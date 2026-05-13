@@ -1,0 +1,231 @@
+/* Todolist example — single-column, no framework. */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e3e6ea;
+  --text: #1f2328;
+  --muted: #6e7681;
+  --accent: #3b6cf6;
+  --accent-soft: #e7eeff;
+  --danger: #c8362f;
+  --done: #9aa3ad;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(20, 24, 31, 0.04), 0 4px 12px rgba(20, 24, 31, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px;
+}
+
+.app {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.app-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header h1 {
+  margin: 0 0 12px;
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.new-task {
+  display: flex;
+  gap: 8px;
+}
+
+.new-task input[type="text"] {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 1rem;
+  background: #fff;
+}
+
+.new-task input[type="text"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.add-btn {
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.add-btn:hover {
+  filter: brightness(1.05);
+}
+
+.task-list-section {
+  min-height: 60px;
+}
+
+.task-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-list .task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-list .task:last-child {
+  border-bottom: none;
+}
+
+.task input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.task .label {
+  flex: 1;
+  cursor: pointer;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.task.done .label {
+  text-decoration: line-through;
+  color: var(--done);
+}
+
+.task .edit-input {
+  flex: 1;
+  padding: 4px 6px;
+  font: inherit;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+}
+
+.task .delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.task .delete-btn:hover {
+  color: var(--danger);
+  background: #fbecea;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 24px 20px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: #fafbfc;
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.filters {
+  display: flex;
+  gap: 4px;
+}
+
+.filter {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.filter:hover {
+  color: var(--text);
+}
+
+.filter.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.clear-completed {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.clear-completed:hover {
+  color: var(--danger);
+  text-decoration: underline;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

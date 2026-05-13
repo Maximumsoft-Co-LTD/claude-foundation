@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Todolist — claude-foundation example</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app" aria-labelledby="app-title">
+      <header class="app-header">
+        <h1 id="app-title">todos</h1>
+        <form id="new-task-form" class="new-task" autocomplete="off">
+          <label class="visually-hidden" for="new-task-input">New task</label>
+          <input
+            id="new-task-input"
+            name="text"
+            type="text"
+            placeholder="What needs doing?"
+            maxlength="280"
+            required
+          />
+          <button type="submit" class="add-btn">Add</button>
+        </form>
+      </header>
+
+      <section class="task-list-section" aria-live="polite">
+        <ul id="task-list" class="task-list" role="list"></ul>
+        <p id="empty-state" class="empty-state" hidden>
+          Nothing here yet — add a task above.
+        </p>
+      </section>
+
+      <footer class="app-footer" id="app-footer" hidden>
+        <span id="active-count" class="active-count"></span>
+        <div class="filters" role="tablist" aria-label="Filter tasks">
+          <button type="button" class="filter" data-filter="all" role="tab">All</button>
+          <button type="button" class="filter" data-filter="active" role="tab">Active</button>
+          <button type="button" class="filter" data-filter="done" role="tab">Done</button>
+        </div>
+        <button type="button" id="clear-completed" class="clear-completed" hidden>
+          Clear completed
+        </button>
+      </footer>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

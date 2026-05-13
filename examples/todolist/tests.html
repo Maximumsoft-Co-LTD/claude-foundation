@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Todolist — smoke tests</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        margin: 24px;
+        color: #1f2328;
+      }
+      h1 {
+        font-size: 1.2rem;
+        margin: 0 0 12px;
+      }
+      #summary {
+        font-weight: 600;
+        margin-bottom: 12px;
+      }
+      .pass {
+        color: #1a7f37;
+      }
+      .fail {
+        color: #c8362f;
+      }
+      ol {
+        padding-left: 20px;
+      }
+      li {
+        margin: 4px 0;
+        line-height: 1.5;
+      }
+      code {
+        background: #f6f8fa;
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Todolist smoke harness</h1>
+    <p>
+      Drives <code>src/store.js</code> directly (pure module — no DOM needed).
+      Open this file in a browser; the summary below reports pass/fail.
+    </p>
+    <div id="summary">Running…</div>
+    <ol id="results"></ol>
+
+    <script type="module">
+      import {
+        createStore,
+        getActiveCount,
+        getDoneCount,
+        getVisibleTasks,
+        isValidFilter,
+        sanitiseState,
+      } from './src/store.js';
+
+      const results = [];
+      function check(name, fn) {
+        try {
+          fn();
+          results.push({ name, ok: true });
+        } catch (err) {
+          results.push({ name, ok: false, err: err && err.message });
+        }
+      }
+      function assert(cond, msg) {
+        if (!cond) throw new Error(msg || 'assertion failed');
+      }
+      function eq(a, b, msg) {
+        const sa = JSON.stringify(a);
+        const sb = JSON.stringify(b);
+        if (sa !== sb) throw new Error((msg || 'not equal') + `: ${sa} !== ${sb}`);
+      }
+
+      // Pinned id + clock so assertions are deterministic.
+      function makeStore(initial) {
+        let n = 0;
+        return createStore(initial, {
+          idFactory: () => `id-${++n}`,
+          clock: () => 1000 + n,
+        });
+      }
+
+      check('initial state is empty + filter=all', () => {
+        const s = makeStore().getState();
+        eq(s.tasks, []);
+        eq(s.filter, 'all');
+        eq(getActiveCount(s), 0);
+      });
+
+      check('add appends a task', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'buy milk' });
+        const s = store.getState();
+        eq(s.tasks.length, 1);
+        eq(s.tasks[0].text, 'buy milk');
+        eq(s.tasks[0].done, false);
+        eq(s.tasks[0].id, 'id-1');
+      });
+
+      check('add rejects empty + whitespace-only', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: '' });
+        store.dispatch({ type: 'add', text: '   ' });
+        store.dispatch({ type: 'add', text: '\t\n' });
+        eq(store.getState().tasks.length, 0);
+      });
+
+      check('add trims surrounding whitespace', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: '  hello  ' });
+        eq(store.getState().tasks[0].text, 'hello');
+      });
+
+      check('toggle flips done', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'a' });
+        store.dispatch({ type: 'toggle', id: 'id-1' });
+        eq(store.getState().tasks[0].done, true);
+        store.dispatch({ type: 'toggle', id: 'id-1' });
+        eq(store.getState().tasks[0].done, false);
+      });
+
+      check('edit updates text; empty edit is a no-op', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'old' });
+        store.dispatch({ type: 'edit', id: 'id-1', text: 'new' });
+        eq(store.getState().tasks[0].text, 'new');
+        store.dispatch({ type: 'edit', id: 'id-1', text: '   ' });
+        eq(store.getState().tasks[0].text, 'new');
+      });
+
+      check('delete removes', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'a' });
+        store.dispatch({ type: 'add', text: 'b' });
+        store.dispatch({ type: 'delete', id: 'id-1' });
+        const s = store.getState();
+        eq(s.tasks.length, 1);
+        eq(s.tasks[0].id, 'id-2');
+      });
+
+      check('setFilter restricts getVisibleTasks', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'a' });
+        store.dispatch({ type: 'add', text: 'b' });
+        store.dispatch({ type: 'toggle', id: 'id-2' }); // b is done
+        store.dispatch({ type: 'setFilter', filter: 'active' });
+        eq(getVisibleTasks(store.getState()).map((t) => t.id), ['id-1']);
+        store.dispatch({ type: 'setFilter', filter: 'done' });
+        eq(getVisibleTasks(store.getState()).map((t) => t.id), ['id-2']);
+        store.dispatch({ type: 'setFilter', filter: 'all' });
+        eq(getVisibleTasks(store.getState()).map((t) => t.id), ['id-1', 'id-2']);
+      });
+
+      check('setFilter rejects unknown values', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'setFilter', filter: 'bogus' });
+        eq(store.getState().filter, 'all');
+      });
+
+      check('clearCompleted removes only done', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'a' });
+        store.dispatch({ type: 'add', text: 'b' });
+        store.dispatch({ type: 'add', text: 'c' });
+        store.dispatch({ type: 'toggle', id: 'id-2' });
+        store.dispatch({ type: 'clearCompleted' });
+        eq(store.getState().tasks.map((t) => t.id), ['id-1', 'id-3']);
+      });
+
+      check('getActiveCount / getDoneCount track tasks', () => {
+        const store = makeStore();
+        store.dispatch({ type: 'add', text: 'a' });
+        store.dispatch({ type: 'add', text: 'b' });
+        store.dispatch({ type: 'toggle', id: 'id-1' });
+        eq(getActiveCount(store.getState()), 1);
+        eq(getDoneCount(store.getState()), 1);
+      });
+
+      check('isValidFilter', () => {
+        assert(isValidFilter('all'));
+        assert(isValidFilter('active'));
+        assert(isValidFilter('done'));
+        assert(!isValidFilter('nope'));
+        assert(!isValidFilter(null));
+      });
+
+      check('sanitiseState drops bad rows + bad filter', () => {
+        const dirty = {
+          tasks: [
+            { id: 'k', text: 'ok', done: false, createdAt: 1 },
+            { id: '', text: 'bad', done: false, createdAt: 1 },
+            { id: 'k2', text: '   ', done: false, createdAt: 1 },
+            null,
+          ],
+          filter: 'bogus',
+        };
+        const s = sanitiseState(dirty);
+        eq(s.tasks.length, 1);
+        eq(s.tasks[0].id, 'k');
+        eq(s.filter, 'all');
+      });
+
+      check('subscribe fires on change, unsubscribe stops it', () => {
+        const store = makeStore();
+        let calls = 0;
+        const unsub = store.subscribe(() => calls++);
+        store.dispatch({ type: 'add', text: 'a' });
+        store.dispatch({ type: 'add', text: 'b' });
+        eq(calls, 2);
+        unsub();
+        store.dispatch({ type: 'add', text: 'c' });
+        eq(calls, 2);
+      });
+
+      check('replace hydrates from sanitised state', () => {
+        const store = makeStore();
+        store.dispatch({
+          type: 'replace',
+          state: {
+            tasks: [{ id: 'x', text: 'hi', done: true, createdAt: 1 }],
+            filter: 'done',
+          },
+        });
+        const s = store.getState();
+        eq(s.tasks.length, 1);
+        eq(s.filter, 'done');
+      });
+
+      // --- Render results ----
+      const ol = document.getElementById('results');
+      for (const r of results) {
+        const li = document.createElement('li');
+        li.className = r.ok ? 'pass' : 'fail';
+        li.textContent = (r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.err ? '  —  ' + r.err : '');
+        ol.appendChild(li);
+      }
+      const passed = results.filter((r) => r.ok).length;
+      const total = results.length;
+      const summary = document.getElementById('summary');
+      summary.textContent = `${passed} / ${total} passed`;
+      summary.className = passed === total ? 'pass' : 'fail';
+    </script>
+  </body>
+</html>
