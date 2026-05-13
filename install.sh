@@ -45,7 +45,7 @@ What gets installed:
   .claude/agents/*.md          — pm, lead, engineer, qa, retro (sub-agents)
   .claude/orchestrator.md      — orchestrator script run by the main agent on /dev
   .claude/commands/dev.md      — the /dev slash command (loads orchestrator.md)
-  .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals
+  .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals + git-workflow
   .claude/rules/*.md           — always-on pointers to the skills above
   .claude/hooks/lint.sh        — PostToolUse lint dispatcher
   .claude/settings.json        — hook wiring (only if missing)

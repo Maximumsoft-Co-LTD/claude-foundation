@@ -11,7 +11,7 @@ An opinionated command workflow for [Claude Code](https://claude.com/claude-code
 - **Carry-over follow-ups** — `retro` appends to `.workflow/FOLLOWUPS.md`; `pm` reads it on every new interview so deferred work doesn't get lost.
 - **Skill-creator handoff** — after `retro` lists skill candidates, the orchestrator asks the user which to create and spawns `skill-creator` for each approval. Nothing auto-creates.
 - **Resume** — every step writes `state.json`; `/dev --resume <id>` continues where the run left off.
-- **Always-on skill rules** — pre-flight pointers for `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `queue-fundamentals`, `debug-fundamentals`. Each rule loads its full skill before code lands.
+- **Always-on skill rules** — pre-flight pointers for `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Each rule loads its full skill before code lands (or before a commit/PR ships).
 - **Installer** — `install.sh` drops the workflow into any target repo, with `--dry-run`, `--force`, and self-copy guard.
 
 ## Install
@@ -35,7 +35,7 @@ What lands in the target:
 .claude/agents/          pm, lead, engineer, qa, retro (sub-agents)
 .claude/orchestrator.md  orchestrator script for the main agent
 .claude/commands/dev.md  the /dev slash command (loads orchestrator.md)
-.claude/skills/          programming / database / debug / hexagonal / queue fundamentals (+ references/)
+.claude/skills/          programming / database / debug / hexagonal / queue fundamentals + git-workflow (+ references/)
 .claude/rules/           always-on pointers to the skills
 .claude/hooks/lint.sh    PostToolUse lint dispatcher
 .claude/settings.json    hook wiring (only if missing)
@@ -86,7 +86,7 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 ├── commands/       dev.md (loads orchestrator.md)
 ├── hooks/
 ├── rules/          programming / database / hexagonal / queue / debug fundamentals
-└── skills/         full skill bodies referenced by the rules
+└── skills/         full skill bodies referenced by the rules (incl. git-workflow)
 .workflow/
 ├── _templates/     blueprints — copy, don't edit in place
 ├── INDEX.md        run registry
