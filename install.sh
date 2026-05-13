@@ -60,6 +60,11 @@ Behavior:
       skipped if present, unless --force
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
   - .claude/settings.local.json is never touched (user-local config)
+  - settings.json side-file: if the target already has .claude/settings.json
+      and our PostToolUse lint hook isn't in it, we drop our config as
+      .claude/settings.foundation.json (pure JSON) and print merge instructions.
+      We never auto-merge — settings.json can hold permissions/model/env that
+      a silent rewrite would surprise.
   - Upgrade cleanup: files removed by a newer foundation version (e.g. the
       legacy .claude/agents/orchestrator.md sub-agent) are deleted from the
       target on every run. The CLEANUP array in this script is the source of
@@ -261,6 +266,24 @@ else
   printf "  ${G}+${N} CLAUDE.md ${D}(stub — points at WORKFLOW.md)${N}\n"
 fi
 
+# settings.json hook check. PLAN keeps the existing settings.json so we never
+# clobber user permissions/model/env config — but that means a target that
+# already has settings.json doesn't get our PostToolUse lint hook wired in.
+# Detect that case and plan to drop the snippet at .claude/settings.foundation.json
+# so the user can merge it by hand. Cheap substring check (no jq dependency).
+SETTINGS_SRC="$SOURCE_PATH/.claude/settings.json"
+SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
+SETTINGS_SNIPPET="$TARGET_PATH/.claude/settings.foundation.json"
+SETTINGS_ACTION="none"
+if [ -e "$SETTINGS_DST" ] && [ -e "$SETTINGS_SRC" ]; then
+  if grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null; then
+    SETTINGS_ACTION="hook-already-wired"
+  else
+    SETTINGS_ACTION="write-snippet"
+    printf "  ${Y}!${N} .claude/settings.json ${D}(kept — our PostToolUse lint hook is not wired; will drop snippet at .claude/settings.foundation.json for you to merge)${N}\n"
+  fi
+fi
+
 if [ "$DRY_RUN" = "yes" ]; then
   printf "\n${Y}✓ Dry run complete. Re-run without --dry-run to apply.${N}\n"
   exit 0
@@ -303,6 +326,17 @@ for row in "${CLEANUP[@]}"; do
   fi
 done
 
+# settings.json side-file when target already has its own settings.json.
+# We don't merge automatically — settings.json can contain permissions, model,
+# env, etc., and silently rewriting it would be surprising. Instead, drop our
+# block as a pure-JSON side-file the user can copy from. Merge instructions
+# go to stdout (the side-file stays valid JSON so it round-trips through tools).
+if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
+  mkdir -p "$(dirname "$SETTINGS_SNIPPET")"
+  cp "$SETTINGS_SRC" "$SETTINGS_SNIPPET"
+  printf "  ${Y}!${N} wrote %s ${D}(see merge instructions below)${N}\n" ".claude/settings.foundation.json"
+fi
+
 # CLAUDE.md stub
 if [ ! -e "$CLAUDE_DST" ]; then
   cat > "$CLAUDE_DST" <<'EOF'
@@ -334,3 +368,19 @@ cat <<EOF
     2. Run:  /dev <intent>
     3. Review WORKFLOW.md for the full flow definition
 EOF
+
+if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
+  cat <<EOF
+
+  ${Y}⚠ settings.json already existed in your project — kept as-is.${N}
+  Our PostToolUse lint hook is NOT wired in. To enable it:
+
+    1. Open .claude/settings.foundation.json (we just wrote it).
+    2. Copy the "hooks.PostToolUse" entry into your .claude/settings.json.
+       If your settings.json already has a "PostToolUse" array, append our
+       entry to the existing list — don't replace it.
+    3. Delete .claude/settings.foundation.json.
+
+  If you don't want the lint hook, just delete the snippet file.
+EOF
+fi

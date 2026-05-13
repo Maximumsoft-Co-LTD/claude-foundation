@@ -48,6 +48,8 @@ CLAUDE.md                minimal stub (only if missing)
 
 `INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten — they hold user state. `.claude/settings.local.json` is never touched (user-local config). Agents, commands, skills, rules, hooks, and `settings.json` are kept on re-run unless you pass `--force`; workflow templates always refresh so the blueprints stay current.
 
+**If your project already has `.claude/settings.json`**, the installer leaves it alone — your `permissions` / `model` / `env` etc. are not rewritten. If your existing file doesn't already wire up our `PostToolUse → .claude/hooks/lint.sh` entry, the installer drops a pure-JSON snippet at `.claude/settings.foundation.json` and prints merge instructions; copy the `hooks` block into your settings (appending to any existing `PostToolUse` array, not replacing it) and delete the snippet. If you don't want the lint hook, just delete the snippet file.
+
 ## Using `/dev`
 
 Inside the target project, open Claude Code and run:
