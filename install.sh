@@ -44,14 +44,15 @@ Options:
 What gets installed:
   .claude/agents/*.md          — orchestrator, pm, lead, engineer, qa, retro
   .claude/commands/dev.md      — the /dev slash command
-  .workflow/_templates/*.md    — spec / plan / review / tests / retro / epic
+  .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json
   .workflow/INDEX.md           — fresh registry (only if missing)
+  .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
   WORKFLOW.md                  — full flow reference at repo root
   CLAUDE.md                    — minimal stub (only if missing)
 
 Behavior:
   - agents/commands/templates/WORKFLOW.md: skipped if present, unless --force
-  - .workflow/INDEX.md & CLAUDE.md: never overwritten (user state)
+  - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
 EOF
 }
 
@@ -102,7 +103,7 @@ SOURCE_PATH="$(expand_path "$SOURCE_PATH")"
 
 # ── Validate source ─────────────────────────────────────────────────────────
 [ -d "$SOURCE_PATH" ] || fail "source not found: $SOURCE_PATH"
-for needed in ".claude/agents" ".claude/commands/dev.md" ".workflow/_templates" "WORKFLOW.md"; do
+for needed in ".claude/agents" ".claude/commands/dev.md" ".workflow/_templates" ".workflow/_templates/state.json" ".workflow/FOLLOWUPS.md" "WORKFLOW.md"; do
   [ -e "$SOURCE_PATH/$needed" ] || fail "source is missing $needed — pass --source with the claude-foundation repo path"
 done
 ok "source: $SOURCE_PATH"
@@ -139,10 +140,14 @@ PLAN=(
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
   ".workflow/_templates/review.md|always-overwrite"
+  ".workflow/_templates/security.md|always-overwrite"
   ".workflow/_templates/tests.md|always-overwrite"
+  ".workflow/_templates/recommendations.md|always-overwrite"
   ".workflow/_templates/retro.md|always-overwrite"
   ".workflow/_templates/epic.md|always-overwrite"
+  ".workflow/_templates/state.json|always-overwrite"
   ".workflow/INDEX.md|never-overwrite"
+  ".workflow/FOLLOWUPS.md|never-overwrite"
   "WORKFLOW.md|skip-if-exists"
 )
 
@@ -222,10 +227,12 @@ if [ ! -e "$CLAUDE_DST" ]; then
 
 Project uses the claude-foundation `/dev` workflow.
 
-Entry point: `/dev <intent>` — spec → plan → gate → implement → review → test → retro.
+Entry point: `/dev <intent>` (or `/dev --resume <id>`) — spec → plan → gate → implement → review → (security) → test → docs → ship → retro.
+
+The flow is type-aware: `feat` / `fix` / `refactor` / `chore` / `docs` / `spike` each skip or specialise some phases (e.g., `fix` writes its regression test before the fix; `chore` skips QA; `spike` produces `recommendations.md` instead of code).
 
 Full flow: see `WORKFLOW.md`.
-Agents live under `.claude/agents/`; run artifacts land in `.workflow/<id>/`.
+Agents live under `.claude/agents/`; run artifacts land in `.workflow/<id>/`; cross-run state lives in `.workflow/INDEX.md` and `.workflow/FOLLOWUPS.md`.
 EOF
 fi
 
