@@ -1,0 +1,17 @@
+{
+  "id": "NNNN-type-slug",
+  "type": "feat",
+  "phase": "phase-1-requirements",
+  "step": "interview",
+  "next_step": "spec",
+  "cycles": {
+    "review": 0,
+    "test": 0
+  },
+  "skipped_steps": [],
+  "open_pr_on_ship": null,
+  "security_triggered": null,
+  "last_agent": "orchestrator",
+  "last_updated": "YYYY-MM-DDTHH:MM:SSZ",
+  "notes": ""
+}
