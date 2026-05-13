@@ -5,22 +5,18 @@ argument-hint: <intent> | --resume <id>
 
 Run the `/dev` workflow on this intent: **$ARGUMENTS**
 
-Spawn the `orchestrator` agent via the `Agent` tool with `subagent_type: orchestrator`. Pass `$ARGUMENTS` as the prompt verbatim.
+You — the main agent — are the Orchestrator for this run. Do **not** spawn an `orchestrator` sub-agent: Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to delegate or interview. Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to sub-agents via the `Agent` tool.
 
-- If `$ARGUMENTS` is empty, the orchestrator asks the user via `AskUserQuestion`.
-- If `$ARGUMENTS` starts with `--resume`, the orchestrator reads `.workflow/<id>/state.json` and continues from the recorded step instead of starting fresh.
+1. Read [`.claude/orchestrator.md`](../orchestrator.md) end-to-end. It is the source of truth for the flow — phases, state discipline, cycle limits, and the rules for delegating to sub-agents.
+2. Read [`WORKFLOW.md`](../../WORKFLOW.md) for the type-aware phase matrix and the example runs.
+3. Follow `.claude/orchestrator.md` as if its instructions were addressed to you. In particular:
+   - You run the Phase 1 interview yourself via `AskUserQuestion` (one batch, 3–4 questions) — the `pm` sub-agent only writes `spec.md` from your interview answers.
+   - You handle the gate, all cycle-limit escalations, and the skill-candidate approval via `AskUserQuestion`.
+   - You spawn sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) via the `Agent` tool with `subagent_type: <name>`. Pass the run id, the run's `Type`, and any mode hint (e.g., lead `plan` / `review` / `security`; engineer `implement` / `docs` / `ship`).
+   - You own `state.json` writes after every step so `/dev --resume <id>` works.
 
-The orchestrator owns:
-- ID assignment from `.workflow/INDEX.md` (`NNNN-<type>-<slug>`)
-- Run folder creation under `.workflow/<id>/` (including `state.json`)
-- Phase 1 — delegate to `pm` (interview + `spec.md`, reading `.workflow/FOLLOWUPS.md`) → `lead` (plan + `plan.md`, or `epic.md` if scope splits) → gate (`approve` / `revise` / `swap`)
-- Phase 2 — delegate to `engineer` (implement) → `lead` (review) → `lead` (security review, if triggered) → `qa` (tests, type-aware) → `engineer` (docs touch-up) → `engineer` (ship — commit + optional PR) → `retro` (closeout) → skill-creator handoff for each user-approved skill candidate
-- Type-aware branching per `WORKFLOW.md > Type-aware phase matrix` (skipping QA for chore/docs/spike, mandating regression-test-first for fix, etc.)
-- `state.json` updates after every step so `--resume` works
-- Follow-up tracking via `.workflow/FOLLOWUPS.md` (pm reads, retro appends + closes)
-- All status updates to `.workflow/INDEX.md`
-- Cycle-limit enforcement (review max 2, test max 3) before escalating to user
+Behavior:
+- If `$ARGUMENTS` is empty, ask the user for the intent via `AskUserQuestion` before proceeding.
+- If `$ARGUMENTS` starts with `--resume`, read `.workflow/<id>/state.json` and continue from the recorded step instead of starting fresh. If `state.json` is missing or malformed, ask the user whether to start fresh.
 
-Do not do any of the orchestrator's work yourself — your job here is just to hand off.
-
-Reference: [`WORKFLOW.md`](../../WORKFLOW.md) for the full flow definition.
+Reference: [`WORKFLOW.md`](../../WORKFLOW.md) for the full flow definition, [`.claude/orchestrator.md`](../orchestrator.md) for the step-by-step orchestration script.
