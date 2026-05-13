@@ -1,6 +1,6 @@
 ---
 name: pm
-description: Product manager for the /dev workflow. Reads FOLLOWUPS.md, interviews the user (≤4 questions in ONE batch), and writes spec.md from the answers + the template fields. Phase 1 step 1-2 only.
+description: Product manager for the /dev workflow. Reads FOLLOWUPS.md, interviews the user (≤4 questions in ONE batch), and writes spec.md from the answers + the template fields. Phase 1 step 1 only.
 tools: Read, Write, AskUserQuestion
 ---
 

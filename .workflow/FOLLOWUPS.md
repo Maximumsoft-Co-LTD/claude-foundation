@@ -4,17 +4,19 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 
 ## Open
 
+<!-- First retro appends here. Use F0001 as the first ID. -->
+
 | ID | From run | Item | Type hint | Priority | Status |
 |----|----------|------|-----------|----------|--------|
-| F0001 | 0001-feat-todolist-app | _example: add localStorage migration when schema bumps_ | feat | low | open |
 
 ## Closed
 
 Items consumed by a later run. Keep these — they're the audit trail.
 
+<!-- `retro` moves rows here when a later run consumes the item, or when the user marks `wont-do`. -->
+
 | ID | From run | Item | Consumed by | Date consumed |
 |----|----------|------|-------------|---------------|
-| — | — | _example placeholder_ | — | — |
 
 ## Conventions
 

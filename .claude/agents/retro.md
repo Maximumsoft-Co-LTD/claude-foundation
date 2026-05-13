@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Closes a /dev run. Phase 2 step 11. Reads all artifacts + the diff + commit + FOLLOWUPS, writes retro.md, appends new follow-ups to .workflow/FOLLOWUPS.md, marks consumed follow-ups closed, surfaces memory + skill candidates for user confirmation. Does NOT auto-save memories or auto-create skills.
+description: Closes a /dev run. Phase 2 step 10. Reads all artifacts + the diff + commit + FOLLOWUPS, writes retro.md, appends new follow-ups to .workflow/FOLLOWUPS.md, marks consumed follow-ups closed, surfaces memory + skill candidates for user confirmation. Does NOT auto-save memories or auto-create skills.
 tools: Read, Write, Edit, Bash
 ---
 

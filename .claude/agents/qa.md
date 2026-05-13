@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Writes and runs unit, integration, and e2e tests after engineer implements. Phase 2 step 8. Type-aware — full pass for feat/refactor, regression-first for fix, skipped (with stub) for chore/docs/spike. Maps every spec acceptance criterion to at least one test. Blocks step 9 until tests pass (or are skipped per type).
+description: Writes and runs unit, integration, and e2e tests after engineer implements. Phase 2 step 7. Type-aware — full pass for feat/refactor, regression-first for fix, skipped (with stub) for chore/docs/spike. Maps every spec acceptance criterion to at least one test. Blocks Phase 2 step 9 (ship) until tests pass (or are skipped per type).
 tools: Read, Write, Edit, Bash, Grep, LSP
 ---
 
@@ -32,11 +32,13 @@ Tick the matching box in `tests.md > Type-aware mode`:
 3. Match the project's existing test framework + conventions. Do not introduce a new framework. If no framework exists, ask the user before adding one.
 4. Run the suites. Record counts in `tests.md > Results` and the re-run command in `Commands`.
 5. **Fix-mode extra step** — verify the regression test is real:
-   - Identify the regression test the engineer wrote (plan step 1).
-   - Confirm it fails on the *pre-fix* code: `git stash` the fix portion (or revert the fix commit on a scratch branch), run only that test, confirm ❌. Restore.
-   - Run the test on the current code, confirm ✅.
-   - Fill `tests.md > Regression test > Pre-fix verification` with the exact commands you ran.
-   - If you cannot make the regression test fail on the pre-fix code, the test doesn't actually cover the bug → blocking finding, ask engineer to tighten it.
+   - Identify the regression test the engineer wrote (plan step 1) and find its commit. Engineer is supposed to land the test as its own commit ahead of the fix commit.
+   - Confirm it fails on the *pre-fix* code. Preferred path (clean two-commit history):
+     `git checkout <test-commit>` → run the suite → the new test must fail ❌ → `git checkout <fix-commit>` (or the branch tip) → run it again → it must pass ✅.
+   - Fallback (engineer bundled test + fix into one commit, or VCS not available):
+     Revert the fix portion to a scratch branch (`git checkout -b qa-pre-fix && git revert <fix-commit> --no-commit -- <fix-files>`, or hand-edit), re-run the test, expect ❌. Restore. Record the bundled-commit issue in `tests.md > Failing` so retro can flag the workflow violation.
+   - Fill `tests.md > Regression test > Pre-fix verification` with the exact commands you ran and the two SHAs.
+   - If you cannot make the regression test fail on the pre-fix code under any path, the test doesn't actually cover the bug → blocking finding, ask engineer to tighten it.
 6. **Refactor-mode extra step** — run the pre-existing suite. If any pre-existing test starts failing post-refactor, that's a *behaviour change* and is a blocking finding unless the plan explicitly approved it.
 7. On failures:
    - Decide: is the test wrong, or is the code wrong?

@@ -63,7 +63,9 @@ Without state writes, resume is broken. Don't skip them even when the next step 
     - Run `git diff --name-only` (if repo is git) or use the engineer's returned file list to get changed paths.
     - If any path matches the sensitive-paths list (auth/session/token, password, crypto, SQL/query builder, raw HTML render, file/path handling, exec/shell, deserialise, env/secrets, new outbound network), fire it.
     - Also fire if the user requested it at the gate or via `revise` notes.
-    - If firing: spawn `lead` in **security mode**, set `state.security_triggered=true`. Verdict `fix-required` with severity `high` → counts against `cycles.review`. Severity `medium`/`low` → non-blocking, carry into `retro.md`.
+    - If firing: spawn `lead` in **security mode**, set `state.security_triggered=true`.
+      - Verdict `fix-required` with severity `high` → blocking. Return to `engineer` with the security findings, then **re-spawn `lead` in security mode** on the new diff (not review mode — security mode owns this lane). Each high-severity loop bumps `cycles.review` by 1; once `cycles.review > 2`, escalate the same way blocking review findings do.
+      - Severity `medium` / `low` only → non-blocking; carry into `retro.md > Security findings (carry-over)` and proceed without a re-spawn.
     - If not firing: write a single line to `state.json` (`security_triggered=false`) and move on.
 12. **Test.** Type-branch:
     - `feat` / `refactor` / `fix` → spawn `qa`. INDEX status → `testing`. State: `step=test, cycles.test++`.

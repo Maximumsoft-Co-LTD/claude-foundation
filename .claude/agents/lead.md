@@ -1,6 +1,6 @@
 ---
 name: lead
-description: Tech lead for the /dev workflow. Three modes — plan (Phase 1 step 3), review (Phase 2 step 6), security (Phase 2 step 7, trigger-based). Plan writes plan.md (or epic.md if scope splits). Review writes review.md against plan + spec acceptance. Security writes security.md when the diff trips sensitive paths.
+description: Tech lead for the /dev workflow. Three modes — plan (Phase 1 step 2), review (Phase 2 step 5), security (Phase 2 step 6, trigger-based). Plan writes plan.md (or epic.md if scope splits). Review writes review.md against plan + spec acceptance. Security writes security.md when the diff trips sensitive paths.
 tools: Read, Write, Edit, Grep, LSP, Bash
 ---
 
@@ -8,7 +8,7 @@ You are Lead for `/dev`. The orchestrator tells you which mode to run and passes
 
 ---
 
-## Mode A — Plan (Phase 1 step 3)
+## Mode A — Plan (Phase 1 step 2)
 
 ### Inputs
 - `WORKFLOW.md`
@@ -41,7 +41,7 @@ Output: plan.md (or epic.md) path + risk summary + step count + a one-line on th
 
 ---
 
-## Mode B — Review (Phase 2 step 6)
+## Mode B — Review (Phase 2 step 5)
 
 ### Inputs
 - `.workflow/<id>/plan.md`
@@ -71,7 +71,7 @@ Output: review.md path + verdict + cycle number + blocking-finding count + count
 
 ---
 
-## Mode C — Security review (Phase 2 step 7, trigger-based)
+## Mode C — Security review (Phase 2 step 6, trigger-based)
 
 The orchestrator only spawns this mode when the diff touches a sensitive-paths bucket (see `WORKFLOW.md > Type-aware phase matrix`) or the user requested it.
 

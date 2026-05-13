@@ -44,6 +44,10 @@ Options:
 What gets installed:
   .claude/agents/*.md          — orchestrator, pm, lead, engineer, qa, retro
   .claude/commands/dev.md      — the /dev slash command
+  .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals
+  .claude/rules/*.md           — always-on pointers to the skills above
+  .claude/hooks/lint.sh        — PostToolUse lint dispatcher
+  .claude/settings.json        — hook wiring (only if missing)
   .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
@@ -51,8 +55,10 @@ What gets installed:
   CLAUDE.md                    — minimal stub (only if missing)
 
 Behavior:
-  - agents/commands/templates/WORKFLOW.md: skipped if present, unless --force
+  - agents/commands/skills/rules/hooks/settings.json/templates/WORKFLOW.md:
+      skipped if present, unless --force
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
+  - .claude/settings.local.json is never touched (user-local config)
 EOF
 }
 
@@ -103,7 +109,17 @@ SOURCE_PATH="$(expand_path "$SOURCE_PATH")"
 
 # ── Validate source ─────────────────────────────────────────────────────────
 [ -d "$SOURCE_PATH" ] || fail "source not found: $SOURCE_PATH"
-for needed in ".claude/agents" ".claude/commands/dev.md" ".workflow/_templates" ".workflow/_templates/state.json" ".workflow/FOLLOWUPS.md" "WORKFLOW.md"; do
+for needed in \
+  ".claude/agents" \
+  ".claude/commands/dev.md" \
+  ".claude/skills" \
+  ".claude/rules" \
+  ".claude/hooks/lint.sh" \
+  ".claude/settings.json" \
+  ".workflow/_templates" \
+  ".workflow/_templates/state.json" \
+  ".workflow/FOLLOWUPS.md" \
+  "WORKFLOW.md"; do
   [ -e "$SOURCE_PATH/$needed" ] || fail "source is missing $needed — pass --source with the claude-foundation repo path"
 done
 ok "source: $SOURCE_PATH"
@@ -129,6 +145,10 @@ ok "target: $TARGET_PATH"
 # ── Plan ────────────────────────────────────────────────────────────────────
 # Each row: "<src-relative-path>|<mode>"
 # mode = skip-if-exists | force-overwrite | always-overwrite | never-overwrite
+#
+# A row whose path is a directory in the source is expanded into one row per
+# file beneath it (recursive), each inheriting the same mode. That keeps the
+# dry-run output file-accurate without a 30-line manual enumeration.
 PLAN=(
   ".claude/agents/orchestrator.md|skip-if-exists"
   ".claude/agents/pm.md|skip-if-exists"
@@ -137,6 +157,10 @@ PLAN=(
   ".claude/agents/qa.md|skip-if-exists"
   ".claude/agents/retro.md|skip-if-exists"
   ".claude/commands/dev.md|skip-if-exists"
+  ".claude/skills|skip-if-exists"
+  ".claude/rules|skip-if-exists"
+  ".claude/hooks/lint.sh|skip-if-exists"
+  ".claude/settings.json|skip-if-exists"
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
   ".workflow/_templates/review.md|always-overwrite"
@@ -150,6 +174,22 @@ PLAN=(
   ".workflow/FOLLOWUPS.md|never-overwrite"
   "WORKFLOW.md|skip-if-exists"
 )
+
+# Expand directory rows into per-file rows.
+EXPANDED_PLAN=()
+for row in "${PLAN[@]}"; do
+  rel="${row%|*}"; mode="${row#*|}"
+  src="$SOURCE_PATH/$rel"
+  if [ -d "$src" ]; then
+    while IFS= read -r -d '' file; do
+      sub_rel="${file#"$SOURCE_PATH"/}"
+      EXPANDED_PLAN+=("$sub_rel|$mode")
+    done < <(find "$src" -type f -print0 | LC_ALL=C sort -z)
+  else
+    EXPANDED_PLAN+=("$row")
+  fi
+done
+PLAN=("${EXPANDED_PLAN[@]}")
 
 resolve_action() {
   local mode="$1" dst="$2"

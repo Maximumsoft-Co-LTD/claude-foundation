@@ -29,4 +29,4 @@ Any criterion that cannot be ticked here is a **blocking** finding.
 - `path:line` — note (carried to retro)
 
 ## Sign-off
-pass | needs-another-round → see Phase 2 step 6
+pass | needs-another-round → see Phase 2 step 5

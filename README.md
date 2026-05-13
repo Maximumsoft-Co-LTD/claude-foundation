@@ -34,6 +34,10 @@ What lands in the target:
 ```
 .claude/agents/          orchestrator, pm, lead, engineer, qa, retro
 .claude/commands/dev.md  the /dev slash command
+.claude/skills/          programming / database / debug / hexagonal / queue fundamentals (+ references/)
+.claude/rules/           always-on pointers to the skills
+.claude/hooks/lint.sh    PostToolUse lint dispatcher
+.claude/settings.json    hook wiring (only if missing)
 .workflow/_templates/    spec / plan / review / security / tests / recommendations / retro / epic / state.json
 .workflow/INDEX.md       run registry (only if missing)
 .workflow/FOLLOWUPS.md   follow-up registry (only if missing)
@@ -41,7 +45,7 @@ WORKFLOW.md              full flow reference at repo root
 CLAUDE.md                minimal stub (only if missing)
 ```
 
-`INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten — they hold user state.
+`INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten — they hold user state. `.claude/settings.local.json` is never touched (user-local config). Agents, commands, skills, rules, hooks, and `settings.json` are kept on re-run unless you pass `--force`; workflow templates always refresh so the blueprints stay current.
 
 ## Using `/dev`
 
