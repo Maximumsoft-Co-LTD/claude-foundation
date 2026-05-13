@@ -60,6 +60,10 @@ Behavior:
       skipped if present, unless --force
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
   - .claude/settings.local.json is never touched (user-local config)
+  - Upgrade cleanup: files removed by a newer foundation version (e.g. the
+      legacy .claude/agents/orchestrator.md sub-agent) are deleted from the
+      target on every run. The CLEANUP array in this script is the source of
+      truth — extend it whenever a fix removes a previously-installed file.
 EOF
 }
 
@@ -177,6 +181,14 @@ PLAN=(
   "WORKFLOW.md|skip-if-exists"
 )
 
+# Files removed by a previous foundation version that must be deleted from
+# upgraded targets (otherwise stale sub-agent / command files keep registering
+# and the new flow breaks). Each row is "<target-relative-path>|<why>".
+# Add a row whenever a fix removes a file the installer used to write.
+CLEANUP=(
+  ".claude/agents/orchestrator.md|moved to .claude/orchestrator.md — sub-agents can't spawn sub-agents or call AskUserQuestion"
+)
+
 # Expand directory rows into per-file rows.
 EXPANDED_PLAN=()
 for row in "${PLAN[@]}"; do
@@ -227,6 +239,20 @@ for row in "${PLAN[@]}"; do
 done
 printf "\n  Summary: ${G}%d new${N}, ${Y}%d overwrite${N}, ${D}%d kept${N}\n" "$NEW" "$OVR" "$SKP"
 
+# Show cleanup plan — files that exist in the target and will be deleted on apply.
+CLEANUP_HITS=0
+for row in "${CLEANUP[@]}"; do
+  rel="${row%%|*}"; why="${row#*|}"
+  dst="$TARGET_PATH/$rel"
+  if [ -e "$dst" ]; then
+    printf "  ${R}-${N} %s ${D}(remove: %s)${N}\n" "$rel" "$why"
+    CLEANUP_HITS=$((CLEANUP_HITS+1))
+  fi
+done
+if [ "$CLEANUP_HITS" -gt 0 ]; then
+  printf "  ${R}%d to remove${N}\n" "$CLEANUP_HITS"
+fi
+
 # CLAUDE.md stub (separate from PLAN — generated, not copied)
 CLAUDE_DST="$TARGET_PATH/CLAUDE.md"
 if [ -e "$CLAUDE_DST" ]; then
@@ -262,15 +288,20 @@ for row in "${PLAN[@]}"; do
   esac
 done
 
-# Upgrade cleanup: older installs put orchestrator.md under .claude/agents/, where
-# Claude Code registers it as a sub-agent. Sub-agents can't spawn other sub-agents
-# or call AskUserQuestion, so the orchestrator role can't run there. Move the file
-# out of agents/ on upgrade so /dev's main-agent orchestrator can take over cleanly.
-LEGACY_ORCH="$TARGET_PATH/.claude/agents/orchestrator.md"
-if [ -e "$LEGACY_ORCH" ]; then
-  printf "  ${Y}~${N} removing legacy %s ${D}(now lives at .claude/orchestrator.md)${N}\n" ".claude/agents/orchestrator.md"
-  rm -f "$LEGACY_ORCH"
-fi
+# Upgrade cleanup: walk the CLEANUP array and delete any legacy files that earlier
+# foundation versions installed but newer versions removed (e.g., a sub-agent that
+# became a main-agent script). Without this step, stale .claude/agents/*.md files
+# would keep registering as sub-agents and break the new flow.
+REMOVED=0
+for row in "${CLEANUP[@]}"; do
+  rel="${row%%|*}"; why="${row#*|}"
+  dst="$TARGET_PATH/$rel"
+  if [ -e "$dst" ]; then
+    printf "  ${R}-${N} %s ${D}(%s)${N}\n" "$rel" "$why"
+    rm -f "$dst"
+    REMOVED=$((REMOVED+1))
+  fi
+done
 
 # CLAUDE.md stub
 if [ ! -e "$CLAUDE_DST" ]; then
@@ -296,7 +327,7 @@ printf "${G}✓ claude-foundation installed${N} at %s\n" "$TARGET_PATH"
 printf "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}\n"
 cat <<EOF
 
-  Files     : ${NEW} new, ${OVR} overwritten, ${SKP} kept
+  Files     : ${NEW} new, ${OVR} overwritten, ${SKP} kept, ${REMOVED:-0} removed
 
   Next steps:
     1. Open the project in Claude Code
