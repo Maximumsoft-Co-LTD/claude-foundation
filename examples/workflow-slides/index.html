@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The /dev Workflow — Interactive Slides</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="deck" class="deck" tabindex="0">
+      <!-- Progress + controls -->
+      <div class="progress" aria-hidden="true">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+
+      <nav class="topbar">
+        <div class="brand">
+          <span class="brand-dot"></span>
+          <span class="brand-text">claude-foundation · /dev workflow</span>
+        </div>
+        <div class="counter" aria-live="polite">
+          <span id="slide-current">1</span><span class="counter-sep">/</span><span id="slide-total">12</span>
+        </div>
+      </nav>
+
+      <main class="stage" id="stage" aria-live="polite">
+        <!-- Slide 1 — Title -->
+        <section class="slide is-active" data-slide="title">
+          <div class="slide-inner center">
+            <div class="title-eyebrow">A workflow for AI engineers</div>
+            <h1 class="title-h1">
+              <span class="grad">/dev</span>
+              <span class="title-sub">one entry point, two phases, six agents</span>
+            </h1>
+            <p class="title-tag">
+              Type-aware. Resumable. Specialists do the work — the orchestrator drives.
+            </p>
+
+            <div class="cmd-bar" role="figure" aria-label="Example command">
+              <span class="cmd-prompt">›</span>
+              <span class="cmd-text"><span class="cmd-slash">/dev</span> <span id="cmd-typer">create a todolist app</span><span class="caret" aria-hidden="true"></span></span>
+            </div>
+
+            <div class="hint">press <kbd>→</kbd> to start · <kbd>?</kbd> for help</div>
+          </div>
+        </section>
+
+        <!-- Slide 2 — The shape -->
+        <section class="slide" data-slide="shape">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">02 · the shape</span>
+              <h2>Two phases, ten numbered steps.</h2>
+              <p class="lede">
+                Phase 1 is interactive: a human approves the plan. Phase 2 is autonomous: agents implement, review, test, ship, reflect.
+              </p>
+            </header>
+
+            <div class="phase-grid">
+              <article class="phase phase-1">
+                <div class="phase-tag">Phase 1 · Requirements</div>
+                <ol class="step-list">
+                  <li><span class="step-n">1</span> Interview + spec</li>
+                  <li><span class="step-n">2</span> Plan</li>
+                  <li><span class="step-n">3</span> Gate <span class="pill">human approval</span></li>
+                </ol>
+                <div class="phase-foot">Interactive</div>
+              </article>
+
+              <div class="phase-bridge" aria-hidden="true">
+                <div class="bridge-line"></div>
+                <div class="bridge-dot"></div>
+              </div>
+
+              <article class="phase phase-2">
+                <div class="phase-tag">Phase 2 · Implementation</div>
+                <ol class="step-list">
+                  <li><span class="step-n">4</span> Implement</li>
+                  <li><span class="step-n">5</span> Review</li>
+                  <li><span class="step-n">6</span> Security <span class="pill pill-amber">trigger</span></li>
+                  <li><span class="step-n">7</span> Test</li>
+                  <li><span class="step-n">8</span> Docs</li>
+                  <li><span class="step-n">9</span> Ship</li>
+                  <li><span class="step-n">10</span> Retro</li>
+                </ol>
+                <div class="phase-foot">Autonomous</div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 3 — Type-aware -->
+        <section class="slide" data-slide="types">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">03 · type-aware</span>
+              <h2>The same flow, branched by intent.</h2>
+              <p class="lede">Pick a type — see which phases run. No e2e test runs for a <code>chore</code>; no fix lands without a regression test.</p>
+            </header>
+
+            <div class="type-tabs" role="tablist" aria-label="Run type">
+              <button class="type-tab is-active" data-type="feat" role="tab">feat</button>
+              <button class="type-tab" data-type="fix" role="tab">fix</button>
+              <button class="type-tab" data-type="refactor" role="tab">refactor</button>
+              <button class="type-tab" data-type="chore" role="tab">chore</button>
+              <button class="type-tab" data-type="docs" role="tab">docs</button>
+              <button class="type-tab" data-type="spike" role="tab">spike</button>
+            </div>
+
+            <div class="type-matrix" id="type-matrix" role="tabpanel">
+              <!-- populated by JS -->
+            </div>
+
+            <p class="type-note" id="type-note"></p>
+          </div>
+        </section>
+
+        <!-- Slide 4 — Agents -->
+        <section class="slide" data-slide="agents">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">04 · six agents</span>
+              <h2>Specialists. The orchestrator only drives.</h2>
+              <p class="lede">Hover an agent to see what it owns. Several have multiple modes, so the count stays small.</p>
+            </header>
+
+            <div class="agent-grid">
+              <button class="agent" data-agent="orchestrator">
+                <div class="agent-name">orchestrator</div>
+                <div class="agent-role">drives all phases</div>
+              </button>
+              <button class="agent" data-agent="pm">
+                <div class="agent-name">pm</div>
+                <div class="agent-role">interview · spec</div>
+              </button>
+              <button class="agent" data-agent="lead">
+                <div class="agent-name">lead</div>
+                <div class="agent-role">plan · review · security</div>
+              </button>
+              <button class="agent" data-agent="engineer">
+                <div class="agent-name">engineer</div>
+                <div class="agent-role">implement · docs · ship</div>
+              </button>
+              <button class="agent" data-agent="qa">
+                <div class="agent-name">qa</div>
+                <div class="agent-role">tests</div>
+              </button>
+              <button class="agent" data-agent="retro">
+                <div class="agent-name">retro</div>
+                <div class="agent-role">reflect · followups</div>
+              </button>
+            </div>
+
+            <aside class="agent-card" id="agent-card" aria-live="polite">
+              <div class="agent-card-head">
+                <span class="agent-card-name" id="agent-card-name">pick an agent</span>
+                <span class="agent-card-phases" id="agent-card-phases"></span>
+              </div>
+              <p class="agent-card-body" id="agent-card-body">
+                Each agent reads and writes specific artifacts. Click a tile.
+              </p>
+              <div class="agent-card-io">
+                <div><span class="io-label">reads</span><span id="agent-card-reads">—</span></div>
+                <div><span class="io-label">writes</span><span id="agent-card-writes">—</span></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- Slide 5 — Artifacts -->
+        <section class="slide" data-slide="artifacts">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">05 · artifacts</span>
+              <h2>One folder per run. Templates, never freeform.</h2>
+              <p class="lede">Everything lives in <code>.workflow/&lt;id&gt;/</code>. Resume cursor in <code>state.json</code>. Carry-overs in <code>FOLLOWUPS.md</code>.</p>
+            </header>
+
+            <div class="artifacts-row">
+              <div class="tree">
+                <pre>.workflow/
+├── INDEX.md
+├── FOLLOWUPS.md
+├── _templates/
+└── <span class="tree-active">0001-feat-todolist-app/</span>
+    ├── <span class="art-link" data-art="state">state.json</span>
+    ├── <span class="art-link" data-art="spec">spec.md</span>
+    ├── <span class="art-link" data-art="plan">plan.md</span>
+    ├── <span class="art-link" data-art="review">review.md</span>
+    ├── <span class="art-link" data-art="security">security.md</span>
+    ├── <span class="art-link" data-art="tests">tests.md</span>
+    └── <span class="art-link" data-art="retro">retro.md</span></pre>
+              </div>
+
+              <aside class="art-card">
+                <div class="art-card-head">
+                  <span class="art-card-name" id="art-card-name">click a file</span>
+                  <span class="art-card-owner" id="art-card-owner"></span>
+                </div>
+                <p class="art-card-body" id="art-card-body">
+                  Hover a file in the tree. Each artifact has a template, an owner, and a purpose — no agent writes freeform.
+                </p>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 6 — The gate -->
+        <section class="slide" data-slide="gate">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">06 · the gate</span>
+              <h2>The non-negotiable checkpoint.</h2>
+              <p class="lede">Before any code is written, the user sees the spec, the plan, and the type-aware step list. Approve, revise, or swap.</p>
+            </header>
+
+            <div class="gate-card">
+              <div class="gate-bar">
+                <span class="gate-dot"></span>
+                <span class="gate-title">Run plan · 0001-feat-todolist-app</span>
+                <span class="gate-pill">awaiting approval</span>
+              </div>
+              <div class="gate-body">
+                <div class="gate-row">
+                  <span class="gate-label">Goal</span>
+                  <span>Single-user todolist · CRUD · localStorage</span>
+                </div>
+                <div class="gate-row">
+                  <span class="gate-label">Type</span>
+                  <span><code>feat</code> · Ship as: single PR</span>
+                </div>
+                <div class="gate-row">
+                  <span class="gate-label">Stack</span>
+                  <span>Vite + React + TypeScript</span>
+                </div>
+                <div class="gate-row">
+                  <span class="gate-label">Will run</span>
+                  <span>1 · 2 · 3 · 4 · 5 · 7 · 8 · 9 · 10</span>
+                </div>
+                <div class="gate-row">
+                  <span class="gate-label">Skipping</span>
+                  <span>6 — no sensitive paths planned</span>
+                </div>
+              </div>
+              <div class="gate-actions">
+                <button class="btn btn-approve" data-gate="approve">approve</button>
+                <button class="btn btn-ghost" data-gate="revise">revise</button>
+                <button class="btn btn-ghost" data-gate="swap">swap slice</button>
+              </div>
+              <div class="gate-result" id="gate-result" hidden></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 7 — Flow simulation -->
+        <section class="slide" data-slide="flow">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">07 · live flow</span>
+              <h2>Watch a <code>feat</code> run move through the steps.</h2>
+              <p class="lede">Press play. Each tile lights up as the active phase advances; cycle counters show review and test loops.</p>
+            </header>
+
+            <div class="flow-controls">
+              <button class="btn btn-primary" id="flow-play">play</button>
+              <button class="btn btn-ghost" id="flow-reset">reset</button>
+              <div class="cycle-meters">
+                <div class="cycle"><span class="cycle-label">review</span><span class="cycle-val" id="cycle-review">0</span><span class="cycle-max">/2</span></div>
+                <div class="cycle"><span class="cycle-label">test</span><span class="cycle-val" id="cycle-test">0</span><span class="cycle-max">/3</span></div>
+              </div>
+            </div>
+
+            <div class="flow-strip" id="flow-strip">
+              <div class="flow-step" data-step="1"><span class="fs-n">1</span><span class="fs-l">interview</span></div>
+              <div class="flow-step" data-step="2"><span class="fs-n">2</span><span class="fs-l">plan</span></div>
+              <div class="flow-step gate-step" data-step="3"><span class="fs-n">3</span><span class="fs-l">gate</span></div>
+              <div class="flow-step" data-step="4"><span class="fs-n">4</span><span class="fs-l">implement</span></div>
+              <div class="flow-step" data-step="5"><span class="fs-n">5</span><span class="fs-l">review</span></div>
+              <div class="flow-step trigger-step" data-step="6"><span class="fs-n">6</span><span class="fs-l">security</span></div>
+              <div class="flow-step" data-step="7"><span class="fs-n">7</span><span class="fs-l">test</span></div>
+              <div class="flow-step" data-step="8"><span class="fs-n">8</span><span class="fs-l">docs</span></div>
+              <div class="flow-step" data-step="9"><span class="fs-n">9</span><span class="fs-l">ship</span></div>
+              <div class="flow-step" data-step="10"><span class="fs-n">10</span><span class="fs-l">retro</span></div>
+            </div>
+
+            <div class="flow-log" id="flow-log" aria-live="polite">
+              <div class="log-line muted">› idle · press play to start</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 8 — Security trigger -->
+        <section class="slide" data-slide="security">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">06 · security · trigger-based</span>
+              <h2>Phase 6 fires only when the diff earns it.</h2>
+              <p class="lede">Click a path on the left. If it matches the sensitive list, the security review fires automatically.</p>
+            </header>
+
+            <div class="sec-grid">
+              <ul class="sec-paths">
+                <li><button class="sec-path sensitive" data-trigger="true">src/auth/session.ts</button></li>
+                <li><button class="sec-path sensitive" data-trigger="true">src/db/queryBuilder.ts</button></li>
+                <li><button class="sec-path sensitive" data-trigger="true">src/lib/crypto.ts</button></li>
+                <li><button class="sec-path sensitive" data-trigger="true">scripts/exec.sh</button></li>
+                <li><button class="sec-path" data-trigger="false">README.md</button></li>
+                <li><button class="sec-path" data-trigger="false">src/ui/Button.tsx</button></li>
+                <li><button class="sec-path" data-trigger="false">styles/theme.css</button></li>
+              </ul>
+
+              <div class="sec-panel" id="sec-panel">
+                <div class="sec-state" id="sec-state">click a path</div>
+                <div class="sec-detail" id="sec-detail">
+                  The orchestrator checks each changed file against the sensitive-paths list before phase 6. No match → recorded as skipped. Match → <code>lead</code> spawned in security mode.
+                </div>
+                <ul class="sec-list">
+                  <li>auth / session / token</li>
+                  <li>password / crypto primitives</li>
+                  <li>SQL / query building</li>
+                  <li>raw HTML render</li>
+                  <li>file / path handling</li>
+                  <li>exec / shell calls</li>
+                  <li>deserialise untrusted input</li>
+                  <li>env / secrets</li>
+                  <li>new outbound network</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 9 — State + resume -->
+        <section class="slide" data-slide="resume">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">09 · resumable</span>
+              <h2>Context dies? <code>/dev --resume &lt;id&gt;</code> picks up.</h2>
+              <p class="lede">Every step writes to <code>state.json</code>. Phase, step, cycle counters, last agent — all the cursor the orchestrator needs.</p>
+            </header>
+
+            <div class="resume-grid">
+              <pre class="state-json" id="state-json">{
+  "id": "0001-feat-todolist-app",
+  "type": "feat",
+  "phase": "phase-2-implementation",
+  "step": "review",
+  "next_step": "test",
+  "cycles": { "review": 1, "test": 0 },
+  "last_agent": "lead",
+  "last_updated": "2026-05-14T12:48:03Z"
+}</pre>
+
+              <div class="resume-side">
+                <button class="btn btn-primary" id="resume-tick">advance one step</button>
+                <button class="btn btn-ghost" id="resume-reset">reset</button>
+                <p class="resume-tip">
+                  Each tick simulates the orchestrator finishing a step and writing state.
+                  The JSON updates live — that's exactly what <code>--resume</code> reads back.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 10 — Cycle limits -->
+        <section class="slide" data-slide="cycles">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">10 · stop conditions</span>
+              <h2>Loops have budgets. The orchestrator doesn't grind.</h2>
+              <p class="lede">Review at 2, test at 3, then escalate. Anti-bias rule keeps reviews honest — checklists, not vibes.</p>
+            </header>
+
+            <div class="limit-grid">
+              <article class="limit">
+                <div class="limit-head">
+                  <span class="limit-name">review cycles</span>
+                  <span class="limit-cap">max 2</span>
+                </div>
+                <div class="limit-bar"><span style="--w: 50%"></span></div>
+                <p class="limit-desc">After cycle 2, orchestrator escalates: continue / hand off / abort.</p>
+              </article>
+              <article class="limit">
+                <div class="limit-head">
+                  <span class="limit-name">test cycles</span>
+                  <span class="limit-cap">max 3</span>
+                </div>
+                <div class="limit-bar"><span style="--w: 33%"></span></div>
+                <p class="limit-desc">Same shape. No silent grinding past the limit.</p>
+              </article>
+              <article class="limit">
+                <div class="limit-head">
+                  <span class="limit-name">security · high</span>
+                  <span class="limit-cap">blocking</span>
+                </div>
+                <div class="limit-bar"><span style="--w: 100%; background: var(--danger);"></span></div>
+                <p class="limit-desc">High severity loops count against the review budget.</p>
+              </article>
+              <article class="limit">
+                <div class="limit-head">
+                  <span class="limit-name">interview</span>
+                  <span class="limit-cap">mandatory</span>
+                </div>
+                <div class="limit-bar"><span style="--w: 100%; background: var(--accent);"></span></div>
+                <p class="limit-desc">If <code>pm</code> skips it, orchestrator re-spawns. Spec built from a one-liner is broken.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 11 — Examples -->
+        <section class="slide" data-slide="examples">
+          <div class="slide-inner">
+            <header class="slide-head">
+              <span class="kicker">11 · in practice</span>
+              <h2>Three runs, three shapes.</h2>
+              <p class="lede">Same orchestrator, same artifacts. The matrix flexes around the intent.</p>
+            </header>
+
+            <div class="ex-grid">
+              <article class="ex">
+                <div class="ex-cmd"><span class="cmd-slash">/dev</span> create todolist app</div>
+                <div class="ex-meta"><span class="ex-type type-feat">feat</span></div>
+                <ol class="ex-flow">
+                  <li>interview → spec (Type=feat)</li>
+                  <li>plan: Vite + React + TS, 10 steps</li>
+                  <li>gate → approve</li>
+                  <li>scaffold → implement → review</li>
+                  <li>tests pass → docs → commit + PR</li>
+                  <li>retro → 1 skill candidate created</li>
+                </ol>
+                <div class="ex-foot">skips: 6 (no sensitive paths)</div>
+              </article>
+
+              <article class="ex">
+                <div class="ex-cmd"><span class="cmd-slash">/dev</span> fix login redirect loop</div>
+                <div class="ex-meta"><span class="ex-type type-fix">fix</span></div>
+                <ol class="ex-flow">
+                  <li>spec includes reproduction</li>
+                  <li>plan step 1 = failing regression test</li>
+                  <li>gate → approve</li>
+                  <li>test fails → fix → test passes</li>
+                  <li>security review fires (auth diff)</li>
+                  <li>commit only (no PR) → retro</li>
+                </ol>
+                <div class="ex-foot">fires: 6 · skips: 8 (docs)</div>
+              </article>
+
+              <article class="ex">
+                <div class="ex-cmd"><span class="cmd-slash">/dev</span> spike bullmq vs sidekiq</div>
+                <div class="ex-meta"><span class="ex-type type-spike">spike</span></div>
+                <ol class="ex-flow">
+                  <li>spec: timebox 1 day</li>
+                  <li>exploration plan, no production code</li>
+                  <li>gate → approve</li>
+                  <li>engineer explores both</li>
+                  <li>recommendations.md drafted</li>
+                  <li>retro → maybe a follow-up feat</li>
+                </ol>
+                <div class="ex-foot">skips: 6, 7, 8 · 9 optional</div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 12 — Outro -->
+        <section class="slide" data-slide="outro">
+          <div class="slide-inner center">
+            <div class="title-eyebrow">In one sentence</div>
+            <h1 class="title-h1">
+              <span class="grad">/dev</span>
+              <span class="title-sub">runs a strict, resumable, type-aware loop so AI engineers can stay in the loop only at the moments that matter.</span>
+            </h1>
+
+            <div class="outro-stats">
+              <div class="stat"><div class="stat-n">2</div><div class="stat-l">phases</div></div>
+              <div class="stat"><div class="stat-n">10</div><div class="stat-l">steps</div></div>
+              <div class="stat"><div class="stat-n">6</div><div class="stat-l">agents</div></div>
+              <div class="stat"><div class="stat-n">1</div><div class="stat-l">gate</div></div>
+            </div>
+
+            <div class="outro-cmd cmd-bar">
+              <span class="cmd-prompt">›</span>
+              <span class="cmd-text"><span class="cmd-slash">/dev</span> &lt;your intent here&gt;</span>
+            </div>
+
+            <div class="hint">
+              <kbd>←</kbd> back · <kbd>Home</kbd> restart · WORKFLOW.md is the source of truth
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Bottom nav -->
+      <footer class="botbar">
+        <button class="navbtn" id="prev-btn" aria-label="Previous slide">←</button>
+        <div class="dots" id="dots" role="tablist" aria-label="Slides"></div>
+        <button class="navbtn" id="next-btn" aria-label="Next slide">→</button>
+      </footer>
+
+      <!-- Help overlay -->
+      <div class="help" id="help" hidden>
+        <div class="help-card">
+          <h3>Keyboard</h3>
+          <ul>
+            <li><kbd>→</kbd> / <kbd>Space</kbd> next slide</li>
+            <li><kbd>←</kbd> previous slide</li>
+            <li><kbd>Home</kbd> first · <kbd>End</kbd> last</li>
+            <li><kbd>?</kbd> toggle this help</li>
+          </ul>
+          <button class="btn btn-ghost" id="help-close">close</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
