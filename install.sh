@@ -42,8 +42,9 @@ Options:
   -h, --help         Show this help
 
 What gets installed:
-  .claude/agents/*.md          — orchestrator, pm, lead, engineer, qa, retro
-  .claude/commands/dev.md      — the /dev slash command
+  .claude/agents/*.md          — pm, lead, engineer, qa, retro (sub-agents)
+  .claude/orchestrator.md      — orchestrator script run by the main agent on /dev
+  .claude/commands/dev.md      — the /dev slash command (loads orchestrator.md)
   .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals
   .claude/rules/*.md           — always-on pointers to the skills above
   .claude/hooks/lint.sh        — PostToolUse lint dispatcher
@@ -111,6 +112,7 @@ SOURCE_PATH="$(expand_path "$SOURCE_PATH")"
 [ -d "$SOURCE_PATH" ] || fail "source not found: $SOURCE_PATH"
 for needed in \
   ".claude/agents" \
+  ".claude/orchestrator.md" \
   ".claude/commands/dev.md" \
   ".claude/skills" \
   ".claude/rules" \
@@ -150,7 +152,7 @@ ok "target: $TARGET_PATH"
 # file beneath it (recursive), each inheriting the same mode. That keeps the
 # dry-run output file-accurate without a 30-line manual enumeration.
 PLAN=(
-  ".claude/agents/orchestrator.md|skip-if-exists"
+  ".claude/orchestrator.md|skip-if-exists"
   ".claude/agents/pm.md|skip-if-exists"
   ".claude/agents/lead.md|skip-if-exists"
   ".claude/agents/engineer.md|skip-if-exists"
@@ -259,6 +261,16 @@ for row in "${PLAN[@]}"; do
     skip) : ;;
   esac
 done
+
+# Upgrade cleanup: older installs put orchestrator.md under .claude/agents/, where
+# Claude Code registers it as a sub-agent. Sub-agents can't spawn other sub-agents
+# or call AskUserQuestion, so the orchestrator role can't run there. Move the file
+# out of agents/ on upgrade so /dev's main-agent orchestrator can take over cleanly.
+LEGACY_ORCH="$TARGET_PATH/.claude/agents/orchestrator.md"
+if [ -e "$LEGACY_ORCH" ]; then
+  printf "  ${Y}~${N} removing legacy %s ${D}(now lives at .claude/orchestrator.md)${N}\n" ".claude/agents/orchestrator.md"
+  rm -f "$LEGACY_ORCH"
+fi
 
 # CLAUDE.md stub
 if [ ! -e "$CLAUDE_DST" ]; then

@@ -4,8 +4,8 @@ An opinionated command workflow for [Claude Code](https://claude.com/claude-code
 
 ## What's in the box
 
-- **`/dev` slash command** — single entry point for any change. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
-- **Six agents** — `orchestrator`, `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa`, `retro`. Roles are split so the planner is not the implementer and the reviewer is checklist-driven against the plan they wrote and the spec's acceptance criteria.
+- **`/dev` slash command** — single entry point for any change. The main agent runs the **orchestrator** role itself (following [`.claude/orchestrator.md`](.claude/orchestrator.md)) because Claude Code sub-agents can't use `Agent` or `AskUserQuestion`. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
+- **Five sub-agents** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa`, `retro`. Roles are split so the planner is not the implementer and the reviewer is checklist-driven against the plan they wrote and the spec's acceptance criteria. The orchestrator (main agent) runs the interview and the gate; `pm` writes `spec.md` from the answers it's passed.
 - **Artifact templates** — `spec.md`, `plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
 - **Type-aware phase matrix** — the same numbered phases run for every type, but `orchestrator` skips or specialises them based on `Type` (see `WORKFLOW.md`).
 - **Carry-over follow-ups** — `retro` appends to `.workflow/FOLLOWUPS.md`; `pm` reads it on every new interview so deferred work doesn't get lost.
@@ -32,8 +32,9 @@ Useful flags:
 What lands in the target:
 
 ```
-.claude/agents/          orchestrator, pm, lead, engineer, qa, retro
-.claude/commands/dev.md  the /dev slash command
+.claude/agents/          pm, lead, engineer, qa, retro (sub-agents)
+.claude/orchestrator.md  orchestrator script for the main agent
+.claude/commands/dev.md  the /dev slash command (loads orchestrator.md)
 .claude/skills/          programming / database / debug / hexagonal / queue fundamentals (+ references/)
 .claude/rules/           always-on pointers to the skills
 .claude/hooks/lint.sh    PostToolUse lint dispatcher
@@ -59,9 +60,9 @@ Inside the target project, open Claude Code and run:
 /dev --resume 0003-fix-login-redirect
 ```
 
-The orchestrator picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives the flow:
+The orchestrator (the main agent acting on the `/dev` script) picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives the flow:
 
-1. **Spec** — `pm` reads `FOLLOWUPS.md`, interviews you (≤4 questions, one batch), writes `spec.md`. For `fix`, includes a reproduction; for `spike`, a timebox.
+1. **Spec** — the orchestrator reads `FOLLOWUPS.md` and interviews you itself (≤4 questions, one batch, via `AskUserQuestion`), then spawns `pm` with the Q&A in the prompt; `pm` writes `spec.md`. For `fix`, includes a reproduction; for `spike`, a timebox. (Sub-agents in Claude Code can't call `AskUserQuestion`, which is why the interview lives in the main agent.)
 2. **Plan** — `lead` reads the spec, reverse-engineers existing code via LSP, writes `plan.md` with `file:line` references, risks, and (when relevant) a rollback section. For `fix`, plan step 1 is "write failing regression test"; for `refactor`, includes a behavior-equivalence statement.
 3. **Gate** — orchestrator shows you spec + plan + the type-aware step list; you reply `approve` / `revise <notes>` / `swap <n>` (epic only).
 4. **Implement** — `engineer` executes the plan with `TaskCreate` progress tracking. For `fix`, writes the failing regression test BEFORE the fix. Before signalling done, ticks each acceptance criterion in `spec.md` or files a blocker.
@@ -78,8 +79,9 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 
 ```
 .claude/
-├── agents/         orchestrator, pm, lead, engineer, qa, retro
-├── commands/       dev.md
+├── agents/         pm, lead, engineer, qa, retro (sub-agents)
+├── orchestrator.md script the main agent follows when /dev runs
+├── commands/       dev.md (loads orchestrator.md)
 ├── hooks/
 ├── rules/          programming / database / hexagonal / queue / debug fundamentals
 └── skills/         full skill bodies referenced by the rules

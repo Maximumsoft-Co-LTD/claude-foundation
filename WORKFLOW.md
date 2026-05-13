@@ -2,6 +2,8 @@
 
 Single entry point: `/dev <intent>` (or `/dev --resume <id>` to pick up an interrupted run). The command detects context (new project vs. existing codebase) and runs the same two-phase flow, branching on **run type** so we don't drag a `chore` through e2e tests or implement a `fix` without first reproducing it. Same artifacts in both cases, written to `.workflow/<id>/`.
 
+> **Orchestration runs in the main agent, not a sub-agent.** Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user). The `/dev` slash command therefore loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent follows it directly. Sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) are spawned from there for file work — they never spawn each other and they never interview the user. The interview step is run by the main agent (orchestrator) and passed to `pm` as input.
+
 ## Naming convention
 
 Each run gets an ID: **`NNNN-<type>-<kebab-slug>`**
@@ -87,7 +89,7 @@ Phase numbering below matches the matrix above (1–10) so the gate output, pros
 
 ## Phase 1 — Requirements (interactive)
 
-1. **Interview + spec** — `pm` reads `FOLLOWUPS.md` first, then uses `AskUserQuestion` (≤4 questions, one batch) to capture: goal, users, scope, non-goals, constraints, **Type**, `Ship as`, and whether any open follow-up is now in scope. For `fix`, also asks for a concrete reproduction. `pm` then writes `spec.md` from the answers — including the `Type` slot and (for `fix`) a Reproduction section.
+1. **Interview + spec** — the **orchestrator (main agent)** reads `FOLLOWUPS.md` first, then uses `AskUserQuestion` (≤4 questions, one batch) to capture: goal, users, scope, non-goals, constraints, **Type**, `Ship as`, and whether any open follow-up is now in scope. For `fix`, it also asks for a concrete reproduction. The orchestrator then spawns `pm` with the full Q&A in the prompt; `pm` writes `spec.md` from the answers — including the `Type` slot and (for `fix`) a Reproduction section. `pm` itself cannot call `AskUserQuestion` (sub-agent limitation), which is why the interview lives in the main agent.
 2. **Plan** — `lead` (plan mode) reads `spec.md`, runs the scope check, then:
    - *New project*: proposes structure + stack in `plan.md`.
    - *Existing code*: reverse-engineers relevant code (LSP first, grep second), writes `plan.md` with `file:line` references + risks.
@@ -131,18 +133,22 @@ The `Ship as` answer is captured in the Phase 1 interview and recorded in `spec.
 
 ## Agent map
 
-Six agents drive everything. `/dev` is the slash command (user-facing); `orchestrator` is the agent it spawns. Several agents have multiple modes so the agent count stays low.
+Five sub-agents drive the file work. The **orchestrator is not a sub-agent** — it's the role the main agent plays when `/dev` runs, following [`.claude/orchestrator.md`](.claude/orchestrator.md). Several sub-agents have multiple modes so the count stays low.
 
-| Agent | Phase steps | Reads | Writes | Primary tools |
-|-------|-------------|-------|--------|---------------|
-| `orchestrator` | drives all | user input, INDEX, FOLLOWUPS, state.json | INDEX status, state.json, follow-up cursor | `AskUserQuestion`, `Agent`, `Bash` |
-| `pm` | 1 | intent + interview answers + FOLLOWUPS | `spec.md` | `AskUserQuestion`, `Read`, `Write` |
-| `lead` | 2 (plan), 5 (review), 6 (security) | `spec.md`, codebase, diff | `plan.md` / `epic.md`, `review.md`, `security.md` | `Read`, `Grep`, `LSP`, `Write`, `Edit` |
-| `engineer` | 4 (implement), 8 (docs), 9 (ship) | `plan.md`, `spec.md`, diff | source, inline comments, commit, PR | `Read`, `Edit`, `Write`, `Bash`, `LSP`, `TaskCreate` |
-| `qa` | 7 | `plan.md`, `spec.md`, source, diff | tests + `tests.md` | `Read`, `Write`, `Bash`, `LSP` |
-| `retro` | 10 | all artifacts + diff + existing memory/skills + FOLLOWUPS | `retro.md`, INDEX status, FOLLOWUPS append | `Read`, `Write`, `Edit`, `Bash` |
+| Role | Where it runs | Phase steps | Reads | Writes | Primary tools |
+|------|---------------|-------------|-------|--------|---------------|
+| `orchestrator` | main agent (`/dev` slash command) | drives all + runs the interview | user input, INDEX, FOLLOWUPS, state.json | INDEX status, state.json, follow-up cursor | `AskUserQuestion`, `Agent`, `Bash` |
+| `pm` | sub-agent | 1 (spec) | intent + interview Q&A passed in prompt + FOLLOWUPS | `spec.md` | `Read`, `Write` |
+| `lead` | sub-agent | 2 (plan), 5 (review), 6 (security) | `spec.md`, codebase, diff | `plan.md` / `epic.md`, `review.md`, `security.md` | `Read`, `Grep`, `LSP`, `Write`, `Edit` |
+| `engineer` | sub-agent | 4 (implement), 8 (docs), 9 (ship) | `plan.md`, `spec.md`, diff | source, inline comments, commit, PR | `Read`, `Edit`, `Write`, `Bash`, `LSP`, `TaskCreate` |
+| `qa` | sub-agent | 7 | `plan.md`, `spec.md`, source, diff | tests + `tests.md` | `Read`, `Write`, `Bash`, `LSP` |
+| `retro` | sub-agent | 10 | all artifacts + diff + existing memory/skills + FOLLOWUPS | `retro.md`, INDEX status, FOLLOWUPS append | `Read`, `Write`, `Edit`, `Bash` |
 
-External: when `retro` surfaces skill candidates and the user approves, `orchestrator` invokes the `skill-creator` skill (built-in) for each approved candidate. The handoff is explicit — no candidate is created silently.
+Sub-agent constraints (enforced by Claude Code, not optional):
+- Sub-agents cannot spawn other sub-agents (`Agent` is filtered out at runtime).
+- Sub-agents cannot call `AskUserQuestion` — any user prompt has to come from the main agent. Sub-agents that hit ambiguity return a `BLOCKER:` line and the orchestrator surfaces the question.
+
+External: when `retro` surfaces skill candidates and the user approves, the orchestrator (main agent) invokes the `skill-creator` skill (built-in) for each approved candidate. The handoff is explicit — no candidate is created silently.
 
 **Anti-bias rule** — because `lead` reviews the plan they wrote, review mode is checklist-driven (one row per plan step, one row per acceptance criterion, one verification per file). "Looks good overall" is banned.
 
