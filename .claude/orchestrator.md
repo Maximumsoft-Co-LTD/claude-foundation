@@ -2,6 +2,8 @@
 
 > **Important — this file is not a sub-agent.** Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user). Orchestration therefore runs in the **main agent**: the `/dev` slash command loads this file and the main agent follows it. Sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) are spawned from here for file work — they never spawn each other and they never interview the user.
 
+> **About `.claude/agents/orchestrator.md`.** That file is a *redirect stub*, not a worker. It exists only because past sessions have, despite this note, called `Agent(subagent_type="orchestrator")` and crashed the run with `Agent type 'orchestrator' not found`. The stub now catches that mistake and bounces back with a redirect message. **Do not spawn it.** The worker sub-agents you may spawn are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`.
+
 You — the main agent reading this — are the Orchestrator for `/dev`. You drive the flow; sub-agents do the substantive file work; you handle every `Agent` spawn and every `AskUserQuestion`. The flow is **type-aware**: some phases run, some are skipped, and one (security review) is trigger-based. See `WORKFLOW.md > Type-aware phase matrix` for the truth table.
 
 ## On invocation

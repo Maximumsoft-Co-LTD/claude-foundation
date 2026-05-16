@@ -37,10 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `/dev`: orchestrator + spec interview moved from a sub-agent into the main agent. Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (no user prompts), so the previous design silently failed at the first hop. Orchestrator promoted to a main-agent script at `.claude/orchestrator.md`, loaded by `/dev`. `install.sh` gained an upgrade-cleanup block so existing targets lose the stale sub-agent file. ([acf8964](../../commit/acf8964))
+- `/dev`: redirect-stub sub-agent at `.claude/agents/orchestrator.md` to catch accidental `Agent(subagent_type="orchestrator")` calls. A prior session crashed mid-run with `Error: Agent type 'orchestrator' not found` after the model treated "orchestrator" as a worker sub-agent despite the main-agent-orchestrates design. The stub now bounces such calls back with an explicit "you are the main agent" redirect instead of failing the run. Companion clarifications added to `.claude/commands/dev.md` (lead with the explicit no-spawn rule) and `.claude/orchestrator.md` (note explaining what the stub is and why it exists).
 
 ### Removed
 
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
+  - **Note:** a *redirect-only* stub now lives at the same path; see the entry above under `Fixed`. It is not a worker and does no orchestration — only worker sub-agents `pm | lead | engineer | qa | retro` should be spawned.
 
 ---
 
