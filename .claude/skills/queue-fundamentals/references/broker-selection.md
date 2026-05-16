@@ -64,7 +64,8 @@ The actual behaviors that bite. Verify against current docs before shipping — 
 
 ### Kafka
 - **Durability:** durable. Configure `acks=all` and a replication factor of 3 for anything important.
-- **Delivery:** at-least-once by default. Kafka EOS exists but only end-to-end within Kafka (topic-to-topic via Kafka transactions).
+- **Delivery:** at-least-once by default. The **idempotent producer is on by default since Kafka 3.0** (no duplicate writes from producer retries within a session). **End-to-end exactly-once** requires three things together: idempotent producer + transactional producer (`transactional.id`) + consumer with `isolation.level=read_committed`. This works for Kafka-to-Kafka topology only — the moment you write to an external DB or call HTTP, you're back to at-least-once and need the outbox (see [[outbox]]).
+- **Cluster mode:** **KRaft (Kafka Raft) is the only supported mode from Kafka 4.0 (March 2025) onward.** ZooKeeper was removed entirely; ZK-backed clusters lost upstream support in late 2025. Any new Kafka cluster is KRaft. Existing ZK clusters must migrate.
 - **Ordering:** per partition. Use a stable partition key to keep one entity's events in one partition.
 - **DLQ:** **not built in.** You implement it: catch in the consumer, publish to a `*-dlq` topic, then commit.
 - **Offsets:** turn off auto-commit for anything that matters. Commit only after the work is durable.

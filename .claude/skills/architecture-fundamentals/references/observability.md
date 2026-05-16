@@ -9,8 +9,10 @@ Deep dive on principle 6: building the system so you can see what it's doing. In
 - Metrics: RED and USE
 - Histograms, percentiles, and why averages lie
 - Distributed tracing
-- OpenTelemetry as the lingua franca
+- OpenTelemetry as the default
 - SLIs, SLOs, and error budgets
+- DORA delivery metrics
+- Chaos engineering as an SLO partner
 - Alerting: symptoms, not causes
 - Cardinality and cost
 
@@ -112,15 +114,18 @@ A **trace** is the record of one logical operation as it flows through your syst
 
 **Sampling:** in production, you don't keep every trace — that's expensive. Sample some fraction (1%, 0.1%) head-on, plus keep all traces containing errors (tail-based sampling). Most tracing backends support both. The sampling decision propagates with the trace context so you don't keep half a trace.
 
-## OpenTelemetry as the lingua franca
+## OpenTelemetry as the default
 
-**OpenTelemetry (OTel)** is the CNCF standard for instrumentation. Auto-instrumentation libraries exist for most languages and frameworks; SDKs let you add custom spans and metrics with a stable API.
+**OpenTelemetry (OTel)** is the CNCF standard for instrumentation, and as of 2025 is the de facto default — all three signals (traces, metrics, **and logs**, which went stable in 2025) ship over a single wire protocol (OTLP). Auto-instrumentation libraries exist for most languages and frameworks; SDKs let you add custom spans and metrics with a stable API.
 
 **Why standardize on OTel:**
 
 - You write instrumentation once; you can swap backends (Jaeger, Tempo, Datadog, Honeycomb, New Relic, X-Ray) without rewriting code.
-- The data model (spans, metrics, log events with trace context) is consistent across pillars.
+- The data model (spans, metrics, log events with trace context) is consistent across pillars and shares trace IDs natively.
 - Auto-instrumentation covers HTTP servers/clients, DB drivers, message brokers — most of the work is done for you.
+- **eBPF-based auto-instrumentation** (OTel OBI, Pixie, Cilium Tetragon) gives you traces and metrics for unmodified processes — useful for legacy services or third-party binaries you can't recompile. Treat it as a complement to SDK instrumentation, not a replacement for it.
+
+**Pick a vendor SDK over OTel only when you have a hard reason** (a single-vendor feature you genuinely need). The portability cost of vendor lock-in is paid the day you want to leave; the cost of OTel is one extra config file.
 
 **Practical setup:**
 
@@ -150,6 +155,32 @@ A **trace** is the record of one logical operation as it flows through your syst
 - **Batch job:** completion (jobs that finish per day), correctness (samples that pass validation), duration.
 
 **SLOs are a contract.** Internal teams promise SLOs to each other; the SLO is what consumers can plan around. Hitting 100% is not the goal — the goal is hitting the SLO consistently, while the error budget funds risk-taking on features.
+
+## DORA delivery metrics
+
+SLOs measure how *the running system performs*. **DORA metrics** measure how *fast and safely you ship changes to it* — a different but equally first-class dimension. The 2024 DORA set:
+
+1. **Deployment frequency** — how often you ship to production. Elite teams: on demand (multiple/day); high: weekly–daily.
+2. **Lead time for changes** — commit-to-production. Elite: under a day; high: under a week.
+3. **Change failure rate** — % of deployments that cause a production incident (rollback, hotfix, degraded service). Elite: 0–15%.
+4. **Failed deployment recovery time** (renamed from MTTR in 2023) — time to restore service after a failed deploy. Elite: under an hour.
+
+A fifth metric, **rework rate** (work redone after a deploy), was added in DORA 2024 as a leading indicator of stability.
+
+**How to apply.** Wire deployment frequency and lead time to your CI/CD pipeline; wire change failure rate to your incident tracker (or to a "deploys → incidents within N hours" join). Treat the DORA set as the *delivery health* dashboard, alongside the SLO dashboard for *running-system health*.
+
+## Chaos engineering as an SLO partner
+
+Once SLOs and DORA are in place, **chaos engineering** is how you stress-test the resilience properties from [[resilience]] *while you still have error budget to spend*. The principle: inject controlled failures (kill a pod, inject 500ms of latency on a dependency, drop 1% of broker messages) and observe whether timeouts, retries, circuit breakers, and bulkheads behave as designed.
+
+**Rules of engagement (Principles of Chaos Engineering):**
+
+- Have a **hypothesis** before the experiment — "if the payment service times out, the checkout falls back to async confirmation within 2s." Not "let's see what breaks."
+- Run experiments **only when the error budget is healthy.** Chaos against a service that's already burning budget makes things worse.
+- Start in **staging or a small production blast radius** (one cell, one region, 1% of traffic). Widen only when the small experiment passes.
+- **Stop conditions are explicit.** If the SLO burn-rate alert fires during the experiment, the experiment ends and rolls back automatically.
+
+Tools: Gremlin, AWS Fault Injection Service, Litmus, Chaos Mesh, plus per-platform primitives (k8s pod evictions, network policies, Toxiproxy).
 
 ## Alerting: symptoms, not causes
 

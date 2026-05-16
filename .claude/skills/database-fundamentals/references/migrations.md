@@ -102,7 +102,7 @@ Different DDL statements take different locks. Knowing which lock matters becaus
 - `DROP INDEX` — quick, takes `ACCESS EXCLUSIVE` briefly. Use `DROP INDEX CONCURRENTLY` for safety.
 
 **MySQL / InnoDB:**
-- Most `ALTER TABLE` operations on a large table are problematic. Use `pt-online-schema-change` (Percona) or `gh-ost` (GitHub) for any non-trivial change on a production table — they build a copy, sync writes via triggers or binlog, and atomically swap.
+- Most `ALTER TABLE` operations on a large table are problematic. Three online-schema-change tools are in active use: **`pt-online-schema-change`** (Percona, triggers-based — long-standing default), **`gh-ost`** (GitHub, binlog-based — lighter on the primary, originally built for GitHub's MySQL fleet), and **Spirit** (the modern successor by Morgan Tocker — binlog-based with better resumability and rewritten internals; intended to replace gh-ost for new work). All three build a shadow copy, sync writes from the source, and atomically swap. Pick the tool your team operates already; default to Spirit for greenfield.
 - `ALGORITHM=INPLACE, LOCK=NONE` works for some changes (adding nullable columns, dropping indexes) but not all.
 
 ## Long-running backfills

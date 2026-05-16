@@ -20,7 +20,11 @@ The SQL standard defines four levels. Each prevents some anomalies and allows ot
 | `REPEATABLE READ`  | Prevented  | Prevented           | Possible*    | Prevented*  | Possible             |
 | `SERIALIZABLE`     | Prevented  | Prevented           | Prevented    | Prevented   | Prevented            |
 
-*Postgres `REPEATABLE READ` prevents phantoms and lost updates (it uses snapshot isolation). MySQL InnoDB `REPEATABLE READ` prevents phantoms via gap locks but its handling of write-write conflicts differs. Check your engine's docs — the SQL standard is loose.
+*The two big engines disagree on what `REPEATABLE READ` actually delivers — this is the most-confused fact in this whole table:
+- **Postgres** `REPEATABLE READ` is **snapshot isolation**. Prevents phantoms and prevents lost updates by aborting the second committer with `serialization_failure` (40001); your app retries.
+- **MySQL InnoDB** `REPEATABLE READ` uses next-key locks to prevent most phantom reads but **still allows lost updates** on the read-modify-write pattern — both transactions read the same value, both UPDATE, the later wins silently. To close this hole in MySQL you must take a row lock (`SELECT ... FOR UPDATE`) or move to `SERIALIZABLE`.
+
+The SQL standard is loose; verify against your engine's docs before relying on the level alone.
 
 **The anomalies, in plain language:**
 - **Dirty read** — you see another transaction's uncommitted write. Almost never enabled in practice.
@@ -31,8 +35,8 @@ The SQL standard defines four levels. Each prevents some anomalies and allows ot
 
 ## Defaults you should memorize
 
-- **Postgres:** `READ COMMITTED`. Allows lost updates. Use `FOR UPDATE` or `REPEATABLE READ` when you need to protect a read-modify-write.
-- **MySQL InnoDB:** `REPEATABLE READ`. Stronger than Postgres's default, but still has some lost-update edge cases on write-skew patterns.
+- **Postgres:** `READ COMMITTED`. Allows lost updates. Three options to protect a read-modify-write: `SELECT ... FOR UPDATE` (pessimistic row lock), `REPEATABLE READ` (snapshot isolation — engine aborts the second committer with 40001), or `SERIALIZABLE` / **SSI** (Postgres's serializable snapshot isolation — detects read-write conflicts across rows; abort + retry on 40001). SSI is the cleanest answer when transactions are short and the retry rate is low; reach for `FOR UPDATE` when you need to *block* rather than retry.
+- **MySQL InnoDB:** `REPEATABLE READ`. Despite the name, this does **not** prevent lost updates on the read-modify-write pattern — both transactions read the same value via their snapshot, both UPDATE, the later wins. To get lost-update protection in MySQL, take a row lock (`SELECT ... FOR UPDATE`) or move to `SERIALIZABLE` (where InnoDB converts plain SELECTs into shared-lock reads). This is one of the most-reported "but I'm in REPEATABLE READ" bugs.
 - **SQLite:** `SERIALIZABLE` (effectively — only one writer at a time). Strong, but throughput is limited.
 - **DynamoDB / most cloud KV stores:** per-item atomicity only; multi-item transactions are an explicit opt-in with sharp limits.
 
@@ -103,6 +107,17 @@ VALUES ($1, $2, $3, 'pending');
 ```
 
 The `UNIQUE` index on `idempotency_key` is the guarantee. The application-level `if (exists) return` check is the race window.
+
+### Upserts: `ON CONFLICT` vs `MERGE`
+
+Postgres 15+ added the SQL-standard `MERGE` statement alongside the older `INSERT ... ON CONFLICT`. They are *not* equivalent under concurrency:
+
+- **`INSERT ... ON CONFLICT`** is the right answer for **single-row, OLTP upserts**. It cooperates with the unique index: under concurrent inserts to the same key, the conflict path runs deterministically and you don't see serialization failures. Use this for "create-if-missing-else-update" on a known PK or unique constraint.
+- **`MERGE`** is the right answer for **bulk / ETL** workloads (apply this batch of source rows to that target table, with insert/update/delete branches). Under concurrent writes against the same target rows, MERGE can raise `serialization_failure` (40001) — you need a retry loop, and you cannot replace `ON CONFLICT` with `MERGE` for hot single-row upsert paths without inviting that error in production.
+
+MySQL has its own dialect: `INSERT ... ON DUPLICATE KEY UPDATE` is the long-standing OLTP equivalent. MySQL 8.0+ also has `MERGE` (limited) and the more common bulk-update path remains `INSERT ... ON DUPLICATE KEY UPDATE` against a unique index.
+
+When in doubt: single-row upsert → `ON CONFLICT` / `ON DUPLICATE KEY UPDATE`. Bulk apply with insert/update/delete logic → `MERGE` with a retry loop.
 
 ### SELECT ... FOR UPDATE SKIP LOCKED (job queues)
 

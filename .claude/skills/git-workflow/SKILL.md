@@ -81,7 +81,7 @@ Good: 5 commits
 - Subject line: imperative ("Add audit log column," not "Added" / "Adding"), ≤72 chars, no trailing period. If you can't fit it, the commit is probably two commits.
 - Body: separated from subject by a blank line, wrapped at ~72 chars, focused on *why* and *what changed in shape*. Skip the body only when the subject is genuinely self-explanatory (`docs: fix typo in README`).
 - Reference issues, RFCs, or the failing test by ID, not by paraphrase. `Closes #482` is useful; "fixes the bug we talked about Tuesday" rots in a week.
-- Pick a convention and stick to it. This project uses **conventional commits** style — `<type>(<scope>): <subject>` with types `feat | fix | refactor | chore | docs | spike | test | perf | build | ci` (these mirror the `/dev` run types). Breaking changes get a `!` after the type or a `BREAKING CHANGE:` footer.
+- Pick a convention and stick to it. This project uses **Conventional Commits** style — `<type>(<scope>): <subject>`. The CC v1.0.0 spec only *mandates* `feat` and `fix` (plus the `!` / `BREAKING CHANGE:` marker); everything else is a project choice. This project's type list is `feat | fix | refactor | chore | docs | spike | test | perf | build | ci`, chosen so the commit log mirrors the `/dev` run types — `spike` in particular is a project-local extension, not part of the spec. Breaking changes get a `!` after the type or a `BREAKING CHANGE:` footer.
 - See `references/commit-messages.md` for the full conventional-commits cheat sheet, scope conventions, and breaking-change syntax.
 
 **Example:**

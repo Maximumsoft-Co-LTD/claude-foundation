@@ -133,6 +133,60 @@ await stripe.charges.create(
 - **Mark before, confirm after.** Write `external_call_started_at` to your DB before the call, and `external_call_completed_at` after. On retry, check the marker — if started but not completed, you don't know if the external system acted. You have to either (a) call its query API to find out, (b) treat the call as completed and risk one duplicate, or (c) treat it as not-completed and risk one missed call. Pick consciously based on which failure mode is worse.
 - **Tighten the window.** Make the unknown-state window as small as possible — keep the external call alone in its critical section, with no other work that could fail and force a retry.
 
+## Your own public mutation API should accept `Idempotency-Key` too
+
+Everything above protects *your consumer* against duplicates. The HTTP-layer cousin protects *your callers* — and it's now a near-universal expectation for any POST/DELETE that costs money or fires an irreversible side effect. The contract (popularised by Stripe, now an IETF draft):
+
+1. Client generates a UUID v4 and sends it in the `Idempotency-Key: <uuid>` header.
+2. On first request, server processes normally and stores `(key, request_fingerprint, status_code, response_body)` keyed by the idempotency key.
+3. On retry with the same key, server short-circuits: it returns the cached status code and body byte-for-byte. The handler does not run again.
+4. Retention is **≥24 hours** (Stripe holds 24h; Slack 24h; many payment processors longer). Long enough to outlive any reasonable client retry budget, short enough not to be a unbounded storage problem.
+5. If the retry's `request_fingerprint` (hash of the body + path + key params) doesn't match the original, return `422` — the client is reusing the key incorrectly.
+
+**Schema (Postgres):**
+```sql
+create table api_idempotency (
+  idempotency_key text primary key,
+  request_fingerprint text not null,
+  status_code int not null,
+  response_body jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index on api_idempotency (created_at);  -- for TTL cleanup
+```
+
+**Pattern (TypeScript sketch):**
+```ts
+app.post('/payments', async (req, res) => {
+  const key = req.header('Idempotency-Key')
+  if (!key) return res.status(400).send({ error: 'Idempotency-Key required' })
+
+  const fp = sha256(req.method + req.path + canonicalize(req.body))
+
+  const cached = await db.one(
+    'select status_code, response_body, request_fingerprint from api_idempotency where idempotency_key = $1',
+    [key],
+  ).catch(() => null)
+
+  if (cached) {
+    if (cached.request_fingerprint !== fp) return res.status(422).send({ error: 'idempotency key reuse with different body' })
+    return res.status(cached.status_code).send(cached.response_body)
+  }
+
+  // ... process the payment exactly once ...
+  const result = await processPayment(req.body)
+
+  await db.none(
+    'insert into api_idempotency (idempotency_key, request_fingerprint, status_code, response_body) values ($1, $2, $3, $4) on conflict (idempotency_key) do nothing',
+    [key, fp, 200, result],
+  )
+
+  res.status(200).send(result)
+})
+```
+
+**Why this belongs in queue-fundamentals.** The HTTP idempotency-key contract and the consumer dedup table are the same idea at different boundaries: a stable client-chosen key + a server-side record + same response on retry. When your service is both an HTTP endpoint *and* a downstream queue consumer for the same operation (a payment endpoint that enqueues a `charge.requested` event), the `Idempotency-Key` from the HTTP request *is* the message-level idempotency key in the queue — propagate it on the event, and the same protection extends end-to-end.
+
 ## Common idempotency mistakes
 
 - **Idempotency at the framework layer, not the operation.** Frameworks that promise "we won't deliver the same message twice" don't extend that promise across consumer crashes, redeployments, or rebalances. Make the operation idempotent regardless.

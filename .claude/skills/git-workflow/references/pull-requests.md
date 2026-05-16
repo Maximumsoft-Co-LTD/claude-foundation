@@ -10,6 +10,7 @@ The deep dive for principle 6 of [[git-workflow]] — a PR is reviewed, a diff i
 - [Splitting a PR that grew too big](#splitting-a-big-pr)
 - [Stacked PRs](#stacked-prs)
 - [Responding to review comments](#responding-to-review-comments)
+- [AI-assisted review](#ai-assisted-review)
 - [Merging — squash, merge commit, or rebase?](#merging)
 
 ## PR size
@@ -116,6 +117,19 @@ The reviewer's etiquette:
 - **Distinguish nits from blockers.** Prefix optional comments: `nit:`, `optional:`, `consider:`. Reviewer authority is real — be explicit about what you're asserting.
 - **Approve when the bar is met, not when the diff is perfect.** "I'd write this differently" is not a blocker; "this has a bug" is.
 - **Ask, don't assume.** "What happens when X is null?" beats "Crashes on X=null, fix." You may be wrong.
+
+## AI-assisted review
+
+AI reviewers (GitHub Copilot's PR review, CodeRabbit, Greptile, the various Claude/Cursor integrations) are now table-stakes for many teams — useful as a *first-pass* on a PR to catch mechanical issues, naming inconsistencies, missing tests for obvious branches, dead code, and surface-level security smells. Treat them as a fast pre-reviewer, not a substitute for human judgment.
+
+**Rules of engagement:**
+
+- **AI review never counts toward required approvals.** GitHub, GitLab, and Bitbucket all enforce this; mirror it in your own policy. Human accountability is the only kind that survives an incident postmortem.
+- **AI catches mechanical issues; humans catch *fit*.** Whether the change matches the system's intent, whether the boundary is in the right place, whether the test coverage exercises the actual risk — these are human-review jobs that AI is still poor at.
+- **Read AI comments like a junior reviewer's.** Often correct, sometimes confidently wrong (especially when it lacks the surrounding context — e.g., it doesn't know that the "missing null check" is enforced upstream). Don't blindly action them; push back the same way you would on a colleague.
+- **Don't let AI-review turn into a discussion partner.** If you find yourself replying to an AI comment to *explain* the design, the explanation belongs in the PR description or a code comment — not buried in a review thread.
+
+Good division of labor: AI handles the "have you considered…" mechanical surface; humans handle the "is this the right design and does it match what the system needs" question. PRs reviewed only by AI are not reviewed.
 
 ## Merging
 

@@ -94,7 +94,7 @@ A circuit breaker is a finite state machine around a dependency:
 
 **Why it matters:** without a breaker, when the dependency is slow or down, every request piles up on it. Connection pools fill, threads block, the upstream becomes unresponsive too. The breaker turns "all requests are slow" into "all requests fail fast with a known error," which lets the upstream stay healthy and the downstream recover unmolested.
 
-**Libraries:** Resilience4j (Java), Polly (.NET), Hystrix (legacy Java), opossum (Node), gobreaker (Go), tenacity + circuitbreaker (Python). Roll your own only if these don't fit; the state machine has subtle edge cases.
+**Libraries:** Resilience4j (Java/Kotlin — Hystrix's successor; Netflix put Hystrix in maintenance mode in 2018 and it's end-of-life today), Polly (.NET), opossum (Node), gobreaker / sony/gobreaker (Go), pybreaker + tenacity (Python). Roll your own only if these don't fit; the state machine has subtle edge cases (the half-open transition is where most bugs hide).
 
 **Per-dependency, not per-service.** One service may talk to ten dependencies. Each gets its own breaker. A failure in one shouldn't trip the breaker for the others.
 

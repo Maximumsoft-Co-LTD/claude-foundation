@@ -563,6 +563,19 @@ export class InMemoryOrderRepository implements OrderRepository {
 
 For everything else — anything with business rules, multiple data sources, or any chance of changing requirements — apply by default.
 
+## Relation to Vertical Slice Architecture
+
+A frequent 2024-2025 critique of Clean / Hexagonal / Onion is that strict layering fragments a single feature across `domain/`, `application/`, and `infrastructure/` directories — a one-line behavior change touches files in three places, and reviewers have to reconstruct the slice in their head. **Vertical Slice Architecture (VSA)** organizes by feature instead: one folder per use case (`features/place-order/`) that *contains* the handler, the request/response types, the validation, and the persistence call, with hexagonal seams only where they earn their cost.
+
+Treat VSA as **complementary, not competing**:
+
+- The two share the same goals (low coupling, testable units, clear seams).
+- VSA's per-feature folder is a *physical layout choice*; hexagonal's dependency-direction rule is a *logical invariant*. They compose: organize files by feature, but still keep domain types pure and inject external dependencies through ports inside the slice.
+- For CRUD-heavy or read-mostly services, lean VSA — the ceremony of ports/adapters across many layers is overkill when the slice is one query and one mapping.
+- For services with real domain invariants, multi-aggregate transactions, or many adapters per use case (HTTP + queue + DB + external API on one feature), the hexagonal-internal layering pays off; the VSA folder structure still works on top of it.
+
+In short: the **logical layering rule from this skill** (domain has zero external dependencies; ports define the interface; adapters depend inward) is the load-bearing piece. Whether you express that as `domain/`, `application/`, `infrastructure/` top-level folders or as feature-scoped slices is a style choice that varies by team and codebase.
+
 ## How to use this skill in a conversation
 
 This skill is always-on for backend work with real domain logic (per the project rule at `.claude/rules/hexagonal-backend.md`). Don't ask the user to opt in. If the task matches "When NOT to apply strictly", say so in one sentence and proceed without hexagonal.

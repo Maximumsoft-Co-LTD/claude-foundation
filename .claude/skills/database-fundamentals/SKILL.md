@@ -217,8 +217,8 @@ Isolation level decides which concurrent-write anomalies are possible. Most data
 - For read-modify-write on a shared row, choose one:
   - **Pessimistic:** `SELECT ... FOR UPDATE` locks the row until commit. Simple, blocks other readers-who-want-to-write.
   - **Optimistic:** add a `version` column or use `WHERE updated_at = $1`. On update, check the affected row count — if zero, someone else wrote first, retry or fail.
-- Know your default. Postgres: `READ COMMITTED`. MySQL InnoDB: `REPEATABLE READ`. SQLite: `SERIALIZABLE` (but it serializes everything).
-- For balance transfers, inventory decrements, ticket bookings — anything where lost updates would be money or correctness — bump isolation to `SERIALIZABLE` or use explicit row locks.
+- Know your default *and that `REPEATABLE READ` means different things in different engines*. Postgres: `READ COMMITTED` by default; its `REPEATABLE READ` is snapshot isolation and prevents lost updates by aborting the second committer with error 40001. MySQL InnoDB: `REPEATABLE READ` by default; uses next-key locks to prevent phantoms but **still allows lost updates** on the read-modify-write pattern unless you take a row lock. SQLite: `SERIALIZABLE` (but it serializes everything).
+- For balance transfers, inventory decrements, ticket bookings — anything where lost updates would be money or correctness — bump isolation to `SERIALIZABLE` or use explicit row locks. **Postgres `SERIALIZABLE` (SSI — Serializable Snapshot Isolation)** is a real first-class option: the engine detects read-write conflicts and aborts the offending transaction with 40001; your app retries. Often a cleaner answer than `SELECT FOR UPDATE` when transactions are short and the retry cost is small.
 - See `references/transactions.md` for the anomalies table, lock types, and concrete patterns.
 
 **Example:**

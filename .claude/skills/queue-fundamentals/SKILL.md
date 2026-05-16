@@ -57,7 +57,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 **How to apply:**
 - Default mental model: at-least-once. Build for it (see principle 3).
 - At-most-once is fine *only* when loss is cheaper than duplicates (high-volume telemetry, ephemeral UI hints). Be honest about which side of that line you're on.
-- "Exactly-once" exists narrowly (Kafka transactions within Kafka; some brokers' EOS modes) and breaks the moment you cross to an external system (DB, HTTP, email). Treat any guarantee that ends at the broker's boundary as at-least-once for the rest of your code.
+- "Exactly-once" exists narrowly *within* a single broker's domain (Kafka transactions + idempotent producer + `isolation.level=read_committed` consumer, set up correctly, deliver true end-to-end EOS for Kafka-to-Kafka pipelines; the idempotent producer has been on by default since Kafka 3.0). It breaks the moment you cross to an external system (DB, HTTP, email, another broker). Treat any guarantee that ends at the broker's boundary as at-least-once for the rest of your code, and reach for the outbox pattern (principle 7) when the cross-system boundary matters.
 - Read your broker's docs for the *exact* semantics, including under failure: leader re-elections, consumer rebalances, ack timeouts. The defaults differ.
 
 **Example:**
@@ -84,6 +84,7 @@ Kafka EOS:           exactly-once *between Kafka topics*     → still at-least-
 - Use **conditional writes** to make non-idempotent operations idempotent: `UPDATE order SET status='shipped' WHERE id=? AND status='paid'`. The second call updates zero rows — a no-op, not a duplicate ship.
 - When neither works, add an **idempotency key** (often the message ID, or a domain-level operation ID the producer chose). On receive, the consumer checks a dedup table inside the same DB transaction as the side effect; if the key is present, drop the message.
 - For external side effects (charging a card, sending an email), pass the idempotency key *through* to the external API when it supports one (Stripe, SendGrid, etc.). When it doesn't, record "I started this work" before the call and "I finished it" after — recovery checks the marker.
+- **Your own public mutation API should accept an `Idempotency-Key` header too.** The Stripe-style contract (UUID v4 from the client, server stores key + response for ≥24h, replays cached status+body on duplicate) is now an IETF draft and a near-universal expectation for any POST/DELETE that costs money or sends an irreversible side effect. This is the HTTP-layer cousin of the queue-consumer dedup table — same idea, different boundary. See [[idempotency]] for the on-the-wire contract.
 - See [[idempotency]] for patterns and code.
 
 **Example (TypeScript, dedup table + conditional write):**
