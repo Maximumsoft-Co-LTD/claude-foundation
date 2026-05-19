@@ -37,12 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `/dev`: orchestrator + spec interview moved from a sub-agent into the main agent. Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (no user prompts), so the previous design silently failed at the first hop. Orchestrator promoted to a main-agent script at `.claude/orchestrator.md`, loaded by `/dev`. `install.sh` gained an upgrade-cleanup block so existing targets lose the stale sub-agent file. ([acf8964](../../commit/acf8964))
-- `/dev`: redirect-stub sub-agent at `.claude/agents/orchestrator.md` to catch accidental `Agent(subagent_type="orchestrator")` calls. A prior session crashed mid-run with `Error: Agent type 'orchestrator' not found` after the model treated "orchestrator" as a worker sub-agent despite the main-agent-orchestrates design. The stub now bounces such calls back with an explicit "you are the main agent" redirect instead of failing the run. Companion clarifications added to `.claude/commands/dev.md` (lead with the explicit no-spawn rule) and `.claude/orchestrator.md` (note explaining what the stub is and why it exists).
+- `/dev`: drop the short-lived `.claude/agents/orchestrator.md` redirect stub introduced in [5bd0475](../../commit/5bd0475) — official Claude Code docs ([sub-agents](https://code.claude.com/docs/en/sub-agents)) do not describe a "redirect stub" pattern, and any `.md` file under `.claude/agents/` simply registers as a spawnable sub-agent, so the stub *enlarged* the available-agents list with a tempting "orchestrator" entry rather than removing it from view. Tightened `.claude/commands/dev.md` and `.claude/orchestrator.md` to make the no-spawn rule explicit ("there is no `orchestrator` sub-agent; the spawn will fail with `Agent type 'orchestrator' not found`") and rely on the natural "agent not found" error as the backstop. `install.sh` now restores the `CLEANUP` row that removes any stub left over on upgraded targets, plus a `${CLEANUP[@]+"${CLEANUP[@]}"}` guard so the loop stays safe under `set -u` if `CLEANUP` is ever emptied again.
 
 ### Removed
 
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
-  - **Note:** a *redirect-only* stub now lives at the same path; see the entry above under `Fixed`. It is not a worker and does no orchestration — only worker sub-agents `pm | lead | engineer | qa | retro` should be spawned.
+  - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
 ---
 

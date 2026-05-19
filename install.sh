@@ -43,7 +43,7 @@ Options:
 
 What gets installed:
   .claude/agents/*.md          — pm, lead, engineer, qa, retro (sub-agents)
-  .claude/orchestrator.md      — orchestrator script run by the main agent on /dev
+  .claude/orchestrator.md      — orchestrator script run by the main agent on /dev (NOT a sub-agent)
   .claude/commands/dev.md      — the /dev slash command (loads orchestrator.md)
   .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals + git-workflow
   .claude/rules/*.md           — always-on pointers to the skills above
@@ -66,9 +66,10 @@ Behavior:
       We never auto-merge — settings.json can hold permissions/model/env that
       a silent rewrite would surprise.
   - Upgrade cleanup: files removed by a newer foundation version (e.g. the
-      legacy .claude/agents/orchestrator.md sub-agent) are deleted from the
-      target on every run. The CLEANUP array in this script is the source of
-      truth — extend it whenever a fix removes a previously-installed file.
+      legacy .claude/agents/orchestrator.md sub-agent / redirect stub) are
+      deleted from the target on every run. The CLEANUP array in this script
+      is the source of truth — extend it whenever a fix removes a previously-
+      installed file.
 EOF
 }
 
@@ -191,7 +192,7 @@ PLAN=(
 # and the new flow breaks). Each row is "<target-relative-path>|<why>".
 # Add a row whenever a fix removes a file the installer used to write.
 CLEANUP=(
-  ".claude/agents/orchestrator.md|moved to .claude/orchestrator.md — sub-agents can't spawn sub-agents or call AskUserQuestion"
+  ".claude/agents/orchestrator.md|no orchestrator sub-agent — orchestration runs in the main agent (see .claude/orchestrator.md)"
 )
 
 # Expand directory rows into per-file rows.
@@ -246,7 +247,7 @@ printf "\n  Summary: ${G}%d new${N}, ${Y}%d overwrite${N}, ${D}%d kept${N}\n" "$
 
 # Show cleanup plan — files that exist in the target and will be deleted on apply.
 CLEANUP_HITS=0
-for row in "${CLEANUP[@]}"; do
+for row in ${CLEANUP[@]+"${CLEANUP[@]}"}; do
   rel="${row%%|*}"; why="${row#*|}"
   dst="$TARGET_PATH/$rel"
   if [ -e "$dst" ]; then
@@ -316,7 +317,7 @@ done
 # became a main-agent script). Without this step, stale .claude/agents/*.md files
 # would keep registering as sub-agents and break the new flow.
 REMOVED=0
-for row in "${CLEANUP[@]}"; do
+for row in ${CLEANUP[@]+"${CLEANUP[@]}"}; do
   rel="${row%%|*}"; why="${row#*|}"
   dst="$TARGET_PATH/$rel"
   if [ -e "$dst" ]; then

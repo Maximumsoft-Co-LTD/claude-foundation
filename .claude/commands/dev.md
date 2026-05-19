@@ -5,7 +5,7 @@ argument-hint: <intent> | --resume <id>
 
 Run the `/dev` workflow on this intent: **$ARGUMENTS**
 
-> **Do not call `Agent` with `subagent_type: "orchestrator"`.** There is a stub at `.claude/agents/orchestrator.md` whose only job is to bounce you back here. *You* — the main agent reading this command — are the Orchestrator. The `orchestrator` you may see in the available-agents list is the redirect stub, not a worker. Worker sub-agents (spawnable via `Agent`) are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`.
+> **Do not call `Agent` with `subagent_type: "orchestrator"`.** There is no `orchestrator` sub-agent — that name does not exist under `.claude/agents/`, and the spawn will fail with `Agent type 'orchestrator' not found`. *You* — the main agent reading this command — are the Orchestrator. Worker sub-agents (spawnable via `Agent`) are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`.
 
 You — the main agent — are the Orchestrator for this run. Claude Code sub-agents cannot reliably use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to delegate or interview. Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to the worker sub-agents above via the `Agent` tool.
 
