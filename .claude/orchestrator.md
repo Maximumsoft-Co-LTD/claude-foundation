@@ -31,6 +31,8 @@ After **every** step (success, deviation, or cycle-bump), update `.workflow/<id>
 
 Without state writes, resume is broken. Don't skip them even when the next step is "obvious".
 
+This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse on `Agent`) touches `.workflow/<id>/.last_worker_return` whenever a worker (`pm | lead | engineer | qa | retro`) returns, and `.claude/hooks/dev-agent-guard.sh` (PreToolUse on `Agent`, case 3) blocks the *next* worker spawn until `state.json` mtime is newer than that marker. If you see `BLOCKED by /dev guard: .workflow/<id>/state.json was not updated after the last worker returned`, write `state.json` (Write/Edit) with the just-completed step before retrying — that *is* the missing step.
+
 ## Phase 1 — Requirements
 
 6. **Interview (you run it).** You — the main agent — run the spec interview. Sub-agents can't call `AskUserQuestion`, so this step lives here, not in `pm`.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse guard for the /dev workflow.
 #
-# Catches two known failure modes when the orchestrator (main agent) delegates work:
+# Catches three known failure modes when the orchestrator (main agent) delegates work:
 #
 #   1. subagent_type="orchestrator" — there is no orchestrator sub-agent;
 #      the main agent IS the orchestrator. Spawn would fail with
@@ -13,6 +13,13 @@
 #      "knowing but not complying" — it labels the description with the
 #      intended worker name but routes to the catch-all agent anyway.
 #      Block and tell it to retry with the correct subagent_type.
+#
+#   3. state.json not updated between worker spawns. The companion
+#      PostToolUse hook dev-state-mark.sh touches .last_worker_return
+#      inside the active run dir when a worker returns. If the marker
+#      is newer than state.json on the next worker spawn, the orchestrator
+#      skipped the bookkeeping step prescribed by orchestrator.md > State
+#      discipline. Block until state.json catches up — resume depends on it.
 
 set -euo pipefail
 
@@ -48,5 +55,35 @@ if [[ "$subagent_type" == "general-purpose" ]]; then
     fi
   done
 fi
+
+# Case 3: state.json must be updated between /dev worker spawns
+case "$subagent_type" in
+  pm|lead|engineer|qa|retro)
+    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+    WF_DIR="$PROJECT_DIR/.workflow"
+    if [[ -d "$WF_DIR" ]]; then
+      latest_state=""
+      for f in "$WF_DIR"/*/state.json; do
+        [[ -f "$f" ]] || continue
+        if [[ -z "$latest_state" ]] || [[ "$f" -nt "$latest_state" ]]; then
+          latest_state="$f"
+        fi
+      done
+      if [[ -n "$latest_state" ]]; then
+        run_dir="$(dirname "$latest_state")"
+        run_id="$(basename "$run_dir")"
+        marker="$run_dir/.last_worker_return"
+        # Block only if both files exist AND marker is newer. If marker is
+        # missing, this is the first worker spawn of the run — let it through.
+        if [[ -f "$marker" ]] && [[ "$marker" -nt "$latest_state" ]]; then
+          state_rel=".workflow/$run_id/state.json"
+          reason="BLOCKED by /dev guard: $state_rel was not updated after the last worker returned. orchestrator.md > State discipline requires writing state.json (phase, step, next_step, cycles, last_updated, last_agent) after EVERY step, before spawning the next worker — otherwise /dev --resume $run_id is broken. Update $state_rel via Write/Edit, then retry the spawn."
+          jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
+          exit 0
+        fi
+      fi
+    fi
+    ;;
+esac
 
 exit 0

@@ -48,7 +48,8 @@ What gets installed:
   .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals + git-workflow
   .claude/rules/*.md           — always-on pointers to the skills above
   .claude/hooks/lint.sh        — PostToolUse lint dispatcher
-  .claude/hooks/dev-agent-guard.sh — PreToolUse guard on the Agent tool (blocks bad /dev sub-agent spawns)
+  .claude/hooks/dev-agent-guard.sh — PreToolUse guard on the Agent tool (blocks bad /dev sub-agent spawns + missed state.json updates)
+  .claude/hooks/dev-state-mark.sh  — PostToolUse marker on Agent (touches .last_worker_return so the guard knows when state.json is stale)
   .claude/settings.json        — hook wiring (only if missing)
   .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json
   .workflow/INDEX.md           — fresh registry (only if missing)
@@ -62,8 +63,9 @@ Behavior:
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
   - .claude/settings.local.json is never touched (user-local config)
   - settings.json wiring: if the target already has .claude/settings.json
-      and our hooks (PostToolUse lint + PreToolUse dev-agent-guard) aren't
-      both wired in, we try to merge automatically. The merge uses jq, is
+      and our hooks (PreToolUse dev-agent-guard + PostToolUse lint +
+      PostToolUse dev-state-mark) aren't all wired in, we try to merge
+      automatically. The merge uses jq, is
       idempotent (re-running adds nothing new), preserves the user's other
       fields (permissions, model, env, their own hooks), writes a backup
       next to the file as settings.json.backup-YYYYMMDD-HHMMSS, and
@@ -134,6 +136,7 @@ for needed in \
   ".claude/rules" \
   ".claude/hooks/lint.sh" \
   ".claude/hooks/dev-agent-guard.sh" \
+  ".claude/hooks/dev-state-mark.sh" \
   ".claude/settings.json" \
   ".workflow/_templates" \
   ".workflow/_templates/state.json" \
@@ -180,6 +183,7 @@ PLAN=(
   ".claude/rules|skip-if-exists"
   ".claude/hooks/lint.sh|skip-if-exists"
   ".claude/hooks/dev-agent-guard.sh|skip-if-exists"
+  ".claude/hooks/dev-state-mark.sh|skip-if-exists"
   ".claude/settings.json|skip-if-exists"
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
@@ -291,17 +295,20 @@ SETTINGS_BACKUP=""
 SETTINGS_ACTION="none"
 SETTINGS_MERGE_ADDED=""
 if [ -e "$SETTINGS_DST" ] && [ -e "$SETTINGS_SRC" ]; then
-  # Both hooks must be wired for the target to be considered up-to-date. Targets
-  # that installed an older foundation have lint.sh wired but are missing the
-  # newer dev-agent-guard.sh — they need a merge (or snippet).
+  # All three hooks must be wired for the target to be considered up-to-date.
+  # Targets that installed an older foundation have lint.sh wired but are
+  # missing the newer dev-agent-guard.sh and/or dev-state-mark.sh — they need
+  # a merge (or snippet).
   if grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null \
-  && grep -q "hooks/dev-agent-guard.sh" "$SETTINGS_DST" 2>/dev/null; then
+  && grep -q "hooks/dev-agent-guard.sh" "$SETTINGS_DST" 2>/dev/null \
+  && grep -q "hooks/dev-state-mark.sh" "$SETTINGS_DST" 2>/dev/null; then
     SETTINGS_ACTION="hook-already-wired"
   elif command -v jq >/dev/null 2>&1; then
     SETTINGS_ACTION="auto-merge"
     # Compose the planned-additions summary (skipped if already present in dst).
     grep -q "hooks/dev-agent-guard.sh" "$SETTINGS_DST" 2>/dev/null || SETTINGS_MERGE_ADDED+="PreToolUse:dev-agent-guard.sh "
     grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null || SETTINGS_MERGE_ADDED+="PostToolUse:lint.sh "
+    grep -q "hooks/dev-state-mark.sh" "$SETTINGS_DST" 2>/dev/null || SETTINGS_MERGE_ADDED+="PostToolUse:dev-state-mark.sh "
     printf "  ${G}~${N} .claude/settings.json ${D}(will merge: %s— backup will be written next to it)${N}\n" "$SETTINGS_MERGE_ADDED"
   else
     SETTINGS_ACTION="write-snippet"
@@ -402,6 +409,11 @@ if [ "$SETTINGS_ACTION" = "auto-merge" ]; then
       type: "command",
       command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/lint.sh",
       timeout: 30
+    }) |
+    upsert_hook("PostToolUse"; "Agent"; {
+      type: "command",
+      command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-state-mark.sh",
+      timeout: 5
     })
   ' "$SETTINGS_DST" 2>/dev/null || true)"
 
@@ -466,7 +478,8 @@ if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
 
     1. Open .claude/settings.foundation.json (we just wrote it).
     2. Copy the "hooks.PreToolUse" entry (dev-agent-guard.sh, blocks bad
-       /dev sub-agent spawns) and "hooks.PostToolUse" entry (lint.sh) into
+       /dev sub-agent spawns and missed state.json updates) and the two
+       "hooks.PostToolUse" entries (lint.sh + dev-state-mark.sh) into
        your .claude/settings.json. If your settings.json already has those
        arrays, append our entries to the existing lists — don't replace.
     3. Delete .claude/settings.foundation.json.
