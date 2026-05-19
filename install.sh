@@ -61,12 +61,16 @@ Behavior:
       skipped if present, unless --force
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
   - .claude/settings.local.json is never touched (user-local config)
-  - settings.json side-file: if the target already has .claude/settings.json
+  - settings.json wiring: if the target already has .claude/settings.json
       and our hooks (PostToolUse lint + PreToolUse dev-agent-guard) aren't
-      both wired in, we drop our config as .claude/settings.foundation.json
-      (pure JSON) and print merge instructions. We never auto-merge —
-      settings.json can hold permissions/model/env that a silent rewrite
-      would surprise.
+      both wired in, we try to merge automatically. The merge uses jq, is
+      idempotent (re-running adds nothing new), preserves the user's other
+      fields (permissions, model, env, their own hooks), writes a backup
+      next to the file as settings.json.backup-YYYYMMDD-HHMMSS, and
+      validates the result is still parseable JSON before overwriting.
+      Falls back to dropping a snippet at .claude/settings.foundation.json
+      with hand-merge instructions if jq isn't installed or the merge
+      fails.
   - Upgrade cleanup: files removed by a newer foundation version (e.g. the
       legacy .claude/agents/orchestrator.md sub-agent / redirect stub) are
       deleted from the target on every run. The CLEANUP array in this script
@@ -272,24 +276,36 @@ else
 fi
 
 # settings.json hook check. PLAN keeps the existing settings.json so we never
-# clobber user permissions/model/env config — but that means a target that
-# already has settings.json doesn't get our PostToolUse lint hook wired in.
-# Detect that case and plan to drop the snippet at .claude/settings.foundation.json
-# so the user can merge it by hand. Cheap substring check (no jq dependency).
+# clobber user permissions/model/env config. If the target already has
+# settings.json but our hooks aren't fully wired, we'd rather *merge* than
+# leave a manual step lying around. Strategy:
+#   - If jq is available → auto-merge our Pre/PostToolUse entries (idempotent,
+#     existing user hooks/permissions preserved, backup written, output
+#     validated as JSON before overwriting).
+#   - If jq is missing (or merge fails) → fall back to dropping the snippet
+#     at .claude/settings.foundation.json with hand-merge instructions.
 SETTINGS_SRC="$SOURCE_PATH/.claude/settings.json"
 SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
 SETTINGS_SNIPPET="$TARGET_PATH/.claude/settings.foundation.json"
+SETTINGS_BACKUP=""
 SETTINGS_ACTION="none"
+SETTINGS_MERGE_ADDED=""
 if [ -e "$SETTINGS_DST" ] && [ -e "$SETTINGS_SRC" ]; then
   # Both hooks must be wired for the target to be considered up-to-date. Targets
   # that installed an older foundation have lint.sh wired but are missing the
-  # newer dev-agent-guard.sh — they need the snippet so the user can merge.
+  # newer dev-agent-guard.sh — they need a merge (or snippet).
   if grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null \
   && grep -q "hooks/dev-agent-guard.sh" "$SETTINGS_DST" 2>/dev/null; then
     SETTINGS_ACTION="hook-already-wired"
+  elif command -v jq >/dev/null 2>&1; then
+    SETTINGS_ACTION="auto-merge"
+    # Compose the planned-additions summary (skipped if already present in dst).
+    grep -q "hooks/dev-agent-guard.sh" "$SETTINGS_DST" 2>/dev/null || SETTINGS_MERGE_ADDED+="PreToolUse:dev-agent-guard.sh "
+    grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null || SETTINGS_MERGE_ADDED+="PostToolUse:lint.sh "
+    printf "  ${G}~${N} .claude/settings.json ${D}(will merge: %s— backup will be written next to it)${N}\n" "$SETTINGS_MERGE_ADDED"
   else
     SETTINGS_ACTION="write-snippet"
-    printf "  ${Y}!${N} .claude/settings.json ${D}(kept — our hooks are not fully wired; will drop snippet at .claude/settings.foundation.json for you to merge)${N}\n"
+    printf "  ${Y}!${N} .claude/settings.json ${D}(kept — jq not found, hooks not fully wired; will drop snippet at .claude/settings.foundation.json for you to merge)${N}\n"
   fi
 fi
 
@@ -335,11 +351,75 @@ for row in ${CLEANUP[@]+"${CLEANUP[@]}"}; do
   fi
 done
 
-# settings.json side-file when target already has its own settings.json.
-# We don't merge automatically — settings.json can contain permissions, model,
-# env, etc., and silently rewriting it would be surprising. Instead, drop our
-# block as a pure-JSON side-file the user can copy from. Merge instructions
-# go to stdout (the side-file stays valid JSON so it round-trips through tools).
+# settings.json wiring when target already has its own settings.json.
+#
+# auto-merge path (preferred): use jq to add our Pre/PostToolUse entries to
+# the existing settings.json without touching the user's other fields
+# (permissions, model, env, their own hooks). Idempotent — the jq filter
+# skips entries whose command is already present. Backs the original up
+# alongside the file, validates the output is still parseable JSON, and
+# only then overwrites. If anything goes wrong, fall back to snippet.
+#
+# write-snippet path (fallback): jq missing or merge failed — drop our full
+# settings.json next to the target's as .claude/settings.foundation.json
+# with hand-merge instructions.
+if [ "$SETTINGS_ACTION" = "auto-merge" ]; then
+  ts="$(date +%Y%m%d-%H%M%S)"
+  SETTINGS_BACKUP="$SETTINGS_DST.backup-$ts"
+  cp "$SETTINGS_DST" "$SETTINGS_BACKUP"
+
+  # jq filter is idempotent: for each (event, matcher, command) triple, find
+  # the matcher entry under .hooks[event] (creating it if absent), then add
+  # our hook into its .hooks list only if no entry with the same command
+  # is already present. `|| true` keeps `set -e` from aborting on jq failure
+  # (invalid JSON input) — we want to fall through to the snippet fallback.
+  merged="$(jq '
+    def upsert_hook($event; $matcher; $hook):
+      .hooks //= {} |
+      .hooks[$event] //= [] |
+      .hooks[$event] = (
+        if (.hooks[$event] | any(.matcher == $matcher)) then
+          .hooks[$event] | map(
+            if .matcher == $matcher then
+              .hooks = (
+                if (.hooks | any(.command == $hook.command))
+                then .hooks
+                else (.hooks // []) + [$hook]
+                end
+              )
+            else . end
+          )
+        else
+          .hooks[$event] + [{matcher: $matcher, hooks: [$hook]}]
+        end
+      );
+    upsert_hook("PreToolUse"; "Agent"; {
+      type: "command",
+      command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh",
+      timeout: 5
+    }) |
+    upsert_hook("PostToolUse"; "Edit|Write|MultiEdit|NotebookEdit"; {
+      type: "command",
+      command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/lint.sh",
+      timeout: 30
+    })
+  ' "$SETTINGS_DST" 2>/dev/null || true)"
+
+  if [ -n "$merged" ] && printf '%s' "$merged" | jq empty >/dev/null 2>&1; then
+    printf '%s\n' "$merged" > "$SETTINGS_DST"
+    printf "  ${G}~${N} merged %s ${D}(added: %s| backup at %s)${N}\n" \
+      ".claude/settings.json" "$SETTINGS_MERGE_ADDED" "$(basename "$SETTINGS_BACKUP")"
+  else
+    # Merge failed (probably invalid JSON in target) — restore from backup
+    # and drop the snippet instead.
+    cp "$SETTINGS_BACKUP" "$SETTINGS_DST"
+    rm -f "$SETTINGS_BACKUP"
+    SETTINGS_BACKUP=""
+    SETTINGS_ACTION="write-snippet"
+    printf "  ${Y}!${N} auto-merge failed (settings.json may be invalid JSON) — falling back to snippet drop\n"
+  fi
+fi
+
 if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
   mkdir -p "$(dirname "$SETTINGS_SNIPPET")"
   cp "$SETTINGS_SRC" "$SETTINGS_SNIPPET"
