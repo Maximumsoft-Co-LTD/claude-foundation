@@ -48,6 +48,7 @@ What gets installed:
   .claude/skills/**            — programming / database / debug / hexagonal / queue fundamentals + git-workflow
   .claude/rules/*.md           — always-on pointers to the skills above
   .claude/hooks/lint.sh        — PostToolUse lint dispatcher
+  .claude/hooks/dev-agent-guard.sh — PreToolUse guard on the Agent tool (blocks bad /dev sub-agent spawns)
   .claude/settings.json        — hook wiring (only if missing)
   .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json
   .workflow/INDEX.md           — fresh registry (only if missing)
@@ -61,10 +62,11 @@ Behavior:
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
   - .claude/settings.local.json is never touched (user-local config)
   - settings.json side-file: if the target already has .claude/settings.json
-      and our PostToolUse lint hook isn't in it, we drop our config as
-      .claude/settings.foundation.json (pure JSON) and print merge instructions.
-      We never auto-merge — settings.json can hold permissions/model/env that
-      a silent rewrite would surprise.
+      and our hooks (PostToolUse lint + PreToolUse dev-agent-guard) aren't
+      both wired in, we drop our config as .claude/settings.foundation.json
+      (pure JSON) and print merge instructions. We never auto-merge —
+      settings.json can hold permissions/model/env that a silent rewrite
+      would surprise.
   - Upgrade cleanup: files removed by a newer foundation version (e.g. the
       legacy .claude/agents/orchestrator.md sub-agent / redirect stub) are
       deleted from the target on every run. The CLEANUP array in this script
@@ -127,6 +129,7 @@ for needed in \
   ".claude/skills" \
   ".claude/rules" \
   ".claude/hooks/lint.sh" \
+  ".claude/hooks/dev-agent-guard.sh" \
   ".claude/settings.json" \
   ".workflow/_templates" \
   ".workflow/_templates/state.json" \
@@ -172,6 +175,7 @@ PLAN=(
   ".claude/skills|skip-if-exists"
   ".claude/rules|skip-if-exists"
   ".claude/hooks/lint.sh|skip-if-exists"
+  ".claude/hooks/dev-agent-guard.sh|skip-if-exists"
   ".claude/settings.json|skip-if-exists"
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
@@ -277,11 +281,15 @@ SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
 SETTINGS_SNIPPET="$TARGET_PATH/.claude/settings.foundation.json"
 SETTINGS_ACTION="none"
 if [ -e "$SETTINGS_DST" ] && [ -e "$SETTINGS_SRC" ]; then
-  if grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null; then
+  # Both hooks must be wired for the target to be considered up-to-date. Targets
+  # that installed an older foundation have lint.sh wired but are missing the
+  # newer dev-agent-guard.sh — they need the snippet so the user can merge.
+  if grep -q "hooks/lint.sh" "$SETTINGS_DST" 2>/dev/null \
+  && grep -q "hooks/dev-agent-guard.sh" "$SETTINGS_DST" 2>/dev/null; then
     SETTINGS_ACTION="hook-already-wired"
   else
     SETTINGS_ACTION="write-snippet"
-    printf "  ${Y}!${N} .claude/settings.json ${D}(kept — our PostToolUse lint hook is not wired; will drop snippet at .claude/settings.foundation.json for you to merge)${N}\n"
+    printf "  ${Y}!${N} .claude/settings.json ${D}(kept — our hooks are not fully wired; will drop snippet at .claude/settings.foundation.json for you to merge)${N}\n"
   fi
 fi
 
@@ -374,14 +382,15 @@ if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
   cat <<EOF
 
   ${Y}⚠ settings.json already existed in your project — kept as-is.${N}
-  Our PostToolUse lint hook is NOT wired in. To enable it:
+  Our hooks are NOT fully wired in. To enable them:
 
     1. Open .claude/settings.foundation.json (we just wrote it).
-    2. Copy the "hooks.PostToolUse" entry into your .claude/settings.json.
-       If your settings.json already has a "PostToolUse" array, append our
-       entry to the existing list — don't replace it.
+    2. Copy the "hooks.PreToolUse" entry (dev-agent-guard.sh, blocks bad
+       /dev sub-agent spawns) and "hooks.PostToolUse" entry (lint.sh) into
+       your .claude/settings.json. If your settings.json already has those
+       arrays, append our entries to the existing lists — don't replace.
     3. Delete .claude/settings.foundation.json.
 
-  If you don't want the lint hook, just delete the snippet file.
+  If you don't want one of the hooks, just leave its entry out of the merge.
 EOF
 fi
