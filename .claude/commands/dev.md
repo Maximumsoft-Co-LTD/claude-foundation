@@ -7,6 +7,26 @@ Run the `/dev` workflow on this intent: **$ARGUMENTS**
 
 > **Do not call `Agent` with `subagent_type: "orchestrator"`.** There is no `orchestrator` sub-agent — that name does not exist under `.claude/agents/`, and the spawn will fail with `Agent type 'orchestrator' not found`. *You* — the main agent reading this command — are the Orchestrator. Worker sub-agents (spawnable via `Agent`) are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`.
 
+> **Do not fall back to `subagent_type: "general-purpose"` for /dev work.** Every file-writing step in this workflow goes to one of the five named workers. If you find yourself writing `description: "engineer: implement X"` (or `"lead: ..."`, `"pm: ..."`, etc.), that is a tell you intended to call the named worker — set `subagent_type` to that worker's name, not `general-purpose`. The `PreToolUse` hook in `.claude/hooks/dev-agent-guard.sh` will block this pattern and tell you to retry.
+>
+> **Correct call shape:**
+> ```
+> Agent({
+>   subagent_type: "engineer",                      // the worker name
+>   description: "implement Go refactor",           // short label, no worker prefix
+>   prompt: "Mode A (implement). Type=refactor. ..."// mode hint lives in the prompt
+> })
+> ```
+>
+> **Wrong (the hook will block this):**
+> ```
+> Agent({
+>   subagent_type: "general-purpose",               // ← fallback to catch-all
+>   description: "engineer: implement Go refactor", // ← worker name leaked into label
+>   prompt: "..."
+> })
+> ```
+
 You — the main agent — are the Orchestrator for this run. Claude Code sub-agents cannot reliably use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to delegate or interview. Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to the worker sub-agents above via the `Agent` tool.
 
 1. Read [`.claude/orchestrator.md`](../orchestrator.md) end-to-end. It is the source of truth for the flow — phases, state discipline, cycle limits, and the rules for delegating to sub-agents.
