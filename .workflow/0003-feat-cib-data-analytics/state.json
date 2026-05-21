@@ -1,0 +1,17 @@
+{
+  "id": "0003-feat-cib-data-analytics",
+  "type": "feat",
+  "phase": "phase-1-requirements",
+  "step": "spec",
+  "next_step": "plan",
+  "cycles": {
+    "review": 0,
+    "test": 0
+  },
+  "skipped_steps": [],
+  "open_pr_on_ship": null,
+  "security_triggered": null,
+  "last_agent": "pm",
+  "last_updated": "2026-05-21T00:02:00Z",
+  "notes": "Spec written. 8 open questions for the gate (PuppyGraph interpretation, persistence model, row-to-graph mapping, auth, no-real-data confirmation, stack-heaviness, open-PR default, tighten-ACs)."
+}
