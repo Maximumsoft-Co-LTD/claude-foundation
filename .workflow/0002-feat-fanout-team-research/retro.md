@@ -50,6 +50,8 @@ Final state of every checkbox in `spec.md > Acceptance criteria` (all ticked at 
 
 Surface to user for confirmation; do not auto-save.
 
+**User decision (2026-05-21): no memory candidates saved this run.** All three deferred — orchestrator did not auto-save. Re-surface in a future retro if the registry-not-refreshed failure recurs, or if a /dev run references the FANOUT_REQUESTED allowlist enough to warrant durable memory.
+
 - **type**: project
   **body**: Claude Code's agent registry is loaded at session start. `team-*.md` files (and any other agent files) created mid-session are NOT discoverable as `subagent_type=<name>` until the session restarts. The orchestrator's documented fallback when this fires is to dispatch via `subagent_type="general-purpose"` with each worker's role contract read inline from `.claude/agents/team-<role>.md`. The `Dispatched-as:` line in each per-agent `review.md` subsection is the discriminator between a real parallel dispatch and the fallback.
   **why**: This failure mode was observed live on this run; it will fire on the first run after every fresh install of this skill bundle until either (a) the user restarts their Claude Code session, or (b) the team-*.md files are pre-shipped (install-time stubs). Future readers seeing "registry not found" errors should know this is the documented case and where the fallback lives.
@@ -68,6 +70,10 @@ Surface to user for confirmation; do not auto-save.
 ## Skill candidates (procedures)
 
 Surface to user for confirmation; do not auto-create. Orchestrator will ask via `AskUserQuestion` for each candidate.
+
+**User decision (2026-05-21):**
+- `fanout-smoke-test` → **dropped** (not created). Candidate logged here for audit; added to FOLLOWUPS as F0016 for later revisit.
+- `validate-fanout-signal` → **dropped** (not created). Candidate logged here for audit; added to FOLLOWUPS as F0017 for later revisit.
 
 - **name**: fanout-smoke-test
   **scope**: project (`.claude/skills/`)

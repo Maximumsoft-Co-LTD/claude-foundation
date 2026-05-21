@@ -23,6 +23,8 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 | F0013 | 0002-feat-fanout-team-research | Plan step 19's verify-clause still cites `smoke-review.md`; AC10 evidence correctly cites `review.md`. Spec-vs-plan coherence drift. | fix | low | open |
 | F0014 | 0002-feat-fanout-team-research | Add `.workflow/*/.last_worker_return` (engineer's ship-note marker file) to `.gitignore`. | chore | low | open |
 | F0015 | 0002-feat-fanout-team-research | Trigger-heuristic syntax drifts across the 5 fanout callsites (`≥ 2 independent`, `≥ 2 distinct`, `≥ 2 of {…}`). Normalize phrasing. | chore | low | open |
+| F0016 | 0002-feat-fanout-team-research | Dropped skill candidate `fanout-smoke-test` — runnable assertion that the fanout pipeline produces a real parallel dispatch (not silent inline-fallback). Revisit if AC10 regresses or registry-not-refreshed bites again. See `retro.md > Skill candidates` for the pre-built handoff prompt. | feat | low | open |
+| F0017 | 0002-feat-fanout-team-research | Dropped skill candidate `validate-fanout-signal` — PostToolUse hook that validates `FANOUT_REQUESTED:` returns against the strict allowlist regex and BLOCKERs on mismatch. Closes the prose-only enforcement gap with `dev-agent-guard.sh`. Revisit if a signal-typo silent-failure happens. See `retro.md > Skill candidates` for the pre-built handoff prompt. | feat | low | open |
 
 ## Closed
 

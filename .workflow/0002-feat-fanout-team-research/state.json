@@ -1,9 +1,9 @@
 {
   "id": "0002-feat-fanout-team-research",
   "type": "feat",
-  "phase": "phase-2-implementation",
-  "step": "ship",
-  "next_step": "retro",
+  "phase": "done",
+  "step": "done",
+  "next_step": null,
   "cycles": {
     "review": 2,
     "test": 0
@@ -14,6 +14,6 @@
   "commit_sha": "5bfd06728d133a7c5982b2743414bc3c01f4e889",
   "pr_url": null,
   "last_agent": "main",
-  "last_updated": "2026-05-21T02:35:00Z",
-  "notes": "Shipped: commit 5bfd067 (21 files, +1554/-4). No PR. INDEX flipped to done. Dispatching retro."
+  "last_updated": "2026-05-21T02:45:00Z",
+  "notes": "Run complete. Retro filed; 17 follow-ups appended (F0001-F0017 — F0016/F0017 are the dropped skill candidates); 0 memory candidates saved; 0 skill candidates created (user dropped both)."
 }
