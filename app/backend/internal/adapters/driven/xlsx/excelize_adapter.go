@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 
 	"github.com/cib/app/backend/internal/app/ports"
@@ -122,7 +123,7 @@ func (p *ExcelizeParser) Parse(blob []byte, m graph.ColumnMapping) (ports.Parsed
 		}
 		sID := graph.NodeID(s)
 		tID := graph.NodeID(tt)
-		e, eerr := graph.NewEdge(sID, tID, weight, rowI+2, graph.Edge{}.FileID)
+		e, eerr := graph.NewEdge(sID, tID, weight, rowI+2, uuid.Nil)
 		if eerr != nil {
 			stats.RowsSkippedBlank++
 			continue

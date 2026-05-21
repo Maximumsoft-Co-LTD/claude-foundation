@@ -33,11 +33,11 @@ Four synthetic fixtures live under `backend/internal/adapters/driven/xlsx/testda
 Hexagonal Go backend + Next.js App Router frontend + Postgres. ClickHouse and PuppyGraph are provisioned in `docker-compose.yml` under `profiles: ["v2"]` and are dormant in v1.
 
 - `backend/internal/domain/` — Case, Graph, Node, Edge, ColumnMapping, sentinel errors.
-- `backend/internal/app/ports/` — repository + parser ports (`CaseRepository`, `FileRepository`, `GraphRepository`, `XlsxParser`, `GraphStore`).
+- `backend/internal/app/ports/` — repository + parser ports (`CaseRepository`, `FileRepository`, `GraphRepository`, `XlsxParser`).
 - `backend/internal/app/usecase/` — 11 use cases (create/update/archive/list cases, upload + map + parse files, toggle, combined graph, node detail, export json).
-- `backend/internal/adapters/driven/postgres/` — pgx-backed repositories + migrations (goose).
+- `backend/internal/adapters/driven/postgres/` — pgx-backed repositories + migrations (goose). Mapping + graph writes share a transaction via `MappingTxWriter`.
 - `backend/internal/adapters/driven/xlsx/` — excelize-backed parser + four synthetic fixtures.
-- `backend/internal/adapters/driven/puppygraph/` — v1 stub that logs once.
+- The v1 PuppyGraph adapter was removed; the docker-compose service stays under `profiles: ["v2"]` for the eventual graph-query persistence path.
 - `backend/internal/adapters/driving/http/` — chi router, middleware (request-id, logging, error mapping), handlers, prometheus metrics.
 - `backend/cmd/api/` — composition root.
 - `frontend/app/` — 5 pages (`/cases`, `/cases/new`, `/cases/[id]`, `/cases/[id]/edit`, `/cases/[id]/upload`).
@@ -58,8 +58,8 @@ Detailed plan + acceptance criteria live in `../.workflow/0003-feat-cib-data-ana
 | `DATABASE_URL` | derived | full pg DSN (used by `goose` and the api container) |
 | `API_PORT` | `8080` | Go API listen port |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8080` | base for browser-side fetches |
-| `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` | `default` / `` | dormant in v1 |
-| `PUPPYGRAPH_USER` / `PUPPYGRAPH_PASSWORD` | `puppygraph` / `puppygraph123` | dormant in v1 |
+| `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` | `default` / `` | dormant in v1; consumed by the v2-profile clickhouse container only |
+| `PUPPYGRAPH_USER` / `PUPPYGRAPH_PASSWORD` | `puppygraph` / `puppygraph123` | dormant in v1; consumed by the v2-profile puppygraph container only (no Go consumer) |
 
 ## Troubleshooting
 

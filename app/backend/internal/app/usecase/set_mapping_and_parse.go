@@ -55,17 +55,8 @@ func (uc *SetMappingAndParse) Run(ctx context.Context, fileID uuid.UUID, m graph
 	for i := range parsed.Graph.Edges {
 		parsed.Graph.Edges[i].FileID = fileID
 	}
-	if uc.txn != nil {
-		if err := uc.txn.SaveMappingAndGraph(ctx, fileID, m, parsed.Graph); err != nil {
-			return SetMappingAndParseResult{}, err
-		}
-	} else {
-		if err := uc.files.SetMapping(ctx, fileID, m); err != nil {
-			return SetMappingAndParseResult{}, err
-		}
-		if err := uc.graphs.SaveFileGraph(ctx, fileID, parsed.Graph); err != nil {
-			return SetMappingAndParseResult{}, err
-		}
+	if err := uc.txn.SaveMappingAndGraph(ctx, fileID, m, parsed.Graph); err != nil {
+		return SetMappingAndParseResult{}, err
 	}
 	logger.Info("mapping.set",
 		slog.String("file_id", fileID.String()),

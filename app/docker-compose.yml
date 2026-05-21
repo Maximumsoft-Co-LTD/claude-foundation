@@ -45,6 +45,8 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
 
+  # v2: PuppyGraph engine for graph-query workloads — no v1 consumer yet
+  # (Go adapter deleted in cycle 2; will be reintroduced when persistence lands).
   puppygraph:
     image: puppygraph/puppygraph:latest
     profiles: ["v2"]

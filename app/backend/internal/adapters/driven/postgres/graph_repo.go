@@ -17,8 +17,9 @@ type GraphRepo struct {
 
 func NewGraphRepo(pool *pgxpool.Pool) *GraphRepo { return &GraphRepo{pool: pool} }
 
-// pgExecer is the minimal write surface satisfied by both *pgxpool.Pool and pgx.Tx,
-// letting the use case run SaveFileGraph inside its own pgx.Tx for atomicity.
+// pgExecer is the minimal surface SetMappingWith/SaveFileGraphWith need, satisfied
+// by both *pgxpool.Pool and pgx.Tx so the same code path serves both the direct
+// adapter and the transactional writer (MappingTxWriter).
 type pgExecer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }

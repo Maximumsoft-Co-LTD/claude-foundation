@@ -46,10 +46,14 @@ type MergeConflict struct {
 }
 
 var (
-	ErrEmptyNodeID    = errors.New("edge: node id cannot be empty")
-	ErrSelfLoop       = errors.New("edge: source and target must differ")
+	// ErrEmptyNodeID is returned by NewEdge when either source or target NodeID is the empty string.
+	ErrEmptyNodeID = errors.New("edge: node id cannot be empty")
+	// ErrSelfLoop is returned by NewEdge when source and target NodeIDs are equal.
+	ErrSelfLoop = errors.New("edge: source and target must differ")
+	// ErrNegativeWeight is returned by NewEdge when weight is finite but strictly less than zero.
 	ErrNegativeWeight = errors.New("edge: weight must be >= 0")
-	ErrInvalidWeight  = errors.New("edge: weight must be a finite number")
+	// ErrInvalidWeight is returned by NewEdge when weight is NaN or ±Inf.
+	ErrInvalidWeight = errors.New("edge: weight must be a finite number")
 )
 
 func NewEdge(src, tgt NodeID, weight float64, rowIdx int, fileID uuid.UUID) (Edge, error) {

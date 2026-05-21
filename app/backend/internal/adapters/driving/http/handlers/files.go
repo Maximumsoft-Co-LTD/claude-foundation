@@ -28,8 +28,11 @@ func NewFilesHandler(upload *usecase.UploadFile, setMap *usecase.SetMappingAndPa
 	return &FilesHandler{upload: upload, setMap: setMap, toggle: toggle, files: files}
 }
 
-// MaxMultipartBytes caps the entire multipart body. Set just above
-// UploadFile's per-file MaxFileBytes so headers + boundary overhead fit.
+// MaxMultipartBytes is the hard upper bound on the entire multipart-form request
+// body via http.MaxBytesReader. Sized at MaxFileBytes + 1 MiB slack to comfortably
+// fit the boundary headers and any per-part metadata; ParseMultipartForm uses this
+// same value as the in-memory threshold (per-part overflow spills to a temp file,
+// which we then read via io.ReadAll).
 const MaxMultipartBytes = 6 * 1024 * 1024
 
 type uploadFileResponse struct {

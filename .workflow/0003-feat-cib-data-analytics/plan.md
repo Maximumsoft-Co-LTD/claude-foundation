@@ -323,7 +323,6 @@ flowchart LR
 - `file.parsed` — fields: `file_id`, `node_count`, `edge_count`, `parse_dur_ms`
 - `graph.exported` — fields: `case_id`, `format`, `node_count`, `edge_count`
 - `upload.rejected` — fields: `case_id`, `reason` (`empty` / `not_xlsx` / `too_large` / `invalid_mapping`)
-- `graph_repo.persistence_deferred` — emitted once at startup by the PuppyGraph stub
 
 **Metrics** (Prometheus, exposed at `/metrics`):
 - `cib_cases_total{status}` — gauge, refreshed on each list; labels: `open`, `closed`, `archived`
