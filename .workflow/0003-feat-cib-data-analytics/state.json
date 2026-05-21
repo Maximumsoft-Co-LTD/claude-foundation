@@ -2,16 +2,16 @@
   "id": "0003-feat-cib-data-analytics",
   "type": "feat",
   "phase": "phase-2-implementation",
-  "step": "review-cycle-2-fanout",
-  "next_step": "review-cycle-2-synthesis",
+  "step": "review",
+  "next_step": "security",
   "cycles": {
     "review": 2,
     "test": 0
   },
   "skipped_steps": [],
   "open_pr_on_ship": true,
-  "security_triggered": null,
-  "last_agent": "team-workers",
-  "last_updated": "2026-05-21T03:30:00Z",
-  "notes": "Cycle 2 fanout done — all 6 workers returned. Convergent verdict: 13/15 cycle-1 blockers fully fixed, 2 partial (B1 frontend Dockerfile + B6 plan.md:307 doc). Orchestrator addressed both directly: added public/ + non-root user + --chown to frontend Dockerfile; corrected plan.md:307 tiebreaker direction. All 8 static gates re-confirmed green. About to spawn lead synthesis."
+  "security_triggered": true,
+  "last_agent": "lead",
+  "last_updated": "2026-05-21T03:50:00Z",
+  "notes": "Cycle 2 review PASS. 0 blocking, 3 ACs partial (AC4 filter composition, AC9 chart-side, AC12 operational) carrying as FOLLOWUPS. Security review now firing — diff trips multiple sensitive-path buckets: SQL composition (custom WHERE in case_repo), file/path handling (xlsx multipart upload + BYTEA blob), raw HTML render with sanitize (react-markdown for case notes), env secrets (POSTGRES_*, etc), new HTTP API surface, JSON deserialize across handlers. Lead Mode C may opt for fanout given ≥2 buckets trip."
 }
