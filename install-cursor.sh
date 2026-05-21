@@ -66,7 +66,8 @@ Arguments:
 
 Options:
   --source <path>    Source repo (default: directory containing this script)
-  --force, -f        Overwrite existing rule/agent/command/workflow files
+  --force, -f        (Currently a no-op — foundation-owned files are always
+                     refreshed; reserved for future user-state opt-ins.)
   --yes, -y          Skip the confirmation prompt
   --dry-run          Print the plan, write nothing
   -h, --help         Show this help
@@ -97,11 +98,13 @@ What is intentionally NOT installed:
                                  run install.sh too (they don't conflict)
 
 Behavior:
-  - rules/skills/agents/commands/orchestrator/templates/WORKFLOW.md:
-      skipped if present, unless --force
+  - Foundation-owned files (rules, skills, agents, commands, orchestrator,
+      templates, WORKFLOW.md) are ALWAYS refreshed on every run so upstream
+      skill/agent updates land. If you've forked one locally and don't want
+      it clobbered, move it out of these paths.
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md, CURSOR.md: never overwritten
   - Existing .cursor/rules/*.mdc not authored by this installer are left alone
-  - Re-running with no changes is a no-op (idempotent)
+  - Re-running with no source changes is a no-op (idempotent)
 EOF
 }
 
@@ -305,7 +308,7 @@ PLAN=()
 # Rules: .claude/rules/foo.md → .cursor/rules/foo.mdc (with frontmatter + path rewrites)
 for rel in "${RULE_FILES[@]}"; do
   base="$(basename "$rel" .md)"
-  PLAN+=(".claude/rules/${base}.md|.cursor/rules/${base}.mdc|skip-if-exists|convert-rule")
+  PLAN+=(".claude/rules/${base}.md|.cursor/rules/${base}.mdc|always-overwrite|convert-rule")
 done
 
 # Skills: copy with path rewrites under .cursor/skills/. Skill bodies link
@@ -314,13 +317,13 @@ done
 # references/*.md are relative paths the sed pattern doesn't touch.
 for rel in "${SKILL_FILES[@]}"; do
   dst_rel="${rel#.claude/}"
-  PLAN+=("${rel}|.cursor/${dst_rel}|skip-if-exists|rewrite")
+  PLAN+=("${rel}|.cursor/${dst_rel}|always-overwrite|rewrite")
 done
 
 # Agents: copy with path rewrites under .cursor/agents/
 for rel in "${AGENT_FILES[@]}"; do
   dst_rel="${rel#.claude/}"
-  PLAN+=("${rel}|.cursor/${dst_rel}|skip-if-exists|rewrite")
+  PLAN+=("${rel}|.cursor/${dst_rel}|always-overwrite|rewrite")
 done
 
 # Orchestrator: copy with path rewrites + a Cursor-port banner explaining that
@@ -329,12 +332,12 @@ done
 # all roles) substitutes "spawn pm" with "switch hat to pm and follow
 # .cursor/agents/pm.md", and "hook-enforced state.json" with "self-enforced
 # state.json discipline."
-PLAN+=(".claude/orchestrator.md|.cursor/orchestrator.md|skip-if-exists|rewrite-orchestrator")
+PLAN+=(".claude/orchestrator.md|.cursor/orchestrator.md|always-overwrite|rewrite-orchestrator")
 
 # /dev command: this one we hand-write at apply time (it's a substantive
 # rewrite, not a path-rewritten copy), so a sentinel action "synthesize-dev"
 # stands in for the src column.
-PLAN+=("synthesize-dev|.cursor/commands/dev.md|skip-if-exists|synthesize-dev")
+PLAN+=("synthesize-dev|.cursor/commands/dev.md|always-overwrite|synthesize-dev")
 
 # Templates: verbatim
 for rel in "${TEMPLATE_FILES[@]}"; do
@@ -346,7 +349,7 @@ PLAN+=(".workflow/INDEX.md|.workflow/INDEX.md|never-overwrite|verbatim")
 PLAN+=(".workflow/FOLLOWUPS.md|.workflow/FOLLOWUPS.md|never-overwrite|verbatim")
 
 # WORKFLOW.md: copy with rewrites
-PLAN+=("WORKFLOW.md|WORKFLOW.md|skip-if-exists|rewrite")
+PLAN+=("WORKFLOW.md|WORKFLOW.md|always-overwrite|rewrite")
 
 resolve_action() {
   local mode="$1" dst="$2"

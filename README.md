@@ -25,28 +25,28 @@ From the repo root:
 Useful flags:
 
 - `--dry-run` — print the plan, write nothing.
-- `--force` — overwrite existing agent/command/template files.
+- `--force` — also overwrite `.claude/settings.json` (foundation-owned files are already refreshed on every run).
 - `--yes` — skip the confirmation prompt.
 - `--source <path>` — install from a foundation checkout other than this one.
 
 What lands in the target:
 
 ```
-.claude/agents/          pm, lead, engineer, qa, retro (sub-agents)
-.claude/orchestrator.md  orchestrator script for the main agent
-.claude/commands/dev.md  the /dev slash command (loads orchestrator.md)
-.claude/skills/          programming / database / debug / hexagonal / queue fundamentals + git-workflow (+ references/)
-.claude/rules/           always-on pointers to the skills
-.claude/hooks/lint.sh    PostToolUse lint dispatcher
-.claude/settings.json    hook wiring (only if missing)
-.workflow/_templates/    spec / plan / review / security / tests / recommendations / retro / epic / state.json
+.claude/agents/          pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
+.claude/orchestrator.md  orchestrator script for the main agent (always refreshed)
+.claude/commands/dev.md  the /dev slash command (always refreshed)
+.claude/skills/          programming / database / debug / hexagonal / queue / architecture fundamentals + git-workflow + plan-writing + brainstorming + fanout-team-agents (always refreshed)
+.claude/rules/           always-on pointers to the skills (always refreshed)
+.claude/hooks/*.sh       PreToolUse guard + PostToolUse lint + state marker (always refreshed)
+.claude/settings.json    hook wiring (only if missing; existing files get a merge — see below)
+.workflow/_templates/    spec / plan / review / security / tests / recommendations / retro / epic / state.json (always refreshed)
 .workflow/INDEX.md       run registry (only if missing)
 .workflow/FOLLOWUPS.md   follow-up registry (only if missing)
-WORKFLOW.md              full flow reference at repo root
+WORKFLOW.md              full flow reference at repo root (always refreshed)
 CLAUDE.md                minimal stub (only if missing)
 ```
 
-`INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten — they hold user state. `.claude/settings.local.json` is never touched (user-local config). Agents, commands, skills, rules, hooks, and `settings.json` are kept on re-run unless you pass `--force`; workflow templates always refresh so the blueprints stay current.
+`INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten — they hold user state. `.claude/settings.local.json` is never touched (user-local config). Foundation-owned files (agents, orchestrator, commands, skills, rules, hooks, templates, `WORKFLOW.md`) are **always refreshed** on every install run so upstream skill/agent updates land — fork them out of these paths if you don't want a local edit clobbered. `.claude/settings.json` is the lone exception: existing files are kept as-is (only the foundation hook wiring is merged in via jq), and `--force` is what makes the installer overwrite it wholesale.
 
 **If your project already has `.claude/settings.json`**, the installer leaves it alone — your `permissions` / `model` / `env` etc. are not rewritten. If your existing file doesn't already wire up our `PostToolUse → .claude/hooks/lint.sh` entry, the installer drops a pure-JSON snippet at `.claude/settings.foundation.json` and prints merge instructions; copy the `hooks` block into your settings (appending to any existing `PostToolUse` array, not replacing it) and delete the snippet. If you don't want the lint hook, just delete the snippet file.
 

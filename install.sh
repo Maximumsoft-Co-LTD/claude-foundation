@@ -36,30 +36,33 @@ Arguments:
 
 Options:
   --source <path>    Source repo (default: directory containing this script)
-  --force, -f        Overwrite existing agent/command/workflow files
+  --force, -f        Also overwrite settings.json (foundation-owned files
+                     are already refreshed on every run)
   --yes, -y          Skip the confirmation prompt
   --dry-run          Print the plan, write nothing
   -h, --help         Show this help
 
 What gets installed:
-  .claude/agents/*.md          — pm, lead, engineer, qa, retro (sub-agents)
-  .claude/orchestrator.md      — orchestrator script run by the main agent on /dev (NOT a sub-agent)
-  .claude/commands/dev.md      — the /dev slash command (loads orchestrator.md)
-  .claude/skills/**            — programming / database / architecture / debug / hexagonal / queue fundamentals + git-workflow + plan-writing + brainstorming
-  .claude/rules/*.md           — always-on pointers to the skills above
-  .claude/hooks/lint.sh        — PostToolUse lint dispatcher
-  .claude/hooks/dev-agent-guard.sh — PreToolUse guard on the Agent tool (blocks bad /dev sub-agent spawns + missed state.json updates)
-  .claude/hooks/dev-state-mark.sh  — PostToolUse marker on Agent (touches .last_worker_return so the guard knows when state.json is stale)
-  .claude/settings.json        — hook wiring (only if missing)
-  .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json
+  .claude/agents/**            — pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
+  .claude/orchestrator.md      — orchestrator script run by the main agent on /dev, NOT a sub-agent (always refreshed)
+  .claude/commands/dev.md      — the /dev slash command (always refreshed)
+  .claude/skills/**            — programming / database / architecture / debug / hexagonal / queue fundamentals + git-workflow + plan-writing + brainstorming + fanout-team-agents (always refreshed)
+  .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
+  .claude/hooks/lint.sh        — PostToolUse lint dispatcher (always refreshed)
+  .claude/hooks/dev-agent-guard.sh — PreToolUse guard on the Agent tool (always refreshed)
+  .claude/hooks/dev-state-mark.sh  — PostToolUse marker on Agent (always refreshed)
+  .claude/settings.json        — hook wiring (only if missing; existing files get a merge — see below)
+  .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json (always refreshed)
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
-  WORKFLOW.md                  — full flow reference at repo root
+  WORKFLOW.md                  — full flow reference at repo root (always refreshed)
   CLAUDE.md                    — minimal stub (only if missing)
 
 Behavior:
-  - agents/commands/skills/rules/hooks/settings.json/templates/WORKFLOW.md:
-      skipped if present, unless --force
+  - Foundation-owned files (agents, orchestrator, commands, skills, rules,
+      hooks, templates, WORKFLOW.md) are ALWAYS refreshed on every run so
+      upstream skill/agent updates land. If you've forked one locally and
+      don't want it clobbered, move it out of these paths.
   - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
   - .claude/settings.local.json is never touched (user-local config)
   - settings.json wiring: if the target already has .claude/settings.json
@@ -172,18 +175,14 @@ ok "target: $TARGET_PATH"
 # file beneath it (recursive), each inheriting the same mode. That keeps the
 # dry-run output file-accurate without a 30-line manual enumeration.
 PLAN=(
-  ".claude/orchestrator.md|skip-if-exists"
-  ".claude/agents/pm.md|skip-if-exists"
-  ".claude/agents/lead.md|skip-if-exists"
-  ".claude/agents/engineer.md|skip-if-exists"
-  ".claude/agents/qa.md|skip-if-exists"
-  ".claude/agents/retro.md|skip-if-exists"
-  ".claude/commands/dev.md|skip-if-exists"
-  ".claude/skills|skip-if-exists"
-  ".claude/rules|skip-if-exists"
-  ".claude/hooks/lint.sh|skip-if-exists"
-  ".claude/hooks/dev-agent-guard.sh|skip-if-exists"
-  ".claude/hooks/dev-state-mark.sh|skip-if-exists"
+  ".claude/orchestrator.md|always-overwrite"
+  ".claude/agents|always-overwrite"
+  ".claude/commands/dev.md|always-overwrite"
+  ".claude/skills|always-overwrite"
+  ".claude/rules|always-overwrite"
+  ".claude/hooks/lint.sh|always-overwrite"
+  ".claude/hooks/dev-agent-guard.sh|always-overwrite"
+  ".claude/hooks/dev-state-mark.sh|always-overwrite"
   ".claude/settings.json|skip-if-exists"
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
@@ -196,7 +195,7 @@ PLAN=(
   ".workflow/_templates/state.json|always-overwrite"
   ".workflow/INDEX.md|never-overwrite"
   ".workflow/FOLLOWUPS.md|never-overwrite"
-  "WORKFLOW.md|skip-if-exists"
+  "WORKFLOW.md|always-overwrite"
 )
 
 # Files removed by a previous foundation version that must be deleted from
