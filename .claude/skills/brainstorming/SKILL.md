@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, and ambiguity. Use this skill when running the `/dev` Phase 1 interview (orchestrator before spawning `pm`), OR when the user asks to "brainstorm X", "scope this idea", "design a feature", "what should we do about Y", "explore options for", or otherwise wants a design conversation before implementation. Composes with [[plan-writing]] (the next step after spec is approved) and the construction-fundamentals skills (load whichever decides *what* to build). Skip for throwaway scripts, single-line config edits, and tasks where the spec is already approved.
+description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, ambiguity, and likely failure modes (verifiability + pre-mortem). Use this skill when running the `/dev` Phase 1 interview (orchestrator before spawning `pm`), OR when the user asks to "brainstorm X", "scope this idea", "design a feature", "what should we do about Y", "explore options for", or otherwise wants a design conversation before implementation. Composes with [[plan-writing]] (the next step after spec is approved) and the construction-fundamentals skills (load whichever decides *what* to build). Skip for throwaway scripts, single-line config edits, and tasks where the spec is already approved.
 ---
 
 # Brainstorming
@@ -44,6 +44,8 @@ Walk the intent. For each slot, decide: *did the user already answer this, or di
 
 In `/dev`, the orchestrator's `AskUserQuestion` is one batch of 3–4 questions. Pick the 3–4 most consequential unanswered slots. Prefer multi-choice options with one-line descriptions; reserve free-text for genuinely open answers (`Reproduction` for `fix` runs is the canonical free-text slot).
 
+**Frame behavioural questions in past-tense / specifics, not future opinions.** Adapted from Rob Fitzpatrick's *The Mom Test*: "Would you use a feature that does X?" is hypothetical fluff — the user will say yes and you'll learn nothing. "When did you last hit this problem, and what did you do?" gets you a concrete behaviour to design against. Filter the *answers* the same way — compliments, hypotheticals, and wishlists are not signal. See `references/interview-tactics.md > The Mom Test for spec interviews`.
+
 ### 4. Propose 2–3 approaches with a recommendation when "how" is open
 
 If the intent pins *what* but leaves *how* open ("add auth", "store these events", "ship a dashboard"), do not jump to one approach. Surface 2–3 with trade-offs and **lead with your recommended option** and the one-line reason it wins.
@@ -80,14 +82,15 @@ Two rules: (a) only offer when UI / layout / diagram questions are actually comi
 
 If the user declines, proceed text-only. The companion is a tool, not a mode.
 
-### 7. Spec self-review before `Status: approved` (the 4 scans)
+### 7. Spec self-review before `Status: approved` (the 5 scans)
 
-After the spec is written, walk it once with fresh eyes — the four scans below. Fix issues inline; no need to re-review:
+After the spec is written, walk it once with fresh eyes — the five scans below. Fix issues inline; no need to re-review:
 
 1. **Placeholder scan** — any `TBD`, `TODO`, `???`, `appropriate X`, `proper Y`, `as needed`, `etc.`, `see spec`, hedging modals (`should`, `would`, `might`) in slots that should be concrete? Fix or move to `Open questions`.
 2. **Contradiction scan** — does any section contradict another? Does the architecture summary match the AC? Does the Scope `In` list contradict an AC? If a contradiction exists, the user hasn't made the call yet — surface it.
 3. **Scope check** — is this still one ship-able thing? If decomposition slipped back in during the conversation, split now, not at planning time. The gate will catch it; better to catch it here.
 4. **Ambiguity check** — could any AC be read two ways? If yes, pick the reading and make it explicit. `"system handles errors gracefully"` reads two ways; `"on 5xx from upstream, return cached value if <5 min old, else 503"` does not.
+5. **Verifiability + pre-mortem scan** — for each AC, can you name the exact command or observable that would verify it? If not, the AC is wishful, not testable — rewrite it so it can be checked. Then name the **top 3 ways this design could fail**: dependency that might not deliver, scope someone could mis-read, AC the implementation could satisfy without satisfying the user. Surface each as a `Risk` (if internal) or an `Open question` (if it needs user input). This is the same "give the agent a way to verify its work" principle Anthropic flags as the single highest-leverage thing in [Claude Code best practices](https://code.claude.com/docs/en/best-practices), applied at spec time — and the pre-mortem half is adapted from the Amazon PR/FAQ's "Top three reasons this product will not succeed" question.
 
 The result of the scans is either a clean spec ready for the gate, or a spec with `Open questions` honestly listing what's still unknown. **Never** mark a spec `approved` while a slot is `TBD — see Open questions`. That is what `Open questions` exists to defer.
 
@@ -162,6 +165,7 @@ If the request says "build", "design", "add feature", "scope", "explore", "brain
 - **Flipping `Status: approved` while `Open questions` has open items or any slot is `TBD`** — `approved` means the spec is complete enough to plan against. If something is `TBD`, it isn't.
 - **"This is too simple to need a design"** — the simplest projects are where unexamined assumptions hide. A three-sentence design with the user's yes is the minimum; that minimum applies always.
 - **Brainstorming with code in flight** — if you've already started writing the code, the brainstorm isn't a brainstorm anymore, it's a rationalization. Stop, present the design, get the yes, then continue.
+- **Treating compliments / hypotheticals / wishlists as signal** — from *The Mom Test*: "I love this idea," "I would totally use that," "you should also add X someday" all *feel* like progress and aren't. Filter them out and re-ask about past behaviour ("when did you last hit this?", "what did you do?"). If the only evidence you have is an enthusiastic future-tense quote, the spec isn't ready.
 
 ## Relation to other skills
 

@@ -114,3 +114,83 @@ If the answer is missing one of these, ask one targeted follow-up. **Do not inve
 - **Free-text when multi-choice works** — "How should users authenticate?" with no options. Give them email/password vs OAuth vs SSO vs magic link and let them pick.
 - **No "Recommended" tag** — without a lead the user is forced to evaluate cold. If you genuinely don't have a preference, say so in the question text and offer all options equally — but that's rare.
 - **Designing the question batch without reading `FOLLOWUPS.md`** — the interview is the time to fold in carry-overs. If a follow-up could be in scope, ask "should we also handle <follow-up X> in this run?" as one of the batch slots.
+
+## The Mom Test for spec interviews
+
+Adapted from Rob Fitzpatrick's *The Mom Test* — three rules for getting useful information out of a customer interview, applied to the `/dev` spec interview. The book is about customer-discovery interviews for new products; the same failure modes show up when interviewing about an internal feature, a refactor scope, or a bug repro.
+
+The book is named for the observation that even your mother — who has every incentive to be kind — can be asked questions that elicit useful information instead of polite encouragement. The trick is asking questions whose answers don't depend on the respondent liking the idea.
+
+### The three rules
+
+**Rule 1 — Talk about their life, not your idea.** Don't pitch the feature; ask about the problem they already have. The moment you describe the solution, you've stopped learning and started selling.
+
+| Don't ask | Ask instead |
+|-----------|-------------|
+| "Would you use an export feature?" | "How do you currently get data out of the system when you need it?" |
+| "Do you think a dashboard would help?" | "How do you keep tabs on the metrics that matter to you right now?" |
+| "Want me to add a notification when X happens?" | "What do you do today to know when X has happened?" |
+
+**Rule 2 — Ask about specifics in the past, not opinions about the future.** Past behaviour is observable; future opinions are imagination, and people are bad at predicting their own future behaviour. "Tell me about the last time…" is the single most useful question shape.
+
+| Don't ask | Ask instead |
+|-----------|-------------|
+| "Would you pay for this?" | "Tell me about the last time you paid for something to solve this problem — what was it, how much, did it work?" |
+| "How often do you think you'd export data?" | "When did you last export data? What was the format and what did you do with the file?" |
+| "Would this be useful?" | "Walk me through the last time you needed this and didn't have it — what did you do instead?" |
+
+**Rule 3 — Talk less, listen more.** Silence is a tool. When the user trails off, resist filling the gap — they almost always continue with the most honest sentence of the conversation. Don't paraphrase their answer back to them in a way that softens or sharpens it; that's a tell that you're leading.
+
+In `/dev` this rule looks different than a live interview because the channel is `AskUserQuestion`, not voice. The equivalent of "listen more" is: don't write a 200-word framing before each question, don't pre-emptively answer the question in the option labels, and don't bundle a follow-up question into the description ("If you pick A, we'll also need to know B"). One question, lean framing, let the answer come.
+
+### Three types of bad data (also from *The Mom Test*)
+
+When a user answer feels great and you find yourself excited, check whether it's actually one of these three failure modes:
+
+1. **Compliments** — "I love this idea," "this is exactly what we need," "you should definitely build this." Praise feels like validation; it isn't data. Redirect: "What was the last time you tried to solve this on your own, and how did it go?"
+2. **Hypothetical fluff** — "I would probably use it," "I could see myself reaching for that," "in theory that would work for me." Future-tense, conditional, hand-wavy. Redirect: "Walk me through the last time the problem came up."
+3. **Wishlists** — "you should also add Y," "while you're in there, can it do Z?" Wishlists are seductive because they sound like requirements; they're usually projections. Redirect: ignore for the current spec, log to `FOLLOWUPS.md` if they recur from multiple users with concrete examples.
+
+Filter these *as you receive them* — every minute you spend designing AC against a hypothetical is a minute you haven't spent designing against a real workflow.
+
+### When the user IS the user (you, your team, solo project)
+
+The Mom Test is usually framed for talking to external customers. When the spec is for an internal feature where the user is the same person you're interviewing (and especially when "the user" is the engineer themselves), the same rules apply but the *tell* shifts:
+
+- "Compliments" become **self-justification** — "this will make us so much faster." Redirect: which past task would have been faster, and by how much?
+- "Hypothetical fluff" becomes **scope-creep enthusiasm** — "while we're refactoring, we should also..." Redirect: was this a real pain point on a real task last week, or a tidy-up wish?
+- "Wishlists" become **gold-plating** — "let's make it generic so we can reuse it later." Redirect: name one concrete second use case that exists today. If you can't, defer.
+
+Reading the rules this way prevents the spec from drifting from "what we actually need this run" to "what would feel satisfying to build."
+
+## Pre-mortem at the gate
+
+Adapted from Amazon's PR/FAQ practice: every internal FAQ ends with the question **"Top three reasons this product will not succeed."** It's a *pre-*mortem — you imagine the failure before it happens and write down what would have caused it, because that's the cheapest moment to design the failure out.
+
+Applied to the `/dev` spec, the pre-mortem is the 5th self-review scan (principle 7 of `SKILL.md`). The shape:
+
+> Imagine it's three weeks from now. This work shipped, and it was a disappointment. Name the top three reasons.
+
+For each reason, classify the response and act:
+
+| Reason category | What to do |
+|-----------------|------------|
+| **Mis-spec'd AC** — the AC was satisfied but the user wasn't | Rewrite the AC to be specific enough that satisfying it satisfies the user. |
+| **Hidden dependency** — something we don't own had to deliver | Add a `Risks` bullet; surface as an `Open question` if it changes the plan. |
+| **Scope mis-read** — the team will build something different from what was meant | Add a sentence to `Scope > In` or `Scope > Out` that makes the intended reading unambiguous. |
+| **Approach risk** — option A was wrong for this context | Reconsider the approach options from principle 4 before locking the spec. |
+| **Operational gap** — works in dev, breaks in prod | Promote to `Constraints` or add an observability AC. |
+
+Three is the magic number — fewer and you're not stretching; more and you're padding. If you genuinely can't think of three, the design is either trivial (size = XS) or you haven't sat with it long enough; the right move on "I can't find three" is usually to sit with it five more minutes, not to skip the scan.
+
+The pre-mortem is *not* a Risks dump — Risks list things that might go wrong. The pre-mortem asks the harder question: *which of these would I be most embarrassed about in three weeks?* That filter promotes the right items to action.
+
+### Worked example — pre-mortem on "export user data" spec
+
+Imagining the work shipped and disappointed:
+
+1. **Mis-spec'd AC** — "user can export their data" passed because the endpoint returns *something*, but the CSV doesn't include the columns the user actually wanted. **Fix:** add a specific column list to the AC.
+2. **Operational gap** — works on test data (1k rows), times out in prod (200k rows). **Fix:** add an AC that the export completes within 30s for the 95th-percentile account size; promote the timeout/streaming question from "implementation detail" to a `Constraint`.
+3. **Scope mis-read** — the team built a one-shot download because the spec said "download," but the user actually expected a scheduled weekly email. **Fix:** add `Out (non-goals): scheduled / recurring exports — manual one-shot only this run.`
+
+Three concrete risks, three concrete spec edits. Pre-mortem done.
