@@ -2,8 +2,8 @@
   "id": "0003-feat-cib-data-analytics",
   "type": "feat",
   "phase": "phase-2-implementation",
-  "step": "review-fanout",
-  "next_step": "review-synthesis",
+  "step": "review",
+  "next_step": "implement-cycle-2",
   "cycles": {
     "review": 1,
     "test": 0
@@ -11,7 +11,7 @@
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": null,
-  "last_agent": "team-workers",
-  "last_updated": "2026-05-21T01:30:00Z",
-  "notes": "All 6 team-* workers returned. Convergence across workers: dead PuppyGraph stub (3 workers), AC11 rollback gap (3 workers), wrong sentinel for node-not-found (3 workers), migration silent-fail (2 workers). Code-reviewer adds 4 new blockers: pgx stdlib import missing, missing Dockerfiles for api+web, goose not installed, golangci-lint fails 7 issues + npm lint not wired. About to re-spawn lead for synthesis into review.md."
+  "last_agent": "lead",
+  "last_updated": "2026-05-21T01:45:00Z",
+  "notes": "Cycle 1 review verdict: fix-required. 15 blocking findings consolidated from 6 worker reports. 3 unticked ACs (AC4 filter path, AC11 transaction gap, AC12 boot chain broken). About to re-spawn engineer for cycle 2 fixes. Cycle 2 is the last allowed before escalation."
 }
