@@ -2,16 +2,16 @@
   "id": "0003-feat-cib-data-analytics",
   "type": "feat",
   "phase": "phase-2-implementation",
-  "step": "security",
-  "next_step": "test",
+  "step": "test",
+  "next_step": "docs",
   "cycles": {
     "review": 2,
-    "test": 0
+    "test": 1
   },
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": true,
-  "last_agent": "lead",
-  "last_updated": "2026-05-21T04:00:00Z",
-  "notes": "Security review verdict: pass (0 high, 3 medium, 9 low). All findings non-blocking — v1-deploy-footgun cluster (xlsx UnzipSizeLimit, CORS *, 0.0.0.0 bind) flagged for retro carry-over. Single-pass not fanout (no auth context dominates each bucket). About to spawn qa for Phase 2 step 13."
+  "last_agent": "qa",
+  "last_updated": "2026-05-21T04:20:00Z",
+  "notes": "QA passing at cycle 1. 0 failures, 0 unmapped ACs. AC4 frontend (CaseFilters.test.tsx, 3 tests) and AC9 chart-side (NetworkChart.test.tsx, 3 tests) partials CLOSED. Suite totals: Go 52 pass, frontend 12 pass, integration 6 skipped (no Postgres). AC12 documented as deferred-operational. About to spawn engineer Mode B (docs touch-up — light for feat)."
 }
