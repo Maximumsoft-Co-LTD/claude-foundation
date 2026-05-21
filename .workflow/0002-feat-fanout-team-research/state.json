@@ -2,8 +2,8 @@
   "id": "0002-feat-fanout-team-research",
   "type": "feat",
   "phase": "phase-2-implementation",
-  "step": "docs",
-  "next_step": "ship",
+  "step": "ship",
+  "next_step": "retro",
   "cycles": {
     "review": 2,
     "test": 0
@@ -11,7 +11,9 @@
   "skipped_steps": ["6:security-review (no sensitive paths)", "7:test (skipped — markdown-only feat; integration smoke is review.md cycle-1+2)"],
   "open_pr_on_ship": false,
   "security_triggered": false,
-  "last_agent": "engineer",
-  "last_updated": "2026-05-21T02:25:00Z",
-  "notes": "Docs touch-up: 1 small edit (spec.md:54 off-by-one). Proceeding to ship — commit only, no PR."
+  "commit_sha": "5bfd06728d133a7c5982b2743414bc3c01f4e889",
+  "pr_url": null,
+  "last_agent": "main",
+  "last_updated": "2026-05-21T02:35:00Z",
+  "notes": "Shipped: commit 5bfd067 (21 files, +1554/-4). No PR. INDEX flipped to done. Dispatching retro."
 }
