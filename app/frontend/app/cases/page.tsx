@@ -1,26 +1,43 @@
-'use client';
-
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, type Case, type CaseFilters } from '@/lib/api';
 import { CaseCard } from '@/components/CaseCard';
 import { CaseFiltersForm } from '@/components/CaseFilters';
 import { EmptyState } from '@/components/EmptyState';
-import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { ErrorBanner } from '@/components/ErrorBanner';
 
-export default function CasesPage() {
-  const [cases, setCases] = useState<Case[] | null>(null);
-  const [filters, setFilters] = useState<CaseFilters>({});
-  const [error, setError] = useState<string | null>(null);
+export const dynamic = 'force-dynamic';
 
-  useEffect(() => {
-    setCases(null);
-    api
-      .listCases(filters)
-      .then((data) => setCases(data || []))
-      .catch((e) => setError(e.message));
-  }, [filters]);
+type SearchParams = {
+  title?: string;
+  tag?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+};
+
+function toFilters(sp: SearchParams): CaseFilters {
+  return {
+    title: sp.title || undefined,
+    tag: sp.tag || undefined,
+    status: sp.status || undefined,
+    from: sp.from || undefined,
+    to: sp.to || undefined,
+  };
+}
+
+export default async function CasesPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
+  const filters = toFilters(searchParams || {});
+  let cases: Case[] = [];
+  let error: string | null = null;
+  try {
+    cases = (await api.listCases(filters)) || [];
+  } catch (e: unknown) {
+    error = e instanceof Error ? e.message : 'failed to load cases';
+  }
 
   return (
     <div className="space-y-4">
@@ -34,27 +51,30 @@ export default function CasesPage() {
         </Link>
       </div>
 
-      <CaseFiltersForm value={filters} onChange={setFilters} />
+      <CaseFiltersForm initial={filters} />
 
       {error ? <ErrorBanner variant="error">{error}</ErrorBanner> : null}
 
-      {cases === null ? (
-        <LoadingSkeleton rows={3} />
-      ) : cases.length === 0 ? (
+      {!error && cases.length === 0 ? (
         <EmptyState
           title="no cases yet"
           body="create your first case to start exploring data."
           cta={{ href: '/cases/new', label: 'Create case' }}
         />
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="case-list">
+      ) : null}
+
+      {!error && cases.length > 0 ? (
+        <ul
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          data-testid="case-list"
+        >
           {cases.map((c) => (
             <li key={c.id}>
               <CaseCard c={c} />
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }
