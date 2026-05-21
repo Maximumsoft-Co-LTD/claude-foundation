@@ -2,8 +2,8 @@
   "id": "0003-feat-cib-data-analytics",
   "type": "feat",
   "phase": "phase-2-implementation",
-  "step": "review",
-  "next_step": "security",
+  "step": "security",
+  "next_step": "test",
   "cycles": {
     "review": 2,
     "test": 0
@@ -12,6 +12,6 @@
   "open_pr_on_ship": true,
   "security_triggered": true,
   "last_agent": "lead",
-  "last_updated": "2026-05-21T03:50:00Z",
-  "notes": "Cycle 2 review PASS. 0 blocking, 3 ACs partial (AC4 filter composition, AC9 chart-side, AC12 operational) carrying as FOLLOWUPS. Security review now firing — diff trips multiple sensitive-path buckets: SQL composition (custom WHERE in case_repo), file/path handling (xlsx multipart upload + BYTEA blob), raw HTML render with sanitize (react-markdown for case notes), env secrets (POSTGRES_*, etc), new HTTP API surface, JSON deserialize across handlers. Lead Mode C may opt for fanout given ≥2 buckets trip."
+  "last_updated": "2026-05-21T04:00:00Z",
+  "notes": "Security review verdict: pass (0 high, 3 medium, 9 low). All findings non-blocking — v1-deploy-footgun cluster (xlsx UnzipSizeLimit, CORS *, 0.0.0.0 bind) flagged for retro carry-over. Single-pass not fanout (no auth context dominates each bucket). About to spawn qa for Phase 2 step 13."
 }
