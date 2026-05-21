@@ -1,0 +1,23 @@
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Go
+backend/bin/
+*.test
+*.out
+coverage.txt
+
+# Env
+.env
+.env.local
+
+# Postgres / docker volumes
+data/
+postgres-data/
+
+# OS
+.DS_Store
