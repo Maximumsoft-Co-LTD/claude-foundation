@@ -2,8 +2,8 @@
   "id": "0003-feat-cib-data-analytics",
   "type": "feat",
   "phase": "phase-1-requirements",
-  "step": "spec",
-  "next_step": "plan",
+  "step": "gate",
+  "next_step": "implement",
   "cycles": {
     "review": 0,
     "test": 0
@@ -11,7 +11,7 @@
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": null,
-  "last_agent": "pm",
-  "last_updated": "2026-05-21T00:05:00Z",
-  "notes": "Spec rewritten for case-based scope. 12 ACs. 3 non-blocking OQs (PuppyGraph interpretation, file-blob storage strategy, markdown renderer). Persistence is first-class (Postgres v1). About to re-spawn lead for fresh plan."
+  "last_agent": "lead",
+  "last_updated": "2026-05-21T00:06:00Z",
+  "notes": "Plan v2 written (74 steps, 10 phases, L tier, 9 risks tracked, all 5 self-review scans passed). Defaults picked: PuppyGraph kept as graph-query layer (stub-only v1), BYTEA for file blobs, react-markdown + remark-gfm + rehype-sanitize. Gate approved by user. Runtime check: go 1.24.7, node 22.22.2, npm 10.9.7, docker client 29.3.1 (DAEMON NOT RUNNING), make, psql ALL present. Engineer can write all code; docker-compose + integration-test verifies will be deferred to user's dev env."
 }

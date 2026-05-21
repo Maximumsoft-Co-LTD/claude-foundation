@@ -8,4 +8,4 @@ Registry of every `/dev` run. `orchestrator` appends a row when Phase 1 starts; 
 |------|--------|----------------------|--------|------------|------------|
 | 0001 | feat | _example: todolist_ | done | 2026-05-13 | 2026-05-14 |
 | 0002 | feat | fanout team research dispatch | done | 2026-05-21 | 2026-05-21 |
-| 0003 | feat | CIB data analytics webapp | spec | 2026-05-21 | — |
+| 0003 | feat | CIB data analytics webapp | building | 2026-05-21 | — |
