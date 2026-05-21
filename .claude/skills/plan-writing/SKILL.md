@@ -1,136 +1,152 @@
 ---
 name: plan-writing
-description: Write an implementation plan that maps a spec to executable steps, sized for the work, with an architecture diagram. Use this skill when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), OR when the user asks to "write a plan", "plan this feature", "design the implementation", "break this down into steps", "draft an RFC". Owns the size tiering (XS/S/M/L), the always-required architecture diagram (mermaid by Type), inline AC tagging, anti-placeholder rules, and the pre-draft self-review. Composes with the construction-fundamentals skills (programming/database/hexagonal/architecture/queue) — load the relevant construction skill first to decide *what* to build; this skill decides *how to sequence and document* what you build. Skip for throwaway scripts, conversational "what should we do about X" exchanges that haven't been spec'd yet.
+description: Use when you have a spec or requirements for a multi-step task, before touching code
 ---
 
-# Plan Writing
+# Writing Plans
 
-## Why this exists
+## Overview
 
-Plans fail in predictable ways: they re-state the spec instead of decomposing it, they hide approach-decisions in prose, they let "TBD" and "appropriate error handling" leak through, they describe a feature without showing where it plugs into the system, and they ship without acceptance-criteria traceability — so the first time AC1 gets verified is during review, by which point the cycle budget is already half-spent.
+Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
 
-A plan that scales with the work, carries a diagram, and ties every step to an AC catches those failures at *plan time* — minutes spent here save hours in review/test cycles (DORA: shift-left validation cuts rework ~40%). This skill is the pre-flight for the `/dev` workflow's Phase 1 step 2 (lead agent, plan mode), and the standard whenever a plan is being drafted.
+Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
 
-## The 7 principles
+**Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-### 1. Read spec.md + carried follow-ups before anything else
-Plan that doesn't map back to spec = blind. Open `spec.md`, list the acceptance criteria, check `Carried-over follow-ups`. Every plan step must tie to either an acceptance criterion or a carried follow-up — if it ties to neither, it's scope-creep.
+**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
 
-### 2. Set Size before drafting Steps
-Size determines which sections are required. Choose XS / S / M / L using the signals in `references/size-tiering.md`. Wrong size = either bloat (XS work in M template) or under-coverage (M work treated as S). When borderline, prefer the larger tier — under-covering is more expensive than over-covering.
+**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+- (User preferences for plan location override this default)
 
-| Size | Trigger signals |
-|------|-----------------|
-| **XS** | chore / docs, 1 file, no logic change (e.g., bump dep, fix typo) |
-| **S** | 1 subsystem, ≤ 2 files, simple logic |
-| **M** | multi-file in one subsystem, real logic, no contract / schema change |
-| **L** | cross-subsystem, schema migration, public API contract change, breaking change |
+## Scope Check
 
-### 3. Architecture diagram is required, always
-Pick the cheapest form that conveys the change. Mark new pieces with `★`. Diagram type defaults from `Type` (full templates in `references/diagrams.md`):
+If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
 
-| Type | Default diagram |
-|------|-----------------|
-| `feat` | `flowchart LR` showing where the new piece plugs in |
-| `fix` | `sequenceDiagram` of bug path + fix point, OR before/after flowchart |
-| `refactor` | before/after `flowchart` or `classDiagram` of the structural shift |
-| `chore` / `docs` | one line: `<file> (<change>)` OR `**Impact:** N/A — <reason>` |
-| `spike` | `flowchart` with `?` on unanswered nodes |
+## File Structure
 
-For XS, even one line counts — keep the section, never delete it.
+Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
 
-### 4. Steps use the strict format: action — path:line — verify — [AC#]
-Every step has all four parts. No exceptions.
+- Design units with clear boundaries and well-defined interfaces. Each file should have one clear responsibility.
+- You reason best about code you can hold in context at once, and your edits are more reliable when files are focused. Prefer smaller, focused files over large ones that do too much.
+- Files that change together should live together. Split by responsibility, not by technical layer.
+- In existing codebases, follow established patterns. If the codebase uses large files, don't unilaterally restructure - but if a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
 
-- **action**: imperative, one verb (`add`, `extract`, `wire`, `delete`, `rename`). Not "implement X" — that's a goal, not a step.
-- **path:line**: concrete location. Use `path:new` for new files. Existing code requires LSP-verified line numbers, not guesses.
-- **verify**: a command (`npm test src/foo.test.ts`) or an observable (`/health returns 200`, `column exists in schema`). If you can't say how the step is verified, the step is too big — split it.
-- **[AC#]**: which acceptance criterion this step lands. A step with no AC tag is either scope-creep or a missing AC in the spec.
+This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
 
-### 5. One step → one verify; if not, split
-A step that needs multiple verifications is doing multiple things. Split it. Steps map 1-to-1 to commits in spirit (atomic). The verify command/observable is also what `qa` will hand to its test suite — write it as if QA will literally run it.
+## Bite-Sized Task Granularity
 
-### 6. Alternatives considered (M/L feat/refactor only, when non-obvious)
-1–2 bullets: `<approach X> — rejected: <reason>`. The point isn't documentation — it's the *forcing function* that makes the author think before committing. If the approach is obviously the only reasonable one, skip the section.
+**Each step is one action (2-5 minutes):**
+- "Write the failing test" - step
+- "Run it to make sure it fails" - step
+- "Implement the minimal code to make the test pass" - step
+- "Run the tests and make sure they pass" - step
+- "Commit" - step
 
-### 7. Self-review before status = draft
-Before handing off to the orchestrator/engineer, walk `references/self-review.md`:
+## Plan Document Header
 
-- Anti-placeholder scan: no "TBD", no "appropriate error handling", no "see spec", no "etc.", no `path/to/file`.
-- AC coverage: every `spec.md > Acceptance criteria` checkbox appears in at least one `[AC#]` tag.
-- Diagram-vs-files alignment: every new component in the diagram has a row in `Files touched`; every new file has a node in the diagram.
-- Verify-per-step completeness: every step has a `verify:` clause that names a command or an observable, not "manually check".
+**Every plan MUST start with this header:**
 
-If any check fails, fix the plan — don't mark `status: draft`.
+```markdown
+# [Feature Name] Implementation Plan
 
-## Pre-flight checklist (run top-to-bottom)
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Before writing any section of plan.md:
+**Goal:** [One sentence describing what this builds]
 
-- [ ] Read `spec.md` and `Carried-over follow-ups`.
-- [ ] Decide `Type` matches what spec says.
-- [ ] Pick `Size` from the signal table (or `references/size-tiering.md` for edge cases).
-- [ ] Load relevant construction skill(s):
-  - Backend code with domain logic → [[hexagonal-backend]]
-  - Schema, query, migration, index → [[database-fundamentals]]
-  - System-level / cross-service decisions → [[architecture-fundamentals]]
-  - Queue / broker / async worker → [[queue-fundamentals]]
-  - Any non-trivial code → [[programming-fundamentals]]
-  - Bug with unknown cause → [[debug-fundamentals]] before *this* skill
-- [ ] Decide diagram type from `Type` (table in principle 3).
-- [ ] Use LSP for existing-code references (definitions, references, diagnostics) before citing `path:line`.
+**Architecture:** [2-3 sentences about approach]
 
-Then draft in order: Approach → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope.
+**Tech Stack:** [Key technologies/libraries]
 
-## Section gating by Size
+---
+```
 
-| Section | XS | S | M | L |
-|---------|----|----|----|----|
-| Approach (2–3 sent) | ✓ | ✓ | ✓ | ✓ |
-| Step order line | skip | optional | ✓ | ✓ |
-| Architecture diagram | one-line / N/A | mini mermaid | full | full + before/after |
-| Steps (with verify + AC tag) | ✓ (verify optional) | ✓ | ✓ | ✓ |
-| Files touched | ✓ | ✓ | ✓ | ✓ |
-| Alternatives considered | skip | skip | when non-obvious | ✓ |
-| Risks | skip | optional | ✓ | ✓ |
-| Observability | N/A | required if feat/fix | required if feat/fix | ✓ |
-| Dependencies | skip unless present | skip unless present | skip unless present | ✓ |
-| Rollback | "revert commit" line | "revert commit" or specific | ✓ if destructive | ✓ |
-| Out of scope | ✓ | ✓ | ✓ | ✓ |
+## Task Structure
 
-Sections marked `skip` should be deleted, not left empty. Empty sections are noise that erodes the size-gating discipline.
+````markdown
+### Task N: [Component Name]
 
-## Relation to other skills
+**Files:**
+- Create: `exact/path/to/file.py`
+- Modify: `exact/path/to/existing.py:123-145`
+- Test: `tests/exact/path/to/test.py`
 
-This skill **composes**, it does not replace:
+- [ ] **Step 1: Write the failing test**
 
-- [[programming-fundamentals]] / [[database-fundamentals]] / [[hexagonal-backend]] / [[architecture-fundamentals]] / [[queue-fundamentals]] — these decide *what to build*. Load the relevant one **first**; their output becomes the substance of `Approach` and `Steps`.
-- [[debug-fundamentals]] — for `fix` plans, run debug-fundamentals first to find the cause, then this skill to encode the fix + regression test.
-- [[git-workflow]] — pairs at ship time (Phase 2 step 9). A plan's atomic Steps become atomic commits; the Type slot mirrors the commit `<type>`.
-- `lead` agent (plan mode) is the *caller* — it invokes this skill before drafting `plan.md`.
+```python
+def test_specific_behavior():
+    result = function(input)
+    assert result == expected
+```
 
-## When to skip
+- [ ] **Step 2: Run test to verify it fails**
 
-Skip this skill only when:
+Run: `pytest tests/path/test.py::test_name -v`
+Expected: FAIL with "function not defined"
 
-- The user is having a conversational "what should we do about X?" exchange that hasn't been spec'd yet — that's brainstorming, not planning.
-- The work is a throwaway one-off script or a single-line config edit with no logic.
-- You are not actually about to write a plan file — e.g., reviewing an existing plan, in which case use the review templates instead.
+- [ ] **Step 3: Write minimal implementation**
 
-If any non-trivial code is about to land in the repo, do not skip.
+```python
+def function(input):
+    return expected
+```
 
-## Anti-patterns (do not do these)
+- [ ] **Step 4: Run test to verify it passes**
 
-- **Restating the spec in `Approach`** — link to spec instead. Plan drifts; spec is source of truth.
-- **Pseudocode in Steps** — if the code is ready to write, write it during implementation, not in the plan. Pseudocode rots and never runs.
-- **Hour/day estimates** — planning fallacy makes these wrong by 2–4×. Use `Size` (XS/S/M/L) only.
-- **"Considerations" / "Notes" bucket sections** — every insight belongs in a section that drives action (Steps, Risks, Alternatives, Out of scope). Unbounded buckets become dump grounds.
-- **Diagram deletion for small work** — even XS keeps the section, even if the content is a one-liner. Habit beats exception.
-- **Verify = "manually check"** — that's not a verify. Name a command or a concrete observable, or split the step.
-- **AC tag = "all"** — every step tags specific AC numbers; "all" hides which step actually lands which behaviour.
+Run: `pytest tests/path/test.py::test_name -v`
+Expected: PASS
 
-## References
+- [ ] **Step 5: Commit**
 
-- `references/size-tiering.md` — full XS/S/M/L picker, edge cases, signals from file count + type
-- `references/diagrams.md` — mermaid templates per Type with worked examples
-- `references/self-review.md` — pre-draft checklist + anti-placeholder regex patterns
+```bash
+git add tests/path/test.py src/path/file.py
+git commit -m "feat: add specific feature"
+```
+````
+
+## No Placeholders
+
+Every step must contain the actual content an engineer needs. These are **plan failures** — never write them:
+- "TBD", "TODO", "implement later", "fill in details"
+- "Add appropriate error handling" / "add validation" / "handle edge cases"
+- "Write tests for the above" (without actual test code)
+- "Similar to Task N" (repeat the code — the engineer may be reading tasks out of order)
+- Steps that describe what to do without showing how (code blocks required for code steps)
+- References to types, functions, or methods not defined in any task
+
+## Remember
+- Exact file paths always
+- Complete code in every step — if a step changes code, show the code
+- Exact commands with expected output
+- DRY, YAGNI, TDD, frequent commits
+
+## Self-Review
+
+After writing the complete plan, look at the spec with fresh eyes and check the plan against it. This is a checklist you run yourself — not a subagent dispatch.
+
+**1. Spec coverage:** Skim each section/requirement in the spec. Can you point to a task that implements it? List any gaps.
+
+**2. Placeholder scan:** Search your plan for red flags — any of the patterns from the "No Placeholders" section above. Fix them.
+
+**3. Type consistency:** Do the types, method signatures, and property names you used in later tasks match what you defined in earlier tasks? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
+
+If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
+
+## Execution Handoff
+
+After saving the plan, offer execution choice:
+
+**"Plan complete and saved to `docs/superpowers/plans/<filename>.md`. Two execution options:**
+
+**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+
+**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
+
+**Which approach?"**
+
+**If Subagent-Driven chosen:**
+- **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development
+- Fresh subagent per task + two-stage review
+
+**If Inline Execution chosen:**
+- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
+- Batch execution with checkpoints for review
