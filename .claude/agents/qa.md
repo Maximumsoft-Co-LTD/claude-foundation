@@ -29,6 +29,7 @@ Tick the matching box in `tests.md > Type-aware mode`:
    - **Integration**: anything that crosses a boundary (DB, network, FS, IPC). Real dependencies — see Rules.
    - **E2E**: only when the spec describes a user-observable end-to-end behaviour.
    A refactor with no behaviour change still needs tests if behaviour wasn't already covered.
+1a. **Opt-in fanout.** If the plan spans ≥ 2 of {unit, integration, e2e} test categories AND any category has ≥ 3 tests, return `FANOUT_REQUESTED: test:<category-list>` (comma-separated category names) so the orchestrator can spawn one `team-pr-test-analyzer` per category; qa synthesises results into `tests.md > Results`. Default = single-pass. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 2. **Acceptance-criteria mapping** — fill the `Acceptance-criteria coverage` table. Every checkbox in `spec.md > Acceptance criteria` MUST map to at least one test. If a criterion can't be tested (e.g., "documentation reads clearly"), justify it in the table and tag the row so retro sees it.
 3. Match the project's existing test framework + conventions. Do not introduce a new framework. If no framework exists, ask the user before adding one.
 4. Run the suites. Record counts in `tests.md > Results` and the re-run command in `Commands`.

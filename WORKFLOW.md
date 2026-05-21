@@ -85,6 +85,8 @@ The same numbered phases run for every type, but `orchestrator` **skips or speci
 
 **Security trigger** — phase 6 runs when the diff touches any of: auth/session/token code, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell calls, deserialisation of untrusted input, secret-bearing files (env, config), or new external network endpoints. `orchestrator` decides; `lead` executes in security mode using the inline checklist (no separate skill required).
 
+**Fanout availability** — parallel team-agent fanout is available at phase steps 4 (implement), 5 (review — mandatory), 6 (security — opt-in per bucket), and 7 (test — opt-in per category); plan-mode fanout is available at step 2 (opt-in per integration point). Pattern + opt-in heuristics live in `.claude/skills/fanout-team-agents/SKILL.md`; the embedded team agents (`team-code-reviewer`, `team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) are documented in `.claude/agents/TEAM.md`. **Operational note**: Claude Code's agent registry is session-scoped — `team-*.md` files created mid-session (e.g., by `/dev` itself) are not discoverable as `subagent_type=team-<role>` until the session restarts. Until then, the orchestrator uses the inline-fallback path (`subagent_type="general-purpose"` with the worker's role contract read inline). Both paths are documented in the skill and in `.claude/orchestrator.md > Fanout dispatch`.
+
 Phase numbering below matches the matrix above (1–10) so the gate output, prose, and agent docs all speak the same language. The orchestrator runs a few extra setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1; those are internal to the orchestrator, not numbered phases.
 
 ## Phase 1 — Requirements (interactive)
@@ -143,6 +145,7 @@ Five sub-agents drive the file work. The **orchestrator is not a sub-agent** —
 | `engineer` | sub-agent | 4 (implement), 8 (docs), 9 (ship) | `plan.md`, `spec.md`, diff | source, inline comments, commit, PR | `Read`, `Edit`, `Write`, `Bash`, `LSP`, `TaskCreate` |
 | `qa` | sub-agent | 7 | `plan.md`, `spec.md`, source, diff | tests + `tests.md` | `Read`, `Write`, `Bash`, `LSP` |
 | `retro` | sub-agent | 10 | all artifacts + diff + existing memory/skills + FOLLOWUPS | `retro.md`, INDEX status, FOLLOWUPS append | `Read`, `Write`, `Edit`, `Bash` |
+| `team-*` agents | sub-agents (workers) | dispatched from fanout phases (steps 2, 4, 5, 6, 7) | the diff slice / bucket / path range the orchestrator scopes them to | findings (returned to the calling /dev sub-agent for synthesis; no artifact write) | varies per fork — see `.claude/agents/TEAM.md` |
 
 Sub-agent constraints (enforced by Claude Code, not optional):
 - Sub-agents cannot spawn other sub-agents (`Agent` is filtered out at runtime).

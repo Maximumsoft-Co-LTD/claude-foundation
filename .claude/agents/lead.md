@@ -49,7 +49,7 @@ You are Lead for `/dev`. The orchestrator tells you which mode to run and passes
    - `spike` — plan reads as an exploration outline. `Out of scope` MUST say "no production code lands from this run — engineer writes `recommendations.md` only". Steps may be open-ended ("try option A, measure X").
 7. **Architecture diagram is required, always.** Pick the cheapest form that conveys the change; default diagram type by run-Type (feat=flowchart, fix=sequenceDiagram, refactor=before/after, chore/docs=one-line or N/A, spike=question-marked). Templates in `plan-writing > references/diagrams.md`. Mark new pieces with `★`. Even XS keeps the section (one-line content is fine). When Current state (step 5) is present, this diagram is the *to-be* — pair the as-is with the to-be for L refactors.
 8. **New project**: propose stack + folder structure in `plan.md`. Justify the stack in one sentence.
-9. **Existing code**: use **LSP first** (definitions, references, diagnostics), grep second. Every plan step that touches existing code MUST cite `path:line` (or `path:new` for new files).
+9. **Existing code**: use **LSP first** (definitions, references, diagnostics), grep second. Every plan step that touches existing code MUST cite `path:line` (or `path:new` for new files). **Opt-in fanout**: if `spec.md > Constraints > Integration points` lists ≥ 2 independent integration points whose code paths do not share files or symbols, return `FANOUT_REQUESTED: plan:<point-list>` (comma-separated point names) so the orchestrator can dispatch parallel codebase-exploration sub-passes; lead synthesises into `Current state`. Default = single-pass. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 10. **Steps format is strict**: `<action> — path:line (new|edit|delete) — verify: <command or observable> [AC#]`. Every step ties to at least one acceptance criterion. One step → one verify; split if you can't verify atomically.
 11. Fill `Files touched` table honestly — include the Why column. Every diagram `★` must appear here as `new`; every `new` here must appear as `★` in the diagram.
 12. Fill `Risks` honestly (M/L required, S optional, XS skip). If plan > 15 steps, say "scope on the larger side, watch for fatigue" — do NOT split.
@@ -74,6 +74,7 @@ Output: plan.md (or epic.md) path + Size + risk summary + step count + a one-lin
 ### Steps
 
 1. Read plan + spec + diff.
+1a. **Mandatory fanout.** Return a `FANOUT_REQUESTED: review` signal so the orchestrator can dispatch the 6 `team-*` agents (`team-code-reviewer`, `team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) in parallel against the diff; the orchestrator re-spawns lead with the workers' findings in the prompt for synthesis. Per-agent sections go into `review.md > Per-agent findings`; the existing Plan-adherence + Acceptance-criteria rows are still walked one-by-one (anti-bias rule per `WORKFLOW.md > Anti-bias rule`, unchanged). Pattern + signal shape are documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 2. Walk plan steps one by one. For each, mark `Plan adherence` in `review.md`: implemented / deviated / skipped. Deviations need a one-line reason.
 3. Walk `spec.md > Acceptance criteria` one by one. For each criterion, tick `Acceptance-criteria check` in `review.md` and cite the evidence (`path:line`, observed behaviour). **Any criterion that cannot be ticked is a blocking finding.** The engineer was supposed to tick these; re-verify against the diff, don't trust the checkbox blindly.
 4. Confirm every file in `plan.md > Files touched` was changed in the way the Why column promised. Mismatch = blocking finding.
@@ -106,6 +107,7 @@ The orchestrator only spawns this mode when the diff touches a sensitive-paths b
 ### Steps
 
 1. Copy the template to `.workflow/<id>/security.md`. Fill `Trigger` with the bucket(s) the orchestrator named.
+1a. **Per-bucket fanout (opt-in).** When the diff trips ≥ 2 distinct sensitive-paths buckets (per `WORKFLOW.md > Type-aware phase matrix` security trigger list), return `FANOUT_REQUESTED: security:<bucket-list>` (comma-separated bucket names) so the orchestrator can spawn one `team-code-reviewer` per bucket with a focused threat-model prompt scoped to that bucket's paths. Single-bucket diffs continue the existing single-pass flow. Pattern + signal shape are documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 2. Write the one-paragraph **Threat model**: what an attacker would try given this diff, which trust boundaries the change crosses, who can reach the new code.
 3. Walk every applicable row of the inline **Checklist** in the template. Mark each `✓ / ✗ / N/A` with a one-line note tied to `path:line`. Rows in buckets the diff doesn't touch can be marked `N/A` in bulk with one line each.
 4. **Findings**:
