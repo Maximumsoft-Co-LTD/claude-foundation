@@ -6,69 +6,87 @@
 **Status**: draft
 **Ship as**: one-drop
 **Parent**: none
-**Open PR on ship**: yes   <!-- default-for-feat; user did not explicitly answer — see Open questions #7 -->
+**Open PR on ship**: yes
 
 ## Goal
-Ship a webapp that lets a user upload a small xlsx file of CIB raw data and renders a network chart (nodes + edges) of the relationships in that file.
+Ship a case-based investigative data-exploration webapp for **CIB (กองบังคับการตำรวจสอบสวนกลาง — Central Investigation Bureau, Royal Thai Police)** analysts. An analyst creates a case, uploads one or more xlsx files (bank statement / crypto statement / phone-call records / travel records) into it, maps each file's columns to `source` / `target` / `weight`, and explores the resulting network chart. A data-explorer page lists all cases with search + tag + status filters.
 
 ## Users
-Analysts working in the **Central Investigation Bureau (กองบังคับการตำรวจสอบสวนกลาง)** context of the Royal Thai Police — the user identified the domain as "กลองตำรวจสอบสวนกลาง" (CIB / Thai police), not Corporate/Investment Banking. MVP is single-user / single-session; no auth or multi-user collaboration in this run. Exact analyst role and operating environment to be confirmed at the gate (see Open questions #4).
+Analysts working in the **Central Investigation Bureau (กองบังคับการตำรวจสอบสวนกลาง)** context of the Royal Thai Police. v1 is single-user / single-session trust model — no auth, no RBAC, no multi-user collaboration. `uploaded_by` is recorded as a constant `"analyst"` since there is no real identity system yet.
 
 ## Scope
 **In**:
 - A webapp lives **in this repo under `/app/`** (workflow scaffolding stays at the repo root).
-- Upload form that accepts a small `.xlsx` file (single file, in-memory-feasible scale).
-- Parse the uploaded xlsx into "raw data" rows.
-- Derive a graph (nodes + edges) from the parsed rows and render it as an interactive **network chart** in the browser.
-- A Go backend service handles the parse + graph-derivation work; Next.js (with Tailwind CSS) is the frontend.
-- Postgres and ClickHouse are provisioned as the storage layer; PuppyGraph (interpreted from "puppygharp" — see Open questions #1) is the graph-query layer that exposes the underlying SQL stores as a queryable property graph backing the network chart.
+- **Case CRUD**: create, read, update (title / notes / tags / status), archive. Cases persist in Postgres.
+- **Data-explorer page** (`/cases`): lists all cases. Search by title (substring); filter by tag, status, created-date range. This is the primary organizing surface — by-case is the main axis.
+- **Case-detail page** (`/cases/:id`): shows title, markdown notes, tags, status, file list, and the network chart.
+- **Upload flow within a case** (`/cases/:id/upload`): user picks an xlsx; app parses headers; user maps `source` / `target` / `weight` columns via a Column-Mapping UI; app parses rows into a graph; file metadata + parsed graph + per-file mapping persist in Postgres; user returns to the case-detail page.
+- **Network chart on the case-detail page**: renders the combined graph from all files included in the case, using `react-force-graph-2d`. Per-file include/exclude toggle controls which files contribute.
+- **Node detail panel**: clicking a node opens a side panel showing the node's id, the edges it participates in, and the source xlsx rows that produced those edges.
+- **Edge filtering**: a weight slider hides edges below the slider's threshold; chart updates live.
+- **Graph export**: "Export PNG" downloads the current chart canvas as PNG; "Export JSON" downloads the underlying graph (nodes + edges + attributes) as JSON.
+- **Markdown notes per case**: free-text field, rendered on the case-detail page.
+- **Case tags + status + search/filter**: tags are free-text strings (e.g., `fraud`, `drug`, `cyber`); status is one of `open` / `closed` / `archived`; the data-explorer page composes search + tag-filter + status-filter + date-range.
+- **Go backend** owns xlsx parsing + graph derivation + persistence, in a hexagonal layout (domain / application / infrastructure).
+- **Postgres** stores cases, files (metadata + original xlsx blob OR a path to it — lead decides at plan time), graphs (JSON), per-file column mappings.
+- **ClickHouse + PuppyGraph** provisioned in `docker-compose.yml` but **NOT WRITTEN TO** in v1 (reserved for v2 advanced graph-query work; stub adapter only).
+- **Tailwind-styled clean UI** is an explicit goal — loading states, error toasts, empty states ("no cases yet").
+- **Multi-schema support**: the Column-Mapping UI must work for at least these four xlsx shapes used as fixtures: **bank statement**, **crypto statement**, **ประวัติการโทร (phone-call records)**, **ประวัติการเดินทาง (travel records)** — each is naturally a "row = one edge" shape (sender→receiver, caller→callee, traveler→destination/companion).
 
 **Out (non-goals)**:
-- No authentication, login, or user accounts in this MVP.
-- No multi-user collaboration, no shared sessions, no roles/permissions.
-- No real CIB / police case data, no personal data, no identifiable records shipped in the repo or any sample dataset — synthetic / fake data only. (See Open questions #5.)
-- No real-time / streaming ingest — single-file, on-demand upload only.
-- No large-file or multi-file ingest in this run ("small xlsx" per the user).
-- No analytics features beyond the network chart (no dashboards, no time-series, no exports) in this MVP.
-- No production deploy in this run — local dev / containerized runtime only.
+- No authentication, login, RBAC, or multi-user collaboration in v1. Single-user trust model.
+- No real CIB / police / personal / identifiable data — synthetic fixtures only.
+- No real-time / streaming ingest.
+- No large-file ingest (>50 MiB); xlsx capped at **≤ 5 MiB**.
+- No production deploy in this run; local `docker-compose` only.
+- No advanced graph queries (Cypher / Gremlin) via PuppyGraph in v1 — the adapter is a stub and the engine sits dormant.
+- No automatic schema detection or column-name heuristics — the user always picks the mapping via the UI.
+- No real-time collaboration on a case (no live cursors / multi-editor).
 
 ## Acceptance criteria
 Observable behaviours. `engineer` ticks these as they land; `lead` re-checks during review; `qa` maps each to a specific test in `tests.md`.
 
-- [ ] A user can navigate to the webapp, select a small `.xlsx` file via an upload control, and submit it without the page erroring.
-- [ ] After a successful upload, the parsed rows from the xlsx are turned into graph nodes and edges and rendered as a visible network chart in the browser.
-- [ ] The Go backend exposes an HTTP endpoint that accepts the uploaded xlsx, parses it, and returns the derived graph (or persists it so the frontend can render it via the graph-query layer) — verified by hitting the endpoint directly with a synthetic xlsx fixture.
-- [ ] Uploading an empty xlsx, a non-xlsx file, or a malformed xlsx produces a user-visible error message rather than a crash or a silent failure.
-
-> Row-to-graph mapping rules (which columns become nodes vs edges) are not yet specified — see Open questions #3. Acceptance criteria above will need to be tightened with a concrete mapping convention before the plan can land.
+- [ ] User can create a new case (title required, notes optional, tags optional, status defaults to `open`); the case appears in the data-explorer list.
+- [ ] User can edit a case's title, notes, tags, and status; changes persist across page refresh and process restart.
+- [ ] User can archive a case (status → `archived`); archived cases are hidden from the default data-explorer view but visible via the status filter.
+- [ ] On the data-explorer page (`/cases`), the user can search cases by title (substring match) and filter by tag, status, and created-date range. Filters compose (all applied together).
+- [ ] On the case-detail page, the user can upload one or more xlsx files. For each file, the app shows the detected column headers and the user maps `source` / `target` / `weight` columns before the parse runs.
+- [ ] After mapping, the file's rows are parsed into a graph (each row = one edge; nodes = unique union of `source` + `target` column values), persisted to Postgres, and the case's network chart re-renders to include the new file's edges.
+- [ ] The case-detail chart exposes a per-file toggle UI; the user can include/exclude each file and the chart updates accordingly. When ≥ 2 files are included, nodes that appear in multiple files merge by id.
+- [ ] Clicking a node in the chart opens a side panel showing the node's id, the edges it participates in, and the source xlsx rows that produced those edges.
+- [ ] A weight slider on the chart hides edges with weight below the slider's threshold; the chart updates live without a page reload.
+- [ ] An "Export PNG" button downloads the current chart canvas as a PNG file; an "Export JSON" button downloads the underlying graph (nodes + edges + attributes) as a JSON file.
+- [ ] Uploading an empty xlsx, a non-xlsx file, a malformed xlsx, or completing a column mapping that points at non-existent columns produces a user-visible error message and rolls back the partial parse (no half-written file row in Postgres).
+- [ ] The 5-runtime docker-compose stack (Next.js, Go, Postgres, ClickHouse, PuppyGraph) boots cleanly via `make up`; the smoke script (`bash app/scripts/smoke.sh`) exercises case-create → upload → column-mapping → chart-render end-to-end against the four fixture schemas (bank / crypto / phone / travel) and exits 0.
 
 ## Constraints
 **Tech stack (new app, lives under `/app/` in this repo)**:
-- **Frontend**: Next.js + Tailwind CSS.
-- **Backend**: Go (Golang) — separate service.
-- **Storage**: PostgreSQL (relational) + ClickHouse (columnar / analytics).
-- **Graph layer**: PuppyGraph — interpreted from the user's verbatim "puppygharp"; graph-query layer over Postgres + ClickHouse, queryable via openCypher / Gremlin, backs the network chart. **This interpretation is unconfirmed — see Open questions #1.**
+- **Frontend**: Next.js 14+ (App Router) + Tailwind CSS. Multi-page (data-explorer + case-detail + upload + column-mapping). `react-force-graph-2d` for the network chart.
+- **Backend**: Go 1.22+, hexagonal layout (`domain/` / `application/` / `infrastructure/`).
+- **Storage v1**: PostgreSQL (cases, files, graphs, per-file mappings, notes, tags, status).
+- **Storage v2 (provisioned, dormant in v1)**: ClickHouse + PuppyGraph. Both come up in `docker-compose.yml` but the v1 code path neither reads from nor writes to them. Their adapters are stubs.
 
 **Location constraint**:
 - The webapp source MUST live under `/app/` in this repo. The `.workflow/`, `.claude/`, and `WORKFLOW.md` scaffolding at the repo root is unrelated workflow tooling and is not touched by this run.
 
-**Operational constraint**:
-- The stack is heavy for a single-file xlsx uploader (5+ runtimes: Next.js, Go, Postgres, ClickHouse, PuppyGraph). The plan step (`lead`) needs to decide whether all five are provisioned in this `/dev` run or whether some are staged later — flagged in Open questions #6 for the gate.
+**UX constraint**:
+- Clean, easy-to-use Tailwind UI is an explicit requirement (user verbatim: "focus uxui ให้ใช้ง่ายด้วย"). Loading states, error toasts, and empty states ("no cases yet", "no files in this case yet", "no edges above current weight threshold") are part of the surface area, not a stretch goal.
 
 **Data constraint**:
-- No real CIB / police / personal data lands in the repo. Any sample dataset for tests or local dev MUST be synthetic.
+- No real CIB / police / personal data lands in the repo. All fixtures (bank / crypto / phone / travel) are synthetic.
+
+**Operational constraint**:
+- 5-runtime docker-compose footprint is provisioned, but only Next.js + Go + Postgres are exercised by v1 acceptance criteria. ClickHouse + PuppyGraph boot but are not asserted on.
+
+**Identity constraint (v1 default)**:
+- No auth. `uploaded_by` is recorded as the constant string `"analyst"`. When auth is added (out of scope here), this field upgrades to a real user id without schema rewrite.
 
 ## Carried-over follow-ups
-None. The 17 open items in `.workflow/FOLLOWUPS.md` (F0001–F0017) are all about the `/dev` workflow itself (fanout regex single-source, team-agent roster dedup, install-time UX, etc.) and none are in scope for a CIB webapp build.
+None. The 17 open items in `.workflow/FOLLOWUPS.md` (F0001–F0017) are all about the `/dev` workflow itself and none are in scope for a CIB webapp build.
 
 ## Open questions
 Things to confirm before planning. Empty when status = `approved`.
 
-1. **"puppygharp" interpretation.** Parsed as **PuppyGraph** (graph-query layer over Postgres + ClickHouse, openCypher / Gremlin). If the user meant something else (Puppeteer? a typo for a different tool?), the stack and the graph layer change — confirm at the gate.
-2. **User / persistence model.** MVP is "import small xlsx → render network chart". Is the import **session-scoped** (in-memory, cleared on refresh) or **persisted** to Postgres / ClickHouse across sessions? The chosen stack includes both DBs, which suggests eventual persistence, but for the MVP it may be deferred. Confirm at the gate.
-3. **Network-chart semantics — row-to-graph mapping.** "Network chart for raw data" — which xlsx columns become nodes, which become edges, are edges weighted, do nodes have attributes? The plan needs an example xlsx schema or a "first column = node A, second column = node B" convention before this can be implemented. Tightening required.
-4. **User role / auth.** Are the users authenticated CIB analysts, or is the MVP an unauthenticated demo? The chosen MVP scope was the most minimal option, so the spec defaults to **unauthenticated** and lists auth as a non-goal — but confirm at the gate.
-5. **No real CIB / police data.** Confirm at the gate that we do not ship any real police data, real personal data, or identifiable case data — the demo dataset (if any) must be synthetic.
-6. **Stack is heavy for MVP.** Next.js + Go + Postgres + ClickHouse + PuppyGraph is 5+ runtimes for a single-page xlsx-uploader. The plan (lead) should decide whether to provision all 5 in this `/dev` run or stage the rollout (e.g., MVP with Next.js + Go + in-memory graph first, add Postgres / ClickHouse / PuppyGraph as a follow-up). Confirm at the gate.
-7. **Open PR on ship.** Defaulted to `yes` per the feat default rule because the user did not answer this slot. Confirm at the gate.
-8. **Tighten acceptance criteria.** Current ACs depend on the row-to-graph mapping (#3) and the persistence model (#2). Once those are pinned, ACs should be revised to assert concrete observable behaviours (e.g., "a 10-row xlsx with columns `source, target, weight` renders 10 edges and N unique nodes").
+1. **"puppygharp" interpretation.** Parsed as **PuppyGraph** (graph-query layer over Postgres + ClickHouse, openCypher / Gremlin). Non-blocking for v1 because the v1 code path neither reads from nor writes to PuppyGraph — the adapter is a stub. If the user meant a different tool, only the v2 design changes, not the v1 deliverable.
+2. **File-blob storage strategy.** Should the original xlsx file be stored as a Postgres `BYTEA` column, on the local filesystem (mounted into the Go container), or in a dedicated `/data` volume? Lead picks at plan time; engineer confirms at implement. Default lean: filesystem under `/data` with the row holding a path, since xlsx ≤ 5 MiB and re-rendering doesn't need the blob in-DB.
+3. **Markdown renderer for case notes.** `react-markdown` is the default if lead doesn't say otherwise. Trivial; lead can pick.
