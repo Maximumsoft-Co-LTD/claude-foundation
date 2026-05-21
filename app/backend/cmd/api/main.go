@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	pgxgoose "github.com/pressly/goose/v3"
 
 	"github.com/cib/app/backend/internal/adapters/driven/postgres"
-	"github.com/cib/app/backend/internal/adapters/driven/puppygraph"
 	"github.com/cib/app/backend/internal/adapters/driven/xlsx"
 	httpapi "github.com/cib/app/backend/internal/adapters/driving/http"
 	"github.com/cib/app/backend/internal/adapters/driving/http/handlers"
@@ -54,15 +54,14 @@ func main() {
 	defer pool.Close()
 
 	if err := runMigrations(dsn); err != nil {
-		logger.Warn("migrations.run_failed", slog.String("err", err.Error()))
+		logger.Error("migrations.run_failed", slog.String("err", err.Error()))
+		os.Exit(1)
 	}
 
 	caseRepo := postgres.NewCaseRepo(pool)
 	fileRepo := postgres.NewFileRepo(pool)
 	graphRepo := postgres.NewGraphRepo(pool)
 	parser := xlsx.NewExcelizeParser()
-	store := puppygraph.NewStubStore(logger)
-	_ = store
 
 	createUC := usecase.NewCreateCase(caseRepo)
 	updateUC := usecase.NewUpdateCase(caseRepo)

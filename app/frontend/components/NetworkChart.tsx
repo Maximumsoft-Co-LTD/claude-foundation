@@ -1,11 +1,26 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import type { ComponentType, ForwardedRef } from 'react';
 import { useMemo, useRef } from 'react';
 import type { Graph } from '@/lib/api';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ForceGraph2D: any = dynamic(() => import('react-force-graph-2d'), { ssr: false });
+type ForceLink = { source: string; target: string; weight: number };
+type ForceNode = { id: string };
+type ForceGraphData = { nodes: ForceNode[]; links: ForceLink[] };
+type ForceGraphProps = {
+  ref?: ForwardedRef<unknown>;
+  graphData: ForceGraphData;
+  nodeLabel?: string;
+  linkDirectionalArrowLength?: number;
+  linkWidth?: (l: ForceLink) => number;
+  onNodeClick?: (n: ForceNode) => void;
+  height?: number;
+};
+
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
+  ssr: false,
+}) as unknown as ComponentType<ForceGraphProps>;
 
 type Props = {
   graph: Graph;
@@ -14,23 +29,22 @@ type Props = {
 };
 
 export function NetworkChart({ graph, minWeight, onNodeClick }: Props) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fgRef = useRef<any>(null);
+  const fgRef = useRef<unknown>(null);
 
-  const data = useMemo(() => {
-    const edges = (graph.Edges || []).filter((e) => (e.Weight ?? 1) >= minWeight);
+  const data = useMemo<ForceGraphData>(() => {
+    const edges = (graph.edges || []).filter((e) => (e.weight ?? 1) >= minWeight);
     const used = new Set<string>();
     edges.forEach((e) => {
-      used.add(String(e.Source));
-      used.add(String(e.Target));
+      used.add(String(e.source));
+      used.add(String(e.target));
     });
-    const nodes = (graph.Nodes || [])
-      .filter((n) => used.has(String(n.ID)))
-      .map((n) => ({ id: String(n.ID) }));
+    const nodes = (graph.nodes || [])
+      .filter((n) => used.has(String(n.id)))
+      .map((n) => ({ id: String(n.id) }));
     const links = edges.map((e) => ({
-      source: String(e.Source),
-      target: String(e.Target),
-      weight: e.Weight,
+      source: String(e.source),
+      target: String(e.target),
+      weight: e.weight,
     }));
     return { nodes, links };
   }, [graph, minWeight]);
@@ -48,10 +62,8 @@ export function NetworkChart({ graph, minWeight, onNodeClick }: Props) {
         graphData={data}
         nodeLabel="id"
         linkDirectionalArrowLength={4}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        linkWidth={(l: any) => Math.max(1, Math.log1p(l.weight ?? 1))}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onNodeClick={(n: any) => onNodeClick?.(String(n.id))}
+        linkWidth={(l) => Math.max(1, Math.log1p(l.weight ?? 1))}
+        onNodeClick={(n) => onNodeClick?.(String(n.id))}
         height={500}
       />
     </div>
