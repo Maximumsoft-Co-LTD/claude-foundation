@@ -6,12 +6,12 @@
 **Status**: draft | approved | done
 
 ## Approach
-2–3 sentences: strategy + the main tradeoff considered.
+2–3 sentences: the strategy + *why this over the obvious alternative*. If there is no obvious alternative, say so in one line.
 
 **Step order**: foundation-first | riskiest-first | outside-in | inside-out — because <reason>   <!-- skip for XS -->
 
 Type-specific:
-- **fix** → step 1 of `Steps` MUST be "write failing regression test for <bug>", encoded against `spec.md > Reproduction`.
+- **fix** → step 1 of `Steps` MUST be "write failing regression test for <bug>", encoded against `spec.md > Reproduction`. State the *root cause* in `Approach` — if the fix is a guard or a catch, name why the bad input arrives.
 - **refactor** → 1-line *behaviour-equivalence statement* — what stays identical and how it gets verified (existing tests / new char-test / golden file).
 - **spike** → name the question being answered and the evidence that will count as an answer.
 
@@ -30,6 +30,10 @@ flowchart LR
 
 ## Steps
 Format: `<action> — path:line (new|edit|delete) — verify: <command or observable> [AC#]`
+
+- **verify** must be a runnable command or a concrete observable. `manually check`, `visually inspect`, `looks correct` are NOT verifies — split the step until each piece is verifiable atomically. See `plan-writing` skill > self-review (scan 4).
+- When the change mimics an existing pattern, cite the precedent inline (e.g., `mirror src/handlers/orders.ts:42-78`) — it gives the engineer a working reference.
+- For L plans with >12 steps, group under `### Phase N: <name>` headers (e.g., `### Phase 1: schema migration`). Phases are *grouping*, not gates.
 
 1. <action> — `path/to/file.ext:line` (new) — verify: `npm test path/to/foo.test.ts` [AC1]
 2. ...
