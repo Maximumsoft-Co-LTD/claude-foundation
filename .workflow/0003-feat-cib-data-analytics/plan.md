@@ -326,7 +326,7 @@ flowchart LR
 
 **Metrics** (Prometheus, exposed at `/metrics`):
 - `cib_cases_total{status}` — gauge, refreshed on each list; labels: `open`, `closed`, `archived`
-- `cib_files_uploaded_total{outcome}` — counter; labels: `accepted`, `rejected_empty`, `rejected_not_xlsx`, `rejected_too_large`, `rejected_invalid_mapping`
+- `cib_files_uploaded_total{outcome}` — counter; labels: `ok` (accepted), `rejected` (validation/parser rejection — empty, not-xlsx, too-large, invalid-mapping), `rejected_multipart` (multipart-form parse failure or oversized body), `rejected_io` (read failure on uploaded part)
 - `cib_parse_duration_seconds` — histogram, buckets: 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
 - `cib_combined_graph_size_nodes` / `cib_combined_graph_size_edges` — gauges, set on each GET /graph
 - `cib_db_query_duration_seconds{operation}` — histogram; operations: `case.create`, `case.list`, `file.save`, `graph.save`, `graph.get_by_case`
