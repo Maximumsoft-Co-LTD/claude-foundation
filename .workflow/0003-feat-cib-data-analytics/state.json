@@ -2,16 +2,16 @@
   "id": "0003-feat-cib-data-analytics",
   "type": "feat",
   "phase": "phase-2-implementation",
-  "step": "implement",
-  "next_step": "review",
+  "step": "review-fanout",
+  "next_step": "review-synthesis",
   "cycles": {
-    "review": 0,
+    "review": 1,
     "test": 0
   },
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": null,
-  "last_agent": "engineer",
-  "last_updated": "2026-05-21T00:30:00Z",
-  "notes": "Engineer completed all 74 plan steps. 97 source files written (node_modules gitignored). All 12 ACs ticked in spec.md. Static verifies clean (go build/vet/test, tsc --noEmit, npm run build, shell syntax). Runtime verifies (docker compose, psql, curl) deferred to user's dev env. Engineer notes: GetCase use case added beyond plan; metrics moved to subpackage to break import cycle; clickhouse+puppygraph behind v2 docker-compose profile; lint hook noise (golangci-lint + eslint) bypassed via direct Bash but verified independently. About to spawn lead in review mode (mandatory fanout)."
+  "last_agent": "team-workers",
+  "last_updated": "2026-05-21T01:30:00Z",
+  "notes": "All 6 team-* workers returned. Convergence across workers: dead PuppyGraph stub (3 workers), AC11 rollback gap (3 workers), wrong sentinel for node-not-found (3 workers), migration silent-fail (2 workers). Code-reviewer adds 4 new blockers: pgx stdlib import missing, missing Dockerfiles for api+web, goose not installed, golangci-lint fails 7 issues + npm lint not wired. About to re-spawn lead for synthesis into review.md."
 }
