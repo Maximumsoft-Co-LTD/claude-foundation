@@ -15,6 +15,33 @@ Type-specific:
 - **refactor** → 1-line *behaviour-equivalence statement* — what stays identical and how it gets verified (existing tests / new char-test / golden file).
 - **spike** → name the question being answered and the evidence that will count as an answer.
 
+## Current state
+<!-- Required for: M, L, any refactor, any fix. Skip for: XS/S feat in isolated new files, chore/docs not touching live code, spike. See `plan-writing` skill > principle 3 + references/current-state.md. -->
+<!-- Walk existing code with LSP (go-to-definition + find-references); every claim cites path:line. Capture only the load-bearing as-is — not a file tour. -->
+
+**Entry point(s)**:
+- `path:line` — <one-line role>
+
+**Data / control flow** (3–7 hops, LSP-walked):
+1. `path:line` — <what this hop does> → calls `<symbol>` at `path:line`
+2. ...
+
+**Callers / blast radius**:
+- `<symbol>` (`path:line`): N callers — <summary; list non-obvious ones with path:line, or "no callers — safe to change">
+
+**Invariants the current code relies on**:
+- <one-line invariant> — `path:line` <why it's load-bearing>
+
+<!-- refactor only --> **Anti-goals** (must stay identical):
+- <behaviour that stays the same>, verified by <existing test / golden file>
+
+<!-- fix only --> **Bug path**:
+```
+<input> → step1 (`path:line`) → step2 (`path:line`) ← BUG: <wrong-data step> → step3 → <symptom>
+```
+
+<!-- L tier + structural refactor: also draw an "as-is" mermaid here, with the Architecture diagram below as "to-be". -->
+
 ## Architecture diagram
 ALWAYS REQUIRED. Pick the cheapest form that conveys the change. Mark new pieces with ★. See `plan-writing` skill > diagrams for templates per Type.
 

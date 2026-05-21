@@ -4,7 +4,7 @@ Run this checklist **before** setting `Status: draft` in `plan.md`. The goal is 
 
 A plan that passes self-review is not "perfect" — it's "internally consistent and free of the known antipatterns". Real surprises will still surface during implementation; this checklist filters out the ones we already know how to spot.
 
-## The four scans
+## The five scans
 
 Walk these in order. Each one takes ~30 seconds for an XS/S plan, ~2 minutes for L.
 
@@ -56,7 +56,29 @@ Edit rows (existing files modified) don't have to be in the diagram unless the e
 
 XS plans where Diagram = `Impact: N/A` skip this scan.
 
-### Scan 4 — Verify-per-step completeness
+### Scan 4 — Current-state coverage
+
+Skip this scan when principle 3 says skip (XS/S feat in isolated new files, chore/docs not touching live code, spike). Otherwise walk it.
+
+Open `## Current state` and `## Files touched` side by side. For each row in `Files touched`:
+
+- **`new`** — no current-state coverage required (the file doesn't exist yet).
+- **`edit`** — the file must appear in either:
+  - the `Data / control flow` bullets (i.e., this file is in the flow we walked), OR
+  - the `Invariants` list (i.e., the edit preserves or breaks a named invariant on this file).
+  If the edit isn't in either, ask: do we actually understand what the current file does at the line we're editing? If yes, add the bullet/invariant. If no, walk it with LSP now — that's the gap this scan exists to catch.
+- **`delete`** — must appear in the caller-walk (we know nothing else points at it) AND in the as-is flow (we know what it currently does at the call site).
+
+Then walk `## Current state` itself:
+
+- Every invariant has a `path:line` citation. "The hook fails open" is not an invariant; "the hook fails open on missing `jq` at `.claude/hooks/dev-state-mark.sh:17`" is.
+- The caller walk gives a concrete number (0 / N / "many — listing non-obvious") for every symbol whose contract changes. "Some callers" is not a count.
+- For `refactor`: the Anti-goals list ties to the Approach's behaviour-equivalence statement — both name the same invariants from opposite sides.
+- For `fix`: the Bug path has a `← BUG` marker on the wrong-data step, not on the symptom step.
+
+If any check fails, the section is paraphrase rather than mapping — re-walk with LSP and cite.
+
+### Scan 5 — Verify-per-step completeness
 
 Walk every Step. For each:
 
@@ -95,6 +117,8 @@ If you grouped Steps under Phases (>12 steps in L), each phase should have a cle
 ## When to fail the self-review and rewrite
 
 If more than 3 items across the scans need fixing, don't patch in place — that usually means the plan was drafted too quickly and the structure is off. Re-read the spec, re-pick the Size if needed, and re-draft. Faster than chasing scan hits one by one.
+
+If Scan 4 (Current-state coverage) is the one failing, fix it *first* before re-running the other scans — most downstream gaps (vague steps, missing verifies, AC tags that don't quite fit) trace back to the planner not actually knowing what the existing code does.
 
 ## The final question
 

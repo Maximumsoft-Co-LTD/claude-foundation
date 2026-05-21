@@ -1,6 +1,6 @@
 ---
 name: plan-writing
-description: Write an implementation plan that maps a spec to executable, verifiable steps with a required architecture diagram, sized for the work. Use this skill when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), OR when the user asks to "write a plan", "plan this feature", "design the implementation", "break this down into steps", "draft an RFC". Owns the size tiering (XS/S/M/L), the always-required architecture diagram (mermaid by Type), inline AC tagging, runnable-verify rule, anti-placeholder rules, and the pre-draft self-review. Composes with the construction-fundamentals skills (programming/database/hexagonal/architecture/queue) — load the relevant construction skill first to decide *what* to build; this skill decides *how to sequence, document, and verify* what you build. Skip for throwaway scripts, single-line config edits, and conversational "what should we do about X" exchanges that haven't been spec'd yet.
+description: Write an implementation plan that maps a spec to executable, verifiable steps with a required architecture diagram, sized for the work. Use this skill when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), OR when the user asks to "write a plan", "plan this feature", "design the implementation", "break this down into steps", "draft an RFC". Owns the size tiering (XS/S/M/L), the always-required architecture diagram (mermaid by Type), the current-state mapping (LSP-walk of existing code for non-greenfield work — required for M/L and any refactor/fix), inline AC tagging, runnable-verify rule, anti-placeholder rules, and the pre-draft self-review. Composes with the construction-fundamentals skills (programming/database/hexagonal/architecture/queue) — load the relevant construction skill first to decide *what* to build; this skill decides *how to sequence, document, and verify* what you build. Skip for throwaway scripts, single-line config edits, and conversational "what should we do about X" exchanges that haven't been spec'd yet.
 ---
 
 # Plan Writing
@@ -11,7 +11,7 @@ Plans fail in predictable ways: they restate the spec instead of decomposing it,
 
 A plan that scales with the work, carries a diagram, ties every step to an AC, and gives every step a *runnable verify* catches those failures at plan time — minutes spent here save hours in review and test cycles. This skill is the pre-flight for the `/dev` workflow's Phase 1 step 2 (lead agent, plan mode), and the standard whenever a plan is being drafted in this repo.
 
-## The 7 principles
+## The 8 principles
 
 ### 1. Read spec.md + carried follow-ups before anything else
 
@@ -28,7 +28,33 @@ Size determines which sections are required, which are optional, and which shoul
 | **M** | multi-file in one subsystem, real logic (branching, state, side effects), no contract / schema change |
 | **L** | cross-subsystem, schema migration, public API contract change, or any breaking change |
 
-### 3. Architecture diagram is required, always
+### 3. Map current state before designing (non-greenfield work)
+
+A plan that touches existing code without first stating what that code does today is gambling. The plan reads as if greenfield, the architecture diagram shows only new pieces, and the engineer discovers each load-bearing invariant by breaking it. Catching this at plan time costs a few LSP queries; catching it at review or production time costs a cycle or a postmortem.
+
+**Required for** (write a full `Current state` section before the Architecture diagram):
+- Any **M** or **L** plan
+- Any **refactor** or **fix** at any size (including XS/S)
+
+**Skip for**:
+- XS/S **feat** that adds entirely new files in an isolated module with no edits to existing code
+- **chore** / **docs** that don't touch live code paths
+- **spike** (the spike *is* the current-state investigation — record findings in `recommendations.md`, not here)
+
+**Fields** (in this order; cite `path:line` for every claim — LSP go-to-definition / find-references is the source, not prose memory):
+
+1. **Entry point(s)** — where execution begins for the code path being changed. Examples: HTTP route handler, CLI subcommand, cron tick, queue consumer, hook trigger, library entry function.
+2. **Data / control flow** — 3–7 bullets tracing how the system behaves today through the file(s) you will touch. One hop per bullet, each citing `path:line`. Don't paraphrase — walk it with LSP.
+3. **Callers / blast radius** — for each symbol you will rename, delete, or change the contract of: run LSP find-references and summarise. "N callers; non-obvious ones are X (`path:line`) and Y (`path:line`)". "No callers — safe to change" is a valid answer and explicitly load-bearing.
+4. **Invariants the current code relies on** — silent assumptions you must either preserve or *explicitly* break: ordering, idempotency, fail-open vs fail-closed, error-swallowing semantics, transaction boundaries, single-writer assumptions, retry behaviour, timeout defaults, encoding. Each invariant is one line with a `path:line` citation. The new code must either preserve each or the plan must call out the break and justify it.
+5. **Anti-goals** *(refactor only)* — current behaviours that intentionally stay identical, paired with the behaviour-equivalence statement in Approach. These are what the test suite will pin.
+6. **Bug path** *(fix only)* — the exact route the bad data / bad call takes from input to symptom, with the wrong-step marked `← BUG`. This is the as-is of the failure; the Architecture diagram shows the fix.
+
+For **L** tier and any non-trivial **refactor**, also draw an "as-is" mermaid diagram alongside the "to-be" Architecture diagram (principle 4). For M and smaller, prose bullets are usually enough.
+
+Full field-by-field examples + LSP-walk technique are in `references/current-state.md`.
+
+### 4. Architecture diagram is required, always
 
 Pick the cheapest form that conveys the change. Mark new pieces with `★`. Diagram type defaults from the run's `Type` (full templates and worked examples in `references/diagrams.md`):
 
@@ -42,7 +68,9 @@ Pick the cheapest form that conveys the change. Mark new pieces with `★`. Diag
 
 For XS, even one line counts — keep the section, never delete it. The discipline is "always have a diagram slot."
 
-### 4. Steps use the strict format: `action — path:line (new|edit|delete) — verify: <command or observable> [AC#]`
+When Current state (principle 3) is present, the Architecture diagram is the *to-be* — show how the existing flow changes. Don't redraw the whole as-is in the to-be diagram; that's the previous section's job.
+
+### 5. Steps use the strict format: `action — path:line (new|edit|delete) — verify: <command or observable> [AC#]`
 
 Every step has all four parts. No exceptions.
 
@@ -51,11 +79,11 @@ Every step has all four parts. No exceptions.
 - **verify** — a command (`npm test src/foo.test.ts`, `curl -s :8080/health | jq .status`, `psql -c "\d users"`) or a concrete observable (`column email_verified exists`, `feature flag returns true for opt-in users`). If you would write `manually check` or `visually inspect`, the step is too big — split it until each piece is verifiable atomically. *This is the single highest-leverage rule in this skill.*
 - **[AC#]** — which acceptance criterion this step lands. A step with no AC tag is either scope-creep or evidence that the spec is missing an AC the work actually delivers — go fix the spec first.
 
-### 5. One step → one verify; if not, split
+### 6. One step → one verify; if not, split
 
 A step that needs multiple verifications is doing multiple things. Split it. Steps map 1-to-1 to commits in spirit (atomic). The verify clause is also what `qa` will hand to its test suite, and what `engineer` will run after the step — write it as if both will literally execute it.
 
-### 6. Type-specific rules
+### 7. Type-specific rules
 
 - **`feat`** — standard plan. Diagram = flowchart, mark `★`.
 - **`fix`** — step 1 of `Steps` MUST be "write failing regression test for <bug>" encoded against `spec.md > Reproduction`. *Address the root cause, not the symptom* — if your fix step is "catch the exception" or "guard the null", ask whether the cause is upstream and document why the local fix is correct.
@@ -64,12 +92,13 @@ A step that needs multiple verifications is doing multiple things. Split it. Ste
 - **`docs`** — Steps are doc edits. Files touched lists every doc file. No test planning.
 - **`spike`** — `Out of scope` MUST say "no production code lands from this run — engineer writes `recommendations.md` only". Steps may be open-ended ("try option A, measure throughput at 1k req/s").
 
-### 7. Self-review before status = draft
+### 8. Self-review before status = draft
 
 Before handing off, walk `references/self-review.md`:
 
 - **Anti-placeholder scan** — no `TBD`, `TODO`, `???`, `appropriate error handling`, `proper validation`, `as needed`, `see spec`, `etc.`, `path/to/file`, hedging modals (`should`, `would`, `might`) in Steps.
 - **AC coverage** — every `spec.md > Acceptance criteria` checkbox appears in at least one `[AC#]` tag; every step has at least one `[AC#]` tag.
+- **Current-state coverage** *(when principle 3 applies)* — every `edit` / `delete` row in `Files touched` appears in the Current state section's data flow OR is named under an invariant; every invariant is cited with `path:line`.
 - **Diagram ↔ Files alignment** — every `★` in the diagram has a `new` row in `Files touched`; every `new` row appears as `★` in the diagram. Same rule for `~~strikethrough~~` and `delete`.
 - **Verify-per-step completeness** — every step's verify is a command or a concrete observable, never "manually check" / "eyeball".
 
@@ -89,11 +118,12 @@ Before writing any section of plan.md:
   - System-level / cross-service decisions → [[architecture-fundamentals]]
   - Queue / broker / async worker → [[queue-fundamentals]]
   - Bug with unknown cause → [[debug-fundamentals]] *before* this skill
-- [ ] Pick diagram type from `Type` (table in principle 3).
+- [ ] Pick diagram type from `Type` (table in principle 4).
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path:line`. Grep is the fallback.
 - [ ] If the change mimics an existing pattern, find that pattern now and have its `path:line` ready to cite in Steps.
+- [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path:line` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
 
-Then draft in order: **Approach → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
+Then draft in order: **Approach → Current state (if required) → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
 
 ## Section gating by Size
 
@@ -101,6 +131,7 @@ Then draft in order: **Approach → Diagram → Steps → Files touched → (siz
 |---------|----|----|----|----|
 | Approach (2–3 sent) | ✓ | ✓ | ✓ | ✓ |
 | Step order line | skip | optional | ✓ | ✓ |
+| Current state (principle 3) | required for refactor/fix; else skip | required when touching existing code OR refactor/fix; else skip | ✓ | ✓ (+ as-is mermaid for refactor) |
 | Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
 | Steps (with verify + AC tag) | ✓ (verify optional) | ✓ | ✓ | ✓ |
 | (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps |
@@ -149,6 +180,8 @@ If any non-trivial code is about to land in the repo and you're about to write `
 - **AC tag = "all"** — every step tags specific AC numbers. "All" hides which step actually lands which behaviour.
 - **Symptom-patching for `fix`** — "wrap in try/catch", "guard against null" without explaining *why* the null arrives is treating the symptom. Show the root cause in `Approach`; let the fix step name it explicitly.
 - **Designing for hypothetical future requirements** — if the spec doesn't ask for it, the plan doesn't plan for it. Carry the idea to `FOLLOWUPS.md` instead.
+- **Designing without Current state on existing code** — if the plan touches existing files and the Current state section is missing (or empty, or written from memory instead of LSP-walked), the plan is gambling on assumptions. Either fill the section honestly or — if the work genuinely is greenfield — say so in one line under Approach so the omission is intentional, not accidental.
+- **Current state that's just paraphrase, no citations** — "the hook writes state.json then exits" without `path:line` is a guess. Walk it with LSP and cite. If you can't cite, you don't know it.
 
 ## References
 
@@ -156,6 +189,7 @@ Pick the one that matches the friction:
 
 - `references/size-tiering.md` — XS/S/M/L picker, edge cases (one-file state machine, mechanical sweep across 30 files, type-vs-size collisions), and per-size time budgets.
 - `references/diagrams.md` — mermaid templates per Type with worked examples, when to use `flowchart` vs `sequenceDiagram` vs `classDiagram`, and L-plan two-diagram pattern.
-- `references/self-review.md` — the four scans in detail with anti-placeholder regex list and extra checks for M/L plans.
+- `references/current-state.md` — the LSP-walk technique for mapping existing code, what counts as an invariant, worked examples per Type (feat touching existing API, fix bug-path, refactor anti-goals), and the "no callers / single caller / many callers" framing.
+- `references/self-review.md` — the five scans in detail with anti-placeholder regex list and extra checks for M/L plans.
 
-If lead is drafting in plan mode and unsure which to consult, use this map: *Size unclear* → size-tiering; *which mermaid kind* → diagrams; *plan reads "done" but feels off* → self-review.
+If lead is drafting in plan mode and unsure which to consult, use this map: *Size unclear* → size-tiering; *which mermaid kind* → diagrams; *what does existing code do* → current-state; *plan reads "done" but feels off* → self-review.
