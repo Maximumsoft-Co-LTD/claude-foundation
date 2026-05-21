@@ -6,7 +6,7 @@ export function ErrorBanner({
   variant = 'error',
   children,
 }: {
-  variant?: 'error' | 'info';
+  variant?: 'error' | 'info' | 'warn';
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
@@ -14,7 +14,9 @@ export function ErrorBanner({
   const cls =
     variant === 'error'
       ? 'border-red-300 bg-red-50 text-red-800'
-      : 'border-blue-300 bg-blue-50 text-blue-800';
+      : variant === 'warn'
+        ? 'border-amber-300 bg-amber-50 text-amber-900'
+        : 'border-blue-300 bg-blue-50 text-blue-800';
   return (
     <div
       role="alert"

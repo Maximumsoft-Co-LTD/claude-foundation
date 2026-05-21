@@ -21,17 +21,22 @@ func WriteError(w http.ResponseWriter, err error) {
 }
 
 func MapError(err error) (int, string) {
+	var mbErr *http.MaxBytesError
 	switch {
-	case errors.Is(err, domain.ErrCaseNotFound), errors.Is(err, domain.ErrFileNotFound):
+	case errors.Is(err, domain.ErrCaseNotFound),
+		errors.Is(err, domain.ErrFileNotFound),
+		errors.Is(err, domain.ErrNodeNotFound):
 		return http.StatusNotFound, err.Error()
+	case errors.As(err, &mbErr), errors.Is(err, domain.ErrTooLarge):
+		return http.StatusRequestEntityTooLarge, "file exceeds 5 MiB limit"
+	case errors.Is(err, domain.ErrInvalidMultipart):
+		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, domain.ErrInvalidMapping),
 		errors.Is(err, domain.ErrEmptyXlsx),
 		errors.Is(err, domain.ErrNotXlsx),
 		errors.Is(err, casedom.ErrTitleRequired):
 		return http.StatusBadRequest, err.Error()
-	case errors.Is(err, domain.ErrTooLarge):
-		return http.StatusRequestEntityTooLarge, err.Error()
-	case errors.Is(err, domain.ErrInvalidStatus), errors.Is(err, casedom.ErrBadStatus):
+	case errors.Is(err, casedom.ErrBadStatus):
 		return http.StatusUnprocessableEntity, err.Error()
 	default:
 		return http.StatusInternalServerError, "internal error"

@@ -10,23 +10,28 @@ import (
 
 func TestErrorMapping(t *testing.T) {
 	cases := []struct {
+		name string
 		err  error
 		want int
 	}{
-		{domain.ErrCaseNotFound, http.StatusNotFound},
-		{domain.ErrFileNotFound, http.StatusNotFound},
-		{domain.ErrInvalidMapping, http.StatusBadRequest},
-		{domain.ErrEmptyXlsx, http.StatusBadRequest},
-		{domain.ErrNotXlsx, http.StatusBadRequest},
-		{casedom.ErrTitleRequired, http.StatusBadRequest},
-		{domain.ErrTooLarge, http.StatusRequestEntityTooLarge},
-		{domain.ErrInvalidStatus, http.StatusUnprocessableEntity},
-		{casedom.ErrBadStatus, http.StatusUnprocessableEntity},
+		{"case-not-found", domain.ErrCaseNotFound, http.StatusNotFound},
+		{"file-not-found", domain.ErrFileNotFound, http.StatusNotFound},
+		{"node-not-found", domain.ErrNodeNotFound, http.StatusNotFound},
+		{"invalid-mapping", domain.ErrInvalidMapping, http.StatusBadRequest},
+		{"empty-xlsx", domain.ErrEmptyXlsx, http.StatusBadRequest},
+		{"not-xlsx", domain.ErrNotXlsx, http.StatusBadRequest},
+		{"invalid-multipart", domain.ErrInvalidMultipart, http.StatusBadRequest},
+		{"title-required", casedom.ErrTitleRequired, http.StatusBadRequest},
+		{"too-large", domain.ErrTooLarge, http.StatusRequestEntityTooLarge},
+		{"max-bytes-error", &http.MaxBytesError{Limit: 1}, http.StatusRequestEntityTooLarge},
+		{"bad-status", casedom.ErrBadStatus, http.StatusUnprocessableEntity},
 	}
 	for _, tc := range cases {
-		got, _ := MapError(tc.err)
-		if got != tc.want {
-			t.Errorf("%v: want %d, got %d", tc.err, tc.want, got)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := MapError(tc.err)
+			if got != tc.want {
+				t.Errorf("%v: want %d, got %d", tc.err, tc.want, got)
+			}
+		})
 	}
 }

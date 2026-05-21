@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"errors"
+	"math"
 	"sort"
 	"time"
 
@@ -10,35 +12,67 @@ import (
 type NodeID string
 
 type Node struct {
-	ID    NodeID
-	Attrs map[string]string
+	ID    NodeID            `json:"id"`
+	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
 type Edge struct {
-	Source   NodeID
-	Target   NodeID
-	Weight   float64
-	RowIndex int
-	FileID   uuid.UUID
-	Attrs    map[string]string
+	Source   NodeID            `json:"source"`
+	Target   NodeID            `json:"target"`
+	Weight   float64           `json:"weight"`
+	RowIndex int               `json:"row_index"`
+	FileID   uuid.UUID         `json:"file_id"`
+	Attrs    map[string]string `json:"attrs,omitempty"`
 }
 
 type Graph struct {
-	Nodes []Node
-	Edges []Edge
+	Nodes []Node `json:"nodes"`
+	Edges []Edge `json:"edges"`
 }
 
 type FileGraph struct {
-	FileID     uuid.UUID
-	UploadedAt time.Time
-	Graph      Graph
+	FileID     uuid.UUID `json:"file_id"`
+	UploadedAt time.Time `json:"uploaded_at"`
+	Graph      Graph     `json:"graph"`
 }
 
-// MergeGraphs unions nodes by id and concatenates edges across files. When
-// the same node id appears in multiple files, later uploads' attributes win on
-// conflict (tiebreaker: file id lexicographic when uploaded_at ties). This is
-// the documented merge contract.
-func MergeGraphs(fgs []FileGraph) Graph {
+type MergeConflict struct {
+	NodeID    NodeID    `json:"node_id"`
+	Key       string    `json:"key"`
+	OldValue  string    `json:"old_value"`
+	NewValue  string    `json:"new_value"`
+	OldFileID uuid.UUID `json:"old_file_id"`
+	NewFileID uuid.UUID `json:"new_file_id"`
+}
+
+var (
+	ErrEmptyNodeID    = errors.New("edge: node id cannot be empty")
+	ErrSelfLoop       = errors.New("edge: source and target must differ")
+	ErrNegativeWeight = errors.New("edge: weight must be >= 0")
+	ErrInvalidWeight  = errors.New("edge: weight must be a finite number")
+)
+
+func NewEdge(src, tgt NodeID, weight float64, rowIdx int, fileID uuid.UUID) (Edge, error) {
+	if src == "" || tgt == "" {
+		return Edge{}, ErrEmptyNodeID
+	}
+	if src == tgt {
+		return Edge{}, ErrSelfLoop
+	}
+	if math.IsNaN(weight) || math.IsInf(weight, 0) {
+		return Edge{}, ErrInvalidWeight
+	}
+	if weight < 0 {
+		return Edge{}, ErrNegativeWeight
+	}
+	return Edge{Source: src, Target: tgt, Weight: weight, RowIndex: rowIdx, FileID: fileID}, nil
+}
+
+// MergeGraphs unions nodes by id and concatenates edges across files. Order is
+// (uploaded_at asc, file_id asc). On node-attribute conflicts the later upload
+// in that order wins; each overwrite is recorded in the returned []MergeConflict
+// (with the prior owning file id) so callers can surface ambiguities.
+func MergeGraphs(fgs []FileGraph) (Graph, []MergeConflict) {
 	sorted := make([]FileGraph, len(fgs))
 	copy(sorted, fgs)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -48,37 +82,52 @@ func MergeGraphs(fgs []FileGraph) Graph {
 		return sorted[i].FileID.String() < sorted[j].FileID.String()
 	})
 
-	nodesByID := map[NodeID]Node{}
+	type nodeOwner struct {
+		node   Node
+		fileID uuid.UUID
+	}
+	owners := map[NodeID]nodeOwner{}
+	var conflicts []MergeConflict
 	var edges []Edge
 	for _, fg := range sorted {
 		for _, n := range fg.Graph.Nodes {
-			existing, ok := nodesByID[n.ID]
+			existing, ok := owners[n.ID]
 			if !ok {
-				nodesByID[n.ID] = cloneNode(n)
+				owners[n.ID] = nodeOwner{node: cloneNode(n), fileID: fg.FileID}
 				continue
 			}
-			merged := cloneNode(existing)
-			if merged.Attrs == nil {
+			merged := cloneNode(existing.node)
+			if merged.Attrs == nil && len(n.Attrs) > 0 {
 				merged.Attrs = map[string]string{}
 			}
 			for k, v := range n.Attrs {
+				if old, present := merged.Attrs[k]; present && old != v {
+					conflicts = append(conflicts, MergeConflict{
+						NodeID:    n.ID,
+						Key:       k,
+						OldValue:  old,
+						NewValue:  v,
+						OldFileID: existing.fileID,
+						NewFileID: fg.FileID,
+					})
+				}
 				merged.Attrs[k] = v
 			}
-			nodesByID[n.ID] = merged
+			owners[n.ID] = nodeOwner{node: merged, fileID: fg.FileID}
 		}
 		edges = append(edges, fg.Graph.Edges...)
 	}
 
-	ids := make([]NodeID, 0, len(nodesByID))
-	for id := range nodesByID {
+	ids := make([]NodeID, 0, len(owners))
+	for id := range owners {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	nodes := make([]Node, 0, len(ids))
 	for _, id := range ids {
-		nodes = append(nodes, nodesByID[id])
+		nodes = append(nodes, owners[id].node)
 	}
-	return Graph{Nodes: nodes, Edges: edges}
+	return Graph{Nodes: nodes, Edges: edges}, conflicts
 }
 
 func cloneNode(n Node) Node {

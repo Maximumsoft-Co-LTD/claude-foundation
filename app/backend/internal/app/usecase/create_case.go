@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	casedom "github.com/cib/app/backend/internal/domain/case"
 	"github.com/cib/app/backend/internal/app/ports"
+	casedom "github.com/cib/app/backend/internal/domain/case"
 )
 
 type CreateCase struct {

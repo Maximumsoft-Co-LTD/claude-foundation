@@ -10,11 +10,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/cib/app/backend/internal/adapters/driven/xlsx"
 	"github.com/cib/app/backend/internal/app/ports"
 	"github.com/cib/app/backend/internal/domain"
 	casedom "github.com/cib/app/backend/internal/domain/case"
 	"github.com/cib/app/backend/internal/domain/graph"
-	"github.com/cib/app/backend/internal/adapters/driven/xlsx"
 )
 
 type fakeCaseRepo struct {
@@ -72,16 +72,16 @@ func (r *fakeCaseRepo) List(_ context.Context, f casedom.CaseFilters) ([]casedom
 			continue
 		}
 		if len(f.Tags) > 0 {
-			any := false
+			anyHit := false
 			for _, t := range f.Tags {
 				for _, ct := range c.Tags {
 					if ct == t {
-						any = true
+						anyHit = true
 						break
 					}
 				}
 			}
-			if !any {
+			if !anyHit {
 				continue
 			}
 		}
@@ -151,13 +151,6 @@ func (r *fakeGraphRepo) SaveFileGraph(_ context.Context, fileID uuid.UUID, g gra
 	r.files[fileID] = g
 	return nil
 }
-func (r *fakeGraphRepo) GetByFile(_ context.Context, fileID uuid.UUID) (graph.Graph, error) {
-	g, ok := r.files[fileID]
-	if !ok {
-		return graph.Graph{}, domain.ErrFileNotFound
-	}
-	return g, nil
-}
 func (r *fakeGraphRepo) GetByCase(_ context.Context, caseID uuid.UUID) ([]graph.FileGraph, error) {
 	var out []graph.FileGraph
 	for id, g := range r.files {
@@ -168,6 +161,26 @@ func (r *fakeGraphRepo) GetByCase(_ context.Context, caseID uuid.UUID) ([]graph.
 		out = append(out, graph.FileGraph{FileID: id, UploadedAt: f.UploadedAt, Graph: g})
 	}
 	return out, nil
+}
+
+// fakeTxnWriter atomically writes mapping + graph via the fake repos. If
+// failGraph is true the graph write returns an error AFTER the mapping path
+// would have been touched — used to assert the rollback contract.
+type fakeTxnWriter struct {
+	files     *fakeFileRepo
+	graphs    *fakeGraphRepo
+	failGraph bool
+}
+
+func (w *fakeTxnWriter) SaveMappingAndGraph(ctx context.Context, fileID uuid.UUID, m graph.ColumnMapping, g graph.Graph) error {
+	if w.failGraph {
+		// simulate "graph save failed, mapping NOT persisted" — never touch w.files
+		return errors.New("simulated graph save failure")
+	}
+	if err := w.files.SetMapping(ctx, fileID, m); err != nil {
+		return err
+	}
+	return w.graphs.SaveFileGraph(ctx, fileID, g)
 }
 
 func TestCreateCase_Happy(t *testing.T) {
@@ -221,10 +234,10 @@ func TestArchiveCase(t *testing.T) {
 
 func TestListCases_ExcludesArchivedByDefault(t *testing.T) {
 	r := newFakeCaseRepo()
-	open, _ := casedom.NewCase("a", "", nil)
+	openC, _ := casedom.NewCase("a", "", nil)
 	archived, _ := casedom.NewCase("b", "", nil)
 	archived.Archive()
-	_ = r.Create(context.Background(), open)
+	_ = r.Create(context.Background(), openC)
 	_ = r.Create(context.Background(), archived)
 
 	uc := NewListCases(r)
@@ -232,7 +245,7 @@ func TestListCases_ExcludesArchivedByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if len(got) != 1 || got[0].ID != open.ID {
+	if len(got) != 1 || got[0].ID != openC.ID {
 		t.Fatalf("archived must be hidden by default, got %v", got)
 	}
 
@@ -284,7 +297,8 @@ func TestSetMappingAndParse_InvalidMapping_NoWrites(t *testing.T) {
 	gr := newFakeGraphRepo(fr)
 	parser := xlsx.NewExcelizeParser()
 	upload := NewUploadFile(fr, parser)
-	smp := NewSetMappingAndParse(fr, gr, parser)
+	txn := &fakeTxnWriter{files: fr, graphs: gr}
+	smp := NewSetMappingAndParse(fr, gr, parser, txn)
 
 	blob, _ := os.ReadFile("../../adapters/driven/xlsx/testdata/bank.xlsx")
 	res, err := upload.Run(context.Background(), uuid.New(), "bank.xlsx", blob)
@@ -305,22 +319,77 @@ func TestSetMappingAndParse_InvalidMapping_NoWrites(t *testing.T) {
 	}
 }
 
+func TestSetMappingAndParse_GraphSaveFails_RollsBackMapping(t *testing.T) {
+	fr := newFakeFileRepo()
+	gr := newFakeGraphRepo(fr)
+	parser := xlsx.NewExcelizeParser()
+	upload := NewUploadFile(fr, parser)
+	txn := &fakeTxnWriter{files: fr, graphs: gr, failGraph: true}
+	smp := NewSetMappingAndParse(fr, gr, parser, txn)
+
+	blob, _ := os.ReadFile("../../adapters/driven/xlsx/testdata/bank.xlsx")
+	res, err := upload.Run(context.Background(), uuid.New(), "bank.xlsx", blob)
+	if err != nil {
+		t.Fatalf("upload failed: %v", err)
+	}
+
+	_, err = smp.Run(context.Background(), res.FileID, graph.ColumnMapping{SourceCol: "sender", TargetCol: "receiver", WeightCol: "amount"})
+	if err == nil {
+		t.Fatal("want error from graph save failure")
+	}
+	if _, ok := gr.files[res.FileID]; ok {
+		t.Fatal("graph row must not exist after a failed transactional write")
+	}
+	stored, _ := fr.Get(context.Background(), res.FileID)
+	if stored.Mapping != nil {
+		t.Fatal("mapping must not be persisted after a failed transactional write — rollback violated")
+	}
+}
+
 func TestSetMappingAndParse_Happy(t *testing.T) {
 	fr := newFakeFileRepo()
 	gr := newFakeGraphRepo(fr)
 	parser := xlsx.NewExcelizeParser()
 	upload := NewUploadFile(fr, parser)
-	smp := NewSetMappingAndParse(fr, gr, parser)
+	txn := &fakeTxnWriter{files: fr, graphs: gr}
+	smp := NewSetMappingAndParse(fr, gr, parser, txn)
 
 	blob, _ := os.ReadFile("../../adapters/driven/xlsx/testdata/bank.xlsx")
 	res, _ := upload.Run(context.Background(), uuid.New(), "bank.xlsx", blob)
 
-	g, err := smp.Run(context.Background(), res.FileID, graph.ColumnMapping{SourceCol: "sender", TargetCol: "receiver", WeightCol: "amount"})
+	r, err := smp.Run(context.Background(), res.FileID, graph.ColumnMapping{SourceCol: "sender", TargetCol: "receiver", WeightCol: "amount"})
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if len(g.Edges) != 5 {
-		t.Fatalf("want 5 edges, got %d", len(g.Edges))
+	if len(r.Graph.Edges) != 5 {
+		t.Fatalf("want 5 edges, got %d", len(r.Graph.Edges))
+	}
+	if r.Stats.RowsSeen != 5 || r.Stats.RowsEmitted != 5 {
+		t.Fatalf("want stats RowsSeen=5/RowsEmitted=5, got %+v", r.Stats)
+	}
+}
+
+type fakeCaseGetter struct {
+	cases map[uuid.UUID]casedom.Case
+}
+
+func (g *fakeCaseGetter) Get(_ context.Context, id uuid.UUID) (casedom.Case, error) {
+	c, ok := g.cases[id]
+	if !ok {
+		return casedom.Case{}, domain.ErrCaseNotFound
+	}
+	return c, nil
+}
+
+func TestGetCombinedGraph_CaseNotFound_Returns_ErrCaseNotFound(t *testing.T) {
+	fr := newFakeFileRepo()
+	gr := newFakeGraphRepo(fr)
+	cg := &fakeCaseGetter{cases: map[uuid.UUID]casedom.Case{}}
+	uc := NewGetCombinedGraph(gr, cg)
+
+	_, err := uc.Run(context.Background(), uuid.New())
+	if !errors.Is(err, domain.ErrCaseNotFound) {
+		t.Fatalf("want ErrCaseNotFound, got %v", err)
 	}
 }
 
@@ -328,6 +397,7 @@ func TestGetCombinedGraph_MergesIncluded(t *testing.T) {
 	fr := newFakeFileRepo()
 	gr := newFakeGraphRepo(fr)
 	caseID := uuid.New()
+	cg := &fakeCaseGetter{cases: map[uuid.UUID]casedom.Case{caseID: {ID: caseID, Status: casedom.StatusOpen}}}
 
 	f1ID, f2ID := uuid.New(), uuid.New()
 	_ = fr.Save(context.Background(), ports.File{ID: f1ID, CaseID: caseID, Included: true, UploadedAt: timeFixture(1)})
@@ -336,22 +406,22 @@ func TestGetCombinedGraph_MergesIncluded(t *testing.T) {
 	_ = gr.SaveFileGraph(context.Background(), f1ID, graph.Graph{Nodes: []graph.Node{{ID: "A"}, {ID: "B"}}, Edges: []graph.Edge{{Source: "A", Target: "B", Weight: 1}}})
 	_ = gr.SaveFileGraph(context.Background(), f2ID, graph.Graph{Nodes: []graph.Node{{ID: "B"}, {ID: "C"}}, Edges: []graph.Edge{{Source: "B", Target: "C", Weight: 2}}})
 
-	uc := NewGetCombinedGraph(gr)
+	uc := NewGetCombinedGraph(gr, cg)
 	g, err := uc.Run(context.Background(), caseID)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if len(g.Nodes) != 3 {
-		t.Fatalf("want 3 merged nodes, got %d", len(g.Nodes))
+	if len(g.Graph.Nodes) != 3 {
+		t.Fatalf("want 3 merged nodes, got %d", len(g.Graph.Nodes))
 	}
-	if len(g.Edges) != 2 {
-		t.Fatalf("want 2 edges, got %d", len(g.Edges))
+	if len(g.Graph.Edges) != 2 {
+		t.Fatalf("want 2 edges, got %d", len(g.Graph.Edges))
 	}
 
 	_ = fr.SetIncluded(context.Background(), f2ID, false)
 	g2, _ := uc.Run(context.Background(), caseID)
-	if len(g2.Edges) != 1 {
-		t.Fatalf("excluded file's edges must drop; got %d edges", len(g2.Edges))
+	if len(g2.Graph.Edges) != 1 {
+		t.Fatalf("excluded file's edges must drop; got %d edges", len(g2.Graph.Edges))
 	}
 }
 
@@ -359,11 +429,12 @@ func TestExportGraphJSON_Shape(t *testing.T) {
 	fr := newFakeFileRepo()
 	gr := newFakeGraphRepo(fr)
 	caseID := uuid.New()
+	cg := &fakeCaseGetter{cases: map[uuid.UUID]casedom.Case{caseID: {ID: caseID, Status: casedom.StatusOpen}}}
 	f1ID := uuid.New()
 	_ = fr.Save(context.Background(), ports.File{ID: f1ID, CaseID: caseID, Included: true, UploadedAt: timeFixture(1)})
-	_ = gr.SaveFileGraph(context.Background(), f1ID, graph.Graph{Nodes: []graph.Node{{ID: "A"}}, Edges: []graph.Edge{{Source: "A", Target: "A", Weight: 1}}})
+	_ = gr.SaveFileGraph(context.Background(), f1ID, graph.Graph{Nodes: []graph.Node{{ID: "A"}, {ID: "B"}}, Edges: []graph.Edge{{Source: "A", Target: "B", Weight: 1, RowIndex: 2, FileID: f1ID}}})
 
-	uc := NewExportGraphJSON(gr)
+	uc := NewExportGraphJSON(gr, cg)
 	out, err := uc.Run(context.Background(), caseID)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
@@ -377,6 +448,7 @@ func TestGetNodeDetail_AttachesEdges(t *testing.T) {
 	fr := newFakeFileRepo()
 	gr := newFakeGraphRepo(fr)
 	caseID := uuid.New()
+	cg := &fakeCaseGetter{cases: map[uuid.UUID]casedom.Case{caseID: {ID: caseID, Status: casedom.StatusOpen}}}
 	f1ID := uuid.New()
 	_ = fr.Save(context.Background(), ports.File{ID: f1ID, CaseID: caseID, Filename: "bank.xlsx", Included: true, UploadedAt: timeFixture(1)})
 	_ = gr.SaveFileGraph(context.Background(), f1ID, graph.Graph{
@@ -386,7 +458,7 @@ func TestGetNodeDetail_AttachesEdges(t *testing.T) {
 			{Source: "B", Target: "C", Weight: 2, RowIndex: 3, FileID: f1ID},
 		},
 	})
-	uc := NewGetNodeDetail(fr, gr)
+	uc := NewGetNodeDetail(fr, gr, cg)
 	d, err := uc.Run(context.Background(), caseID, "B")
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
@@ -401,8 +473,80 @@ func TestGetNodeDetail_AttachesEdges(t *testing.T) {
 	}
 }
 
+func TestGetNodeDetail_MissingNode_ReturnsErrNodeNotFound(t *testing.T) {
+	fr := newFakeFileRepo()
+	gr := newFakeGraphRepo(fr)
+	caseID := uuid.New()
+	cg := &fakeCaseGetter{cases: map[uuid.UUID]casedom.Case{caseID: {ID: caseID, Status: casedom.StatusOpen}}}
+	f1ID := uuid.New()
+	_ = fr.Save(context.Background(), ports.File{ID: f1ID, CaseID: caseID, Filename: "bank.xlsx", Included: true, UploadedAt: timeFixture(1)})
+	_ = gr.SaveFileGraph(context.Background(), f1ID, graph.Graph{Nodes: []graph.Node{{ID: "A"}}, Edges: []graph.Edge{{Source: "A", Target: "B", Weight: 1, FileID: f1ID}}})
+	uc := NewGetNodeDetail(fr, gr, cg)
+	if _, err := uc.Run(context.Background(), caseID, "Z"); !errors.Is(err, domain.ErrNodeNotFound) {
+		t.Fatalf("want ErrNodeNotFound, got %v", err)
+	}
+}
+
+func TestUsecaseLogs(t *testing.T) {
+	// Asserts each documented log event fires on its happy path.
+	// case.created / case.updated / case.archived / file.uploaded /
+	// mapping.set / file.parsed / graph.exported / upload.rejected.
+	want := []string{
+		"case.created", "case.updated", "case.archived",
+		"file.uploaded", "mapping.set", "file.parsed",
+		"graph.exported", "upload.rejected",
+	}
+
+	var buf bytes.Buffer
+	logger := newCapture(&buf)
+	ctx := WithLogger(context.Background(), logger)
+
+	caseR := newFakeCaseRepo()
+	createUC := NewCreateCase(caseR)
+	c, err := createUC.Run(ctx, "title-x", "", []string{"fraud"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	newTitle := "renamed-x"
+	if _, err := NewUpdateCase(caseR).Run(ctx, c.ID, UpdateCasePatch{Title: &newTitle}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if err := NewArchiveCase(caseR).Run(ctx, c.ID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	fr := newFakeFileRepo()
+	gr := newFakeGraphRepo(fr)
+	parser := xlsx.NewExcelizeParser()
+	uploadUC := NewUploadFile(fr, parser)
+	blob, _ := os.ReadFile("../../adapters/driven/xlsx/testdata/bank.xlsx")
+	res, err := uploadUC.Run(ctx, c.ID, "bank.xlsx", blob)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	// upload.rejected on too-large blob
+	big := make([]byte, MaxFileBytes+1)
+	_, _ = uploadUC.Run(ctx, c.ID, "x.xlsx", big)
+
+	txn := &fakeTxnWriter{files: fr, graphs: gr}
+	smp := NewSetMappingAndParse(fr, gr, parser, txn)
+	if _, err := smp.Run(ctx, res.FileID, graph.ColumnMapping{SourceCol: "sender", TargetCol: "receiver", WeightCol: "amount"}); err != nil {
+		t.Fatalf("set mapping: %v", err)
+	}
+
+	cg := &fakeCaseGetter{cases: map[uuid.UUID]casedom.Case{c.ID: c}}
+	if _, err := NewExportGraphJSON(gr, cg).Run(ctx, c.ID); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	logged := buf.String()
+	for _, ev := range want {
+		if !bytes.Contains([]byte(logged), []byte(ev)) {
+			t.Errorf("expected log event %q to fire; logs:\n%s", ev, logged)
+		}
+	}
+}
+
 func timeFixture(i int) time.Time {
 	return time.Date(2026, 1, i, 0, 0, 0, 0, time.UTC)
-
-
 }

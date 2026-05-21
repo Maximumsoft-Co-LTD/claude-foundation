@@ -11,9 +11,9 @@ var (
 )
 
 type ColumnMapping struct {
-	SourceCol string
-	TargetCol string
-	WeightCol string
+	SourceCol string `json:"source_col"`
+	TargetCol string `json:"target_col"`
+	WeightCol string `json:"weight_col,omitempty"`
 }
 
 func (m ColumnMapping) Validate(headers []string) error {

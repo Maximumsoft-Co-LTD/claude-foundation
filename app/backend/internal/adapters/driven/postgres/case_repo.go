@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -63,12 +64,12 @@ func (r *CaseRepo) List(ctx context.Context, f casedom.CaseFilters) ([]casedom.C
 	var args []any
 	idx := 1
 	if f.TitleSubstring != "" {
-		where = append(where, "title ILIKE $"+itoa(idx))
+		where = append(where, "title ILIKE $"+strconv.Itoa(idx))
 		args = append(args, "%"+f.TitleSubstring+"%")
 		idx++
 	}
 	if len(f.Tags) > 0 {
-		where = append(where, "tags && $"+itoa(idx))
+		where = append(where, "tags && $"+strconv.Itoa(idx))
 		args = append(args, f.Tags)
 		idx++
 	}
@@ -77,21 +78,20 @@ func (r *CaseRepo) List(ctx context.Context, f casedom.CaseFilters) ([]casedom.C
 		for i, s := range f.Statuses {
 			statusStrings[i] = string(s)
 		}
-		where = append(where, "status = ANY($"+itoa(idx)+")")
+		where = append(where, "status = ANY($"+strconv.Itoa(idx)+")")
 		args = append(args, statusStrings)
 		idx++
 	} else {
 		where = append(where, "status <> 'archived'")
 	}
 	if f.CreatedFrom != nil {
-		where = append(where, "created_at >= $"+itoa(idx))
+		where = append(where, "created_at >= $"+strconv.Itoa(idx))
 		args = append(args, *f.CreatedFrom)
 		idx++
 	}
 	if f.CreatedTo != nil {
-		where = append(where, "created_at <= $"+itoa(idx))
+		where = append(where, "created_at <= $"+strconv.Itoa(idx))
 		args = append(args, *f.CreatedTo)
-		idx++
 	}
 
 	q := `SELECT id, title, notes, tags, status, created_at, updated_at FROM cases`
@@ -117,17 +117,4 @@ func (r *CaseRepo) List(ctx context.Context, f casedom.CaseFilters) ([]casedom.C
 		out = append(out, c)
 	}
 	return out, rows.Err()
-}
-
-func itoa(i int) string {
-	if i < 10 {
-		return string(rune('0' + i))
-	}
-	// fallback (we never reach beyond ~6 placeholders here)
-	out := ""
-	for i > 0 {
-		out = string(rune('0'+i%10)) + out
-		i /= 10
-	}
-	return out
 }

@@ -45,29 +45,34 @@ func (r *FileRepo) Save(ctx context.Context, f ports.File) error {
 	})
 }
 
-func (r *FileRepo) Get(ctx context.Context, id uuid.UUID) (ports.File, error) {
+type fileRow interface {
+	Scan(dest ...any) error
+}
+
+func scanFile(r fileRow, withBlob bool) (ports.File, error) {
 	var f ports.File
 	var headersJSON []byte
 	var sourceCol, targetCol string
 	var weightCol *string
-	err := r.pool.QueryRow(ctx,
-		`SELECT f.id, f.case_id, f.filename, f.original_blob, f.byte_size, f.sha256,
-		        f.uploaded_by, f.uploaded_at, f.included,
-		        m.header_names, m.source_col, m.target_col, m.weight_col
-		 FROM files f LEFT JOIN file_mappings m ON m.file_id = f.id
-		 WHERE f.id = $1`, id,
-	).Scan(&f.ID, &f.CaseID, &f.Filename, &f.Blob, &f.ByteSize, &f.SHA256,
-		&f.UploadedBy, &f.UploadedAt, &f.Included,
-		&headersJSON, &sourceCol, &targetCol, &weightCol,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ports.File{}, domain.ErrFileNotFound
+	var err error
+	if withBlob {
+		err = r.Scan(&f.ID, &f.CaseID, &f.Filename, &f.Blob, &f.ByteSize, &f.SHA256,
+			&f.UploadedBy, &f.UploadedAt, &f.Included,
+			&headersJSON, &sourceCol, &targetCol, &weightCol,
+		)
+	} else {
+		err = r.Scan(&f.ID, &f.CaseID, &f.Filename, &f.ByteSize, &f.SHA256,
+			&f.UploadedBy, &f.UploadedAt, &f.Included,
+			&headersJSON, &sourceCol, &targetCol, &weightCol,
+		)
 	}
 	if err != nil {
 		return ports.File{}, err
 	}
 	if len(headersJSON) > 0 {
-		_ = json.Unmarshal(headersJSON, &f.Headers)
+		if uerr := json.Unmarshal(headersJSON, &f.Headers); uerr != nil {
+			return ports.File{}, uerr
+		}
 	}
 	if sourceCol != "" && targetCol != "" {
 		w := ""
@@ -75,6 +80,24 @@ func (r *FileRepo) Get(ctx context.Context, id uuid.UUID) (ports.File, error) {
 			w = *weightCol
 		}
 		f.Mapping = &graph.ColumnMapping{SourceCol: sourceCol, TargetCol: targetCol, WeightCol: w}
+	}
+	return f, nil
+}
+
+func (r *FileRepo) Get(ctx context.Context, id uuid.UUID) (ports.File, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT f.id, f.case_id, f.filename, f.original_blob, f.byte_size, f.sha256,
+		        f.uploaded_by, f.uploaded_at, f.included,
+		        m.header_names, m.source_col, m.target_col, m.weight_col
+		 FROM files f LEFT JOIN file_mappings m ON m.file_id = f.id
+		 WHERE f.id = $1`, id,
+	)
+	f, err := scanFile(row, true)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ports.File{}, domain.ErrFileNotFound
+	}
+	if err != nil {
+		return ports.File{}, err
 	}
 	return f, nil
 }
@@ -94,24 +117,9 @@ func (r *FileRepo) ListByCase(ctx context.Context, caseID uuid.UUID) ([]ports.Fi
 
 	var out []ports.File
 	for rows.Next() {
-		var f ports.File
-		var headersJSON []byte
-		var sourceCol, targetCol string
-		var weightCol *string
-		if err := rows.Scan(&f.ID, &f.CaseID, &f.Filename, &f.ByteSize, &f.SHA256,
-			&f.UploadedBy, &f.UploadedAt, &f.Included,
-			&headersJSON, &sourceCol, &targetCol, &weightCol); err != nil {
+		f, err := scanFile(rows, false)
+		if err != nil {
 			return nil, err
-		}
-		if len(headersJSON) > 0 {
-			_ = json.Unmarshal(headersJSON, &f.Headers)
-		}
-		if sourceCol != "" && targetCol != "" {
-			w := ""
-			if weightCol != nil {
-				w = *weightCol
-			}
-			f.Mapping = &graph.ColumnMapping{SourceCol: sourceCol, TargetCol: targetCol, WeightCol: w}
 		}
 		out = append(out, f)
 	}

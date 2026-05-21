@@ -23,21 +23,31 @@ func NewGraphHandler(combined *usecase.GetCombinedGraph, node *usecase.GetNodeDe
 	return &GraphHandler{combined: combined, node: node, export: export}
 }
 
+type combinedGraphResponse struct {
+	Nodes     []graph.Node          `json:"nodes"`
+	Edges     []graph.Edge          `json:"edges"`
+	Conflicts []graph.MergeConflict `json:"conflicts,omitempty"`
+}
+
 func (h *GraphHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	caseID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		middleware.WriteError(w, err)
 		return
 	}
-	g, err := h.combined.Run(r.Context(), caseID)
+	res, err := h.combined.Run(r.Context(), caseID)
 	if err != nil {
 		middleware.WriteError(w, err)
 		return
 	}
-	metrics.CombinedGraphNodes.Set(float64(len(g.Nodes)))
-	metrics.CombinedGraphEdges.Set(float64(len(g.Edges)))
+	metrics.CombinedGraphNodes.Set(float64(len(res.Graph.Nodes)))
+	metrics.CombinedGraphEdges.Set(float64(len(res.Graph.Edges)))
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(g)
+	_ = json.NewEncoder(w).Encode(combinedGraphResponse{
+		Nodes:     res.Graph.Nodes,
+		Edges:     res.Graph.Edges,
+		Conflicts: res.Conflicts,
+	})
 }
 
 func (h *GraphHandler) Node(w http.ResponseWriter, r *http.Request) {

@@ -3,13 +3,11 @@ package postgres
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cib/app/backend/internal/domain"
 	"github.com/cib/app/backend/internal/domain/graph"
 )
 
@@ -19,7 +17,19 @@ type GraphRepo struct {
 
 func NewGraphRepo(pool *pgxpool.Pool) *GraphRepo { return &GraphRepo{pool: pool} }
 
+// pgExecer is the minimal write surface satisfied by both *pgxpool.Pool and pgx.Tx,
+// letting the use case run SaveFileGraph inside its own pgx.Tx for atomicity.
+type pgExecer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
 func (r *GraphRepo) SaveFileGraph(ctx context.Context, fileID uuid.UUID, g graph.Graph) error {
+	return SaveFileGraphWith(ctx, r.pool, fileID, g)
+}
+
+// SaveFileGraphWith writes a per-file graph using the supplied executor (pool or tx).
+// Exposed so callers can compose mapping + graph writes inside a single transaction.
+func SaveFileGraphWith(ctx context.Context, q pgExecer, fileID uuid.UUID, g graph.Graph) error {
 	nodesJSON, err := json.Marshal(g.Nodes)
 	if err != nil {
 		return err
@@ -28,7 +38,7 @@ func (r *GraphRepo) SaveFileGraph(ctx context.Context, fileID uuid.UUID, g graph
 	if err != nil {
 		return err
 	}
-	_, err = r.pool.Exec(ctx,
+	_, err = q.Exec(ctx,
 		`INSERT INTO file_graphs (file_id, nodes, edges, node_count, edge_count, parsed_at)
 		 VALUES ($1, $2, $3, $4, $5, now())
 		 ON CONFLICT (file_id) DO UPDATE SET nodes=EXCLUDED.nodes, edges=EXCLUDED.edges,
@@ -38,25 +48,18 @@ func (r *GraphRepo) SaveFileGraph(ctx context.Context, fileID uuid.UUID, g graph
 	return err
 }
 
-func (r *GraphRepo) GetByFile(ctx context.Context, fileID uuid.UUID) (graph.Graph, error) {
-	var nodesJSON, edgesJSON []byte
-	err := r.pool.QueryRow(ctx,
-		`SELECT nodes, edges FROM file_graphs WHERE file_id = $1`, fileID,
-	).Scan(&nodesJSON, &edgesJSON)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return graph.Graph{}, domain.ErrFileNotFound
+// SetMappingWith updates file_mappings using the supplied executor (pool or tx).
+func SetMappingWith(ctx context.Context, q pgExecer, fileID uuid.UUID, m graph.ColumnMapping) error {
+	var weightCol *string
+	if m.WeightCol != "" {
+		w := m.WeightCol
+		weightCol = &w
 	}
-	if err != nil {
-		return graph.Graph{}, err
-	}
-	var g graph.Graph
-	if err := json.Unmarshal(nodesJSON, &g.Nodes); err != nil {
-		return graph.Graph{}, err
-	}
-	if err := json.Unmarshal(edgesJSON, &g.Edges); err != nil {
-		return graph.Graph{}, err
-	}
-	return g, nil
+	_, err := q.Exec(ctx,
+		`UPDATE file_mappings SET source_col=$2, target_col=$3, weight_col=$4, set_at=now() WHERE file_id=$1`,
+		fileID, m.SourceCol, m.TargetCol, weightCol,
+	)
+	return err
 }
 
 func (r *GraphRepo) GetByCase(ctx context.Context, caseID uuid.UUID) ([]graph.FileGraph, error) {
@@ -71,7 +74,7 @@ func (r *GraphRepo) GetByCase(ctx context.Context, caseID uuid.UUID) ([]graph.Fi
 	}
 	defer rows.Close()
 
-	var out []graph.FileGraph
+	out := make([]graph.FileGraph, 0)
 	for rows.Next() {
 		var fg graph.FileGraph
 		var nodesJSON, edgesJSON []byte

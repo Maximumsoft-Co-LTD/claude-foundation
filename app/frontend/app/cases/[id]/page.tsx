@@ -19,19 +19,23 @@ export default function CaseDetailPage(props: { params: Promise<{ id: string }> 
   const [files, setFiles] = useState<CaseFile[] | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const [minWeight, setMinWeight] = useState(0);
   const [openNode, setOpenNode] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [cs, fs, g] = await Promise.all([
-        api.getCase(id),
-        api.listFiles(id),
-        api.getGraph(id).catch(() => ({ Nodes: [], Edges: [] }) as Graph),
-      ]);
+      const [cs, fs] = await Promise.all([api.getCase(id), api.listFiles(id)]);
       setCase(cs);
       setFiles(fs || []);
-      setGraph(g);
+      setGraphError(null);
+      try {
+        const g = await api.getGraph(id);
+        setGraph(g);
+      } catch (ge: unknown) {
+        setGraphError(ge instanceof Error ? ge.message : 'graph fetch failed');
+        setGraph(null);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'load failed');
     }
@@ -89,7 +93,12 @@ export default function CaseDetailPage(props: { params: Promise<{ id: string }> 
       <section data-testid="case-files" className="space-y-2">
         <h2 className="text-lg font-semibold">Files</h2>
         {files && files.length > 0 ? (
-          <FileToggleList caseID={id} files={files} onToggle={refresh} />
+          <FileToggleList
+            caseID={id}
+            files={files}
+            onToggle={refresh}
+            onError={(msg) => setGraphError(msg)}
+          />
         ) : (
           <EmptyState
             title="no files in this case yet"
@@ -107,7 +116,9 @@ export default function CaseDetailPage(props: { params: Promise<{ id: string }> 
             <ExportButtons caseID={id} />
           </div>
         </div>
-        {graph && graph.Edges && graph.Edges.length > 0 ? (
+        {graphError ? (
+          <ErrorBanner variant="error">{graphError}</ErrorBanner>
+        ) : graph && graph.edges && graph.edges.length > 0 ? (
           <NetworkChart
             graph={graph}
             minWeight={minWeight}
@@ -119,6 +130,12 @@ export default function CaseDetailPage(props: { params: Promise<{ id: string }> 
             body="upload a file or lower the weight slider to see edges."
           />
         )}
+        {graph && graph.conflicts && graph.conflicts.length > 0 ? (
+          <ErrorBanner variant="warn">
+            {graph.conflicts.length} merge conflict
+            {graph.conflicts.length === 1 ? '' : 's'} across files — open a node to inspect.
+          </ErrorBanner>
+        ) : null}
       </section>
 
       {openNode ? (

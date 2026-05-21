@@ -12,42 +12,60 @@ import (
 	"github.com/cib/app/backend/internal/domain/graph"
 )
 
+// TransactionalMappingWriter atomically writes a file's column mapping + parsed
+// graph so a graph-write failure rolls back the prior mapping update.
+type TransactionalMappingWriter interface {
+	SaveMappingAndGraph(ctx context.Context, fileID uuid.UUID, m graph.ColumnMapping, g graph.Graph) error
+}
+
+type SetMappingAndParseResult struct {
+	Graph graph.Graph
+	Stats ports.ParseStats
+}
+
 type SetMappingAndParse struct {
 	files  ports.FileRepository
 	graphs ports.GraphRepository
 	parser ports.XlsxParser
+	txn    TransactionalMappingWriter
 }
 
-func NewSetMappingAndParse(files ports.FileRepository, graphs ports.GraphRepository, parser ports.XlsxParser) *SetMappingAndParse {
-	return &SetMappingAndParse{files: files, graphs: graphs, parser: parser}
+func NewSetMappingAndParse(files ports.FileRepository, graphs ports.GraphRepository, parser ports.XlsxParser, txn TransactionalMappingWriter) *SetMappingAndParse {
+	return &SetMappingAndParse{files: files, graphs: graphs, parser: parser, txn: txn}
 }
 
-func (uc *SetMappingAndParse) Run(ctx context.Context, fileID uuid.UUID, m graph.ColumnMapping) (graph.Graph, error) {
+func (uc *SetMappingAndParse) Run(ctx context.Context, fileID uuid.UUID, m graph.ColumnMapping) (SetMappingAndParseResult, error) {
 	logger := LoggerFrom(ctx)
 	f, err := uc.files.Get(ctx, fileID)
 	if err != nil {
-		return graph.Graph{}, err
+		return SetMappingAndParseResult{}, err
 	}
 	if err := m.Validate(f.Headers); err != nil {
 		logger.Warn("upload.rejected",
 			slog.String("case_id", f.CaseID.String()),
 			slog.String("file_id", fileID.String()),
 			slog.String("reason", "invalid_mapping"))
-		return graph.Graph{}, domain.ErrInvalidMapping
+		return SetMappingAndParseResult{}, domain.ErrInvalidMapping
 	}
 	t0 := time.Now()
-	g, err := uc.parser.Parse(f.Blob, m)
+	parsed, err := uc.parser.Parse(f.Blob, m)
 	if err != nil {
-		return graph.Graph{}, err
+		return SetMappingAndParseResult{}, err
 	}
-	for i := range g.Edges {
-		g.Edges[i].FileID = fileID
+	for i := range parsed.Graph.Edges {
+		parsed.Graph.Edges[i].FileID = fileID
 	}
-	if err := uc.files.SetMapping(ctx, fileID, m); err != nil {
-		return graph.Graph{}, err
-	}
-	if err := uc.graphs.SaveFileGraph(ctx, fileID, g); err != nil {
-		return graph.Graph{}, err
+	if uc.txn != nil {
+		if err := uc.txn.SaveMappingAndGraph(ctx, fileID, m, parsed.Graph); err != nil {
+			return SetMappingAndParseResult{}, err
+		}
+	} else {
+		if err := uc.files.SetMapping(ctx, fileID, m); err != nil {
+			return SetMappingAndParseResult{}, err
+		}
+		if err := uc.graphs.SaveFileGraph(ctx, fileID, parsed.Graph); err != nil {
+			return SetMappingAndParseResult{}, err
+		}
 	}
 	logger.Info("mapping.set",
 		slog.String("file_id", fileID.String()),
@@ -57,9 +75,14 @@ func (uc *SetMappingAndParse) Run(ctx context.Context, fileID uuid.UUID, m graph
 	)
 	logger.Info("file.parsed",
 		slog.String("file_id", fileID.String()),
-		slog.Int("node_count", len(g.Nodes)),
-		slog.Int("edge_count", len(g.Edges)),
+		slog.Int("node_count", len(parsed.Graph.Nodes)),
+		slog.Int("edge_count", len(parsed.Graph.Edges)),
+		slog.Int("rows_seen", parsed.Stats.RowsSeen),
+		slog.Int("rows_emitted", parsed.Stats.RowsEmitted),
+		slog.Int("rows_skipped_short", parsed.Stats.RowsSkippedShort),
+		slog.Int("rows_skipped_blank", parsed.Stats.RowsSkippedBlank),
+		slog.Int("weights_unparsed", parsed.Stats.WeightsUnparsed),
 		slog.Int64("parse_dur_ms", time.Since(t0).Milliseconds()),
 	)
-	return g, nil
+	return SetMappingAndParseResult{Graph: parsed.Graph, Stats: parsed.Stats}, nil
 }

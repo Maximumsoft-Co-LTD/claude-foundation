@@ -61,6 +61,7 @@ func main() {
 	caseRepo := postgres.NewCaseRepo(pool)
 	fileRepo := postgres.NewFileRepo(pool)
 	graphRepo := postgres.NewGraphRepo(pool)
+	txWriter := postgres.NewMappingTxWriter(pool)
 	parser := xlsx.NewExcelizeParser()
 
 	createUC := usecase.NewCreateCase(caseRepo)
@@ -69,11 +70,11 @@ func main() {
 	listUC := usecase.NewListCases(caseRepo)
 	getUC := usecase.NewGetCase(caseRepo)
 	uploadUC := usecase.NewUploadFile(fileRepo, parser)
-	setMapUC := usecase.NewSetMappingAndParse(fileRepo, graphRepo, parser)
+	setMapUC := usecase.NewSetMappingAndParse(fileRepo, graphRepo, parser, txWriter)
 	toggleUC := usecase.NewToggleFileIncluded(fileRepo)
-	combinedUC := usecase.NewGetCombinedGraph(graphRepo)
-	nodeUC := usecase.NewGetNodeDetail(fileRepo, graphRepo)
-	exportUC := usecase.NewExportGraphJSON(graphRepo)
+	combinedUC := usecase.NewGetCombinedGraph(graphRepo, caseRepo)
+	nodeUC := usecase.NewGetNodeDetail(fileRepo, graphRepo, caseRepo)
+	exportUC := usecase.NewExportGraphJSON(graphRepo, caseRepo)
 
 	deps := httpapi.Deps{
 		Cases:  handlers.NewCasesHandler(createUC, updateUC, archiveUC, listUC, getUC),
@@ -110,7 +111,7 @@ func runMigrations(dsn string) error {
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	pgxgoose.SetBaseFS(nil)
 	migrationsDir := os.Getenv("MIGRATIONS_DIR")
 	if migrationsDir == "" {

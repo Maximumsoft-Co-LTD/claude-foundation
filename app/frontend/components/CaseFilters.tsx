@@ -65,13 +65,13 @@ export function CaseFiltersForm({
       </select>
       <input
         type="date"
-        value={from}
+        value={from.slice(0, 10)}
         onChange={(e) => setFrom(e.target.value ? `${e.target.value}T00:00:00Z` : '')}
         className="rounded-md border border-slate-300 px-2 py-1 text-sm"
       />
       <input
         type="date"
-        value={to}
+        value={to.slice(0, 10)}
         onChange={(e) => setTo(e.target.value ? `${e.target.value}T23:59:59Z` : '')}
         className="rounded-md border border-slate-300 px-2 py-1 text-sm"
       />

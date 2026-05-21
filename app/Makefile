@@ -1,4 +1,4 @@
-.PHONY: up down migrate smoke fmt test build
+.PHONY: up down migrate smoke fmt test test-integration build
 
 up:
 	docker compose up -d postgres api web
@@ -18,6 +18,9 @@ fmt:
 
 test:
 	cd backend && go test ./...
+
+test-integration:
+	cd backend && DATABASE_URL=$${DATABASE_URL:-postgres://cib:cib@localhost:5432/cib?sslmode=disable} go test -tags=integration ./internal/adapters/driven/postgres/...
 
 build:
 	cd backend && go build ./...

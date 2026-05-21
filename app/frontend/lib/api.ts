@@ -8,6 +8,20 @@ export class ApiError extends Error {
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
 
+async function throwIfNotOk(res: Response): Promise<void> {
+  if (res.ok) return;
+  let msg = res.statusText;
+  try {
+    const body = await res.json();
+    if (body && typeof body.error === 'string') {
+      msg = body.error;
+    }
+  } catch {
+    // body was not JSON; keep statusText
+  }
+  throw new ApiError(res.status, msg);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}/api/v1${path}`, {
     ...init,
@@ -17,16 +31,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
     cache: 'no-store',
   });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const body = await res.json();
-      msg = body.error || msg;
-    } catch {
-      // ignore
-    }
-    throw new ApiError(res.status, msg);
-  }
+  await throwIfNotOk(res);
   if (res.status === 204) {
     return undefined as unknown as T;
   }
@@ -43,23 +48,44 @@ export type Case = {
   updated_at: string;
 };
 
+export type ColumnMapping = {
+  source_col: string;
+  target_col: string;
+  weight_col?: string;
+};
+
 export type CaseFile = {
   id: string;
   filename: string;
   included: boolean;
   headers: string[];
-  mapping?: { SourceCol: string; TargetCol: string; WeightCol: string };
+  mapping?: ColumnMapping;
 };
 
-export type GraphNode = { ID: string; Attrs?: Record<string, string> };
+export type GraphNode = { id: string; attrs?: Record<string, string> };
 export type GraphEdge = {
-  Source: string;
-  Target: string;
-  Weight: number;
-  RowIndex: number;
-  FileID: string;
+  source: string;
+  target: string;
+  weight: number;
+  row_index: number;
+  file_id: string;
+  attrs?: Record<string, string>;
 };
-export type Graph = { Nodes: GraphNode[]; Edges: GraphEdge[] };
+
+export type MergeConflict = {
+  node_id: string;
+  key: string;
+  old_value: string;
+  new_value: string;
+  old_file_id: string;
+  new_file_id: string;
+};
+
+export type Graph = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  conflicts?: MergeConflict[];
+};
 
 export type NodeDetail = {
   node_id: string;
@@ -71,6 +97,7 @@ export type NodeDetail = {
     filename: string;
     row_index: number;
   }>;
+  conflicts?: MergeConflict[];
 };
 
 export type CaseFilters = {
@@ -108,25 +135,26 @@ export const api = {
       method: 'POST',
       body: fd,
     });
-    if (!res.ok) {
-      let msg = res.statusText;
-      try {
-        const body = await res.json();
-        msg = body.error || msg;
-      } catch {}
-      throw new ApiError(res.status, msg);
-    }
+    await throwIfNotOk(res);
     return res.json();
   },
   setMapping: (
     caseID: string,
     fileID: string,
-    m: { source_col: string; target_col: string; weight_col: string },
+    m: { source_col: string; target_col: string; weight_col?: string },
   ) =>
-    request<{ node_count: number; edge_count: number }>(
-      `/cases/${caseID}/files/${fileID}/mapping`,
-      { method: 'PATCH', body: JSON.stringify(m) },
-    ),
+    request<{
+      node_count: number;
+      edge_count: number;
+      rows_seen: number;
+      rows_emitted: number;
+      rows_skipped_short: number;
+      rows_skipped_blank: number;
+      weights_unparsed: number;
+    }>(`/cases/${caseID}/files/${fileID}/mapping`, {
+      method: 'PATCH',
+      body: JSON.stringify(m),
+    }),
   setIncluded: (caseID: string, fileID: string, included: boolean) =>
     request<void>(`/cases/${caseID}/files/${fileID}/included`, {
       method: 'PATCH',
@@ -134,7 +162,9 @@ export const api = {
     }),
   getGraph: (id: string) => request<Graph>(`/cases/${id}/graph`),
   getNodeDetail: (id: string, nodeID: string) =>
-    request<NodeDetail>(`/cases/${id}/nodes/${encodeURIComponent(nodeID)}`),
+    request<NodeDetail>(
+      `/cases/${id}/nodes/${encodeURIComponent(nodeID)}`,
+    ),
   exportGraphURL: (id: string) =>
     `${BASE}/api/v1/cases/${id}/graph/export.json`,
 };

@@ -3,8 +3,8 @@ package usecase
 import (
 	"context"
 
-	casedom "github.com/cib/app/backend/internal/domain/case"
 	"github.com/cib/app/backend/internal/app/ports"
+	casedom "github.com/cib/app/backend/internal/domain/case"
 )
 
 type ListCases struct {

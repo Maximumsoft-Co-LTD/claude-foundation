@@ -20,25 +20,30 @@ type NodeDetailEdge struct {
 }
 
 type NodeDetail struct {
-	NodeID graph.NodeID     `json:"node_id"`
-	Edges  []NodeDetailEdge `json:"edges"`
+	NodeID    graph.NodeID          `json:"node_id"`
+	Edges     []NodeDetailEdge      `json:"edges"`
+	Conflicts []graph.MergeConflict `json:"conflicts,omitempty"`
 }
 
 type GetNodeDetail struct {
 	files  ports.FileRepository
 	graphs ports.GraphRepository
+	cases  CaseGetter
 }
 
-func NewGetNodeDetail(files ports.FileRepository, graphs ports.GraphRepository) *GetNodeDetail {
-	return &GetNodeDetail{files: files, graphs: graphs}
+func NewGetNodeDetail(files ports.FileRepository, graphs ports.GraphRepository, cases CaseGetter) *GetNodeDetail {
+	return &GetNodeDetail{files: files, graphs: graphs, cases: cases}
 }
 
 func (uc *GetNodeDetail) Run(ctx context.Context, caseID uuid.UUID, nodeID graph.NodeID) (NodeDetail, error) {
+	if _, err := uc.cases.Get(ctx, caseID); err != nil {
+		return NodeDetail{}, err
+	}
 	fgs, err := uc.graphs.GetByCase(ctx, caseID)
 	if err != nil {
 		return NodeDetail{}, err
 	}
-	g := graph.MergeGraphs(fgs)
+	g, conflicts := graph.MergeGraphs(fgs)
 	found := false
 	for _, n := range g.Nodes {
 		if n.ID == nodeID {
@@ -47,7 +52,7 @@ func (uc *GetNodeDetail) Run(ctx context.Context, caseID uuid.UUID, nodeID graph
 		}
 	}
 	if !found {
-		return NodeDetail{}, domain.ErrFileNotFound
+		return NodeDetail{}, domain.ErrNodeNotFound
 	}
 
 	files, err := uc.files.ListByCase(ctx, caseID)
@@ -72,6 +77,11 @@ func (uc *GetNodeDetail) Run(ctx context.Context, caseID uuid.UUID, nodeID graph
 			Filename: filenames[e.FileID],
 			RowIndex: e.RowIndex,
 		})
+	}
+	for _, c := range conflicts {
+		if c.NodeID == nodeID {
+			detail.Conflicts = append(detail.Conflicts, c)
+		}
 	}
 	return detail, nil
 }

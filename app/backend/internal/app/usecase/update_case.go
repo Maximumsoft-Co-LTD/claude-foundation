@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	casedom "github.com/cib/app/backend/internal/domain/case"
 	"github.com/cib/app/backend/internal/app/ports"
+	casedom "github.com/cib/app/backend/internal/domain/case"
 )
 
 type UpdateCasePatch struct {
