@@ -18,6 +18,7 @@ Type-specific:
 ## Current state
 <!-- Required for: M, L, any refactor, any fix. Skip for: XS/S feat in isolated new files, chore/docs not touching live code, spike. See `plan-writing` skill > principle 3 + references/current-state.md. -->
 <!-- Walk existing code with LSP (go-to-definition + find-references); every claim cites path:line. Capture only the load-bearing as-is — not a file tour. -->
+<!-- When plan fanout ran, synthesise team-codebase-explorer findings here and keep the worker details under Research notes. -->
 
 **Entry point(s)**:
 - `path:line` — <one-line role>
@@ -41,6 +42,19 @@ Type-specific:
 ```
 
 <!-- L tier + structural refactor: also draw an "as-is" mermaid here, with the Architecture diagram below as "to-be". -->
+
+## Research notes
+<!-- Required when spec/plan research fanout ran. Delete for small local-only plans. Summarise worker findings that changed the plan. -->
+
+### Codebase exploration
+- **Dispatched-as**: team-codebase-explorer | general-purpose fallback
+- Finding: ...
+- Plan impact: ...
+
+### Best-practice research
+- **Dispatched-as**: team-best-practice-researcher | general-purpose fallback
+- Finding: ...
+- Plan impact: ...
 
 ## Architecture diagram
 ALWAYS REQUIRED. Pick the cheapest form that conveys the change. Mark new pieces with ★. See `plan-writing` skill > diagrams for templates per Type.

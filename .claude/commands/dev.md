@@ -5,7 +5,7 @@ argument-hint: <intent> | --resume <id>
 
 Run the `/dev` workflow on this intent: **$ARGUMENTS**
 
-> **Do not call `Agent` with `subagent_type: "orchestrator"`.** There is no `orchestrator` sub-agent — that name does not exist under `.claude/agents/`, and the spawn will fail with `Agent type 'orchestrator' not found`. *You* — the main agent reading this command — are the Orchestrator. Worker sub-agents (spawnable via `Agent`) are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`.
+> **Do not call `Agent` with `subagent_type: "orchestrator"`.** There is no `orchestrator` sub-agent — that name does not exist under `.claude/agents/`, and the spawn will fail with `Agent type 'orchestrator' not found`. *You* — the main agent reading this command — are the Orchestrator. File-writing workflow sub-agents are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`; fanout-only worker sub-agents use the `team-*` prefix.
 
 > **Do not fall back to `subagent_type: "general-purpose"` for /dev work.** Every file-writing step in this workflow goes to one of the five named workers. If you find yourself writing `description: "engineer: implement X"` (or `"lead: ..."`, `"pm: ..."`, etc.), that is a tell you intended to call the named worker — set `subagent_type` to that worker's name, not `general-purpose`. The `PreToolUse` hook in `.claude/hooks/dev-agent-guard.sh` will block this pattern and tell you to retry.
 >
@@ -27,14 +27,14 @@ Run the `/dev` workflow on this intent: **$ARGUMENTS**
 > })
 > ```
 
-You — the main agent — are the Orchestrator for this run. Claude Code sub-agents cannot reliably use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to delegate or interview. Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to the worker sub-agents above via the `Agent` tool.
+You — the main agent — are the Orchestrator for this run. Claude Code sub-agents cannot reliably use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to delegate or interview. Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to the five workflow sub-agents above via the `Agent` tool. Parallel investigation/research fanout is delegated to `team-*` workers by the orchestrator and synthesised back by `pm`, `lead`, `qa`, or `engineer`.
 
 1. Read [`.claude/orchestrator.md`](../orchestrator.md) end-to-end. It is the source of truth for the flow — phases, state discipline, cycle limits, and the rules for delegating to sub-agents.
 2. Read [`WORKFLOW.md`](../../WORKFLOW.md) for the type-aware phase matrix and the example runs.
 3. Follow `.claude/orchestrator.md` as if its instructions were addressed to you. In particular:
    - You run the Phase 1 interview yourself via `AskUserQuestion` (one batch, 3–4 questions) — the `pm` sub-agent only writes `spec.md` from your interview answers.
    - You handle the gate, all cycle-limit escalations, and the skill-candidate approval via `AskUserQuestion`.
-   - You spawn sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) via the `Agent` tool with `subagent_type: <name>`. Pass the run id, the run's `Type`, and any mode hint (e.g., lead `plan` / `review` / `security`; engineer `implement` / `docs` / `ship`).
+   - You spawn workflow sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) via the `Agent` tool with `subagent_type: <name>`. Pass the run id, the run's `Type`, and any mode hint (e.g., lead `plan` / `review` / `security`; engineer `implement` / `docs` / `ship`). You spawn `team-*` workers only for fanout probes described in `.claude/orchestrator.md`.
    - You own `state.json` writes after every step so `/dev --resume <id>` works.
 
 Behavior:

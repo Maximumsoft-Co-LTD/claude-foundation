@@ -1,6 +1,6 @@
 # Orchestrator (main-agent role)
 
-> **This file is not a sub-agent.** It lives at `.claude/orchestrator.md` (not under `.claude/agents/`) on purpose: there is no `orchestrator` agent — Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so orchestration must run in the **main agent**. The `/dev` slash command reads this file and the main agent follows it. Worker sub-agents you spawn from here are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`. **Never** call `Agent(subagent_type="orchestrator")` — that name does not exist and the spawn will fail with `Agent type 'orchestrator' not found`.
+> **This file is not a sub-agent.** It lives at `.claude/orchestrator.md` (not under `.claude/agents/`) on purpose: there is no `orchestrator` agent — Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so orchestration must run in the **main agent**. The `/dev` slash command reads this file and the main agent follows it. Worker sub-agents you spawn from here are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`; fanout worker sub-agents are the `team-*` agents. **Never** call `Agent(subagent_type="orchestrator")` — that name does not exist and the spawn will fail with `Agent type 'orchestrator' not found`.
 
 You — the main agent reading this — are the Orchestrator for `/dev`. You drive the flow; sub-agents do the substantive file work; you handle every `Agent` spawn and every `AskUserQuestion`. The flow is **type-aware**: some phases run, some are skipped, and one (security review) is trigger-based. See `WORKFLOW.md > Type-aware phase matrix` for the truth table.
 
@@ -38,12 +38,16 @@ This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse o
 6. **Interview (you run it).** You — the main agent — run the spec interview. Sub-agents can't call `AskUserQuestion`, so this step lives here, not in `pm`.
     1. **Load the `brainstorming` skill first.** It owns the pre-interview discipline: explore project context (CLAUDE.md, recent commits, named files), decompose oversized scope before refining details, slot-walk only the UNSPECIFIED slots, propose 2–3 approaches with a recommendation when "how" is open, and (when UI work is in scope) the opt-in visual-companion offer. The substance below is the workflow-specific shell around that skill.
     2. Read `.workflow/_templates/spec.md` and `.workflow/FOLLOWUPS.md`. Skim the `Open` table — if any item looks like it could be in scope for this intent, fold it into the questions.
-    3. Read `.claude/agents/pm.md > Required slots` for the full slot list. Pick the 3–4 slots the intent left UNSPECIFIED. **Never** assume defaults for slots you didn't ask about.
-    4. Call `AskUserQuestion` **once** — one batch, exactly 3–4 questions. Prefer multi-choice options with one-line descriptions. For `fix` runs, the reproduction question is free-text; do not invent steps. Never skip this — even a one-line intent like "create todolist" needs the batch.
-    5. Save the answers (and any folded-in follow-up IDs) for the `pm` spawn.
-7. **Spec.** Spawn `pm` (mode = "write spec from answers"). Pass the run id, the type, the user's intent, the full Q&A from step 6, and the list of carried-over `FOLLOWUPS.md` IDs the user confirmed are in scope. `pm` writes `.workflow/<id>/spec.md` from the template + answers and returns the spec path + 3-bullet summary. Update INDEX status → `planned`. Update state: `step=spec, next_step=plan`.
+    3. **Spec-prep fanout (condition-based).** This is not an every-run step. Dispatch focused workers before asking the interview batch only when doing so will reduce guessing: existing modules/integration points are named, the work touches APIs/security-sensitive paths, the product/domain terms are unfamiliar, or there are 2+ independent research questions.
+       - `team-codebase-explorer` per codebase area / integration point to discover current behaviour, invariants, and likely constraints.
+       - `team-best-practice-researcher` per external API / framework / security / UX / architecture practice question to gather current best-practice constraints.
+       Dispatch all probes in one message. If a `team-*` spawn fails with `Agent type ... not found`, use the inline fallback in `## Fanout dispatch`. Save the labelled findings and `Dispatched-as:` map for the `pm` prompt. Skip this fanout for XS pure-greenfield work with no unfamiliar domain/API choices.
+    4. Read `.claude/agents/pm.md > Required slots` for the full slot list. Pick the 3–4 slots the intent left UNSPECIFIED, using the prep findings to avoid asking questions the codebase already answers. **Never** assume defaults for slots you didn't ask about.
+    5. Call `AskUserQuestion` **once** — one batch, exactly 3–4 questions. Prefer multi-choice options with one-line descriptions. For `fix` runs, the reproduction question is free-text; do not invent steps. Never skip this — even a one-line intent like "create todolist" needs the batch.
+    6. Save the answers, any folded-in follow-up IDs, and any fanout findings for the `pm` spawn.
+7. **Spec.** Spawn `pm` (mode = "write spec from answers"). Pass the run id, the type, the user's intent, the full Q&A from step 6, the list of carried-over `FOLLOWUPS.md` IDs the user confirmed are in scope, and any spec-prep fanout findings + `Dispatched-as:` map. `pm` writes `.workflow/<id>/spec.md` from the template + answers and returns the spec path + 3-bullet summary. If `pm` returns `FANOUT_REQUESTED: research:<question-list>`, follow `## Fanout dispatch` below — dispatch `team-codebase-explorer` for `codebase-*` questions and `team-best-practice-researcher` for `best-practice-*` questions, then re-spawn `pm` with the worker findings appended to the interview Q&A. Update INDEX status → `planned`. Update state: `step=spec, next_step=plan`.
    - **Spec check.** Open `spec.md`. Confirm: `Type` is set; `Constraints` names a real tech stack or integration set; for `fix`, the `Reproduction` section has concrete steps; for `spike`, the `Timebox` section has a hard limit. If any of these are blank/invented/"TBD" because the user genuinely didn't answer, that slot belongs under `spec.md > Open questions` — re-spawn `pm` only if the slot has a real answer that didn't make it in.
-8. **Plan.** Spawn `lead` in **plan mode** to write `plan.md` (or `epic.md` if scope check triggers). Pass the `Type` so the plan applies the right rules (regression-test-first for `fix`, behavior-equivalence note for `refactor`, timeboxed exploration for `spike`). Update INDEX status → `planned` (or `epic`). State: `step=plan, next_step=gate`. If `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` (default-on for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield), follow `## Fanout dispatch` below — dispatch one codebase-exploration pass per integration point, then re-spawn `lead` for synthesis into `Current state`.
+8. **Plan.** Spawn `lead` in **plan mode** to write `plan.md` (or `epic.md` if scope check triggers). Pass the `Type` so the plan applies the right rules (regression-test-first for `fix`, behavior-equivalence note for `refactor`, timeboxed exploration for `spike`). Update INDEX status → `planned` (or `epic`). State: `step=plan, next_step=gate`. If `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` (condition-based: plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield), follow `## Fanout dispatch` below — for each integration point, dispatch `team-codebase-explorer` for current-state mapping and `team-best-practice-researcher` for relevant framework/API/testing/security best practices, then re-spawn `lead` for synthesis into `Current state`, `Research notes`, `Approach`, `Risks`, and `Steps`.
 9. **Gate** — Build the type-aware run plan from the matrix in `WORKFLOW.md`. Decide whether to open a PR on ship (the spec has the user's preference; if it's still blank, ask once with `AskUserQuestion`). Tentatively mark whether security review will fire (rule of thumb: if any planned file path or diff hint matches the sensitive-paths list, plan to fire; the real decision happens after implement). Print a tight summary:
     - Spec goal + Type + `Ship as` + acceptance criteria (bulleted)
     - Constraints / stack from `spec.md`
@@ -63,7 +67,7 @@ This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse o
     - If `engineer` returns "needs user input" (e.g., unfamiliar files in `git status` during ship, destructive op confirmation), surface the question to the user with `AskUserQuestion` and re-spawn `engineer` with the answer.
     - If `engineer` returns `FANOUT_REQUESTED: implement:<phase-list>`, follow `## Fanout dispatch` below. Treat this shape as experimental — see the caveat in that section.
 11. **Review.** Spawn `lead` in **review mode**. INDEX status → `review`. State: `step=review, cycles.review++`.
-    - `lead` Mode B **always** returns `FANOUT_REQUESTED: review` as its first line; dispatch the 6 `team-*` workers per `## Fanout dispatch` below, then re-spawn `lead` with the workers' outputs and the `Dispatched-as:` map for synthesis.
+    - `lead` Mode B **always** returns `FANOUT_REQUESTED: review` as its first line; dispatch the 6 review-focused `team-*` workers per `## Fanout dispatch` below, then re-spawn `lead` with the workers' outputs and the `Dispatched-as:` map for synthesis.
     - Verdict `fix-required` and `cycles.review` ≤ 2 → back to `engineer` with findings; do not bump `cycles.test`.
     - `cycles.review` > 2 → escalate to user via `AskUserQuestion`. Print blocking findings + ask whether to continue, hand off, or abort.
 12. **Security review (trigger-based).** Decide whether to fire:
@@ -90,7 +94,7 @@ This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse o
 
 ## Fanout dispatch
 
-The `/dev` workflow's `lead`, `qa`, and `engineer` sub-agents can request parallel team-agent fanout for the independent-sub-investigation case (review, security buckets, plan integration points, test categories, implement phases). The full pattern lives in `.claude/skills/fanout-team-agents/SKILL.md`; this section is the orchestrator's (main agent's) consumer-side contract.
+The `/dev` workflow's main agent and `pm`, `lead`, `qa`, and `engineer` sub-agents can request parallel team-agent fanout for the independent-sub-investigation case (spec research, plan integration points, review, security buckets, test categories, implement phases). The full pattern lives in `.claude/skills/fanout-team-agents/SKILL.md`; this section is the orchestrator's (main agent's) consumer-side contract.
 
 ### Recognising the signal
 
@@ -106,12 +110,12 @@ If the first line matches the case-insensitive `FANOUT_REQ` prefix but does **no
 
 | Shape | Trigger phase / mode | Dispatch |
 |-------|----------------------|----------|
-| `FANOUT_REQUESTED: review` | Phase 2 step 11 — `lead` Mode B (mandatory) | Spawn all 6 `team-*` workers against the diff |
+| `FANOUT_REQUESTED: review` | Phase 2 step 11 — `lead` Mode B (mandatory) | Spawn the 6 review-focused `team-*` workers against the diff |
 | `FANOUT_REQUESTED: security:<bucket-list>` | Phase 2 step 12 — `lead` Mode C (opt-in, ≥ 2 buckets) | One `team-code-reviewer` per bucket with a focused threat-model prompt scoped to that bucket's paths |
-| `FANOUT_REQUESTED: plan:<point-list>` | Phase 1 step 8 — `lead` Mode A (default-on for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield) | One codebase-exploration pass per integration point |
+| `FANOUT_REQUESTED: plan:<point-list>` | Phase 1 step 8 — `lead` Mode A (condition-based: Size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield) | For each point: one `team-codebase-explorer` pass for current state + one `team-best-practice-researcher` pass for current best practices |
 | `FANOUT_REQUESTED: test:<category-list>` | Phase 2 step 13 — `qa` (opt-in, ≥ 2 of {unit, integration, e2e} AND any ≥ 3 tests) | One `team-pr-test-analyzer` per category |
 | `FANOUT_REQUESTED: implement:<phase-list>` | Phase 2 step 10 — `engineer` Mode A (opt-in, L-tier with disjoint Files-touched) | One `engineer` per phase, then re-spawn the calling engineer for integration. **Caveat**: this shape races the Case 3 state.json discipline in `dev-agent-guard.sh`; treat as experimental until the guard is namespaced per-phase. |
-| `FANOUT_REQUESTED: research:<question-list>` | Phase 1 step 1 (interview-prep, pre-spec) — main agent (opt-in when user intent is ambiguous); `pm` sub-agent via return-signal (opt-in when interview answers are insufficient) | One `general-purpose` worker per question. pm cannot dispatch directly — pm returns `FANOUT_REQUESTED: research:<…>`, orchestrator dispatches, orchestrator re-spawns pm with the workers' findings appended to the interview Q&A. |
+| `FANOUT_REQUESTED: research:<question-list>` | Phase 1 step 7 — `pm` return-signal, plus step 6 spec-prep fanout from the main agent | One `team-codebase-explorer` per `codebase-*` question and one `team-best-practice-researcher` per `best-practice-*` question. pm cannot dispatch directly — pm returns `FANOUT_REQUESTED: research:<…>`, orchestrator dispatches, orchestrator re-spawns pm with the workers' findings appended to the interview Q&A. |
 
 ### The dispatch pattern (parallelism)
 
@@ -119,12 +123,14 @@ Once the signal validates, dispatch **all workers in the same orchestrator messa
 
 ```
 # In one orchestrator message:
-Agent(subagent_type="team-code-reviewer",      description="...", prompt=<focused-prompt-1>)
-Agent(subagent_type="team-code-simplifier",    description="...", prompt=<focused-prompt-2>)
-Agent(subagent_type="team-comment-analyzer",   description="...", prompt=<focused-prompt-3>)
-Agent(subagent_type="team-pr-test-analyzer",   description="...", prompt=<focused-prompt-4>)
-Agent(subagent_type="team-silent-failure-hunter", description="...", prompt=<focused-prompt-5>)
-Agent(subagent_type="team-type-design-analyzer",  description="...", prompt=<focused-prompt-6>)
+Agent(subagent_type="team-codebase-explorer",        description="...", prompt=<focused-prompt-1>)
+Agent(subagent_type="team-best-practice-researcher", description="...", prompt=<focused-prompt-2>)
+Agent(subagent_type="team-code-reviewer",            description="...", prompt=<focused-prompt-3>)
+Agent(subagent_type="team-code-simplifier",          description="...", prompt=<focused-prompt-4>)
+Agent(subagent_type="team-comment-analyzer",         description="...", prompt=<focused-prompt-5>)
+Agent(subagent_type="team-pr-test-analyzer",         description="...", prompt=<focused-prompt-6>)
+Agent(subagent_type="team-silent-failure-hunter",    description="...", prompt=<focused-prompt-7>)
+Agent(subagent_type="team-type-design-analyzer",     description="...", prompt=<focused-prompt-8>)
 ```
 
 Each prompt is **self-contained** (the workers inherit none of the calling sub-agent's context). Include scope (paths / diff slice), goal (one sentence), constraints (what NOT to do), and output shape (the worker's documented section format from `.claude/agents/team-<role>.md`).
@@ -138,23 +144,24 @@ If any `team-<role>` spawn fails with `Agent type 'team-<role>' not found`, the 
 
 ### Re-spawn for synthesis
 
-When every worker returns, re-spawn the calling sub-agent (`lead` / `qa` / `engineer`) with:
+When every worker returns, re-spawn the calling sub-agent (`pm` / `lead` / `qa` / `engineer`) with:
 
 - The workers' outputs concatenated into the prompt (one labelled block per worker).
 - A `Dispatched-as:` map: one line per worker, `team-<role> → <actual subagent_type that ran>` (so the calling sub-agent can fill the mandatory `**Dispatched-as**:` provenance line on each `### team-<role>` subsection of the artifact — see `.workflow/_templates/review.md > Per-agent findings`).
 
-The re-spawned sub-agent does the synthesis (per-agent sections + its own plan-adherence / AC / coverage / integration pass).
+The re-spawned sub-agent does the synthesis (spec discovery notes; plan current-state / research notes; per-agent sections + its own plan-adherence / AC / coverage / integration pass).
 
-### Where fanout fires in Phase 2
+### Where fanout fires
 
-The phase-2 steps that can fire a fanout (signal originated by the spawned sub-agent, dispatched here):
+The steps that can fire a fanout (signal originated by the main agent or spawned sub-agent, dispatched here):
 
+- **Step 6 — Spec prep** — condition-based: main agent may dispatch `team-codebase-explorer` / `team-best-practice-researcher` before the interview when the intent names existing code, integration points, APIs, security-sensitive paths, unfamiliar domain terms, or 2+ independent research questions. Skip for XS pure-greenfield work with no unfamiliar domain/API choices.
+- **Step 7 — Spec** — `pm` may return `FANOUT_REQUESTED: research:<question-list>` if it needs codebase or best-practice probes before writing `spec.md`.
+- **Step 8 — Plan** — condition-based: `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` for Size ∈ {S, M, L} AND existing code (skip XS / pure-greenfield), and the orchestrator dispatches both codebase and best-practice workers for each point.
 - **Step 10 — Implement** — `engineer` may return `FANOUT_REQUESTED: implement:<phase-list>` (opt-in, L-tier only; see caveat above).
-- **Step 11 — Review** — `lead` Mode B **always** returns `FANOUT_REQUESTED: review` (mandatory fanout — dispatch the 6 workers, then re-spawn `lead` for synthesis).
+- **Step 11 — Review** — `lead` Mode B **always** returns `FANOUT_REQUESTED: review` (mandatory fanout — dispatch the 6 review-focused workers, then re-spawn `lead` for synthesis).
 - **Step 12 — Security review** — `lead` Mode C may return `FANOUT_REQUESTED: security:<bucket-list>` (opt-in when ≥ 2 buckets trip).
 - **Step 13 — Test** — `qa` may return `FANOUT_REQUESTED: test:<category-list>` (opt-in heuristic).
-
-Phase-1 step 8 (Plan) can also fire: `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` default-on for plan size ∈ {S, M, L} AND existing code (skip XS / pure-greenfield).
 
 ## Cycle escalation
 
@@ -168,7 +175,7 @@ Phase-1 step 8 (Plan) can also fire: `lead` Mode A returns `FANOUT_REQUESTED: pl
 - **Never skip the interview.** A spec built from a one-line intent alone is a broken run. Step 6 is mandatory for every fresh run, even short intents.
 - Never skip phases that the type matrix says should run. Skipping that's allowed by the matrix is recorded in `state.json > skipped_steps`.
 - The gate is non-negotiable.
-- **Never spawn an `orchestrator` sub-agent.** That sub-agent does not exist (and could not work — sub-agents can't spawn sub-agents). All `Agent` calls go to `pm`, `lead`, `engineer`, `qa`, or `retro`.
+- **Never spawn an `orchestrator` sub-agent.** That sub-agent does not exist (and could not work — sub-agents can't spawn sub-agents). File-writing workflow `Agent` calls go to `pm`, `lead`, `engineer`, `qa`, or `retro`; fanout-only read/research calls may go to `team-*` workers.
 - **Never fall back to `subagent_type: "general-purpose"` for /dev work.** Every file-writing step goes to one of the five named workers. If your description reads `"engineer: …"` / `"lead: …"` / `"pm: …"` / `"qa: …"` / `"retro: …"`, the `subagent_type` MUST be that exact worker name — not `general-purpose`. The `PreToolUse` hook at `.claude/hooks/dev-agent-guard.sh` enforces this and will block the call with a retry message. Correct shape: `Agent({subagent_type: "engineer", description: "implement Go refactor", prompt: "Mode A. Type=refactor. …"})`. The mode hint (`plan`/`review`/`security`, `implement`/`docs`/`ship`, etc.) goes in the *prompt*, not in the description.
 - Keep your user-facing text to status updates: which phase, which agent, what's next. One sentence each. The exception is the gate summary, the interview batch, and the final summary, which are spec-shaped.
 - End-of-turn: artifacts written + files changed + commit/PR + open follow-ups from `retro.md` + skills created. Nothing else.

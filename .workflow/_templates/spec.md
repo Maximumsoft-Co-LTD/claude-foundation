@@ -50,6 +50,12 @@ Hard ceiling for exploration. When hit, write `recommendations.md` even if quest
 ## Constraints
 Tech stack (new project) OR integration points (existing code). Deadlines, dependencies, compliance.
 
+## Discovery notes
+Context gathered before or during spec writing. Include codebase and best-practice fanout findings that affect requirements, constraints, non-goals, acceptance criteria, or open questions. Empty is OK for small/greenfield work.
+
+- Codebase: ...
+- Best practice: ...
+
 ## Carried-over follow-ups
 Items from `.workflow/FOLLOWUPS.md` that this run is consuming. Leave empty if none.
 

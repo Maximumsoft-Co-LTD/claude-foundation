@@ -1,18 +1,20 @@
 ---
 name: fanout-team-agents
-description: Use when a /dev phase has 2+ independent sub-investigations that can run in parallel — code review, security buckets, codebase exploration across disjoint integration points, test categories, or plan phases that write to disjoint files. The pattern lets the orchestrator dispatch focused team-agent workers and a /dev sub-agent synthesise the findings into a single artifact.
+description: Use when a /dev phase has 2+ independent sub-investigations that can run in parallel — spec research, best-practice research, codebase exploration across disjoint integration points, code review, security buckets, test categories, or plan phases that write to disjoint files. The pattern lets the orchestrator dispatch focused team-agent workers and a /dev sub-agent synthesise the findings into a single artifact.
 ---
 
 # Fanout team agents
 
 ## Overview
 
-This skill codifies the parallel-dispatch pattern (originally from the `superpowers > dispatching-parallel-agents` skill) for the `/dev` workflow in this repo. The pattern says: when a single phase has 2+ independent sub-investigations — different test files, different security buckets, different codebase regions — investigate them in parallel rather than sequentially, by spawning one focused worker per domain and synthesising the returns.
+This skill codifies the parallel-dispatch pattern (originally from the `superpowers > dispatching-parallel-agents` skill) for the `/dev` workflow in this repo. The pattern says: when a single phase has 2+ independent sub-investigations — spec probes, best-practice research questions, different test files, different security buckets, different codebase regions — investigate them in parallel rather than sequentially, by spawning one focused worker per domain and synthesising the returns.
 
 **Core principle**: one worker per independent problem domain, each with its own self-contained context, dispatched concurrently, results integrated by the caller.
 
-The workers in this repo are the 6 `team-<role>` agents under `.claude/agents/` (forks of `pr-review-toolkit`, manifest at `.claude/agents/TEAM.md`):
+The workers in this repo are the `team-<role>` agents under `.claude/agents/` (manifest at `.claude/agents/TEAM.md`):
 
+- `team-codebase-explorer` — read-only pre-diff exploration for spec/plan: entry points, current flow, invariants, blast radius, existing patterns.
+- `team-best-practice-researcher` — focused best-practice research for spec/plan: official docs, standards, current framework/API/security/testing guidance.
 - `team-code-reviewer` — diff review against CLAUDE.md, bugs, quality (confidence ≥ 80).
 - `team-code-simplifier` — clarity/maintainability of recently-modified code.
 - `team-comment-analyzer` — comment accuracy + rot-resistance.
@@ -22,16 +24,16 @@ The workers in this repo are the 6 `team-<role>` agents under `.claude/agents/` 
 
 ## When to use
 
-`/dev` enters fanout in one mandatory case, one default-on case, and four opt-in cases:
+`/dev` enters fanout in one mandatory case, two condition-based cases, and three opt-in cases:
 
 | Phase / mode | Owner sub-agent | Mandatory? | Trigger |
 |--------------|-----------------|-----------|---------|
-| Phase 2 step 5 — review | `lead` (Mode B) | yes | always — runs the 6 `team-*` workers on every review |
+| Phase 2 step 5 — review | `lead` (Mode B) | yes | always — runs the 6 review-focused `team-*` workers on every review |
 | Phase 2 step 6 — security | `lead` (Mode C) | opt-in | diff trips ≥ 2 distinct sensitive-paths buckets |
-| Phase 1 step 2 — plan | `lead` (Mode A) | default-on | default-on for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield |
+| Phase 1 step 1 — spec prep / research | main agent; `pm` via return-signal | condition-based | use when existing code, APIs, security-sensitive paths, unfamiliar domain terms, or 2+ independent research questions make guessing risky; skip XS pure-greenfield |
+| Phase 1 step 2 — plan | `lead` (Mode A) | condition-based | use for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield; dispatch both codebase and best-practice workers per integration point |
 | Phase 2 step 7 — test | `qa` | opt-in | plan spans ≥ 2 of {unit, integration, e2e} AND any category has ≥ 3 tests |
 | Phase 2 step 4 — implement | `engineer` (Mode A) | opt-in | `plan.md` has Phases (L-tier, > 12 steps) AND phases write to disjoint file sets |
-| Phase 1 step 1 — `research:<question-list>` (interview-prep) | main agent; `pm` via return-signal | opt-in | user intent is ambiguous (main agent) OR interview answers are insufficient (pm). Research workers are `general-purpose` (no `team-<role>` constraint). |
 
 **Don't use when:**
 - Sub-investigations are related (one finding might invalidate another).
@@ -41,13 +43,13 @@ The workers in this repo are the 6 `team-<role>` agents under `.claude/agents/` 
 
 ## The load-bearing invariant
 
-**Sub-agents in Claude Code cannot spawn other sub-agents.** The `Agent` tool is filtered out of sub-agent tool lists at runtime (`WORKFLOW.md > Sub-agent constraints`, `.claude/orchestrator.md > Orchestrator (main-agent role)`). `lead`, `qa`, and `engineer` are sub-agents — they cannot literally call `Agent(team-code-reviewer, ...)` themselves.
+**Sub-agents in Claude Code cannot spawn other sub-agents.** The `Agent` tool is filtered out of sub-agent tool lists at runtime (`WORKFLOW.md > Sub-agent constraints`, `.claude/orchestrator.md > Orchestrator (main-agent role)`). `pm`, `lead`, `qa`, and `engineer` are sub-agents — they cannot literally call `Agent(team-code-reviewer, ...)` themselves.
 
 The upstream `dispatching-parallel-agents` skill assumes the dispatcher is the main agent. Here, the dispatcher must be the **orchestrator** (the main agent driving `/dev`), and the /dev sub-agent that asked for fanout is responsible only for (a) deciding to fan out, (b) signalling the request, and (c) synthesising the workers' returns into the artifact when re-spawned.
 
 ### The `FANOUT_REQUESTED:` return-prefix convention
 
-When a /dev sub-agent (`lead`, `qa`, `engineer`) decides fanout is warranted, it returns control to the orchestrator with a line prefixed `FANOUT_REQUESTED:` carrying the request shape. The orchestrator parses the line, dispatches the workers in parallel via `Agent(...)` calls (one per worker, all in the same message so they run concurrently), collects the returns, and re-spawns the calling sub-agent with the workers' outputs included in the prompt for synthesis.
+When a /dev sub-agent (`pm`, `lead`, `qa`, `engineer`) decides fanout is warranted, it returns control to the orchestrator with a line prefixed `FANOUT_REQUESTED:` carrying the request shape. The orchestrator parses the line, dispatches the workers in parallel via `Agent(...)` calls (one per worker, all in the same message so they run concurrently), collects the returns, and re-spawns the calling sub-agent with the workers' outputs included in the prompt for synthesis.
 
 Six documented shapes:
 
@@ -60,12 +62,12 @@ FANOUT_REQUESTED: implement:<phase-list>
 FANOUT_REQUESTED: research:<question-list>
 ```
 
-- `review` — no payload; orchestrator dispatches all 6 `team-*` workers against the diff.
+- `review` — no payload; orchestrator dispatches the 6 review-focused `team-*` workers against the diff.
 - `security:auth,crypto` — comma-separated bucket names from the security trigger list; orchestrator spawns one `team-code-reviewer` per bucket with a focused threat-model prompt scoped to that bucket's paths.
-- `plan:webhook-ingest,billing-api` — comma-separated integration-point names from `spec.md > Constraints > Integration points`; orchestrator spawns one codebase-exploration pass per point.
+- `plan:webhook-ingest,billing-api` — comma-separated integration-point names from `spec.md > Constraints > Integration points`; orchestrator spawns `team-codebase-explorer` and `team-best-practice-researcher` per point.
 - `test:unit,integration` — comma-separated test categories; orchestrator spawns one `team-pr-test-analyzer` per category against the slice of the diff that category covers.
 - `implement:phase-1,phase-2` — comma-separated phase labels from `plan.md > Phases`; orchestrator spawns one `engineer` per phase, then re-spawns the calling engineer for integration.
-- `research:retries-rate-limit,auth-provider` — comma-separated kebab-case research-question slugs; orchestrator spawns one `general-purpose` worker per question, then re-spawns the calling agent (main or pm) with the workers' findings appended to the interview Q&A.
+- `research:codebase-auth-flow,best-practice-oauth-callbacks` — comma-separated kebab-case question slugs. `codebase-*` routes to `team-codebase-explorer`; `best-practice-*` routes to `team-best-practice-researcher`. If a slug has no prefix, the orchestrator picks the narrower worker and may dispatch both only when the question explicitly needs repo facts and external guidance. Then it re-spawns the calling agent (main or pm) with the worker findings appended to the interview Q&A.
 
 ## The pattern
 
@@ -76,9 +78,10 @@ Two checks before fanning out:
 - **Disjoint scope** — do the workers touch overlapping files or symbols? If two workers would edit/analyse the same lines, dispatch sequentially or merge them into one worker.
 
 Examples:
-- *Review fanout* — the 6 `team-*` agents look at the same diff from different lenses (review, simplification, comments, tests, silent failures, type design). The diff is shared, but each lens is independent — they don't need each other's outputs to proceed.
+- *Review fanout* — the 6 review-focused `team-*` agents look at the same diff from different lenses (review, simplification, comments, tests, silent failures, type design). The diff is shared, but each lens is independent — they don't need each other's outputs to proceed.
 - *Security buckets* — `auth` and `crypto` buckets touch different files (or different sections of the same file). One worker per bucket with a bucket-scoped path filter.
-- *Plan integration points* — only fan out when the points share no files/symbols. If `webhook-ingest` and `billing-api` both read `users/repo.ts`, they're not disjoint — keep them in one pass.
+- *Spec prep* — one worker explores the existing checkout flow while another researches current payment-provider webhook verification rules. The outputs shape the interview questions and `spec.md > Discovery notes`.
+- *Plan integration points* — fan out when the points can be researched independently. For each point, pair a `team-codebase-explorer` current-state pass with a `team-best-practice-researcher` best-practice pass. If `webhook-ingest` and `billing-api` both hinge on the same `users/repo.ts` contract, merge their codebase exploration into one pass but keep external best-practice research separate if the sources differ.
 
 ### 2. Construct focused prompts
 
@@ -97,12 +100,14 @@ The orchestrator dispatches all workers in the **same message** — Claude Code'
 
 ```
 # orchestrator does, in one message:
-Agent(subagent_type="team-code-reviewer", prompt=<focused-prompt-1>)
-Agent(subagent_type="team-code-simplifier", prompt=<focused-prompt-2>)
-Agent(subagent_type="team-comment-analyzer", prompt=<focused-prompt-3>)
-Agent(subagent_type="team-pr-test-analyzer", prompt=<focused-prompt-4>)
-Agent(subagent_type="team-silent-failure-hunter", prompt=<focused-prompt-5>)
-Agent(subagent_type="team-type-design-analyzer", prompt=<focused-prompt-6>)
+Agent(subagent_type="team-codebase-explorer", prompt=<focused-prompt-1>)
+Agent(subagent_type="team-best-practice-researcher", prompt=<focused-prompt-2>)
+Agent(subagent_type="team-code-reviewer", prompt=<focused-prompt-3>)
+Agent(subagent_type="team-code-simplifier", prompt=<focused-prompt-4>)
+Agent(subagent_type="team-comment-analyzer", prompt=<focused-prompt-5>)
+Agent(subagent_type="team-pr-test-analyzer", prompt=<focused-prompt-6>)
+Agent(subagent_type="team-silent-failure-hunter", prompt=<focused-prompt-7>)
+Agent(subagent_type="team-type-design-analyzer", prompt=<focused-prompt-8>)
 ```
 
 **Guard-hook reality** (read the hook, not the prose around it): `.claude/hooks/dev-agent-guard.sh` (referenced from `.claude/orchestrator.md > State discipline`) does **not** restrict `team-*` spawns. The hook has three cases:
@@ -119,9 +124,9 @@ When all workers return, the orchestrator re-spawns the calling /dev sub-agent w
 
 The sub-agent then:
 
-- Writes one `### team-<role>` subsection per worker into the artifact's per-agent section (for review mode, this is `review.md > Per-agent findings`). The first line of each subsection MUST be `**Dispatched-as**: <subagent_type> (<reason if fallback>)` so a future reader can tell a real `team-*` dispatch from the inline-fallback path (see `## Operational caveats > Agent registry is session-scoped`).
+- Writes one `### team-<role>` subsection per worker into the target artifact's fanout section (`spec.md > Discovery notes`, `plan.md > Research notes`, or `review.md > Per-agent findings`). The first line of each subsection MUST be `**Dispatched-as**: <subagent_type> (<reason if fallback>)` so a future reader can tell a real `team-*` dispatch from the inline-fallback path (see `## Operational caveats > Agent registry is session-scoped`).
 - Synthesises across workers — same finding reported by two workers = collapse to one bullet citing both; contradictions = surface in the synthesis as a question for the human.
-- Writes the sub-agent's own pass (plan-adherence + acceptance-criteria for `lead` review; coverage table for `qa`; integration pass for `engineer`). The fanout output is **additive** — it does not replace the sub-agent's own discipline (the anti-bias rule in `WORKFLOW.md > Anti-bias rule` still binds `lead`).
+- Writes the sub-agent's own pass (requirements synthesis for `pm`; current-state / approach / risk synthesis for `lead` plan; plan-adherence + acceptance-criteria for `lead` review; coverage table for `qa`; integration pass for `engineer`). The fanout output is **additive** — it does not replace the sub-agent's own discipline (the anti-bias rule in `WORKFLOW.md > Anti-bias rule` still binds `lead`).
 - Returns the artifact path + a one-line summary that names the worker count and the count of findings per severity.
 
 Single-pass runs (no fanout) skip the `### team-<role>` subsections entirely — the artifact template marks them as `(present only when fanout ran; omit for single-reviewer runs)` so both shapes stay valid (`AC8` in spec 0002).
@@ -136,7 +141,7 @@ Claude Code loads the agent registry at **session start** by scanning `.claude/a
 Agent type 'team-code-reviewer' not found
 ```
 
-This is exactly what fired on this skill's own first live fanout — the orchestrator dispatched 6 `team-*` workers, every spawn failed at the registry lookup, and the orchestrator fell back to the inline path documented next.
+This is exactly what fired on this skill's own first live fanout — the orchestrator dispatched 6 review-focused `team-*` workers, every spawn failed at the registry lookup, and the orchestrator fell back to the inline path documented next.
 
 **Two correct responses** (orchestrator picks at run time):
 
@@ -169,4 +174,4 @@ Beyond the three above, three more apply to /dev specifically:
 
 - **Fanning out when fanout isn't justified.** Opt-in modes (security, test, implement) should default single-pass. The opt-in heuristics in each mode are the threshold — below the threshold, single-pass is faster and produces a smaller artifact.
 - **Forgetting the sub-agent-cannot-spawn invariant.** A /dev sub-agent that tries `Agent(...)` directly will fail at runtime. The `FANOUT_REQUESTED:` return-prefix is the only correct path — the sub-agent signals; the orchestrator dispatches.
-- **Skipping the synthesis pass.** The fanout output is not the artifact. The /dev sub-agent must still walk plan-adherence (lead), acceptance-criteria coverage (qa), or phase integration (engineer) on its own. The per-agent sections are evidence the sub-agent reads alongside its own pass — they do not replace it.
+- **Skipping the synthesis pass.** The fanout output is not the artifact. The /dev sub-agent must still synthesise requirements (`pm`), current state and approach (`lead` plan), plan-adherence (`lead` review), acceptance-criteria coverage (`qa`), or phase integration (`engineer`) on its own. The per-agent sections are evidence the sub-agent reads alongside its own pass — they do not replace it.
