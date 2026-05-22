@@ -35,7 +35,7 @@ What lands in the target:
 .claude/agents/          pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
 .claude/orchestrator.md  orchestrator script for the main agent (always refreshed)
 .claude/commands/dev.md  the /dev slash command (always refreshed)
-.claude/skills/          programming / database / debug / hexagonal / queue / architecture fundamentals + git-workflow + plan-writing + brainstorming + fanout-team-agents (always refreshed)
+.claude/skills/          programming / database / debug / hexagonal / queue / architecture fundamentals + git-workflow + plan-writing + brainstorming + fanout-team-agents + skill-creator (always refreshed)
 .claude/rules/           always-on pointers to the skills (always refreshed)
 .claude/hooks/*.sh       PreToolUse guard + PostToolUse lint + state marker (always refreshed)
 .claude/settings.json    hook wiring (only if missing; existing files get a merge — see below)
