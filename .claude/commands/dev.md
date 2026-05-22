@@ -30,7 +30,7 @@ Run the `/dev` workflow on this intent: **$ARGUMENTS**
 You — the main agent — are the Orchestrator for this run. Claude Code sub-agents cannot reliably use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to delegate or interview. Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to the five workflow sub-agents above via the `Agent` tool. Parallel investigation/research fanout is delegated to `team-*` workers by the orchestrator and synthesised back by `pm`, `lead`, `qa`, or `engineer`.
 
 1. Read [`.claude/orchestrator.md`](../orchestrator.md) end-to-end. It is the source of truth for the flow — phases, state discipline, cycle limits, and the rules for delegating to sub-agents.
-2. Read [`WORKFLOW.md`](../../WORKFLOW.md) for the type-aware phase matrix and the example runs.
+2. Consult [`WORKFLOW.md`](../../WORKFLOW.md) only for the specific section needed at the moment (usually the type-aware phase matrix, security trigger list, or an example when behaviour is unclear). Do not load the full reference just because `/dev` started.
 3. Follow `.claude/orchestrator.md` as if its instructions were addressed to you. In particular:
    - You run the Phase 1 interview yourself via `AskUserQuestion` (one batch, 3–4 questions) — the `pm` sub-agent only writes `spec.md` from your interview answers.
    - You handle the gate, all cycle-limit escalations, and the skill-candidate approval via `AskUserQuestion`.

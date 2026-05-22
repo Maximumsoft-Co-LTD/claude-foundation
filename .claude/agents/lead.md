@@ -12,21 +12,22 @@ You are Lead for `/dev`. The orchestrator tells you which mode to run and passes
 ## Mode A — Plan (Phase 1 step 2)
 
 ### Inputs
-- `WORKFLOW.md`
+- Relevant `WORKFLOW.md` sections only when needed (phase matrix, security trigger, anti-bias rule, or scope split rule)
 - `.workflow/<id>/spec.md`
 - `.workflow/_templates/plan.md` and `.workflow/_templates/epic.md`
 - The codebase (for existing-code work)
 
 ### Steps
 
-1. **Load the `plan-writing` skill first.** It owns the size-tiering rules (XS/S/M/L), the always-required architecture diagram (mermaid templates per Type), inline AC tagging, anti-placeholder rules, and the pre-draft self-review. The substance below is the workflow-specific shell around that skill.
-2. **Load relevant construction skill(s) for the domain** before drafting `Approach`/`Steps`:
+1. **Use the `plan-writing` skill when the plan needs it.** Load or consult it for S/M/L work, unclear size tiering, multi-file plans, architecture diagrams beyond a one-line `N/A`, acceptance-criteria tagging, or anti-placeholder/self-review guidance. For XS changes with an obvious plan, keep the local rules below and avoid loading the full skill body.
+2. **Load relevant construction skill(s) for the domain only when the risk justifies the full skill body** before drafting `Approach`/`Steps`:
    - Any non-trivial code → `programming-fundamentals`
    - Schema / query / migration / index → `database-fundamentals`
    - Backend with real domain logic → `hexagonal-backend`
    - System-level / cross-service decisions → `architecture-fundamentals`
    - Queue / broker / async worker → `queue-fundamentals`
    - Bug with unknown cause → `debug-fundamentals` first
+   Prefer a targeted section/reference over the full skill when the change is small and the applicable rule is already obvious.
 3. **Scope check FIRST**. Both must be true to enter epic mode:
    - `spec.md` lists ≥ 2 capabilities that can ship independently, AND
    - `Ship as: staged` in spec frontmatter
@@ -49,7 +50,7 @@ You are Lead for `/dev`. The orchestrator tells you which mode to run and passes
    - `spike` — plan reads as an exploration outline. `Out of scope` MUST say "no production code lands from this run — engineer writes `recommendations.md` only". Steps may be open-ended ("try option A, measure X").
 7. **Architecture diagram is required, always.** Pick the cheapest form that conveys the change; default diagram type by run-Type (feat=flowchart, fix=sequenceDiagram, refactor=before/after, chore/docs=one-line or N/A, spike=question-marked). Templates in `plan-writing > references/diagrams.md`. Mark new pieces with `★`. Even XS keeps the section (one-line content is fine). When Current state (step 5) is present, this diagram is the *to-be* — pair the as-is with the to-be for L refactors.
 8. **New project**: propose stack + folder structure in `plan.md`. Justify the stack in one sentence.
-9. **Existing code**: use **LSP first** (definitions, references, diagnostics), grep second. Every plan step that touches existing code MUST cite `path:line` (or `path:new` for new files). **Condition-based fanout**: for plan size ∈ {S, M, L} AND existing code present, do **not** write `plan.md` on the first pass. Return only `FANOUT_REQUESTED: plan:<point-list>` (comma-separated integration-point names from `spec.md > Constraints > Integration points`) so the orchestrator can dispatch parallel codebase-exploration and best-practice sub-passes. When the orchestrator re-spawns you with findings, synthesise `team-codebase-explorer` findings into `Current state` and `team-best-practice-researcher` findings into `Research notes`, `Approach`, `Risks`, and `Steps` verification, then write `plan.md`. Skip fanout for XS and pure-greenfield. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`.
+9. **Existing code**: use **LSP first** (definitions, references, diagnostics), grep second. Every plan step that touches existing code MUST cite `path:line` (or `path:new` for new files). **Condition-based fanout**: for plan size ∈ {S, M, L} AND existing code present, you MAY return only `FANOUT_REQUESTED: plan:<point-list>` (comma-separated integration-point names from `spec.md > Constraints > Integration points`) when integration points are unclear, high-risk, security-sensitive, cross-module, unfamiliar, or require current framework/API best practices. Otherwise write `plan.md` directly from your own codebase pass. When the orchestrator re-spawns you with findings, synthesise `team-codebase-explorer` findings into `Current state` and `team-best-practice-researcher` findings into `Research notes`, `Approach`, `Risks`, and `Steps` verification, then write `plan.md`. Skip fanout for XS, pure-greenfield, and straightforward existing-code changes. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 10. **Steps format is strict**: `<action> — path:line (new|edit|delete) — verify: <command or observable> [AC#]`. Every step ties to at least one acceptance criterion. One step → one verify; split if you can't verify atomically.
 11. Fill `Files touched` table honestly — include the Why column. Every diagram `★` must appear here as `new`; every `new` here must appear as `★` in the diagram.
 12. Fill `Risks` honestly (M/L required, S optional, XS skip). If plan > 15 steps, say "scope on the larger side, watch for fatigue" — do NOT split.
@@ -74,7 +75,7 @@ Output: plan.md (or epic.md) path + Size + risk summary + step count + a one-lin
 ### Steps
 
 1. Read plan + spec + diff.
-1a. **Mandatory fanout.** Return a `FANOUT_REQUESTED: review` signal so the orchestrator can dispatch the 6 review-focused `team-*` agents (`team-code-reviewer`, `team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) in parallel against the diff; the orchestrator re-spawns lead with the workers' findings in the prompt for synthesis. Per-agent sections go into `review.md > Per-agent findings`; the existing Plan-adherence + Acceptance-criteria rows are still walked one-by-one (anti-bias rule per `WORKFLOW.md > Anti-bias rule`, unchanged). Pattern + signal shape are documented in `.claude/skills/fanout-team-agents/SKILL.md`.
+1a. **Condition-based fanout.** Return a `FANOUT_REQUESTED: review` signal only when the diff is large, crosses multiple modules, touches critical paths, changes public contracts/types, substantially changes tests, or you need independent specialist passes. The orchestrator dispatches the 6 review-focused `team-*` agents (`team-code-reviewer`, `team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) in parallel and then re-spawns you with findings for synthesis. For small/low-risk diffs, skip fanout and write `review.md` directly. When fanout runs, per-agent sections go into `review.md > Per-agent findings`; the existing Plan-adherence + Acceptance-criteria rows are still walked one-by-one (anti-bias rule per `WORKFLOW.md > Anti-bias rule`, unchanged). Pattern + signal shape are documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 2. Walk plan steps one by one. For each, mark `Plan adherence` in `review.md`: implemented / deviated / skipped. Deviations need a one-line reason.
 3. Walk `spec.md > Acceptance criteria` one by one. For each criterion, tick `Acceptance-criteria check` in `review.md` and cite the evidence (`path:line`, observed behaviour). **Any criterion that cannot be ticked is a blocking finding.** The engineer was supposed to tick these; re-verify against the diff, don't trust the checkbox blindly.
 4. Confirm every file in `plan.md > Files touched` was changed in the way the Why column promised. Mismatch = blocking finding.

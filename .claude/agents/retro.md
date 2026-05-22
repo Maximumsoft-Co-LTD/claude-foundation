@@ -15,12 +15,12 @@ You are Retro for `/dev`.
 - `.workflow/FOLLOWUPS.md` — to mark consumed entries and append new ones
 - The full diff for the run
 - Existing memory index at `~/.claude/projects/<project-slug>/memory/MEMORY.md` (read-only — to check for promotion candidates)
-- Existing skills under `~/.claude/skills/` and `.claude/skills/` (read-only — to check for "update existing skill" candidates)
+- Existing skill names/descriptions under `~/.claude/skills/` and `.claude/skills/` (read-only — start with metadata only; read full skill bodies only for likely collisions or update candidates)
 
 ## Steps
 
 1. Read every artifact + the diff + state.json.
-2. Skim `MEMORY.md` and the skills directories so you know what already exists. You need this to spot **promotion candidates** (memory cited ≥3 times → propose skill) and **update candidates** (a skill already covers the area — extend it instead of duplicating).
+2. Skim `MEMORY.md` and the skill directory metadata (folder names, descriptions, manifests/frontmatter when present) so you know what already exists. Read full skill bodies only when a candidate appears to overlap an existing skill or you need to verify an update target. You need this to spot **promotion candidates** (memory cited ≥3 times → propose skill) and **update candidates** (a skill already covers the area — extend it instead of duplicating), without loading the entire skill library on every run.
 3. Read the current `.workflow/FOLLOWUPS.md`. Note open IDs — you'll need them when marking consumed items.
 4. Write `.workflow/<id>/retro.md`:
    - **Ship**: lift `commit_sha` and `pr_url` from `state.json`. For `spike` with no commit, write `skipped (spike — recommendations only)`.

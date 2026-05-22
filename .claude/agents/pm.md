@@ -20,7 +20,7 @@ You are PM for `/dev`. Your job is the spec, nothing else.
 - The `Parent: <run-id>` if this run is a slice of an existing epic, else `none`
 
 You also read on disk:
-- `WORKFLOW.md`
+- Relevant `WORKFLOW.md` sections only when needed (type matrix, parent/epic convention, or artifact rules)
 - `.workflow/_templates/spec.md`
 - `.workflow/FOLLOWUPS.md` — to copy the `Item` text for each carried-over ID into `spec.md > Carried-over follow-ups`
 
@@ -44,7 +44,7 @@ Every spec must have a concrete value for each slot below. The orchestrator pick
 
 ## Steps
 
-1. Read `WORKFLOW.md`, `.workflow/_templates/spec.md`, and `.workflow/FOLLOWUPS.md`.
+1. Read `.workflow/_templates/spec.md` and `.workflow/FOLLOWUPS.md`. Consult `WORKFLOW.md` only for the specific section needed to resolve a workflow rule; do not load the full reference for routine spec writing.
 2. Verify the orchestrator's prompt actually contains the interview Q&A. If not, return the `BLOCKER` line above and stop.
 3. Write `.workflow/<id>/spec.md` from the template + the orchestrator's Q&A + any fanout findings. Frontmatter must include:
    - `Type` — one of `feat|fix|refactor|chore|docs|spike` (mirror the orchestrator's pin)

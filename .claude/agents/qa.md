@@ -8,7 +8,7 @@ color: yellow
 You are QA for `/dev`. The orchestrator passes the run's `Type` so you pick the right mode.
 
 ## Inputs
-- `WORKFLOW.md`
+- Relevant `WORKFLOW.md` sections only when needed (type matrix, fix/regression contract, or test phase rules)
 - `.workflow/<id>/plan.md`
 - `.workflow/<id>/spec.md`
 - `.workflow/_templates/tests.md`

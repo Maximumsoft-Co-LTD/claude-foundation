@@ -24,14 +24,14 @@ The workers in this repo are the `team-<role>` agents under `.claude/agents/` (m
 
 ## When to use
 
-`/dev` enters fanout in one mandatory case, two condition-based cases, and three opt-in cases:
+`/dev` enters fanout through condition-based or opt-in paths; no fanout is mandatory for every run:
 
-| Phase / mode | Owner sub-agent | Mandatory? | Trigger |
+| Phase / mode | Owner sub-agent | Trigger style | Trigger |
 |--------------|-----------------|-----------|---------|
-| Phase 2 step 5 — review | `lead` (Mode B) | yes | always — runs the 6 review-focused `team-*` workers on every review |
+| Phase 2 step 5 — review | `lead` (Mode B) | condition-based | large, cross-module, critical, type/contract/test-sensitive, or uncertain diffs that deserve independent specialist passes |
 | Phase 2 step 6 — security | `lead` (Mode C) | opt-in | diff trips ≥ 2 distinct sensitive-paths buckets |
 | Phase 1 step 1 — spec prep / research | main agent; `pm` via return-signal | condition-based | use when existing code, APIs, security-sensitive paths, unfamiliar domain terms, or 2+ independent research questions make guessing risky; skip XS pure-greenfield |
-| Phase 1 step 2 — plan | `lead` (Mode A) | condition-based | use for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield; dispatch both codebase and best-practice workers per integration point |
+| Phase 1 step 2 — plan | `lead` (Mode A) | condition-based | use for unclear/high-risk S/M/L existing-code work; skip XS, pure-greenfield, and straightforward existing-code changes; dispatch both codebase and best-practice workers per integration point |
 | Phase 2 step 7 — test | `qa` | opt-in | plan spans ≥ 2 of {unit, integration, e2e} AND any category has ≥ 3 tests |
 | Phase 2 step 4 — implement | `engineer` (Mode A) | opt-in | `plan.md` has Phases (L-tier, > 12 steps) AND phases write to disjoint file sets |
 
@@ -62,7 +62,7 @@ FANOUT_REQUESTED: implement:<phase-list>
 FANOUT_REQUESTED: research:<question-list>
 ```
 
-- `review` — no payload; orchestrator dispatches the 6 review-focused `team-*` workers against the diff.
+- `review` — no payload; orchestrator dispatches the 6 review-focused `team-*` workers against the diff when review fanout is warranted.
 - `security:auth,crypto` — comma-separated bucket names from the security trigger list; orchestrator spawns one `team-code-reviewer` per bucket with a focused threat-model prompt scoped to that bucket's paths.
 - `plan:webhook-ingest,billing-api` — comma-separated integration-point names from `spec.md > Constraints > Integration points`; orchestrator spawns `team-codebase-explorer` and `team-best-practice-researcher` per point.
 - `test:unit,integration` — comma-separated test categories; orchestrator spawns one `team-pr-test-analyzer` per category against the slice of the diff that category covers.
@@ -78,7 +78,7 @@ Two checks before fanning out:
 - **Disjoint scope** — do the workers touch overlapping files or symbols? If two workers would edit/analyse the same lines, dispatch sequentially or merge them into one worker.
 
 Examples:
-- *Review fanout* — the 6 review-focused `team-*` agents look at the same diff from different lenses (review, simplification, comments, tests, silent failures, type design). The diff is shared, but each lens is independent — they don't need each other's outputs to proceed.
+- *Review fanout* — when a diff is large, cross-module, critical, type/contract/test-sensitive, or uncertain, the 6 review-focused `team-*` agents look at the same diff from different lenses (review, simplification, comments, tests, silent failures, type design). The diff is shared, but each lens is independent — they don't need each other's outputs to proceed. Small/low-risk diffs stay single-pass.
 - *Security buckets* — `auth` and `crypto` buckets touch different files (or different sections of the same file). One worker per bucket with a bucket-scoped path filter.
 - *Spec prep* — one worker explores the existing checkout flow while another researches current payment-provider webhook verification rules. The outputs shape the interview questions and `spec.md > Discovery notes`.
 - *Plan integration points* — fan out when the points can be researched independently. For each point, pair a `team-codebase-explorer` current-state pass with a `team-best-practice-researcher` best-practice pass. If `webhook-ingest` and `billing-api` both hinge on the same `users/repo.ts` contract, merge their codebase exploration into one pass but keep external best-practice research separate if the sources differ.
@@ -92,7 +92,7 @@ Each worker prompt is **self-contained** — it inherits nothing from the callin
 - **Constraints** — what the worker must NOT do (touch files outside scope, refactor production code, exceed N findings).
 - **Output shape** — the exact section structure expected. For team-`<role>` workers, this is the agent file's documented output format (already in the YAML/body of `.claude/agents/team-*.md`).
 
-For the 6-worker review fanout, the prompt to each `team-*` is essentially: "Review this diff: `<paste of git diff>`. Apply your responsibilities as documented in your agent file. Return your findings in the section shape your agent file specifies."
+When 6-worker review fanout runs, the prompt to each `team-*` is essentially: "Review this diff: `<paste of git diff>`. Apply your responsibilities as documented in your agent file. Return your findings in the section shape your agent file specifies."
 
 ### 3. Parallel dispatch (orchestrator-owned)
 

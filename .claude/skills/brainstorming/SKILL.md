@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, ambiguity, and likely failure modes (verifiability + pre-mortem). Use this skill when running the `/dev` Phase 1 interview (orchestrator before spawning `pm`), OR when the user asks to "brainstorm X", "scope this idea", "design a feature", "what should we do about Y", "explore options for", or otherwise wants a design conversation before implementation. Composes with [[plan-writing]] (the next step after spec is approved) and the construction-fundamentals skills (load whichever decides *what* to build). Skip for throwaway scripts, single-line config edits, and tasks where the spec is already approved.
+description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, ambiguity, and likely failure modes (verifiability + pre-mortem). Use this skill when the `/dev` Phase 1 interview has ambiguous scope, open-ended product/approach choices, oversized requests, UI work needing visual exploration, or several unclear requirement slots; also use it when the user asks to "brainstorm X", "scope this idea", "design a feature", "what should we do about Y", "explore options for", or otherwise wants a design conversation before implementation. Composes with [[plan-writing]] (the next step after spec is approved) and the construction-fundamentals skills (load whichever decides *what* to build). Skip for throwaway scripts, single-line config edits, narrow concrete `/dev` changes, and tasks where the spec is already approved.
 ---
 
 # Brainstorming
@@ -142,7 +142,7 @@ flowchart TD
     Q -- approve --> R[Status: approved → plan-writing]
 ```
 
-**Terminal state in `/dev`:** `Status: approved` and the orchestrator spawns `lead` in plan mode. Outside `/dev`: a clean design doc the user can hand to whatever workflow they use next. The next skill is **always** [[plan-writing]] — not an implementation skill, not a code-writing tool.
+**Terminal state in `/dev`:** `Status: approved` and the orchestrator spawns `lead` in plan mode. Outside `/dev`: a clean design doc the user can hand to whatever workflow they use next. The next phase is planning — not implementation, not code-writing. Load [[plan-writing]] only when the plan complexity warrants the full skill body.
 
 ## When to skip
 
@@ -171,7 +171,7 @@ If the request says "build", "design", "add feature", "scope", "explore", "brain
 
 Brainstorming is the **pre-spec** skill — it composes, it does not replace:
 
-- [[plan-writing]] — the next step. Once `Status: approved`, plan-writing decides *how to sequence and verify* the work. Brainstorming hands the spec to plan-writing; never bypasses it.
+- [[plan-writing]] — the next planning aid when complexity warrants it. Once `Status: approved`, planning decides *how to sequence and verify* the work. Brainstorming hands the spec to the plan phase; never bypasses planning.
 - [[programming-fundamentals]] / [[database-fundamentals]] / [[hexagonal-backend]] / [[architecture-fundamentals]] / [[queue-fundamentals]] — load whichever applies BEFORE drafting approach options in principle 4. They decide *what* to build; this skill decides *how to surface the choice and get to a yes*.
 - [[debug-fundamentals]] — for `Type=fix` runs, debug-fundamentals runs *before* this skill: find the actual cause first, then brainstorm the fix (including the regression test the fix step will encode).
 - [[git-workflow]] — pairs later at ship time, not here. Brainstorming produces a spec; plan-writing produces a plan; git-workflow lands the commit.
