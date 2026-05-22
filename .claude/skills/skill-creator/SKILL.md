@@ -1,11 +1,21 @@
 ---
 name: skill-creator
-description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
+description: Create, modify, evaluate, or optimize skills. Use when the user explicitly asks to create/edit/improve a skill, when a /dev retro skill candidate has been approved by the user, or when benchmarking/trigger-optimizing an existing skill. Do not use during ordinary /dev implementation just because a skill might be helpful; retro only proposes candidates, and the orchestrator invokes this skill only after user approval.
 ---
 
 # Skill Creator
 
 A skill for creating new skills and iteratively improving them.
+
+## /dev workflow boundary
+
+In this repository's `/dev` workflow, this skill is an explicit handoff target, not a background helper:
+
+- `retro` may propose skill candidates in `.workflow/<id>/retro.md`.
+- The orchestrator asks the user which candidates to create or update.
+- Only after approval should this skill create or modify files under `.claude/skills/` or `~/.claude/skills/`.
+
+Do not create skills silently during implementation, review, or test phases. If a recurring procedure is discovered before retro, record it as a note for retro instead.
 
 At a high level, the process of creating a skill goes like this:
 

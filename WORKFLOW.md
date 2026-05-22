@@ -87,6 +87,19 @@ The same numbered phases run for every type, but `orchestrator` **skips or speci
 
 **Fanout availability** — parallel team-agent fanout is available at phase steps 1 (spec prep / research — condition-based), 2 (plan — condition-based for unclear/high-risk S/M/L existing-code work), 4 (implement), 5 (review — condition-based), 6 (security — opt-in per bucket), and 7 (test — opt-in per category). Spec/plan research uses `team-codebase-explorer` for read-only codebase facts and `team-best-practice-researcher` for current best-practice probes when existing code, APIs, security-sensitive paths, unfamiliar domain terms, or multiple independent research questions make guessing risky; skip it for XS pure-greenfield and straightforward existing-code work. Review fanout uses the six review workers only when the diff is large, cross-module, critical, type/contract/test-sensitive, or uncertain enough to merit independent passes. Pattern + heuristics live in `.claude/skills/fanout-team-agents/SKILL.md`; the embedded team agents are documented in `.claude/agents/TEAM.md`. **Operational note**: Claude Code's agent registry is session-scoped — `team-*.md` files created mid-session (e.g., by `/dev` itself) are not discoverable as `subagent_type=team-<role>` until the session restarts. Until then, the orchestrator uses the inline-fallback path (`subagent_type="general-purpose"` with the worker's role contract read inline). Both paths are documented in the skill and in `.claude/orchestrator.md > Fanout dispatch`.
 
+## Skill routing
+
+The `/dev` workflow uses skills as phase-specific procedural knowledge, not as extra agents. Load the narrowest skill that owns the current decision:
+
+- Ambiguous product scope or approach trade-offs: `brainstorming` before `pm` writes `spec.md`.
+- Fixes with unknown cause: `debug-fundamentals` before construction skills, then encode the regression in `plan-writing`.
+- Construction decisions: `ddd-strategic` first when business language/context boundaries are unclear; then `programming-fundamentals`; then `database-fundamentals`, `hexagonal-backend`, `architecture-fundamentals`, and `queue-fundamentals` only when their layer is actually touched.
+- Planning: `plan-writing` when `lead` drafts `.workflow/<id>/plan.md`; it sequences the decisions produced by the construction skills.
+- UI work: `ui-ux-pro-max` for UX/design decisions and review, `frontend-design` for implementing polished UI code, and `tailwind-design-system` only for Tailwind v4 shared tokens/components/migration mechanics.
+- Parallel research/review/test slices: `fanout-team-agents`, dispatched only by the orchestrator.
+- Ship: `git-workflow` before staging, committing, rebasing, or opening a PR.
+- Retro skill creation: `skill-creator` only after `retro` proposes a candidate and the user approves it.
+
 Phase numbering below matches the matrix above (1–10) so the gate output, prose, and agent docs all speak the same language. The orchestrator runs a few extra setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1; those are internal to the orchestrator, not numbered phases.
 
 ## Phase 1 — Requirements (interactive)

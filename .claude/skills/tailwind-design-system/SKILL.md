@@ -1,6 +1,6 @@
 ---
 name: tailwind-design-system
-description: Build scalable design systems with Tailwind CSS v4, design tokens, component libraries, and responsive patterns. Use when creating component libraries, implementing design systems, or standardizing UI patterns.
+description: "Build or maintain Tailwind CSS v4 design-system mechanics: CSS-first `@theme` tokens, semantic color/radius/spacing variables, reusable component variants, dark mode, responsive patterns, and v3-to-v4 migration. Use when the task specifically touches Tailwind v4 configuration, shared tokens, component-library APIs, CVA-style variants, or standardizing repeated UI primitives. Do not use for ordinary one-off UI styling; use [[frontend-design]] for visual implementation and [[ui-ux-pro-max]] for UX/design decisions before translating them into Tailwind tokens."
 ---
 
 # Tailwind Design System (v4)
@@ -8,6 +8,13 @@ description: Build scalable design systems with Tailwind CSS v4, design tokens, 
 Build production-ready design systems with Tailwind CSS v4, including CSS-first configuration, design tokens, component variants, responsive patterns, and accessibility.
 
 > **Note**: This skill targets Tailwind CSS v4 (2024+). For v3 projects, refer to the [upgrade guide](https://tailwindcss.com/docs/upgrade-guide).
+
+## Workflow routing
+
+- Use this skill only when Tailwind v4 itself is part of the work: tokens, variants, reusable primitives, CSS-first config, dark mode, responsive systems, or migration.
+- Use [[ui-ux-pro-max]] first when the decision is still "what should the interface feel like, prioritize, or allow users to do?"
+- Use [[frontend-design]] when implementing a page or component whose design direction is already settled and no shared Tailwind system change is needed.
+- In `/dev`, this skill usually belongs in lead planning for design-system work or engineer implementation when shared Tailwind primitives are being changed.
 
 ## When to Use This Skill
 
@@ -17,6 +24,8 @@ Build production-ready design systems with Tailwind CSS v4, including CSS-first 
 - Standardizing UI patterns across a codebase
 - Migrating from Tailwind v3 to v4
 - Setting up dark mode with native CSS features
+
+Skip this skill for one-off class tweaks, copy-only changes, plain CSS projects, or UI tasks whose main difficulty is visual composition rather than Tailwind system design.
 
 ## Key v4 Changes
 

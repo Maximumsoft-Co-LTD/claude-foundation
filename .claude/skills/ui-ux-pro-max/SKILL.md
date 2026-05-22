@@ -1,6 +1,6 @@
 ---
 name: ui-ux-pro-max
-description: "UI/UX design intelligence for web and mobile. Includes 50+ styles, 161 color palettes, 57 font pairings, 161 product types, 99 UX guidelines, and 25 chart types across 10 stacks (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind, shadcn/ui, and HTML/CSS). Actions: plan, build, create, design, implement, review, fix, improve, optimize, enhance, refactor, and check UI/UX code. Projects: website, landing page, dashboard, admin panel, e-commerce, SaaS, portfolio, blog, and mobile app. Elements: button, modal, navbar, sidebar, card, table, form, and chart. Styles: glassmorphism, claymorphism, minimalism, brutalism, neumorphism, bento grid, dark mode, responsive, skeuomorphism, and flat design. Topics: color systems, accessibility, animation, layout, typography, font pairing, spacing, interaction states, shadow, and gradient. Integrations: shadcn/ui MCP for component search and examples."
+description: "UI/UX decision and review support for web and mobile. Use when the task is to plan, audit, or improve user experience: information hierarchy, interaction patterns, accessibility, responsive behavior, navigation, forms, charts, visual consistency, color/typography direction, or product-specific design-system choices. In the /dev workflow, use this during brainstorming/spec/plan/review for UI-heavy work and before [[frontend-design]] when direction is not yet settled. Do not use it merely because a frontend file is touched; use [[frontend-design]] for implementing polished UI code, and [[tailwind-design-system]] for Tailwind v4 token/component-library mechanics."
 ---
 
 # UI/UX Pro Max - Design Intelligence
@@ -9,7 +9,7 @@ Comprehensive design guide for web and mobile applications. Contains 50+ styles,
 
 ## When to Apply
 
-This Skill should be used when the task involves **UI structure, visual design decisions, interaction patterns, or user experience quality control**.
+This Skill should be used when the task involves **UI structure, visual design decisions, interaction patterns, or user experience quality control**. It is a reasoning and review skill first; implementation aesthetics belong to [[frontend-design]], and Tailwind v4 mechanics belong to [[tailwind-design-system]].
 
 ### Must Use
 
@@ -42,8 +42,16 @@ This Skill is not needed in the following situations:
 - Performance optimization unrelated to the interface
 - Infrastructure or DevOps work
 - Non-visual scripts or automation tasks
+- Pure UI implementation where the design direction is already decided
+- Tailwind v4 configuration, token syntax, or component-variant mechanics without broader UX decisions
 
 **Decision criteria**: If the task will change how a feature **looks, feels, moves, or is interacted with**, this Skill should be used.
+
+## Neighboring Skills
+
+- [[frontend-design]] builds or polishes the actual UI code once the direction is known.
+- [[tailwind-design-system]] owns Tailwind v4 design tokens, reusable component APIs, CSS-first configuration, and migration details.
+- [[brainstorming]] owns open-ended product scoping before a UI direction can be chosen.
 
 ## Rule Categories by Priority
 
