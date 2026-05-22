@@ -22,15 +22,16 @@ The workers in this repo are the 6 `team-<role>` agents under `.claude/agents/` 
 
 ## When to use
 
-`/dev` enters fanout in one mandatory case and four opt-in cases:
+`/dev` enters fanout in one mandatory case, one default-on case, and four opt-in cases:
 
 | Phase / mode | Owner sub-agent | Mandatory? | Trigger |
 |--------------|-----------------|-----------|---------|
 | Phase 2 step 5 — review | `lead` (Mode B) | yes | always — runs the 6 `team-*` workers on every review |
 | Phase 2 step 6 — security | `lead` (Mode C) | opt-in | diff trips ≥ 2 distinct sensitive-paths buckets |
-| Phase 1 step 2 — plan | `lead` (Mode A) | opt-in | `spec.md > Constraints > Integration points` lists ≥ 2 independent points whose code paths share no files/symbols |
+| Phase 1 step 2 — plan | `lead` (Mode A) | default-on | default-on for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield |
 | Phase 2 step 7 — test | `qa` | opt-in | plan spans ≥ 2 of {unit, integration, e2e} AND any category has ≥ 3 tests |
 | Phase 2 step 4 — implement | `engineer` (Mode A) | opt-in | `plan.md` has Phases (L-tier, > 12 steps) AND phases write to disjoint file sets |
+| Phase 1 step 1 — `research:<question-list>` (interview-prep) | main agent; `pm` via return-signal | opt-in | user intent is ambiguous (main agent) OR interview answers are insufficient (pm). Research workers are `general-purpose` (no `team-<role>` constraint). |
 
 **Don't use when:**
 - Sub-investigations are related (one finding might invalidate another).
@@ -48,7 +49,7 @@ The upstream `dispatching-parallel-agents` skill assumes the dispatcher is the m
 
 When a /dev sub-agent (`lead`, `qa`, `engineer`) decides fanout is warranted, it returns control to the orchestrator with a line prefixed `FANOUT_REQUESTED:` carrying the request shape. The orchestrator parses the line, dispatches the workers in parallel via `Agent(...)` calls (one per worker, all in the same message so they run concurrently), collects the returns, and re-spawns the calling sub-agent with the workers' outputs included in the prompt for synthesis.
 
-Four documented shapes:
+Six documented shapes:
 
 ```
 FANOUT_REQUESTED: review
@@ -56,6 +57,7 @@ FANOUT_REQUESTED: security:<bucket-list>
 FANOUT_REQUESTED: plan:<point-list>
 FANOUT_REQUESTED: test:<category-list>
 FANOUT_REQUESTED: implement:<phase-list>
+FANOUT_REQUESTED: research:<question-list>
 ```
 
 - `review` — no payload; orchestrator dispatches all 6 `team-*` workers against the diff.
@@ -63,6 +65,7 @@ FANOUT_REQUESTED: implement:<phase-list>
 - `plan:webhook-ingest,billing-api` — comma-separated integration-point names from `spec.md > Constraints > Integration points`; orchestrator spawns one codebase-exploration pass per point.
 - `test:unit,integration` — comma-separated test categories; orchestrator spawns one `team-pr-test-analyzer` per category against the slice of the diff that category covers.
 - `implement:phase-1,phase-2` — comma-separated phase labels from `plan.md > Phases`; orchestrator spawns one `engineer` per phase, then re-spawns the calling engineer for integration.
+- `research:retries-rate-limit,auth-provider` — comma-separated kebab-case research-question slugs; orchestrator spawns one `general-purpose` worker per question, then re-spawns the calling agent (main or pm) with the workers' findings appended to the interview Q&A.
 
 ## The pattern
 
@@ -147,7 +150,7 @@ The inline-fallback artifact is byte-identical in shape to a real parallel-dispa
 The orchestrator MUST validate every sub-agent return whose first line starts with `FANOUT_REQ` (case-insensitive). The allowlist is the exact set:
 
 ```text
-^FANOUT_REQUESTED: (review|security:[a-z0-9,\-]+|plan:[a-z0-9,\-]+|test:[a-z0-9,\-]+|implement:[a-z0-9,\-]+)$
+^FANOUT_REQUESTED: (review|security:[a-z0-9,\-]+|plan:[a-z0-9,\-]+|test:[a-z0-9,\-]+|implement:[a-z0-9,\-]+|research:[a-z0-9,\-]+)$
 ```
 
 Any return whose first line matches the case-insensitive `FANOUT_REQ` prefix but fails the strict regex is a **BLOCKER** — the orchestrator surfaces via `AskUserQuestion` rather than silently falling through to non-fanout. This makes typo failure modes (`FANOUTREQUESTED:` missing underscore, `Fanout_Requested:` case-mixed prefix, trailing junk, missing space after the colon) loud instead of silent. Full parser shape lives in `.claude/orchestrator.md > Fanout dispatch`.
@@ -164,6 +167,6 @@ The three failure modes from the upstream skill apply here unchanged:
 
 Beyond the three above, three more apply to /dev specifically:
 
-- **Fanning out when fanout isn't justified.** Opt-in modes (plan, security, test, implement) should default single-pass. The opt-in heuristics in each mode are the threshold — below the threshold, single-pass is faster and produces a smaller artifact.
+- **Fanning out when fanout isn't justified.** Opt-in modes (security, test, implement) should default single-pass. The opt-in heuristics in each mode are the threshold — below the threshold, single-pass is faster and produces a smaller artifact.
 - **Forgetting the sub-agent-cannot-spawn invariant.** A /dev sub-agent that tries `Agent(...)` directly will fail at runtime. The `FANOUT_REQUESTED:` return-prefix is the only correct path — the sub-agent signals; the orchestrator dispatches.
 - **Skipping the synthesis pass.** The fanout output is not the artifact. The /dev sub-agent must still walk plan-adherence (lead), acceptance-criteria coverage (qa), or phase integration (engineer) on its own. The per-agent sections are evidence the sub-agent reads alongside its own pass — they do not replace it.

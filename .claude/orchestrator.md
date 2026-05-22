@@ -43,7 +43,7 @@ This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse o
     5. Save the answers (and any folded-in follow-up IDs) for the `pm` spawn.
 7. **Spec.** Spawn `pm` (mode = "write spec from answers"). Pass the run id, the type, the user's intent, the full Q&A from step 6, and the list of carried-over `FOLLOWUPS.md` IDs the user confirmed are in scope. `pm` writes `.workflow/<id>/spec.md` from the template + answers and returns the spec path + 3-bullet summary. Update INDEX status → `planned`. Update state: `step=spec, next_step=plan`.
    - **Spec check.** Open `spec.md`. Confirm: `Type` is set; `Constraints` names a real tech stack or integration set; for `fix`, the `Reproduction` section has concrete steps; for `spike`, the `Timebox` section has a hard limit. If any of these are blank/invented/"TBD" because the user genuinely didn't answer, that slot belongs under `spec.md > Open questions` — re-spawn `pm` only if the slot has a real answer that didn't make it in.
-8. **Plan.** Spawn `lead` in **plan mode** to write `plan.md` (or `epic.md` if scope check triggers). Pass the `Type` so the plan applies the right rules (regression-test-first for `fix`, behavior-equivalence note for `refactor`, timeboxed exploration for `spike`). Update INDEX status → `planned` (or `epic`). State: `step=plan, next_step=gate`. If `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` (opt-in, ≥ 2 disjoint integration points), follow `## Fanout dispatch` below — dispatch one codebase-exploration pass per integration point, then re-spawn `lead` for synthesis into `Current state`.
+8. **Plan.** Spawn `lead` in **plan mode** to write `plan.md` (or `epic.md` if scope check triggers). Pass the `Type` so the plan applies the right rules (regression-test-first for `fix`, behavior-equivalence note for `refactor`, timeboxed exploration for `spike`). Update INDEX status → `planned` (or `epic`). State: `step=plan, next_step=gate`. If `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` (default-on for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield), follow `## Fanout dispatch` below — dispatch one codebase-exploration pass per integration point, then re-spawn `lead` for synthesis into `Current state`.
 9. **Gate** — Build the type-aware run plan from the matrix in `WORKFLOW.md`. Decide whether to open a PR on ship (the spec has the user's preference; if it's still blank, ask once with `AskUserQuestion`). Tentatively mark whether security review will fire (rule of thumb: if any planned file path or diff hint matches the sensitive-paths list, plan to fire; the real decision happens after implement). Print a tight summary:
     - Spec goal + Type + `Ship as` + acceptance criteria (bulleted)
     - Constraints / stack from `spec.md`
@@ -94,23 +94,24 @@ The `/dev` workflow's `lead`, `qa`, and `engineer` sub-agents can request parall
 
 ### Recognising the signal
 
-After every sub-agent return, scan the **first line** of the return for a case-insensitive `FANOUT_REQ` prefix. If present, validate against the strict allowlist:
+After every sub-agent return, scan the **first line** of the return: (a) case-insensitive `FANOUT_REQ` prefix → fanout signal (validate below); (b) `BLOCKER:` prefix → blocker (surface to user); (c) else → success. If a fanout signal is present, validate against the strict allowlist:
 
 ```text
-^FANOUT_REQUESTED: (review|security:[a-z0-9,\-]+|plan:[a-z0-9,\-]+|test:[a-z0-9,\-]+|implement:[a-z0-9,\-]+)$
+^FANOUT_REQUESTED: (review|security:[a-z0-9,\-]+|plan:[a-z0-9,\-]+|test:[a-z0-9,\-]+|implement:[a-z0-9,\-]+|research:[a-z0-9,\-]+)$
 ```
 
-If the first line matches the case-insensitive `FANOUT_REQ` prefix but does **not** match the strict regex (typos, casing, payload-shape errors), this is a **BLOCKER** — surface to the user via `AskUserQuestion` with the offending line and the 5 valid shapes. Do **not** silently fall through to non-fanout. The typo modes this catches: `FANOUTREQUESTED:` (missing underscore), `Fanout_Requested:` (case-mixed prefix), `FANOUT_REQUESTED:review` (no space after colon), `FANOUT_REQUESTED: REVIEW` (uppercase payload), `FANOUT_REQUESTED: review extra` (trailing junk), `FANOUT_REQUESTED: foo` (unknown payload).
+If the first line matches the case-insensitive `FANOUT_REQ` prefix but does **not** match the strict regex (typos, casing, payload-shape errors), this is a **BLOCKER** — surface to the user via `AskUserQuestion` with the offending line and the 6 valid shapes. Do **not** silently fall through to non-fanout. The typo modes this catches: `FANOUTREQUESTED:` (missing underscore), `Fanout_Requested:` (case-mixed prefix), `FANOUT_REQUESTED:review` (no space after colon), `FANOUT_REQUESTED: REVIEW` (uppercase payload), `FANOUT_REQUESTED: review extra` (trailing junk), `FANOUT_REQUESTED: foo` (unknown payload).
 
-### The 5 documented payload shapes
+### The 6 documented payload shapes
 
 | Shape | Trigger phase / mode | Dispatch |
 |-------|----------------------|----------|
 | `FANOUT_REQUESTED: review` | Phase 2 step 11 — `lead` Mode B (mandatory) | Spawn all 6 `team-*` workers against the diff |
 | `FANOUT_REQUESTED: security:<bucket-list>` | Phase 2 step 12 — `lead` Mode C (opt-in, ≥ 2 buckets) | One `team-code-reviewer` per bucket with a focused threat-model prompt scoped to that bucket's paths |
-| `FANOUT_REQUESTED: plan:<point-list>` | Phase 1 step 8 — `lead` Mode A (opt-in, ≥ 2 disjoint integration points) | One codebase-exploration pass per integration point |
+| `FANOUT_REQUESTED: plan:<point-list>` | Phase 1 step 8 — `lead` Mode A (default-on for plan size ∈ {S, M, L} AND existing code; skip XS / pure-greenfield) | One codebase-exploration pass per integration point |
 | `FANOUT_REQUESTED: test:<category-list>` | Phase 2 step 13 — `qa` (opt-in, ≥ 2 of {unit, integration, e2e} AND any ≥ 3 tests) | One `team-pr-test-analyzer` per category |
 | `FANOUT_REQUESTED: implement:<phase-list>` | Phase 2 step 10 — `engineer` Mode A (opt-in, L-tier with disjoint Files-touched) | One `engineer` per phase, then re-spawn the calling engineer for integration. **Caveat**: this shape races the Case 3 state.json discipline in `dev-agent-guard.sh`; treat as experimental until the guard is namespaced per-phase. |
+| `FANOUT_REQUESTED: research:<question-list>` | Phase 1 step 1 (interview-prep, pre-spec) — main agent (opt-in when user intent is ambiguous); `pm` sub-agent via return-signal (opt-in when interview answers are insufficient) | One `general-purpose` worker per question. pm cannot dispatch directly — pm returns `FANOUT_REQUESTED: research:<…>`, orchestrator dispatches, orchestrator re-spawns pm with the workers' findings appended to the interview Q&A. |
 
 ### The dispatch pattern (parallelism)
 
@@ -153,7 +154,7 @@ The phase-2 steps that can fire a fanout (signal originated by the spawned sub-a
 - **Step 12 — Security review** — `lead` Mode C may return `FANOUT_REQUESTED: security:<bucket-list>` (opt-in when ≥ 2 buckets trip).
 - **Step 13 — Test** — `qa` may return `FANOUT_REQUESTED: test:<category-list>` (opt-in heuristic).
 
-Phase-1 step 8 (Plan) can also fire: `lead` Mode A may return `FANOUT_REQUESTED: plan:<point-list>` when integration points are disjoint.
+Phase-1 step 8 (Plan) can also fire: `lead` Mode A returns `FANOUT_REQUESTED: plan:<point-list>` default-on for plan size ∈ {S, M, L} AND existing code (skip XS / pure-greenfield).
 
 ## Cycle escalation
 

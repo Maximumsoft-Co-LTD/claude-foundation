@@ -64,9 +64,12 @@ Every spec must have a concrete value for each slot below. The orchestrator pick
 
 ## Done
 
+Return exactly one of three shapes — the orchestrator distinguishes them by the FIRST LINE of the return: (a) `FANOUT_REQUESTED: research:<…>` → research-fanout request; (b) `BLOCKER: <reason>` → blocker; (c) anything else → success (the bulleted shape below).
+
 Return:
 - `spec path`
 - 3-bullet summary (goal, type, ship-as)
 - the list of slots covered by the interview vs. slots left under `Open questions` (so the orchestrator can sanity-check coverage)
 - any FOLLOWUPS IDs you folded in
 - any `BLOCKER:` lines (missing interview, missing repro for fix, etc.)
+- **OR** a `FANOUT_REQUESTED: research:<question-list>` line as the first line of the return (kebab-case slugs, comma-separated) when the interview answers are insufficient to write the spec and one-or-more focused research probes would resolve the gap. pm cannot dispatch directly (sub-agent constraint); the orchestrator dispatches `general-purpose` workers per question and re-spawns pm with the findings appended to the interview Q&A. Mirrors the existing `BLOCKER:` return-signal pattern. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`. If a `BLOCKER:` condition ALSO applies (e.g., missing reproduction for a fix), emit the `BLOCKER:` line and skip this `FANOUT_REQUESTED:` line — the blocker must be resolved before research probes are useful.

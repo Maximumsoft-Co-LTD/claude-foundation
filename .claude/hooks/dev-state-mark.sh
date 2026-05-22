@@ -67,7 +67,7 @@ BEFORE your next \`Agent\` spawn, update \`.workflow/${run_id}/state.json\` via 
   - \`last_updated\`: fresh ISO timestamp
   - \`last_agent\`: \`${subagent_type}\`
 
-The PreToolUse guard (\`.claude/hooks/dev-agent-guard.sh\` Case 3) blocks the next worker spawn until \`state.json\`'s mtime is newer than \`.last_worker_return\`. Skipping this is the single most common reason a /dev run gets BLOCKED and needs \`/dev --resume\`.
+The PreToolUse guard (\`.claude/hooks/dev-agent-guard.sh\` Case 3) blocks the next worker spawn until the mtime of \`state.json\` is newer than \`.last_worker_return\`. Skipping this is the single most common reason a /dev run gets BLOCKED and needs \`/dev --resume\`.
 EOF
 )
 
