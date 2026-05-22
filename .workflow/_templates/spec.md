@@ -14,6 +14,12 @@ One sentence describing what "done" looks like.
 ## Users
 Who uses this and in what context.
 
+## User journey <!-- optional · use for `feat` with a UI flow (multi-screen, multi-state, decision points). Delete for other types or when N/A. -->
+Step-by-step user-visible flow (3–7 steps). Each step: `<actor> <action> → <system response / next state>`. Keeps the engineer coherent across screens; AC items below should each map to a step here.
+
+1. ...
+2. ...
+
 ## Scope
 **In**:
 - ...

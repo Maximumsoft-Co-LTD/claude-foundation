@@ -27,6 +27,24 @@ flowchart LR
 
 Worked example: adding a `/reports` endpoint that aggregates orders. `★` marks the two new pieces; everything else is existing. Reviewer sees in 3 seconds: "new handler + new cache, plugged into the API gateway, reads orders." No prose needed.
 
+**UI-heavy `feat` (multi-screen / multi-state flows)** — prefer mermaid `journey` or `sequenceDiagram` over a plain flowchart, so the *user-visible order* is legible. The spec's `## User journey` section names the steps; this diagram visualises them.
+
+```mermaid
+journey
+  title Checkout — guest → paid order
+  section Cart
+    Review items: 5: User
+    Click "Checkout": 4: User
+  section ★ Guest details
+    Fill email + address: 3: User
+    Validate fields: 4: System
+  section Pay
+    Stripe redirect: 3: User, System
+    Land on receipt: 5: User
+```
+
+Use `sequenceDiagram` instead when the back-and-forth between User / UI / Server matters (e.g., async validation, optimistic updates, retries from the client). Use plain `flowchart` when the change is a single screen or the seam is structural, not user-facing.
+
 ### `fix` — sequenceDiagram of the bug path, with the fix marked
 
 ```mermaid
@@ -143,6 +161,7 @@ For L plans involving multiple actors (services, brokers, external APIs), includ
 | Question to answer | Use |
 |--------------------|-----|
 | Where does the new piece sit in the system? | `flowchart` |
+| What does the user *see and do*, step by step? | `journey` (or `sequenceDiagram` if client↔server back-and-forth matters) |
 | What's the order of operations across components? | `sequenceDiagram` |
 | What's the structural relationship between types? | `classDiagram` |
 | How does the system shape change pre → post? | `flowchart` with before/after subgraphs |
