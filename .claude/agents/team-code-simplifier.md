@@ -37,7 +37,7 @@ description: |
   </commentary>
   assistant: "Now I'll use the code-simplifier agent to ensure the optimized code is also clear and follows our coding standards"
   </example>
-model: opus
+model: sonnet
 ---
 
 Fork source: pr-review-toolkit @ ~/.claude/plugins/marketplaces/claude-plugins-official/plugins/pr-review-toolkit/agents/code-simplifier.md, forked: 2026-05-21

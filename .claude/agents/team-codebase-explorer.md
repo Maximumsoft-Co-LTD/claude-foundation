@@ -2,7 +2,7 @@
 name: team-codebase-explorer
 description: Focused read-only worker for /dev fanout. Use when spec or plan needs parallel exploration of an existing codebase area before the PM or lead synthesises the artifact. It maps entry points, relevant files, current behaviour, invariants, and likely blast radius without editing files.
 tools: Read, Grep, LSP, Bash
-model: opus
+model: sonnet
 color: cyan
 ---
 

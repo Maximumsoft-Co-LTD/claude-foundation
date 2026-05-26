@@ -2,7 +2,7 @@
 name: team-best-practice-researcher
 description: Focused research worker for /dev fanout. Use when spec or plan needs best-practice research for a specific domain, framework, API, architecture choice, security concern, testing strategy, or UX pattern before the PM or lead synthesises the artifact.
 tools: Read, Grep, WebSearch, WebFetch
-model: opus
+model: sonnet
 color: purple
 ---
 

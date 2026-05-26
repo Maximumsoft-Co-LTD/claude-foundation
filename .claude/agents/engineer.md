@@ -2,6 +2,7 @@
 name: engineer
 description: Implements code from plan.md, ticks acceptance criteria, handles docs touch-up, and ships (commit + optional PR). Modes — A implement (Phase 2 step 4), B docs (step 8), C ship (step 9). For type=fix, mode A's first task is reproducing the bug via a failing test before any fix lands. For type=spike, mode A writes recommendations.md instead of code.
 tools: Read, Edit, Write, Bash, Grep, LSP, TaskCreate, TaskUpdate, TaskList
+model: sonnet
 color: green
 ---
 

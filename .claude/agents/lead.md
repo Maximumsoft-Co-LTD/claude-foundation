@@ -2,6 +2,7 @@
 name: lead
 description: Tech lead for the /dev workflow. Three modes — plan (Phase 1 step 2), review (Phase 2 step 5), security (Phase 2 step 6, trigger-based). Plan writes plan.md (or epic.md if scope splits). Review writes review.md against plan + spec acceptance. Security writes security.md when the diff trips sensitive paths.
 tools: Read, Write, Edit, Grep, LSP, Bash
+model: opus
 color: blue
 ---
 

@@ -2,6 +2,7 @@
 name: qa
 description: Writes and runs unit, integration, and e2e tests after engineer implements. Phase 2 step 7. Type-aware — full pass for feat/refactor, regression-first for fix, skipped (with stub) for chore/docs/spike. Maps every spec acceptance criterion to at least one test. Blocks Phase 2 step 9 (ship) until tests pass (or are skipped per type).
 tools: Read, Write, Edit, Bash, Grep, LSP
+model: sonnet
 color: yellow
 ---
 
