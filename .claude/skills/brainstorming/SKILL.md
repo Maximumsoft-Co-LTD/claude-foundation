@@ -29,18 +29,15 @@ The test: can this be one approved spec that produces one ship-able thing? If no
 
 ### 3. Ask only about UNSPECIFIED slots — never re-ask what the intent already pinned
 
-The `spec.md` template (`.workflow/_templates/spec.md`) and `pm.md > Required slots` define what every spec needs:
+The **authoritative slot list and trigger rules live in `.workflow/_templates/spec.md`** (in the `<!-- ... -->` comments under each section) and the slot summary in `.claude/agents/pm.md > Slots`. Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
 
-| Slot | Always required | Conditional |
-|------|-----------------|-------------|
-| Type, Goal, Users, Scope, AC, Constraints, `Ship as`, `Open PR on ship` | ✓ | |
-| Tech stack | ✓ for new projects | |
-| Integration points | ✓ for existing code | |
-| Reproduction | | required when `Type=fix` |
-| Timebox | | required when `Type=spike` |
-| Carry-over | | only if any `FOLLOWUPS.md` item is in scope |
+**Minimum floor (always asked or pulled from intent):** `Type`, `Goal`, `Acceptance criteria`, `Ship as`, `Open PR on ship`. AC may be just 1 for XS; edges live as sub-bullets under the AC they edge (NOT a separate section).
 
-Walk the intent. For each slot, decide: *did the user already answer this, or did the repo answer it for them?* Only the **unanswered** slots become interview questions. **Never** assume defaults for slots you didn't ask about — that is the single most common cause of a broken spec.
+**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. The template comment for each section names the trigger condition; ask only when it fires.
+
+Walk the intent. For each triggered slot, first decide whether the trigger fires at all. If not, the slot is not just unanswered — it does not exist for this spec. If yes: *did the user already answer this, or did the repo answer it?* Only the **triggered AND unanswered** slots become interview questions. **Never** assume defaults for slots you didn't ask about, and **never** include a triggered section just because the template mentions it.
+
+**Frame trigger questions to detect, not to fill.** Bad: "What are the NFRs?" — assumes there are some, invites TBD. Good: "Is there a perf/security/a11y target outside the AC behaviours that needs a number? If not, we skip NFR entirely." The detection question is binary; only on `yes` do you ask for the actual values.
 
 In `/dev`, the orchestrator's `AskUserQuestion` is one batch of 3–4 questions. Pick the 3–4 most consequential unanswered slots. Prefer multi-choice options with one-line descriptions; reserve free-text for genuinely open answers (`Reproduction` for `fix` runs is the canonical free-text slot).
 
@@ -82,17 +79,17 @@ Two rules: (a) only offer when UI / layout / diagram questions are actually comi
 
 If the user declines, proceed text-only. The companion is a tool, not a mode.
 
-### 7. Spec self-review before `Status: approved` (the 5 scans)
+### 7. Spec self-review before `Status: approved` (5 scans)
 
-After the spec is written, walk it once with fresh eyes — the five scans below. Fix issues inline; no need to re-review:
+After the spec is written, walk it once with fresh eyes. Fix issues inline; no need to re-review:
 
-1. **Placeholder scan** — any `TBD`, `TODO`, `???`, `appropriate X`, `proper Y`, `as needed`, `etc.`, `see spec`, hedging modals (`should`, `would`, `might`) in slots that should be concrete? Fix or move to `Open questions`.
-2. **Contradiction scan** — does any section contradict another? Does the architecture summary match the AC? Does the Scope `In` list contradict an AC? If a contradiction exists, the user hasn't made the call yet — surface it.
-3. **Scope check** — is this still one ship-able thing? If decomposition slipped back in during the conversation, split now, not at planning time. The gate will catch it; better to catch it here.
-4. **Ambiguity check** — could any AC be read two ways? If yes, pick the reading and make it explicit. `"system handles errors gracefully"` reads two ways; `"on 5xx from upstream, return cached value if <5 min old, else 503"` does not.
-5. **Verifiability + pre-mortem scan** — for each AC, can you name the exact command or observable that would verify it? If not, the AC is wishful, not testable — rewrite it so it can be checked. Then name the **top 3 ways this design could fail**: dependency that might not deliver, scope someone could mis-read, AC the implementation could satisfy without satisfying the user. Surface each as a `Risk` (if internal) or an `Open question` (if it needs user input). This is the same "give the agent a way to verify its work" principle Anthropic flags as the single highest-leverage thing in [Claude Code best practices](https://code.claude.com/docs/en/best-practices), applied at spec time — and the pre-mortem half is adapted from the Amazon PR/FAQ's "Top three reasons this product will not succeed" question.
+1. **Placeholder + ambiguity scan** — any `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `etc.`, hedging modals (`should`, `would`, `might`) in concrete slots → either resolve or replace with `[NEEDS CLARIFICATION: <who> — <what>]` at the spot it matters.
+2. **Content discipline scan** — every section in the spec has its trigger firing; no empty headers, no "N/A"; NFR lines are triples (`attribute: target — measured: how`), no aspirational text; DoD items name concrete artifacts (specific metric / doc path / flag); edges live as sub-bullets under the AC they edge, never as a standalone section.
+3. **Contradiction scan** — does any section contradict another (User journey vs AC, Scope > Out vs AC)? If yes, surface as inline `[NEEDS CLARIFICATION]`.
+4. **Scope check** — still one ship-able thing? If decomposition slipped back in, split now.
+5. **Verifiability + pre-mortem scan** — for each AC, can you name the exact command or observable that would verify it? If not, the AC is wishful — rewrite it. Then name the **top 3 ways this design could fail**: dependency that might not deliver, scope someone could mis-read, AC the implementation could satisfy without satisfying the user. Surface each as a plan `Risk`, a `[NEEDS CLARIFICATION]`, or a Discovery note. This is the "give the agent a way to verify its work" principle from [Claude Code best practices](https://code.claude.com/docs/en/best-practices) applied at spec time, with the pre-mortem half adapted from the Amazon PR/FAQ.
 
-The result of the scans is either a clean spec ready for the gate, or a spec with `Open questions` honestly listing what's still unknown. **Never** mark a spec `approved` while a slot is `TBD — see Open questions`. That is what `Open questions` exists to defer.
+Result: a clean spec, or a spec with inline `[NEEDS CLARIFICATION]` markers listing what's unknown. **Never** mark `approved` while any marker remains — that is what the marker exists to defer to the gate (Phase 1 step 8).
 
 ## Pre-flight checklist (run top-to-bottom)
 
@@ -100,7 +97,7 @@ Before the first question of the interview:
 
 - [ ] Read `CLAUDE.md`, recent commits (`git log -5 --oneline`), and any file the intent names.
 - [ ] Read `.workflow/_templates/spec.md` and `.workflow/FOLLOWUPS.md > Open` — fold any in-scope follow-up IDs into the interview.
-- [ ] Read `.claude/agents/pm.md > Required slots` for the full slot list. Walk it: which are answered by the intent + repo, which are genuinely open?
+- [ ] Read `.workflow/_templates/spec.md` (template comments are authoritative triggers) and the slot summary in `.claude/agents/pm.md > Slots`. Walk the floor + triggered slots: which are answered by the intent + repo, which trigger fires, which are genuinely open?
 - [ ] Decide the run's `Type` (`feat | fix | refactor | chore | docs | spike`). If genuinely ambiguous, that is question 1.
 - [ ] Run the scope-decomposition test — is this one ship-able thing, or multiple? If multiple, surface that BEFORE asking detail questions.
 - [ ] Load the relevant construction-fundamentals skill(s) for the work that's coming — they shape the approach options in principle 4:
@@ -157,12 +154,14 @@ If the request says "build", "design", "add feature", "scope", "explore", "brain
 ## Anti-patterns (do not do these)
 
 - **Assuming defaults for slots you didn't ask about** — "I'll just use React + Tailwind" / "I'll store it in Postgres" when the user said nothing about either. The interview missed the slot or the repo answers it — pick one; don't invent.
+- **Including triggered sections "just in case"** — `Users: end users` when the actor is singular and obvious, `Constraints: None` when there's no real boundary, `Discovery notes: N/A` when no research ran. These defeat the minimum-floor principle and become placeholder magnets. DELETE the whole section instead.
+- **Inventing NFR numbers** — writing "p95 < 200ms" because the template asks for an NFR and you needed something to fill the blank. If the user didn't give a number and no constraint forces one, the NFR slot does not trigger — DELETE it, or replace the line with `[NEEDS CLARIFICATION]`.
 - **Burning the question batch on slots the repo already answered** — language, framework, deploy target are usually visible in 30 seconds of reading; don't ask them.
 - **Picking one approach silently and asking "does this work?"** — that's leading the witness, not exploring. Show ≥ 2 options with a lead.
 - **Five-option menus** — punts the choice back to the user. Three with a clear recommendation is the format.
 - **Combining the Visual Companion offer with a clarifying question** — the offer is its own message. Otherwise the user has to answer two things in one reply and one of them gets ignored.
 - **One mega-question** — "tell me about goals, constraints, AC, and integration points?" The user answers half of it. Split into 3–4 crisp questions; multi-choice when you can.
-- **Flipping `Status: approved` while `Open questions` has open items or any slot is `TBD`** — `approved` means the spec is complete enough to plan against. If something is `TBD`, it isn't.
+- **Flipping `Status: approved` while any `[NEEDS CLARIFICATION]` marker remains** — `approved` means the spec is complete enough to plan against. If something is unresolved, the marker stays and the gate blocks.
 - **"This is too simple to need a design"** — the simplest projects are where unexamined assumptions hide. A three-sentence design with the user's yes is the minimum; that minimum applies always.
 - **Brainstorming with code in flight** — if you've already started writing the code, the brainstorm isn't a brainstorm anymore, it's a rationalization. Stop, present the design, get the yes, then continue.
 - **Treating compliments / hypotheticals / wishlists as signal** — from *The Mom Test*: "I love this idea," "I would totally use that," "you should also add X someday" all *feel* like progress and aren't. Filter them out and re-ask about past behaviour ("when did you last hit this?", "what did you do?"). If the only evidence you have is an enthusiastic future-tense quote, the spec isn't ready.

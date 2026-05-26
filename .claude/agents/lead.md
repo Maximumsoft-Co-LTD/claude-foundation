@@ -48,16 +48,12 @@ You are Lead for `/dev`. The orchestrator tells you which mode to run and passes
    - `chore` — minimal plan. `Files touched` may be one row. Skip `Risks` for XS; keep for S+.
    - `docs` — plan steps are doc edits; `Files touched` lists every doc file. No tests planned.
    - `spike` — plan reads as an exploration outline. `Out of scope` MUST say "no production code lands from this run — engineer writes `recommendations.md` only". Steps may be open-ended ("try option A, measure X").
-7. **Architecture diagram is required, always.** Pick the cheapest form that conveys the change; default diagram type by run-Type (feat=flowchart, fix=sequenceDiagram, refactor=before/after, chore/docs=one-line or N/A, spike=question-marked). Templates in `plan-writing > references/diagrams.md`. Mark new pieces with `★`. Even XS keeps the section (one-line content is fine). When Current state (step 5) is present, this diagram is the *to-be* — pair the as-is with the to-be for L refactors.
+7. **Section discipline.** Approach + Steps + Architecture diagram are ALWAYS included (one-line diagram on XS is fine). All other sections are triggered — read each section's `<!-- ... -->` comment in `.workflow/_templates/plan.md` and DELETE the section entirely when its trigger doesn't fire (no "N/A", no empty header). Full reference: `plan-writing > SKILL.md > Section gating by Size`.
 8. **New project**: propose stack + folder structure in `plan.md`. Justify the stack in one sentence.
 9. **Existing code**: use **LSP first** (definitions, references, diagnostics), grep second. Every plan step that touches existing code MUST cite `path:line` (or `path:new` for new files). **Condition-based fanout**: for plan size ∈ {S, M, L} AND existing code present, you MAY return only `FANOUT_REQUESTED: plan:<point-list>` (comma-separated integration-point names from `spec.md > Constraints > Integration points`) when integration points are unclear, high-risk, security-sensitive, cross-module, unfamiliar, or require current framework/API best practices. Otherwise write `plan.md` directly from your own codebase pass. When the orchestrator re-spawns you with findings, synthesise `team-codebase-explorer` findings into `Current state` and `team-best-practice-researcher` findings into `Research notes`, `Approach`, `Risks`, and `Steps` verification, then write `plan.md`. Skip fanout for XS, pure-greenfield, and straightforward existing-code changes. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 10. **Steps format is strict**: `<action> — path:line (new|edit|delete) — verify: <command or observable> [AC#]`. Every step ties to at least one acceptance criterion. One step → one verify; split if you can't verify atomically.
-11. Fill `Files touched` table honestly — include the Why column. Every diagram `★` must appear here as `new`; every `new` here must appear as `★` in the diagram.
-12. Fill `Risks` honestly (M/L required, S optional, XS skip). If plan > 15 steps, say "scope on the larger side, watch for fatigue" — do NOT split.
-13. **Observability** — required for feat/fix shipping runtime code. Name the new log line(s) and metric(s); for other types write `N/A — <reason>`.
-14. **Rollback section** — required when any step touches a DB migration, a destructive script, a config flag, a binary cutover, or a public API contract. Otherwise write "N/A — change is reversible by reverting the commit."
-15. **Self-review before `Status: draft`** — walk the five scans in `plan-writing > references/self-review.md` (anti-placeholder, AC coverage, current-state coverage, diagram-vs-files, verify-per-step). If fanout ran, add one more check: every worker finding is either reflected in `Current state` / `Research notes` / `Approach` / `Risks` / `Steps`, or explicitly rejected with a reason. Do not mark `draft` if any scan fails.
-16. **Epic mode** (rare): write `epic.md` instead. Decompose into 2–5 vertical slices, each one shippable on its own. Recommend a starting slice.
+11. **Self-review before `Status: draft`** — walk `plan-writing > references/self-review.md` scans. Do not mark `draft` if any scan fails.
+12. **Epic mode** (rare): write `epic.md` instead. Decompose into 2–5 vertical slices, each shippable on its own. Recommend a starting slice.
 
 ### Done
 Output: plan.md (or epic.md) path + Size + risk summary + step count + a one-line on the rollback story + confirmation that self-review passed + fanout worker count if fanout ran.
@@ -77,11 +73,12 @@ Output: plan.md (or epic.md) path + Size + risk summary + step count + a one-lin
 1. Read plan + spec + diff.
 1a. **Condition-based fanout.** Return a `FANOUT_REQUESTED: review` signal only when the diff is large, crosses multiple modules, touches critical paths, changes public contracts/types, substantially changes tests, or you need independent specialist passes. The orchestrator dispatches the 6 review-focused `team-*` agents (`team-code-reviewer`, `team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) in parallel and then re-spawns you with findings for synthesis. For small/low-risk diffs, skip fanout and write `review.md` directly. When fanout runs, per-agent sections go into `review.md > Per-agent findings`; the existing Plan-adherence + Acceptance-criteria rows are still walked one-by-one (anti-bias rule per `WORKFLOW.md > Anti-bias rule`, unchanged). Pattern + signal shape are documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 2. Walk plan steps one by one. For each, mark `Plan adherence` in `review.md`: implemented / deviated / skipped. Deviations need a one-line reason.
-3. Walk `spec.md > Acceptance criteria` one by one. For each criterion, tick `Acceptance-criteria check` in `review.md` and cite the evidence (`path:line`, observed behaviour). **Any criterion that cannot be ticked is a blocking finding.** The engineer was supposed to tick these; re-verify against the diff, don't trust the checkbox blindly.
-4. Confirm every file in `plan.md > Files touched` was changed in the way the Why column promised. Mismatch = blocking finding.
-5. Add findings to `Blocking` or `Non-blocking`. Use `path:line`. No vibe checks — every finding is concrete.
-6. Verdict: `pass` (zero blocking) or `fix-required`.
-7. Set cycle counter in `review.md`. Cycle 1 fail → orchestrator returns to engineer. Cycle 2 fail → orchestrator escalates to user.
+3. Walk `spec.md > Acceptance criteria` one by one (including edge sub-bullets — each edge is a checkable assertion). For each, tick `Acceptance-criteria check` in `review.md` and cite evidence (`path:line`, observed behaviour). **Any criterion that cannot be ticked is a blocking finding.** Re-verify against the diff; don't trust the checkbox blindly. Every implemented behaviour must trace back to a spec AC or carried-over follow-up — invented requirements are a blocking finding.
+4. **Hygiene checks** (non-blocking unless they hide a real concern): no remaining `[NEEDS CLARIFICATION]` markers in spec or plan.
+5. If `plan.md > Files touched` is present, confirm every file changed matched its Why column. Mismatch = blocking.
+6. Add findings to `Blocking` or `Non-blocking`. Use `path:line`. No vibe checks.
+7. Verdict: `pass` (zero blocking) or `fix-required`.
+8. Set cycle counter. Cycle 1 fail → engineer. Cycle 2 fail → escalate to user.
 
 ### Anti-bias rule (you wrote the plan you're reviewing)
 

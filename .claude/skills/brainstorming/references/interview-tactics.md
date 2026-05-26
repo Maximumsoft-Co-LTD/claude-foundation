@@ -87,7 +87,7 @@ Two failure modes:
 If the user picks `revise <notes>` at the gate (Phase 1 step 8), you don't necessarily re-run a full batch. Decide:
 
 - **Notes affect requirements** (changed AC, added scope, changed users) → re-interview only the affected slots. A 1–2 question batch is fine.
-- **Notes are spec-only** (rewording, clarifying an existing slot, fixing a contradiction) → don't re-interview. Edit `spec.md > Open questions` with the notes and re-spawn `pm` for a spec patch.
+- **Notes are spec-only** (rewording, clarifying an existing slot, fixing a contradiction) → don't re-interview. Edit `spec.md` inline — resolve any related `[NEEDS CLARIFICATION]` markers, or add a new one AT THE SPOT the ambiguity sits — and re-spawn `pm` for a spec patch.
 - **Notes affect approach** (user wants Option B instead of A) → no interview; update the design, re-present, get the yes, re-spawn `pm`.
 
 Don't treat `revise` as "start over." It's surgical.

@@ -66,7 +66,7 @@ Pick the cheapest form that conveys the change. Mark new pieces with `★`. Diag
 | `chore` / `docs` | one line: `<file> (<change>)` OR `**Impact:** N/A — <reason>` |
 | `spike` | `flowchart` with `?` on unanswered nodes |
 
-For XS, even one line counts — keep the section, never delete it. The discipline is "always have a diagram slot."
+For XS, even one line counts — keep the section. The discipline is "always have a diagram slot": habit beats exception.
 
 When Current state (principle 3) is present, the Architecture diagram is the *to-be* — show how the existing flow changes. Don't redraw the whole as-is in the to-be diagram; that's the previous section's job.
 
@@ -94,13 +94,13 @@ A step that needs multiple verifications is doing multiple things. Split it. Ste
 
 ### 8. Self-review before status = draft
 
-Before handing off, walk `references/self-review.md`:
+Before handing off, walk these scans (and `references/self-review.md` for examples):
 
-- **Anti-placeholder scan** — no `TBD`, `TODO`, `???`, `appropriate error handling`, `proper validation`, `as needed`, `see spec`, `etc.`, `path/to/file`, hedging modals (`should`, `would`, `might`) in Steps.
-- **AC coverage** — every `spec.md > Acceptance criteria` checkbox appears in at least one `[AC#]` tag; every step has at least one `[AC#]` tag.
-- **Current-state coverage** *(when principle 3 applies)* — every `edit` / `delete` row in `Files touched` appears in the Current state section's data flow OR is named under an invariant; every invariant is cited with `path:line`.
-- **Diagram ↔ Files alignment** — every `★` in the diagram has a `new` row in `Files touched`; every `new` row appears as `★` in the diagram. Same rule for `~~strikethrough~~` and `delete`.
-- **Verify-per-step completeness** — every step's verify is a command or a concrete observable, never "manually check" / "eyeball".
+- **Anti-placeholder** — no `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `path/to/file`, hedging modals in Steps.
+- **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Diagram is the exception — always include, one-line on XS is fine.)
+- **AC + edge coverage** — every spec AC (and edge sub-bullet) appears in at least one `[AC#]` tag; every Step has at least one `[AC#]`.
+- **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path:line`. When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
+- **Verify-per-step** — every Step's verify is a runnable command or concrete observable, never "manually check".
 
 If any scan fails, fix the plan — do not mark `status: draft`.
 
@@ -118,7 +118,7 @@ Before writing any section of plan.md:
   - System-level / cross-service decisions → [[architecture-fundamentals]]
   - Queue / broker / async worker → [[queue-fundamentals]]
   - Bug with unknown cause → [[debug-fundamentals]] *before* this skill
-- [ ] Pick diagram type from `Type` (table in principle 4).
+- [ ] Pick diagram type from `Type` (table in principle 4). Even XS keeps the section — one line is fine.
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path:line`. Grep is the fallback.
 - [ ] If the change mimics an existing pattern, find that pattern now and have its `path:line` ready to cite in Steps.
 - [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path:line` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
@@ -130,20 +130,20 @@ Then draft in order: **Approach → Current state (if required) → Diagram → 
 | Section | XS | S | M | L |
 |---------|----|----|----|----|
 | Approach (2–3 sent) | ✓ | ✓ | ✓ | ✓ |
+| Steps (with verify + AC tag) | ✓ | ✓ | ✓ | ✓ |
 | Step order line | skip | optional | ✓ | ✓ |
 | Current state (principle 3) | required for refactor/fix; else skip | required when touching existing code OR refactor/fix; else skip | ✓ | ✓ (+ as-is mermaid for refactor) |
 | Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
-| Steps (with verify + AC tag) | ✓ (verify optional) | ✓ | ✓ | ✓ |
 | (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps |
-| Files touched | ✓ | ✓ | ✓ | ✓ |
-| Alternatives considered | skip | skip | when non-obvious | ✓ |
+| Files touched | skip if ≤2 files | when >2 files | ✓ | ✓ |
+| Alternatives considered (+ Verified line) | skip | skip | when non-obvious | ✓ |
 | Risks | skip | optional | ✓ | ✓ |
-| Observability | N/A | required if feat/fix | required if feat/fix | ✓ |
-| Dependencies | skip unless present | skip unless present | skip unless present | ✓ |
-| Rollback | "revert commit" line | "revert commit" or specific | ✓ if destructive | ✓ runbook |
-| Out of scope | ✓ | ✓ | ✓ | ✓ |
+| Observability | skip | when feat/fix ships runtime + new op surface | required if feat/fix | ✓ |
+| Dependencies (WHEN-only) | skip unless present | skip unless present | skip unless present | when blocking handoffs exist |
+| Rollback | skip (revert commit) | skip unless destructive | ✓ if destructive | ✓ runbook |
+| Out of scope | skip if no creep risk | skip if no creep risk | when creep risk in implementation | ✓ |
 
-Sections marked `skip` should be deleted, not left empty. Empty sections are noise that erodes the size-gating discipline.
+Sections marked `skip` are **DELETED entirely** — no empty headers, no "N/A" lines. Empty sections defeat the minimum-floor principle.
 
 ### Optional Phases for L plans
 
@@ -175,7 +175,9 @@ If any non-trivial code is about to land in the repo and you're about to write `
 - **Pseudocode in Steps** — if the code is ready to write, write it during implementation, not in the plan. Pseudocode rots and never runs.
 - **Hour / day estimates** — planning fallacy makes these wrong by 2–4×. Use `Size` (XS/S/M/L) only.
 - **"Considerations" / "Notes" bucket sections** — every insight belongs in a section that drives action (Steps, Risks, Alternatives, Out of scope). Unbounded buckets become dump grounds.
-- **Diagram deletion for small work** — even XS keeps the section, even if the content is one line. Habit beats exception.
+- **Including triggered sections "just in case"** — an empty `Architecture diagram` on an XS string change, a `Files touched` table with one row, a `Risks` section that says "N/A". DELETE the whole section instead. Empty headers defeat the minimum-floor principle.
+- **Inventing an Observability line because the template asks for one** — if the run doesn't ship runtime code or add a new operational surface, DELETE the section. Don't invent metric names to fill a slot.
+- **`Alternatives considered` without a Verified line** — "rejected: feels slower" is a feeling, not evidence. Each rejection needs a load test, prior incident, profiling result, or spike reference.
 - **Verify = "manually check" / "eyeball" / "visually inspect"** — that's not a verify. Name a command or a concrete observable, or split the step. (Anthropic's single-highest-leverage rule for working with AI coding agents is *give the agent a way to verify its work*. This rule is that rule, applied to plans.)
 - **AC tag = "all"** — every step tags specific AC numbers. "All" hides which step actually lands which behaviour.
 - **Symptom-patching for `fix`** — "wrap in try/catch", "guard against null" without explaining *why* the null arrives is treating the symptom. Show the root cause in `Approach`; let the fix step name it explicitly.

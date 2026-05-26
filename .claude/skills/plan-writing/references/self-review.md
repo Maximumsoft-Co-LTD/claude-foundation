@@ -14,7 +14,7 @@ Search the entire plan for these strings. Every hit is a fix-before-draft:
 
 | Pattern | Why it's bad |
 |---------|--------------|
-| `TBD`, `TODO`, `???` | A placeholder is a hole. Either fill it or move it to `Out of scope` / `Open questions` in spec. |
+| `TBD`, `TODO`, `???` | A placeholder is a hole. Either fill it, move it to `Out of scope`, or replace with an inline `[NEEDS CLARIFICATION: <who> — <what>]` marker in spec.md AT THE SPOT it matters. Plans should not carry placeholders past `Status: draft`. |
 | `appropriate error handling`, `proper validation`, `as needed`, `where appropriate` | Vague — no engineer can implement "appropriate". State the actual behaviour. |
 | `see spec`, `as discussed`, `per the design` | Forces reader to dereference. Plan should be self-contained for the slice it owns. |
 | `etc.`, `and so on`, `among others` | Hides scope. List it or scope it out. |
@@ -124,7 +124,7 @@ If Scan 4 (Current-state coverage) is the one failing, fix it *first* before re-
 
 Before marking `Status: draft`, ask:
 
-> If I handed this plan to an engineer who has never seen the spec, could they implement it without asking me anything except about ambiguities I've already listed in `Open questions` (in spec.md)?
+> If I handed this plan to an engineer who has never seen the spec, could they implement it without asking me anything except about ambiguities I've already flagged with inline `[NEEDS CLARIFICATION: <who> — <what>]` markers (in spec.md, at the spots they apply)?
 
 If yes → draft.
 If no → which scan caught it? Run that scan again.
