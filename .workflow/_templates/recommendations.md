@@ -1,37 +1,23 @@
 # Recommendations: <title>
 
-**Spec**: [./spec.md](./spec.md)
-**Plan**: [./plan.md](./plan.md)
-**Type**: spike
-**Timebox spent**: <e.g., 4 hours of 1 day>
-**Date**: YYYY-MM-DD
+**Spec**: [./spec.md](./spec.md) · **Plan**: [./plan.md](./plan.md) · **Type**: spike · **Timebox spent**: <e.g., 4h of 1 day> · **Date**: YYYY-MM-DD
 
 ## Question
 The one question this spike was trying to answer (copy from `spec.md > Timebox > Deliverable`).
 
-## What we tried
-Brief log of what got explored. Code experiments live in scratch branches or under `spike/` — link them, don't paste them.
-
-- ...
-
 ## What we learned
-Three to seven bullets. Each bullet is a *fact* discovered, not an opinion.
-
+Three to seven bullets, each a *fact* discovered (not an opinion). Code experiments live in scratch branches / `spike/` — link them, don't paste them.
 - ...
 
 ## Recommendation
-The named next action. Pick one of:
-
+The named next action — pick one:
 - **Proceed** — open a follow-up `feat` run with this scope: <one line>
 - **Defer** — not worth doing now because: <one line>. Re-evaluate when: <trigger>
 - **Reject** — option ruled out because: <one line>
 
-## Follow-ups generated
-What `retro` should append to `.workflow/FOLLOWUPS.md`.
-
-- ...
-
-## Open questions
-Things the timebox didn't resolve. Each becomes either a new spike or a known-unknown filed under follow-ups.
-
-- ...
+<!--
+The sections above are always required for a spike. Add the sections below ONLY when they apply, then DELETE them if not:
+- What we tried — brief log of what got explored (when the path taken isn't obvious from What we learned)
+- Follow-ups generated — what retro should append to FOLLOWUPS.md
+- Open questions — what the timebox didn't resolve (each → a new spike or a known-unknown filed under follow-ups)
+-->

@@ -22,6 +22,7 @@ Of the open slots, pick the 3–4 with the highest **consequence × ambiguity**:
 | Constraints (tech stack for new code, integration points for existing) | Wrong stack = whole plan wrong | Always ask if neither intent nor repo answers |
 | Reproduction (`Type=fix`) | Regression test depends on it | Always free-text, always ask |
 | Timebox (`Type=spike`) | Spike runs forever otherwise | Always ask, default 1 day if user shrugs |
+| NFR detection (perf / security / a11y) | A missing-but-needed NFR passes every consistency scan and only breaks in prod | Mandatory **binary** ask for feat/fix shipping runtime code; on `no`, no section |
 | Users / context | Shapes AC and approach | Ask if non-obvious |
 | Ship as / Open PR | Has safe defaults | Skip if running short on slots |
 
@@ -81,6 +82,36 @@ Two failure modes:
 > Options:
 > - Sync
 > - Async
+
+## Bounded multi-round digging (when one batch is too shallow)
+
+One `AskUserQuestion` batch is the default and is enough for narrow, concrete work. But the Mom Test is iterative — the most useful question ("tell me about the last time…") earns its value from the *follow-up* you ask after the answer lands, and you can't follow that thread inside a single batch. So a second batch is warranted when, after batch 1, **any** of these holds:
+
+- `Type` is still genuinely ambiguous (the whole workflow branches on it).
+- More than ~4 consequential slots are still open (you couldn't fit them in one batch).
+- A batch-1 answer was vague, or arrived as "Other" free-text that *opened a new unknown* the options didn't cover.
+
+Rules for the dig loop:
+
+1. **Hard cap: 3 batches.** Past that, you're not converging — you're interviewing in circles.
+2. **Each batch is narrower than the last.** Batch 2 digs into what batch 1 revealed; it does not pick fresh cold slots. If you find yourself opening *new* topics in batch 2, you mis-prioritised batch 1.
+3. **An open picture after 3 batches is itself the finding.** Stop and write a `[NEEDS CLARIFICATION: <who> — <what>]` at the spot it matters. Guessing to "finish" the interview is the exact failure this loop exists to prevent.
+
+The dig loop is the escape hatch for real ambiguity — the kind of open-ended product work this skill claims to own. It is *not* license to turn every interview into an interrogation; narrow concrete tasks still get one batch.
+
+## Specification by Example — ground AC in concrete cases
+
+Adapted from Specification by Example / BDD: the cheapest place to catch a mis-spec'd acceptance criterion is *before* it's written down, by forcing a real `input → expected output` pair. An AC stated only in the abstract ("user can export their data") hides the requirements that actually bite — size limits, formats, timeouts — until someone hits them in prod.
+
+For every AC whose one-line behaviour isn't self-evident, capture one concrete example during the interview and carry it into the spec as an `e.g.:` sub-bullet:
+
+| Abstract AC (hides requirements) | AC + example (surfaces them) |
+|----------------------------------|------------------------------|
+| "User can export their data" | "User exports their data" · *e.g.:* `account with 200k rows` → `CSV with columns A,B,C, downloaded in <30s` |
+| "Search returns relevant results" | "Search returns matches ranked by recency" · *e.g.:* `query "invoice" with 3 matches from 2021/2023/2024` → `2024, 2023, 2021 order` |
+| "Login rejects bad credentials" | "Login rejects bad credentials without leaking which field was wrong" · *e.g.:* `valid email + wrong password` → `same 401 + message as unknown email` |
+
+The example is doing the work the pre-mortem's "mis-spec'd AC" scan does — but *up front*, where it's cheapest. When the user can't give a concrete example for an AC, that's a signal the AC isn't understood well enough to build yet → dig (above) or mark `[NEEDS CLARIFICATION]`. **Never invent the example values** — an invented example is a guessed requirement wearing a contract's clothes.
 
 ## Handling `revise` follow-ups (in `/dev`)
 

@@ -4,6 +4,51 @@ Single entry point: `/dev <intent>` (or `/dev --resume <id>` to pick up an inter
 
 > **Orchestration runs in the main agent, not a sub-agent.** Claude Code sub-agents cannot use `Agent` (no nested spawns) or `AskUserQuestion` (sub-agents can't talk to the user). The `/dev` slash command therefore loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent follows it directly. Sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) are spawned from there for file work — they never spawn each other and they never interview the user. The interview step is run by the main agent (orchestrator) and passed to `pm` as input.
 
+## Flow at a glance
+
+The happy path with its three feedback loops (review, security, test). Diamonds are decision points; the dotted edge is the `--resume` re-entry. Phase numbers match the [type-aware matrix](#type-aware-phase-matrix) and the prose below.
+
+```mermaid
+flowchart TD
+    Start(["/dev &lt;intent&gt;"]) --> Setup["Setup (orchestrator)<br/>read INDEX · pick NNNN-type-slug · create folder · copy state.json"]
+
+    subgraph P1["Phase 1 — Requirements (interactive)"]
+        direction TB
+        S1["1. Interview + spec<br/>orchestrator asks · pm writes spec.md"]
+        S2["2. Plan<br/>lead → plan.md (or epic.md)"]
+        S3{"3. Gate"}
+        S1 --> S2 --> S3
+    end
+
+    Setup --> S1
+    S3 -- "revise / swap" --> S1
+    S3 -- "approve" --> S4
+
+    subgraph P2["Phase 2 — Implementation (autonomous)"]
+        direction TB
+        S4["4. Implement<br/>engineer · fix → failing test first"]
+        S5{"5. Review<br/>lead vs plan + acceptance"}
+        S6{"6. Security<br/>trigger-based · lead"}
+        S7{"7. Test<br/>qa · regression for fix"}
+        S8["8. Docs touch-up<br/>engineer"]
+        S9["9. Ship<br/>engineer · commit + PR"]
+        S10["10. Retro<br/>retro.md · memory + skill candidates"]
+        S4 --> S5
+        S5 -- "pass" --> S6
+        S6 -- "pass / not triggered" --> S7
+        S7 -- "pass" --> S8 --> S9 --> S10
+    end
+
+    S5 -- "blocking · ≤2 cycles" --> S4
+    S6 -- "high finding" --> S4
+    S7 -- "fail · ≤3 cycles" --> S4
+
+    S10 --> Skill["skill-creator<br/>per user-approved candidate"]
+    Skill --> Done(["Summary · done"])
+
+    Resume(["/dev --resume &lt;id&gt;"]) -. "continue from state.json cursor" .-> P2
+```
+
 ## Naming convention
 
 Each run gets an ID: **`NNNN-<type>-<kebab-slug>`**
@@ -104,7 +149,7 @@ Phase numbering below matches the matrix above (1–10) so the gate output, pros
 
 ## Phase 1 — Requirements (interactive)
 
-1. **Interview + spec** — the **orchestrator (main agent)** reads `FOLLOWUPS.md` first. When existing code, APIs, security-sensitive paths, unfamiliar domain terms, or multiple independent research questions make guessing risky, it fans out spec-prep probes before the interview: `team-codebase-explorer` maps relevant current behaviour/invariants, and `team-best-practice-researcher` gathers focused best-practice constraints. It skips this fanout for XS pure-greenfield work. The orchestrator then uses `AskUserQuestion` (≤4 questions, one batch) to capture: goal, users, scope, non-goals, constraints, **Type**, `Ship as`, and whether any open follow-up is now in scope. For `fix`, it also asks for a concrete reproduction. The orchestrator then spawns `pm` with the full Q&A plus fanout findings in the prompt; `pm` writes `spec.md` from the answers — including the `Type` slot, `Discovery notes`, and (for `fix`) a Reproduction section. `pm` itself cannot call `AskUserQuestion` (sub-agent limitation), which is why the interview lives in the main agent.
+1. **Interview + spec** — the **orchestrator (main agent)** reads `FOLLOWUPS.md` first. When existing code, APIs, security-sensitive paths, unfamiliar domain terms, or multiple independent research questions make guessing risky, it fans out spec-prep probes before the interview: `team-codebase-explorer` maps relevant current behaviour/invariants, and `team-best-practice-researcher` gathers focused best-practice constraints. It skips this fanout for XS pure-greenfield work. The orchestrator then uses `AskUserQuestion` (≤4 questions per batch; one batch by default, a bounded dig loop of at most 3 narrowing batches when ambiguity is genuinely high) to capture: goal, users, scope, non-goals, constraints, **Type**, `Ship as`, a measurable NFR target (mandatory binary ask for runtime-shipping feat/fix), a concrete `input → output` example per consequential AC, and whether any open follow-up is now in scope. For `fix`, it also asks for a concrete reproduction. The orchestrator then spawns `pm` with the full Q&A plus fanout findings in the prompt; `pm` writes `spec.md` from the answers — including the `Type` slot, `Discovery notes`, and (for `fix`) a Reproduction section. `pm` itself cannot call `AskUserQuestion` (sub-agent limitation), which is why the interview lives in the main agent.
 2. **Plan** — `lead` (plan mode) reads `spec.md`, runs the scope check, then:
    - *New project*: proposes structure + stack in `plan.md`.
    - *Existing code*: may return `FANOUT_REQUESTED: plan:<point-list>` for unclear/high-risk S/M/L plans; orchestrator dispatches `team-codebase-explorer` and `team-best-practice-researcher` per integration point; `lead` synthesises the results into `Current state`, `Research notes`, `Approach`, steps with `file:line` references, risks, and verification. Straightforward existing-code plans are written directly.
@@ -112,7 +157,7 @@ Phase numbering below matches the matrix above (1–10) so the gate output, pros
    - *Refactor type*: includes a behavior-equivalence note (what stays stable, how it gets verified).
    - *Spike type*: plan reads as an exploration outline with a timebox; `Out of scope` calls out "no production code lands from this run".
    - *Epic case* (rare): writes `epic.md` instead and recommends a starting slice.
-3. **Gate** — `orchestrator` shows `spec.md` summary + `plan.md` outline (or epic slices) + the type-aware phase list ("will run: 1-2-3-4-6-8-9-10; skipping 5,7 — type=fix, no sensitive paths"). Wait for `approve` / `revise <notes>` / `swap <n>` (epic only). On `revise`, loop to step 1 with notes.
+3. **Gate** — `orchestrator` shows the `spec.md` summary with the **acceptance criteria presented as the contract for per-line confirmation** (each AC + its example, framed "done when each is true — confirm or correct each"), any `Assumptions (inferred from repo — correct any that are wrong)`, the `plan.md` outline (or epic slices), and the type-aware phase list ("will run: 1-2-3-4-6-8-9-10; skipping 5,7 — type=fix, no sensitive paths"). Wait for `approve` / `revise <notes>` / `swap <n>` (epic only). A correction to any AC line or inferred assumption is a `revise`; loop to step 1 with notes.
 
 ## Phase 2 — Implementation (autonomous after approval)
 

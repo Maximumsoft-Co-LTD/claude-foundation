@@ -7,49 +7,15 @@
 **Cycle**: 1 of max 2
 
 ## Plan adherence
-One row per plan step. No skipping rows. Deviation needs a one-line reason.
+One row per plan step — no skipping rows. A deviation needs a one-line reason.
 
 - [x] Step 1 — implemented as planned
 - [ ] Step 2 — deviation: <what + why>
 
 ## Acceptance-criteria check
-One row per `spec.md > Acceptance criteria` bullet. `engineer` is expected to have ticked these already; `lead` re-verifies against the diff and the running code.
+One row per `spec.md > Acceptance criteria` bullet. `engineer` ticks these; `lead` re-verifies against the diff and the running code. Any criterion that can't be ticked here is a **blocking** finding.
 
 - [ ] Criterion 1 — evidence: `path:line` / behaviour observed
-- [ ] Criterion 2 — evidence: ...
-
-Any criterion that cannot be ticked here is a **blocking** finding.
-
-## Per-agent findings
-(present only when fanout ran; omit for single-reviewer runs)
-
-One `### team-<role>` subsection per worker dispatched in the review-mode fanout (see `.claude/skills/fanout-team-agents/SKILL.md`). Each subsection holds the worker's raw findings (bullets, `path:line`). `lead`'s synthesis sits in `Findings` below; this section is the evidence trail.
-
-**Mandatory provenance line.** The first line of every `### team-<role>` subsection MUST be `**Dispatched-as**: <subagent_type> (<reason-if-fallback>)`. The orchestrator captures each `Agent` invocation's actual `subagent_type` at dispatch time and passes the `Dispatched-as:` map into the synthesis prompt (see `.claude/orchestrator.md > Fanout dispatch > Re-spawn for synthesis`). Without this line a reader cannot distinguish a real `team-<role>` dispatch from the inline-fallback path (`subagent_type="general-purpose"`, role-contract read inline) — both produce byte-identical artifact shapes.
-
-### team-code-reviewer
-**Dispatched-as**: `team-code-reviewer` (or `general-purpose` with a one-phrase reason if fallback fired)
-- `path:line` — finding
-
-### team-code-simplifier
-**Dispatched-as**: `team-code-simplifier` (or `general-purpose` with a one-phrase reason if fallback fired)
-- `path:line` — finding
-
-### team-comment-analyzer
-**Dispatched-as**: `team-comment-analyzer` (or `general-purpose` with a one-phrase reason if fallback fired)
-- `path:line` — finding
-
-### team-pr-test-analyzer
-**Dispatched-as**: `team-pr-test-analyzer` (or `general-purpose` with a one-phrase reason if fallback fired)
-- `path:line` — finding
-
-### team-silent-failure-hunter
-**Dispatched-as**: `team-silent-failure-hunter` (or `general-purpose` with a one-phrase reason if fallback fired)
-- `path:line` — finding
-
-### team-type-design-analyzer
-**Dispatched-as**: `team-type-design-analyzer` (or `general-purpose` with a one-phrase reason if fallback fired)
-- `path:line` — finding
 
 ## Findings
 
@@ -61,3 +27,13 @@ One `### team-<role>` subsection per worker dispatched in the review-mode fanout
 
 ## Sign-off
 pass | needs-another-round → see Phase 2 step 5
+
+<!--
+The sections above are always required. Add the section below ONLY when the review-mode fanout ran (see fanout-team-agents/SKILL.md):
+
+## Per-agent findings
+One `### team-<role>` subsection per worker dispatched. `lead`'s synthesis stays in Findings above; this is the evidence trail. MANDATORY first line of every subsection: `**Dispatched-as**: <subagent_type>` (or `general-purpose` + a one-phrase reason if the fallback fired) — the orchestrator passes the Dispatched-as map into synthesis (orchestrator.md > Fanout dispatch). Without it a reader can't tell a real team-<role> dispatch from the inline fallback (both produce byte-identical artifact shapes).
+  ### team-<role>
+  **Dispatched-as**: `team-<role>`
+  - `path:line` — finding
+-->

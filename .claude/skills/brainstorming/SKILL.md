@@ -19,7 +19,9 @@ The promise is small: explore context first, name the unknowns honestly, ask onl
 
 The intent is one sentence; the codebase already has answers. Read `CLAUDE.md`, `.workflow/INDEX.md`, the last few commits, and any file the intent names *before* the first question. The interview gets sharper when you already know which file the feature plugs into, what stack is in play, and which conventions already exist.
 
-Skipping this and going straight to "tell me about X" wastes questions on things the repo would have told you. The orchestrator gets one `AskUserQuestion` batch — don't burn it asking the language when `package.json` is sitting right there.
+Skipping this and going straight to "tell me about X" wastes questions on things the repo would have told you. Questions are scarce — don't burn one asking the language when `package.json` is sitting right there.
+
+**Log what the repo answered as an assumption, not a fact.** When the repo (not the user) answers a slot — stack from `package.json`, integration point from the file the intent names, a convention from a sibling module — that inference can be wrong (the repo uses Postgres for service A; this feature lives in service B on Mongo). Keep a short running list of these repo-inferred answers and hand it to the orchestrator to surface at the gate as `Assumptions (inferred — correct me if wrong)`. A wrong inference nobody saw silently corrupts the spec and survives every internal-consistency scan; a one-line veto at the gate is the cheap fix.
 
 ### 2. Decompose oversized scope BEFORE refining details
 
@@ -29,7 +31,7 @@ The test: can this be one approved spec that produces one ship-able thing? If no
 
 ### 3. Ask only about UNSPECIFIED slots — never re-ask what the intent already pinned
 
-The **authoritative slot list and trigger rules live in `.workflow/_templates/spec.md`** (in the `<!-- ... -->` comments under each section) and the slot summary in `.claude/agents/pm.md > Slots`. Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
+The **authoritative slot list and trigger rules live in `.workflow/_templates/spec.md`** (in the `<!-- ... -->` trigger menu below the always-required sections) and the slot summary in `.claude/agents/pm.md > Slots`. Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
 
 **Minimum floor (always asked or pulled from intent):** `Type`, `Goal`, `Acceptance criteria`, `Ship as`, `Open PR on ship`. AC may be just 1 for XS; edges live as sub-bullets under the AC they edge (NOT a separate section).
 
@@ -39,7 +41,15 @@ Walk the intent. For each triggered slot, first decide whether the trigger fires
 
 **Frame trigger questions to detect, not to fill.** Bad: "What are the NFRs?" — assumes there are some, invites TBD. Good: "Is there a perf/security/a11y target outside the AC behaviours that needs a number? If not, we skip NFR entirely." The detection question is binary; only on `yes` do you ask for the actual values.
 
-In `/dev`, the orchestrator's `AskUserQuestion` is one batch of 3–4 questions. Pick the 3–4 most consequential unanswered slots. Prefer multi-choice options with one-line descriptions; reserve free-text for genuinely open answers (`Reproduction` for `fix` runs is the canonical free-text slot).
+**The NFR detection question is mandatory for any run that ships runtime code (`feat`/`fix` with a real runtime path)** — ask it even when slots are tight, because a missing-but-needed NFR is the one failure mode that passes every internal-consistency scan and only surfaces in prod. This makes the *question* mandatory, not the *section*: if the answer is "no target needed", DELETE the NFR section as usual — anti-bloat still wins. The section is only born on a real, measurable number.
+
+In `/dev`, the orchestrator's `AskUserQuestion` is **one batch of 3–4 questions by default**. Pick the 3–4 most consequential unanswered slots. Prefer multi-choice options with one-line descriptions; reserve free-text for genuinely open answers (`Reproduction` for `fix` runs is the canonical free-text slot).
+
+**Bounded multi-round digging — when one batch is too shallow.** One batch is enough for narrow, concrete work. It is *not* enough for the genuinely ambiguous work this skill claims to own, because the Mom Test is iterative by nature: a good past-behaviour answer opens the next question, and you can't follow that thread inside a single batch. So when ambiguity is high — `Type` still unclear after batch 1, more than ~4 consequential slots open, or a batch-1 answer arrived vague / as "Other" free-text that raised a new unknown — you may run a **second (at most third) batch that digs into what the previous answer revealed**, not new slots picked cold. Three rules: (a) hard cap of **3 batches**; (b) each follow-up batch is *narrower* than the last — you are converging, not re-opening; (c) if the picture is still open after 3 batches, that is itself the finding — stop and surface it as a `[NEEDS CLARIFICATION]` rather than guessing. The default stays one batch; the dig loop is the escape hatch for real ambiguity, not the norm.
+
+Two sequencing notes: resolve open slots through the dig loop *before* you frame approach options (principle 4) — clarification precedes design choice, never the reverse; and if the mandatory NFR-detection question (above) crowds a consequential slot out of batch 1, treat that pressure as a signal to run a second batch, not a reason to drop either question.
+
+**Ground each consequential AC in a concrete example.** For any AC where the right behaviour isn't obvious from a single line, capture one real `input → expected output` during the interview (Specification by Example). "Export their data" is a wish; "`account with 200k rows` → `CSV with columns A,B,C downloaded in <30s`" is a contract. The example is where hidden requirements surface *up front* (size limits, formats, timeouts) instead of late in the pre-mortem. Carry it into the spec as an `e.g.:` sub-bullet under the AC (format in `.workflow/_templates/spec.md`). Skip only for AC whose one line is already unambiguous.
 
 **Frame behavioural questions in past-tense / specifics, not future opinions.** Adapted from Rob Fitzpatrick's *The Mom Test*: "Would you use a feature that does X?" is hypothetical fluff — the user will say yes and you'll learn nothing. "When did you last hit this problem, and what did you do?" gets you a concrete behaviour to design against. Filter the *answers* the same way — compliments, hypotheticals, and wishlists are not signal. See `references/interview-tactics.md > The Mom Test for spec interviews`.
 
@@ -87,7 +97,7 @@ After the spec is written, walk it once with fresh eyes. Fix issues inline; no n
 2. **Content discipline scan** — every section in the spec has its trigger firing; no empty headers, no "N/A"; NFR lines are triples (`attribute: target — measured: how`), no aspirational text; DoD items name concrete artifacts (specific metric / doc path / flag); edges live as sub-bullets under the AC they edge, never as a standalone section.
 3. **Contradiction scan** — does any section contradict another (User journey vs AC, Scope > Out vs AC)? If yes, surface as inline `[NEEDS CLARIFICATION]`.
 4. **Scope check** — still one ship-able thing? If decomposition slipped back in, split now.
-5. **Verifiability + pre-mortem scan** — for each AC, can you name the exact command or observable that would verify it? If not, the AC is wishful — rewrite it. Then name the **top 3 ways this design could fail**: dependency that might not deliver, scope someone could mis-read, AC the implementation could satisfy without satisfying the user. Surface each as a plan `Risk`, a `[NEEDS CLARIFICATION]`, or a Discovery note. This is the "give the agent a way to verify its work" principle from [Claude Code best practices](https://code.claude.com/docs/en/best-practices) applied at spec time, with the pre-mortem half adapted from the Amazon PR/FAQ.
+5. **Verifiability + example + pre-mortem scan** — for each AC, can you name the exact command or observable that would verify it? If not, the AC is wishful — rewrite it. Then: every *consequential* AC (one whose behaviour isn't obvious from its single line) has a concrete `e.g.: input → expected output` sub-bullet — if it needed an example to be unambiguous and lacks one, add it now (this is where mis-spec'd AC are cheapest to catch). Then name the **top 3 ways this design could fail**: dependency that might not deliver, scope someone could mis-read, AC the implementation could satisfy without satisfying the user. Surface each as a plan `Risk`, a `[NEEDS CLARIFICATION]`, or a Discovery note. This is the "give the agent a way to verify its work" principle from [Claude Code best practices](https://code.claude.com/docs/en/best-practices) applied at spec time, with the pre-mortem half adapted from the Amazon PR/FAQ.
 
 Result: a clean spec, or a spec with inline `[NEEDS CLARIFICATION]` markers listing what's unknown. **Never** mark `approved` while any marker remains — that is what the marker exists to defer to the gate (Phase 1 step 8).
 
@@ -126,14 +136,16 @@ flowchart TD
     H -- yes --> I[Offer Visual Companion - own message]
     H -- no --> J[Ask question batch]
     I --> J
-    J --> K{Approach 'how' open?}
+    J --> DIG{High ambiguity + answer opened a new unknown?}
+    DIG -- "yes · ≤3 batches · narrower" --> J
+    DIG -- "no / cap hit" --> K{Approach 'how' open?}
     K -- yes --> L[Propose 2–3 options with recommendation]
-    K -- no --> M[Present design: Goal + Scope + AC + chosen approach]
+    K -- no --> M[Present design: Goal + Scope + AC + example + chosen approach]
     L --> M
     M --> N{User approves design?}
     N -- no, revise --> J
     N -- yes --> O[pm writes spec.md]
-    O --> P[Self-review: 4 scans, fix inline]
+    O --> P[Self-review: 5 scans, fix inline]
     P --> Q{Gate: orchestrator presents to user}
     Q -- revise --> J
     Q -- approve --> R[Status: approved → plan-writing]
@@ -198,7 +210,7 @@ The `/dev` orchestrator (main agent, defined in `.claude/orchestrator.md`) is th
 
 **Step 4 — approach options (after answers come in):** Option A: synchronous CSV download from a new `/api/export` route, recommended for ≤ 100k rows. Option B: background job + email link, better for large exports but adds a queue. Option C: hybrid — sync if under threshold, async otherwise. Lead with A unless answer 2 implied >100k rows.
 
-**Step 5 — present design, get yes, hand to `pm`.** `pm` writes `spec.md` with concrete AC ("CSV download from /api/export, ≤30s for accounts up to 100k rows, columns A/B/C"). **Step 6 — self-review:** scan for `TBD`, contradictions, scope creep, ambiguity. Fix inline. **Step 7 — orchestrator runs the gate.**
+**Step 5 — present design, get yes, hand to `pm`.** `pm` writes `spec.md` with concrete AC ("CSV download from /api/export, ≤30s for accounts up to 100k rows, columns A/B/C"). **Step 6 — self-review (5 scans):** placeholder/ambiguity, content discipline, contradictions, scope, and verifiability + example + pre-mortem (confirm the CSV AC carries its concrete `e.g.:` example). Fix inline. **Step 7 — orchestrator runs the gate.**
 
 That's it. Eight steps, no production code touched, spec is concrete enough to plan against.
 

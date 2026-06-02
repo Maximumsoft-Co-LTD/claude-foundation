@@ -98,7 +98,7 @@ Before handing off, walk these scans (and `references/self-review.md` for exampl
 
 - **Anti-placeholder** — no `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `path/to/file`, hedging modals in Steps.
 - **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Diagram is the exception — always include, one-line on XS is fine.)
-- **AC + edge coverage** — every spec AC (and edge sub-bullet) appears in at least one `[AC#]` tag; every Step has at least one `[AC#]`.
+- **AC sufficiency, not just coverage** — every Step still carries ≥1 `[AC#]`, but presence is the floor, not the bar. For each spec AC (and edge sub-bullet): the Step(s) tagged with it, taken *together*, must **fully deliver** it (not merely touch it), AND at least one of those Steps' `verify:` clause must be the AC's actual acceptance check — when the spec AC carries an `e.g.: input → expected output` example, that example is the verify target. A step tagged `[AC1]` that doesn't satisfy AC1, or an AC whose tagged steps have no verify that proves it, is coverage on paper only — that is the gap this scan catches.
 - **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path:line`. When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
 - **Verify-per-step** — every Step's verify is a runnable command or concrete observable, never "manually check".
 

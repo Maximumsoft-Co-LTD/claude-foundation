@@ -2,39 +2,20 @@
 
 **Plan**: [./plan.md](./plan.md)
 **Reviewed**: YYYY-MM-DD
-**Trigger**: <which sensitive-path bucket the diff touched — auth | crypto | sql | html | path | exec | deserialise | secrets | network>
+**Trigger**: <bucket the diff touched — auth | crypto | sql | html | path | exec | deserialise | secrets | network>
 **Verdict**: pass | fix-required
 
 ## Threat model (one paragraph)
 What an attacker would try given this diff. Trust boundaries crossed. Who can reach the new code.
 
 ## Checklist
-Walk every applicable row. Mark ✓ / ✗ / N/A with a one-line note. Inline checklist — no separate skill needed.
+Walk ONLY the buckets your `Trigger` names; mark ✓ / ✗ / N/A with a one-line note. Inline — no separate skill needed.
 
-### Input handling
-- [ ] All user input validated at the boundary, not deep inside
-- [ ] No string concatenation into SQL / shell / HTML / paths
-- [ ] Parser/decoder choice safe for untrusted input (no `pickle.loads`, no `yaml.load`, no eval)
-
-### Authn / authz
-- [ ] Every new endpoint has an explicit authz check (not "the middleware probably catches it")
-- [ ] Session/token storage is httpOnly + secure + SameSite where applicable
-- [ ] No new "admin" code path skips the existing authz layer
-
-### Secrets + crypto
-- [ ] No hard-coded secrets, API keys, or test credentials in the diff
-- [ ] No custom crypto — using the platform's standard library / vetted lib
-- [ ] PRNG used for security purposes is a CSPRNG
-
-### Output / rendering
-- [ ] Untrusted text escaped on the way out (HTML, JSON, log lines)
-- [ ] Redirect targets validated against an allowlist
-- [ ] Error messages don't leak stack traces / internal paths to end users
-
-### Infra-adjacent
-- [ ] File path joins go through `path.join` / `filepath.Clean` and reject `..`
-- [ ] New outbound network call has a timeout and a target allowlist
-- [ ] New process exec doesn't shell out with user input
+- [ ] **Input** — validated at the boundary, not deep inside; no string-concat into SQL / shell / HTML / paths; safe parser for untrusted input (no `pickle.loads`, no `yaml.load`, no eval)
+- [ ] **Authn / authz** — every new endpoint has an explicit authz check (not "middleware probably catches it"); session/token storage httpOnly + secure + SameSite; no admin path skips the existing authz layer
+- [ ] **Secrets / crypto** — no hard-coded secrets / API keys / test creds in the diff; no custom crypto (use the platform / a vetted lib); CSPRNG for security-purpose randomness
+- [ ] **Output** — untrusted text escaped on the way out (HTML / JSON / logs); redirect targets validated against an allowlist; errors don't leak stack traces / internal paths
+- [ ] **Infra-adjacent** — path joins go through `path.join` / `filepath.Clean` and reject `..`; new outbound call has a timeout + target allowlist; new process exec doesn't shell out with user input
 
 ## Findings
 

@@ -25,13 +25,14 @@ Search the entire plan for these strings. Every hit is a fix-before-draft:
 
 If any pattern appears in `Approach`, that's usually OK — `Approach` carries the *why* and may use hedging. The hard rule is **`Steps` and `Files touched` must be placeholder-free**.
 
-### Scan 2 — Acceptance-criteria coverage
+### Scan 2 — Acceptance-criteria sufficiency
 
-Open `spec.md > Acceptance criteria`. For each checkbox:
+Coverage (the `[AC#]` tag exists) is the floor. Sufficiency is the bar: the tagged steps actually deliver the AC, and a verify proves it. Open `spec.md > Acceptance criteria`. For each checkbox:
 
 1. Search the plan for the AC's number (`[AC1]`, `[AC2]`, ...).
 2. Confirm at least one `Step` carries that tag.
-3. Read that Step. Does executing it actually deliver the AC? If the connection is hand-wavy, the Step is too abstract — split it.
+3. Read those Steps. Taken *together*, do they fully deliver the AC — not merely touch it? If the connection is hand-wavy, the Step is too abstract — split it.
+4. Confirm the AC's *acceptance check actually runs*: at least one tagged Step's `verify:` clause exercises the AC's behaviour. When the spec AC carries an `e.g.: <input> → <expected output>` example, that example is the verify target — the verify should produce that output for that input. A tagged AC with no verify that checks it is coverage on paper only.
 
 If an AC has no step:
 - The plan is incomplete → add the steps.
@@ -128,6 +129,6 @@ Before marking `Status: draft`, ask:
 
 If yes → draft.
 If no → which scan caught it? Run that scan again.
-If "I'm not sure" → run all four scans.
+If "I'm not sure" → run all five scans.
 
 The plan is the *contract* between `lead` (planner) and `engineer` (implementer), and the *spec* that `qa` will test against. Self-review is what makes the contract stand on its own.
