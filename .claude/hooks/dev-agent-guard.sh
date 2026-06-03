@@ -20,16 +20,25 @@
 #      is newer than state.json on the next worker spawn, the orchestrator
 #      skipped the bookkeeping step prescribed by orchestrator.md > State
 #      discipline. Block until state.json catches up — resume depends on it.
+#
+# This hook sits on the critical path of EVERY Agent spawn, so it does the least
+# work possible: a single jq parse pulls tool_name + subagent_type (both
+# newline-free tokens) in one process; the spawn-heavy `description` field is
+# only parsed in Case 2, where it's actually needed. The Case 3 freshness check
+# uses bash globbing + `-nt` (no subprocesses). Net: the common worker spawn
+# pays for exactly one jq invocation, not three.
 
 set -euo pipefail
 
 input="$(cat)"
 
-tool_name="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
-[[ "$tool_name" != "Agent" ]] && exit 0
+# One jq parse for the two fields every branch needs. `|| true` keeps the hook
+# fail-open: a malformed payload yields empty fields and the guard waves it through.
+IFS=$'\t' read -r tool_name subagent_type < <(
+  printf '%s' "$input" | jq -r '[(.tool_name // ""), (.tool_input.subagent_type // "")] | @tsv'
+) || true
 
-subagent_type="$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // ""')"
-description="$(printf '%s' "$input" | jq -r '.tool_input.description // ""')"
+[[ "$tool_name" != "Agent" ]] && exit 0
 
 # Case 1: orchestrator is never a valid sub-agent
 if [[ "$subagent_type" == "orchestrator" ]]; then
@@ -40,8 +49,10 @@ if [[ "$subagent_type" == "orchestrator" ]]; then
   exit 0
 fi
 
-# Case 2: general-purpose fallback with worker-name prefix in description
+# Case 2: general-purpose fallback with worker-name prefix in description.
+# The description (which can contain newlines) is parsed only here, off the hot path.
 if [[ "$subagent_type" == "general-purpose" ]]; then
+  description="$(printf '%s' "$input" | jq -r '.tool_input.description // ""')"
   # case-insensitive match for the worker prefix
   desc_lc="$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]')"
   for worker in pm lead engineer qa retro; do

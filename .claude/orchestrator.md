@@ -33,6 +33,14 @@ Without state writes, resume is broken. Don't skip them even when the next step 
 
 This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse on `Agent`) touches `.workflow/<id>/.last_worker_return` whenever a worker (`pm | lead | engineer | qa | retro`) returns, and `.claude/hooks/dev-agent-guard.sh` (PreToolUse on `Agent`, case 3) blocks the *next* worker spawn until `state.json` mtime is newer than that marker. If you see `BLOCKED by /dev guard: .workflow/<id>/state.json was not updated after the last worker returned`, write `state.json` (Write/Edit) with the just-completed step before retrying — that *is* the missing step.
 
+### Between-step efficiency
+
+The slowest part of a `/dev` run is usually *you* — the main-agent turn between two worker spawns. Keep those turns lean so the next spawn fires sooner and stays cache-warm:
+
+- **`state.json` + the returning worker's summary are your working set.** Don't re-read `spec.md`, `plan.md`, or artifacts already summarised in context. Re-open a file only when a step explicitly requires it (e.g. the post-spec "Spec check" opens `spec.md`; the gate reads `plan.md`).
+- **Short turns keep spawns fast and cheap.** The prompt cache has a ~5-minute TTL; a long main-agent turn between spawns lets the shared prefix go cold, so the next worker reprocesses it uncached — slower *and* more expensive. Decide, write `state.json`, spawn — don't narrate or re-derive.
+- **Fanout goes out in one message.** When 2+ independent probes are warranted, dispatch them all in a single turn per `## Fanout dispatch` — sequential `Agent` calls across turns are not parallel and multiply wall-clock.
+
 ## Phase 1 — Requirements
 
 6. **Interview (you run it).** You — the main agent — run the spec interview. Sub-agents can't call `AskUserQuestion`, so this step lives here, not in `pm`.

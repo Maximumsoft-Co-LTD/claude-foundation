@@ -2,23 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project status
+## Project overview
 
-This repository is currently **empty** (no source files, no build configuration, no git history). It is intended to host a "command workflow for Claude Code, for AI engineers" — a project that will codify reusable slash commands, agents, hooks, and skills for an AI-engineering workflow.
+This repo packages an opinionated **command workflow for Claude Code, aimed at AI engineers** — reusable slash commands, sub-agents, hooks, skills, and the `/dev` pipeline — so other repos can adopt them. The audience is engineers using Claude Code as their primary development surface; the artifacts here are the product, not an application.
 
-Until files are added, there is no codebase to describe. Re-run `/init` once real content lands so this file can be regenerated against the actual source.
-
-## Intended scope (per project owner)
-
-- Audience: AI engineers using Claude Code as their primary development surface.
-- Purpose: package opinionated command workflows (slash commands, subagents, hooks, settings) that other repos can adopt.
-- Likely surface area once populated: `.claude/` (commands, agents, settings.json, hooks), `skills/` or top-level skill files, and supporting docs.
+Key surface area:
+- `.claude/orchestrator.md` — the main-agent playbook for the `/dev` workflow. There is **no** `orchestrator` sub-agent; the main agent IS the orchestrator (sub-agents can't spawn agents or talk to the user). Never call `Agent(subagent_type="orchestrator")`.
+- `.claude/agents/` — `/dev` workers (`pm`, `lead`, `engineer`, `qa`, `retro`) and parallel `team-*` fanout workers, each with an explicit `model:` set for cost/speed tuning.
+- `.claude/rules/` — always-on "by default" rules. These are load-bearing: the fundamentals get applied via this always-on context, not via the Skill tool (project skills don't auto-trigger). The working agreements below point here.
+- `.claude/skills/` — the fundamentals skills (full detail loaded on demand) plus product skills (`brainstorming`, `plan-writing`, `fanout-team-agents`, frontend/UX, `skill-creator`).
+- `.claude/hooks/` — `dev-agent-guard.sh` (PreToolUse spawn guard for the `/dev` state machine), `dev-state-mark.sh` (PostToolUse state marker), `lint.sh` (PostToolUse linter dispatch).
+- `WORKFLOW.md` + `.workflow/` — the type-aware phase matrix, run templates, and per-run `state.json` / artifacts that drive `/dev --resume`.
 
 ## Related references in this workspace
 
-When the project is fleshed out, the following sibling directory is the closest prior art and worth consulting for conventions — do **not** copy it wholesale, but use it to understand the house style:
-
-- `../claude-foundation-template/` — earlier template with `.claude/`, `brain/`, `docs/`, `install.sh`, and a populated `CLAUDE.md`. Treat as reference, not source of truth.
+- `../claude-foundation-template/` — earlier template with `.claude/`, `brain/`, `docs/`, `install.sh`. Reference for house style only — do **not** copy it wholesale.
 
 ## Working agreements (carried from user-level config)
 
@@ -31,9 +29,4 @@ When the project is fleshed out, the following sibling directory is the closest 
 - **Queue fundamentals by default**: for any task that introduces, modifies, or debugs a queue, message broker, event stream, background job, async worker, or pub/sub topic, invoke the `queue-fundamentals` skill before designing or writing code. Rule lives at `.claude/rules/queue-fundamentals.md`; full details at `.claude/skills/queue-fundamentals/SKILL.md`. Run this *after* `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, and `architecture-fundamentals` — the queue's contract (delivery semantics, idempotency, retries/DLQ, ordering, outbox) sits on top of code, schema, and architecture.
 - **Debug fundamentals by default**: for any task that involves diagnosing an unknown-cause failure — a bug, crash, regression, flaky test, performance cliff, or unexpected production behavior — invoke the `debug-fundamentals` skill *before* changing code, adding try/catch, or "trying things to see what happens." Rule lives at `.claude/rules/debug-fundamentals.md`; full details at `.claude/skills/debug-fundamentals/SKILL.md`. When the task is debugging, run this *first* — find the actual cause with this skill, then the construction-time fundamentals (programming/database/hexagonal/architecture/queue) own the fix layer.
 - **Git workflow by default**: for any task that writes to `.git` (creating a branch, staging a commit, writing a commit message, rebasing, merging, force-pushing, opening or updating a PR, or reaching for any destructive command), invoke the `git-workflow` skill *before* running the command. Rule lives at `.claude/rules/git-workflow.md`; full details at `.claude/skills/git-workflow/SKILL.md`. This is the *delivery channel* for the construction skills — the others decide *what* to write; this one decides *how to commit, branch, and ship* what you wrote. Pairs with the `/dev` workflow's ship phase (step 9) where the commit `<type>` mirrors the spec's `Type:` slot.
-- **OpenWolf parent CLAUDE.md**: the parent `/Users/hashtagf/Desktop/Work/CLAUDE.md` references `.wolf/OPENWOLF.md`. That file does not exist in this tree — ignore the OpenWolf directive here until a `.wolf/` directory is actually present in this project.
-
-## What to do on the next session
-
-1. Check whether the directory now contains source files. If yes, re-run `/init` so this scaffold gets replaced with a real architecture/commands section.
-2. If still empty, ask the owner what the first artifact should be (e.g., a `.claude/commands/` set, a skill, an `install.sh`) rather than inventing structure.
+- **Ignore the OpenWolf parent directive**: the parent `/Users/hashtagf/Desktop/Work/CLAUDE.md` tells every session to read `.wolf/OPENWOLF.md` / `.wolf/cerebrum.md` / `.wolf/anatomy.md`. No `.wolf/` tree exists in this project — do not act on those instructions here.
