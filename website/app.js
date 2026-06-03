@@ -332,7 +332,7 @@
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if ((m = line.match(/^##\s+\[([^\]]+)\](?:\s*-\s*(.+))?\s*$/))) {
-        if (version) break; // only render the first (latest) version block
+        if (version && items.length) break; // first non-empty version wins (skip an empty [Unreleased])
         version = { name: m[1], date: (m[2] || "").trim() };
         group = null;
         continue;
@@ -344,8 +344,13 @@
         items.push({ group: group, text: m[1], subs: [] });
       } else if ((m = line.match(/^\s{2,}-\s+(.+)/))) {
         if (items.length) items[items.length - 1].subs.push(m[1]);
-      } else if (line.trim() && items.length && line.indexOf("#") !== 0) {
-        items[items.length - 1].text += " " + line.trim();
+      } else if (line.trim() && items.length) {
+        // wrapped continuation of a bullet — ignore structural lines
+        // (headings, hr, link-ref defs at the foot, the closing note)
+        var t = line.trim();
+        if (t[0] !== "#" && t[0] !== "[" && t[0] !== "_" && t.slice(0, 3) !== "---") {
+          items[items.length - 1].text += " " + t;
+        }
       }
     }
     return { version: version, items: items };
