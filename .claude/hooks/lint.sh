@@ -79,12 +79,30 @@ case "$FILE_PATH" in
     done
 
     if [ "$has_go_mod" -eq 1 ] && have golangci-lint; then
+      # Go can't type-check a single file in isolation — sibling-file symbols in
+      # the same package read as "undefined", producing a false cascade. So lint
+      # the file's PACKAGE from the module root ($dir, found above) where imports
+      # and same-package symbols resolve, then surface ONLY issues whose path is
+      # the edited file, so pre-existing lint debt in sibling files never blocks
+      # this edit. ($rel is the file path relative to the module root; golangci-
+      # lint prints issues as "relpath:line:col: msg (linter)".)
+      rel="${FILE_PATH#"$dir"/}"
+      reldir="$(dirname "$rel")"
       rc=0
-      out="$(golangci-lint run "$FILE_PATH" 2>&1)" || rc=$?
-      # "no go files to analyze" means the loader couldn't resolve the
-      # package context — treat as a soft skip, not a lint failure.
-      if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -q 'no go files to analyze'; then
+      full="$(cd "$dir" && golangci-lint run "./$reldir/" 2>&1)" || rc=$?
+      out="$(printf '%s\n' "$full" | grep -F "$rel:" || true)"
+      if [ -n "$out" ]; then
         printf '── golangci-lint: %s ──\n%s\n' "$FILE_PATH" "$out" >&2
+        exit 2
+      fi
+      # Distinguish "no findings in this file" from "the linter never ran".
+      # golangci-lint exits 0 = clean, 1 = issues found (sibling debt we filtered
+      # out above). Any other code is a real failure — a broken .golangci.yml
+      # (exit 3) or an unresolved package / typecheck error (exit 7). Surfacing
+      # nothing for those would let a misconfigured linter pass every edit
+      # silently, which is exactly the trap this per-file lint must avoid.
+      if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+        printf '── golangci-lint could not run for %s (exit %s) ──\n%s\n' "$FILE_PATH" "$rc" "$full" >&2
         exit 2
       fi
     fi
