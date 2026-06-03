@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-04
+
 ### Changed
 
 - Agent-spawn overhead trimmed across the `/dev` orchestration path — the workflow felt slow *between* worker spawns, not inside them. Four independent changes: (1) **`dev-agent-guard.sh` hot path cut from three `jq` subprocesses to one.** The PreToolUse guard runs before *every* `Agent` spawn (worker and non-worker alike); it previously parsed `tool_name`, `subagent_type`, and `description` in three separate `jq` calls. `tool_name` + `subagent_type` (both newline-free) now come from a single `jq … | @tsv` read, and the newline-bearing `description` is parsed only inside the Case-2 (`general-purpose` misroute) branch where it is actually used, so the common worker spawn pays for exactly one `jq` process. All three block cases (orchestrator misname, worker-prefixed `general-purpose`, stale `state.json`) plus the fail-open-on-malformed-JSON path were re-verified against six payloads — behaviour is unchanged. (2) **`orchestrator.md` gained a "Between-step efficiency" subsection** under State discipline, because the slowest part of a run is usually the main-agent turn *between* two spawns: treat `state.json` + the returning worker's summary as the working set (don't re-read `spec.md` / `plan.md` unless a step requires it), keep main-agent turns short so the shared prompt-cache prefix stays warm across its ~5-minute TTL, and dispatch fanout in one message. (3) **`CLAUDE.md` rewritten to match reality** — it still described the repo as "currently empty (no source files, no git history)" and told every session to re-run `/init`, stale context that loaded into every spawn and actively misled sub-agents; replaced with an accurate surface map (orchestrator / agents / rules / skills / hooks / `WORKFLOW.md`) while preserving the load-bearing "Working agreements" rule bullets verbatim and compacting the dead OpenWolf parent-directive note to a single line. (4) **`team-codebase-explorer` model `sonnet` → `haiku`**, narrowing the recent explicit-per-agent model pass — the read-only LSP/grep fact-gatherer that feeds `pm` / `lead` is faster and cheaper on Haiku, while reviewer/analyzer workers stay on Sonnet because their judgment is load-bearing. Revert this one line if a Haiku explorer starts missing callers or invariants in plan current-state mapping.
@@ -68,6 +70,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
----
-
-_No tagged releases yet. Once a version is cut, move entries from `[Unreleased]` into a dated section (e.g. `## [0.1.0] - YYYY-MM-DD`)._
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v1.0.0
