@@ -136,6 +136,7 @@ The same numbered phases run for every type, but `orchestrator` **skips or speci
 
 The `/dev` workflow uses skills as phase-specific procedural knowledge, not as extra agents. Load the narrowest skill that owns the current decision:
 
+- Conduct on any code task: `coding-discipline` as the behavioral pre-flight before producing or editing code — surface assumptions, keep the change minimal and surgical, set a verifiable goal. It wraps and routes to the skills below; it does not replace them.
 - Ambiguous product scope or approach trade-offs: `brainstorming` before `pm` writes `spec.md`.
 - Fixes with unknown cause: `debug-fundamentals` before construction skills, then encode the regression in `plan-writing`.
 - Construction decisions: `ddd-strategic` first when business language/context boundaries are unclear; then `programming-fundamentals`; then `database-fundamentals`, `hexagonal-backend`, `architecture-fundamentals`, and `queue-fundamentals` only when their layer is actually touched.

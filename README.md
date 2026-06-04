@@ -11,7 +11,7 @@ An opinionated command workflow for [Claude Code](https://claude.com/claude-code
 - **Carry-over follow-ups** — `retro` appends to `.workflow/FOLLOWUPS.md`; `pm` reads it on every new interview so deferred work doesn't get lost.
 - **Skill-creator handoff** — after `retro` lists skill candidates, the orchestrator asks the user which to create and spawns `skill-creator` for each approval. Nothing auto-creates.
 - **Resume** — every step writes `state.json`; `/dev --resume <id>` continues where the run left off.
-- **Always-on skill rules** — pre-flight pointers for `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Each rule loads its full skill before code lands (or before a commit/PR ships).
+- **Always-on skill rules** — pre-flight pointers led by `coding-discipline` (the behavioral conduct layer that wraps the rest), then `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Each rule loads its full skill before code lands (or before a commit/PR ships).
 - **Installer** — `install.sh` drops the workflow into any target repo, with `--dry-run`, `--force`, and self-copy guard.
 
 ## Install
@@ -85,7 +85,7 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 ├── orchestrator.md script the main agent follows when /dev runs
 ├── commands/       dev.md (loads orchestrator.md)
 ├── hooks/
-├── rules/          programming / database / hexagonal / queue / debug fundamentals
+├── rules/          coding-discipline (conduct) + programming / database / hexagonal / queue / debug fundamentals
 └── skills/         full skill bodies referenced by the rules (incl. git-workflow)
 .workflow/
 ├── _templates/     blueprints — copy, don't edit in place
