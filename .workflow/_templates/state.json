@@ -1,6 +1,9 @@
 {
   "id": "NNNN-type-slug",
   "type": "feat",
+  "repo_root": null,
+  "branch": null,
+  "branch_existed": false,
   "phase": "phase-1-requirements",
   "step": "interview",
   "next_step": "spec",

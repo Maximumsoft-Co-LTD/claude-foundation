@@ -76,10 +76,13 @@ Return: list of files touched in this mode, or "no doc changes needed".
 ### Inputs
 - The run's `id`, `Type`, `spec.md > Goal`, and `Open PR on ship` decision (orchestrator passes these)
 - The diff and any uncommitted changes
+- `repo_root` and `branch` from `state.json` (the orchestrator includes these in the prompt when set)
 
 ### Steps
 
-1. Run `git status` (or the equivalent if VCS is not git — if there is no VCS, return "no VCS — ship skipped" and stop). Confirm the only uncommitted changes are the ones in this run's diff. If unfamiliar files appear, STOP and ask the user — never `git add -A` past unknown state.
+**Repo scope.** If the orchestrator passed `repo_root`, run all git commands and resolve all file paths from that directory throughout this mode: prefix every git call with `git -C <repo_root>` and `cd <repo_root>` before any shell commands that read or write source files. Workflow artifacts (`.workflow/<id>/`) live in the orchestrator's CWD and are accessed as-is.
+
+1. Run `git -C <repo_root> status` (or `git status` if no `repo_root`; if VCS is absent return "no VCS — ship skipped" and stop). Confirm the only uncommitted changes are the ones in this run's diff. If unfamiliar files appear, STOP and ask the user — never `git add -A` past unknown state.
 2. Stage the run's files explicitly by path (no `git add -A`, no `git add .`).
 3. Write a commit message via HEREDOC:
    ```

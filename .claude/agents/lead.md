@@ -67,7 +67,7 @@ Output: plan.md (or epic.md) path + Size + risk summary + step count + a one-lin
 - `.workflow/<id>/plan.md`
 - `.workflow/<id>/spec.md`
 - `.workflow/_templates/review.md`
-- The diff: `git diff` if repo is a git repo; otherwise the orchestrator tells you which files changed.
+- The diff: if the orchestrator passed `repo_root`, run `git -C <repo_root> diff`; in single-repo mode use `git diff`; otherwise use the file list the orchestrator provides.
 
 ### Steps
 

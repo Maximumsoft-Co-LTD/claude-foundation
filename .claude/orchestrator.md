@@ -9,16 +9,24 @@ You — the main agent reading this — are the Orchestrator for `/dev`. You dri
 ### Fresh run
 
 1. Read `.workflow/INDEX.md` and `.workflow/FOLLOWUPS.md`. Consult `WORKFLOW.md` only for the specific section needed to choose phases, security triggers, or resolve an unclear workflow rule.
-2. Pick the next run ID: `NNNN-<type>-<kebab-slug>`. Type is one of `feat|fix|refactor|chore|docs|spike`. If the intent doesn't make the type obvious, ask the user with `AskUserQuestion` (one question, type only).
-3. Create the run folder `.workflow/<id>/`.
-4. Copy `.workflow/_templates/state.json` to `.workflow/<id>/state.json`. Fill `id`, `type`, `phase=phase-1-requirements`, `step=interview`, `last_updated=<ISO timestamp>`.
-5. Append a row to `.workflow/INDEX.md`: status = `spec`, started = today, finished = `—`.
+2. **Repo detection.** Run `find . -maxdepth 2 -name .git -type d 2>/dev/null` to discover git repos under the working directory.
+   - `./.git` only (no subdirectory `.git` dirs): **single-repo** — `repo_root = $(pwd)`. No question needed.
+   - Any subdirectory `.git` dirs found (whether or not the root itself also has `.git`): **control-plane** — ask via `AskUserQuestion` (one question, "Which repo does this run target?"); list each discovered path (strip the trailing `/.git`); if the root itself also has `.git`, include `$(pwd)` as the first option labelled `<dirname> (this repo)`; include Other for a custom path. `repo_root = <selected absolute path>`.
+   - No `.git` found anywhere: **no-git** — `repo_root = null`; skip branch creation entirely.
+3. Pick the next run ID: `NNNN-<type>-<kebab-slug>`. Type is one of `feat|fix|refactor|chore|docs|spike`. Propose branch name: `<type>/<kebab-slug>` (e.g. `feat/todolist-app`). Ask via `AskUserQuestion` — one batch of up to 2 questions:
+   - **(If type is unclear)** "Run type?" — the 6 type options with one-line descriptions.
+   - **(If `repo_root` is set)** "Branch name?" — first option is the proposed name (Recommended); Other for custom input.
+   If `repo_root` is set: first check the base — run `git -C <repo_root> branch --show-current`. If the current branch is not `main` or `master` (or the repo's configured default), warn the user and ask via `AskUserQuestion` whether to checkout the default branch first (recommended) or branch from the current head. Then run `git -C <repo_root> checkout -b <branch>`. If the branch already exists, `git -C <repo_root> checkout <branch>` and note `branch_existed=true` in state.
+4. Create the run folder `.workflow/<id>/`.
+5. Copy `.workflow/_templates/state.json` to `.workflow/<id>/state.json`. Fill `id`, `type`, `repo_root`, `branch`, `phase=phase-1-requirements`, `step=interview`, `last_updated=<ISO timestamp>`.
+6. Append a row to `.workflow/INDEX.md`: status = `spec`, started = today, finished = `—`.
 
 ### Resume (`/dev --resume <id>`)
 
 1. Read `.workflow/<id>/state.json`.
-2. Print one sentence: "Resuming `<id>` at phase=<phase>, step=<step>, cycles=review:<n>/test:<n>."
-3. Jump to the matching step below. Don't replay completed steps. If `state.json` is missing or malformed, ask the user (`AskUserQuestion`) whether to start fresh.
+2. If `repo_root` is set: run `git -C <repo_root> checkout <branch>`. If this fails for any reason (dirty tree, branch missing, detached HEAD, or any git error) — **stop immediately and surface the error to the user via `AskUserQuestion` before proceeding**. Never continue a resume on an incorrect or unverified branch.
+3. Print one sentence: "Resuming `<id>` at phase=<phase>, step=<step>, cycles=review:<n>/test:<n>, repo=<repo_root>, branch=<branch>."
+4. Jump to the matching step below. Don't replay completed steps. If `state.json` is missing or malformed, ask the user (`AskUserQuestion`) whether to start fresh.
 
 ## State discipline
 
@@ -40,6 +48,7 @@ The slowest part of a `/dev` run is usually *you* — the main-agent turn betwee
 - **`state.json` + the returning worker's summary are your working set.** Don't re-read `spec.md`, `plan.md`, or artifacts already summarised in context. Re-open a file only when a step explicitly requires it (e.g. the post-spec "Spec check" opens `spec.md`; the gate reads `plan.md`).
 - **Short turns keep spawns fast and cheap.** The prompt cache has a ~5-minute TTL; a long main-agent turn between spawns lets the shared prefix go cold, so the next worker reprocesses it uncached — slower *and* more expensive. Decide, write `state.json`, spawn — don't narrate or re-derive.
 - **Fanout goes out in one message.** When 2+ independent probes are warranted, dispatch them all in a single turn per `## Fanout dispatch` — sequential `Agent` calls across turns are not parallel and multiply wall-clock.
+- **Pass repo context to every sub-agent.** Include `repo_root` and `branch` from `state.json` in every sub-agent prompt. Sub-agents that run git or file operations must scope them to `repo_root` (e.g. `git -C <repo_root> …` or `cd <repo_root>` before any git command).
 
 ## Phase 1 — Requirements
 
@@ -81,7 +90,7 @@ The slowest part of a `/dev` run is usually *you* — the main-agent turn betwee
     - Verdict `fix-required` and `cycles.review` ≤ 2 → back to `engineer` with findings; do not bump `cycles.test`.
     - `cycles.review` > 2 → escalate to user via `AskUserQuestion`. Print blocking findings + ask whether to continue, hand off, or abort.
 12. **Security review (trigger-based).** Decide whether to fire:
-    - Run `git diff --name-only` (if repo is git) or use the engineer's returned file list to get changed paths.
+    - Run `git -C <repo_root> diff --name-only` (if `repo_root` is set) or `git diff --name-only` (single-repo) to get changed paths. Fall back to the engineer's returned file list if git is unavailable.
     - If any path matches the sensitive-paths list (auth/session/token, password, crypto, SQL/query builder, raw HTML render, file/path handling, exec/shell, deserialise, env/secrets, new outbound network), fire it.
     - Also fire if the user requested it at the gate or via `revise` notes.
     - If firing: spawn `lead` in **security mode**, set `state.security_triggered=true`. If `lead` Mode C returns `FANOUT_REQUESTED: security:<bucket-list>` (≥ 2 buckets), follow `## Fanout dispatch` below — dispatch one `team-code-reviewer` per bucket with a focused threat-model prompt, then re-spawn `lead` for synthesis.

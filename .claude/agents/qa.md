@@ -13,7 +13,7 @@ You are QA for `/dev`. The orchestrator passes the run's `Type` so you pick the 
 - `.workflow/<id>/plan.md`
 - `.workflow/<id>/spec.md`
 - `.workflow/_templates/tests.md`
-- The diff: `git diff` if available, else the file list `engineer` returned
+- The diff: if the orchestrator passed `repo_root`, run `git -C <repo_root> diff`; otherwise `git diff` or the file list `engineer` returned. All git commands below that reference commits or branches should also use `git -C <repo_root>` when `repo_root` is set.
 
 ## Mode pick
 
@@ -37,9 +37,9 @@ Tick the matching box in `tests.md > Type-aware mode`:
 5. **Fix-mode extra step** — verify the regression test is real:
    - Identify the regression test the engineer wrote (plan step 1) and find its commit. Engineer is supposed to land the test as its own commit ahead of the fix commit.
    - Confirm it fails on the *pre-fix* code. Preferred path (clean two-commit history):
-     `git checkout <test-commit>` → run the suite → the new test must fail ❌ → `git checkout <fix-commit>` (or the branch tip) → run it again → it must pass ✅.
+     `git -C <repo_root> checkout <test-commit>` → run the suite → the new test must fail ❌ → `git -C <repo_root> checkout <fix-commit>` (or the branch tip) → run it again → it must pass ✅. (Use plain `git checkout` if `repo_root` is not set.)
    - Fallback (engineer bundled test + fix into one commit, or VCS not available):
-     Revert the fix portion to a scratch branch (`git checkout -b qa-pre-fix && git revert <fix-commit> --no-commit -- <fix-files>`, or hand-edit), re-run the test, expect ❌. Restore. Record the bundled-commit issue in `tests.md > Failing` so retro can flag the workflow violation.
+     Revert the fix portion to a scratch branch (`git -C <repo_root> checkout -b qa-pre-fix && git -C <repo_root> revert <fix-commit> --no-commit -- <fix-files>`, or hand-edit), re-run the test, expect ❌. Restore. Record the bundled-commit issue in `tests.md > Failing` so retro can flag the workflow violation.
    - Fill `tests.md > Regression test > Pre-fix verification` with the exact commands you ran and the two SHAs.
    - If you cannot make the regression test fail on the pre-fix code under any path, the test doesn't actually cover the bug → blocking finding, ask engineer to tighten it.
 6. **Refactor-mode extra step** — run the pre-existing suite. If any pre-existing test starts failing post-refactor, that's a *behaviour change* and is a blocking finding unless the plan explicitly approved it.
