@@ -7,7 +7,7 @@ description: Apply the high-leverage fundamentals that govern any non-trivial pi
 
 ## Why this exists
 
-Most code defects, hard-to-debug systems, and painful rewrites trace back to the same handful of missed fundamentals. Architecture (covered by [[hexagonal-backend]]) and refactoring (covered by [[simplify]]) sit on top of these. If the fundamentals are shaky, no architecture saves you and no refactor sticks.
+Most code defects, hard-to-debug systems, and painful rewrites trace back to the same handful of missed fundamentals. Architecture (covered by [[hexagonal-backend]]) and refactoring (covered by /simplify) sit on top of these. If the fundamentals are shaky, no architecture saves you and no refactor sticks.
 
 This skill is a **pre-flight**: read it before you write the code, not after. The principles are language-agnostic — they apply equally to a 30-line Python data script and a 30-file Go service.
 
