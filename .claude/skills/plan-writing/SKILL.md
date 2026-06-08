@@ -41,12 +41,12 @@ A plan that touches existing code without first stating what that code does toda
 - **chore** / **docs** that don't touch live code paths
 - **spike** (the spike *is* the current-state investigation — record findings in `recommendations.md`, not here)
 
-**Fields** (in this order; cite `path:line` for every claim — LSP go-to-definition / find-references is the source, not prose memory):
+**Fields** (in this order; cite `path#anchor` for every claim — LSP go-to-definition / find-references is the source, not prose memory; anchor format is defined in principle 5):
 
 1. **Entry point(s)** — where execution begins for the code path being changed. Examples: HTTP route handler, CLI subcommand, cron tick, queue consumer, hook trigger, library entry function.
-2. **Data / control flow** — 3–7 bullets tracing how the system behaves today through the file(s) you will touch. One hop per bullet, each citing `path:line`. Don't paraphrase — walk it with LSP.
-3. **Callers / blast radius** — for each symbol you will rename, delete, or change the contract of: run LSP find-references and summarise. "N callers; non-obvious ones are X (`path:line`) and Y (`path:line`)". "No callers — safe to change" is a valid answer and explicitly load-bearing.
-4. **Invariants the current code relies on** — silent assumptions you must either preserve or *explicitly* break: ordering, idempotency, fail-open vs fail-closed, error-swallowing semantics, transaction boundaries, single-writer assumptions, retry behaviour, timeout defaults, encoding. Each invariant is one line with a `path:line` citation. The new code must either preserve each or the plan must call out the break and justify it.
+2. **Data / control flow** — 3–7 bullets tracing how the system behaves today through the file(s) you will touch. One hop per bullet, each citing `path#anchor`. Don't paraphrase — walk it with LSP.
+3. **Callers / blast radius** — for each symbol you will rename, delete, or change the contract of: run LSP find-references and summarise. "N callers; non-obvious ones are X (`path#anchor`) and Y (`path#anchor`)". "No callers — safe to change" is a valid answer and explicitly load-bearing.
+4. **Invariants the current code relies on** — silent assumptions you must either preserve or *explicitly* break: ordering, idempotency, fail-open vs fail-closed, error-swallowing semantics, transaction boundaries, single-writer assumptions, retry behaviour, timeout defaults, encoding. Each invariant is one line with a `path#anchor` citation. The new code must either preserve each or the plan must call out the break and justify it.
 5. **Anti-goals** *(refactor only)* — current behaviours that intentionally stay identical, paired with the behaviour-equivalence statement in Approach. These are what the test suite will pin.
 6. **Bug path** *(fix only)* — the exact route the bad data / bad call takes from input to symptom, with the wrong-step marked `← BUG`. This is the as-is of the failure; the Architecture diagram shows the fix.
 
@@ -70,12 +70,12 @@ For XS, even one line counts — keep the section. The discipline is "always hav
 
 When Current state (principle 3) is present, the Architecture diagram is the *to-be* — show how the existing flow changes. Don't redraw the whole as-is in the to-be diagram; that's the previous section's job.
 
-### 5. Steps use the strict format: `action — path:line (new|edit|delete) — verify: <command or observable> [AC#]`
+### 5. Steps use the strict format: `action — path#anchor (new|edit|delete) — verify: <command or observable> [AC#]`
 
 Every step has all four parts. No exceptions.
 
 - **action** — imperative, one verb (`add`, `extract`, `wire`, `delete`, `rename`). Not "implement X" — that's a goal, not a step.
-- **path:line** — concrete location. Use `path:new` for new files. Existing-code references require LSP-verified line numbers, not guesses. When the change mimics an existing pattern in the codebase, cite the precedent inline (e.g., `mirror src/handlers/orders.ts:42-78`) — it gives the engineer a working reference.
+- **path#anchor** — a *re-resolvable* location, not a raw line number. Cite the **symbol** for code (`src/users.ts#getUserById`, `PaymentsClient.charge`), or a **unique quoted snippet / heading** for shell, config, markdown, or a spot inside a function with no named symbol (`dev-state-mark.sh#"command -v jq"`, `WORKFLOW.md#"## Type-aware phase matrix"`). The test: any reader must be able to re-find the target with LSP or `grep` *after earlier steps have already shifted the file* — a bare `:42` goes stale the moment a step above it edits the file, and a plan full of stale line numbers reads as untrustworthy and burns review time on cross-checking. A line number MAY be appended as an explicit write-time hint (`#getUserById (~L42)`), never as the sole handle. Use `path (new)` for new files — the `(new)` disposition already carries "new"; name the symbol-to-add when it helps. When the change mimics an existing pattern, cite the precedent by anchor (e.g., `mirror src/handlers/orders.ts#createOrder`) — a reference that survives edits beats a line range that doesn't.
 - **verify** — a command (`npm test src/foo.test.ts`, `curl -s :8080/health | jq .status`, `psql -c "\d users"`) or a concrete observable (`column email_verified exists`, `feature flag returns true for opt-in users`). If you would write `manually check` or `visually inspect`, the step is too big — split it until each piece is verifiable atomically. *This is the single highest-leverage rule in this skill.*
 - **[AC#]** — which acceptance criterion this step lands. A step with no AC tag is either scope-creep or evidence that the spec is missing an AC the work actually delivers — go fix the spec first.
 
@@ -99,7 +99,7 @@ Before handing off, walk these scans (and `references/self-review.md` for exampl
 - **Anti-placeholder** — no `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `path/to/file`, hedging modals in Steps.
 - **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Diagram is the exception — always include, one-line on XS is fine.)
 - **AC sufficiency, not just coverage** — every Step still carries ≥1 `[AC#]`, but presence is the floor, not the bar. For each spec AC (and edge sub-bullet): the Step(s) tagged with it, taken *together*, must **fully deliver** it (not merely touch it), AND at least one of those Steps' `verify:` clause must be the AC's actual acceptance check — when the spec AC carries an `e.g.: input → expected output` example, that example is the verify target. A step tagged `[AC1]` that doesn't satisfy AC1, or an AC whose tagged steps have no verify that proves it, is coverage on paper only — that is the gap this scan catches.
-- **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path:line`. When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
+- **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path#anchor` (symbol or snippet, not a bare line). When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
 - **Verify-per-step** — every Step's verify is a runnable command or concrete observable, never "manually check".
 
 If any scan fails, fix the plan — do not mark `status: draft`.
@@ -119,9 +119,9 @@ Before writing any section of plan.md:
   - Queue / broker / async worker → [[queue-fundamentals]]
   - Bug with unknown cause → [[debug-fundamentals]] *before* this skill
 - [ ] Pick diagram type from `Type` (table in principle 4). Even XS keeps the section — one line is fine.
-- [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path:line`. Grep is the fallback.
-- [ ] If the change mimics an existing pattern, find that pattern now and have its `path:line` ready to cite in Steps.
-- [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path:line` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
+- [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path#anchor` (symbol / snippet, not a bare line). Grep is the fallback.
+- [ ] If the change mimics an existing pattern, find that pattern now and have its `path#anchor` ready to cite in Steps.
+- [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
 
 Then draft in order: **Approach → Current state (if required) → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
 
@@ -183,7 +183,7 @@ If any non-trivial code is about to land in the repo and you're about to write `
 - **Symptom-patching for `fix`** — "wrap in try/catch", "guard against null" without explaining *why* the null arrives is treating the symptom. Show the root cause in `Approach`; let the fix step name it explicitly.
 - **Designing for hypothetical future requirements** — if the spec doesn't ask for it, the plan doesn't plan for it. Carry the idea to `FOLLOWUPS.md` instead.
 - **Designing without Current state on existing code** — if the plan touches existing files and the Current state section is missing (or empty, or written from memory instead of LSP-walked), the plan is gambling on assumptions. Either fill the section honestly or — if the work genuinely is greenfield — say so in one line under Approach so the omission is intentional, not accidental.
-- **Current state that's just paraphrase, no citations** — "the hook writes state.json then exits" without `path:line` is a guess. Walk it with LSP and cite. If you can't cite, you don't know it.
+- **Current state that's just paraphrase, no citations** — "the hook writes state.json then exits" without a `path#anchor` is a guess. Walk it with LSP and cite. If you can't cite, you don't know it.
 
 ## References
 

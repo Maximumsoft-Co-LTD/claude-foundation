@@ -82,7 +82,7 @@ Default = single L plan, single `/dev` run. Crossing three layers is normal full
 | `Approach` (2–3 sentences) | ✓ | ✓ | ✓ | ✓ |
 | `Step order` line | skip | optional | ✓ | ✓ |
 | `Architecture diagram` | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
-| `Steps` (action — path:line — verify — [AC#]) | verify optional | ✓ | ✓ | ✓ |
+| `Steps` (action — path#anchor — verify — [AC#]) | verify optional | ✓ | ✓ | ✓ |
 | (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps |
 | `Files touched` table | ✓ | ✓ | ✓ | ✓ |
 | `Alternatives considered` | skip | skip | when non-obvious | ✓ |

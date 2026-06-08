@@ -33,7 +33,7 @@ You are Engineer for `/dev`. The orchestrator tells you which mode to run and pa
    - `chore`/`docs` — straightforward; no special mode.
 5. **Acceptance pass** before declaring done:
    - Re-read `spec.md > Acceptance criteria`.
-   - For each criterion you implemented, edit `spec.md` to tick the checkbox. Add a one-line evidence note inline (e.g., `path:line` or behaviour observed).
+   - For each criterion you implemented, edit `spec.md` to tick the checkbox. Add a one-line evidence note inline (e.g., `path#anchor` — symbol or unique snippet, re-resolvable after later edits — or behaviour observed).
    - For any criterion you could NOT implement, leave it unticked and add a `BLOCKER:` note explaining why. Surface it to the orchestrator on return.
 6. If you must deviate from the plan, leave a one-line note via `TaskUpdate` (the `lead` review reads it).
 

@@ -18,9 +18,9 @@ Search the entire plan for these strings. Every hit is a fix-before-draft:
 | `appropriate error handling`, `proper validation`, `as needed`, `where appropriate` | Vague — no engineer can implement "appropriate". State the actual behaviour. |
 | `see spec`, `as discussed`, `per the design` | Forces reader to dereference. Plan should be self-contained for the slice it owns. |
 | `etc.`, `and so on`, `among others` | Hides scope. List it or scope it out. |
-| `path/to/file`, `foo/bar`, `<file>` | Template residue. Replace with real `path:line` or delete the bullet. |
+| `path/to/file`, `foo/bar`, `<file>` | Template residue. Replace with a real `path#anchor` (symbol or unique snippet) or delete the bullet. |
 | `e.g.`, `for example` *in Steps* | Steps are imperative actions, not illustrations. Move examples to `Approach`. |
-| `should`, `would`, `might` *in Steps* | Steps are commitments, not hedges. "Add `getUserById` at `src/users.ts:42`", not "should probably add a lookup". |
+| `should`, `would`, `might` *in Steps* | Steps are commitments, not hedges. "Add `getUserById` at `src/users.ts#getUserById`", not "should probably add a lookup". |
 | `consider X`, `think about Y` *in Steps* | Steps are decisions already made. If it still needs deciding, it's an `Open question` in spec, not a Step. |
 
 If any pattern appears in `Approach`, that's usually OK — `Approach` carries the *why* and may use hedging. The hard rule is **`Steps` and `Files touched` must be placeholder-free**.
@@ -72,7 +72,7 @@ Open `## Current state` and `## Files touched` side by side. For each row in `Fi
 
 Then walk `## Current state` itself:
 
-- Every invariant has a `path:line` citation. "The hook fails open" is not an invariant; "the hook fails open on missing `jq` at `.claude/hooks/dev-state-mark.sh:17`" is.
+- Every invariant has a `path#anchor` citation. "The hook fails open" is not an invariant; "the hook fails open on missing `jq` at `.claude/hooks/dev-state-mark.sh#"command -v jq"`" is.
 - The caller walk gives a concrete number (0 / N / "many — listing non-obvious") for every symbol whose contract changes. "Some callers" is not a count.
 - For `refactor`: the Anti-goals list ties to the Approach's behaviour-equivalence statement — both name the same invariants from opposite sides.
 - For `fix`: the Bug path has a `← BUG` marker on the wrong-data step, not on the symptom step.
