@@ -73,7 +73,7 @@ Options:
   -h, --help         Show this help
 
 What gets installed:
-  .cursor/rules/*.mdc          — 7 always-apply rules ported from .claude/rules/
+  .cursor/rules/*.mdc          — 9 always-apply rules ported from .claude/rules/
                                  (frontmatter prepended, paths rewritten)
   .cursor/skills/**            — fundamentals skills (verbatim copy, referenced
                                  from the rules)
@@ -191,9 +191,11 @@ ok "target: $TARGET_PATH"
 # Each .mdc gets a `description` slug Cursor shows in the rules panel. Keep
 # these one-line so the panel stays readable; the long pitch lives in the rule
 # body (and in the skill it points at). Order mirrors the apply order in
-# CLAUDE.md (fundamentals → architecture → channels → delivery).
+# CLAUDE.md (conduct wrapper → strategic model → code/data/service fundamentals → architecture → channels → delivery).
 rule_description() {
   case "$1" in
+    coding-discipline)         echo "Behavioral conduct wrapper for any code task — surface assumptions, write the minimum non-speculative code, keep diffs surgical, turn the task into a verifiable goal. Run first, then the layer-appropriate fundamental." ;;
+    ddd-strategic)             echo "Strategic Domain-Driven Design before deciding where a model lives and what language it speaks (subdomain classification, bounded contexts, ubiquitous language, context mapping, aggregate sizing, domain vs integration events)." ;;
     programming-fundamentals)  echo "Pre-flight fundamentals before writing or changing any non-trivial code (data shape, illegal states, function design, pure core, errors, complexity, naming)." ;;
     database-fundamentals)     echo "Pre-flight fundamentals before any database work (schema, constraints, indexes, query plans, transactions, expand-backfill-contract migrations)." ;;
     hexagonal-backend)         echo "Ports-and-adapters layering for backend code (domain / application / infrastructure; dependencies point inward)." ;;
@@ -236,11 +238,18 @@ convert_rule_to_mdc() {
   } > "$dst"
 }
 
-# Copies a markdown file with path rewrites applied.
+# Copies a file with path rewrites applied. Skills can include binary assets
+# (images, fonts, compiled data, stray *.pyc); running sed over those errors
+# with "illegal byte sequence" and, under `set -e`, aborts the whole install.
+# Only rewrite text files; copy anything binary (or empty) verbatim.
 copy_with_rewrite() {
   local src="$1" dst="$2"
   mkdir -p "$(dirname "$dst")"
-  rewrite_paths < "$src" > "$dst"
+  if LC_ALL=C grep -Iq . "$src" 2>/dev/null; then
+    rewrite_paths < "$src" > "$dst"
+  else
+    cp "$src" "$dst"
+  fi
 }
 
 # Verbatim copy (used for workflow templates — Cursor-agnostic markdown).
@@ -490,7 +499,7 @@ The original workflow assumed Claude Code primitives Cursor doesn't have. The po
 
 ## Files
 
-- `.cursor/rules/*.mdc` — always-apply rules (fundamentals + git workflow). Cursor loads these automatically.
+- `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + ddd-strategic + code/data/service/architecture/queue/debug fundamentals + git-workflow). Cursor loads these automatically.
 - `.cursor/skills/**` — deep-dive skill content the rules point to.
 - `.cursor/agents/*.md` — role docs (pm/lead/engineer/qa/retro). Read these when entering the matching phase.
 - `.cursor/orchestrator.md` — the orchestration script the `/dev` command follows.

@@ -1,1 +1,5 @@
 /tmp
+
+# Python bytecode (skill scripts under .claude/skills/*/scripts/)
+__pycache__/
+*.pyc
