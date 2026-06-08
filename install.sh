@@ -46,7 +46,7 @@ What gets installed:
   .claude/agents/**            — pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
   .claude/orchestrator.md      — orchestrator script run by the main agent on /dev, NOT a sub-agent (always refreshed)
   .claude/commands/dev.md      — the /dev slash command (always refreshed)
-  .claude/skills/**            — programming / database / architecture / debug / hexagonal / queue fundamentals + git-workflow + plan-writing + brainstorming + fanout-team-agents (always refreshed)
+  .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, database, hexagonal, architecture, queue, debug, git-workflow) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
   .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
   .claude/hooks/lint.sh        — PostToolUse lint dispatcher (always refreshed)
   .claude/hooks/dev-agent-guard.sh — PreToolUse guard on the Agent tool (always refreshed)
@@ -56,7 +56,7 @@ What gets installed:
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
   WORKFLOW.md                  — full flow reference at repo root (always refreshed)
-  CLAUDE.md                    — minimal stub (only if missing)
+  CLAUDE.md                    — stub + always-on rules-import fallback (only if missing)
 
 Behavior:
   - Foundation-owned files (agents, orchestrator, commands, skills, rules,
@@ -450,6 +450,20 @@ The flow is type-aware: `feat` / `fix` / `refactor` / `chore` / `docs` / `spike`
 
 Full flow: see `WORKFLOW.md`.
 Agents live under `.claude/agents/`; run artifacts land in `.workflow/<id>/`; cross-run state lives in `.workflow/INDEX.md` and `.workflow/FOLLOWUPS.md`.
+
+## Always-on fundamentals
+
+The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit imports below are a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, these imports are redundant but harmless — delete this section if you ever see a rule loaded twice.
+
+@.claude/rules/coding-discipline.md
+@.claude/rules/ddd-strategic.md
+@.claude/rules/programming-fundamentals.md
+@.claude/rules/database-fundamentals.md
+@.claude/rules/hexagonal-backend.md
+@.claude/rules/architecture-fundamentals.md
+@.claude/rules/queue-fundamentals.md
+@.claude/rules/debug-fundamentals.md
+@.claude/rules/git-workflow.md
 EOF
 fi
 
