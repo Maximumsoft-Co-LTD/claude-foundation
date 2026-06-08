@@ -1,0 +1,26 @@
+{
+  "name": "bkk-city-ai-sim",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "bench": "tsx scripts/bench-headless.ts"
+  },
+  "dependencies": {
+    "pixi.js": "8.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.17",
+    "@typescript-eslint/eslint-plugin": "8.33.0",
+    "@typescript-eslint/parser": "8.33.0",
+    "eslint": "9.28.0",
+    "prettier": "3.8.1",
+    "tsx": "4.19.4",
+    "typescript": "5.4.5",
+    "vite": "5.4.19",
+    "vitest": "2.1.9"
+  }
+}

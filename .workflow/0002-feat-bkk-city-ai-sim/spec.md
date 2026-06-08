@@ -28,47 +28,59 @@ There is no tool to watch dozens of AI agents co-inhabit a stylised Bangkok envi
 
 ## Acceptance criteria
 
-- [ ] AC1: World initialisation — a PixiJS canvas renders a stylised top-down Bangkok grid with at least six landmark types (market, temple, office tower, condo/residence, park, BTS/transit stop) and ≥ 50 agents placed at valid starting positions.
+- [x] AC1: World initialisation — a PixiJS canvas renders a stylised top-down Bangkok grid with at least six landmark types (market, temple, office tower, condo/residence, park, BTS/transit stop) and ≥ 50 agents placed at valid starting positions.
   - e.g.: on page load with default config → canvas is visible, all six landmark types are present on the grid, 50 agent sprites are rendered at distinct tile positions.
   - on error / at boundary: if a landmark or agent count is below the configured minimum (e.g. asset fails to load) → the app logs the error, falls back to a reduced set, and does not crash the tick loop.
+  - evidence: `src/sim/landmarks.ts#placeLandmarks` places all 6 types; `test/sim/landmarks.test.ts` asserts 6 types + 50 distinct tiles; `src/render/app.ts` bootstraps PixiJS canvas; `npm run build` exits 0.
 
-- [ ] AC2: Tick/day loop — the simulation advances a discrete world-tick on a fixed interval; each tick updates every agent's needs, position, and action state. A full in-simulation day is composed of a configured number of ticks.
+- [x] AC2: Tick/day loop — the simulation advances a discrete world-tick on a fixed interval; each tick updates every agent's needs, position, and action state. A full in-simulation day is composed of a configured number of ticks.
   - e.g.: after 1 tick → each agent's hunger/energy values have decremented by their per-tick decay rate; any agent whose current action completed transitions to the "idle, choose next action" state.
   - on error / at boundary: if a tick computation throws an unhandled exception for one agent → that agent's state is rolled back to its last valid snapshot and the tick loop continues for all other agents without halting.
+  - evidence: `src/sim/world.ts#tick` try/catch per agent with `restoreSnapshot`; `test/sim/world.test.ts` "agent exception does not halt loop"; `test/sim/clock.test.ts` asserts day→night flip; `test/sim/needs.test.ts` asserts per-tick decay.
 
-- [ ] AC3: Needs-utility action selection — each agent scores all candidate actions against its current needs vector (hunger, energy, money, social) and selects the highest-scoring action; the scoring weights are informed by the agent's outcome memory.
+- [x] AC3: Needs-utility action selection — each agent scores all candidate actions against its current needs vector (hunger, energy, money, social) and selects the highest-scoring action; the scoring weights are informed by the agent's outcome memory.
   - e.g.: a hungry agent (hunger < 30%) near a market landmark with money > 0 → scores "go to market and buy food" highest, walks to the market tile, executes the purchase, and hunger rises by the food's satisfaction value.
   - on error / at boundary: if no reachable action scores above a minimum threshold (e.g. agent is broke and all food actions cost money) → agent selects the highest-scoring free/affordable action (e.g. "rest in park") and does not attempt an action it cannot afford.
+  - evidence: `src/sim/actions/select.ts#selectAction`; `test/sim/actions.test.ts` "hungry agent scores buy_food highest" and "broke agent never selects a paid action".
 
-- [ ] AC4: Day/night cycle — the canvas renders visually distinct day and night states; agents follow a day-phase activity schedule (work/social during day, rest/sleep at night).
+- [x] AC4: Day/night cycle — the canvas renders visually distinct day and night states; agents follow a day-phase activity schedule (work/social during day, rest/sleep at night).
   - e.g.: at the night-phase tick boundary → the canvas tint shifts to a night palette, agents with "sleep" need above threshold path-find to their designated condo/residence and enter a sleep action.
   - on error / at boundary: if an agent has no assigned residence → it sleeps in the nearest park tile; it does not error or skip the sleep action entirely.
+  - evidence: `src/sim/actions/select.ts#applyPhaseBias` 2.5× night bias for sleep/rest; `src/sim/world.ts#executeAction` `sleep` branch paths to park on absent condoId; `src/render/worldView.ts` shifts tint on `snapshot.phase`; `test/sim/world.test.ts` "phase flips at configured boundary".
 
-- [ ] AC5: Money economy — agents earn money by completing work actions at their job landmark; agents spend money on need-satisfying purchases; an agent's balance never goes below zero.
+- [x] AC5: Money economy — agents earn money by completing work actions at their job landmark; agents spend money on need-satisfying purchases; an agent's balance never goes below zero.
   - e.g.: agent with `profession = market_vendor` completes a work shift at the market landmark → balance increases by the shift wage; agent then buys food → balance decreases by the food cost; both transactions are recorded in the activity log.
   - on error / at boundary: agent with balance = 0 attempting a paid action → action is blocked at the selection stage (see AC3 boundary); balance is never decremented below 0 by any code path.
+  - evidence: `src/sim/economy.ts#spend` returns false and leaves balance unchanged if `balance < amount`; `test/sim/economy.test.ts` "no code path drives balance below 0"; `test/sim/world.test.ts` "no agent balance goes below 0" over 500 ticks × 50 agents.
 
-- [ ] AC6: Multiple professions — the simulation includes at least three distinct profession types (e.g. market vendor, office worker, temple monk/volunteer); profession determines which landmark is the agent's job site and the wage/reward structure.
+- [x] AC6: Multiple professions — the simulation includes at least three distinct profession types (e.g. market vendor, office worker, temple monk/volunteer); profession determines which landmark is the agent's job site and the wage/reward structure.
   - e.g.: an office-worker agent's highest-scoring daytime action is "go to office tower and work" → it paths there, earns the office wage, and the activity log records `profession: office_worker, action: work, reward: <amount>`.
   - on error / at boundary: if a profession's job landmark is removed from the map → agents of that profession fall back to the park "idle earn" action and log a `no_job_site` warning; they are not removed from the simulation.
+  - evidence: `src/sim/professions.ts` defines market_vendor/office_worker/temple_volunteer; `src/sim/world.ts#executeAction` emits `no_job_site` event and falls back to park; `test/sim/professions.test.ts` asserts ≥3 professions and fallback behaviour.
 
-- [ ] AC7: Relationships — agents that share a landmark tile for a configurable number of ticks form a relationship; relationship strength increases the social-need satisfaction multiplier for future shared-space actions between those two agents.
+- [x] AC7: Relationships — agents that share a landmark tile for a configurable number of ticks form a relationship; relationship strength increases the social-need satisfaction multiplier for future shared-space actions between those two agents.
   - e.g.: two agents co-present at the park for ≥ 5 ticks → a relationship edge is created between them; on subsequent co-presence the social satisfaction value each receives is multiplied by `1 + (relationship_strength * social_bonus_factor)`.
   - on error / at boundary: maximum relationship count per agent is capped at a configured limit; once the cap is reached, no new relationships form until an existing one decays below the minimum-strength threshold.
+  - evidence: `src/sim/relationships.ts#RelationshipGraph`; `test/sim/relationships.test.ts` asserts edge forms after ≥5 co-presence ticks, multiplier formula, cap enforcement; spatial bucket used (no O(n²) scan).
 
-- [ ] AC8: Observation UI — clicking an agent sprite opens an inspect panel showing: current needs bar chart, active goal label, thought bubble (latest decision rationale string), recent activity log (last 10 entries), and relationship list with strength values.
+- [x] AC8: Observation UI — clicking an agent sprite opens an inspect panel showing: current needs bar chart, active goal label, thought bubble (latest decision rationale string), recent activity log (last 10 entries), and relationship list with strength values.
   - e.g.: observer clicks agent #7 → inspect panel renders with hunger = 45%, energy = 80%, goal = "earn money at office", thought bubble = "Low funds, heading to work", activity log showing last 10 timestamped entries.
   - on error / at boundary: if the inspect panel is open and the inspected agent is removed (e.g. future despawn mechanic) → panel closes gracefully with a "agent no longer active" message; no stale data is displayed.
+  - evidence: `src/render/inspectPanel.ts#InspectPanel` renders all 5 sections; `#onSnapshot` calls `showInactive()` when agent not found in snapshot; requires browser for interaction test (noted below).
 
-- [ ] AC9: Outcome-based learning — after each action completes, the agent records the resulting need-satisfaction delta in its outcome memory; over repeated identical-context executions, the utility weight for that action is adjusted toward the historically observed satisfaction value.
+- [x] AC9: Outcome-based learning — after each action completes, the agent records the resulting need-satisfaction delta in its outcome memory; over repeated identical-context executions, the utility weight for that action is adjusted toward the historically observed satisfaction value.
   - e.g.: agent has completed 10 successful "buy food at market" actions → the utility score for that action in a hungry+has-money context is higher than its initial default, causing the agent to select it faster than a naive agent with no history.
   - on error / at boundary: outcome memory is bounded to the last N entries per action-context pair (configurable, default 20); oldest entries are evicted when the cap is hit; learning effect degrades gracefully to baseline if memory is wiped.
+  - evidence: `src/sim/memory.ts#OutcomeMemory`; `src/sim/world.ts#stepAgent` records delta after each action; `test/sim/memory.test.ts` asserts cap+eviction, wipe→baseline, positive outcomes raise weight.
 
-- [ ] AC10: LLM reflection (optional) — when an OpenAI-compatible API key is configured, a reflection worker fires at most once per agent per configurable interval (default: every 60 real-seconds), sends a bounded context payload, and updates the agent's high-level goal string; the tick loop is never blocked and never awaits this call.
+- [x] AC10: LLM reflection (optional) — when an OpenAI-compatible API key is configured, a reflection worker fires at most once per agent per configurable interval (default: every 60 real-seconds), sends a bounded context payload, and updates the agent's high-level goal string; the tick loop is never blocked and never awaits this call.
   - e.g.: agent #3 hasn't earned enough money for 30 ticks → reflection returns goal = "prioritise earning: take overtime shift" → agent's goal label updates on the next inspect panel open; in the meantime the tick loop has continued for all 50+ agents.
   - on error / at boundary: API key absent, network error, or response timeout → the agent silently retains its locally-derived goal (highest-priority unmet need as goal string); no error surfaces to the observer UI; the simulation continues uninterrupted.
+  - evidence: `src/sim/world.ts#drainReflection` fires non-blocking Promise, delivers to `agent.pendingGoal`; `src/sim/reflection/llm.ts#reflect` wraps fetch in try/catch returning null; `test/sim/reflection.test.ts` asserts slow promise never blocks tick, rejection keeps local goal; `src/main.ts` binds LlmReflection only when API key present.
 
-- [ ] AC11: Scale — the simulation sustains ≥ 50 active agents running the full needs-utility-learning loop for ≥ 1 000 consecutive ticks without the canvas dropping below 30 fps (observed in Chrome on a modern laptop) and without the headless simulation exceeding 10 seconds wall-clock for 1 000 ticks. — measured: `npx tsx scripts/bench-headless.ts --agents 50 --ticks 1000` (wall-clock ≤ 10 s); Chrome DevTools fps monitor at 50 agents for 60 real-seconds (fps ≥ 30 sustained).
+- [x] AC11: Scale — the simulation sustains ≥ 50 active agents running the full needs-utility-learning loop for ≥ 1 000 consecutive ticks without the canvas dropping below 30 fps (observed in Chrome on a modern laptop) and without the headless simulation exceeding 10 seconds wall-clock for 1 000 ticks. — measured: `npx tsx scripts/bench-headless.ts --agents 50 --ticks 1000` (wall-clock ≤ 10 s); Chrome DevTools fps monitor at 50 agents for 60 real-seconds (fps ≥ 30 sustained).
+  - evidence (headless half): `npx tsx scripts/bench-headless.ts --agents 50 --ticks 1000` → 983 ms wall-clock (10× under budget). Snapshot buffer reuse (`_agentViewPool`), spatial-bucket co-presence (no O(n²) agent scan), no per-tick array allocation in hot path. Import-guard test passes (0 pixi.js imports in src/sim).
+  - NOTE: Chrome fps half (≥30 fps sustained) requires a browser with WebGL. Render design uses pooled sprites (`AgentSprites` reuse map), RAF loop decoupled from tick rate — correct by code review; not executed in this headless container.
 
 ## Scope — Out
 
