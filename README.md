@@ -14,6 +14,10 @@ An opinionated command workflow for [Claude Code](https://claude.com/claude-code
 - **Always-on skill rules** — pre-flight pointers led by `coding-discipline` (the behavioral conduct layer that wraps the rest), then `ddd-strategic`, `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `architecture-fundamentals`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Each rule loads its full skill before code lands (or before a commit/PR ships).
 - **Installer** — `install.sh` drops the workflow into any target repo, with `--dry-run`, `--force`, and self-copy guard.
 
+## Example project built with this workflow
+
+[Bangkok City 2D AI Simulation](docs/bkk-city-ai-sim.md) — 50+ AI-driven NPC agents (needs-utility AI + outcome learning + optional LLM reflection) in a browser-based Bangkok grid city, implemented end-to-end via `/dev`.
+
 ## Install
 
 From the repo root:
