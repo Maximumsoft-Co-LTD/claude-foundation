@@ -16,7 +16,11 @@ You — the main agent reading this — are the Orchestrator for `/dev`. You dri
 3. Pick the next run ID: `NNNN-<type>-<kebab-slug>`. Type is one of `feat|fix|refactor|chore|docs|spike`. Propose branch name: `<type>/<kebab-slug>` (e.g. `feat/todolist-app`). Ask via `AskUserQuestion` — one batch of up to 2 questions:
    - **(If type is unclear)** "Run type?" — the 6 type options with one-line descriptions.
    - **(If `repo_root` is set)** "Branch name?" — first option is the proposed name (Recommended); Other for custom input.
-   If `repo_root` is set: first check the base — run `git -C <repo_root> branch --show-current`. If the current branch is not `main` or `master` (or the repo's configured default), warn the user and ask via `AskUserQuestion` whether to checkout the default branch first (recommended) or branch from the current head. Then run `git -C <repo_root> checkout -b <branch>`. If the branch already exists, `git -C <repo_root> checkout <branch>` and note `branch_existed=true` in state.
+
+   **As soon as the branch-name answer comes back, create and checkout the branch immediately — before creating the run folder (step 4) or any later step.** Skip this only when `repo_root` is null (no-git). Otherwise, in order:
+   1. Check the base: run `git -C <repo_root> branch --show-current`. If the current branch is not `main` or `master` (or the repo's configured default), warn the user and ask via `AskUserQuestion` whether to checkout the default branch first (recommended) or branch from the current head; act on the answer.
+   2. Create + checkout: run `git -C <repo_root> checkout -b <branch>`. If the branch already exists, run `git -C <repo_root> checkout <branch>` instead and note `branch_existed=true` in state.
+   3. Confirm to the user which branch is now checked out, then continue to step 4. Do not proceed to step 4 until the checkout has actually run.
 4. Create the run folder `.workflow/<id>/`.
 5. Copy `.workflow/_templates/state.json` to `.workflow/<id>/state.json`. Fill `id`, `type`, `repo_root`, `branch`, `phase=phase-1-requirements`, `step=interview`, `last_updated=<ISO timestamp>`.
 6. Append a row to `.workflow/INDEX.md`: status = `spec`, started = today, finished = `—`.
