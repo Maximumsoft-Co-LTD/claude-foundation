@@ -56,14 +56,19 @@ What gets installed:
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
   WORKFLOW.md                  — full flow reference at repo root (always refreshed)
-  CLAUDE.md                    — stub + always-on rules-import fallback (only if missing)
+  CLAUDE.md                    — full stub if missing; otherwise the always-on
+                                 rules-import fallback block is appended if absent
+                                 (idempotent, existing content preserved)
 
 Behavior:
   - Foundation-owned files (agents, orchestrator, commands, skills, rules,
       hooks, templates, WORKFLOW.md) are ALWAYS refreshed on every run so
       upstream skill/agent updates land. If you've forked one locally and
       don't want it clobbered, move it out of these paths.
-  - .workflow/INDEX.md, .workflow/FOLLOWUPS.md & CLAUDE.md: never overwritten (user state)
+  - .workflow/INDEX.md & .workflow/FOLLOWUPS.md: never overwritten (user state)
+  - CLAUDE.md: the full file is never overwritten; if it already exists we
+      append ONLY the always-on rules-import fallback block when it's missing
+      (idempotent — re-runs add nothing; existing content preserved)
   - .claude/settings.local.json is never touched (user-local config)
   - settings.json wiring: if the target already has .claude/settings.json
       and our hooks (PreToolUse dev-agent-guard + PostToolUse lint +
@@ -270,12 +275,46 @@ if [ "$CLEANUP_HITS" -gt 0 ]; then
   printf "  ${R}%d to remove${N}\n" "$CLEANUP_HITS"
 fi
 
-# CLAUDE.md stub (separate from PLAN — generated, not copied)
+# CLAUDE.md (separate from PLAN — generated/merged, not copied). Created with a
+# full stub when absent; otherwise we append ONLY the always-on rules-import
+# fallback block when it's missing, preserving the user's existing content.
+# emit_rules_block is the single source of truth for that block — used both for
+# the fresh stub and the append path. RULES_IMPORT_MARKER is the idempotency key
+# (the first import line); if it's already in CLAUDE.md the block is present.
+#
+# NOTE: the marker is a *first-write freeze*, not a sync. Once the block exists
+# in a target's CLAUDE.md we never touch it again — so if this foundation later
+# adds/renames/removes a rule, an existing block won't pick up the change. That
+# is acceptable because the block is only a fallback (recent Claude Code
+# auto-loads .claude/rules/) and the rule *files* themselves always refresh; the
+# stale-fallback window is (old Claude Code × rule-set change). If that ever
+# needs to re-sync, wrap the block in sentinel comments and replace between them.
+emit_rules_block() {
+  cat <<'BLOCK'
+## Always-on fundamentals
+
+The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit imports below are a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, these imports are redundant but harmless — delete this section if you ever see a rule loaded twice.
+
+@.claude/rules/coding-discipline.md
+@.claude/rules/ddd-strategic.md
+@.claude/rules/programming-fundamentals.md
+@.claude/rules/database-fundamentals.md
+@.claude/rules/hexagonal-backend.md
+@.claude/rules/architecture-fundamentals.md
+@.claude/rules/queue-fundamentals.md
+@.claude/rules/debug-fundamentals.md
+@.claude/rules/git-workflow.md
+BLOCK
+}
+RULES_IMPORT_MARKER="@.claude/rules/coding-discipline.md"
+
 CLAUDE_DST="$TARGET_PATH/CLAUDE.md"
-if [ -e "$CLAUDE_DST" ]; then
-  printf "  ${D}=${N} CLAUDE.md ${D}(kept)${N}\n"
+if [ ! -e "$CLAUDE_DST" ]; then
+  printf "  ${G}+${N} CLAUDE.md ${D}(stub — points at WORKFLOW.md + rules-import fallback)${N}\n"
+elif ! grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
+  printf "  ${G}~${N} CLAUDE.md ${D}(append always-on rules-import fallback)${N}\n"
 else
-  printf "  ${G}+${N} CLAUDE.md ${D}(stub — points at WORKFLOW.md)${N}\n"
+  printf "  ${D}=${N} CLAUDE.md ${D}(kept — rules-import already present)${N}\n"
 fi
 
 # settings.json hook check. PLAN keeps the existing settings.json so we never
@@ -437,7 +476,11 @@ if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
   printf "  ${Y}!${N} wrote %s ${D}(see merge instructions below)${N}\n" ".claude/settings.foundation.json"
 fi
 
-# CLAUDE.md stub
+# CLAUDE.md: write the full stub when absent; otherwise append ONLY the
+# always-on rules-import fallback block when it's missing. Existing user content
+# is always preserved (we only ever append). Keyed on RULES_IMPORT_MARKER for
+# idempotency — re-running adds nothing.
+CLAUDE_ACTION="kept"
 if [ ! -e "$CLAUDE_DST" ]; then
   cat > "$CLAUDE_DST" <<'EOF'
 # CLAUDE.md
@@ -451,21 +494,18 @@ The flow is type-aware: `feat` / `fix` / `refactor` / `chore` / `docs` / `spike`
 Full flow: see `WORKFLOW.md`.
 Agents live under `.claude/agents/`; run artifacts land in `.workflow/<id>/`; cross-run state lives in `.workflow/INDEX.md` and `.workflow/FOLLOWUPS.md`.
 
-## Always-on fundamentals
-
-The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit imports below are a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, these imports are redundant but harmless — delete this section if you ever see a rule loaded twice.
-
-@.claude/rules/coding-discipline.md
-@.claude/rules/ddd-strategic.md
-@.claude/rules/programming-fundamentals.md
-@.claude/rules/database-fundamentals.md
-@.claude/rules/hexagonal-backend.md
-@.claude/rules/architecture-fundamentals.md
-@.claude/rules/queue-fundamentals.md
-@.claude/rules/debug-fundamentals.md
-@.claude/rules/git-workflow.md
 EOF
+  emit_rules_block >> "$CLAUDE_DST"
+  CLAUDE_ACTION="created"
+elif ! grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
+  { printf '\n'; emit_rules_block; } >> "$CLAUDE_DST"
+  CLAUDE_ACTION="appended"
 fi
+case "$CLAUDE_ACTION" in
+  created)  printf "  ${G}+${N} CLAUDE.md ${D}(stub + rules-import fallback)${N}\n" ;;
+  appended) printf "  ${G}~${N} CLAUDE.md ${D}(appended always-on rules-import fallback)${N}\n" ;;
+  kept)     printf "  ${D}=${N} CLAUDE.md ${D}(kept — rules-import already present)${N}\n" ;;
+esac
 
 ok "files written"
 
