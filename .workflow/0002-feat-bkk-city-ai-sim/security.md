@@ -3,7 +3,7 @@
 **Plan**: [./plan.md](./plan.md)
 **Reviewed**: 2026-06-08
 **Trigger**: secrets + network (outbound LLM adapter reading an API key) + html (untrusted LLM output rendered to DOM)
-**Verdict**: fix-required
+**Verdict**: approve (re-verified loop 2 — see "Re-verification (loop 2)" below; was fix-required in loop 1)
 
 ## Threat model (one paragraph)
 This is a single-session, server-less, no-auth, no-DB browser SPA built by Vite. The new attack surface is the optional `LlmReflection` adapter (`src/sim/reflection/llm.ts`), which (1) reads an API key and (2) makes an outbound `fetch` to an OpenAI-compatible endpoint, then (3) feeds the **untrusted** model response back into the simulation where it is rendered to the DOM. The relevant trust boundaries are: developer secret → client bundle (Vite inlines `import.meta.env.VITE_*` into the shipped JS, so anyone who opens the page can read the key from DevTools/Sources); and remote LLM endpoint → DOM (the LLM is an untrusted third party — a compromised/malicious endpoint, a prompt-injected response, or even a benign model emitting markup can return arbitrary text that the app injects into `innerHTML`). An attacker who can MITM/redirect the endpoint, or who controls the endpoint a victim is pointed at, can both steal the key and run script in the victim's page. Reachability: any visitor with the page open and a configured key; the inspect panel renders agent strings on a single click.
@@ -40,4 +40,48 @@ This is a single-session, server-less, no-auth, no-DB browser SPA built by Vite.
 - **Dependency surface — light pass, no finding.** `package.json` pins exact versions; runtime dep is only `pixi.js@8.4.0` (dev-only: vite@5.4.19, vitest@2.1.9, tsx, typescript, eslint, prettier). Nothing obviously risky or unexpected in the direct set; full transitive audit (`npm audit`) is out of scope for this review.
 
 ## Sign-off
-fix-required (counts against the review cycle budget) — 2 high-severity blocking findings (HIGH-1 DOM XSS, HIGH-2 client-bundle key exposure).
+~~fix-required (counts against the review cycle budget) — 2 high-severity blocking findings (HIGH-1 DOM XSS, HIGH-2 client-bundle key exposure).~~
+
+**Superseded by loop 2 (2026-06-08): approve.** Both HIGH findings verified closed by commit `420003d`; MEDIUM-1 and LOW-3 also fixed. 0 remaining high-severity findings. See re-verification below.
+
+## Re-verification (loop 2)
+
+**Fix commit**: `420003d` ("fix(security): escape untrusted strings in inspect panel; dev-gate LLM key")
+**Re-reviewed**: 2026-06-08
+**Scope**: the two HIGH findings + the two follow-on fixes (MEDIUM-1, LOW-3) only — not a full re-review.
+
+### HIGH-1 — DOM XSS via `innerHTML` → **CLOSED (verified)**
+`src/render/inspectPanel.ts` was rewritten. `grep -n "innerHTML" src/render/inspectPanel.ts` → **0 matches** (was the sole sink). Both touched methods now build DOM imperatively:
+- `render()` (`inspectPanel.ts:63-167`) creates every node with `document.createElement` and assigns text via `textContent`. The three untrusted/LLM-influenced values are confirmed text-only: `goal` (`goalDiv.textContent`), `thought` (`thoughtDiv.textContent`), and per-event `e.kind`/`e.detail` (`row.textContent = \`[${e.tick}] ${e.kind}: ${e.detail}\``). Relationship strings and `id` are sim-internal keys but also routed through `textContent`. Markup in any of these is now rendered inert as literal text, not parsed as HTML.
+- `showInactive()` (`inspectPanel.ts:43-50`) replaced its `innerHTML` string with `createElement('p')` + `textContent`.
+- Note: `style.cssText`/`element.style` are still set from **static, code-controlled** color/layout strings only (e.g. `bar` color `#f59e0b`) — no untrusted value reaches a style sink, so no CSS-injection path is introduced. The one numeric-interpolated style (`width:${val.toFixed(0)}%`) is a `number.toFixed()` result, not attacker-controllable.
+No untrusted string reaches the DOM as HTML anywhere in the file. **HIGH-1 resolved.**
+
+### HIGH-2 — API key inlined into client bundle → **CLOSED (verified)**
+`src/main.ts:9-10` now gates the key read behind `import.meta.env.DEV`: `const apiKey = (env?.DEV ? env?.['VITE_OPENAI_API_KEY'] : undefined) ?? ''`. In a production build `DEV` is `false`, so the `VITE_OPENAI_API_KEY` reference is dead-code-eliminated and the key is never inlined; with an empty `apiKey`, `LlmReflection` is not usable and `LocalReflection` (no-network, no-key) remains the default path. A `SECURITY:` comment documents the constraint and points at the proxy fix.
+Empirically re-verified with the build run **with the key actually set** (worst case):
+```
+VITE_OPENAI_API_KEY="sk-test-SENTINEL-12345" npm run build   # exit 0
+grep -r VITE_OPENAI_API_KEY dist/ | wc -l   → 0
+grep -r "sk-test-SENTINEL-12345" dist/ | wc -l → 0
+```
+Neither the env-var name nor the actual key value appears anywhere in `dist/`. **HIGH-2 resolved.**
+
+### MEDIUM-1 — `baseUrl` allowlist → **CLOSED (verified)**
+`src/sim/reflection/llm.ts:11-27` adds `assertSafeBaseUrl()`: rejects unparseable URLs, rejects any non-`https:` scheme, and rejects any hostname not in `ALLOWED_HOSTS` (`api.openai.com`, `openrouter.ai`). It is called at construction (`llm.ts:47`), so a bad `baseUrl` throws before any auth header can be sent. Three new tests (`test/sim/reflection.test.ts`) cover reject-http, reject-unknown-host, accept-openrouter. Was non-blocking; now fixed.
+
+### LOW-3 — `.gitignore` env entries → **CLOSED (verified)**
+`.gitignore:17-19` now contains `.env`, `.env.*`, and `!.env.example`. Was non-blocking; now fixed.
+
+### Regression check
+- `npx vitest run` → **59 passed / 14 files, exit 0** (includes the 3 new allowlist tests and the `no-pixi-in-sim` guard).
+- `npm run build` → **exit 0**.
+- `grep -rn "pixi.js" src/sim/` → **0 matches** — sim/render boundary guard still holds.
+No regression from the fix.
+
+### Loop-2 verdict: **approve**
+- **High-severity findings remaining: 0.** Both HIGHs (HIGH-1, HIGH-2) verified closed.
+- **Medium disposition**: MEDIUM-1 fixed (no longer carried).
+- **Low disposition**: LOW-3 fixed. LOW-4 was never a finding (already capped). **LOW-2 (prompt-injection feedback loop)** remains a note-only item — with HIGH-1 fixed the output is now inert in the DOM, and raw LLM text still drives no tools/actions (deterministic needs-utility core), so blast radius stays cosmetic. **Carry to retro.**
+
+**Carried to retro**: LOW-2 (untrusted LLM text re-embedded into the next prompt — cosmetic-only feedback loop, monitor if LLM output ever begins driving actions). No medium findings left open.

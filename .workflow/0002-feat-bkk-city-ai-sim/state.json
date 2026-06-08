@@ -5,16 +5,16 @@
   "branch": "claude/bkk-city-ai-game-dqi19p",
   "branch_existed": true,
   "phase": "phase-2-implementation",
-  "step": "security",
-  "next_step": "implement-security-fix",
+  "step": "test",
+  "next_step": "docs",
   "cycles": {
     "review": 2,
-    "test": 0
+    "test": 1
   },
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": true,
   "last_agent": "lead",
-  "last_updated": "2026-06-08T20:26:00Z",
-  "notes": "Security=fix-required, 2 HIGH blocking: HIGH-1 XSS (inspectPanel innerHTML w/ untrusted LLM/agent strings), HIGH-2 API key in client bundle (VITE_ var). Looping to engineer (review cycle->2), then re-run security mode. Also fixing MEDIUM-1 baseUrl allowlist + LOW-3 .env gitignore."
+  "last_updated": "2026-06-08T20:44:00Z",
+  "notes": "Security re-verify=approve, 0 HIGH remaining (HIGH-1+HIGH-2 closed at 420003d, sentinel-grep clean). LOW-2 prompt-injection-feedback -> retro. Engineer wrote 59 tests; qa now maps AC coverage + runs suite."
 }

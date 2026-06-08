@@ -7,4 +7,4 @@ Registry of every `/dev` run. `orchestrator` appends a row when Phase 1 starts; 
 | ID | Type | Title | Status | Started | Finished |
 |------|--------|----------------------|--------|------------|------------|
 | 0001 | feat | _example: todolist_ | done | 2026-05-13 | 2026-05-14 |
-| 0002 | feat | bkk city ai simulation | building | 2026-06-08 | — |
+| 0002 | feat | bkk city ai simulation | testing | 2026-06-08 | — |
