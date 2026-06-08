@@ -35,6 +35,30 @@ describe('LlmReflection throttle and mock transport', () => {
     expect(llm.throttleMs).toBe(throttleMs);
   });
 
+  it('drainReflection respects throttleMs: only 1 reflect call per agent across many ticks (AC10)', () => {
+    // throttleMs=60_000 (far larger than any synchronous tick loop duration).
+    // Running 20 ticks in rapid succession must result in exactly 1 call per agent —
+    // subsequent ticks see nowMs - lastMs < throttleMs and skip the call.
+    const callCounts = new Map<string, number>();
+    const countingReflection: ReflectionPort = {
+      throttleMs: 60_000,
+      reflect(input) {
+        callCounts.set(input.agentId, (callCounts.get(input.agentId) ?? 0) + 1);
+        return Promise.resolve({ goal: 'counted' });
+      },
+    };
+    const world = new World({ seed: 42, agentCount: 5, reflection: countingReflection });
+
+    // All 20 ticks run within a single real-ms window — well under 60 s throttle
+    for (let i = 0; i < 20; i++) world.tick();
+
+    // Every agent: exactly 1 call (first tick fired; all subsequent ticks throttled)
+    expect(callCounts.size).toBe(5);
+    for (const count of callCounts.values()) {
+      expect(count).toBe(1);
+    }
+  });
+
   it('transport rejection → null return, no throw', async () => {
     // Use the default (https://api.openai.com/v1) — the host is allowed but the
     // network call will fail in the test environment, which must return null.
