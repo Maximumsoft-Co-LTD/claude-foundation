@@ -5,8 +5,8 @@
   "branch": "claude/bkk-city-ai-game-dqi19p",
   "branch_existed": true,
   "phase": "phase-2-implementation",
-  "step": "test",
-  "next_step": "docs",
+  "step": "ship",
+  "next_step": "retro",
   "cycles": {
     "review": 2,
     "test": 1
@@ -14,7 +14,9 @@
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": true,
-  "last_agent": "qa",
-  "last_updated": "2026-06-08T20:55:00Z",
-  "notes": "Test=PASS: 61 tests green, AC11 bench 975ms, all 11 ACs mapped, gaps AC6/AC9/AC10 closed (commit a390faa). Manual-verify: AC8 click + AC11 fps (browser-only). Next: docs (README for greenfield app), then ship."
+  "ship_commit": "82a2d75",
+  "pr_url": "https://github.com/Maximumsoft-Co-LTD/claude-foundation/pull/2",
+  "last_agent": "main",
+  "last_updated": "2026-06-08T21:10:00Z",
+  "notes": "Ship done. PR #2 opened (base=main). Branch commits: a6baf45 build, 420003d sec-fix, a390faa qa-tests, 82a2d75 docs. Next: retro."
 }
