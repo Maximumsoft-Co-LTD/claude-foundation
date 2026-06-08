@@ -3,3 +3,6 @@
 # Python bytecode (skill scripts under .claude/skills/*/scripts/)
 __pycache__/
 *.pyc
+
+# /dev workflow transient hook markers (runtime state, not artifacts)
+.workflow/*/.last_worker_return

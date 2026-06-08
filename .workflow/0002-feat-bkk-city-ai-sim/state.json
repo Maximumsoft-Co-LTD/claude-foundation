@@ -16,5 +16,5 @@
   "security_triggered": null,
   "last_agent": "pm",
   "last_updated": "2026-06-08T19:54:00Z",
-  "notes": "Spec written, 11 ACs incl AC11 (scale NFR). L-tier greenfield. Gate assumptions to confirm: PixiJS+Vite stack, decoupled sim-core/render, LLM-reflection optional+throttled+graceful-fallback, Bangkok landmark set, learning=utility memory."
+  "notes": "Spec written, 11 ACs incl AC11 (scale NFR). L-tier greenfield. GATE PRE-APPROVED by user ('Approve all', 2026-06-08): all 11 ACs + all inferred assumptions (PixiJS+Vite, decoupled sim-core/render, LLM-reflection optional+throttled+graceful-fallback, Bangkok landmark set, learning=utility memory) confirmed. Proceed autonomously through Phase 2 once plan/epic returns. open_pr_on_ship=true."
 }
