@@ -42,7 +42,12 @@ export class InspectPanel {
 
   private showInactive(): void {
     const content = this._el.querySelector('.inspect-content');
-    if (content) content.innerHTML = '<p style="color:#f87171">Agent no longer active.</p>';
+    if (!content) return;
+    content.textContent = '';
+    const p = document.createElement('p');
+    p.style.color = '#f87171';
+    p.textContent = 'Agent no longer active.';
+    content.appendChild(p);
   }
 
   private render(
@@ -58,44 +63,108 @@ export class InspectPanel {
   ): void {
     const content = this._el.querySelector('.inspect-content');
     if (!content) return;
+    content.textContent = '';
 
-    const bar = (label: string, val: number, color: string) =>
-      `<div style="margin:2px 0">
-        <span style="display:inline-block;width:60px;font-size:11px">${label}</span>
-        <span style="display:inline-block;background:#334155;width:120px;height:10px;vertical-align:middle;border-radius:4px">
-          <span style="display:block;background:${color};width:${val.toFixed(0)}%;height:100%;border-radius:4px"></span>
-        </span>
-        <span style="font-size:10px;margin-left:4px">${val.toFixed(0)}%</span>
-      </div>`;
+    // Agent id row — id comes from the sim's own key space (no LLM taint), but
+    // still use textContent so the pattern is uniform.
+    const idRow = document.createElement('div');
+    idRow.style.cssText = 'font-size:12px;color:#94a3b8;margin-bottom:4px';
+    idRow.textContent = `Agent: ${id}`;
+    content.appendChild(idRow);
 
-    const evHtml = events.slice(-10).reverse().map(e =>
-      `<div style="font-size:10px;color:#94a3b8">[${e.tick}] ${e.kind}: ${e.detail}</div>`
-    ).join('');
+    // Need bars (all values are numbers, no LLM taint)
+    const barsDiv = document.createElement('div');
+    barsDiv.style.marginBottom = '6px';
+    const addBar = (label: string, val: number, color: string) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin:2px 0';
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'display:inline-block;width:60px;font-size:11px';
+      lbl.textContent = label;
+      const track = document.createElement('span');
+      track.style.cssText = 'display:inline-block;background:#334155;width:120px;height:10px;vertical-align:middle;border-radius:4px';
+      const fill = document.createElement('span');
+      fill.style.cssText = `display:block;background:${color};width:${val.toFixed(0)}%;height:100%;border-radius:4px`;
+      track.appendChild(fill);
+      const pct = document.createElement('span');
+      pct.style.cssText = 'font-size:10px;margin-left:4px';
+      pct.textContent = `${val.toFixed(0)}%`;
+      row.appendChild(lbl);
+      row.appendChild(track);
+      row.appendChild(pct);
+      barsDiv.appendChild(row);
+    };
+    addBar('Hunger', hunger, '#f59e0b');
+    addBar('Energy', energy, '#22c55e');
+    addBar('Social', social, '#a78bfa');
+    content.appendChild(barsDiv);
 
-    const relHtml = rels.slice(0, 5).map(r => {
-      const other = r.agentIdA === id ? r.agentIdB : r.agentIdA;
-      return `<div style="font-size:10px;color:#a5f3fc">${other}: ${(r.strength * 100).toFixed(0)}%</div>`;
-    }).join('') || '<div style="font-size:10px;color:#64748b">None yet</div>';
+    // Goal — untrusted LLM string: textContent only
+    const goalDiv = document.createElement('div');
+    goalDiv.style.cssText = 'font-size:11px;color:#fbbf24;margin-bottom:4px';
+    goalDiv.textContent = `Goal: ${goal}`;
+    content.appendChild(goalDiv);
 
-    content.innerHTML = `
-      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Agent: ${id}</div>
-      <div style="margin-bottom:6px">
-        ${bar('Hunger', hunger, '#f59e0b')}
-        ${bar('Energy', energy, '#22c55e')}
-        ${bar('Social', social, '#a78bfa')}
-      </div>
-      <div style="font-size:11px;color:#fbbf24;margin-bottom:4px">Goal: ${goal}</div>
-      <div style="font-size:10px;color:#e2e8f0;background:#1e293b;padding:4px;border-radius:4px;margin-bottom:6px">
-        💭 ${thought || '…'}
-      </div>
-      <div style="font-size:11px;color:#64748b;margin-bottom:2px">Balance: ${balance} ¢</div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:2px">Activity log:</div>
-      <div style="max-height:80px;overflow-y:auto;background:#0f172a;padding:4px;border-radius:4px;margin-bottom:6px">
-        ${evHtml || '<div style="font-size:10px;color:#64748b">No events yet</div>'}
-      </div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:2px">Relationships:</div>
-      <div>${relHtml}</div>
-    `;
+    // Thought — untrusted LLM string: textContent only
+    const thoughtDiv = document.createElement('div');
+    thoughtDiv.style.cssText = 'font-size:10px;color:#e2e8f0;background:#1e293b;padding:4px;border-radius:4px;margin-bottom:6px';
+    thoughtDiv.textContent = `\u{1F4AD} ${thought || '…'}`;
+    content.appendChild(thoughtDiv);
+
+    // Balance (number, no LLM taint)
+    const balDiv = document.createElement('div');
+    balDiv.style.cssText = 'font-size:11px;color:#64748b;margin-bottom:2px';
+    balDiv.textContent = `Balance: ${balance} ¢`;
+    content.appendChild(balDiv);
+
+    // Activity log — e.kind and e.detail are untrusted LLM-influenced strings
+    const logLabel = document.createElement('div');
+    logLabel.style.cssText = 'font-size:11px;color:#94a3b8;margin-bottom:2px';
+    logLabel.textContent = 'Activity log:';
+    content.appendChild(logLabel);
+
+    const logBox = document.createElement('div');
+    logBox.style.cssText = 'max-height:80px;overflow-y:auto;background:#0f172a;padding:4px;border-radius:4px;margin-bottom:6px';
+    const recentEvents = events.slice(-10).reverse();
+    if (recentEvents.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:10px;color:#64748b';
+      empty.textContent = 'No events yet';
+      logBox.appendChild(empty);
+    } else {
+      for (const e of recentEvents) {
+        const row = document.createElement('div');
+        row.style.cssText = 'font-size:10px;color:#94a3b8';
+        row.textContent = `[${e.tick}] ${e.kind}: ${e.detail}`;
+        logBox.appendChild(row);
+      }
+    }
+    content.appendChild(logBox);
+
+    // Relationships — agentIdA/B are sim-internal keys (no LLM taint), but
+    // still use textContent for uniformity.
+    const relLabel = document.createElement('div');
+    relLabel.style.cssText = 'font-size:11px;color:#94a3b8;margin-bottom:2px';
+    relLabel.textContent = 'Relationships:';
+    content.appendChild(relLabel);
+
+    const relBox = document.createElement('div');
+    const topRels = rels.slice(0, 5);
+    if (topRels.length === 0) {
+      const none = document.createElement('div');
+      none.style.cssText = 'font-size:10px;color:#64748b';
+      none.textContent = 'None yet';
+      relBox.appendChild(none);
+    } else {
+      for (const r of topRels) {
+        const other = r.agentIdA === id ? r.agentIdB : r.agentIdA;
+        const row = document.createElement('div');
+        row.style.cssText = 'font-size:10px;color:#a5f3fc';
+        row.textContent = `${other}: ${(r.strength * 100).toFixed(0)}%`;
+        relBox.appendChild(row);
+      }
+    }
+    content.appendChild(relBox);
   }
 
   private createDOM(): HTMLElement {

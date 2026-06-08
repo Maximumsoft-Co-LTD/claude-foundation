@@ -1,6 +1,31 @@
 import type { ReflectionPort, ReflectionInput } from '../ports.js';
 import { CONFIG } from '../config.js';
 
+// Hosts that may receive the Authorization bearer token. Extend this list (or
+// point at a same-origin proxy) rather than removing the check.
+const ALLOWED_HOSTS = new Set([
+  'api.openai.com',
+  'openrouter.ai',
+]);
+
+function assertSafeBaseUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`LlmReflection: baseUrl is not a valid URL: ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`LlmReflection: baseUrl must use https (got ${parsed.protocol})`);
+  }
+  if (!ALLOWED_HOSTS.has(parsed.hostname)) {
+    throw new Error(
+      `LlmReflection: baseUrl hostname "${parsed.hostname}" is not in the allowed list. ` +
+      `Add it to ALLOWED_HOSTS in llm.ts or route through a same-origin proxy.`,
+    );
+  }
+}
+
 export interface LlmReflectionOptions {
   apiKey: string;
   baseUrl?: string;
@@ -19,6 +44,7 @@ export class LlmReflection implements ReflectionPort {
   constructor(options: LlmReflectionOptions) {
     this._apiKey = options.apiKey;
     this._baseUrl = options.baseUrl ?? 'https://api.openai.com/v1';
+    assertSafeBaseUrl(this._baseUrl);
     this._model = options.model ?? 'gpt-4o-mini';
     this.throttleMs = options.throttleMs ?? CONFIG.reflectionDefaultThrottleMs;
     this._timeoutMs = options.timeoutMs ?? 10_000;

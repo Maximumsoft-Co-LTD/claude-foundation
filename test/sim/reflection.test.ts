@@ -36,9 +36,26 @@ describe('LlmReflection throttle and mock transport', () => {
   });
 
   it('transport rejection → null return, no throw', async () => {
-    const llm = new LlmReflection({ apiKey: 'badkey', baseUrl: 'http://0.0.0.0:1', timeoutMs: 50 });
+    // Use the default (https://api.openai.com/v1) — the host is allowed but the
+    // network call will fail in the test environment, which must return null.
+    const llm = new LlmReflection({ apiKey: 'badkey', timeoutMs: 50 });
     const result = await llm.reflect(sampleInput);
     expect(result).toBeNull();
+  });
+
+  it('baseUrl allowlist: rejects http scheme', () => {
+    expect(() => new LlmReflection({ apiKey: 'k', baseUrl: 'http://api.openai.com/v1' }))
+      .toThrow(/must use https/);
+  });
+
+  it('baseUrl allowlist: rejects unknown host', () => {
+    expect(() => new LlmReflection({ apiKey: 'k', baseUrl: 'https://evil.example.com/v1' }))
+      .toThrow(/not in the allowed list/);
+  });
+
+  it('baseUrl allowlist: accepts openrouter.ai', () => {
+    expect(() => new LlmReflection({ apiKey: 'k', baseUrl: 'https://openrouter.ai/api/v1' }))
+      .not.toThrow();
   });
 });
 
