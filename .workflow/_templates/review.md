@@ -13,9 +13,16 @@ One row per plan step — no skipping rows. A deviation needs a one-line reason.
 - [ ] Step 2 — deviation: <what + why>
 
 ## Acceptance-criteria check
-One row per `spec.md > Acceptance criteria` bullet. `engineer` ticks these; `lead` re-verifies against the diff and the running code. Any criterion that can't be ticked here is a **blocking** finding.
+One row per `spec.md > Acceptance criteria` bullet, INCLUDING each AC's `on error / at boundary:` clause and any `measured:` perf/security/a11y target (these are checkable assertions, not optional). `engineer` ticks these; `lead` re-verifies against the diff and the running code. Any criterion that can't be ticked here is a **blocking** finding.
 
 - [ ] Criterion 1 — evidence: `path:line` / behaviour observed
+- [ ] Criterion 1 (on error / at boundary) — evidence: `path:line` / behaviour observed
+
+## Non-AC slot check
+DoD items and Constraints do NOT thread through AC tags, so they get their own walk here or they ship unchecked. Delete this section only when the spec has neither a `Definition of Done` nor a `Constraints` section.
+
+- [ ] DoD: <item> — concrete artifact present? evidence: `path:line` / file exists (missing artifact = **blocking**)
+- [ ] Constraint: <constraint> — diff honours it? evidence: `path:line` (violation, e.g. banned dependency or crossed integration boundary = **blocking**)
 
 ## Findings
 

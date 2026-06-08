@@ -33,6 +33,7 @@ Coverage (the `[AC#]` tag exists) is the floor. Sufficiency is the bar: the tagg
 2. Confirm at least one `Step` carries that tag.
 3. Read those Steps. Taken *together*, do they fully deliver the AC — not merely touch it? If the connection is hand-wavy, the Step is too abstract — split it.
 4. Confirm the AC's *acceptance check actually runs*: at least one tagged Step's `verify:` clause exercises the AC's behaviour. When the spec AC carries an `e.g.: <input> → <expected output>` example, that example is the verify target — the verify should produce that output for that input. A tagged AC with no verify that checks it is coverage on paper only.
+5. **Cover the error/boundary clause and any measured target.** When the spec AC carries an `on error / at boundary:` line, the happy path is not enough: a Step must deliver the unhappy path AND a `verify:` must exercise it (feed the bad input / hit the limit / send the unauthorized caller, assert the recorded behaviour). When the AC carries a `measured:` perf/security/a11y target, a Step's verify runs that measurement. An AC whose boundary clause or measured target has no delivering+verifying Step is the silent-guess gap this scan exists to catch.
 
 If an AC has no step:
 - The plan is incomplete → add the steps.
@@ -110,6 +111,8 @@ If `Rollback` says anything beyond "revert the commit", read it as a runbook:
 ### Dependencies are concrete
 
 `External: some library` is not a dependency — `External: pg-listen >= 1.7.2 (for LISTEN/NOTIFY support added in 1.7)` is. `Internal: prior PR` is not a dependency — `Internal: must land after PR #482 (schema migration adds users.tenant_id)` is.
+
+The same pinning rule applies to any package a **Step** introduces, not just the Dependencies section: an exact version that exists, with the Step's verify confirming it resolves (lockfile entry / `npm ls pkg@ver`). An unpinned or unconfirmed package name in a Step is how a hallucinated or typo-squatted dependency lands.
 
 ### Phases are coherent (L plans with optional Phases)
 

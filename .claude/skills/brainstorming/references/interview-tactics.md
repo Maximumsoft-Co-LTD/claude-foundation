@@ -22,7 +22,8 @@ Of the open slots, pick the 3–4 with the highest **consequence × ambiguity**:
 | Constraints (tech stack for new code, integration points for existing) | Wrong stack = whole plan wrong | Always ask if neither intent nor repo answers |
 | Reproduction (`Type=fix`) | Regression test depends on it | Always free-text, always ask |
 | Timebox (`Type=spike`) | Spike runs forever otherwise | Always ask, default 1 day if user shrugs |
-| NFR detection (perf / security / a11y) | A missing-but-needed NFR passes every consistency scan and only breaks in prod | Mandatory **binary** ask for feat/fix shipping runtime code; on `no`, no section |
+| NFR detection (perf / security / a11y) | A missing-but-needed NFR passes every consistency scan and only breaks in prod | Mandatory **binary** ask for feat/fix shipping runtime code; on `yes` it becomes an AC (verify = `measured:`), on `no` nothing |
+| Error/boundary per consequential behavioural AC | A silently-guessed unhappy path is the #1 "runs but does the wrong thing" failure | Mandatory **detect** ask per consequential behavioural AC (NFR-class measured ACs exempt); `none — <default>` is a valid recorded answer, silence is not |
 | Users / context | Shapes AC and approach | Ask if non-obvious |
 | Ship as / Open PR | Has safe defaults | Skip if running short on slots |
 
