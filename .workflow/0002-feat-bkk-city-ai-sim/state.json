@@ -14,7 +14,7 @@
   "skipped_steps": [],
   "open_pr_on_ship": true,
   "security_triggered": true,
-  "last_agent": "lead",
-  "last_updated": "2026-06-08T20:44:00Z",
-  "notes": "Security re-verify=approve, 0 HIGH remaining (HIGH-1+HIGH-2 closed at 420003d, sentinel-grep clean). LOW-2 prompt-injection-feedback -> retro. Engineer wrote 59 tests; qa now maps AC coverage + runs suite."
+  "last_agent": "qa",
+  "last_updated": "2026-06-08T20:55:00Z",
+  "notes": "Test=PASS: 61 tests green, AC11 bench 975ms, all 11 ACs mapped, gaps AC6/AC9/AC10 closed (commit a390faa). Manual-verify: AC8 click + AC11 fps (browser-only). Next: docs (README for greenfield app), then ship."
 }
