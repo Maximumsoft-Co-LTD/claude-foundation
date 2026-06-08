@@ -6,3 +6,9 @@ __pycache__/
 
 # /dev workflow transient hook markers (runtime state, not artifacts)
 .workflow/*/.last_worker_return
+
+# Node / Vite build artifacts (bkk-city-ai-sim and any JS subprojects)
+node_modules/
+dist/
+.vite/
+*.log
