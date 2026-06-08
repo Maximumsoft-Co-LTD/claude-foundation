@@ -563,6 +563,8 @@ export class InMemoryOrderRepository implements OrderRepository {
 
 For everything else — anything with business rules, multiple data sources, or any chance of changing requirements — apply by default.
 
+**Ports are not the speculative abstraction [[coding-discipline]]'s *simplicity-first* warns against.** Simplicity-first says "no abstraction for a single call site"; a port is the *deliberate* seam that buys requirement-change resilience, so it earns its keep everywhere this skill applies. The skip-list above is exactly where simplicity-first wins instead — trivial CRUD and thin BFFs don't need the port.
+
 ## Relation to Vertical Slice Architecture
 
 A frequent 2024-2025 critique of Clean / Hexagonal / Onion is that strict layering fragments a single feature across `domain/`, `application/`, and `infrastructure/` directories — a one-line behavior change touches files in three places, and reviewers have to reconstruct the slice in their head. **Vertical Slice Architecture (VSA)** organizes by feature instead: one folder per use case (`features/place-order/`) that *contains* the handler, the request/response types, the validation, and the persistence call, with hexagonal seams only where they earn their cost.

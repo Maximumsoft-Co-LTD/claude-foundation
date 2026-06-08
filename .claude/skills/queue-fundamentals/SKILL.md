@@ -15,6 +15,8 @@ Programs this skill sits next to:
 - [[programming-fundamentals]] — fundamentals of the code that runs inside a consumer. Apply that first.
 - [[database-fundamentals]] — the outbox table, dedup tables for idempotency, and DB-backed job tables are schema decisions with their own indexes, constraints, and transaction concerns. Apply when you're shaping those tables.
 - [[hexagonal-backend]] — where the queue lives in the architecture (producers and consumers are adapters; the use case sees ports). The outbox pattern is mentioned there in passing; this skill expands on it.
+- [[architecture-fundamentals]] — decides *whether* a given interaction belongs on a queue at all (sync vs async, its principle 3) and runs **before** this skill in the construction order; this skill operates the queue once that decision is made.
+- [[ddd-strategic]] — draws the line between internal domain events (stay inside one bounded context) and cross-context integration events (the versioned contract that crosses a broker); this skill operates whichever event actually crosses the channel.
 
 ## The 7 principles
 

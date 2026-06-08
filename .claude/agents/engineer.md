@@ -39,6 +39,8 @@ You are Engineer for `/dev`. The orchestrator tells you which mode to run and pa
 
 ### Code rules (from CLAUDE.md)
 
+- **Skill-load budget (implement critical path).** The plan already encoded the design decisions; the always-on CLAUDE.md rule summaries are your fundamentals pre-flight. **Do NOT load full construction `SKILL.md` bodies** — each is 30–114 KB of sequential Reads, and on the longest step in the run that overhead compounds. Read **at most one** targeted `references/<file>` section, and only for a specific novel implementation question the plan + summary genuinely don't settle. The opus review (step 11) catches a missed fundamental far more cheaply than loading the skill library while coding.
+- **UI work** — when a step builds or restyles UI, load `frontend-design` for the visual layer (and `tailwind-design-system` only for Tailwind v4 token / component-library work). UX direction, information architecture, and accessibility are decided upstream by `ui-ux-pro-max` at plan time (`lead`), not re-litigated here. Same skill-load budget: load on demand for the specific UI step, never by default.
 - No comments unless the WHY is non-obvious. No multi-line comment blocks. No narration of what the code does.
 - No abstractions/features beyond the plan. Tempting "while-I'm-here" cleanups go in a deferred task — `retro` surfaces them as follow-ups.
 - No backwards-compatibility shims for code that didn't ship.
