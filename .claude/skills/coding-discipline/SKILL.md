@@ -1,6 +1,6 @@
 ---
 name: coding-discipline
-description: Apply the behavioral guardrails that keep an AI coding session honest — surface assumptions instead of guessing, write the minimum code that solves the problem, keep every diff surgical (touch only what the request requires), and turn the task into a verifiable goal you can loop on. Use this skill BEFORE starting any code change, large or small, in any language. Triggers on requests like "implement", "add a feature", "write this", "fix this", "refactor", "change X", "make it do Y", "clean this up" — any moment you are about to produce or edit code. Use it even when no principle is named — the trigger is any coding task where the risk is acting on a silent assumption, over-building, over-editing, or shipping with no way to verify. This is the conduct layer: it ROUTES to [[brainstorming]] when scope is ambiguous, [[programming-fundamentals]] for the code itself, /simplify for the post-hoc cleanup pass, [[git-workflow]] for commits/branches/PRs, and [[debug-fundamentals]] / qa for verification — it does not duplicate them. Skip only for pure config edits, one-line shell, or throwaway scripts.
+description: Apply the behavioral guardrails that keep an AI coding session honest — surface assumptions instead of guessing, write the minimum code that solves the problem, keep every diff surgical, and turn the task into a verifiable goal. Use BEFORE starting any code change, large or small — implement, add a feature, fix, refactor, "clean this up". This is the conduct layer; it routes to [[brainstorming]] for ambiguous scope, [[programming-fundamentals]] for the code itself, [[git-workflow]] for commits/PRs, and [[debug-fundamentals]] / qa for verification rather than duplicating them. Skip pure config edits, one-line shell, and throwaway scripts.
 ---
 
 # Coding Discipline
@@ -97,7 +97,7 @@ This is a thin **behavioral wrapper**, deliberately not a competitor — it rout
 - [[git-workflow]] — owns commits/branches/PRs. Principle 3 (surgical diffs) is what makes its atomic commits possible.
 - [[debug-fundamentals]] and the `qa` agent — own verification. Principle 4 sets the goal-driven stance; they author the actual tests.
 
-Run order: apply this skill *first* as the conduct check on any code task, then the layer-appropriate domain skill (`ddd-strategic` → `programming-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `architecture-fundamentals` → `queue-fundamentals`, or `debug-fundamentals` for a bug). It does not replace any of them and does not re-teach their content.
+Run order: apply this skill *first* as the conduct check on any code task, then the layer-appropriate domain skill — the canonical construction order lives in `.claude/rules/fundamentals.md`; for a bug, `debug-fundamentals` runs first. It does not replace any of them and does not re-teach their content.
 
 ## When to skip
 

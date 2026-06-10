@@ -298,7 +298,7 @@
               </li>
               <li class="step">
                 <span class="step-n">2</span>
-                <div class="step-body"><strong>Plan</strong><span><span class="agent">lead</span> maps the spec to executable steps with <code>file:line</code> refs, risks, and verification.</span></div>
+                <div class="step-body"><strong>Plan</strong><span><span class="agent">lead</span> maps the spec to executable steps with <code>path#anchor</code> refs, risks, and verification.</span></div>
               </li>
               <li class="step">
                 <span class="step-n">3</span>
@@ -397,7 +397,7 @@
         <div class="agents-grid">
           <article class="agent-card reveal">
             <div class="agent-top"><span class="agent-name"><span class="at">@</span>pm</span><span class="agent-phase">Phase 1</span></div>
-            <p>Writes <code>spec.md</code> from the interview Q&amp;A and any research findings — goal, users, scope, non-goals, acceptance criteria, and the <code>Type</code> slot.</p>
+            <p>Writes <code>spec.md</code> from the interview Q&amp;A and any research findings — outcome (before → after → benefit), users, scope, non-goals, acceptance criteria, and the <code>Type</code> slot.</p>
             <div class="agent-io">
               <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>spec.md</b></span></div>
               <div class="io-row"><span class="io-k">reads</span><span class="io-v">interview · FOLLOWUPS · fanout</span></div>
@@ -456,6 +456,7 @@
             <span class="chip">team-codebase-explorer</span>
             <span class="chip">team-best-practice-researcher</span>
             <span class="chip">team-code-reviewer</span>
+            <span class="chip">team-code-simplifier</span>
             <span class="chip">team-silent-failure-hunter</span>
             <span class="chip">team-type-design-analyzer</span>
             <span class="chip">team-comment-analyzer</span>
@@ -472,34 +473,39 @@
           <span class="eyebrow">Always-on fundamentals</span>
           <h2>Pre-flight rules that load before code lands.</h2>
           <p>
-            Each rule is an always-on pointer; it loads its full skill before the relevant work
-            happens — so the model gets the right checklist at the right moment, every time.
+            Each rule is a three-line always-on pointer — trigger, one-sentence why, skill path.
+            The full skill body loads on demand before the relevant work happens, and the
+            cross-skill run order lives in one file — the right checklist at the right moment,
+            without paying for it in every context window.
           </p>
         </div>
 
         <div class="skills-grid">
-          <a class="skill-pill reveal" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/ddd-strategic" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/coding-discipline" target="_blank" rel="noopener">
+            <span class="sk-name">coding-discipline</span><span class="sk-desc">Stated assumptions, minimal code, surgical diffs, verifiable done.</span>
+          </a>
+          <a class="skill-pill reveal" data-d="1" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/ddd-strategic" target="_blank" rel="noopener">
             <span class="sk-name">ddd-strategic</span><span class="sk-desc">Bounded contexts, ubiquitous language, aggregate sizing.</span>
           </a>
-          <a class="skill-pill reveal" data-d="1" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/programming-fundamentals" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" data-d="2" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/programming-fundamentals" target="_blank" rel="noopener">
             <span class="sk-name">programming-fundamentals</span><span class="sk-desc">Data shape, illegal states, pure core, error handling.</span>
           </a>
-          <a class="skill-pill reveal" data-d="2" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/database-fundamentals" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" data-d="3" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/database-fundamentals" target="_blank" rel="noopener">
             <span class="sk-name">database-fundamentals</span><span class="sk-desc">Schema, constraints, indexes, plans, safe migrations.</span>
           </a>
-          <a class="skill-pill reveal" data-d="3" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/hexagonal-backend" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/hexagonal-backend" target="_blank" rel="noopener">
             <span class="sk-name">hexagonal-backend</span><span class="sk-desc">Ports &amp; adapters, dependency direction, layering.</span>
           </a>
-          <a class="skill-pill reveal" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/architecture-fundamentals" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" data-d="1" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/architecture-fundamentals" target="_blank" rel="noopener">
             <span class="sk-name">architecture-fundamentals</span><span class="sk-desc">Boundaries, ownership, sync/async, resilience, contracts.</span>
           </a>
-          <a class="skill-pill reveal" data-d="1" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/queue-fundamentals" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" data-d="2" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/queue-fundamentals" target="_blank" rel="noopener">
             <span class="sk-name">queue-fundamentals</span><span class="sk-desc">Delivery semantics, idempotency, DLQ, outbox pattern.</span>
           </a>
-          <a class="skill-pill reveal" data-d="2" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/debug-fundamentals" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" data-d="3" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/debug-fundamentals" target="_blank" rel="noopener">
             <span class="sk-name">debug-fundamentals</span><span class="sk-desc">Reproduce, read evidence, bisect, fix the real layer.</span>
           </a>
-          <a class="skill-pill reveal" data-d="3" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/git-workflow" target="_blank" rel="noopener">
+          <a class="skill-pill reveal" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/tree/main/.claude/skills/git-workflow" target="_blank" rel="noopener">
             <span class="sk-name">git-workflow</span><span class="sk-desc">Atomic commits, why-carrying messages, safe recovery.</span>
           </a>
         </div>
@@ -540,8 +546,8 @@
 └── <span class="ft-file">FOLLOWUPS.md</span>       <span class="ft-cmt"># carry-over</span></pre>
 
           <div class="artifact-list reveal" data-d="1">
-            <div class="artifact"><div class="af-name">spec.md <span class="af-owner">· pm</span></div><div class="af-desc">Goal, users, scope, non-goals, acceptance criteria, Type.</div></div>
-            <div class="artifact"><div class="af-name">plan.md <span class="af-owner">· lead</span></div><div class="af-desc">Steps with file:line refs, diagram, risks, verification.</div></div>
+            <div class="artifact"><div class="af-name">spec.md <span class="af-owner">· pm</span></div><div class="af-desc">Outcome (before → after → benefit), users, scope, non-goals, acceptance criteria, Type.</div></div>
+            <div class="artifact"><div class="af-name">plan.md <span class="af-owner">· lead</span></div><div class="af-desc">Steps with path#anchor refs, diagram, risks, verification.</div></div>
             <div class="artifact"><div class="af-name">review.md <span class="af-owner">· lead</span></div><div class="af-desc">One check per file, one row per acceptance criterion.</div></div>
             <div class="artifact"><div class="af-name">security.md <span class="af-owner">· lead</span></div><div class="af-desc">Inline checklist; high findings are blocking.</div></div>
             <div class="artifact"><div class="af-name">tests.md <span class="af-owner">· qa</span></div><div class="af-desc">Each criterion mapped to a specific test.</div></div>

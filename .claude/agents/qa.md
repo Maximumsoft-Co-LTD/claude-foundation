@@ -33,7 +33,7 @@ Tick the matching box in `tests.md > Type-aware mode`:
 1a. **Opt-in fanout.** If the plan spans ≥ 2 of {unit, integration, e2e} test categories AND any category has ≥ 3 tests, return `FANOUT_REQUESTED: test:<category-list>` (comma-separated category names) so the orchestrator can spawn one `team-pr-test-analyzer` per category; qa synthesises results into `tests.md > Results`. Default = single-pass. Pattern documented in `.claude/skills/fanout-team-agents/SKILL.md`.
 2. **Acceptance-criteria mapping** — fill the `Acceptance-criteria coverage` table. Every checkbox in `spec.md > Acceptance criteria` MUST map to at least one test — INCLUDING its `on error / at boundary:` clause (the unhappy path is its own checkable assertion: write a test that feeds the bad input / hits the limit / sends the unauthorized caller and asserts the recorded behaviour) and any `measured:` perf/security/a11y target (map it to a test that runs the measurement, not a prose note). If a criterion can't be tested (e.g., "documentation reads clearly"), justify it in the table and tag the row so retro sees it.
 3. Match the project's existing test framework + conventions. Do not introduce a new framework. If no framework exists, ask the user before adding one.
-4. Run the suites. Record counts in `tests.md > Results` and the re-run command in `Commands`.
+4. **Run the whole suite in ONE command** — invoke the project's runner once (`npm test`, `pnpm test`, `pytest`, `go test ./...`, `cargo test`, etc.) so every test executes in a single process. Do NOT loop Bash once per test file or per case — that is the slowest possible path and the main cause of a slow QA phase. If your new tests live in several files, let the runner discover them (run the suite, or a path/pattern that matches them all) instead of running them one by one; if the project genuinely has no single entrypoint, write a one-shot script that runs them all in one invocation. Record counts in `tests.md > Results` and the single re-run command in `Commands`.
 5. **Fix-mode extra step** — verify the regression test is real:
    - Identify the regression test the engineer wrote (plan step 1) and find its commit. Engineer is supposed to land the test as its own commit ahead of the fix commit.
    - Confirm it fails on the *pre-fix* code. Preferred path (clean two-commit history):
@@ -46,7 +46,7 @@ Tick the matching box in `tests.md > Type-aware mode`:
 7. On failures:
    - Decide: is the test wrong, or is the code wrong?
    - Fix the right side. Production-code fixes consume a cycle.
-   - Re-run.
+   - Re-run. While iterating on a single failure you MAY target just that test/file for speed, but the run that sets status = `passing` MUST be a full-suite run in one command.
 8. Cycle limit: **3**. After cycle 3, leave `tests.md` status = `failing`, list each failure in `Failing`, and escalate to the orchestrator. Do NOT mark passing to move on.
 
 ## Steps (Skipped mode)
@@ -58,6 +58,7 @@ Tick the matching box in `tests.md > Type-aware mode`:
 
 ## Rules
 
+- **Batch the run.** One suite command per run, never one Bash call per test file. Per-file targeting is only for iterating on a single failure (step 7); the status-deciding run is always the full suite.
 - **No mocking the database** in integration tests — hits real test DB. Mocks hide migration/contract bugs.
 - One assertion focus per test. Tests are read more often than written.
 - Failing tests block Phase 2 step 9 (ship). Never let the workflow proceed with `failing` status.

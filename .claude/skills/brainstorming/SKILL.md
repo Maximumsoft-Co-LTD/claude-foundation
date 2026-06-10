@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, ambiguity, and likely failure modes (verifiability + pre-mortem). Use this skill when the `/dev` Phase 1 interview has ambiguous scope, open-ended product/approach choices, oversized requests, UI work needing visual exploration, or several unclear requirement slots; also use it when the user asks to "brainstorm X", "scope this idea", "design a feature", "what should we do about Y", "explore options for", or otherwise wants a design conversation before implementation. Composes with [[plan-writing]] (the next step after spec is approved) and the construction-fundamentals skills (load whichever decides *what* to build). Skip for throwaway scripts, single-line config edits, narrow concrete `/dev` changes, and tasks where the spec is already approved.
+description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, and failure modes. Use in the `/dev` Phase 1 interview when scope is ambiguous, choices are open-ended, or the request is oversized; also when the user asks to "brainstorm X", "scope this idea", "design a feature", or wants a design conversation before implementation. Composes with [[plan-writing]] as the next step after spec approval. Skip throwaway scripts, narrow concrete changes, and already-approved specs.
 ---
 
 # Brainstorming
@@ -33,9 +33,9 @@ The test: can this be one approved spec that produces one ship-able thing? If no
 
 The **authoritative slot list and trigger rules live in `.workflow/_templates/spec.md`** (in the `<!-- ... -->` trigger menu below the always-required sections) and the slot summary in `.claude/agents/pm.md > Slots`. Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
 
-**Minimum floor (always asked or pulled from intent):** `Type`, `Goal`, `Acceptance criteria`, `Ship as`, `Open PR on ship`. AC may be just 1 for XS; each consequential *behavioural* AC also carries an `on error / at boundary:` line (the unhappy-path decision, or an explicit `none — <default>`) and edges live as sub-bullets under the AC they edge (NOT a separate section). Measurable perf/security/a11y targets are themselves ACs (verify = the `measured:` clause), not a separate untestable section — an NFR-class AC carries neither `e.g.` nor `on error / at boundary`.
+**Minimum floor (always asked or pulled from intent):** `Type`, `Outcome` (the Before → After → Benefit framing — capture the *why / who-benefits* during the interview, not just what "done" is), `Acceptance criteria`, `Ship as`, `Open PR on ship`. AC may be just 1 for XS; each consequential *behavioural* AC also carries an `on error / at boundary:` line (the unhappy-path decision, or an explicit `none — <default>`) and edges live as sub-bullets under the AC they edge (NOT a separate section). Measurable perf/security/a11y targets are themselves ACs (verify = the `measured:` clause), not a separate untestable section — an NFR-class AC carries neither `e.g.` nor `on error / at boundary`.
 
-**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. The template comment for each section names the trigger condition; ask only when it fires.
+**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References / examples to follow`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. The template comment for each section names the trigger condition; ask only when it fires.
 
 Walk the intent. For each triggered slot, first decide whether the trigger fires at all. If not, the slot is not just unanswered — it does not exist for this spec. If yes: *did the user already answer this, or did the repo answer it?* Only the **triggered AND unanswered** slots become interview questions. **Never** assume defaults for slots you didn't ask about, and **never** include a triggered section just because the template mentions it.
 
@@ -71,7 +71,7 @@ If a relevant construction-fundamentals skill applies ([[programming-fundamental
 
 ### 5. HARD-GATE: no code, no `Status: approved`, no `plan.md` until the design is acknowledged
 
-Until the user has seen the design (Goal + Scope + AC + chosen approach) and said yes, you do not:
+Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes, you do not:
 - write production code
 - spawn `engineer` (or any implement-mode agent)
 - spawn `lead` in plan mode
@@ -142,14 +142,14 @@ flowchart TD
     DIG -- "yes · ≤3 batches · narrower" --> J
     DIG -- "no / cap hit" --> K{Approach 'how' open?}
     K -- yes --> L[Propose 2–3 options with recommendation]
-    K -- no --> M[Present design: Goal + Scope + AC + example + chosen approach]
+    K -- no --> M[Present design: Outcome + Scope + AC + example + chosen approach]
     L --> M
     M --> N{User approves design?}
     N -- no, revise --> J
     N -- yes --> O[pm writes spec.md]
     O --> P[Self-review: 5 scans, fix inline]
     P --> Q{Gate: orchestrator presents to user}
-    Q -- revise --> J
+    Q -- "revise (targeted slots only)" --> J
     Q -- approve --> R[Status: approved → plan-writing]
 ```
 
@@ -201,7 +201,7 @@ The `/dev` orchestrator (main agent, defined in `.claude/orchestrator.md`) is th
 
 **Step 3 — required-slots walk:**
 - Type: `feat` (clear from "add a way")
-- Goal: answered ("export their data")
+- Outcome: After answered ("export their data"); Before + Benefit still to confirm in the interview
 - Users: not specified — *ask*
 - Scope/AC: not specified — *ask*
 - Constraints: stack visible; integration point inferable

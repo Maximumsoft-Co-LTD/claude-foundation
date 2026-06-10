@@ -20,12 +20,12 @@ Key surface area:
 
 ## Working agreements (carried from user-level config)
 
-These fundamentals are applied via this always-on context (project skills don't auto-trigger). Each entry names its **trigger → skill**; **the rule lives at `.claude/rules/<skill-name>.md` and the full skill body at `.claude/skills/<skill-name>/SKILL.md`** — load those on demand for the why/how, skip lists, and worked examples. Invoke the skill *before* the first line of the work it governs.
+These fundamentals are applied via this always-on context (project skills don't auto-trigger). Each entry names its **trigger → skill**; **the rule lives at `.claude/rules/<skill-name>.md` and the full skill body at `.claude/skills/<skill-name>/SKILL.md`** — load those on demand for the why/how, skip lists, and worked examples. Invoke the skill *before* the first line of the work it governs. **The canonical cross-skill run order lives in `.claude/rules/fundamentals.md`** (always-on and shipped to adopting repos by the installers) — rules and skills point there instead of restating the chain.
 
 - **LSP first** — when an LSP tool is available, use it for diagnostics, go-to-definition, and references before grep/read. (From `~/.claude/CLAUDE.md`.)
 - **`coding-discipline`** — any task that produces or edits code. The behavioral conduct wrapper (assumptions stated → minimum non-speculative code → surgical diff → verifiable definition of done); it **routes** to the skills below and must not re-teach them. **Run first** as the stance check, then the layer-appropriate construction/debug skill. Skip pure config edits, one-line shell, throwaway scripts.
 
-**Construction skills — when several apply, run in this order** (decide model & boundaries → code → storage → one service's layering → cross-service → async channel):
+**Construction skills** (run order: `.claude/rules/fundamentals.md`):
 
 - **`ddd-strategic`** — deciding *where* a model lives / *what language* it speaks: bounded contexts, cross-context concepts, subdomain build-vs-buy, aggregate sizing, diagnosing a broken model. Skip generic CRUD, prototypes, known single-context work.
 - **`programming-fundamentals`** — any code with real logic (function, module, data model, non-trivial bug, refactor, review).

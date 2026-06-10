@@ -116,11 +116,11 @@ The example is doing the work the pre-mortem's "mis-spec'd AC" scan does — but
 
 ## Handling `revise` follow-ups (in `/dev`)
 
-If the user picks `revise <notes>` at the gate (Phase 1 step 8), you don't necessarily re-run a full batch. Decide:
+If the user picks `revise <notes>` at the gate (Phase 1 — `orchestrator.md` step 9), or just chats free-form about the spec/plan, you don't necessarily re-run a full batch. The orchestrator treats all of it as an incremental, in-run edit (never a fresh Phase 1). Decide:
 
-- **Notes affect requirements** (changed AC, added scope, changed users) → re-interview only the affected slots. A 1–2 question batch is fine.
-- **Notes are spec-only** (rewording, clarifying an existing slot, fixing a contradiction) → don't re-interview. Edit `spec.md` inline — resolve any related `[NEEDS CLARIFICATION]` markers, or add a new one AT THE SPOT the ambiguity sits — and re-spawn `pm` for a spec patch.
-- **Notes affect approach** (user wants Option B instead of A) → no interview; update the design, re-present, get the yes, re-spawn `pm`.
+- **Notes affect requirements** (changed AC, added scope, changed users) → re-interview only the affected slots. A 1–2 question batch is fine. Re-spawn `pm` in spec-patch mode to edit only the affected sections.
+- **Notes are spec-only** (rewording, clarifying an existing slot, fixing a contradiction) → don't re-interview. Re-spawn `pm` in spec-patch mode to edit `spec.md` in place — resolve any related `[NEEDS CLARIFICATION]` markers, or add a new one AT THE SPOT the ambiguity sits.
+- **Notes affect approach only** (user wants Option B instead of A; requirements unchanged) → no interview, skip `pm`; re-spawn `lead` in plan-revise mode to edit only the affected plan steps (no re-fanout, no LSP re-walk).
 
 Don't treat `revise` as "start over." It's surgical.
 

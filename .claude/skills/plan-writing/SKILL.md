@@ -1,6 +1,6 @@
 ---
 name: plan-writing
-description: Write an implementation plan that maps a spec to executable, verifiable steps with a required architecture diagram, sized for the work. Use this skill when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), OR when the user asks to "write a plan", "plan this feature", "design the implementation", "break this down into steps", "draft an RFC". Owns the size tiering (XS/S/M/L), the always-required architecture diagram (mermaid by Type), the current-state mapping (LSP-walk of existing code for non-greenfield work — required for M/L and any refactor/fix), inline AC tagging, runnable-verify rule, anti-placeholder rules, and the pre-draft self-review. Composes with the construction-fundamentals skills (programming/database/hexagonal/architecture/queue) — load the relevant construction skill first to decide *what* to build; this skill decides *how to sequence, document, and verify* what you build. Skip for throwaway scripts, single-line config edits, and conversational "what should we do about X" exchanges that haven't been spec'd yet.
+description: Write an implementation plan that maps a spec to executable, verifiable steps with a required architecture diagram, sized XS/S/M/L. Use when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), or when the user asks to "write a plan", "plan this feature", "break this down", "draft an RFC". Owns size tiering, the mermaid diagram by Type, current-state mapping for non-greenfield work, inline AC tagging, runnable-verify and anti-placeholder rules, and the pre-draft self-review. Load the relevant construction skill first to decide *what* to build; this skill decides how to sequence, document, and verify it. Skip throwaway scripts, single-line config edits, and un-spec'd design conversations.
 ---
 
 # Plan Writing
@@ -11,7 +11,7 @@ Plans fail in predictable ways: they restate the spec instead of decomposing it,
 
 A plan that scales with the work, carries a diagram, ties every step to an AC, and gives every step a *runnable verify* catches those failures at plan time — minutes spent here save hours in review and test cycles. This skill is the pre-flight for the `/dev` workflow's Phase 1 step 2 (lead agent, plan mode), and the standard whenever a plan is being drafted in this repo.
 
-## The 8 principles
+## The 9 principles
 
 ### 1. Read spec.md + carried follow-ups before anything else
 
@@ -96,6 +96,7 @@ A step that needs multiple verifications is doing multiple things. Split it. Ste
 
 Before handing off, walk these scans (and `references/self-review.md` for examples):
 
+- **Outcome reads for a non-technical reader** — the `## Outcome` block exists with all three bullets; Before/After carry no `path#anchor` (that detail is `Current state`'s job), and Benefit links to `spec.md > Outcome` rather than restating it. A reader who stops after Outcome should already know what changes and why.
 - **Anti-placeholder** — no `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `path/to/file`, hedging modals in Steps.
 - **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Diagram is the exception — always include, one-line on XS is fine.)
 - **AC sufficiency, not just coverage** — every Step still carries ≥1 `[AC#]`, but presence is the floor, not the bar. For each spec AC (its `on error / at boundary:` clause and edge sub-bullets included): the Step(s) tagged with it, taken *together*, must **fully deliver** it (not merely touch it), AND at least one of those Steps' `verify:` clause must be the AC's actual acceptance check — when the spec AC carries an `e.g.: input → expected output` example, that example is the verify target. **The error/boundary clause needs its own delivering+verifying coverage** — a plan that implements only the happy path leaves the boundary the spec explicitly called out unbuilt and unverified. A measurable `measured:` target is an AC too: its verify runs the measurement. A step tagged `[AC1]` that doesn't satisfy AC1, or an AC (or its boundary clause) whose tagged steps have no verify that proves it, is coverage on paper only — that is the gap this scan catches.
@@ -103,6 +104,16 @@ Before handing off, walk these scans (and `references/self-review.md` for exampl
 - **Verify-per-step** — every Step's verify is a runnable command or concrete observable, never "manually check".
 
 If any scan fails, fix the plan — do not mark `status: draft`.
+
+### 9. Lead with a plain-language Outcome (Before → After → Benefit)
+
+A plan that opens on `Approach` + steps forces the reviewer to reverse-engineer "what does this even change, and why do I care" out of the technical detail — the readability complaint this principle exists to kill. The fix is a three-line `## Outcome` block at the very top, the first thing rendered, before `Approach`:
+
+- **Before** — how the system / flow behaves today, in one plain-language line. **No `path#anchor`** — the cited walk is `## Current state`.
+- **After** — how it behaves once the Steps land.
+- **Benefit** — `→ spec.md > Outcome`. The product-level win lives in the spec; link it, don't restate it (a restated benefit drifts from its source).
+
+Always rendered, every Size and Type — one short line per bullet is fine on XS, the same "always have the slot" discipline as the diagram (principle 4). `Outcome.Before` is the 30-second prose summary; `Current state` (when present) is the load-bearing `path#anchor`-cited detail — they are **complements, not duplicates**: write Before even when there is no Current state section, and never paste anchors into Before. The spec carries the same block at the product level; the plan's is the system/behaviour level.
 
 ## Pre-flight checklist (run top-to-bottom)
 
@@ -123,12 +134,13 @@ Before writing any section of plan.md:
 - [ ] If the change mimics an existing pattern, find that pattern now and have its `path#anchor` ready to cite in Steps.
 - [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
 
-Then draft in order: **Approach → Current state (if required) → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
+Then draft in order: **Outcome → Approach → Current state (if required) → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
 
 ## Section gating by Size
 
 | Section | XS | S | M | L |
 |---------|----|----|----|----|
+| Outcome (Before/After/Benefit) | ✓ | ✓ | ✓ | ✓ |
 | Approach (2–3 sent) | ✓ | ✓ | ✓ | ✓ |
 | Steps (with verify + AC tag) | ✓ | ✓ | ✓ | ✓ |
 | Step order line | skip | optional | ✓ | ✓ |

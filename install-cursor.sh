@@ -73,7 +73,7 @@ Options:
   -h, --help         Show this help
 
 What gets installed:
-  .cursor/rules/*.mdc          — 9 always-apply rules ported from .claude/rules/
+  .cursor/rules/*.mdc          — 10 always-apply rules ported from .claude/rules/
                                  (frontmatter prepended, paths rewritten)
   .cursor/skills/**            — fundamentals skills (verbatim copy, referenced
                                  from the rules)
@@ -499,7 +499,7 @@ The original workflow assumed Claude Code primitives Cursor doesn't have. The po
 
 ## Files
 
-- `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + ddd-strategic + code/data/service/architecture/queue/debug fundamentals + git-workflow). Cursor loads these automatically.
+- `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + run-order routing + ddd-strategic + code/data/service/architecture/queue/debug fundamentals + git-workflow). Cursor loads these automatically.
 - `.cursor/skills/**` — deep-dive skill content the rules point to.
 - `.cursor/agents/*.md` — role docs (pm/lead/engineer/qa/retro). Read these when entering the matching phase.
 - `.cursor/orchestrator.md` — the orchestration script the `/dev` command follows.

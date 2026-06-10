@@ -9,12 +9,12 @@ const ARTIFACTS = {
   spec: {
     name: "spec.md",
     owner: "pm",
-    body: "Goal, users, scope, non-goals, constraints, acceptance criteria, Type. For fix: a Reproduction section. For spike: a Timebox. The interview output, never invented.",
+    body: "Outcome (before → after → benefit), users, scope, non-goals, constraints, acceptance criteria, Type. For fix: a Reproduction section. For spike: a Timebox. The interview output, never invented.",
   },
   plan: {
     name: "plan.md",
     owner: "lead · plan mode",
-    body: "Step-by-step plan with file:line references and rollback notes. For fix runs, step 1 is the failing regression test. For refactor, includes a behavior-equivalence note. For spike, an exploration outline.",
+    body: "Step-by-step plan with path#anchor references and rollback notes. For fix runs, step 1 is the failing regression test. For refactor, includes a behavior-equivalence note. For spike, an exploration outline.",
   },
   review: {
     name: "review.md",

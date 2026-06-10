@@ -2,6 +2,13 @@
 
 **Spec**: [./spec.md](./spec.md) · **Type**: feat | fix | refactor | chore | docs | spike · **Size**: XS | S | M | L · **Status**: draft | approved | done
 
+## Outcome
+The 30-second read before the technical detail — plain language, no `path#anchor` (the cited walk is `## Current state` when present). Always rendered; one short line per bullet is fine on XS.
+
+- **Before:** <how the system / flow behaves today — one line>
+- **After:** <how it behaves once these Steps land>
+- **Benefit:** → `spec.md > Outcome` (link the product win; don't restate it here)
+
 <!--
 ## Reviewer summary
 TRIGGER: Size=L OR ≥3 decisions need gate sign-off. Comes BEFORE ## Approach. Max 10 lines.
@@ -31,7 +38,7 @@ flowchart LR
 ```
 
 ## Steps
-Format: `<action> — path#anchor (new|edit|delete) — verify: <command or observable> [AC#]`
+Format: `<action> — path#anchor (new|edit|delete) — verify: <command or observable> [AC#]` (or `[DoD]` when the step delivers a `spec.md > Definition of Done` item rather than an acceptance criterion)
 
 `path#anchor` is a **re-resolvable** location, not a raw line number: the **symbol** for code (`src/users.ts#getUserById`), or a **unique quoted snippet/heading** for shell/markdown/config (`dev-state-mark.sh#"command -v jq"`). A reader must be able to re-find it with LSP or `grep` after earlier steps shift the file — a bare `:42` goes stale the moment a step above it edits the file and makes the whole plan read as untrustworthy. Append a line only as a write-time hint (`#getUserById (~L42)`), never as the sole handle; use `path (new)` for new files.
 
@@ -44,11 +51,12 @@ Format: `<action> — path#anchor (new|edit|delete) — verify: <command or obse
 1. <action> — `path/to/file.ext#symbolOrSnippet` (new) — verify: `npm test path/to/foo.test.ts` [AC1]
 
 <!--
-Approach + Architecture diagram + Steps are the ONLY always-required sections. Add the sections below ONLY when this task needs them, then DELETE the rest (no empty headers, no "N/A"). These triggers are authoritative — lead.md reads them. Size picker lives in plan-writing > size-tiering.
+Outcome + Approach + Architecture diagram + Steps are the always-required sections. Add the sections below ONLY when this task needs them, then DELETE the rest (no empty headers, no "N/A"). These triggers are authoritative — lead.md reads them. Size picker lives in plan-writing > size-tiering.
 
 Optional sections — include WHEN:
 - Step order — Size ∈ {S, M, L} and order matters (`foundation-first | riskiest-first | outside-in | inside-out` — because <reason>)
-- Current state — M/L OR refactor OR fix (LSP-walk existing code, cite `path#anchor`: entry points · data/control flow 3–7 hops · callers/blast radius · invariants. refactor→Anti-goals that must stay identical; fix→Bug path line)
+- Current state — M/L OR refactor OR fix (LSP-walk existing code, cite `path#anchor`: entry points · data/control flow 3–7 hops · callers/blast radius · invariants. refactor→Anti-goals that must stay identical; fix→Bug path line). This is the `path#anchor`-cited detail; the plain-language one-liner already lives in `## Outcome > Before` — complement it, don't duplicate it.
+- References / examples to follow — `spec.md` carries a `References / examples to follow` section (the user gave an artifact to model after). Restate each repo ref as `path#anchor` and tag the Step(s) that use it (e.g. `[ref: src/legacy/foo.ts#handler]`) so the engineer opens the example at the moment it's needed; inlined URL excerpts / pasted samples stay in `spec.md` — point to them, don't duplicate. Comes BEFORE Steps.
 - Folder structure — new project OR feat adding ≥3 new packages/modules (directory tree with one-line purpose per node; omit unchanged subtrees). Comes AFTER Architecture diagram, BEFORE Steps.
 - API / event contracts — feat/fix that introduces or changes public HTTP endpoints, event schemas, cross-service message formats, OR a new internal port/interface boundary (e.g. a hexagonal port between application and an adapter). For transport: method · path · request fields · response fields · error codes, one block per endpoint. For an internal port: the interface name + method signatures (params → return/error) the Steps must satisfy. Name the contract here BEFORE the Steps that implement it, so the engineer fills a defined signature instead of inventing one (and the adapter can't drift from the port). Comes AFTER Folder structure (if present), BEFORE Steps.
 - UI component & state plan — feat/refactor shipping UI (screens/components). Component or screen tree (hierarchy · one-line purpose · `[AC#]`) · state ownership (which state is server-state vs local UI-state, and where each lives) · data source per screen (which API contract above it calls) · routes→screens if multi-screen · one-line design direction (which design system/skill drives the visual layer + any a11y target). Comes AFTER API / event contracts, BEFORE Steps. The WHAT-side user flow lives in `spec.md > User journey`; this section is the HOW (the build structure), not a re-statement of the flow.

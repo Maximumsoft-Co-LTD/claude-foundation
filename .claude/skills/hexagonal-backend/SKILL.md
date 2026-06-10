@@ -1,6 +1,6 @@
 ---
 name: hexagonal-backend
-description: Apply hexagonal architecture (ports & adapters) when designing or implementing backend code. Use this skill BEFORE writing or restructuring any backend that has business logic — services, APIs, repositories, use cases, domain models, persistence, message handling. Triggers on user requests involving "backend", "API", "service", "repository", "use case", "domain", "controller", "handler", "DAO", "persistence", "business logic", or when starting/refactoring a server-side codebase. Use it even when the user does not explicitly say "hexagonal" — the trigger is backend work with real domain logic. The skill defines the 3-layer structure (domain / application / infrastructure), port and adapter conventions, dependency direction rules, testing strategy, and common pitfalls, with language-agnostic examples plus TypeScript and Go snippets. Skip only for throwaway scripts or trivial CRUD with no real domain logic.
+description: Apply hexagonal architecture (ports & adapters) to backend code. Use BEFORE writing or restructuring any backend with real business logic — services, APIs, repositories, use cases, domain models, persistence, message handling — even when the user doesn't say "hexagonal". Defines the 3-layer structure (domain / application / infrastructure), port/adapter conventions, dependency direction, testing strategy, and common pitfalls, with TypeScript and Go examples. Skip throwaway scripts and trivial CRUD with no real domain logic.
 ---
 
 # Hexagonal Backend Architecture (Ports & Adapters)

@@ -1,58 +1,38 @@
 # claude-foundation
 
-An opinionated command workflow for [Claude Code](https://claude.com/claude-code), built for AI engineers. Drop it into a project and you get a single entry point — `/dev <intent>` — that runs a small team of specialist agents through spec → plan → gate → implement → review → (security) → test → docs → ship → retro, with every artifact written to disk. The flow is **type-aware**: a `chore` skips QA, a `fix` writes its regression test first, a `spike` is timeboxed and produces a recommendation instead of code.
+> One command. A full engineering team. Every artifact on disk.
 
-## What's in the box
+**claude-foundation** turns [Claude Code](https://claude.com/claude-code) from a very smart pair-programmer into a disciplined engineering pipeline. Drop it into any repo and you get a single entry point — `/dev <intent>` — that drives a small team of specialist agents through:
 
-- **`/dev` slash command** — single entry point for any change. The main agent runs the **orchestrator** role itself (following [`.claude/orchestrator.md`](.claude/orchestrator.md)) because Claude Code sub-agents can't use `Agent` or `AskUserQuestion`. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
-- **Five workflow sub-agents + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa`, `retro`, plus `team-*` workers for spec research, plan exploration, review, security, and test fanout. Roles are split so the planner is not the implementer and the reviewer is checklist-driven against the plan they wrote and the spec's acceptance criteria. The orchestrator (main agent) runs the interview, fanout dispatch, and the gate; `pm` writes `spec.md` from the answers and research findings it's passed.
-- **Artifact templates** — `spec.md`, `plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
-- **Type-aware phase matrix** — the same numbered phases run for every type, but `orchestrator` skips or specialises them based on `Type` (see `WORKFLOW.md`).
-- **Carry-over follow-ups** — `retro` appends to `.workflow/FOLLOWUPS.md`; `pm` reads it on every new interview so deferred work doesn't get lost.
-- **Skill-creator handoff** — after `retro` lists skill candidates, the orchestrator asks the user which to create and spawns `skill-creator` for each approval. Nothing auto-creates.
-- **Resume** — every step writes `state.json`; `/dev --resume <id>` continues where the run left off.
-- **Always-on skill rules** — pre-flight pointers led by `coding-discipline` (the behavioral conduct layer that wraps the rest), then `ddd-strategic`, `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `architecture-fundamentals`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Each rule loads its full skill before code lands (or before a commit/PR ships).
-- **Installer** — `install.sh` drops the workflow into any target repo, with `--dry-run`, `--force`, and self-copy guard.
+```
+spec → plan → gate → implement → review → (security) → test → docs → ship → retro
+```
 
-## Install
+No vibes-based "looks good overall" reviews. No regression-test-shaped holes. No "wait, what did we decide last week?" — every run leaves a folder of artifacts behind, and every run is resumable.
 
-From the repo root:
+```
+/dev fix the login redirect loop
+```
+
+…and the pipeline writes the failing regression test **before** the fix, because a `fix` that can't prove the bug existed can't ship.
+
+## Why this exists
+
+AI coding fails in predictable ways: silent assumptions, skipped tests, reviews that rubber-stamp, context that evaporates between sessions. The fix isn't a smarter model — it's **process**. claude-foundation encodes that process so you don't have to remember it:
+
+- **The planner is not the implementer.** Roles are split across sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) so review is adversarial, not self-congratulatory.
+- **The flow is type-aware.** A `chore` skips QA. A `fix` reproduces the bug first. A `spike` is timeboxed and produces a recommendation instead of code. Same pipeline, different teeth.
+- **Everything is auditable.** `spec.md`, `plan.md`, `review.md`, `tests.md`, `retro.md`, `state.json` — written to `.workflow/<run-id>/`, replayable, hand-off-able, resumable with `/dev --resume <id>`.
+
+## Quick start
+
+From this repo's root, install into any target project:
 
 ```bash
 ./install.sh /path/to/your/project
 ```
 
-Useful flags:
-
-- `--dry-run` — print the plan, write nothing.
-- `--force` — also overwrite `.claude/settings.json` (foundation-owned files are already refreshed on every run).
-- `--yes` — skip the confirmation prompt.
-- `--source <path>` — install from a foundation checkout other than this one.
-
-What lands in the target:
-
-```
-.claude/agents/          pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
-.claude/orchestrator.md  orchestrator script for the main agent (always refreshed)
-.claude/commands/dev.md  the /dev slash command (always refreshed)
-.claude/skills/          programming / database / debug / hexagonal / queue / architecture fundamentals + git-workflow + plan-writing + brainstorming + fanout-team-agents + skill-creator (always refreshed)
-.claude/rules/           always-on pointers to the skills (always refreshed)
-.claude/hooks/*.sh       PreToolUse guard + PostToolUse lint + state marker (always refreshed)
-.claude/settings.json    hook wiring (only if missing; existing files get a merge — see below)
-.workflow/_templates/    spec / plan / review / security / tests / recommendations / retro / epic / state.json (always refreshed)
-.workflow/INDEX.md       run registry (only if missing)
-.workflow/FOLLOWUPS.md   follow-up registry (only if missing)
-WORKFLOW.md              full flow reference at repo root (always refreshed)
-CLAUDE.md                minimal stub (only if missing)
-```
-
-`INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten — they hold user state. `.claude/settings.local.json` is never touched (user-local config). Foundation-owned files (agents, orchestrator, commands, skills, rules, hooks, templates, `WORKFLOW.md`) are **always refreshed** on every install run so upstream skill/agent updates land — fork them out of these paths if you don't want a local edit clobbered. `.claude/settings.json` is the lone exception: existing files are kept as-is (only the foundation hook wiring is merged in via jq), and `--force` is what makes the installer overwrite it wholesale.
-
-**If your project already has `.claude/settings.json`**, the installer leaves it alone — your `permissions` / `model` / `env` etc. are not rewritten. If your existing file doesn't already wire up our `PostToolUse → .claude/hooks/lint.sh` entry, the installer drops a pure-JSON snippet at `.claude/settings.foundation.json` and prints merge instructions; copy the `hooks` block into your settings (appending to any existing `PostToolUse` array, not replacing it) and delete the snippet. If you don't want the lint hook, just delete the snippet file.
-
-## Using `/dev`
-
-Inside the target project, open Claude Code and run:
+Then open Claude Code inside that project and go:
 
 ```
 /dev create a todo app with localStorage
@@ -62,31 +42,91 @@ Inside the target project, open Claude Code and run:
 /dev --resume 0003-fix-login-redirect
 ```
 
-The orchestrator (the main agent acting on the `/dev` script) picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives the flow:
+Installer flags:
 
-1. **Spec** — the orchestrator reads `FOLLOWUPS.md`, conditionally fans out spec-prep probes when existing code or domain/API uncertainty makes guessing risky (`team-codebase-explorer` + `team-best-practice-researcher`), interviews you itself (≤4 questions, one batch, via `AskUserQuestion`), then spawns `pm` with the Q&A and findings in the prompt; `pm` writes `spec.md`. For `fix`, includes a reproduction; for `spike`, a timebox. (Sub-agents in Claude Code can't call `AskUserQuestion`, which is why the interview lives in the main agent.)
-2. **Plan** — `lead` reads the spec, requests plan fanout only when S/M/L existing-code work is unclear or high-risk, then synthesises any parallel codebase exploration + best-practice research into `plan.md` with `path#anchor` references (symbol or unique snippet, re-resolvable as lines shift), risks, verification, and (when relevant) a rollback section. Straightforward plans are written directly. For `fix`, plan step 1 is "write failing regression test"; for `refactor`, includes a behavior-equivalence statement.
-3. **Gate** — orchestrator shows you spec + plan + the type-aware step list; you reply `approve` / `revise <notes>` / `swap <n>` (epic only).
-4. **Implement** — `engineer` executes the plan with `TaskCreate` progress tracking. For `fix`, writes the failing regression test BEFORE the fix. Before signalling done, ticks each acceptance criterion in `spec.md` or files a blocker.
-5. **Review** — `lead` checks the diff against `plan.md` AND `spec.md > Acceptance criteria` (each AC's `on error / at boundary:` clause included), plus the non-AC correctness slots that don't thread through AC tags — `Definition of Done` items and `Constraints` (checklist-driven; "looks good overall" is banned). It fans out to review workers only for diffs that are large, cross-module, critical, type/contract/test-sensitive, or uncertain.
-6. **Security review** *(trigger-based)* — fires when the diff touches sensitive paths (auth, SQL, crypto, secrets, exec, deserialise, untrusted input). `lead` writes `security.md` from an inline checklist. High findings are blocking.
-7. **Test** — `qa` writes and runs unit + integration + e2e, mapping every acceptance criterion to a test (its `on error / at boundary:` clause and any `measured:` perf/security/a11y target included). For `fix`, verifies the regression test fails on pre-fix code and passes now. Skipped (with one-line stub) for `chore` / `docs` / `spike`.
-8. **Docs** — `engineer` touches up inline comments where the *why* is non-obvious.
-9. **Ship** — `engineer` stages, commits with a spec-aware message, and (if opted in) opens a PR via `gh`. Records commit + PR URL in `state.json`. Skipped for `spike` unless requested.
-10. **Retro** — `retro` writes `retro.md`, appends new items to `FOLLOWUPS.md`, marks consumed ones closed, surfaces memory + skill candidates. For each approved skill candidate, orchestrator hands off to `skill-creator`.
+| Flag | What it does |
+|---|---|
+| `--dry-run` | Print the plan, write nothing |
+| `--force` | Also overwrite `.claude/settings.json` (foundation-owned files are already refreshed every run) |
+| `--yes` | Skip the confirmation prompt |
+| `--source <path>` | Install from a foundation checkout other than this one |
+
+## How a run flows
+
+The main agent **is** the orchestrator (following [`.claude/orchestrator.md`](.claude/orchestrator.md)) — Claude Code sub-agents can't spawn agents or talk to you, so the interview, fanout dispatch, and the gate all live in the main agent. It picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives:
+
+| # | Phase | Who | The point |
+|---|-------|-----|-----------|
+| 1 | **Spec** | orchestrator + `pm` | Reads `FOLLOWUPS.md`, distils your pre-`/dev` conversation into a requirements digest, fans out research probes when guessing is risky, interviews you for *only* what's still open (≤4 questions, one batch), then `pm` writes `spec.md`. A `fix` includes a reproduction; a `spike` gets a timebox. |
+| 2 | **Plan** | `lead` | Synthesises codebase exploration + best-practice research into `plan.md` with re-resolvable `path#anchor` references, risks, and verification. For `fix`, step 1 is always "write the failing regression test". |
+| 3 | **Gate** | you | The only mandatory stop. Reply `approve` / `revise <notes>` / `swap <n>` (epic only). A `revise` is a targeted in-run edit — never a fresh restart. |
+| 4 | **Implement** | `engineer` | Executes the plan with task-level progress tracking. Ticks each acceptance criterion in `spec.md` or files a blocker — unticked criteria block ship. |
+| 5 | **Review** | `lead` | Row-by-row against `plan.md` **and** `spec.md`'s acceptance criteria (error/boundary clauses included), plus Definition-of-Done items and Constraints. Checklist-driven; "looks good overall" is banned. |
+| 6 | **Security** | `lead` | *Trigger-based* — fires only when the diff touches auth, SQL, crypto, secrets, exec, deserialisation, or untrusted input. High findings are blocking. |
+| 7 | **Test** | `qa` | Unit + integration + e2e, every acceptance criterion mapped to a test. For `fix`, verifies the regression test fails on pre-fix code and passes now. Skipped (with a stub) for `chore`/`docs`/`spike`. |
+| 8 | **Docs** | `engineer` | Inline comments where the *why* is non-obvious. |
+| 9 | **Ship** | `engineer` | Stages, commits with a spec-aware message, optionally opens a PR via `gh`. Records commit + PR URL in `state.json`. |
+| 10 | **Retro** | `retro` | Writes `retro.md`, carries follow-ups into `.workflow/FOLLOWUPS.md` (which `pm` reads on every new run — deferred work doesn't get lost), surfaces memory + skill candidates for your approval. |
+
+**Phase 1 is interactive; Phase 2 is autonomous.** Once you `approve` at the gate, the orchestrator only stops for blocking review issues (max 2 cycles), failing tests (max 3 cycles), or genuine ambiguity.
 
 Full definition: [`WORKFLOW.md`](WORKFLOW.md).
+
+## What's in the box
+
+- **`/dev` slash command** — the single entry point. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
+- **Five workflow sub-agents + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa`, `retro`, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Each has an explicit `model:` for cost/speed tuning.
+- **Artifact templates** — `spec.md`, `plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
+- **Type-aware phase matrix** — the same numbered phases run for every type; the orchestrator skips or specialises them based on `Type` (see `WORKFLOW.md`).
+- **Always-on skill rules** — ten lean rules in `.claude/rules/` (each ~3 lines: trigger + one-sentence why + skill pointer), led by `coding-discipline` (the conduct layer that wraps the rest), then `ddd-strategic`, `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `architecture-fundamentals`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Full skill bodies load on demand; the cross-skill run order lives in exactly one file, `.claude/rules/fundamentals.md`.
+- **Hooks** — a PreToolUse spawn guard for the `/dev` state machine, a PostToolUse state marker and lint dispatch, and a secrets guard that blocks reads of `.env` and credential files.
+- **Skill-creator handoff** — `retro` lists skill candidates, you approve, the orchestrator spawns `skill-creator` for each. Nothing auto-creates.
+- **Installer** — `install.sh` with `--dry-run`, `--force`, and a self-copy guard.
+
+## What lands in your repo
+
+```
+.claude/agents/          pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md   (always refreshed)
+.claude/orchestrator.md  orchestrator script for the main agent                             (always refreshed)
+.claude/commands/dev.md  the /dev slash command                                             (always refreshed)
+.claude/skills/          fundamentals skills + git-workflow, plan-writing, brainstorming,
+                         fanout-team-agents, skill-creator                                  (always refreshed)
+.claude/rules/           always-on pointers to the skills                                   (always refreshed)
+.claude/hooks/*.sh       PreToolUse guard + PostToolUse lint + state marker                 (always refreshed)
+.claude/settings.json    hook wiring                                                        (only if missing; existing files get a merge)
+.workflow/_templates/    spec / plan / review / security / tests / recommendations /
+                         retro / epic / state.json                                          (always refreshed)
+.workflow/INDEX.md       run registry                                                       (only if missing)
+.workflow/FOLLOWUPS.md   follow-up registry                                                 (only if missing)
+WORKFLOW.md              full flow reference at repo root                                   (always refreshed)
+CLAUDE.md                minimal stub                                                       (only if missing)
+```
+
+**Your state is safe.** `INDEX.md`, `FOLLOWUPS.md`, and `CLAUDE.md` are never overwritten, and `.claude/settings.local.json` is never touched. Foundation-owned files (agents, orchestrator, commands, skills, rules, hooks, templates, `WORKFLOW.md`) are **always refreshed** on every install so upstream updates land — fork them out of these paths if you don't want a local edit clobbered.
+
+**Already have `.claude/settings.json`?** The installer leaves it alone — your `permissions` / `model` / `env` are not rewritten; only the foundation hook wiring is merged in via jq (`--force` is what makes it overwrite wholesale). If the merge can't apply cleanly, the installer drops a pure-JSON snippet at `.claude/settings.foundation.json` with merge instructions — copy the `hooks` block in (appending to any existing `PostToolUse` array), then delete the snippet. Don't want the lint hook? Just delete the snippet file.
+
+## Design principles
+
+- **Single entry point.** One command, one flow. No separate `/plan`, `/review`, `/test` to forget — the orchestrator runs them in order so nothing gets skipped.
+- **Reproduce before fix.** A `fix` run can't ship without a regression test that fails on pre-fix code and passes now. Enforced at plan time (step 1), implement time (engineer writes it first), and test time (qa verifies the failure mode).
+- **Acceptance criteria are first-class.** Engineer ticks them, lead re-checks them, qa maps each to a test, retro reports their final state. Unticked criteria block ship.
+- **Anti-bias review.** Because `lead` reviews their own plan, review mode is row-by-row against `plan.md` AND `spec.md` — one verification per file, one row per acceptance criterion, DoD item, and Constraint. No vibes.
+- **Security as a trigger, not a tax.** Most runs don't touch auth or SQL; those skip the security pass entirely. Runs that do get an inline checklist — nothing outsourced to an external tool.
+- **Scope splits are rare.** Default is one run, even when DB + API + UI all change. Epic mode only kicks in when the spec lists ≥2 independently-shippable capabilities *and* `Ship as: staged`.
+- **Lean always-on context.** Rules are 3-line pointers; full skill bodies load on demand. Every sub-agent spawn reloads `CLAUDE.md` + rules, so always-on weight is paid *per agent* — keeping it lean compounds across a `/dev` run.
+- **Artifacts on disk + resumable.** Every run leaves a folder behind, including `state.json`. Replay it, audit it, hand it off — or if the session dies, `/dev --resume <id>` and keep going.
 
 ## Repository layout
 
 ```
 .claude/
-├── agents/         pm, lead, engineer, qa, retro (sub-agents)
+├── agents/         pm, lead, engineer, qa, retro + team-* fanout workers
 ├── orchestrator.md script the main agent follows when /dev runs
 ├── commands/       dev.md (loads orchestrator.md)
-├── hooks/
-├── rules/          coding-discipline (conduct) + programming / database / hexagonal / queue / debug fundamentals
-└── skills/         full skill bodies referenced by the rules (incl. git-workflow)
+├── hooks/          spawn guard, state marker, lint dispatch, secrets guard
+├── rules/          10 lean always-on pointers (conduct + run order + fundamentals)
+└── skills/         full skill bodies referenced by the rules
 .workflow/
 ├── _templates/     blueprints — copy, don't edit in place
 ├── INDEX.md        run registry
@@ -96,18 +136,6 @@ install.sh
 WORKFLOW.md         full flow definition
 CLAUDE.md           per-project guidance
 ```
-
-## Design notes
-
-- **Single entry point.** One command, one flow. No separate `/plan`, `/review`, `/test` — the orchestrator runs them in order so nothing gets skipped.
-- **Phase 1 is interactive; Phase 2 is autonomous.** The gate is non-negotiable. Once you `approve`, the orchestrator only stops on blocking review issues (max 2 cycles), failing tests (max 3 cycles), or genuine ambiguity.
-- **Type-aware.** `feat`, `fix`, `refactor`, `chore`, `docs`, `spike` don't all need the same phases. The phase matrix in `WORKFLOW.md` is the source of truth.
-- **Reproduce before fix.** A `fix` run can't ship without a regression test that fails on the pre-fix code and passes on the current code. The contract is enforced at plan time (step 1), implement time (engineer writes it first), and test time (qa verifies failure mode).
-- **Acceptance criteria are first-class.** Engineer ticks them, lead re-checks them, qa maps each to a test, retro reports their final state. Unticked criteria block ship.
-- **Artifacts on disk + resumable.** Every run leaves a folder behind, including `state.json`. You can replay, audit, hand off, or — if the session dies — resume with `/dev --resume <id>`.
-- **Scope splits are rare.** Default is one run, even when DB + API + UI all change. The planner enters epic mode only when the spec lists ≥2 independently-shippable capabilities *and* `Ship as: staged` is set.
-- **Anti-bias review.** Because `lead` reviews their own plan, review mode is row-by-row against `plan.md` AND `spec.md`. One verification per file, one row per acceptance criterion (its error/boundary clause included), one row per DoD item and Constraint. No vibes.
-- **Security as a trigger, not a tax.** Most runs don't touch auth or SQL; those don't get a security pass. Runs that do touch sensitive paths run an inline checklist; nothing is outsourced to an external tool.
 
 ## License
 

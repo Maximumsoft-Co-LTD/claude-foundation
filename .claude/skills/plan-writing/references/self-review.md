@@ -4,7 +4,7 @@ Run this checklist **before** setting `Status: draft` in `plan.md`. The goal is 
 
 A plan that passes self-review is not "perfect" — it's "internally consistent and free of the known antipatterns". Real surprises will still surface during implementation; this checklist filters out the ones we already know how to spot.
 
-## The five scans
+## The six scans
 
 Walk these in order. Each one takes ~30 seconds for an XS/S plan, ~2 minutes for L.
 
@@ -25,7 +25,7 @@ Search the entire plan for these strings. Every hit is a fix-before-draft:
 
 If any pattern appears in `Approach`, that's usually OK — `Approach` carries the *why* and may use hedging. The hard rule is **`Steps` and `Files touched` must be placeholder-free**.
 
-### Scan 2 — Acceptance-criteria sufficiency
+### Scan 2 — Requirement coverage: acceptance criteria + Definition of Done
 
 Coverage (the `[AC#]` tag exists) is the floor. Sufficiency is the bar: the tagged steps actually deliver the AC, and a verify proves it. Open `spec.md > Acceptance criteria`. For each checkbox:
 
@@ -40,10 +40,13 @@ If an AC has no step:
 - OR the AC is out of scope for this run → state it in `Out of scope` and confirm with the orchestrator/user.
 
 If a Step has no AC tag:
-- The step doesn't earn its place → delete it, OR it's scope-creep → move to `FOLLOWUPS.md`.
+- It may legitimately deliver a `spec.md > Definition of Done` item (telemetry, a doc, a rollback flag — these don't thread through `[AC#]` tags) → tag it `[DoD]` so it doesn't read as scope-creep.
+- Else the step doesn't earn its place → delete it, OR it's scope-creep → move to `FOLLOWUPS.md`.
 - OR the spec is missing an AC the work actually delivers → go back and add the AC to spec first, then re-tag.
 
-There is no third option. Every Step ↔ at least one AC. Every AC ↔ at least one Step.
+**Definition-of-Done coverage** (skip if the spec has no `Definition of Done`). DoD items are deliverables but carry no `[AC#]` tag, so the AC checks above won't catch a missing one — and review (`lead` Mode B) only catches it in the diff, a cycle later. For each DoD item: either a `[DoD]`-tagged Step delivers the named artifact AND its `verify:` confirms it exists (the metric emits, the doc path is present, the flag toggles), OR the item is genuinely post-ship ("watch error rate for a week") and carries an explicit one-line deferred note in `Approach`/`Out of scope`. An in-run DoD item with neither is the gap this check exists to catch — fix it before draft, not at review.
+
+Every Step ↔ at least one AC **or** a DoD item. Every AC ↔ at least one Step. Every in-run DoD item ↔ a delivering+verifying Step (or an explicit deferred note).
 
 ### Scan 3 — Diagram ↔ Files alignment
 
@@ -91,6 +94,17 @@ Walk every Step. For each:
 If a Step doesn't have a clean verify, the step is doing too many things — split until each piece is verifiable atomically.
 
 > Why this scan is the highest-leverage one: the `verify` clause is what `engineer` runs after the step, what `qa` translates into a test, and what `lead` (review mode) uses to confirm the step landed. A bad verify reaches all three later phases.
+
+### Scan 6 — Outcome reads for a non-technical reader
+
+The `## Outcome` block is the first thing a reviewer reads, so it earns its own scan. Check:
+
+- All three bullets are present: **Before**, **After**, **Benefit**.
+- **Before** and **After** are *plain language* — no `path#anchor`, no symbol names a stakeholder wouldn't know. The `path#anchor`-cited version of "before" is `## Current state`; Outcome is the prose summary, not a second copy of it.
+- **Benefit** links to `spec.md > Outcome` rather than restating the product win (a restated benefit drifts from its source).
+- The before→after pair actually describes *this* change — not a generic "improves the system". A reader who stops after Outcome should know what changes and why it's worth doing.
+
+This scan is quick (~15 seconds). A failing Outcome is usually a sign the planner jumped to Steps without framing the change — fix it before draft, because it's the block a reviewer reads first and judges the whole plan by.
 
 ## Extra checks for M / L plans
 

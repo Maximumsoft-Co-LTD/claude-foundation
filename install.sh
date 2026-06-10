@@ -290,6 +290,7 @@ emit_rules_block() {
 The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit imports below are a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, these imports are redundant but harmless — delete this section if you ever see a rule loaded twice.
 
 @.claude/rules/coding-discipline.md
+@.claude/rules/fundamentals.md
 @.claude/rules/ddd-strategic.md
 @.claude/rules/programming-fundamentals.md
 @.claude/rules/database-fundamentals.md
