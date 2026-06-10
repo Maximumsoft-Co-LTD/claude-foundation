@@ -15,6 +15,8 @@
   "open_pr_on_ship": null,
   "security_triggered": null,
   "last_agent": "orchestrator",
+  "created_at": "YYYY-MM-DDTHH:MM:SSZ",
   "last_updated": "YYYY-MM-DDTHH:MM:SSZ",
+  "done_at": null,
   "notes": ""
 }

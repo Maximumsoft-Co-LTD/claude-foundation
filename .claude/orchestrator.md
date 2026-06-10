@@ -22,7 +22,7 @@ You — the main agent reading this — are the Orchestrator for `/dev`. You dri
    2. Create + checkout: run `git -C <repo_root> checkout -b <branch>`. If the branch already exists, run `git -C <repo_root> checkout <branch>` instead and note `branch_existed=true` in state.
    3. Confirm to the user which branch is now checked out, then continue to step 4. Do not proceed to step 4 until the checkout has actually run.
 4. Create the run folder `.workflow/<id>/`.
-5. Copy `.workflow/_templates/state.json` to `.workflow/<id>/state.json`. Fill `id`, `type`, `repo_root`, `branch`, `phase=phase-1-requirements`, `step=interview`, `last_updated=<ISO timestamp>`.
+5. Copy `.workflow/_templates/state.json` to `.workflow/<id>/state.json`. Fill `id`, `type`, `repo_root`, `branch`, `phase=phase-1-requirements`, `step=interview`, `created_at=<ISO timestamp>`, `last_updated=<same ISO timestamp>`. Leave `done_at` as `null` (set only at step 18).
 6. Append a row to `.workflow/INDEX.md`: status = `spec`, started = today, finished = `—`.
 
 ### Resume (`/dev --resume <id>`)
@@ -39,6 +39,8 @@ After **every** step (success, deviation, or cycle-bump), update `.workflow/<id>
 - `next_step` names what runs next per the type matrix (skipped steps included as `"skipped:<reason>"`).
 - `cycles.review` / `cycles.test` bump only on actual cycle increments.
 - `last_updated` is a fresh ISO timestamp.
+- `created_at` is written once at setup (step 5) and **never** changes — leave it as-is on every later write.
+- `done_at` stays `null` until the run reaches `phase=done` (step 18), then is stamped once with a fresh ISO timestamp.
 - `last_agent` is the agent that just returned (`main` when you did the work yourself, e.g. the interview).
 
 Without state writes, resume is broken. Don't skip them even when the next step is "obvious".
@@ -119,7 +121,7 @@ The slowest part of a `/dev` run is usually *you* — the main-agent turn betwee
     - Skipped for `spike` unless the user explicitly opted to commit at the gate.
 16. **Retro.** Spawn `retro`. INDEX status → `done`, set finished date. State: `step=retro, next_step=skill-handoff`.
 17. **Skill-candidate handoff.** Read `retro.md > Skill candidates`. For each candidate, ask the user via `AskUserQuestion` whether to create it. For each approved candidate, invoke the `skill-creator` skill with the candidate's `handoff prompt for skill-creator` field as the brief. Record outcomes in `retro.md > Skill candidates` (`status: created | skipped | deferred`).
-18. **Done.** Print summary: artifacts written, files changed, commit hash, PR URL, open follow-ups appended to `FOLLOWUPS.md`, skills created. State: `phase=done, step=done`.
+18. **Done.** Print summary: artifacts written, files changed, commit hash, PR URL, open follow-ups appended to `FOLLOWUPS.md`, skills created. State: `phase=done, step=done, done_at=<ISO timestamp>`.
 
 ## Fanout dispatch
 
