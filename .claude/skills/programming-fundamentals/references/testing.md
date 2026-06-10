@@ -27,6 +27,22 @@ In rough priority order:
 - **Implementation details.** "Did my function call `formatDate` exactly once?" If the behavior is right, you don't care.
 - **Generated code or wrappers around well-tested libraries.** Test what *you* added on top.
 
+## Edge-case checklist
+
+The requirement usually spells out the happy path. These are the inputs that break code in production anyway. Walk the list against the *actual code under test* — skip any case the type system or a guard already makes impossible (don't test illegal states you've made unrepresentable; that's noise).
+
+- **Emptiness / absence** — empty string, empty list/map, `null`/`undefined`/`None`, missing optional field, zero rows returned.
+- **Boundaries** — min, max, and ±1 around every limit (`0, 1, n-1, n, n+1`); off-by-one is the classic bug. First/last element, single-element collection.
+- **Numbers** — negative, zero, very large (overflow), floating-point rounding, division by zero, money in the smallest unit.
+- **Strings / text** — unicode, emoji, combining chars, leading/trailing whitespace, very long input, injection-ish payloads (`'`, `<`, `;`, `../`), mixed newline styles.
+- **Time** — timezone boundaries, DST, leap year/second, clock skew, expiry exactly at `now`, events with equal timestamps.
+- **Collections / ordering** — duplicates, unsorted input where sorted is assumed, ordering not guaranteed, pagination at the boundary.
+- **Concurrency / repetition** — same request twice (idempotency), retry after partial success, two writers racing one row, out-of-order delivery.
+- **Failure / partial state** — dependency times out or errors mid-operation, network drops between a DB write and its side effect, transaction rolls back.
+- **Auth / tenancy** — unauthenticated, authenticated-but-unauthorized, one tenant reaching another's data.
+
+For each case the code under test can actually reach, decide one of three: **covered** (a test already asserts it), **specified-but-untested** (the requirement is clear — write the test), or **reachable-but-undefined** (the requirement never says what should happen — surface it as a gap, don't guess the assertion).
+
 ## Fast tests vs slow tests
 
 A good suite has both, in roughly the right ratio.
@@ -36,6 +52,25 @@ A good suite has both, in roughly the right ratio.
 - **E2E tests (seconds each)** — full stack, real network. Run on every PR. A handful.
 
 If your "unit" tests take seconds each, they're not unit tests — they're hitting something they shouldn't. Find the I/O and stub it (or move it out — see "pure core, effectful shell" in the main skill).
+
+## Running the suite in one command
+
+Run the whole suite in a single process, not file-by-file. When you loop "run test A, read result, run test B…", the cost isn't the tests — it's N separate invocations, each with its own startup and round-trip. Collapse the loop into one command. In rough order of preference:
+
+1. **The runner already does it.** Most runners auto-discover every test and run them in one process — `npm test` / `vitest`, `pytest`, `go test ./...`, `cargo test`, `mvn test`. This is the answer ~90% of the time; you write nothing.
+2. **Monorepo? Use the workspace aggregator.** `pnpm -r test`, `npm test --workspaces`, `turbo run test`, `nx run-many -t test`, `go test ./...`, `cargo test --workspace`. Still one command.
+3. **No aggregator at all? Write a one-shot script.** Last resort — suites spanning runners/languages with nothing tying them together. The loop lives *inside* the shell, so it's one invocation:
+   ```bash
+   #!/usr/bin/env bash
+   fail=0
+   pytest backend/             || fail=1
+   npm --prefix frontend test  || fail=1
+   ./integration/run.sh        || fail=1
+   exit $fail   # run them all, then fail if any failed
+   ```
+   If you find yourself rewriting this script every run, that's the smell: commit it as `make test` or `scripts/test.sh` so the suite gets a permanent single entrypoint.
+
+Targeting one file is fine while iterating on a single failure — but the run that *decides* pass/fail is always the full suite.
 
 ## Mocking, carefully
 

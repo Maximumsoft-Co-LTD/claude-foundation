@@ -121,6 +121,7 @@ The slowest part of a `/dev` run is usually *you* — the main-agent turn betwee
       - `fix`: the prompt to qa must restate "verify the regression test fails on pre-fix code (use the test-commit vs fix-commit two-commit history; fall back to `git stash` or a scratch revert branch) and passes now."
       - Failing tests, `cycles.test` ≤ 3 → engineer fixes.
       - `cycles.test` > 3 → escalate via `AskUserQuestion`.
+      - **Edge-case gaps** (qa's `tests.md > Edge-case gaps` — reachable inputs the spec left undefined): non-blocking ones need no action here; they stay in `tests.md` and `retro` lifts them into follow-ups. If qa flags one **blocking** (reachable security/data-integrity path), treat it like a blocking finding → `AskUserQuestion`: define the behaviour (→ back to `engineer`/`pm`) or accept the risk (→ carry into `retro.md`).
     - `chore` / `docs` → spawn `qa` with mode = `Skipped`; qa writes a one-line stub in `tests.md` explaining why and returns.
     - `spike` → skip entirely. Engineer's `recommendations.md` is the deliverable.
 14. **Docs touch-up.** Spawn `engineer` in docs mode (skipped for `spike`; light for `fix`/`refactor`/`chore` — pass that hint).
