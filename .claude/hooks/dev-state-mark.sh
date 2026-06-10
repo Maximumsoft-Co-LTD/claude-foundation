@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PostToolUse marker for the /dev workflow.
 #
-# When a /dev worker sub-agent (pm | lead | engineer | qa | retro) returns:
+# When a /dev worker sub-agent (pm | lead | engineer | qa | retro) returns
+# from a FOREGROUND spawn:
 #   1. Touch a marker file in the most-recently-modified .workflow/<id>/ dir.
 #      The companion PreToolUse check in dev-agent-guard.sh refuses to spawn
 #      the next worker until state.json has been updated past that marker.
@@ -30,6 +31,15 @@ case "$subagent_type" in
   pm|lead|engineer|qa|retro) ;;
   *) exit 0 ;;
 esac
+
+# A background spawn's tool result is only the launch acknowledgment — the
+# worker has NOT returned yet (its completion arrives later as a task
+# notification, which fires no PostToolUse). Touching the marker here would
+# block every later spawn in a one-message background fanout batch behind a
+# state.json bump that has nothing to record. The marker means "a worker
+# returned", not "a worker launched" — skip.
+run_in_background="$(printf '%s' "$input" | jq -r '.tool_input.run_in_background // false')"
+[[ "$run_in_background" == "true" ]] && exit 0
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 WF_DIR="$PROJECT_DIR/.workflow"
