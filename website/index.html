@@ -595,8 +595,8 @@
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">Get started</span>
-          <h2>One script drops it into any repo.</h2>
-          <p>Foundation-owned files refresh on every run so upstream updates land; your state files are never overwritten.</p>
+          <h2>One command drops it into any repo.</h2>
+          <p>Install with Homebrew (or the bundled <code>install.sh</code>). Foundation-owned files refresh on every run so upstream updates land; your state files are never overwritten.</p>
         </div>
 
         <div class="install-grid">
@@ -604,21 +604,25 @@
             <div class="codeblock">
               <div class="codeblock-head">
                 <span>bash</span>
-                <button class="copy-btn" data-copy="git clone https://github.com/Maximumsoft-Co-LTD/claude-foundation.git&#10;cd claude-foundation&#10;./install.sh /path/to/your/project">
+                <button class="copy-btn" data-copy="brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation&#10;brew trust maximumsoft-co-ltd/claude-foundation&#10;brew install claude-foundation">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5"/></svg>
                   <span class="copy-text">Copy</span>
                 </button>
               </div>
-              <pre><span class="c"># 1 · clone the foundation</span>
-<span class="p">git clone</span> https://github.com/Maximumsoft-Co-LTD/claude-foundation.git
-<span class="p">cd</span> claude-foundation
+              <pre><span class="c"># 1 · install the CLI via Homebrew (macOS / Linux)</span>
+<span class="p">brew tap</span> maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation
+<span class="p">brew trust</span> maximumsoft-co-ltd/claude-foundation
+<span class="p">brew install</span> claude-foundation
 
-<span class="c"># 2 · install it into your project</span>
-<span class="p">./install.sh</span> <span class="f">/path/to/your/project</span>
+<span class="c"># 2 · scaffold the foundation into your project</span>
+<span class="p">cd</span> <span class="f">/path/to/your/project</span> &amp;&amp; <span class="p">claude-foundation</span>
+
+<span class="c"># …or skip Homebrew — clone and run install.sh directly</span>
+<span class="p">git clone</span> https://github.com/Maximumsoft-Co-LTD/claude-foundation.git
+<span class="p">cd</span> claude-foundation &amp;&amp; <span class="p">./install.sh</span> <span class="f">/path/to/your/project</span>
 
 <span class="c"># 3 · inside your project, in Claude Code</span>
 <span class="s">/dev</span> create a todo app with localStorage
-<span class="s">/dev</span> fix the login redirect loop
 <span class="s">/dev</span> --resume 0003-fix-login-redirect</pre>
             </div>
             <div class="flag-row">
@@ -630,7 +634,7 @@
           </div>
 
           <ol class="install-steps reveal" data-d="1">
-            <li><strong>Clone &amp; install</strong><span>Clone the foundation, then point <code>./install.sh</code> at your target repo. Add <code>--dry-run</code> first to preview exactly what lands.</span></li>
+            <li><strong>Install</strong><span><code>brew install claude-foundation</code> via Homebrew (after tapping &amp; trusting the tap), or clone and point <code>./install.sh</code> at your target repo. <code>--dry-run</code> previews exactly what lands.</span></li>
             <li><strong>Enable GitHub Pages</strong><span>This very site lives in <code>website/</code> — publish it to GitHub Pages with a GitHub Actions deploy.</span></li>
             <li><strong>Run <code>/dev &lt;intent&gt;</code></strong><span>Describe the change in plain language. The orchestrator picks the run ID and drives the flow.</span></li>
             <li><strong>Approve at the gate</strong><span>Review the spec and plan, reply <code>approve</code>, and let Phase 2 take it to a shipped PR.</span></li>
