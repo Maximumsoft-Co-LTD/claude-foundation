@@ -46,7 +46,12 @@ All flags from `install.sh` are forwarded unchanged (`--dry-run`, `--force`, `--
 
 **Windows / non-brew:** Homebrew is not available on Windows. Clone the repo and run `install.sh` directly — see [Quick start](#quick-start) below.
 
-**Before others can install:** push this repo and then create a tap repo named `homebrew-claude-foundation` (or equivalent) under the `Maximumsoft-Co-LTD` GitHub org so Homebrew can resolve the tap. See the [Homebrew tap docs](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap) for setup. Future hardening: cut a tagged release and add `url`/`sha256` to replace the HEAD-only formula.
+**Two ways to host the tap** — pick one before others can install:
+
+- **This repo, via the explicit URL (what the commands above use).** Because `brew tap … https://github.com/Maximumsoft-Co-LTD/claude-foundation` passes the repo URL explicitly, Homebrew taps *this* repository directly and finds `Formula/claude-foundation.rb` here — so **no separate tap repo is required**. You only need to push this repo so the URL is reachable.
+- **The shorthand tap name (optional).** If you'd rather users type the shorthand `brew tap maximumsoft-co-ltd/claude-foundation` (no URL) or `brew install maximumsoft-co-ltd/claude-foundation/claude-foundation`, Homebrew resolves that name to a repo literally named **`homebrew-claude-foundation`** under the `Maximumsoft-Co-LTD` org. Create that repo, move `Formula/claude-foundation.rb` into it, and publish — then the URL argument is no longer needed. See the [Homebrew tap docs](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap).
+
+Future hardening: cut a tagged release and add `url`/`sha256` to replace the HEAD-only formula.
 
 ## Quick start
 
@@ -163,4 +168,4 @@ CLAUDE.md           per-project guidance
 
 ## License
 
-Not yet specified.
+[MIT](LICENSE) © Maximumsoft Co., Ltd.

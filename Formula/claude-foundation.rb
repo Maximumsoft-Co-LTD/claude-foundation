@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "Drop the /dev workflow (spec → plan → implement → ship) into any project"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
+  license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
-  # TODO: add license "SPDX-ID" once repo license is declared
 
   def install
     libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
