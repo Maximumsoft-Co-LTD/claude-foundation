@@ -31,10 +31,10 @@ On macOS (and Linux with Homebrew), add the tap, trust it, then install:
 ```bash
 brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation
 brew trust maximumsoft-co-ltd/claude-foundation   # required — Homebrew refuses untrusted third-party taps
-brew install --HEAD claude-foundation
+brew install claude-foundation
 ```
 
-> **`--HEAD` is required.** This formula is HEAD-only (no stable tarball release yet — that is a documented future hardening step). A plain `brew install claude-foundation` without `--HEAD` will fail with a Homebrew error. Always use `brew install --HEAD claude-foundation`.
+> **Stable vs latest.** `brew install claude-foundation` installs the latest tagged release (recommended) — `brew update && brew upgrade claude-foundation` then picks up new releases the normal way. To track the bleeding edge of `main` instead, use `brew install --HEAD claude-foundation`; a HEAD install only updates via `brew upgrade --fetch-HEAD claude-foundation` or `brew reinstall --HEAD claude-foundation` (plain `brew upgrade` skips HEAD installs).
 
 > **`brew trust` is required.** Recent Homebrew refuses to load formulae from a third-party/private tap until you trust it — without it you'll see `Refusing to load formula … from untrusted tap`. Run `brew trust maximumsoft-co-ltd/claude-foundation` (whole tap) once after tapping.
 
@@ -56,7 +56,7 @@ All flags from `install.sh` are forwarded unchanged (`--dry-run`, `--force`, `--
 - **This repo, via the explicit URL (what the commands above use).** Because `brew tap … https://github.com/Maximumsoft-Co-LTD/claude-foundation` passes the repo URL explicitly, Homebrew taps *this* repository directly and finds `Formula/claude-foundation.rb` here — so **no separate tap repo is required**. You only need to push this repo so the URL is reachable.
 - **The shorthand tap name (optional).** If you'd rather users type the shorthand `brew tap maximumsoft-co-ltd/claude-foundation` (no URL) or `brew install maximumsoft-co-ltd/claude-foundation/claude-foundation`, Homebrew resolves that name to a repo literally named **`homebrew-claude-foundation`** under the `Maximumsoft-Co-LTD` org. Create that repo, move `Formula/claude-foundation.rb` into it, and publish — then the URL argument is no longer needed. See the [Homebrew tap docs](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap).
 
-Future hardening: cut a tagged release and add `url`/`sha256` to replace the HEAD-only formula.
+Releasing: the formula now ships a stable tagged release (`url` + `sha256`, currently `v1.3.0`) alongside the `head` block, so `brew install claude-foundation` and `brew upgrade` work the normal way. See [`RELEASING.md`](RELEASING.md) for the runbook to cut the next version (bump `CHANGELOG` → tag → recompute `sha256` → update the formula).
 
 ## Quick start
 

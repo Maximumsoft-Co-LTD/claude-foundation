@@ -1,0 +1,76 @@
+# Releasing
+
+How to cut a new version of claude-foundation and update the Homebrew formula.
+
+The formula (`Formula/claude-foundation.rb`) ships **two** install paths:
+
+- **Stable** — `url` + `sha256` pinned to a tagged release tarball. `brew install claude-foundation` and `brew upgrade claude-foundation` use this. This is what the steps below bump.
+- **HEAD** — `head "…git", branch: "main"`. `brew install --HEAD claude-foundation` tracks `main` and never needs a release.
+
+We follow [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/). Tags are `vMAJOR.MINOR.PATCH` (e.g. `v1.3.0`).
+
+## Cutting a release
+
+Replace `X.Y.Z` with the new version throughout.
+
+1. **Bump the changelog.** In `CHANGELOG.md`, rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, and update the link-reference block at the bottom:
+   ```
+   [Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/vX.Y.Z...HEAD
+   [X.Y.Z]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v<prev>...vX.Y.Z
+   ```
+
+2. **Tag the source snapshot and push it.** Tag the commit you want to release (usually the tip of `main`):
+   ```bash
+   git tag -a vX.Y.Z -m "Release vX.Y.Z — <one-line summary>"
+   git push origin vX.Y.Z
+   ```
+   Pushing the tag makes GitHub generate the source tarball at
+   `https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/vX.Y.Z.tar.gz`.
+
+3. **Compute the tarball `sha256`:**
+   ```bash
+   curl -fsSL https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/vX.Y.Z.tar.gz \
+     | shasum -a 256
+   ```
+
+4. **Update the formula.** In `Formula/claude-foundation.rb`, set the `url` to the new tag tarball and replace `sha256` with the value from step 3. Keep the `head` block. Component order must stay `desc → homepage → url → sha256 → license → head` (Homebrew `brew style` enforces it).
+
+5. **Validate the formula:**
+   ```bash
+   ruby -c Formula/claude-foundation.rb          # syntax
+   brew style Formula/claude-foundation.rb       # lint (must be 0 offenses)
+   brew audit --strict --formula Formula/claude-foundation.rb   # run from within the tap; warnings OK for a private tap
+   ```
+
+6. **Commit the changelog + formula** (one PR), e.g. `chore(release): vX.Y.Z`, and merge to `main`.
+
+7. **Publish the GitHub release** (human-facing notes from the changelog section):
+   ```bash
+   gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/## \[X.Y.Z\]/,/## \[/p' CHANGELOG.md)
+   ```
+
+8. **Verify the upgrade path** on a machine that has the tap:
+   ```bash
+   brew update
+   brew upgrade claude-foundation          # picks up the new stable release the normal way
+   brew install claude-foundation --version   # or: brew info claude-foundation
+   ```
+
+> **Note on tarball hashes.** GitHub's `archive/refs/tags/*.tar.gz` checksums are stable, so the `sha256` you compute once stays valid. If you ever re-tag the same version (don't), the hash changes and the formula must be re-bumped.
+
+## Branch protection (recommended, not yet enabled)
+
+Because `brew install --HEAD` and the tap clone both track `main`, a force-push to `main` would ship rewritten history to everyone tracking HEAD. Enabling branch protection on `main` is recommended:
+
+```bash
+gh api -X PUT repos/Maximumsoft-Co-LTD/claude-foundation/branches/main/protection \
+  -H "Accept: application/vnd.github+json" \
+  -f "required_pull_request_reviews[required_approving_review_count]=1" \
+  -F "enforce_admins=false" \
+  -F "required_status_checks=null" \
+  -F "restrictions=null" \
+  -F "allow_force_pushes=false" \
+  -F "allow_deletions=false"
+```
+
+This was intentionally **left disabled** for now (it would block the current direct-push workflow); enable it when the team is ready to require PRs into `main`.
