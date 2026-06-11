@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-11
+
 ### Added
 
-- **Homebrew install support via a HEAD-only tap formula** — engineers can now add the foundation to any project in two commands: `brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation` followed by `brew install --HEAD claude-foundation`. The formula packages the foundation into `libexec` and exposes a `claude-foundation` CLI that wraps `install.sh`, forwarding all flags (`--dry-run`, `--force`, `--yes`, `--help`, `[target-path]`) unchanged. `--HEAD` is required (no stable tarball release yet — a tagged release with `url`/`sha256` is a documented future hardening step). Files: `Formula/claude-foundation.rb`, `README.md` (`## Install via Homebrew` section).
+- **Homebrew install support** — engineers can add the foundation to any project via a tap formula: `brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation`, then `brew trust maximumsoft-co-ltd/claude-foundation` (recent Homebrew requires third-party taps to be trusted once), then `brew install claude-foundation`. The formula packages the foundation into `libexec` and exposes a `claude-foundation` CLI that wraps `install.sh`, forwarding all flags (`--dry-run`, `--force`, `--yes`, `--help`, `[target-path]`) unchanged. Ships **both** a stable tagged release (pinned via `url` + `sha256`, so `brew upgrade claude-foundation` works the normal way) and a `--HEAD` mode that tracks `main`. Files: `Formula/claude-foundation.rb`, `README.md` (`## Install via Homebrew`), `RELEASING.md`.
 
 ### Changed
 
@@ -120,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v1.0.0
