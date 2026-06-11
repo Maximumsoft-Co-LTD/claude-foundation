@@ -26,14 +26,19 @@ AI coding fails in predictable ways: silent assumptions, skipped tests, reviews 
 
 ## Install via Homebrew
 
-On macOS (and Linux with Homebrew), add the tap and install in two commands:
+On macOS (and Linux with Homebrew), add the tap, trust it, then install:
 
 ```bash
 brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation
+brew trust maximumsoft-co-ltd/claude-foundation   # required — Homebrew refuses untrusted third-party taps
 brew install --HEAD claude-foundation
 ```
 
 > **`--HEAD` is required.** This formula is HEAD-only (no stable tarball release yet — that is a documented future hardening step). A plain `brew install claude-foundation` without `--HEAD` will fail with a Homebrew error. Always use `brew install --HEAD claude-foundation`.
+
+> **`brew trust` is required.** Recent Homebrew refuses to load formulae from a third-party/private tap until you trust it — without it you'll see `Refusing to load formula … from untrusted tap`. Run `brew trust maximumsoft-co-ltd/claude-foundation` (whole tap) once after tapping.
+
+> **Seeing `No available formula with the name "claude-foundation"` right after `brew tap`?** Your tap clone is stale (it was tapped before the formula reached the default branch). Homebrew does not auto-refresh taps on install — run `brew update` (or `brew untap maximumsoft-co-ltd/claude-foundation` then re-tap) to pull the latest, then install again.
 
 Then run inside any target project to scaffold the foundation there:
 
