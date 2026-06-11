@@ -37,6 +37,7 @@
           <a href="#flow" class="hide-sm">Workflow</a>
           <a href="#agents" class="hide-sm">Agents</a>
           <a href="#skills" class="hide-sm">Skills</a>
+          <a href="#dashboard" class="hide-sm">Dashboard</a>
           <a href="#demo" class="hide-sm">Demo</a>
           <a href="#install" class="hide-sm">Install</a>
           <a href="#changelog" class="hide-sm">Changelog</a>
@@ -555,6 +556,54 @@
             <div class="artifact"><div class="af-name">retro.md <span class="af-owner">· retro</span></div><div class="af-desc">Outcomes, follow-ups, memory &amp; skill candidates.</div></div>
             <div class="artifact"><div class="af-name">state.json <span class="af-owner">· all</span></div><div class="af-desc">The phase cursor that makes <code>--resume</code> work.</div></div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================ DASHBOARD ======= -->
+    <section class="section dashboard" id="dashboard">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Team awareness</span>
+          <h2>See who's online — and who's about to <span class="lead-accent">conflict with you</span>.</h2>
+          <p>A tiny presence board for everyone on the flow. One background command per machine; one page that shows who's working where — and warns when two people edit the same lines, <em>before</em> the merge.</p>
+        </div>
+
+        <div class="dash-layout">
+          <!-- Mini board preview -->
+          <div class="dash-board reveal" data-d="1" aria-hidden="true">
+            <div class="db-conflict">
+              <span class="db-warn">⚠</span>
+              <div>
+                <div class="db-file"><b>acme/checkout · src/payment/charge.ts</b></div>
+                <div class="db-parties">alice <span class="db-br">⎇ feat/stripe-retry</span> <span class="db-ln">L42–58</span> &nbsp;⨯&nbsp; bob <span class="db-br">⎇ fix/idempotency</span> <span class="db-ln">L50–63</span></div>
+              </div>
+            </div>
+            <div class="db-card">
+              <div class="db-name"><span class="db-dot"></span> alice <span class="db-host">· alice-mbp</span></div>
+              <div class="db-wlabel">working in</div>
+              <div class="db-repo"><b>acme/checkout-service</b> <span class="db-br">⎇ feat/stripe-retry</span> <span class="db-files">7 files</span></div>
+              <div class="db-dir">~/work/checkout-service</div>
+              <div class="db-act">/dev 0042-feat-stripe-retry · implement</div>
+            </div>
+          </div>
+
+          <!-- Feature list -->
+          <div class="dash-feats reveal" data-d="2">
+            <div class="dash-feat"><h3>Presence</h3><p>Who's online right now, by git name + host. In-memory, 30-second window.</p></div>
+            <div class="dash-feat"><h3>Working in</h3><p>The repos each person has uncommitted changes in — folder path + an optional label, so nested sub-repos stay distinct.</p></div>
+            <div class="dash-feat"><h3>/dev activity</h3><p>Which run is in flight and what phase, read straight from <code>state.json</code>.</p></div>
+            <div class="dash-feat"><h3>Conflict warning</h3><p>Overlapping line ranges across branches in the same file — flagged to both people before anyone pushes.</p></div>
+          </div>
+        </div>
+
+        <div class="dash-cta reveal" data-d="3">
+          <a class="btn btn-primary" href="https://claude-foundation-dashboard-production.up.railway.app/?demo" target="_blank" rel="noopener">
+            View the live demo
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h7v7M13 3 4 12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <code class="dash-join">claude-foundation dashboard-up --key …</code>
+          <span class="dash-note">No key needed for the demo · binds no port · opt out with <code>--no-conflicts</code></span>
         </div>
       </div>
     </section>

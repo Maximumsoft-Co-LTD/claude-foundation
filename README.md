@@ -140,6 +140,33 @@ CLAUDE.md                minimal stub                                           
 
 **Already have `.claude/settings.json`?** The installer leaves it alone — your `permissions` / `model` / `env` are not rewritten; only the foundation hook wiring is merged in via jq (`--force` is what makes it overwrite wholesale). If the merge can't apply cleanly, the installer drops a pure-JSON snippet at `.claude/settings.foundation.json` with merge instructions — copy the `hooks` block in (appending to any existing `PostToolUse` array), then delete the snippet. Don't want the lint hook? Just delete the snippet file.
 
+## Team presence dashboard
+
+Beyond the `/dev` pipeline, claude-foundation ships a small **team awareness dashboard**. Each machine runs a background client; a zero-dependency Node server (deploys to Railway in minutes) serves one shared web page that shows, in real time:
+
+- **Presence** — who's online right now (git name + host; in-memory, 30s window).
+- **Working in** — which repos each person has uncommitted changes in, with the local folder path and an optional label (`git config dashboard.label "…"`) so nested or same-named sub-repos stay distinct.
+- **/dev activity** — the in-flight run and phase, read straight from `state.json`.
+- **Potential conflicts** — when two people's changed line ranges in the same file overlap, both are warned **before** anyone merges (it catches uncommitted work a git server can't see yet).
+
+Control it from any machine on the flow:
+
+```bash
+claude-foundation dashboard-up   --key <shared-key>   # start reporting (background, no port)
+claude-foundation dashboard-status                    # is it running?
+claude-foundation dashboard-down                      # stop — drops you off the board immediately
+```
+
+- **No port, no collisions.** The client binds nothing — it's a background process tracked by a PID file (`~/.claude-foundation/dashboard.pid`) that only sends outbound heartbeats. The one port in the system is the server's, and Railway assigns that automatically.
+- **Identity** on the board = a shared key (auth) + a stable per-machine id + your `git config user.name`.
+- **Presence is in-memory.** "Online" means a heartbeat arrived within the last 30s; stop the client (or close the laptop) and you fall off the board within the window.
+
+**Try it now:** the board has a **demo mode** that renders sample data through the real UI — no key needed. **[View the live demo →](https://claude-foundation-dashboard-production.up.railway.app/?demo)**
+
+Stand up your own server and wire it in a few minutes — full deploy steps, API endpoints, and security notes live in [`dashboard/README.md`](dashboard/README.md).
+
+> **Availability.** The `dashboard-*` subcommands route through `cli.sh` (the top-level router that also dispatches the installer). They ship with a source checkout and `brew install --HEAD` today, and fold into the stable Homebrew release next version.
+
 ## Design principles
 
 - **Single entry point.** One command, one flow. No separate `/plan`, `/review`, `/test` to forget — the orchestrator runs them in order so nothing gets skipped.
@@ -165,8 +192,13 @@ CLAUDE.md                minimal stub                                           
 ├── _templates/     blueprints — copy, don't edit in place
 ├── INDEX.md        run registry
 └── FOLLOWUPS.md    carry-over registry
+dashboard/          team presence dashboard — Node server + web UI + heartbeat client
+├── server.js       zero-dep API + static dashboard
+├── public/         the web board (vanilla HTML/CSS/JS)
+└── client.sh       dashboard-up / -down / -status
+cli.sh              top-level CLI router (installer ↔ dashboard subcommands)
+install.sh          installs the foundation into a target project
 docs/
-install.sh
 WORKFLOW.md         full flow definition
 CLAUDE.md           per-project guidance
 ```

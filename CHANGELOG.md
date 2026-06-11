@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Team presence dashboard** — a real-time awareness board for everyone on the `/dev` flow. Each machine runs a background client (`claude-foundation dashboard-up --key <key>`; `dashboard-down` to stop, `dashboard-status` to check) that heartbeats to one **zero-dependency Node server** (deploys to Railway in minutes); a vanilla-JS web page shows four layers:
+  - **Presence** — who's online right now (git name + host; in-memory, 30s window).
+  - **Working in** — which repos each person has uncommitted changes in, with the local **folder path** and an optional **label** (`git config dashboard.label "<name>"`) so nested/same-named sub-repos stay distinct. Scans every git repo in the background, ranked by most-recently-edited.
+  - **/dev activity** — the in-flight run id + phase, read straight from `state.json`.
+  - **Potential conflicts** — a pre-merge early warning: when two people's changed **line ranges** in the same file overlap (computed from `git diff`, including uncommitted work the git server can't see yet), both are flagged with the file, branches, and lines.
+
+  The client binds **no port** (PID-file controlled, outbound HTTP only) and the page has a **demo mode** (`?demo`, a header "demo" button, or a gate link) that renders sample data through the real render path — no key needed. Files: `dashboard/**` (`server.js`, `public/`, `client.sh`, `package.json`, `railway.json`, `.env.example`, `README.md`), `README.md` (`## Team presence dashboard`), `website/` (landing-page section).
+
+- **`cli.sh` top-level command router** — splits the single `claude-foundation` command in two: `dashboard*` subcommands → the presence client, everything else → the installer (`install.sh`), keeping the installer single-purpose. The Homebrew bin execs `cli.sh`; the formula installs `cli.sh` + `dashboard` on `--HEAD` builds (guarded so the current stable tarball still installs cleanly). Files: `cli.sh`, `install.sh` (usage), `Formula/claude-foundation.rb`.
+
 ## [1.3.0] - 2026-06-11
 
 ### Added
