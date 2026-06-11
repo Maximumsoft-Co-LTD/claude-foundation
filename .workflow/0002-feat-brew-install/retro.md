@@ -1,0 +1,71 @@
+# Retro: Homebrew tap formula for claude-foundation
+
+**Plan**: [./plan.md](./plan.md)
+**Type**: feat
+**Completed**: 2026-06-11
+**Total cycles**: review=2, test=1
+**Ship**: commit=44d499c | PR=https://github.com/Maximumsoft-Co-LTD/claude-foundation/pull/3
+
+## What worked
+
+- **Explicit `libexec.install` list over `Dir["*"]`** — catching the dotfile-omission hazard before writing the formula saved a real installation defect. `Dir["*"]` silently drops `.claude/` and `.workflow/` because Ruby's `Dir.glob` skips dotfiles by default; reading plan step 3 before coding avoided this. Repeatable rule: for Homebrew formulas packaging dotfile-heavy repos, always use an explicit path list.
+- **Reading `install.sh`'s `for needed in` block first** — the 11-path validation list in `install.sh:137-150` gave an authoritative source-of-truth for what the libexec tree must contain. No guessing needed; the file's own validation loop defined the formula's install list.
+- **`--source` last-wins ordering caught in review** — the cycle-1 blocking finding (wrapper had `--source` before `"$@"`, allowing a user's `--source /evil` to override) was caught by the lead before ship, fixed in engineer cycle 2, and confirmed by the security bucket-1 assessment. The security check re-verified the flag parser (`install.sh:100-102`) independently rather than trusting the AC. One blocking defect prevented from shipping.
+- **Simulated-libexec dry-run as functional equivalent of `brew install`** — because `brew install --HEAD` requires a registered tap (out-of-scope this run), using a temp-dir copy + `bash install.sh --source <tmpdir> --dry-run` proved the full wrapper-to-installer path without needing a live brew environment. This pattern is worth reusing for any shell-tool packaging task.
+- **Security trigger was correct** — the formula introduces a `exec "$@"` argv pass-through; flagging exec+path buckets surfaced the `--source` ordering bug that review already found, giving a second independent confirmation from a different angle.
+
+## What to change next time
+
+- **Verify the real GitHub remote owner before baking it into spec/plan URLs.** This run's spec was written with `hashtagf` as the GitHub owner; the gate caught it and the user corrected it to `Maximumsoft-Co-LTD`. For any packaging or distribution run (Homebrew, Docker Hub, PyPI, npm), reading `git remote get-url origin` and recording the canonical org/owner in state before writing the spec prevents baked-in wrong URLs from drifting into README, formula, and PR templates. WHY: URLs in a formula are the live install path — a wrong owner turns every `brew install` into a 404 with no helpful error.
+- **Ship-mode state-write produces malformed JSON — needs a fix run.** The ship worker wrote `state.json` with a missing comma between fields, a duplicate `notes` key, and a prematurely-set `done_at`. The orchestrator had to repair it by hand. WHY: downstream agents (`retro`, `--resume`) rely on machine-readable JSON; a malformed write silently breaks the pipeline. This is a real ship-mode bug, not user error — record it as a follow-up fix run.
+- **`brew audit --strict` deferred to post-PR local run is a weak gate.** AC5 required it to pass, but because the CI environment lacks Homebrew, it was deferred with "must run locally before merge." The PR was opened before that confirmation. For formula work, schedule a step that exits early unless the engineer affirms the audit passed, or add a GitHub Actions workflow that runs brew audit on a macOS runner. WHY: audit failures after the PR is open create a noisy amendment commit or force-push cycle; catching them pre-open is cheaper.
+
+## Acceptance criteria status
+
+- [x] AC1 — `Formula/claude-foundation.rb` exists; HEAD-only formula with correct `head` stanza; syntax passes `ruby -c`; `brew style` exits 0 ("1 file inspected, no offenses detected"). Full `brew install --HEAD` requires tap registration (out-of-scope; accepted pre-merge gate).
+- [x] AC2 — `libexec.install` explicitly lists `.claude`, `.workflow`, `WORKFLOW.md`, `CLAUDE.md`, `install.sh`, `install-cursor.sh`; wrapper passes `--source "#{libexec}"` as last arg (last-wins); simulated-libexec dry-run exits 0, plans 145 files, `ls .claude/agents` = 14 files, `ls .workflow/_templates` = 9 files.
+- [x] AC3 — `"$@"` precedes `--source "#{libexec}"` on the exec line; flag interface parity confirmed by dry-run and decoy-source override test; unknown-flag path guaranteed by `install.sh`'s `set -euo pipefail` + `fail()`.
+- [x] AC4 — README `## Install via Homebrew` section contains all four elements: (a) tap + `--HEAD` install commands including the `--HEAD` required note, (b) `cd /path/to/myproject && claude-foundation` run example, (c) Windows/non-brew fallback pointing to Quick start, (d) tap-repo creation + future sha256/url hardening note.
+- [x] AC5 — `brew style` exit 0; `ruby -c` "Syntax OK"; `depends_on "jq" => :optional` removed (deprecated form); `license` stanza omitted with `# TODO` comment. `brew audit --strict` deferred to post-tap-registration local run (recorded command; documented gate in AC5 note).
+
+## Deviations from plan
+
+- **Step 3 — wrapper arg order reversed from plan sketch**: Plan sketch showed `exec "#{libexec}/install.sh" --source "#{libexec}" "$@"` (source first). Cycle-1 review identified this as a blocking defect (user's `--source` in `"$@"` would win over the injected path). Engineer cycle 2 corrected to `exec "#{libexec}/install.sh" "$@" --source "#{libexec}"` (source last, wins). Final formula matches the corrected form; the plan's sketch was updated in the review notes.
+- **Step 7 — `brew audit --strict` not confirmed before PR**: Plan explicitly acknowledged this deferral ("If brew is absent…"), and the gate note in AC5 preserves the requirement. Non-blocking per plan; recorded under "What to change" as a process gap for future formula runs.
+- **Step 3 — `depends_on "jq" => :optional` removed**: Plan included this line; `brew style` rejected it (deprecated form). Removed per the plan's own risk-mitigation note ("If lint fails on this line, remove it"). `install.sh`'s graceful jq degradation means no UX change.
+
+## Follow-ups
+
+New items appended to `.workflow/FOLLOWUPS.md`:
+
+- **F0001** — Cut a tagged GitHub release and add `url`/`sha256` to the formula, replacing the HEAD-only block with a pinned stable release; enable branch protection on `main` in the interim. Enables the short `brew install claude-foundation` form and removes the supply-chain risk of tracking a moving `main`. · type hint: feat · priority: high
+- **F0002** — Create a `homebrew-claude-foundation` tap repo (or rename the existing repo) under `Maximumsoft-Co-LTD` so `brew tap maximumsoft-co-ltd/claude-foundation` resolves without a URL argument, enabling the standard short tap form. · type hint: chore · priority: med
+- **F0003** — Fix ship-mode state-write: the worker produced malformed JSON (missing comma, duplicate `notes` key, premature `done_at`) in `state.json`, requiring manual orchestrator repair. Investigate the ship-mode write path and add a `jq empty` validation gate before the file is written. · type hint: fix · priority: high
+- **F0004** — Harden `install.sh:166-168` self-copy guard: the path comparison is a prefix string match, not symlink-resolved on both sides. Inert for the brew path (source = read-only Cellar libexec, target = user project) but a defensive hardening note for any future `install.sh` revisit. · type hint: fix · priority: low
+- **F0005** — Expose `install-cursor.sh` via Homebrew: the formula bundles `install-cursor.sh` in libexec but only exposes a `claude-foundation` wrapper (for `install.sh`). A future run could expose `claude-foundation-cursor` or a `--cursor` flag. · type hint: feat · priority: low
+
+No follow-ups were consumed this run (Open table was empty at start).
+
+## Memory candidates (facts)
+
+- **type**: project · **body**: The repo's canonical GitHub remote owner is `Maximumsoft-Co-LTD` (not `hashtagf`); origin is `git@github.com:Maximumsoft-Co-LTD/claude-foundation.git`. · **why**: The spec was initially drafted with the wrong owner (`hashtagf`) — only caught at the gate. Any run that bakes a GitHub URL into a formula, README, or PR template will embed the wrong org if this isn't verified first. · **how to apply**: At spec-draft time for any packaging, distribution, or repo-reference run, run `git remote get-url origin` and record the canonical org before writing any URLs.
+
+- **type**: project · **body**: The ship-mode worker has a confirmed malformed-JSON bug in its `state.json` write path: produced a missing comma between fields, a duplicate `notes` key, and a prematurely-set `done_at` in run 0002. The orchestrator had to repair it by hand. · **why**: Downstream agents (`retro`, `--resume`) parse `state.json` as JSON; a malformed write silently breaks the pipeline on any subsequent run that relies on the file. · **how to apply**: Until F0003 is fixed, after every ship step verify `cat .workflow/<id>/state.json | jq empty` exits 0 before proceeding to retro.
+
+- **type**: feedback · **body**: For Homebrew formula runs, `brew audit --strict` must be confirmed before opening the PR, not deferred to a post-open local run — otherwise amendment commits or force-push cycles result if it fails. · **why**: AC5 required it; the PR was opened before the audit was confirmed. · **how to apply**: In any `/dev` run producing a Homebrew formula (AC that references `brew audit`), add an explicit gate in the ship checklist: "engineer confirms `brew audit --strict` passed locally" before the commit lands on PR-ready.
+
+- **type**: reference · **body**: Ruby's `Dir["*"]` silently omits dotfiles (`.claude/`, `.workflow/`) in Homebrew `libexec.install` calls; always use an explicit path list when the formula must package a dotfile-heavy repo.
+
+## Skill candidates (procedures)
+
+- **name**: homebrew-tap-formula · **scope**: project · **trigger description**: Any run that produces a Homebrew formula, tap entry, or `brew install` path for a shell-tool or CLI packaged from this repo. · **action**: new · **steps**: 1. Read `git remote get-url origin` and record the canonical GitHub org/owner before writing any URLs into the formula or README. 2. Read the tool's source-validation list (equivalent of `install.sh`'s `for needed in`) to derive the exact `libexec.install` path list — never use `Dir["*"]` for dotfile-heavy repos. 3. Write the formula: `head` stanza (HEAD-only), explicit `libexec.install` list, generated `bin` wrapper with `"$@"` BEFORE the injected `--source` so the injected value wins (last-wins parser), `test do` block with `--help`. 4. Run `ruby -c` (syntax) and `brew style` (lint) locally; remove any deprecated `depends_on` forms that style rejects. 5. Confirm `brew audit --strict` passes locally BEFORE opening the PR. 6. README: add an `## Install via Homebrew` section with tap+install commands, `--HEAD` required note, run-in-project example, Windows fallback, and future-hardening note (tap repo + sha256). 7. Record follow-ups: pinned release + sha256, separate tap repo, branch protection on main. · **why a skill not a memory**: Seven ordered steps with conditional logic (last-wins arg ordering, dotfile glob trap, deprecated-dep removal), a clear recurring trigger ("write a Homebrew formula for this repo"), and will apply to at least three future runs (stable release formula, tap-repo setup, cursor variant). · **handoff prompt for skill-creator**: Create a new project-scoped skill named `homebrew-tap-formula`. Trigger: any `/dev` run producing a Homebrew formula or tap entry for a shell-tool CLI. The skill covers seven ordered steps: (1) verify canonical GitHub org from `git remote get-url origin` before writing any formula/README URLs; (2) derive the `libexec.install` path list from the tool's own source-validation block (never `Dir["*"]` — silently drops dotfiles); (3) write the formula with HEAD-only `head` stanza, explicit install list, generated `bin` wrapper where caller `"$@"` precedes the injected `--source` so last-wins parser always picks the libexec path, and a `test do --help` block; (4) run `ruby -c` + `brew style` locally and remove deprecated `depends_on` forms; (5) confirm `brew audit --strict` passes locally before opening the PR (not after); (6) add README `## Install via Homebrew` section with tap+install commands, explicit `--HEAD` required warning, run-in-project example, Windows fallback, and future-hardening notes (tap repo, sha256, branch protection); (7) append follow-ups for: pinned release + sha256, separate tap repo creation, branch protection on main. Include a skip condition: skip this skill for non-shell-tool formulas (Python/Node packages have different libexec patterns) and for runs that are only updating an existing formula (use a shorter checklist). Derive examples from run 0002-feat-brew-install artifacts.
+- **status**: deferred — user declined at step 17 (2026-06-11, "ยังก่อน"). Candidate retained here; re-offer on the next Homebrew/packaging run (e.g. when F0001/F0002 cut the stable-release formula + tap repo).
+
+> **Memory candidates outcome (step 17):** user selected none — no memories saved. The 4 candidates (ship-mode JSON bug, verify-git-remote-before-URLs, brew-audit-before-PR, `Dir["*"]`-omits-dotfiles) remain recorded above for a future decision.
+
+## Security findings (carry-over)
+
+These non-blocking findings from `security.md` are carried here so they are not lost:
+
+- **(medium) HEAD-only formula tracks moving `main` with no `sha256` pin** (`Formula/claude-foundation.rb:4`): a compromised upstream account, malicious merge to `main`, or branch force-push ships arbitrary executable payload to all `brew install --HEAD` users. Accepted decision: the documented hardening path is (a) cut a tagged release, (b) add `url` + `sha256` to the formula, (c) enable branch protection + required-signed-commits on `main` in the interim. Tracked as F0001.
+- **(low) `install.sh:166-168` self-copy guard uses prefix string match, not symlink-resolved paths**: inert for the brew path (source = distinct read-only Cellar libexec), but a defensive note for any future `install.sh` revisit. Tracked as F0004.

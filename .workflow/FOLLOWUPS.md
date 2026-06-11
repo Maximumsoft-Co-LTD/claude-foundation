@@ -8,6 +8,10 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 
 | ID | From run | Item | Type hint | Priority | Status |
 |----|----------|------|-----------|----------|--------|
+| F0002 | 0002-feat-brew-install | Create a `homebrew-claude-foundation` tap repo (or rename) under `Maximumsoft-Co-LTD` so `brew tap maximumsoft-co-ltd/claude-foundation` resolves without a URL argument (standard short tap form). | chore | med | open |
+| F0003 | 0002-feat-brew-install | Fix ship-mode `state.json` write: worker produced malformed JSON (missing comma, duplicate `notes` key, premature `done_at`) in run 0002, requiring manual orchestrator repair. Add a `jq empty` validation gate before the file is written. | fix | high | open |
+| F0004 | 0002-feat-brew-install | Harden `install.sh:166-168` self-copy guard: prefix string match is not symlink-resolved on both sides — inert for the brew path but a defensive hardening note for any future `install.sh` revisit. | fix | low | open |
+| F0005 | 0002-feat-brew-install | Expose `install-cursor.sh` via Homebrew: formula bundles it in libexec but only exposes `claude-foundation` (wrapping `install.sh`). Future run could expose `claude-foundation-cursor` or a `--cursor` flag. | feat | low | open |
 
 
 ## Closed
@@ -18,6 +22,7 @@ Items consumed by a later run. Keep these — they're the audit trail.
 
 | ID | From run | Item | Consumed by | Date consumed |
 |----|----------|------|-------------|---------------|
+| F0001 | 0002-feat-brew-install | Cut a tagged GitHub release + add `url`/`sha256` to the formula (versioned upgrades, supply-chain pin). **Done.** Branch protection on `main` was documented in `RELEASING.md` but left **disabled** by choice. The short `brew install` form remains F0002 (needs a separate tap repo). | v1.3.0 release (PR #5, direct fix) | 2026-06-11 |
 
 ## Conventions
 
