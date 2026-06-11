@@ -24,6 +24,35 @@ AI coding fails in predictable ways: silent assumptions, skipped tests, reviews 
 - **The flow is type-aware.** A `chore` skips QA. A `fix` reproduces the bug first. A `spike` is timeboxed and produces a recommendation instead of code. Same pipeline, different teeth.
 - **Everything is auditable.** `spec.md`, `plan.md`, `review.md`, `tests.md`, `retro.md`, `state.json` — written to `.workflow/<run-id>/`, replayable, hand-off-able, resumable with `/dev --resume <id>`.
 
+## Install via Homebrew
+
+On macOS (and Linux with Homebrew), add the tap and install in two commands:
+
+```bash
+brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation
+brew install --HEAD claude-foundation
+```
+
+> **`--HEAD` is required.** This formula is HEAD-only (no stable tarball release yet — that is a documented future hardening step). A plain `brew install claude-foundation` without `--HEAD` will fail with a Homebrew error. Always use `brew install --HEAD claude-foundation`.
+
+Then run inside any target project to scaffold the foundation there:
+
+```bash
+cd /path/to/myproject
+claude-foundation
+```
+
+All flags from `install.sh` are forwarded unchanged (`--dry-run`, `--force`, `--yes`, `--help`, `[target-path]`).
+
+**Windows / non-brew:** Homebrew is not available on Windows. Clone the repo and run `install.sh` directly — see [Quick start](#quick-start) below.
+
+**Two ways to host the tap** — pick one before others can install:
+
+- **This repo, via the explicit URL (what the commands above use).** Because `brew tap … https://github.com/Maximumsoft-Co-LTD/claude-foundation` passes the repo URL explicitly, Homebrew taps *this* repository directly and finds `Formula/claude-foundation.rb` here — so **no separate tap repo is required**. You only need to push this repo so the URL is reachable.
+- **The shorthand tap name (optional).** If you'd rather users type the shorthand `brew tap maximumsoft-co-ltd/claude-foundation` (no URL) or `brew install maximumsoft-co-ltd/claude-foundation/claude-foundation`, Homebrew resolves that name to a repo literally named **`homebrew-claude-foundation`** under the `Maximumsoft-Co-LTD` org. Create that repo, move `Formula/claude-foundation.rb` into it, and publish — then the URL argument is no longer needed. See the [Homebrew tap docs](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap).
+
+Future hardening: cut a tagged release and add `url`/`sha256` to replace the HEAD-only formula.
+
 ## Quick start
 
 From this repo's root, install into any target project:
@@ -139,4 +168,4 @@ CLAUDE.md           per-project guidance
 
 ## License
 
-Not yet specified.
+[MIT](LICENSE) © Maximumsoft Co., Ltd.
