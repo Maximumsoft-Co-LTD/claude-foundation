@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>claude-foundation · who's online</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Key gate: shown until a valid view key is stored -->
+  <div id="gate" class="gate" hidden>
+    <form id="gate-form" class="gate-card">
+      <h1 class="gate-title">claude-foundation</h1>
+      <p class="gate-sub">Enter the dashboard key to view who's online.</p>
+      <input id="gate-key" class="gate-input" type="password" placeholder="dashboard key" autocomplete="off" spellcheck="false" />
+      <button class="gate-btn" type="submit">View dashboard</button>
+      <button type="button" id="gate-demo" class="gate-demo">or view a demo →</button>
+      <p id="gate-error" class="gate-error" hidden>That key was rejected.</p>
+    </form>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◢</span>
+      <span class="brand-name">claude-foundation</span>
+      <span class="brand-tag">presence</span>
+    </div>
+    <div class="status">
+      <span id="pulse" class="pulse" data-state="loading"></span>
+      <span id="status-text" class="status-text">connecting…</span>
+      <button id="header-demo" class="header-demo" title="Preview features with sample data">demo</button>
+      <button id="signout" class="signout" title="Forget key">sign out</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="demo-banner" class="demo-banner" hidden>
+      <span class="demo-tag">DEMO</span>
+      <span class="demo-text">Sample data — this is how <b>presence</b>, <b>working&nbsp;in</b>, <b>/dev activity</b>, and <b>conflict warnings</b> render. Nothing here is real.</span>
+      <button type="button" id="demo-exit" class="demo-exit">exit demo</button>
+    </div>
+
+    <section class="counts">
+      <div class="count count--online">
+        <span id="online-count" class="count-num">—</span>
+        <span class="count-label">online now</span>
+      </div>
+      <div class="count">
+        <span id="total-count" class="count-num">—</span>
+        <span class="count-label">seen recently</span>
+      </div>
+      <div class="count count--meta">
+        <span id="updated" class="count-num count-num--sm">—</span>
+        <span class="count-label">last refresh · window <span id="ttl">—</span></span>
+      </div>
+    </section>
+
+    <section id="conflicts-section" hidden>
+      <h2 class="section-title section-title--warn">⚠ Potential conflicts</h2>
+      <p class="section-sub">Same file edited by two people whose changed lines overlap — coordinate before you merge.</p>
+      <div id="conflicts-list" class="conflicts"></div>
+    </section>
+
+    <section id="online-section">
+      <h2 class="section-title">Online</h2>
+      <div id="online-grid" class="grid"></div>
+      <p id="online-empty" class="empty" hidden>No agents online right now.</p>
+    </section>
+
+    <section id="recent-section" hidden>
+      <h2 class="section-title section-title--muted">Recently seen</h2>
+      <div id="recent-grid" class="grid grid--muted"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>auto-refresh every <span id="poll">5</span>s · in-memory presence</span>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>

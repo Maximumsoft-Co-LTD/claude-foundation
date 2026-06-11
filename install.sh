@@ -30,6 +30,9 @@ ${SCRIPT_NAME} — install the /dev workflow into a project
 
 Usage:
   ${SCRIPT_NAME} [target-path] [options]
+  ${SCRIPT_NAME} dashboard-up --key <key>   Start team-presence client (background)
+  ${SCRIPT_NAME} dashboard-down             Stop the presence client
+  ${SCRIPT_NAME} dashboard-status           Is the presence client running?
 
 Arguments:
   target-path        Where to install (default: current directory)

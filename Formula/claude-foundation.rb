@@ -7,13 +7,27 @@ class ClaudeFoundation < Formula
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
   def install
-    libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
-                    "install.sh", "install-cursor.sh"
+    components = [".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
+                  "install.sh", "install-cursor.sh"]
+    # The CLI router (cli.sh) and the dashboard ship from source (HEAD) today.
+    # They fold into the stable tarball at the next tagged release; after that,
+    # drop this guard and install/exec cli.sh unconditionally.
+    components += ["cli.sh", "dashboard"] if build.head?
+    libexec.install components
 
-    (bin/"claude-foundation").write <<~EOS
-      #!/usr/bin/env bash
-      exec "#{libexec}/install.sh" "$@" --source "#{libexec}"
-    EOS
+    if build.head?
+      # cli.sh routes subcommands (installer + dashboard-*) and finds its
+      # siblings relative to itself, so it needs no --source.
+      (bin/"claude-foundation").write <<~EOS
+        #!/usr/bin/env bash
+        exec "#{libexec}/cli.sh" "$@"
+      EOS
+    else
+      (bin/"claude-foundation").write <<~EOS
+        #!/usr/bin/env bash
+        exec "#{libexec}/install.sh" "$@" --source "#{libexec}"
+      EOS
+    end
     chmod 0755, bin/"claude-foundation"
   end
 
