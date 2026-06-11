@@ -332,7 +332,10 @@
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if ((m = line.match(/^##\s+\[([^\]]+)\](?:\s*-\s*(.+))?\s*$/))) {
-        if (version && items.length) break; // first non-empty version wins (skip an empty [Unreleased])
+        if (version && items.length) break; // first non-empty release wins
+        // skip [Unreleased] entirely — the section shows shipped releases, so a
+        // populated Unreleased must not shadow the latest tagged version.
+        if (/^unreleased$/i.test(m[1])) { version = null; group = null; continue; }
         version = { name: m[1], date: (m[2] || "").trim() };
         group = null;
         continue;
