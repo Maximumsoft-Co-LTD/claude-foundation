@@ -49,7 +49,7 @@ What gets installed:
   .claude/agents/**            — pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
   .claude/orchestrator.md      — orchestrator script run by the main agent on /dev, NOT a sub-agent (always refreshed)
   .claude/commands/dev.md      — the /dev slash command (always refreshed)
-  .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, database, hexagonal, architecture, queue, debug, git-workflow) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
+  .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, concurrency, database, hexagonal, architecture, queue, security, observability, debug, refactoring, testing, git-workflow, delivery-engineering) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
   .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
   .claude/hooks/**             — every hook script in the foundation (lint, dev-agent-guard, dev-state-mark, protect-secrets, …) — copied verbatim, always refreshed
   .claude/settings.json        — hook wiring, derived from this file's own hooks block (only if missing; existing files get a merge — see below)
@@ -296,12 +296,18 @@ The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude
 @.claude/rules/fundamentals.md
 @.claude/rules/ddd-strategic.md
 @.claude/rules/programming-fundamentals.md
+@.claude/rules/concurrency-fundamentals.md
 @.claude/rules/database-fundamentals.md
 @.claude/rules/hexagonal-backend.md
 @.claude/rules/architecture-fundamentals.md
 @.claude/rules/queue-fundamentals.md
+@.claude/rules/security-fundamentals.md
+@.claude/rules/observability-fundamentals.md
 @.claude/rules/debug-fundamentals.md
+@.claude/rules/refactoring-fundamentals.md
+@.claude/rules/testing-fundamentals.md
 @.claude/rules/git-workflow.md
+@.claude/rules/delivery-engineering.md
 BLOCK
 }
 RULES_IMPORT_MARKER="@.claude/rules/coding-discipline.md"
