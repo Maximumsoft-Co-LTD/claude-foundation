@@ -126,10 +126,11 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 .claude/agents/          pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md   (always refreshed)
 .claude/orchestrator.md  orchestrator script for the main agent                             (always refreshed)
 .claude/commands/dev.md  the /dev slash command                                             (always refreshed)
-.claude/skills/          fundamentals skills + git-workflow, plan-writing, brainstorming,
-                         fanout-team-agents, skill-creator                                  (always refreshed)
-.claude/rules/           always-on pointers to the skills                                   (always refreshed)
-.claude/hooks/*.sh       PreToolUse guard + PostToolUse lint + state marker                 (always refreshed)
+.claude/skills/          fundamentals skills (construction + verification + delivery) +
+                         plan-writing, brainstorming, fanout-team-agents, qa-handoff-note,
+                         frontend/UX skills, skill-creator                                  (always refreshed)
+.claude/rules/           16 always-on pointers to the skills                                (always refreshed)
+.claude/hooks/*.sh       PreToolUse spawn guard + secrets guard, PostToolUse lint + state marker  (always refreshed)
 .claude/settings.json    hook wiring                                                        (only if missing; existing files get a merge)
 .workflow/_templates/    spec / plan / review / security / tests / recommendations /
                          retro / epic / state.json                                          (always refreshed)
@@ -189,7 +190,7 @@ Stand up your own server and wire it in a few minutes — full deploy steps, API
 ├── orchestrator.md script the main agent follows when /dev runs
 ├── commands/       dev.md (loads orchestrator.md)
 ├── hooks/          spawn guard, state marker, lint dispatch, secrets guard
-├── rules/          10 lean always-on pointers (conduct + run order + fundamentals)
+├── rules/          16 lean always-on pointers (conduct + run order + fundamentals)
 └── skills/         full skill bodies referenced by the rules
 .workflow/
 ├── _templates/     blueprints — copy, don't edit in place

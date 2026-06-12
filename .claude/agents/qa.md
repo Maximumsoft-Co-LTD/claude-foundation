@@ -21,7 +21,7 @@ Tick the matching box in `tests.md > Type-aware mode`:
 
 - **Full** — `type=feat` or `type=refactor` → all of the steps below.
 - **Fix** — `type=fix` → all steps below PLUS the regression-test verification.
-- **Skipped** — `type=chore` / `docs` / `spike` → fill `tests.md > Skipped` with reason + risk accepted and return. Do NOT write tests.
+- **Skipped** — `type=chore` / `docs` → fill `tests.md > Skipped` with reason + risk accepted and return. Do NOT write tests. (`type=spike` never reaches qa — the orchestrator skips the test phase entirely and the engineer's `recommendations.md` is the deliverable; if you were somehow spawned for a spike, return a one-line note saying so.)
 
 ## Steps (Full / Fix modes)
 

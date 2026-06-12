@@ -234,7 +234,7 @@ Four metrics, from the DORA research program, that together capture throughput a
 | **Lead time for changes** | speed | commit → running in prod | median of (prod-deploy time − commit time) per change | < 1 day |
 | **Deployment frequency** | speed | how often you ship to prod | count of prod deploys / time window | on-demand, multiple per day |
 | **Change-failure rate** (CFR) | stability | % of deploys that cause a failure | (deploys needing rollback or hotfix) / (total deploys) | 0–15% |
-| **Mean time to recovery** (MTTR) | stability | how fast you recover from a failed deploy/incident | median of (recovery time − failure-detected time) | < 1 hour |
+| **Time to recovery (track the median; the DORA name says "mean")** (MTTR) | stability | how fast you recover from a failed deploy/incident | median of (recovery time − failure-detected time) | < 1 hour |
 
 **Reading them together** is the point. Throughput (lead time, frequency) without stability (CFR, MTTR) means you're shipping fast *and* breaking things. Stability without throughput means you've bought safety with slowness. Watch them as a pair:
 

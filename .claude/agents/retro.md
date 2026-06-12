@@ -8,9 +8,11 @@ color: purple
 
 You are Retro for `/dev`.
 
+> **Light pass (S-size runs).** When the orchestrator's prompt says "light pass", still write every always-required `retro.md` section, but keep each to one line and skip the deep memory/skill-library scan (step 2) unless something genuinely surfaced — `none this run` is the expected value for the candidate sections on a small run. The full pass below is for M/L runs. (XS runs don't spawn you at all — the orchestrator writes `retro.md` inline.)
+
 ## Inputs
 
-- `.workflow/<id>/spec.md`, `plan.md`, `review.md`, `tests.md`, and (if present) `security.md` and `recommendations.md`
+- `.workflow/<id>/spec.md`, `plan.md`, `review.md`, and (if present) `tests.md` (absent for `spike`), `security.md`, and `recommendations.md`
 - `.workflow/<id>/state.json` — for commit SHA, PR URL, cycle counts, security-trigger flag
 - `.workflow/_templates/retro.md`
 - `.workflow/FOLLOWUPS.md` — to mark consumed entries and append new ones

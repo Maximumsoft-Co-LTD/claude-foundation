@@ -165,7 +165,7 @@ When a L plan grows past ~12 steps, group them under named Phases (e.g., `### Ph
 
 This skill **composes**, it does not replace:
 
-- [[programming-fundamentals]] / [[database-fundamentals]] / [[hexagonal-backend]] / [[architecture-fundamentals]] / [[queue-fundamentals]] — these decide *what to build*. Load the relevant one **first**; their output becomes the substance of `Approach` and `Steps`.
+- The construction-fundamentals skills (canonical run order in `.claude/rules/fundamentals.md`) — these decide *what to build*. Load the layer(s) the work touches **first**; their output becomes the substance of `Approach` and `Steps`.
 - [[debug-fundamentals]] — for `fix` plans, run debug-fundamentals first to find the cause, then this skill to encode the fix + regression test.
 - [[git-workflow]] — pairs at ship time (Phase 2 step 9). A plan's atomic Steps become atomic commits; the Type slot mirrors the commit `<type>`.
 

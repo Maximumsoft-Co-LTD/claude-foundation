@@ -119,13 +119,13 @@ Same shape as DB optimistic locking, in memory: stamp the state with a version, 
 
 ```ts
 type Doc = { value: string; version: number }
-function update(store: Map<string, Doc>, key: string, fn: (s: string) => string) {
+async function update(store: Map<string, Doc>, key: string, fn: (s: string) => Promise<string>) {
   for (;;) {
     const cur = store.get(key)!
-    const next = { value: fn(cur.value), version: cur.version + 1 }
-    // commit only if no one bumped the version meanwhile
-    if (store.get(key)!.version === cur.version) { store.set(key, next); return }
-    // else retry with the fresh value
+    const newValue = await fn(cur.value)               // the only interleave point is here
+    if (store.get(key)!.version !== cur.version) continue   // someone wrote during the await — retry
+    store.set(key, { value: newValue, version: cur.version + 1 })  // check + set with NO await
+    return                                              // between them, so it's atomic in JS
   }
 }
 ```

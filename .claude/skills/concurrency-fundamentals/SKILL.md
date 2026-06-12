@@ -33,13 +33,11 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Example:**
 ```ts
-// Bad — shared mutable accumulator; two tasks racing on results.push + total
-const results: number[] = []
+// Bad — shared accumulator whose read-modify-write straddles an await
 let total = 0
 await Promise.all(items.map(async (it) => {
-  const v = await score(it)
-  results.push(v)        // push is not safe to interleave with reordering logic
-  total += v             // read-modify-write race (see principle 2)
+  total += await score(it)   // reads `total`, suspends at await, writes later: two tasks
+                             // read the SAME old value and one increment is lost
 }))
 
 // Good — no shared mutable state; each task returns its own value, combine after
@@ -47,7 +45,7 @@ const scores = await Promise.all(items.map((it) => score(it)))  // each task own
 const total = scores.reduce((a, b) => a + b, 0)                  // single-threaded fold, no race
 ```
 
-In single-threaded JS, `+=` across `await` points still races logically (two tasks read the old `total` before either writes); the fix is the same — don't share the accumulator.
+In single-threaded JS the race is the read-modify-write that *straddles* an `await`: `total += await score(it)` reads `total`, suspends, and a second task reads the same old value before either writes. (A `+=` with no `await` between its read and write is atomic here — see principle 4.) The fix is the same — don't share the accumulator.
 
 ---
 
@@ -132,7 +130,7 @@ async function transfer(from: Account, to: Account, amt: number) {
 - **Always await (or deliberately handle) every promise.** A floating promise runs detached: if it rejects, the error vanishes (unhandled rejection), and downstream code runs before it finishes. If you truly want fire-and-forget, say so explicitly and attach a `.catch`.
 - **Concurrent vs sequential is a choice.** `await a(); await b();` runs them in series. `await Promise.all([a(), b()])` runs them concurrently. Pick on purpose — series for dependencies, parallel for independent work. (`Promise.allSettled` when you want every result even if some reject.)
 - **Don't block the event loop.** A synchronous CPU-heavy loop or a sync FS/crypto call freezes every other task and request on the same thread. Offload to a worker thread, chunk the work, or use the async API. The same applies to Python's asyncio and a blocking call.
-- **Cooperative vs preemptive.** In a cooperative runtime (JS event loop, Python asyncio, Go before a yield point) a task runs uninterrupted until it `await`s/yields — so a critical section with no `await` inside it is effectively atomic. In a preemptive model (OS threads) the scheduler can switch *anywhere*, so even `i++` races. Know which you're in; it changes what needs a lock.
+- **Cooperative vs preemptive.** In a cooperative runtime (JS event loop, Python asyncio) a task runs uninterrupted until it `await`s/yields — so a critical section with no `await` inside it is effectively atomic. In a preemptive *and* parallel model (OS threads, **Go goroutines** — multiple run simultaneously on `GOMAXPROCS>1`, and the scheduler also preempts asynchronously) two tasks execute at the same instant, so even `i++` races and every shared mutation needs an atomic or a lock. Know which you're in; it changes what needs a lock.
 
 **Example:**
 ```ts
@@ -200,7 +198,7 @@ async function pay(orderId: string, signal: AbortSignal) {
 **Why:** "Run them all at once" works in the demo with ten items and melts with ten thousand: connection pool exhausted, memory blown, downstream service rate-limited or knocked over, the event loop starved. Concurrency is a resource you spend, and resources are finite — pools, sockets, RAM, file descriptors. The cap is what keeps throughput high and the system standing instead of thrashing.
 
 **How to apply:**
-- **Semaphore / concurrency limit** — allow at most N tasks in the critical resource at once; the N+1th waits. `p-limit`, a counting semaphore, a `Sempahore(N)`. Pick N from the real bottleneck (DB pool size, downstream rate limit), not a guess.
+- **Semaphore / concurrency limit** — allow at most N tasks in the critical resource at once; the N+1th waits. `p-limit`, a counting semaphore, a `Semaphore(N)`. Pick N from the real bottleneck (DB pool size, downstream rate limit), not a guess.
 - **Worker pool** — a fixed set of workers pull from a shared queue. Bounded workers, bounded memory, natural load-leveling.
 - **Backpressure** — when producers outrun consumers, *slow the producer* (bounded queue that blocks/rejects on full), don't buffer unboundedly until you OOM. A full queue is a signal, not a problem to paper over.
 - **Match N to the limiter.** More concurrency than the downstream can absorb just converts to queueing and timeouts. The right N is usually small.

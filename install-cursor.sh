@@ -195,6 +195,7 @@ ok "target: $TARGET_PATH"
 rule_description() {
   case "$1" in
     coding-discipline)         echo "Behavioral conduct wrapper for any code task — surface assumptions, write the minimum non-speculative code, keep diffs surgical, turn the task into a verifiable goal. Run first, then the layer-appropriate fundamental." ;;
+    fundamentals)              echo "Cross-skill run order — the single source of truth for which fundamentals skill runs when (ddd → programming → concurrency → database → hexagonal → architecture → queue → security → observability, plus the verification and delivery skills). Other rules point here instead of restating the chain." ;;
     ddd-strategic)             echo "Strategic Domain-Driven Design before deciding where a model lives and what language it speaks (subdomain classification, bounded contexts, ubiquitous language, context mapping, aggregate sizing, domain vs integration events)." ;;
     programming-fundamentals)  echo "Pre-flight fundamentals before writing or changing any non-trivial code (data shape, illegal states, function design, pure core, errors, complexity, naming)." ;;
     concurrency-fundamentals)  echo "In-process concurrency fundamentals (don't share mutable state, atomic critical sections, deadlock avoidance, async/await pitfalls, idempotent/cancellable ops, bounded fan-out). Cross-process async is queue-fundamentals." ;;

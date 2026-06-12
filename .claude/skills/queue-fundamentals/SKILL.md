@@ -1,6 +1,6 @@
 ---
 name: queue-fundamentals
-description: Apply queue fundamentals — broker selection, delivery semantics, idempotent consumers, ack discipline, retries/DLQ, ordering, and the outbox pattern for DB + broker writes. Use BEFORE introducing, modifying, or debugging any queue, message broker, event stream, background job, async worker, or pub/sub topic, with any broker (Kafka, SQS, RabbitMQ, BullMQ, Redis Streams, Celery, in-memory channels). The trigger is any queue-shaped or async-processing problem, even when no broker is named. Includes references on broker selection, idempotency, the outbox pattern, and operating queues in production. Skip pure in-process data structures with no concurrency, persistence, or cross-process concerns.
+description: Apply queue fundamentals — broker selection, delivery semantics, idempotent consumers, ack discipline, retries/DLQ, ordering, and the outbox pattern for DB + broker writes. Use BEFORE introducing, modifying, or debugging any queue, message broker, event stream, background job, async worker, or pub/sub topic, with any broker (Kafka, SQS, RabbitMQ, BullMQ, Redis Streams, Celery). The trigger is any queue-shaped or async-processing problem, even when no broker is named. Includes references on broker selection, idempotency, the outbox pattern, and operating queues in production. Skip pure in-process data structures with no concurrency, persistence, or cross-process concerns.
 ---
 
 # Queue Fundamentals
@@ -9,7 +9,7 @@ description: Apply queue fundamentals — broker selection, delivery semantics, 
 
 Queues are the joints of a distributed system. Every async boundary — between a web request and a slow job, between two services, between a write and its downstream consumers — is a queue. Almost every "ghost in the machine" bug in a production backend traces back to the same handful of missed queue fundamentals: silent message loss, duplicate processing that double-charged a customer, an ordering assumption that held in dev and broke under load, a dead-letter queue that nobody set up so a single bad payload wedged the whole pipeline, a DB write that "succeeded" but the matching event never published.
 
-This skill is a **pre-flight** for anything queue-shaped: read it before you put a queue in your system, not after the first incident. The principles are broker-agnostic — they apply equally to SQS, Kafka, RabbitMQ, BullMQ, an in-memory Go channel, or a hand-rolled job table in Postgres. The mechanics differ; the contract you have to think about does not.
+This skill is a **pre-flight** for anything queue-shaped: read it before you put a queue in your system, not after the first incident. The principles are broker-agnostic — they apply equally to SQS, Kafka, RabbitMQ, BullMQ, or a hand-rolled job table in Postgres — anywhere work crosses a process boundary. The mechanics differ; the contract you have to think about does not.
 
 Programs this skill sits next to:
 - [[programming-fundamentals]] — fundamentals of the code that runs inside a consumer. Apply that first.
@@ -287,7 +287,7 @@ See [[operating]] for thresholds, dashboards, and the claim-check pattern.
 
 ## When to skip this skill
 
-- Using a `List`, `Deque`, `Queue`, or `chan` purely as an in-process data structure, with no concurrency, persistence, or cross-process concerns. (That's a data-structure choice — covered by [[programming-fundamentals]].)
+- In-process channels, worker pools, and async tasks **inside one process** — even with concurrency — are [[concurrency-fundamentals]]' territory (in-process coordination), not this skill's. A bare `List`/`Deque`/`Queue`/`chan` used as a plain data structure with no concurrency is [[programming-fundamentals]]. This skill starts where the work crosses a **process boundary**.
 - Throwaway scripts or one-shot data fixes where loss is acceptable and there's no production system on the other end.
 - Synchronous request/response paths that don't involve a queue at all.
 

@@ -57,7 +57,7 @@ Example inside an AC bullet:
 
 > `[NEEDS CLARIFICATION: payment lead — replay > 24h: extend TTL or new key?]`
 
-Spec cannot reach `Status: approved` while any marker remains. The orchestrator's gate (Phase 1 step 8) blocks until all are resolved or explicitly deferred to `FOLLOWUPS.md`.
+Spec cannot reach `Status: approved` while any marker remains. The orchestrator's gate (Phase 1 step 9) blocks until all are resolved or explicitly deferred to `FOLLOWUPS.md`.
 
 ## Steps
 

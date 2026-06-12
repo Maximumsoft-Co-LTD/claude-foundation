@@ -33,7 +33,7 @@ DoD items and Constraints do NOT thread through AC tags, so they get their own w
 - `path:line` — note (carried to retro)
 
 ## Sign-off
-pass | needs-another-round → see Phase 2 step 5
+pass | fix-required → see Phase 2 step 5
 
 <!--
 The sections above are always required. Add the section below ONLY when the review-mode fanout ran (see fanout-team-agents/SKILL.md):
