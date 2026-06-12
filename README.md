@@ -104,6 +104,8 @@ The main agent **is** the orchestrator (following [`.claude/orchestrator.md`](.c
 
 **Phase 1 is interactive; Phase 2 is autonomous.** Once you `approve` at the gate, the orchestrator only stops for blocking review issues (max 2 cycles), failing tests (max 3 cycles), or genuine ambiguity.
 
+**The machinery scales with the work.** Type decides *which* phases run; **size** (XS/S/M/L, estimated from your request before any question is asked) decides *how much machinery* each phase gets. A one-line text fix takes the XS fast path — one merged question batch, spec+plan in a single `lead` spawn, docs+ship merged, retro inline (~4 worker spawns total) — while an M/L run gets the full pipeline above. The contract never shrinks: the interview, the gate with per-line acceptance confirmation, and the security trigger run at every size, and any worker can escalate the size mid-run (never the reverse).
+
 Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 
 ## What's in the box
@@ -112,6 +114,7 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 - **Five workflow sub-agents + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa`, `retro`, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Each has an explicit `model:` for cost/speed tuning.
 - **Artifact templates** — `spec.md`, `plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
 - **Type-aware phase matrix** — the same numbered phases run for every type; the orchestrator skips or specialises them based on `Type` (see `WORKFLOW.md`).
+- **Size-aware execution matrix** — XS/S runs take a fast path (merged question batch, combined spec+plan spawn, merged docs+ship, inline retro) while M/L runs get the full machinery; upgrades are one-way via a `SIZE_UPGRADE` signal (see `WORKFLOW.md`).
 - **Always-on skill rules** — ten lean rules in `.claude/rules/` (each ~3 lines: trigger + one-sentence why + skill pointer), led by `coding-discipline` (the conduct layer that wraps the rest), then `ddd-strategic`, `programming-fundamentals`, `database-fundamentals`, `hexagonal-backend`, `architecture-fundamentals`, `queue-fundamentals`, `debug-fundamentals`, `git-workflow`. Full skill bodies load on demand; the cross-skill run order lives in exactly one file, `.claude/rules/fundamentals.md`.
 - **Hooks** — a PreToolUse spawn guard for the `/dev` state machine, a PostToolUse state marker and lint dispatch, and a secrets guard that blocks reads of `.env` and credential files.
 - **Skill-creator handoff** — `retro` lists skill candidates, you approve, the orchestrator spawns `skill-creator` for each. Nothing auto-creates.

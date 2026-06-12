@@ -8,6 +8,12 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 
 | ID | From run | Item | Type hint | Priority | Status |
 |----|----------|------|-----------|----------|--------|
+| F0001 | audit-2026-06-12 | Verify in a FRESH session (agent registry caches definitions at session start): (a) combined-mode `SIZE_UPGRADE` tripwires fire on a disguised-XS storage-key rename, (b) combined-mode lead refuses source-file writes | chore | high | open |
+| F0002 | audit-2026-06-12 | Trim `lead.md` (~30–35%) and `pm.md` (~20–25%): drop sections that restate orchestrator-side enforcement (skill budgets, fanout signal shapes, NFR/AC rules already enforced pre-spawn) | refactor | med | open |
+| F0003 | audit-2026-06-12 | Gate review-fanout workers by diff content (`team-comment-analyzer` only when comments change; `team-type-design-analyzer` only when types are added) and fold `team-silent-failure-hunter`'s checklist into `team-code-reviewer` (activates when the diff contains catch/fallback paths) | refactor | med | open |
+| F0004 | audit-2026-06-12 | Cut generic-textbook skill references (~30–40 KB): `programming-fundamentals/{complexity,naming,testing}.md`, `queue-fundamentals/operating.md`, slim `database-fundamentals/indexing.md` (keep the EXPLAIN diagnostic in SKILL.md) | chore | low | open |
+| F0005 | audit-2026-06-12 | PreToolUse hook to warn when a /dev worker session Reads multiple full `SKILL.md` bodies (skill-load budget is currently advisory only) | feat | low | open |
+| F0006 | audit-2026-06-12 | Live-test the new CI ship gate on a repo with a remote + real CI (sandboxes had neither); includes the `gh pr checks` / MCP / subscription fallback order | chore | low | open |
 
 
 ## Closed
