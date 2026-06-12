@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-06-12
+
+### Added
+
+- **`refactoring-fundamentals` skill + baseline-capture contract.** A dedicated process skill for restructuring existing code without changing behaviour — closing the `fix`→`debug-fundamentals` / `refactor`→(nothing) asymmetry. Carved from `programming-fundamentals` (which owns the *target shape*); this owns the *safe path* to get there: 7 principles (behaviour contract, one hat at a time, characterize-before-touch, small reversible steps, smell/preparatory triggers, when-NOT-to-refactor, Mikado/strangler) plus references (code smells, the refactoring catalog, characterization tests, large-scale). Registered in the always-on rule, `WORKFLOW.md` skill routing, and the `rules/fundamentals.md` run order. The **baseline-capture contract** threads it into `/dev`: a `refactor` run captures a characterization (golden-master) baseline as plan step 1 when coverage is thin, and `qa` verifies it (no baseline + uncovered behaviour = blocking gap) — wired through `plan-writing`, `lead`, `engineer`, `qa`, the `plan.md` / `tests.md` templates, and the type-aware phase matrix. Files: `.claude/skills/refactoring-fundamentals/**`, `.claude/rules/refactoring-fundamentals.md`, `CLAUDE.md`, `WORKFLOW.md`, `.claude/agents/{lead,engineer,qa}.md`, `.claude/skills/plan-writing/SKILL.md`, `.workflow/_templates/{plan,tests}.md`.
+- **`qa-handoff-note` skill.** A product skill that writes `.workflow/<id>/qa-note.md` — a black-box handoff telling QA how to exercise a change on a deployed **dev / staging environment** (environment URL + build, login account/role, navigation path, API endpoint + auth, seeded test data, feature flags) and what to test (focus areas / risk hotspots, known limits *not* to flag, and step-by-step scenarios with explicit expected results). Bounded against `spec.md` (acceptance criteria) and `tests.md` (automated results) so it never restates them; oriented to manual testing on the environment, so it carries no code or run-the-repo steps. Manual invocation — no phase-matrix or agent changes. Ships filled `feat` + `fix` examples under `references/`, loaded on demand. Files: `.claude/skills/qa-handoff-note/**`, `CLAUDE.md` (skills inventory).
+
 ## [1.5.0] - 2026-06-12
 
 ### Added
@@ -151,7 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.2.0...v1.3.0
