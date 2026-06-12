@@ -1,6 +1,6 @@
 ---
 name: qa-handoff-note
-description: Write a `qa-note.md` handoff that lets QA test a change on a deployed environment (dev/staging) by hand — where it lives, how to reach it, what to click/call, what to expect, and what NOT to flag — WITHOUT pulling the repo or running code. The dev→QA bridge for black-box / functional testing, distinct from `tests.md` (automated test results). Use when handing implemented work off to a QA tester in a /dev run (orchestrator/main agent, after review/security, before the test phase), or when the user asks to "write a QA note", "qa handoff", "test notes for QA", "บันทึกส่งงานให้ QA", "qa test บน dev", "qa-note". Owns the four sections (Where & how to access on dev · Focus areas & risk hotspots · Known limits / not covered · Test scenarios) plus the concrete-access, expected-result, no-secrets, and honest-limits rules. Skip for chore/docs/spike (no QA pass) and throwaway scripts.
+description: Write a `qa-note.md` handoff that lets QA hand-test a change on a deployed environment (dev/staging) WITHOUT pulling the repo — distinct from `tests.md` (automated results). Use when handing implemented work off to a QA tester in a /dev run (after review/security, before the test phase), or when the user asks to "write a QA note", "qa handoff", "test notes for QA", "บันทึกส่งงานให้ QA", "qa test บน dev", "qa-note". Skip for chore/docs/spike (no QA pass) and throwaway scripts.
 ---
 
 # QA Handoff Note
