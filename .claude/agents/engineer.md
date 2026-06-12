@@ -104,7 +104,7 @@ Return: list of files touched in this mode, or "no doc changes needed".
    - Push the current branch with `-u` if it isn't tracking one.
    - Run `gh pr create` with a HEREDOC body that includes: spec summary, acceptance criteria (copy from `spec.md`), test plan summary (copy from `tests.md`), and a "Generated with Claude Code" footer.
    - Capture the PR URL.
-7. Record `commit_sha` and `pr_url` in `.workflow/<id>/state.json` so `retro` can lift them.
+7. Report `commit_sha` and `pr_url` in your return message — do NOT write them into `.workflow/<id>/state.json` yourself. The orchestrator is the single writer of `state.json` (its State discipline has no carve-out for workers); it records both values on your return so `retro` can lift them.
 
 ### Rules
 

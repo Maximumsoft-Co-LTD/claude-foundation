@@ -116,7 +116,7 @@ The slowest part of a `/dev` run is usually *you* — the main-agent turn betwee
       - Severity `medium` / `low` only → non-blocking; carry into `retro.md > Security findings (carry-over)` and proceed without a re-spawn.
     - If not firing: write a single line to `state.json` (`security_triggered=false`) and move on.
 13. **Test.** Type-branch:
-    - `feat` / `refactor` / `fix` → spawn `qa`. INDEX status → `testing`. State: `step=test, cycles.test++`. If `qa` returns `FANOUT_REQUESTED: test:<category-list>` (opt-in heuristic), follow `## Fanout dispatch` below — dispatch one `team-pr-test-analyzer` per category, then re-spawn `qa` for synthesis.
+    - `feat` / `refactor` / `fix` → spawn `qa`. INDEX status → `testing`. State: `step=test, cycles.test++`. **Dedup with review fanout:** if step 11's review fanout already ran `team-pr-test-analyzer` on this same diff (no engineer changes since), pass its `review.md > Per-agent findings > team-pr-test-analyzer` section into the `qa` prompt up front — qa folds it in instead of re-requesting the same ground. If `qa` returns `FANOUT_REQUESTED: test:<category-list>` (opt-in heuristic), follow `## Fanout dispatch` below — dispatch one `team-pr-test-analyzer` per category **not already covered by the passed-in review findings**, then re-spawn `qa` for synthesis.
       - **Test artifact check.** Confirm `tests.md` exists (read first line). If absent, re-spawn `qa` before applying cycle logic.
       - `fix`: the prompt to qa must restate "verify the regression test fails on pre-fix code (use the test-commit vs fix-commit two-commit history; fall back to `git stash` or a scratch revert branch) and passes now."
       - Failing tests, `cycles.test` ≤ 3 → engineer fixes.
@@ -125,7 +125,7 @@ The slowest part of a `/dev` run is usually *you* — the main-agent turn betwee
     - `chore` / `docs` → spawn `qa` with mode = `Skipped`; qa writes a one-line stub in `tests.md` explaining why and returns.
     - `spike` → skip entirely. Engineer's `recommendations.md` is the deliverable.
 14. **Docs touch-up.** Spawn `engineer` in docs mode (skipped for `spike`; light for `fix`/`refactor`/`chore` — pass that hint).
-15. **Ship.** Spawn `engineer` in ship mode. Pass `open_pr_on_ship` from state. Engineer stages, writes a commit message referencing the run ID + goal, and (if requested) opens a PR. Record commit hash + PR URL in `state.json` so `retro` can lift them.
+15. **Ship.** Spawn `engineer` in ship mode. Pass `open_pr_on_ship` from state. Engineer stages, writes a commit message referencing the run ID + goal, and (if requested) opens a PR. The engineer **returns** the commit hash + PR URL; **you** record them in `state.json` (single-writer discipline — workers never write state) so `retro` can lift them.
     - **Ship check** (skip when `repo_root` is null or the engineer returned "no VCS — ship skipped"). Run `git -C <repo_root> log --oneline -1` and confirm the commit SHA the engineer reported is present. If the log shows no new commit, re-spawn `engineer` in ship mode.
     - Skipped for `spike` unless the user explicitly opted to commit at the gate.
 16. **Retro.** Spawn `retro`. INDEX status → `done`, set finished date. State: `step=retro, next_step=skill-handoff`.
@@ -162,16 +162,16 @@ If the first line matches the case-insensitive `FANOUT_REQ` prefix but does **no
 Once the signal validates, dispatch **all workers in the same orchestrator message** — Claude Code's `Agent` tool runs them concurrently when multiple invocations appear in one assistant turn. Sequential `Agent` calls across multiple turns are **not** parallel.
 
 ```
-# In one orchestrator message:
-Agent(subagent_type="team-codebase-explorer",        description="...", prompt=<focused-prompt-1>)
-Agent(subagent_type="team-best-practice-researcher", description="...", prompt=<focused-prompt-2>)
-Agent(subagent_type="team-code-reviewer",            description="...", prompt=<focused-prompt-3>)
-Agent(subagent_type="team-code-simplifier",          description="...", prompt=<focused-prompt-4>)
-Agent(subagent_type="team-comment-analyzer",         description="...", prompt=<focused-prompt-5>)
-Agent(subagent_type="team-pr-test-analyzer",         description="...", prompt=<focused-prompt-6>)
-Agent(subagent_type="team-silent-failure-hunter",    description="...", prompt=<focused-prompt-7>)
-Agent(subagent_type="team-type-design-analyzer",     description="...", prompt=<focused-prompt-8>)
+# In one orchestrator message — example: the review fanout's 6 workers:
+Agent(subagent_type="team-code-reviewer",            description="...", prompt=<focused-prompt-1>)
+Agent(subagent_type="team-code-simplifier",          description="...", prompt=<focused-prompt-2>)
+Agent(subagent_type="team-comment-analyzer",         description="...", prompt=<focused-prompt-3>)
+Agent(subagent_type="team-pr-test-analyzer",         description="...", prompt=<focused-prompt-4>)
+Agent(subagent_type="team-silent-failure-hunter",    description="...", prompt=<focused-prompt-5>)
+Agent(subagent_type="team-type-design-analyzer",     description="...", prompt=<focused-prompt-6>)
 ```
+
+Each shape dispatches **its own worker set** (the table above is authoritative) — e.g. `plan:<point-list>` sends one `team-codebase-explorer` + one `team-best-practice-researcher` per point, never the review six. The one-message rule applies to every shape.
 
 Each prompt is **self-contained** (the workers inherit none of the calling sub-agent's context). Include scope (paths / diff slice), goal (one sentence), constraints (what NOT to do), and output shape (the worker's documented section format from `.claude/agents/team-<role>.md`).
 
