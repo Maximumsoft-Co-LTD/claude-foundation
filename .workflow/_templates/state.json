@@ -1,6 +1,7 @@
 {
   "id": "NNNN-type-slug",
   "type": "feat",
+  "size": null,
   "repo_root": null,
   "branch": null,
   "branch_existed": false,

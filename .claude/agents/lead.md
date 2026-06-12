@@ -75,6 +75,16 @@ When the orchestrator re-spawns you with gate-revise notes (Phase 1 step 9 `revi
 - Keep the strict `Steps` format and AC tags intact: if a note adds/removes/retargets a step, fix its `[AC#]` tag and `verify:` clause, and re-check that every AC still has delivering + verifying step(s) and that no `P<phase>.<step>` cross-reference now dangles. That self-check on the edited region is the consistency verification the orchestrator relies on before re-presenting.
 - Return: plan path + a 1–2 line summary of **only what changed** (which steps/sections) + confirmation the edited-region self-check passed.
 
+### Combined variant (XS/S fast path — spec + plan in one spawn)
+
+When the orchestrator spawns you in **combined mode** (`pm` is skipped for XS/S runs), write both artifacts in one pass:
+
+1. Copy `.workflow/_templates/spec.md` → `.workflow/<id>/spec.md` and fill it from the requirements digest + interview Q&A in the prompt — the same inputs and rules `pm` works under: minimum floor is Outcome + AC + `Type`; every AC keeps its `e.g.:` example and `on error / at boundary:` clause from the interview; user-stated digest content is authoritative (only repo-derived facts are inferences); unresolved slots get `[NEEDS CLARIFICATION: <who> — <what>]` markers (syntax: `pm.md > Inline ambiguity`), never guesses.
+2. Write `plan.md` per Mode A as usual, at XS/S compactness (one-line diagram is fine; the template's section triggers stay authoritative). If the spec work reveals the run is genuinely larger than the orchestrator's estimate, set the real `Size` in the plan and return `SIZE_UPGRADE: <size> — <reason>` as your **first line** — your `spec.md` stands; the orchestrator re-routes the rest.
+3. No spec-prep or plan-prep fanout in this mode. If you find yourself needing `FANOUT_REQUESTED`, that is itself evidence the run is not XS/S — return the `SIZE_UPGRADE` line instead.
+
+Return: both artifact paths + Size + the Mode A done-summary fields.
+
 ---
 
 ## Mode B — Review (Phase 2 step 5)

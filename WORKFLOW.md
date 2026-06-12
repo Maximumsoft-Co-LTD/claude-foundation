@@ -130,6 +130,24 @@ The same numbered phases run for every type, but `orchestrator` **skips or speci
 
 **Security trigger** — phase 6 runs when the diff touches any of: auth/session/token code, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell calls, deserialisation of untrusted input, secret-bearing files (env, config), or new external network endpoints. `orchestrator` decides; `lead` executes in security mode using the inline checklist (no separate skill required).
 
+## Size-aware execution matrix
+
+Type decides *which* phases run; **size decides how much machinery each phase gets** — the same contract scaled to the work, so a one-line text fix doesn't pay a migration's process cost. The orchestrator estimates size (XS/S/M/L — picker in `plan-writing > references/size-tiering.md`) right after the requirements digest and records it in `state.json`; `lead` sets the authoritative plan `Size` and may only raise it.
+
+| Step | XS | S | M / L |
+|------|----|---|-------|
+| Setup + interview questions | one merged batch (≤4 questions) | one merged batch | setup batch + interview batch (+ bounded dig loop) |
+| Spec + plan | one `lead` spawn (combined mode, `pm` skipped), no prep fanout | same as XS | `pm` + `lead` spawns, condition-based prep fanout |
+| Gate (per-line AC confirm) | full | full | full |
+| Implement | one `engineer` spawn | one spawn | one spawn (+ opt-in L-tier fanout) |
+| Review | `lead` sonnet, fanout refused | sonnet, fanout refused | sonnet/opus per stakes, fanout condition-based |
+| Security review | trigger-based (unchanged) | trigger-based | trigger-based |
+| Test | per type matrix (unchanged) | per type matrix | per type matrix (+ opt-in fanout) |
+| Docs + ship | one merged `engineer` spawn | one merged spawn | two spawns |
+| Retro | inline (orchestrator writes `retro.md`) | `retro` spawn, light pass | `retro` spawn, full |
+
+**Never shrinks at any size:** the interview (merged, not skipped) · the gate + per-line AC confirmation · `state.json` discipline · the security trigger check · the type matrix. **Upgrades are one-way:** any worker can return `SIZE_UPGRADE: <S|M|L> — <reason>` as its first line; the orchestrator re-records `size` and runs the remaining steps with the bigger tier's machinery. Size never moves down mid-run. Mechanics: `.claude/orchestrator.md > Size-aware execution`.
+
 **Fanout availability** — parallel team-agent fanout is available at phase steps 1 (spec prep / research — condition-based), 2 (plan — condition-based for unclear/high-risk S/M/L existing-code work), 4 (implement), 5 (review — condition-based), 6 (security — opt-in per bucket), and 7 (test — opt-in per category). Spec/plan research uses `team-codebase-explorer` for read-only codebase facts and `team-best-practice-researcher` for current best-practice probes when existing code, APIs, security-sensitive paths, unfamiliar domain terms, or multiple independent research questions make guessing risky; skip it for XS pure-greenfield and straightforward existing-code work. Review fanout uses the six review workers only when the diff is large, cross-module, critical, type/contract/test-sensitive, or uncertain enough to merit independent passes. Pattern + heuristics live in `.claude/skills/fanout-team-agents/SKILL.md`; the embedded team agents are documented in `.claude/agents/TEAM.md`. **Operational note**: Claude Code's agent registry is session-scoped — `team-*.md` files created mid-session (e.g., by `/dev` itself) are not discoverable as `subagent_type=team-<role>` until the session restarts. Until then, the orchestrator uses the inline-fallback path (`subagent_type="general-purpose"` with the worker's role contract read inline). Both paths are documented in the skill and in `.claude/orchestrator.md > Fanout dispatch`.
 
 ## Skill routing

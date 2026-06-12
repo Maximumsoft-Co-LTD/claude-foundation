@@ -59,6 +59,8 @@ Return: list of changed files + ticked acceptance criteria + any `BLOCKER:` note
 
 ## Mode B — Docs touch-up (Phase 2 step 8)
 
+> **XS/S fast path:** the orchestrator may merge this mode with Mode C into ONE spawn ("Mode B then Mode C"). Run the Mode B steps first, then the Mode C steps, in that order — never ship before the docs pass.
+
 ### Steps
 
 1. Re-read the diff after QA passed (or after review, for chore/docs/spike where QA was skipped).
