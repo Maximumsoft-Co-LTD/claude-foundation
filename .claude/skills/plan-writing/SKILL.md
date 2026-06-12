@@ -87,7 +87,7 @@ A step that needs multiple verifications is doing multiple things. Split it. Ste
 
 - **`feat`** — standard plan. Diagram = flowchart, mark `★`.
 - **`fix`** — step 1 of `Steps` MUST be "write failing regression test for <bug>" encoded against `spec.md > Reproduction`. *Address the root cause, not the symptom* — if your fix step is "catch the exception" or "guard the null", ask whether the cause is upstream and document why the local fix is correct.
-- **`refactor`** — one-line behaviour-equivalence statement in `Approach`: what stays identical and how it gets verified (existing suite, character test, golden file). Lean on existing tests first.
+- **`refactor`** — one-line behaviour-equivalence statement in `Approach`: what stays identical and how it gets verified. Lean on the existing suite **where it already covers the touched behaviour**; where it doesn't, the equivalence claim is unverifiable until you pin the current behaviour — so make **step 1 of `Steps` a characterization baseline** (golden-master/snapshot of current observable behaviour, captured before the structural change), mirroring how `fix` opens with a regression test.
 - **`chore`** — minimal plan. Skip Risks for XS.
 - **`docs`** — Steps are doc edits. Files touched lists every doc file. No test planning.
 - **`spike`** — `Out of scope` MUST say "no production code lands from this run — engineer writes `recommendations.md` only". Steps may be open-ended ("try option A, measure throughput at 1k req/s").

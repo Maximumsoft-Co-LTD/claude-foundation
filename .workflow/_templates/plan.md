@@ -26,7 +26,7 @@ TRIGGER: Size=L OR ≥3 decisions need gate sign-off. Comes BEFORE ## Approach. 
 
 ## Approach
 2–3 sentences: strategy + why this over the obvious alternative.
-<!-- Type-specific: fix → state the root cause; step 1 of Steps is a failing regression test vs spec.md > Reproduction · refactor → one-line behaviour-equivalence statement (what stays identical + how it's verified) · spike → name the question + what evidence counts as an answer. -->
+<!-- Type-specific: fix → state the root cause; step 1 of Steps is a failing regression test vs spec.md > Reproduction · refactor → one-line behaviour-equivalence statement (what stays identical + how it's verified); when the touched behaviour isn't already covered by a test, step 1 of Steps = capture a characterization baseline (golden-master/snapshot of current behaviour) BEFORE the structural change · spike → name the question + what evidence counts as an answer. -->
 
 ## Architecture diagram
 <!-- ALWAYS required. Mark new pieces ★. Type picks the diagram: feat=flowchart · fix=sequenceDiagram · refactor=before/after · chore/docs=one-line or N/A · spike=question-marked. XS may be a single line. -->
@@ -55,7 +55,7 @@ Outcome + Approach + Architecture diagram + Steps are the always-required sectio
 
 Optional sections — include WHEN:
 - Step order — Size ∈ {S, M, L} and order matters (`foundation-first | riskiest-first | outside-in | inside-out` — because <reason>)
-- Current state — M/L OR refactor OR fix (LSP-walk existing code, cite `path#anchor`: entry points · data/control flow 3–7 hops · callers/blast radius · invariants. refactor→Anti-goals that must stay identical; fix→Bug path line). This is the `path#anchor`-cited detail; the plain-language one-liner already lives in `## Outcome > Before` — complement it, don't duplicate it.
+- Current state — M/L OR refactor OR fix (LSP-walk existing code, cite `path#anchor`: entry points · data/control flow 3–7 hops · callers/blast radius · invariants. refactor→Anti-goals that must stay identical, noting which already have test coverage vs which need a characterization baseline captured first; fix→Bug path line). This is the `path#anchor`-cited detail; the plain-language one-liner already lives in `## Outcome > Before` — complement it, don't duplicate it.
 - References / examples to follow — `spec.md` carries a `References / examples to follow` section (the user gave an artifact to model after). Restate each repo ref as `path#anchor` and tag the Step(s) that use it (e.g. `[ref: src/legacy/foo.ts#handler]`) so the engineer opens the example at the moment it's needed; inlined URL excerpts / pasted samples stay in `spec.md` — point to them, don't duplicate. Comes BEFORE Steps.
 - Folder structure — new project OR feat adding ≥3 new packages/modules (directory tree with one-line purpose per node; omit unchanged subtrees). Comes AFTER Architecture diagram, BEFORE Steps.
 - API / event contracts — feat/fix that introduces or changes public HTTP endpoints, event schemas, cross-service message formats, OR a new internal port/interface boundary (e.g. a hexagonal port between application and an adapter). For transport: method · path · request fields · response fields · error codes, one block per endpoint. For an internal port: the interface name + method signatures (params → return/error) the Steps must satisfy. Name the contract here BEFORE the Steps that implement it, so the engineer fills a defined signature instead of inventing one (and the adapter can't drift from the port). Comes AFTER Folder structure (if present), BEFORE Steps.

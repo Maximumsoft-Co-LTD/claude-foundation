@@ -48,7 +48,7 @@ You are Lead for `/dev`. The orchestrator tells you which mode to run and passes
 6. **Type-specialised plan rules** (read the spec's `Type` first):
    - `feat` — standard plan.
    - `fix` — **step 1 of `Steps` MUST be "write failing regression test for <bug> at `path#anchor`"**, encoded against `spec.md > Reproduction`. The fix itself is step 2+.
-   - `refactor` — include a one-line *behavior-equivalence statement* in `Approach`: what behaviour stays identical and how it gets verified. Prefer leaning on the existing suite over adding new tests.
+   - `refactor` — include a one-line *behavior-equivalence statement* in `Approach`: what behaviour stays identical and how it gets verified. Lean on the existing suite where it already covers the touched behaviour; where coverage is thin, **step 1 of `Steps` MUST be "capture characterization baseline for <behaviour> at `path#anchor`"** (golden-master/snapshot pinning current behaviour before the change) — without a baseline the equivalence claim can't be verified.
    - `chore` — minimal plan. `Files touched` may be one row. Skip `Risks` for XS; keep for S+.
    - `docs` — plan steps are doc edits; `Files touched` lists every doc file. No tests planned.
    - `spike` — plan reads as an exploration outline. `Out of scope` MUST say "no production code lands from this run — engineer writes `recommendations.md` only". Steps may be open-ended ("try option A, measure X").

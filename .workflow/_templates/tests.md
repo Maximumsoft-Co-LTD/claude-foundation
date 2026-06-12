@@ -15,6 +15,7 @@ Pick one. Fill the rest of the doc only for the active mode (full fill rules liv
 Type-aware mode is the only always-required section. Add ONLY the sections your mode needs, then DELETE the rest:
 - Coverage plan — Full/Fix (Unit / Integration / E2E)
 - Regression test — REQUIRED for Fix (Path · reproduces spec.md > Reproduction? · pre-fix verification: how QA confirmed it fails on the old code, e.g. `git stash && test` → ❌ / pop → ✅)
+- Baseline — REQUIRED for Refactor when the touched behaviour wasn't already covered (characterization/golden-master that pins current behaviour: what was pinned · captured BEFORE the structural change · result before ✅ → after ✅). No baseline AND uncovered behaviour = blocking gap — the equivalence claim is unverifiable.
 - Acceptance-criteria coverage — Full/Fix (table mapping every spec.md AC → ≥1 test; justify any untestable criterion + tag it for retro)
 - Edge-case gaps — Full/Fix (reachable inputs the spec leaves undefined: input · why reachable · open question · blocking? — findings, not test rows; omit if none)
 - Results — Full/Fix (table: Suite | Run | Pass | Fail | Notes)
