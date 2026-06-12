@@ -10,7 +10,7 @@ Key surface area:
 - `.claude/orchestrator.md` — the main-agent playbook for the `/dev` workflow. There is **no** `orchestrator` sub-agent; the main agent IS the orchestrator (sub-agents can't spawn agents or talk to the user). Never call `Agent(subagent_type="orchestrator")`.
 - `.claude/agents/` — `/dev` workers (`pm`, `lead`, `engineer`, `qa`, `retro`) and parallel `team-*` fanout workers, each with an explicit `model:` set for cost/speed tuning.
 - `.claude/rules/` — always-on "by default" rules. These are load-bearing: the fundamentals get applied via this always-on context, not via the Skill tool (project skills don't auto-trigger). The working agreements below point here.
-- `.claude/skills/` — the fundamentals skills (full detail loaded on demand) plus product skills (`brainstorming`, `plan-writing`, `fanout-team-agents`, frontend/UX, `skill-creator`).
+- `.claude/skills/` — the fundamentals skills (full detail loaded on demand) plus product skills (`brainstorming`, `plan-writing`, `qa-handoff-note`, `fanout-team-agents`, frontend/UX, `skill-creator`).
 - `.claude/hooks/` — `dev-agent-guard.sh` (PreToolUse spawn guard for the `/dev` state machine), `dev-state-mark.sh` (PostToolUse state marker), `lint.sh` (PostToolUse linter dispatch), `protect-secrets.sh` (PreToolUse guard that blocks `Read`/`Grep`/`Bash` from reading `.env` and credential files; allow-lists `*.example`/`*.template`/`*.pub`).
 - `WORKFLOW.md` + `.workflow/` — the type-aware phase matrix, run templates, and per-run `state.json` / artifacts that drive `/dev --resume`.
 
