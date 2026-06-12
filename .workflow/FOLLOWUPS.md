@@ -14,6 +14,7 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 | F0004 | audit-2026-06-12 | Cut generic-textbook skill references (~30–40 KB): `programming-fundamentals/{complexity,naming,testing}.md`, `queue-fundamentals/operating.md`, slim `database-fundamentals/indexing.md` (keep the EXPLAIN diagnostic in SKILL.md) | chore | low | open |
 | F0005 | audit-2026-06-12 | PreToolUse hook to warn when a /dev worker session Reads multiple full `SKILL.md` bodies (skill-load budget is currently advisory only) | feat | low | open |
 | F0006 | audit-2026-06-12 | Live-test the new CI ship gate on a repo with a remote + real CI (sandboxes had neither); includes the `gh pr checks` / MCP / subscription fallback order | chore | low | open |
+| F0007 | audit-2026-06-12 | Surface `size` in the dashboard Insights (client `scan_runs` lifts it from `state.json`; server aggregates; UI adds by-size counts + median-duration-by-size next to the by-type charts) — the ROI story of size-aware execution is invisible until this lands | feat | med | open |
 
 
 ## Closed
