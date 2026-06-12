@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-12
+
 ### Added
 
 - **Dashboard redesign — sidebar + four tabs + Insights.** The presence dashboard is now a multi-tab app with a left sidebar: **Team** (presence + "working in" + activity), **Conflicts**, **Insights**, and **Activity**.
@@ -149,7 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.1.0...v1.2.0
