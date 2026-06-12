@@ -56,7 +56,7 @@ app.get('/files/:name', async (req, res) => {
 
 **Rule:** Validate every untrusted input where it enters, against an allow-list of what is permitted, *after* reducing it to a single canonical form. Reject what does not match; never try to sanitize hostile input into safe input.
 
-**Why:** A check that runs on a non-canonical input is a check an attacker walks around. `../`, `..%2f`, `..%252f` (double-encoded), Unicode look-alikes, mixed case, trailing dots, and overlong UTF-8 are all the same value wearing disguises. If you check `if (path.startsWith('/safe'))` before decoding, the attacker sends an encoded form that fails your check and then gets decoded by the filesystem into the dangerous form. **Canonicalize first, then validate** — decode, normalize Unicode, resolve the path, lowercase the host, *then* compare.
+**Why:** A check that runs on a non-canonical input is a check an attacker walks around. `../`, `..%2f`, `..%252f` (double-encoded), Unicode look-alikes, mixed case, trailing dots, and overlong UTF-8 are all the same value wearing disguises. If you check `if (path.startsWith('/safe'))` before decoding, the attacker sends an encoded form that passes your check (no literal `../` in sight) and is then decoded downstream into the dangerous form. **Canonicalize first, then validate** — decode, normalize Unicode, resolve the path, lowercase the host, *then* compare.
 
 Allow-list over deny-list, always. A deny-list enumerates the bad inputs you thought of; the attacker only needs the one you didn't. An allow-list enumerates the good inputs, which is a small, knowable set. "Must match `^[a-z0-9-]{1,32}$`" is defensible; "must not contain `<script>`" is a game of whack-a-mole you will lose.
 
@@ -112,7 +112,7 @@ exec(`convert ${filename} out.png`)                        // ; rm -rf /
 
 // Good — parameterized query; argument array, no shell
 db.query('SELECT * FROM users WHERE email = $1', [email])
-execFile('convert', [filename, 'out.png'])                 // filename can't break out of the arg
+execFile('convert', ['--', filename, 'out.png'])           // argv defeats shell injection; `--` (or rejecting a leading `-`) stops the filename being parsed as a flag
 
 // HTML: let the framework escape; raw insertion is the exception that needs a reason
 element.textContent = userComment            // safe — text node, not parsed as HTML
@@ -238,7 +238,7 @@ function canAccess(u, r) {
 The defense is unglamorous: know what you depend on, pin it so builds are reproducible and a malicious version can't silently slip in, scan it for known issues, and keep the tree small so there's less to trust and less to patch.
 
 **How to apply:**
-- Commit the lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`, `go.sum`) and build from it (`npm ci`, not `npm install`) so the exact resolved tree is reproducible and a surprise version can't appear between builds.
+- Commit the lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`; in Go, `go.mod` pins and `go.sum` verifies) and build from it (`npm ci`, not `npm install`) so the exact resolved tree is reproducible and a surprise version can't appear between builds.
 - Run a vulnerability scanner in CI (`npm audit`, `pip-audit`, `osv-scanner`, Dependabot/Renovate) and treat a high-severity advisory in a reachable path as a blocker, not a someday.
 - Minimize: prefer the standard library or a small, well-maintained package over a sprawling one. A left-pad-sized dependency is a left-pad-sized risk. Audit a new dependency's own tree before adding it.
 - Pin and review updates. Auto-merging dependency bumps without a lockfile-diff review is how a compromised release lands. Be especially wary of install-time scripts (`postinstall`) from packages you don't control.
@@ -286,7 +286,7 @@ For anything else — a request handler, a login or session flow, a parser or de
 
 This skill is always-on for security-relevant work (per the project rule at `.claude/rules/security-fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
-This skill is the **design-time half** of security in the `/dev` workflow; the **review-time half** is the lead's security review (Mode C in `.claude/orchestrator.md`), a checklist run on the diff after the engineer writes code. The two are complementary: load this skill *before* writing auth, crypto, or input-handling code so that when the security review runs on the diff, it finds nothing to flag. If you are the one writing the code, this skill is your job; if you are reviewing, the review checklist is — but both draw on the same seven principles.
+This skill is the **design-time half** of security in the `/dev` workflow; the **review-time half** is the lead's security review (Mode C in `.claude/agents/lead.md`; the orchestrator decides when it fires), a checklist run on the diff after the engineer writes code. The two are complementary: load this skill *before* writing auth, crypto, or input-handling code so that when the security review runs on the diff, it finds nothing to flag. If you are the one writing the code, this skill is your job; if you are reviewing, the review checklist is — but both draw on the same seven principles.
 
 When the skill applies:
 - **Writing a request handler or parser** — name the trust boundary first; state what each untrusted input controls before you use it.

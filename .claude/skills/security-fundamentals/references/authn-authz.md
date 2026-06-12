@@ -121,7 +121,7 @@ The fatal mistake is reaching for the wrong tool. They are not interchangeable:
 |---|---|---|
 | Store a password | `argon2id` / `scrypt` / `bcrypt` (slow, salted) | SHA-256, MD5, encryption |
 | Hide data in transit/at rest | AEAD: AES-GCM or ChaCha20-Poly1305 | ECB mode, "encrypt then forget the auth tag" |
-| Prove a message wasn't tampered with (shared secret) | HMAC-SHA256 | a plain hash of `data + secret` (length-extension) |
+| Prove a message wasn't tampered with (shared secret) | HMAC-SHA256 | any hand-rolled concatenation — `H(secret + data)` is length-extendable, `H(data + secret)` inherits collision fragility; use HMAC |
 | Prove origin (public verification) | digital signature (Ed25519, RSA-PSS) | HMAC (verifier needs the secret) |
 | Generate a token / id / nonce / salt | CSPRNG: `crypto.randomBytes`, `secrets.token_bytes` | `Math.random()`, `random.random()`, timestamps |
 | Compare two secrets/MACs/tokens | constant-time: `timingSafeEqual`, `compare_digest` | `==` / `===` (timing oracle) |

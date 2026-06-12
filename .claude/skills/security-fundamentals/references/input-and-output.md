@@ -13,7 +13,7 @@ A check that runs against a non-canonical form is bypassable. The same logical v
 ..%2f..%2fetc%2fpasswd    # URL-encoded
 ..%252f..                 # double-encoded (decoded once by proxy, again by app)
 ....//                     # nested — strip-once "../" → "../"
-../             # unicode-escaped
+..%c0%af                   # overlong UTF-8 encoding of ../ (decodes past naive filters)
 ```
 
 Order: **decode until stable → Unicode-normalize (NFC) → resolve (`..`, symlinks, case for hosts) → THEN compare against the allow-list.** For paths, resolve to an absolute real path and confirm it is under the intended base directory (`commonpath`/`startsWith` on the *resolved* path, not the input).
@@ -76,7 +76,8 @@ ORMs parameterize automatically — until you reach for a raw-SQL escape hatch (
 os.system(f"convert {filename} out.png")        # filename = "x.png; rm -rf /"
 subprocess.run(f"convert {filename} out.png", shell=True)   # same hole
 
-# Safe: no shell, filename is one opaque argument that can't break out
+# Safe from SHELL injection: no shell, filename is one opaque argument.
+# Still pass `--` (or reject a leading `-`) so it can't be parsed as a flag by the tool itself
 subprocess.run(["convert", filename, "out.png"])            # shell=False is the default
 ```
 

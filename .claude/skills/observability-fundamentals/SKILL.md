@@ -153,7 +153,7 @@ checkout_latency_avg_ms  723   ← means nothing; whose latency? the p99 could b
 The actionability test is clarifying: for every alert ask "when this fires at 3 a.m., is there a specific thing the responder does?" If the honest answer is "look and go back to sleep," it's not an alert — it's a dashboard panel or a ticket. Demote it.
 
 **How to apply:**
-- Alert on **SLO burn rate** (principle 6), elevated error ratio, and latency-percentile breach — symptoms. Use **multi-window burn-rate** alerts (e.g. fast-burn over 1h AND slow-burn over 6h) so you page on real budget loss, not a one-minute blip.
+- Alert on **SLO burn rate** (principle 6), elevated error ratio, and latency-percentile breach — symptoms. Use **multi-window burn-rate** alerts (each alert pairs a long window with a short one — e.g. page on 1h AND 5m both burning; ticket on 6h AND 30m) so you page on real budget loss, not a one-minute blip.
 - Put causes (CPU, memory, GC, pool saturation) on **dashboards**, not pagers — they're diagnostic context, consulted after a symptom fires.
 - For every paging alert, write the **runbook link** and the first action into the alert itself. No runbook → not ready to page.
 - Tier by urgency: **page** = user-facing and needs action now; **ticket** = needs attention this week; **dashboard** = context only. Most things are not pages.
@@ -193,7 +193,7 @@ Without an SLO you get one of two failures: chasing 100% (infinitely expensive, 
 ```
 SLI:  proportion of POST /checkout requests that are non-5xx AND < 500ms
 SLO:  99.9% over a rolling 30 days
-Error budget:  0.1% of requests  →  over 30 days ≈ 43m13s of total unavailability allowed
+Error budget:  0.1% of requests  →  over 30 days ≈ 43m12s of total unavailability allowed
 
 Budgeting in practice:
   budget 80% remaining, mid-month  →  green: ship the risky migration

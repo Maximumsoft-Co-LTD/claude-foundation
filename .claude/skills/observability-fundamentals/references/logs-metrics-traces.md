@@ -79,7 +79,7 @@ Pick metrics from a checklist, not by vibe. **RED** covers request-serving servi
 
 - **Counter** — monotonically increasing total. Requests, errors, bytes. You compute a *rate* from it (`rate(http_requests_total[5m])`). Never use a gauge for a count.
 - **Gauge** — a value that goes up and down. Pool connections in use, queue depth, temperature. A point-in-time level.
-- **Histogram** — bucketed distribution. Latency, payload size. **The only correct way to get percentiles** — the backend computes p95/p99 from buckets across all instances. You cannot average per-instance percentiles into a fleet percentile.
+- **Histogram** — bucketed distribution. Latency, payload size. **The way to get fleet-wide percentiles** — the backend computes p95/p99 from buckets across all instances (summaries/sketches also yield percentiles but don't aggregate across instances). You cannot average per-instance percentiles into a fleet percentile.
 
 ### RED — for a request-serving service / endpoint
 
@@ -221,7 +221,7 @@ SLI:           proportion of POST /checkout requests that are non-5xx AND < 500m
                = count(non-5xx AND <500ms) / count(valid requests)
 SLO:           99.9% over a rolling 30-day window
 Error budget:  1 − 0.999 = 0.1% of requests may fail
-               in time terms over 30 days ≈ 43m 13s of total "down"
+               in time terms over 30 days ≈ 43m 12s of total "down"
 ```
 
 ### Using the budget
