@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard redesign — sidebar + four tabs + Insights.** The presence dashboard is now a multi-tab app with a left sidebar: **Team** (presence + "working in" + activity), **Conflicts**, **Insights**, and **Activity**.
+  - **Insights** aggregates `/dev` completion stats across the team: runs completed (total + this week), in-flight count, median duration, *completed-by-type* and *median-duration-by-type* bar charts, a 14-day *throughput* column chart, and *top-contributor* / *most-active-repo* leaderboards — all rendered with vanilla CSS/SVG (no chart library).
+  - **Activity** is a feed of recent `/dev` runs (shipped + duration, or active + phase), newest first.
+  - A **member filter** ("Whole team" + a chip per teammate) on Insights and Activity scopes every stat and the feed to one person; the client computes from a deduped run list, so filtering is instant and day-buckets use the viewer's own timezone.
+
+### Changed
+
+- **Client reports full `/dev` run history (client v1.5.0).** `scan_runs` replaces the active-only activity scan: it reports every run under the scan roots (active + completed) with filesystem-derived timing — run-dir birth time ≈ start, `state.json` mtime ≈ finish — and treats `phase: "done"` as completed (real `state.json` carries no `created_at`/`done_at`). The server derives live activity, deduped run stats, and the activity feed from these records.
+- **Compact team cards.** Each "working in" repo is now a single line (folder name + branch + file count, full path on hover), capped at 6 with a "+N more" toggle, and the agent meta collapses to one line — so a machine with many active repos no longer makes a very tall card. Repos stay sorted most-recently-edited first.
+- The dashboard heartbeat body cap was raised to 512 KB to fit the richer run + change payloads, and over-limit bodies now drain to a clean `400` instead of dropping the connection (which surfaced as a `502`). Files: `dashboard/server.js`, `dashboard/client.sh`, `dashboard/public/**`.
+
 ## [1.4.0] - 2026-06-12
 
 ### Added

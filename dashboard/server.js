@@ -43,6 +43,18 @@ function prune(now) {
   }
 }
 
+// A reported /dev run counts as live "activity" on the team card if it's not
+// done and its state.json was touched within this window.
+const ACTIVE_RUN_WINDOW_MS = 24 * 3600 * 1000;
+
+/** Derive the card's live /dev activity from an agent's reported runs. */
+function deriveActivity(runs, now) {
+  return (runs || [])
+    .filter((r) => !r.done && r.finished && now - r.finished * 1000 <= ACTIVE_RUN_WINDOW_MS)
+    .slice(0, 10)
+    .map((r) => ({ repo: r.repo, branch: r.branch, runId: r.id, type: r.type, phase: r.phase }));
+}
+
 /** Shape the public view of one agent. */
 function snapshot(a, now) {
   const ageMs = now - a.lastSeen;
@@ -52,7 +64,7 @@ function snapshot(a, now) {
     host: a.host,
     version: a.version,
     status: a.status,
-    activity: a.activity || [],
+    activity: deriveActivity(a.runs, now),
     // Compact "working in" summary — repo + branch + file count, derived from the
     // reported changes. Full paths/line-ranges stay server-side for conflict math.
     repos: (a.changes || []).map((c) => ({
@@ -81,19 +93,22 @@ function clean(v, max = MAX_FIELD_LEN) {
   return String(v).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, max).trim();
 }
 
-/** Sanitize the optional activity array (the in-flight /dev runs an agent reports). */
-function cleanActivity(raw) {
+/** Sanitize the reported /dev runs (active + completed) used for activity + stats. */
+function cleanRuns(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
-    .slice(0, 20)
-    .map((it) => ({
-      repo: clean(it && it.repo, 80),
-      branch: clean(it && it.branch, 120),
-      runId: clean(it && it.runId, 80),
-      type: clean(it && it.type, 20),
-      phase: clean(it && it.phase, 40),
+    .slice(0, 300)
+    .map((r) => ({
+      id: clean(r && r.id, 80),
+      type: clean(r && r.type, 20),
+      repo: clean(r && r.repo, 120),
+      branch: clean(r && r.branch, 120),
+      phase: clean(r && r.phase, 40),
+      started: Math.max(0, toInt(r && r.started, 0)),
+      finished: Math.max(0, toInt(r && r.finished, 0)),
+      done: !!(r && r.done),
     }))
-    .filter((it) => it.repo || it.branch || it.runId);
+    .filter((r) => r.id);
 }
 
 /** Sanitize a list of [start,end] line ranges. */
@@ -230,7 +245,7 @@ async function handleHeartbeat(req, res, url) {
     host: clean(body.value.host),
     version: clean(body.value.version),
     status,
-    activity: cleanActivity(body.value.activity),
+    runs: cleanRuns(body.value.runs),
     changes: cleanChanges(body.value.changes),
     firstSeen: existing ? existing.firstSeen : now,
     lastSeen: now,
@@ -303,6 +318,101 @@ function computeConflicts(now) {
   return conflicts.slice(0, 100);
 }
 
+const DAY_MS = 86400 * 1000;
+
+/** Dedupe runs across all agents by repo|id; first/most-recent reporter wins. */
+function dedupeRuns(pickNewest) {
+  const seen = new Map();
+  for (const a of agents.values()) {
+    for (const r of a.runs || []) {
+      const key = `${r.repo}|${r.id}`;
+      const cur = seen.get(key);
+      if (!cur || (pickNewest && r.finished > cur.finished)) seen.set(key, { ...r, gitUser: a.gitUser });
+    }
+  }
+  return [...seen.values()];
+}
+
+function median(sortedNums) {
+  return sortedNums.length ? sortedNums[Math.floor(sortedNums.length / 2)] : 0;
+}
+
+/** Aggregate /dev completion stats across all known agents. */
+function computeStats(now) {
+  const all = dedupeRuns(false);
+  const completed = all.filter((r) => r.done);
+  const inFlight = all.filter((r) => !r.done && r.finished && now - r.finished * 1000 <= 7 * DAY_MS);
+
+  const durs = completed.map((r) => r.finished - r.started).filter((d) => d > 0).sort((x, y) => x - y);
+  const avgDuration = durs.length ? Math.round(durs.reduce((s, d) => s + d, 0) / durs.length) : 0;
+
+  const byType = {};
+  const durByTypeArr = {};
+  for (const r of completed) {
+    const t = r.type || 'other';
+    byType[t] = (byType[t] || 0) + 1;
+    const d = r.finished - r.started;
+    if (d > 0) (durByTypeArr[t] = durByTypeArr[t] || []).push(d);
+  }
+  const durByType = {};
+  for (const t of Object.keys(durByTypeArr)) durByType[t] = median(durByTypeArr[t].sort((x, y) => x - y));
+
+  const weekAgo = now - 7 * DAY_MS;
+  const completedThisWeek = completed.filter((r) => r.finished * 1000 >= weekAgo).length;
+
+  const throughput = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now - i * DAY_MS);
+    d.setHours(0, 0, 0, 0);
+    const start = d.getTime();
+    throughput.push({
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      count: completed.filter((r) => r.finished * 1000 >= start && r.finished * 1000 < start + DAY_MS).length,
+    });
+  }
+
+  const byPerson = {};
+  const byRepo = {};
+  for (const r of completed) {
+    byPerson[r.gitUser || 'unknown'] = (byPerson[r.gitUser || 'unknown'] || 0) + 1;
+    byRepo[r.repo || 'unknown'] = (byRepo[r.repo || 'unknown'] || 0) + 1;
+  }
+  const top = (obj, k) =>
+    Object.entries(obj).map(([name, count]) => ({ [k]: name, count })).sort((a, b) => b.count - a.count).slice(0, 8);
+
+  return {
+    totalCompleted: completed.length,
+    completedThisWeek,
+    inFlight: inFlight.length,
+    totalRuns: all.length,
+    avgDuration,
+    medianDuration: median(durs),
+    byType,
+    durByType,
+    throughput,
+    topPeople: top(byPerson, 'name'),
+    topRepos: top(byRepo, 'repo'),
+  };
+}
+
+/** Recent run events for the Activity feed (newest first). */
+function computeFeed() {
+  return dedupeRuns(true)
+    .filter((r) => r.finished)
+    .sort((a, b) => b.finished - a.finished)
+    .slice(0, 25)
+    .map((r) => ({
+      id: r.id,
+      type: r.type,
+      repo: r.repo,
+      gitUser: r.gitUser,
+      phase: r.phase,
+      done: r.done,
+      finished: r.finished,
+      durationSec: r.done && r.finished > r.started ? r.finished - r.started : 0,
+    }));
+}
+
 function handleOnline(req, res, url) {
   if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
     return sendJson(res, 401, { ok: false, error: 'bad key' });
@@ -318,6 +428,12 @@ function handleOnline(req, res, url) {
     totalCount: all.length,
     agents: all,
     conflicts: computeConflicts(now),
+    // Deduped run list — the client computes stats + feed from this so it can
+    // filter by teammate and use the viewer's own timezone for day buckets.
+    runs: dedupeRuns(true).slice(0, 400).map((r) => ({
+      id: r.id, type: r.type, repo: r.repo, gitUser: r.gitUser,
+      phase: r.phase, started: r.started, finished: r.finished, done: r.done,
+    })),
   });
 }
 

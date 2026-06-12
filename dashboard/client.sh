@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-CLIENT_VERSION="1.4.0"
+CLIENT_VERSION="1.5.0"
 DEFAULT_SERVER="https://claude-foundation-dashboard-production.up.railway.app"
 
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -151,11 +151,11 @@ derive_identity() {
 
 json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 
-# ── Activity scan: what /dev runs are in flight on this machine ──────────────
-ACTIVITY_JSON="[]"
+# ── Run + change scans: /dev run history and per-repo edits on this machine ──
+RUNS_JSON="[]"
 CHANGES_JSON="[]"
 LAST_SCAN=0
-ACT_CACHE="$STATE_DIR/activity.json"   # background scan publishes results here
+RUNS_CACHE="$STATE_DIR/runs.json"      # background scan publishes results here
 CHG_CACHE="$STATE_DIR/changes.json"
 SCAN_LOCK="$STATE_DIR/scan.lock"
 
@@ -181,39 +181,47 @@ normalize_remote() {
 file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
 # Pull a string field out of a state.json (null/number fields → empty).
 json_get() { sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1" 2>/dev/null | head -1; }
+# Best-effort "started" epoch for a run dir (state.json has no created_at): the
+# dir's birth time, falling back to the state.json mtime.
+dir_started() {
+  local d=$1 b
+  b="$(stat -f %B "$d" 2>/dev/null || stat -c %W "$d" 2>/dev/null || true)"
+  [ -n "$b" ] && [ "$b" != "0" ] || b="$(file_mtime "$d/state.json")"
+  printf '%s' "$b"
+}
 
-# Find /dev runs that are in flight (done_at: null) and were touched within
-# ACTIVE_WINDOW, under SCAN_ROOTS. Sets ACTIVITY_JSON to a JSON array of
-# {repo, branch, runId, type, phase}. All data comes straight from state.json.
-scan_activity() {
-  [ "$ACTIVITY" = "yes" ] || { ACTIVITY_JSON="[]"; return; }
-  local now items=() sj id branch repo_root repo type phase mt
-  now="$(date +%s)"
+# Find ALL /dev runs under SCAN_ROOTS (active AND completed) and report one
+# compact record each, so the server can derive live activity AND aggregate
+# completion stats (counts, durations, throughput). Fields come straight from
+# state.json; newest-first, capped at RUNS_CAP.
+scan_runs() {
+  [ "$ACTIVITY" = "yes" ] || { RUNS_JSON="[]"; return; }
+  local tab; tab="$(printf '\t')"
+  local ranked=() sj rundir id rtype repo branch phase step repo_root started finished doneflag
   while IFS= read -r sj; do
     [ -n "$sj" ] || continue
-    grep -q '"done_at"[[:space:]]*:[[:space:]]*null' "$sj" 2>/dev/null || continue
-    mt="$(file_mtime "$sj")"
-    [ "$(( now - mt ))" -le "$ACTIVE_WINDOW" ] || continue
+    case "$sj" in */_templates/*) continue ;; esac      # skip the blueprint state.json
+    rundir="$(dirname "$sj")"
     id="$(json_get "$sj" id)"
+    [ -n "$id" ] && [ "$id" != "NNNN-type-slug" ] || continue
+    rtype="$(json_get "$sj" type)"
     branch="$(json_get "$sj" branch)"
-    repo_root="$(json_get "$sj" repo_root)"
-    type="$(json_get "$sj" type)"
     phase="$(json_get "$sj" phase)"
+    step="$(json_get "$sj" step)"
+    repo_root="$(json_get "$sj" repo_root)"
     if [ -n "$repo_root" ]; then repo="$(basename "$repo_root")"
-    else repo="$(basename "$(dirname "$(dirname "$(dirname "$sj")")")")"; fi
-    items+=("$(printf '{"repo":"%s","branch":"%s","runId":"%s","type":"%s","phase":"%s"}' \
-      "$(json_escape "$repo")" "$(json_escape "$branch")" "$(json_escape "$id")" \
-      "$(json_escape "$type")" "$(json_escape "$phase")")")
+    else repo="$(basename "$(dirname "$(dirname "$rundir")")")"; fi
+    started="$(dir_started "$rundir")"                  # run-dir birth ≈ created
+    finished="$(file_mtime "$sj")"                      # state.json mtime ≈ last_updated
+    doneflag=false; { [ "$phase" = "done" ] || [ "$step" = "done" ]; } && doneflag=true
+    ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"branch\":\"$(json_escape "$branch")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag}}")
   done < <(find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
              \( -name node_modules -o -name .git -o -name Library -o -name .Trash -o -name .cache \) -prune \
-             -o -path '*/.workflow/*/state.json' -mtime -1 -print 2>/dev/null)
-  # Join — guarded because `${items[*]}` on an empty array trips `set -u`
-  # under macOS's bash 3.2 (no active runs is the common case).
-  if [ "${#items[@]}" -gt 0 ]; then
-    local IFS=,
-    ACTIVITY_JSON="[${items[*]}]"
+             -o -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print 2>/dev/null)
+  if [ "${#ranked[@]}" -gt 0 ]; then
+    RUNS_JSON="[$(printf '%s\n' "${ranked[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${RUNS_CAP:-200}" 'NR<=n' | cut -f2- | paste -sd, -)]"
   else
-    ACTIVITY_JSON="[]"
+    RUNS_JSON="[]"
   fi
 }
 
@@ -281,9 +289,9 @@ scan_changes() {
 
 # Run both scans and atomically publish their results to the cache files.
 run_scans_to_cache() {
-  scan_activity
+  scan_runs
   scan_changes
-  printf '%s' "$ACTIVITY_JSON" > "$ACT_CACHE.tmp" 2>/dev/null && mv "$ACT_CACHE.tmp" "$ACT_CACHE" 2>/dev/null
+  printf '%s' "$RUNS_JSON" > "$RUNS_CACHE.tmp" 2>/dev/null && mv "$RUNS_CACHE.tmp" "$RUNS_CACHE" 2>/dev/null
   printf '%s' "$CHANGES_JSON" > "$CHG_CACHE.tmp" 2>/dev/null && mv "$CHG_CACHE.tmp" "$CHG_CACHE" 2>/dev/null
   rm -f "$SCAN_LOCK"
 }
@@ -306,16 +314,16 @@ maybe_scan() {
 
 # Load the latest published scan results into the payload vars.
 load_cache() {
-  [ -s "$ACT_CACHE" ] && ACTIVITY_JSON="$(cat "$ACT_CACHE" 2>/dev/null)"
+  [ -s "$RUNS_CACHE" ] && RUNS_JSON="$(cat "$RUNS_CACHE" 2>/dev/null)"
   [ -s "$CHG_CACHE" ] && CHANGES_JSON="$(cat "$CHG_CACHE" 2>/dev/null)"
-  [ -n "$ACTIVITY_JSON" ] || ACTIVITY_JSON="[]"
+  [ -n "$RUNS_JSON" ] || RUNS_JSON="[]"
   [ -n "$CHANGES_JSON" ] || CHANGES_JSON="[]"
 }
 
 build_payload() {
-  printf '{"agentId":"%s","gitUser":"%s","host":"%s","version":"%s","status":"%s","activity":%s,"changes":%s}' \
+  printf '{"agentId":"%s","gitUser":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s}' \
     "$(json_escape "$AGENT_ID")" "$(json_escape "$GIT_USER")" \
-    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$ACTIVITY_JSON" "$CHANGES_JSON"
+    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$RUNS_JSON" "$CHANGES_JSON"
 }
 
 beat() {
@@ -344,13 +352,13 @@ run_loop() {
   info "dashboard: ${SERVER}"
   info "agent:     ${GIT_USER} ${D}(${AGENT_ID:0:8} @ ${HOST})${N}"
   if [ "$ACTIVITY" = "yes" ]; then
-    info "activity:  scanning ${#SCAN_ROOTS[@]} root(s) for /dev runs every ${SCAN_INTERVAL}s ${D}(--no-activity to disable)${N}"
+    info "runs:      scanning ${#SCAN_ROOTS[@]} root(s) for /dev runs (activity + stats) every ${SCAN_INTERVAL}s ${D}(--no-activity to disable)${N}"
   fi
   if [ "$CONFLICTS" = "yes" ]; then
     info "conflicts: scanning git repos in the background for changed files/lines ${D}(top ${CHANGES_REPO_CAP:-20} by recency · --no-conflicts to disable)${N}"
   fi
   # --once: run the scans synchronously so the single beat carries fresh data.
-  if [ "$ONCE" = "yes" ]; then scan_activity; scan_changes; beat online; exit 0; fi
+  if [ "$ONCE" = "yes" ]; then scan_runs; scan_changes; beat online; exit 0; fi
   info "heartbeat every ${INTERVAL}s — press Ctrl-C to stop"
   # Presence is never blocked by scanning: the first beat fires immediately, the
   # heavy repo scan runs detached (writes a cache), and beats load whatever the
