@@ -49,7 +49,7 @@ What gets installed:
   .claude/agents/**            — pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
   .claude/orchestrator.md      — orchestrator script run by the main agent on /dev, NOT a sub-agent (always refreshed)
   .claude/commands/dev.md      — the /dev slash command (always refreshed)
-  .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, database, hexagonal, architecture, queue, debug, git-workflow) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
+  .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, concurrency, database, hexagonal, architecture, queue, security, observability, debug, refactoring, testing, git-workflow, delivery-engineering) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
   .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
   .claude/hooks/**             — every hook script in the foundation (lint, dev-agent-guard, dev-state-mark, protect-secrets, …) — copied verbatim, always refreshed
   .claude/settings.json        — hook wiring, derived from this file's own hooks block (only if missing; existing files get a merge — see below)
@@ -288,6 +288,7 @@ fi
 # needs to re-sync, wrap the block in sentinel comments and replace between them.
 emit_rules_block() {
   cat <<'BLOCK'
+<!-- claude-foundation:rules-imports:start (managed block — re-synced by install.sh; edit rules in .claude/rules/, not here) -->
 ## Always-on fundamentals
 
 The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit imports below are a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, these imports are redundant but harmless — delete this section if you ever see a rule loaded twice.
@@ -296,23 +297,35 @@ The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude
 @.claude/rules/fundamentals.md
 @.claude/rules/ddd-strategic.md
 @.claude/rules/programming-fundamentals.md
+@.claude/rules/concurrency-fundamentals.md
 @.claude/rules/database-fundamentals.md
 @.claude/rules/hexagonal-backend.md
 @.claude/rules/architecture-fundamentals.md
 @.claude/rules/queue-fundamentals.md
+@.claude/rules/security-fundamentals.md
+@.claude/rules/observability-fundamentals.md
 @.claude/rules/debug-fundamentals.md
+@.claude/rules/refactoring-fundamentals.md
+@.claude/rules/testing-fundamentals.md
 @.claude/rules/git-workflow.md
+@.claude/rules/delivery-engineering.md
+<!-- claude-foundation:rules-imports:end -->
 BLOCK
 }
+SENTINEL_START="<!-- claude-foundation:rules-imports:start"
+SENTINEL_END="<!-- claude-foundation:rules-imports:end -->"
+# Legacy idempotency key (pre-sentinel blocks, installed before the rule set grew).
 RULES_IMPORT_MARKER="@.claude/rules/coding-discipline.md"
 
 CLAUDE_DST="$TARGET_PATH/CLAUDE.md"
 if [ ! -e "$CLAUDE_DST" ]; then
   printf "  ${G}+${N} CLAUDE.md ${D}(stub — points at WORKFLOW.md + rules-import fallback)${N}\n"
-elif ! grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
-  printf "  ${G}~${N} CLAUDE.md ${D}(append always-on rules-import fallback)${N}\n"
+elif grep -qF "$SENTINEL_START" "$CLAUDE_DST" 2>/dev/null; then
+  printf "  ${G}~${N} CLAUDE.md ${D}(re-sync managed rules-import block)${N}\n"
+elif grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
+  printf "  ${G}~${N} CLAUDE.md ${D}(upgrade legacy rules-import block → managed block)${N}\n"
 else
-  printf "  ${D}=${N} CLAUDE.md ${D}(kept — rules-import already present)${N}\n"
+  printf "  ${G}~${N} CLAUDE.md ${D}(append always-on rules-import fallback)${N}\n"
 fi
 
 # settings.json hook check. PLAN keeps the existing settings.json so we never
@@ -490,12 +503,33 @@ Agents live under `.claude/agents/`; run artifacts land in `.workflow/<id>/`; cr
 EOF
   emit_rules_block >> "$CLAUDE_DST"
   CLAUDE_ACTION="created"
-elif ! grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
+elif grep -qF "$SENTINEL_START" "$CLAUDE_DST" 2>/dev/null; then
+  # Managed block present — re-sync its contents in place (this is how a new rule
+  # reaches an existing adopter). Replace everything between the sentinels.
+  if command -v awk >/dev/null 2>&1; then
+    NEW_BLOCK="$(emit_rules_block)"
+    awk -v repl="$NEW_BLOCK" '
+      $0 ~ /claude-foundation:rules-imports:start/ {print repl; skip=1; next}
+      $0 ~ /claude-foundation:rules-imports:end/   {skip=0; next}
+      skip!=1 {print}
+    ' "$CLAUDE_DST" > "$CLAUDE_DST.tmp" && mv "$CLAUDE_DST.tmp" "$CLAUDE_DST"
+    CLAUDE_ACTION="resynced"
+  fi
+elif grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
+  # Legacy pre-sentinel block (frozen before the rule set grew, so it is missing
+  # the newer rules — including security-fundamentals). Append the managed block;
+  # the duplicate imports are redundant-but-harmless per the block's own note, and
+  # the next install re-syncs in place via the sentinels just added.
+  { printf '\n'; emit_rules_block; } >> "$CLAUDE_DST"
+  CLAUDE_ACTION="upgraded"
+else
   { printf '\n'; emit_rules_block; } >> "$CLAUDE_DST"
   CLAUDE_ACTION="appended"
 fi
 case "$CLAUDE_ACTION" in
   created)  printf "  ${G}+${N} CLAUDE.md ${D}(stub + rules-import fallback)${N}\n" ;;
+  resynced) printf "  ${G}~${N} CLAUDE.md ${D}(re-synced managed rules-import block)${N}\n" ;;
+  upgraded) printf "  ${G}~${N} CLAUDE.md ${D}(upgraded legacy rules-import block → managed)${N}\n" ;;
   appended) printf "  ${G}~${N} CLAUDE.md ${D}(appended always-on rules-import fallback)${N}\n" ;;
   kept)     printf "  ${D}=${N} CLAUDE.md ${D}(kept — rules-import already present)${N}\n" ;;
 esac

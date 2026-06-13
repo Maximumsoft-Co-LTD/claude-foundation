@@ -73,7 +73,7 @@ Options:
   -h, --help         Show this help
 
 What gets installed:
-  .cursor/rules/*.mdc          — 10 always-apply rules ported from .claude/rules/
+  .cursor/rules/*.mdc          — 16 always-apply rules ported from .claude/rules/
                                  (frontmatter prepended, paths rewritten)
   .cursor/skills/**            — fundamentals skills (verbatim copy, referenced
                                  from the rules)
@@ -195,14 +195,21 @@ ok "target: $TARGET_PATH"
 rule_description() {
   case "$1" in
     coding-discipline)         echo "Behavioral conduct wrapper for any code task — surface assumptions, write the minimum non-speculative code, keep diffs surgical, turn the task into a verifiable goal. Run first, then the layer-appropriate fundamental." ;;
+    fundamentals)              echo "Cross-skill run order — the single source of truth for which fundamentals skill runs when (ddd → programming → concurrency → database → hexagonal → architecture → queue → security → observability, plus the verification and delivery skills). Other rules point here instead of restating the chain." ;;
     ddd-strategic)             echo "Strategic Domain-Driven Design before deciding where a model lives and what language it speaks (subdomain classification, bounded contexts, ubiquitous language, context mapping, aggregate sizing, domain vs integration events)." ;;
     programming-fundamentals)  echo "Pre-flight fundamentals before writing or changing any non-trivial code (data shape, illegal states, function design, pure core, errors, complexity, naming)." ;;
+    concurrency-fundamentals)  echo "In-process concurrency fundamentals (don't share mutable state, atomic critical sections, deadlock avoidance, async/await pitfalls, idempotent/cancellable ops, bounded fan-out). Cross-process async is queue-fundamentals." ;;
     database-fundamentals)     echo "Pre-flight fundamentals before any database work (schema, constraints, indexes, query plans, transactions, expand-backfill-contract migrations)." ;;
     hexagonal-backend)         echo "Ports-and-adapters layering for backend code (domain / application / infrastructure; dependencies point inward)." ;;
     architecture-fundamentals) echo "System-level architecture fundamentals (boundaries, ownership, sync vs async, resilience, consistency, observability, contract evolution)." ;;
     queue-fundamentals)        echo "Queue / message-broker fundamentals (delivery semantics, idempotent consumers, ack discipline, retries/DLQ, ordering, outbox)." ;;
+    security-fundamentals)     echo "Design-time security fundamentals before code on a trust boundary (threat modeling, input validation, contextual output encoding/parameterized queries, authn/authz deny-by-default, secrets & crypto, least privilege, dependency hygiene)." ;;
+    observability-fundamentals) echo "Observability fundamentals before shipping runtime code with a new failure mode (logs/metrics/traces, structured leveled logging, correlation ids, RED/USE + percentiles, alert on symptoms, SLI/SLO/error budgets, cardinality/cost)." ;;
     debug-fundamentals)        echo "Debugging fundamentals when a failure's cause is unknown (reproduce, read evidence, facts vs assumptions, bisect, one change at a time, right layer, cause + regression test)." ;;
+    refactoring-fundamentals)  echo "Refactoring fundamentals before reshaping working code without changing behaviour (one hat at a time, green-or-characterize-first, small reversible steps, smell/preparatory triggers, Mikado/strangler)." ;;
+    testing-fundamentals)      echo "Testing fundamentals before writing tests or designing a suite (test behaviour not implementation, the test pyramid, what to test, disciplined test doubles, isolated/deterministic/fast, AAA, coverage as a flashlight)." ;;
     git-workflow)              echo "Git workflow fundamentals before writing to .git (fresh base, atomic commits, why-carrying messages, local vs shared history, integrate often, PR as unit of review, recover with reflog)." ;;
+    delivery-engineering)      echo "Delivery-engineering fundamentals before changing the CI/CD pipeline, build, or deploy (CI gate as merge contract, build-once-promote, config/secrets outside the artifact, reproducible builds, safe reversible deploys, automate to prod, pipeline as code + DORA)." ;;
     *)                         echo "$1" ;;
   esac
 }
@@ -499,7 +506,7 @@ The original workflow assumed Claude Code primitives Cursor doesn't have. The po
 
 ## Files
 
-- `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + run-order routing + ddd-strategic + code/data/service/architecture/queue/debug fundamentals + git-workflow). Cursor loads these automatically.
+- `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + run-order routing + ddd-strategic + programming/concurrency/database/hexagonal/architecture/queue/security/observability fundamentals + debug/refactoring/testing + git-workflow/delivery-engineering). Cursor loads these automatically.
 - `.cursor/skills/**` — deep-dive skill content the rules point to.
 - `.cursor/agents/*.md` — role docs (pm/lead/engineer/qa/retro). Read these when entering the matching phase.
 - `.cursor/orchestrator.md` — the orchestration script the `/dev` command follows.

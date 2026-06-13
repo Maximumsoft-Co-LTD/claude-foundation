@@ -4,6 +4,7 @@
 **Type**: feat | fix | refactor | chore | docs | spike
 **Completed**: YYYY-MM-DD
 **Total cycles**: review=N, test=N
+**Run metrics**: wall-clock=<created_at → done_at (duration)> · size=<XS|S|M|L> · skipped=<n steps> · security=<fired|not-fired>
 **Ship**: commit=<sha> | PR=<url> | skipped (reason)
 
 ## What worked

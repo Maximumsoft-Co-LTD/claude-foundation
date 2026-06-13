@@ -76,6 +76,8 @@ case "$subagent_type" in
       latest_state=""
       for f in "$WF_DIR"/*/state.json; do
         [[ -f "$f" ]] || continue
+        # _templates holds the blueprint state.json, not a run — never treat it as the active run
+        [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
         if [[ -z "$latest_state" ]] || [[ "$f" -nt "$latest_state" ]]; then
           latest_state="$f"
         fi

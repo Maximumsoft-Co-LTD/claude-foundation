@@ -67,7 +67,7 @@ Format:
 
 Two anti-patterns: (a) silently picking one and asking "does this work?" — that's not exploration, that's leading the witness; (b) listing 5 options of equal weight — that's punting the decision back to the user. Three with a clear lead is the sweet spot.
 
-If a relevant construction-fundamentals skill applies ([[programming-fundamentals]] / [[database-fundamentals]] / [[hexagonal-backend]] / [[architecture-fundamentals]] / [[queue-fundamentals]]), load it BEFORE drafting the options — they decide *what* to build; this skill decides *how to surface the choice*.
+If a relevant construction-fundamentals skill applies, load it BEFORE drafting the options (the layers and their run order live in `.claude/rules/fundamentals.md`) — they decide *what* to build; this skill decides *how to surface the choice*.
 
 ### 5. HARD-GATE: no code, no `Status: approved`, no `plan.md` until the design is acknowledged
 
@@ -185,7 +185,7 @@ If the request says "build", "design", "add feature", "scope", "explore", "brain
 Brainstorming is the **pre-spec** skill — it composes, it does not replace:
 
 - [[plan-writing]] — the next planning aid when complexity warrants it. Once `Status: approved`, planning decides *how to sequence and verify* the work. Brainstorming hands the spec to the plan phase; never bypasses planning.
-- [[programming-fundamentals]] / [[database-fundamentals]] / [[hexagonal-backend]] / [[architecture-fundamentals]] / [[queue-fundamentals]] — load whichever applies BEFORE drafting approach options in principle 4. They decide *what* to build; this skill decides *how to surface the choice and get to a yes*.
+- The construction-fundamentals skills (run order in `.claude/rules/fundamentals.md`) — load whichever layer the work touches BEFORE drafting approach options in principle 4. They decide *what* to build; this skill decides *how to surface the choice and get to a yes*.
 - [[debug-fundamentals]] — for `Type=fix` runs, debug-fundamentals runs *before* this skill: find the actual cause first, then brainstorm the fix (including the regression test the fix step will encode).
 - [[git-workflow]] — pairs later at ship time, not here. Brainstorming produces a spec; plan-writing produces a plan; git-workflow lands the commit.
 

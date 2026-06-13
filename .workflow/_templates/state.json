@@ -1,6 +1,7 @@
 {
   "id": "NNNN-type-slug",
   "type": "feat",
+  "size": null,
   "repo_root": null,
   "branch": null,
   "branch_existed": false,
@@ -14,6 +15,8 @@
   "skipped_steps": [],
   "open_pr_on_ship": null,
   "security_triggered": null,
+  "commit_sha": null,
+  "pr_url": null,
   "last_agent": "orchestrator",
   "created_at": "YYYY-MM-DDTHH:MM:SSZ",
   "last_updated": "YYYY-MM-DDTHH:MM:SSZ",
