@@ -20,6 +20,11 @@
 #      is newer than state.json on the next worker spawn, the orchestrator
 #      skipped the bookkeeping step prescribed by orchestrator.md > State
 #      discipline. Block until state.json catches up — resume depends on it.
+#      The active run is taken from $CLAUDE_DEV_RUN_ID when set, else the
+#      single active run under .workflow/. With two or more runs active at
+#      once (concurrent /dev runs, or a worktree sharing the tree) "newest
+#      state.json" can name a DIFFERENT run than this spawn, so the check
+#      fails OPEN rather than block the wrong run with a stale id.
 #
 # This hook sits on the critical path of EVERY Agent spawn, so it does the least
 # work possible: a single jq parse pulls tool_name + subagent_type (both
@@ -73,22 +78,34 @@ case "$subagent_type" in
     PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
     WF_DIR="$PROJECT_DIR/.workflow"
     if [[ -d "$WF_DIR" ]]; then
-      latest_state=""
-      for f in "$WF_DIR"/*/state.json; do
-        [[ -f "$f" ]] || continue
-        # _templates holds the blueprint state.json, not a run — never treat it as the active run
-        [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
-        if [[ -z "$latest_state" ]] || [[ "$f" -nt "$latest_state" ]]; then
-          latest_state="$f"
-        fi
-      done
-      if [[ -n "$latest_state" ]]; then
-        run_dir="$(dirname "$latest_state")"
+      # Identify the run this freshness check applies to.
+      #   a. $CLAUDE_DEV_RUN_ID — the orchestrator's explicit, concurrency-safe
+      #      signal (also the right knob when /dev runs inside a git worktree).
+      #   b. otherwise the single active (non-_templates) run. With 0 runs there
+      #      is nothing to enforce; with 2+ runs the "newest state.json" heuristic
+      #      can name a DIFFERENT run than this spawn, so fail OPEN — never
+      #      false-block one run because a concurrent sibling wrote its state.
+      active_state=""
+      if [[ -n "${CLAUDE_DEV_RUN_ID:-}" ]] && [[ -f "$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json" ]]; then
+        active_state="$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json"
+      else
+        active_count=0
+        for f in "$WF_DIR"/*/state.json; do
+          [[ -f "$f" ]] || continue
+          # _templates holds the blueprint state.json, not a run — never treat it as a run
+          [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
+          active_count=$((active_count + 1))
+          active_state="$f"
+        done
+        [[ "$active_count" -eq 1 ]] || active_state=""
+      fi
+      if [[ -n "$active_state" ]]; then
+        run_dir="$(dirname "$active_state")"
         run_id="$(basename "$run_dir")"
         marker="$run_dir/.last_worker_return"
         # Block only if both files exist AND marker is newer. If marker is
         # missing, this is the first worker spawn of the run — let it through.
-        if [[ -f "$marker" ]] && [[ "$marker" -nt "$latest_state" ]]; then
+        if [[ -f "$marker" ]] && [[ "$marker" -nt "$active_state" ]]; then
           state_rel=".workflow/$run_id/state.json"
           reason="BLOCKED by /dev guard: $state_rel was not updated after the last worker returned. orchestrator.md > State discipline requires writing state.json (phase, step, next_step, cycles, last_updated, last_agent) after EVERY step, before spawning the next worker — otherwise /dev --resume $run_id is broken. Update $state_rel via Write/Edit, then retry the spawn."
           jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'

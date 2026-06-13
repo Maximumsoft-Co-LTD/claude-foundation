@@ -51,6 +51,8 @@ This rule is now hook-enforced: `.claude/hooks/dev-state-mark.sh` (PostToolUse o
 
 **Background spawns are exempt from the marker.** An `Agent` call with `run_in_background: true` returns immediately with a launch acknowledgment — that is not a worker return, so `dev-state-mark.sh` does not touch the marker for it (otherwise a one-message background batch would self-block: spawn A's launch ack would trip the guard for spawn B). The flip side: a background worker's *completion* arrives as a task notification, which fires no PostToolUse — so for background workers the state-discipline rule is **not** hook-enforced. Write `state.json` yourself when each background worker's notification lands, before acting on its result.
 
+**Git worktrees / concurrent runs.** The `dev-state-mark.sh` / `dev-agent-guard.sh` hooks resolve `.workflow/` against `$CLAUDE_PROJECT_DIR` — the session's project directory (the main checkout), **not** a separate `git worktree` you may be running in. So when `/dev` runs inside a worktree whose `.workflow/` differs from the session dir's, the marker-freshness check compares files across two trees and is unreliable. The supported path is to run `/dev` from the session's main checkout. If you must run inside a worktree — or run two `/dev` runs at once — export `CLAUDE_DEV_RUN_ID=<id>` so the guard scopes its freshness check to your run; without it the guard uses the single active run and fails open when two or more runs are active, so a sibling run never false-blocks yours.
+
 ### Between-step efficiency
 
 The slowest part of a `/dev` run is usually *you* — the main-agent turn between two worker spawns. Keep those turns lean so the next spawn fires sooner and stays cache-warm:
