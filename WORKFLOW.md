@@ -111,6 +111,21 @@ All artifacts have a template in [`.workflow/_templates/`](.workflow/_templates/
 | `epic.md` | `lead` (rare) | [`_templates/epic.md`](.workflow/_templates/epic.md) | Decomposition into slices when `Ship as: staged` + ≥2 capabilities |
 | `state.json` | `orchestrator` | [`_templates/state.json`](.workflow/_templates/state.json) | Resume cursor: phase, step, cycle counters, run timestamps (`created_at` at setup, `last_updated` per step, `done_at` at finish) |
 
+## Optional artifact gate
+
+[`.claude/hooks/artifact-lint.sh`](.claude/hooks/artifact-lint.sh) is an **optional** linter that validates a run's artifacts against the templates. It is *not* wired into the `/dev` state machine — it does not run automatically and never blocks a tool call. Invoke it by hand, in a pre-commit step, or in CI when you want a fast structural check that a run's artifacts are template-complete and placeholder-free.
+
+```sh
+sh .claude/hooks/artifact-lint.sh .workflow/<id>/
+```
+
+What it checks, per directory:
+
+- **Required sections** — `spec.md` must declare a `**Type**:` and an `## Acceptance criteria` section; `plan.md` must have a fenced `mermaid` block, at least one inline AC tag (`[AC<n>]` or `[DoD]`), and a runnable verify section (a `verify:` clause).
+- **No leftover placeholder markers** — `TODO`, `TBD`, `FIXME`, `lorem` (word markers, case-insensitive) and `<...>` angle-bracket placeholders, in any recognised artifact. A marker that sits inside an inline code span (backticks) or a fenced code block is treated as documentation/example syntax and ignored — only bare-prose markers are flagged, so an artifact that *documents* the markers still passes.
+
+It prints a per-check report (`[OK]` / `[FAIL] <file>:<line>: …`) and **exits non-zero on any failure, zero when clean** (and non-zero if the path is missing/empty or holds no recognised artifact). Dependency-light: POSIX `sh` + the base `grep`/`awk` toolchain, no new packages, and it does not read `.workflow/_templates/` at runtime (the rules are encoded in the script) so it works in an adopting repo that installs `.workflow/` without the templates. Its fixtures test suite is [`.claude/hooks/tests/run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
+
 ## Type-aware phase matrix
 
 The same numbered phases run for every type, but `orchestrator` **skips or specializes** some of them based on `Type`. Everything ticked (✓) runs; `skip` means the orchestrator records "skipped — type=<x>" and moves on; `light` means a thinner pass.
