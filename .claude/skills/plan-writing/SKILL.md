@@ -11,7 +11,7 @@ Plans fail in predictable ways: they restate the spec instead of decomposing it,
 
 A plan that scales with the work, carries a diagram, ties every step to an AC, and gives every step a *runnable verify* catches those failures at plan time — minutes spent here save hours in review and test cycles. This skill is the pre-flight for the `/dev` workflow's Phase 1 step 2 (lead agent, plan mode), and the standard whenever a plan is being drafted in this repo.
 
-## The 9 principles
+## The 10 principles
 
 ### 1. Read spec.md + carried follow-ups before anything else
 
@@ -101,6 +101,7 @@ Before handing off, walk these scans (and `references/self-review.md` for exampl
 - **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Diagram is the exception — always include, one-line on XS is fine.)
 - **AC sufficiency, not just coverage** — every Step still carries ≥1 `[AC#]`, but presence is the floor, not the bar. For each spec AC (its `on error / at boundary:` clause and edge sub-bullets included): the Step(s) tagged with it, taken *together*, must **fully deliver** it (not merely touch it), AND at least one of those Steps' `verify:` clause must be the AC's actual acceptance check — when the spec AC carries an `e.g.: input → expected output` example, that example is the verify target. **The error/boundary clause needs its own delivering+verifying coverage** — a plan that implements only the happy path leaves the boundary the spec explicitly called out unbuilt and unverified. A measurable `measured:` target is an AC too: its verify runs the measurement. A step tagged `[AC1]` that doesn't satisfy AC1, or an AC (or its boundary clause) whose tagged steps have no verify that proves it, is coverage on paper only — that is the gap this scan catches.
 - **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path#anchor` (symbol or snippet, not a bare line). When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
+- **Scaffold integrity** *(M/L)* — the `## Scaffold` section exists; every `★` file in it maps to a `(new)` Step (and vice versa); every signature shown is one a Step fills; a type whose shape is a decision is shown as a definition, not just a consuming signature; the block stays signatures / type shapes / one-line stubs, not real bodies; no separate `## Folder structure` duplicates the tree.
 - **Verify-per-step** — every Step's verify is a runnable command or concrete observable, never "manually check".
 
 If any scan fails, fix the plan — do not mark `status: draft`.
@@ -114,6 +115,27 @@ A plan that opens on `Approach` + steps forces the reviewer to reverse-engineer 
 - **Benefit** — `→ spec.md > Outcome`. The product-level win lives in the spec; link it, don't restate it (a restated benefit drifts from its source).
 
 Always rendered, every Size and Type — one short line per bullet is fine on XS, the same "always have the slot" discipline as the diagram (principle 4). `Outcome.Before` is the 30-second prose summary; `Current state` (when present) is the load-bearing `path#anchor`-cited detail — they are **complements, not duplicates**: write Before even when there is no Current state section, and never paste anchors into Before. The spec carries the same block at the product level; the plan's is the system/behaviour level.
+
+### 10. Scaffold the skeleton before a long build (M/L)
+
+A plan that describes the shape only in prose and a flow diagram still leaves the engineer to invent the concrete file layout and every signature — and the reviewer to approve a long build sight-unseen. For **M/L** work, add a `## Scaffold` section: one fenced block showing the *target file tree* (★ = new file, ~ = edited) with each new / changed file's **key exported signature(s)** inline (interface / type / function — params → return/error). It is the concrete skeleton — what the tree and the contracts look like *after scaffolding, before the bodies are filled in*.
+
+This is the highest-leverage review checkpoint for long work: a wrong structural decision (a misplaced boundary, a signature that leaks the wrong type, a missing port) is cheap to fix in a skeleton and expensive to fix after hundreds of lines are written against it. The gate (Phase 1 step 3) surfaces the Scaffold for M/L, so the user signs off the shape before the autonomous Phase 2 begins; the engineer then builds to it instead of guessing.
+
+- **Required** for M/L · **optional** mini version for S that touches existing code · **skip** XS.
+- **Placement:** after the Architecture diagram, before Steps.
+- **No redundancy:** for M/L the Scaffold *is* the file-tree view — it **subsumes `## Folder structure`** (don't write both). Keep a separate `## API / event contracts` section only when a transport contract or port needs field-level / error-code detail richer than the one-line signature the Scaffold already carries.
+- **Show the key type shapes, not just the signatures.** When a type the signatures consume carries a real decision — a discriminated union, a value object, a state enum, anything where the wrong shape leaves an *illegal state representable* — inline its **definition** in the block, not merely the function signature that takes it. Wrong-type is the most expensive shape error and the cheapest to catch here ([[programming-fundamentals]] — make illegal states unrepresentable): a leaked nullable, a union missing its error arm, a primitive where a value object belonged. Don't expand every DTO — only the types whose *shape is itself a choice* the reviewer should sign off. A type definition is contract, not body, so it belongs in the skeleton.
+- **Stays a skeleton, not an implementation:** signatures and type shapes, and at most a one-line stub *body* (`throw new Error('not implemented')` / `raise NotImplementedError`), kept inside the fenced block. Real bodies belong in implementation — pseudocode in a plan rots (see anti-patterns).
+
+```
+src/payments/                          ★ new module
+  domain/charge.types.ts      ★  type ChargeResult = { ok: true; receiptId: string } | { ok: false; reason: DeclineReason }
+  ports/charge.port.ts        ★  interface ChargeProvider { charge(r: ChargeReq): Promise<ChargeResult> }
+  app/charge.usecase.ts       ★  chargeOrder(orderId: string): Promise<Receipt>
+  adapters/stripe.client.ts   ★  class StripeClient implements ChargeProvider
+  orders/order.service.ts     ~  + call chargeOrder() in placeOrder()
+```
 
 ## Pre-flight checklist (run top-to-bottom)
 
@@ -133,8 +155,9 @@ Before writing any section of plan.md:
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path#anchor` (symbol / snippet, not a bare line). Grep is the fallback.
 - [ ] If the change mimics an existing pattern, find that pattern now and have its `path#anchor` ready to cite in Steps.
 - [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
+- [ ] For **M/L**, plan the `## Scaffold` (principle 10): the target file tree (★ new · ~ edited) + each new file's key signature — the skeleton the gate reviews and the engineer builds first. Subsumes `## Folder structure` for M/L.
 
-Then draft in order: **Outcome → Approach → Current state (if required) → Diagram → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
+Then draft in order: **Outcome → Approach → Current state (if required) → Diagram → Scaffold (M/L) → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
 
 ## Section gating by Size
 
@@ -146,6 +169,7 @@ Then draft in order: **Outcome → Approach → Current state (if required) → 
 | Step order line | skip | optional | ✓ | ✓ |
 | Current state (principle 3) | required for refactor/fix; else skip | required when touching existing code OR refactor/fix; else skip | ✓ | ✓ (+ as-is mermaid for refactor) |
 | Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
+| Scaffold (tree + signatures, principle 10) | skip | optional (when touching existing code) | ✓ required | ✓ required |
 | (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps |
 | Files touched | skip if ≤2 files | when >2 files | ✓ | ✓ |
 | Alternatives considered (+ Verified line) | skip | skip | when non-obvious | ✓ |
@@ -198,6 +222,7 @@ If any non-trivial code is about to land in the repo and you're about to write `
 - **Current state that's just paraphrase, no citations** — "the hook writes state.json then exits" without a `path#anchor` is a guess. Walk it with LSP and cite. If you can't cite, you don't know it.
 - **Implementing a new port/boundary without naming its interface first** — if a Step creates a new internal port (e.g. a hexagonal port between application and an adapter), the engineer will invent the method signatures and the adapter drifts from the port. Name the interface + signatures (params → return/error) in `## API / event contracts` *before* the Steps that fill them.
 - **Unpinned or assumed dependencies** — a Step that says "add the `fast-csv` package" with no version, or names a package you didn't confirm exists, invites a hallucinated or typo-squatted dependency. Pin an exact existing version and make the Step's verify confirm it resolves (lockfile entry / `npm ls pkg@ver`).
+- **Scaffold with real bodies** — a `## Scaffold` block that fills in working logic isn't a skeleton, it's early implementation smuggled past the gate (and it rots the same way pseudocode does). Keep it to the file tree + signatures + at most a one-line stub; the bodies land in the Steps. Conversely, on M/L, *omitting* the Scaffold forces the reviewer to approve a long build from prose alone and the engineer to invent the layout — both are the failure principle 10 exists to prevent.
 
 ## References
 

@@ -14,7 +14,7 @@ const ARTIFACTS = {
   plan: {
     name: "plan.md",
     owner: "lead · plan mode",
-    body: "Step-by-step plan with path#anchor references and rollback notes. For fix runs, step 1 is the failing regression test. For refactor, includes a behavior-equivalence note. For spike, an exploration outline.",
+    body: "Step-by-step plan with path#anchor references and rollback notes — plus a Scaffold skeleton (file tree + key signatures and type shapes) for M/L, signed off at the gate before the long build. For fix runs, step 1 is the failing regression test. For refactor, includes a behavior-equivalence note. For spike, an exploration outline.",
   },
   review: {
     name: "review.md",

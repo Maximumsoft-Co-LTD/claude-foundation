@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`plan.md` gains a `## Scaffold` section — the concrete skeleton the gate signs off before a long build.** Plan-writing **principle 10**: for **M/L** plans, `lead` writes a `## Scaffold` block after the Architecture diagram — the target file tree (`★` new · `~` edited) with each new/changed file's key exported signature(s) inline (interface/type/function → params → return/error), plus the definition of any consumed type whose shape is itself a decision (discriminated union / value object / state enum) — the illegal-state-representable check the reviewer should see, not just the signature that takes it. Signatures + type shapes + one-line stubs only (no real bodies — that's early implementation smuggled past the gate). It **subsumes `## Folder structure`** for M/L (the tree lives in Scaffold), and `## API / event contracts` shrinks to only the field/error-code detail richer than the one-line signature already shown. The orchestrator surfaces it at the gate so the user signs off the concrete shape — a misplaced boundary, wrong signature, or a type that leaves an illegal state representable is cheap to fix in a skeleton and expensive after hundreds of lines — and the `engineer` builds the skeleton (layout + signatures + type shapes) first instead of inventing the layout. Threaded through the pre-flight checklist, the size-gating table, the self-review scans (a Scaffold-integrity check: section exists, every `★` maps to a `(new)` Step and vice versa, every signature maps to a Step, a decision-bearing type is shown as a definition, the block stays signatures/type-shapes/stubs, no duplicate `## Folder structure`), and an anti-pattern. Files: `.claude/skills/plan-writing/SKILL.md`, `.claude/skills/plan-writing/references/self-review.md`, `.claude/agents/{lead,engineer}.md`, `.claude/orchestrator.md`, `.workflow/_templates/plan.md`, `WORKFLOW.md`, `website/demo/src/slides/artifacts.js`.
+
 ## [1.6.0] - 2026-06-14
 
 ### Added

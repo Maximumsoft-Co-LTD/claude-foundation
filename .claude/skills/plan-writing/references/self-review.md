@@ -108,6 +108,17 @@ This scan is quick (~15 seconds). A failing Outcome is usually a sign the planne
 
 ## Extra checks for M / L plans
 
+### Scaffold matches the Steps (M/L — required section)
+
+The `## Scaffold` section (principle 10) is the concrete skeleton the gate signs off and the engineer builds first — so it must agree with the rest of the plan, not drift from it. Walk it:
+
+- The section **exists** for M/L. A missing Scaffold means the reviewer approves a long build from prose alone and the engineer invents the layout — the failure principle 10 exists to prevent.
+- Every `★` (new file) in the tree maps to a `(new)` row in `Files touched` / a `(new)` Step (and vice versa) — the same `★`↔`new` correspondence Scan 3 runs for the diagram.
+- Every signature shown is one a Step actually fills. A signature with no Step behind it is a contract nobody builds; a `(new)` file a Step creates but the Scaffold omits is a hole in the skeleton.
+- Where a type the signatures consume carries a decision (discriminated union / value object / state enum), its **definition** is shown — not just the consuming signature. A signature that takes `ChargeResult` with the union defined nowhere leaves the most expensive shape decision (illegal-state-representable) unreviewed at the gate.
+- The block stays **signatures + type shapes + at most a one-line stub body** (`throw new Error('not implemented')` / `raise NotImplementedError`), inside the fence. Real bodies are early implementation smuggled past the gate — move them to the Steps.
+- No separate `## Folder structure` section duplicates the tree (for M/L the tree lives in Scaffold; Folder structure is the new-project / S fallback).
+
 ### Alternatives section is honest (M/L feat/refactor)
 
 If you wrote `Alternatives considered`, the rejected options must be plausible — not strawmen. "Considered X, rejected because it would be slower" without naming *why* or *by how much* is a strawman. Either give a real reason (benchmark, complexity argument, ecosystem maturity) or drop the section.
