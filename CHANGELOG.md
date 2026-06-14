@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`claude-foundation` gains `init`, `version`, and `help` subcommands.** `init [target-path] [options]` is an explicit alias for the installer (the bare `claude-foundation [target-path]` form still works unchanged); `version` (also `--version` / `-v`) prints the release from a new root `VERSION` file — cli.sh's machine-readable source of truth, read relative to the script so it works from both a source checkout and the Homebrew libexec, with a `git describe` fallback; `help` (also `--help` / `-h`) prints a top-level command map and points at `claude-foundation init --help` for the full installer flags. The Homebrew formula ships `VERSION` when present and otherwise synthesizes it from the formula version (so stable tarballs predating the file still report correctly without clobbering HEAD builds), and its `test` block now asserts `version` output. `RELEASING.md` adds a `VERSION` bump step (kept in lockstep with the tag). Files: `cli.sh`, `VERSION` (new), `Formula/claude-foundation.rb`, `RELEASING.md`, `README.md`.
+
 ## [2.0.0] - 2026-06-14
 
 ### Added

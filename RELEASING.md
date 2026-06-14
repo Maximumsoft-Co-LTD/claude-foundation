@@ -13,11 +13,13 @@ We follow [Semantic Versioning](https://semver.org/) and [Keep a Changelog](http
 
 Replace `X.Y.Z` with the new version throughout.
 
-1. **Bump the changelog.** In `CHANGELOG.md`, rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, and update the link-reference block at the bottom:
-   ```
-   [Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/vX.Y.Z...HEAD
-   [X.Y.Z]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v<prev>...vX.Y.Z
-   ```
+1. **Bump the version + changelog.**
+   - Write the bare version (no `v` prefix) into `VERSION`, e.g. `echo "X.Y.Z" > VERSION`. This is the source of truth for `claude-foundation version`; keep it in lockstep with the tag below.
+   - In `CHANGELOG.md`, rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, and update the link-reference block at the bottom:
+     ```
+     [Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/vX.Y.Z...HEAD
+     [X.Y.Z]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v<prev>...vX.Y.Z
+     ```
 
 2. **Tag the source snapshot and push it.** Tag the commit you want to release (usually the tip of `main`):
    ```bash

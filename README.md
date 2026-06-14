@@ -44,10 +44,19 @@ Then run inside any target project to scaffold the foundation there:
 
 ```bash
 cd /path/to/myproject
-claude-foundation
+claude-foundation init        # bare `claude-foundation` does the same
 ```
 
-All flags from `install.sh` are forwarded unchanged (`--dry-run`, `--force`, `--yes`, `--help`, `[target-path]`).
+The CLI surface:
+
+| Command | What it does |
+|---|---|
+| `claude-foundation init [target-path] [options]` | Install the `/dev` workflow (default target: current dir) |
+| `claude-foundation version` | Print the installed version |
+| `claude-foundation help` | Top-level command map (also `--help` / `-h`) |
+| `claude-foundation dashboard-up\|-status\|-down` | Team-presence client (see [Team presence dashboard](#team-presence-dashboard)) |
+
+Installer flags (`--dry-run`, `--force`, `--yes`, `--source <path>`, `[target-path]`) are forwarded through `init` (and through the bare form) to `install.sh`; run `claude-foundation init --help` to list them.
 
 **Windows / non-brew:** Homebrew is not available on Windows. Clone the repo and run `install.sh` directly — see [Quick start](#quick-start) below.
 
@@ -202,8 +211,9 @@ dashboard/          team presence dashboard — Node server + web UI + heartbeat
 ├── server.js       zero-dep API + static dashboard
 ├── public/         the web board (vanilla HTML/CSS/JS)
 └── client.sh       dashboard-up / -down / -status
-cli.sh              top-level CLI router (installer ↔ dashboard subcommands)
+cli.sh              top-level CLI router (init / version / help / dashboard-*)
 install.sh          installs the foundation into a target project
+VERSION             source of truth for `claude-foundation version`
 docs/
 WORKFLOW.md         full flow definition
 CLAUDE.md           per-project guidance
