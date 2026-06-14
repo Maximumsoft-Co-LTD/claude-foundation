@@ -1,6 +1,6 @@
 ---
 name: plan-writing
-description: Write an implementation plan that maps a spec to executable, verifiable steps with a required architecture diagram, sized XS/S/M/L. Use when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), or when the user asks to "write a plan", "plan this feature", "break this down", "draft an RFC". Owns size tiering, the mermaid diagram by Type, current-state mapping for non-greenfield work, inline AC tagging, runnable-verify and anti-placeholder rules, and the pre-draft self-review. Load the relevant construction skill first to decide *what* to build; this skill decides how to sequence, document, and verify it. Skip throwaway scripts, single-line config edits, and un-spec'd design conversations.
+description: Write an implementation plan that maps a spec to executable, verifiable steps with a required architecture diagram, sized XS/S/M/L. Use when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), or when the user asks to "write a plan", "plan this feature", "break this down", "draft an RFC". Owns size tiering, the mermaid diagram by Type, current-state mapping, inline AC tagging, runnable-verify and anti-placeholder rules, and the pre-draft self-review. Skip throwaway scripts, single-line config edits, and un-spec'd design conversations.
 ---
 
 # Plan Writing
@@ -81,7 +81,7 @@ Every step has all four parts. No exceptions.
 
 ### 6. One step → one verify; if not, split
 
-A step that needs multiple verifications is doing multiple things. Split it. Steps map 1-to-1 to commits in spirit (atomic). The verify clause is also what `qa` will hand to its test suite, and what `engineer` will run after the step — write it as if both will literally execute it.
+A step that needs multiple verifications is doing multiple things. Split it. Steps map 1-to-1 to commits in spirit (atomic). The verify clause is what `engineer` runs after the step — write it as if it will literally be executed. (The per-AC *test strategy* — which level proves each criterion — lives in `test-plan.md`, `qa`'s contract at the test phase; a step's verify often becomes one of those tests, but the plan doesn't own the test design.)
 
 ### 7. Type-specific rules
 
@@ -103,6 +103,7 @@ Before handing off, walk these scans (and `references/self-review.md` for exampl
 - **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path#anchor` (symbol or snippet, not a bare line). When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
 - **Scaffold integrity** *(M/L)* — the `## Scaffold` section exists; every `★` file in it maps to a `(new)` Step (and vice versa); every signature shown is one a Step fills; a type whose shape is a decision is shown as a definition, not just a consuming signature; the block stays signatures / type shapes / one-line stubs, not real bodies; no separate `## Folder structure` duplicates the tree.
 - **Verify-per-step** — every Step's verify is a runnable command or concrete observable, never "manually check".
+- **Parallel-phase integrity** *(feat with `Parallelizable: yes` phases)* — there are **≥ 2** such phases (a lone one is pointless); every parallel phase declares `Files touched (exclusive)` and `Depends on: none`; the exclusive sets are **pairwise-disjoint** (no path appears in two parallel phases — count `(new)` paths identically, and treat case-insensitive-filesystem variants like `Index.ts`/`index.ts` as the same path); **no parallel phase imports a symbol *defined in* another parallel phase's exclusive file** (a shared symbol must be pinned in `## Scaffold` and owned by the integration phase or a pre-existing file — file-disjoint is not the same as independent); a final sequential `### Phase <last>: integration` exists and owns the shared glue (barrel/router/DI/lockfile/generated output) + verifies + dep installs; and **any AC delivered across ≥ 2 phases — or partly by a parallel phase and finished in integration — has its acceptance-verifying step in the integration phase** (parallel phases are write-only and run no `verify:`, so an AC whose acceptance check is stranded in a parallel phase can never be verified — put the completing + verifying step in integration). A shared file or symbol in a parallel phase, an overlapping path, fewer than 2 parallel phases, a missing integration phase, or a split AC whose verify lands in a parallel phase means the orchestrator will refuse fanout or the integrator will block — fix it before `draft`.
 
 If any scan fails, fix the plan — do not mark `status: draft`.
 
@@ -170,7 +171,7 @@ Then draft in order: **Outcome → Approach → Current state (if required) → 
 | Current state (principle 3) | required for refactor/fix; else skip | required when touching existing code OR refactor/fix; else skip | ✓ | ✓ (+ as-is mermaid for refactor) |
 | Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
 | Scaffold (tree + signatures, principle 10) | skip | optional (when touching existing code) | ✓ required | ✓ required |
-| (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps |
+| (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps; `feat`-only parallel form adds exclusive Files-touched + integration phase |
 | Files touched | skip if ≤2 files | when >2 files | ✓ | ✓ |
 | Alternatives considered (+ Verified line) | skip | skip | when non-obvious | ✓ |
 | Risks | skip | optional | ✓ | ✓ |
@@ -184,6 +185,34 @@ Sections marked `skip` are **DELETED entirely** — no empty headers, no "N/A" l
 ### Optional Phases for L plans
 
 When a L plan grows past ~12 steps, group them under named Phases (e.g., `### Phase 1: schema migration`, `### Phase 2: write path`, `### Phase 3: read path`). Each phase has its own ordered Steps with the same strict format. Phases let `engineer` create one `TaskCreate` per phase and one nested task per step, which makes long plans navigable without forcing them to split into separate `/dev` runs. Phases are *grouping*, not gates — the /dev workflow already gates between Phase 1 and Phase 2 at the spec-approval point.
+
+#### Parallelizable phases (feat-only — the implement-fanout contract)
+
+Phases are *grouping* by default. A `feat` plan MAY additionally mark phases **parallelizable** so the implement step can run one engineer per phase concurrently (`engineer` Mode A returns `FANOUT_REQUESTED: implement:<parallel-phase-list>`; pattern in `.claude/skills/fanout-team-agents/SKILL.md`). This is **feat-only**: `fix` (regression-test-first), `refactor` (characterization-baseline-first), and `spike` (no production code) all carry step-1 ordering that parallel disjoint phases break — never mark their phases parallel.
+
+Mark phases parallel only when there are **≥ 2** of them — a lone `Parallelizable: yes` phase gains no concurrency and just adds a pointless integration phase (the orchestrator's fanout trigger requires ≥ 2 and will fall back to single-pass otherwise). A parallelizable phase declares three fields directly under its `### Phase N: <name>` heading, before its Steps:
+
+- `**Parallelizable:** yes` — this phase's Steps can run concurrently with the other `yes` phases.
+- `**Files touched (exclusive):**` — the exact file paths this phase owns. **No other parallel phase may list any of these paths.** The orchestrator computes the pairwise intersection of all parallel phases' exclusive sets before dispatch and **refuses fanout (falls back to one sequential engineer) if any intersection is non-empty** — a declaration alone is not trusted. A shared file (barrel/index, route registration, DI container, lockfile, shared types module, **or any generated/codegen output** — anything a build step rewrites) is therefore **never** a parallel phase's file; it belongs to the integration phase below.
+- `**Depends on:** P<n> | none` — a phase that depends on another phase's output is **not** parallelizable with it; a parallel phase must be `none`. (A dependency edge is the other reason the orchestrator refuses fanout.)
+
+Every plan that marks phases parallel MUST end with a final **sequential integration phase** (`### Phase <last>: integration`, `**Parallelizable:** no`). It is the single place that touches **shared glue** (barrel exports, router/DI wiring, lockfile), installs dependencies, **runs the verifies**, and reconciles acceptance — because the parallel phase-engineers are **write-only** (they Edit/Write only their exclusive files and do not run verifies, install deps, touch git, or tick `spec.md`). The per-step `verify:` loop therefore does not run during the parallel phase; review (step 5) and qa (step 7) are the catch.
+
+```
+### Phase 1: payments adapter
+**Parallelizable:** yes · **Depends on:** none
+**Files touched (exclusive):** src/payments/adapters/stripe.client.ts, src/payments/adapters/stripe.client.test.ts
+1. add … — `src/payments/adapters/stripe.client.ts#charge` (new) — verify: `npm test src/payments/adapters/stripe.client.test.ts` [AC2]
+
+### Phase 2: refunds adapter
+**Parallelizable:** yes · **Depends on:** none
+**Files touched (exclusive):** src/payments/adapters/refund.client.ts, src/payments/adapters/refund.client.test.ts
+1. add … — `src/payments/adapters/refund.client.ts#refund` (new) — verify: `npm test src/payments/adapters/refund.client.test.ts` [AC3]
+
+### Phase 3: integration
+**Parallelizable:** no · **Depends on:** P1, P2
+1. wire both adapters into the container — `src/payments/container.ts#register` (edit) — verify: `npm test src/payments` [AC2, AC3]
+```
 
 ## Relation to other skills
 
@@ -223,6 +252,7 @@ If any non-trivial code is about to land in the repo and you're about to write `
 - **Implementing a new port/boundary without naming its interface first** — if a Step creates a new internal port (e.g. a hexagonal port between application and an adapter), the engineer will invent the method signatures and the adapter drifts from the port. Name the interface + signatures (params → return/error) in `## API / event contracts` *before* the Steps that fill them.
 - **Unpinned or assumed dependencies** — a Step that says "add the `fast-csv` package" with no version, or names a package you didn't confirm exists, invites a hallucinated or typo-squatted dependency. Pin an exact existing version and make the Step's verify confirm it resolves (lockfile entry / `npm ls pkg@ver`).
 - **Scaffold with real bodies** — a `## Scaffold` block that fills in working logic isn't a skeleton, it's early implementation smuggled past the gate (and it rots the same way pseudocode does). Keep it to the file tree + signatures + at most a one-line stub; the bodies land in the Steps. Conversely, on M/L, *omitting* the Scaffold forces the reviewer to approve a long build from prose alone and the engineer to invent the layout — both are the failure principle 10 exists to prevent.
+- **Parallel phases over a shared file** — marking two phases `Parallelizable: yes` when both edit the route table / barrel `index.ts` / DI container / lockfile. Concurrent write-only engineers on the same file race or clobber. The shared file is glue — move it into the sequential integration phase and keep each parallel phase's `Files touched (exclusive)` genuinely disjoint. (Same trap: marking `fix`/`refactor`/`spike` phases parallel — their step-1 ordering forbids it.)
 
 ## References
 

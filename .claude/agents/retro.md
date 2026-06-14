@@ -12,17 +12,17 @@ You are Retro for `/dev`.
 
 ## Inputs
 
-- `.workflow/<id>/spec.md`, `plan.md`, `review.md`, and (if present) `tests.md` (absent for `spike`), `security.md`, and `recommendations.md`
-- `.workflow/<id>/state.json` — for commit SHA, PR URL, cycle counts, security-trigger flag
+- `.workflow/<id>/spec.md`, `plan.md`, `review.md`, and (if present) `test-plan.md` (feat/fix/refactor — its `Out of test scope` and any `undefined → spec gap` edge cases that survived the gate are follow-up candidates), `tests.md` (absent for `spike`), `security.md`, and `recommendations.md`
+- `.workflow/<id>/state.json` — for commit SHA, PR URL, cycle counts, security-trigger flag, and `repos` (the control-plane repo list, if any)
 - `.workflow/_templates/retro.md`
 - `.workflow/FOLLOWUPS.md` — to mark consumed entries and append new ones
-- The full diff for the run
+- The full diff for the run — **across every changed repo, not just `repo_root`**. For a control-plane multi-repo run (`state.repos` set), read each changed repo's diff (`git -C <r> diff` / `log`) so your reflection covers the whole run. This is a deliberately **single multi-repo-aware pass, not a per-repo fanout**: the per-repo code detail already lives in the now-unified `review.md` / `tests.md` / `security.md` per-repo sections (you synthesise those), so retro skims each repo's diff rather than re-auditing it line by line. (Ship tracks only `repo_root`'s `commit_sha`/`pr_url` — the single-`repo_root` boundary, `FOLLOWUPS.md` F0001; note other repos' commits in `Ship` if the run made them.)
 - Existing memory index at `~/.claude/projects/<project-slug>/memory/MEMORY.md` (read-only — to check for promotion candidates)
 - Existing skill names/descriptions under `~/.claude/skills/` and `.claude/skills/` (read-only — start with metadata only; read full skill bodies only for likely collisions or update candidates)
 
 ## Steps
 
-1. Read every artifact + the diff + state.json.
+1. Read every artifact + the diff + state.json. For a multi-repo run, the diff is each changed repo's diff (`git -C <r> …` over the `state.repos` changed set) — read them all so `What worked` / `What to change` / `Deviations` reflect the whole run, not only the primary repo.
 2. Skim `MEMORY.md` and the skill directory metadata (folder names, descriptions, manifests/frontmatter when present) so you know what already exists. Read full skill bodies only when a candidate appears to overlap an existing skill or you need to verify an update target. You need this to spot **promotion candidates** (memory cited ≥3 times → propose skill) and **update candidates** (a skill already covers the area — extend it instead of duplicating), without loading the entire skill library on every run.
 3. Read the current `.workflow/FOLLOWUPS.md`. Note open IDs — you'll need them when marking consumed items.
 4. Write `.workflow/<id>/retro.md`:
@@ -36,10 +36,10 @@ You are Retro for `/dev`.
    - **Memory candidates (facts)**: single rules/preferences/facts. Categorize each as `feedback | project | reference | user`. Include WHY + HOW-TO-APPLY for `feedback` and `project` types (per the global memory rules in CLAUDE.md).
    - **Skill candidates (procedures)**: multi-step workflows with clear triggers. Use the routing rules below. **Each candidate MUST include the `handoff prompt for skill-creator` field — a copy-paste-ready brief the orchestrator can pass directly to `skill-creator`.** Leave `status` blank; orchestrator fills it after the user-approval round.
    - **Follow-ups**:
-     - Append each new item to `.workflow/FOLLOWUPS.md > Open` table with a fresh `F` ID (next number after the highest existing ID).
+     - Append each new item to `.workflow/FOLLOWUPS.md > Open` table with a **run-namespaced ID `F-<run-id>-NN`** — `<run-id>` is this run's folder name and `NN` is a per-run counter starting at `01` (e.g. `F-0010-feat-24buym-gift-card-01`, `-02`, …). This is collision-proof by construction: **never** the old global "next number after the highest existing ID", which silently races when two parallel runs both read the same highest ID and both claim it (the duplicate-`F0001`-class corruption). Legacy global `F0001`-style IDs already in the file keep their form — a mixed ID space is expected; do not renumber history.
      - For every item from `spec.md > Carried-over follow-ups` that landed in this run, edit `.workflow/FOLLOWUPS.md`: move its row from `Open` → `Closed`, set status to `consumed-by: <this run id>`, fill the `Date consumed` cell.
      - Mirror both lists in `retro.md > Follow-ups` so the run's history is self-contained.
-   - **Security findings (carry-over)**: if `security.md` exists, copy its medium/low non-blocking findings here. The high findings should already have been fixed before this step; if any high is still open, that's a process bug — flag it under `What to change`.
+   - **Security findings (carry-over)**: if `security.md` exists, **mirror** its medium/low non-blocking findings here for the run's self-contained history. These were **already appended to `FOLLOWUPS.md` at security-review time** (orchestrator step 12), so they survive even a skipped retro — **do NOT re-append them to `FOLLOWUPS.md`** (that double-counts); just reflect them in this section. The high findings should already have been fixed before this step; if any high is still open, that's a process bug — flag it under `What to change`.
 5. Update `.workflow/INDEX.md`: this run's status → `done`, set `Finished` to today's date.
 6. Surface memory + skill candidates to the user explicitly in the return message. **Do not save anything to memory and do not create any skill files yourself** — the orchestrator drives the skill-creator handoff with user approval.
 

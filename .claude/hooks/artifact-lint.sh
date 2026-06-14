@@ -3,9 +3,11 @@
 #
 # Validates a `.workflow/<id>/` run directory against the artifact templates:
 #   1. Required sections per artifact:
-#        spec.md  — a `**Type**:` declaration AND a `## Acceptance criteria` section.
-#        plan.md  — a fenced `mermaid` block, at least one inline AC tag (`[AC<n>]`
-#                   or `[DoD]`), and a runnable verify section (a `verify:` clause).
+#        spec.md       — a `**Type**:` declaration AND a `## Acceptance criteria` section.
+#        plan.md       — a fenced `mermaid` block, at least one inline AC tag (`[AC<n>]`
+#                        or `[DoD]`), and a runnable verify section (a `verify:` clause).
+#        test-plan.md  — a `## Coverage plan` section AND at least one AC reference
+#                        (`AC<n>`), so the test strategy maps to the spec's criteria.
 #   2. No leftover placeholder markers anywhere in any linted artifact:
 #        TODO, TBD, FIXME, lorem  (word markers, case-insensitive)
 #        <...>                    (an angle-bracket placeholder, e.g. <title>, <id>)
@@ -13,6 +15,11 @@
 #      treated as documentation/example syntax, NOT a leftover, and is skipped —
 #      only bare-prose markers are findings. (This is what lets an artifact that
 #      *documents* the markers pass against its own run directory.)
+#   3. FOLLOWUPS.md governance (the shared backlog, found at the run dir or one
+#      level up at .workflow/FOLLOWUPS.md): no duplicate follow-up IDs (the
+#      parallel-run "highest+1" allocation race) and no row marked `consumed-by:`
+#      still sitting in the `## Open` section (it belongs in `## Closed`). Skipped
+#      when no FOLLOWUPS.md is present.
 #
 # Prints a report (one line per check) and exits non-zero on any failure, zero
 # when clean. Dependency-light: POSIX sh + the standard `awk`/`grep` toolchain;
@@ -27,9 +34,9 @@
 
 set -eu
 
-# Recognised artifacts. spec.md / plan.md also get required-section checks;
-# every file here gets the placeholder scan.
-ARTIFACTS='spec.md plan.md review.md security.md tests.md retro.md recommendations.md epic.md'
+# Recognised artifacts. spec.md / plan.md / test-plan.md also get required-section
+# checks; every file here gets the placeholder scan.
+ARTIFACTS='spec.md plan.md test-plan.md review.md security.md tests.md retro.md recommendations.md epic.md'
 
 PROG="$(basename "$0")"
 
@@ -76,6 +83,13 @@ check_plan() {
   require_section "$file" "runnable verify section" F 'verify:'
 }
 
+check_test_plan() {
+  file="$1"
+  # Anchor the heading at line start so a mention in prose/comment doesn't satisfy it.
+  require_section "$file" "Coverage plan"        E '^#+[[:space:]]+Coverage plan'
+  require_section "$file" "AC reference"         E '\bAC[0-9]+'
+}
+
 # scan_placeholders <file>
 # Reports every bare-prose placeholder marker as `<file>:<line>: placeholder
 # marker: <marker>`. Skips fenced code blocks and inline backtick spans so a
@@ -119,6 +133,49 @@ scan_placeholders() {
   fi
 }
 
+# check_followups <file>
+# Governance scan of the shared FOLLOWUPS.md backlog. Two findings:
+#   - a follow-up ID used as the leading ID of >1 table row (the parallel-run
+#     "next number after the highest existing ID" race — run-namespaced
+#     `F-<run-id>-NN` IDs avoid it, but a legacy/regressed file can still collide);
+#   - a row carrying `consumed-by:` left in the `## Open` section instead of moved
+#     to `## Closed` (the leak that lets "done" items re-trigger and accumulate).
+# Section is tracked by `## Open` / `## Closed` headings; only `|`-delimited table
+# rows whose first F-token is the row ID are considered. Tolerant of both the
+# legacy `F0001` and the namespaced `F-<run-id>-NN` ID forms.
+check_followups() {
+  file="$1"
+  hits="$(
+    awk '
+      /^#+[[:space:]]*[Oo]pen/   { section = "open";   next }
+      /^#+[[:space:]]*[Cc]losed/ { section = "closed"; next }
+      /^#+[[:space:]]/           { section = "other";  next }
+      {
+        if ($0 !~ /^[[:space:]]*\|/) next
+        if (!match($0, /F-[A-Za-z0-9][A-Za-z0-9_-]*|F[0-9]+/)) next
+        id = substr($0, RSTART, RLENGTH)
+        seen[id]++
+        low = tolower($0)
+        if (section == "open" && index(low, "consumed-by"))
+          print "consumed-by: row left in ## Open (move to ## Closed): " id
+      }
+      END {
+        for (k in seen) if (seen[k] > 1)
+          print "duplicate follow-up ID across rows: " k " (" seen[k] " rows)"
+      }
+    ' "$file"
+  )"
+  if [ -n "$hits" ]; then
+    echo "$hits" | while IFS= read -r h; do
+      report FAIL "$(basename "$file"): $h"
+    done
+    n="$(printf '%s\n' "$hits" | grep -c '')"
+    fail_count=$((fail_count + n))
+  else
+    report OK "$(basename "$file"): follow-up IDs unique, no consumed rows left open"
+  fi
+}
+
 main() {
   if [ "$#" -ne 1 ]; then
     usage
@@ -145,10 +202,23 @@ main() {
     [ -f "$file" ] || continue
     found=$((found + 1))
     case "$name" in
-      spec.md) check_spec "$file" ;;
-      plan.md) check_plan "$file" ;;
+      spec.md)      check_spec "$file" ;;
+      plan.md)      check_plan "$file" ;;
+      test-plan.md) check_test_plan "$file" ;;
     esac
     scan_placeholders "$file"
+  done
+
+  # FOLLOWUPS.md governance. The shared backlog lives at .workflow/FOLLOWUPS.md
+  # (one level above a run dir), so check the run dir itself first, then its
+  # parent. Counts as a linted artifact so pointing the linter at .workflow/
+  # to check the backlog alone is a valid invocation.
+  for fu in "$dir/FOLLOWUPS.md" "$dir/../FOLLOWUPS.md"; do
+    if [ -f "$fu" ]; then
+      found=$((found + 1))
+      check_followups "$fu"
+      break
+    fi
   done
 
   echo

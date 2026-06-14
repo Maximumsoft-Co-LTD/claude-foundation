@@ -17,6 +17,16 @@ Every embedded review agent uses the filename prefix `team-<role>.md`, and the `
 
 These are foundation-native because the existing review-agent forks are diff-oriented; spec/plan needs pre-diff exploration and research workers with read-only output contracts.
 
+## Direct-nesting (`Agent`) grants
+
+Since Claude Code v2.1.172 a worker with `Agent` in its `tools` can spawn nested helpers (direct nesting). Three workers hold `Agent`, so they can split genuinely large work into disjoint sub-scopes and spawn helpers of their own type:
+
+- `team-codebase-explorer` — splits a large area into sub-areas → sub-explorers.
+- `team-best-practice-researcher` — splits a multi-part question into sub-questions → sub-researchers.
+- `team-code-reviewer` — splits a large diff into per-area slices → sub-reviewers.
+
+The other five review workers (`team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) stay read-only with **no `Agent`** — their work doesn't split. Each `Agent`-holder's "Recruit help when the work is large" section caps the fan-out and stamps every helper prompt with a no-further-spawn line, so nesting is one level deep only.
+
 ## Fork sources
 
 Forked: **2026-05-21**. Source plugin: **`pr-review-toolkit`** at `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/pr-review-toolkit/agents/`. Version inferred from the marketplace cache at fork-time (not pinned to a release tag — `pr-review-toolkit` did not carry a version manifest in the cache snapshot).

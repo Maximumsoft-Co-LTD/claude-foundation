@@ -1,0 +1,603 @@
+/* =========================================================================
+   ORRERY — A Field Guide to the Solar System
+   Deep-space editorial almanac. Each world carries its own accent (--accent),
+   set inline from the data. No framework.
+   ========================================================================= */
+
+:root {
+  /* Surfaces — warm-tinted deep void, not flat black */
+  --void: #05060d;
+  --void-2: #090c18;
+  --panel: rgba(18, 23, 42, 0.55);
+  --panel-2: rgba(13, 17, 32, 0.78);
+
+  /* Ink — warm cream for that printed-almanac feel */
+  --ink: #f4eee2;
+  --ink-soft: #cbc4b4;
+  --ink-mute: #82869b;
+
+  /* Hairlines */
+  --line: rgba(244, 238, 226, 0.1);
+  --line-2: rgba(244, 238, 226, 0.22);
+
+  /* Solar accent (the default / global highlight) */
+  --solar: #ffb454;
+  --solar-deep: #ff7a18;
+
+  /* Per-body accent, overridden inline */
+  --accent: var(--solar);
+
+  /* Type */
+  --display: "Fraunces", Georgia, "Times New Roman", serif;
+  --body: "Newsreader", Georgia, serif;
+  --mono: "Space Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --measure: 64ch;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--body);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--void);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* ---- Atmosphere: layered nebula glows + grain over the whole page -------- */
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(60% 50% at 78% 8%, rgba(255, 138, 40, 0.16), transparent 60%),
+    radial-gradient(50% 45% at 12% 82%, rgba(64, 96, 220, 0.18), transparent 62%),
+    radial-gradient(80% 60% at 50% 50%, rgba(20, 26, 52, 0.5), transparent 70%),
+    linear-gradient(180deg, var(--void) 0%, var(--void-2) 55%, var(--void) 100%);
+}
+.sky::after {
+  /* film grain — kills the flat-gradient "AI slop" look */
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#starfield {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.55;
+  animation: twinkle var(--tw, 4s) ease-in-out infinite;
+  animation-delay: var(--td, 0s);
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.8); }
+  50% { opacity: 0.9; transform: scale(1.2); }
+}
+
+/* ---- Layout shell -------------------------------------------------------- */
+.wrap {
+  width: min(1180px, 92vw);
+  margin-inline: auto;
+}
+
+a { color: inherit; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* ---- Masthead ------------------------------------------------------------ */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.6rem 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.masthead__mark {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 1.5rem;
+  letter-spacing: 0.18em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.masthead__mark::before {
+  content: "";
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, var(--solar) 45%, var(--solar-deep));
+  box-shadow: 0 0 14px var(--solar-deep);
+}
+.masthead__nav {
+  display: flex;
+  gap: 1.6rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.masthead__nav a {
+  color: var(--ink-mute);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color 0.25s, border-color 0.25s;
+}
+.masthead__nav a:hover { color: var(--ink); border-color: var(--accent); }
+
+/* ---- Hero ---------------------------------------------------------------- */
+.hero {
+  padding: clamp(2.5rem, 7vw, 5.5rem) 0 1rem;
+}
+.hero__title {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(2.8rem, 9vw, 6.6rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  max-width: 14ch;
+  font-variation-settings: "opsz" 144;
+}
+.hero__title em {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--solar);
+}
+.hero__lede {
+  margin-top: 1.4rem;
+  max-width: 52ch;
+  font-size: clamp(1.05rem, 1.8vw, 1.3rem);
+  color: var(--ink-soft);
+}
+
+/* ---- Stage: orrery + focus card ----------------------------------------- */
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: center;
+  padding: clamp(1.5rem, 4vw, 3rem) 0 clamp(3rem, 7vw, 5rem);
+}
+
+/* The orrery itself ------------------------------------------------------- */
+.orrery-shell { display: flex; flex-direction: column; gap: 1.2rem; }
+.orrery {
+  position: relative;
+  width: min(86vw, 560px);
+  aspect-ratio: 1;
+  margin-inline: auto;
+}
+.orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--d);
+  height: var(--d);
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  transition: border-color 0.4s, box-shadow 0.4s;
+}
+.orbit.is-active {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 28px -6px color-mix(in srgb, var(--accent) 50%, transparent) inset;
+}
+.orbit__arm {
+  position: absolute;
+  inset: 0;
+  animation: spin var(--dur) linear infinite;
+}
+.is-paused .orbit__arm,
+.is-paused .body { animation-play-state: paused !important; }
+
+.body {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--s);
+  height: var(--s);
+  transform: translate(-50%, -50%);
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: radial-gradient(circle at 32% 28%, #ffffffcc, var(--accent) 42%, color-mix(in srgb, var(--accent) 55%, #000) 100%);
+  box-shadow: 0 0 0 0 transparent, 0 2px 8px rgba(0, 0, 0, 0.5);
+  animation: counter-spin var(--dur) linear infinite;
+  transition: box-shadow 0.3s, scale 0.2s;
+}
+.body::after {
+  /* hover/focus halo */
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.body:hover, .body:focus-visible { outline: none; scale: 1.18; }
+.body:hover::after, .body:focus-visible::after { opacity: 1; }
+.body.is-active {
+  box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 75%, transparent), 0 2px 8px rgba(0,0,0,0.5);
+}
+.body.is-active::after { opacity: 1; }
+
+/* Saturn's ring — a tilted ellipse drawn on the dot */
+.body--rings::before {
+  content: "";
+  position: absolute;
+  inset: -42% -16%;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 80%, #fff 10%);
+  border-left-color: transparent;
+  border-right-color: transparent;
+  transform: rotate(-22deg);
+}
+
+/* Tooltip label on hover/focus */
+.body__name {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  padding: 2px 7px;
+  border-radius: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.body:hover .body__name,
+.body:focus-visible .body__name,
+.body.is-active .body__name { opacity: 1; }
+
+/* The Sun at centre */
+.sun {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 13%;
+  height: 13%;
+  transform: translate(-50%, -50%);
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: radial-gradient(circle at 42% 38%, #fff8e6, var(--solar) 38%, var(--solar-deep) 78%, #b53d00);
+  box-shadow:
+    0 0 30px 6px rgba(255, 138, 40, 0.55),
+    0 0 80px 20px rgba(255, 122, 24, 0.28);
+  animation: sun-pulse 6s var(--ease) infinite;
+}
+.is-paused .sun { animation-play-state: paused; }
+.sun:hover, .sun:focus-visible { outline: 2px solid var(--solar); outline-offset: 4px; }
+.sun.is-active { outline: 2px solid var(--solar); outline-offset: 4px; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes counter-spin { to { transform: translate(-50%, -50%) rotate(-360deg); } }
+@keyframes sun-pulse {
+  0%, 100% { box-shadow: 0 0 30px 6px rgba(255,138,40,0.5), 0 0 80px 20px rgba(255,122,24,0.25); }
+  50% { box-shadow: 0 0 40px 10px rgba(255,138,40,0.7), 0 0 110px 30px rgba(255,122,24,0.36); }
+}
+
+/* Orrery controls */
+.orrery__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.ctl {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.ctl:hover { color: var(--ink); border-color: var(--solar); }
+.orrery__hint {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* ---- Focus card (selected body) ----------------------------------------- */
+.focus {
+  position: relative;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  padding: clamp(1.4rem, 3vw, 2.2rem);
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  overflow: hidden;
+}
+.focus::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent), transparent 80%);
+}
+.focus__glow {
+  position: absolute;
+  top: -40%;
+  right: -20%;
+  width: 60%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.focus__order {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.focus__name {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.02;
+  margin: 0.2rem 0 0.1rem;
+}
+.focus__tagline {
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+}
+.focus__desc {
+  margin: 1.1rem 0 1.3rem;
+  color: var(--ink-soft);
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.stat {
+  background: var(--void-2);
+  padding: 0.8rem 0.9rem;
+}
+.stat__label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: block;
+}
+.stat__value {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.15rem;
+  margin-top: 0.2rem;
+}
+.stat__value small { font-size: 0.7rem; color: var(--ink-mute); font-family: var(--mono); }
+
+.focus__fact {
+  margin-top: 1.3rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--accent);
+  font-style: italic;
+  color: var(--ink);
+}
+.focus__fact b {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+/* ---- Section scaffolding ------------------------------------------------ */
+.section { padding: clamp(3rem, 8vw, 6rem) 0; border-top: 1px solid var(--line); }
+.section__head { margin-bottom: clamp(1.8rem, 4vw, 3rem); }
+.section__title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(1.9rem, 5vw, 3.2rem);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  margin-top: 0.5rem;
+}
+.section__title em { font-style: italic; font-weight: 400; color: var(--solar); }
+.section__sub { margin-top: 0.8rem; max-width: var(--measure); color: var(--ink-soft); }
+
+/* ---- Worlds grid -------------------------------------------------------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.card {
+  position: relative;
+  text-align: left;
+  background: var(--void-2);
+  border: none;
+  padding: 1.6rem 1.5rem 1.7rem;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+  transition: background 0.3s;
+}
+.card:hover, .card:focus-visible { outline: none; background: #0f1426; }
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.3s var(--ease);
+}
+.card:hover::before, .card:focus-visible::before, .card.is-active::before { transform: scaleY(1); }
+.card.is-active { background: #0f1426; }
+.card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+.card__orb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex: none;
+  background: radial-gradient(circle at 32% 28%, #ffffffcc, var(--accent) 42%, color-mix(in srgb, var(--accent) 55%, #000));
+  box-shadow: 0 0 16px -3px var(--accent);
+}
+.card__order {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.card__name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.card__tagline { color: var(--ink-soft); font-style: italic; margin-top: 0.2rem; }
+.card__meta {
+  display: flex;
+  gap: 1.2rem;
+  margin-top: 1.1rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+.card__meta b { color: var(--ink); font-weight: 700; }
+
+/* ---- To-scale size chart ------------------------------------------------ */
+.scale {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(0.5rem, 2.5vw, 2rem);
+  flex-wrap: wrap;
+  padding-top: 1rem;
+}
+.scale__item { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; }
+.scale__orb {
+  width: var(--w);
+  height: var(--w);
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #ffffffbb, var(--accent) 45%, color-mix(in srgb, var(--accent) 55%, #000));
+  box-shadow: 0 0 22px -6px var(--accent);
+  cursor: pointer;
+  transition: transform 0.25s;
+}
+.scale__orb:hover { transform: scale(1.06); }
+.scale__label {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+.scale__label span { display: block; color: var(--ink-mute); font-size: 0.6rem; }
+.scale__note {
+  margin-top: 2.5rem;
+  font-style: italic;
+  color: var(--ink-mute);
+  text-align: center;
+}
+
+/* ---- Footer ------------------------------------------------------------- */
+.footer {
+  border-top: 1px solid var(--line);
+  padding: 2.5rem 0 3.5rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  line-height: 1.7;
+}
+.footer a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--line-2); }
+.footer a:hover { color: var(--ink); }
+
+/* ---- Reveal-on-load ----------------------------------------------------- */
+.reveal { opacity: 0; transform: translateY(18px); }
+.reveal.in { opacity: 1; transform: none; transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
+
+/* ---- Responsive --------------------------------------------------------- */
+@media (max-width: 880px) {
+  .stage { grid-template-columns: 1fr; }
+  .orrery-shell { order: -1; }
+  .masthead__nav { display: none; }
+}
+
+/* ---- Reduced motion ----------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .orbit__arm, .body, .sun, .star { animation: none !important; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+}

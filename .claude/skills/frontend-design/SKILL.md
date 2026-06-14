@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Build the visual layer of a frontend after the product/UX direction is known. Use this skill when implementing or restyling web pages, React/Vue/Svelte components, HTML/CSS layouts, posters, dashboards, or app screens where the output is production UI code and the main risk is visual quality, composition, typography, motion, or avoiding generic AI aesthetics. In the /dev workflow, use it during implementation for UI work; use [[ui-ux-pro-max]] first when the task is UX review, information architecture, accessibility, interaction patterns, or choosing the design direction, and use [[tailwind-design-system]] only when the task is specifically Tailwind v4 tokens/components/design-system work.
+description: Build the visual layer of a frontend after the product/UX direction is known. Use when implementing or restyling web pages, React/Vue/Svelte components, HTML/CSS layouts, posters, dashboards, or app screens where the output is production UI code and the risk is visual quality, composition, typography, motion, or avoiding generic AI aesthetics. Use ui-ux-pro-max first for UX review, IA, accessibility, or choosing the design direction; use tailwind-design-system only for Tailwind v4 token/component work.
 license: Complete terms in LICENSE.txt
 ---
 

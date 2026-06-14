@@ -22,7 +22,7 @@ AI coding fails in predictable ways: silent assumptions, skipped tests, reviews 
 
 - **The planner is not the implementer.** Roles are split across sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) so review is adversarial, not self-congratulatory.
 - **The flow is type-aware.** A `chore` skips QA. A `fix` reproduces the bug first. A `spike` is timeboxed and produces a recommendation instead of code. Same pipeline, different teeth.
-- **Everything is auditable.** `spec.md`, `plan.md`, `review.md`, `tests.md`, `retro.md`, `state.json` — written to `.workflow/<run-id>/`, replayable, hand-off-able, resumable with `/dev --resume <id>`.
+- **Everything is auditable.** `spec.md`, `plan.md`, `test-plan.md`, `review.md`, `tests.md`, `retro.md`, `state.json` — written to `.workflow/<run-id>/`, replayable, hand-off-able, resumable with `/dev --resume <id>`.
 
 ## Install via Homebrew
 
@@ -87,17 +87,18 @@ Installer flags:
 
 ## How a run flows
 
-The main agent **is** the orchestrator (following [`.claude/orchestrator.md`](.claude/orchestrator.md)) — Claude Code sub-agents can't spawn agents or talk to you, so the interview, fanout dispatch, and the gate all live in the main agent. It picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives:
+The main agent **is** the orchestrator (following [`.claude/orchestrator.md`](.claude/orchestrator.md)) — Claude Code sub-agents can't talk to you, so the interview, the gate, and single-writer `state.json` all live in the main agent. The splittable workers hold `Agent` and self-dispatch their own helpers directly when their work is large (Claude Code v2.1.172+), with the orchestrator-mediated fanout signal as the fallback. The main agent picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives:
 
 | # | Phase | Who | The point |
 |---|-------|-----|-----------|
 | 1 | **Spec** | orchestrator + `pm` | Reads `FOLLOWUPS.md`, distils your pre-`/dev` conversation into a requirements digest, fans out research probes when guessing is risky, interviews you for *only* what's still open (≤4 questions, one batch), then `pm` writes `spec.md`. A `fix` includes a reproduction; a `spike` gets a timebox. |
 | 2 | **Plan** | `lead` | Synthesises codebase exploration + best-practice research into `plan.md` with re-resolvable `path#anchor` references, risks, and verification. For `fix`, step 1 is always "write the failing regression test". |
-| 3 | **Gate** | you | The only mandatory stop. Reply `approve` / `revise <notes>` / `swap <n>` (epic only). A `revise` is a targeted in-run edit — never a fresh restart. |
+| 2½ | **Test plan** | `qa` | *feat/fix/refactor only* — writes `test-plan.md` before any code: which test level proves each acceptance criterion, the edge cases to probe, what's out of test scope, and the fixtures a run needs. Signed off at the gate; `qa` executes it at phase 7. |
+| 3 | **Gate** | you | The only mandatory stop. Reply `approve` / `revise <notes>` / `swap <n>` (epic only). A `revise` is a targeted in-run edit — never a fresh restart. The spec's acceptance criteria, the plan, and the test plan are all surfaced for sign-off. |
 | 4 | **Implement** | `engineer` | Executes the plan with task-level progress tracking. Ticks each acceptance criterion in `spec.md` or files a blocker — unticked criteria block ship. |
 | 5 | **Review** | `lead` | Row-by-row against `plan.md` **and** `spec.md`'s acceptance criteria (error/boundary clauses included), plus Definition-of-Done items and Constraints. Checklist-driven; "looks good overall" is banned. |
 | 6 | **Security** | `lead` | *Trigger-based* — fires only when the diff touches auth, SQL, crypto, secrets, exec, deserialisation, or untrusted input. High findings are blocking. |
-| 7 | **Test** | `qa` | Unit + integration + e2e, every acceptance criterion mapped to a test. For `fix`, verifies the regression test fails on pre-fix code and passes now. Skipped (with a stub) for `chore`/`docs`/`spike`. |
+| 7 | **Test** | `qa` | Executes the `test-plan.md` strategy — unit + integration + e2e, every acceptance criterion mapped to a test, with advisory diff-coverage floors on the changed code (unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys). For `fix`, verifies the regression test fails on pre-fix code and passes now. Skipped (with a stub) for `chore`/`docs`/`spike`. |
 | 8 | **Docs** | `engineer` | Inline comments where the *why* is non-obvious. |
 | 9 | **Ship** | `engineer` | Stages, commits with a spec-aware message, optionally opens a PR via `gh`. Records commit + PR URL in `state.json`. |
 | 10 | **Retro** | `retro` | Writes `retro.md`, carries follow-ups into `.workflow/FOLLOWUPS.md` (which `pm` reads on every new run — deferred work doesn't get lost), surfaces memory + skill candidates for your approval. |
@@ -111,8 +112,8 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 ## What's in the box
 
 - **`/dev` slash command** — the single entry point. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
-- **Five workflow sub-agents + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa`, `retro`, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Each has an explicit `model:` for cost/speed tuning.
-- **Artifact templates** — `spec.md`, `plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
+- **Five workflow sub-agents + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa` (test-plan / execute modes), `retro`, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Control-plane runs that span multiple repos also fan out review, security, and test **per repo** (one `lead`/`qa` per changed repo) so the read-and-judge phases don't crawl four repos serially; retro reads across all repos in one multi-repo-aware pass. Each has an explicit `model:` for cost/speed tuning.
+- **Artifact templates** — `spec.md`, `plan.md`, `test-plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
 - **Type-aware phase matrix** — the same numbered phases run for every type; the orchestrator skips or specialises them based on `Type` (see `WORKFLOW.md`).
 - **Size-aware execution matrix** — XS/S runs take a fast path (merged question batch, combined spec+plan spawn, merged docs+ship, inline retro) while M/L runs get the full machinery; upgrades are one-way via a `SIZE_UPGRADE` signal (see `WORKFLOW.md`).
 - **Always-on skill rules** — lean rules in `.claude/rules/` (each ~3 lines: trigger + one-sentence why + skill pointer), led by `coding-discipline` (the conduct layer that wraps the rest), then the construction chain `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`, the verification skills `debug-fundamentals` / `refactoring-fundamentals` / `testing-fundamentals`, and the delivery channel `git-workflow` / `delivery-engineering`. Full skill bodies load on demand; the cross-skill run order lives in exactly one file, `.claude/rules/fundamentals.md`.
@@ -132,8 +133,8 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 .claude/rules/           16 always-on pointers to the skills                                (always refreshed)
 .claude/hooks/*.sh       PreToolUse spawn guard + secrets guard, PostToolUse lint + state marker  (always refreshed)
 .claude/settings.json    hook wiring                                                        (only if missing; existing files get a merge)
-.workflow/_templates/    spec / plan / review / security / tests / recommendations /
-                         retro / epic / state.json                                          (always refreshed)
+.workflow/_templates/    spec / plan / test-plan / review / security / tests /
+                         recommendations / retro / epic / state.json                        (always refreshed)
 .workflow/INDEX.md       run registry                                                       (only if missing)
 .workflow/FOLLOWUPS.md   follow-up registry                                                 (only if missing)
 WORKFLOW.md              full flow reference at repo root                                   (always refreshed)
@@ -176,6 +177,7 @@ Stand up your own server and wire it in a few minutes — full deploy steps, API
 - **Single entry point.** One command, one flow. No separate `/plan`, `/review`, `/test` to forget — the orchestrator runs them in order so nothing gets skipped.
 - **Reproduce before fix.** A `fix` run can't ship without a regression test that fails on pre-fix code and passes now. Enforced at plan time (step 1), implement time (engineer writes it first), and test time (qa verifies the failure mode).
 - **Acceptance criteria are first-class.** Engineer ticks them, lead re-checks them, qa maps each to a test, retro reports their final state. Unticked criteria block ship.
+- **Coverage as a ratchet, not a gate.** qa measures diff coverage on the *changed* code against per-level floors (unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys) — advisory, so a below-floor level is a finding you accept or send back, never a number to pad with trivial tests. Floors apply only where the level is in scope for the change.
 - **Anti-bias review.** Because `lead` reviews their own plan, review mode is row-by-row against `plan.md` AND `spec.md` — one verification per file, one row per acceptance criterion, DoD item, and Constraint. No vibes.
 - **Security as a trigger, not a tax.** Most runs don't touch auth or SQL; those skip the security pass entirely. Runs that do get an inline checklist — nothing outsourced to an external tool.
 - **Scope splits are rare.** Default is one run, even when DB + API + UI all change. Epic mode only kicks in when the spec lists ≥2 independently-shippable capabilities *and* `Ship as: staged`.

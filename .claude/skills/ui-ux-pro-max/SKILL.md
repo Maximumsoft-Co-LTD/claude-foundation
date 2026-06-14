@@ -1,6 +1,6 @@
 ---
 name: ui-ux-pro-max
-description: "UI/UX decision and review support for web and mobile. Use when the task is to plan, audit, or improve user experience: information hierarchy, interaction patterns, accessibility, responsive behavior, navigation, forms, charts, visual consistency, color/typography direction, or product-specific design-system choices. In the /dev workflow, use this during brainstorming/spec/plan/review for UI-heavy work and before [[frontend-design]] when direction is not yet settled. Do not use it merely because a frontend file is touched; use [[frontend-design]] for implementing polished UI code, and [[tailwind-design-system]] for Tailwind v4 token/component-library mechanics."
+description: "UI/UX decision and review support for web and mobile. Use when the task is to plan, audit, or improve user experience: information hierarchy, interaction patterns, accessibility, responsive behavior, navigation, forms, charts, visual consistency, color/typography direction, or product-specific design-system choices. In the /dev workflow, use this during brainstorming/spec/plan/review for UI-heavy work and before frontend-design when direction is not yet settled. Do not use it merely because a frontend file is touched; use frontend-design for implementing polished UI code, and tailwind-design-system for Tailwind v4 token/component-library mechanics."
 ---
 
 # UI/UX Pro Max - Design Intelligence

@@ -1,6 +1,6 @@
 ---
 name: delivery-engineering
-description: Apply delivery-engineering fundamentals — CI gate as the merge contract, build once and promote the same artifact, config and secrets outside the artifact, reproducible pinned builds, deploy safely and reversibly, automate the path to prod, pipeline as code that is observed. Use BEFORE designing or changing a CI/CD pipeline, build, deploy strategy, release process, containerization, environment config, or rollout/rollback plan. The trigger is real delivery work (pipeline YAML, Dockerfile, deploy script, release flow), even when no principle is named. Skip local-only scripts, a repo with no deploy target, and pure code changes that don't touch the pipeline.
+description: Apply delivery-engineering fundamentals — CI gate as the merge contract, build once and promote the same artifact, config and secrets outside the artifact, reproducible pinned builds, deploy safely and reversibly, pipeline as code. Use BEFORE designing or changing a CI/CD pipeline, build, deploy strategy, release process, containerization, environment config, or rollout/rollback plan. The trigger is real delivery work (pipeline YAML, Dockerfile, deploy script, release flow), even when no principle is named. Skip local-only scripts, a repo with no deploy target, and pure code changes that don't touch the pipeline.
 ---
 
 # Delivery Engineering

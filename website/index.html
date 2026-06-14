@@ -121,7 +121,7 @@
         <div class="proof-item reveal" data-d="1"><span class="proof-num">10</span><span class="proof-label">numbered phases per run</span></div>
         <div class="proof-item reveal" data-d="2"><span class="proof-num">5+</span><span class="proof-label">specialist sub-agents</span></div>
         <div class="proof-item reveal" data-d="3"><span class="proof-num">6</span><span class="proof-label">run types it adapts to</span></div>
-        <div class="proof-item reveal" data-d="4"><span class="proof-num">9</span><span class="proof-label">on-disk artifact templates</span></div>
+        <div class="proof-item reveal" data-d="4"><span class="proof-num">10</span><span class="proof-label">on-disk artifact templates</span></div>
       </div>
     </section>
 
@@ -424,11 +424,11 @@
           </article>
 
           <article class="agent-card reveal" data-d="1">
-            <div class="agent-top"><span class="agent-name"><span class="at">@</span>qa</span><span class="agent-phase">Phase 7</span></div>
-            <p>Writes and runs unit + integration + e2e, mapping every acceptance criterion to a test. For a <code>fix</code>, it verifies the regression test fails on pre-fix code.</p>
+            <div class="agent-top"><span class="agent-name"><span class="at">@</span>qa</span><span class="agent-phase">Phase 2½ + 7</span></div>
+            <p>First designs the test strategy into <b>test-plan.md</b> before any code (which level proves each criterion, edge cases to probe, fixtures) — signed off at the gate. Then executes it: unit + integration + e2e, every acceptance criterion mapped to a test, with advisory diff-coverage floors on the changed code (unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys). For a <code>fix</code>, it verifies the regression test fails on pre-fix code.</p>
             <div class="agent-io">
-              <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>tests.md</b> · tests</span></div>
-              <div class="io-row"><span class="io-k">reads</span><span class="io-v">spec.md · the diff</span></div>
+              <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>test-plan.md</b> · <b>tests.md</b> · tests</span></div>
+              <div class="io-row"><span class="io-k">reads</span><span class="io-v">spec.md · plan.md · the diff</span></div>
             </div>
           </article>
 
@@ -452,7 +452,7 @@
 
         <div class="fanout reveal" data-d="1">
           <h4>+ parallel fanout workers</h4>
-          <p>When a phase has independent sub-investigations, the orchestrator dispatches focused <code>team-*</code> workers in parallel and a sub-agent synthesises their findings into one artifact.</p>
+          <p><code>/dev</code> is delegation-first: whenever a phase splits into independent sub-investigations, it fans out by default — focused <code>team-*</code> workers run in parallel and a sub-agent synthesises their findings into one artifact. The splittable workers spawn their own helpers directly (direct nesting), and a multi-repo run fans review, security, and test out per repo.</p>
           <div class="fanout-chips">
             <span class="chip">team-codebase-explorer</span>
             <span class="chip">team-best-practice-researcher</span>
@@ -541,6 +541,7 @@
 ├── <span class="ft-id">0003-fix-login-redirect/</span>
 │   ├── <span class="ft-file">spec.md</span>        <span class="ft-cmt"># the contract</span>
 │   ├── <span class="ft-file">plan.md</span>        <span class="ft-cmt"># executable steps</span>
+│   ├── <span class="ft-file">test-plan.md</span>   <span class="ft-cmt"># test strategy</span>
 │   ├── <span class="ft-file">review.md</span>      <span class="ft-cmt"># row-by-row</span>
 │   ├── <span class="ft-file">security.md</span>    <span class="ft-cmt"># if triggered</span>
 │   ├── <span class="ft-file">tests.md</span>       <span class="ft-cmt"># AC → test map</span>
@@ -552,9 +553,10 @@
           <div class="artifact-list reveal" data-d="1">
             <div class="artifact"><div class="af-name">spec.md <span class="af-owner">· pm</span></div><div class="af-desc">Outcome (before → after → benefit), users, scope, non-goals, acceptance criteria, Type.</div></div>
             <div class="artifact"><div class="af-name">plan.md <span class="af-owner">· lead</span></div><div class="af-desc">Steps with path#anchor refs, diagram, risks, verification.</div></div>
+            <div class="artifact"><div class="af-name">test-plan.md <span class="af-owner">· qa</span></div><div class="af-desc">Test strategy before code: level per criterion, edge cases, fixtures. Signed off at the gate.</div></div>
             <div class="artifact"><div class="af-name">review.md <span class="af-owner">· lead</span></div><div class="af-desc">One check per file, one row per acceptance criterion.</div></div>
             <div class="artifact"><div class="af-name">security.md <span class="af-owner">· lead</span></div><div class="af-desc">Inline checklist; high findings are blocking.</div></div>
-            <div class="artifact"><div class="af-name">tests.md <span class="af-owner">· qa</span></div><div class="af-desc">Each criterion mapped to a specific test.</div></div>
+            <div class="artifact"><div class="af-name">tests.md <span class="af-owner">· qa</span></div><div class="af-desc">Each criterion mapped to a specific test; run results + coverage.</div></div>
             <div class="artifact"><div class="af-name">recommendations.md <span class="af-owner">· spike</span></div><div class="af-desc">What we learned + the recommended next step.</div></div>
             <div class="artifact"><div class="af-name">retro.md <span class="af-owner">· retro</span></div><div class="af-desc">Outcomes, follow-ups, memory &amp; skill candidates.</div></div>
             <div class="artifact"><div class="af-name">state.json <span class="af-owner">· all</span></div><div class="af-desc">The phase cursor that makes <code>--resume</code> work.</div></div>

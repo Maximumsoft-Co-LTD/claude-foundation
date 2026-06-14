@@ -36,11 +36,18 @@ DoD items and Constraints do NOT thread through AC tags, so they get their own w
 pass | fix-required → see Phase 2 step 5
 
 <!--
-The sections above are always required. Add the section below ONLY when the review-mode fanout ran (see fanout-team-agents/SKILL.md):
+The sections above are always required. Add a section below ONLY when the matching fanout ran (see fanout-team-agents/SKILL.md):
 
 ## Per-agent findings
+(lens-axis fanout — 6 review workers on one repo's diff)
 One `### team-<role>` subsection per worker dispatched. `lead`'s synthesis stays in Findings above; this is the evidence trail. MANDATORY first line of every subsection: `**Dispatched-as**: <subagent_type>` (or `general-purpose` + a one-phrase reason if the fallback fired) — the orchestrator passes the Dispatched-as map into synthesis (orchestrator.md > Fanout dispatch). Without it a reader can't tell a real team-<role> dispatch from the inline fallback (both produce byte-identical artifact shapes).
   ### team-<role>
   **Dispatched-as**: `team-<role>`
+  - `path:line` — finding
+
+## Per-repo review
+(surface-axis fanout — one per-repo reviewer per changed repo in a control-plane run; orchestrator.md step 11 + Surface fanout). One `### Repo: <path>` subsection per changed repo, each carrying that repo's plan-adherence + Blocking/Non-blocking findings + per-repo verdict. The top-level Acceptance-criteria check, Verdict, and Cycle stay GLOBAL (one AC walk across all repos; Verdict = pass iff every repo passed; one run-level cycle).
+  ### Repo: `<path>`
+  **Per-repo verdict**: pass | fix-required
   - `path:line` — finding
 -->

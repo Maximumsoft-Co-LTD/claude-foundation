@@ -16,6 +16,11 @@ const ARTIFACTS = {
     owner: "lead · plan mode",
     body: "Step-by-step plan with path#anchor references and rollback notes — plus a Scaffold skeleton (file tree + key signatures and type shapes) for M/L, signed off at the gate before the long build. For fix runs, step 1 is the failing regression test. For refactor, includes a behavior-equivalence note. For spike, an exploration outline.",
   },
+  testplan: {
+    name: "test-plan.md",
+    owner: "qa · test-plan mode",
+    body: "The design-time test strategy (feat/fix/refactor), written before any code and signed off at the gate: which test level proves each acceptance criterion, the edge cases to probe, what's out of test scope, the fixtures a run needs, and the regression contract (fix) / baseline (refactor). qa executes it at the test phase — this file is the design, tests.md is the record.",
+  },
   review: {
     name: "review.md",
     owner: "lead · review mode",
@@ -28,8 +33,8 @@ const ARTIFACTS = {
   },
   tests: {
     name: "tests.md",
-    owner: "qa",
-    body: "Test plan, results, acceptance-criteria mapping. For fix: notes the regression test failed on pre-fix code. For chore / docs / spike: a one-line stub explaining the skip.",
+    owner: "qa · execute mode",
+    body: "The test execution record: acceptance-criteria mapping to the actual tests, run results, and measured diff coverage — running the strategy designed in test-plan.md. For fix: notes the regression test failed on pre-fix code. For chore / docs / spike: a one-line stub explaining the skip.",
   },
   retro: {
     name: "retro.md",

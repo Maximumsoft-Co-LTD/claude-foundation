@@ -1,6 +1,6 @@
 ---
 name: api-design-fundamentals
-description: Apply API-design fundamentals before shaping the surface a client codes against — resource and endpoint modeling, HTTP semantics and status codes, request/response contracts and validation, errors as a first-class contract, idempotency and method safety, pagination and filtering, backwards-compatible versioning, and auth/rate-limiting at the boundary. Use BEFORE designing or changing any HTTP/REST, GraphQL, or RPC endpoint — a new route, a resource model, a request or response body, a status-code or error shape, a pagination scheme, or a version bump — even when no principle is named. Covers the REST-vs-GraphQL/gRPC trade-off and includes references on resource modeling, errors and validation, and versioning. Skip throwaway scripts, internal one-off RPCs with a single trusted caller, and pure transport/config changes with no contract impact.
+description: Apply API-design fundamentals to the surface a client codes against — HTTP semantics, request/response contracts, errors, idempotency, pagination, and versioning. Use BEFORE designing or changing any HTTP/REST, GraphQL, or RPC endpoint — a new route, resource model, request/response body, status-code or error shape, pagination scheme, or version bump — even when no principle is named. Skip throwaway scripts, internal one-off RPCs with a single trusted caller, and pure transport/config changes with no contract impact.
 ---
 
 # API Design Fundamentals

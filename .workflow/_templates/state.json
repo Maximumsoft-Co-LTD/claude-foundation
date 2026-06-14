@@ -3,6 +3,7 @@
   "type": "feat",
   "size": null,
   "repo_root": null,
+  "repos": null,
   "branch": null,
   "branch_existed": false,
   "phase": "phase-1-requirements",
@@ -13,6 +14,7 @@
     "test": 0
   },
   "skipped_steps": [],
+  "impl_phases_done": [],
   "open_pr_on_ship": null,
   "security_triggered": null,
   "commit_sha": null,

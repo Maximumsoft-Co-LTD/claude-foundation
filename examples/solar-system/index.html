@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orrery — A Field Guide to the Solar System</title>
+  <meta name="description" content="An interactive field guide to the Sun and the eight planets — explore an animated orrery and learn each world's vital statistics." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="sky" aria-hidden="true"></div>
+  <div id="starfield" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <header class="masthead">
+      <span class="masthead__mark">ORRERY</span>
+      <nav class="masthead__nav" aria-label="Sections">
+        <a href="#explore">The Orrery</a>
+        <a href="#worlds">The Worlds</a>
+        <a href="#to-scale">To Scale</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero reveal">
+        <p class="eyebrow">A field guide to the solar system</p>
+        <h1 class="hero__title">Eight worlds<br />around one <em>star.</em></h1>
+        <p class="hero__lede">
+          From scorched Mercury to the windswept deep of Neptune, every planet keeps its own
+          time around the Sun. Spin the orrery, tap a world, and read its story.
+        </p>
+      </section>
+
+      <section class="stage reveal" id="explore">
+        <div class="orrery-shell">
+          <div class="orrery" id="orrery" role="group" aria-label="Animated model of the solar system"></div>
+          <div class="orrery__controls">
+            <button class="ctl" id="toggle-motion" type="button">❚❚ Pause orbits</button>
+            <span class="orrery__hint">Tap a world to explore</span>
+          </div>
+        </div>
+        <article class="focus" id="focus" aria-live="polite"></article>
+      </section>
+
+      <section class="section reveal" id="worlds">
+        <div class="section__head">
+          <p class="eyebrow">The catalogue</p>
+          <h2 class="section__title">The <em>worlds</em>, in order</h2>
+          <p class="section__sub">
+            Nine bodies anchor everything we call home — one star and eight planets, listed
+            outward from the Sun. Pick any to bring it into focus above.
+          </p>
+        </div>
+        <div class="grid" id="grid"></div>
+      </section>
+
+      <section class="section reveal" id="to-scale">
+        <div class="section__head">
+          <p class="eyebrow">Honest proportions</p>
+          <h2 class="section__title">Planets, <em>truly</em> to scale</h2>
+          <p class="section__sub">
+            The orrery above stylises distance so every orbit fits on screen. Diameter, though, is
+            real here: each disc is sized against Jupiter, the widest planet. Mercury really is
+            that small.
+          </p>
+        </div>
+        <div class="scale" id="scale"></div>
+        <p class="scale__note">
+          And the Sun? Roughly ten Jupiters across — about 109 Earths edge to edge.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>
+        Built with the <a href="../../README.md">claude-foundation</a> workflow.<br />
+        Vanilla HTML · CSS · ES modules — no build step.
+      </div>
+      <div>
+        Figures rounded from public NASA planetary fact sheets.<br />
+        Orbit spacing &amp; speeds are stylised, not to scale.
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

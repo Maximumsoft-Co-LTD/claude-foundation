@@ -33,5 +33,5 @@ Optional sections — include WHEN:
 - Constraints — tech-stack lock / integration boundary / compliance / BC window bounds WHAT we build
 - References / examples to follow — the user pointed at a concrete artifact to model after (a repo file/path, a URL, a pasted sample, a design). This is NOT an AC's `e.g.` (that is one input→output pair); this is "build it like THIS". List each entry as `<source> — <what to take from it>`: a repo ref as `path#anchor`; an external URL with its relevant excerpt INLINED here (downstream agents have no web access — a bare URL is unreadable); a pasted sample fenced verbatim. The engineer is REQUIRED to open every entry before implementing, so this section must be self-contained.
 - Discovery notes — fanout ran, or pre-spec research changed requirements
-- Carried-over follow-ups — this run consumes FOLLOWUPS.md items (list the F-NNN IDs)
+- Carried-over follow-ups — this run consumes FOLLOWUPS.md items (list the follow-up IDs verbatim, e.g. `F-0010-feat-24buym-gift-card-02` or a legacy `F0007`)
 -->

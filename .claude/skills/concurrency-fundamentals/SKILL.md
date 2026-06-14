@@ -1,6 +1,6 @@
 ---
 name: concurrency-fundamentals
-description: Apply concurrency fundamentals — don't share mutable state, make shared access atomic, prevent deadlock by design, treat async/await as concurrency, make operations idempotent and cancellable, bound your concurrency, test the races you can. Use BEFORE writing code where things run at once in one process — threads, async/await, shared mutable state, locks, parallel tasks, event loops, callbacks that can race, worker pools — even when no principle is named. Includes a reference on shared-state escape hatches, locking, deadlock recipes, async pitfalls, and bounded concurrency. Skip single-threaded request/response with no shared mutable state, pure functions, and throwaway scripts.
+description: Apply concurrency fundamentals — don't share mutable state, make shared access atomic, prevent deadlock by design, treat async/await as concurrency, make operations idempotent and cancellable, bound your concurrency. Use BEFORE writing code where things run at once in one process — threads, async/await, shared mutable state, locks, parallel tasks, event loops, callbacks that can race, worker pools — even when no principle is named. Skip single-threaded request/response with no shared mutable state, pure functions, and throwaway scripts.
 ---
 
 # Concurrency Fundamentals

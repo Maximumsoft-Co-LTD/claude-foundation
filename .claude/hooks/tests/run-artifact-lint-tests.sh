@@ -6,11 +6,12 @@
 #   - exits 0     on the clean  pass/ fixture
 #   - exits non-0 on the broken fail/ fixture (missing section + placeholder)
 #
-# The remaining assertions map each acceptance criterion (AC1–AC5) to a focused
-# behaviour check, built from throwaway temp fixtures so the committed fixtures
-# stay minimal. Every assertion is one suite run; the suite runs in this single
-# process. Paths are resolved relative to THIS script's location, so the runner
-# is invariant to the caller's working directory. Exit 0 iff every assertion holds.
+# The remaining assertions map each acceptance criterion (AC1–AC5, plus AC7 for
+# the test-plan.md required-section rule) to a focused behaviour check, built from
+# throwaway temp fixtures so the committed fixtures stay minimal. Every assertion
+# is one suite run; the suite runs in this single process. Paths are resolved
+# relative to THIS script's location, so the runner is invariant to the caller's
+# working directory. Exit 0 iff every assertion holds.
 
 set -eu
 
@@ -126,8 +127,41 @@ sh "$LINTER" >/dev/null 2>&1; rc=$?
 set -e
 if [ "$rc" -ne 0 ]; then pass "AC5 missing arg (exit non-zero)"; else fail "AC5 missing arg — expected non-zero"; fi
 
+# AC7 — test-plan.md required sections: a `## Coverage plan` heading AND an AC reference.
+mk_clean_test_plan() { printf '# Test plan\n\n## Coverage plan\n| AC | Level | Asserts |\n|----|-------|---------|\n| AC1 | unit | ok |\n' > "$1/test-plan.md"; }
+d="$TMPROOT/ac7-clean"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"; mk_clean_test_plan "$d"
+assert_exit_zero "AC7 clean test-plan" "$d"
+# missing Coverage plan section is named + fails.
+d="$TMPROOT/ac7-nocov"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"
+printf '# Test plan\n\n## Fixtures\nAC1 is mapped somewhere\n' > "$d/test-plan.md"
+assert_exit_nonzero "AC7 test-plan missing coverage plan" "$d"
+assert_report_contains "AC7 names missing coverage plan" "$d" "MISSING required section: Coverage plan"
+# missing AC reference is named + fails.
+d="$TMPROOT/ac7-noac"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"
+printf '# Test plan\n\n## Coverage plan\n| level | asserts |\n|-------|---------|\n| unit | ok |\n' > "$d/test-plan.md"
+assert_exit_nonzero "AC7 test-plan missing AC ref" "$d"
+assert_report_contains "AC7 names missing AC ref" "$d" "MISSING required section: AC reference"
+
+# AC8 — FOLLOWUPS.md governance: duplicate IDs + a consumed row left in ## Open.
+# The check finds FOLLOWUPS.md in the run dir or one level up; here we drop it in
+# the run dir directly. A clean backlog (distinct IDs, consumed rows in Closed)
+# passes; a duplicate row-ID or a consumed-by row still in Open fails.
+mk_clean_followups() { printf '# Follow-ups\n\n## Open\n| ID | Item |\n|----|------|\n| F-0001-feat-x-01 | do a thing |\n| F0002 | legacy item |\n\n## Closed\n| ID | Item | Status |\n|----|------|--------|\n| F-0001-feat-x-02 | done thing | consumed-by: 0003-feat-y |\n' > "$1/FOLLOWUPS.md"; }
+d="$TMPROOT/ac8-clean"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"; mk_clean_followups "$d"
+assert_exit_zero "AC8 clean FOLLOWUPS" "$d"
+# duplicate ID across two Open rows.
+d="$TMPROOT/ac8-dup"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"
+printf '# Follow-ups\n\n## Open\n| ID | Item |\n|----|------|\n| F0031 | first |\n| F0031 | collided |\n' > "$d/FOLLOWUPS.md"
+assert_exit_nonzero "AC8 duplicate ID" "$d"
+assert_report_contains "AC8 names duplicate ID" "$d" "duplicate follow-up ID across rows: F0031"
+# a consumed-by row left in the Open section (should have moved to Closed).
+d="$TMPROOT/ac8-openconsumed"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"
+printf '# Follow-ups\n\n## Open\n| ID | Item | Status |\n|----|------|--------|\n| F-0005-fix-z-01 | leaked | consumed-by: 0006-feat-w |\n' > "$d/FOLLOWUPS.md"
+assert_exit_nonzero "AC8 consumed row left in Open" "$d"
+assert_report_contains "AC8 names consumed-in-open" "$d" "left in ## Open"
+
 echo
-total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5" | wc -w) ))
+total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8" | wc -w) ))
 if [ "$failures" -eq 0 ]; then
   echo "artifact-lint tests: ALL PASS ($total_pass/$total_pass assertions)"
   exit 0

@@ -1,6 +1,6 @@
 ---
 name: debug-fundamentals
-description: Apply debugging fundamentals — reproduce reliably, read the evidence, separate facts from assumptions, bisect, change one thing at a time, fix the right layer, pin with a regression test. Use BEFORE guessing at fixes for any unknown-cause failure — bug, crash, regression, flaky test, perf cliff, or unexpected production behavior, in any stack. The trigger is any "fix this / why is X happening / this used to work" investigation, even when the user doesn't say "debug". Includes references on reproduction, bisection, instrumentation, and distributed debugging. Skip one-line typo fixes with the cause already on screen, and greenfield work where nothing is broken.
+description: Apply debugging fundamentals — reproduce, read the evidence, bisect, change one thing at a time, fix the right layer, pin with a regression test. Use BEFORE guessing at fixes for any unknown-cause failure — bug, crash, regression, flaky test, perf cliff, or unexpected production behavior, in any stack. The trigger is any "fix this / why is X happening / this used to work" investigation, even when the user doesn't say "debug". Skip one-line typo fixes with the cause already on screen, and greenfield work where nothing is broken.
 ---
 
 # Debug Fundamentals

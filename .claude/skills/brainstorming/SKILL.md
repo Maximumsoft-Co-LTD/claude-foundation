@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Turn a rough idea into an approved design before any code lands — explore project context, decompose oversized scope, ask only about UNSPECIFIED requirement slots, propose 2–3 approaches with a recommendation, and self-review the spec for placeholders, contradictions, scope creep, and failure modes. Use in the `/dev` Phase 1 interview when scope is ambiguous, choices are open-ended, or the request is oversized; also when the user asks to "brainstorm X", "scope this idea", "design a feature", or wants a design conversation before implementation. Composes with [[plan-writing]] as the next step after spec approval. Skip throwaway scripts, narrow concrete changes, and already-approved specs.
+description: Turn a rough idea into an approved design before any code lands — explore context, decompose oversized scope, ask only about UNSPECIFIED requirements, propose 2–3 approaches with a recommendation, and self-review the spec. Use in the `/dev` Phase 1 interview when scope is ambiguous, choices are open-ended, or the request is oversized; also when the user asks to "brainstorm X", "scope this idea", "design a feature", or wants a design conversation before implementation. Skip throwaway scripts, narrow concrete changes, and already-approved specs.
 ---
 
 # Brainstorming

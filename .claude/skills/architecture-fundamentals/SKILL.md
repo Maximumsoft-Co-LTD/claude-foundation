@@ -1,6 +1,6 @@
 ---
 name: architecture-fundamentals
-description: Apply system-level architecture fundamentals before designing how modules, services, processes, APIs, events, or teams relate at runtime. Use for service/module boundaries, ownership, sync vs async, resilience, consistency, observability, API/event contracts, scaling, extraction, strangler-fig work, or any cross-component call. If the open question is business meaning, language, bounded contexts, or subdomain investment, use [[ddd-strategic]] first; this skill then decides runtime/component boundaries, communication, failure modes, and contract evolution. Skip purely within-one-service code work, throwaway prototypes, and code-level refactors with no cross-boundary concern.
+description: Apply system-level architecture fundamentals before designing how modules, services, processes, APIs, events, or teams relate at runtime. Use for service/module boundaries, ownership, sync vs async, resilience, consistency, observability, API/event contracts, scaling, extraction, strangler-fig work, or any cross-component call. If the open question is business meaning, language, bounded contexts, or subdomain investment, use ddd-strategic first; this skill then decides runtime/component boundaries, communication, failure modes, and contract evolution. Skip purely within-one-service code work, throwaway prototypes, and code-level refactors with no cross-boundary concern.
 ---
 
 # Architecture Fundamentals

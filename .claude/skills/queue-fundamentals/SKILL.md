@@ -1,6 +1,6 @@
 ---
 name: queue-fundamentals
-description: Apply queue fundamentals — broker selection, delivery semantics, idempotent consumers, ack discipline, retries/DLQ, ordering, and the outbox pattern for DB + broker writes. Use BEFORE introducing, modifying, or debugging any queue, message broker, event stream, background job, async worker, or pub/sub topic, with any broker (Kafka, SQS, RabbitMQ, BullMQ, Redis Streams, Celery). The trigger is any queue-shaped or async-processing problem, even when no broker is named. Includes references on broker selection, idempotency, the outbox pattern, and operating queues in production. Skip pure in-process data structures with no concurrency, persistence, or cross-process concerns.
+description: Apply queue fundamentals — broker selection, delivery semantics, idempotent consumers, ack discipline, retries/DLQ, ordering, and the outbox pattern for DB + broker writes. Use BEFORE introducing, modifying, or debugging any queue, message broker, event stream, background job, async worker, or pub/sub topic, with any broker (Kafka, SQS, RabbitMQ, BullMQ, Redis Streams, Celery). The trigger is any queue-shaped or async-processing problem, even when no broker is named. Skip pure in-process data structures with no concurrency, persistence, or cross-process concerns.
 ---
 
 # Queue Fundamentals

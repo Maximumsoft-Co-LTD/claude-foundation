@@ -1,6 +1,6 @@
 ---
 name: security-fundamentals
-description: Apply security fundamentals — trust boundaries and threat modeling, validate-and-canonicalize input at the boundary, contextual output encoding and parameterized queries, authenticate once and authorize every access (deny by default), secrets and crypto with vetted primitives, least privilege and secure defaults, dependency and supply-chain hygiene. Use BEFORE writing auth/login/session/token code, input parsing or deserialization, anything that builds a SQL/shell/HTML/LDAP string, crypto/password/secret handling, or adding a dependency. The trigger is any code an untrusted caller can reach or that handles untrusted data, even when no principle is named. Includes references on input/output and authn/authz. Skip throwaway scripts and config with no trust boundary.
+description: Apply security fundamentals — trust boundaries, input validation, output encoding, authn/authz (deny by default), secrets and crypto, least privilege, and supply-chain hygiene. Use BEFORE writing auth/login/session/token code, input parsing or deserialization, anything that builds a SQL/shell/HTML/LDAP string, crypto/password/secret handling, or adding a dependency. The trigger is any code an untrusted caller can reach or that handles untrusted data, even when no principle is named. Skip throwaway scripts and config with no trust boundary.
 ---
 
 # Security Fundamentals

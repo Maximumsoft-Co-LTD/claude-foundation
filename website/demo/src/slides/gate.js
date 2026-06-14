@@ -7,7 +7,7 @@ const RESPONSES = {
   },
   revise: {
     cls: "revise",
-    text: "↺ revise · notes appended to spec.md > Open questions · loop back to step 1 (pm re-interviews)",
+    text: "↺ revise · targeted in-run edit of the affected spec / plan / test-plan section (pm spec-patch · lead plan-revise · qa test-plan-revise) — never a fresh restart",
   },
   swap: {
     cls: "revise",

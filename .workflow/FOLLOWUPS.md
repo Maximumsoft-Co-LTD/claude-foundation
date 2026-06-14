@@ -4,10 +4,11 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 
 ## Open
 
-<!-- First retro appends here. Use F0001 as the first ID. -->
+<!-- First retro appends here. Use a run-namespaced ID `F-<run-id>-01` (run folder + per-run counter). -->
 
 | ID | From run | Item | Type hint | Priority | Status |
 |----|----------|------|-----------|----------|--------|
+| F0001 | manual (surface-fanout) | Surface (per-repo) fanout parallelises only review, security, and test for control-plane multi-repo runs; branch creation, implement, gate, and ship still operate on the single primary `repo_root`. Make these phases multi-repo-aware (per-repo branch/checkout, multi-repo implement, multi-repo ship/PR) so a cross-repo run is coherent end-to-end, not just at review/security/test. | feat | med | open |
 
 ## Closed
 
@@ -20,7 +21,7 @@ Items consumed by a later run. Keep these — they're the audit trail.
 
 ## Conventions
 
-- **ID** — `F` + 4-digit counter, monotonically increasing across all retros. `retro` reads this file to pick the next number.
+- **ID** — run-namespaced `F-<run-id>-NN` (`<run-id>` is the surfacing run's folder name, `NN` a per-run counter from `01`) — collision-proof under parallel runs. `retro` mints these; it never picks "the next number after the highest existing ID" (which races when two runs claim the same number). Legacy global `F0001`-style IDs already in the file keep their form — a mixed ID space is expected; history is not renumbered.
 - **From run** — the `NNNN-type-slug` of the run that surfaced the item.
 - **Type hint** — what *kind* of `/dev` run would consume this. Not binding; `pm` can override after interview.
 - **Priority** — `low | med | high`. `high` is reserved for known-broken behaviour or security carry-over from `security.md`.

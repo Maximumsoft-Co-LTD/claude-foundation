@@ -84,7 +84,7 @@ What gets installed:
                                  agent (no Agent() dispatch, no hook guard)
   .cursor/commands/dev.md      — the /dev slash command (Cursor's project
                                  commands feature)
-  .workflow/_templates/**      — spec/plan/review/security/tests/recs/retro/epic
+  .workflow/_templates/**      — spec/plan/test-plan/review/security/tests/recs/retro/epic
                                  + state.json (verbatim)
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)

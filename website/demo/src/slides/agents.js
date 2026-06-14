@@ -26,10 +26,10 @@ const AGENTS = {
     writes: "source · commit · PR",
   },
   qa: {
-    phases: "phase 7 · tests",
-    body: "Writes and runs unit + integration + e2e. Records in tests.md. For fix: verifies regression test fails on pre-fix code, passes now. Stub-skips for chore / docs / spike.",
-    reads: "plan.md · spec.md · source",
-    writes: "tests · tests.md",
+    phases: "phase 2½ · test plan + phase 7 · tests",
+    body: "Phase 2½ (test-plan mode): writes test-plan.md before code — which level proves each AC, edge cases to probe, fixtures, regression/baseline contract — signed off at the gate. Phase 7 (execute mode): runs unit + integration + e2e against that plan, records tests.md with advisory diff-coverage floors (unit 80% / integration 70% / e2e 50% of critical journeys). For fix: verifies regression test fails on pre-fix code, passes now. Stub-skips for chore / docs / spike.",
+    reads: "spec.md · plan.md · test-plan.md · source",
+    writes: "test-plan.md · tests · tests.md",
   },
   retro: {
     phases: "phase 10 · reflect",

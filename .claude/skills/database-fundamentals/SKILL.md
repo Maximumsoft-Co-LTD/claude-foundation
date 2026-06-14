@@ -1,6 +1,6 @@
 ---
 name: database-fundamentals
-description: Apply database fundamentals — schema design and types, constraints as invariants, indexes that match queries, reading the query plan, avoiding N+1, transactions and isolation, safe migrations. Use BEFORE designing a table, writing a non-trivial query, adding an index or migration, debugging a slow query, or modeling persistent data; also on repository/adapter work where domain state crosses into storage. The trigger is real database work (schema, SQL, EXPLAIN, deadlock, N+1, ORM), even when no principle is named. Includes references on indexing, transactions, query performance, and migrations. Skip throwaway scripts and one-off ad-hoc queries.
+description: Apply database fundamentals — schema design and types, constraints as invariants, indexes that match queries, reading the query plan, avoiding N+1, transactions and isolation, safe migrations. Use BEFORE designing a table, writing a non-trivial query, adding an index or migration, debugging a slow query, or modeling persistent data; also on repository/adapter work where domain state crosses into storage. The trigger is real database work (schema, SQL, EXPLAIN, deadlock, N+1, ORM), even when no principle is named. Skip throwaway scripts and one-off ad-hoc queries.
 ---
 
 # Database Fundamentals

@@ -1,6 +1,6 @@
 ---
 name: coding-discipline
-description: Apply the behavioral guardrails that keep an AI coding session honest — surface assumptions instead of guessing, write the minimum code that solves the problem, keep every diff surgical, and turn the task into a verifiable goal. Use BEFORE starting any code change, large or small — implement, add a feature, fix, refactor, "clean this up". This is the conduct layer; it routes to [[brainstorming]] for ambiguous scope, [[programming-fundamentals]] for the code itself, [[git-workflow]] for commits/PRs, and [[debug-fundamentals]] / qa for verification rather than duplicating them. Skip pure config edits, one-line shell, and throwaway scripts.
+description: Apply the behavioral guardrails that keep an AI coding session honest — surface assumptions instead of guessing, write the minimum code that solves the problem, keep every diff surgical, and turn the task into a verifiable goal. Use BEFORE starting any code change, large or small — implement, add a feature, fix, refactor, "clean this up". This is the conduct layer; it routes to the construction, git, and debug/qa skills rather than duplicating them. Skip pure config edits, one-line shell, and throwaway scripts.
 ---
 
 # Coding Discipline

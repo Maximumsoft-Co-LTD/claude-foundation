@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Solar system — smoke tests</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 24px;
+        color: #1f2328;
+      }
+      h1 { font-size: 1.2rem; margin: 0 0 12px; }
+      #summary { font-weight: 600; margin-bottom: 12px; }
+      .pass { color: #1a7f37; }
+      .fail { color: #c8362f; }
+      ol { padding-left: 20px; }
+      li { margin: 4px 0; line-height: 1.5; }
+      code { background: #f6f8fa; padding: 1px 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <h1>Solar system smoke harness</h1>
+    <p>
+      Drives <code>src/planets.js</code> directly (pure module — no DOM needed).
+      Open this file in a browser; the summary below reports pass/fail.
+    </p>
+    <div id="summary">Running…</div>
+    <ol id="results"></ol>
+
+    <script type="module">
+      import {
+        SUN,
+        PLANETS,
+        BODIES,
+        getBody,
+        formatNumber,
+        auToKm,
+        diameterRatio,
+      } from './src/planets.js';
+
+      const results = [];
+      function check(name, fn) {
+        try {
+          fn();
+          results.push({ name, ok: true });
+        } catch (err) {
+          results.push({ name, ok: false, err: err && err.message });
+        }
+      }
+      function assert(cond, msg) {
+        if (!cond) throw new Error(msg || 'assertion failed');
+      }
+      function eq(a, b, msg) {
+        const sa = JSON.stringify(a);
+        const sb = JSON.stringify(b);
+        if (sa !== sb) throw new Error((msg || 'not equal') + `: ${sa} !== ${sb}`);
+      }
+
+      check('there are exactly 8 planets', () => {
+        eq(PLANETS.length, 8);
+      });
+
+      check('planets are ordered 1..8 with no gaps', () => {
+        eq(PLANETS.map((p) => p.order), [1, 2, 3, 4, 5, 6, 7, 8]);
+      });
+
+      check('every body id is unique', () => {
+        const ids = BODIES.map((b) => b.id);
+        eq(new Set(ids).size, ids.length);
+      });
+
+      check('BODIES lists the Sun first, then the planets', () => {
+        eq(BODIES[0].id, 'sun');
+        eq(BODIES.length, 9);
+      });
+
+      check('every planet carries the fields render needs', () => {
+        for (const p of PLANETS) {
+          for (const key of ['name', 'color', 'distanceMkm', 'diameterKm', 'dayLabel', 'yearLabel', 'description', 'fact', 'orbit', 'size', 'duration', 'phase']) {
+            assert(p[key] !== undefined, `${p.id} missing ${key}`);
+          }
+          assert(p.phase >= 0 && p.phase < 1, `${p.id} phase out of range`);
+        }
+      });
+
+      check('getBody resolves planets and the Sun, undefined otherwise', () => {
+        eq(getBody('mars').name, 'Mars');
+        eq(getBody('sun').kind, 'star');
+        eq(getBody('pluto'), undefined);
+      });
+
+      check('formatNumber groups thousands', () => {
+        eq(formatNumber(139820), '139,820');
+        eq(formatNumber(0), '0');
+        eq(formatNumber(4879), '4,879');
+      });
+
+      check('auToKm converts 1 AU to ~149.6M km', () => {
+        const km = auToKm(1);
+        assert(km > 149_000_000 && km < 150_000_000, `got ${km}`);
+        eq(auToKm(0), 0);
+      });
+
+      check('diameterRatio is 1 for the widest planet (Jupiter)', () => {
+        const widest = PLANETS.reduce((a, b) => (b.diameterKm > a.diameterKm ? b : a));
+        eq(widest.id, 'jupiter');
+        eq(diameterRatio(widest.diameterKm), 1);
+      });
+
+      check('diameterRatio shrinks for smaller planets', () => {
+        const mercury = getBody('mercury');
+        const r = diameterRatio(mercury.diameterKm);
+        assert(r > 0 && r < 0.05, `Mercury should be a sliver of Jupiter, got ${r}`);
+      });
+
+      check('the dataset is frozen against mutation', () => {
+        let threw = false;
+        try {
+          'use strict';
+          PLANETS[0].name = 'Vulcan';
+        } catch (e) {
+          threw = true;
+        }
+        // Either it throws (strict) or silently no-ops (sloppy) — name must hold.
+        eq(getBody('mercury').name, 'Mercury');
+        assert(Object.isFrozen(PLANETS), 'PLANETS should be frozen');
+      });
+
+      // --- Render results ----
+      const ol = document.getElementById('results');
+      for (const r of results) {
+        const li = document.createElement('li');
+        li.className = r.ok ? 'pass' : 'fail';
+        li.textContent = (r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.err ? '  —  ' + r.err : '');
+        ol.appendChild(li);
+      }
+      const passed = results.filter((r) => r.ok).length;
+      const total = results.length;
+      const summary = document.getElementById('summary');
+      summary.textContent = `${passed} / ${total} passed`;
+      summary.className = passed === total ? 'pass' : 'fail';
+    </script>
+  </body>
+</html>

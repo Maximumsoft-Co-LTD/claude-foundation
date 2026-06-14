@@ -3,7 +3,8 @@
 const SCRIPT = [
   { step: 1, log: "pm · interview → spec.md written", cls: "accent" },
   { step: 2, log: "lead (plan) · 10 steps + rollback noted", cls: "accent" },
-  { step: 3, log: "orchestrator · gate · awaiting user", cls: "warn" },
+  { step: 2, log: "qa (test-plan) · coverage plan per AC → test-plan.md", cls: "accent" },
+  { step: 3, log: "orchestrator · gate · spec + plan + test plan · awaiting user", cls: "warn" },
   { step: 3, log: "user → approve", cls: "success" },
   { step: 4, log: "engineer · scaffolding Vite + React + TS", cls: "accent" },
   { step: 4, log: "engineer · acceptance criteria ticked", cls: "success" },

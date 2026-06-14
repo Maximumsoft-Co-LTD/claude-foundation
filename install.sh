@@ -53,7 +53,7 @@ What gets installed:
   .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
   .claude/hooks/**             — every hook script in the foundation (lint, dev-agent-guard, dev-state-mark, protect-secrets, …) — copied verbatim, always refreshed
   .claude/settings.json        — hook wiring, derived from this file's own hooks block (only if missing; existing files get a merge — see below)
-  .workflow/_templates/*       — spec/plan/review/security/tests/recommendations/retro/epic + state.json (always refreshed)
+  .workflow/_templates/*       — spec/plan/test-plan/review/security/tests/recommendations/retro/epic + state.json (always refreshed)
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
   WORKFLOW.md                  — full flow reference at repo root (always refreshed)
@@ -188,6 +188,7 @@ PLAN=(
   ".claude/settings.json|skip-if-exists"
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
+  ".workflow/_templates/test-plan.md|always-overwrite"
   ".workflow/_templates/review.md|always-overwrite"
   ".workflow/_templates/security.md|always-overwrite"
   ".workflow/_templates/tests.md|always-overwrite"

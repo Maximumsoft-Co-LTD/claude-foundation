@@ -16,7 +16,7 @@ The implementer's head holds all of that, and none of it survives the handoff on
 ## What it is / is not
 
 - **IS** — a black-box test guide for a deployed environment: how to reach the change, what to do, what the correct result looks like, and what's intentionally not done yet. Written from the *tester's* point of view (screens, buttons, endpoints, accounts), not the *coder's* (files, functions).
-- **IS NOT** — the acceptance criteria (those live in `spec.md` — link, don't restate), the automated test plan/results (`tests.md`), or anything that assumes the reader can read or run source. **No `npm test`, no "clone and run", no `path#anchor` for QA to inspect** — they can't see the code. If a step needs the repo, it's in the wrong document.
+- **IS NOT** — the acceptance criteria (those live in `spec.md` — link, don't restate), the automated test plan + results (`test-plan.md` / `tests.md`), or anything that assumes the reader can read or run source. **No `npm test`, no "clone and run", no `path#anchor` for QA to inspect** — they can't see the code. If a step needs the repo, it's in the wrong document.
 
 ## When to write it
 

@@ -27,3 +27,12 @@ Walk ONLY the buckets your `Trigger` names; mark ✓ / ✗ / N/A with a one-line
 
 ## Sign-off
 pass | fix-required (counts against the review cycle budget)
+
+<!--
+Add the section below ONLY when surface-axis fanout ran (one per-repo security reviewer per tripping repo in a control-plane run; orchestrator.md step 12 + Surface fanout). One `### Repo: <path>` subsection per tripping repo, each carrying that repo's Threat model + Checklist + Blocking/Non-blocking findings. The top-level Trigger, Verdict, and Findings stay GLOBAL (Verdict = fix-required iff any repo has a high; Trigger = union of buckets that fired).
+
+## Per-repo security
+  ### Repo: `<path>`
+  **Per-repo verdict**: pass | fix-required
+  - `path:line` — <issue> → <fix> (severity)
+-->

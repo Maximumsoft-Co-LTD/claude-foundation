@@ -45,17 +45,28 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 WF_DIR="$PROJECT_DIR/.workflow"
 [[ -d "$WF_DIR" ]] || exit 0
 
-# Find the most recently modified .workflow/<id>/state.json — that's the
-# active /dev run. If there isn't one, this Agent call isn't part of /dev.
+# Identify the active /dev run whose marker to touch. Prefer the orchestrator's
+# explicit, concurrency-safe signal $CLAUDE_DEV_RUN_ID — the SAME knob the
+# PreToolUse guard (dev-agent-guard.sh Case 3) scopes its freshness check to.
+# Without this, the two hooks disagree on "which run": this hook would pick the
+# most-recently-modified state.json, and during an implement fanout THIS run's
+# state.json is repeatedly the newest (written on every phase completion), so a
+# concurrent sibling run's worker return would cross-touch THIS run's marker and
+# false-block its next spawn — the exact failure the guard's run-scoping exists
+# to prevent. Fall back to newest-mtime only when the var is unset.
 latest_state=""
-for f in "$WF_DIR"/*/state.json; do
-  [[ -f "$f" ]] || continue
-  # _templates holds the blueprint state.json, not a run — never mark it
-  [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
-  if [[ -z "$latest_state" ]] || [[ "$f" -nt "$latest_state" ]]; then
-    latest_state="$f"
-  fi
-done
+if [[ -n "${CLAUDE_DEV_RUN_ID:-}" ]] && [[ -f "$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json" ]]; then
+  latest_state="$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json"
+else
+  for f in "$WF_DIR"/*/state.json; do
+    [[ -f "$f" ]] || continue
+    # _templates holds the blueprint state.json, not a run — never mark it
+    [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
+    if [[ -z "$latest_state" ]] || [[ "$f" -nt "$latest_state" ]]; then
+      latest_state="$f"
+    fi
+  done
+fi
 
 [[ -n "$latest_state" ]] || exit 0
 

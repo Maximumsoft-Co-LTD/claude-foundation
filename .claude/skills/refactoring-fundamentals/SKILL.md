@@ -1,6 +1,6 @@
 ---
 name: refactoring-fundamentals
-description: Apply refactoring fundamentals — change structure without changing behavior, safely. Use BEFORE reshaping existing, working code whose behavior should stay identical and only the shape is wrong — break up, extract, move, rename, consolidate duplication, untangle, or restructure legacy/untested code (characterize first). The ask often sounds like "clean this up / break this into smaller pieces / extract / split / pull into one place / de-duplicate / untangle / is there a cleaner way / it works but it's a mess / pay down tech debt" — even when the word "refactor" never appears. The safe-transformation process toward the shape [[programming-fundamentals]] defines. Skip greenfield code, new features, bug fixes, reformatting, deleting code, and explaining what code does.
+description: Apply refactoring fundamentals — change structure without changing behavior, safely. Use BEFORE reshaping existing, working code whose behavior should stay identical and only the shape is wrong — break up, extract, move, rename, consolidate duplication, untangle, or restructure legacy/untested code (characterize first). The ask often sounds like "clean this up / break into smaller pieces / extract / split / pull into one place / de-duplicate / untangle / is there a cleaner way / it works but it's a mess / pay down tech debt" — even when the word "refactor" never appears. Skip greenfield code, new features, bug fixes, reformatting, deleting code, and explaining what code does.
 ---
 
 # Refactoring Fundamentals
