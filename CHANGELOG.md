@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-06-14
+
 ### Added
 
 - **`claude-foundation` gains `init`, `version`, and `help` subcommands.** `init [target-path] [options]` is an explicit alias for the installer (the bare `claude-foundation [target-path]` form still works unchanged); `version` (also `--version` / `-v`) prints the release from a new root `VERSION` file — cli.sh's machine-readable source of truth, read relative to the script so it works from both a source checkout and the Homebrew libexec, with a `git describe` fallback; `help` (also `--help` / `-h`) prints a top-level command map and points at `claude-foundation init --help` for the full installer flags. The Homebrew formula ships `VERSION` when present and otherwise synthesizes it from the formula version (so stable tarballs predating the file still report correctly without clobbering HEAD builds), and its `test` block now asserts `version` output. `RELEASING.md` adds a `VERSION` bump step (kept in lockstep with the tag). Files: `cli.sh`, `VERSION` (new), `Formula/claude-foundation.rb`, `RELEASING.md`, `README.md`.
@@ -207,7 +209,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.6.0...v2.0.0
 [1.6.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.0...v1.5.1
