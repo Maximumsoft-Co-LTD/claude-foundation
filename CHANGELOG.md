@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-14
+
 ### Added
 
 - **Five new fundamentals skills, closing the software-lifecycle coverage gaps.** A five-lens review found whole disciplines that no skill owned: `security-fundamentals` (the design-time counterpart to the `/dev` security review — threat modeling, input validation, contextual output encoding, authn/authz deny-by-default, secrets/crypto, least privilege, dependency hygiene), `testing-fundamentals` (test strategy/design that was scattered across `programming-fundamentals`, `qa`, and `refactoring-fundamentals` — pyramid, what-to-test, disciplined doubles, behaviour-not-implementation; the canonical home of the edge-case checklist, which `qa` step 2a now points to), `observability-fundamentals` (logs/metrics/traces, correlation, RED/USE, SLOs, alert-on-symptoms — backs the `plan.md > Observability` trigger), `concurrency-fundamentals` (in-process: shared state, atomic critical sections, deadlock avoidance, async/await pitfalls, bounded fan-out — sits between `programming-fundamentals` and `queue-fundamentals`), and `delivery-engineering` (CI/CD as the merge contract, build-once-promote, config/secrets outside the artifact, safe reversible deploys — the delivery-channel sibling to `git-workflow`, backing the new CI ship-gate). Each ships a rule in `.claude/rules/`, a full `SKILL.md` + references, and is wired into the run-order chain (`.claude/rules/fundamentals.md`), `WORKFLOW.md` skill routing, `CLAUDE.md`, and both installers (`install.sh`, `install-cursor.sh`). The construction chain is now `ddd-strategic → programming-fundamentals → concurrency-fundamentals → database-fundamentals → hexagonal-backend → architecture-fundamentals → queue-fundamentals → security-fundamentals → observability-fundamentals`, with `testing-fundamentals` as the verification companion and `delivery-engineering` joining `git-workflow` on the delivery channel.
@@ -180,7 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.3.0...v1.4.0
