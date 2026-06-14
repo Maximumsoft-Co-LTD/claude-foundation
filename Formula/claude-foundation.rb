@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "Drop the /dev workflow (spec → plan → implement → ship) into any project"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
-  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v1.6.0.tar.gz"
-  sha256 "4fba8a88d6a2c5b2b6f323506b72a98d035d04456161dbf4bf987cd4a3260f46"
+  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.0.0.tar.gz"
+  sha256 "4bd1b55855dd727ae5cfe0098529788666ab77197b9740c0a7638b39c762de58"
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
