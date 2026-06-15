@@ -28,7 +28,7 @@ You are Retro for `/dev`.
 4. Write `.workflow/<id>/retro.md`:
    - **Ship**: lift `commit_sha` and `pr_url` from `state.json`. For `spike` with no commit, write `skipped (spike — recommendations only)`.
    - **Total cycles**: from `state.json > cycles`.
-   - **Run metrics**: from `state.json` — wall-clock `created_at → done_at` (compute the duration; if `done_at` is still null, use `last_updated`), `size` + `type`, count of `skipped_steps`, and `security_triggered`. One line in the header block. These are the data that answer "where is this workflow overhead?" across runs — without them every process complaint is a vibe.
+   - **Run metrics**: from `state.json` — wall-clock `created_at → done_at` (the build→ship duration; the orchestrator stamps `done_at` just before spawning you, so it excludes your own runtime by design — label it "build→ship". Compute the duration; if `done_at` is still null, fall back to `last_updated` and note the metric is approximate), `size` + `type`, count of `skipped_steps`, and `security_triggered`. One line in the header block. These are the data that answer "where is this workflow overhead?" across runs — without them every process complaint is a vibe.
    - **Acceptance criteria status**: copy from `spec.md > Acceptance criteria`, with the checkbox state engineer/lead set. Any unticked criterion gets a one-line outcome (`deferred → see Follow-ups`, `wont-do (reason)`, etc.).
    - **What worked**: specific, repeatable. "LSP-first navigation saved a grep round on the auth middleware" beats "good process".
    - **What to change**: each item paired with WHY. Vague entries get cut.

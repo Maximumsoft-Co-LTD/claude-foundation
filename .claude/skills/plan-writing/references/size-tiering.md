@@ -15,6 +15,8 @@ This file is the picker. The `lead` agent sets `Size` in the plan's frontmatter 
 
 "Real logic" = branching, state, side effects to design. "Simple logic" = one branch, no state. "Contract / schema" = public REST/gRPC API, DB schema, queue message shape, IPC, event payload.
 
+> **File count is a proxy, not a gate.** A **self-contained greenfield module** (brand-new, isolated, nothing imports it yet, no published contract, no integration with existing code, first-party storage only) caps at **S regardless of file count** — a 3-file vanilla CRUD app is S, not M. Blast radius, not file spread (see the greenfield signal + edge case below).
+
 ## Picker — answer in order
 
 1. **Does the change touch a public contract or schema?** (REST/gRPC API, DB schema migration, queue message format, public library function signature, breaking change to any external surface)
@@ -24,7 +26,7 @@ This file is the picker. The `lead` agent sets `Size` in the plan's frontmatter 
    → **L**. Stop.
 
 3. **Is there real logic to design?** (branching, state machine, retry policy, ordering decision, concurrency)
-   → **M** if single-subsystem (multi-subsystem already caught in step 2).
+   → **M** if single-subsystem (multi-subsystem already caught in step 2) — **unless it's a self-contained greenfield module** (brand-new, isolated, nothing imports it yet, no published contract, no integration with existing code, first-party storage only), which caps at **S**: the logic is real but the blast radius is ~zero. See the greenfield signal + edge case below.
 
 4. **Is it more than 2 files, OR does it have any logic at all?**
    → **S**.
@@ -32,7 +34,7 @@ This file is the picker. The `lead` agent sets `Size` in the plan's frontmatter 
 5. **Single file, no logic, no behaviour change visible to users or callers?** (typo, dep bump, doc edit, formatter run, comment cleanup)
    → **XS**.
 
-When two answers feel equally true (e.g., "2 files but they're trivial" vs "1 file but the logic is hairy"), pick **the larger size**. The cost of an over-sized plan on small work is a few extra optional sections you skip; the cost of an under-sized plan on real work is missed scope caught at review (cycle burn).
+When two answers feel equally true (e.g., "2 files but they're trivial" vs "1 file but the logic is hairy"), pick **the larger size**. The cost of an over-sized plan on small work is a few extra optional sections you skip; the cost of an under-sized plan on real work is missed scope caught at review (cycle burn). **Exception:** the self-contained greenfield S-cap below is a *defined* route, not a "torn" case — don't round a hermetic new module up to M just because it has several CRUD features.
 
 ## Signals that override file count
 
@@ -42,7 +44,8 @@ File count is a *proxy*, not a rule. These signals push the size up regardless o
 - **One-file change to a public API signature or DB migration** → L. Contract changes are always L.
 - **Many-file change that's pure rename / formatter / mechanical sweep** → still XS or S. Mechanical changes don't carry design risk.
 - **Many-file change that's "ripple from removing one thing"** → S or M depending on the call sites' logic. Removal alone isn't M; *design* of the removal is.
-- **Touches a security-sensitive path** (auth, crypto, exec, deserialise, raw SQL, file/path handling) → bump up one tier. The security review will fire anyway and the plan benefits from more documentation.
+- **Touches a security-sensitive path** (auth, crypto, exec, deserialise of untrusted input, raw SQL, file/path handling) → bump up one tier *when the security review fires on it* (it usually does, and the plan benefits from more documentation). **Exception — first-party browser-storage round-trip:** `JSON.parse` of the app's own `localStorage`/`sessionStorage`/`IndexedDB` single-user data is not untrusted deserialisation and earns **no** bump — it doesn't fire the security review either (see `WORKFLOW.md > Security trigger`) — *unless* the stored data crosses a real trust boundary (multi-user / shared-device threat model, server- or other-principal-written data) or the parsed value flows to a dangerous sink (`innerHTML`/`dangerouslySetInnerHTML`/jQuery `.html()`/`eval`/… — open list, any HTML-injection sink).
+- **Self-contained greenfield module** (new, isolated, nothing imports it yet, no published contract, no integration with existing code, first-party storage only) → cap at **S** even with multi-feature CRUD logic. M-tier machinery (separate `pm`+`lead` spawns, fanout eligibility, full retro) prices *blast radius into existing systems* and *cross-component coordination*; a hermetic new module carries neither. It re-enters M the moment something depends on it, it grows a published contract or real schema, or it integrates with existing code.
 - **Introduces a queue, broker, async worker, or pub/sub topic** → at least M, often L. The contract you're committing to (delivery semantics, idempotency, retry/DLQ, ordering) needs documentation even if the code is one consumer file.
 
 ## Edge cases
@@ -56,6 +59,10 @@ Rule: if user-visible behaviour changes, it's not a chore. Re-pick `Type` first,
 ### "It's one file but it's a 200-line state machine"
 
 Logic density wins over file count. **M.** A state machine deserves a diagram, AC tags per transition, and observability around state changes — all M-tier sections.
+
+### "It's a greenfield app with several features but all new and self-contained"
+
+A vanilla-JS todolist — add / edit / delete / filter / persist, 3 files, `localStorage` — has several ACs of real logic but is a brand-new isolated module: nothing imports it, no published contract, no integration with existing code, first-party storage only. **S, not M.** Multi-feature CRUD *breadth* ≠ blast *radius*; the coordination-and-contract cost that M-tier machinery exists to cover isn't present. `JSON.parse(localStorage)` does not bump it via the security-path signal — see that signal's first-party-storage exception. It enters M the moment it grows a backend contract, a real schema, or integration with existing code.
 
 ### "It's a fix but the fix is one line"
 
