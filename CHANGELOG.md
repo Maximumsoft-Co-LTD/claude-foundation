@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-15
+
+### Added
+
+- **Team-mode commands — `/dev` is no longer all-or-nothing; each role can be handed to the person who owns it.** `/dev` runs the whole pipeline in one shot; team mode breaks that same flow into five role-scoped slash commands so a team can divide the work — the PM takes `/spec`, the tech lead takes `/dev-plan`, QA takes `/test-plan`, the UX/UI designer takes `/uxui-plan`, and the engineer takes `/implement` — while every command writes into the **same `.workflow/<id>/` run folder**, so the artifacts still compose and the run is still resumable with `/dev --resume <id>`. Mechanics are identical to `/dev`: the command's main agent plays the orchestrator (interview/gate + single-writer `state.json`); the named worker does the file work; the spawn guard still requires calling workers by name. Specifically:
+  - **`/spec <intent>`** — runs the Phase-1 interview, then `pm` writes `spec.md`, and stops at `step=spec`. Always spawns `pm` (no XS combined-mode shortcut — it is the PM command). Pass a run id to refine an existing spec (spec-patch mode).
+  - **`/dev-plan [id]`** — runs plan-prep fanout, then `lead` plans against the spec (`plan.md`/`epic.md`; sonnet by default, opus for L-tier — schema/contract/cross-subsystem), runs the plan check, stops at `step=plan`. No gate, no build.
+  - **`/test-plan [id]`** — `qa` designs `test-plan.md` (coverage per AC, edge cases, fixtures, regression/baseline contract) against `spec.md` + `plan.md`, before any code. Needs a spec; warns if there is no plan yet; chore/docs/spike get none.
+  - **`/uxui-plan [id]`** — the new `uxui` agent writes `uxui-plan.md` (Scenes, Scenarios, UX direction & components, AC↔scene mapping) for UI-bearing work, driving `ui-ux-pro-max` / `frontend-design`. Design only, no UI code; it leaves the resume cursor untouched (not a linear state-machine step).
+  - **`/implement [id]`** — the Phase 2 entry point for when the plan is already done: confirms the run is ready (spec + plan + test-plan, producing a missing test-plan as a gate prerequisite), runs the **gate** if the run has not been approved yet (human sign-off before autonomous work never shrinks), then runs the whole autonomous build — implement → review → security → test → docs → ship → retro. Same Phase 2 and same `state.json` as `/dev`, so `/implement <id>` and `/dev --resume <id>` are interchangeable mid-build.
+  - Files: `.claude/commands/{spec,dev-plan,test-plan,uxui-plan,implement}.md`.
+- **New `uxui` sub-agent + `uxui-plan.md` template — a design-time UX artifact the `/dev` flow never had.** `uxui` (sonnet) reads `spec.md` and the existing design system, then writes the Scenes (every screen/state, including the empty/error states implementers skip), Scenarios (user journeys across scenes, happy path + the spec's `on error / at boundary` flows), UX direction & components, and an AC↔scene mapping that catches orphan scenes (scope creep) and unmapped ACs (design gaps) — the UX analogue of `test-plan.md`'s coverage plan. It holds `Agent` for one-level UX-research fanout (`team-best-practice-researcher` / `team-codebase-explorer`) and is reused by `qa`'s visual-verification pass at the test phase. Files: `.claude/agents/uxui.md`, `.workflow/_templates/uxui-plan.md`, `.claude/agents/{INDEX,TEAM}.md`.
+
+### Changed
+
+- `install.sh` now ships the **whole** `.claude/commands/` directory (was just `dev.md`) and the new `uxui-plan.md` template, so future commands need no manifest edit. `install-cursor.sh` ports every team-mode command into `.cursor/commands/` with a Cursor-port banner inserted **after** the YAML frontmatter (the frontmatter stays on line 1); the `uxui` agent and `uxui-plan.md` template are picked up automatically by its directory globs. The `dev-agent-guard.sh` PreToolUse guard learned `uxui` so a `general-purpose` spawn mislabeled `uxui:` is blocked the same way the five `/dev` workers are. Files: `install.sh`, `install-cursor.sh`, `.claude/hooks/dev-agent-guard.sh`, `README.md`, `WORKFLOW.md`, `CLAUDE.md`.
+
+### Fixed
+
+- **`/dev` calibration round 2** (from a second `/dev` trace, run `0002-feat-todolist-website`) — four surgical workflow fixes: (1) **plan-writing** gains a trust-boundary skill-load bullet so the *planner* engages `security-fundamentals` and names the safe construction in the step (`textContent`, not `innerHTML`) — the root cause of an `innerHTML`-in-plan XSS near-miss, since the always-on security rule only fires at code-write time and the combined fast path loads skills lightly; (2) **orchestrator gate (step 9)** — a resolved `undefined → spec gap` now triggers a `test-plan.md` sync independent of any AC change (and an inline `spec.md` patch carries the matching `test-plan.md` edit), fixing the doc-drift where the gate decision lands in `spec.md` while `test-plan.md` still reads "spec gap"; (3) **orchestrator security trigger (step 12)** now scans diff **content** (added lines for `innerHTML`/SQL/`exec` sinks), not just `--name-only` — a filename can't reveal a sink, so a path-only scan would wrongly apply the `localStorage` carve-out to a diff that actually contains an `innerHTML` (a stored-XSS false-negative); (4) **retro + orchestrator (step 17 / XS-inline)** — sub-bar memory/skill candidates are reported `not proposing — <reason>` rather than raised as an `AskUserQuestion`, and memory candidates are no longer gated by a question at all. Files: `.claude/agents/retro.md`, `.claude/orchestrator.md`, `.claude/skills/plan-writing/SKILL.md`.
+
 ## [2.0.2] - 2026-06-15
 
 ### Added
@@ -224,7 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.2...v2.1.0
 [2.0.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v1.6.0...v2.0.0
