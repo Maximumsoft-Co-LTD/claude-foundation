@@ -14,6 +14,14 @@ The five sub-agents the orchestrator (main agent) spawns to do the `/dev` file w
 | [`qa`](./qa.md) | sonnet | Test-plan mode (Phase 1) writes `test-plan.md` before code; execute mode (Phase 2) runs unit/integration/e2e against it; type-aware; blocks ship until tests pass or are skipped. |
 | [`retro`](./retro.md) | sonnet | Closes the run — writes `retro.md`, appends follow-ups, surfaces memory + skill candidates for user confirmation. |
 
+## Team-mode command workers
+
+Workers a **team-mode slash command** spawns to drive one slice on its own, outside the full `/dev` run. The command's main agent plays the orchestrator (setup + interview + gate); the workers do the file work. The `/dev` workers above are reused — `pm` (via `/spec`), `lead` (via `/dev-plan`), `qa` (via `/test-plan`), and `engineer` + `lead` + `qa` + `retro` (via `/implement`, which runs the whole autonomous Phase 2). `uxui` is exclusive to team mode (`/uxui-plan`).
+
+| Agent | Model | Command | One-line role |
+|-------|-------|---------|---------------|
+| [`uxui`](./uxui.md) | sonnet | `/uxui-plan` | UX/UI designer — writes `uxui-plan.md` (Scenes, Scenarios, UX direction & components, AC↔scene mapping) from the spec, before the frontend is built. Drives `ui-ux-pro-max` / `frontend-design`; design only, writes no UI code. |
+
 ## `team-*` fanout workers
 
 Focused workers the orchestrator dispatches in parallel during fanout phases (spec/plan research, review, security, test). They return findings for a `/dev` sub-agent to synthesise — they never write run artifacts directly.

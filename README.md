@@ -121,8 +121,9 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 ## What's in the box
 
 - **`/dev` slash command** — the single entry point. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
-- **Five workflow sub-agents + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa` (test-plan / execute modes), `retro`, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Control-plane runs that span multiple repos also fan out review, security, and test **per repo** (one `lead`/`qa` per changed repo) so the read-and-judge phases don't crawl four repos serially; retro reads across all repos in one multi-repo-aware pass. Each has an explicit `model:` for cost/speed tuning.
-- **Artifact templates** — `spec.md`, `plan.md`, `test-plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
+- **Team-mode commands** — run one role at a time, writing into a shared `.workflow/<id>/` run, so you can drive the pipeline like a team instead of only through the monolithic `/dev`. `/spec` interviews and `pm` writes `spec.md`; `/dev-plan` has `lead` write `plan.md`; `/test-plan` has `qa` design `test-plan.md`; `/uxui-plan` has the `uxui` agent write `uxui-plan.md` (scenes, scenarios, UX direction, AC↔scene mapping); and `/implement` starts **Phase 2** directly — it gates the run (human sign-off, if not already approved) then runs the autonomous build (implement → review → security → test → docs → ship → retro). A typical flow: `/spec` → `/dev-plan` → `/test-plan` (+ `/uxui-plan` if UI) → `/implement`. `/implement` and `/dev --resume <id>` are interchangeable — both run the same gate + Phase 2.
+- **Five workflow sub-agents + a UX designer + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa` (test-plan / execute modes), `retro`, the team-mode `uxui` designer, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Control-plane runs that span multiple repos also fan out review, security, and test **per repo** (one `lead`/`qa` per changed repo) so the read-and-judge phases don't crawl four repos serially; retro reads across all repos in one multi-repo-aware pass. Each has an explicit `model:` for cost/speed tuning.
+- **Artifact templates** — `spec.md`, `plan.md`, `test-plan.md`, `uxui-plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
 - **Type-aware phase matrix** — the same numbered phases run for every type; the orchestrator skips or specialises them based on `Type` (see `WORKFLOW.md`).
 - **Size-aware execution matrix** — XS/S runs take a fast path (merged question batch, combined spec+plan spawn, merged docs+ship, inline retro) while M/L runs get the full machinery; upgrades are one-way via a `SIZE_UPGRADE` signal (see `WORKFLOW.md`).
 - **Always-on skill rules** — lean rules in `.claude/rules/` (each ~3 lines: trigger + one-sentence why + skill pointer), led by `coding-discipline` (the conduct layer that wraps the rest), then the construction chain `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`, the verification skills `debug-fundamentals` / `refactoring-fundamentals` / `testing-fundamentals`, and the delivery channel `git-workflow` / `delivery-engineering`. Full skill bodies load on demand; the cross-skill run order lives in exactly one file, `.claude/rules/fundamentals.md`.
@@ -133,16 +134,17 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 ## What lands in your repo
 
 ```
-.claude/agents/          pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md   (always refreshed)
+.claude/agents/          pm, lead, engineer, qa, retro, uxui + team-* fan-out workers + TEAM.md  (always refreshed)
 .claude/orchestrator.md  orchestrator script for the main agent                             (always refreshed)
-.claude/commands/dev.md  the /dev slash command                                             (always refreshed)
+.claude/commands/        dev + team-mode commands (spec, dev-plan, test-plan,
+                         uxui-plan, implement)                                              (always refreshed)
 .claude/skills/          fundamentals skills (construction + verification + delivery) +
                          plan-writing, brainstorming, fanout-team-agents, qa-handoff-note,
                          frontend/UX skills, skill-creator                                  (always refreshed)
 .claude/rules/           16 always-on pointers to the skills                                (always refreshed)
 .claude/hooks/*.sh       PreToolUse spawn guard + secrets guard, PostToolUse lint + state marker  (always refreshed)
 .claude/settings.json    hook wiring                                                        (only if missing; existing files get a merge)
-.workflow/_templates/    spec / plan / test-plan / review / security / tests /
+.workflow/_templates/    spec / plan / test-plan / uxui-plan / review / security / tests /
                          recommendations / retro / epic / state.json                        (always refreshed)
 .workflow/INDEX.md       run registry                                                       (only if missing)
 .workflow/FOLLOWUPS.md   follow-up registry                                                 (only if missing)
@@ -197,9 +199,9 @@ Stand up your own server and wire it in a few minutes — full deploy steps, API
 
 ```
 .claude/
-├── agents/         pm, lead, engineer, qa, retro + team-* fanout workers
+├── agents/         pm, lead, engineer, qa, retro, uxui + team-* fanout workers
 ├── orchestrator.md script the main agent follows when /dev runs
-├── commands/       dev.md (loads orchestrator.md)
+├── commands/       dev.md (loads orchestrator.md) + team-mode spec / dev-plan / test-plan / uxui-plan / implement
 ├── hooks/          spawn guard, state marker, lint dispatch, secrets guard
 ├── rules/          16 lean always-on pointers (conduct + run order + fundamentals)
 └── skills/         full skill bodies referenced by the rules

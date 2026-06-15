@@ -26,6 +26,10 @@
 #                                                         Agent() dispatch
 #                                                         shape, single-agent
 #                                                         flow)
+#   - .claude/commands/{spec,test-plan,uxui-plan}.md
+#                                → .cursor/commands/*.md  (path-rewritten +
+#                                                         Cursor-port banner —
+#                                                         team-mode commands)
 #   - .workflow/_templates/**    → .workflow/_templates/** (verbatim)
 #   - WORKFLOW.md                → WORKFLOW.md           (path rewrites)
 #   - CURSOR.md                  → CURSOR.md             (generated stub)
@@ -84,7 +88,9 @@ What gets installed:
                                  agent (no Agent() dispatch, no hook guard)
   .cursor/commands/dev.md      — the /dev slash command (Cursor's project
                                  commands feature)
-  .workflow/_templates/**      — spec/plan/test-plan/review/security/tests/recs/retro/epic
+  .cursor/commands/*.md        — team-mode commands (/spec, /test-plan,
+                                 /uxui-plan) — path-rewritten + port banner
+  .workflow/_templates/**      — spec/plan/test-plan/uxui-plan/review/security/tests/recs/retro/epic
                                  + state.json (verbatim)
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
@@ -293,6 +299,29 @@ BANNER
   } > "$dst"
 }
 
+# Team-mode commands (/spec, /test-plan, /uxui-plan): path-rewritten copy with a
+# short Cursor-port banner inserted AFTER the YAML frontmatter (the frontmatter
+# must stay on line 1, so the banner can't be prepended — same placement the
+# synthesized dev.md uses). Their bodies tell the main agent to "spawn the
+# <role> agent"; in Cursor there is one agent, so the banner maps that onto the
+# hat-switch the orchestrator banner describes. The banner lands right after the
+# 2nd `---` (frontmatter close); awk inserts it inline so unicode-free escaping
+# stays simple.
+copy_team_command() {
+  local src="$1" dst="$2"
+  mkdir -p "$(dirname "$dst")"
+  rewrite_paths < "$src" | awk '
+    { print }
+    /^---$/ {
+      d++
+      if (d == 2) {
+        print ""
+        print "> **Cursor-port note.** This command was written for Claude Code. In Cursor you are the only agent, so substitute: \"spawn the `<role>` agent\" (pm / lead / engineer / qa / retro / uxui) -> read `.cursor/agents/<role>.md` and act as that role for this command; \"`AskUserQuestion`\" -> ask in chat (batched, <= 4); and there are no PreToolUse/PostToolUse hooks, so write `state.json` after every step yourself. See `.cursor/orchestrator.md` for the full mapping."
+      }
+    }
+  ' > "$dst"
+}
+
 # ── Build the plan ──────────────────────────────────────────────────────────
 # Each plan row carries: src-relative-path | dst-relative-path | mode | action
 #   mode   = skip-if-exists | always-overwrite | never-overwrite
@@ -318,6 +347,11 @@ TEMPLATE_FILES=()
 while IFS= read -r -d '' f; do
   TEMPLATE_FILES+=("${f#"$SOURCE_PATH"/}")
 done < <(find "$SOURCE_PATH/.workflow/_templates" -type f -print0 | LC_ALL=C sort -z)
+
+COMMAND_FILES=()
+while IFS= read -r -d '' f; do
+  COMMAND_FILES+=("${f#"$SOURCE_PATH"/}")
+done < <(find "$SOURCE_PATH/.claude/commands" -type f -name '*.md' -print0 | LC_ALL=C sort -z)
 
 PLAN=()
 
@@ -354,6 +388,16 @@ PLAN+=(".claude/orchestrator.md|.cursor/orchestrator.md|always-overwrite|rewrite
 # rewrite, not a path-rewritten copy), so a sentinel action "synthesize-dev"
 # stands in for the src column.
 PLAN+=("synthesize-dev|.cursor/commands/dev.md|always-overwrite|synthesize-dev")
+
+# Team-mode commands (/spec, /test-plan, /uxui-plan and any future sibling):
+# every .claude/commands/*.md EXCEPT dev.md (which is synthesized above). These
+# are path-rewritten copies with a short Cursor-port banner prepended, since
+# their bodies still speak Claude Code's "spawn the <role> agent" vocabulary.
+for rel in "${COMMAND_FILES[@]}"; do
+  base="$(basename "$rel")"
+  [ "$base" = "dev.md" ] && continue
+  PLAN+=("${rel}|.cursor/commands/${base}|always-overwrite|rewrite-command")
+done
 
 # Templates: verbatim
 for rel in "${TEMPLATE_FILES[@]}"; do
@@ -473,6 +517,7 @@ for row in "${PLAN[@]}"; do
   case "$action" in
     convert-rule)         convert_rule_to_mdc      "$src" "$dst" ;;
     rewrite)              copy_with_rewrite        "$src" "$dst" ;;
+    rewrite-command)      copy_team_command        "$src" "$dst" ;;
     rewrite-orchestrator) copy_orchestrator        "$src" "$dst" ;;
     verbatim)             copy_verbatim            "$src" "$dst" ;;
     synthesize-dev)       write_cursor_dev_command "$dst" ;;
@@ -508,10 +553,11 @@ The original workflow assumed Claude Code primitives Cursor doesn't have. The po
 
 - `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + run-order routing + ddd-strategic + programming/concurrency/database/hexagonal/architecture/queue/security/observability fundamentals + debug/refactoring/testing + git-workflow/delivery-engineering). Cursor loads these automatically.
 - `.cursor/skills/**` — deep-dive skill content the rules point to.
-- `.cursor/agents/*.md` — role docs (pm/lead/engineer/qa/retro). Read these when entering the matching phase.
+- `.cursor/agents/*.md` — role docs (pm/lead/engineer/qa/retro + uxui). Read these when entering the matching phase or running a team-mode command.
 - `.cursor/orchestrator.md` — the orchestration script the `/dev` command follows.
 - `.cursor/commands/dev.md` — the slash command itself.
-- `.workflow/<id>/` — run artifacts (spec/plan/review/security/tests/recs/retro + `state.json`).
+- `.cursor/commands/{spec,test-plan,uxui-plan}.md` — team-mode commands: run one role on its own (`/spec` → spec.md, `/test-plan` → test-plan.md, `/uxui-plan` → uxui-plan.md). In Cursor, read the matching role doc and play it.
+- `.workflow/<id>/` — run artifacts (spec/plan/uxui-plan/review/security/tests/recs/retro + `state.json`).
 - `.workflow/INDEX.md`, `.workflow/FOLLOWUPS.md` — cross-run state.
 - `WORKFLOW.md` — full flow reference.
 

@@ -441,6 +441,15 @@
             </div>
           </article>
 
+          <article class="agent-card reveal" data-d="3">
+            <div class="agent-top"><span class="agent-name"><span class="at">@</span>uxui</span><span class="agent-phase">team mode</span></div>
+            <p>Design-time UX for UI-bearing work. Writes <b>uxui-plan.md</b> — Scenes (every screen/state), Scenarios (user flows), UX direction &amp; components, and an AC↔scene mapping that catches orphan screens and unmapped criteria. Drives <code>ui-ux-pro-max</code>; design only, no UI code.</p>
+            <div class="agent-io">
+              <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>uxui-plan.md</b></span></div>
+              <div class="io-row"><span class="io-k">reads</span><span class="io-v">spec.md · design system</span></div>
+            </div>
+          </article>
+
           <article class="agent-card reveal" data-d="3" style="background: var(--ink); color: var(--paper); border-color: var(--ink);">
             <div class="agent-top"><span class="agent-name" style="color: var(--paper)"><span style="color:#6aa3ff">@</span>orchestrator</span><span class="agent-phase" style="background: rgba(255,255,255,.1); color:#9aa0ad">main agent</span></div>
             <p style="color:#a7adba">Not a sub-agent — the main agent <em>is</em> the orchestrator. It runs the interview, the gate, fanout dispatch, and drives all ten phases via <code style="background:rgba(255,255,255,.1);color:#cfe0ff">.claude/orchestrator.md</code>.</p>
@@ -462,6 +471,18 @@
             <span class="chip">team-type-design-analyzer</span>
             <span class="chip">team-comment-analyzer</span>
             <span class="chip">team-pr-test-analyzer</span>
+          </div>
+        </div>
+
+        <div class="fanout reveal" data-d="2">
+          <h4>+ run one role on its own — team mode</h4>
+          <p>Don't want the whole pipeline in one shot? Hand each role its own command. Each one writes into the <strong>same <code>.workflow/&lt;id&gt;/</code> run</strong> and shares the gate, so the work still composes — and <code>/dev --resume &lt;id&gt;</code> (or <code>/implement</code>) carries it the rest of the way.</p>
+          <div class="fanout-chips">
+            <span class="chip">/spec → @pm</span>
+            <span class="chip">/dev-plan → @lead</span>
+            <span class="chip">/test-plan → @qa</span>
+            <span class="chip">/uxui-plan → @uxui</span>
+            <span class="chip">/implement → @engineer · Phase 2</span>
           </div>
         </div>
       </div>

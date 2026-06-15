@@ -48,12 +48,12 @@ Options:
 What gets installed:
   .claude/agents/**            — pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
   .claude/orchestrator.md      — orchestrator script run by the main agent on /dev, NOT a sub-agent (always refreshed)
-  .claude/commands/dev.md      — the /dev slash command (always refreshed)
+  .claude/commands/**          — /dev plus the team-mode commands (/spec, /test-plan, /uxui-plan) (always refreshed)
   .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, concurrency, database, hexagonal, architecture, queue, security, observability, debug, refactoring, testing, git-workflow, delivery-engineering) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
   .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
   .claude/hooks/**             — every hook script in the foundation (lint, dev-agent-guard, dev-state-mark, protect-secrets, …) — copied verbatim, always refreshed
   .claude/settings.json        — hook wiring, derived from this file's own hooks block (only if missing; existing files get a merge — see below)
-  .workflow/_templates/*       — spec/plan/test-plan/review/security/tests/recommendations/retro/epic + state.json (always refreshed)
+  .workflow/_templates/*       — spec/plan/test-plan/uxui-plan/review/security/tests/recommendations/retro/epic + state.json (always refreshed)
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
   WORKFLOW.md                  — full flow reference at repo root (always refreshed)
@@ -140,6 +140,7 @@ SOURCE_PATH="$(expand_path "$SOURCE_PATH")"
 for needed in \
   ".claude/agents" \
   ".claude/orchestrator.md" \
+  ".claude/commands" \
   ".claude/commands/dev.md" \
   ".claude/skills" \
   ".claude/rules" \
@@ -181,7 +182,7 @@ ok "target: $TARGET_PATH"
 PLAN=(
   ".claude/orchestrator.md|always-overwrite"
   ".claude/agents|always-overwrite"
-  ".claude/commands/dev.md|always-overwrite"
+  ".claude/commands|always-overwrite"
   ".claude/skills|always-overwrite"
   ".claude/rules|always-overwrite"
   ".claude/hooks|always-overwrite"
@@ -189,6 +190,7 @@ PLAN=(
   ".workflow/_templates/spec.md|always-overwrite"
   ".workflow/_templates/plan.md|always-overwrite"
   ".workflow/_templates/test-plan.md|always-overwrite"
+  ".workflow/_templates/uxui-plan.md|always-overwrite"
   ".workflow/_templates/review.md|always-overwrite"
   ".workflow/_templates/security.md|always-overwrite"
   ".workflow/_templates/tests.md|always-overwrite"

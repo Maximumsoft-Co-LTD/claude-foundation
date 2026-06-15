@@ -1,6 +1,8 @@
 # Workflow
 
-Single entry point: `/dev <intent>` (or `/dev --resume <id>` to pick up an interrupted run). The command detects context (new project vs. existing codebase) and runs the same two-phase flow, branching on **run type** so we don't drag a `chore` through e2e tests or implement a `fix` without first reproducing it. Same artifacts in both cases, written to `.workflow/<id>/`.
+Primary entry point: `/dev <intent>` (or `/dev --resume <id>` to pick up an interrupted run). The command detects context (new project vs. existing codebase) and runs the same two-phase flow, branching on **run type** so we don't drag a `chore` through e2e tests or implement a `fix` without first reproducing it. Same artifacts in both cases, written to `.workflow/<id>/`.
+
+**Team mode** ([below](#team-mode--run-one-role-on-its-own)) splits that same flow into role-scoped commands — `/spec` (pm), `/dev-plan` (lead), `/test-plan` (qa), `/uxui-plan` (uxui), `/implement` (Phase 2) — so a team can divide the work by role. Each writes into the **same** `.workflow/<id>/` run and shares the gate, so the artifacts compose exactly as the one-shot `/dev` run produces them, and `/dev --resume <id>` (or `/implement`) carries a hand-assembled run the rest of the way.
 
 > **Orchestration runs in the main agent, not a sub-agent.** A Claude Code sub-agent **cannot call `AskUserQuestion`** (it can't talk to the user), so the `/dev` slash command loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent runs the interview + drives the flow. Sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) do the file work. **Fan-out has two paths:** the splittable agents (`pm`, `lead`, `qa`, `engineer`, and the self-splitting `team-*` workers) hold `Agent` and **spawn their own helpers directly** when their work is large (direct nesting, Claude Code v2.1.172+); the orchestrator-mediated `FANOUT_REQUESTED:` signal is the fallback (and the path for background implement-fanout). `state.json` stays single-writer (the orchestrator) regardless — helpers never write it.
 
@@ -70,6 +72,7 @@ Examples: `0001-feat-todolist-app`, `0002-feat-audit-log`, `0003-fix-login-redir
 │   ├── spec.md
 │   ├── plan.md
 │   ├── test-plan.md
+│   ├── uxui-plan.md                # team-mode UX plan (/uxui-plan, UI work)
 │   ├── review.md
 │   ├── tests.md
 │   ├── security.md
@@ -107,6 +110,7 @@ All artifacts have a template in [`.workflow/_templates/`](.workflow/_templates/
 | `spec.md` | `pm` | [`_templates/spec.md`](.workflow/_templates/spec.md) | **Outcome** (before → after → benefit), users, scope, non-goals, acceptance criteria, **Type**, bug-repro (fix), timebox (spike), discovery notes from spec fanout |
 | `plan.md` | `lead` (plan mode) | [`_templates/plan.md`](.workflow/_templates/plan.md) | **Outcome** (before → after → benefit), step-by-step plan, current-state + best-practice research notes, **scaffold skeleton** (file tree + key signatures, M/L), files to touch (`path#anchor`), risks, **rollback** |
 | `test-plan.md` | `qa` (test-plan mode) | [`_templates/test-plan.md`](.workflow/_templates/test-plan.md) | **Design-time test strategy** (feat/fix/refactor) — coverage plan (level per AC), edge cases to probe, out-of-test-scope, fixtures/data/env, regression contract (fix) / baseline (refactor), coverage targets. Authored after `plan.md`, **signed off at the gate**; `qa` executes it at the test phase |
+| `uxui-plan.md` | `uxui` (team mode) | [`_templates/uxui-plan.md`](.workflow/_templates/uxui-plan.md) | **Design-time UX plan** for UI-bearing work — Scenes (screens/states), Scenarios (user flows), UX direction & components, AC↔scene mapping. Written by the `/uxui-plan` team-mode command (not part of the linear `/dev` state machine); `frontend-design` builds from it and `qa > Visual verification` checks against it |
 | `review.md` | `lead` (review mode) | [`_templates/review.md`](.workflow/_templates/review.md) | Plan-adherence + **acceptance verification** against `spec.md` |
 | `security.md` | `lead` (security mode) | [`_templates/security.md`](.workflow/_templates/security.md) | Security findings; only written when the diff trips the sensitive-paths trigger |
 | `tests.md` | `qa` (execute mode) | [`_templates/tests.md`](.workflow/_templates/tests.md) | **Test execution record** — acceptance-criteria mapping (actual tests), run results, regression verification (fix), measured per-level diff coverage, edge-case gaps found. Executes the strategy from `test-plan.md` |
@@ -240,7 +244,7 @@ The `Ship as` answer is captured in the Phase 1 interview and recorded in `spec.
 
 ## Agent map
 
-Five sub-agents drive the file work. The **orchestrator is not a sub-agent** — it's the role the main agent plays when `/dev` runs, following [`.claude/orchestrator.md`](.claude/orchestrator.md). Several sub-agents have multiple modes so the count stays low.
+Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (spawned only by `/uxui-plan` — see [Team mode](#team-mode--run-one-role-on-its-own)). The **orchestrator is not a sub-agent** — it's the role the main agent plays when `/dev` (or a team-mode command) runs, following [`.claude/orchestrator.md`](.claude/orchestrator.md). Several sub-agents have multiple modes so the count stays low.
 
 | Role | Where it runs | Phase steps | Reads | Writes | Primary tools |
 |------|---------------|-------------|-------|--------|---------------|
@@ -250,6 +254,7 @@ Five sub-agents drive the file work. The **orchestrator is not a sub-agent** —
 | `engineer` | sub-agent | 4 (implement), 8 (docs), 9 (ship) | `plan.md`, `spec.md`, diff | source, inline comments, commit, PR | `Read`, `Edit`, `Write`, `Bash`, `Grep`, `LSP`, `TaskCreate`, `TaskUpdate`, `TaskList`, `Agent` |
 | `qa` | sub-agent | 2½ (test plan), 7 (test) | `spec.md`, `plan.md`, `test-plan.md`, source, diff | `test-plan.md` (design), tests + `tests.md` (execution) | `Read`, `Write`, `Edit`, `Bash`, `LSP`, `Grep`, `Agent` |
 | `retro` | sub-agent | 10 | all artifacts + diff + existing memory/skills + FOLLOWUPS | `retro.md`, INDEX status, FOLLOWUPS append | `Read`, `Write`, `Edit`, `Bash` |
+| `uxui` | sub-agent (team mode) | `/uxui-plan` only (not a `/dev` step) | `spec.md`, existing design system/components, `ui-ux-pro-max` | `uxui-plan.md` | `Read`, `Grep`, `LSP`, `Write`, `Edit`, `Agent` |
 | `team-*` agents | sub-agents (workers) | dispatched from fanout phases (steps 1, 2, 4, 5, 6, 7) | the spec question / codebase area / best-practice question / diff slice / bucket / path range the orchestrator scopes them to | findings (returned to the calling /dev sub-agent for synthesis; no artifact write) | varies by worker — see `.claude/agents/TEAM.md` |
 
 Sub-agent constraints:
@@ -259,6 +264,20 @@ Sub-agent constraints:
 External: when `retro` surfaces skill candidates and the user approves, the orchestrator (main agent) invokes the `skill-creator` skill (built-in) for each approved candidate. The handoff is explicit — no candidate is created silently.
 
 **Anti-bias rule** — because `lead` reviews the plan they wrote, review mode is checklist-driven (one row per plan step, one row per acceptance criterion incl. its error/boundary clause, one row per DoD item and Constraint, one verification per file). "Looks good overall" is banned.
+
+## Team mode — run one role on its own
+
+`/dev` is the full pipeline; **team mode** lets you summon one specialist at a time and produce a single artifact, so requirements can be built up like a team rather than only through the monolithic run. Each command writes into the **same `.workflow/<id>/` run folder**, so the artifacts compose — and the run can be carried the rest of the way with `/dev --resume <id>`.
+
+| Command | Role (agent) | Writes | Notes |
+|---------|--------------|--------|-------|
+| [`/spec`](.claude/commands/spec.md) | `pm` | `spec.md` | The main agent runs the Phase-1 interview (sub-agents can't), then `pm` writes the spec and the run stops at `step=spec`. Always spawns `pm` (no XS combined-mode shortcut). Pass a run id instead of an intent to refine an existing spec (spec-patch mode). |
+| [`/dev-plan`](.claude/commands/dev-plan.md) | `lead` (plan mode) | `plan.md` / `epic.md` | Resolves a run (id arg or most-recent), runs plan-prep fanout, then `lead` plans against `spec.md` (sonnet by default, opus for L-tier). Needs a ready spec; stops after the plan check at `step=plan`. No gate, no implement. |
+| [`/test-plan`](.claude/commands/test-plan.md) | `qa` (test-plan mode) | `test-plan.md` | Resolves a run (id arg or most-recent), reads `spec.md` + `plan.md`, designs the strategy. Needs a spec; warns if there's no plan yet. `chore`/`docs`/`spike` get no test plan. |
+| [`/uxui-plan`](.claude/commands/uxui-plan.md) | `uxui` | `uxui-plan.md` | UI-bearing work only. Reads `spec.md`, drives `ui-ux-pro-max` / `frontend-design`, writes Scenes + Scenarios + UX direction + AC↔scene mapping. **Not a linear state-machine step** — it leaves `step`/`next_step` untouched and just records the artifact in `state.json > notes`. |
+| [`/implement`](.claude/commands/implement.md) | `engineer` + `lead` + `qa` + `retro` | source, `review.md`, `tests.md`, `retro.md`, commit/PR | **Phase 2 entry point.** Confirms the run is ready (spec + plan + test-plan), runs the **gate** if it hasn't been approved yet (human sign-off before autonomous work), then runs the whole autonomous build — implement → review → security → test → docs → ship → retro. Same Phase 2 and same `state.json` as `/dev`, so it's interchangeable with `/dev --resume <id>` mid-build. |
+
+Mechanics shared with `/dev`: the command's **main agent plays the orchestrator** (setup, interview, the gate, single-writer `state.json`); the named worker does the file work. The spawn guard ([`dev-agent-guard.sh`](.claude/hooks/dev-agent-guard.sh)) still applies — spawn `pm`/`lead`/`engineer`/`qa`/`retro`/`uxui` by name, never `general-purpose`. A typical team flow: `/spec` → `/dev-plan` → `/test-plan` (+ `/uxui-plan` if UI) → `/implement` (gate → build → ship). `/implement` and `/dev --resume <id>` are interchangeable — both run the same gate + Phase 2 against the run's `state.json`.
 
 ## Example: `/dev create todolist app`
 

@@ -27,6 +27,8 @@ Since Claude Code v2.1.172 a worker with `Agent` in its `tools` can spawn nested
 
 The other five review workers (`team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) stay read-only with **no `Agent`** — their work doesn't split. Each `Agent`-holder's "Recruit help when the work is large" section caps the fan-out and stamps every helper prompt with a no-further-spawn line, so nesting is one level deep only.
 
+The team-mode command worker **`uxui`** (spawned by `/uxui-plan`, not by the `/dev` orchestrator — see [`INDEX.md`](./INDEX.md)) also holds `Agent` and follows the same one-level-deep rule: it self-dispatches `team-best-practice-researcher` (UX-pattern probes) and `team-codebase-explorer` (existing-UI mapping) when the surface is large, caps at 4, and stamps every helper prompt with the no-further-spawn line.
+
 ## Fork sources
 
 Forked: **2026-05-21**. Source plugin: **`pr-review-toolkit`** at `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/pr-review-toolkit/agents/`. Version inferred from the marketplace cache at fork-time (not pinned to a release tag — `pr-review-toolkit` did not carry a version manifest in the cache snapshot).

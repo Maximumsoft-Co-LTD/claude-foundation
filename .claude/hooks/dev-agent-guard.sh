@@ -60,12 +60,12 @@ if [[ "$subagent_type" == "general-purpose" ]]; then
   description="$(printf '%s' "$input" | jq -r '.tool_input.description // ""')"
   # case-insensitive match for the worker prefix
   desc_lc="$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]')"
-  for worker in pm lead engineer qa retro; do
+  for worker in pm lead engineer qa retro uxui; do
     # match "<worker>:", "<worker> ", "<worker>(" at the start of the description
     if [[ "$desc_lc" =~ ^${worker}[[:space:]:\(] ]] || [[ "$desc_lc" == "$worker" ]]; then
       jq -n --arg w "$worker" '{
         decision: "block",
-        reason: ("BLOCKED by /dev guard: you set subagent_type=\"general-purpose\" but the description starts with \"\($w)\" — that signals you intended to spawn the `\($w)` worker agent. The /dev workflow worker agents live in .claude/agents/ and must be called by name. Retry with subagent_type=\"\($w)\" instead. (Worker agents: pm, lead, engineer, qa, retro.)")
+        reason: ("BLOCKED by /dev guard: you set subagent_type=\"general-purpose\" but the description starts with \"\($w)\" — that signals you intended to spawn the `\($w)` worker agent. These worker agents live in .claude/agents/ and must be called by name. Retry with subagent_type=\"\($w)\" instead. (Worker agents: pm, lead, engineer, qa, retro; team-mode: uxui.)")
       }'
       exit 0
     fi
