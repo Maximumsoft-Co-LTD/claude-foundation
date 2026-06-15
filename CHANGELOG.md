@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-06-16
+
+### Changed
+
+- **The XS/S fast path now designs the whole contract in one spawn — `spec.md` + `plan.md` + `test-plan.md` — instead of two.** For `feat`/`fix`/`refactor`, the combined `lead` spawn (the path that already skips `pm` and merges spec+plan for XS/S runs) now also writes `test-plan.md` in the same pass, so there is no separate `qa` design-time spawn and no orchestrator-inline test-plan write: one design-time spawn produces all three artifacts the gate signs off. `lead` writes the test-plan as an adversarial check on the plan it just wrote (every AC verifiable, the unhappy path stated, a reachable security/data-integrity `undefined` returns a first-line `BLOCKER:`), and the orchestrator's step-8a test-plan check + the pre-gate consistency scan run on the artifact `lead` already produced. `/implement` (Phase-2 entry) and a gate test-plan-revise correctly fall back to writing/editing the test-plan inline, since there is no combined `lead` spawn to fold into at those points. Files: `.claude/agents/lead.md`, `.claude/orchestrator.md`, `.claude/commands/{spec,implement}.md`, `README.md`, `WORKFLOW.md`.
+
+### Fixed
+
+- **`/dev` calibration round 3** (from a third `/dev` trace) — five surgical fixes that close behaviour-drift and cost gaps the run surfaced, no new features:
+  - **Plan-adherence reconciliation (`qa` step 2b + orchestrator test phase).** A behaviour the gate-approved `plan.md` (a Step *or* a `Risks`-table mitigation) or `test-plan.md` (a Coverage row or a `Specified` edge case) **named**, where the diff does the **opposite**, is now a `[plan-contradiction]` — `qa` asserts the specified behaviour and **never weakens an assertion (or renames a weaker test) to go green** against a divergent implementation, and never files it under `Edge-case gaps` (that bucket is spec-*undefined* inputs only). The orchestrator reconciles it before ship (match the plan → `engineer`, or amend the contract at a mini-gate), never ships the contradiction as a one-line follow-up. `engineer` is told explicitly that "the plan" is **not only the numbered Steps** — a `Risks` mitigation or a `test-plan` `Specified` behaviour binds the same way.
+  - **Settled-render visual verification.** `qa` captures each viewport on a *settled* render — `animations: "disabled"` **and** the transition waited out — because a mid-transition frame (washed-out background, faded text) reads as a contrast/readability defect the running app does not have. Findings are recorded as **observations, not source diagnoses**: before naming any cause `qa` greps the CSS/JS to confirm it (a present-but-mid-transition value is a capture artifact, not a source bug), and an unconfirmed cause goes up as a flagged hypothesis, never a confident diagnosis the orchestrator would route straight to a fix.
+  - **Capture-first defect validation (orchestrator).** Before spawning `engineer` for a visual defect (from `qa` or its own MCP backstop), the orchestrator confirms the shot was a settled render and greps any claimed source cause itself — one grep + a re-read is far cheaper than burning a whole `engineer` cycle on a capture artifact; a defect that survives both checks is the only one worth a cycle.
+  - **System-browser test runner.** `qa`'s `Execution mechanism` now defaults a web browser runner to the system-installed browser via Playwright's `channel` (`channel: 'chrome'` / `'msedge'`), driving the Chrome/Edge already on the machine with **no multi-minute Chromium download** — bundled Chromium is the fallback only when no system browser exists. The gate signs the chosen `channel` off so execute mode configures it without re-downloading.
+  - **Review model exception narrowed.** The "keep opus" review exception for a "substantial test change" now means **test-*infrastructure* churn** (a new harness, reworked fixtures, mass rewrites) — **not** a high *count* of straightforward new tests, which on a fast-path feature is normal coverage; on XS/S, sonnet stands regardless and a contract/test-infra signal is a size-upgrade consideration, not an opus-on-S escalation.
+
+  Files: `.claude/agents/{engineer,qa}.md`, `.claude/orchestrator.md`.
+
 ## [2.1.0] - 2026-06-15
 
 ### Added
@@ -245,7 +262,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.2...v2.1.0
 [2.0.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.0.0...v2.0.1
