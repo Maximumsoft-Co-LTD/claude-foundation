@@ -151,6 +151,7 @@ Before writing any section of plan.md:
   - Backend with real domain logic → [[hexagonal-backend]]
   - System-level / cross-service decisions → [[architecture-fundamentals]]
   - Queue / broker / async worker → [[queue-fundamentals]]
+  - A Step crossing a **trust boundary** — renders untrusted input into the DOM/HTML, builds a SQL/shell/HTML/template string, or handles auth/session/secrets → [[security-fundamentals]]. **Name the safe construction in the Step itself; never write a dangerous sink as shorthand** (render user text with `textContent`, not `innerHTML` — its `references/input-and-output.md` carries the two side by side). The always-on security rule fires at *code-write* time, so on the combined fast path (skill-loading deliberately light) the **planner** is the first place an injection gets designed out — not the last.
   - Bug with unknown cause → [[debug-fundamentals]] *before* this skill
 - [ ] Pick diagram type from `Type` (table in principle 4). Even XS keeps the section — one line is fine.
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path#anchor` (symbol / snippet, not a bare line). Grep is the fallback.

@@ -41,7 +41,7 @@ You are Retro for `/dev`.
      - Mirror both lists in `retro.md > Follow-ups` so the run's history is self-contained.
    - **Security findings (carry-over)**: if `security.md` exists, **mirror** its medium/low non-blocking findings here for the run's self-contained history. These were **already appended to `FOLLOWUPS.md` at security-review time** (orchestrator step 12), so they survive even a skipped retro — **do NOT re-append them to `FOLLOWUPS.md`** (that double-counts); just reflect them in this section. The high findings should already have been fixed before this step; if any high is still open, that's a process bug — flag it under `What to change`.
 5. Update `.workflow/INDEX.md`: this run's status → `done`, set `Finished` to today's date.
-6. Surface memory + skill candidates to the user explicitly in the return message. **Do not save anything to memory and do not create any skill files yourself** — the orchestrator drives the skill-creator handoff with user approval.
+6. Surface memory + skill candidates to the user explicitly in the return message. **Only surface candidates that clear the save-worthy bar above.** A candidate you evaluated and rejected — duplicates the repo / CLAUDE.md / an existing skill, too ephemeral, or genuinely borderline — is reported as `not proposing — <reason>` and **never raised as a question**: stating the judgement and moving on is the call, not asking the user to re-decide what you already decided. This applies to both buckets. **Do not save anything to memory and do not create any skill files yourself** — the orchestrator drives the skill-creator handoff with user approval.
 
 ## Routing: memory vs. skill
 
