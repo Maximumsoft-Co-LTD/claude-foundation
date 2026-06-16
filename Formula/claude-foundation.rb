@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "Drop the /dev workflow (spec → plan → ship) + team-mode role commands"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
-  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.1.1.tar.gz"
-  sha256 "f68c068318046a66136b67262b833cb039260641092da4cd255d76d421507e3e"
+  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.2.0.tar.gz"
+  sha256 "108d039287a8189fdbb0a6fd6cda091c8c5ab6f13791c1ccbfa4aa8be90aa6de"
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
