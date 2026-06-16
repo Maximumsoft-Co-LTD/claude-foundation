@@ -105,7 +105,7 @@ Tick the matching box in `tests.md > Type-aware mode`:
 
 ### Per-repo variant (surface fanout — one repo of a multi-repo run)
 
-When the orchestrator spawns you as **one of several parallel per-repo testers** for a control-plane run (step 13 surface fanout, `repo_root=<r>` is one of `state.repos`), you run **only that repo's suite** over its slice of `test-plan.md` and **return** a per-repo result block — you do **NOT** write the shared `tests.md` (single-writer; the Surface-synthesis re-spawn owns it).
+When you are dispatched as **one per-repo tester** of a control-plane run's surface fanout (step 13), `repo_root=<r>` is one of `state.repos` — **nested by the Surface-coordinator as a `general-purpose` helper carrying this contract inlined** (the coordinator nests `general-purpose`, not `qa`, so the same-message batch clears guard Case 3 — see `orchestrator.md > Surface (per-repo) fanout > Dispatch`). You run **only that repo's suite** over its slice of `test-plan.md` and **return** a per-repo result block — you do **NOT** write the shared `tests.md` (single-writer; the **Surface-coordinator** owns it).
 
 - Scope every command to `<r>` (`git -C <r> …`, run the suite inside `<r>`). Honour the **batch-the-run** rule per repo: one suite command in `<r>`, never one Bash call per file.
 - Cover the `test-plan.md > Coverage plan` rows whose tests live in `<r>`; an AC another repo proves is `not-in-this-repo` for you.
@@ -113,12 +113,16 @@ When the orchestrator spawns you as **one of several parallel per-repo testers**
 - Single-pass by default — don't nest the per-category fanout for one repo's slice.
 - **Return shape (text, not a file):** a `### Repo: <r>` block — Results table, Acceptance-criteria coverage (this repo's slice), any Failing, this repo's diff-coverage vs floor, **any Visual verification findings or a `visual: deferred to orchestrator MCP backstop` note (when this repo's diff touches UI)**, and a one-line per-repo status (`passing` | `failing` — a blocking visual defect makes it `failing`).
 
-### Surface-synthesis variant (writes the unified tests.md)
+### Surface-coordinator variant (nests per-repo helpers, then writes the unified tests.md)
 
-When re-spawned with every per-repo block, write the single `tests.md`:
+When the orchestrator spawns you as the **surface-fanout coordinator** for a multi-repo run (it passes the changed-repo list), you run the whole per-repo test phase in **one spawn** — nest, collect, write:
+
+1. **Nest one per-repo helper per repo, in a single message, foreground:** `Agent(subagent_type="general-purpose", …)` per `<r>`, each prompt carrying the **Per-repo variant** contract above inlined + `repo_root=<r>`. Use `general-purpose` (**not** `qa`) so the same-message batch clears guard Case 3 — a foreground `qa` batch self-blocks on the 2nd spawn (`orchestrator.md > Surface (per-repo) fanout > Dispatch`). **Cap 6 per message**; with >6 repos, nest in **waves of ≤6** — one message per wave, await each wave before starting the next (never put >6 in one message; the excess queues past the concurrency cap and stalls silently). If you cannot nest (`Agent` unavailable), run each repo's slice **sequentially yourself** instead — single-pass, correct, just serial.
+2. **Collect** every helper's `### Repo: <r>` block (each from a nested `general-purpose` helper — note `Dispatched-as: general-purpose` once in the artifact), then write the single `tests.md`:
 
 - One `### Repo: <path>` subsection per repo under `## Per-repo results`, carrying that repo's results + coverage.
 - **Global AC-coverage walk:** map every `spec.md` AC **once across all repos** to whichever repo's actual test proves it (including each AC's `on error / at boundary:` clause and `measured:` target) — an AC no repo's tests cover is an unmapped-AC finding.
+- **Cross-repo coherence (coupled changes).** If the changed repos share a contract this change touches, confirm a **cross-repo integration/e2e test actually exercises the shared boundary** (a client in one repo against the server in another) — per-repo suites run in isolation and pass even when two repos sit on incompatible contract versions. A failing cross-repo test is `failing` like any other; the **absence** of any such test on a coupled change is a coverage gap — record it (so the orchestrator can escalate), don't let isolated green suites imply the boundary is proven.
 - **Aggregate `Status` = `passing` iff every repo passed**; any repo `failing` ⇒ run `failing`. Collect every repo's failures into the top-level `Failing`.
 - Set the single **run-level** `Cycle` counter. Carry each repo's below-floor coverage rows, edge-case gaps, and any `[plan-contradiction]` findings up so the orchestrator can escalate them once. **Carry each repo's Visual verification findings up too** — surface any blocking visual defect (→ `failing`) and any `visual: deferred to orchestrator MCP backstop` note (so the orchestrator runs the MCP backstop for that repo); a UI defect in a non-primary repo must not vanish in synthesis.
 - Return: tests.md path + aggregate status + cycle + total failure count + unmapped-AC count + per-repo coverage summary + repo count.
@@ -128,7 +132,8 @@ When re-spawned with every per-repo block, write the single `tests.md`:
 You hold `Agent` — when the change spans several test levels, **spawn analysis helpers yourself** (Claude Code v2.1.172+) instead of only signalling `FANOUT_REQUESTED: test` (kept as the orchestrator-mediated fallback). You still write every test and `tests.md`.
 
 - **When** — the plan spans ≥ 2 of {unit, integration, e2e} AND a level has ≥ 3 tests worth a focused coverage pass.
-- **Split + spawn** — one `team-pr-test-analyzer` per category, **in a single message** (parallel), **cap 3**, each scoped to the slice of the diff that category covers. Each starts fresh: pass the diff slice + the `test-plan.md` coverage rows + what to return.
+- **Split + spawn** — one `team-pr-test-analyzer` per category — **N copies of the same worker, one per test category** (horizontal scaling, not one-of-each) — **in a single message** (parallel), **cap 3**, each scoped to the slice of the diff that category covers. Each starts fresh: pass the diff slice + the `test-plan.md` coverage rows + what to return.
+- **Registry path** — read `team_registry` from your prompt: `live` → spawn `team-pr-test-analyzer` by name; `inline-fallback` → spawn `general-purpose` with `.claude/agents/team-pr-test-analyzer.md` inlined; `unknown` → attempt the named spawn, fall to inline on `Agent type ... not found`, reporting the path you used. A registry miss never drops you to single-pass — only the spawn mechanism changes.
 - **Integrate** the returned coverage-gap findings into your test design + `tests.md` yourself.
 - **Guardrails** — helpers are read-only and return findings; they never write tests, `tests.md`, or `state.json`. If review (step 5) already ran `team-pr-test-analyzer` on this same diff, fold those findings in rather than re-spawning. **One level of split:** end every helper's prompt with the literal line `You are a nested helper: handle this one sub-scope directly and do NOT spawn further agents.` — a fresh-context helper can't otherwise tell it's a helper.
 
