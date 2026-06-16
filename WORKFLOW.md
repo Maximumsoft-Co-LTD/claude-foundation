@@ -1,5 +1,7 @@
 # Workflow
 
+**Version 2.3.0** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
+
 Primary entry point: `/dev <intent>` (or `/dev --resume <id>` to pick up an interrupted run). The command detects context (new project vs. existing codebase) and runs the same two-phase flow, branching on **run type** so we don't drag a `chore` through e2e tests or implement a `fix` without first reproducing it. Same artifacts in both cases, written to `.workflow/<id>/`.
 
 **Team mode** ([below](#team-mode--run-one-role-on-its-own)) splits that same flow into role-scoped commands — `/spec` (pm), `/dev-plan` (lead), `/test-plan` (qa), `/uxui-plan` (uxui), `/implement` (Phase 2) — so a team can divide the work by role. Each writes into the **same** `.workflow/<id>/` run and shares the gate, so the artifacts compose exactly as the one-shot `/dev` run produces them, and `/dev --resume <id>` (or `/implement`) carries a hand-assembled run the rest of the way.

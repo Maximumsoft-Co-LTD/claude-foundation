@@ -15,6 +15,7 @@ Replace `X.Y.Z` with the new version throughout.
 
 1. **Bump the version + changelog.**
    - Write the bare version (no `v` prefix) into `VERSION`, e.g. `echo "X.Y.Z" > VERSION`. This is the source of truth for `claude-foundation version`; keep it in lockstep with the tag below.
+   - Update the `**Version X.Y.Z**` line at the top of `WORKFLOW.md` to match (it mirrors `VERSION` for at-a-glance reading).
    - In `CHANGELOG.md`, rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, and update the link-reference block at the bottom:
      ```
      [Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/vX.Y.Z...HEAD
