@@ -39,6 +39,20 @@ Matrix defaults for `type=<feat|fix|refactor|chore|docs|spike>` — no deviation
 | 8 Docs | skip | no user-facing surface changes *(deviates from matrix)* |
 -->
 
+## Fanout plan
+<!-- ALWAYS present. Declare the planned fanout for each **gate-authorized Phase-2** phase — Review / Security / Test / Implement — so the gate signs it off. (Plan-fanout and spec-prep-fanout run BEFORE the gate; their provenance is in `## Research notes` / spec Discovery notes, not here.) Review/Security/Test rows are PREDICTIONS from planned scope (no diff yet). The **Implement** row is DERIVED from the `Parallelizable: yes` phase markers in `## Steps` — the markers are the single source of truth (`Implement: yes` ⟺ ≥ 2 such phases exist), never an independent claim. `×N` = N copies of the SAME worker, one per independent unit (bucket / category) — horizontal scaling is first-class; cap 6. Delegation-first: default `Fanout=yes` wherever the sub-investigations are independent; mark `no` only on a feasibility guardrail (coupled / not-disjoint / cost-clearly-loses / type-ordering). The gate flips a row with `fanout <phase> on|off`. Full rule + telemetry + registry: WORKFLOW.md > Fanout plan. ONE line at XS / pure-greenfield / a single straightforward change; the table only when at least one phase fans out. -->
+
+No fanout — single-pass (XS / greenfield / single straightforward change).
+
+<!-- When any phase fans out, replace the line above with the table:
+| Phase     | Fanout | Workers (×N)          | Reason          |
+|-----------|--------|-----------------------|-----------------|
+| Review    | yes    | 6 review lenses ×1    | cross-module    |
+| Security  | no     | —                     | 0–1 bucket      |
+| Test      | yes    | pr-test-analyzer ×2   | unit+e2e split  |
+| Implement | no     | —                     | no ∥ phases     |
+-->
+
 ## Architecture diagram
 <!-- ALWAYS required. Mark new pieces ★. Type picks the diagram: feat=flowchart · fix=sequenceDiagram · refactor=before/after · chore/docs=one-line or N/A · spike=question-marked. XS may be a single line. -->
 
