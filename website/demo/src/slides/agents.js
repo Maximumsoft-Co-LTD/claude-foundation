@@ -20,8 +20,8 @@ const AGENTS = {
     writes: "plan.md · review.md · security.md",
   },
   engineer: {
-    phases: "4 · implement  ·  8 · docs  ·  9 · ship",
-    body: "Executes plan.md step by step using TaskCreate. For fix runs, the first task is the failing regression test as its own commit. Stages, commits, opens the PR if the gate opted in.",
+    phases: "4 · implement  ·  7½ · improve  ·  8 · docs  ·  9 · ship",
+    body: "Executes plan.md step by step using TaskCreate. For fix runs, the first task is the failing regression test as its own commit. Improve mode (7½, brownfield feat/fix) is a bounded, behaviour-preserving cleanup of the touched code with the suite green — refactor and greenfield skip it. Stages, commits, opens the PR if the gate opted in.",
     reads: "plan.md · spec.md · diff",
     writes: "source · commit · PR",
   },

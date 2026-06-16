@@ -28,16 +28,18 @@ Size determines which sections are required, which are optional, and which shoul
 | **M** | multi-file in one subsystem, real logic (branching, state, side effects), no contract / schema change |
 | **L** | cross-subsystem, schema migration, public API contract change, or any breaking change |
 
-### 3. Map current state before designing (non-greenfield work)
+### 3. Map current state before designing (brownfield work)
 
 A plan that touches existing code without first stating what that code does today is gambling. The plan reads as if greenfield, the architecture diagram shows only new pieces, and the engineer discovers each load-bearing invariant by breaking it. Catching this at plan time costs a few LSP queries; catching it at review or production time costs a cycle or a postmortem.
 
-**Required for** (write a full `Current state` section before the Architecture diagram):
-- Any **M** or **L** plan
-- Any **refactor** or **fix** at any size (including XS/S)
+**The trigger is the run's `field`, not its Type or Size** (`field` is defined in `references/size-tiering.md > Greenfield vs brownfield`): **brownfield work maps current state; greenfield skips it.** Because greenfield always caps at XS/S and every `fix`/`refactor`/M/L run is brownfield, this subsumes the old "M/L or refactor/fix" trigger *and* closes the gap it left — a **brownfield `feat` that edits existing code is no longer exempt just because it's small** (the "added a feature, broke existing behaviour" hole).
+
+**Required** (write a `Current state` section before the Architecture diagram), scaled to size:
+- **Full section** — any **M** or **L** plan, and any **refactor** or **fix** at any size: entry point · data/control flow · callers/blast-radius · invariants (+ refactor anti-goals / fix bug-path).
+- **Proportional note** — a **brownfield `feat` at XS/S**: at minimum the entry point of the code you edit and its blast radius (who else calls the symbol you change), each with `path#anchor`. One to three lines is fine — the point is that you *walked* it, not that you wrote an essay.
 
 **Skip for**:
-- XS/S **feat** that adds entirely new files in an isolated module with no edits to existing code
+- **greenfield** work (any size) — new isolated files, nothing to reverse-engineer. Say so in one line under `Approach` so the omission is intentional, not accidental; `programming-fundamentals` owns getting the new shape right.
 - **chore** / **docs** that don't touch live code paths
 - **spike** (the spike *is* the current-state investigation — record findings in `recommendations.md`, not here)
 
@@ -98,7 +100,7 @@ Before handing off, walk these scans (and `references/self-review.md` for exampl
 
 - **Outcome reads for a non-technical reader** — the `## Outcome` block exists with all three bullets; Before/After carry no `path#anchor` (that detail is `Current state`'s job), and Benefit links to `spec.md > Outcome` rather than restating it. A reader who stops after Outcome should already know what changes and why.
 - **Anti-placeholder** — no `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `path/to/file`, hedging modals in Steps.
-- **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Diagram is the exception — always include, one-line on XS is fine.)
+- **Trigger discipline** — every section in the plan has its trigger firing. No 1-row Files touched tables, no Risks="N/A", no Dependencies="None". DELETE such sections. (Two always-include exceptions: the Diagram — one-line on XS is fine — and `## Phases for this task`, which states the matrix defaults even when there's no deviation; full rule `WORKFLOW.md > Per-task phase plan`.)
 - **AC sufficiency, not just coverage** — every Step still carries ≥1 `[AC#]`, but presence is the floor, not the bar. For each spec AC (its `on error / at boundary:` clause and edge sub-bullets included): the Step(s) tagged with it, taken *together*, must **fully deliver** it (not merely touch it), AND at least one of those Steps' `verify:` clause must be the AC's actual acceptance check — when the spec AC carries an `e.g.: input → expected output` example, that example is the verify target. **The error/boundary clause needs its own delivering+verifying coverage** — a plan that implements only the happy path leaves the boundary the spec explicitly called out unbuilt and unverified. A measurable `measured:` target is an AC too: its verify runs the measurement. A step tagged `[AC1]` that doesn't satisfy AC1, or an AC (or its boundary clause) whose tagged steps have no verify that proves it, is coverage on paper only — that is the gap this scan catches.
 - **Section integrity** — when Alternatives appears, each rejection cites evidence (load test / incident / spike-NNN), not "feels slower". When Current state appears, every claim cites `path#anchor` (symbol or snippet, not a bare line). When diagram appears, every `★` matches a `new` in Files/Steps and vice versa.
 - **Scaffold integrity** *(M/L)* — the `## Scaffold` section exists; every `★` file in it maps to a `(new)` Step (and vice versa); every signature shown is one a Step fills; a type whose shape is a decision is shown as a definition, not just a consuming signature; the block stays signatures / type shapes / one-line stubs, not real bodies; no separate `## Folder structure` duplicates the tree.
@@ -156,10 +158,10 @@ Before writing any section of plan.md:
 - [ ] Pick diagram type from `Type` (table in principle 4). Even XS keeps the section — one line is fine.
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path#anchor` (symbol / snippet, not a bare line). Grep is the fallback.
 - [ ] If the change mimics an existing pattern, find that pattern now and have its `path#anchor` ready to cite in Steps.
-- [ ] **Map current state** (principle 3) for non-greenfield work — required when Size ∈ {M, L} or Type ∈ {refactor, fix}. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting Steps. Skip only when the work is brand-new files in an isolated module.
+- [ ] **Map current state** (principle 3) for **brownfield** work (the `field`, not Type/Size) — full section for M/L + refactor/fix, a proportional entry-point + blast-radius note for a brownfield `feat` at XS/S. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting Steps. Skip only for greenfield (brand-new files in an isolated module), chore/docs not touching live code, and spike.
 - [ ] For **M/L**, plan the `## Scaffold` (principle 10): the target file tree (★ new · ~ edited) + each new file's key signature — the skeleton the gate reviews and the engineer builds first. Subsumes `## Folder structure` for M/L.
 
-Then draft in order: **Outcome → Approach → Current state (if required) → Diagram → Scaffold (M/L) → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
+Then draft in order: **Outcome → Approach → Phases for this task → Current state (if required) → Diagram → Scaffold (M/L) → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
 
 ## Section gating by Size
 
@@ -169,7 +171,7 @@ Then draft in order: **Outcome → Approach → Current state (if required) → 
 | Approach (2–3 sent) | ✓ | ✓ | ✓ | ✓ |
 | Steps (with verify + AC tag) | ✓ | ✓ | ✓ | ✓ |
 | Step order line | skip | optional | ✓ | ✓ |
-| Current state (principle 3) | required for refactor/fix; else skip | required when touching existing code OR refactor/fix; else skip | ✓ | ✓ (+ as-is mermaid for refactor) |
+| Current state (principle 3) | brownfield → proportional note (entry point + blast radius); greenfield → skip | brownfield → proportional note (full for refactor/fix); greenfield → skip | ✓ | ✓ (+ as-is mermaid for refactor) |
 | Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
 | Scaffold (tree + signatures, principle 10) | skip | optional (when touching existing code) | ✓ required | ✓ required |
 | (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps; `feat`-only parallel form adds exclusive Files-touched + integration phase |

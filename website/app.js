@@ -144,51 +144,54 @@
   }
 
   /* ------------------------------------------------ type-aware matrix */
+  // {n, name} — n is the displayed phase number (half-phases keep the ½ glyph)
   var PHASES = [
-    "Interview + spec",
-    "Plan",
-    "Gate",
-    "Implement",
-    "Review",
-    "Security review",
-    "Test",
-    "Docs touch-up",
-    "Ship",
-    "Retro"
+    { n: "01", name: "Interview + spec" },
+    { n: "02", name: "Plan" },
+    { n: "03", name: "Gate" },
+    { n: "04", name: "Implement" },
+    { n: "05", name: "Review" },
+    { n: "06", name: "Security review" },
+    { n: "07", name: "Test" },
+    { n: "7½", name: "Improve" },
+    { n: "08", name: "Docs touch-up" },
+    { n: "09", name: "Ship" },
+    { n: "10", name: "Retro" }
   ];
   // cell = [status, detail?]  ·  status: run | skip | light | trigger | optional
+  // 11 cells in PHASES order — Improve is index 7, between Test and Docs.
   var MATRIX = {
     feat: {
-      note: "Full pipeline — the canonical run. Security review arms only when the diff is sensitive.",
-      cells: [["run"], ["run"], ["run"], ["run"], ["run"], ["trigger"], ["run"], ["run"], ["run"], ["run"]]
+      note: "Full pipeline — the canonical run. Security arms only on a sensitive diff; Improve runs only when the feat is brownfield (touches existing code).",
+      cells: [["run"], ["run"], ["run"], ["run"], ["run"], ["trigger"], ["run"], ["run", "brownfield only"], ["run"], ["run"], ["run"]]
     },
     fix: {
-      note: "Reproduce before fix — step 1 is a regression test that must fail on pre-fix code and pass now.",
+      note: "Reproduce before fix — step 1 is a regression test that must fail on pre-fix code and pass now. Improve is an optional light cleanup of the touched code (brownfield).",
       cells: [
         ["run"], ["run", "step 1 = regression test"], ["run"], ["run", "test FIRST, then fix"],
-        ["run"], ["trigger"], ["run", "regression must pass"], ["optional"], ["run"], ["run"]
+        ["run"], ["trigger"], ["run", "regression must pass"], ["optional", "brownfield · light"], ["optional"], ["run"], ["run"]
       ]
     },
     refactor: {
-      note: "Carries a behavior-equivalence statement; review and tests guard against behavioural drift.",
+      note: "Carries a behavior-equivalence statement; review and tests guard against drift. Improve is skipped — the refactor itself was the improvement.",
       cells: [
         ["run"], ["run", "behavior-equivalence note"], ["run"], ["run"], ["run"],
-        ["trigger"], ["run", "behavior-equiv check"], ["optional"], ["run"], ["run"]
+        ["trigger"], ["run", "behavior-equiv check"], ["skip", "the refactor is the improvement"], ["optional"], ["run"], ["run"]
       ]
     },
     chore: {
-      note: "Config, deps, tooling — no domain logic, so tests and e2e are skipped and docs run light.",
-      cells: [["run"], ["run"], ["run"], ["run"], ["run"], ["trigger"], ["skip"], ["optional"], ["run"], ["run"]]
+      note: "Config, deps, tooling — no domain logic, so tests and Improve are skipped and docs run light. Review is also skipped at XS (size×type default).",
+      cells: [["run"], ["run"], ["run"], ["run"], ["run", "skip @XS"], ["trigger"], ["skip"], ["skip"], ["optional"], ["run"], ["run"]]
     },
     docs: {
-      note: "Implementation and the docs touch-up are the same work; tests are skipped entirely.",
-      cells: [["run"], ["run"], ["run"], ["run"], ["run"], ["trigger"], ["skip"], ["run"], ["run"], ["run"]]
+      note: "Documentation work — no test phase, no Improve. Review is skipped at XS (size×type default); the docs phase is the payload, not a touch-up.",
+      cells: [["run"], ["run"], ["run"], ["run"], ["run", "skip @XS"], ["trigger"], ["skip"], ["skip"], ["run"], ["run"], ["run"]]
     },
     spike: {
-      note: "Timeboxed exploration — review is light, ship is commit-only, the deliverable is recommendations.md.",
+      note: "Timeboxed exploration — review is light, no test or Improve, ship is commit-only, the deliverable is recommendations.md.",
       cells: [
         ["run", "timeboxed"], ["run", "exploration plan"], ["run"], ["run", "exploration"], ["light"],
-        ["skip"], ["skip"], ["skip"], ["optional", "commit only"], ["run"]
+        ["skip"], ["skip"], ["skip"], ["skip"], ["optional", "commit only"], ["run"]
       ]
     }
   };
@@ -213,11 +216,11 @@
         var detail = cell[1]
           ? '<div class="pdetail">' + esc(cell[1]) + "</div>"
           : "";
-        var n = String(i + 1).padStart(2, "0");
+        var phase = PHASES[i];
         return (
           '<div class="matrix-row">' +
-          '<div class="matrix-phase"><span class="pn">' + n + "</span>" +
-          "<div><span class=\"pname\">" + PHASES[i] + "</span>" + detail + "</div></div>" +
+          '<div class="matrix-phase"><span class="pn">' + phase.n + "</span>" +
+          "<div><span class=\"pname\">" + phase.name + "</span>" + detail + "</div></div>" +
           '<span class="matrix-status ' + st.cls + '">' + st.text + "</span>" +
           "</div>"
         );

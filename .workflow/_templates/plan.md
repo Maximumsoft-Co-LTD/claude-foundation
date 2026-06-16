@@ -1,6 +1,6 @@
 # Plan: <title>
 
-**Spec**: [./spec.md](./spec.md) · **Type**: feat | fix | refactor | chore | docs | spike · **Size**: XS | S | M | L · **Status**: draft | approved | done
+**Spec**: [./spec.md](./spec.md) · **Type**: feat | fix | refactor | chore | docs | spike · **Size**: XS | S | M | L · **Field**: greenfield | brownfield · **Status**: draft | approved | done
 
 ## Outcome
 The 30-second read before the technical detail — plain language, no `path#anchor` (the cited walk is `## Current state` when present). Always rendered; one short line per bullet is fine on XS.
@@ -26,7 +26,18 @@ TRIGGER: Size=L OR ≥3 decisions need gate sign-off. Comes BEFORE ## Approach. 
 
 ## Approach
 2–3 sentences: strategy + why this over the obvious alternative.
-<!-- Type-specific: fix → state the root cause; step 1 of Steps is a failing regression test vs spec.md > Reproduction · refactor → one-line behaviour-equivalence statement (what stays identical + how it's verified); when the touched behaviour isn't already covered by a test, step 1 of Steps = capture a characterization baseline (golden-master/snapshot of current behaviour) BEFORE the structural change · spike → name the question + what evidence counts as an answer. -->
+<!-- Type-specific: fix → state the root cause; step 1 of Steps is a failing regression test vs spec.md > Reproduction · refactor → one-line behaviour-equivalence statement (what stays identical + how it's verified); when the touched behaviour isn't already covered by a test, step 1 of Steps = capture a characterization baseline (golden-master/snapshot of current behaviour) BEFORE the structural change · brownfield feat → when the feature edits existing behaviour not already covered by a test, step 1 of Steps = capture that same characterization baseline BEFORE the feature change (greenfield feat skips it) · spike → name the question + what evidence counts as an answer. -->
+
+## Phases for this task
+<!-- ALWAYS present. The type-aware matrix (WORKFLOW.md) is the default; state it, and DEVIATE only for a discretionary phase this task genuinely doesn't need. Discretionary = 5 Review · 7 Test · 7½ Improve · 8 Docs (7½ Improve runs only for a brownfield feat/fix). A disposition that drops/lightens a phase the matrix runs for this Type is a DEVIATION — render the table below and tag the row `(deviates from matrix)` with a one-line why; the gate confirms each deviation explicitly (it won't ride a plain approve). NEVER deviate the protected set (interview, plan, gate, security-trigger check, retro); security firing stays diff-driven (predict it here, never mark it skip). Full rule: WORKFLOW.md > Per-task phase plan. ONE line when there's no deviation; the table only when there is. -->
+
+Matrix defaults for `type=<feat|fix|refactor|chore|docs|spike>` — no deviations.
+
+<!-- When deviating, replace the line above with:
+| Phase | Disposition | Why |
+|-------|-------------|-----|
+| 8 Docs | skip | no user-facing surface changes *(deviates from matrix)* |
+-->
 
 ## Architecture diagram
 <!-- ALWAYS required. Mark new pieces ★. Type picks the diagram: feat=flowchart · fix=sequenceDiagram · refactor=before/after · chore/docs=one-line or N/A · spike=question-marked. XS may be a single line. -->
@@ -58,7 +69,7 @@ Outcome + Approach + Architecture diagram + Steps are the always-required sectio
 Optional sections — include WHEN:
 - Hard-to-reverse decisions — the plan commits to anything expensive to undo once shipped: schema/migration shape, public API or event contract, architecture/topology choice, data backfill / destructive script (one line each: decision · why now · cost to reverse). Comes right AFTER ## Approach; the gate lifts each line for explicit human confirmation.
 - Step order — Size ∈ {S, M, L} and order matters (`foundation-first | riskiest-first | outside-in | inside-out` — because <reason>)
-- Current state — M/L OR refactor OR fix (LSP-walk existing code, cite `path#anchor`: entry points · data/control flow 3–7 hops · callers/blast radius · invariants. refactor→Anti-goals that must stay identical, noting which already have test coverage vs which need a characterization baseline captured first; fix→Bug path line). This is the `path#anchor`-cited detail; the plain-language one-liner already lives in `## Outcome > Before` — complement it, don't duplicate it.
+- Current state — **brownfield** work (the `field`, not Type/Size): full section for M/L OR refactor OR fix; a proportional entry-point + blast-radius note for a brownfield `feat` at XS/S. Skip for greenfield. (LSP-walk existing code, cite `path#anchor`: entry points · data/control flow 3–7 hops · callers/blast radius · invariants. refactor→Anti-goals that must stay identical, noting which already have test coverage vs which need a characterization baseline captured first; fix→Bug path line). This is the `path#anchor`-cited detail; the plain-language one-liner already lives in `## Outcome > Before` — complement it, don't duplicate it.
 - References / examples to follow — `spec.md` carries a `References / examples to follow` section (the user gave an artifact to model after). Restate each repo ref as `path#anchor` and tag the Step(s) that use it (e.g. `[ref: src/legacy/foo.ts#handler]`) so the engineer opens the example at the moment it's needed; inlined URL excerpts / pasted samples stay in `spec.md` — point to them, don't duplicate. Comes BEFORE Steps.
 - Scaffold — REQUIRED for M/L; optional mini version for S that touches existing code; skip XS. The concrete skeleton the gate surfaces and the engineer builds first: one fenced block with the target file tree (★ new · ~ edited) and each new/changed file's key exported signature(s) inline (interface/type/function — params → return/error), plus the definition of any consumed type whose shape is itself a decision (discriminated union / value object / state enum — not just the signature that takes it; the illegal-state-representable check the reviewer should see). Signatures + type shapes + one-line stubs only (no real bodies). Subsumes Folder structure for M/L (the tree lives here — don't write both). Comes AFTER Architecture diagram, BEFORE Steps. Lets the reviewer approve the shape before a long build and the engineer fill defined signatures instead of inventing them.
 - Folder structure — new project OR feat adding ≥3 new packages/modules (directory tree with one-line purpose per node; omit unchanged subtrees). Comes AFTER Architecture diagram, BEFORE Steps. For M/L, fold the tree into ## Scaffold instead — write this standalone section only for new-project / S cases where Scaffold isn't required.

@@ -1,5 +1,5 @@
 ---
-description: Start the /dev workflow (spec → plan → gate → implement → review → security → test → docs → ship → retro). Pass --resume <id> to continue an interrupted run.
+description: Start the /dev workflow (spec → plan → gate → implement → review → security → test → improve → docs → ship → retro). Pass --resume <id> to continue an interrupted run.
 argument-hint: <intent> | --resume <id>
 ---
 

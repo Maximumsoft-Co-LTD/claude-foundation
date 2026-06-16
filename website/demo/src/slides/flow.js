@@ -13,6 +13,7 @@ const SCRIPT = [
   { step: 5, log: "lead (review) · clean", cls: "success" },
   { step: 6, log: "orchestrator · no sensitive paths → skip", cls: "muted", skip: 6 },
   { step: 7, log: "qa · 14 tests, all pass · cycles.test = 1", cls: "success", cycle: "test" },
+  { step: 7.5, log: "orchestrator · greenfield feat → improve skipped", cls: "muted", skip: 7.5 },
   { step: 8, log: "engineer (docs) · README updated", cls: "accent" },
   { step: 9, log: "engineer (ship) · commit 8a3f2c1 · PR #42 opened", cls: "success" },
   { step: 10, log: "retro · 1 skill candidate · react-vite-bootstrap", cls: "success" },
@@ -58,7 +59,7 @@ export function initFlow() {
 
     // Mark "done" on any step number less than current
     steps.forEach((s) => {
-      const n = parseInt(s.dataset.step, 10);
+      const n = parseFloat(s.dataset.step);
       s.classList.remove("active");
       if (n < ev.step) {
         if (!s.classList.contains("skipped")) s.classList.add("done");
@@ -67,12 +68,12 @@ export function initFlow() {
 
     // Skipped step?
     if (ev.skip) {
-      const sk = steps.find((s) => parseInt(s.dataset.step, 10) === ev.skip);
+      const sk = steps.find((s) => parseFloat(s.dataset.step) === ev.skip);
       if (sk) sk.classList.add("skipped");
     }
 
     // Active step
-    const cur = steps.find((s) => parseInt(s.dataset.step, 10) === ev.step);
+    const cur = steps.find((s) => parseFloat(s.dataset.step) === ev.step);
     if (cur) {
       cur.classList.remove("done", "skipped");
       cur.classList.add("active");
@@ -90,7 +91,7 @@ export function initFlow() {
     // Log line
     const line = document.createElement("div");
     line.className = `log-line ${ev.cls || ""}`;
-    line.textContent = `[${pad2(ev.step)}] ${ev.log}`;
+    line.textContent = `[${ev.step === 7.5 ? "7½" : pad2(ev.step)}] ${ev.log}`;
     $log.appendChild(line);
     $log.scrollTop = $log.scrollHeight;
 

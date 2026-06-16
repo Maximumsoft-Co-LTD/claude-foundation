@@ -6,7 +6,7 @@
     <title>claude-foundation — a /dev workflow for Claude Code</title>
     <meta
       name="description"
-      content="One command — /dev <intent> — runs a small team of specialist agents through spec → plan → gate → implement → review → test → docs → ship → retro. Type-aware, resumable, every artifact on disk. Built for AI engineers using Claude Code."
+      content="One command — /dev <intent> — runs a small team of specialist agents through spec → plan → gate → implement → review → (security) → test → (improve) → docs → ship → retro. Type-aware, resumable, every artifact on disk. Built for AI engineers using Claude Code."
     />
     <meta name="color-scheme" content="light" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="claude-foundation — a /dev workflow for Claude Code" />
     <meta
       property="og:description"
-      content="One command runs a small team of specialist agents through spec → plan → gate → implement → review → test → docs → ship → retro. Type-aware, resumable, artifacts on disk."
+      content="One command runs a small team of specialist agents through spec → plan → gate → implement → review → (security) → test → (improve) → docs → ship → retro. Type-aware, resumable, artifacts on disk."
     />
     <meta property="og:url" content="https://maximumsoft-co-ltd.github.io/claude-foundation/" />
 
@@ -69,7 +69,7 @@
           <p class="hero-sub reveal in" data-d="2">
             Drop <code>claude-foundation</code> into a repo and get one entry point —
             <code>/dev &lt;intent&gt;</code> — that runs specialist agents through
-            <strong>spec → plan → gate → implement → review → test → docs → ship → retro</strong>.
+            <strong>spec → plan → gate → implement → review → (security) → test → (improve) → docs → ship → retro</strong>.
             Type-aware, resumable, every artifact written to disk.
           </p>
           <div class="hero-cta reveal in" data-d="3">
@@ -187,7 +187,7 @@
 
         <!-- Workflow diagram -->
         <div class="flow-diagram reveal">
-          <svg viewBox="0 0 1160 430" role="img" aria-label="The /dev workflow: Phase 1 (spec, plan, gate) hands off to Phase 2 (implement, review, security trigger, test, docs, ship, retro), with review and test feedback loops back to implement.">
+          <svg viewBox="0 0 1160 430" role="img" aria-label="The /dev workflow: Phase 1 (spec, plan, gate) hands off to Phase 2 (implement, review, security trigger, test, improve for brownfield feat/fix, docs, ship, retro), with review and test feedback loops back to implement.">
             <defs>
               <marker id="ah-ink" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
                 <path d="M0,0 L7,3 L0,6 Z" fill="#3a3d44" />
@@ -205,22 +205,23 @@
             <line class="fd-conn" x1="198" y1="78" x2="230" y2="78" marker-end="url(#ah-ink)" />
             <line class="fd-conn" x1="396" y1="78" x2="454" y2="78" marker-end="url(#ah-ink)" />
             <!-- gate -> implement handoff (animated) -->
-            <path class="fd-handoff" d="M520,118 L520,148 L106,148 L106,202" marker-end="url(#ah-mk)" />
+            <path class="fd-handoff" d="M520,118 L520,148 L100,148 L100,202" marker-end="url(#ah-mk)" />
             <text class="fd-handoff-label" x="118" y="142">approve →</text>
 
-            <!-- phase 2 chain -->
-            <line class="fd-conn" x1="172" y1="240" x2="186" y2="240" marker-end="url(#ah-ink)" />
-            <line class="fd-conn" x1="326" y1="240" x2="340" y2="240" marker-end="url(#ah-ink)" />
-            <line class="fd-conn" x1="480" y1="240" x2="494" y2="240" marker-end="url(#ah-ink)" />
-            <line class="fd-conn" x1="634" y1="240" x2="648" y2="240" marker-end="url(#ah-ink)" />
-            <line class="fd-conn" x1="788" y1="240" x2="802" y2="240" marker-end="url(#ah-ink)" />
-            <line class="fd-conn" x1="942" y1="240" x2="956" y2="240" marker-end="url(#ah-ink)" />
+            <!-- phase 2 chain (8 nodes, pitch 140) -->
+            <line class="fd-conn" x1="160" y1="240" x2="176" y2="240" marker-end="url(#ah-ink)" />
+            <line class="fd-conn" x1="300" y1="240" x2="316" y2="240" marker-end="url(#ah-ink)" />
+            <line class="fd-conn" x1="440" y1="240" x2="456" y2="240" marker-end="url(#ah-ink)" />
+            <line class="fd-conn" x1="580" y1="240" x2="596" y2="240" marker-end="url(#ah-ink)" />
+            <line class="fd-conn" x1="720" y1="240" x2="736" y2="240" marker-end="url(#ah-ink)" />
+            <line class="fd-conn" x1="860" y1="240" x2="876" y2="240" marker-end="url(#ah-ink)" />
+            <line class="fd-conn" x1="1000" y1="240" x2="1016" y2="240" marker-end="url(#ah-ink)" />
 
             <!-- feedback loops -->
-            <path class="fd-loop" d="M260,270 C260,326 96,326 90,276" marker-end="url(#ah-mk)" />
-            <text class="fd-loop-label" x="150" y="320">review · ≤ 2 cycles</text>
-            <path class="fd-loop" d="M568,270 C568,378 120,378 124,276" marker-end="url(#ah-mk)" />
-            <text class="fd-loop-label" x="300" y="400">test · ≤ 3 cycles</text>
+            <path class="fd-loop" d="M240,270 C240,326 96,326 90,276" marker-end="url(#ah-mk)" />
+            <text class="fd-loop-label" x="140" y="320">review · ≤ 2 cycles</text>
+            <path class="fd-loop" d="M520,270 C520,378 120,378 124,276" marker-end="url(#ah-mk)" />
+            <text class="fd-loop-label" x="290" y="400">test · ≤ 3 cycles</text>
 
             <!-- Phase 1 nodes -->
             <g class="fd-node p1">
@@ -240,46 +241,52 @@
 
             <!-- Phase 2 nodes -->
             <g class="fd-node p2">
-              <rect x="40" y="210" width="132" height="60" rx="12" />
+              <rect x="40" y="210" width="120" height="60" rx="12" />
               <text class="fd-num" x="56" y="235">04</text>
               <text class="fd-label" x="56" y="255">Implement</text>
             </g>
             <g class="fd-node p2">
-              <rect x="194" y="210" width="132" height="60" rx="12" />
-              <text class="fd-num" x="210" y="235">05</text>
-              <text class="fd-label" x="210" y="255">Review</text>
+              <rect x="180" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="196" y="235">05</text>
+              <text class="fd-label" x="196" y="255">Review</text>
             </g>
             <g class="fd-node p2 trig">
-              <rect x="348" y="210" width="132" height="60" rx="12" />
-              <text class="fd-num" x="364" y="232">06</text>
-              <text class="fd-label" x="364" y="250">Security</text>
-              <text class="fd-sub" x="364" y="263">trigger-based</text>
+              <rect x="320" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="336" y="232">06</text>
+              <text class="fd-label" x="336" y="250">Security</text>
+              <text class="fd-sub" x="336" y="263">trigger-based</text>
             </g>
             <g class="fd-node p2">
-              <rect x="502" y="210" width="132" height="60" rx="12" />
-              <text class="fd-num" x="518" y="235">07</text>
-              <text class="fd-label" x="518" y="255">Test</text>
+              <rect x="460" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="476" y="235">07</text>
+              <text class="fd-label" x="476" y="255">Test</text>
+            </g>
+            <g class="fd-node p2 trig">
+              <rect x="600" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="616" y="232">7½</text>
+              <text class="fd-label" x="616" y="250">Improve</text>
+              <text class="fd-sub" x="616" y="263">brownfield</text>
             </g>
             <g class="fd-node p2">
-              <rect x="656" y="210" width="132" height="60" rx="12" />
-              <text class="fd-num" x="672" y="235">08</text>
-              <text class="fd-label" x="672" y="255">Docs</text>
+              <rect x="740" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="756" y="235">08</text>
+              <text class="fd-label" x="756" y="255">Docs</text>
             </g>
             <g class="fd-node p2">
-              <rect x="810" y="210" width="132" height="60" rx="12" />
-              <text class="fd-num" x="826" y="235">09</text>
-              <text class="fd-label" x="826" y="255">Ship</text>
+              <rect x="880" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="896" y="235">09</text>
+              <text class="fd-label" x="896" y="255">Ship</text>
             </g>
             <g class="fd-node p2">
-              <rect x="964" y="210" width="132" height="60" rx="12" />
-              <text class="fd-num" x="980" y="235">10</text>
-              <text class="fd-label" x="980" y="255">Retro</text>
+              <rect x="1020" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="1036" y="235">10</text>
+              <text class="fd-label" x="1036" y="255">Retro</text>
             </g>
           </svg>
 
           <div class="fd-legend">
-            <span><i class="lg lg-gate"></i> gate — you approve / revise / swap</span>
-            <span><i class="lg lg-trig"></i> security — fires only on sensitive diffs</span>
+            <span><i class="lg lg-gate"></i> gate — you approve / revise / skip / run / swap</span>
+            <span><i class="lg lg-trig"></i> conditional — security (sensitive diff) &amp; improve (brownfield feat/fix)</span>
             <span><i class="lg lg-loop"></i> review &amp; test loops back to implement</span>
             <span><i class="lg lg-resume"></i> <code>--resume</code> re-enters at the saved step</span>
           </div>
@@ -332,6 +339,10 @@
                 <div class="step-body"><strong>Test</strong><span><span class="agent">qa</span> writes &amp; runs unit + integration + e2e, mapping every criterion to a test.</span></div>
               </li>
               <li class="step">
+                <span class="step-n">7½</span>
+                <div class="step-body"><strong>Improve</strong><span><em>Brownfield <code>feat</code>/<code>fix</code> only</em> — <span class="agent">engineer</span> makes a bounded, behaviour-preserving cleanup of the touched code, suite still green. <code>refactor</code> &amp; greenfield skip it.</span></div>
+              </li>
+              <li class="step">
                 <span class="step-n">8</span>
                 <div class="step-body"><strong>Docs touch-up</strong><span><span class="agent">engineer</span> updates inline comments where the <em>why</em> is non-obvious.</span></div>
               </li>
@@ -353,8 +364,8 @@
           </span>
           <div>
             <strong>The gate is non-negotiable.</strong> Reply
-            <span class="kbd">approve</span><span class="kbd">revise&nbsp;&lt;notes&gt;</span><span class="kbd">swap&nbsp;&lt;n&gt;</span>.
-            Once you approve, Phase&nbsp;2 only stops on blocking review issues, failing tests, or genuine ambiguity.
+            <span class="kbd">approve</span><span class="kbd">revise&nbsp;&lt;notes&gt;</span><span class="kbd">skip&nbsp;&lt;n&gt;</span><span class="kbd">run&nbsp;&lt;n&gt;</span><span class="kbd">swap&nbsp;&lt;n&gt;</span>.
+            The <code>lead</code> proposes a per-task phase plan; any deviation from the type matrix — and <code>skip</code>/<code>run</code> on a discretionary phase (review · test · improve · docs) — needs your explicit per-line OK. Once you approve, Phase&nbsp;2 only stops on blocking review issues, failing tests, or genuine ambiguity.
           </div>
         </div>
       </div>
@@ -415,8 +426,8 @@
           </article>
 
           <article class="agent-card reveal" data-d="2">
-            <div class="agent-top"><span class="agent-name"><span class="at">@</span>engineer</span><span class="agent-phase">4 · 8 · 9</span></div>
-            <p>Three modes: <b>implement</b>, <b>docs</b>, <b>ship</b>. Executes the plan with progress tracking, ticks each criterion, then commits and opens the PR.</p>
+            <div class="agent-top"><span class="agent-name"><span class="at">@</span>engineer</span><span class="agent-phase">4 · 7½ · 8 · 9</span></div>
+            <p>Four modes: <b>implement</b>, <b>docs</b>, <b>ship</b>, <b>improve</b>. Executes the plan with progress tracking, ticks each criterion, then commits and opens the PR. On a brownfield <code>feat</code>/<code>fix</code>, the improve pass cleans the touched code with the suite green.</p>
             <div class="agent-io">
               <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>code</b> · commit · PR</span></div>
               <div class="io-row"><span class="io-k">reads</span><span class="io-v">plan.md · spec.md</span></div>
@@ -425,7 +436,7 @@
 
           <article class="agent-card reveal" data-d="1">
             <div class="agent-top"><span class="agent-name"><span class="at">@</span>qa</span><span class="agent-phase">Phase 2½ + 7</span></div>
-            <p>First designs the test strategy into <b>test-plan.md</b> before any code (which level proves each criterion, edge cases to probe, fixtures) — signed off at the gate. Then executes it: unit + integration + e2e, every acceptance criterion mapped to a test, with advisory diff-coverage floors on the changed code (unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys). For a <code>fix</code>, it verifies the regression test fails on pre-fix code.</p>
+            <p>First designs the test strategy into <b>test-plan.md</b> before any code (which level proves each criterion, edge cases to probe, fixtures) — signed off at the gate. Then executes it: unit + integration + contract + e2e, every acceptance criterion mapped to a test, with advisory diff-coverage floors on the changed code (unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys). UI diffs get a visual + accessibility (axe-core) pass in the same browser session. For a <code>fix</code>, it verifies the regression test fails on pre-fix code.</p>
             <div class="agent-io">
               <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>test-plan.md</b> · <b>tests.md</b> · tests</span></div>
               <div class="io-row"><span class="io-k">reads</span><span class="io-v">spec.md · plan.md · the diff</span></div>

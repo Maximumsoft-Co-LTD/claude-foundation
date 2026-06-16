@@ -63,7 +63,7 @@ XS plans where Diagram = `Impact: N/A` skip this scan.
 
 ### Scan 4 — Current-state coverage
 
-Skip this scan when principle 3 says skip (XS/S feat in isolated new files, chore/docs not touching live code, spike). Otherwise walk it.
+Skip this scan when principle 3 says skip — i.e. **greenfield** work (a feat in isolated new files with no edits to existing code), chore/docs not touching live code, or spike. A brownfield feat that edits existing code does NOT skip even at XS/S (it carries the proportional note). Otherwise walk it.
 
 Open `## Current state` and `## Files touched` side by side. For each row in `Files touched`:
 

@@ -2,6 +2,7 @@
   "id": "NNNN-type-slug",
   "type": "feat",
   "size": null,
+  "field": null,
   "repo_root": null,
   "repos": null,
   "branch": null,
@@ -14,6 +15,7 @@
     "test": 0
   },
   "skipped_steps": [],
+  "phase_plan": {},
   "impl_phases_done": [],
   "open_pr_on_ship": null,
   "security_triggered": null,
