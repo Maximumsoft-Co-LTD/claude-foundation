@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/dev` qa gains two trigger-based test capabilities that reuse existing machinery (no new always-on cost).** (1) **Contract test** is now a Coverage-plan level — when `plan.md` declares a `## API / event contracts` section, `qa` plans a contract test on the request/response or event shape both sides depend on (consumer-driven when a separate consumer exists; folds into integration for fanout + floors), completing the pyramid for public-contract changes. (2) **Accessibility (a11y) check** rides the existing UI-triggered visual-verification pass — `qa` runs axe-core (or the stack's equivalent) in the **same** browser session the screenshots already use (no extra browser, no Chromium cost), treating a serious WCAG violation (contrast, missing accessible name/role) as blocking like a layout defect and a best-practice nit as an `Edge-case gap`. Both are type-gated (feat/fix/refactor) and fire only on their trigger. Files: `.claude/agents/qa.md`.
+
 ## [2.1.1] - 2026-06-16
 
 ### Changed
