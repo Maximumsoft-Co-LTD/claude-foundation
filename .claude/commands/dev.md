@@ -39,6 +39,6 @@ You — the main agent — are the Orchestrator for this run. Claude Code sub-ag
 
 Behavior:
 - If `$ARGUMENTS` is empty, ask the user for the intent via `AskUserQuestion` before proceeding.
-- If `$ARGUMENTS` starts with `--resume`, read `.workflow/<id>/state.json` and continue from the recorded step instead of starting fresh. If `state.json` is missing or malformed, ask the user whether to start fresh.
+- If `$ARGUMENTS` starts with `--resume`, read `.workflow/<id>/state.json` and continue from the recorded step instead of starting fresh, following `orchestrator.md > Resume`. If the run was built via team-mode commands (`/spec`, `/dev-plan`, `/test-plan`, `/uxui-plan`), `.workflow/<id>/` will hold `state.*.json` shards and the cursor may read stale — Resume step 4 reconciles them by routing to the gate, whose fold absorbs the shards (`orchestrator.md > State discipline > Team-mode Phase-1 sharding`). If `state.json` is missing or malformed, ask the user whether to start fresh.
 
 Reference: [`WORKFLOW.md`](../../WORKFLOW.md) for the full flow definition, [`.claude/orchestrator.md`](../orchestrator.md) for the step-by-step orchestration script.

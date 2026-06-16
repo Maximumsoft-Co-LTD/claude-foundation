@@ -41,6 +41,22 @@ esac
 run_in_background="$(printf '%s' "$input" | jq -r '.tool_input.run_in_background // false')"
 [[ "$run_in_background" == "true" ]] && exit 0
 
+# Team-mode Phase-1 slice spawns (/dev-plan -> lead, /test-plan -> qa) write their
+# OWN shard file (state.<slice>.json), NOT the canonical state.json, so they must
+# NOT touch the shared .last_worker_return marker. If they did, the next team-mode
+# command's worker spawn (a sibling slice, possibly a concurrent session) would see
+# a marker newer than the unchanged state.json and be false-blocked by
+# dev-agent-guard.sh Case 3 -- even when the slices run sequentially, since a slice
+# advances its shard, never state.json. The command tags such a spawn with a
+# `team-slice: <plan|test-plan|uxui>` token in the worker prompt/description; detect
+# it and skip the marker. The slice owns its shard and never trips the Phase-2
+# freshness guard; the canonical state.json is folded single-writer at the gate
+# (orchestrator.md > State discipline > Team-mode Phase-1 sharding).
+slice_payload="$(printf '%s' "$input" | jq -r '[(.tool_input.prompt // ""), (.tool_input.description // "")] | join("\n")')"
+if printf '%s' "$slice_payload" | grep -qiE 'team-slice:[[:space:]]*(plan|test-plan|uxui)'; then
+  exit 0
+fi
+
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 WF_DIR="$PROJECT_DIR/.workflow"
 [[ -d "$WF_DIR" ]] || exit 0

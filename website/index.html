@@ -487,7 +487,7 @@
 
         <div class="fanout reveal" data-d="2">
           <h4>+ run one role on its own — team mode</h4>
-          <p>Don't want the whole pipeline in one shot? Hand each role its own command. Each one writes into the <strong>same <code>.workflow/&lt;id&gt;/</code> run</strong> and shares the gate, so the work still composes — and <code>/dev --resume &lt;id&gt;</code> (or <code>/implement</code>) carries it the rest of the way.</p>
+          <p>Don't want the whole pipeline in one shot? Hand each role its own command. Each one writes into the <strong>same <code>.workflow/&lt;id&gt;/</code> run</strong> and shares the gate, so the work still composes. The three Phase-1 plan slices — <code>/dev-plan</code>, <code>/test-plan</code>, <code>/uxui-plan</code> — can even run <strong>in parallel</strong>: each writes its own <code>state.&lt;slice&gt;.json</code> shard instead of the shared cursor, and the gate folds them back together single-writer. Then <code>/dev --resume &lt;id&gt;</code> (or <code>/implement</code>) carries it the rest of the way.</p>
           <div class="fanout-chips">
             <span class="chip">/spec → @pm</span>
             <span class="chip">/dev-plan → @lead</span>
