@@ -17,6 +17,21 @@ This file is the picker. The `lead` agent sets `Size` in the plan's frontmatter 
 
 > **File count is a proxy, not a gate.** A **self-contained greenfield module** (brand-new, isolated, nothing imports it yet, no published contract, no integration with existing code, first-party storage only) caps at **S regardless of file count** — a 3-file vanilla CRUD app is S, not M. Blast radius, not file spread (see the greenfield signal + edge case below).
 
+## Greenfield vs brownfield (the `field` classification) — canonical
+
+Orthogonal to size, every run is one of two **fields**, recorded in `state.json > field` (the formalisation of the "new project vs existing codebase" detection `/dev` already does). This is the **canonical definition** — `orchestrator.md`, `lead.md`, `WORKFLOW.md`, and `plan-writing > principle 3` point here instead of restating it.
+
+- **greenfield** — new, isolated code: nothing imports it yet, no published contract, no integration with existing code, first-party storage only. This is the *same* condition as the self-contained-module S-cap below, so **a greenfield run is always XS/S**.
+- **brownfield** — the change modifies or extends existing behaviour, or wires new code into existing code paths. The default: most work in an existing repo is brownfield, and **every `fix`, every `refactor`, and every M/L run is brownfield** (greenfield caps at S, and changing existing code is the definition of brownfield). When a run is genuinely mixed (a new isolated module *plus* an edit to existing code), it is **brownfield** — the integration is what carries the risk.
+
+`field` is estimated by the orchestrator at digest time (alongside `size`) and re-derived by `lead` at plan time. Like `size` it **only ratchets one way**: a greenfield estimate that the code walk reveals to be an integration becomes brownfield via a first-line `FIELD_UPGRADE: brownfield — <reason>` signal; it never moves back, because discovering isolation late doesn't shed safety the run has already priced in (and wrongly-brownfield only costs an extra current-state note on isolated code — cheap).
+
+**What `field` gates** — brownfield turns each on; greenfield skips them ("nothing to preserve; got the shape right the first time" — `programming-fundamentals` owns the greenfield shape):
+
+- **Understand** — a `Current state` map before designing the change (`plan-writing > principle 3`). All brownfield work.
+- **Lock** — a characterization baseline pinning the touched behaviour *before* it is edited (`test-plan.md > Baseline`), for brownfield `feat` and `refactor`; `fix` locks via its regression contract instead.
+- **Improve** — the bounded post-test cleanup phase (7½) on the code the change touched: brownfield `feat` (and optionally `fix`); a `refactor` **skips** it, since the refactor itself *is* the improvement.
+
 ## Picker — answer in order
 
 1. **Does the change touch a public contract or schema?** (REST/gRPC API, DB schema migration, queue message format, public library function signature, breaking change to any external surface)

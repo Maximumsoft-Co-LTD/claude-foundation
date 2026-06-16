@@ -1,13 +1,21 @@
-// Gate slide: clicking the three buttons shows what each action does.
+// Gate slide: clicking the action buttons shows what each gate reply does.
 
 const RESPONSES = {
   approve: {
     cls: "",
-    text: "✓ approved · INDEX status → approved · orchestrator advances to step 4 (implement)",
+    text: "✓ approved · INDEX status → approved · orchestrator records the gate-confirmed phase plan and advances to step 4 (implement)",
   },
   revise: {
     cls: "revise",
     text: "↺ revise · targeted in-run edit of the affected spec / plan / test-plan section (pm spec-patch · lead plan-revise · qa test-plan-revise) — never a fresh restart",
+  },
+  skip: {
+    cls: "revise",
+    text: "⤳ skip 8 · flips a discretionary phase off (review · test · 7½ improve · docs only) and records it in state.json > phase_plan — protected phases (interview · plan · gate · security check · retro) refuse a skip",
+  },
+  run: {
+    cls: "revise",
+    text: "⤺ run <n> · forces a discretionary phase back on — e.g. run 5 keeps the review that a chore/docs run skips at XS by default",
   },
   swap: {
     cls: "revise",

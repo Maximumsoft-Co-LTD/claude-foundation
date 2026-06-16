@@ -76,7 +76,7 @@ The bar exists because the Current state section is *load-bearing context for th
 
 ## Section template
 
-Structure for the `## Current state` section in `plan.md`. Adapt per Type — fields marked *(type)* apply only to that Type.
+Structure for the `## Current state` section in `plan.md`. Adapt per Type — fields marked *(type)* apply only to that Type. **Scale it to the run** (principle 3's trigger is the `field`): a full M/L or refactor/fix walk fills every field below; a **brownfield `feat` at XS/S** needs only the proportional version — the **Entry point(s)** of the code you edit and its **Callers / blast radius** (one to three lines), enough to prove you walked it rather than guessed. Greenfield skips the section entirely.
 
 ```markdown
 ## Current state
@@ -232,8 +232,8 @@ When you do draw one, put it directly under the `## Current state` heading (befo
 
 The principle table is the source of truth. As a quick reference:
 
-- XS/S `feat` adding entirely new files in an isolated module with no edits to existing code → skip.
+- **Greenfield** `feat` (always XS/S) — entirely new files in an isolated module, no edits to existing code → skip. **A brownfield `feat` that *edits* existing code does NOT skip even at XS/S** — write the proportional note (entry point + blast radius of the touched code); the `field`, not the size, is the trigger.
 - `chore` / `docs` not touching live code paths → skip.
 - `spike` → skip (write findings to `recommendations.md` instead).
 
-Everything else: write the section. When borderline, write it — three minutes spent now saves a cycle later.
+Everything else (all brownfield work): write the section — full for M/L + refactor/fix, proportional for a brownfield feat at XS/S. When borderline, write it — three minutes spent now saves a cycle later.
