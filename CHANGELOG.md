@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-18
+
+### Changed
+
+- **`/dev` is now single-pass-first — the fanout default is reversed.** The workflow used to be *delegation-first*: every phase defaulted to parallel `team-*` fanout whenever its sub-investigations looked independent, and stayed single-pass only on a feasibility guardrail. Measured against real runs that bias over-fired — firing six review workers (or N prep probes) on diffs and research surfaces a single sequential pass would have finished before the helpers even spun up, paying an N× worker cold-start, a context re-pass, and a synthesis re-read for nothing. The default is now inverted: **each phase runs a single sequential worker pass, and fanout fires only when all three hold** — (a) the work genuinely decomposes into independent sub-investigations, (b) the workers write disjoint files/symbols, and (c) the coordination + N× cold-start cost is clearly *less* than the wall-clock saved. The gate's `## Fanout plan` now defaults every row to `no` (the user can still steer a phase `on`), and clearing a phase's eligibility bar makes fanout *eligible*, not *mandatory*. The stance is propagated end-to-end: `orchestrator.md` (`## Single-pass-first`), the `lead` / `qa` / `engineer` / `retro` agents, `fanout-team-agents`, and `WORKFLOW.md`. None of the guardrails changed — single-writer `state.json`, the synthesis pass when fanout *does* fire, implement-fanout disjointness re-verification, and the gate are all unchanged; only the default flipped. Files: `.claude/orchestrator.md`, `.claude/agents/{lead,qa,engineer,retro}.md`, `.claude/skills/fanout-team-agents/SKILL.md`, `WORKFLOW.md`, `CLAUDE.md`.
+- **The 16 per-skill rule redirect stubs are consolidated into one always-on router, `.claude/rules/fundamentals.md`.** Each fundamentals skill used to ship a ~7-line `.claude/rules/<skill>.md` stub whose only job was to name the trigger and point at the skill body; Claude Code auto-loads the whole `.claude/rules/` directory, so all 16 were carried on every turn. They now collapse into a single `fundamentals.md` router — a thin detection table mapping every "by default" trigger to its skill, plus the cross-skill run order and the **Ponytail** always-on minimalism digest (the `coding-discipline` principle-2 decision ladder + the `ponytail: <upgrade path>` shortcut-marker convention). One file loaded per turn instead of sixteen; the full skill body still loads on demand. Every skill body and doc that referenced a per-skill rule file is repointed at the router. Files: `.claude/rules/` (15 stubs removed, `fundamentals.md` rewritten), `.claude/skills/*/SKILL.md`, `CLAUDE.md`, `README.md`.
+- **`orchestrator.md` is slimmed by ~120 lines into on-demand references.** The fanout-dispatch contract, resume mechanics, state-discipline edge cases, and the surface (per-repo) fanout contract moved out of the always-read `orchestrator.md` into `.claude/orchestrator/references/{fanout,resume,state-edge-cases,surface-fanout}.md`, each loaded only when its path actually fires (a `FANOUT_REQUESTED:` return, a `--resume`, a background spawn / worktree, or a multi-repo run). A single-repo XS/S run with no fanout signal never pays to carry any of it. Files: `.claude/orchestrator.md`, `.claude/orchestrator/references/**`.
+
+### Fixed
+
+- **Installer upgrade-cleanup for the removed rule files.** Both `install.sh` and `install-cursor.sh` now delete the consolidated per-skill rule files from an upgraded target (`.claude/rules/*.md` and the Cursor `.cursor/rules/*.mdc` ports), so a stale stub can't keep auto-loading the old router alongside the new one; the cleanup lists explicit paths only, so user-authored rules are never touched. `install.sh` also rewrites the `CLAUDE.md` managed import block from the 16-import list to the single `@.claude/rules/fundamentals.md`, ships the new `.claude/orchestrator/references/**`, and fixes a macOS BSD `awk` bug that silently left the stale import block in place on re-sync (a multi-line `-v` variable is rejected by BSD awk — the fresh block is now read from a temp file). Files: `install.sh`, `install-cursor.sh`.
+
 ## [2.3.2] - 2026-06-17
 
 ### Added
@@ -309,7 +321,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.2...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.2...v2.4.0
 [2.3.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.2.0...v2.3.0
