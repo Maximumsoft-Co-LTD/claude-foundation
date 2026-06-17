@@ -299,7 +299,7 @@ For anything else — designing or reworking a CI/CD pipeline, writing a Dockerf
 
 ## How to use this skill in a conversation
 
-This skill is always-on for delivery work (per the project rule at `.claude/rules/delivery-engineering.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+This skill is always-on for delivery work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 When the skill applies:
 - **Designing a pipeline** — name the stages and what each gate guarantees before writing YAML. Decide what's parallel, what's cached, and what the merge contract requires. Don't emit a workflow file until the gate's meaning is settled.

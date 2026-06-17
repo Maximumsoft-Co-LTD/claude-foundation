@@ -306,7 +306,7 @@ For anything else — a real schema design, a query that will run in production,
 
 ## How to use this skill in a conversation
 
-This skill is always-on for database work (per the project rule at `.claude/rules/database-fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+This skill is always-on for database work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 When the skill applies:
 - **Designing a schema** — sketch the entities and relationships first, choose types deliberately, list constraints and indexes alongside columns. Don't write `CREATE TABLE` until the shape is settled.

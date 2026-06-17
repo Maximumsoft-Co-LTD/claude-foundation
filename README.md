@@ -127,7 +127,7 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 - **Artifact templates** — `spec.md`, `plan.md`, `test-plan.md`, `uxui-plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform.
 - **Type-aware phase matrix + per-task phase plan** — the same numbered phases run for every type; the orchestrator skips or specialises them based on `Type`. The matrix is the default: `lead` writes a reasoned `## Phases for this task` block that may **deviate** for a discretionary phase (review / test / improve / docs) this task doesn't need, and the gate confirms each deviation explicitly (protected phases — interview, plan, gate, security-trigger check, retro — never deviate). See `WORKFLOW.md`.
 - **Size-aware execution matrix** — XS/S runs take a fast path (merged question batch, combined spec+plan+test-plan spawn, merged docs+ship, inline retro) while M/L runs get the full machinery; upgrades are one-way via a `SIZE_UPGRADE` signal (see `WORKFLOW.md`).
-- **Always-on skill rules** — lean rules in `.claude/rules/` (each ~3 lines: trigger + one-sentence why + skill pointer), led by `coding-discipline` (the conduct layer that wraps the rest), then the construction chain `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`, the verification skills `debug-fundamentals` / `refactoring-fundamentals` / `testing-fundamentals`, and the delivery channel `git-workflow` / `delivery-engineering`. Full skill bodies load on demand; the cross-skill run order lives in exactly one file, `.claude/rules/fundamentals.md`.
+- **Always-on fundamentals router** — a single lean file `.claude/rules/fundamentals.md` that maps every "by default" trigger to its skill: the conduct layer `coding-discipline` (which wraps the rest), the construction chain `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`, the verification skills `debug-fundamentals` / `refactoring-fundamentals` / `testing-fundamentals`, and the delivery channel `git-workflow` / `delivery-engineering`. Full skill bodies load on demand; this router is the single source of truth for triggers and the cross-skill run order.
 - **Hooks** — a PreToolUse spawn guard for the `/dev` state machine, a PostToolUse state marker and lint dispatch, and a secrets guard that blocks reads of `.env` and credential files.
 - **Skill-creator handoff** — `retro` lists skill candidates, you approve, the orchestrator spawns `skill-creator` for each. Nothing auto-creates.
 - **Installer** — `install.sh` with `--dry-run`, `--force`, and a self-copy guard.
@@ -137,12 +137,14 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 ```
 .claude/agents/          pm, lead, engineer, qa, retro, uxui + team-* fan-out workers + TEAM.md  (always refreshed)
 .claude/orchestrator.md  orchestrator script for the main agent                             (always refreshed)
+.claude/orchestrator/    references/ — on-demand orchestrator detail (fanout, resume,
+                         state edge cases) the core loads only when that path fires        (always refreshed)
 .claude/commands/        dev + team-mode commands (spec, dev-plan, test-plan,
                          uxui-plan, implement)                                              (always refreshed)
 .claude/skills/          fundamentals skills (construction + verification + delivery) +
                          plan-writing, brainstorming, fanout-team-agents, qa-handoff-note,
                          frontend/UX skills, skill-creator                                  (always refreshed)
-.claude/rules/           16 always-on pointers to the skills                                (always refreshed)
+.claude/rules/           fundamentals.md — one always-on router to the skills              (always refreshed)
 .claude/hooks/*.sh       PreToolUse spawn guard + secrets guard, PostToolUse lint + state marker  (always refreshed)
 .claude/settings.json    hook wiring                                                        (only if missing; existing files get a merge)
 .workflow/_templates/    spec / plan / test-plan / uxui-plan / review / security / tests /
@@ -202,10 +204,11 @@ Stand up your own server and wire it in a few minutes — full deploy steps, API
 .claude/
 ├── agents/         pm, lead, engineer, qa, retro, uxui + team-* fanout workers
 ├── orchestrator.md script the main agent follows when /dev runs
+├── orchestrator/   references/ — fanout, resume, state edge-case detail the core loads on demand
 ├── commands/       dev.md (loads orchestrator.md) + team-mode spec / dev-plan / test-plan / uxui-plan / implement
 ├── hooks/          spawn guard, state marker, lint dispatch, secrets guard
-├── rules/          16 lean always-on pointers (conduct + run order + fundamentals)
-└── skills/         full skill bodies referenced by the rules
+├── rules/          fundamentals.md — one always-on router (conduct + run order + fundamentals)
+└── skills/         full skill bodies referenced by the router
 .workflow/
 ├── _templates/     blueprints — copy, don't edit in place
 ├── INDEX.md        run registry

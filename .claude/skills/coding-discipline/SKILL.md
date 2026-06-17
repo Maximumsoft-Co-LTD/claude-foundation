@@ -7,7 +7,7 @@ description: Apply the behavioral guardrails that keep an AI coding session hone
 
 ## Why this exists
 
-Adapted from [Andrej Karpathy's observations on LLM coding pitfalls](https://x.com/karpathy/status/2015883857489522876), via the MIT-licensed [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) repo. The failure modes are specific, recurring, and *not* knowledge gaps — the model already knows better:
+Adapted from [Andrej Karpathy's observations on LLM coding pitfalls](https://x.com/karpathy/status/2015883857489522876), via the MIT-licensed [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) repo. The same "laziest senior dev in the room" stance is distilled in [ponytail](https://github.com/DietrichGebert/ponytail) — principle 2's decision ladder is its core, and its cheap always-on digest (plus the `ponytail:` shortcut-marker convention) lives in `.claude/rules/fundamentals.md > Ponytail`, carried every turn so this full body need only load on the first code task. The failure modes are specific, recurring, and *not* knowledge gaps — the model already knows better:
 
 > "The models make wrong assumptions on your behalf and just run along with them without checking … don't seek clarifications, don't surface inconsistencies, don't present tradeoffs, don't push back when they should."
 
@@ -50,7 +50,7 @@ Walk the **decision ladder** before writing — stop at the first rung that solv
 5. **Can it be one line?** — the smallest correct expression wins.
 6. **Only then** — write the minimum code that solves it.
 
-**Lazy, not negligent:** the ladder trims *solution bloat*, never the trust-boundary validation, error- and data-loss handling, authorization, or accessibility the task actually needs — those are required behaviour, not speculative extras (principle 1 surfaces them; the security/testing fundamentals own them). "One line" never means "skip the unhappy path."
+**Lazy, not negligent:** the ladder trims *solution bloat*, never the trust-boundary validation, error- and data-loss handling, authorization, or accessibility the task actually needs — those are required behaviour, not speculative extras (principle 1 surfaces them; the security/testing fundamentals own them). "One line" never means "skip the unhappy path." When you *do* take a deliberate shortcut (a stub, a deferred generalisation, a narrower-than-ideal implementation), mark it inline with a `ponytail: <upgrade path>` comment naming what it would take to lift it — so the deferral is visible and harvestable later, never silently lost.
 
 Then, whatever rung you land on:
 - No features, options, or config beyond what was asked. No error handling for impossible scenarios.

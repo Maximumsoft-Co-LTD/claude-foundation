@@ -297,4 +297,4 @@ Deeper guides for individual principles. Read the one that matches the work in f
 
 ## How to use this skill in a conversation
 
-This skill is always-on for strategic-DDD work (per the project rule at `.claude/rules/ddd-strategic.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it. When working alongside the construction-fundamentals skills, this skill runs *first* (decide where the model lives and what language it speaks), then the construction skills whose layer the work touches build what this skill placed — the canonical run order lives in `.claude/rules/fundamentals.md`.
+This skill is always-on for strategic-DDD work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it. When working alongside the construction-fundamentals skills, this skill runs *first* (decide where the model lives and what language it speaks), then the construction skills whose layer the work touches build what this skill placed — the canonical run order lives in `.claude/rules/fundamentals.md`.

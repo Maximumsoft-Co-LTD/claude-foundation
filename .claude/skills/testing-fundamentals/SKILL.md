@@ -264,7 +264,7 @@ For anything else — a function with branches, a boundary crossing, a contract 
 
 ## How to use this skill in a conversation
 
-This skill is always-on for testing-design work (per the project rule at `.claude/rules/testing-fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+This skill is always-on for testing-design work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 When the skill applies:
 - **Writing a test** — name the behaviour first, pick the cheapest level that proves it, decide which seams to fake (and keep the DB real for integration), then write it arrange-act-assert with a behaviour name.

@@ -268,7 +268,7 @@ For everything else — any endpoint an outside client, another team, or a futur
 
 ## How to use this skill in a conversation
 
-This skill is always-on for API-surface work (per the project rule at `.claude/rules/api-design-fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it.
+This skill is always-on for API-surface work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it.
 
 When the skill applies:
 - **Designing a new API or endpoint** — walk the principles in order: name the resources and language (1), the methods and status codes (2), the body contracts (3) and error shape (4), the idempotency/safety guarantees (5), pagination/filtering (6), auth and limits (7), and the versioning stance (8). Show the user the surface — routes, request/response shapes, error envelope — before writing handlers.

@@ -273,7 +273,7 @@ For anything else — threads, async tasks touching shared state, locks, paralle
 
 ## How to use this skill in a conversation
 
-This skill is always-on for in-process concurrency work (per the project rule at `.claude/rules/concurrency-fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+This skill is always-on for in-process concurrency work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 When the skill applies:
 - **Designing concurrent code** — start by trying to design the sharing away (principle 1). State the chosen model — immutable, confined, message-passing, or locked — and *why*, before writing it.

@@ -284,7 +284,7 @@ For anything else — a request handler, a login or session flow, a parser or de
 
 ## How to use this skill in a conversation
 
-This skill is always-on for security-relevant work (per the project rule at `.claude/rules/security-fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+This skill is always-on for security-relevant work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 This skill is the **design-time half** of security in the `/dev` workflow; the **review-time half** is the lead's security review (Mode C in `.claude/agents/lead.md`; the orchestrator decides when it fires), a checklist run on the diff after the engineer writes code. The two are complementary: load this skill *before* writing auth, crypto, or input-handling code so that when the security review runs on the diff, it finds nothing to flag. If you are the one writing the code, this skill is your job; if you are reviewing, the review checklist is — but both draw on the same seven principles.
 

@@ -677,7 +677,7 @@ In short: the **logical layering rule** (domain has zero external dependencies; 
 
 ## How to use this skill in a conversation
 
-Always-on for backend work with real domain logic (per `.claude/rules/hexagonal-backend.md`) — don't ask the user to opt in. If the task matches "When NOT to apply strictly", say so in one sentence and proceed without hexagonal.
+Always-on for backend work with real domain logic (per the always-on router `.claude/rules/fundamentals.md`) — don't ask the user to opt in. If the task matches "When NOT to apply strictly", say so in one sentence and proceed without hexagonal.
 
 When the skill applies:
 - **Starting fresh** — propose the folder structure first, then sketch domain entities and ports before code.

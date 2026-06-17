@@ -77,7 +77,7 @@ Options:
   -h, --help         Show this help
 
 What gets installed:
-  .cursor/rules/*.mdc          — 16 always-apply rules ported from .claude/rules/
+  .cursor/rules/*.mdc          — always-apply fundamentals router ported from .claude/rules/
                                  (frontmatter prepended, paths rewritten)
   .cursor/skills/**            — fundamentals skills (verbatim copy, referenced
                                  from the rules)
@@ -201,7 +201,7 @@ ok "target: $TARGET_PATH"
 rule_description() {
   case "$1" in
     coding-discipline)         echo "Behavioral conduct wrapper for any code task — surface assumptions, write the minimum non-speculative code, keep diffs surgical, turn the task into a verifiable goal. Run first, then the layer-appropriate fundamental." ;;
-    fundamentals)              echo "Cross-skill run order — the single source of truth for which fundamentals skill runs when (ddd → programming → concurrency → database → hexagonal → architecture → queue → security → observability, plus the verification and delivery skills). Other rules point here instead of restating the chain." ;;
+    fundamentals)              echo "Always-on fundamentals router — the single detection layer that maps every 'by default' trigger to its skill, plus the cross-skill run order (ddd → programming → concurrency → database → hexagonal → api-design → architecture → queue → security → observability, plus the process and delivery skills). Match a trigger, then load that one skill body." ;;
     ddd-strategic)             echo "Strategic Domain-Driven Design before deciding where a model lives and what language it speaks (subdomain classification, bounded contexts, ubiquitous language, context mapping, aggregate sizing, domain vs integration events)." ;;
     programming-fundamentals)  echo "Pre-flight fundamentals before writing or changing any non-trivial code (data shape, illegal states, function design, pure core, errors, complexity, naming)." ;;
     concurrency-fundamentals)  echo "In-process concurrency fundamentals (don't share mutable state, atomic critical sections, deadlock avoidance, async/await pitfalls, idempotent/cancellable ops, bounded fan-out). Cross-process async is queue-fundamentals." ;;
@@ -230,6 +230,7 @@ rewrite_paths() {
     -e 's|\.claude/skills/|.cursor/skills/|g' \
     -e 's|\.claude/agents/|.cursor/agents/|g' \
     -e 's|\.claude/commands/|.cursor/commands/|g' \
+    -e 's|\.claude/orchestrator/|.cursor/orchestrator/|g' \
     -e 's|\.claude/orchestrator\.md|.cursor/orchestrator.md|g'
 }
 
@@ -353,6 +354,13 @@ while IFS= read -r -d '' f; do
   COMMAND_FILES+=("${f#"$SOURCE_PATH"/}")
 done < <(find "$SOURCE_PATH/.claude/commands" -type f -name '*.md' -print0 | LC_ALL=C sort -z)
 
+ORCH_REF_FILES=()
+if [ -d "$SOURCE_PATH/.claude/orchestrator/references" ]; then
+  while IFS= read -r -d '' f; do
+    ORCH_REF_FILES+=("${f#"$SOURCE_PATH"/}")
+  done < <(find "$SOURCE_PATH/.claude/orchestrator/references" -type f -name '*.md' -print0 | LC_ALL=C sort -z)
+fi
+
 PLAN=()
 
 # Rules: .claude/rules/foo.md → .cursor/rules/foo.mdc (with frontmatter + path rewrites)
@@ -384,6 +392,14 @@ done
 # state.json discipline."
 PLAN+=(".claude/orchestrator.md|.cursor/orchestrator.md|always-overwrite|rewrite-orchestrator")
 
+# Orchestrator on-demand references: path-rewritten copies under
+# .cursor/orchestrator/references/ (the core's pointers + their internal links
+# are rewritten .claude/orchestrator/ → .cursor/orchestrator/ by rewrite_paths).
+for rel in ${ORCH_REF_FILES[@]+"${ORCH_REF_FILES[@]}"}; do
+  dst_rel="${rel#.claude/}"
+  PLAN+=("${rel}|.cursor/${dst_rel}|always-overwrite|rewrite")
+done
+
 # /dev command: this one we hand-write at apply time (it's a substantive
 # rewrite, not a path-rewritten copy), so a sentinel action "synthesize-dev"
 # stands in for the src column.
@@ -410,6 +426,31 @@ PLAN+=(".workflow/FOLLOWUPS.md|.workflow/FOLLOWUPS.md|never-overwrite|verbatim")
 
 # WORKFLOW.md: copy with rewrites
 PLAN+=("WORKFLOW.md|WORKFLOW.md|always-overwrite|rewrite")
+
+# Files removed by a previous foundation version that must be deleted from
+# upgraded targets. Each row is "<target-relative-path>|<why>". Cursor loads
+# every .cursor/rules/*.mdc with alwaysApply, so a stale port of a removed rule
+# would inject the old router alongside the new one. We list explicit paths
+# (not "any .mdc without a source rule") so user-authored .mdc are never touched
+# — same promise the header makes. Add a row whenever a rule is removed upstream.
+CLEANUP=(
+  ".cursor/rules/coding-discipline.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/ddd-strategic.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/programming-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/concurrency-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/database-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/hexagonal-backend.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/api-design-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/architecture-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/queue-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/security-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/observability-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/debug-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/refactoring-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/testing-fundamentals.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/git-workflow.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+  ".cursor/rules/delivery-engineering.mdc|consolidated into .cursor/rules/fundamentals.mdc"
+)
 
 resolve_action() {
   local mode="$1" dst="$2"
@@ -444,6 +485,21 @@ for row in "${PLAN[@]}"; do
   esac
 done
 printf "\n  Summary: ${G}%d new${N}, ${Y}%d overwrite${N}, ${D}%d kept${N}\n" "$NEW" "$OVR" "$SKP"
+
+# Show cleanup plan — stale legacy files that exist in the target and will be
+# deleted on apply.
+CLEANUP_HITS=0
+for row in ${CLEANUP[@]+"${CLEANUP[@]}"}; do
+  rel="${row%%|*}"; why="${row#*|}"
+  dst="$TARGET_PATH/$rel"
+  if [ -e "$dst" ]; then
+    printf "  ${R}-${N} %s ${D}(remove: %s)${N}\n" "$rel" "$why"
+    CLEANUP_HITS=$((CLEANUP_HITS+1))
+  fi
+done
+if [ "$CLEANUP_HITS" -gt 0 ]; then
+  printf "  ${R}%d to remove${N}\n" "$CLEANUP_HITS"
+fi
 
 # CURSOR.md stub (separate from PLAN — generated, not copied)
 CURSOR_DST="$TARGET_PATH/CURSOR.md"
@@ -525,6 +581,21 @@ for row in "${PLAN[@]}"; do
   esac
 done
 
+# Upgrade cleanup: delete legacy ports that earlier foundation versions installed
+# but newer versions removed (e.g. the per-skill rule .mdc files now folded into
+# fundamentals.mdc). Without this, every stale .mdc keeps alwaysApply-injecting
+# the old router. The CLEANUP array is the source of truth — explicit paths only,
+# so user-authored .mdc are never touched.
+for row in ${CLEANUP[@]+"${CLEANUP[@]}"}; do
+  rel="${row%%|*}"; why="${row#*|}"
+  dst="$TARGET_PATH/$rel"
+  if [ -e "$dst" ]; then
+    printf "  ${R}-${N} %s ${D}(%s)${N}\n" "$rel" "$why"
+    rm -f "$dst"
+    REMOVED=$((REMOVED+1))
+  fi
+done
+
 # CURSOR.md stub. Parallel to the CLAUDE.md stub install.sh writes, but
 # Cursor-flavored: explains the port boundary so a new contributor doesn't
 # expect Agent() dispatch or hook-enforced state writes to work.
@@ -551,7 +622,7 @@ The original workflow assumed Claude Code primitives Cursor doesn't have. The po
 
 ## Files
 
-- `.cursor/rules/*.mdc` — always-apply rules (coding-discipline + run-order routing + ddd-strategic + programming/concurrency/database/hexagonal/architecture/queue/security/observability fundamentals + debug/refactoring/testing + git-workflow/delivery-engineering). Cursor loads these automatically.
+- `.cursor/rules/*.mdc` — the always-apply fundamentals router (one file mapping every "by default" trigger to its skill — conduct wrapper, ddd-strategic, the programming/concurrency/database/hexagonal/api-design/architecture/queue/security/observability fundamentals, debug/refactoring/testing, and git-workflow/delivery-engineering). Cursor loads it automatically.
 - `.cursor/skills/**` — deep-dive skill content the rules point to.
 - `.cursor/agents/*.md` — role docs (pm/lead/engineer/qa/retro + uxui). Read these when entering the matching phase or running a team-mode command.
 - `.cursor/orchestrator.md` — the orchestration script the `/dev` command follows.
@@ -573,7 +644,7 @@ printf "${G}✓ claude-foundation (Cursor flavor) installed${N} at %s\n" "$TARGE
 printf "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}\n"
 cat <<EOF
 
-  Files     : ${NEW} new, ${OVR} overwritten, ${SKP} kept
+  Files     : ${NEW} new, ${OVR} overwritten, ${SKP} kept, ${REMOVED:-0} removed
 
   Next steps:
     1. Open the project in Cursor

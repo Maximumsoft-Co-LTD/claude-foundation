@@ -295,7 +295,7 @@ Deeper guides for individual principles. Read the one that matches the work in f
 
 ## How to use this skill in a conversation
 
-This skill is always-on for system-level architectural work (per the project rule at `.claude/rules/architecture-fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it.
+This skill is always-on for system-level architectural work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it.
 
 When the skill applies:
 

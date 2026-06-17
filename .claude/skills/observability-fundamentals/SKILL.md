@@ -264,7 +264,7 @@ For anything else — runtime code that introduces a new way to fail or a new op
 
 ## How to use this skill in a conversation
 
-This skill is always-on for runtime observability work (per the project rule at `.claude/rules/observability-fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+This skill is always-on for runtime observability work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 When the skill applies:
 - **Shipping a new code path with a failure mode** — decide up front what metric counts it, what log records its failures (with which ids), and whether a trace needs to span it. Name those alongside the code, not after.

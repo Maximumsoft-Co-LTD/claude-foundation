@@ -304,7 +304,7 @@ Deeper guides for individual principles. Read the one that matches the work in f
 
 ## How to use this skill in a conversation
 
-This skill is always-on for queue-shaped work (per the project rule at `.claude/rules/queue-fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip", say so in one sentence and proceed without it.
+This skill is always-on for queue-shaped work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip", say so in one sentence and proceed without it.
 
 When the skill applies:
 - **Designing a new async path** — name the purpose first (principle 1), then the delivery semantics (2), then walk the rest of the checklist before writing code.

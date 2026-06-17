@@ -48,6 +48,7 @@ Options:
 What gets installed:
   .claude/agents/**            — pm, lead, engineer, qa, retro + team-* fan-out workers + TEAM.md (always refreshed)
   .claude/orchestrator.md      — orchestrator script run by the main agent on /dev, NOT a sub-agent (always refreshed)
+  .claude/orchestrator/references/** — on-demand orchestrator detail (fanout, resume, state edge cases) the core loads only when that path fires (always refreshed)
   .claude/commands/**          — /dev plus the team-mode commands (/spec, /test-plan, /uxui-plan) (always refreshed)
   .claude/skills/**            — fundamentals (coding-discipline, ddd-strategic, programming, concurrency, database, hexagonal, architecture, queue, security, observability, debug, refactoring, testing, git-workflow, delivery-engineering) + product skills (brainstorming, plan-writing, fanout-team-agents, frontend-design, tailwind-design-system, ui-ux-pro-max, skill-creator) (always refreshed)
   .claude/rules/*.md           — always-on pointers to the skills above (always refreshed)
@@ -181,6 +182,7 @@ ok "target: $TARGET_PATH"
 # dry-run output file-accurate without a 30-line manual enumeration.
 PLAN=(
   ".claude/orchestrator.md|always-overwrite"
+  ".claude/orchestrator/references|always-overwrite"
   ".claude/agents|always-overwrite"
   ".claude/commands|always-overwrite"
   ".claude/skills|always-overwrite"
@@ -209,6 +211,25 @@ PLAN=(
 # Add a row whenever a fix removes a file the installer used to write.
 CLEANUP=(
   ".claude/agents/orchestrator.md|no orchestrator sub-agent — orchestration runs in the main agent (see .claude/orchestrator.md)"
+  # The per-skill rule files were consolidated into the single fundamentals.md
+  # router. Claude Code auto-loads the whole .claude/rules/ dir, so a stale copy
+  # would load the old router alongside the new one — delete them on upgrade.
+  ".claude/rules/coding-discipline.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/ddd-strategic.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/programming-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/concurrency-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/database-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/hexagonal-backend.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/api-design-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/architecture-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/queue-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/security-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/observability-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/debug-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/refactoring-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/testing-fundamentals.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/git-workflow.md|consolidated into .claude/rules/fundamentals.md"
+  ".claude/rules/delivery-engineering.md|consolidated into .claude/rules/fundamentals.md"
 )
 
 # Expand directory rows into per-file rows.
@@ -294,30 +315,17 @@ emit_rules_block() {
 <!-- claude-foundation:rules-imports:start (managed block — re-synced by install.sh; edit rules in .claude/rules/, not here) -->
 ## Always-on fundamentals
 
-The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit imports below are a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, these imports are redundant but harmless — delete this section if you ever see a rule loaded twice.
+The `/dev` workflow's "by default" rules live in `.claude/rules/`. Recent Claude Code auto-loads that directory as project memory; the explicit import below is a fallback so the fundamentals still load on versions that do NOT auto-load `.claude/rules/`. If your Claude Code already auto-loads them, this import is redundant but harmless — delete this section if you ever see the router loaded twice.
 
-@.claude/rules/coding-discipline.md
 @.claude/rules/fundamentals.md
-@.claude/rules/ddd-strategic.md
-@.claude/rules/programming-fundamentals.md
-@.claude/rules/concurrency-fundamentals.md
-@.claude/rules/database-fundamentals.md
-@.claude/rules/hexagonal-backend.md
-@.claude/rules/architecture-fundamentals.md
-@.claude/rules/queue-fundamentals.md
-@.claude/rules/security-fundamentals.md
-@.claude/rules/observability-fundamentals.md
-@.claude/rules/debug-fundamentals.md
-@.claude/rules/refactoring-fundamentals.md
-@.claude/rules/testing-fundamentals.md
-@.claude/rules/git-workflow.md
-@.claude/rules/delivery-engineering.md
 <!-- claude-foundation:rules-imports:end -->
 BLOCK
 }
 SENTINEL_START="<!-- claude-foundation:rules-imports:start"
 SENTINEL_END="<!-- claude-foundation:rules-imports:end -->"
-# Legacy idempotency key (pre-sentinel blocks, installed before the rule set grew).
+# Legacy idempotency key (pre-sentinel blocks, installed before the rules were
+# consolidated into the single fundamentals.md router). Matching it on an old
+# target triggers the upgrade path that replaces the multi-import block.
 RULES_IMPORT_MARKER="@.claude/rules/coding-discipline.md"
 
 CLAUDE_DST="$TARGET_PATH/CLAUDE.md"
@@ -507,15 +515,21 @@ EOF
   emit_rules_block >> "$CLAUDE_DST"
   CLAUDE_ACTION="created"
 elif grep -qF "$SENTINEL_START" "$CLAUDE_DST" 2>/dev/null; then
-  # Managed block present — re-sync its contents in place (this is how a new rule
-  # reaches an existing adopter). Replace everything between the sentinels.
+  # Managed block present — re-sync its contents in place (this is how a rule-set
+  # change reaches an existing adopter). Replace everything between the sentinels.
+  # The fresh block is read from a temp file (NOT awk -v): BSD awk on macOS rejects
+  # a newline inside a -v variable, so a multi-line -v silently fails the re-sync
+  # and leaves the stale block in place.
   if command -v awk >/dev/null 2>&1; then
-    NEW_BLOCK="$(emit_rules_block)"
-    awk -v repl="$NEW_BLOCK" '
-      $0 ~ /claude-foundation:rules-imports:start/ {print repl; skip=1; next}
+    BLOCK_TMP="$(mktemp)"
+    emit_rules_block > "$BLOCK_TMP"
+    awk '
+      FNR==NR {repl=repl $0 ORS; next}
+      $0 ~ /claude-foundation:rules-imports:start/ {printf "%s", repl; skip=1; next}
       $0 ~ /claude-foundation:rules-imports:end/   {skip=0; next}
       skip!=1 {print}
-    ' "$CLAUDE_DST" > "$CLAUDE_DST.tmp" && mv "$CLAUDE_DST.tmp" "$CLAUDE_DST"
+    ' "$BLOCK_TMP" "$CLAUDE_DST" > "$CLAUDE_DST.tmp" && mv "$CLAUDE_DST.tmp" "$CLAUDE_DST"
+    rm -f "$BLOCK_TMP"
     CLAUDE_ACTION="resynced"
   fi
 elif grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
