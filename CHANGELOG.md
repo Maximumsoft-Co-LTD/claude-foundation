@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-06-17
+
+### Added
+
+- **A ponytail-style "decision ladder" in `coding-discipline`.** Principle 2 (Simplicity First) now opens with an explicit, ordered ladder — **does it need to exist? → standard library → native platform feature → already-installed dependency → one line → only then minimal code** — so the agent reaches for the laziest correct solution before writing new code. It carries a *"lazy, not negligent"* guard (trust-boundary validation, error/data-loss handling, authorization, and accessibility are never on the chopping block; a *new* dependency is not a free rung — `security-fundamentals` owns that call). `engineer` (Mode A) and `lead` (review) point at it rather than restating it. Adapted from the [ponytail](https://github.com/DietrichGebert/ponytail) concept. Files: `.claude/skills/coding-discipline/SKILL.md`, `.claude/agents/{engineer,lead}.md`.
+
+### Changed
+
+- **De-bloated the `/dev` workflow docs by ~840 words with no behaviour change** — applied the workflow's own minimalism discipline to its own prompts. **(1) DRY**: the skill-load budget, the UI visual/a11y-verification procedure, and the registry-path fallback each collapse to one canonical home plus one-line pointers (the "single canonical location + pointers" rule, previously violated by 2–4 verbatim copies each). **(2) Prose-pass**: trimmed defense/rationale prose from the prose-heavy `orchestrator.md` narrative steps (plan / size / digest), keeping every rule, threshold, and state-transition verbatim. **(3) Aside sweep**: removed 14 *"this is the fix for «past complaint»"* calibration-history asides that carried no rule (anecdotes belong in memory, not the always-read prompt). Dense procedure steps were left untouched by design; `orchestrator.md` (the epicentre) dropped ~415 words. Files: `.claude/orchestrator.md`, `.claude/agents/{engineer,lead,pm,qa}.md`, `WORKFLOW.md`.
+- **`WORKFLOW.md` now stamps the current release version** at the top, pointing at `VERSION` (source of truth) and `CHANGELOG.md`, kept in lockstep by the release bump. Files: `WORKFLOW.md`, `RELEASING.md`.
+
 ## [2.3.0] - 2026-06-16
 
 ### Added
@@ -292,7 +303,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.0...v2.1.1
