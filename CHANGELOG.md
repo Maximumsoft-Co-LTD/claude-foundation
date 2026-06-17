@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-06-17
+
+### Added
+
+- **`DESIGN.md` (UX/UI) as a seventh doc in the `init-project-docs` suite.** The brownfield onboarding-docs skill now documents a project's UX/UI surface — design tokens, a reusable-component inventory, a mermaid screen/navigation map, the key per-screen states (loading/empty/error/loaded), and interaction & accessibility patterns — alongside the existing OVERVIEW / ARCHITECTURE / TECHSTACK / DATAMODEL / COREFEATURE / API set. Like the rest of the suite it is **grounded in the code**: tokens come from the real theme/Tailwind/CSS files, components from the component directory, and the screen map from the router/page definitions — never a framework's defaults. It is produced **only for a project with a user-facing UI**; for a headless service, pure-API backend, or library it is dropped or left a one-line "Not applicable" stub (the existing skip discipline). It documents the UX the code *already implements* — the brownfield counterpart to the forward-looking `uxui` / `/uxui-plan` design plan. The `document.html` viewer slots `DESIGN.md` into canonical reading order after `API.md`. Files: `.claude/skills/init-project-docs/SKILL.md`, `.claude/skills/init-project-docs/references/doc-templates.md`, `.claude/skills/init-project-docs/scripts/build_doc_viewer.py`.
+
 ## [2.3.1] - 2026-06-17
 
 ### Added
@@ -303,7 +309,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.2...HEAD
+[2.3.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.1.1...v2.2.0
