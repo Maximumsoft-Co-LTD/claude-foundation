@@ -41,6 +41,18 @@ These are **conduct** gaps — how the session is run, not what it knows. This s
 **Why:** "Flexibility" and "configurability" nobody asked for is the most common form of self-inflicted complexity. Every speculative abstraction is a guess about a future that usually never arrives, and a tax on every reader until then.
 
 **How to apply:**
+
+Walk the **decision ladder** before writing — stop at the first rung that solves the *stated* problem, and only descend when the rung above genuinely doesn't:
+1. **Does it need to exist?** — if the stated problem doesn't require it, don't build it (principle 1's YAGNI, at code granularity).
+2. **Does the standard library / language built-in solve it?** — reach for it before hand-rolling.
+3. **Is there a native platform feature?** — the runtime, framework, or database may already do it.
+4. **Does an already-installed dependency solve it?** — use what's in the lockfile before writing the code yourself. (Adding a *new* dependency is **not** a free rung — a dependency is its own complexity and trust boundary; [[security-fundamentals]] owns that call.)
+5. **Can it be one line?** — the smallest correct expression wins.
+6. **Only then** — write the minimum code that solves it.
+
+**Lazy, not negligent:** the ladder trims *solution bloat*, never the trust-boundary validation, error- and data-loss handling, authorization, or accessibility the task actually needs — those are required behaviour, not speculative extras (principle 1 surfaces them; the security/testing fundamentals own them). "One line" never means "skip the unhappy path."
+
+Then, whatever rung you land on:
 - No features, options, or config beyond what was asked. No error handling for impossible scenarios.
 - No abstraction for a single call site. Inline first; extract only on the second real use.
 - The test: *would a senior engineer call this overcomplicated?* If 200 lines could be 50, rewrite it.
@@ -81,7 +93,7 @@ These are **conduct** gaps — how the session is run, not what it knows. This s
 Before you touch code, four questions:
 
 1. **Assumptions** — have I stated them, and named any genuine ambiguity instead of silently choosing?
-2. **Simplicity** — is this the minimum that solves the *asked* problem, with nothing speculative?
+2. **Simplicity** — did I walk the ladder (stdlib / native / already-installed dep before new code), and is this the minimum that solves the *asked* problem, with nothing speculative?
 3. **Surgical** — does every changed line trace to the request, with no orthogonal edits riding along?
 4. **Goal** — do I have a concrete, checkable definition of done?
 
