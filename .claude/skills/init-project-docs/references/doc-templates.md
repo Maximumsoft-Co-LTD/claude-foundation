@@ -12,6 +12,7 @@ Keep prose tight — tables and diagrams beat paragraphs.
 - [DATAMODEL.md](#datamodelmd)
 - [COREFEATURE.md](#corefeaturemd)
 - [API.md](#apimd)
+- [DESIGN.md](#designmd)
 
 ---
 
@@ -248,3 +249,55 @@ List the caller's orders.
 ```
 
 If an OpenAPI/GraphQL schema exists, summarise it here and link to the spec rather than transcribing every field. State the real status codes and error envelope, not idealised ones.
+
+---
+
+## DESIGN.md
+
+The UX/UI surface a user interacts with — produced **only for a project with a frontend** (web/mobile/desktop GUI). Sourced from the theme/token files, the component directory, and the router/page definitions. Document the design language the UI *uses*, never a framework's defaults.
+
+```markdown
+# Design (UX/UI)
+
+## Design language
+<1–2 sentences: the overall direction the UI actually shows — dense data dashboard, minimal marketing site, mobile-first app — as evidenced by the code, not aspiration.>
+
+## Design tokens
+Sourced from `<tailwind.config.* / theme.ts / :root CSS custom properties>`.
+- **Colour**: <primary / surface / semantic — the real token names & values>
+- **Typography**: <font families + the type scale>
+- **Spacing, radius, shadow**: <the scale and the named steps>
+- **Theming**: <light/dark or brand themes, and how they're toggled — from the code>
+
+## Component inventory
+The reusable building blocks, not every one-off. From the component directory.
+| Component | Variants / role | Location |
+|-----------|-----------------|----------|
+| Button | primary · ghost · destructive | `src/components/ui/Button.tsx` |
+| Modal | dialog + confirm | `src/components/ui/Modal.tsx` |
+
+## Screen & navigation map
+\`\`\`mermaid
+flowchart LR
+  Login["/login"] --> Dashboard["/dashboard"]
+  Dashboard --> Orders["/orders"]
+  Orders --> OrderDetail["/orders/:id"]
+  Dashboard --> Settings["/settings"]
+\`\`\`
+
+## Key screens & states
+### Dashboard (`src/pages/Dashboard.tsx`)
+- **Purpose**: <one line>
+- **States**: loading → <skeleton> · empty → <empty-state copy> · error → <error UI> · loaded → <content>
+
+## Interaction & feedback patterns
+<Forms & validation, toasts/notifications, modals/confirms, optimistic updates, loading affordances — as actually implemented, by file.>
+
+## Accessibility
+<What the code does — semantic elements, `aria-*`, focus management, keyboard nav, colour contrast. Name honest gaps: "custom dropdown has no keyboard support in the reviewed files".>
+
+## Responsive behaviour
+<Breakpoints from the config; how the layout adapts; the mobile-navigation pattern.>
+```
+
+For the screen map use `flowchart LR`/`TD` — one node per route/screen, arrows = navigation; label nodes with the real path. For a single screen's lifecycle, a `stateDiagram-v2` (`idle --> loading --> loaded` / `--> error`) is often clearer than prose. Keep tokens and components grounded in the files that define them — cite the path so a reader can verify, and mark anything you couldn't find rather than inventing it.
