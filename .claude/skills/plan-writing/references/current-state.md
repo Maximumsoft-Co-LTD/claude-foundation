@@ -6,9 +6,17 @@ Reverse-engineer the existing code *before* designing the change. This file is t
 
 The principle in SKILL.md is the rule. This file is the *technique*: which LSP queries to run, how many hops to trace, what counts as an invariant worth writing down, what to do when LSP returns 200 references, and worked examples per Type so the section doesn't reduce to "I read the file and it does stuff."
 
+## Boundary-depth, not full-depth — read less, defer the rest
+
+The plan does **not** need to understand the whole subsystem. It needs to read deep enough on three things only: the **blast radius** (what this change can break), the **invariants** the change must preserve, and the **insertion points** where new code wires in. That safety-critical subset is what the fields below map and what the gate signs off on. Everything else is the engineer's to read **at edit time** — `engineer` opens every file it touches with LSP during Phase 2 anyway (`engineer.md > Mode A`), so pre-reading the internal mechanics of code whose *contract you don't change* is a read done twice: once here into a doc, once there to act. Read it once, where it's actionable.
+
+So when a file is in scope but its internals don't constrain the plan — a contained edit, a flow you won't alter, a helper you'll call but not change — **don't walk it here.** Write a one-line pointer in `plan.md > ## To explore at implement` (*what to read · why it was safe to defer*) and move on. That section is the sanctioned home for deferral, not a confession of laziness: it tells the engineer exactly where to go deep, and it keeps `## Current state` to the load-bearing subset (the "stop when actionable for the engineer" bar below — now with somewhere to put what you stopped short of). What you write there is **instead of** walking those areas, not in addition — the Current state shrinks to the blast-radius subset, it does not grow a second list.
+
+The depth bar: read deep enough that **(a)** the gate can make a sound go/no-go, **(b)** the approach is feasible (won't die on contact with the code), and **(c)** the blast radius is known (the change won't silently break a caller or invariant). Not deep enough to "know the file." When the approach itself is genuinely uncertain — a brownfield M/L where you're unsure it holds — read a thin **feasibility** slice to confirm it, then defer the rest; that is a spike-sized read, not a full map. **Never defer a blast-radius invariant the change depends on** — that belongs in `## Current state`, mapped and cited. Defer mechanics, never safety.
+
 ## The LSP-walk technique
 
-You don't need to read every file. You need to *trace the change*. Do this in order:
+This is how you map the boundary-depth subset above — *trace the change*, don't read every file. Do this in order:
 
 1. **Anchor on the spec's integration points.** Open `spec.md > Constraints > Integration points` (or the equivalent — the spec's list of existing files this run will touch). Each one is a starting node for the walk. If the spec doesn't list integration points, the spec is under-specified — fix the spec first.
 

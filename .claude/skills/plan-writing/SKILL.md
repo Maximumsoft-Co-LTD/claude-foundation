@@ -34,6 +34,8 @@ A plan that touches existing code without first stating what that code does toda
 
 **The trigger is the run's `field`, not its Type or Size** (`field` is defined in `references/size-tiering.md > Greenfield vs brownfield`): **brownfield work maps current state; greenfield skips it.** Because greenfield always caps at XS/S and every `fix`/`refactor`/M/L run is brownfield, this subsumes the old "M/L or refactor/fix" trigger *and* closes the gap it left — a **brownfield `feat` that edits existing code is no longer exempt just because it's small** (the "added a feature, broke existing behaviour" hole).
 
+**Map at boundary-depth, not full-depth.** Current state is the load-bearing subset — blast radius, invariants the change must preserve, insertion points — *not* a tour of every file in scope. Code whose internals don't constrain the plan (a contained edit, a flow you won't alter) is read by `engineer` at edit time, not pre-read here; write a one-line pointer in `## To explore at implement` **instead of** walking it, so Current state stays the safety-critical subset rather than growing a second list. Defer mechanics, never a blast-radius invariant. Full stance + the feasibility-read exception: `references/current-state.md > Boundary-depth, not full-depth`.
+
 **Required** (write a `Current state` section before the Architecture diagram), scaled to size:
 - **Full section** — any **M** or **L** plan, and any **refactor** or **fix** at any size: entry point · data/control flow · callers/blast-radius · invariants (+ refactor anti-goals / fix bug-path).
 - **Proportional note** — a **brownfield `feat` at XS/S**: at minimum the entry point of the code you edit and its blast radius (who else calls the symbol you change), each with `path#anchor`. One to three lines is fine — the point is that you *walked* it, not that you wrote an essay.
@@ -161,7 +163,7 @@ Before writing any section of plan.md:
 - [ ] **Map current state** (principle 3) for **brownfield** work (the `field`, not Type/Size) — full section for M/L + refactor/fix, a proportional entry-point + blast-radius note for a brownfield `feat` at XS/S. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting Steps. Skip only for greenfield (brand-new files in an isolated module), chore/docs not touching live code, and spike.
 - [ ] For **M/L**, plan the `## Scaffold` (principle 10): the target file tree (★ new · ~ edited) + each new file's key signature — the skeleton the gate reviews and the engineer builds first. Subsumes `## Folder structure` for M/L.
 
-Then draft in order: **Outcome → Approach → Phases for this task → Current state (if required) → Diagram → Scaffold (M/L) → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
+Then draft in order: **Outcome → Approach → Phases for this task → Current state (if required) → To explore at implement (if deferred) → Diagram → Scaffold (M/L) → Steps → Files touched → (size-gated sections) → Rollback → Out of scope**.
 
 ## Section gating by Size
 
@@ -172,6 +174,7 @@ Then draft in order: **Outcome → Approach → Phases for this task → Current
 | Steps (with verify + AC tag) | ✓ | ✓ | ✓ | ✓ |
 | Step order line | skip | optional | ✓ | ✓ |
 | Current state (principle 3) | brownfield → proportional note (entry point + blast radius); greenfield → skip | brownfield → proportional note (full for refactor/fix); greenfield → skip | ✓ | ✓ (+ as-is mermaid for refactor) |
+| To explore at implement (deferred internals, principle 3) | skip | brownfield → when boundary-depth deferred internals | brownfield → when deferred | brownfield → when deferred |
 | Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
 | Scaffold (tree + signatures, principle 10) | skip | optional (when touching existing code) | ✓ required | ✓ required |
 | (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps; `feat`-only parallel form adds exclusive Files-touched + integration phase |

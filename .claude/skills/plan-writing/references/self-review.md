@@ -68,10 +68,11 @@ Skip this scan when principle 3 says skip — i.e. **greenfield** work (a feat i
 Open `## Current state` and `## Files touched` side by side. For each row in `Files touched`:
 
 - **`new`** — no current-state coverage required (the file doesn't exist yet).
-- **`edit`** — the file must appear in either:
+- **`edit`** — the file must appear in one of:
   - the `Data / control flow` bullets (i.e., this file is in the flow we walked), OR
-  - the `Invariants` list (i.e., the edit preserves or breaks a named invariant on this file).
-  If the edit isn't in either, ask: do we actually understand what the current file does at the line we're editing? If yes, add the bullet/invariant. If no, walk it with LSP now — that's the gap this scan exists to catch.
+  - the `Invariants` list (i.e., the edit preserves or breaks a named invariant on this file), OR
+  - `## To explore at implement` — the edit there is **contained**: you mapped its blast radius but deliberately deferred its internals for the engineer to read at edit time (`references/current-state.md > Boundary-depth, not full-depth`). Valid **only** when no blast-radius invariant the change depends on lives in that file. If one does, deferring it is the gap this scan catches — move it into `Current state`, mapped and cited.
+  If the edit is in none of the three, ask: do we actually understand what the current file does at the line we're editing? If yes and it constrains the change, add the bullet/invariant; if yes and it's contained, defer it explicitly to `## To explore at implement`. If no, walk it with LSP now.
 - **`delete`** — must appear in the caller-walk (we know nothing else points at it) AND in the as-is flow (we know what it currently does at the call site).
 
 Then walk `## Current state` itself:
@@ -80,6 +81,7 @@ Then walk `## Current state` itself:
 - The caller walk gives a concrete number (0 / N / "many — listing non-obvious") for every symbol whose contract changes. "Some callers" is not a count.
 - For `refactor`: the Anti-goals list ties to the Approach's behaviour-equivalence statement — both name the same invariants from opposite sides.
 - For `fix`: the Bug path has a `← BUG` marker on the wrong-data step, not on the symptom step.
+- If the orchestrator provided **plan-prep findings**, Current state **synthesises** them — re-cited `path#anchor`, load-bearing claims spot-checked — and does **NOT** re-derive a point the prep already mapped. A from-scratch re-walk of a prep-covered point defeats the push-prep speed-up; cite the prep, don't redo it.
 
 If any check fails, the section is paraphrase rather than mapping — re-walk with LSP and cite.
 
