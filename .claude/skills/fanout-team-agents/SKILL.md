@@ -43,7 +43,7 @@ The workers in this repo are the `team-<role>` agents under `.claude/agents/` (m
 
 ## The third axis: surface (per-repo) fanout
 
-Every row above splits **one repo's** work. The *lens* axis (the 6 review workers, the security buckets) and the *category* axis (the test categories) both fan out **within a single `repo_root`**. A **control-plane run that spans multiple repos** adds an orthogonal **surface** axis: split the three read-and-judge phases — **review** (step 11), **security** (step 12), and **test** (step 13) — **per repo**, so N repos are read in parallel instead of one agent crawling them serially. The repos are the ideal fanout target — separate trees, separate diffs, separate test suites, zero shared state. (**Retro** (step 16) also reads across repos but is **multi-repo-aware single-pass, not surface-fanned**: it synthesises the already-unified per-repo artifact sections and holds no `Agent`.)
+Every row above splits **one repo's** work. The *lens* axis (the review workers — up to 6, **tiered by size**: core 3 at M, full 6 at L/high-stakes; plus the security buckets) and the *category* axis (the test categories) both fan out **within a single `repo_root`**. A **control-plane run that spans multiple repos** adds an orthogonal **surface** axis: split the three read-and-judge phases — **review** (step 11), **security** (step 12), and **test** (step 13) — **per repo**, so N repos are read in parallel instead of one agent crawling them serially. The repos are the ideal fanout target — separate trees, separate diffs, separate test suites, zero shared state. (**Retro** (step 16) also reads across repos but is **multi-repo-aware single-pass, not surface-fanned**: it synthesises the already-unified per-repo artifact sections and holds no `Agent`.)
 
 This axis is **orchestrator-owned and carries no `FANOUT_REQUESTED:` signal**: no sub-agent discovers it mid-work — the orchestrator already knows the repo list from `state.repos` at dispatch time, so it leads directly — one **Surface-coordinator** spawn that nests the per-repo helpers itself (below) — like plan-prep push. The full contract is `.claude/orchestrator.md > Fanout dispatch > Surface (per-repo) fanout`; the load-bearing rules:
 
@@ -76,7 +76,7 @@ FANOUT_REQUESTED: implement:<parallel-phase-list>
 FANOUT_REQUESTED: research:<question-list>
 ```
 
-- `review` — no payload; orchestrator dispatches the 6 review-focused `team-*` workers against the diff when review fanout is warranted.
+- `review` — no payload; orchestrator dispatches the **tiered** review-focused `team-*` workers against the diff when review fanout is warranted (core 3 lenses at M-tier/moderate, the full 6 only at L/high-stakes — the orchestrator picks the count from `state.json > size`).
 - `security:auth,crypto` — comma-separated bucket names from the security trigger list; orchestrator spawns one `team-code-reviewer` per bucket with a focused threat-model prompt scoped to that bucket's paths.
 - `plan:webhook-ingest,billing-api` — comma-separated integration-point names from `spec.md > Constraints > Integration points`; orchestrator spawns `team-codebase-explorer` and `team-best-practice-researcher` per point — but skips the `team-codebase-explorer` for any point the push-based plan-prep already mapped, re-dispatching only the residual `team-best-practice-researcher` (the dedup guard in `orchestrator.md` step 8, so push-then-pull never re-explores the same point).
 - `test:unit,integration` — comma-separated test categories; orchestrator spawns one `team-pr-test-analyzer` per category against the slice of the diff that category covers.
@@ -92,7 +92,7 @@ Two checks before fanning out:
 - **Disjoint scope** — do the workers touch overlapping files or symbols? If two workers would edit/analyse the same lines, dispatch sequentially or merge them into one worker.
 
 Examples:
-- *Review fanout* — when a diff is large, cross-module, critical, type/contract/test-sensitive, or uncertain, the 6 review-focused `team-*` agents look at the same diff from different lenses (review, simplification, comments, tests, silent failures, type design). The diff is shared, but each lens is independent — they don't need each other's outputs to proceed. Small/low-risk diffs stay single-pass.
+- *Review fanout* — when a diff is large, cross-module, critical, type/contract/test-sensitive, or uncertain, the review-focused `team-*` agents look at the same diff from different lenses (review, simplification, comments, tests, silent failures, type design) — **dispatched tiered by size: the core 3 (reviewer, test-analyzer, silent-failure) at M/moderate, the full 6 only at L/high-stakes**. The diff is shared, but each lens is independent — they don't need each other's outputs to proceed. Small/low-risk diffs stay single-pass.
 - *Security buckets* — `auth` and `crypto` buckets touch different files (or different sections of the same file). One worker per bucket with a bucket-scoped path filter.
 - *Spec prep* — one worker explores the existing checkout flow while another researches current payment-provider webhook verification rules. The outputs shape the interview questions and `spec.md > Discovery notes`.
 - *Plan integration points* — fan out when the points can be researched independently. For each point, pair a `team-codebase-explorer` current-state pass with a `team-best-practice-researcher` best-practice pass. If `webhook-ingest` and `billing-api` both hinge on the same `users/repo.ts` contract, merge their codebase exploration into one pass but keep external best-practice research separate if the sources differ.
@@ -108,7 +108,7 @@ Each worker prompt is **self-contained** — it inherits nothing from the callin
 - **Constraints** — what the worker must NOT do (touch files outside scope, refactor production code, exceed N findings).
 - **Output shape** — the exact section structure expected. For team-`<role>` workers, this is the agent file's documented output format (already in the YAML/body of `.claude/agents/team-*.md`).
 
-When 6-worker review fanout runs, the prompt to each `team-*` is essentially: "Review this diff: `<paste of git diff>`. Apply your responsibilities as documented in your agent file. Return your findings in the section shape your agent file specifies."
+When a review fanout runs (core 3 or the full 6, by tier), the prompt to each `team-*` is essentially: "Review this diff: `<paste of git diff>`. Apply your responsibilities as documented in your agent file. Return your findings in the section shape your agent file specifies."
 
 ### 3. Parallel dispatch (orchestrator-owned)
 

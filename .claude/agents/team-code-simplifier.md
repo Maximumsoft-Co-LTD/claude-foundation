@@ -2,7 +2,7 @@
 name: team-code-simplifier
 description: Use this agent when code has been written or modified and needs to be simplified for clarity, consistency, and maintainability while preserving all functionality. Trigger after completing a coding task or a logical chunk of code — a new feature, a bug fix that added conditionals, or a performance optimization that needs a clarity pass. Focuses only on recently modified code unless instructed otherwise. See "When to invoke" in the agent body for worked scenarios.
 tools: Read, Grep
-model: sonnet
+model: haiku
 color: orange
 ---
 

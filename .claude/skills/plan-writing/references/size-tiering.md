@@ -51,6 +51,57 @@ Orthogonal to size, every run is one of two **fields**, recorded in `state.json 
 
 When two answers feel equally true (e.g., "2 files but they're trivial" vs "1 file but the logic is hairy"), pick **the larger size**. The cost of an over-sized plan on small work is a few extra optional sections you skip; the cost of an under-sized plan on real work is missed scope caught at review (cycle burn). **Exception:** the self-contained greenfield S-cap below is a *defined* route, not a "torn" case — don't round a hermetic new module up to M just because it has several CRUD features.
 
+## Scorecard fallback — calibrate the picker
+
+Use this when the picker feels borderline, when the change spans unfamiliar operational concerns, or when stakeholders want a story-point-like explanation. The scorecard **calibrates** the tier; it does not replace the hard picker stops above. Score the deepest single surface, not the repo count.
+
+| Factor | 0 | 1 | 2 |
+|--------|---|---|---|
+| Layers touched | 1 layer | 2–3 layers | 4+ layers |
+| Data change | none | field / index / config data | migration / backfill / data rewrite |
+| Cache complexity | none | simple TTL / read-through | invalidation / fallback / race-prone cache |
+| Deployment risk | normal deploy | feature flag / config / rollout toggle | migration / rollback / restore plan |
+| Observability | existing coverage | one metric/log/trace | dashboard / alert / runbook / new SLO |
+| Security / compliance | no sensitive data | existing auth/privacy path | PII / secrets / signature / audit / auth boundary |
+| Test scope | unit or static check only | unit + integration | e2e / contract / performance / recovery |
+
+Map total score to machinery:
+
+| Score | Size |
+|-------|------|
+| 0–2 | XS / patch lane when the patch-lane rule also holds |
+| 3–5 | S |
+| 6–8 | M |
+| 9–11 | L |
+| 12+ | L plus consider epic/split only when the spec has independently shippable slices |
+
+Hard overrides still win:
+
+- Public API/event/schema migration/backfill → at least L, even if the arithmetic is lower.
+- Auth/session/crypto/secrets/PII or other real trust boundary → at least M; L when it also changes a public contract or compliance/audit surface.
+- Queue/broker/async worker delivery semantics → at least M, often L.
+- Self-contained greenfield module remains capped at S unless it adds a public contract, real schema, or existing-code integration.
+- Wide-but-shallow multi-repo sweep scores the **deepest single repo surface**. Do not add points for repo count when each repo repeats the same independent trivial edit and no shared contract changes.
+
+## Worked examples
+
+These are calibration examples, not new hard rules. Use them to explain the score and the `measurable done` line in `plan.md`; then still apply the hard overrides above.
+
+| Example task | Score | Size | Why | Measurable done |
+|--------------|-------|------|-----|-----------------|
+| Add unread-count badge in a Next.js inbox using an existing API | 2 | XS/S | UI component change, existing API, no new data contract. Patch lane only if it is display-only and one file; otherwise S because component logic changes user-visible behaviour. | Badge updates after a new message; unit test and component test pass. |
+| Add the same copy/config line to one file in each of several independent repos | 2 | XS | Wide-but-shallow multi-repo sweep: one trivial edit per repo, no shared contract, deepest repo surface is XS. Repo count drives parallel verify, not size. | Each touched repo has the same line changed; per-repo static check or targeted smoke check passes. |
+| Create one Go endpoint that lists `conversations` from MongoDB with pagination | 3 | S | Single service path, existing repository pattern, simple request/response behaviour, no public contract break. | p95 under 300ms on a 1,000-conversation test dataset; unit + handler/repository tests pass. |
+| Add a one-line guard for a known bug inside an existing function | 3 | S | Tiny code diff, but behaviour changes and fix type requires a regression test first. | Regression test fails on pre-fix code and passes on current code. |
+| Publish inbound messages through RabbitMQ and persist normalized messages in MongoDB | 5 | M | Queue + persistence + integration tests; delivery semantics and ack discipline need design even if code footprint is small. | Given an inbound payload, message is stored once and acked once; duplicate delivery is idempotent. |
+| Add Redis session cache for active chat assignment | 5 | M | Cache behaviour, expiry, fallback, and race conditions need design; one service but state consistency risk. | Assignment lookup p95 under 50ms; fallback to MongoDB verified; expiry/race tests pass. |
+| Add webhook signature verification to an existing inbound endpoint | 6 | M | Existing endpoint plus auth/security boundary; no schema change, but trust-boundary design and negative tests are required. | Invalid signature is rejected; valid signature proceeds; no secret/token logged; security review passes. |
+| Add ClickHouse analytics ingestion for message volume by channel | 8 | M | Analytics path, batching/idempotency, dashboard query risk, and observability. No user-facing flow by itself, but operational correctness matters. | Dashboard shows per-channel volume within 5 minutes of event time; duplicate events do not double-count. |
+| Add MongoDB migration/backfill for `conversation_id` index used by existing queries | 9 | L | Schema/index/backfill is a hard override: rollback, deploy sequencing, and query-plan verification matter more than line count. | Migration/backfill completes on staging data; query plan uses the index; rollback/restore path documented. |
+| Change a public API/event schema used by multiple services | 10 | L | Coupled multi-service contract; per-repo review alone cannot see version skew. | Producer and consumer contract tests pass; generated clients/events are consistent across repos. |
+| Build a self-contained greenfield todolist app with localStorage | 4 | S | Real UI/state logic but isolated: no existing callers, no published contract, first-party storage only. Greenfield cap keeps it S. | Add/edit/delete/filter/persist behaviours pass unit + integration tests; no browser e2e unless opted in. |
+| Deliver a consolidated chat inbox spanning Next.js, Go, RabbitMQ, Redis, MongoDB, and ClickHouse | 13 | L / split candidate | Multiple components and risks: UI, API/router, cache, queue, persistence, analytics, security, and E2E stories. | Split into independently shippable slices where possible: UI shell, API/router, cache, persistence, analytics, and E2E flows. |
+
 ## Signals that override file count
 
 File count is a *proxy*, not a rule. These signals push the size up regardless of file count:

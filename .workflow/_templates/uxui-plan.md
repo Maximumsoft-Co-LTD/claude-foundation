@@ -3,7 +3,7 @@
 **Spec**: [./spec.md](./spec.md) · **Plan**: [./plan.md](./plan.md)
 **Status**: draft | approved
 
-The UX **design**, written from the spec before (or alongside) the implementation plan and signed off at the gate: every screen/state the feature needs (Scenes), the user journeys that move across them (Scenarios), the visual + interaction direction, and the map proving each acceptance criterion has a scene/scenario that satisfies it. `frontend-design` builds the UI from this plan; `qa > Visual verification` checks the rendered result against it. **This file is the design, the rendered UI is the record.** Only UI-bearing runs get a UX plan — skip it for non-visual work (a pure API, a CLI, a backend refactor with no rendered surface).
+The UX **design**, written from the spec before (or alongside) the implementation plan and signed off at the gate: every screen/state the feature needs (Scenes), low-fidelity ASCII wireframes for the layout, the user journeys that move across them (Scenarios), the visual + interaction direction, and the map proving each acceptance criterion has a scene/scenario that satisfies it. `frontend-design` builds the UI from this plan; `qa > Visual verification` checks the rendered result against it. **This file is the design, the rendered UI is the record.** Only UI-bearing runs get a UX plan — skip it for non-visual work (a pure API, a CLI, a backend refactor with no rendered surface).
 
 ## Scenes
 Every screen / view / distinct UI state the feature needs — the inventory the implementer builds and the scenarios move across. One row per scene. A "scene" is a coherent UI surface (a page, a modal, a panel) at a given state; the same surface in a different state (loading vs error) is a *state* of one scene, not a new scene — capture those in the States column, not as new rows.
@@ -13,10 +13,44 @@ Every screen / view / distinct UI state the feature needs — the inventory the 
 | S1: <name> | <what the user does here, one line> | <the few elements that carry the purpose> | <which of the four states apply + what each shows; `none` if the scene is static> | <how the user arrives → where each action leads> |
 
 <!--
-Scenes, Scenarios, and AC ↔ scene mapping are the always-required sections. Add the rest only when this run needs them, then DELETE the ones it doesn't (no empty headers, no "N/A"). For unresolved bits, embed `[NEEDS CLARIFICATION: <who> — <what>]` inline at the spot it matters; Status can't reach `approved` while any marker remains.
+Scenes, ASCII wireframes, Scenarios, and AC ↔ scene mapping are the always-required sections. Add the rest only when this run needs them, then DELETE the ones it doesn't (no empty headers, no "N/A"). For unresolved bits, embed `[NEEDS CLARIFICATION: <who> — <what>]` inline at the spot it matters; Status can't reach `approved` while any marker remains.
 
 - States column: enumerate ONLY the states a scene can actually reach. A read-only static label has `none`; a list view that fetches has loading + empty + error + success. The empty and error states are the ones implementers silently skip — name them here so they're built, not discovered in QA.
 - A scene with no spec AC behind it is a scope-creep smell: either it serves an AC (map it below) or it belongs in `spec.md > Scope — Out`. Don't invent screens the requirements don't ask for.
+-->
+
+## ASCII wireframes
+Low-fidelity layout sketches for the scenes above. These are **structure only** — boxes, hierarchy, ordering, and responsive changes — not visual polish. They let `frontend-design` and the implementer see the intended layout before code, and they give `qa > Visual verification` concrete layout properties to inspect when e2e/visual is enabled.
+
+### S1: <name> — desktop
+```text
++--------------------------------------------------+
+| Header / nav                                     |
++----------------------+---------------------------+
+| Primary content      | Secondary panel / actions |
+|                      |                           |
++----------------------+---------------------------+
+| Footer / status / helper text                    |
++--------------------------------------------------+
+```
+
+### S1: <name> — mobile
+```text
++--------------------------+
+| Header                   |
++--------------------------+
+| Primary content          |
+|                          |
++--------------------------+
+| Actions / secondary info |
++--------------------------+
+```
+
+<!--
+- Add at least one wireframe per scene. Include both desktop and mobile when layout changes across breakpoints; a single shared wireframe is fine when the layout is identical.
+- Use ASCII only inside `text` fences. Keep labels short and tied to the Scene's Key elements. Do not use Mermaid here — this is a wireframe, not an architecture diagram.
+- Show loading / empty / error variants only when the state materially changes layout. Otherwise name the variant in a note under the scene's wireframe instead of duplicating the whole sketch.
+- The wireframe must not introduce a component or region that is absent from Scenes / AC mapping. If the sketch needs a new element, add it to the Scene row and map it to an AC or mark it as scope creep.
 -->
 
 ## Scenarios

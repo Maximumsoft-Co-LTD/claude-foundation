@@ -1,6 +1,6 @@
 ---
 name: qa-handoff-note
-description: Write a `qa-note.md` handoff that lets QA hand-test a change on a deployed environment (dev/staging) WITHOUT pulling the repo — distinct from `tests.md` (automated results). Use when handing implemented work off to a QA tester in a /dev run (after review/security, before the test phase), or when the user asks to "write a QA note", "qa handoff", "test notes for QA", "บันทึกส่งงานให้ QA", "qa test บน dev", "qa-note". Skip for chore/docs/spike (no QA pass) and throwaway scripts.
+description: Write a `qa-note.md` handoff that lets QA hand-test a change on a deployed environment (dev/staging) WITHOUT pulling the repo — distinct from `tests.md` (automated results). Use on explicit request when handing implemented work off to a QA tester, e.g. "write a QA note", "qa handoff", "test notes for QA", "บันทึกส่งงานให้ QA", "qa test บน dev", "qa-note". This skill is not an automatic `/dev` phase; invoke it manually after the change is deployed or when the user asks. Skip for chore/docs/spike (no QA pass) and throwaway scripts.
 ---
 
 # QA Handoff Note
@@ -20,8 +20,8 @@ The implementer's head holds all of that, and none of it survives the handoff on
 
 ## When to write it
 
-- **In a `/dev` run** — after Review and Security, **before** the Test phase, once the change is **deployed to the dev environment**. The note describes the *deployed* surface QA will actually touch. Write it to `.workflow/<id>/qa-note.md`.
-- **Manually** — any time you hand a deployed change to a separate tester.
+- **Manual `/dev` handoff** — after implementation and any required review/security checks, once the change is **deployed to the dev environment** and the user asks for a handoff note. The note describes the *deployed* surface QA will actually touch. Write it to `.workflow/<id>/qa-note.md`. The core `/dev` orchestrator does not run this automatically.
+- **Manually outside `/dev`** — any time you hand a deployed change to a separate tester.
 - **Skip** — `chore` / `docs` / `spike` runs (no QA pass), throwaway scripts, and changes with no user- or API-observable surface on the environment (a pure internal refactor with nothing for a black-box tester to see — that's `tests.md`'s job).
 
 ## Inputs — read before writing
@@ -163,7 +163,7 @@ This skill **composes**; it doesn't replace:
 - [[debug-fundamentals]] — for `fix` runs, the reproduction it produced is what Section 4 replays *on dev*.
 - [[refactoring-fundamentals]] — for `refactor` runs, the behaviour baseline is what QA confirms stayed identical on the environment.
 
-In a `/dev` run the orchestrator (main agent) is the *caller* — it invokes this skill at handoff. The skill writes the artifact; it does not spawn an agent or change the phase matrix.
+In a `/dev` run the orchestrator (main agent) is the *caller only when the user explicitly asks for the handoff note*. The skill writes the artifact; it does not spawn an agent or change the phase matrix.
 
 ## When to skip
 

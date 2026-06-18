@@ -147,13 +147,13 @@ Before writing any section of plan.md:
 - [ ] Read `spec.md` and its `Carried-over follow-ups`.
 - [ ] Confirm `Type` matches what the spec says.
 - [ ] Pick `Size` from the signal table above (or `references/size-tiering.md` for edge cases). Borderline → larger tier.
-- [ ] Load the relevant construction skill(s):
+- [ ] Name the construction skill that owns each decision; load at most one targeted `references/<file>` section only if the router summary does not settle the choice:
   - Any non-trivial code → [[programming-fundamentals]]
   - Schema / query / migration / index → [[database-fundamentals]]
   - Backend with real domain logic → [[hexagonal-backend]]
   - System-level / cross-service decisions → [[architecture-fundamentals]]
   - Queue / broker / async worker → [[queue-fundamentals]]
-  - A Step crossing a **trust boundary** — renders untrusted input into the DOM/HTML, builds a SQL/shell/HTML/template string, or handles auth/session/secrets → [[security-fundamentals]]. **Name the safe construction in the Step itself; never write a dangerous sink as shorthand** (render user text with `textContent`, not `innerHTML` — its `references/input-and-output.md` carries the two side by side). The always-on security rule fires at *code-write* time, so on the combined fast path (skill-loading deliberately light) the **planner** is the first place an injection gets designed out — not the last.
+  - A Step crossing a **trust boundary** — renders untrusted input into the DOM/HTML, builds a SQL/shell/HTML/template string, or handles auth/session/secrets → [[security-fundamentals]]. **Name the safe construction in the Step itself; never write a dangerous sink as shorthand** (render user text with `textContent`, not `innerHTML`; open `security-fundamentals/references/input-and-output.md` only when you need the side-by-side detail). The always-on security rule fires at *code-write* time, so on the combined fast path (skill-loading deliberately light) the **planner** is the first place an injection gets designed out — not the last.
   - Bug with unknown cause → [[debug-fundamentals]] *before* this skill
 - [ ] Pick diagram type from `Type` (table in principle 4). Even XS keeps the section — one line is fine.
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path#anchor` (symbol / snippet, not a bare line). Grep is the fallback.

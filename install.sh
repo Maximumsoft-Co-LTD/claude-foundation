@@ -30,9 +30,6 @@ ${SCRIPT_NAME} — install the /dev workflow into a project
 
 Usage:
   ${SCRIPT_NAME} [target-path] [options]
-  ${SCRIPT_NAME} dashboard-up --key <key>   Start team-presence client (background)
-  ${SCRIPT_NAME} dashboard-down             Stop the presence client
-  ${SCRIPT_NAME} dashboard-status           Is the presence client running?
 
 Arguments:
   target-path        Where to install (default: current directory)
@@ -58,9 +55,9 @@ What gets installed:
   .workflow/INDEX.md           — fresh registry (only if missing)
   .workflow/FOLLOWUPS.md       — follow-up registry (only if missing)
   WORKFLOW.md                  — full flow reference at repo root (always refreshed)
-  CLAUDE.md                    — full stub if missing; otherwise the always-on
-                                 rules-import fallback block is appended if absent
-                                 (idempotent, existing content preserved)
+  CLAUDE.md                    — full stub if missing; otherwise the managed
+                                 rules-import fallback block is appended or
+                                 re-synced in place (existing content preserved)
 
 Behavior:
   - Foundation-owned files (agents, orchestrator, commands, skills, rules,
@@ -69,8 +66,9 @@ Behavior:
       don't want it clobbered, move it out of these paths.
   - .workflow/INDEX.md & .workflow/FOLLOWUPS.md: never overwritten (user state)
   - CLAUDE.md: the full file is never overwritten; if it already exists we
-      append ONLY the always-on rules-import fallback block when it's missing
-      (idempotent — re-runs add nothing; existing content preserved)
+      append the managed rules-import fallback block when missing, or re-sync
+      that managed block in place when sentinel comments are present
+      (existing content outside the block is preserved)
   - .claude/settings.local.json is never touched (user-local config)
   - settings.json wiring: if the target already has .claude/settings.json
       and any hook declared in our source .claude/settings.json isn't wired
@@ -303,13 +301,10 @@ fi
 # the fresh stub and the append path. RULES_IMPORT_MARKER is the idempotency key
 # (the first import line); if it's already in CLAUDE.md the block is present.
 #
-# NOTE: the marker is a *first-write freeze*, not a sync. Once the block exists
-# in a target's CLAUDE.md we never touch it again — so if this foundation later
-# adds/renames/removes a rule, an existing block won't pick up the change. That
-# is acceptable because the block is only a fallback (recent Claude Code
-# auto-loads .claude/rules/) and the rule *files* themselves always refresh; the
-# stale-fallback window is (old Claude Code × rule-set change). If that ever
-# needs to re-sync, wrap the block in sentinel comments and replace between them.
+# Sentinel-managed blocks are re-synced in place. Older pre-sentinel blocks are
+# upgraded once, and files without any foundation block get the current managed
+# fallback appended. The rule files themselves always refresh; this fallback is
+# only for Claude Code versions that do not auto-load `.claude/rules/`.
 emit_rules_block() {
   cat <<'BLOCK'
 <!-- claude-foundation:rules-imports:start (managed block — re-synced by install.sh; edit rules in .claude/rules/, not here) -->
@@ -531,6 +526,11 @@ elif grep -qF "$SENTINEL_START" "$CLAUDE_DST" 2>/dev/null; then
     ' "$BLOCK_TMP" "$CLAUDE_DST" > "$CLAUDE_DST.tmp" && mv "$CLAUDE_DST.tmp" "$CLAUDE_DST"
     rm -f "$BLOCK_TMP"
     CLAUDE_ACTION="resynced"
+  else
+    # awk is POSIX-required and effectively always present, but if it is somehow
+    # missing we must not silently leave the stale block — the pre-scan above
+    # already announced a re-sync, so flag the no-op loudly instead.
+    CLAUDE_ACTION="resync-skipped"
   fi
 elif grep -qF "$RULES_IMPORT_MARKER" "$CLAUDE_DST" 2>/dev/null; then
   # Legacy pre-sentinel block (frozen before the rule set grew, so it is missing
@@ -546,6 +546,7 @@ fi
 case "$CLAUDE_ACTION" in
   created)  printf "  ${G}+${N} CLAUDE.md ${D}(stub + rules-import fallback)${N}\n" ;;
   resynced) printf "  ${G}~${N} CLAUDE.md ${D}(re-synced managed rules-import block)${N}\n" ;;
+  resync-skipped) printf "  ${Y}!${N} CLAUDE.md ${D}(managed block NOT re-synced — awk unavailable; re-run after installing awk, or update the block manually from .claude/rules/)${N}\n" ;;
   upgraded) printf "  ${G}~${N} CLAUDE.md ${D}(upgraded legacy rules-import block → managed)${N}\n" ;;
   appended) printf "  ${G}~${N} CLAUDE.md ${D}(appended always-on rules-import fallback)${N}\n" ;;
   kept)     printf "  ${D}=${N} CLAUDE.md ${D}(kept — rules-import already present)${N}\n" ;;
@@ -581,5 +582,15 @@ if [ "$SETTINGS_ACTION" = "write-snippet" ]; then
     3. Delete .claude/settings.foundation.json.
 
   If you don't want one of the hooks, just leave its entry out of the merge.
+EOF
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  cat <<EOF
+
+  ${Y}⚠ jq was not found on this machine.${N}
+  The installed hook scripts intentionally fail open without jq, so spawn
+  guarding, state freshness checks, and secret-read protection may be inactive
+  until jq is installed and .claude/settings.json is merged/wired.
 EOF
 fi

@@ -21,7 +21,7 @@ Key surface area:
 
 ## Working agreements (carried from user-level config)
 
-The fundamentals are applied via the always-on router `.claude/rules/fundamentals.md` (project skills don't auto-trigger). **The router maps every "by default" trigger to its skill and is the single source of truth for triggers and the cross-skill run order** — match a trigger, then load that one skill body at `.claude/skills/<skill-name>/SKILL.md` for the why/how, skip list, and worked examples, and invoke it *before* the first line of the work it governs.
+The fundamentals are applied via the always-on router `.claude/rules/fundamentals.md` (project skills don't auto-trigger). **The router maps every "by default" trigger to its skill and is the single source of truth for triggers and the cross-skill run order.** On the `/dev` plan / implement / review critical path, the always-on router + agent summaries are the default pre-flight: load no full skill body unless a specific friction requires it, and prefer at most one targeted `references/<file>` section. Off the critical path, or when a task explicitly asks for a skill's full procedure, load the relevant `SKILL.md`.
 
 - **LSP first** — when an LSP tool is available, use it for diagnostics, go-to-definition, and references before grep/read. (From `~/.claude/CLAUDE.md`.)
 - **`coding-discipline` wraps every code task** and runs first as the conduct check (assumptions stated → minimum non-speculative code → surgical diff → verifiable definition of done); it routes to the construction/debug/refactor skills per their rules and must not re-teach them.

@@ -1,6 +1,6 @@
 # Workflow Index
 
-Registry of every `/dev` run. `orchestrator` appends a row when Phase 1 starts; `retro` flips status to `done` at step 9.
+Registry of every `/dev` run. `orchestrator` appends a row when Phase 1 starts; `retro` flips status to `done` at Phase 2 step 10 (orchestrator step 16).
 
 **Status values**: `spec` → `planned` → `approved` → `building` → `review` → `testing` → `done` | `cancelled`
 
