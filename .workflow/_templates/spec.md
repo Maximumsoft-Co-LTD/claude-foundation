@@ -1,6 +1,9 @@
 # Spec: <title>
 
-**ID**: NNNN-type-slug · **Type**: feat | fix | refactor | chore | docs | spike · **Status**: draft | approved · **Ship as**: one-drop | staged · **Open PR on ship**: yes | no · **Parent**: none | <parent-id>
+**ID**: NNNN-type-slug · **Type**: feat | fix | refactor | chore | docs | spike · **Status**: draft | approved · **Ship as**: one-drop | staged · **Open PR on ship**: yes | no · **E2E + visual**: off | on · **Parent**: none | <parent-id>
+
+<!-- E2E + visual: browser-based e2e + the visual/a11y verification pass — OPT-IN, default `off`. Only meaningful for feat/fix with a UI surface; `on` makes the test phase add the e2e level + visual pass (browser install + slow journeys). Off by default because unit/integration over jsdom cover UI logic without a browser. Mirrors state.json > e2e_visual; flipped at the gate with `e2e on|off`. -->
+
 
 ## Outcome
 The 30-second read: what changes and why it's worth doing — plain language a stakeholder gets at a glance (no `path#anchor`, no internal jargon). Always rendered; on an XS chore/docs run, one short line per bullet is fine.

@@ -21,6 +21,7 @@
   "team_registry": null,
   "impl_phases_done": [],
   "open_pr_on_ship": null,
+  "e2e_visual": null,
   "security_triggered": null,
   "commit_sha": null,
   "pr_url": null,

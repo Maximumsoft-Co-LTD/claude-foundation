@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-06-18
+
+### Changed
+
+- **Browser-based e2e + the visual/a11y verification pass are now opt-in (`e2e_visual`, default `off`).** They used to fire automatically: a UI-touching diff always triggered the visual content-trigger, and a user-observable journey was mapped to the e2e level with a 50%-of-journeys coverage floor — so almost every UI `feat` paid the browser cost (installing the browser binary + slow journeys) on every run, the dominant cause of a long test phase. The test phase now defaults to **unit + integration only** (a journey maps to the integration level; UI *logic* is covered over jsdom/happy-dom without a browser), with **no e2e level, no Visual verification plan/pass, no e2e coverage floor, and no browser install**. The browser path is turned on per-run via a binary interview opt-in (asked only for feat/fix shipping a UI surface) and a new `e2e on|off` gate lever, recorded in `state.json > e2e_visual` and mirrored in `spec.md` frontmatter (`E2E + visual`); a still-unset flag resolves to `off` at approve. When `on`, the full browser path runs exactly as before (system `channel`, one reused session, the visual/a11y pass, the e2e floor). Canonical: `WORKFLOW.md > E2E + visual (opt-in)` and `qa.md > e2e_visual`. Files: `.claude/orchestrator.md`, `.claude/agents/{qa,lead}.md`, `.claude/commands/test-plan.md`, `WORKFLOW.md`, `README.md`, `.workflow/_templates/{state.json,spec.md,test-plan.md,tests.md}`.
+- **De-bloated the always-read `/dev` prompts further with no behaviour change** — continuing the v2.3.1/v2.4.0 minimalism passes on the hot-path files. Removed non-rule calibration asides (`(observed in the field)`, war-story examples, time-anecdotes) from `orchestrator.md`, consolidated the browser-install-cost rationale that `qa.md` stated three times into its one canonical Rule plus pointers, and collapsed the two duplicated spawn-guard blockquotes + verbatim call-shape code examples in `dev.md` into a single warning that points at `orchestrator.md > Rules`. Every rule, threshold, and state-transition is kept verbatim; dense procedure steps were left untouched by design. Files: `.claude/orchestrator.md`, `.claude/agents/qa.md`, `.claude/commands/dev.md`.
+
 ## [2.4.0] - 2026-06-18
 
 ### Changed
@@ -321,7 +328,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.2...v2.4.0
 [2.3.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.0...v2.3.1

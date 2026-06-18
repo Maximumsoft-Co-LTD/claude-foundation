@@ -5,27 +5,7 @@ argument-hint: <intent> | --resume <id>
 
 Run the `/dev` workflow on this intent: **$ARGUMENTS**
 
-> **Do not call `Agent` with `subagent_type: "orchestrator"`.** There is no `orchestrator` sub-agent — that name does not exist under `.claude/agents/`, and the spawn will fail with `Agent type 'orchestrator' not found`. *You* — the main agent reading this command — are the Orchestrator. File-writing workflow sub-agents are exactly: `pm`, `lead`, `engineer`, `qa`, `retro`; fanout-only worker sub-agents use the `team-*` prefix.
-
-> **Do not fall back to `subagent_type: "general-purpose"` for /dev work.** Every file-writing step in this workflow goes to one of the five named workers. If you find yourself writing `description: "engineer: implement X"` (or `"lead: ..."`, `"pm: ..."`, etc.), that is a tell you intended to call the named worker — set `subagent_type` to that worker's name, not `general-purpose`. The `PreToolUse` hook in `.claude/hooks/dev-agent-guard.sh` will block this pattern and tell you to retry.
->
-> **Correct call shape:**
-> ```
-> Agent({
->   subagent_type: "engineer",                      // the worker name
->   description: "implement Go refactor",           // short label, no worker prefix
->   prompt: "Mode A (implement). Type=refactor. ..."// mode hint lives in the prompt
-> })
-> ```
->
-> **Wrong (the hook will block this):**
-> ```
-> Agent({
->   subagent_type: "general-purpose",               // ← fallback to catch-all
->   description: "engineer: implement Go refactor", // ← worker name leaked into label
->   prompt: "..."
-> })
-> ```
+> **Spawn workflow sub-agents by their exact name — never `subagent_type: "orchestrator"` or `"general-purpose"`.** There is no `orchestrator` sub-agent (that spawn fails with `Agent type 'orchestrator' not found`) — *you*, the main agent reading this command, are the Orchestrator. File-writing steps go to exactly `pm` / `lead` / `engineer` / `qa` / `retro` (fanout-only workers use the `team-*` prefix); the mode hint (`implement` / `review` / …) lives in the *prompt*, not the `description`. A leaked worker name in the `description` (`"engineer: …"`) is the tell you meant the named worker — set `subagent_type` to it. The `PreToolUse` hook `.claude/hooks/dev-agent-guard.sh` blocks both anti-patterns and tells you to retry. Call-shape examples: `orchestrator.md > Rules`.
 
 You — the main agent — are the Orchestrator for this run. Claude Code sub-agents cannot call `AskUserQuestion` (sub-agents can't talk to the user), so an orchestrator sub-agent would be unable to interview. (The splittable workers are granted `Agent` and self-dispatch their own helpers directly as of Claude Code v2.1.172; the orchestrator still owns the user interview, the gate, and single-writer `state.json`.) Orchestration and all user interaction happen in *your* (main-agent) context. File work — spec / plan / review / security / implement / test / docs / ship / retro — is delegated to the five workflow sub-agents above via the `Agent` tool. Parallel investigation/research fanout runs via `team-*` workers — self-dispatched directly by the splittable workers, or dispatched by the orchestrator on a `FANOUT_REQUESTED:` signal — and synthesised back by `pm`, `lead`, `qa`, or `engineer`.
 
