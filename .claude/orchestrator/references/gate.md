@@ -1,6 +1,6 @@
 # Orchestrator reference — Gate (step 9)
 
-> Loaded on demand by the main agent (`.claude/orchestrator.md`). The gate's decision flow stays inline in step 9; this holds the verbose summary contents + the option-routing detail. Read it when you reach the gate or handle a gate option.
+> Loaded on demand by the main agent (`.claude/orchestrator.md`). The gate's decision flow stays inline in step 9; this holds the summary contents + option-routing detail. Read it at the gate or when handling a gate option.
 
 The gate is **non-negotiable** and never shrinks at any size. It is a **loop** until `approve`; free-form input = `revise` for **this** run (never a fresh Phase 1).
 
@@ -15,7 +15,7 @@ The gate is **non-negotiable** and never shrinks at any size. It is a **loop** u
 
 `approve` | `skip <n>` | `run <n>` | `fanout <phase> on|off` | `e2e on|off` | `revise <notes>` | (epic) `swap <n>`.
 
-- `revise` → **targeted incremental edit, never full regeneration.** Plan-only → `lead` plan-revise (`lead.md > Mode A — Revise variant`), edits only affected sections. Requirements → `pm` spec-patch mode (edit affected sections; re-interview only if a new slot opened), then `lead` plan-revise + (feat/fix/refactor) `qa` test-plan-revise if an AC moved or a gap resolved. Test-plan-only → `qa` test-plan-revise. Re-present only changed parts; loop until `approve`.
+- `revise` → **targeted incremental edit, never full regeneration.** Plan-only → `lead` plan-revise (`.claude/agents/references/lead.md > Revise variant`), edits only affected sections. Requirements → `pm` spec-patch mode (edit affected sections; re-interview only if a new slot opened), then `lead` plan-revise + (feat/fix/refactor) `qa` test-plan-revise if an AC moved or a gap resolved. Test-plan-only → `qa` test-plan-revise. Re-present only changed parts; loop until `approve`.
 - `skip <n>`/`run <n>` → discretionary only (5 Review / 7 Test / 7½ Improve / 8 Docs); refuse protected (1/2/3/6/10) or non-discretionary (4/9). Edit `plan.md` row + `state.json > phase_plan.<…>`. `skip 7` on feat/fix/refactor needs explicit waiver of the regression/baseline contract.
 - `fanout <phase> on|off` → flip `plan.md > Fanout plan` + `state.json > fanout_plan.<phase>`; can't defeat hard guardrails (non-independent work; size-tier — `fanout review on` on XS/S → `SIZE_UPGRADE` prompt). Log if blocked. `e2e on|off` → set `state.json > e2e_visual`. `swap` → `lead` opens the chosen slice.
 - `approve` → INDEX → `approved`. Record final `phase_plan`/`fanout_plan`/`e2e_visual` (resolve null `e2e_visual` → `off`). **Don't accept `approve` while a `(deviates)` row is unconfirmed.** State: `step=gate, next_step=implement`.

@@ -1,11 +1,11 @@
 # Orchestrator reference — Phase 2 guard mechanics
 
-> Loaded on demand by the main agent (`.claude/orchestrator.md`). The Phase-2 step *decisions* stay inline (steps 10–16); this holds the deep scan/guard mechanics. Read it at the step it names.
+> Loaded on demand by the main agent (`.claude/orchestrator.md`). The Phase-2 step *decisions* stay inline (steps 10–16); this holds the scan/guard mechanics. Read it at the step it names.
 
 ### Step 10 — Implement (details)
 
 - **Resume guard:** `--resume` into `step=implement` with `impl_phases_done` a non-empty subset → spawn the **Integration variant directly** (skip the write-intersection check); else normal. Prompt hints: references present → "open every reference first"; feat/fix/refactor → "read `test-plan.md` first, build its edge cases as you implement"; `fix` → "step 1 is the failing regression test, committed before any production fix."
-- Confirm AC progression; unticked without a blocker → re-spawn with one correction. **Diff check** (skip if `repo_root` null): `git -C <repo_root> status --porcelain` empty → re-spawn (`spike`→confirm `recommendations.md`; `fix`→confirm HEAD advanced). `FANOUT_REQUESTED: implement:<phases>` → run the 5-step consumer contract (`references/fanout.md > Implement-fanout`). "needs user input" → `AskUserQuestion`, re-spawn.
+- Confirm AC progression; unticked without a blocker → re-spawn with one correction. **Diff check** (skip if `repo_root` null): `git -C <repo_root> status --porcelain` empty → re-spawn (`spike`→confirm `recommendations.md`; `fix`→confirm HEAD advanced). `FANOUT_REQUESTED: implement:<phases>` → run the 5-step consumer contract (`references/fanout.md > Implement-fanout — orchestrator consumer contract`). "needs user input" → `AskUserQuestion`, re-spawn.
 
 ### Step 11 — Review (details)
 

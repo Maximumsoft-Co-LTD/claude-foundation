@@ -10,7 +10,7 @@ You are Engineer for `/dev`. The orchestrator names the mode and passes the run'
 
 ## Goal
 
-The plan, built. Mode A: every plan step done, every `spec.md` acceptance criterion ticked with one-line evidence (or left unticked + `BLOCKER:`), the suite green for the level the plan/test-plan demands. The other modes finish the job: B keeps docs/comments true, C commits (and optionally PRs) cleanly, D leaves touched code simpler with the suite still green.
+The plan, built. Mode A: every plan step done, every `spec.md` acceptance criterion ticked with one-line evidence (or left unticked + `BLOCKER:`), the suite green for the level the plan/test-plan demands. Other modes: B keeps docs/comments true, C commits (and optionally PRs) cleanly, D leaves touched code simpler with the suite still green.
 
 ## Inputs
 

@@ -1,10 +1,10 @@
 # Agent index
 
-Quick reference for which model each agent in `.claude/agents/` runs on and what it does. Models are pulled from each file's frontmatter `model:` field. For the narrative on how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — it is the prose companion to this table, not an agent itself.
+Which model each agent in `.claude/agents/` runs on and what it does (model from each file's frontmatter `model:`). For how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — the prose companion to this table, not an agent itself.
 
 ## `/dev` workers
 
-The five sub-agents the orchestrator (main agent) spawns to do the `/dev` file work. The orchestrator is **not** listed here — there is no `orchestrator` sub-agent; the main agent plays that role (see [`../orchestrator.md`](../orchestrator.md)).
+The five sub-agents the orchestrator (main agent) spawns for the `/dev` file work. The orchestrator is **not** listed — there is no `orchestrator` sub-agent; the main agent plays that role (see [`../orchestrator.md`](../orchestrator.md)).
 
 | Agent | Model | One-line role |
 |-------|-------|---------------|
@@ -16,7 +16,7 @@ The five sub-agents the orchestrator (main agent) spawns to do the `/dev` file w
 
 ## Team-mode command workers
 
-Workers a **team-mode slash command** spawns to drive one slice on its own, outside the full `/dev` run. The command's main agent plays the orchestrator (setup + interview + gate); the workers do the file work. The `/dev` workers above are reused — `pm` (via `/spec`), `lead` (via `/dev-plan`), `qa` (via `/test-plan`), and `engineer` + `lead` + `qa` + `retro` (via `/implement`, which runs the whole autonomous Phase 2). `uxui` is exclusive to team mode (`/uxui-plan`).
+Workers a **team-mode slash command** spawns to drive one slice outside the full `/dev` run. The command's main agent plays the orchestrator (setup + interview + gate); the workers do the file work. The `/dev` workers above are reused — `pm` (via `/spec`), `lead` (via `/dev-plan`), `qa` (via `/test-plan`), and `engineer` + `lead` + `qa` + `retro` (via `/implement`, which runs the whole autonomous Phase 2). `uxui` is exclusive to team mode (`/uxui-plan`).
 
 | Agent | Model | Command | One-line role |
 |-------|-------|---------|---------------|
@@ -24,7 +24,7 @@ Workers a **team-mode slash command** spawns to drive one slice on its own, outs
 
 ## `team-*` fanout workers
 
-Focused workers the orchestrator dispatches in parallel during fanout phases (spec/plan research, review, security, test). They return findings for a `/dev` sub-agent to synthesise — they never write run artifacts directly.
+Focused workers the orchestrator dispatches in parallel during fanout phases (spec/plan research, review, security, test). They return findings for a `/dev` sub-agent to synthesise — never writing run artifacts directly.
 
 | Agent | Model | One-line role |
 |-------|-------|---------------|

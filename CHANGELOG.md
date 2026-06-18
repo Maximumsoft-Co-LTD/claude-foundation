@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-06-18
+
+### Changed
+
+- **Word-minimization pass across the `/dev` prompt surface — no behaviour change.** Continues the v2.4.0 / v2.5.0 / v2.5.1 minimalism work, now at the word level: trims filler, hedge words, and rationale that merely restates the adjacent rule from the always-read playbook (`orchestrator.md`), the worker agents (`pm` / `lead` / `engineer` / `qa` / `retro` / `uxui`, the `team-*` fanout workers, and `INDEX.md` / `TEAM.md`), the on-demand reference modules (`.claude/orchestrator/references/**`, `.claude/agents/references/**`), and `WORKFLOW.md` — ~180 net lines, with the largest cuts on the forked `team-*` review agents (upstream flattery preambles / padded process prose) and only modest cuts on the dense one-rule-per-line playbook and reference files (six of which were already at irreducible density and left untouched). Two structural touch-ups ride along: orchestrator-reference cross-references to the agent references now use the full `.claude/agents/references/<agent>.md` path (a bare `references/<agent>.md` was unresolvable from the orchestrator-references directory), and `surface-fanout.md`'s four non-primary-repo notes fold from their own `##` headings into bold paragraphs under their parent step (no pointer targets them). Every rule, threshold, trigger, type-matrix entry, gate, state transition, `FANOUT_REQUESTED:` shape, and `file > Section` pointer is preserved verbatim and verified to resolve; the `/dev` flow, phases, artifacts, and commands are identical. Files: `.claude/orchestrator.md`, `.claude/orchestrator/references/**`, `.claude/agents/**`, `.workflow/_templates/tests.md`, `WORKFLOW.md`.
+
 ## [2.5.1] - 2026-06-18
 
 ### Changed

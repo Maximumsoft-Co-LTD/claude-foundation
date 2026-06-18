@@ -36,7 +36,7 @@ Design how the change will be proven before the engineer writes a line. No diff 
 
 ## Mode: Execute (Phase 2 step 7)
 
-The engineer has implemented. Run the tests `test-plan.md` designed against the diff, record in `tests.md` — the plan already chose levels + edge cases; execute it, don't re-derive. Read `test-plan.md` + `plan.md` + `spec.md` + the diff (`git -C <repo_root> diff` when `repo_root` is set — use `git -C <repo_root>` for every commit/branch command below).
+Run the tests `test-plan.md` designed against the diff, record in `tests.md` — the plan already chose levels + edge cases; execute it, don't re-derive. Read `test-plan.md` + `plan.md` + `spec.md` + the diff (`git -C <repo_root> diff` when `repo_root` is set — use `git -C <repo_root>` for every commit/branch command below).
 
 **Mode pick** (tick in `tests.md > Type-aware mode`): **Full** (feat/refactor) — all steps; **Fix** (fix) — all steps + regression verification; **Skipped** (chore/docs) — fill `Skipped` with reason + risk accepted, write no tests, return. (`spike` never reaches qa — if somehow spawned, return a one-line note.)
 

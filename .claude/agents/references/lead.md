@@ -1,6 +1,6 @@
 # lead — extended rules
 
-Load a section when its trigger (named in `agents/lead.md`) fires. Single-repo single-pass runs — the common case — never need most of this.
+Load a section when its trigger (in `agents/lead.md`) fires. Single-repo single-pass runs — the common case — never need most of this.
 
 ## Skill routing (all modes)
 
@@ -17,7 +17,7 @@ Construction skills — **summary, not body** (same budget). At most ONE constru
 - Frontend/UI (screens, components, client state, navigation) → `ui-ux-pro-max` for the UX/IA/accessibility decisions shaping `UI component & state plan` (`frontend-design`/`tailwind-design-system` are build-layer — name them in the design-direction line, don't load here).
 - Bug with unknown cause → `debug-fundamentals` first.
 
-When in doubt, draft from the summary and ship — Mode B catches a missed fundamental cheaper than loading a 100 KB body on every plan's critical path. (One `SKILL.md`-body exception: `plan-writing > ## Parallelizable phases`, for a parallel-phase feat plan.)
+When in doubt, draft from the summary and ship — Mode B catches a missed fundamental cheaper than loading a 100 KB body. (One `SKILL.md`-body exception: `plan-writing > ## Parallelizable phases`, for a parallel-phase feat plan.)
 
 **Model note:** sonnet by default (plan/review are `plan-writing`-guided, sonnet ≈ opus at ~½ wall-clock); opus only for high-stakes (L-tier, cross-subsystem, schema migration, public API/event contract, breaking change, large/cross-module critical-path review, public-contract/type-shape change). Mode C always opus.
 
@@ -38,7 +38,7 @@ For L + structural refactor, draw an "as-is" mermaid alongside the to-be diagram
 ## Type rules (Mode A step 4) — full detail
 
 - **`feat`** — standard plan. **Brownfield baseline:** when the feat edits existing untested behaviour (`field` = brownfield), step 1 MUST be "capture characterization baseline for <touched behaviour> at `path#anchor`" before the feature steps (`test-plan.md` records it under `Baseline`); greenfield skips it.
-  - **Parallel-phase option (L-tier only — implement-fanout producer):** when the feat is L-tier (>12 steps) AND decomposes into ≥ 2 **additive, independently-completable sub-features touching disjoint files** (new adapters/modules wired at the end — NOT a field threaded through shared existing code), mark those phases `**Parallelizable:** yes` with their own `**Files touched (exclusive):**` set + `**Depends on:** none`, and add a final sequential `### Phase <last>: integration` (`**Parallelizable:** no`) owning ALL shared glue (barrel/router/DI/lockfile/generated output) + dependency installs + every `verify:` + AC reconciliation. Without these markers the run falls back to single-pass. Full rationale (pairwise-disjoint + no-shared-symbol rules the orchestrator re-verifies): `plan-writing > ## Parallelizable phases`.
+  - **Parallel-phase option (L-tier only — implement-fanout producer):** when the feat is L-tier (>12 steps) AND decomposes into ≥ 2 **additive, independently-completable sub-features touching disjoint files** (new adapters/modules wired at the end — NOT a field threaded through shared existing code), mark those phases `**Parallelizable:** yes` with their own `**Files touched (exclusive):**` set + `**Depends on:** none`, and add a final sequential `### Phase <last>: integration` (`**Parallelizable:** no`) owning ALL shared glue (barrel/router/DI/lockfile/generated output) + dependency installs + every `verify:` + AC reconciliation. Without these markers the run falls back to single-pass. Full rationale: `plan-writing > ## Parallelizable phases`.
 - **`fix`** — step 1 MUST be "write failing regression test for <bug> at `path#anchor`", encoded against `spec.md > Reproduction`. The fix is step 2+.
 - **`refactor`** — one-line *behavior-equivalence statement* in `Approach`. Lean on the existing suite where it covers the touched behaviour; where coverage is thin, **step 1 MUST be "capture characterization baseline for <behaviour> at `path#anchor`"** (golden-master/snapshot) — without it the equivalence claim can't be verified.
 - **`chore`** — minimal plan. `Files touched` may be one row. Skip `Risks` for XS.
@@ -96,7 +96,7 @@ You hold `Agent` — when scope is too big for one serial pass, **spawn helpers 
 
 - **Plan mode** — ≥ 2 integration points **in disjoint surfaces** → **one `team-codebase-explorer` per point**; ≥ 1 unfamiliar framework/API/security choice → add a `team-best-practice-researcher`. **Dedup:** if the prompt already has plan-prep explorer findings, recruit ONLY for uncovered points + residual best-practice research.
 - **Review mode** — follow the Review-fanout tiering below.
-- **Security mode** — ≥ 2 threat buckets → one `team-code-reviewer` per bucket, threat-model prompt scoped to that bucket's paths.
+- **Security mode** — follow the Security-fanout rule below.
 
 **How** — split into non-overlapping sub-scopes; one helper per sub-scope **in one message** (parallel), **cap 6**; self-contained prompt (scope + what to return + what NOT to touch). **Integrate + verify** each return; re-drive a strayed result.
 
@@ -106,7 +106,7 @@ You hold `Agent` — when scope is too big for one serial pass, **spawn helpers 
 
 **Single-pass-first** (`orchestrator.md > Single-pass-first`) — the most expensive fanout; default to one direct pass. **Tier by size + risk:**
 - XS/S → always direct (or `SIZE_UPGRADE` if the diff proves larger).
-- M → defaults direct; may recruit only the **core 3 lenses** (`team-code-reviewer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`) for a genuinely cross-module/test-/fallback-sensitive diff.
+- M → defaults direct; may recruit only the **core 3 lenses** (`team-code-reviewer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`) for a cross-module/test-/fallback-sensitive diff.
 - L-tier / public-contract / type-shape / high-stakes → may use the **full 6** (+ `team-code-simplifier`, `team-comment-analyzer`, `team-type-design-analyzer`) when six passes repay their cost.
 
 A comment-sparse diff skips `team-comment-analyzer`; no new types skips `team-type-design-analyzer`; an already-simple diff skips `team-code-simplifier`. Fanout per-agent sections go in `review.md > Per-agent findings`; Plan-adherence + Acceptance-criteria rows are still walked one-by-one (`WORKFLOW.md > Anti-bias rule`).

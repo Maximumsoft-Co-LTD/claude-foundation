@@ -8,7 +8,7 @@ Load a section only when its trigger fires; the core `pm.md` carries everything 
 
 - **Edit only the affected sections** with `Edit`. Don't rewrite the spec, don't re-render unaffected sections, don't re-run/re-request research — the spec stands except where the notes change it. Keep the rest byte-stable so the orchestrator can re-present only the changed parts.
 - Apply the same hard rules to the edited region (NFR → AC, consequential AC carry `e.g.`/`on error`, no invented values, resolve or add markers inline).
-- A note that opens a genuinely new unfillable slot → embed `[NEEDS CLARIFICATION]` rather than guessing; the orchestrator decides whether to ask one narrow question.
+- A note that opens a new unfillable slot → embed `[NEEDS CLARIFICATION]` rather than guessing; the orchestrator decides whether to ask one narrow question.
 - **Return:** the spec path, a 1–2 line summary of **only what changed** (which sections/AC), and any remaining markers.
 
 ## Recruit help (direct nesting)

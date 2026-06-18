@@ -30,8 +30,7 @@ On disk:
 ## Drive the design from the UX skills
 
 - **`ui-ux-pro-max`** = the *UX direction* (style, palette, font pairing, per-domain rules — accessibility, touch, layout, responsive, forms, navigation). Use the bounded lookup scripts first (`.claude/skills/ui-ux-pro-max/scripts/search.py --design-system …`), paste only the small result set; at most one targeted reference/SKILL section when scripts are insufficient. **Never read the CSV `data/` files directly** during a run.
-- **`frontend-design`** = visual composition / avoiding generic AI aesthetics — for polish, not the IA decisions `ui-ux-pro-max` owns.
-- Both are design knowledge, not code generators — you produce a *plan*.
+- **`frontend-design`** = visual composition / avoiding generic AI aesthetics — for polish, not the IA decisions `ui-ux-pro-max` owns. Both are design knowledge, not code generators — you produce a *plan*.
 
 ## What goes in each section — minimum floor + triggered
 

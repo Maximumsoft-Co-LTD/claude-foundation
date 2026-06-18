@@ -1,6 +1,6 @@
 # Team agents — manifest
 
-Local fanout workers embedded under `.claude/agents/` for use by the `/dev` fanout pattern (see `.claude/skills/fanout-team-agents/SKILL.md`). Some are foundation-native spec/plan workers; the review workers are local forks of upstream review agents. This file is the audit trail: source path per agent, fork date when applicable, version inferred at fork-time, and the drift-awareness rule.
+Local fanout workers under `.claude/agents/` for the `/dev` fanout pattern (see `.claude/skills/fanout-team-agents/SKILL.md`). Some are foundation-native spec/plan workers; the review workers are local forks of upstream review agents. This file is the audit trail: source path per agent, fork date when applicable, fork-time version, and the drift-awareness rule.
 
 ## Naming convention
 
@@ -45,7 +45,7 @@ Fork date: 2026-05-21
 
 ## Drift awareness
 
-Upstream parity is **not** enforced for forked agents. Drift is expected — the local forks are owned by this repo and will pick up local conventions (e.g., references to this repo's `CLAUDE.md` rules, this repo's logging functions, this repo's test framework). Foundation-native workers (`team-codebase-explorer`, `team-best-practice-researcher`) do not have upstream parity obligations. The rules:
+Upstream parity is **not** enforced for forked agents. Drift is expected — the local forks are owned by this repo and pick up local conventions (this repo's `CLAUDE.md` rules, logging functions, test framework). Foundation-native workers (`team-codebase-explorer`, `team-best-practice-researcher`) have no upstream-parity obligation. The rules:
 
 - Any change to a `team-*` agent file must update the corresponding `Fork source:` block (top of the file, under the YAML) — at minimum, set a new `forked:` date or add a `local-edit:` line citing what changed.
 - An audit pass against upstream is a follow-up, not a recurring obligation. The audit diffs each local file against the source path above and decides per-finding whether to keep the local divergence or pull upstream.

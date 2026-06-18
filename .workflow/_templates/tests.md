@@ -17,5 +17,5 @@ Acceptance-criteria coverage · Regression test (fix) · Baseline (refactor / br
 Results · Coverage (diff vs floor) · Failing · Commands · Visual verification (e2e_visual=on) ·
 Per-repo results (surface fanout) · Skipped.
 When each applies + how to fill: see  qa.md > Mode: Execute
-  (Per-repo results / surface-coordinator: orchestrator/references/surface-fanout.md > QA — Execute).
+  (Per-repo results / surface-coordinator: orchestrator/references/surface-fanout.md > QA — Execute (Test)).
 -->
