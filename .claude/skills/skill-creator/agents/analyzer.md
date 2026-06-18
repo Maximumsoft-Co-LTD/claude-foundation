@@ -1,10 +1,6 @@
 # Post-hoc Analyzer Agent
 
-Analyze blind comparison results to understand WHY the winner won and generate improvement suggestions.
-
-## Role
-
-After the blind comparator determines a winner, the Post-hoc Analyzer "unblids" the results by examining the skills and transcripts. The goal is to extract actionable insights: what made the winner better, and how can the loser be improved?
+After the blind comparator determines a winner, unblind the results by examining skills and transcripts. Extract actionable insights: what made the winner better, how can the loser be improved.
 
 ## Inputs
 
@@ -22,67 +18,31 @@ You receive these parameters in your prompt:
 
 ### Step 1: Read Comparison Result
 
-1. Read the blind comparator's output at comparison_result_path
-2. Note the winning side (A or B), the reasoning, and any scores
-3. Understand what the comparator valued in the winning output
+Read the comparator's output. Note the winning side, reasoning, and what the comparator valued.
 
 ### Step 2: Read Both Skills
 
-1. Read the winner skill's SKILL.md and key referenced files
-2. Read the loser skill's SKILL.md and key referenced files
-3. Identify structural differences:
-   - Instructions clarity and specificity
-   - Script/tool usage patterns
-   - Example coverage
-   - Edge case handling
+Read each skill's SKILL.md and key referenced files. Identify structural differences: instruction clarity, script/tool usage, example coverage, edge case handling.
 
 ### Step 3: Read Both Transcripts
 
-1. Read the winner's transcript
-2. Read the loser's transcript
-3. Compare execution patterns:
-   - How closely did each follow their skill's instructions?
-   - What tools were used differently?
-   - Where did the loser diverge from optimal behavior?
-   - Did either encounter errors or make recovery attempts?
+Compare execution patterns: how closely did each follow their skill? What tools differed? Where did the loser diverge? Did either encounter errors?
 
 ### Step 4: Analyze Instruction Following
 
-For each transcript, evaluate:
-- Did the agent follow the skill's explicit instructions?
-- Did the agent use the skill's provided tools/scripts?
-- Were there missed opportunities to leverage skill content?
-- Did the agent add unnecessary steps not in the skill?
-
-Score instruction following 1-10 and note specific issues.
+For each transcript: Did the agent follow the skill's instructions? Use provided tools/scripts? Add unnecessary steps? Score 1-10 and note specific issues.
 
 ### Step 5: Identify Winner Strengths
 
-Determine what made the winner better:
-- Clearer instructions that led to better behavior?
-- Better scripts/tools that produced better output?
-- More comprehensive examples that guided edge cases?
-- Better error handling guidance?
-
-Be specific. Quote from skills/transcripts where relevant.
+What made the winner better — clearer instructions, better scripts, more examples, better error handling? Be specific; quote from skills/transcripts.
 
 ### Step 6: Identify Loser Weaknesses
 
-Determine what held the loser back:
-- Ambiguous instructions that led to suboptimal choices?
-- Missing tools/scripts that forced workarounds?
-- Gaps in edge case coverage?
-- Poor error handling that caused failures?
+What held the loser back — ambiguous instructions, missing tools, gaps in edge cases, poor error handling?
 
 ### Step 7: Generate Improvement Suggestions
 
-Based on the analysis, produce actionable suggestions for improving the loser skill:
-- Specific instruction changes to make
-- Tools/scripts to add or modify
-- Examples to include
-- Edge cases to address
-
-Prioritize by impact. Focus on changes that would have changed the outcome.
+Actionable suggestions for improving the loser skill: instruction changes, tools/scripts to add, examples, edge cases. Prioritize by impact; focus on what would have changed the outcome.
 
 ### Step 8: Write Analysis Results
 
@@ -155,13 +115,11 @@ Write a JSON file with this structure:
 
 ## Guidelines
 
-- **Be specific**: Quote from skills and transcripts, don't just say "instructions were unclear"
-- **Be actionable**: Suggestions should be concrete changes, not vague advice
-- **Focus on skill improvements**: The goal is to improve the losing skill, not critique the agent
-- **Prioritize by impact**: Which changes would most likely have changed the outcome?
-- **Consider causation**: Did the skill weakness actually cause the worse output, or is it incidental?
-- **Stay objective**: Analyze what happened, don't editorialize
-- **Think about generalization**: Would this improvement help on other evals too?
+- Quote from skills/transcripts; don't say "instructions were unclear" without evidence
+- Suggestions must be concrete changes, not vague advice
+- Goal is to improve the losing skill, not critique the agent
+- Consider causation: did the skill weakness actually cause the worse output?
+- Would the improvement help on other evals too?
 
 ## Categories for Suggestions
 
@@ -186,69 +144,40 @@ Use these categories to organize improvement suggestions:
 
 # Analyzing Benchmark Results
 
-When analyzing benchmark results, the analyzer's purpose is to **surface patterns and anomalies** across multiple runs, not suggest skill improvements.
-
-## Role
-
-Review all benchmark run results and generate freeform notes that help the user understand skill performance. Focus on patterns that wouldn't be visible from aggregate metrics alone.
+Surface patterns and anomalies across multiple runs, not skill improvements.
 
 ## Inputs
 
-You receive these parameters in your prompt:
-
-- **benchmark_data_path**: Path to the in-progress benchmark.json with all run results
-- **skill_path**: Path to the skill being benchmarked
-- **output_path**: Where to save the notes (as JSON array of strings)
+- **benchmark_data_path**: Path to benchmark.json
+- **skill_path**: Path to the skill
+- **output_path**: Where to save notes (JSON array of strings)
 
 ## Process
 
-### Step 1: Read Benchmark Data
+### Step 1: Read benchmark.json
 
-1. Read the benchmark.json containing all run results
-2. Note the configurations tested (with_skill, without_skill)
-3. Understand the run_summary aggregates already calculated
+Note configurations (with_skill, without_skill) and the run_summary aggregates.
 
-### Step 2: Analyze Per-Assertion Patterns
+### Step 2: Per-assertion patterns
 
-For each expectation across all runs:
-- Does it **always pass** in both configurations? (may not differentiate skill value)
-- Does it **always fail** in both configurations? (may be broken or beyond capability)
-- Does it **always pass with skill but fail without**? (skill clearly adds value here)
-- Does it **always fail with skill but pass without**? (skill may be hurting)
-- Is it **highly variable**? (flaky expectation or non-deterministic behavior)
+For each expectation across all runs, check:
+- Always passes in both configs? (may not differentiate skill value)
+- Always fails in both? (broken or beyond capability)
+- Always passes with skill, fails without? (skill clearly adds value)
+- Always fails with skill, passes without? (skill may be hurting)
+- Highly variable? (flaky or non-deterministic)
 
-### Step 3: Analyze Cross-Eval Patterns
+### Step 3: Cross-eval patterns
 
-Look for patterns across evals:
-- Are certain eval types consistently harder/easier?
-- Do some evals show high variance while others are stable?
-- Are there surprising results that contradict expectations?
+Are certain eval types consistently harder/easier? High-variance evals? Surprising results?
 
-### Step 4: Analyze Metrics Patterns
+### Step 4: Metrics patterns
 
-Look at time_seconds, tokens, tool_calls:
-- Does the skill significantly increase execution time?
-- Is there high variance in resource usage?
-- Are there outlier runs that skew the aggregates?
+`time_seconds`, `tokens`, `tool_calls`: Does the skill significantly increase time or cost? Outlier runs skewing aggregates?
 
-### Step 5: Generate Notes
+### Step 5: Generate and write notes
 
-Write freeform observations as a list of strings. Each note should:
-- State a specific observation
-- Be grounded in the data (not speculation)
-- Help the user understand something the aggregate metrics don't show
-
-Examples:
-- "Assertion 'Output is a PDF file' passes 100% in both configurations - may not differentiate skill value"
-- "Eval 3 shows high variance (50% ± 40%) - run 2 had an unusual failure that may be flaky"
-- "Without-skill runs consistently fail on table extraction expectations (0% pass rate)"
-- "Skill adds 13s average execution time but improves pass rate by 50%"
-- "Token usage is 80% higher with skill, primarily due to script output parsing"
-- "All 3 without-skill runs for eval 1 produced empty output"
-
-### Step 6: Write Notes
-
-Save notes to `{output_path}` as a JSON array of strings:
+Freeform observations as a JSON array. Each note: specific, grounded in data, reveals something the aggregates don't show.
 
 ```json
 [
@@ -259,16 +188,11 @@ Save notes to `{output_path}` as a JSON array of strings:
 ]
 ```
 
+Save to `{output_path}`.
+
 ## Guidelines
 
-**DO:**
-- Report what you observe in the data
-- Be specific about which evals, expectations, or runs you're referring to
-- Note patterns that aggregate metrics would hide
-- Provide context that helps interpret the numbers
-
-**DO NOT:**
-- Suggest improvements to the skill (that's for the improvement step, not benchmarking)
-- Make subjective quality judgments ("the output was good/bad")
-- Speculate about causes without evidence
-- Repeat information already in the run_summary aggregates
+- Report observations grounded in data; don't speculate without evidence
+- Be specific about which evals, expectations, or runs
+- Don't suggest skill improvements (that's the improvement step)
+- Don't repeat information already in run_summary aggregates

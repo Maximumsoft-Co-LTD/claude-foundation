@@ -1,20 +1,14 @@
 # Distributed-system debugging
 
-Single-process bugs are about *what* went wrong. Distributed bugs are about *when*, *where*, and *in what order*. The hardest production bugs almost all live here, and they share a small set of recurring shapes. Recognizing the shape early shortcuts the investigation by hours.
+Single-process bugs are about *what* went wrong. Distributed bugs are about *when*, *where*, and *in what order*. The hardest production bugs live here and share a small set of recurring shapes. Recognizing the shape early shortcuts the investigation by hours.
 
 ## The first move: correlate
 
-Before anything else, get a **correlation id** through the system. A request id, a trace id, a job id — anything that lets you say "show me everything that touched this one request, across all services."
+Before anything else, get a **correlation id** through the system — a request id, trace id, or job id that lets you say "show me everything that touched this one request, across all services."
 
-If the system already has one (X-Request-Id, OpenTelemetry traceparent, etc.), use it. If it doesn't, add one. Cross-service debugging without correlation is reading nine random log streams in parallel and squinting; correlation collapses it to one timeline.
+If the system already has one (X-Request-Id, OpenTelemetry traceparent), use it. If it doesn't, add one. Cross-service debugging without correlation is reading nine random log streams in parallel and squinting.
 
-What good correlation looks like in practice:
-- Generated at the edge (or accepted from upstream if present and trusted).
-- Propagated on every outbound call (HTTP header, message header, RPC metadata).
-- Logged on every log line emitted while serving that request.
-- Surfaced to the user in error responses ("If you contact support, include request id `req_abc123`").
-
-If you're investigating an incident and there's no correlation id, your first fix may be to add one — even mid-investigation. The current incident may not benefit, but the next one will.
+Good correlation: generated at the edge, propagated on every outbound call (HTTP header, message header, RPC metadata), logged on every log line, surfaced to users in error responses. If there's no correlation id mid-investigation, add one — the current incident may not benefit, but the next one will.
 
 ## The common shapes
 
@@ -129,15 +123,13 @@ Fixes are case-by-case but the discipline is: have a single source of truth, and
 
 ## Investigation flow
 
-When facing a distributed bug:
-
 1. **Get the correlation id of one failing case.** One specific incident, one request id, one timestamp.
 2. **Pull every log line carrying that id across all services.** Sort by timestamp. This is your timeline.
-3. **Walk the timeline forward.** At each step, ask: is this what I expected at this moment? The first surprise is where to dig.
+3. **Walk the timeline forward.** At each step, ask: is this what I expected? The first surprise is where to dig.
 4. **Match the surprise to a shape above.** Duplicate? Out of order? Race? Lost? Time skew? Retry storm?
-5. **Form one hypothesis. One.** Then design the smallest experiment that distinguishes "shape X" from "shape Y." Run it.
+5. **Form one hypothesis.** Then design the smallest experiment that distinguishes "shape X" from "shape Y." Run it.
 
-Resist the urge to debug *all* failing requests at once. The shapes don't co-occur cleanly; you'll confuse signals from two unrelated bugs. Pick one, finish it, move on.
+Resist debugging *all* failing requests at once. Pick one, finish it, move on.
 
 ## Anti-patterns
 
@@ -149,6 +141,6 @@ Resist the urge to debug *all* failing requests at once. The shapes don't co-occ
 
 ## Relation to other skills
 
-- [[queue-fundamentals]] — most of the shapes above (duplicate, lost, out-of-order, retry storm) are queue concerns. The fix lives there; this skill helps you recognize which one you're hitting.
-- [[database-fundamentals]] — race conditions and partial failures often want a transaction or a constraint as the real fix. Don't paper over them in the app layer.
-- [[hexagonal-backend]] — when the bug crosses an adapter boundary, the right test is at the boundary itself. The adapter is usually where serialization, retries, and timeouts live.
+- [[queue-fundamentals]] — most shapes above (duplicate, lost, out-of-order, retry storm) are queue concerns. The fix lives there; this skill helps you recognize which one you're hitting.
+- [[database-fundamentals]] — race conditions and partial failures often want a transaction or constraint as the real fix.
+- [[hexagonal-backend]] — bugs at adapter boundaries; the adapter is usually where serialization, retries, and timeouts live.

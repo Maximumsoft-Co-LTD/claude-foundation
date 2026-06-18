@@ -1,7 +1,5 @@
 # Testing
 
-A good test suite catches regressions and gives you the confidence to change things. A bad test suite breaks every time you rename a variable and tells you nothing about whether the system works. The difference is what you choose to test.
-
 ## The rule
 
 **Test the behavior, not the implementation.**
@@ -45,13 +43,11 @@ For each case the code under test can actually reach, decide one of three: **cov
 
 ## Fast tests vs slow tests
 
-A good suite has both, in roughly the right ratio.
-
 - **Unit tests (ms each)** — pure logic, no I/O. Run on every save. There should be hundreds to thousands.
 - **Integration tests (10s–100s ms each)** — real DB, real filesystem, in-process. Run on every commit. Tens to hundreds.
 - **E2E tests (seconds each)** — full stack, real network. Run on every PR. A handful.
 
-If your "unit" tests take seconds each, they're not unit tests — they're hitting something they shouldn't. Find the I/O and stub it (or move it out — see "pure core, effectful shell" in the main skill).
+If unit tests take seconds, they're hitting I/O — find it and stub it (or move it out — see "pure core, effectful shell" in the main skill).
 
 ## Running the suite in one command
 
@@ -73,8 +69,6 @@ Run the whole suite in a single process, not file-by-file. When you loop "run te
 Targeting one file is fine while iterating on a single failure — but the run that *decides* pass/fail is always the full suite.
 
 ## Mocking, carefully
-
-Mocks let you test in isolation; they also let you write tests that pass while the real system is broken. Use sparingly.
 
 - **OK to mock:** external APIs, slow services, things that cost money to call.
 - **Risky to mock:** your own database. A mocked DB happily accepts queries that a real DB would reject. Prefer a real test DB (Docker, in-memory variant, transactional rollback).

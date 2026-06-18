@@ -32,10 +32,10 @@ A multi-step procedure — ≥3 steps OR conditional logic, AND a clear trigger,
 - **name**: <kebab> · **scope**: personal | project · **trigger description**: <phrase / task type> · **action**: new | update `<name>` | promote memory `<slug>` · **steps**: 1… 2… 3… · **why a skill not a memory**: … · **handoff prompt for skill-creator**: <copy-paste-ready brief>  (leave status blank — orchestrator fills it after the approval round)
 
 <!--
-The sections above are always required. Add the sections below ONLY when this run produced them, then DELETE the rest:
-- Deviations from plan — when actual ≠ plan (Step X became Y — reason)
+Sections above = always required. Add a section below ONLY when this run produced it, then DELETE the rest:
+- Deviations from plan — actual ≠ plan (Step X became Y — reason)
 - Follow-ups — append each verbatim to FOLLOWUPS.md > Open, then mirror here:
     - **item**: <one line> · **type hint**: feat|fix|refactor|chore|docs|spike · **priority**: low|med|high
-    - **consumed**: <followup-id> — landed in this run via step <n>
-- Security findings (carry-over) — when security.md exists (its non-blocking medium/low findings, so they don't get lost)
+    - **consumed**: <followup-id> — landed via step <n>
+- Security findings (carry-over) — when security.md exists (its non-blocking medium/low findings)
 -->

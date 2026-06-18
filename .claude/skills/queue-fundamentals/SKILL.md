@@ -7,20 +7,11 @@ description: Apply queue fundamentals — broker selection, delivery semantics, 
 
 ## Why this exists
 
-Queues are the joints of a distributed system. Every async boundary — between a web request and a slow job, between two services, between a write and its downstream consumers — is a queue. Almost every "ghost in the machine" bug in a production backend traces back to the same handful of missed queue fundamentals: silent message loss, duplicate processing that double-charged a customer, an ordering assumption that held in dev and broke under load, a dead-letter queue that nobody set up so a single bad payload wedged the whole pipeline, a DB write that "succeeded" but the matching event never published.
+Every async boundary in a distributed system is a queue. Almost every "ghost in the machine" production bug traces to the same handful of missed fundamentals: silent message loss, duplicate processing that double-charged a customer, an ordering assumption that broke under load, no DLQ so a single bad payload wedged the pipeline, a DB write that committed while the matching event never published. This skill is a **pre-flight** for anything queue-shaped — broker-agnostic, applies equally to SQS, Kafka, RabbitMQ, BullMQ, or a Postgres job table. The mechanics differ; the contract does not.
 
-This skill is a **pre-flight** for anything queue-shaped: read it before you put a queue in your system, not after the first incident. The principles are broker-agnostic — they apply equally to SQS, Kafka, RabbitMQ, BullMQ, or a hand-rolled job table in Postgres — anywhere work crosses a process boundary. The mechanics differ; the contract you have to think about does not.
-
-Programs this skill sits next to:
-- [[programming-fundamentals]] — fundamentals of the code that runs inside a consumer. Apply that first.
-- [[database-fundamentals]] — the outbox table, dedup tables for idempotency, and DB-backed job tables are schema decisions with their own indexes, constraints, and transaction concerns. Apply when you're shaping those tables.
-- [[hexagonal-backend]] — where the queue lives in the architecture (producers and consumers are adapters; the use case sees ports). The outbox pattern is mentioned there in passing; this skill expands on it.
-- [[architecture-fundamentals]] — decides *whether* a given interaction belongs on a queue at all (sync vs async, its principle 3) and runs **before** this skill in the construction order; this skill operates the queue once that decision is made.
-- [[ddd-strategic]] — draws the line between internal domain events (stay inside one bounded context) and cross-context integration events (the versioned contract that crosses a broker); this skill operates whichever event actually crosses the channel.
+Run order and the concurrency/queue/database seam are owned by `.claude/rules/fundamentals.md` (the router) — this skill operates the queue once `architecture-fundamentals` has decided to use one, over code that `programming-fundamentals` governs. Domain hand-offs unique to this skill: outbox/dedup/DB-backed job tables are `database-fundamentals` schema work (indexes, constraints, transactions); producers and consumers are `hexagonal-backend` adapters and this skill expands its outbox note; `ddd-strategic` draws the internal-domain-event vs cross-context integration-event line (the versioned contract the broker carries).
 
 ## The 7 principles
-
-Each principle has a one-line rule, a *why*, and a worked example. Apply them in roughly this order — the early ones unblock the later ones.
 
 ---
 
@@ -28,7 +19,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Rule:** Decide what the queue is *for* before you decide which broker to use. Different purposes need different shapes; the wrong broker turns a normal feature into an operational nightmare.
 
-**Why:** "We use Kafka" is not an architecture. A queue can be doing any of: smoothing bursts (buffer), decoupling services (async API), distributing work across a worker pool (task queue), fanning a single event out to many independent consumers (pub/sub), or storing a replayable history of events (log). Each purpose has a different natural fit, and forcing the wrong tool into the wrong role is where most queue pain comes from — Kafka used as a task queue, SQS used as an event log, an in-memory channel used to survive crashes.
+**Why:** "We use Kafka" is not an architecture. A queue can be a burst buffer, an async decoupler, a task queue, a pub/sub fanout, or a replayable event log. Each purpose has a different natural fit — most queue pain comes from forcing the wrong tool into the wrong role (Kafka as a task queue, SQS as an event log, an in-memory channel expected to survive crashes).
 
 **How to apply:**
 - Name the purpose in one sentence before picking a broker. "Fan out user-signup events to N independent consumers" → log/pub-sub. "Run a slow image-resize off the request thread" → task queue. "Buffer a burst of webhooks so we don't drop any" → durable broker.
@@ -54,7 +45,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Rule:** Pick one of {at-most-once, at-least-once, exactly-once} consciously, and know which one your broker actually delivers. "Exactly-once" is almost always at-least-once + an idempotent consumer.
 
-**Why:** Almost every production broker is **at-least-once** by default. That means duplicates happen — on retries, on consumer crashes, on rebalances, on network blips. If you wrote your handler assuming "this runs once per message," you wrote a bug. Every queue-bug postmortem with the words "we double-charged" or "we sent the email twice" started here.
+**Why:** Almost every production broker is **at-least-once** by default — duplicates happen on retries, consumer crashes, rebalances, and network blips. If your handler assumes "this runs once per message," you wrote a bug. Every "we double-charged" postmortem started here.
 
 **How to apply:**
 - Default mental model: at-least-once. Build for it (see principle 3).
@@ -79,7 +70,7 @@ Kafka EOS:           exactly-once *between Kafka topics*     → still at-least-
 
 **Rule:** Every message handler must produce the same observable effect whether called once, twice, or N times with the same message.
 
-**Why:** Because at-least-once means duplicates *will* happen. This is the single highest-leverage line of defense in a queue-based system — it turns retries, redeliveries, replays, and rebalances from incidents into non-events. A consumer without an idempotency story is one consumer crash away from a billing incident.
+**Why:** At-least-once means duplicates *will* happen. Idempotency is the single highest-leverage defense — it turns retries, redeliveries, replays, and rebalances from incidents into non-events. A consumer without an idempotency story is one crash away from a billing incident.
 
 **How to apply:**
 - Prefer **naturally idempotent** operations: `SET balance = 100` (idempotent) vs `INCREMENT balance BY 5` (not). When the domain allows, model state as absolute rather than relative.
@@ -119,7 +110,7 @@ async function handleOrderPaid(msg: OrderPaidMessage) {
 
 **Rule:** Acknowledge a message *after* its effect is durable. Until then, the broker should consider the message in-flight and redeliver it if you crash. If your work might exceed the broker's visibility timeout, extend it explicitly.
 
-**Why:** This is where delivery semantics actually live in code. **Ack-before-work** loses messages on consumer crashes (the broker thinks it's done, the work never ran). **Ack-after-work** is correct but causes duplicates on crash — which is exactly what principle 3 was for. The third trap is the visibility timeout: brokers (SQS, RabbitMQ with consumer ack, etc.) hide a delivered message for a window; if you don't ack within that window, they redeliver to another consumer. A 30-second visibility timeout on a 5-minute job means the job runs three times in parallel before the first one finishes.
+**Why:** **Ack-before-work** loses messages on crash (broker thinks done, work never ran). **Ack-after-work** is correct but causes duplicates on crash — exactly what principle 3 handles. Third trap: the visibility timeout. A broker hides a delivered message for a window; miss the window and it redelivers. A 30-second timeout on a 5-minute job means the job runs three times in parallel.
 
 **How to apply:**
 - Ack pattern: receive → do work → write result → **then** ack. Never the other order.
@@ -161,7 +152,7 @@ func handleLong(ctx context.Context, msg Message) error {
 
 **Rule:** Every consumer needs three numbers and one destination: max attempts, backoff strategy, jitter, and a DLQ. Decide these before the first message flows.
 
-**Why:** Some messages will always fail — bad payloads, schema drift, removed dependencies, references to deleted rows. Without a cap, a single poison message can spin forever, burn budget, and starve healthy messages behind it. Without backoff, a downstream blip turns into a thundering herd. Without a DLQ, you have no visibility into what's broken and no way to replay it after a fix. These are not optional; they are the operational floor.
+**Why:** Some messages will always fail — bad payloads, schema drift, deleted references. Without a cap, a single poison message spins forever and starves healthy ones. Without backoff, a downstream blip becomes a thundering herd. Without a DLQ, you have no visibility and no replay path after a fix. These are not optional; they are the operational floor.
 
 **How to apply:**
 - **Cap retries.** Pick a max attempts (commonly 3–10 depending on side-effect cost). After the cap, send the message to a DLQ instead of retrying forever.
@@ -196,7 +187,7 @@ alerts:
 
 **Rule:** Most brokers do not preserve global message order. If your handler assumes order, prove the broker delivers it for the keys you care about — or make the handler order-tolerant.
 
-**Why:** "Process messages in the order they were sent" is the most-broken hidden assumption in queue code. SQS Standard is unordered. RabbitMQ preserves per-queue order but not across consumers (multiple workers race). Kafka guarantees order **per partition**, not per topic. The moment you scale consumers horizontally, "in order" stops holding unless you explicitly designed for it. Code that worked in dev with one worker breaks the day you add a second.
+**Why:** "Process in the order sent" is the most-broken hidden assumption in queue code. SQS Standard is unordered; RabbitMQ preserves per-queue order but not across workers; Kafka guarantees order **per partition**, not per topic. Code that worked with one worker breaks the day you add a second.
 
 **How to apply:**
 - Ask "for what subset of messages does order need to hold?" — almost never *all* of them. Order usually matters per-entity (this user's events in order; this order's state transitions in order), not globally.
@@ -226,7 +217,7 @@ async function applyUserUpdate(msg: UserUpdatedMessage) {
 
 **Rule:** Never write to a database and publish to a broker as two separate steps. They cannot be made atomic across systems, and the gap is where data gets corrupted in production.
 
-**Why:** The pattern "save the row, then publish the event" looks fine until the process crashes between the two — or the DB commits but the broker is down, or the broker accepts but the DB rolls back. Each of those leaves an inconsistency that no amount of retries fixes (the in-memory message is gone, or the DB never persisted, or duplicate events get published on retry). This is the single most common source of "we lost the event" bugs. The fix is well-known and not optional for systems where the events matter.
+**Why:** "Save the row, then publish the event" looks fine until the process crashes between the two — DB commits but broker is down, or broker accepts but DB rolls back. Each leaves an inconsistency no retry fixes. This is the single most common source of "we lost the event" bugs.
 
 **How to apply:**
 - **Transactional outbox.** Write the outgoing message into an `outbox` table *in the same DB transaction* as the state change. A separate relay process polls the outbox (or uses CDC on it) and publishes to the broker. The relay marks rows as published. Producers never talk to the broker directly.
@@ -287,7 +278,7 @@ See [[operating]] for thresholds, dashboards, and the claim-check pattern.
 
 ## When to skip this skill
 
-- In-process channels, worker pools, and async tasks **inside one process** — even with concurrency — are [[concurrency-fundamentals]]' territory (in-process coordination), not this skill's. A bare `List`/`Deque`/`Queue`/`chan` used as a plain data structure with no concurrency is [[programming-fundamentals]]. This skill starts where the work crosses a **process boundary**.
+- In-process channels, worker pools, and async tasks inside one process are `concurrency-fundamentals`; a bare `List`/`Deque`/`Queue`/`chan` used as a plain data structure with no concurrency is `programming-fundamentals` (the router's "Seams that blur" owns this split). This skill starts where the work crosses a **process boundary**.
 - Throwaway scripts or one-shot data fixes where loss is acceptable and there's no production system on the other end.
 - Synchronous request/response paths that don't involve a queue at all.
 
@@ -304,10 +295,10 @@ Deeper guides for individual principles. Read the one that matches the work in f
 
 ## How to use this skill in a conversation
 
-This skill is always-on for queue-shaped work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip", say so in one sentence and proceed without it.
+Always-on for queue-shaped work (per `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip", say so in one sentence and proceed without it.
 
 When the skill applies:
-- **Designing a new async path** — name the purpose first (principle 1), then the delivery semantics (2), then walk the rest of the checklist before writing code.
-- **Reviewing existing queue code** — go through the 7 principles as a checklist. Be explicit about which ones the code currently fails. Cite the principle number when you flag an issue.
-- **Debugging a queue incident** — start at the symptom and work back through the principles. "Double-charged" → principle 3 (idempotency). "Lost event" → principle 7 (dual-write) or principle 4 (ack order). "Stuck processing" → principle 5 (poison message, no cap or DLQ). "Out-of-order state" → principle 6.
-- When you make a non-obvious call (turning off auto-commit, introducing an outbox, choosing FIFO over Standard, capping retries at a specific number), say *why* in one sentence and cite the principle. Don't emit YAML or code silently.
+- **Designing a new async path** — name the purpose first (principle 1), then delivery semantics (2), then walk the rest of the checklist before writing code.
+- **Reviewing queue code** — go through the 7 principles as a checklist; cite the principle number when flagging an issue.
+- **Debugging a queue incident** — symptom → principle: "double-charged" → P3 (idempotency); "lost event" → P7 (dual-write) or P4 (ack order); "stuck processing" → P5 (poison/no DLQ); "out-of-order state" → P6.
+- Non-obvious calls (turning off auto-commit, introducing an outbox, FIFO vs Standard, retry cap): say *why* in one sentence and cite the principle.

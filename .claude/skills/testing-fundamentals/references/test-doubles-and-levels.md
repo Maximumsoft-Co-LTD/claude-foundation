@@ -1,6 +1,6 @@
 # Test Doubles and Levels
 
-Two decisions dominate test design: *at which level* do I test this, and *what do I replace the real dependencies with*. This file gives the decision rules for both, plus the taxonomy of doubles, the case for a real database, contract tests across services, and how to kill flakiness.
+Two decisions dominate test design: *at which level* to test, and *what to replace the real dependencies with*. This file gives the decision rules for both, plus the taxonomy of doubles, the case for a real database, contract tests, and how to kill flakiness.
 
 ## Levels: unit vs integration vs e2e
 
@@ -27,9 +27,9 @@ The levels trade **speed** against **fidelity**. Pick the lowest level that can 
       /____\        many    unit         fast, sharp failures — all the branchy logic
 ```
 
-The **inverted pyramid / ice-cream cone** — mostly e2e, few unit — is the most common bad suite. It's slow (minutes, so it's skipped on save), it has a broad blast radius (one broken login fails fifty journey tests, telling you little), and e2e is the flakiest level (real network, real timing). The fix is to push tests down: most of what e2e tests is logic that a unit test proves faster and more precisely. Keep e2e for "the whole thing is wired together and a real user can complete this journey."
+The **inverted pyramid / ice-cream cone** — mostly e2e, few unit — is slow (minutes, so it's skipped on save), has a broad blast radius (one broken login fails fifty journey tests), and e2e is the flakiest level. Fix: push tests down. Keep e2e for "the whole thing is wired together and a real user can complete this journey."
 
-The opposite failure — *only* unit tests — ships integration bugs: every unit passes against its mocks, and the system is broken at the seams the mocks papered over. You need the middle layer.
+The opposite — *only* unit tests — ships integration bugs. You need the middle layer.
 
 ## The double taxonomy
 
@@ -41,9 +41,9 @@ The opposite failure — *only* unit tests — ships integration bugs: every uni
 - **Mock** — pre-programmed with expectations and *fails the test if they aren't met* in the right way/order. A strict mock asserts on the interaction. This is the highest-risk double — a mock that asserts call order is testing the implementation, not the behaviour.
 - **Fake** — a working but lightweight implementation of the real thing (an in-memory repository, an in-memory payment gateway, an in-memory clone of the *same* DB engine). Behaves like the real dependency, so tests exercise real logic against it. (Swapping in a *different* engine — SQLite for Postgres — is the dialect-mismatch trap the real-DB section below warns against, not a safe fake.) Often the best double when many tests need the same collaborator.
 
-**Rule of thumb on risk:** dummy < stub < fake < spy < mock. Prefer **fakes and stubs** (state-based: set up input, assert output). Reach for **spies/mocks** only when the *interaction* is the behaviour under test ("on success, the receipt is sent") — and even then, assert *that it happened*, not the exact call count and argument order, unless those are part of the contract.
+**Rule of thumb on risk:** dummy < stub < fake < spy < mock. Prefer **fakes and stubs** (state-based: set up input, assert output). Reach for **spies/mocks** only when the *interaction* is the behaviour ("on success, the receipt is sent") — and even then, assert *that it happened*, not the exact call count and argument order unless those are part of the contract.
 
-A second signal: 20 lines of mock setup for a 5-line assertion means the unit has too many dependencies. Fix the production design (extract the pure core), don't write more elaborate mocks.
+A second signal: 20 lines of mock setup for a 5-line assertion means the unit has too many dependencies. Fix the production design (extract the pure core).
 
 ## Fake at the seams (ports)
 
@@ -67,13 +67,7 @@ If a dependency has no seam — the code `new`s a concrete client inline — tha
 
 Mocking your own database is the single most common way a test passes while the system is broken.
 
-A mocked DB returns whatever you told it to. It will happily "accept" a query that the real database would reject for:
-- a column that a migration dropped or renamed,
-- a `NOT NULL` / `UNIQUE` / foreign-key / `CHECK` constraint the data violates,
-- a SQL dialect or syntax error,
-- a transaction/isolation behaviour the mock doesn't model.
-
-So a repository test against a mocked DB asserts that *your code calls a function you stubbed* — it proves nothing about whether the real SQL and the real schema agree, which is the entire reason the repository exists. The bug ships green.
+A mocked DB returns whatever you told it to — it happily "accepts" a query the real database would reject for a missing column, a violated constraint, a migration that never ran, or a SQL dialect error. So a repository test against a mocked DB asserts that *your code calls a function you stubbed* — it proves nothing about whether the real SQL and the real schema agree.
 
 Use a real test database in integration tests. Three workable strategies:
 - **Test containers** — spin up a real Postgres/MySQL in Docker for the test run (`testcontainers` in most languages). Highest fidelity; the same engine you ship.
@@ -84,7 +78,7 @@ Pick per project; default to containers for fidelity, transactional rollback for
 
 ## Contract tests across services
 
-When service A calls service B over the network, A's integration tests can't spin up the real B, and mocking B in A's tests just re-creates the "passes while broken" problem at the service boundary — A's mock of B can drift from what B actually returns. **Contract tests** close that gap: A (the consumer) declares the requests it makes and the responses it expects; that contract is verified against B (the provider) in B's own CI. If B changes its response shape, B's build fails against A's contract *before* the break reaches production. Consumer-driven contract testing (Pact and similar) is the usual tooling. Reach for this when independently-deployed services integrate; for a monolith with in-process boundaries, an integration test across the real components is simpler and sufficient.
+When service A calls service B, A's integration tests can't spin up the real B, and mocking B in A's tests re-creates the "passes while broken" problem at the service boundary — A's mock of B can drift from what B actually returns. **Contract tests** close that gap: A declares the requests it makes and the responses it expects; that contract is verified against B in B's own CI. If B changes its response shape, B's build fails against A's contract before the break reaches production. Consumer-driven contract testing (Pact and similar) is the usual tooling. Use this for independently-deployed services; for a monolith, an integration test across real in-process components is simpler.
 
 ## Taming flakiness
 
@@ -100,4 +94,4 @@ A flaky test — passes and fails without a code change — trains the team to i
 
 ## Running the suite in one command
 
-The run that *decides* pass/fail is always the full suite in a single process — not a loop of one invocation per file. Most runners auto-discover and run everything in one command (`pytest`, `go test ./...`, `cargo test`, `npm test`/`vitest`); monorepos have an aggregator (`pnpm -r test`, `turbo run test`, `nx run-many -t test`). Only when nothing ties the suites together do you write a one-shot script that loops *internally* and commit it as the permanent entrypoint. Targeting one file is fine while iterating on a single failure; the status-deciding run is the whole suite, once. (This is the execution contract the `/dev` `qa` agent follows.)
+The run that *decides* pass/fail is always the full suite in a single process — not a loop of one invocation per file. Most runners auto-discover everything in one command (`pytest`, `go test ./...`, `cargo test`, `npm test`/`vitest`); monorepos have an aggregator (`pnpm -r test`, `turbo run test`, `nx run-many -t test`). Targeting one file is fine while iterating on a failure; the status-deciding run is the whole suite, once. (This is the execution contract the `/dev` `qa` agent follows.)

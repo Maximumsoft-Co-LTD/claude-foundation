@@ -1,6 +1,6 @@
 # Code smells — the catalog
 
-A code smell is a surface symptom that *usually* points to a deeper structural problem. A smell is not a bug and not automatically wrong — it's a prompt to look closer and decide whether a refactor pays off (principle 5: refactor with a purpose). Use this catalog to name *why* before you touch anything: a named smell is a real trigger; "it felt messy" is not.
+A code smell is a surface symptom that *usually* points to a deeper structural problem. A smell is not a bug and not automatically wrong — it's a prompt to look closer and decide whether a refactor pays off (principle 5). Use this catalog to name *why* before you touch anything.
 
 Each entry: what it looks like → why it costs you → the refactoring move(s) that resolve it (see `catalog.md` for mechanics).
 

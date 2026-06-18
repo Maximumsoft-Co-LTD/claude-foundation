@@ -1,8 +1,8 @@
 # Large-scale refactoring — staying shippable
 
-The deep technique behind principle 7. A refactor too big for one sitting is where the discipline matters most, because the failure mode — a long-lived branch that drifts from trunk and blocks releases — is so common and so costly. The goal of everything here is the same: **decompose the large change into small, independently shippable, always-green steps**, and keep `main` releasable the entire time.
+The deep technique behind principle 7. The failure mode — a long-lived branch that drifts from trunk and blocks releases — is common and costly. Everything here has the same goal: **decompose the large change into small, independently shippable, always-green steps**, keeping `main` releasable throughout.
 
-The enemy is the big-bang: "rewrite this subsystem on a branch, merge when done." It drifts, the merge is a multi-day conflict, and "we can't ship until it lands" holds the whole team hostage. Every technique below exists to avoid it.
+The enemy: "rewrite this subsystem on a branch, merge when done." It drifts, the merge is a multi-day conflict, and "we can't ship until it lands" holds the team hostage.
 
 ---
 

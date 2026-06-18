@@ -7,17 +7,11 @@ description: Apply delivery-engineering fundamentals — CI gate as the merge co
 
 ## Why this exists
 
-Most delivery pain — the failed Friday deploy, the rollback that wasn't possible, the "but it works on my machine" outage — traces back to the same handful of missed fundamentals. A green build that runs no real tests gives false confidence. A 40-minute pipeline gets routed around with `--no-verify` and merge-without-waiting. A deploy assembled by hand on a laptop can't be reproduced when it breaks at 2 AM. An artifact rebuilt per environment means the thing you tested is not the thing you shipped. A secret baked into a Docker layer leaks the moment the image is pulled. A big-bang release of three weeks of work has no safe way back.
+Most delivery pain traces to the same handful of missed fundamentals: a green build that runs no real tests; a 40-minute pipeline that gets routed around with `--no-verify`; a hand-assembled deploy that can't be reproduced at 2 AM; an artifact rebuilt per environment so the thing tested isn't the thing shipped; a secret baked into a Docker layer; a big-bang release with no safe way back. The pipeline is **production infrastructure** — design it. This skill is a **pre-flight**: read it before writing the workflow file, Dockerfile, deploy script, or release plan.
 
-The pipeline is **production infrastructure** — design it, don't accrete it. The pipeline is the only path your code takes from a merge to a running system; every shortcut in it is a future incident with a timestamp on it. This skill is a **pre-flight**: read it before you write the workflow file, the Dockerfile, the deploy script, or the release plan.
-
-The principles assume a mainstream stack — a hosted CI runner (GitHub Actions, GitLab CI, CircleCI, Buildkite), container or package artifacts, and a deploy target (Kubernetes, a PaaS, VMs, serverless). The mechanics differ; the contract does not. Where a principle changes meaningfully for serverless or a PaaS, the section says so.
-
-This skill is the design-time counterpart to [[git-workflow]]: **git-workflow owns the road up to the merge** (branches, atomic commits, why-carrying messages, PRs as the unit of review, reflog recovery); **delivery-engineering owns what happens to the merged code** (CI gates, build, artifact promotion, deploy, release, rollback). They meet at the PR's green check. Don't restate branch/commit/PR mechanics here — cross-reference and move on. In the `/dev` flow, this skill is the knowledge behind the **CI ship-gate**: after the orchestrator opens a PR, it confirms CI is green before declaring the run shipped.
+Sibling to [[git-workflow]] in the Delivery layer (`.claude/rules/fundamentals.md` owns the boundary): git-workflow owns the road to the merge, this skill owns what happens to the merged code (CI gate, build, artifact promotion, deploy, release, rollback) — they meet at the PR's green check. In `/dev` it backs the CI ship-gate; the ship-phase mechanics live in `WORKFLOW.md`.
 
 ## The 7 principles
-
-Each principle has a one-line rule, a *why*, and a worked example. Apply them roughly in order — the early ones (what the gate means, what artifact you build) constrain the later ones (how you configure, deploy, and observe it).
 
 ---
 
@@ -25,7 +19,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them ro
 
 **Rule:** Every change runs build + test + lint + typecheck before it can merge, on the same commit that will merge. A passing gate is a *promise* that this commit is shippable. If the gate is slow or flaky, people route around it — so make it fast (parallelize, cache, fail fast) and make it real.
 
-**Why:** The merge gate is the one moment where the whole team's discipline is enforced by a machine instead of by memory. If the gate is hollow — tests that assert nothing, a lint step that's `|| true`, a typecheck commented out "temporarily" — then "CI is green" stops carrying information and review degrades into trust. If the gate is *slow*, the failure mode is human: a 40-minute pipeline trains people to merge before it finishes, skip hooks with `--no-verify`, and batch unrelated changes to pay the wait once. Fast feedback is what keeps the gate from being bypassed — aim for single-digit minutes by parallelizing independent jobs, caching dependencies, and ordering checks fail-fast.
+**Why:** The merge gate is the one moment where the team's discipline is enforced by a machine. A hollow gate (tests that assert nothing, lint that's `|| true`, a commented-out typecheck) makes "CI is green" meaningless. A *slow* gate is bypassed: a 40-minute pipeline trains people to merge before it finishes and skip hooks with `--no-verify`. Fast feedback keeps the gate honest — single-digit minutes by parallelizing independent jobs, caching deps, and ordering checks fail-fast.
 
 **How to apply:**
 - Run the gate on the *merge result*, not just the branch tip, where the platform supports it (GitHub merge queue, GitLab merged-results pipelines). "Green on my branch" can still break `main` if `main` moved.
@@ -70,7 +64,7 @@ jobs:
 
 **Rule:** Build a single immutable, versioned artifact once, and promote *that exact artifact* through dev → staging → prod. Never rebuild per environment.
 
-**Why:** If you rebuild for each environment, you haven't tested what you shipped — you've tested a sibling of it. A dependency floated a patch between the staging and prod builds, a base image got re-pulled, a network blip changed a fetched asset, and now prod runs a binary your suite never saw. The whole point of staging evaporates: it validated a different artifact. Build-once-promote makes the artifact the unit of release — staging gives confidence about a specific digest, prod runs *that digest*. It also makes rollback trivial: the previous good artifact still exists, tagged and pullable, so rollback is re-pointing at a digest, not a frantic rebuild from a commit you hope still builds.
+**Why:** If you rebuild per environment, you haven't tested what you shipped — a floated dep patch or re-pulled base image means prod runs a binary your suite never saw. Staging validated a different artifact; its confidence is worthless. Build-once-promote makes the artifact the unit of release. Rollback falls out for free: the previous good digest still exists, so rollback is re-pointing, not a frantic rebuild from a commit you hope still compiles.
 
 **How to apply:**
 - Build the artifact (container image, jar, wheel, zip, binary) exactly once, in CI, on the commit that's merging. Tag it immutably — a content digest or `<version>-<short-sha>`, never a moving tag like `latest` for anything you deploy.
@@ -105,7 +99,7 @@ deploy-prod:
 
 **Rule:** The same binary runs in every environment; what differs is configuration injected from the environment, and secrets pulled from a secrets manager at deploy/run time — never baked into the image, committed to the repo, or printed in logs.
 
-**Why:** This is the [[database-fundamentals]] "one fact, one place" idea applied to delivery: the artifact is one fact (the code), the environment is another (where it runs, what it talks to), and braiding them produces the works-on-my-machine class of bug. Baking a database URL or API endpoint into the image forces a different image per environment, breaking principle 2 outright. Worse, a secret baked into a Docker layer is *permanent* — `docker history` and a pulled image expose it forever even if you `rm` it in a later layer, because the adding layer is still there. A secret in a git commit is just as bad: history keeps it after you delete the file. Config-from-environment (12-factor) and secrets-from-a-manager keep the artifact clean, portable, and safe to share.
+**Why:** Baking config into the image forces a different image per environment (breaks principle 2). Worse, a secret baked into a Docker layer is *permanent* — `docker history` exposes it forever even if you `rm` it in a later layer, because the adding layer remains. A secret committed to git is the same: history keeps it after deletion. Config-from-environment (12-factor) and secrets-from-a-manager keep the artifact clean, portable, and safe to share.
 
 **How to apply:**
 - Read all environment-varying config from the environment (env vars, mounted config, a config service) — endpoints, feature toggles, pool sizes, log levels. The 12-factor "config in the environment" rule. No `if (env === 'prod')` branches compiled into the binary.
@@ -140,7 +134,7 @@ env:
 
 **Rule:** The same source must produce the same artifact on any machine. Pin everything that goes into the build — dependency versions (lockfiles), base images (by digest), and the toolchain (language/runtime version). "Works on my machine" is an unpinned-environment bug, not a mystery.
 
-**Why:** A build that depends on whatever happened to be installed is one you can't trust or reproduce. The classic incident: CI passes Tuesday, the same commit fails Thursday, nothing in the repo changed — but `node:18` got re-pulled to a newer patch, a transitive dependency floated, or the runner image rotated. Pinning makes the build a pure function of the source: same inputs, same output, everywhere. It's also a supply-chain control — a pinned digest can't be swapped out from under you by a compromised upstream tag.
+**Why:** A build depending on whatever was installed is untrustworthy. Classic incident: CI passes Tuesday, same commit fails Thursday — `node:18` got re-pulled to a newer patch. Pinning makes the build a pure function of the source: same inputs, same output, everywhere. It's also a supply-chain control — a pinned digest can't be swapped by a compromised upstream tag.
 
 **How to apply:**
 - Commit the lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`, `go.sum`) and install from it exactly: `npm ci` not `npm install`, `pip install -r requirements.txt` with hashes, `poetry install --no-update`. CI must fail if the lockfile is out of date.
@@ -172,7 +166,7 @@ RUN npm run build
 
 **Rule:** Roll new code out behind a health check, with a way back that's automatic and fast. Use a strategy that limits blast radius (blue-green, canary, or rolling) and an automated rollback trigger. Separate *deploying* code (it's running) from *releasing* a feature (users see it) with feature flags.
 
-**Why:** Every deploy bets the new version works under real load with real data. The question is never "will a deploy ever go bad" — it's "when one does, how much breaks and how fast can I undo it." A naive all-at-once replace answers "everything, only as fast as a rebuild." Health-checked progressive rollouts answer "a fraction of traffic, automatically." Decoupling deploy from release is the deepest lever: if the risky path is dark behind a flag, you deploy the binary safely (it just sits there), *release* by flipping the flag, and roll back a bad feature in seconds with no redeploy. That also unbraids "the deploy failed" from "the feature is wrong" — different incidents, different fixes.
+**Why:** The question isn't "will a deploy ever go bad" — it's "when one does, how much breaks and how fast can you undo it." An all-at-once replace answers: everything, only as fast as a rebuild. Health-checked progressive rollouts answer: a fraction of traffic, automatically. Decoupling deploy from release is the deepest lever: risky code ships dark behind a flag; release is a flag flip; rolling back a bad feature is seconds with no redeploy, and it unbraids "the deploy failed" from "the feature is wrong."
 
 **How to apply:**
 - Gate every rollout on a real **health/readiness check** — not "the process started" but "the process serves a real request and its dependencies are reachable." A rollout that can't pass health does not receive traffic.
@@ -215,7 +209,7 @@ return legacyCheckout(cart)
 
 **Rule:** Every step from merge to running-in-prod is automated and runs through the pipeline. No manual `scp`, no "SSH in and pull," no hand-assembled release. Prefer small, frequent releases over big-bang ones.
 
-**Why:** Manual deploy steps are where outages live. A human running release commands at 6 PM Friday forgets the migration, uses the wrong environment's config, skips the smoke test "just this once" — or simply isn't there at 2 AM when the steps are needed in a hurry. Every manual step is an undocumented dependency on one person's memory. Automating the path makes the deploy *the same every time*, reviewable (it's code — principle 7), and runnable by anyone or a trigger. Frequency matters as much: a big-bang release of three weeks of work bundles dozens of changes into one risky event with one giant diff to bisect. Small frequent releases shrink each deploy's blast radius and make a regression's cause obvious — it's in the handful of changes since the last good deploy. Deploying *more often* is how you deploy *more safely*.
+**Why:** Manual deploy steps are where outages live — a human forgets the migration, uses the wrong config, skips the smoke test "just this once." Every manual step is an undocumented dependency on one person's memory. Automating makes the deploy the same every time and runnable by anyone. Frequency matters too: a three-week big-bang release is one risky event with a 47-file diff to bisect; small frequent releases shrink blast radius and make regressions obvious. Deploying *more often* is how you deploy *more safely*.
 
 **How to apply:**
 - The pipeline is the single path to prod. If a step can only be done by a person typing commands on a server, it's a latent outage — script it and move it into the pipeline.
@@ -246,7 +240,7 @@ Good (automated, small, continuous):
 
 **Rule:** The pipeline definition lives in the repo, is reviewed like application code, and is versioned with it. And you measure delivery itself — lead time, deploy frequency, change-failure rate, mean-time-to-recovery — so you know whether the pipeline is healthy or quietly rotting.
 
-**Why:** A pipeline configured by clicking around a CI web UI is undocumented, unreviewable, and un-revertible — your most production-critical automation lives somewhere with no history and no PR. Pipeline-as-code (workflow YAML, Dockerfile, deploy manifests, Terraform) puts delivery under the same discipline as the code it ships: it's in [[git-workflow]]'s review-and-revert loop, changes via PRs with a green gate, and you can see *why* the build step changed and roll it back. And you can't improve what you don't measure: the four DORA metrics are a delivery system's vital signs. **Lead time** (commit → prod) and **deploy frequency** measure throughput; **change-failure rate** (% of deploys causing an incident) and **MTTR** (recovery speed) measure stability. Watching them tells you whether a "speed" change traded away safety, and surfaces a degrading pipeline before it's an incident.
+**Why:** A pipeline configured by clicking in a CI web UI is undocumented, unreviewable, and un-revertible. Pipeline-as-code (workflow YAML, Dockerfile, deploy manifests, Terraform) puts delivery under the same discipline as the code it ships: PR-reviewed, green-gated, revertible. And you can't improve what you don't measure — the four DORA metrics are a delivery system's vital signs: **lead time** (commit → prod) and **deploy frequency** for throughput; **change-failure rate** and **MTTR** for stability. Watching them tells you whether a "speed" change traded away safety.
 
 **How to apply:**
 - Keep all delivery config in the repo: CI workflow files, `Dockerfile`, deploy manifests/Helm charts, infrastructure-as-code. Review changes to them in PRs ([[git-workflow]] principle 6) — a change to the deploy script is as load-bearing as a change to the app.
@@ -299,15 +293,15 @@ For anything else — designing or reworking a CI/CD pipeline, writing a Dockerf
 
 ## How to use this skill in a conversation
 
-This skill is always-on for delivery work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+Always-on for delivery work (per `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
 When the skill applies:
-- **Designing a pipeline** — name the stages and what each gate guarantees before writing YAML. Decide what's parallel, what's cached, and what the merge contract requires. Don't emit a workflow file until the gate's meaning is settled.
-- **Writing a build** — pin the toolchain and base image, install from the lockfile, and build the one artifact you'll promote. Call out anything that fetches at build time.
-- **Choosing a deploy strategy** — name the blast radius, the health check, the rollback trigger, and whether the change rides behind a feature flag. Say which strategy (rolling/blue-green/canary) and why.
-- **Handling config or secrets** — state explicitly what's injected at run time and what comes from the secrets manager. Never put a secret in an artifact, a repo, or a log.
+- **Designing a pipeline** — name the stages and what each gate guarantees before writing YAML. Decide what's parallel, what's cached, and what the merge contract requires.
+- **Writing a build** — pin toolchain and base image, install from the lockfile, build the one artifact you'll promote. Call out anything that fetches at build time.
+- **Choosing a deploy strategy** — name the blast radius, health check, rollback trigger, and whether the change rides behind a flag. Say which strategy and why.
+- **Handling config or secrets** — state what's injected at run time and what comes from the secrets manager. Never put a secret in an artifact, a repo, or a log.
 
-This skill pairs with [[git-workflow]]: git-workflow gets the change reviewed and merged; this skill gets the merged change built, deployed, and released safely. It also backs the `/dev` **CI ship-gate** — the orchestrator confirms CI is green after opening the PR, which is principle 1 enforced at run time. When you make a non-obvious call (canary over blue-green, manual promotion over continuous deploy, a feature flag over a branch), say *why* in one sentence and name the trade-off.
+Non-obvious calls (canary over blue-green, manual promotion, flag over branch): say *why* in one sentence and name the trade-off.
 
 ## Reference files
 

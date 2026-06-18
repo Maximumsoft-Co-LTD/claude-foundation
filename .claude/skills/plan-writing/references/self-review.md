@@ -1,12 +1,10 @@
 # Plan Self-Review
 
-Run this checklist **before** setting `Status: draft` in `plan.md`. The goal is to catch the failure modes that otherwise show up at review time and burn a cycle.
-
-A plan that passes self-review is not "perfect" — it's "internally consistent and free of the known antipatterns". Real surprises will still surface during implementation; this checklist filters out the ones we already know how to spot.
+Run before setting `Status: draft` in `plan.md`. Filters known failure modes that otherwise surface at review time.
 
 ## The six scans
 
-Walk these in order. Each one takes ~30 seconds for an XS/S plan, ~2 minutes for L.
+Walk in order. ~30 seconds for XS/S, ~2 minutes for L.
 
 ### Scan 1 — Anti-placeholder
 
@@ -27,7 +25,7 @@ If any pattern appears in `Approach`, that's usually OK — `Approach` carries t
 
 ### Scan 2 — Requirement coverage: acceptance criteria + Definition of Done
 
-Coverage (the `[AC#]` tag exists) is the floor. Sufficiency is the bar: the tagged steps actually deliver the AC, and a verify proves it. Open `spec.md > Acceptance criteria`. For each checkbox:
+Tag presence is the floor; sufficiency is the bar. Open `spec.md > Acceptance criteria`. For each checkbox:
 
 1. Search the plan for the AC's number (`[AC1]`, `[AC2]`, ...).
 2. Confirm at least one `Step` carries that tag.
@@ -90,23 +88,21 @@ If any check fails, the section is paraphrase rather than mapping — re-walk wi
 Walk every Step. For each:
 
 - Has a `verify:` clause? (Required for S/M/L; optional for XS.)
-- Verify clause is a **command** (something runnable: `npm test src/foo.test.ts`, `curl -s :8080/health | jq .status`, `psql -c "\d users"`) OR a **concrete observable** (`column email_verified exists`, `feature flag returns true for opt-in users`)?
-- If verify is `manually check`, `visually inspect`, `eyeball the output`, `looks correct` → reject. Either name what you're checking for (`response body includes "ok"`) or the verify isn't real.
+- Verify clause is a **command** (`npm test src/foo.test.ts`, `curl -s :8080/health | jq .status`, `psql -c "\d users"`) OR a **concrete observable** (`column email_verified exists`, `feature flag returns true for opt-in users`)?
+- If verify is `manually check`, `visually inspect`, `looks correct` → reject. Name what you're checking for, or the verify isn't real.
 
-If a Step doesn't have a clean verify, the step is doing too many things — split until each piece is verifiable atomically.
-
-> Why this scan is the highest-leverage one: the `verify` clause is what `engineer` runs after the step, what `qa` translates into a test, and what `lead` (review mode) uses to confirm the step landed. A bad verify reaches all three later phases.
+If a Step doesn't have a clean verify, split until each piece is verifiable atomically.
 
 ### Scan 6 — Outcome reads for a non-technical reader
 
-The `## Outcome` block is the first thing a reviewer reads, so it earns its own scan. Check:
+Check:
 
 - All three bullets are present: **Before**, **After**, **Benefit**.
 - **Before** and **After** are *plain language* — no `path#anchor`, no symbol names a stakeholder wouldn't know. The `path#anchor`-cited version of "before" is `## Current state`; Outcome is the prose summary, not a second copy of it.
 - **Benefit** links to `spec.md > Outcome` rather than restating the product win (a restated benefit drifts from its source).
 - The before→after pair actually describes *this* change — not a generic "improves the system". A reader who stops after Outcome should know what changes and why it's worth doing.
 
-This scan is quick (~15 seconds). A failing Outcome is usually a sign the planner jumped to Steps without framing the change — fix it before draft, because it's the block a reviewer reads first and judges the whole plan by.
+A failing Outcome usually means the planner jumped to Steps without framing the change — fix before draft.
 
 ## Extra checks for M / L plans
 
@@ -147,18 +143,12 @@ If you grouped Steps under Phases (>12 steps in L), each phase should have a cle
 
 ## When to fail the self-review and rewrite
 
-If more than 3 items across the scans need fixing, don't patch in place — that usually means the plan was drafted too quickly and the structure is off. Re-read the spec, re-pick the Size if needed, and re-draft. Faster than chasing scan hits one by one.
-
-If Scan 4 (Current-state coverage) is the one failing, fix it *first* before re-running the other scans — most downstream gaps (vague steps, missing verifies, AC tags that don't quite fit) trace back to the planner not actually knowing what the existing code does.
+If more than 3 items need fixing, re-draft rather than patch in place. If Scan 4 (Current-state) is failing, fix it *first* — most downstream gaps trace back to the planner not knowing what the existing code does.
 
 ## The final question
 
-Before marking `Status: draft`, ask:
+Before marking `Status: draft`:
 
-> If I handed this plan to an engineer who has never seen the spec, could they implement it without asking me anything except about ambiguities I've already flagged with inline `[NEEDS CLARIFICATION: <who> — <what>]` markers (in spec.md, at the spots they apply)?
+> Could an engineer who has never seen the spec implement this without asking anything except about ambiguities already flagged with `[NEEDS CLARIFICATION]` markers?
 
-If yes → draft.
-If no → which scan caught it? Run that scan again.
-If "I'm not sure" → run all five scans.
-
-The plan is the *contract* between `lead` (planner) and `engineer` (implementer), and the *spec* that `qa` will test against. Self-review is what makes the contract stand on its own.
+If yes → draft. If no → which scan caught it? Run that scan again. If unsure → run all scans.

@@ -7,35 +7,29 @@ description: Turn a rough idea into an approved design before any code lands —
 
 ## Why this exists
 
-Most "we have to rewrite this" stories trace back to one missed beat: the team started coding before the design was real. The intent was a sentence, the AC was implied, the tech stack was assumed, the scope hid two independent subsystems, and three "approaches" later nobody could remember why option B got picked. Catching all of that at brainstorming time costs minutes; catching it at review or in prod costs cycles, weekends, and trust.
-
-This skill is the pre-spec discipline. In the `/dev` workflow it sits at Phase 1 step 6 — the orchestrator's interview — and runs *before* spawning `pm` to write `spec.md`. Outside `/dev` it runs any time the user wants to think through an idea before code lands.
-
-The promise is small: explore context first, name the unknowns honestly, ask only what the intent didn't already pin, propose 2–3 ways to do it with a recommendation, and re-read the spec with fresh eyes before letting status flip to `approved`.
+Pre-spec discipline for the `/dev` Phase 1 step 6 interview (before `pm` writes `spec.md`), and any time a design conversation is needed before code lands. Promise: explore context first, name the unknowns, ask only what the intent didn't pin, propose 2–3 approaches with a recommendation, and self-review before `approved`.
 
 ## The 7 principles
 
 ### 1. Explore project context BEFORE asking anything
 
-The intent is one sentence; the codebase already has answers. Read `CLAUDE.md`, `.workflow/INDEX.md`, the last few commits, and any file the intent names *before* the first question. The interview gets sharper when you already know which file the feature plugs into, what stack is in play, and which conventions already exist.
+The intent is one sentence; the codebase already has answers. Read `CLAUDE.md`, `.workflow/INDEX.md`, the last few commits, and any file the intent names *before* the first question.
 
-Skipping this and going straight to "tell me about X" wastes questions on things the repo would have told you. Questions are scarce — don't burn one asking the language when `package.json` is sitting right there.
-
-**Log what the repo answered as an assumption, not a fact.** When the repo (not the user) answers a slot — stack from `package.json`, integration point from the file the intent names, a convention from a sibling module — that inference can be wrong (the repo uses Postgres for service A; this feature lives in service B on Mongo). Keep a short running list of these repo-inferred answers and hand it to the orchestrator to surface at the gate as `Assumptions (inferred — correct me if wrong)`. A wrong inference nobody saw silently corrupts the spec and survives every internal-consistency scan; a one-line veto at the gate is the cheap fix.
+**Log what the repo answered as an assumption, not a fact.** When the repo (not the user) answers a slot — stack from `package.json`, integration point from the file the intent names, a convention from a sibling module — that inference can be wrong. Keep a short running list and hand it to the orchestrator to surface at the gate as `Assumptions (inferred — correct me if wrong)`. A wrong inference silently corrupts the spec; a one-line veto at the gate is cheap.
 
 ### 2. Decompose oversized scope BEFORE refining details
 
-If the intent describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), surface that immediately. Don't spend the interview refining details of a request that needs to be broken up first.
+If the intent describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), surface that immediately.
 
 The test: can this be one approved spec that produces one ship-able thing? If not, name the pieces, ask the user which one to scope first, and carry the rest to `FOLLOWUPS.md` as candidates for separate `/dev` runs. Inside `/dev`, this is also what triggers the `epic.md` path — the gate will split it anyway, so flag it here.
 
 ### 3. Ask only about UNSPECIFIED slots — never re-ask what the intent already pinned
 
-The **authoritative slot list and trigger rules live in `.workflow/_templates/spec.md`** (in the `<!-- ... -->` trigger menu below the always-required sections) and the slot summary in `.claude/agents/pm.md > Slots`. Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
+The **authoritative slot list and trigger rules live in `.claude/agents/pm.md > Spec sections`** (the template `.workflow/_templates/spec.md` is now a clean skeleton — required sections + a pointer). Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
 
 **Minimum floor (always asked or pulled from intent):** `Type`, `Outcome` (the Before → After → Benefit framing — capture the *why / who-benefits* during the interview, not just what "done" is), `Acceptance criteria`, `Ship as`, `Open PR on ship`. AC may be just 1 for XS; each consequential *behavioural* AC also carries an `on error / at boundary:` line (the unhappy-path decision, or an explicit `none — <default>`) and edges live as sub-bullets under the AC they edge (NOT a separate section). Measurable perf/security/a11y targets are themselves ACs (verify = the `measured:` clause), not a separate untestable section — an NFR-class AC carries neither `e.g.` nor `on error / at boundary`.
 
-**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References / examples to follow`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. The template comment for each section names the trigger condition; ask only when it fires.
+**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References / examples to follow`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. `pm.md > Spec sections` names the trigger condition for each; ask only when it fires.
 
 Walk the intent. For each triggered slot, first decide whether the trigger fires at all. If not, the slot is not just unanswered — it does not exist for this spec. If yes: *did the user already answer this, or did the repo answer it?* Only the **triggered AND unanswered** slots become interview questions. **Never** assume defaults for slots you didn't ask about, and **never** include a triggered section just because the template mentions it.
 
@@ -65,7 +59,7 @@ Format:
 > **Option C:** <alternative> — <trade-off>
 > *Recommendation:* A, because <one sentence>.
 
-Two anti-patterns: (a) silently picking one and asking "does this work?" — that's not exploration, that's leading the witness; (b) listing 5 options of equal weight — that's punting the decision back to the user. Three with a clear lead is the sweet spot.
+Two anti-patterns: (a) silently picking one and asking "does this work?" — that's leading the witness; (b) listing 5 options of equal weight — that punts the decision. Three with a clear lead is the sweet spot.
 
 If a relevant construction-fundamentals skill applies, load it BEFORE drafting the options (the layers and their run order live in `.claude/rules/fundamentals.md`) — they decide *what* to build; this skill decides *how to surface the choice*.
 
@@ -79,7 +73,7 @@ Until the user has seen the design (Outcome + Scope + AC + chosen approach) and 
 
 "This is too simple to need a design" is the failure mode this gate exists to catch. Even a one-file utility goes through the gate; the design can be three sentences, but it gets presented and approved.
 
-In `/dev`, the formal gate is Phase 1 step 8 (orchestrator runs it with the user). This skill's HARD-GATE is the discipline that makes that step meaningful: when the gate fires, the design is already named explicitly, not hidden in the intent.
+In `/dev`, the formal gate is Phase 1 step 8 (orchestrator runs it with the user).
 
 ### 6. Visual companion is optional, opt-in, and lives in its own message
 
@@ -89,7 +83,7 @@ When upcoming questions are genuinely visual (UI mockups, layout comparisons, ar
 
 Two rules: (a) only offer when UI / layout / diagram questions are actually coming up; conceptual or scope questions are text-better. (b) Even after the user accepts, decide *per question* whether the answer is better seen or read. "What does 'personality' mean in this context?" is conceptual → terminal. "Which wizard layout works better?" is visual → browser.
 
-If the user declines, proceed text-only. The companion is a tool, not a mode.
+If the user declines, proceed text-only.
 
 ### 7. Spec self-review before `Status: approved` (5 scans)
 
@@ -109,7 +103,7 @@ Before the first question of the interview:
 
 - [ ] Read `CLAUDE.md`, recent commits (`git log -5 --oneline`), and any file the intent names.
 - [ ] Read `.workflow/_templates/spec.md` and `.workflow/FOLLOWUPS.md > Open` — fold any in-scope follow-up IDs into the interview.
-- [ ] Read `.workflow/_templates/spec.md` (template comments are authoritative triggers) and the slot summary in `.claude/agents/pm.md > Slots`. Walk the floor + triggered slots: which are answered by the intent + repo, which trigger fires, which are genuinely open?
+- [ ] Read `.claude/agents/pm.md > Spec sections` (the authoritative triggers; the template `.workflow/_templates/spec.md` is a clean skeleton). Walk the floor + triggered slots: which are answered by the intent + repo, which trigger fires, which are genuinely open?
 - [ ] Decide the run's `Type` (`feat | fix | refactor | chore | docs | spike`). If genuinely ambiguous, that is question 1.
 - [ ] Run the scope-decomposition test — is this one ship-able thing, or multiple? If multiple, surface that BEFORE asking detail questions.
 - [ ] Load the relevant construction-fundamentals skill(s) for the work that's coming — they shape the approach options in principle 4:
@@ -178,7 +172,7 @@ If the request says "build", "design", "add feature", "scope", "explore", "brain
 - **Flipping `Status: approved` while any `[NEEDS CLARIFICATION]` marker remains** — `approved` means the spec is complete enough to plan against. If something is unresolved, the marker stays and the gate blocks.
 - **"This is too simple to need a design"** — the simplest projects are where unexamined assumptions hide. A three-sentence design with the user's yes is the minimum; that minimum applies always.
 - **Brainstorming with code in flight** — if you've already started writing the code, the brainstorm isn't a brainstorm anymore, it's a rationalization. Stop, present the design, get the yes, then continue.
-- **Treating compliments / hypotheticals / wishlists as signal** — from *The Mom Test*: "I love this idea," "I would totally use that," "you should also add X someday" all *feel* like progress and aren't. Filter them out and re-ask about past behaviour ("when did you last hit this?", "what did you do?"). If the only evidence you have is an enthusiastic future-tense quote, the spec isn't ready.
+- **Treating compliments / hypotheticals / wishlists as signal** — "I love this idea," "I would totally use that," "add X someday" aren't data. Re-ask about past behaviour ("when did you last hit this?"). If all evidence is future-tense, the spec isn't ready.
 
 ## Relation to other skills
 
@@ -189,7 +183,7 @@ Brainstorming is the **pre-spec** skill — it composes, it does not replace:
 - [[debug-fundamentals]] — for `Type=fix` runs, debug-fundamentals runs *before* this skill: find the actual cause first, then brainstorm the fix (including the regression test the fix step will encode).
 - [[git-workflow]] — pairs later at ship time, not here. Brainstorming produces a spec; plan-writing produces a plan; git-workflow lands the commit.
 
-The `/dev` orchestrator (main agent, defined in `.claude/orchestrator.md`) is the **caller** in Phase 1: it loads this skill before running step 6 (interview) and step 7 (spawn `pm`). The `pm` sub-agent receives the orchestrator's Q&A and writes `spec.md` — it does *not* re-run the interview. This skill is the orchestrator's discipline, not `pm`'s.
+The `/dev` orchestrator (`.claude/orchestrator.md`) is the **caller** in Phase 1: loads this skill at step 6 (interview) and step 7 (spawn `pm`). `pm` receives the Q&A and writes `spec.md` — it does *not* re-run the interview.
 
 ## Mini worked example (one-paragraph feature request)
 
@@ -213,8 +207,6 @@ The `/dev` orchestrator (main agent, defined in `.claude/orchestrator.md`) is th
 **Step 4 — approach options (after answers come in):** Option A: synchronous CSV download from a new `/api/export` route, recommended for ≤ 100k rows. Option B: background job + email link, better for large exports but adds a queue. Option C: hybrid — sync if under threshold, async otherwise. Lead with A unless answer 2 implied >100k rows.
 
 **Step 5 — present design, get yes, hand to `pm`.** `pm` writes `spec.md` with concrete AC ("CSV download from /api/export, ≤30s for accounts up to 100k rows, columns A/B/C"). **Step 6 — self-review (5 scans):** placeholder/ambiguity, content discipline, contradictions, scope, and verifiability + example + pre-mortem (confirm the CSV AC carries its concrete `e.g.:` example). Fix inline. **Step 7 — orchestrator runs the gate.**
-
-That's it. Eight steps, no production code touched, spec is concrete enough to plan against.
 
 ## References
 

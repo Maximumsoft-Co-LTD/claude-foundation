@@ -1,7 +1,5 @@
 # Naming
 
-Good names are the single highest-leverage thing you can do for code readability. A reader who can trust names spends much less time inside function bodies.
-
 ## The one rule
 
 **A name should let the reader skip reading the body.** If a reader has to open the function to find out what it does, the name has failed.

@@ -7,17 +7,11 @@ description: Apply observability fundamentals — the three pillars (logs/metric
 
 ## Why this exists
 
-Most incidents are made longer — sometimes unsolvable — by the same handful of missed fundamentals. The outage you can't diagnose because the failing path logged nothing. The log firehose that buries the one line that mattered under a million heartbeats. The dashboard that shows a healthy *average* latency while the p99 times out for one customer in twenty. Logs you can't stitch together because no request id threads them across services. Pagers that fire on `CPU > 80%` — a cause, not a symptom — until the on-call learns to swipe the alert away, and then sleeps through the one that meant something.
+Incidents are made longer by the same handful of missed fundamentals: the failing path that logged nothing; the log firehose that buried the one relevant line; the average-latency dashboard hiding a catastrophic p99; logs with no request id threading them across services; pages on `CPU > 80%` that train on-call to ignore the pager. This skill is a **pre-flight** — read it before shipping code, wiring a metric, or writing an alert. Observability is a property you build in; you can't bolt it on during an incident.
 
-This skill is a **pre-flight**: read it before you ship the code, wire the metric, or write the alert — *while* you still have the context to make the system diagnosable. Observability is not a thing you bolt on during an incident; it's a property you build in beforehand. Minutes of deliberate instrumentation at design time versus hours staring at a black box at 3 a.m. with no signal to go on.
-
-This is the inverse of [[debug-fundamentals]], and the two are easy to confuse. Debug-fundamentals is **reactive**: a failure already happened and you're finding its cause from the evidence you have. Observability-fundamentals is **proactive**: you're deciding *what evidence will exist* the next time something breaks — the logs, metrics, and traces a future debugger (you, in six months, half-awake) will need. If debugging is the investigation, observability is making sure the scene was wired with cameras before the crime. Get this right and the debug session is short; skip it and there's nothing to debug *with*.
-
-Observability composes with the construction skills: [[architecture-fundamentals]] decides the service boundaries that correlation ids must cross, and [[queue-fundamentals]] adds async hops where a trace is the only way to follow a request. Instrument at the boundaries those skills draw.
+Inverse of [[debug-fundamentals]]: debug is reactive (failure happened, find the cause). Observability is proactive (decide what evidence will exist next time). Pairs with [[architecture-fundamentals]] (service boundaries correlation ids must cross) and [[queue-fundamentals]] (async hops where a trace is the only way to follow a request).
 
 ## The 7 principles
-
-Each principle has a one-line rule, a *why*, and a worked example. The early ones (what to emit) unblock the later ones (what to measure and alert on).
 
 ---
 
@@ -25,9 +19,7 @@ Each principle has a one-line rule, a *why*, and a worked example. The early one
 
 **Rule:** Logs are discrete events, metrics are aggregatable numbers, traces are the causal path of one request. Reach for the right pillar for the question — don't try to make one do another's job.
 
-**Why:** The three carry different information and cost differently. A **log** is a timestamped record of one event ("order 8821 failed payment: card declined") — high detail, high cost per unit, read individually. A **metric** is a number aggregated over time ("payment_failures_total now 4,201") — cheap, graphable, alertable, but it tells you *how many*, never *which one*. A **trace** follows one request across every function and service it touches, with timing per hop — "where did *this* request spend its 9 seconds." Using the wrong pillar is expensive: counting log lines to get a rate is slow and costly; finding one failing request by scrolling metrics is impossible.
-
-The practical division: metrics tell you *that* something is wrong and how widespread (they fire the alert); traces tell you *where* in the path (which service/hop); logs tell you *why* that operation failed. An incident usually walks metric → trace → log.
+**Why:** Each pillar carries different information and costs differently. **Metric**: cheap, aggregatable, alertable — tells you *that* and *how many*, never *which one*. **Log**: high detail per event — tells you *why* that operation failed. **Trace**: follows one request across every hop with timing — tells you *where* time was spent. The wrong pillar is expensive: counting log lines for a rate is slow; finding one failing request in metrics is impossible. Incident flow: metric → trace → log.
 
 **How to apply:**
 - Emit a **metric** for anything you'd want to alert on, graph, or count: request rate, error rate, latency, queue depth, cache hit ratio.
@@ -49,9 +41,7 @@ Incident: "checkout is slow"
 
 **Rule:** Emit logs as structured key-value records (JSON or logfmt), at a level that means something. `ERROR` means "a human should act." Include enough context (ids, not secrets) to debug the event six months from now, with no access to your memory of today.
 
-**Why:** A log line is written once and read under pressure, long after the author forgot everything. `log.info("processing " + userId + " order " + orderId)` is unparseable at scale — you can't filter, count, or alert on a string. As `{"msg":"processing order","user_id":"u_91","order_id":"o_88","level":"info"}` it's queryable: filter by `order_id`, group by `level`, alert on a field. Levels give the firehose a dial: if everything is `INFO`, the level carries no information and the real `ERROR` drowns. And context is everything — `"payment failed"` with no order id, amount, or error code cost money to store and tells you nothing.
-
-The other half is what *not* to log. Logs leak. A line with a password, a full card number, a bearer token, or a customer's PII is a breach sitting in your aggregator's index. Log the *id*, never the secret; "card ending 4242," never the PAN.
+**Why:** A log line is written once and read under pressure months later. An interpolated string is unparseable at scale — you can't filter, count, or alert on it. Key-value is queryable: filter by `order_id`, group by `level`, alert on a field. Levels give the firehose a dial: if everything is `INFO`, the real `ERROR` drowns. And logs leak: a line with a password, bearer token, or PAN is a breach sitting in your aggregator's index. Log the *id*, never the secret.
 
 **How to apply:**
 - Use a structured logger (`pino`, `zerolog`, `structlog`, `slog`, `serilog`) and pass fields as key-value, never via string interpolation.
@@ -61,7 +51,7 @@ The other half is what *not* to log. Logs leak. A line with a password, a full c
   - `INFO` — a notable business event (order placed, user registered) — sparse by design.
   - `DEBUG` — developer detail, off in production by default.
 - Attach context fields every reader will want: ids (`user_id`, `order_id`, `request_id`), the operation, the outcome, the duration. Make ids consistent across the codebase (principle 3 depends on it).
-- **Never** log secrets, credentials, tokens, full PANs, or full PII. Log identifiers and redacted forms. (The repo's `protect-secrets.sh` guards reads of secret files — the same discipline applies to what you *write* into logs.)
+- **Never** log secrets, credentials, tokens, full PANs, or full PII — log identifiers and redacted forms. ([[security-fundamentals]] owns the trust-boundary rule; this is its application to what you *write* into logs, mirroring the repo's `protect-secrets.sh` guard on what you *read*.)
 
 **Example:**
 ```ts
@@ -81,9 +71,7 @@ log.error({ event: "payment.failed", order_id: o.id, request_id: ctx.requestId,
 
 **Rule:** Stamp each request with a correlation id (request id / trace id) at the edge, attach it to every log line that request produces, and propagate it across every service and queue boundary it crosses. Without it you cannot reconstruct what happened.
 
-**Why:** In a single process, logs are already in order. The moment a request fans out — A calls B calls C, or A enqueues a job a worker runs later — the logs interleave with thousands of concurrent requests and arrive out of order. Without a shared id, "what happened to order 8821" is unanswerable: you have A's log, B's log, and the worker's, but no way to know they belong together. With a correlation id, one filter (`request_id = "req_abc"`) pulls the whole story across every service in causal order. It's the highest-leverage thing you can do for incident response, and it costs one header and one log field.
-
-The id must *survive boundaries*: an HTTP call carries it in a header (`traceparent` per W3C Trace Context, or `X-Request-Id`); a queue message in its metadata; a background job in its payload. Drop propagation at any hop and the trace dead-ends there.
+**Why:** Once a request fans out across services or async hops, logs from different processes interleave. Without a shared id, "what happened to order 8821" is unanswerable — you can't know which lines belong together. With a correlation id, one filter pulls the whole causal story. It costs one header and one log field and is the highest-leverage observability investment. The id must survive every boundary — drop propagation at one hop and the trace dead-ends there.
 
 **How to apply:**
 - Generate (or accept from the inbound header) a correlation id at the edge — gateway, first handler, message consumer.
@@ -115,9 +103,7 @@ withContext({ requestId }, () => process(msg))
 
 **Rule:** Don't emit metrics at random. For a request-serving **service**, measure RED: **R**ate, **E**rrors, **D**uration. For a **resource** (CPU, pool, disk, queue), measure USE: **U**tilization, **S**aturation, **E**rrors. Report duration as percentiles, never as a mean.
 
-**Why:** "Add some metrics" produces a junk drawer of gauges no one reads. RED and USE are checklists that guarantee the metrics answer the questions you'll ask in an incident. For a service: *serving requests* (rate), *failing* (errors), *slow* (duration) — those three cover "is this service healthy" almost completely. For a resource: *how busy* (utilization), *how much queued/rejected* (saturation), *how often it errors*. Together they localize a bottleneck fast.
-
-Averages lie, in exactly the direction that hurts. If 95 requests take 50ms and 5 take 10s, the mean is ~550ms — a number *no one* experiences. The fast 95 see 50ms; the slow 5 see 10s and file the tickets. Averages average away the tail, and the tail is where the incident lives. Percentiles (p50/p95/p99) preserve it: p99 = 10s says 1-in-100 is catastrophic, which a 550ms mean completely hides.
+**Why:** "Add some metrics" produces a junk drawer no one reads. RED and USE are checklists that guarantee metrics answer the questions you'll ask in an incident. Service: rate, errors, duration cover "is this healthy" almost completely. Resource: utilization, saturation, errors localize a bottleneck fast. Averages lie: 95 requests at 50ms + 5 at 10s = 550ms mean — a latency *no single user experiences*. The slow 5 file the tickets; only p99 shows them.
 
 **How to apply:**
 - For each service/endpoint, emit: a **counter** for request count (the rate, by route and status), a **counter** for errors (so you can compute error ratio), and a **histogram** for duration (so you can read percentiles).
@@ -148,9 +134,7 @@ checkout_latency_avg_ms  723   ← means nothing; whose latency? the p99 could b
 
 **Rule:** Page on the symptom a user experiences (requests failing, requests slow, SLO budget burning), not on a cause (`CPU > 80%`, `memory high`). Every alert that pages a human must be actionable — if there's nothing to do, it shouldn't page.
 
-**Why:** Causes are not outcomes. High CPU might be perfectly fine (a batch job) or invisible to users (you have headroom). Paging on it produces false alarms; false alarms train the on-call to ignore the pager; and a trained-to-ignore on-call sleeps through the real one. Alert fatigue is how good monitoring leads to *worse* incident response than none. The fix: alert on what the user feels — requests failing, requests slow, error budget burning. Those are true regardless of the cause behind them, so they fire only when it matters. Causes belong on dashboards consulted *after* a symptom alert — diagnostic context, not a reason to wake anyone.
-
-The actionability test is clarifying: for every alert ask "when this fires at 3 a.m., is there a specific thing the responder does?" If the honest answer is "look and go back to sleep," it's not an alert — it's a dashboard panel or a ticket. Demote it.
+**Why:** Causes are not outcomes. High CPU might be invisible to users. Paging on causes produces false alarms; false alarms train on-call to ignore the pager; alert fatigue is how good monitoring leads to *worse* response. The fix: alert on what the user feels — errors, slow requests, SLO budget burning. Causes belong on dashboards consulted *after* a symptom fires. The actionability test: "when this fires at 3 a.m., is there a specific thing to do?" If the honest answer is "look and go back to sleep," it's a dashboard panel, not an alert — demote it.
 
 **How to apply:**
 - Alert on **SLO burn rate** (principle 6), elevated error ratio, and latency-percentile breach — symptoms. Use **multi-window burn-rate** alerts (each alert pairs a long window with a short one — e.g. page on 1h AND 5m both burning; ticket on 6h AND 30m) so you page on real budget loss, not a one-minute blip.
@@ -179,9 +163,7 @@ ALERT CheckoutErrorBudgetFastBurn
 
 **Rule:** Before you can alert meaningfully or make a reliability tradeoff, define what "healthy" *measurably* means: an **SLI** (the metric), an **SLO** (the target on it), and the **error budget** (1 − SLO) that the target implies.
 
-**Why:** "Is the service healthy?" is unanswerable without a number, and every alert in principle 5 needs that number to fire against. An **SLI** (Indicator) is the precise measurement of one user-facing quality — e.g. *the fraction of /checkout requests under 500ms and not-5xx*. An **SLO** (Objective) is the target: *99.9% of those over 30 days*. The **error budget** is what the target permits to fail: 100% − 99.9% = 0.1%, ≈ 43 minutes of failure over 30 days. That budget is the most useful object in the framework: it converts "are we reliable enough?" from an argument into arithmetic. Budget left → ship faster, take risks. Budget exhausted → freeze risky changes, spend the cycle on reliability. The burn-rate alert in principle 5 is just "are we spending the budget too fast right now?"
-
-Without an SLO you get one of two failures: chasing 100% (infinitely expensive, and users can't tell 99.9% from 100% over the network) or no bar at all (every degradation is an argument). The SLO sets the bar once, from the user's view, and everything hangs off it.
+**Why:** "Is the service healthy?" is unanswerable without a number. An **SLI** measures one user-facing quality (fraction of `/checkout` requests non-5xx and < 500ms). An **SLO** sets the target (99.9% over 30 days). The **error budget** is what the target permits to fail (0.1% ≈ 43 min/month) — the currency for reliability-vs-velocity decisions: budget left → ship; exhausted → stabilize. Without an SLO you either chase 100% (infinitely expensive) or have no bar at all (every degradation is an argument).
 
 **How to apply:**
 - Pick SLIs that reflect **user experience**, expressed as good-events / valid-events: availability (non-5xx ratio), latency (fraction under a threshold), correctness/freshness where relevant. One to three per service — not dozens.
@@ -207,9 +189,7 @@ Budgeting in practice:
 
 **Rule:** Telemetry is not free. High-cardinality metric labels can multiply your time-series count into the millions; a debug-log firehose can cost more than the service it watches and bury the one signal that mattered. Choose labels, sample, and budget retention deliberately.
 
-**Why:** Two failure modes, both expensive. **Cardinality**: every unique combination of label values is a separate stored time series. Add a `user_id` label and a service with a million users now has a million series per metric — the backend falls over and the bill explodes. The metric was meant to *aggregate*; a unique-per-request label defeats the point. **Volume**: logging every request at `DEBUG` in prod generates terabytes, costs real money to ingest and store, *and* buries the signal — the one `ERROR` is now one line in ten million. More telemetry is not more observability past a point; it's more cost and more noise.
-
-Treat telemetry as a metered resource with a budget. Labels go on metrics only if they're low-cardinality and you'll group by them; high-cardinality identifiers belong in *logs and traces* (built for per-event detail), never in metric labels. High-volume signals get sampled — keep 100% of errors, a fraction of successes.
+**Why:** Two failure modes. **Cardinality**: every unique label combination is a separate stored time series. A `user_id` label on a service with 1M users = 1M series — the backend falls over and the bill explodes. **Volume**: debug-logging every request in prod generates terabytes and buries the one `ERROR` in ten million lines. More telemetry past a point is more cost and more noise, not more observability. High-cardinality ids belong in logs/traces (built for per-event detail), never in metric labels.
 
 **How to apply:**
 - **Metric labels**: only bounded, low-cardinality dimensions — `route`, `status_class`, `region`, `method`. **Never** `user_id`, `order_id`, `email`, `request_id`, raw URL with ids, or anything unbounded. Put those identifiers on logs/traces instead.
@@ -264,16 +244,9 @@ For anything else — runtime code that introduces a new way to fail or a new op
 
 ## How to use this skill in a conversation
 
-This skill is always-on for runtime observability work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+Always-on for runtime observability work — `.claude/rules/fundamentals.md` owns the trigger and run order (it's cross-cutting, applied last). Don't ask the user to opt in; if the task matches *When to skip*, say so in one sentence and proceed.
 
-When the skill applies:
-- **Shipping a new code path with a failure mode** — decide up front what metric counts it, what log records its failures (with which ids), and whether a trace needs to span it. Name those alongside the code, not after.
-- **Adding logging** — make it structured and leveled, attach the correlation id and the debugging context, and confirm no secret or PII rides along.
-- **Adding metrics** — name the question each metric answers (RED or USE), use a histogram for latency, and check every label for cardinality before committing it.
-- **Defining alerts or SLOs** — state the SLI/SLO first, alert on the symptom and the burn rate, and write the runbook action into the alert. An alert with no action is a dashboard panel.
-- **Debugging a prod blind spot** — name what evidence was missing and add the instrumentation that would have answered it, so the next incident is shorter.
-
-When you make a non-obvious call (sampling rate, dropping a label for cardinality, choosing a trace over a log, setting an SLO target), say *why* in one sentence. Tie the instrumentation to the failure mode it illuminates — don't emit telemetry silently.
+Apply the principles inline, not after the fact: when a code path adds a failure mode, name its metric (RED/USE), its failure log (with ids, no secrets), and whether a trace must span it *alongside the code* — not later; drive any alert off an SLI/SLO + burn rate with a runbook action (an alert with no action is a dashboard panel); for a prod blind spot, name the missing evidence and add the instrumentation so the next incident is shorter. The pre-flight checklist above is the standard to hold the work to. For non-obvious calls (sampling rate, dropping a label for cardinality, an SLO target) say *why* in one sentence — tie instrumentation to the failure mode it illuminates, don't emit telemetry silently.
 
 ## Reference files
 

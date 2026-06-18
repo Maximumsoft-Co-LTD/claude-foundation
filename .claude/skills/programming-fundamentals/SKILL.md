@@ -5,15 +5,7 @@ description: Apply the code-level fundamentals — data modeling, illegal-state 
 
 # Programming Fundamentals
 
-## Why this exists
-
-Most code defects, hard-to-debug systems, and painful rewrites trace back to the same handful of missed fundamentals. Architecture — one service's layering via [[hexagonal-backend]], the system-level shape via [[architecture-fundamentals]] — and refactoring (via /simplify) sit on top of these. If the fundamentals are shaky, no architecture saves you and no refactor sticks.
-
-This skill is a **pre-flight**: read it before you write the code, not after. The principles are language-agnostic — they apply equally to a 30-line Python data script and a 30-file Go service.
-
 ## The 7 principles
-
-Each principle has a one-line rule, a *why*, and a worked example. Apply them in roughly this order — the early ones unblock the later ones.
 
 ---
 
@@ -21,7 +13,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Rule:** Decide the shape of the data before you decide the operations. Operations follow from data; if the data is wrong, the operations will be ugly forever.
 
-**Why:** Most "complex logic" is actually a symptom of an awkward data shape. A `Map<UserId, List<Order>>` makes "find orders by user" trivial. A flat `List<Order>` makes it an N-pass scan and invites bugs every time someone forgets to filter.
+**Why:** Most "complex logic" is an awkward data shape in disguise — the right structure makes the operation trivial, the wrong one invites bugs forever.
 
 **How to apply:**
 - Before writing the function, sketch the input type and the output type. If you can't write them down, you don't yet understand the problem.
@@ -44,7 +36,7 @@ function chargeAll(charges: Charge[]) { ... }
 
 **Rule:** Use types, enums, sum types, smart constructors, and structure to ensure that wrong states can't even be written down.
 
-**Why:** Every runtime check for "did the caller pass nonsense?" is a check you'll forget to write somewhere, or that you'll write five different ways across the codebase. Push the check into the type system or the constructor, and the compiler/runtime enforces it once, forever.
+**Why:** An application check gets forgotten or written five different ways. A type constraint or smart constructor enforces it once, everywhere, forever.
 
 **How to apply:**
 - Replace `String` with a typed wrapper when the string has rules (`Email`, `UserId`, `IsoCountryCode`). The constructor validates once; everyone downstream trusts it.
@@ -69,7 +61,7 @@ type RequestState<T> =
 
 **Rule:** A function should have one clear job and a name that states it. If you can't name it crisply without "and", it's doing too much.
 
-**Why:** A function name is a contract with the reader: "you don't have to read my body to know what I do." When the name lies or hedges, every caller has to read the body, which defeats the whole point of having a function.
+**Why:** A function name is a contract — "you don't have to read my body." When it lies, every caller reads the body, defeating the abstraction.
 
 **How to apply:**
 - Read your function's name and ask: does the body do exactly that, nothing more, nothing less? If it also writes to the database, also sends an email, and also returns a thing, the name is hiding two of those.
@@ -96,7 +88,7 @@ def record_access(id): audit_log.append({"accessed": id, "at": now()})
 
 **Rule:** Push side effects (I/O, time, randomness, network, DB) to the edges. Keep the logic in the middle pure.
 
-**Why:** Pure functions are testable, composable, and reasonable. The moment a function reaches out to a clock, a network, or a database, you can no longer reason about it locally — you need the whole world. Concentrate that pain at the boundary and the inner 80% of your code stays cheap to test and change.
+**Why:** Pure functions are testable and composable; I/O kills both. Concentrate effects at the edge and the inner 80% stays cheap to test and change.
 
 **How to apply:**
 - A function that takes inputs and returns outputs, with no hidden reads or writes, is pure. Aim for this whenever the logic doesn't *need* I/O.
@@ -125,7 +117,7 @@ function discountFor(total: Money): Money {
 
 **Rule:** Treat errors as first-class data. Never silently swallow. Handle at the layer that has enough information to do something useful — otherwise propagate.
 
-**Why:** A `try { ... } catch (e) {}` is a time bomb: the program continues in a state it doesn't understand, and you debug the *consequences* hours later. The right question is always "who has enough context to decide what to do here?" — and that's rarely the function that first noticed.
+**Why:** Silent swallows let the program continue in an unknown state; you debug consequences, not causes. Handle where you have context; propagate everywhere else.
 
 **How to apply:**
 - At the function that *can* recover (retry, fall back to a default, ask the user), handle it. Everywhere else, propagate.
@@ -153,7 +145,7 @@ return process(data)
 
 **Rule:** Know the time and space complexity of the data structures and loops you use. Watch for accidentally quadratic patterns.
 
-**Why:** Most performance disasters are not exotic — they're an `O(n)` lookup nested inside an `O(n)` loop, run on data that grew from 10 rows in dev to 1M rows in prod. You don't need to micro-optimize; you just need to not write `O(n²)` when `O(n)` is one `Map` away.
+**Why:** Most performance disasters are an O(n) lookup inside an O(n) loop on data that grew from 10 in dev to 1M in prod. Don't choose O(n²) when O(n) is the same code length — that's not optimization, it's just not writing bad code.
 
 **How to apply:**
 - For every loop, ask: what's the size of what I'm iterating, and what's the cost of one iteration? Multiply.
@@ -184,11 +176,11 @@ const enriched = orders.map(o => ({
 
 **Rule:** Read the surrounding code, the error message, and the actual failing function before writing or guessing.
 
-**Why:** Most "bug fixes" that don't work are fixes for a problem the engineer imagined, not the one that's actually happening. Most "new code" that doesn't fit was written without looking at how the rest of the codebase solves the same shape of problem. Reading is cheap; rewriting is expensive.
+**Why:** Most fixes that fail address an imagined problem. Reading first is free; rework is expensive.
 
 **How to apply:**
-- When debugging: read the full error message, including the stack trace. Most bugs name themselves in the first line.
-- Before adding a new utility, grep for existing ones doing the same thing. Adopt the project's conventions even if they aren't your favorite — consistency is a feature.
+- When debugging, read the evidence first — the full error message and stack trace; most bugs name themselves in the first line. (Unknown-cause failures have their own procedure: `debug-fundamentals`.)
+- Before adding a new utility, search for existing ones doing the same thing (LSP-first when available — `CLAUDE.md`). Adopt the project's conventions even if they aren't your favorite — consistency is a feature.
 - Before changing a function, read its callers. The function's contract is what callers depend on, not what its docstring claims.
 
 ---
@@ -216,8 +208,6 @@ If any answer is "I don't know," stop and find out before writing.
 For anything else — yes, even the "small" feature, even the "quick" fix — these fundamentals apply.
 
 ## Reference files
-
-Deeper guides for individual principles. Read the one that matches the work in front of you; you don't need to read them all upfront.
 
 - `references/naming.md` — variables, functions, types, files, commit messages.
 - `references/error-handling.md` — Result/Either patterns, exceptions vs return values, boundary handling.

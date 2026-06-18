@@ -7,17 +7,15 @@ description: Apply refactoring fundamentals — change structure without changin
 
 ## Why this exists
 
-Refactoring is the most common way working code gets *broken*. The intent is harmless — "just clean this up" — but a restructure with no safety net, a diff that mixes cleanup with a behavior change, or a "small tidy" that quietly turns into a half-finished rewrite is how a green codebase goes red. The classic failure modes:
+Classic failure modes that turn refactoring into breaking:
 
 - Restructuring code that has no tests, then "it still looks right" ships a behavior change nobody noticed.
-- One commit that *both* renames things *and* fixes a bug — unreviewable, and impossible to revert one without the other.
+- One commit that *both* renames things *and* fixes a bug — unreviewable, impossible to revert selectively.
 - A big-bang "rewrite this module properly" that's 80% done for three weeks while `main` can't ship.
-- Refactoring for its own sake — gold-plating code that was about to be deleted, or that nobody will touch again.
+- Refactoring for its own sake — gold-plating code that was about to be deleted.
 - Calling it "refactoring" while actually changing behavior, so no one writes the test that would have caught the regression.
 
-The discipline below is what separates a safe, reviewable, always-green transformation from "I cleaned it up and now staging is down." It is language- and stack-agnostic, drawn from Fowler (*Refactoring*), Beck (*Tidy First?*), and Feathers (*Working Effectively with Legacy Code*). Apply it *before* you start moving code, not after the suite goes red.
-
-This skill owns the **safe path**. It deliberately does *not* re-teach what good code looks like at the destination — one-thing functions, illegal states unrepresentable, good names, sane complexity. That's [[programming-fundamentals]]. A smell tells you *that* this code needs restructuring; programming-fundamentals tells you *what shape* to move it toward; this skill tells you *how to get there without breaking it*.
+Apply *before* moving code, not after the suite goes red. This skill owns the **safe path** (Fowler, Beck, Feathers) — not what the destination looks like (that's [[programming-fundamentals]]), but how to get there without breaking anything. A smell tells you *that* this code needs restructuring; programming-fundamentals tells you *what shape* to move it toward; this skill tells you *how to get there green*.
 
 ## The 7 principles
 
@@ -29,7 +27,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them ro
 
 **Rule:** A refactoring changes the internal structure of code without changing its observable behavior. If a change alters what the system *does* — a different output, a new validation, a fixed bug — it is not a refactoring, and it must not travel under that name.
 
-**Why:** The whole safety argument for refactoring rests on this contract. Because behavior is held constant, the existing tests are a sufficient safety net and reviewers can read the diff as "same thing, better shape." The moment you smuggle a behavior change into a "refactor," both guarantees evaporate: the tests no longer pin the new behavior, and the reviewer waves through a functional change they thought was cosmetic. Naming is load-bearing here — mislabeling a behavior change as a refactor is how regressions ship unwatched.
+**Why:** The entire safety argument rests on this: held-constant behavior means existing tests are sufficient and reviewers read the diff as "same thing, better shape." Smuggling a behavior change into a "refactor" voids both — tests no longer pin the new behavior, and the reviewer waves through a functional change they thought was cosmetic.
 
 **How to apply:**
 - Before you start, state the one-line behavior-equivalence claim: *what stays observably identical, and how you'll verify it.* If you can't state it, you don't yet know whether this is a refactor.
@@ -49,7 +47,7 @@ Not a refactor: "While extracting, I also fixed the rounding to round half-up." 
 
 **Rule:** At any moment you are *either* refactoring (changing structure, adding no functionality, touching tests only to keep them compiling) *or* adding/changing functionality — never both. Each commit wears exactly one hat.
 
-**Why:** Beck's two-hats rule is what makes both activities tractable. A pure-refactor commit is safe to review fast and safe to revert wholesale. A pure-behavior commit is where the reviewer and the test suite focus their attention. A mixed commit is the worst of both: the reader can't tell which of the 200 changed lines actually changed behavior, and you can't roll back the regression without also losing the cleanup. Separation isn't bureaucracy — it's what keeps the diff legible and the history bisectable.
+**Why:** A pure-refactor commit is safe to review fast and safe to revert wholesale; a pure-behavior commit is where the test suite focuses. A mixed commit is the worst of both: nobody can tell which of 200 lines actually changed behavior, and rolling back the regression also loses the cleanup.
 
 **How to apply:**
 - One commit = one hat. Refactor commits say `refactor(...)`; behavior commits say `feat(...)`/`fix(...)`. The split is visible in history, not just in your head.
@@ -69,13 +67,13 @@ Good: PR 1 `refactor(auth): extract TokenVerifier port` (behavior identical, sui
 
 **Rule:** Refactoring is only safe on top of a passing test that exercises the behavior you're about to move. If that behavior isn't covered, write a *characterization test* that pins its current actual behavior — including any bugs — before you change a line.
 
-**Why:** Without a safety net, refactoring is just editing and hoping. The test is the entire reason you're allowed to restructure aggressively: it's what tells you, after each step, that behavior is still identical. Legacy code is exactly the code with no such net, which is why Feathers' move is "cover, *then* modify": you capture what the code *actually does* (not what it should do — you're not fixing it yet), and that captured behavior becomes the baseline the refactor must reproduce. Skipping this is the single biggest cause of refactors that silently break things.
+**Why:** The test is why you're allowed to restructure aggressively — it tells you after each step that behavior is still identical. Feathers' move for legacy code: "cover, *then* modify" — capture what the code *actually does* (not what it should do), make that the baseline, then refactor. Skipping this is the single biggest cause of refactors that silently break things.
 
 **How to apply:**
 - Covered already? Run the suite, confirm green, then refactor. Green-to-green is the loop.
 - Uncovered? Before touching the code, write characterization tests: feed representative inputs, capture whatever the code returns/writes *now*, and assert that. A golden-master / snapshot test is the fast path when output is large. Pin the behavior even where it looks wrong — fixing it is a separate, later hat.
 - Can't get the code under test because it's too tangled to instantiate? Find a *seam* — a place to break a dependency so you can call the unit in isolation — before you refactor the logic. The deep technique (seams, cover-and-modify, golden master) is in `references/characterization-tests.md`.
-- This baseline is the `/dev` refactor contract: it's why the workflow makes characterization capture step 1 when coverage is thin.
+- In `/dev` this baseline is the brownfield **lock** step; when the workflow schedules characterization capture is owned by `WORKFLOW.md > Improve phase` (and its understand→lock→change→improve discipline) — don't restate it here.
 
 **Example:**
 ```
@@ -91,7 +89,7 @@ Right: golden-master first — run exportReport on 5 saved fixtures, snapshot th
 
 **Rule:** Move in the smallest behavior-preserving steps the catalog offers — Extract Function, Inline, Move, Rename, Replace Conditional with Polymorphism — running the tests after each and committing per step. Refactoring is a sequence of tiny safe moves, not one big edit.
 
-**Why:** Each named refactoring is a mechanical transformation with known, low-risk mechanics; done one at a time with a green run between, a mistake is caught the instant it's introduced, while the diff is one move wide and trivial to undo. This is the bright line between *refactoring* and *rewriting*: a rewrite throws working code away and rebuilds (re-discovering every edge case the original learned the hard way), while a refactor keeps the code working and shippable at every step. If you're estimating effort across a batch of changes, you've stopped refactoring and started rewriting — recognize it and treat it as principle 7.
+**Why:** Named moves are mechanical transformations with known mechanics; done one at a time with a green run between, a mistake is caught instantly and the diff is trivial to undo. This is the bright line between refactoring (code stays working at every step) and rewriting (throws away correctness, re-discovers every edge case). If you're estimating effort across a batch of changes, that's a rewrite — treat it as principle 7.
 
 **How to apply:**
 - Prefer the catalog's named moves over freehand edits — they have a tested sequence of micro-steps that never goes red. See `references/catalog.md`.
@@ -114,7 +112,7 @@ Each step is reversible; if step 3 reddens the suite, you undo one tiny commit, 
 
 **Rule:** Don't refactor for its own sake. Refactor when a *code smell* is actively costing you, or to *prepare* for a change you're about to make — "make the change easy, then make the easy change."
 
-**Why:** Refactoring isn't free: it costs time and adds (small, but real) risk. Spent without a purpose, that's gold-plating — polishing code that didn't need it, or that's about to be deleted. The payoff is real only when the code is one you keep paying to work around. Code smells are the named symptoms that signal *which* code that is (Long Method, Feature Envy, Data Clumps, Primitive Obsession, Shotgun Surgery, Divergent Change). And the highest-leverage moment is *preparatory* refactoring: when a feature is awkward to add because of the current shape, first reshape so the feature drops in cleanly — separating the restructure (safe, tested) from the addition (new behavior) and making both easier than forcing the feature on top of an awkward design.
+**Why:** Refactoring costs time and risk; without a purpose it's gold-plating. The payoff is real only when the code is what you keep paying to work around. The highest-leverage moment is *preparatory* refactoring — separating the restructure (safe, tested) from the behavior addition (new behavior, new tests), making both simpler than forcing a feature onto an awkward design.
 
 **How to apply:**
 - Name the trigger before you start: which smell, or which upcoming change does this enable? "It felt messy" is not a trigger; "Shotgun Surgery — every new payment type edits six files" is. The smell→move map is in `references/code-smells.md`.
@@ -136,12 +134,12 @@ Prepared: first refactor the six scattered switches into one PaymentMethod strat
 
 **Rule:** Refactoring is a tool, not a virtue. Don't do it when the payoff is absent or the risk is unmanaged: code about to be deleted, a hard deadline with no test net, or a change so large it's really a rewrite in disguise.
 
-**Why:** The most expensive refactoring mistakes are the ones that shouldn't have started. Restructuring code you're about to delete is pure waste. Refactoring untested, tangled code under deadline pressure — with no time to build the characterization net first — is how you turn a working-but-ugly system into a broken one right before a release. And the "let's just rewrite it properly" reflex is a trap: rewrites discard hard-won correctness, take far longer than estimated, and usually produce a *new* mess plus a migration. Knowing when to leave code alone is as much a part of this skill as knowing how to change it.
+**Why:** Restructuring code you're about to delete is waste. Refactoring untested, tangled code under deadline without a characterization net turns a working-but-ugly system into a broken one. "Let's just rewrite it properly" discards hard-won correctness, takes far longer than estimated, and usually produces a new mess. Knowing when to leave code alone matters as much as knowing how to change it.
 
 **How to apply:**
 - Skip it when: the code is scheduled for deletion; it's stable and rarely touched (refactor what costs you *weekly*, not what merely offends you); or you're against a deadline and the safety net doesn't exist yet — note the debt, schedule it, move on.
-- Refactor vs rewrite test: if you're *estimating effort* on a batch of changes rather than making mechanical green-to-green moves, it's a rewrite. Default to incremental (principle 7) — reserve true rewrites for when the platform/language is genuinely a dead end, and even then prefer strangling the old system over a big-bang replacement.
-- No tests + no time + must-change code: build the *minimum* characterization net around just the change point (find a seam), make the change, defer the broader cleanup. Don't refactor blind to save time — that trade loses.
+- Refactor vs rewrite test: if you're *estimating effort* on a batch of changes rather than making mechanical green-to-green moves, it's a rewrite. Default to incremental (principle 7) — reserve true rewrites for when the platform/language is genuinely a dead end.
+- No tests + no time + must-change code: build the *minimum* characterization net around just the change point (find a seam), make the change, defer the broader cleanup.
 
 **Example:**
 ```
@@ -155,7 +153,7 @@ twice a year. A rewrite re-opens all 30. Decision: leave it. Refactor the module
 
 **Rule:** When a refactor is too big for one sitting, don't open a long-lived branch and disappear. Keep the trunk green and shippable the whole way: discover the dependency graph and work it leaf-first (Mikado), or grow the new structure alongside the old and switch over incrementally (strangler / parallel change).
 
-**Why:** Big-bang refactors on a three-week branch are where refactoring goes to die: the branch drifts from `main`, the merge is a nightmare, and "we can't ship until it's done" blocks everyone. The alternative is to decompose the large change into a sequence of small, independently shippable, always-green steps. The Mikado Method finds that sequence safely — try the naive change, note what breaks, *revert*, and record the prerequisites as a graph; the leaves (no prerequisites) are your safe starting points, and you work back toward the goal, committing small the whole time. Strangler-fig / parallel-change does the same for replacing a subsystem: new and old coexist, traffic shifts gradually, the old is retired only once nothing depends on it.
+**Why:** Big-bang refactors on long branches drift from `main`, block releases, and produce nightmarish merges. The alternative: decompose into small, independently shippable, always-green steps. Mikado finds that sequence safely (try the goal change, note what breaks, revert, record prerequisites, work leaves-first); strangler-fig / parallel-change applies the same idea to replacing a whole subsystem.
 
 **How to apply:**
 - Mikado: attempt the goal change directly. When it breaks something, don't push through — undo it, write down the prerequisite it revealed, and recurse. Implement leaves first (each a small green commit), erasing the graph as you go. Full technique in `references/large-scale.md`.
@@ -198,19 +196,17 @@ For anything else — yes, even the "quick cleanup," even the "I'll just extract
 
 ## Relation to other skills
 
-Refactoring is a *process* skill, the structural-change sibling to debugging. They compose with the construction skills, they don't replace them:
+- [[programming-fundamentals]] — the **destination**. A smell says *that* code needs work; programming-fundamentals says *what good looks like*; this skill says *how to get there green*.
+- [[debug-fundamentals]] — for a `fix`, run debug-fundamentals first to find the cause; refactoring is then often the safe way to reshape around it. Both share "pin behavior with a test before you touch it."
+- [[coding-discipline]] — the conduct layer that wraps this and every code task (`CLAUDE.md` / the router own the "wraps first" agreement).
+- [[architecture-fundamentals]] — when the refactor crosses component/service boundaries, it owns the runtime-boundary and contract decisions; this skill owns the keep-it-green mechanics.
+- [[git-workflow]] — the delivery channel for principle 2: atomic per-step commits, refactor commits separate from feature/fix commits, a branch green at every commit.
 
-- [[programming-fundamentals]] — the **destination**. This skill is the safe path; programming-fundamentals defines the shape you're moving toward (one-thing functions, illegal states unrepresentable, pure core, good names). A smell says *that* code needs work; programming-fundamentals says *what good looks like*; this skill says *how to get there green*.
-- [[debug-fundamentals]] — the **other process sibling**. For a `fix`, run debug-fundamentals first to find the cause; refactoring is then often the safe way to reshape around it. Both share the "pin behavior with a test before you touch it" instinct — a regression test (debug) and a characterization test (refactor) are the same move aimed at different goals.
-- [[coding-discipline]] — wraps this, as it wraps all code work (assumptions surfaced, minimum change, surgical diff, verifiable done).
-- [[architecture-fundamentals]] — when the refactor crosses component/service boundaries (extract a service, strangler migration), it owns the runtime-boundary and contract decisions; this skill owns the keep-it-green mechanics underneath.
-- [[git-workflow]] — the delivery channel that realizes principle 2: atomic per-step commits, refactor commits kept separate from feature/fix commits, a branch green at every commit.
-
-**Run order when several apply:** for a refactor, run *this skill first* (pick the safe path, capture the baseline), then the construction skill that owns the target layer ([[programming-fundamentals]], and [[database-fundamentals]]/[[hexagonal-backend]] if the restructure reaches those layers). The canonical cross-skill chain lives in `.claude/rules/fundamentals.md`.
+**Run order when several apply:** `.claude/rules/fundamentals.md` is canonical — it runs this skill first (pick the safe path, capture the baseline), then the construction skill that owns the target layer ([[programming-fundamentals]], plus [[database-fundamentals]]/[[hexagonal-backend]] when the restructure reaches those layers).
 
 ## Reference files
 
-Deeper guides. Read the one that matches the move in front of you; you don't need them all upfront.
+Read the one that matches the move in front of you; you don't need them all upfront.
 
 - `references/code-smells.md` — the smell catalog: each smell, why it hurts, and the refactoring move(s) that resolve it. Start here to decide *whether and what* to refactor.
 - `references/catalog.md` — the core named refactorings (Extract/Inline Function, Move, Rename, Replace Conditional with Polymorphism, Introduce Parameter Object, Replace Temp with Query, Split Phase…) with their safe step-by-step mechanics. The *how* of principle 4.

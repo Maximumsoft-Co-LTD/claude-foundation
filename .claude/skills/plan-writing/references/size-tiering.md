@@ -1,8 +1,6 @@
 # Size Tiering for Plans
 
-Size determines which sections of `plan.md` are required, which are optional, and which should be deleted. Wrong size = either bloat (XS work dragged through M template) or under-coverage (M work treated as S). When borderline, prefer the larger tier.
-
-This file is the picker. The `lead` agent sets `Size` in the plan's frontmatter before drafting `Steps`. The picker is also the implicit answer to the question *"is this even worth a plan?"* — see [Anthropic's guidance](https://code.claude.com/docs/en/best-practices): "if you could describe the diff in one sentence, skip the plan." That sentence-test is the XS floor.
+Size determines which sections of `plan.md` are required, optional, or deleted. When borderline, prefer the larger tier. The sentence-test is the XS floor: if you could describe the diff in one sentence, it's XS.
 
 ## The four tiers at a glance
 
@@ -53,7 +51,7 @@ When two answers feel equally true (e.g., "2 files but they're trivial" vs "1 fi
 
 ## Scorecard fallback — calibrate the picker
 
-Use this when the picker feels borderline, when the change spans unfamiliar operational concerns, or when stakeholders want a story-point-like explanation. The scorecard **calibrates** the tier; it does not replace the hard picker stops above. Score the deepest single surface, not the repo count.
+Use when the picker feels borderline or spans unfamiliar operational concerns. The scorecard **calibrates** the tier; it does not replace the hard picker stops above. Score the deepest single surface, not the repo count.
 
 | Factor | 0 | 1 | 2 |
 |--------|---|---|---|
@@ -85,7 +83,7 @@ Hard overrides still win:
 
 ## Worked examples
 
-These are calibration examples, not new hard rules. Use them to explain the score and the `measurable done` line in `plan.md`; then still apply the hard overrides above.
+Calibration examples — apply hard overrides above after scoring.
 
 | Example task | Score | Size | Why | Measurable done |
 |--------------|-------|------|-----|-----------------|
@@ -173,8 +171,6 @@ Default = single L plan, single `/dev` run. Crossing three layers is normal full
 `skip` means *delete the section*, not leave it empty with placeholder text. Empty sections erode the gating discipline.
 
 ## How long should a plan take to write?
-
-Rough budget (for `lead` with the construction skill already loaded):
 
 | Size | Plan-write time | Notes |
 |------|-----------------|-------|

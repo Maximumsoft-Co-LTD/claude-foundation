@@ -7,15 +7,9 @@ description: Apply security fundamentals — trust boundaries, input validation,
 
 ## Why this exists
 
-Most production security incidents trace back to the same handful of missed fundamentals, and each one costs minutes at design time versus a breach in production. The string-concatenated query that became SQL injection. The endpoint that checked *who you are* but never *whether you may touch this record* — broken access control, the top of the OWASP list for a reason. The API key committed to the repo in the first week and rotated only after it leaked. The transitive dependency with a known CVE that nobody pinned or watched. None of these are exotic; they are the boring, repeated failures that a few seconds of stance would have caught.
-
-This skill is a **pre-flight**: read it before you write the auth check, the input handler, the query builder, or the crypto call — not after. It is the **design-time counterpart to the `/dev` security review** (lead Mode C), which is a checklist run on the *diff after code lands*. The review is a backstop; this skill is what you load *first* so the review finds nothing. If you only run the review, you are debugging security defects after they exist. If you internalize these seven principles, you write code that is already safe by the time it reaches the diff.
-
-The principles assume code that an untrusted party can reach or influence — a request handler, a parser, a job that reads user-supplied data, a deserializer. Where a principle is specific to a sink (SQL, shell, HTML), the section says so. Security fundamentals compose with [[programming-fundamentals]] (illegal states unrepresentable is the same instinct as "untrusted input is a distinct type") and [[hexagonal-backend]] (the boundary where you validate is the adapter edge). When several skills apply, run programming fundamentals first for the shape, then this skill for the trust story.
+Production security incidents trace back to the same handful of missed fundamentals: the string-concatenated SQL query, broken object-level authorization, the committed API key, the unpatched transitive dep. This skill is a **pre-flight** — read it before writing auth, input handlers, query builders, or crypto. Security is cross-cutting, applied last to whichever layer carries the trust boundary (run order + seams: `.claude/rules/fundamentals.md`); the security-specific pairings are [[programming-fundamentals]] (illegal-state elimination = untrusted input as a distinct type) and [[hexagonal-backend]] (the adapter edge is where you validate). Design-time counterpart to the lead's security review (Mode C, `.claude/agents/lead.md`) — that review is a backstop, not a substitute for this pre-flight.
 
 ## The 7 principles
-
-Each principle has a one-line rule, a *why*, and a worked example. Apply them in roughly this order — you cannot validate input until you know the boundary, and you cannot authorize until you have authenticated.
 
 ---
 
@@ -23,9 +17,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Rule:** Before the first line, name who can reach this code and what they control. Every input that crosses from a less-trusted zone to a more-trusted one is a boundary, and the boundary is where defenses live.
 
-**Why:** Security is not a property of a function; it is a property of the *path* an attacker can take to it. You cannot defend what you have not located. Most injection and access-control bugs are not "we wrote the check wrong" — they are "we never realized this value came from the user." A request body, a URL parameter, an HTTP header, a filename in an upload, a message off a queue, a field inside a JWT, a row another service wrote — all of these cross a trust boundary, and each is a place an attacker gets a vote.
-
-Threat modeling at this scale is cheap: for the change in front of you, ask *who can send this, what is the worst thing they can put here, and what do they gain if it works.* You do not need a STRIDE workshop for a single endpoint — you need to have asked the question before you trusted the value.
+**Why:** Security is a property of the *path*, not a function — you can't defend what you haven't located. Most injection and access-control bugs aren't "check written wrong" but "never realized this value came from the user." For each untrusted input, ask: who can send this, what can they control, and what's the blast radius if it's hostile? No STRIDE workshop needed — just ask the question before trusting the value.
 
 **How to apply:**
 - Mark every input as trusted or untrusted at the point it enters. Treat "from another internal service" as untrusted unless that service is itself authenticated and authorized — internal does not mean safe (server-side request forgery and confused-deputy bugs live here).
@@ -56,9 +48,7 @@ app.get('/files/:name', async (req, res) => {
 
 **Rule:** Validate every untrusted input where it enters, against an allow-list of what is permitted, *after* reducing it to a single canonical form. Reject what does not match; never try to sanitize hostile input into safe input.
 
-**Why:** A check that runs on a non-canonical input is a check an attacker walks around. `../`, `..%2f`, `..%252f` (double-encoded), Unicode look-alikes, mixed case, trailing dots, and overlong UTF-8 are all the same value wearing disguises. If you check `if (path.startsWith('/safe'))` before decoding, the attacker sends an encoded form that passes your check (no literal `../` in sight) and is then decoded downstream into the dangerous form. **Canonicalize first, then validate** — decode, normalize Unicode, resolve the path, lowercase the host, *then* compare.
-
-Allow-list over deny-list, always. A deny-list enumerates the bad inputs you thought of; the attacker only needs the one you didn't. An allow-list enumerates the good inputs, which is a small, knowable set. "Must match `^[a-z0-9-]{1,32}$`" is defensible; "must not contain `<script>`" is a game of whack-a-mole you will lose.
+**Why:** A check on a non-canonical input is bypassable — `../`, `..%2f`, `..%252f` are the same path wearing disguises. **Canonicalize first, then validate**: decode, normalize Unicode, resolve the path, lowercase the host, *then* compare. Allow-list over deny-list always: a deny-list enumerates attacks you thought of; the attacker only needs the one you didn't.
 
 **How to apply:**
 - Validate at the boundary, once, into a typed value — then the rest of the code works with a value it can trust. This is [[programming-fundamentals]] "parse, don't validate": the output of the boundary is a `Email`, a `SafePath`, a `UserId`, not a raw `string` you re-check everywhere.
@@ -93,9 +83,7 @@ def get_file(name: str):
 
 **Rule:** Encode data for the specific place it is going — HTML body, HTML attribute, JavaScript, URL, SQL, shell, LDAP — at the moment it goes there. For queries and commands, don't escape at all: parameterize. There is no such thing as generically "sanitized" data.
 
-**Why:** Injection is a confusion of data and code. It happens when a value the attacker controls is interpreted as instructions by some downstream interpreter — the SQL parser, the shell, the HTML/JS engine, the LDAP server. The fix is to keep the data on the data side of the boundary, which means encoding it the way *that specific interpreter* requires. HTML-escaping a value and then putting it in a SQL string does nothing for SQL injection; the contexts have different metacharacters. "I sanitized it" is meaningless without "for what sink."
-
-For SQL and OS commands, the only robust answer is to not build the string at all: use **parameterized queries / prepared statements** (the value travels in a separate channel the parser never treats as SQL) and **argument arrays** for subprocesses (no shell, no word-splitting). String escaping for these sinks is a fallback you should almost never reach for, because one missed escape is a full compromise.
+**Why:** Injection = attacker-controlled data interpreted as code by a downstream parser (SQL, shell, HTML/JS, LDAP). HTML-escaping a value then dropping it in SQL does nothing — contexts have different metacharacters. "I sanitized it" is meaningless without "for what sink." For SQL and shell, the only robust answer is not to build the string at all — one missed escape is a full compromise.
 
 **How to apply:**
 - SQL: parameterize. `db.query("... WHERE id = $1", [id])`, never `"... WHERE id = " + id`. Identifiers that can't be parameters (table/column names) must come from an allow-list, never from user input.
@@ -125,9 +113,7 @@ element.innerHTML = userComment              // XSS — userComment = "<img src=
 
 **Rule:** Authentication (who are you) happens once per request and establishes identity. Authorization (may you do *this*, to *this object*) happens at every access, on the server, derived from that identity — never from a value the client supplied. Default to deny.
 
-**Why:** **Broken access control is the most common serious web vulnerability** because the failure mode is invisible in the happy path. The code works perfectly when the legitimate user clicks the legitimate link; it fails only when an attacker changes the id in the URL. Authenticating a user proves they are *someone*; it says nothing about whether they may read invoice 4012. If you fetch the record by an id taken from the request and skip the "does this record belong to this caller" check, you have an Insecure Direct Object Reference — the attacker enumerates ids and reads everyone's data.
-
-Deny by default means the *absence* of an explicit allow is a denial. New endpoints, new fields, new admin actions should be locked unless something grants access — so the person who forgets to add a check fails closed, not open. And the check must be server-side: a hidden button, a disabled field, or a missing menu item in the UI is not authorization, because the attacker talks to your API directly.
+**Why:** **Broken access control is the most common serious web vulnerability** — the happy path works perfectly; the bug only appears when an attacker changes the id in the URL. Authn proves identity; it says nothing about whether this user may read invoice 4012. Deny by default: absence of explicit allow = denial; new endpoints start locked so a forgotten check fails closed. The check must be server-side — a hidden UI element is not authorization.
 
 **How to apply:**
 - Derive the actor's identity from the authenticated session/token on the server. Never trust a `userId`, `role`, `isAdmin`, or `tenantId` that arrived in the request body, query string, or a client-set header — those are attacker-controlled (principle 1).
@@ -162,9 +148,7 @@ app.get('/invoices/:id', requireLogin, async (req, res) => {
 
 **Rule:** Never invent your own cryptography. Use a vetted library, pick the primitive that matches the job (hashing ≠ encryption ≠ signing, and password hashing is its own category), and keep secrets out of source control and out of logs.
 
-**Why:** Cryptography is the one area where "looks correct and passes tests" is no defense — a scheme can be catastrophically broken while encrypting and decrypting perfectly. ECB mode leaks patterns, a reused nonce destroys a stream cipher, a non-constant-time comparison leaks a token byte by byte, MD5/SHA-1 are collision-broken, and hashing a password with a fast hash (even SHA-256) means an attacker brute-forces the whole database overnight. The people who get this right are full-time cryptographers; your job is to call the library they wrote, with its defaults, for the purpose it was built for.
-
-Choosing the wrong primitive is just as fatal as a weak one. Encryption hides data but doesn't prove who wrote it. A signature proves origin and integrity but doesn't hide anything. A hash is one-way and proves nothing about who made it. Passwords need a *slow*, *salted* hash (argon2id, scrypt, bcrypt) precisely because fast is the enemy. Reaching for the wrong one — encrypting a password, hashing for "encryption," signing when you needed a MAC — produces something that works in the demo and fails in the audit.
+**Why:** Crypto is the one area where "looks correct and round-trips" is no evidence of security — a reused nonce destroys a stream cipher, a non-constant-time compare leaks a token byte by byte, and a fast hash for passwords means an attacker brute-forces the DB overnight. Choosing the wrong primitive is as fatal as a weak one: encryption ≠ integrity, signature ≠ confidentiality, passwords need a *slow* hash. Call the vetted library for the purpose it was built for; tune the cost, don't replace the algorithm.
 
 **How to apply:**
 - Passwords → `argon2id` (preferred), `scrypt`, or `bcrypt`. Never a general-purpose hash, never homegrown salting. The library handles the salt and work factor; tune the cost, don't replace the algorithm.
@@ -197,9 +181,7 @@ if hmac.compare_digest(provided_token, stored_token): ...  # constant-time
 
 **Rule:** Every actor — a token, a DB user, a service account, a file, a CORS policy — gets the minimum scope it needs and nothing more. The default state, and the state on error, is the restrictive one.
 
-**Why:** Least privilege is what turns a compromise into an incident instead of a catastrophe. If the web app's database user can only `SELECT`/`INSERT`/`UPDATE` on three tables, a SQL injection can't `DROP` the schema or read the admin table. If the API token is scoped to one repository, leaking it doesn't hand over the org. The blast radius of every bug and every leak is bounded by the privilege you granted — so grant little. The opposite, granting broad access "to be safe" or "so it just works," means every small breach is a total one.
-
-Secure defaults and failing closed are the same instinct applied to the unhappy path. When a permission check throws, when a config value is missing, when a token can't be parsed — the safe outcome is *deny*, not *allow*. Insecure defaults (debug mode on in prod, directory listing enabled, `cors: *` with credentials, a default admin password, verbose stack traces to the client) are vulnerabilities shipped on purpose. The system should be safe out of the box and require an explicit, visible decision to open up.
+**Why:** Least privilege turns a compromise into an incident instead of a catastrophe — blast radius is bounded by what you granted. Granting broad access "to be safe" makes every small breach total. Failing closed is the same instinct on the unhappy path: when an auth check throws, deny; insecure defaults (debug in prod, `cors: *` with credentials, default admin passwords, verbose errors to clients) are vulnerabilities shipped on purpose.
 
 **How to apply:**
 - Scope tokens, API keys, and OAuth grants to the narrowest set of actions and resources. A read job gets a read-only token. A webhook verifier needs no write scope.
@@ -233,9 +215,7 @@ function canAccess(u, r) {
 
 **Rule:** Treat every dependency as code you ship and are responsible for. Pin versions with a lockfile, watch for known vulnerabilities, and import as little as you can get away with.
 
-**Why:** Most of the code in a modern application is code you did not write — and a vulnerability in a transitive dependency is just as exploitable as one in your own. The known-CVE in an unpatched library (Log4Shell, the endless `lodash`/`minimist` prototype-pollution chain) is a perennial top-of-OWASP entry not because it's clever but because nobody was watching. And the supply chain is itself an attack surface: typosquatted package names, a maintained library that gets a malicious update, a compromised maintainer account, a postinstall script that exfiltrates your env. Every package you add is trust you extend to its entire dependency tree and everyone who can publish to it.
-
-The defense is unglamorous: know what you depend on, pin it so builds are reproducible and a malicious version can't silently slip in, scan it for known issues, and keep the tree small so there's less to trust and less to patch.
+**Why:** A CVE in a transitive dep is as exploitable as one in your own code — unpatched known vulnerabilities are a perennial OWASP top entry. The supply chain is an attack surface: typosquatted names, malicious updates, compromised maintainers, `postinstall` scripts that exfiltrate your env. Every package = trust extended to its whole dependency tree and everyone who can publish to it.
 
 **How to apply:**
 - Commit the lockfile (`package-lock.json`, `poetry.lock`, `Cargo.lock`; in Go, `go.mod` pins and `go.sum` verifies) and build from it (`npm ci`, not `npm install`) so the exact resolved tree is reproducible and a surprise version can't appear between builds.
@@ -284,17 +264,15 @@ For anything else — a request handler, a login or session flow, a parser or de
 
 ## How to use this skill in a conversation
 
-This skill is always-on for security-relevant work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
-
-This skill is the **design-time half** of security in the `/dev` workflow; the **review-time half** is the lead's security review (Mode C in `.claude/agents/lead.md`; the orchestrator decides when it fires), a checklist run on the diff after the engineer writes code. The two are complementary: load this skill *before* writing auth, crypto, or input-handling code so that when the security review runs on the diff, it finds nothing to flag. If you are the one writing the code, this skill is your job; if you are reviewing, the review checklist is — but both draw on the same seven principles.
+Always-on for security-relevant work (the router owns the trigger — don't ask the user to opt in). If the task matches "When to skip", say so in one sentence and proceed. This is the design-time half of `/dev` security; the lead's security review backstop is noted under "Why this exists".
 
 When the skill applies:
-- **Writing a request handler or parser** — name the trust boundary first; state what each untrusted input controls before you use it.
-- **Building a query or command** — parameterize / use an argument array by default; if you ever build a SQL or shell string by concatenation, justify it out loud.
-- **Writing auth** — separate authentication from authorization explicitly; say which check is identity and which is per-object access, and confirm both run server-side.
-- **Touching crypto or secrets** — name the primitive and why it fits the job; never hand-roll, never log a secret.
+- **Request handler / parser** — name the trust boundary first; state what each untrusted input controls before you use it.
+- **Query or command** — parameterize / argument array by default; if you ever build a SQL or shell string by concatenation, justify it out loud.
+- **Auth** — separate authn from authz explicitly; say which check is identity and which is per-object access; confirm both run server-side.
+- **Crypto / secrets** — name the primitive and why it fits the job; never hand-roll, never log a secret.
 
-When you make a non-obvious call (returning 404 instead of 403 to avoid confirming existence, choosing optimistic token validation, accepting a dependency with a large tree), say *why* in one sentence. Cite the specific pitfall — don't just emit code silently.
+Non-obvious calls (404 vs 403 to avoid confirming existence, optimistic token validation, large-tree dependency): say *why* in one sentence. Cite the specific pitfall — don't emit code silently.
 
 ## Reference files
 

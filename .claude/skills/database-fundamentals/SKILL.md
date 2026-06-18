@@ -5,17 +5,9 @@ description: Apply database fundamentals — schema design and types, constraint
 
 # Database Fundamentals
 
-## Why this exists
-
-Most production database pain — slow pages, outages during deploys, mysteriously corrupt data, runaway tech debt — traces back to the same handful of missed fundamentals. Bad types and missing constraints let bad data through. Missing or wrong indexes turn linear queries quadratic. Long transactions wedge the database under load. Sloppy migrations cause downtime.
-
-This skill is a **pre-flight**: read it before you write the schema, the query, or the migration. The principles assume a relational database (Postgres, MySQL, SQLite) — that's the default for backend work — but the underlying ideas (model data first, push invariants into the store, build for access patterns, read the plan, batch, isolate, evolve safely) apply to almost any data store. Where a principle differs meaningfully for NoSQL, the section says so.
-
-Fundamentals compose with [[programming-fundamentals]] (the layer below) and [[hexagonal-backend]] (which puts the database behind an adapter port). If multiple skills apply, run programming fundamentals first, then this skill, then hexagonal layering. A clean port over a broken schema still gives you a broken system — get the data right first.
-
 ## The 7 principles
 
-Each principle has a one-line rule, a *why*, and a worked example. Apply them in roughly this order — the early ones unblock the later ones.
+Assumes relational DB (Postgres, MySQL, SQLite) by default; underlying ideas apply broadly. Run order vs sibling skills (`programming-fundamentals`, `hexagonal-backend`, and the rest of the chain) is owned by the always-on router `.claude/rules/fundamentals.md`.
 
 ---
 
@@ -23,7 +15,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Rule:** Decide the shape of the data before you decide the queries. Pick types that match the domain, and start in a normalized shape. Denormalize only when a query forces it, not as a default.
 
-**Why:** The schema outlives the code that reads it. A wrong column type (money as `FLOAT`, timestamps as `VARCHAR`, foreign-key id as `TEXT`) is a thousand small bugs queued up for the next year. Duplicated facts across rows mean every update is a race; every "fix the data" script is one missed table away from making it worse.
+**Why:** The schema outlives the code. A wrong type (`FLOAT` for money, `VARCHAR` for timestamps) queues a year of bugs; duplicated facts make every update a race.
 
 **How to apply:**
 - Choose types that match the domain. Money is integer cents (or `NUMERIC`/`DECIMAL`), **never** `FLOAT` or `DOUBLE` — floating point loses pennies. Dates and timestamps are `DATE` / `TIMESTAMPTZ`, never strings. Identifiers have a single canonical type used everywhere they appear.
@@ -66,9 +58,7 @@ CREATE TABLE order_items (
 
 **Rule:** Every invariant the application "always" guarantees should also be a constraint in the database. `NOT NULL`, `UNIQUE`, foreign keys, `CHECK` constraints — use all of them.
 
-**Why:** This is the [[programming-fundamentals]] "make illegal states unrepresentable" principle, one layer down. The application *will* eventually have a bug. A different service or a one-off backfill script *will* eventually write to the same tables. The database is the last line of defense for "this row is well-formed." A constraint is one declaration that protects every writer, forever. An application check is a check you'll forget to add to the next code path.
-
-A unique index is the *only* way to enforce uniqueness across concurrent writers — application-level `SELECT then INSERT` always has a race window. The DB unique index is the truth.
+**Why:** [[programming-fundamentals]] "make illegal states unrepresentable" at the storage layer. The application will have a bug; a future script will write the same tables. Constraints protect every writer forever; application checks get forgotten. A unique index is the **only** way to enforce uniqueness across concurrent writers — `SELECT then INSERT` has a race window.
 
 **How to apply:**
 - Default every column to `NOT NULL`. A nullable column is a claim that "missing" is a meaningful value for this field. If you can't explain what `NULL` means here in business terms, the column should be `NOT NULL`.
@@ -109,7 +99,7 @@ NoSQL note: most document stores don't give you foreign keys or rich `CHECK` con
 
 **Rule:** Index for the queries you actually run. Composite indexes are ordered — the column order matters. Don't index every column; writes pay the cost.
 
-**Why:** Indexes are the difference between an `O(n)` table scan and an `O(log n)` lookup. But indexing is not free: every write updates every index on the table, and every index takes disk and memory. The right indexes turn a 10-second query into 10ms; the wrong indexes slow every insert and bloat the storage with no benefit.
+**Why:** The right index turns O(n) scans into O(log n); every index taxes every write. Right indexes turn 10s into 10ms; wrong ones slow writes with no read benefit.
 
 **How to apply:**
 - Read the `WHERE`, `JOIN`, and `ORDER BY` clauses of your hottest queries. Those columns — together — are your index candidates.
@@ -143,7 +133,7 @@ CREATE INDEX ON orders (user_id, status, placed_at DESC);
 
 **Rule:** Before you decide a query is slow, before you add an index, before you "optimize" — run `EXPLAIN ANALYZE` and read the plan.
 
-**Why:** Intuition about query performance is wrong most of the time. The database has more information than you do: table statistics, row counts, available indexes, memory budgets. `EXPLAIN ANALYZE` shows you what the planner actually chose, how many rows came back at each step, and how long it took. Optimizing without a plan is guessing.
+**Why:** Intuition is usually wrong. `EXPLAIN ANALYZE` shows what the planner actually chose and why. Optimizing without a plan is guessing.
 
 **How to apply:**
 - Use `EXPLAIN ANALYZE` (Postgres / MySQL 8) — runs the query and reports actual times and row counts. Plain `EXPLAIN` only shows the estimated plan, which is often wrong.
@@ -173,7 +163,7 @@ ORDER BY placed_at DESC LIMIT 20;
 
 **Rule:** When you need data for many things, fetch it in one query, not one query per thing. The "loop and query" pattern is the most common database performance bug.
 
-**Why:** This is the [[programming-fundamentals]] complexity principle applied to I/O. A single query that returns 1000 rows is cheap. 1000 queries that each return one row is a network round-trip times 1000 — typically 1000× slower, often the difference between a 20ms response and a 20-second timeout. ORMs hide this by lazy-loading relations on attribute access — every `for order in user.orders` becomes 1+N queries unless you opt out.
+**Why:** [[programming-fundamentals]] complexity applied to I/O. One query returning 1000 rows is cheap; 1000 queries returning one row is 1000× slower. ORMs hide this via lazy-loading — `user.orders` fires a query per user unless you opt out.
 
 **How to apply:**
 - Whenever a function loops and calls the database inside the loop, stop. That's an N+1 candidate. Either join, or batch-fetch by IDs, or use a dataloader.
@@ -207,9 +197,7 @@ const users = await db.users.findAll({ include: { orders: true } })
 
 **Rule:** Wrap multi-step writes in a transaction so they succeed or fail together. Keep transactions short — open, do the work, commit. Know what isolation level you're running under and what anomalies it leaves possible.
 
-**Why:** A transaction's job is atomicity (all-or-nothing) and isolation (concurrent transactions don't see each other's half-written state). Both have costs: an open transaction holds locks, blocks other writers on the same rows, consumes a connection, and (in Postgres) prevents vacuum cleanup. The longer it lives, the more it hurts. A transaction that waits on user input or external HTTP can wedge the whole database under load.
-
-Isolation level decides which concurrent-write anomalies are possible. Most databases default to `READ COMMITTED`, which prevents dirty reads but allows non-repeatable reads and lost updates. If your business logic does "read value, compute new value, write back," `READ COMMITTED` lets two transactions both read the old value and both write — one update lost silently.
+**Why:** Open transactions hold locks, block writers, consume connections, and prevent vacuum — the longer they live, the worse. Isolation level determines which anomalies are possible: `READ COMMITTED` (Postgres default) allows lost updates — two transactions read the same value, both write, one silently clobbered.
 
 **How to apply:**
 - The unit of a transaction is "a thing that must succeed or fail atomically together." Usually that's one HTTP request, one use case, one event handler. Not "the whole user session."
@@ -248,7 +236,7 @@ WHERE id = $1 AND version = $expected_version;
 
 **Rule:** A migration runs against a live database under load with an old version of the application still pointing at it. Every migration must be safe to apply *while the old code is still running*. The pattern is: expand the schema (additive, backwards-compatible) → backfill data → deploy the new code → contract (drop the old shape) in a later release.
 
-**Why:** "Easy" migrations bring down production. Renaming a column the app still reads gives every request a `column does not exist` error. Adding `NOT NULL` to a column with rows that don't have a value yet fails immediately. Building an index on a huge table without `CONCURRENTLY` locks the table for writes for minutes. A migration is a public API change as risky as a wire-protocol break — treat it that way.
+**Why:** "Easy" migrations take down production: renaming a column the running app reads, adding `NOT NULL` with null rows, `CREATE INDEX` without `CONCURRENTLY` — each locks or errors. A migration is a public API change; treat it that way.
 
 **How to apply:**
 - **Never** combine schema changes with code changes that depend on them in the same deploy. Ship the schema change first; ship the code that uses it next.
@@ -297,28 +285,12 @@ If any answer is "I don't know," stop and find out before writing.
 
 ## When to skip this skill
 
-- One-off ad-hoc queries in a local DB you'll never run again.
-- Throwaway scripts and prototypes that will be deleted in the next hour.
-- Pure infra/config edits with no schema or query changes (connection strings, env vars, formatter rules).
-- Trivial read queries (`SELECT * FROM small_table WHERE id = ?`) where the schema is already known-good.
-
-For anything else — a real schema design, a query that will run in production, a migration that will touch a live table, an index decision, a transaction wrapping multi-step writes — these fundamentals apply.
-
-## How to use this skill in a conversation
-
-This skill is always-on for database work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
-
-When the skill applies:
-- **Designing a schema** — sketch the entities and relationships first, choose types deliberately, list constraints and indexes alongside columns. Don't write `CREATE TABLE` until the shape is settled.
-- **Writing a query** — name the hot access pattern, check whether an index supports it, and read `EXPLAIN ANALYZE` for anything non-trivial before declaring it done.
-- **Writing a migration** — call out the running-app safety story explicitly. Name which step is expand, which is backfill, which is contract, and which deploys go between them.
-- **Debugging a slow query** — never optimize without a plan. Always paste `EXPLAIN ANALYZE` output before suggesting changes.
-
-When you make a non-obvious call (choosing optimistic over pessimistic locking, denormalizing for a hot read, introducing a partial index, splitting expand from contract), say *why* in one sentence. Cite specific pitfalls when relevant — don't just emit SQL silently.
+- One-off ad-hoc queries on a local DB.
+- Throwaway scripts and prototypes.
+- Pure config edits (connection strings, env vars).
+- Trivial reads on a known-good schema.
 
 ## Reference files
-
-Deeper guides for individual principles. Read the one that matches the work in front of you; you don't need to read them all upfront.
 
 - `references/indexing.md` — composite ordering, leftmost prefix, covering / index-only scans, partial indexes, when **not** to index, finding unused indexes.
 - `references/transactions.md` — ACID, isolation levels and the anomalies table, optimistic vs pessimistic locking, common patterns, deadlocks.

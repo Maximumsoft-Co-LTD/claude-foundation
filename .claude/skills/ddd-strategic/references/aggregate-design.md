@@ -1,18 +1,5 @@
 # Aggregate design
 
-Deep dive on principle 5: size aggregates around invariants, not entities. This reference covers Vernon's four rules with worked examples, the sizing test, the canonical Scrum-aggregate split, the relationship between aggregates and bounded contexts, and the practical concerns of persistence (ORMs, transactions, events).
-
-## Table of contents
-
-- What an aggregate actually is
-- Vernon's four rules
-- The sizing test
-- The canonical example: splitting the Scrum aggregate
-- Aggregates within bounded contexts
-- Aggregates and persistence
-- Aggregates and events
-- Common anti-patterns
-
 ## What an aggregate actually is
 
 An **aggregate** is a *transactional consistency boundary*: the smallest cluster of entities and value objects that must change atomically to keep a business invariant true. It has a single **root entity** (the aggregate root) — the only object outside code can hold a reference to. All access to the aggregate's internals goes through the root.

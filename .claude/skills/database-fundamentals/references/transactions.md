@@ -1,7 +1,5 @@
 # Transactions
 
-A transaction is a unit of work that the database treats as atomic: it either fully happens or fully doesn't. Inside the transaction, the work is also (to some degree) isolated from other concurrent work. Both properties — atomicity and isolation — have costs, and the cost compounds as the transaction stays open.
-
 ## ACID, in one paragraph each
 
 - **Atomicity** — all the statements between `BEGIN` and `COMMIT` succeed together, or none of them take effect. A crash mid-transaction rolls back to the state before `BEGIN`.
@@ -41,8 +39,6 @@ The SQL standard is loose; verify against your engine's docs before relying on t
 - **DynamoDB / most cloud KV stores:** per-item atomicity only; multi-item transactions are an explicit opt-in with sharp limits.
 
 ## The lost-update problem
-
-This is the bug to internalize. It's not theoretical — it shows up the first time two users hit the same screen at the same time.
 
 ```sql
 -- T1                                            -- T2

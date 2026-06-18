@@ -1,10 +1,8 @@
 # Broker selection
 
-Companion to principle 1 of [[queue-fundamentals]]. Use this when you have to choose *what* sits between the producer and the consumer. The goal is to match the shape of your problem to the shape of the broker — not to default to whatever the team used last time.
+Companion to principle 1 of [[queue-fundamentals]]. Match the shape of your problem to the shape of the broker.
 
 ## Five shapes a queue can take
-
-Most queue debates collapse once you can name which of these you actually need.
 
 1. **In-process buffer** — same process, decouple two pieces of code or smooth a burst. Lost on restart. Examples: Go `chan`, Node `EventEmitter` + array, Python `asyncio.Queue`.
 2. **Task / work queue** — point-to-point: one message, one worker out of a pool processes it. Built-in retries, backoff, scheduled jobs. Examples: SQS, BullMQ (Redis), Sidekiq (Redis), Celery (Redis/RabbitMQ), `pg-boss` (Postgres).
@@ -31,7 +29,7 @@ The questions, in order:
 
 ## Per-broker cheat sheet
 
-The actual behaviors that bite. Verify against current docs before shipping — defaults change.
+Behaviors that bite. Verify against current docs — defaults change.
 
 ### In-process channel (Go chan, Node, Python asyncio)
 - **Durability:** none. Restart = lost.

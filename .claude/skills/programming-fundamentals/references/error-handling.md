@@ -1,10 +1,6 @@
 # Error Handling
 
-The goal is never to "make the error go away." The goal is to put the program in a state you understand at every line. Silent swallows defeat this. Loud crashes preserve it.
-
 ## The three buckets
-
-Every failure falls into one of these. Treating them all the same is the root of most error-handling pain.
 
 ### 1. Expected failures (part of the domain)
 Validation failed. Resource not found. Insufficient funds. The user typed the wrong password.
@@ -26,7 +22,7 @@ Network blip. DB connection lost. Disk full. Upstream service down.
 
 ## Where to handle
 
-Handle at the **lowest layer that has enough context to do something useful**. Everywhere above that, propagate.
+Handle at the **lowest layer that has enough context to do something useful**; propagate everywhere above.
 
 ```ts
 // Bottom — knows nothing about retry policy, just propagates

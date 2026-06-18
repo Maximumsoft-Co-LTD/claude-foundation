@@ -1,9 +1,6 @@
 # Doc templates & mermaid examples
 
-Section skeletons for each file in the suite. Follow the structure so the docs are
-consistent across projects; fill from what you read in the code (the grounding rule
-in SKILL.md). Delete a section that genuinely doesn't apply rather than padding it.
-Keep prose tight — tables and diagrams beat paragraphs.
+Section skeletons for each file. Follow the structure, fill from what you read, delete inapplicable sections. Tables and diagrams over prose.
 
 ## Contents
 - [OVERVIEW.md](#overviewmd)

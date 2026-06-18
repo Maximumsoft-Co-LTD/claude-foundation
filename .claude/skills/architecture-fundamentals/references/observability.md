@@ -1,21 +1,5 @@
 # Observability
 
-Deep dive on principle 6: building the system so you can see what it's doing. In a distributed or multi-component system, "what happened in this request?" is a relationship across N components — you cannot reconstruct it without correlation, structured data, and metrics over time.
-
-## Table of contents
-
-- The three pillars (and what each is for)
-- Structured logging
-- Metrics: RED and USE
-- Histograms, percentiles, and why averages lie
-- Distributed tracing
-- OpenTelemetry as the default
-- SLIs, SLOs, and error budgets
-- DORA delivery metrics
-- Chaos engineering as an SLO partner
-- Alerting: symptoms, not causes
-- Cardinality and cost
-
 ## The three pillars (and what each is for)
 
 | Pillar | Question it answers | Time scale | Cardinality |

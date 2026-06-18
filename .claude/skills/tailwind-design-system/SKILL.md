@@ -5,27 +5,15 @@ description: "Build or maintain Tailwind CSS v4 design-system mechanics: CSS-fir
 
 # Tailwind Design System (v4)
 
-Build production-ready design systems with Tailwind CSS v4, including CSS-first configuration, design tokens, component variants, responsive patterns, and accessibility.
-
 > **Note**: This skill targets Tailwind CSS v4 (2024+). For v3 projects, refer to the [upgrade guide](https://tailwindcss.com/docs/upgrade-guide).
 
-## Workflow routing
+## When to Use
 
-- Use this skill only when Tailwind v4 itself is part of the work: tokens, variants, reusable primitives, CSS-first config, dark mode, responsive systems, or migration.
-- Use [[ui-ux-pro-max]] first when the decision is still "what should the interface feel like, prioritize, or allow users to do?"
-- Use [[frontend-design]] when implementing a page or component whose design direction is already settled and no shared Tailwind system change is needed.
-- In `/dev`, this skill usually belongs in lead planning for design-system work or engineer implementation when shared Tailwind primitives are being changed.
+Only when Tailwind v4 itself is part of the work: tokens, variants, CSS-first config, component APIs, dark mode, responsive systems, or v3→v4 migration. Skip for one-off class tweaks, copy-only changes, plain CSS, or pure visual composition.
 
-## When to Use This Skill
-
-- Creating a component library with Tailwind v4
-- Implementing design tokens and theming with CSS-first configuration
-- Building responsive and accessible components
-- Standardizing UI patterns across a codebase
-- Migrating from Tailwind v3 to v4
-- Setting up dark mode with native CSS features
-
-Skip this skill for one-off class tweaks, copy-only changes, plain CSS projects, or UI tasks whose main difficulty is visual composition rather than Tailwind system design.
+- [[ui-ux-pro-max]] first when deciding what the interface should feel like.
+- [[frontend-design]] when the design is settled and no shared Tailwind system change is needed.
+- In `/dev`: lead planning for design-system work; engineer for shared primitive changes.
 
 ## Key v4 Changes
 
@@ -172,22 +160,9 @@ Skip this skill for one-off class tweaks, copy-only changes, plain CSS projects,
 
 ## Core Concepts
 
-### 1. Design Token Hierarchy
+**Token hierarchy**: Brand (abstract) → Semantic (`--color-primary`) → Component (`bg-primary`)
 
-```
-Brand Tokens (abstract)
-    └── Semantic Tokens (purpose)
-        └── Component Tokens (specific)
-
-Example:
-    oklch(45% 0.2 260) → --color-primary → bg-primary
-```
-
-### 2. Component Architecture
-
-```
-Base styles → Variants → Sizes → States → Overrides
-```
+**Component architecture**: Base styles → Variants → Sizes → States → Overrides
 
 ## Patterns
 
@@ -763,8 +738,6 @@ export const disabled = "disabled:pointer-events-none disabled:opacity-50";
 ## Advanced v4 Patterns
 
 ### Custom Utilities with `@utility`
-
-Define reusable custom utilities:
 
 ```css
 /* Custom utility for decorative lines */

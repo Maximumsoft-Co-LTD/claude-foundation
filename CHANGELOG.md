@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-06-18
+
+### Changed
+
+- **De-bloat / modularization pass across the `/dev` prompt surface — no behaviour change.** Continues the v2.3.1 / v2.4.0 / v2.5.0 minimalism work: the always-read playbook and worker prompts are slimmed by moving rarely-needed detail into on-demand `references/` modules that load only when that path actually fires. `orchestrator.md` drops to a lean core and splits its gate, interview, resume, fanout, Phase-2 guard, team-mode sharding, and XS/S fast-path detail into `.claude/orchestrator/references/`; the `pm` / `lead` / `qa` agents move their long-form procedure into `.claude/agents/references/`; the fundamentals skill bodies (hexagonal-backend, plan-writing, and others) extract reference sections so each `SKILL.md` stays focused; and the `.workflow/_templates/*` artifacts shed explanatory boilerplate. Every rule, threshold, type-matrix entry, gate, and state transition is preserved verbatim — the `/dev` flow, phases, artifacts, and commands are identical; only context-per-spawn shrinks. Files: `.claude/orchestrator.md` (+ new `.claude/orchestrator/references/`), `.claude/agents/**` (+ new `.claude/agents/references/`), `.claude/skills/**`, `.claude/rules/fundamentals.md`, `.workflow/_templates/**`, `WORKFLOW.md`.
+
 ## [2.5.0] - 2026-06-18
 
 ### Added
@@ -342,7 +348,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.2...v2.4.0
 [2.3.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.1...v2.3.2

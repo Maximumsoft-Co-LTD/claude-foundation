@@ -1,30 +1,28 @@
 # Review: <title>
 
-**Plan**: [./plan.md](./plan.md)
-**Spec**: [./spec.md](./spec.md)
-**Reviewed**: YYYY-MM-DD
-**Verdict**: pass | fix-required
-**Cycle**: 1 of max 2
+**Plan**: [./plan.md](./plan.md) · **Spec**: [./spec.md](./spec.md)
+**Reviewed**: YYYY-MM-DD · **Verdict**: pass | fix-required · **Cycle**: 1 of max 2
 
-## Plan adherence
+## Plan adherence *(required)*
+
 One row per plan step — no skipping rows. A deviation needs a one-line reason.
 
 - [x] Step 1 — implemented as planned
 - [ ] Step 2 — deviation: <what + why>
 
-## Acceptance-criteria check
-One row per `spec.md > Acceptance criteria` bullet, INCLUDING each AC's `on error / at boundary:` clause and any `measured:` perf/security/a11y target (these are checkable assertions, not optional). `engineer` ticks these; `lead` re-verifies against the diff and the running code. Any criterion that can't be ticked here is a **blocking** finding.
+## Acceptance-criteria check *(required)*
+
+One row per `spec.md` AC, INCLUDING each `on error / at boundary:` clause and any `measured:` target. Re-verify against the diff + running code (don't trust the checkbox). Any criterion that can't be ticked = **blocking**.
 
 - [ ] Criterion 1 — evidence: `path:line` / behaviour observed
 - [ ] Criterion 1 (on error / at boundary) — evidence: `path:line` / behaviour observed
 
-## Non-AC slot check
-DoD items and Constraints do NOT thread through AC tags, so they get their own walk here or they ship unchecked. Delete this section only when the spec has neither a `Definition of Done` nor a `Constraints` section.
+## Non-AC slot check *(required when spec has a Definition of Done or Constraints)*
 
-- [ ] DoD: <item> — concrete artifact present? evidence: `path:line` / file exists (missing artifact = **blocking**)
-- [ ] Constraint: <constraint> — diff honours it? evidence: `path:line` (violation, e.g. banned dependency or crossed integration boundary = **blocking**)
+- [ ] DoD: <item> — concrete artifact present? evidence: `path:line` (missing = **blocking**)
+- [ ] Constraint: <constraint> — diff honours it? evidence: `path:line` (violation = **blocking**)
 
-## Findings
+## Findings *(required)*
 
 ### Blocking
 - `path:line` — issue → suggested fix
@@ -32,22 +30,13 @@ DoD items and Constraints do NOT thread through AC tags, so they get their own w
 ### Non-blocking
 - `path:line` — note (carried to retro)
 
-## Sign-off
+## Sign-off *(required)*
+
 pass | fix-required → see Phase 2 step 5
 
 <!--
-The sections above are always required. Add a section below ONLY when the matching fanout ran (see fanout-team-agents/SKILL.md):
-
-## Per-agent findings
-(lens-axis fanout — 6 review workers on one repo's diff)
-One `### team-<role>` subsection per worker dispatched. `lead`'s synthesis stays in Findings above; this is the evidence trail. MANDATORY first line of every subsection: `**Dispatched-as**: <subagent_type>` (or `general-purpose` + a one-phrase reason if the fallback fired) — the orchestrator passes the Dispatched-as map into synthesis (orchestrator.md > Fanout dispatch). Without it a reader can't tell a real team-<role> dispatch from the inline fallback (both produce byte-identical artifact shapes).
-  ### team-<role>
-  **Dispatched-as**: `team-<role>`
-  - `path:line` — finding
-
-## Per-repo review
-(surface-axis fanout — one per-repo reviewer per changed repo in a control-plane run; orchestrator.md step 11 + Surface fanout). One `### Repo: <path>` subsection per changed repo, each carrying that repo's plan-adherence + Blocking/Non-blocking findings + per-repo verdict. The top-level Acceptance-criteria check, Verdict, and Cycle stay GLOBAL (one AC walk across all repos; Verdict = pass iff every repo passed; one run-level cycle).
-  ### Repo: `<path>`
-  **Per-repo verdict**: pass | fix-required
-  - `path:line` — finding
+Fanout-only sections — add when the matching fanout ran:
+Per-agent findings (lens-axis: ≥2 review workers on one repo's diff — each `### team-<role>` with `**Dispatched-as**:` first line) ·
+Per-repo review (surface-axis: one `### Repo: <path>` per changed repo; AC check / Verdict / Cycle stay global).
+Shape + when — Per-agent: lead.md > Mode B (Review); Per-repo: orchestrator/references/surface-fanout.md > Lead — Mode B (Review).
 -->

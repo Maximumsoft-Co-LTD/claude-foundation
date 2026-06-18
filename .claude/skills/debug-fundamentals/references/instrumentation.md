@@ -1,6 +1,6 @@
 # Instrumentation
 
-Instrumentation is how you turn a system that "doesn't work" into a system that *tells you* what it's doing. Most stuck debugging sessions are stuck because the engineer is reasoning about what the code *should* do rather than what it *did*. A well-placed log, breakpoint, or trace replaces an hour of theorizing with a fact.
+Instrumentation turns a system that "doesn't work" into one that *tells you* what it's doing. Most stuck sessions are stuck because the engineer reasons about what the code *should* do rather than what it *did*. A well-placed log replaces an hour of theorizing with a fact.
 
 ## The hierarchy
 
@@ -16,7 +16,7 @@ Don't reach for the heavy tool first. A `console.log` solves 80% of bugs; a debu
 
 ## Print debugging — done well
 
-"Print debugging" gets a bad rap because it's often done badly. Done well, it's almost always the fastest path.
+Done well, it's almost always the fastest path.
 
 ### What to print
 
@@ -91,41 +91,34 @@ Debugger usage in agentic contexts is awkward (no interactive UI). When you can'
 
 ## Tracing
 
-For multi-service bugs, distributed tracing (OpenTelemetry, Jaeger, Tempo, Honeycomb, Datadog APM) is the only sane tool. The trace is a tree of spans, each with timing and attributes, propagated across service boundaries via trace headers.
+For multi-service bugs, distributed tracing (OpenTelemetry, Jaeger, Tempo, Honeycomb, Datadog APM) is the only sane tool. The trace is a tree of spans with timing and attributes, propagated across service boundaries via trace headers. It shows the exact path, which span was slow, which span errored, and where a value changed shape.
 
-What it lets you see:
+When a span is missing a useful attribute (order id, user id, payload size), add it. Trace attributes during debugging are usually the lowest-effort, highest-value instrumentation in a distributed system.
 
-- The exact path a request took across services.
-- Which span was slow (the cause of a tail-latency bug).
-- Which span errored (and what its attributes were).
-- Where in the chain a value changed shape.
-
-When a span is missing a useful attribute (the order id, the user id, the size of the payload), add it. Trace attributes during a debugging session are usually the lowest-effort, highest-value instrumentation in a distributed system.
-
-If the system has no tracing and a distributed bug is wasting days, *the right fix is to add tracing*. It pays back on the next incident, not just this one.
+If the system has no tracing and a distributed bug is wasting days, *adding tracing is the right fix*. It pays back on every future incident.
 
 ## System-level tracing
 
-When the app says "it succeeded" but the user sees nothing, the application's testimony is unreliable. Drop a layer:
+When the app says "it succeeded" but nothing happened, drop a layer:
 
-- **`strace -p <pid>` / `dtruss`** — every system call the process makes. Slow but ground-truth. Great for "is the process even opening the file?" / "is it making the network call I think it is?"
-- **`tcpdump` / Wireshark** — what bytes are actually going on the wire. The only honest answer when TLS, HTTP/2, or a proxy is misbehaving.
-- **`eBPF` tools** (`bpftrace`, `bcc-tools`) — production-safe system tracing. `tcpconnect`, `opensnoop`, `execsnoop`, `biolatency`, etc.
-- **`/proc/<pid>/`** — fds, maps, status. Useful when a process is doing something unexpected.
-- **`lsof`, `netstat`, `ss`** — what's the process holding open, what's it connected to, what's it listening on.
+- **`strace -p <pid>` / `dtruss`** — every system call. Good for "is the process even opening the file?"
+- **`tcpdump` / Wireshark** — what bytes are actually on the wire. The honest answer when TLS, HTTP/2, or a proxy is misbehaving.
+- **`eBPF` tools** (`bpftrace`, `bcc-tools`) — production-safe tracing: `tcpconnect`, `opensnoop`, `execsnoop`, `biolatency`.
+- **`/proc/<pid>/`** — fds, maps, status.
+- **`lsof`, `netstat`, `ss`** — what's open, connected, listening.
 
-These are heavyweight. Reach for them when the bug is *below* the application layer: weird timeouts that don't show in app logs, "file not found" when the file is there, DNS resolution misery, mysterious EAGAIN/EINTR loops.
+Reach for these when the bug is *below* the application layer: weird timeouts not in app logs, "file not found" when the file is there, DNS misery, mysterious EAGAIN/EINTR loops.
 
 ## Production instrumentation
 
-Some bugs only happen in production. Your only path is to make production carry the evidence on the next occurrence:
+Some bugs only happen in production. Make production carry the evidence on the next occurrence:
 
 - Add a log at the failure point with full context (sanitized).
-- Add a metric counter on the failure shape — `order.charge.zero_total` — so you can see frequency.
+- Add a metric counter on the failure shape — `order.charge.zero_total`.
 - Add a trace attribute so the next failing trace has the values you need.
 - Deploy. Wait. The next occurrence is no longer wasted.
 
-Resist the urge to deploy a "fix" instead of an instrumented build. A fix-without-repro is a guess; an instrumented build is a hypothesis-collector that pays off in hours.
+Resist deploying a "fix" instead of an instrumented build. A fix-without-repro is a guess; an instrumented build is a hypothesis-collector.
 
 ## Anti-patterns
 

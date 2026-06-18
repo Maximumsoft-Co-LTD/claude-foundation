@@ -5,47 +5,12 @@ description: "UI/UX decision and review support for web and mobile. Use when the
 
 # UI/UX Pro Max - Design Intelligence
 
-Comprehensive design guide for web and mobile applications. Contains 50+ styles, 161 color palettes, 57 font pairings, 161 product types with reasoning rules, 99 UX guidelines, and 25 chart types across 10 technology stacks. Searchable database with priority-based recommendations.
-
 ## When to Apply
 
-This Skill should be used when the task involves **UI structure, visual design decisions, interaction patterns, or user experience quality control**. It is a reasoning and review skill first; implementation aesthetics belong to [[frontend-design]], and Tailwind v4 mechanics belong to [[tailwind-design-system]].
+**Use** for: new pages, UI components, color/typography/spacing/layout decisions, UX or a11y review, navigation patterns, animations, cross-platform design, component libraries, or any "why does this look bad" question.
+**Skip** for: pure backend/API/DB/infra work, non-visual tasks, pure implementation with settled design direction, or Tailwind v4 config/token syntax without broader UX decisions.
 
-### Must Use
-
-This Skill must be invoked in the following situations:
-
-- Designing new pages (Landing Page, Dashboard, Admin, SaaS, Mobile App)
-- Creating or refactoring UI components (buttons, modals, forms, tables, charts, etc.)
-- Choosing color schemes, typography systems, spacing standards, or layout systems
-- Reviewing UI code for user experience, accessibility, or visual consistency
-- Implementing navigation structures, animations, or responsive behavior
-- Making product-level design decisions (style, information hierarchy, brand expression)
-- Improving perceived quality, clarity, or usability of interfaces
-
-### Recommended
-
-This Skill is recommended in the following situations:
-
-- UI looks "not professional enough" but the reason is unclear
-- Receiving feedback on usability or experience
-- Pre-launch UI quality optimization
-- Aligning cross-platform design (Web / iOS / Android)
-- Building design systems or reusable component libraries
-
-### Skip
-
-This Skill is not needed in the following situations:
-
-- Pure backend logic development
-- Only involving API or database design
-- Performance optimization unrelated to the interface
-- Infrastructure or DevOps work
-- Non-visual scripts or automation tasks
-- Pure UI implementation where the design direction is already decided
-- Tailwind v4 configuration, token syntax, or component-variant mechanics without broader UX decisions
-
-**Decision criteria**: If the task will change how a feature **looks, feels, moves, or is interacted with**, this Skill should be used.
+**Trigger**: the task changes how a feature looks, feels, moves, or is interacted with.
 
 ## Neighboring Skills
 
@@ -54,8 +19,6 @@ This Skill is not needed in the following situations:
 - [[brainstorming]] owns open-ended product scoping before a UI direction can be chosen.
 
 ## Rule Categories by Priority
-
-*For human/AI reference: follow priority 1→10 to decide which rule category to focus on first; use `--domain <Domain>` to query details when needed. Scripts do not read this table.*
 
 | Priority | Category | Impact | Domain | Key Checks (Must Have) | Anti-Patterns (Avoid) |
 |----------|----------|--------|--------|------------------------|------------------------|
@@ -307,12 +270,6 @@ This Skill is not needed in the following situations:
 - `drill-down-consistency` - Drill-down interactions must maintain a clear back-path and hierarchy breadcrumb
 - `time-scale-clarity` - Time series charts must clearly label time granularity (day/week/month) and allow switching
 
-## How to Use
-
-Search specific domains using the CLI tool below.
-
----
-
 ## Prerequisites
 
 Check if Python is installed:
@@ -341,8 +298,6 @@ winget install Python.Python.3.12
 ---
 
 ## How to Use This Skill
-
-Use this skill when the user requests any of the following:
 
 | Scenario | Trigger Examples | Start From |
 |----------|-----------------|------------|
@@ -374,12 +329,6 @@ Extract key information from user request:
 python3 skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <keywords>" --design-system [-p "Project Name"]
 ```
 
-This command:
-1. Searches domains in parallel (product, style, color, landing, typography)
-2. Applies reasoning rules from `ui-reasoning.csv` to select best matches
-3. Returns complete design system: pattern, style, colors, typography, effects
-4. Includes anti-patterns to avoid
-
 **Example:**
 ```bash
 python3 skills/ui-ux-pro-max/scripts/search.py "beauty spa wellness service" --design-system -p "Serenity Spa"
@@ -404,11 +353,6 @@ python3 skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --persi
 
 This also creates:
 - `design-system/pages/dashboard.md` — Page-specific deviations from Master
-
-**How hierarchical retrieval works:**
-1. When building a specific page (e.g., "Checkout"), first check `design-system/pages/checkout.md`
-2. If the page file exists, its rules **override** the Master file
-3. If not, use `design-system/MASTER.md` exclusively
 
 **Context-aware retrieval prompt:**
 ```
@@ -482,45 +426,23 @@ python3 skills/ui-ux-pro-max/scripts/search.py "<keyword>" --stack react-native
 
 ## Example Workflow
 
-**User request:** "Make an AI search homepage."
-
-### Step 1: Analyze Requirements
-- Product type: Tool (AI search engine)
-- Target audience: C-end users looking for fast, intelligent search
-- Style keywords: modern, minimal, content-first, dark mode
-- Stack: React Native
-
-### Step 2: Generate Design System (REQUIRED)
+**User request:** "Make an AI search homepage" (Tool · modern · minimal · dark mode)
 
 ```bash
+# Step 2: design system
 python3 skills/ui-ux-pro-max/scripts/search.py "AI search tool modern minimal" --design-system -p "AI Search"
-```
-
-**Output:** Complete design system with pattern, style, colors, typography, effects, and anti-patterns.
-
-### Step 3: Supplement with Detailed Searches (as needed)
-
-```bash
-# Get style options for a modern tool product
+# Step 3: domain supplements
 python3 skills/ui-ux-pro-max/scripts/search.py "minimalism dark mode" --domain style
-
-# Get UX best practices for search interaction and loading
 python3 skills/ui-ux-pro-max/scripts/search.py "search loading animation" --domain ux
-```
-
-### Step 4: Stack Guidelines
-
-```bash
+# Step 4: stack
 python3 skills/ui-ux-pro-max/scripts/search.py "list performance navigation" --stack react-native
 ```
 
-**Then:** Synthesize design system + detailed searches and implement the design.
+Synthesize results and implement.
 
 ---
 
 ## Output Formats
-
-The `--design-system` flag supports two output formats:
 
 ```bash
 # ASCII box (default) - best for terminal display

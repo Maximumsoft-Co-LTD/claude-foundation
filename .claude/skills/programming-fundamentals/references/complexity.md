@@ -61,12 +61,10 @@ Match the structure to the access pattern, not the other way around.
 
 ## When to actually optimize
 
-> "Premature optimization is the root of all evil" — Knuth. But: don't intentionally choose the slower option when the faster one is the same code length. That's not optimization, that's not writing bad code.
-
-1. **Profile first.** Don't guess where the hot spot is — measure. Most "obviously slow" code isn't on the hot path; most actually-slow code is somewhere boring.
-2. **Algorithmic wins beat micro-optimizations.** Going from `O(n²)` to `O(n)` will outperform any amount of inner-loop tuning.
-3. **Memory matters too.** Iterating over a large dataset in chunks instead of loading it all is often the difference between "works" and "OOM in prod."
-4. **Cache invalidation is the other half.** A cache that's wrong is worse than no cache. Only cache when you can name the invalidation rule.
+1. **Profile first.** Measure — most "obviously slow" code isn't on the hot path.
+2. **Algorithmic wins beat micro-optimizations.** O(n²) → O(n) beats any inner-loop tuning.
+3. **Memory matters too.** Chunk large datasets instead of loading all at once.
+4. **Cache invalidation is the other half.** A wrong cache is worse than no cache. Only cache when you can name the invalidation rule.
 
 ## A quick gut check
 

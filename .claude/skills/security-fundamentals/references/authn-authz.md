@@ -1,17 +1,15 @@
 # Authentication, Authorization, Secrets, and Crypto
 
-Two words that sound alike and protect different things:
-
-- **Authentication (authn)** — *who are you.* Establishes identity once per request, from a credential (password, token, session). Getting this wrong lets an attacker become someone.
+- **Authentication (authn)** — *who are you.* Establishes identity once per request. Getting this wrong lets an attacker become someone.
 - **Authorization (authz)** — *may you do this, to this thing.* Runs at every access, derived from the authenticated identity. Getting this wrong lets an authenticated user touch what isn't theirs.
 
-The overwhelming majority of serious, easily-exploited web bugs are **authorization** failures, not authentication ones — because the authn happy path is obvious and tested, while the authz check is the one nobody notices is missing until an attacker increments an id.
+The overwhelming majority of serious web bugs are **authorization** failures — the authn happy path is obvious and tested; the authz check is the one nobody notices is missing until an attacker increments an id.
 
 ## Sessions vs tokens
 
 ### Cookie sessions (server-side state)
 
-The server stores session state and hands the client an opaque session id in a cookie. Revocation is trivial (delete the server record). The cookie must be:
+The server stores session state; the client holds an opaque session id in a cookie. Revocation is trivial (delete the server record). The cookie must be:
 
 ```
 Set-Cookie: sid=...; HttpOnly; Secure; SameSite=Lax; Path=/
@@ -24,7 +22,7 @@ Set-Cookie: sid=...; HttpOnly; Secure; SameSite=Lax; Path=/
 
 ### Tokens (JWT, stateless)
 
-The server signs a token the client holds; no server-side lookup per request. Cheap to scale, **hard to revoke** (the token is valid until it expires). Use short-lived access tokens (minutes) plus a refresh token, and keep a revocation/denylist for the refresh side.
+The server signs a token the client holds; no server-side lookup per request. Cheap to scale, **hard to revoke**. Use short-lived access tokens (minutes) + a refresh token with a revocation/denylist.
 
 JWT validation is a field of footguns. Validate **all** of:
 
@@ -45,10 +43,10 @@ jwt.verify(token, key, { algorithms: ['RS256'], issuer: 'auth.example.com', audi
 
 Prefer delegating to an identity provider (OAuth/OIDC). If you must store passwords:
 
-- Hash with a **slow, salted, memory-hard** function: `argon2id` (first choice), `scrypt`, or `bcrypt`. The library generates the salt and embeds the cost; you tune the cost factor, never the algorithm.
-- **Never** a general-purpose hash (SHA-256, MD5) — they're built to be fast, which is exactly what an offline cracker wants.
-- Verify with the library's `verify` (constant-time); never compare hashes with `==`.
-- Rate-limit and lock out on repeated failures; the same generic error for "wrong password" and "no such user" (don't leak which accounts exist).
+- Hash with **slow, salted, memory-hard** `argon2id` (first choice), `scrypt`, or `bcrypt`. Library generates the salt; you tune the cost factor, never the algorithm.
+- **Never** SHA-256 or MD5 — built to be fast, which is exactly what an offline cracker wants.
+- Verify with the library's `verify` (constant-time); never compare with `==`.
+- Rate-limit and lock out on repeated failures; same generic error for "wrong password" and "no such user" (don't leak account existence).
 
 ## Authorization: deny by default, per-object, server-side
 
@@ -80,7 +78,7 @@ You need **two layers** and they fail differently:
 
 ### Deny by default
 
-The absence of an explicit *allow* is a *deny*. New endpoints, new fields, new actions start locked. A central policy layer (`can(actor, action, resource)`) beats scattered `if (user.role === ...)` checks that drift out of sync. When a check errors, deny — see the fail-closed rule below.
+Absence of explicit *allow* = *deny*. New endpoints, fields, and actions start locked. A central policy layer (`can(actor, action, resource)`) beats scattered `if (user.role === ...)` checks that drift. When a check errors, deny.
 
 ```ts
 // Bad — returns the object to any authenticated caller (IDOR)
@@ -93,29 +91,29 @@ if (!doc || doc.ownerId !== req.session.userId) return res.sendStatus(404)
 return res.json(doc)
 ```
 
-Returning **404 instead of 403** for an object the caller may not access avoids confirming that the id exists (an enumeration oracle). Use 403 when the existence isn't sensitive.
+Return **404 instead of 403** when the caller may not access an object — avoids confirming the id exists (enumeration oracle). Use 403 when existence isn't sensitive.
 
 ### Where to enforce it
 
-Put authorization at the lowest layer that has the object — ideally in the use case / application service ([[hexagonal-backend]]), so every transport (HTTP, gRPC, a background job, a CLI) inherits the same check. Authorization bolted onto one controller is authorization the next entry point forgets.
+Put authorization at the lowest layer that has the object — ideally in the use case / application service ([[hexagonal-backend]]), so every transport inherits the same check. Authorization bolted onto one controller is authorization the next entry point forgets.
 
 ## Fail closed
 
 Every security decision must default to *deny* on the unhappy path:
 
 ```ts
-// Fails OPEN — an exception in the policy grants access
+// Fails OPEN — exception grants access
 function authorized(u, r) { try { return policy.check(u, r) } catch { return true } }
 
 // Fails CLOSED — error → log → deny
 function authorized(u, r) { try { return policy.check(u, r) } catch (e) { log.error(e); return false } }
 ```
 
-The same applies to config: a missing required secret/permission should *refuse to start*, not silently default to a permissive value. (This is exactly the territory `team-silent-failure-hunter` patrols — a swallowed error on a security path is the worst kind of silent failure.)
+Same for config: a missing required secret/permission should *refuse to start*, not silently default to a permissive value. (`team-silent-failure-hunter` territory — a swallowed error on a security path is the worst kind of silent failure.)
 
 ## Secrets and crypto: the primitive-selection decision guide
 
-The fatal mistake is reaching for the wrong tool. They are not interchangeable:
+The fatal mistake is reaching for the wrong tool:
 
 | You want to… | Use | Not |
 |---|---|---|
@@ -127,18 +125,17 @@ The fatal mistake is reaching for the wrong tool. They are not interchangeable:
 | Compare two secrets/MACs/tokens | constant-time: `timingSafeEqual`, `compare_digest` | `==` / `===` (timing oracle) |
 
 Rules that hold regardless of language:
-
-- **Never roll your own crypto.** Call a vetted library (libsodium/NaCl, your platform's standard crypto module) with its defaults, for the purpose it was built for. "Looks correct and round-trips" is no evidence of security.
-- **Never reuse a nonce/IV** with a stream cipher or GCM — it catastrophically breaks confidentiality. Let the library generate it.
-- **Encryption is not authentication.** Use authenticated encryption (AEAD) so tampering is detected; a bare cipher lets an attacker flip bits.
-- **A signed token is not a secret token** — JWTs and the like are readable by anyone. Don't put PII or secrets in a payload that's only signed.
+- **Never roll your own crypto.** Call a vetted library (libsodium/NaCl, your platform's standard crypto module) with defaults.
+- **Never reuse a nonce/IV** — catastrophically breaks confidentiality. Let the library generate it.
+- **Encryption is not authentication.** Use AEAD so tampering is detected; a bare cipher lets an attacker flip bits.
+- **A signed token is not a secret token** — JWTs are readable by anyone. Don't put PII or secrets in a signed-only payload.
 
 ### Handling secrets
 
-- Out of source control, always. API keys, DB passwords, signing keys live in environment variables or a secrets manager, injected at runtime. This repo's `protect-secrets.sh` hook blocks `Read`/`Grep`/`Bash` from reading `.env` and credential files for exactly this reason (it allow-lists `*.example`/`*.template`/`*.pub`).
-- **A secret committed once is compromised forever** — even if a later commit removes it, it's in the history. Rotate it; don't just `git rm`.
-- Keep secrets out of logs, error messages, exception traces, and analytics. A stack trace that prints the request with an `Authorization` header is a leak.
-- Scope every secret to least privilege (see SKILL principle 6): a read job gets a read-only key; a webhook verifier needs no write scope.
+- Out of source control, always. API keys, DB passwords, signing keys live in env vars or a secrets manager, injected at runtime. This repo's `protect-secrets.sh` hook blocks reading `.env` and credential files (allow-lists `*.example`/`*.template`/`*.pub`).
+- **A secret committed once is compromised forever** — even deleted from a later commit, it's in history. Rotate it; don't just `git rm`.
+- Keep secrets out of logs, error messages, exception traces, and analytics.
+- Scope every secret to least privilege (SKILL principle 6): read job gets read-only key; webhook verifier needs no write scope.
 
 ## Checklist for an authn/authz/secrets diff
 

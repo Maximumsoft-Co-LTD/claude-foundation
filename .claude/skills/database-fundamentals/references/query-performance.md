@@ -1,10 +1,8 @@
 # Query Performance
 
-Most "the database is slow" complaints are actually "this specific query is slow," and most slow queries are slow for one of a small handful of reasons. The path is always the same: get the plan, identify the bottleneck, fix it, confirm with the plan.
-
 ## Reading EXPLAIN ANALYZE
 
-`EXPLAIN ANALYZE` (Postgres / MySQL 8) runs the query and reports the actual plan with actual row counts and times. Plain `EXPLAIN` only shows the planner's estimates — which are often wrong, which is why you got there.
+`EXPLAIN ANALYZE` (Postgres / MySQL 8) runs the query and reports actual row counts and times. Plain `EXPLAIN` shows estimates only — often wrong.
 
 A Postgres plan reads bottom-up. The leaf nodes (the bottom) fetch data; each parent processes its children's output; the top node returns to the client.
 
@@ -34,8 +32,6 @@ Things to look at:
 If you see `Seq Scan` on a million-row table with a selective `WHERE`, you're missing an index or the planner can't use the one you have (often a type mismatch — `WHERE user_id = '5'` against a `BIGINT` column will bypass the index).
 
 ## The N+1 antipattern
-
-The single most common performance bug in any system that uses an ORM.
 
 **The pattern:**
 ```py
@@ -89,7 +85,7 @@ For graph fetches across many call sites, use a **dataloader**: collect IDs duri
 
 ## Pagination: keyset over offset
 
-`OFFSET 10000 LIMIT 20` looks reasonable but scales `O(offset)` — the database has to fetch and discard the first 10,000 rows to give you rows 10001–10020. On page 500, this is a problem.
+`OFFSET 10000 LIMIT 20` scales O(offset) — the DB fetches and discards 10,000 rows to return 20. Worsens with depth.
 
 **Keyset pagination** uses the last seen value of the sort key as the cursor:
 
@@ -106,18 +102,11 @@ LIMIT 20;
 
 Index on `(user_id, placed_at DESC, id DESC)` and every page costs the same: `O(log n)` lookup + 20 row reads. No matter what page you're on.
 
-Tradeoff: no "jump to page 50" — only "next" and "previous." Almost always the right call for APIs and infinite-scroll UIs. Use offset only for admin grids where the page count is small and bounded.
+Tradeoff: no "jump to page N." Use offset only for small, bounded admin grids.
 
 ## SELECT * and overfetching
 
-`SELECT *` is fine in development. In production:
-
-- It returns columns the caller doesn't need, wasting network and serialization time.
-- It prevents `Index Only Scan` — the index doesn't cover the columns you didn't ask for.
-- It silently breaks when a column is added or removed.
-- It serializes large `TEXT` or `JSONB` payloads even when nobody reads them.
-
-Project the columns you actually use. Keep the wide blob columns (`description`, `payload`, `metadata`) out of list endpoints; load them in the detail view.
+`SELECT *` in production: wastes network, prevents Index Only Scan, breaks silently on schema changes, serializes large blobs nobody reads. Project the columns you actually use; keep wide blobs out of list endpoints.
 
 ## COUNT(*) on large tables
 

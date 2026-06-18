@@ -1,7 +1,5 @@
 # Indexing
 
-An index is a separate data structure that lets the database find rows by some column(s) in `O(log n)` instead of scanning the table. The catch: every index pays write cost on every `INSERT`/`UPDATE`/`DELETE`, and takes disk and memory. The goal isn't "index everything," it's "index the queries that need it, nothing more."
-
 ## The two rules that catch most engineers
 
 ### 1. The leftmost prefix rule
@@ -55,7 +53,7 @@ CREATE INDEX ON orders (user_id, status) INCLUDE (total_cents, id);
 -- Postgres can do an Index Only Scan: never touches the table.
 ```
 
-Don't over-include — every column in the index inflates its size, which inflates cache pressure and write cost. Cover for queries that are both hot and read-heavy.
+Don't over-include — every column inflates index size, cache pressure, and write cost. Cover hot, read-heavy queries only.
 
 ## Partial indexes
 
@@ -85,7 +83,7 @@ If you don't know which to pick, the answer is B-tree.
 
 ## Foreign keys need indexes
 
-Postgres does **not** create an index on foreign-key columns automatically. (MySQL InnoDB does.) Without one, every delete or update on the parent table has to scan the child table to find dependents — turning O(log n) deletes into O(n) deletes, and holding row locks while it scans.
+Postgres does **not** auto-index foreign-key columns (MySQL InnoDB does). Without one, parent deletes/updates scan the child table — O(log n) becomes O(n), holding row locks throughout.
 
 ```sql
 CREATE TABLE order_items (
@@ -98,10 +96,10 @@ CREATE INDEX ON order_items (order_id);
 
 ## When NOT to add an index
 
-- **Small tables** (under ~10k rows). The seq scan is faster than B-tree lookup once you account for the planner overhead, and the optimizer will ignore the index anyway.
-- **Low-selectivity columns**, alone. An index on a boolean `is_active` (95% true) is mostly useless — the planner will seq scan because following the index costs more than the read. *Composite* or *partial* indexes on low-selectivity columns can still help.
-- **Heavy-write, rarely-read columns.** Every index is a tax on writes. If a column is never in a `WHERE`, don't index it.
-- **You haven't measured.** Don't speculatively index. Run the query, look at the plan, add the index only if the plan shows seq scan over a meaningful row count.
+- **Small tables** (~10k rows or fewer) — seq scan is faster; optimizer ignores the index anyway.
+- **Low-selectivity columns** alone (`is_active` boolean) — use composite or partial instead.
+- **Heavy-write, rarely-read columns** — every index taxes every write.
+- **Before measuring** — run the query, check the plan, add only if there's a meaningful seq scan.
 
 ## How to find unused indexes (Postgres)
 
@@ -118,7 +116,7 @@ WHERE idx_scan = 0 AND NOT indisunique
 ORDER BY pg_relation_size(i.indexrelid) DESC;
 ```
 
-If a non-unique index has zero scans since the last stats reset (default: server start), it's a candidate for dropping. Don't drop blindly — confirm by checking that no infrequent batch job uses it.
+Zero scans since the last stats reset → candidate for dropping. Confirm no infrequent batch job uses it first.
 
 ## Diagnostic flow when adding an index
 

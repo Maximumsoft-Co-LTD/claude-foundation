@@ -16,8 +16,8 @@ The named next action — pick one:
 - **Reject** — option ruled out because: <one line>
 
 <!--
-The sections above are always required for a spike. Add the sections below ONLY when they apply, then DELETE them if not:
-- What we tried — brief log of what got explored (when the path taken isn't obvious from What we learned)
+Sections above = always required for a spike. Add a section below ONLY when it applies, then DELETE if not:
+- What we tried — brief log of what got explored (when not obvious from What we learned)
 - Follow-ups generated — what retro should append to FOLLOWUPS.md
-- Open questions — what the timebox didn't resolve (each → a new spike or a known-unknown filed under follow-ups)
+- Open questions — what the timebox didn't resolve (each → a new spike or a known-unknown follow-up)
 -->

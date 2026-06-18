@@ -1,14 +1,8 @@
 # Shared state, locking, and async
 
-This is the deep guide for the in-process concurrency principles. It covers, in order: the escape hatches that let you *avoid* shared mutable state; the decision rules for when you can't (lock vs atomic vs CAS vs optimistic version); deadlock-avoidance recipes; the async/await pitfalls that bite even single-threaded runtimes; and the bounded-concurrency patterns that keep fan-out from melting your pools. Examples are TypeScript or pseudo-threaded — translate the primitive to your stack.
-
-Scope reminder: this is **in-process** concurrency. Contention across processes over a broker is [[queue-fundamentals]]; contention across database transactions is [[database-fundamentals]]. The ideas rhyme (atomicity, lost updates, optimistic versions, idempotency) — apply the one that owns the boundary you're actually crossing.
-
 ---
 
 ## 1. Escape hatches: avoid the sharing entirely
-
-The fastest race fix is to make the race unrepresentable. Reach for these *before* a lock.
 
 ### Immutability
 
@@ -58,15 +52,13 @@ Instead of two tasks sharing a buffer behind a lock, pass ownership through a ch
 
 Per-worker scratch state that nothing else can see needs no protection. A buffer allocated inside a task, a request-scoped context — keep it local and the question of races never arises.
 
-**Decision:** can I make it immutable? → do that. Else, can one owner hold it? → confine it. Else, can I hand it off by message? → do that. Only if none of those fit do you reach for a lock.
+**Decision:** immutable? → do that. One owner? → confine it. Hand off by message? → do that. Only if none fit: reach for a lock.
 
 ---
 
 ## 2. When you must share: lock vs atomic vs CAS vs optimistic version
 
-You've decided the state is genuinely shared and mutable. Now protect the **critical section** — the smallest span that must run without another task observing or changing the value mid-flight.
-
-`count++` is three machine steps (load, add, store). Two threads interleaving them lose an increment. This is the in-process lost update — the same bug as [[database-fundamentals]]'s lost update, one layer up.
+Protect the **critical section** — the smallest span that must run without interleaving. `count++` is three steps (load, add, store); two threads lose an increment. Same as [[database-fundamentals]] lost update, in memory.
 
 ### The decision rules
 
@@ -90,7 +82,7 @@ async function deposit(amt: number) {
 }
 ```
 
-Rules: hold the lock for the *smallest* span that preserves the invariant; never `await` un-owned I/O while holding it (principle 3); prefer a lock *per key/shard* over one global lock so independent work stays parallel.
+Rules: hold for the *smallest* span; never `await` un-owned I/O while holding it; prefer a lock per key/shard over one global lock.
 
 ### Atomic — for a single value
 
@@ -130,13 +122,11 @@ async function update(store: Map<string, Doc>, key: string, fn: (s: string) => P
 }
 ```
 
-Optimistic wins when conflicts are *rare* (cheap happy path). Pessimistic locks win when conflicts are *common* (retrying repeatedly is worse than waiting once).
+Optimistic wins when conflicts are rare; pessimistic when conflicts are common (retrying is worse than waiting).
 
 ---
 
 ## 3. Deadlock-avoidance recipes
-
-A deadlock is a cycle in the "who waits for whom" graph. Make the graph acyclic and deadlock is impossible.
 
 ### Recipe 1: consistent lock ordering (the big one)
 
@@ -170,7 +160,7 @@ await mutex.runExclusive(() => { shared.value = result })   // tiny critical sec
 
 ### Recipe 3: avoid nested locks
 
-Needing two locks at once is the *precondition* for deadlock. Often you can hold one at a time, or merge two fine-grained locks into one coarser lock. One lock can't deadlock against itself (unless you take it re-entrantly — use a re-entrant mutex or restructure).
+Needing two locks at once is the precondition for deadlock. Hold one at a time, or merge them into one coarser lock.
 
 ### Recipe 4: never lock across un-owned I/O
 
@@ -200,8 +190,6 @@ if (!acquired) throw new LockTimeout("could not acquire within 5s")  // fail lou
 ---
 
 ## 4. async/await pitfalls
-
-Single-threaded does not mean race-free. At every `await`, another task can interleave. And async has its own footguns that look like ordinary linear code.
 
 ### Pitfall: the floating (un-awaited) promise
 
@@ -293,17 +281,13 @@ async function fetchWithTimeout(url: string, ms: number) {
 }
 ```
 
-Plumb the signal *through* every layer; a timeout that abandons a request without aborting it leaks the connection (and anything it holds). Put resource release in `finally` so it runs on completion, throw, and cancellation alike.
+Plumb the signal through every layer; a timeout that abandons without aborting leaks the connection. Put cleanup in `finally` so it runs on completion, throw, and cancel alike.
 
 ---
 
 ## 5. Bounded concurrency patterns
 
-Unbounded fan-out is a self-inflicted DoS: `Promise.all` over 50k items opens 50k sockets/connections/handles at once. Cap in-flight work to the real bottleneck.
-
 ### Semaphore / concurrency limit
-
-Allow at most N tasks into the constrained resource; the rest wait.
 
 ```ts
 import pLimit from "p-limit"
@@ -333,8 +317,6 @@ class Semaphore {
 
 ### Worker pool draining a queue
 
-A fixed set of workers pull from a shared queue. Bounded workers → bounded memory and connections, with natural load-leveling.
-
 ```ts
 async function runPool<T>(items: T[], workers: number, job: (t: T) => Promise<void>) {
   const queue = [...items]
@@ -345,8 +327,6 @@ await runPool(records, 10, (r) => db.insert(r))
 ```
 
 ### Backpressure
-
-When producers outrun consumers, *slow the producer* — don't buffer unboundedly until you OOM. A bounded queue blocks (or rejects) the producer when full; that pushback is the signal.
 
 ```ts
 class BoundedQueue<T> {
@@ -360,11 +340,11 @@ class BoundedQueue<T> {
 }
 ```
 
-Node streams give you this for free via the `highWaterMark` and `pipe` honoring backpressure — prefer the platform mechanism when one exists.
+Prefer the platform mechanism when one exists (Node streams `highWaterMark` + `pipe`).
 
 ### Choosing N
 
-N is the *real* bottleneck, not a vibe: the DB connection-pool size, the downstream service's rate limit, the number of CPU cores for CPU-bound work. More concurrency than the limiter can absorb just converts into queueing and timeouts — it doesn't speed anything up. The right N is usually small (single or low double digits).
+N is the real bottleneck: DB pool size, downstream rate limit, CPU cores. More concurrency than the limiter absorbs converts to queueing and timeouts. The right N is usually small (single or low double digits).
 
 ---
 

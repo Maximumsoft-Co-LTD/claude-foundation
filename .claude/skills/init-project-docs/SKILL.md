@@ -7,11 +7,7 @@ description: Generate a standard onboarding documentation suite for an EXISTING 
 
 ## Why this exists
 
-A new engineer (or a new agent) dropped into an unfamiliar repository spends the first days reconstructing what the codebase already knows: what the project is for, how it's wired, what data it holds, which endpoints exist, and what the important flows do at runtime. That knowledge lives in the code and in people's heads — it is rarely written down, and when it is, it drifts.
-
-This skill produces a **fixed, predictable documentation suite** by *reading the actual code* and grounding every statement in real files. The suite is the same six topics every time, so a reader knows exactly where to look, plus one `document.html` that renders the whole set in a browser with no build step and no server — open it, read it, share it.
-
-The hard part is not the file layout — the script handles that. The hard part is **accuracy**: brownfield docs are only useful if they describe the system that exists, not a plausible-sounding system. The bulk of this skill is about reading the code first and refusing to invent.
+Brownfield docs are only useful when they describe what exists, not a plausible-sounding system. This skill produces a **fixed, predictable documentation suite** by reading the actual code — same seven topics every time — plus a `document.html` viewer (no server needed). The hard part is **accuracy**: read the code first, refuse to invent.
 
 ## What it produces
 

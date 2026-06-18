@@ -1,16 +1,5 @@
 # Boundaries
 
-Deep dive on principle 1: drawing the boundaries before the boxes. This is the most expensive thing to get wrong and the cheapest to get right — every other principle gets easier when the boundaries are honest.
-
-## Table of contents
-
-- Bounded contexts
-- Module vs service: the cost of a process boundary
-- Conway's Law (and the inverse maneuver)
-- Extracting a service from a monolith: the strangler fig
-- Anti-corruption layers
-- Boundary smells
-
 ## Bounded contexts
 
 A **bounded context** is a region of the domain where a word means one thing. "Order" inside Checkout (an in-progress cart waiting to be paid) is a different concept from "Order" inside Fulfillment (a packed box on a truck) and from "Order" inside Finance (a line on a revenue ledger). Trying to model all three as one `Order` entity produces a class with thirty fields, most of them nullable, and ten rules about when each field applies. That class becomes the thing no one wants to touch.

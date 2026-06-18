@@ -1,18 +1,5 @@
 # Event Storming and domain discovery
 
-Deep dive on principle 2: discover bounded contexts and aggregates from the *events* of the domain, not from the nouns the team currently uses. This reference covers Event Storming (the dominant workshop technique) and Domain Storytelling (its lighter alternative), with concrete artifact-to-code mapping.
-
-## Table of contents
-
-- Why event-first discovery
-- Event Storming: the three flavors
-- The sticky-color grammar
-- Facilitation: how a session actually runs
-- Reading the wall: how to interpret what you see
-- Mapping workshop output to code
-- Domain Storytelling as alternative
-- Pitfalls and when to skip the workshop
-
 ## Why event-first discovery
 
 The temptation when modeling a new domain is to start with the nouns: "we have users, orders, products, invoices — let's draw boxes around each and call them services." This is the canonical path to god-objects, because the same noun means different things to different parts of the business. The `User` in Identity is not the `User` in Marketing is not the `User` in Support. A model trying to satisfy all three satisfies none, and every feature that touches `User` becomes a coordination problem across the whole company.

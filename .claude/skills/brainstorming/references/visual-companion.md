@@ -68,12 +68,3 @@ Even after a yes, decide **per question** whether the answer is browser-better o
 
 If anything in this protocol fails (tools won't load, browser unreachable, render errors twice), abandon the companion and fall back to text. Don't keep retrying — the brainstorm is the goal, not the visual.
 
-## Why this reference is here
-
-The companion is genuinely useful for UI / layout / diagram work, but it has three failure modes that show up consistently:
-
-1. The offer combined with a question — user only answers one of them.
-2. "Mode-creep" after acceptance — every question goes through the browser, even conceptual ones.
-3. Offered when no visual questions actually arise — wasted turn.
-
-This reference exists to prevent those three. If you can keep them in mind without re-reading, you don't need this file.

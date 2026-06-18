@@ -1,8 +1,6 @@
 # Migrations
 
-A migration runs against a live production database, while users are hitting the system, while the old version of the application is still pointing at the same tables. Every migration must be safe under those conditions. Most production outages caused by a database change are caused by ignoring this.
-
-The mental model: a migration is a **public API change**. The database schema is the contract between the database and every application instance reading and writing it. Breaking the contract — even briefly — breaks all the running instances.
+A migration runs against a live DB while old application instances are still running. Every migration must be safe under those conditions. The schema is a **public API contract** — breaking it, even briefly, breaks every running instance.
 
 ## The cardinal rule: never break the running app
 
@@ -19,14 +17,11 @@ At deploy time, you have a mix of old and new application instances. Both must w
 
 ## The expand → backfill → contract pattern
 
-For any change that isn't strictly additive, split it across at least three deploys:
-
-1. **Expand** — make the schema compatible with both old and new code. Add the new shape alongside the old.
-2. **Backfill** — populate the new shape for existing rows. Make the app write to both shapes.
+For any non-additive change, split across at least three deploys:
+1. **Expand** — add new shape alongside old; both old and new code must work.
+2. **Backfill** — populate new shape for existing rows; write to both.
 3. **Switch** — deploy code that reads from the new shape.
-4. **Contract** — once no code references the old shape, drop it.
-
-Each step is independently deployable and rollback-safe.
+4. **Contract** — drop the old shape once no code references it.
 
 ### Example: renaming `full_name` to `display_name`
 
@@ -56,7 +51,7 @@ user.display_name = name
 ALTER TABLE users DROP COLUMN full_name;
 ```
 
-Four deploys for a column rename. That sounds like a lot until you watch a naïve `RENAME` take production down for the 60 seconds it takes to roll out new app instances.
+Four deploys for a column rename — or one naïve `RENAME` that takes production down for 60 seconds during rollout.
 
 ### Example: adding a `NOT NULL` column
 
@@ -107,7 +102,7 @@ Different DDL statements take different locks. Knowing which lock matters becaus
 
 ## Long-running backfills
 
-A 50-million-row `UPDATE` in one transaction is a bad idea: it bloats the WAL, blocks `VACUUM`, holds locks, and if it fails you redo all of it. Batch instead.
+A 50M-row `UPDATE` in one transaction bloats WAL, blocks `VACUUM`, holds locks, and must redo on failure. Batch instead.
 
 ```sql
 -- Pseudo-pattern (Postgres). Loop in a script.
@@ -121,15 +116,11 @@ UPDATE orders SET currency = 'USD' WHERE id IN (SELECT id FROM batch);
 -- Sleep briefly between batches to let replicas catch up and let other writers in.
 ```
 
-Why batches:
-- Each batch commits quickly, releasing locks.
-- Replica lag stays bounded.
-- Failure costs you one batch, not the whole job.
-- You can monitor progress (`COUNT(*) WHERE currency IS NULL`).
+Batches: commit quickly (releases locks), bound replica lag, fail cheaply, and can be monitored (`COUNT(*) WHERE currency IS NULL`).
 
 ## Migration files
 
-Most stacks have a migration framework (Flyway, Liquibase, Alembic, golang-migrate, Knex, Prisma Migrate, Rails ActiveRecord, Django). Use one — don't hand-run SQL files in production.
+Use a migration framework (Flyway, Liquibase, Alembic, golang-migrate, Knex, Prisma Migrate, Rails, Django) — don't hand-run SQL in production.
 
 Conventions:
 - Migrations are **numbered or timestamped**, applied in order, applied once.
@@ -140,16 +131,7 @@ Conventions:
 
 ## Dual-write transitions (the "shadow write")
 
-When the new shape is in a different system entirely (new table, new database, new service), the pattern is:
-
-1. Write to both old and new. Read from old.
-2. Backfill the new system with historical data.
-3. Add a verification job: for each old write, confirm the new value matches.
-4. Switch reads to new.
-5. Stop writing to old.
-6. Decommission old after a grace period.
-
-Same idea — expand, backfill, switch, contract — at a larger scale.
+When the new shape is in a different system: (1) write to both, read from old; (2) backfill historical data; (3) verify new matches old on each write; (4) switch reads to new; (5) stop writing old; (6) decommission. Same expand-backfill-switch-contract at larger scale.
 
 ## Pitfalls
 

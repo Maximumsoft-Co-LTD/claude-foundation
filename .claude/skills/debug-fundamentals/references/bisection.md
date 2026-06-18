@@ -1,6 +1,6 @@
 # Bisection
 
-Bisection is the single highest-leverage debugging technique. Reading code linearly is `O(n)`. Bisection is `O(log n)`. On a 200-commit regression, that's 8 steps versus 200. The trick is recognizing that almost *any* search space can be bisected — not just commits.
+Bisection is the highest-leverage debugging technique. Reading code linearly is O(n); bisecting is O(log n). On a 200-commit regression: 8 steps vs 200. The trick: almost *any* search space can be bisected, not just commits.
 
 ## The general shape
 
@@ -32,15 +32,13 @@ git bisect reset
 
 ### Automated mode (preferred)
 
-If you have a script that exits 0 for "good" and non-zero for "bad", git can drive the whole bisect:
+If you have a script that exits 0 for "good" and non-zero for "bad":
 
 ```bash
 git bisect start <bad-sha> <good-sha>
 git bisect run ./scripts/repro.sh   # exit 0 = good, non-zero = bad, 125 = skip
 git bisect reset
 ```
-
-Now you can go to lunch. Come back to a one-commit verdict.
 
 ### Bisect script anatomy
 
@@ -69,9 +67,7 @@ esac
 
 ## Bisecting inside one commit — where in the code?
 
-Once you know the commit, you may still have a 500-line diff to find the bug in.
-
-Approach: **print at the midpoint of the suspect call stack.**
+Once you know the commit, you may still have a 500-line diff. **Print at the midpoint of the suspect call stack.**
 
 ```ts
 function chargeOrder(order) {
@@ -82,14 +78,12 @@ function chargeOrder(order) {
 }
 ```
 
-- Is `order.total` already wrong by the midpoint? Bug is upstream of the log. Move the log earlier; repeat.
+- Is `order.total` already wrong by the midpoint? Bug is upstream. Move the log earlier; repeat.
 - Is it still right? Bug is downstream. Move the log later; repeat.
 
-Each step halves the suspect region of code. Three or four logs almost always pinpoint the line.
+Each step halves the suspect region. Three or four logs almost always pinpoint the line.
 
-When the stack is shallow but the function is long: `console.log` at line N/2 inside the function. Same idea, smaller scale.
-
-For compiled languages where adding prints is slow: do it at function boundaries first, narrow to one function, then add finer logging only in that function.
+When the stack is shallow but the function is long: `console.log` at line N/2 inside the function.
 
 ## Bisecting inputs — which field?
 
@@ -145,4 +139,4 @@ Twenty feature flags. One combination triggers a bug. Tedious manual exploration
 
 ## The mindset
 
-Every time you're about to read a 500-line file or a 200-commit log looking for the bug, ask: *is there a binary question I could ask to halve this?* The answer is almost always yes. The discipline is recognizing it before you've already wasted an hour scrolling.
+Every time you're about to read a 500-line file or a 200-commit log, ask: *is there a binary question I could ask to halve this?* The answer is almost always yes.

@@ -7,13 +7,13 @@ description: Apply testing fundamentals — test behaviour not implementation, t
 
 ## Why this exists
 
-Most of the pain a test suite causes — rather than prevents — traces back to the same handful of missed fundamentals. Tests that assert *how* the code works instead of *what* it does break on every refactor, so the suite punishes the cleanup it should be protecting. A pyramid inverted into a tower of slow, flaky end-to-end tests turns a five-second feedback loop into five minutes, and the team stops running it. Mocking everything — especially the database — lets tests stay green while the integration that actually ships is broken. Coverage chased as a number produces 100%-covered trivia and 0%-covered business logic. And the bug that recurs every quarter is the one nobody pinned with a test the first time.
+Classic test suite anti-patterns: implementation tests that break on every refactor, an inverted pyramid of slow flaky e2e tests the team stops running, mocking the database so tests stay green while the real integration is broken, and bugs that recur because nobody pinned them with a regression test the first time.
 
-This skill is a **pre-flight**: read it before you write the test, choose the level, or design the suite. It owns test *strategy and design* — what deserves a test, at which level, with which doubles, asserting what. It is the design-time companion to what the `/dev` `qa` agent does — design the test strategy into `test-plan.md` at phase 2½ (level per criterion, edge cases to probe, fixtures), then execute it at phase 7 (run the suite, map every acceptance criterion to a test, record results in `tests.md`); this skill is the "how to test well" that `qa` and `engineer` reach for, not a copy of `qa`'s procedure.
+This skill is a **pre-flight**: read it before you write a test, choose the level, or design the suite. It is the design-time companion to the construction skills (run order in `.claude/rules/fundamentals.md`) and the "how to test well" the `/dev` `qa` agent reaches for at its test phases (those phase mechanics live in `WORKFLOW.md`).
 
-Two neighbours own adjacent territory: [[refactoring-fundamentals]] owns **characterization tests** — the baseline you capture before reshaping untested code; [[debug-fundamentals]] owns **reproduction** — pinning a failure into a reliable repro before you touch the fix. This matters per `/dev` type: for a `fix`, the regression test comes **first** (it fails on the old code, passes on the new — that's the proof the bug is gone); for a `refactor`, the safety net is a characterization test captured before the structural change. This skill owns everything else about a test: its shape, level, doubles, and assertions.
+Two neighbours own adjacent territory: [[refactoring-fundamentals]] owns **characterization tests** (captured before reshaping untested code); [[debug-fundamentals]] owns **reproduction** (pinning a failure into a reliable repro). For a `fix`, the regression test comes first and must fail on the old code; for a `refactor`, the safety net is a characterization test captured before the structural change. This skill owns everything else about a test: its shape, level, doubles, and assertions.
 
-Fundamentals compose with [[programming-fundamentals]] (pure cores are the easiest thing to test well) and [[hexagonal-backend]] (whose ports are exactly the seams you fake at). A clean test over the wrong behaviour still ships the wrong system — decide what "correct" means first.
+Composes with [[programming-fundamentals]] (pure cores are easiest to test) and [[hexagonal-backend]] (whose ports are exactly the seams you fake at).
 
 ## The 7 principles
 
@@ -25,9 +25,7 @@ Each principle has a one-line rule, a *why*, and a worked example. The early one
 
 **Rule:** Assert the observable outcome — the return value, the persisted row, the message published, the error raised — not the internal steps the code took to get there. If a refactor that preserves behaviour breaks the test, the test was wrong.
 
-**Why:** A behaviour test asks "given this input, does the system produce the right outcome?" An implementation test asks "did this function call that function, in this order, exactly once?" The first survives a rename, an extraction, a swapped algorithm; the second fails on all of them while the system still works. The whole point of a suite is to give you the confidence to change the code — a suite coupled to the implementation does the opposite, it taxes every change and tells you nothing about whether the change was correct.
-
-The clearest symptom is a test that's mostly `expect(mock).toHaveBeenCalledWith(...)`. That assertion is a snapshot of the *current* call graph, not a statement about what the code is supposed to do. The moment the code achieves the same outcome a different way, the assertion is a false alarm.
+**Why:** A behaviour test asks "does the system produce the right outcome?"; an implementation test asks "did this function call that function in this order?" The first survives a rename, an extraction, a swapped algorithm; the second fails on all of them while the system still works. The tell: a test that's mostly `expect(mock).toHaveBeenCalledWith(...)` is a snapshot of the call graph, not a statement about what the code should do.
 
 **How to apply:**
 - Assert on outputs and effects you can observe from outside the unit: return values, the state of a store you can read back, an event/email/HTTP call at a real seam.
@@ -58,9 +56,7 @@ test('gold-tier orders over $100 get 10% off', () => {
 
 **Rule:** Many fast unit tests at the base, fewer integration tests in the middle, a few end-to-end tests at the top. For each thing you want to prove, choose the lowest level that can actually prove it.
 
-**Why:** The levels trade speed against fidelity. A unit test runs in milliseconds and pinpoints the failure, but proves nothing about how the pieces connect. An e2e test exercises the real wiring but is slow, broad in blast radius when it fails, and the flakiest thing you own. A suite that's mostly e2e — the "inverted pyramid" or "ice-cream cone" — is slow to run, slow to diagnose, and quietly skipped under deadline. A suite that's *only* unit tests ships integration and contract bugs. You want both, in roughly the right ratio: hundreds-to-thousands of unit, tens-to-hundreds of integration, a handful of e2e.
-
-The discipline is "push down": before writing an e2e test for a pricing rule, ask whether a unit test on the pricing function proves the same thing in 2ms instead of 20s. Reserve the expensive levels for what only they can prove — that the layers are wired together (integration) and that a whole user journey works through the real stack (e2e).
+**Why:** Levels trade speed against fidelity. A mostly-e2e suite (inverted pyramid / ice-cream cone) is slow to run, slow to diagnose, and quietly skipped under deadline. A units-only suite ships integration bugs. The discipline: "push down" — ask whether a unit test proves the same thing 10× faster before writing an e2e. Reserve expensive levels for what only they can prove (real wiring, real user journeys).
 
 **How to apply:**
 - Pure logic with branches → unit. Pricing, validation, state machines, parsers, formatters. This is the backbone; it should be most of your tests.
@@ -86,9 +82,7 @@ Inverted (bad):                       Pyramid (good):
 
 **Rule:** Spend test effort where bugs live: the contract a caller depends on, the edges of every input range, the failure paths, and any bug that has shipped once. Don't spend it on getters, DTOs, or framework code.
 
-**Why:** The requirement spells out the happy path; production breaks on everything else. The empty list, the off-by-one at the limit, the timeout mid-write, the second tenant reaching the first tenant's data — these are where regressions hurt users, and they're exactly what an unconsidered suite skips. Meanwhile `assertEquals(user.getName(), "Alice")` tests a field assignment that has no logic and no bug; testing that the ORM saves a row, or that the web framework routes a URL, tests someone else's code. Effort spent there is coverage theatre — it moves the number without protecting anything.
-
-The recurring bug deserves special mention: a defect that ships, gets hot-fixed, and comes back is a defect nobody pinned. The regression test is the difference between "fixed" and "fixed until someone touches that file again." In the `/dev` `fix` flow this is non-negotiable and goes in *first* — the test that fails on the old code and passes on the new is the proof the fix is real (see [[debug-fundamentals]] for getting to a reliable repro before you write it).
+**Why:** The requirement spells out the happy path; production breaks on everything else — the off-by-one, the timeout mid-write, the second tenant's data. Testing `assertEquals(user.getName(), "Alice")` covers a field with no logic; testing ORM saves or URL routing is coverage theatre. The recurring bug gets special treatment: a defect that ships, hot-fixes, and comes back was never pinned — the regression test is the difference between "fixed" and "fixed until someone touches that file." For a fix, the regression test comes *first* and must fail on the old code (see [[debug-fundamentals]] for getting to a reliable repro before you write it).
 
 **How to apply:**
 - Name the contract and test it: for an endpoint or function, what does valid input return? Invalid input? An unauthorized caller? Those are separate tests.
@@ -120,9 +114,7 @@ def test_discount_never_exceeds_subtotal():     # boundary: the bug that shipped
 
 **Rule:** Replace a dependency with a double only at an architectural seam (a port), and only when the real thing is slow, costly, non-deterministic, or out of scope. Use the *real* thing for the component you're actually testing — above all, a real database in integration tests.
 
-**Why:** Doubles let you test in isolation; they also let you write tests that pass while the real system is broken. A mocked database happily accepts a query the real one would reject for a missing column, a violated constraint, or a migration that never ran — so the bug ships green. Rule of thumb: fake the things you *aren't* testing that are expensive or non-deterministic (third-party APIs, the clock, the payment gateway); use the real thing for the thing under test. For a repository, the thing under test is "does this code talk to the database correctly" — mocking the database deletes the point of the test.
-
-The taxonomy matters because "mock" names five different things (dummy, stub, spy, mock, fake) that fail differently — a stub returning canned data is low-risk; a strict mock asserting call order is principle 1's trap in disguise. Full taxonomy and the decision tree: `references/test-doubles-and-levels.md`. A second signal: 20 lines of mock setup for a 5-line assertion means the unit has too many dependencies — fix the production design (extract the pure logic), not the mocks.
+**Why:** Doubles enable isolation; they also let tests pass while the real system is broken. A mocked DB happily accepts queries the real one rejects for missing columns, violated constraints, or un-run migrations. Fake what you're *not* testing (third-party APIs, the clock); use the real thing for what you are — a repository test is testing "does this code talk to the DB correctly" and mocking the DB deletes the point. The taxonomy ("mock" names five distinct things); decision tree in `references/test-doubles-and-levels.md`. A second signal: 20 lines of mock setup for a 5-line assertion → fix the production design, not the mocks.
 
 **How to apply:**
 - Fake at ports/seams: the repository interface, the email-sender interface, the clock. Hexagonal code makes this natural — the port *is* the seam ([[hexagonal-backend]]).
@@ -153,7 +145,7 @@ const gateway = new InMemoryPaymentGateway()           // a fake, not a mock
 
 **Rule:** Each test sets up its own world, depends on nothing another test left behind, and produces the same result every run. No shared mutable state, no real clock/network/randomness unless that *is* what you're testing, no dependence on test order.
 
-**Why:** A flaky test — one that passes and fails without the code changing — is worse than no test, because it trains the team to ignore red. The causes are almost always a determinism leak: a test reads `Date.now()` and breaks at a DST boundary; two tests share a database row and the result depends on which ran first; a test asserts on the order of an unordered query; a test sleeps for a "long enough" 200ms that isn't long enough under load. Each of these is the same root cause — the test's outcome depends on something outside the test's control. Fast matters for the same reason the pyramid matters: a suite that takes minutes is a suite that gets run on push instead of on save, which means bugs are found later and cheaper feedback is wasted.
+**Why:** A flaky test is worse than no test — it trains the team to ignore red. Causes are always a determinism leak: shared DB rows, real clocks, unordered query assertions, fixed sleeps. Fast matters for the same reason the pyramid does: a minutes-long suite gets run on push instead of on save.
 
 **How to apply:**
 - No shared mutable state across tests. Each test builds its own fixtures and tears them down (transactional rollback, fresh temp dir, fresh in-memory store). If tests pass alone but fail together, you have leakage.
@@ -186,9 +178,7 @@ test('token expires after 1h', () => {
 
 **Rule:** Structure every test as three visible sections — arrange, act, assert. Give each test one reason to fail. Name it after the behaviour it pins, not the function it calls. Tests are read far more often than they're written.
 
-**Why:** When a test fails in CI six months from now, its name is the first and often only thing a hurried engineer reads. `test('calculateDiscount')` tells them which function broke; `test('orders under $100 get no discount')` tells them which *rule* broke — which is what they actually need. The three-part shape makes a test scannable: inputs at the top, the single call in the middle, the expectation at the bottom. A test that interleaves five actions and five assertions is really five tests in a trench coat — when it fails you can't tell which behaviour regressed, and you have to read the whole body to find out.
-
-"One reason to fail" is not "one `assert` statement" — asserting three fields of one returned object is one reason (the object is wrong). It *is* a rule against bundling unrelated behaviours into one test to save typing.
+**Why:** When a test fails in CI, its name is the first thing a hurried engineer reads. `test('calculateDiscount')` tells them which function broke; `test('orders under $100 get no discount')` tells them which *rule* broke. The three-part shape makes a test scannable; a test with five interleaved actions and assertions is five tests in one — when it fails you can't tell which regressed. "One reason to fail" means one assertable behaviour, not one `assert` statement.
 
 **How to apply:**
 - Keep arrange / act / assert visually separated (blank lines or comments). Don't sprinkle assertions through the arrange.
@@ -214,15 +204,13 @@ def test_orders_over_100_get_a_discount():
 
 **Rule:** Use coverage to *find* untested code — especially uncovered branches on critical paths — not as a target to hit. A percentage is a floor and a diagnostic, never the objective.
 
-**Why:** Coverage measures which lines ran, not whether the tests asserted anything meaningful. You can hit 100% line coverage with tests that call every function and assert nothing. Worse, a coverage *target* distorts effort: the cheapest way to move 78% to 85% is testing trivial code that has no bugs, while the gnarly branch in the pricing engine stays dark because testing it is hard — the number went up, the risk didn't move. Goodhart's law in a CI gate.
-
-Used the other way, coverage is a flashlight: it shows the lines and branches your tests never touched. Point it at the code that matters — the critical path, the error handling, the new logic in this diff — and the uncovered branches are a worklist of real gaps. Branch coverage beats line coverage here, because the dangerous gap is usually the `else` you forgot, which line coverage happily counts as covered.
+**Why:** Coverage measures lines run, not whether tests asserted anything meaningful — 100% line coverage with no assertions is achievable. A coverage *target* distorts effort: the cheapest path to 85% is testing trivial code while the gnarly pricing branch stays dark. Used as a flashlight instead: the uncovered branches in important code are the real worklist. Branch coverage beats line coverage — the dangerous gap is usually the `else` you forgot, which line coverage counts as covered.
 
 **How to apply:**
 - Read the coverage *report*, not the coverage *number*. Look at which branches in important code are red, and write tests for the ones that matter.
 - Prioritize uncovered branches on critical and error paths over chasing a percentage across trivial code.
 - Prefer branch/condition coverage to line coverage for finding the real gaps.
-- If you set a CI threshold, treat it as a ratchet that catches *drops* on changed code, not a bar that justifies testing trivia to clear it. The `/dev` workflow applies exactly this — **per-level diff-coverage floors on the changed code**: unit ≥ 80%, integration ≥ 70%, e2e ≥ 50% of the change's **critical user journeys** (journey coverage keeps the pyramid; e2e *line* coverage would invert it). Each floor covers the slice that level owns — integration over only the *boundary-crossing* changed lines, so it never fires against (or pressures you to test) pure logic in the same diff; an empty slice has no floor. They are **advisory**: below-floor is a finding `qa` records and the orchestrator escalates (accept → retro, or back to add tests), not a ship-block — the floor means *don't ship changed logic nothing exercises*, not *pad the number*. Read the report for the dark branches, then decide.
+- If you set a CI threshold, treat it as a ratchet that catches *drops* on changed code, not a bar that justifies testing trivia to clear it — the point is *don't ship changed logic nothing exercises*, not *pad the number*. (`/dev` applies exactly this as advisory per-level diff-coverage floors on the changed code; the floor numbers and escalation are `/dev` policy in `WORKFLOW.md`.) Read the report for the dark branches, then decide.
 - 70% coverage of the hard logic beats 100% coverage that skips it.
 
 **Example:**
@@ -256,7 +244,7 @@ If any answer is "I don't know," stop and find out before writing.
 ## When to skip this skill
 
 - Throwaway scripts and prototypes that will be deleted within the hour — no suite to design.
-- The `qa` SKIPPED-mode types: `chore`, `docs`, and `spike` runs (a config bump, a docs edit, a research spike) have no executable surface to test; `qa` records the skip and its risk rather than writing tests.
+- `chore`, `docs`, and `spike` work (a config bump, a docs edit, a research spike) — no executable surface to test. (In `/dev` these are `qa`'s skipped types; see `WORKFLOW.md`.)
 - Trivial config edits — formatter rules, env vars, dependency version bumps — with no logic to assert.
 - Generated code or thin pass-through wrappers around an already-tested library: test what *you* added, not the library.
 
@@ -264,17 +252,11 @@ For anything else — a function with branches, a boundary crossing, a contract 
 
 ## How to use this skill in a conversation
 
-This skill is always-on for testing-design work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
+Always-on for testing-design work (per `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
-When the skill applies:
-- **Writing a test** — name the behaviour first, pick the cheapest level that proves it, decide which seams to fake (and keep the DB real for integration), then write it arrange-act-assert with a behaviour name.
-- **Deciding what to test** — start from the contract and the error paths, walk the edge-case checklist against the actual code, and classify each reachable case as covered / specified / undefined rather than inventing assertions for unspecified behaviour.
-- **Designing a suite** — sketch the pyramid: which logic goes unit, which crossings go integration, which journeys justify an e2e. Push every test to the lowest level that can prove the thing.
-- **Reviewing coverage** — read the report, not the number; point the flashlight at uncovered branches on critical and error paths.
+This skill is design-time: in `/dev`, `qa` and `engineer` both reach for these fundamentals to decide *what good looks like* (their test phases are defined in `WORKFLOW.md`). Type-specific hand-offs: for a **fix**, the regression test comes first and must fail on the old code (get the repro via [[debug-fundamentals]]); for a **refactor**, the baseline is a **characterization test** owned by [[refactoring-fundamentals]] — capture it before the structural change, then this skill governs any *new* tests you add.
 
-This skill is design-time. In `/dev`, the `qa` agent *designs* the strategy into `test-plan.md` (phase 2½) and then *executes* the suite, recording results in `tests.md` (phase 7); the `engineer` writes tests as it implements — all reach for these fundamentals to decide *what good looks like*; this skill does not duplicate `qa`'s design/run/record procedure. Two type-specific contracts hand off to neighbours: for a **fix**, the regression test comes first and must fail on the old code (get the repro via [[debug-fundamentals]]); for a **refactor**, the baseline is a **characterization test** owned by [[refactoring-fundamentals]] — capture it before the structural change, then this skill governs any *new* tests you add.
-
-When you make a non-obvious call (faking a collaborator that could have been real, choosing an e2e where a unit test wouldn't suffice, leaving a reachable input untested because it's spec-undefined), say *why* in one sentence. Don't emit tests silently.
+When making a non-obvious call (faking a collaborator that could be real, choosing an e2e where a unit test wouldn't suffice, leaving a reachable input untested because spec-undefined), say *why* in one sentence. Don't emit tests silently.
 
 ## Reference files
 

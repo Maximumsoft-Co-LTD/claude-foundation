@@ -1,8 +1,8 @@
 # The refactoring catalog — moves and mechanics
 
-Named refactorings are the vocabulary of principle 4 (small reversible steps). Each is a transformation with a *tested sequence of micro-steps* that, done in order, never leaves the code red. Prefer these named moves over freehand edits, and prefer your IDE/LSP's automated version when it has one (it's behavior-preserving by construction).
+Named refactorings are the vocabulary of principle 4 (small reversible steps). Each is a transformation with a *tested sequence of micro-steps* that never leaves the code red. Prefer named moves over freehand edits, and prefer your IDE/LSP's automated version when available.
 
-The golden rule under every move: **run the tests after each micro-step; commit when green.** If a step reddens the suite, undo that one step — never push through.
+**Golden rule under every move: run the tests after each micro-step; commit when green.** If a step reddens the suite, undo that one step — never push through.
 
 ## Contents
 - Composing functions (Extract, Inline, Extract Variable, Replace Temp with Query, Split Phase)

@@ -1,23 +1,23 @@
 # Security review: <title>
 
-**Plan**: [./plan.md](./plan.md)
-**Reviewed**: YYYY-MM-DD
-**Trigger**: <bucket the diff touched — auth | crypto | sql | html | path | exec | deserialise | secrets | network>
-**Verdict**: pass | fix-required
+**Plan**: [./plan.md](./plan.md) · **Reviewed**: YYYY-MM-DD · **Verdict**: pass | fix-required
+**Trigger**: <bucket(s) the diff touched — auth | crypto | sql | html | path | exec | deserialise | secrets | network>
 
-## Threat model (one paragraph)
-What an attacker would try given this diff. Trust boundaries crossed. Who can reach the new code.
+## Threat model *(required)*
 
-## Checklist
-Walk ONLY the buckets your `Trigger` names; mark ✓ / ✗ / N/A with a one-line note. Inline — no separate skill needed.
+One paragraph: what an attacker would try given this diff. Trust boundaries crossed. Who can reach the new code.
 
-- [ ] **Input** — validated at the boundary, not deep inside; no string-concat into SQL / shell / HTML / paths; safe parser for untrusted input (no `pickle.loads`, no `yaml.load`, no eval)
-- [ ] **Authn / authz** — every new endpoint has an explicit authz check (not "middleware probably catches it"); session/token storage httpOnly + secure + SameSite; no admin path skips the existing authz layer
-- [ ] **Secrets / crypto** — no hard-coded secrets / API keys / test creds in the diff; no custom crypto (use the platform / a vetted lib); CSPRNG for security-purpose randomness
-- [ ] **Output** — untrusted text escaped on the way out (HTML / JSON / logs); redirect targets validated against an allowlist; errors don't leak stack traces / internal paths
-- [ ] **Infra-adjacent** — path joins go through `path.join` / `filepath.Clean` and reject `..`; new outbound call has a timeout + target allowlist; new process exec doesn't shell out with user input
+## Checklist *(required)*
 
-## Findings
+Walk ONLY the buckets your `Trigger` names; mark ✓ / ✗ / N/A with a one-line note.
+
+- [ ] **Input** — validated at the boundary; no string-concat into SQL / shell / HTML / paths; safe parser for untrusted input (no `pickle.loads`, `yaml.load`, `eval`)
+- [ ] **Authn / authz** — explicit authz check per new endpoint; session/token httpOnly + secure + SameSite; no admin path skips the authz layer
+- [ ] **Secrets / crypto** — no hard-coded secrets / keys / test creds; no custom crypto; CSPRNG for security randomness
+- [ ] **Output** — untrusted text escaped on the way out (HTML / JSON / logs); redirect targets allowlisted; errors don't leak traces / paths
+- [ ] **Infra-adjacent** — path joins via `path.join` / `filepath.Clean` rejecting `..`; new outbound call has a timeout + allowlist; new exec doesn't shell out with user input
+
+## Findings *(required)*
 
 ### Blocking (severity = high)
 - `path:line` — <issue> → <fix>
@@ -25,14 +25,12 @@ Walk ONLY the buckets your `Trigger` names; mark ✓ / ✗ / N/A with a one-line
 ### Non-blocking (severity = medium / low)
 - `path:line` — <issue> → <fix or accepted risk>
 
-## Sign-off
+## Sign-off *(required)*
+
 pass | fix-required (counts against the review cycle budget)
 
 <!--
-Add the section below ONLY when surface-axis fanout ran (one per-repo security reviewer per tripping repo in a control-plane run; orchestrator.md step 12 + Surface fanout). One `### Repo: <path>` subsection per tripping repo, each carrying that repo's Threat model + Checklist + Blocking/Non-blocking findings. The top-level Trigger, Verdict, and Findings stay GLOBAL (Verdict = fix-required iff any repo has a high; Trigger = union of buckets that fired).
-
-## Per-repo security
-  ### Repo: `<path>`
-  **Per-repo verdict**: pass | fix-required
-  - `path:line` — <issue> → <fix> (severity)
+Fanout-only section — add when surface-axis fanout ran:
+Per-repo security (one `### Repo: <path>` per tripping repo; Trigger / Verdict / Findings stay global).
+Shape + when: see  orchestrator/references/surface-fanout.md > Lead — Mode C (Security review).
 -->

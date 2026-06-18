@@ -7,11 +7,9 @@ description: Write a `qa-note.md` handoff that lets QA hand-test a change on a d
 
 ## Why this exists
 
-QA tests the change on a **running, deployed environment** (dev / staging / UAT) — they open a URL, log in, click through the UI, hit the API. They do **not** clone the repo, install dependencies, or run the source. So the knowledge they need is *access + navigation + expected behaviour*, not build commands: the environment URL, which account and role to log in as, the exact menu path to the new screen, the API endpoint and how to authenticate to it, the test data already sitting in that environment, and the one deliberate gap that *looks* like a bug but isn't.
+QA tests on a **deployed environment** — they need access, navigation, expected behaviour, and test data, not code. Without a written note, QA rediscovers every step by trial-and-error or files a deliberate gap as a defect. `qa-note.md` carries the implementer's knowledge to the tester.
 
-The implementer's head holds all of that, and none of it survives the handoff on its own. Without a written note QA rediscovers every step by trial and error — or files the deliberate gap as a defect and burns a cycle on something out of scope. `qa-note.md` is the artifact that carries it across, authored *by the side that built the change, for the side that tests it on the environment*.
-
-`tests.md` (the repo's `qa` agent) records **automated** test design + results in code. `qa-note.md` is the **manual / functional** test guide for exercising the deployed build. They complement each other; this note targets the human pass on dev.
+Complements `tests.md` (automated); this note targets the manual on-environment pass.
 
 ## What it is / is not
 
@@ -48,7 +46,7 @@ Everything QA needs to *reach* the change on the environment:
 - **Test data** — what already exists on dev to test against (a seeded account, sample order IDs, a record in the right state) — or how to create it through the UI. Saves QA from hunting.
 - **Feature flag / config** — any toggle that must be ON for the change to appear, and how it's set on dev.
 
-Rule (the access version of [[plan-writing]]'s verify clause): **every access detail is concrete and real** — the actual URL, the actual account/role, the actual menu path, the actual endpoint. If you'd write "log in as usual" or "go to the refunds page", replace it with the exact account and the exact path. A handoff that assumes the tester already knows where it is isn't a handoff.
+Rule: **every access detail is concrete and real** — the actual URL, account/role, menu path, endpoint. If you'd write "log in as usual" or "go to the refunds page", replace it with the exact detail.
 
 ### 2. Focus areas & risk hotspots
 
@@ -58,7 +56,7 @@ Where to spend attention — the 1–3 surfaces most likely to break, in tester 
 - **Ripple / regression** — existing screens the change could affect, from `plan.md` blast radius: "this also changed the shared currency formatter — re-check the invoice and receipt screens too."
 - **Where to push hard** — inputs and sequences worth stressing beyond the happy path: large/empty values, double-submit, a user *without* permission, the boundary number, going back mid-flow.
 
-This is the implementer's honest "if something's wrong, it's probably here" — not the full AC list.
+The implementer's honest "if something's wrong, it's probably here" — not the full AC list.
 
 ### 3. Known limits / not covered
 
@@ -68,7 +66,7 @@ Protect QA's time and stop false defects:
 - **Not on dev yet / shipped-on-purpose rough edges** — a path behind a flag that's OFF, a dependent service still mocked on dev, a follow-up not in this run.
 - **Environments / roles / data not exercised** — "only the manager role was wired this run", "email actually sends only on staging, not dev", "mobile layout not in scope."
 
-**Be honest.** A "known limit" is a *deliberate* choice. If something is actually broken on dev, it's a blocker — say so, don't disguise a defect as a footnote. Smuggling a real bug in here is the one thing that makes this section worse than leaving it out.
+**Be honest.** A "known limit" is a *deliberate* choice. If something is broken on dev, it's a blocker — don't disguise a defect as a footnote.
 
 ### 4. Test scenarios
 
@@ -76,7 +74,7 @@ The concrete things to do on the environment, each with the **expected result** 
 
 - **Happy path** — numbered `action → expected`, the main flow that proves the change works on dev. Each line is something QA literally does in the UI/API and what they should see.
 - **Edge / error paths** — drive the cases tied to each AC's `on error / at boundary:` clause and (for a fix) the original reproduction: bad input, the limit, the unauthorized user — and the correct response each time.
-- These are **the starting set QA runs and extends** — QA still owns final coverage and (if applicable) records the automated side in `tests.md`. The note gives them the on-environment scenarios the implementer already knows matter.
+- The starting set QA runs and extends. QA still owns final coverage and records automated tests in `tests.md`.
 
 ## Type-aware emphasis
 
@@ -155,15 +153,13 @@ If a section has nothing real (e.g. no API surface → no API line), **delete it
 
 ## Relation to other skills / artifacts
 
-This skill **composes**; it doesn't replace:
+- `spec.md` (owned by `pm`) — AC source. Scenarios exercise the AC on the environment.
+- `plan.md` (owned by `lead`) — blast radius + risks → Focus areas and Known limits.
+- `tests.md` (owned by `qa`) — automated counterpart. Both can run for the same change.
+- [[debug-fundamentals]] — `fix` reproduction → Section 4 replays on dev.
+- [[refactoring-fundamentals]] — `refactor` behaviour baseline → QA confirms on the environment.
 
-- `spec.md` (owned by `pm`) — source of *what / why* + acceptance criteria. The note points at it; the scenarios exercise the AC on the environment.
-- `plan.md` (owned by `lead`) — blast radius + risks are the raw material for Focus areas and Known limits.
-- `tests.md` (owned by `qa`) — the **automated** counterpart. `qa-note.md` guides the **manual on-environment** pass; both can run for the same change.
-- [[debug-fundamentals]] — for `fix` runs, the reproduction it produced is what Section 4 replays *on dev*.
-- [[refactoring-fundamentals]] — for `refactor` runs, the behaviour baseline is what QA confirms stayed identical on the environment.
-
-In a `/dev` run the orchestrator (main agent) is the *caller only when the user explicitly asks for the handoff note*. The skill writes the artifact; it does not spawn an agent or change the phase matrix.
+In `/dev`, the orchestrator calls this only when the user explicitly asks. No agent spawned, no phase matrix change.
 
 ## When to skip
 

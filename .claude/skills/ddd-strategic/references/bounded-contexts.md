@@ -1,18 +1,5 @@
 # Bounded contexts
 
-Deep dive on principles 3 and 4: bounded contexts as linguistic + model boundaries, ubiquitous language as a per-context naming discipline, and the seven context-mapping patterns that name how two bounded contexts relate.
-
-## Table of contents
-
-- What a bounded context actually is
-- Bounded context vs service vs module
-- Ubiquitous language as a discipline
-- Building and maintaining the glossary
-- The seven context-mapping patterns
-- Drawing a context map
-- Anti-corruption layers in depth
-- Boundary smells
-
 ## What a bounded context actually is
 
 A **bounded context** is the region of the domain inside which a model is consistent and the language is shared. It is not a service. It is not a module. It is not a team boundary. It is a *linguistic + semantic* boundary — the area where every concept has one definition that everyone (engineers, domain experts, the database schema, the API, the dashboards) agrees on.

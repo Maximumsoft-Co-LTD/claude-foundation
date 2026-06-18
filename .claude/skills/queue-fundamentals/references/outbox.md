@@ -1,6 +1,6 @@
 # The outbox pattern
 
-Companion to principle 7 of [[queue-fundamentals]]. Use this whenever a use case has to (a) change state in a database and (b) emit an event to a broker, and both must "happen together." Which is almost any meaningful event-driven backend.
+Companion to principle 7 of [[queue-fundamentals]]. Use whenever a use case must change DB state and emit an event to a broker atomically — almost any meaningful event-driven backend.
 
 ## The problem in one diagram
 
@@ -16,11 +16,11 @@ Failure modes:
   - Retrying the whole thing:                                              → duplicate event
 ```
 
-There is no ordering of these two steps that avoids the problem on its own. Two-phase commit across "your Postgres" and "your broker" isn't a real option in practice. The fix is to make both writes part of **one** transaction by writing to one system, and have a separate process bridge to the other.
+No ordering of those two steps avoids the problem. Two-phase commit across Postgres and a broker isn't practical. The fix: make both writes part of **one** transaction by writing to one system, and have a separate process bridge to the other.
 
 ## The fix: an outbox table
 
-Add an `outbox` table to the **same** database as your domain data. When the use case wants to publish an event, it writes a row into `outbox` inside the same transaction as the state change. A separate relay process reads `outbox` rows and publishes them to the broker.
+Add an `outbox` table to the **same** database. The use case writes a row inside the same transaction as the state change. A separate relay reads `outbox` rows and publishes them to the broker.
 
 ```
 Use case:
@@ -37,7 +37,7 @@ Use case:
     UPDATE outbox SET published_at = now() WHERE id = ?
 ```
 
-The use case sees one DB transaction. The broker sees the event eventually. There is no window where state changed but the event was lost.
+One DB transaction from the use case's perspective. No window where state changed but the event was lost.
 
 ## Schema
 
@@ -58,10 +58,9 @@ CREATE INDEX outbox_pending_idx
 ```
 
 Notes:
-- `id` is monotonic — useful for preserving order during relay.
-- `payload` is JSONB (or BYTEA if you're sending binary). Don't try to be clever and store columns per field; the schema would change every time an event shape changes.
-- `headers` is where the message ID (used by consumers for idempotency — see [[idempotency]]) lives. Generate it at insert time, not at publish time, so retries publish the same ID.
-- Don't delete published rows immediately. Keep them for a retention window (days) for auditability and replay; sweep older rows on a schedule.
+- `id` is monotonic — preserves per-entity order during relay.
+- `headers` carries the message ID (used by consumers for idempotency — see [[idempotency]]). Generate at insert time, not publish time, so retries publish the same ID.
+- Don't delete published rows immediately. Keep for a retention window (days) for auditability and replay; sweep on a schedule.
 
 ## The relay
 
@@ -87,36 +86,29 @@ loop:
 
 Notes:
 - `FOR UPDATE SKIP LOCKED` lets you scale the relay horizontally without two workers grabbing the same row.
-- The relay is at-least-once: if it crashes after `broker.publish` but before `UPDATE outbox`, it'll publish again on next poll. Consumers must be idempotent. (Which they should be anyway — see principle 3.)
-- Tune `LIMIT` and sleep interval for your throughput. Polling adds latency; expect a few hundred ms of lag between commit and publish.
+- Relay is at-least-once — if it crashes after `broker.publish` but before `UPDATE outbox`, it publishes again on the next poll. Consumers must be idempotent (see principle 3).
+- Tune `LIMIT` and sleep interval for throughput. Polling adds latency — expect ~100–500ms lag between commit and publish.
 
 ### 2. LISTEN/NOTIFY relay (Postgres-specific, lower latency)
 
-Use a trigger on `outbox` that fires `pg_notify('outbox', '')`. The relay process holds a `LISTEN outbox` connection and wakes up immediately on insert. Otherwise the loop is identical to polling.
-
-Cuts publish latency from "polling interval" to "milliseconds" without much added complexity. Worth it for user-facing latency-sensitive events.
+A trigger fires `pg_notify('outbox', '')`. The relay holds a `LISTEN outbox` connection and wakes immediately on insert. Otherwise identical to polling. Cuts latency from the polling interval to milliseconds — worth it for user-facing latency-sensitive events.
 
 ### 3. CDC relay (Debezium, etc.)
 
-A change-data-capture tool reads the DB's write-ahead log directly and publishes outbox-row inserts to the broker. You don't write a relay process — the CDC tool is the relay.
+A change-data-capture tool reads the DB's write-ahead log and publishes outbox inserts to the broker — no relay code to write.
 
-Trade-offs:
-- **Pros:** lowest latency; zero application code; works for any DB write, not just outbox-shaped ones.
-- **Cons:** operational complexity (Debezium + Kafka Connect + schema registry); needs DB log retention configured; harder to test locally.
+**Pros:** lowest latency, zero app code, works for any DB write. **Cons:** operational complexity (Debezium + Kafka Connect + schema registry), needs log retention configured, harder to test locally.
 
-Use CDC when you have many services already on this pattern and the ops investment is amortized. For one or two services, polling or LISTEN/NOTIFY is plenty.
+Use CDC when many services are on this pattern and the ops investment is amortized. For 1–2 services, polling or LISTEN/NOTIFY is plenty.
 
 ## Ordering
 
-Two questions to answer up front:
-
-1. **Per-entity order** (events for one order arrive in DB-insert order on the broker): trivially preserved if the relay reads rows `ORDER BY id` and publishes serially. With parallel relays, route by partition key — set a partition key header on the outbox row matching the entity ID, and let the broker handle within-partition ordering.
-
-2. **Global order** across all entities: don't try. It forces single-threaded relay and limits throughput. Almost no consumer actually needs it.
+1. **Per-entity order**: preserved if the relay reads `ORDER BY id` and publishes serially. With parallel relays, set a partition key header matching the entity ID.
+2. **Global order** across all entities: don't try — forces single-threaded relay. Almost no consumer needs it.
 
 ## When to write to the outbox vs the broker
 
-In the use case, **always** write to the outbox, never directly to the broker. The composition root wires the use case with an outbox-shaped port; the relay is its own deployable.
+In the use case, **always** write to the outbox, never directly to the broker. The composition root wires the use case with an outbox-shaped port; the relay is a separate deployable.
 
 ```ts
 // application/ports/event-publisher.ts
@@ -173,4 +165,4 @@ Default to outbox + polling. Move to LISTEN/NOTIFY for latency-sensitive paths. 
 
 ## Putting it together
 
-The outbox eliminates *lost* events. Idempotent consumers (see [[idempotency]]) eliminate *duplicate* effects. Together they give you what people usually mean by "exactly-once," using only at-least-once components. That's the working production answer to the dual-write problem.
+Outbox eliminates *lost* events. Idempotent consumers (see [[idempotency]]) eliminate *duplicate* effects. Together they give you what people mean by "exactly-once," using only at-least-once components.

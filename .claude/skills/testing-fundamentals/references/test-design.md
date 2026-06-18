@@ -1,6 +1,6 @@
 # Test Design
 
-How an individual test is shaped, named, fed data, and aimed at the inputs that actually break code. This file is the canonical home of the edge-case checklist — the `/dev` `qa` agent's edge-case discovery pass (its step 2a) resolves here.
+How an individual test is shaped, named, fed data, and aimed at the inputs that actually break code. This file is the canonical home of the edge-case checklist — the `/dev` `qa` agent's edge-case discovery pass resolves here.
 
 ## Arrange / Act / Assert
 
@@ -17,9 +17,9 @@ def test_orders_over_100_get_a_discount():
 ```
 
 Rules that follow from the shape:
-- **One act.** If a test calls the thing under test twice with different inputs, it's two tests. The exception is a sequence that *is* the behaviour ("withdraw then withdraw again is rejected") — there the second call is the act and the first is arrange.
-- **Don't assert mid-arrange.** Assertions sprinkled through setup mean the test is checking more than one thing and the failure won't tell you which.
-- **No logic in the test.** Loops, conditionals, and `try/except` in a test body are where test bugs hide. If you need a loop over inputs, use a parameterized test (below), not a hand-rolled `for`.
+- **One act.** If a test calls the thing under test twice with different inputs, it's two tests. Exception: a sequence *is* the behaviour ("withdraw then withdraw again is rejected") — the second call is the act and the first is arrange.
+- **Don't assert mid-arrange.** Assertions sprinkled through setup check more than one thing and don't tell you which failed.
+- **No logic in the test.** Loops, conditionals, and `try/except` in a test body are where test bugs hide. Use parameterized tests (below), not hand-rolled `for`.
 
 ## One reason to fail
 
@@ -32,7 +32,7 @@ The test name is the contract for "one reason": if you can write a single senten
 
 ## Naming: state the behaviour, not the method
 
-The name is read at 2 a.m. by someone who didn't write it. It should say what *rule* the test enforces, so a red name explains the break without opening the body.
+The name is read at 2 a.m. by someone who didn't write it. It should say what *rule* the test enforces so a red name explains the break without opening the body.
 
 ```js
 // Bad — names the function or a number; tells you nothing about the expectation
@@ -53,10 +53,10 @@ Conventions that scale: `<subject> <condition> <expected outcome>`, or the BDD `
 
 Each test should make the *one* input it cares about obvious and leave everything else as a sane default.
 
-- **Builders / factories beat shared fixtures.** `make_order(subtotal_cents=15_000)` lets the test state price and ignore address, tier, timestamps. A big shared `setUp` fixture couples every test to one shape — change the shape and unrelated tests break.
-- **Realistic but minimal.** Set the fields the behaviour reads; leave the rest defaulted. A future reader should see the relevant inputs at a glance, not hunt through 30 lines of setup for the one that matters.
-- **No production data.** Not even "just a snapshot." Real user data in a test repo is a leak waiting to happen and tends to be brittle (it changes when the source does).
-- **Name the magic values.** `subtotal_cents=15_000  # $150, over the $100 discount threshold` — the comment turns a bare number into the reason it was chosen.
+- **Builders / factories beat shared fixtures.** `make_order(subtotal_cents=15_000)` lets the test state price and ignore address, tier, timestamps. A big shared `setUp` fixture couples every test to one shape.
+- **Realistic but minimal.** Set the fields the behaviour reads; leave the rest defaulted.
+- **No production data.** Real user data in a test repo is a leak waiting to happen and tends to be brittle.
+- **Name the magic values.** `subtotal_cents=15_000  # $150, over the $100 discount threshold` turns a bare number into the reason it was chosen.
 
 ```py
 # A builder with defaults — each test overrides only what it asserts on
@@ -96,7 +96,7 @@ test.each([
 })
 ```
 
-When *not* to table-ize: when the cases differ in shape (different setup, different assertion), not just in values. Forcing dissimilar cases into one table produces a parameter list full of `null`s and conditionals — that's worse than separate tests. Table tests are for one rule across a range of inputs, especially boundaries.
+When *not* to table-ize: when the cases differ in shape (different setup, different assertion), not just in values. Forcing dissimilar cases into one table produces a parameter list full of `null`s and conditionals. Table tests are for one rule across a range of inputs, especially boundaries.
 
 ## Testing error paths
 
@@ -142,9 +142,9 @@ For each case the code under test can actually reach, decide one of three:
 
 ## When tests are painful to write
 
-Pain is design feedback, not a test problem:
+Pain is design feedback:
 - "I have to mock 12 things" → the unit has too many dependencies; extract the pure logic and test that directly.
-- "I can't tell what this should do" → the behaviour isn't crisp; clarify the requirement before writing the test (don't guess — see undefined, above).
-- "The test is longer than the code" → either the test is doing too much (split it) or the code hides complexity behind a simple-looking interface (sometimes the right design — judgment call).
+- "I can't tell what this should do" → the behaviour isn't crisp; clarify the requirement before writing the test.
+- "The test is longer than the code" → either the test is doing too much (split it) or the code hides complexity behind a simple interface.
 
 Listen to the pain. The fix is usually in the production code.

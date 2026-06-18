@@ -5,22 +5,9 @@ description: Apply API-design fundamentals to the surface a client codes against
 
 # API Design Fundamentals
 
-## Why this exists
-
-An API is a contract you publish to people you will never meet, who will build on it, depend on its exact shape, and feel every break. Most API pain is not a bug in the handler — it is a design decision that was never made deliberately: a `POST` that isn't idempotent so a retry double-charges, a 200 response carrying `{"error": ...}` so clients can't tell success from failure, an unversioned response whose new required field breaks every consumer on deploy, offset pagination that silently skips rows when the underlying list shifts, a "flexible" endpoint that accepts anything and validates nothing. Each is cheap to get right while you are sketching the surface and expensive-to-impossible to fix once clients have coded against it. The surface outlives the implementation behind it — you will rewrite the service three times; the URL and the response shape have to survive all three.
-
-This skill is a **pre-flight** for designing the *surface* of one API: the resources, routes, methods, status codes, request and response bodies, errors, pagination, and versioning that a client codes against. Read it before you write the first route, not after the first breaking-change incident. The principles are stack- and protocol-agnostic — they apply to REST over HTTP (the default for backend work), and most translate directly to GraphQL and gRPC where noted; the mechanics differ, the decisions do not.
-
-Where this sits next to its neighbours — keep the seams clean, cross-link rather than restate:
-
-- [[architecture-fundamentals]] owns the **runtime relationship between components** — whether a call is sync or async, timeouts and retries and circuit breakers, who owns which data, and contracts as a *system* concern (the same change rippling across services). This skill owns the **design of one API's surface** — the shape a single client codes against. Architecture decides *whether* two components talk and *how reliably*; api-design decides *what the message looks like* when they do. (Contract *evolution* is shared: architecture-fundamentals principle 7 frames it as a multi-service rollout concern; here, principle 8 frames it as the surface-versioning mechanics for one API.)
-- [[hexagonal-backend]] — the API is a **driving adapter** over an application port. The endpoint translates HTTP/GraphQL/gRPC into a use-case call and back; it must not leak domain internals (ORM rows, internal enums) into the wire shape, and the port — not the framework — is the real boundary. Design the surface here; wire it to the port there.
-- [[security-fundamentals]] — every endpoint is a **trust boundary**. Authentication, authorization on every access (deny by default), input validation and canonicalization, and output encoding live there; this skill names *where* on the surface they attach (principle 7), security-fundamentals owns *how* to implement them.
-- [[ddd-strategic]] — the API should speak the **ubiquitous language** of its bounded context. Resource names and field names are the public vocabulary; a leaky or inconsistent vocabulary is a design smell that ddd-strategic diagnoses.
-
 ## The 8 principles
 
-Each principle has a one-line rule, a *why*, and a worked example. Apply them in roughly this order — the early ones (the resource model, the method semantics) constrain the later ones (errors, pagination, versioning).
+The api/architecture/hexagonal seam and cross-skill run order are owned by the always-on router (`.claude/rules/fundamentals.md` → "Seams that blur"): this skill owns one service's published surface — after [[hexagonal-backend]] defines the port, before [[architecture-fundamentals]] draws runtime relationships. The per-principle pointers below name [[security-fundamentals]], [[ddd-strategic]], and [[database-fundamentals]] where their ownership touches the surface.
 
 ---
 
@@ -28,7 +15,7 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them in
 
 **Rule:** Design the API around **nouns** (resources) the client cares about, named in the domain's language, and let the HTTP method carry the verb. A REST URL identifies a *thing*; it should not contain an action. Choose REST-resource, GraphQL-graph, or RPC-procedure shape deliberately based on the access pattern — but whichever you pick, the names are the public vocabulary and they are forever.
 
-**Why:** The resource model is the part of the API clients reason about, bookmark, cache, and build mental models around. A surface full of `/getUserOrders`, `/createOrder`, `/cancelOrderById` is an RPC list bolted onto HTTP — it can't use HTTP caching, it has no consistent shape, and every new operation invents its own convention. A clean resource model (`/users/{id}/orders`, `POST /orders`, `DELETE /orders/{id}`) is predictable: a client who learns one resource can guess the next. And the *names* leak your domain to the world — if "customer" means one thing in billing and another in CRM (a [[ddd-strategic]] bounded-context boundary), an API that conflates them publishes the confusion to every consumer permanently.
+**Why:** An RPC surface can't be cached, has no consistent shape, and invents a new convention per operation. A clean resource model is predictable — a client who learns one resource guesses the next. Names leak the domain permanently: conflating "customer" across bounded contexts ([[ddd-strategic]]) publishes that confusion to every consumer forever.
 
 **How to apply:**
 - Identify the **resources** — the durable nouns clients manipulate (`order`, `invoice`, `subscription`). Pluralize collections (`/orders`), address members by id (`/orders/{id}`), nest only for genuine ownership (`/orders/{id}/items`) and stop nesting at ~2 levels (deep nesting couples URLs to your hierarchy).
@@ -57,7 +44,7 @@ Right (resource model, verbs in the method):
 
 **Rule:** Let the HTTP method and status code carry their standard meaning. The method tells the client what the call *does to state*; the status code tells the client what *happened*, in a class (2xx/3xx/4xx/5xx) it can branch on without parsing the body.
 
-**Why:** HTTP is a contract clients, proxies, caches, and load balancers already understand. Returning `200 OK` with `{"success": false}` forces every client to parse the body to learn the call failed — and breaks every piece of infrastructure that trusts the status line (a cache will happily cache your "error", a retry layer won't retry your 200-wrapped 503). Using the wrong code is worse than a vague one: a `400` for "you're not logged in" sends the client to fix its request body when it needs to authenticate; a `200` for "created" denies the client the `201 + Location` it needs to find the new resource. The codes are a finite, shared vocabulary — spend them correctly and clients write less special-case code.
+**Why:** HTTP codes are a shared vocabulary caches, proxies, and retry middleware already understand. `200 {"success": false}` breaks infra that trusts the status line. Wrong class breaks client retry logic (`400` for "not logged in" tells the client to fix its request body).
 
 **How to apply:**
 - **2xx** — `200` read/update OK, `201 Created` (with a `Location` header to the new resource), `202 Accepted` (async work queued — pair with a status resource, see [[architecture-fundamentals]] on async), `204 No Content` (success, nothing to return, e.g. `DELETE`).
@@ -84,7 +71,7 @@ Right:  HTTP/1.1 401 Unauthorized
 
 **Rule:** Specify the exact shape of every request and response — field names, types, which are required, what's nullable — and validate every incoming request against it at the boundary, rejecting malformed input with a 4xx before it reaches domain logic. The wire shape is decoupled from your internal model; never serialize an ORM row straight to the client.
 
-**Why:** The body is the part of the contract clients marshal into their own types; an undocumented or drifting shape means every consumer reverse-engineers it from example responses and breaks when you change a field they didn't know was load-bearing. Validating at the edge is both a correctness and a [[security-fundamentals]] concern: unvalidated input is the root of injection, mass-assignment, and "the server 500'd because `quantity` was a string" bugs — and the boundary is the one place you can reject it cleanly with a useful error instead of a stack trace. Serializing the internal model directly is the most common way a refactor becomes a breaking change: rename a DB column and you've silently broken the API.
+**Why:** Clients marshal the body into their own types; an undocumented or drifting shape breaks them silently. Validate at the edge ([[security-fundamentals]]) — the one place to reject bad input with a useful error. Serializing internal models is the most common way a DB rename silently breaks the API.
 
 **How to apply:**
 - **Write the schema down** — OpenAPI for REST, the SDL for GraphQL, `.proto` for gRPC. The schema is the source of truth; generate docs and client types from it, don't hand-maintain them in parallel.
@@ -110,7 +97,7 @@ Right: a defined response DTO, mapped explicitly
 
 **Rule:** Design the error response as deliberately as the success response: a consistent, machine-readable shape with a stable error **code**, a human message, and (for validation) per-field detail. Document the errors each endpoint can return. The error body is an API, not an afterthought.
 
-**Why:** Clients spend as much code on the unhappy path as the happy one, and an inconsistent error surface makes that code impossible to write well. If one endpoint returns `{"error": "bad"}`, another returns `{"message": "...", "errors": [...]}`, and a third returns a bare string, every client writes per-endpoint error parsing and still falls back to "something went wrong". A **stable machine code** (`insufficient_funds`, not the prose "You don't have enough balance" which Marketing will reword next sprint) lets clients branch reliably and lets you change the human text freely. Undocumented errors mean clients only discover the `409` exists when it happens in production.
+**Why:** An inconsistent error surface means per-endpoint error parsing that still falls back to "something went wrong." A stable machine `code` lets clients branch reliably while human `message` text changes freely. Undocumented errors are discovered in production.
 
 **How to apply:**
 - **One error envelope across the whole API.** A widely-used shape is RFC 9457 *Problem Details* (`type`, `title`, `status`, `detail`, `instance`); or a simple `{"error": {"code", "message", "details": [...]}}`. Pick one and use it everywhere, including framework-default 404/500s (override them so they match).
@@ -142,7 +129,7 @@ Right (one envelope, stable code, safe message, traceable):
 
 **Rule:** Keep `GET`/`HEAD` **safe** (no observable state change) and `PUT`/`DELETE` **idempotent** (calling N times == calling once). For `POST` and any non-idempotent mutation, accept an **idempotency key** so a client can safely retry a request whose response it never saw.
 
-**Why:** Networks drop responses. A client that sends `POST /charges`, times out, and retries has no idea whether the first charge succeeded — without idempotency, the safe-looking retry double-charges the customer. Safety and idempotency are also what let *everyone else* — proxies, the browser, retry middleware, [[architecture-fundamentals]]'s circuit breakers — retry on your behalf without asking. A `GET` with a side effect (a "track view" that mutates on read) breaks caches and prefetchers; a non-idempotent `PUT` breaks every retry layer that assumed the verb's contract. These guarantees are the difference between "retries are free" and "retries are a liability".
+**Why:** Networks drop responses; a retry on `POST /charges` double-charges without idempotency. Safety and idempotency also let proxies, caches, and circuit breakers retry on the client's behalf. A `GET` with a side effect breaks caches; a non-idempotent `PUT` breaks every retry layer.
 
 **How to apply:**
 - **Safe methods change nothing observable.** Never mutate on `GET`/`HEAD`. If reading needs to record something (analytics), do it out-of-band; don't make the read unsafe.
@@ -168,7 +155,7 @@ Right:  POST /charges
 
 **Rule:** Never return an unbounded collection. Decide the pagination scheme (cursor vs offset), the default and max page size, and the filter/sort surface up front — changing it later is a breaking change to every client that paged through the old shape.
 
-**Why:** A `GET /orders` that returns "all orders" is a latent outage: it's fine with 10 rows in dev and falls over at 10 million in prod, taking the database and the client with it. Retrofitting pagination onto a shipped unbounded endpoint breaks every consumer. And the *kind* of pagination matters: naive `?offset=N&limit=M` (`OFFSET` in SQL) both scans-and-discards N rows (slow on deep pages — the [[database-fundamentals]] keyset-vs-offset point) and **skips or duplicates rows** when the underlying list changes between pages, which silently corrupts any client doing a full sync. Cursor pagination is stable under concurrent writes and stays fast at any depth.
+**Why:** An unbounded `GET /orders` is fine at 10 rows and fatal at 10M. Retrofitting pagination breaks every consumer. Offset pagination scans N rows for page N and skips/duplicates rows when the list mutates ([[database-fundamentals]] keyset-vs-offset); cursor is stable at any depth.
 
 **How to apply:**
 - **Always cap the result set.** A default page size (e.g. 20) and a hard max (e.g. 100); clamp, don't error, on an over-large `limit`.
@@ -192,7 +179,7 @@ Right:  GET /orders?limit=20                     → 20 items + "next_cursor": "
 
 **Rule:** Every endpoint authenticates the caller, authorizes the specific action on the specific resource (deny by default), and is protected by a rate limit. Decide per endpoint who may call it and how often — public, authenticated, owner-only, admin-only — and enforce it at the edge, not in scattered helpers.
 
-**Why:** The endpoint is the trust boundary; everything past it assumes the caller is allowed. Skipping authorization is the most common serious API vulnerability — **Broken Object-Level Authorization** (BOLA / IDOR) tops the OWASP API Security Top 10: `GET /orders/99` that checks you're logged in but not that order 99 is *yours* lets any user read every order by incrementing the id. Without a rate limit, one client (or one attacker) can exhaust the service for everyone, brute-force tokens, or run up your bill. These are surface decisions: *which* auth scheme, *what* the scope of each token is, and *what* the limit is are part of the contract clients integrate against.
+**Why:** The endpoint is the trust boundary. BOLA/IDOR (OWASP API Top 10 #1): checking authentication but not object-level authorization lets any logged-in user enumerate resources. Without a rate limit, one client exhausts the service for everyone.
 
 **How to apply:**
 - **Authenticate** with a standard scheme — `Authorization: Bearer <token>` (OAuth2/OIDC/JWT) for users, API keys for service clients — and document which each endpoint requires. `401` when missing/expired. (The crypto/token mechanics are [[security-fundamentals]]; name the scheme here.)
@@ -220,7 +207,7 @@ Right:  GET /orders/{id}    (scope: orders:read, rate-limit: 100/min/user)
 
 **Rule:** Treat the published surface as a contract you evolve **additively**. Add optional fields and new endpoints freely; never rename, remove, retype, or change the meaning of an existing field without a versioned, deprecation-cycled migration that gives every consumer time to move.
 
-**Why:** You cannot deploy your API and all of its clients atomically — clients are other teams, other companies, mobile apps pinned to an old build, scripts written two years ago. A breaking change turns "ship a field" into "coordinate a fleet-wide migration", and discovering the break in production means an emergency rollback. The asymmetry is enormous: additive changes are invisible to clients who haven't adopted them and free to ship continuously; breaking changes are quarters of coordination. (This is the surface-level mechanics of [[architecture-fundamentals]] principle 7's system-level contract-evolution stance.)
+**Why:** Clients are other teams, pinned mobile builds, and two-year-old scripts — you can't deploy them atomically with the API. Additive changes are invisible and free; breaking changes are quarters of coordination. (Surface-level mechanics of [[architecture-fundamentals]] principle 7.)
 
 **How to apply:**
 - **Additive is safe; mutating is a break.** Safe: a new optional field with a default, a new endpoint, a new optional query param, a new enum value clients can ignore. Break: removing/renaming a field, making an optional field required, narrowing a type, changing units or semantics, removing an endpoint or enum value clients switch on.
@@ -259,27 +246,13 @@ If any answer is "I don't know," stop and decide before publishing the surface �
 
 ## When to skip this skill
 
-- Throwaway scripts, spikes, and internal one-off RPCs with a single trusted caller you control and can change in lockstep — there's no external contract to protect.
-- Pure transport or config changes with no contract impact (swapping the web framework behind an unchanged surface, a timeout tweak, a TLS cert) — that's [[architecture-fundamentals]] / [[delivery-engineering]] territory.
-- Internal function or module boundaries inside one service that never cross the process edge — that's [[programming-fundamentals]] and [[hexagonal-backend]] (the port), not a published API.
-- Trivial, fully-internal CRUD over a private network where the consumer is the same team and the same deploy, with no third-party or cross-team client — apply judgement; the versioning and auth principles still earn their keep the moment a second consumer appears.
+- Throwaway scripts, spikes, internal one-off RPCs with a single trusted caller changeable in lockstep.
+- Pure transport/config changes with no contract impact (framework swap, timeout tweak, TLS cert) → [[architecture-fundamentals]] / [[delivery-engineering]].
+- Internal module boundaries inside one service that never cross the process edge → [[programming-fundamentals]] / [[hexagonal-backend]].
 
-For everything else — any endpoint an outside client, another team, or a future version of your own app will code against — these fundamentals apply. They apply on the "internal" API that always eventually gets a second consumer, and especially on the "we'll version it later" endpoint.
-
-## How to use this skill in a conversation
-
-This skill is always-on for API-surface work (per the always-on router `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task is in "When to skip," say so in one sentence and proceed without it.
-
-When the skill applies:
-- **Designing a new API or endpoint** — walk the principles in order: name the resources and language (1), the methods and status codes (2), the body contracts (3) and error shape (4), the idempotency/safety guarantees (5), pagination/filtering (6), auth and limits (7), and the versioning stance (8). Show the user the surface — routes, request/response shapes, error envelope — before writing handlers.
-- **Changing an existing API** — the load-bearing question is principle 8: is this additive or breaking? Name it explicitly and propose the additive path or the deprecation cycle; never silently mutate a published field.
-- **Reviewing an API** — use the principles as a checklist and cite the number when flagging an issue ("this is a principle-7 violation: `GET /orders/{id}` authenticates but never authorizes the object — BOLA").
-- **Wiring an endpoint to the backend** — this skill designs the surface; [[hexagonal-backend]] connects it to the application port (translate the wire DTO to a use-case call, don't pass the domain model through), and [[security-fundamentals]] implements the authn/authz/validation the boundary demands.
-- When you make a non-obvious call — choosing GraphQL over REST, cursor over offset, a version bump over an additive field, `422` vs `400` — say *why* in one sentence and cite the principle. Don't emit API decisions silently.
+For everything else — any endpoint another team, client, or future version of your own app will code against — these fundamentals apply.
 
 ## Reference files
-
-Deeper guides for individual principles. Read the one that matches the work in front of you; you don't need to read them all upfront. (These are described here for scope; the bodies are authored on demand.)
 
 - `references/resource-modeling.md` — resources vs RPC, URL design and nesting depth, collection/member conventions, the REST-vs-GraphQL-vs-gRPC decision matrix and when each wins. Use when shaping the surface (principles 1–2).
 - `references/contracts-and-errors.md` — OpenAPI/SDL/proto as source of truth, edge validation, wire-DTO vs domain-model mapping, the RFC 9457 Problem Details error envelope, stable error codes, field-level validation detail. Use when designing request/response bodies and the error surface (principles 3–4).

@@ -1,10 +1,8 @@
 # Interview tactics
 
-The interview is one `AskUserQuestion` batch (in `/dev`) or a short series of focused questions (outside `/dev`). This reference is the field guide for making it land.
-
 ## Pick the 3–4 most consequential UNSPECIFIED slots
 
-Walk `.claude/agents/pm.md > Required slots` and `.workflow/_templates/spec.md`. For each slot, classify:
+Walk `.claude/agents/pm.md > Spec sections (authoritative)` and `.workflow/_templates/spec.md`. For each slot, classify:
 
 1. **Pinned by the intent** — the user already said it. Don't re-ask.
 2. **Pinned by the repo** — `package.json`, `README.md`, recent commits, or the file the intent names answers it. Don't ask.
@@ -149,9 +147,7 @@ If the answer is missing one of these, ask one targeted follow-up. **Do not inve
 
 ## The Mom Test for spec interviews
 
-Adapted from Rob Fitzpatrick's *The Mom Test* — three rules for getting useful information out of a customer interview, applied to the `/dev` spec interview. The book is about customer-discovery interviews for new products; the same failure modes show up when interviewing about an internal feature, a refactor scope, or a bug repro.
-
-The book is named for the observation that even your mother — who has every incentive to be kind — can be asked questions that elicit useful information instead of polite encouragement. The trick is asking questions whose answers don't depend on the respondent liking the idea.
+Adapted from Rob Fitzpatrick's *The Mom Test*: three rules for getting useful information out of an interview, applied to the `/dev` spec interview. Same failure modes appear when interviewing about an internal feature, refactor scope, or bug repro.
 
 ### The three rules
 
@@ -171,9 +167,9 @@ The book is named for the observation that even your mother — who has every in
 | "How often do you think you'd export data?" | "When did you last export data? What was the format and what did you do with the file?" |
 | "Would this be useful?" | "Walk me through the last time you needed this and didn't have it — what did you do instead?" |
 
-**Rule 3 — Talk less, listen more.** Silence is a tool. When the user trails off, resist filling the gap — they almost always continue with the most honest sentence of the conversation. Don't paraphrase their answer back to them in a way that softens or sharpens it; that's a tell that you're leading.
+**Rule 3 — Talk less, listen more.** Silence is a tool. When the user trails off, resist filling the gap — they almost always continue with the most honest sentence of the conversation. Don't paraphrase in a way that softens or sharpens it.
 
-In `/dev` this rule looks different than a live interview because the channel is `AskUserQuestion`, not voice. The equivalent of "listen more" is: don't write a 200-word framing before each question, don't pre-emptively answer the question in the option labels, and don't bundle a follow-up question into the description ("If you pick A, we'll also need to know B"). One question, lean framing, let the answer come.
+In `/dev` via `AskUserQuestion`: don't write a 200-word framing, don't pre-answer in option labels, don't bundle follow-ups into descriptions. One question, lean framing.
 
 ### Three types of bad data (also from *The Mom Test*)
 
@@ -197,9 +193,7 @@ Reading the rules this way prevents the spec from drifting from "what we actuall
 
 ## Pre-mortem at the gate
 
-Adapted from Amazon's PR/FAQ practice: every internal FAQ ends with the question **"Top three reasons this product will not succeed."** It's a *pre-*mortem — you imagine the failure before it happens and write down what would have caused it, because that's the cheapest moment to design the failure out.
-
-Applied to the `/dev` spec, the pre-mortem is the 5th self-review scan (principle 7 of `SKILL.md`). The shape:
+The 5th self-review scan (principle 7 of `SKILL.md`), adapted from Amazon PR/FAQ. Shape:
 
 > Imagine it's three weeks from now. This work shipped, and it was a disappointment. Name the top three reasons.
 
@@ -213,9 +207,9 @@ For each reason, classify the response and act:
 | **Approach risk** — option A was wrong for this context | Reconsider the approach options from principle 4 before locking the spec. |
 | **Operational gap** — works in dev, breaks in prod | Promote to `Constraints` or add an observability AC. |
 
-Three is the magic number — fewer and you're not stretching; more and you're padding. If you genuinely can't think of three, the design is either trivial (size = XS) or you haven't sat with it long enough; the right move on "I can't find three" is usually to sit with it five more minutes, not to skip the scan.
+Three — not fewer, not more. If you can't find three, sit with it longer before skipping the scan.
 
-The pre-mortem is *not* a Risks dump — Risks list things that might go wrong. The pre-mortem asks the harder question: *which of these would I be most embarrassed about in three weeks?* That filter promotes the right items to action.
+The pre-mortem is *not* a Risks dump — Risks list things that might go wrong. The pre-mortem asks: *which would I be most embarrassed about in three weeks?*
 
 ### Worked example — pre-mortem on "export user data" spec
 

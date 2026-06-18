@@ -1,16 +1,5 @@
 # Subdomain classification
 
-Deep dive on principle 1: classify the subdomain before applying DDD. This is the single highest-leverage decision in any DDD project — it determines whether the rest of the principles are worth applying at all, and where to spend your senior engineering capacity.
-
-## Table of contents
-
-- The three categories
-- The differentiation test
-- The build / buy / borrow lens
-- Wardley mapping as a sharper version of the same idea
-- Subdomains drift between classifications
-- Worked examples
-
 ## The three categories
 
 A **subdomain** is a coherent area of the business problem space — not a piece of the software, but a piece of *what the business does*. A typical company has 5–30 subdomains in active use; some are visible to customers, some are internal infrastructure.

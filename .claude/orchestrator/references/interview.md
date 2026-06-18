@@ -1,0 +1,11 @@
+# Orchestrator reference — Interview (step 6 sub-steps)
+
+> Loaded on demand by the main agent (`.claude/orchestrator.md`). Step 6's headline (**you** run the interview — sub-agents can't `AskUserQuestion`) stays inline; this is the sub-step procedure. Read it when you reach step 6.
+
+0. **Ingest prior conversation FIRST** into a **requirements digest** (every goal, constraint, decision, example, scope boundary, edge case in the user's words) — an authoritative source (only repo-derived facts go in `Assumptions (inferred)`). **Estimate `size`, classify `field`** (default brownfield). Capture `References / examples to follow`; **fetch URLs now** (you have `WebFetch`; pm/engineer don't) and inline the excerpt.
+1. `brainstorming` is on the critical path (~47KB) — default to slot discipline + the always-on summary; reach for one reference only when scope is genuinely ambiguous.
+2. Read `_templates/spec.md` + `FOLLOWUPS.md`; fold in-scope `Open` items into questions.
+3. **Spec-prep fanout (opt-in)** per `## Single-pass-first` — dispatch `team-codebase-explorer` / `team-best-practice-researcher` only when 2+ disjoint research areas materially cut guessing (one area = a quick read you do yourself; always single-pass for XS/S + pure-greenfield). First `team-*` dispatch records `team_registry` (`references/fanout.md > Registry preflight`).
+4. Read `pm.md > Spec sections`. Pick the 3–4 UNSPECIFIED slots (digest + prep avoid re-asking; never assume defaults for slots you didn't ask; repo-answered slots → `Assumptions (inferred)`). Run three mandatory detections: **NFR** (measurable target → an AC), **e2e/visual opt-in** (default `off`, record `state.json > e2e_visual`), **error/boundary** per consequential behavioural AC (`none — <default>` valid; silence isn't).
+5. `AskUserQuestion` — **one batch of 3–4** by default (fix's repro is free-text). Capture `input → expected output` + `on error / at boundary:` per behavioural AC. **Bounded dig loop:** up to 3 narrower batches for high ambiguity; still open → `[NEEDS CLARIFICATION]`. **Close with a free-text catch-all** (record verbatim). Any named reference → `References / examples to follow` (fetch+inline URLs).
+6. Save answers + digest + catch-all + `Assumptions (inferred)` + AC examples + references + folded follow-up IDs + fanout findings for `pm`.

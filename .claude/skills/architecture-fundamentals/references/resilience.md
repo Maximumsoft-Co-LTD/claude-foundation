@@ -1,20 +1,5 @@
 # Resilience
 
-Deep dive on principle 4: every cross-process call can fail, and the design must handle that without taking the whole system down. The patterns here are well-known; the failures are well-known; the only question is whether you write them in or learn them from a 3am page.
-
-## Table of contents
-
-- Timeouts and time budgets
-- Retries: when, when not, how
-- Exponential backoff and jitter
-- Retry budgets
-- Circuit breakers
-- Bulkheads
-- Graceful degradation
-- Load shedding
-- Health checks: liveness vs readiness
-- Chaos testing
-
 ## Timeouts and time budgets
 
 **The default timeout in most HTTP clients is dangerous.** Node's `fetch` waits forever. Go's `http.DefaultClient` has no timeout. Java's URLConnection defaults vary. Python's `requests` defaults to no timeout. Every one of these will, on the wrong day, leave a connection pool full of hung waits that take the service down.

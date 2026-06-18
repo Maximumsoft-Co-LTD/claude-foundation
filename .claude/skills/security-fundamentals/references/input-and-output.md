@@ -1,12 +1,12 @@
 # Input and Output Handling
 
-Injection is one bug wearing many costumes: a value the attacker controls crosses into an interpreter (SQL parser, shell, HTML/JS engine, filesystem, LDAP, an HTTP client) and gets read as instructions instead of data. The two defenses are symmetric: **validate on the way in** (is this the shape I expect?) and **encode/parameterize on the way out** (keep this on the data side of the sink). They are not interchangeable — you need both, because validation can't know every downstream sink and encoding can't know business rules.
+Injection = attacker-controlled data read as instructions by a downstream interpreter (SQL, shell, HTML/JS, LDAP). Two defenses: **validate on the way in** (is this the shape I expect?) and **encode/parameterize on the way out** (keep data on the data side). Not interchangeable — you need both.
 
 ## Validation: at the boundary, allow-list, canonical-first
 
 ### Canonicalize, *then* check
 
-A check that runs against a non-canonical form is bypassable. The same logical value has many encodings; the attacker picks one that fails your check but is decoded into the dangerous form by the downstream interpreter.
+A check on a non-canonical form is bypassable — the attacker picks an encoding that passes your check but decodes into the dangerous form downstream.
 
 ```
 ../../etc/passwd          # raw
@@ -28,7 +28,7 @@ Order: **decode until stable → Unicode-normalize (NFC) → resolve (`..`, syml
 | Redirect target | one of a known internal path set | "must start with our domain" (`evil.com?x=ourdomain.com`) |
 | Numeric input | parse to int + range check | regex for "looks numeric" |
 
-A deny-list is a list of attacks you've thought of; the attacker only needs the one you haven't. Anchor every regex with `^...$` (an unanchored `[a-z]+` matches a substring of hostile input). Cap length on everything — unbounded input is a denial-of-service vector (huge body, ReDoS via catastrophic backtracking, billion-laughs XML).
+A deny-list enumerates attacks you thought of; the attacker only needs the one you didn't. Anchor every regex with `^...$`. Cap length on everything — unbounded input is a DoS vector (huge body, ReDoS, billion-laughs XML).
 
 ### Parse, don't validate
 
@@ -81,7 +81,7 @@ subprocess.run(f"convert {filename} out.png", shell=True)   # same hole
 subprocess.run(["convert", filename, "out.png"])            # shell=False is the default
 ```
 
-If you think you *need* a shell (pipes, globbing), you almost always don't — do the piping in code, or pass a fixed command with the untrusted part as an argument. `shell=True`, `os.system`, backticks, and `eval`/`exec` on anything attacker-influenced are red flags requiring justification.
+If you think you need a shell, you almost always don't — pipe in code, or pass a fixed command with the untrusted part as an argument. `shell=True`, `os.system`, backticks, and `eval`/`exec` on anything attacker-influenced are red flags.
 
 ### HTML/JS — contextual escaping; the context within HTML matters
 
@@ -95,7 +95,7 @@ Escaping is per-context. The same value needs different treatment in each place:
 | URL in `href`/`src` | `<a href="HERE">` | URL-encode + validate scheme (`javascript:` is XSS) |
 | CSS value | `<div style="width:HERE">` | CSS escaping (rare; avoid) |
 
-Let the framework do it. React, Vue, Angular, Jinja2 (`autoescape`), Razor escape HTML by default. The dangerous APIs are the opt-outs: `dangerouslySetInnerHTML`, `v-html`, `innerHTML`, `mark_safe`, `| safe`, `Html.Raw`. Each is a place auto-escaping is turned off — treat every one as needing a written reason, and if the content is user-derived, run it through a vetted sanitizer (DOMPurify) configured with an allow-list of tags/attributes.
+Let the framework escape by default (React, Vue, Angular, Jinja2 autoescape, Razor). The dangerous opt-outs — `dangerouslySetInnerHTML`, `v-html`, `innerHTML`, `mark_safe`, `| safe`, `Html.Raw` — each needs a written reason; if the content is user-derived, run it through DOMPurify with an allow-list of tags/attributes.
 
 ```ts
 el.textContent = comment    // safe: a text node, never parsed as markup
@@ -128,7 +128,7 @@ Defense in depth for XSS: a `Content-Security-Policy` that disallows inline scri
 
 ### SSRF deserves a note
 
-Server-Side Request Forgery: the server fetches a URL the user supplied (webhook, image proxy, link preview), and the attacker points it at `http://169.254.169.254/` (cloud metadata, credentials) or `http://localhost:6379/` (internal Redis). Validating the URL string isn't enough — DNS rebinding and redirects defeat it. Defenses, layered: allow-list the destination hosts you actually need; resolve the hostname and reject private/loopback/link-local IP ranges *on the resolved address*; disable following redirects; use a dedicated egress proxy with no access to the internal network.
+Server-Side Request Forgery: the server fetches a user-supplied URL and the attacker points it at `http://169.254.169.254/` (cloud metadata) or `http://localhost:6379/` (internal Redis). Validating the URL string isn't enough — DNS rebinding and redirects defeat it. Defenses, layered: allow-list destination hosts; resolve the hostname and reject private/loopback/link-local IPs *on the resolved address*; disable redirects; use a dedicated egress proxy with no internal access.
 
 ## Checklist for an input-handling diff
 

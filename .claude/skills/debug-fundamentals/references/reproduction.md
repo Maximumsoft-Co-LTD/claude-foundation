@@ -1,16 +1,16 @@
 # Reproduction
 
-A bug you can't reproduce is a bug you can't debug — every "fix" is a hope, not a verified change. This guide is about getting from "it happened to someone, sometimes" to "I can make it happen on demand, in 30 seconds, locally."
+A bug you can't reproduce is a bug you can't debug. Goal: from "it happened to someone, sometimes" to "I can make it happen on demand, in 30 seconds, locally."
 
 ## What a real repro looks like
 
-A repro is a procedure such that:
-1. **It's specific.** Exact input, exact environment, exact version, exact command.
-2. **It's deterministic enough to iterate.** If it fails 1 in 1000 runs, that's not yet a repro — that's a flake hunt. Get the rate up before debugging the cause.
-3. **It's cheap to run.** A repro that takes 20 minutes per attempt is a debugging accelerator running in reverse. Get the cycle below 60 seconds before you start changing code.
-4. **It's standalone.** A repro that needs prod data, your laptop's `~/.aws`, and yesterday's deploy is fragile. Bake the inputs in.
+A repro is a procedure that is:
+1. **Specific.** Exact input, exact environment, exact version, exact command.
+2. **Deterministic enough to iterate.** 1-in-1000 is a flake hunt, not a repro. Get the rate up first.
+3. **Cheap to run.** Get the cycle below 60 seconds before changing code.
+4. **Standalone.** A repro needing prod data, your `~/.aws`, and yesterday's deploy is fragile. Bake the inputs in.
 
-The artifact at the end of this stage is usually one of: a failing test, a one-liner `curl`, a script, or a saved request payload. Pick whatever the bug fits.
+The artifact: a failing test, a one-liner `curl`, a script, or a saved request payload.
 
 ## The repro funnel
 
@@ -24,7 +24,7 @@ If it still reproduces in staging, push down.
 
 ### 2. Reproduce locally
 
-Run the same code on your machine against the same dependencies. Docker Compose, devcontainer, whatever the project uses. If it stops reproducing here, the cause is in something your local setup *doesn't* have — usually load, scale, real data, or a real dependency you mocked.
+Run the same code on your machine against the same dependencies. If it stops reproducing, the cause is something your local setup lacks — usually load, scale, real data, or a real dependency you mocked.
 
 If it still reproduces, push down.
 
@@ -70,18 +70,18 @@ Flow: list the variables you *think* are constant → pick the most suspicious �
 
 ## Getting a repro out of a production-only bug
 
-Sometimes the bug really won't repro outside production. Often this is because production has data, scale, or traffic patterns you can't simulate. The play is to make production carry the evidence:
+When the bug really won't repro outside production, make production carry the evidence:
 
-1. **Log the inputs.** When the failure handler fires, log the full inbound request (sanitized), the user id, the timestamp, the request id, the version, the host.
-2. **Capture the state.** Log the value of any field involved in the failure path, *before* it's used. If `order.total.currency` blows up, log `order.total` and `typeof order.total` upstream.
-3. **Wait for the next occurrence.** With the right instrumentation, one more occurrence is one more repro. Don't waste it.
-4. **Replay it locally.** Once you have the payload from logs, send it as a test or a `curl`. Almost always reproduces. The remaining cases are usually concurrency or time-dependent — go back to "hidden variables" above.
+1. **Log the inputs.** When the failure handler fires, log the full inbound request (sanitized), user id, timestamp, request id, version, host.
+2. **Capture the state.** Log the value of any field involved in the failure path *before* it's used.
+3. **Wait for the next occurrence.** One more occurrence is one more repro. Don't waste it.
+4. **Replay it locally.** Once you have the payload from logs, send it as a test or `curl`. Almost always reproduces.
 
-When even logging the inputs is too sensitive (PII, compliance), log the *shape* — types, lengths, presence of fields — not the values. That's often enough to identify the trigger.
+When logging inputs is too sensitive, log the *shape* — types, lengths, field presence — not the values.
 
 ## Common pitfalls
 
-- **"It reproduces sometimes" stops being good enough below ~80% rate.** Stop calling it a repro. Either find the missing variable or accept it's a flake hunt and instrument prod.
-- **Re-running the failing test until it passes is not a fix.** It just teaches your CI to hide the bug.
-- **Repros that need your dev branch and your laptop are not portable.** Bake them into the repo as a test or a script so the next engineer doesn't start from zero.
-- **Don't lose the repro after the fix.** Promote it into the test suite. That's principle 7 in the main skill — the proof that the fix sticks.
+- **"It reproduces sometimes" stops being good enough below ~80% rate.** Find the missing variable or accept it's a flake hunt and instrument prod.
+- **Re-running the failing test until it passes is not a fix.** It teaches CI to hide the bug.
+- **Repros needing your dev branch and laptop are not portable.** Bake them into the repo as a test or script.
+- **Don't lose the repro after the fix.** Promote it into the test suite — that's principle 7.

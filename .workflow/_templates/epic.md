@@ -18,7 +18,7 @@ Appended as slices spawn:
 - [ ] `NNNN-feat-<slice-slug>` — created YYYY-MM-DD
 
 <!--
-The sections above are always required for an epic. Add the sections below ONLY when they apply, then DELETE them if not:
-- Dependencies — cross-slice ordering ("Slice 2 needs <thing> from slice 1 — hard dep"; write "none — slices can ship in any order" if all independent)
+Sections above = always required for an epic. Add a section below ONLY when it applies, then DELETE if not:
+- Dependencies — cross-slice ordering ("Slice 2 needs <thing> from slice 1 — hard dep"); omit when all slices are independent
 - Out of epic — what's NOT covered across all slices (future epics / never-doing), when scope-creep is a real risk
 -->

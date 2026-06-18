@@ -1,8 +1,6 @@
 # Architecture Diagrams in Plans
 
-Diagrams are **always required** in `plan.md`. The form scales with `Size`; the *type* defaults from the run's `Type`. Mermaid is the format — renders on GitHub, in VS Code (with extension), in Obsidian, in most markdown viewers, and inside Claude Code's preview pane.
-
-This file is the lookup table when drafting the `## Architecture diagram` section. Keep diagrams small — they exist to make the *seam* of the change legible at a glance, not to redraw the whole system.
+Always required in `plan.md`. Form scales with `Size`; type defaults from the run's `Type`. Format: Mermaid. Keep diagrams small — they exist to make the *seam* of the change legible at a glance.
 
 ## Conventions
 
@@ -25,7 +23,7 @@ flowchart LR
   S --> C[★ Cache layer]
 ```
 
-Worked example: adding a `/reports` endpoint that aggregates orders. `★` marks the two new pieces; everything else is existing. Reviewer sees in 3 seconds: "new handler + new cache, plugged into the API gateway, reads orders." No prose needed.
+Worked example: adding a `/reports` endpoint. `★` marks the two new pieces; everything else is existing.
 
 **UI-heavy `feat` (multi-screen / multi-state flows)** — prefer mermaid `journey` or `sequenceDiagram` over a plain flowchart, so the *user-visible order* is legible. The spec's `## User journey` section names the steps; this diagram visualises them.
 
@@ -62,8 +60,6 @@ sequenceDiagram
   Svc->>DB: UPDATE status=charged
   Svc-->>API: 200
 ```
-
-Worked example: a bug where charging a non-pending order silently succeeded. `Note over` lines mark exactly where the fix lands. The flow is the existing flow; the fix is one guard inside it.
 
 Alternative for `fix`: a before/after `flowchart` showing the broken branch and the corrected branch — use when the fix changes control flow rather than adding a guard.
 
@@ -104,7 +100,7 @@ classDiagram
   note for StripeAdapter "★ new adapter"
 ```
 
-The behaviour-equivalence statement in `Approach` says *what* stays the same; the diagram shows *how the shape changes*. Both are required for refactor.
+The `Approach` behaviour-equivalence statement says *what* stays the same; the diagram shows *how the shape changes*. Both are required for refactor.
 
 ### `chore` / `docs` — one line, OR `N/A`
 
@@ -137,24 +133,13 @@ The diagram for a spike is a *question*, not an answer. Multiple branches are ex
 
 ## When Size = XS
 
-XS plans still keep the section. Acceptable content:
-
-- `**Impact:** N/A — <reason>` (one-file chore, doc-only change, dep bump with no API surface change)
-- `path/to/file (one-line summary of change)` (one-file fix with no system impact)
-- A 3-node mermaid `flowchart LR` if even one line of mermaid clarifies it
-
-The cost is ~10 seconds; the value is the habit. Do not skip.
+XS plans still keep the section. Acceptable: `**Impact:** N/A — <reason>`, a one-line file summary, or a 3-node mermaid. Do not skip.
 
 ## When Size = L
 
-L plans usually need **two** diagrams:
+L plans usually need **two** diagrams: **Before** (current system) + **After** (post-change, `★` on additions, `~~strikethrough~~` on removals). Two separate blocks are usually clearer than subgraphs.
 
-1. **Before**: the current system at the layer being changed.
-2. **After**: the system post-change, with `★` on additions and `~~strikethrough~~` on removals.
-
-Use `subgraph Before { ... }` / `subgraph After { ... }` blocks (as in the refactor example above) or two separate code blocks. Two separate blocks are usually clearer.
-
-For L plans involving multiple actors (services, brokers, external APIs), include a `sequenceDiagram` *in addition* to the flowchart — flowchart shows *shape*, sequence shows *interaction order*. The two views together close the "I see the shape but not the dance" gap.
+For L plans with multiple actors, add a `sequenceDiagram` alongside the flowchart — flowchart shows *shape*, sequence shows *interaction order*.
 
 ## Choosing between diagram kinds
 

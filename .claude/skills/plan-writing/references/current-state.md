@@ -1,22 +1,18 @@
 # Current State Mapping
 
-Reverse-engineer the existing code *before* designing the change. This file is the deep-dive when `plan-writing > principle 3` says "map current state" and you need to know what to capture, how to walk it with LSP, and what good looks like per Type.
-
-## Why this exists separately
-
-The principle in SKILL.md is the rule. This file is the *technique*: which LSP queries to run, how many hops to trace, what counts as an invariant worth writing down, what to do when LSP returns 200 references, and worked examples per Type so the section doesn't reduce to "I read the file and it does stuff."
+Reverse-engineer the existing code *before* designing the change. Deep-dive for `plan-writing > principle 3`: LSP queries, hop count, what counts as an invariant, and worked examples per Type.
 
 ## Boundary-depth, not full-depth — read less, defer the rest
 
-The plan does **not** need to understand the whole subsystem. It needs to read deep enough on three things only: the **blast radius** (what this change can break), the **invariants** the change must preserve, and the **insertion points** where new code wires in. That safety-critical subset is what the fields below map and what the gate signs off on. Everything else is the engineer's to read **at edit time** — `engineer` opens every file it touches with LSP during Phase 2 anyway (`engineer.md > Mode A`), so pre-reading the internal mechanics of code whose *contract you don't change* is a read done twice: once here into a doc, once there to act. Read it once, where it's actionable.
+The plan needs to read deep on three things only: **blast radius**, **invariants** the change must preserve, and **insertion points**. That safety-critical subset is what the gate signs off on. Everything else is the engineer's to read **at edit time** — pre-reading code whose *contract you don't change* is a read done twice.
 
 So when a file is in scope but its internals don't constrain the plan — a contained edit, a flow you won't alter, a helper you'll call but not change — **don't walk it here.** Write a one-line pointer in `plan.md > ## To explore at implement` (*what to read · why it was safe to defer*) and move on. That section is the sanctioned home for deferral, not a confession of laziness: it tells the engineer exactly where to go deep, and it keeps `## Current state` to the load-bearing subset (the "stop when actionable for the engineer" bar below — now with somewhere to put what you stopped short of). What you write there is **instead of** walking those areas, not in addition — the Current state shrinks to the blast-radius subset, it does not grow a second list.
 
-The depth bar: read deep enough that **(a)** the gate can make a sound go/no-go, **(b)** the approach is feasible (won't die on contact with the code), and **(c)** the blast radius is known (the change won't silently break a caller or invariant). Not deep enough to "know the file." When the approach itself is genuinely uncertain — a brownfield M/L where you're unsure it holds — read a thin **feasibility** slice to confirm it, then defer the rest; that is a spike-sized read, not a full map. **Never defer a blast-radius invariant the change depends on** — that belongs in `## Current state`, mapped and cited. Defer mechanics, never safety.
+Depth bar: **(a)** gate can make a sound go/no-go, **(b)** approach is feasible, **(c)** blast radius is known. Not "know the file." When approach is uncertain — read a thin feasibility slice, then defer the rest. **Never defer a blast-radius invariant** — that belongs in `## Current state`, mapped and cited. Defer mechanics, never safety.
 
 ## The LSP-walk technique
 
-This is how you map the boundary-depth subset above — *trace the change*, don't read every file. Do this in order:
+*Trace the change*, don't read every file. Do this in order:
 
 1. **Anchor on the spec's integration points.** Open `spec.md > Constraints > Integration points` (or the equivalent — the spec's list of existing files this run will touch). Each one is a starting node for the walk. If the spec doesn't list integration points, the spec is under-specified — fix the spec first.
 
@@ -49,11 +45,10 @@ This is how you map the boundary-depth subset above — *trace the change*, don'
 
 ## What counts as an invariant
 
-A useful invariant has three properties:
-
-- **Silent** — the current code relies on it but doesn't document it. (If it's already in a docstring or `WORKFLOW.md`, link there; don't restate.)
-- **Load-bearing** — breaking it would change observable behaviour or violate a downstream assumption.
-- **Citable** — you can point to `path#anchor` (symbol or unique snippet) where the assumption lives.
+A useful invariant is:
+- **Silent** — the code relies on it but doesn't document it. (If already in a docstring or `WORKFLOW.md`, link there.)
+- **Load-bearing** — breaking it changes observable behaviour or violates a downstream assumption.
+- **Citable** — you can point to `path#anchor` where the assumption lives.
 
 Examples worth writing:
 
@@ -75,12 +70,11 @@ Examples NOT worth writing:
 
 ### The one-line bar
 
-When in doubt, ask: **would silently breaking this change observable behaviour or violate a caller's assumption?**
+**Would silently breaking this change observable behaviour or violate a caller's assumption?**
+- Yes → invariant; write it with a citation.
+- No → code style or trivia; cut it.
 
-- Yes → it's an invariant; write it with a citation.
-- No → it's just behaviour, code style, or trivia; cut it.
-
-The bar exists because the Current state section is *load-bearing context for the engineer who will change this code*, not a file tour. A 12-bullet invariants list that includes 8 trivia items is worse than a 4-bullet list of the four things that actually constrain the change — the trivia dilutes the signal.
+A 12-bullet list with 8 trivia items is worse than 4 load-bearing bullets — trivia dilutes the signal.
 
 ## Section template
 
@@ -231,10 +225,10 @@ When you do draw one, put it directly under the `## Current state` heading (befo
 ## Common failure modes
 
 - **Paraphrase without citations** — "the hook writes state.json, then exits" with no `path#anchor`. Walk it again; cite every claim.
-- **Including everything you noticed** — Current state is the *load-bearing* subset, not a file tour. If a fact doesn't constrain the plan, cut it.
-- **Skipping the caller walk** — "I'll find out at implementation time" — no. The caller walk is what reveals the blast radius before you commit to the change.
-- **Treating the type signature as the invariant** — types are checked by the compiler; invariants are what the compiler *can't* tell you (ordering, idempotency, error semantics). Focus on the latter.
-- **Bug path that's just the stack trace** — a stack trace shows *where* the symptom surfaced, not *where the data turned wrong*. The bug-path arrow with `← BUG` should mark the data-turned-wrong step, often *above* the symptom.
+- **Including everything you noticed** — Current state is the *load-bearing* subset, not a file tour.
+- **Skipping the caller walk** — the caller walk reveals blast radius before you commit to the change.
+- **Treating the type signature as the invariant** — invariants are what the compiler *can't* tell you (ordering, idempotency, error semantics).
+- **Bug path that's just the stack trace** — mark the data-turned-wrong step with `← BUG`, often *above* the symptom.
 
 ## When to skip Current state
 

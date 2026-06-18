@@ -7,9 +7,7 @@ description: Write an implementation plan that maps a spec to executable, verifi
 
 ## Why this exists
 
-Plans fail in predictable ways: they restate the spec instead of decomposing it, they hide approach-decisions in prose, they let "TBD" and "appropriate error handling" leak through, they describe a feature without showing where it plugs into the system, they say "manually verify" when they should name a command, and they ship without acceptance-criteria traceability — so the first time AC1 actually gets verified is during review, by which point the cycle budget is already half-spent.
-
-A plan that scales with the work, carries a diagram, ties every step to an AC, and gives every step a *runnable verify* catches those failures at plan time — minutes spent here save hours in review and test cycles. This skill is the pre-flight for the `/dev` workflow's Phase 1 step 2 (lead agent, plan mode), and the standard whenever a plan is being drafted in this repo.
+Plans that restate the spec, hide decisions in prose, let "TBD" leak, or lack runnable verifies fail predictably — the first AC check lands at review, not plan time. This skill is the pre-flight for `/dev` Phase 1 step 2 (lead, plan mode) and whenever a plan is being drafted.
 
 ## The 10 principles
 
@@ -30,7 +28,7 @@ Size determines which sections are required, which are optional, and which shoul
 
 ### 3. Map current state before designing (brownfield work)
 
-A plan that touches existing code without first stating what that code does today is gambling. The plan reads as if greenfield, the architecture diagram shows only new pieces, and the engineer discovers each load-bearing invariant by breaking it. Catching this at plan time costs a few LSP queries; catching it at review or production time costs a cycle or a postmortem.
+A plan that touches existing code without first stating what it does today is gambling on assumptions.
 
 **The trigger is the run's `field`, not its Type or Size** (`field` is defined in `references/size-tiering.md > Greenfield vs brownfield`): **brownfield work maps current state; greenfield skips it.** Because greenfield always caps at XS/S and every `fix`/`refactor`/M/L run is brownfield, this subsumes the old "M/L or refactor/fix" trigger *and* closes the gap it left — a **brownfield `feat` that edits existing code is no longer exempt just because it's small** (the "added a feature, broke existing behaviour" hole).
 
@@ -113,7 +111,7 @@ If any scan fails, fix the plan — do not mark `status: draft`.
 
 ### 9. Lead with a plain-language Outcome (Before → After → Benefit)
 
-A plan that opens on `Approach` + steps forces the reviewer to reverse-engineer "what does this even change, and why do I care" out of the technical detail — the readability complaint this principle exists to kill. The fix is a three-line `## Outcome` block at the very top, the first thing rendered, before `Approach`:
+Lead with a `## Outcome` block at the very top (before `Approach`) so reviewers immediately know what changes and why:
 
 - **Before** — how the system / flow behaves today, in one plain-language line. **No `path#anchor`** — the cited walk is `## Current state`.
 - **After** — how it behaves once the Steps land.
@@ -123,9 +121,7 @@ Always rendered, every Size and Type — one short line per bullet is fine on XS
 
 ### 10. Scaffold the skeleton before a long build (M/L)
 
-A plan that describes the shape only in prose and a flow diagram still leaves the engineer to invent the concrete file layout and every signature — and the reviewer to approve a long build sight-unseen. For **M/L** work, add a `## Scaffold` section: one fenced block showing the *target file tree* (★ = new file, ~ = edited) with each new / changed file's **key exported signature(s)** inline (interface / type / function — params → return/error). It is the concrete skeleton — what the tree and the contracts look like *after scaffolding, before the bodies are filled in*.
-
-This is the highest-leverage review checkpoint for long work: a wrong structural decision (a misplaced boundary, a signature that leaks the wrong type, a missing port) is cheap to fix in a skeleton and expensive to fix after hundreds of lines are written against it. The gate (Phase 1 step 3) surfaces the Scaffold for M/L, so the user signs off the shape before the autonomous Phase 2 begins; the engineer then builds to it instead of guessing.
+For **M/L** work, add a `## Scaffold` section: one fenced block showing the *target file tree* (★ = new file, ~ = edited) with each new / changed file's **key exported signature(s)** inline (interface / type / function — params → return/error) — the skeleton the gate reviews and the engineer builds first.
 
 - **Required** for M/L · **optional** mini version for S that touches existing code · **skip** XS.
 - **Placement:** after the Architecture diagram, before Steps.
@@ -249,7 +245,7 @@ If any non-trivial code is about to land in the repo and you're about to write `
 - **Including triggered sections "just in case"** — an empty `Architecture diagram` on an XS string change, a `Files touched` table with one row, a `Risks` section that says "N/A". DELETE the whole section instead. Empty headers defeat the minimum-floor principle.
 - **Inventing an Observability line because the template asks for one** — if the run doesn't ship runtime code or add a new operational surface, DELETE the section. Don't invent metric names to fill a slot.
 - **`Alternatives considered` without a Verified line** — "rejected: feels slower" is a feeling, not evidence. Each rejection needs a load test, prior incident, profiling result, or spike reference.
-- **Verify = "manually check" / "eyeball" / "visually inspect"** — that's not a verify. Name a command or a concrete observable, or split the step. (Anthropic's single-highest-leverage rule for working with AI coding agents is *give the agent a way to verify its work*. This rule is that rule, applied to plans.)
+- **Verify = "manually check" / "eyeball" / "visually inspect"** — that's not a verify. Name a command or a concrete observable, or split the step.
 - **AC tag = "all"** — every step tags specific AC numbers. "All" hides which step actually lands which behaviour.
 - **Symptom-patching for `fix`** — "wrap in try/catch", "guard against null" without explaining *why* the null arrives is treating the symptom. Show the root cause in `Approach`; let the fix step name it explicitly.
 - **Designing for hypothetical future requirements** — if the spec doesn't ask for it, the plan doesn't plan for it. Carry the idea to `FOLLOWUPS.md` instead.
@@ -268,5 +264,6 @@ Pick the one that matches the friction:
 - `references/diagrams.md` — mermaid templates per Type with worked examples, when to use `flowchart` vs `sequenceDiagram` vs `classDiagram`, and L-plan two-diagram pattern.
 - `references/current-state.md` — the LSP-walk technique for mapping existing code, what counts as an invariant, worked examples per Type (feat touching existing API, fix bug-path, refactor anti-goals), and the "no callers / single caller / many callers" framing.
 - `references/self-review.md` — the five scans in detail with anti-placeholder regex list and extra checks for M/L plans.
+- `references/plan-sections.md` — the authoritative trigger + placement list for every optional plan section (the template `plan.md` is a clean skeleton that points here); the size-axis companion is `## Section gating by Size` above.
 
-If lead is drafting in plan mode and unsure which to consult, use this map: *Size unclear* → size-tiering; *which mermaid kind* → diagrams; *what does existing code do* → current-state; *plan reads "done" but feels off* → self-review.
+If lead is drafting in plan mode and unsure which to consult, use this map: *Size unclear* → size-tiering; *which mermaid kind* → diagrams; *what does existing code do* → current-state; *plan reads "done" but feels off* → self-review; *which optional sections to include + where* → plan-sections.

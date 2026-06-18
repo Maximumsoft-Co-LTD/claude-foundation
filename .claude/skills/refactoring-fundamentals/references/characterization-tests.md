@@ -1,8 +1,8 @@
 # Characterization tests — the safety net for changing untested code
 
-This is the deep technique behind principle 3 ("get green before you touch; if there's no test, characterize first") and the home of the `/dev` **baseline-capture contract**. Drawn from Michael Feathers, *Working Effectively with Legacy Code*.
+This is the deep technique behind principle 3 and the home of the `/dev` **baseline-capture contract**. Drawn from Michael Feathers, *Working Effectively with Legacy Code*.
 
-The core problem: you must change code that has no tests. You can't safely refactor without a net, and you can't write "correct" unit tests because you don't yet know what correct *is* — the code is the only spec. The resolution is to stop asking "what *should* this do?" and instead pin "what does it *actually* do, right now?"
+The core problem: you must change code that has no tests. You can't safely refactor without a net, and you can't write "correct" unit tests because you don't yet know what correct *is* — the code is the only spec. The resolution: stop asking "what *should* this do?" and pin "what does it *actually* do, right now?"
 
 ## What a characterization test is
 
@@ -48,15 +48,15 @@ Finding and exploiting a seam is itself a tiny, careful refactor — and one of 
 
 ## The cover-and-modify workflow (the legacy change algorithm)
 
-Feathers' loop for changing code you're afraid of:
+Feathers' loop:
 
 1. **Identify change points** — where the new behavior or restructure must happen.
-2. **Find test points** — where you can observe the effects of those changes.
-3. **Break dependencies** — introduce seams so the code can run under a test harness (the riskiest part; keep these edits tiny and mechanical).
+2. **Find test points** — where you can observe the effects.
+3. **Break dependencies** — introduce seams so the code can run under a test harness (keep these edits tiny and mechanical).
 4. **Write characterization tests** — cover the current behavior around the change point.
-5. **Make changes and refactor** — now with a net, apply the catalog moves in small green steps.
+5. **Make changes and refactor** — with a net, apply the catalog moves in small green steps.
 
-Note the order: **cover, then modify.** The temptation is to start changing immediately because the code is bad; that's exactly backwards and exactly how legacy refactors break things.
+**Cover, then modify.** The temptation is to start changing immediately; that's exactly backwards.
 
 ## How much to cover
 

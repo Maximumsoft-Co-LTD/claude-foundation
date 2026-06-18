@@ -7,7 +7,7 @@ description: Apply debugging fundamentals — reproduce, read the evidence, bise
 
 ## Why this exists
 
-Debugging is where engineering hours actually go. Most stuck debugging sessions are not stuck for lack of cleverness — they're stuck because the engineer skipped a fundamental and is now iterating on a hypothesis that was never grounded in evidence. The classic failure modes look like this:
+Classic failure modes that eat days:
 
 - Changing five things at once, the bug goes away, nobody knows why, it comes back next week.
 - "Adding a try/catch" so the symptom stops without finding what produced it — the program now silently continues with bad state.
@@ -15,7 +15,7 @@ Debugging is where engineering hours actually go. Most stuck debugging sessions 
 - Re-running the failing test until it passes "to unblock the build," leaving a real race in production.
 - Assuming the framework is broken before assuming the code is.
 
-The principles below are language-, stack-, and decade-agnostic. They're what separates an hour of debugging from a day. Apply them *before* you start changing code, not after the third "let me try…" round.
+Apply these before you start changing code, not after the third "let me try…" round.
 
 ## The 7 principles
 
@@ -27,13 +27,13 @@ Each principle has a one-line rule, a *why*, and a worked example. Apply them ro
 
 **Rule:** Find the smallest, most reliable trigger before you start hypothesizing about causes. If you can't make the bug happen on demand, every "fix" you ship is a guess you can't verify.
 
-**Why:** Every diagnosis is a hypothesis, and a hypothesis you can't test is just a feeling. A repro is the only loop that lets you say "with this change, the bug is gone" and *know* it. A reliable repro also forces the bug to commit to a shape — it stops being "sometimes it 500s" and becomes "it 500s when `order.total === 0`", which is a debuggable thing.
+**Why:** A repro is the only loop where "with this change, the bug is gone" is verifiable, not guesswork. Stripping it down forces the bug to commit to a shape — "sometimes it 500s" becomes "it 500s when `order.total === 0`".
 
 **How to apply:**
 - Capture the exact input, environment, time, user, and request that produced the failure. "It didn't work" is not a repro; `curl -X POST .../orders -d @failing-payload.json` is.
 - Strip the repro down. Remove every step that, when omitted, still produces the bug. What's left is the actual trigger.
 - For intermittent bugs, find what increases the rate. Concurrency? A specific clock minute? A cold cache? A particular row in the database? Increase that knob until the bug is reliable, then debug.
-- If a real repro is genuinely impossible (rare in practice — usually you just haven't tried hard enough), increase observability *in production* until the next occurrence carries enough evidence.
+- If a real repro is genuinely impossible, increase observability *in production* until the next occurrence carries enough evidence.
 - See `references/reproduction.md` for the deeper guide on minimization and flaky-bug strategies.
 
 **Example:**
@@ -49,7 +49,7 @@ Good path: Pull failing request from logs → replay against staging → fails 1
 
 **Rule:** Read the full error, the full stack trace, the full log line — *before* you form a theory. Most bugs name themselves in the first or last frame.
 
-**Why:** It is astonishingly common to skim the top of an exception, pattern-match it to a familiar shape, and start "fixing" a bug the system never reported. The error message is the system's testimony about what it saw at the moment of failure. Skip it and you debug your imagination instead.
+**Why:** The error message is the system's testimony about what it actually saw. Pattern-matching to a familiar shape without reading it means debugging your imagination.
 
 **How to apply:**
 - Read the whole stack trace, not just the top. The top frame is *where it crashed*; the cause is usually three to ten frames down, in your code, not in the framework.
@@ -76,13 +76,13 @@ Good: orders.ts:84 dereferences `order.total.currency`. So `order.total` is unde
 
 **Rule:** Before each new step, write down (literally or mentally) what you *know* (verified) versus what you *assume* (plausible but unchecked). Most stuck sessions are stuck on a wrong assumption everyone forgot was an assumption.
 
-**Why:** Bugs hide in the gap between "obviously X is true" and "X is actually true." Which version is deployed? Which config file is loaded? Which database is the app pointed at? Is this even the branch the bug is on? Every long debugging story has a moment of "wait — is it even running the new code?" Catching that earlier saves hours.
+**Why:** Bugs hide in the gap between "obviously X is true" and "X is actually true." Every long debugging story has a "wait — is it even running the new code?" moment. Catch it early by asking *how do I know that?* for each load-bearing belief.
 
 **How to apply:**
 - For each load-bearing belief, ask: *how do I know that?* If the answer is "it's always been that way" or "the docs say so" or "obviously," it's an assumption, not a fact.
 - Verify the cheap ones immediately: print the config, print the version, print the input as the function actually received it, print the env var. One log line beats one hour of theorizing.
 - Watch for the words "should," "must be," "can't be." Those are flags. "The cache *must be* invalidating" → go check.
-- Especially suspect: data shape (is it really a `number`, or a `string` that looks like one?), nullability (is this field actually always present?), ordering (does this really arrive before that?), identity (are these two object refs really the same one?).
+- Especially suspect: data shape (`number` vs `string` that looks like one), nullability, ordering, identity.
 
 **Example:**
 ```
@@ -97,7 +97,7 @@ Fact-check: Read the handler. The dedup check runs *after* the row insert. Under
 
 **Rule:** Halve the suspect region with each step. Don't read code linearly hoping to spot the bug — drive a wedge into the search space and split it.
 
-**Why:** A bug lives in some specific subset of (commits × files × lines × inputs × configs × dependencies). Reading sequentially is `O(n)`. Bisecting is `O(log n)`. On a 200-commit regression window, that's 7 steps versus 200. The same logic applies to "which of these 40 fields broke serialization" or "which middleware is dropping the header."
+**Why:** Reading sequentially is O(n); bisecting is O(log n). On a 200-commit regression window: 7 steps vs 200. The same logic applies to inputs, configs, and dependencies.
 
 **How to apply:**
 - *When did it break?* → `git bisect` between a known-good and known-bad commit. Automate the test if you can; the bisect runs itself.
@@ -120,11 +120,11 @@ That single commit is now your entire search space.
 
 **Rule:** Vary one variable per experiment. If you change three things and the bug disappears, you've learned nothing — you've just added three new unknowns to the codebase.
 
-**Why:** Causality in software is already hard; pile-on changes make it impossible. The scientific method works for the same reason in code as in chemistry: a clean experiment isolates the cause. The corollary is just as important — *also* revert your scaffolding (print statements, debug flags, hacked-up configs) once you're done. Otherwise you're shipping a debug build to production with extra surface area for the next bug.
+**Why:** Pile-on changes make causality impossible. Clean one-variable experiments isolate the cause. The corollary: revert all scaffolding (prints, debug flags) once done — otherwise you're shipping extra surface area for the next bug.
 
 **How to apply:**
 - One hypothesis, one change, one observation. Write the prediction down before you run the experiment — "if I change X, I expect Y." If you got Z, the hypothesis was wrong; don't quietly adopt the new theory without saying so.
-- When you find what fixes it, *put back the bug* and verify it returns. Then put the fix back and verify it's gone. This proves the fix actually causes the cure — not some unrelated coincidence.
+- When you find what fixes it, *put back the bug* and verify it returns. Then put the fix back and verify it's gone. This proves the fix actually causes the cure.
 - Throw away all the failed experiments. Don't leave the "for safety" try/catch, the "just in case" retry, the commented-out block. Each one is a future debugging trap.
 - Commit your debug instrumentation separately so you can drop the commit cleanly.
 
@@ -143,13 +143,13 @@ Good: Bumped DB pool → no change. Reverted. Added retry → masks the symptom,
 
 **Rule:** Walk the causality chain from the symptom back through the stack — UI → API → service → DB → infra — and stop at the first place the data turned wrong. Fix it there, not where it surfaced.
 
-**Why:** Bugs surface far from where they originate. A wrong number on a dashboard might be a frontend formatter, a serializer dropping precision, a service rounding too early, a SQL `INT` truncation, or a clock skew on a cron host. "Fixing" the dashboard formatter when the cause is the SQL truncation hides the bug everywhere else that reads the same column. Every layer above the root cause is downstream of the lie — patching there just teaches the lie to more places.
+**Why:** Bugs surface far from where they originate. "Fixing" the dashboard formatter when the cause is a SQL truncation hides the bug everywhere else that reads the same column. Every layer above the root cause is downstream of the lie.
 
 **How to apply:**
 - Start at the symptom. Capture the actual wrong value and the expected one.
 - At each layer boundary, ask: "what does this layer receive, and is it already wrong here?" Log it if you can't tell.
 - The first layer where the value is already wrong is the layer above the bug. Look there.
-- Resist the urge to "patch the display" once you find a workaround higher up. Yes, even with a deadline. Note the real bug, schedule it, don't lose it.
+- Resist the urge to "patch the display" once you find a workaround higher up. Note the real bug, schedule it, don't lose it.
 - Pay attention to layer-boundary translations: serialization, type coercion, units (cents vs dollars, ms vs s), timezones, encoding. Most cross-layer bugs live there.
 
 **Example:**
@@ -169,14 +169,14 @@ Trace:
 
 **Rule:** Once you know the cause, fix it where it lives, then write a test that fails without the fix and passes with it. Commit both together.
 
-**Why:** The fix and the test are two halves of the same proof. The fix changes behavior; the test pins it. Without the test, the bug can come back the moment someone "refactors that ugly bit" — and it will, often by the same engineer six months later. A bug that has happened once is likely to happen again; you cheaply buy a permanent guarantee with one test.
+**Why:** The fix changes behavior; the test pins it. Without the test, the same bug returns the moment someone "refactors that ugly bit" — and it will. A bug that happened once is likely to happen again; one test buys a permanent guarantee.
 
 **How to apply:**
-- Write the test first if you can — it's the cleanest verification that you actually fixed *this* bug and not a different one.
-- The test should target the specific failure shape (the exact race, the exact input, the exact boundary), not just "the broader feature works." Otherwise it'll go green from any unrelated change and stop catching the regression.
-- If the cause is a missing invariant, prefer encoding the invariant in the types or schema (see [[programming-fundamentals]] principle 2) over relying on a runtime test. A type-system fix is enforced for free, forever.
+- Write the test first if you can — it's the cleanest verification that you fixed *this* bug and not a different one.
+- The test should target the specific failure shape (the exact race, the exact input, the exact boundary), not just "the broader feature works." Otherwise it'll go green from any unrelated change.
+- If the cause is a missing invariant, prefer encoding it in the types or schema (see [[programming-fundamentals]] principle 2) over relying on a runtime test.
 - If the bug is in shared state (DB, queue, cache), the regression test usually wants a real instance — mocks lose the very interaction that produced the bug. (See [[database-fundamentals]] and [[queue-fundamentals]] for the patterns.)
-- Write the postmortem note even for small fixes — what was the wrong assumption that allowed this bug to exist? That's the actual lesson, not the diff.
+- Write the postmortem note even for small fixes — what was the wrong assumption that allowed this bug to exist?
 
 **Example:**
 ```
@@ -206,20 +206,15 @@ If any answer is "I don't know," stop and find out before continuing. The cost o
 
 - One-line typo or obvious off-by-one where the cause is already visible on the screen and the fix is trivial.
 - Greenfield feature work — nothing is broken yet; use [[programming-fundamentals]] instead.
-- Pure config edits whose effect is obvious and reversible (formatter rules, package versions). These are not bugs; they're knobs.
+- Pure config edits whose effect is obvious and reversible (formatter rules, package versions).
 
 For anything else — yes, even "I think I see the bug," even "this is just a quick fix" — these fundamentals apply. The bugs that eat days are almost always the ones where the first instinct was "I see it, I'll just…"
 
 ## Relation to other skills
 
-Debug fundamentals are the *recovery* sibling to the construction-time fundamentals. They compose, they don't compete:
+Run order and the sibling-skill triggers live in the always-on router (`.claude/rules/fundamentals.md`): use *this skill first* to find the cause, then the construction skill that owns the fix layer, and pin it with a regression test ([[testing-fundamentals]] owns test design).
 
-- [[programming-fundamentals]] — the layer below. Most bugs come from violations of these (illegal states, impure functions, swallowed errors, accidentally quadratic loops). When you find the cause, fixing it almost always means *applying* a programming-fundamentals principle — most often "make illegal states unrepresentable" so the bug can't return.
-- [[database-fundamentals]] — when the bug crosses into persistent state: bad data, lost updates, deadlocks, slow queries, broken migrations. Use this skill to *find* the bug; use database-fundamentals to *fix* the schema, query, or transaction that produced it.
-- [[hexagonal-backend]] — bugs that look like "the wrong adapter," ports leaking infra concerns into the domain, untestable code paths. Often the fix is moving a side effect to the right layer; this skill helps locate it, hexagonal-backend tells you where it belongs.
-- [[queue-fundamentals]] — distributed/async bugs (duplicate delivery, lost messages, ordering, poison pills, ack/retry traps) are the dominant production-debug category. This skill's reference on distributed debugging points back at the queue principles for the fix shape.
-
-Run order when multiple apply: use *this skill first* (find the actual cause), then the construction skill that owns the fix layer.
+The debug-specific nuance: most bugs are violations of [[programming-fundamentals]] (illegal states, impure functions, swallowed errors), so once you find the cause, fixing it almost always means applying one of its principles — most often "make illegal states unrepresentable."
 
 ## Reference files
 

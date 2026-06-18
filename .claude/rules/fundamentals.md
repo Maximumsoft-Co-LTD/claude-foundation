@@ -1,10 +1,10 @@
 # Rule: Fundamentals router (always-on)
 
-This single file is the always-on **detection layer**: it names every "by default" trigger and points at the full skill body. It is *not* a checklist — match the trigger, then load that one skill (`.claude/skills/<name>/SKILL.md`) for the why/how, pre-flight checklist, and skip list, and invoke it **before** the first line of the work it governs. The full prose for each trigger lives in its skill body; this table is deliberately thin so it costs little to carry on every turn.
+The always-on **detection layer**: match a "by default" trigger below, then load that one skill (`.claude/skills/<name>/SKILL.md`) for the why/how, checklist, and skip list **before** the first line of the work it governs. Deliberately thin — the prose lives in each skill body; this is cheap to carry every turn.
 
 ## Ponytail (always-on minimalism)
 
-The laziest-senior-dev stance: **the best code is the code you never wrote.** Before writing any code, stop at the first rung that holds — (1) does it need to exist? → no: skip it (YAGNI); (2) stdlib / language built-in does it? → use it; (3) native platform / runtime / framework feature? → use it; (4) already-installed dependency does it? → use it (a *new* dependency is **not** a free rung — `security-fundamentals` owns that call); (5) one line? → one line; (6) only then: the minimum that works. **Lazy, not negligent** — never cut trust-boundary validation, error / data-loss handling, security, or accessibility; the code is small because it is *necessary*, not golfed. When you take a deliberate shortcut (a stub, a deferred generalisation), mark it inline with a `ponytail: <upgrade path>` comment so "later" doesn't become "never". This is the cheap always-on digest of `coding-discipline` principle 2 (the full conduct body loads on the first code task). Adapted from [ponytail](https://github.com/DietrichGebert/ponytail).
+Laziest-senior-dev stance: **the best code is the code you never wrote.** Before writing code, stop at the first rung that holds: (1) does it need to exist? → no: skip it (YAGNI); (2) stdlib / built-in does it? → use it; (3) native platform/framework feature? → use it; (4) already-installed dependency? → use it (a *new* dependency is **not** free — `security-fundamentals` owns that call); (5) one line? → one line; (6) only then: the minimum that works. **Lazy, not negligent** — never cut trust-boundary validation, error/data-loss handling, security, or accessibility. Mark deliberate shortcuts inline with a `ponytail: <upgrade path>` comment. This is the always-on digest of `coding-discipline` principle 2. Adapted from [ponytail](https://github.com/DietrichGebert/ponytail).
 
 ## Process layer (wraps the work)
 
@@ -17,7 +17,7 @@ The laziest-senior-dev stance: **the best code is the code you never wrote.** Be
 
 ## Construction layer (run in this order when several apply)
 
-Decide model & boundaries → code → in-process concurrency → storage → one service's layering → one API's surface → cross-service → async channel → harden → make observable:
+Model & boundaries → code → in-process concurrency → storage → service layering → API surface → cross-service → async channel → harden → observe:
 
 `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`
 
@@ -43,9 +43,9 @@ Decide model & boundaries → code → in-process concurrency → storage → on
 
 ## Seams that blur
 
-- **concurrency vs queue vs database** — `concurrency-fundamentals` is in-process; cross-process/broker async is `queue-fundamentals`; transaction isolation is `database-fundamentals`.
-- **api-design vs architecture** — `api-design-fundamentals` owns one service's published surface (settled after `hexagonal-backend` defines the port, before `architecture-fundamentals` draws runtime relationships).
-- **ddd-strategic vs architecture** — `ddd-strategic` decides semantic/model boundaries; `architecture-fundamentals` decides runtime/component boundaries after meanings are clear.
-- **security & observability are cross-cutting** — applied last (harden/instrument a surface once it exists), but to whichever layer carries a trust boundary or op surface.
+- **concurrency vs queue vs database** — in-process is `concurrency-fundamentals`; cross-process/broker async is `queue-fundamentals`; transaction isolation is `database-fundamentals`.
+- **api-design vs architecture** — `api-design-fundamentals` owns one service's published surface (after `hexagonal-backend` defines the port, before `architecture-fundamentals` draws runtime relationships).
+- **ddd-strategic vs architecture** — `ddd-strategic` decides semantic/model boundaries; `architecture-fundamentals` decides runtime/component boundaries afterward.
+- **security & observability are cross-cutting** — applied last, to whichever layer carries a trust boundary or op surface.
 
-This file is the single source of truth for triggers and the cross-skill run order. The prose overviews in `CLAUDE.md`, `README.md`, and `WORKFLOW.md` mirror the chain for at-a-glance reading and name this file canonical; when you add, remove, or reorder a skill, update those three together with this file (grep the chain head `ddd-strategic` to find them).
+This file is the single source of truth for triggers and cross-skill run order. `CLAUDE.md`, `README.md`, and `WORKFLOW.md` mirror the chain and name this file canonical; when you add/remove/reorder a skill, update all three together (grep chain head `ddd-strategic` to find them).

@@ -1,18 +1,5 @@
 # Communication
 
-Deep dive on principles 3 and 7: choosing sync vs async, picking a transport, and evolving contracts without breaking consumers. The decisions here are sticky — what you publish today, you maintain for years.
-
-## Table of contents
-
-- Sync vs async decision matrix
-- Sync transports: REST, gRPC, GraphQL
-- Async transports: event-driven, task queues, webhooks
-- API versioning patterns
-- Event schema evolution
-- Idempotency keys as a public contract
-- Tolerant reader
-- The deprecation lifecycle
-
 ## Sync vs async decision matrix
 
 | Question | Sync | Async |
