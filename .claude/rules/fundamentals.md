@@ -1,10 +1,14 @@
 # Rule: Fundamentals router (always-on)
 
-The always-on **detection layer**: match a "by default" trigger below, then load that one skill (`.claude/skills/<name>/SKILL.md`) for the why/how, checklist, and skip list **before** the first line of the work it governs. Deliberately thin — the prose lives in each skill body; this is cheap to carry every turn.
+The always-on **detection layer**: match a trigger below, then load that one skill (`.claude/skills/<name>/SKILL.md`) — why/how, checklist, skip list — **before** the work it governs. Thin by design; the prose lives in each skill body.
 
 ## Ponytail (always-on minimalism)
 
-Laziest-senior-dev stance: **the best code is the code you never wrote.** Before writing code, stop at the first rung that holds: (1) does it need to exist? → no: skip it (YAGNI); (2) stdlib / built-in does it? → use it; (3) native platform/framework feature? → use it; (4) already-installed dependency? → use it (a *new* dependency is **not** free — `security-fundamentals` owns that call); (5) one line? → one line; (6) only then: the minimum that works. **Lazy, not negligent** — never cut trust-boundary validation, error/data-loss handling, security, or accessibility. Mark deliberate shortcuts inline with a `ponytail: <upgrade path>` comment. This is the always-on digest of `coding-discipline` principle 2. Adapted from [ponytail](https://github.com/DietrichGebert/ponytail).
+**The best code is the code you never wrote.** Before writing code, stop at the first rung that holds: (1) does it need to exist? → no: skip it (YAGNI); (2) stdlib / built-in does it? → use it; (3) native platform/framework feature? → use it; (4) already-installed dependency? → use it (a *new* dependency is **not** free — `security-fundamentals` owns that call); (5) one line? → one line; (6) only then: the minimum that works. **Lazy, not negligent** — never cut trust-boundary validation, error/data-loss handling, security, or accessibility. Mark deliberate shortcuts inline with a `ponytail: <upgrade path>` comment. Always-on digest of `coding-discipline` principle 2.
+
+## Output discipline (always-on)
+
+Terse-first — every response, artifact, agent report. Cut preamble, restated context, narration. **Terse ≠ lossy**: never drop a result, caveat, or needed step. Throwaway prose (chat, agent report, `state.json notes`) → minimize hard, tags not paragraphs. Consumed artifacts → trim prose, but keep every field a later phase reads (ACs, plan steps, mermaid diagram, `path#anchor` citations, regression contract, `--resume` keys) — cut those and the next phase breaks.
 
 ## Process layer (wraps the work)
 

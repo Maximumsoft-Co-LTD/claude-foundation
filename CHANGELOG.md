@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.3] - 2026-06-19
+
+### Added
+
+- **Terse-output is now a first-class always-on rule (`fundamentals.md` › Output discipline).** Promotes the user-level "Terse output" preference and the v2.5.1 / v2.5.2 minimization work into a standing stance carried every turn: default every response, artifact, and agent report to the minimum that carries the point. Two channels, different floors — **throwaway prose** (chat reply, agent report to the orchestrator, `state.json notes`) minimizes hard to breadcrumb tags, not paragraphs; **consumed artifacts** (`spec.md`, `plan.md`, `test-plan.md`, `review.md`, `security.md`, `tests.md`, `retro.md`, `uxui-plan.md`) trim prose freely but keep every load-bearing field a later phase reads (acceptance criteria, plan steps, the mermaid diagram, `path#anchor` citations, the regression contract, `--resume` state keys) — **terse ≠ lossy**, never drop a result, caveat, or needed step. Paired with `orchestrator.md`, whose `state.json notes` field is now specified as terse breadcrumb tags (`patch-lane`, `ci: unchecked`, `branch_existed=true`, `fanout refused — <reason>`), not prose that restates artifact content. The same pass trims two flourish/attribution lines from the `fundamentals.md` intro and `Ponytail` blocks. No `/dev` flow, phase, artifact, or command change; every trigger, skill name, and the cross-skill run-order chain is preserved verbatim. Files: `.claude/rules/fundamentals.md`, `.claude/orchestrator.md`.
+
 ## [2.5.2] - 2026-06-18
 
 ### Changed
