@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.4] - 2026-06-19
+
+### Added
+
+- **Team-mode Phase-1 plan slices now run fully in parallel — `/dev-plan`, `/test-plan`, and `/uxui-plan` can be fired together on one run, no sequence.** `/dev-plan` and `/uxui-plan` need only `spec.md`; `/test-plan` also consumes `plan.md`, so when it starts before the plan exists it runs **spec-only** — every acceptance criterion still maps to a level (the Coverage plan stays complete), but plan-derived rows (edge cases off Files-touched, fixtures, the regression/baseline path) are recorded `[pending plan]` instead of invented, and the shard sets `pending_plan_backfill`. The **gate backfills** them: when it folds the Phase-1 shards and `plan.md` now exists, it re-spawns `qa` in a new `backfill` mode once to complete the deferred rows before the consistency scan (which now also requires no `[pending plan]` rows remain). Spec-only is a first-class path (no user go-ahead needed); a one-shot `/dev` run is unchanged (it writes the test plan after the plan, so never produces `[pending plan]`). Files: `.claude/commands/test-plan.md`, `.claude/agents/qa.md`, `.claude/orchestrator.md`, `.claude/commands/implement.md`, `.claude/orchestrator/references/team-mode-sharding.md`.
+
+### Fixed
+
+- **`uxui-plan.md` is now consumed by the engineer at build time.** Previously the UX/UI design artifact (`/uxui-plan`'s Scenes, ASCII wireframes, UX direction, components, AC↔scene mapping) was folded as a state shard and checked by `qa` visual verification, but never fed to the engineer — who built the UI from `plan.md`'s Scaffold + the frontend skills generically, ignoring the approved design. The engineer's Inputs + implement mode now read `uxui-plan.md` when present and build each screen/state to its Scene + wireframe; orchestrator step 10 and `/implement` point the engineer at it. Files: `.claude/agents/engineer.md`, `.claude/orchestrator.md`, `.claude/commands/implement.md`.
+
+### Changed
+
+- **De-duplication pass across the team-mode command surface — no behaviour change.** Three concepts that were re-explained in full across the slice commands now live in one canonical home with thin pointers + per-command deltas, matching the existing fanout/resume house pattern: the **shard shape** (was duplicated across 4 files → now only `team-mode-sharding.md`), the **"resolve the run" selection logic** (was in 5 files → new `references/resolve-run.md`), and the **spawn-by-name guard** (was a full callout in 6 files → now points to `orchestrator.md > Rules`). Collapses ~1,400 words of repeated prose to one-line pointers; a future change to a shard field, the run-id format, or the guard now touches one file instead of 4–6. Also fixes two pre-existing drifts surfaced during the pass: `WORKFLOW.md`'s version line (stuck at 2.5.2) and the `CHANGELOG.md` link-reference block (had skipped 2.5.2 / 2.5.3). Files: `.claude/commands/*.md`, `.claude/orchestrator/references/resolve-run.md` (new), `.claude/orchestrator/references/team-mode-sharding.md`, `WORKFLOW.md`.
+
 ## [2.5.3] - 2026-06-19
 
 ### Added
@@ -360,7 +374,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.4...HEAD
+[2.5.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.3...v2.5.4
+[2.5.3]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.2...v2.5.3
+[2.5.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.3.2...v2.4.0

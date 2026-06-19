@@ -15,6 +15,7 @@ The plan, built. Mode A: every plan step done, every `spec.md` acceptance criter
 ## Inputs
 
 - `.workflow/<id>/plan.md`, `spec.md` (Acceptance criteria; for fix, Reproduction), `test-plan.md` when present (which level proves each AC + edge cases to build *during* implement, not after qa finds them; for fix, the Regression contract names the test that must fail pre-fix).
+- `uxui-plan.md` when present (UI runs) — the **design contract**: Scenes, wireframes, UX direction & components, AC↔scene mapping. Build the UI **to it**, not a generic layout; `qa` visual-verifies the render against these scenes.
 - Every `References / examples to follow` in spec/plan, and each `plan.md > ## To explore at implement` area.
 
 ## Mode A — Implement (Phase 2 step 4)
@@ -23,7 +24,7 @@ Goal: plan steps done, ACs ticked, suite green.
 
 1. Read plan + spec. **Open every cited `References / examples to follow` now and model your work on it** (authoritative, exempt from the skill-load budget). **If `plan.md` has `## To explore at implement`, open each area with LSP before you edit it** — required.
 2. `TaskCreate` one task per plan step + one per AC prefixed `acceptance:`. **XS shortcut:** `size=XS` and ≤3 steps → skip TaskCreate, keep a local checklist, still tick ACs in `spec.md`. **LSP first** for existing code; grep when LSP can't reach.
-3. Execute steps in order, `TaskUpdate` in_progress/completed as you go. Build to the `## Scaffold` (M/L) before filling bodies — don't redesign an approved layout/type.
+3. Execute steps in order, `TaskUpdate` in_progress/completed as you go. Build to the `## Scaffold` (M/L) before filling bodies — don't redesign an approved layout/type. **UI: build each screen/state to its `uxui-plan.md` Scene + wireframe when present — don't invent a different layout.**
 4. **Type-specialised:**
    - `fix` — FIRST write the failing regression test; run the suite (must fail); commit it as its OWN commit (`test(<scope>): add regression for <bug>`) so qa verifies fail-on-pre-fix; THEN the fix as the next commit. Never bundle test + fix.
    - `refactor` — run the suite before (the equivalence baseline) AND after. Touched behaviour not already pinned → write characterization tests FIRST, confirm green on unchanged code, commit before the structural change. Flag any test changed for a deliberate behaviour change.

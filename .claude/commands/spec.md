@@ -7,7 +7,7 @@ Write a spec for: **$ARGUMENTS**
 
 This is the **PM slice of `/dev`, run on its own** — the first link of team mode. You — the main agent — set up the run and run the interview (sub-agents can't call `AskUserQuestion`), then the `pm` sub-agent writes `spec.md` from your answers. You stop after the spec check; planning, UX, tests, and implementation are separate commands (`/uxui-plan`, `/test-plan`, then `/dev --resume <id>`).
 
-> **Spawn the `pm` worker by name** — `Agent({ subagent_type: "pm", ... })`. Do **not** use `subagent_type: "general-purpose"` or `"orchestrator"` (the `.claude/hooks/dev-agent-guard.sh` PreToolUse guard blocks both). There is no `orchestrator` sub-agent; *you* play that role here.
+> **Spawn `pm` by name** (`Agent({ subagent_type: "pm" })`); never `general-purpose`/`orchestrator` — the spawn guard blocks both (`orchestrator.md > Rules`). *You* are the orchestrator.
 
 ## What to do
 
