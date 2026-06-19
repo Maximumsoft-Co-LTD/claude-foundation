@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.7] - 2026-06-19
+
+### Added
+
+- **The Phase-1 interview now grills along the design tree and recommends an answer to every question — `grill-me` concepts imported across `/spec`, `/dev-plan`, `/test-plan`, and `/uxui-plan`.** Slot/decision selection is no longer a flat "pick the 3–4 most consequential" batch: the interview now **orders open slots by the design tree** (a load-bearing decision others hinge on — approach, data shape, actor — is resolved first; a dependent slot is never asked cold while its parent is open, it waits for a later batch the prior answer shapes), and **every `AskUserQuestion` choice leads with a `(Recommended)` option + one-line why** (the harness-native label) so the user vetoes instead of authoring from scratch. The bounded dig loop is reframed **tree-driven, not counter-driven** — keep digging while a consequential branch is unresolved; the 3-batch cap is the safety stop, not a quota. The same discipline is mirrored into the team-slice clarify step (each slice orders by its own remit's tree: plan approach gates placement+rollback · test levels gate fixtures+env · UX devices+style gate layout). The literal grill-me "one question at a time" is a deliberate divergence — our model batches 3–4 (token-conscious + the orchestrator owns `AskUserQuestion`), so thoroughness comes from tree-ordered batches + the dig loop, not single-question prompts. Files: `.claude/orchestrator.md`, `.claude/orchestrator/references/interview.md`, `.claude/skills/brainstorming/SKILL.md`, `.claude/skills/brainstorming/references/interview-tactics.md`.
+- **`grill-with-docs` capture-as-you-go — a triggered `Glossary` spec section, plus interview-resolved decisions wired into the plan's existing ADR sections.** As the grilling surfaces them, the interview now records **glossary terms** (domain language that needed defining → a new **triggered** `spec.md > Glossary` section owned by `pm`, sourced from the interview bundle; `[[ddd-strategic]]` territory, skipped for generic CRUD, so it stays off the minimum floor) and **resolved decisions** (each non-trivial choice + its rejected alternative + the one-line why). The ADR side adds **no new artifact** — the plan already carried `Approach`, `Alternatives considered`, and `Hard-to-reverse decisions`; the interview now feeds them so the rationale doesn't evaporate once the user picks. `ddd-strategic` owned the glossary *discipline* (principle 3) but it never landed as a run artifact before; now it does. Files: `.claude/agents/pm.md`, `.workflow/_templates/spec.md`, `.claude/orchestrator/references/interview.md`, `.claude/skills/brainstorming/SKILL.md`.
+
+### Changed
+
+- **`interview-tactics.md` minimized 234 → 127 lines (~46%) with no load-bearing content lost.** Removed sections that duplicated `brainstorming/SKILL.md` (the "Bounded multi-round digging" section restated principle 3 almost verbatim; the interview "anti-patterns" section restated SKILL.md's), de-duplicated the "export user data" worked example that appeared 4× (now one canonical copy), cut the redundant pre-mortem worked example (its category table already conveys it), and tightened prose throughout. All anchor-referenced content is preserved — slot-picking, multi-choice framing, `revise` follow-ups, `Type=fix` reproduction, and the full `The Mom Test for spec interviews` section SKILL.md links to. Files: `.claude/skills/brainstorming/references/interview-tactics.md`.
+
 ## [2.5.6] - 2026-06-19
 
 ### Added
@@ -390,7 +401,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.6...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.7...HEAD
+[2.5.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.6...v2.5.7
 [2.5.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.5...v2.5.6
 [2.5.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.4...v2.5.5
 [2.5.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.3...v2.5.4

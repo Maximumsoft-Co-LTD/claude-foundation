@@ -1,14 +1,10 @@
 # Interview tactics
 
+> Deep reference for SKILL.md's interview steps — consult for: picking slots, framing multi-choice options, `revise` follow-ups, `Type=fix` reproduction, the Mom Test. The **dig loop, Specification-by-Example, and pre-mortem are owned inline by SKILL.md principles 3 & 7**; only their extra detail lives here.
+
 ## Pick the 3–4 most consequential UNSPECIFIED slots
 
-Walk `.claude/agents/pm.md > Spec sections (authoritative)` and `.workflow/_templates/spec.md`. For each slot, classify:
-
-1. **Pinned by the intent** — the user already said it. Don't re-ask.
-2. **Pinned by the repo** — `package.json`, `README.md`, recent commits, or the file the intent names answers it. Don't ask.
-3. **Open** — neither the intent nor the repo answers it.
-
-Of the open slots, pick the 3–4 with the highest **consequence × ambiguity**: the slots where a wrong guess would cascade through the spec, plan, and code. Skip slots that have safe defaults the gate can still flip (e.g., `Open PR on ship: yes` for feat — defaults work, confirm at gate).
+Walk `pm.md > Spec sections` + `_templates/spec.md`. Classify each slot — **pinned by intent** (user said it) / **pinned by repo** (`package.json`, `README`, commits, the named file) → don't ask; **open** (neither) → candidate. Of the open ones, ask the 3–4 highest in **consequence × ambiguity**, where a wrong guess cascades through spec/plan/code. Skip slots with safe gate-flippable defaults (`Open PR: yes` for feat). Read `FOLLOWUPS.md` first and fold any in-scope carry-over in as a slot ("also handle `<F-id>` this run?").
 
 ### Consequence ranking (rule of thumb)
 
@@ -16,207 +12,116 @@ Of the open slots, pick the 3–4 with the highest **consequence × ambiguity**:
 |------|----------------------|--------------|
 | Type (when ambiguous) | Whole workflow branches differently | Always ask first if ambiguous |
 | Acceptance criteria | Defines what "done" means | Always ask if open |
-| Scope (`Out / non-goals`) | Hidden subsystems will surface at planning | Ask if anything could expand |
-| Constraints (tech stack for new code, integration points for existing) | Wrong stack = whole plan wrong | Always ask if neither intent nor repo answers |
+| Scope (`Out / non-goals`) | Hidden subsystems surface at planning | Ask if anything could expand |
+| Constraints (stack for new code, integration points for existing) | Wrong stack = whole plan wrong | Always ask if neither intent nor repo answers |
 | Reproduction (`Type=fix`) | Regression test depends on it | Always free-text, always ask |
 | Timebox (`Type=spike`) | Spike runs forever otherwise | Always ask, default 1 day if user shrugs |
-| NFR detection (perf / security / a11y) | A missing-but-needed NFR passes every consistency scan and only breaks in prod | Mandatory **binary** ask for feat/fix shipping runtime code; on `yes` it becomes an AC (verify = `measured:`), on `no` nothing |
-| Error/boundary per consequential behavioural AC | A silently-guessed unhappy path is the #1 "runs but does the wrong thing" failure | Mandatory **detect** ask per consequential behavioural AC (NFR-class measured ACs exempt); `none — <default>` is a valid recorded answer, silence is not |
+| NFR detection (perf / security / a11y) | A missing-but-needed NFR passes every consistency scan, breaks only in prod | Mandatory **binary** ask for feat/fix shipping runtime code; `yes` → an AC (verify = `measured:`), `no` → nothing |
+| Error/boundary per consequential behavioural AC | A silently-guessed unhappy path is the #1 "runs but does the wrong thing" failure | Mandatory **detect** ask per consequential behavioural AC (NFR-class measured ACs exempt); `none — <default>` valid, silence isn't |
 | Users / context | Shapes AC and approach | Ask if non-obvious |
 | Ship as / Open PR | Has safe defaults | Skip if running short on slots |
 
+### Then order by the design tree, not just consequence
+
+Consequence tells you *which* slots matter; the design tree tells you *what order*. Decisions depend on each other — the right AC depends on the chosen approach, the right data shape on the actor, the right index on the store. **Resolve the upstream slot first; never ask a dependent slot cold while its parent is open** (you'd guess against an unconfirmed assumption and re-ask once it flips). So **batch 1** = the roots nothing depends on (Type, approach, actor, the load-bearing Constraint); **later batches** = what a batch-1 answer shapes — the dig loop (SKILL.md principle 3) walks these. E.g. "add export": resolve transport (sync/async) in batch 1 because it shapes the format question — don't ask both at once.
+
 ## Question shape — multi-choice > open-ended > free-text
 
-`AskUserQuestion` lets you set 2–4 options per question plus an "Other" escape hatch. Prefer multi-choice — the user picks in one click, you get structured input, and the options themselves educate the user about the trade-off space.
-
-### Multi-choice template
+`AskUserQuestion` takes 2–4 options + an auto "Other". Prefer multi-choice: one click, structured input, and the options themselves teach the trade-off space.
 
 ```
 Question: <one specific question, ends with "?">
 Header: <≤12 char chip>
 Options:
-  - Label: <1–5 words, the recommended option first with "(Recommended)" suffix>
-    Description: <1 sentence: what this means + main implication>
-  - Label: <alternative>
-    Description: <1 sentence: trade-off>
+  - Label: <1–5 words; recommended option FIRST with "(Recommended)" suffix>
+    Description: <1 sentence: what it means + main implication>
+  - Label: <alternative>  /  Description: <trade-off>
   - (optional 3rd / 4th)
 ```
 
-The "Other" option is added automatically; do not list it yourself.
-
-### When to use free-text (open-ended)
-
-Free-text is right when the answer is genuinely descriptive:
-- `Reproduction` for `Type=fix` — never multi-choice; the user needs to type steps.
-- A goal restatement that the intent left vague — "what does 'done' look like for you in one sentence?"
-- A constraint the user knows that the repo can't show you — e.g., a compliance deadline.
-
-Don't reach for free-text just because picking options feels hard. Hard-to-design options usually means the question is too broad — split it.
+The "Other" option is added automatically; don't list it. **Free-text** only when the answer is genuinely descriptive: `Reproduction` (fix), a one-sentence "what does done look like?", or a constraint the repo can't show (e.g. a compliance deadline). Hard-to-design options usually means the question is too broad — split it, don't punt to free-text.
 
 ## Framing multi-choice options
 
-Two failure modes:
+Two failure modes: **loaded** (Option A = a paragraph of upside, B = a one-line "but harder" — match depth and tone) and **false-binary** ("REST vs GraphQL?" when RPC / file-export also fit — add the third even if it loses, so the user sees the space).
 
-1. **Loaded options** — Option A is described as a paragraph of upside, Option B as a one-line "but harder." That's not exploration. Match the depth and tone.
-2. **False-binary** — "REST vs GraphQL?" when the actual choice has 3+ shapes (REST, GraphQL, RPC, file-based export). Add the third option even if it loses; the user can see the space.
-
-### Worked example — Type=feat, "export user data"
+### Worked example — "export user data" (the canonical one; reused throughout)
 
 ✅ Good:
-> Q: How should users receive the export?
-> Header: Delivery
-> Options:
-> - Sync download (Recommended) — Browser downloads the CSV directly. Works for ≤ 100k rows / ≤ 30s; simplest path.
-> - Async email link — Background job builds the file, emails a signed link. Best for large accounts; adds a queue.
-> - Hybrid (sync up to threshold, async above) — Picks the right one per request. Most complex; only worth it if account sizes vary widely.
+> Q: How should users receive the export? · Header: Delivery
+> - **Sync download (Recommended)** — Browser downloads the CSV. ≤ 100k rows / ≤ 30s; simplest path.
+> - **Async email link** — Background job builds the file, emails a signed link. For large accounts; adds a queue.
+> - **Hybrid** (sync ≤ threshold, async above) — Right one per request. Most complex; only if sizes vary widely.
 
-❌ Bad (loaded):
-> Q: Should we use a queue?
-> Options:
-> - Yes (queue + email link, scalable, future-proof, recommended)
-> - No (just download)
+❌ Loaded: "Should we use a queue? — Yes (scalable, future-proof, recommended) / No (just download)".
+❌ False-binary: "Sync or async?" with only those two when a hybrid exists.
 
-❌ Bad (false binary):
-> Q: Sync or async?
-> Options:
-> - Sync
-> - Async
+## Ground AC in concrete examples (Specification by Example)
 
-## Bounded multi-round digging (when one batch is too shallow)
-
-One `AskUserQuestion` batch is the default and is enough for narrow, concrete work. But the Mom Test is iterative — the most useful question ("tell me about the last time…") earns its value from the *follow-up* you ask after the answer lands, and you can't follow that thread inside a single batch. So a second batch is warranted when, after batch 1, **any** of these holds:
-
-- `Type` is still genuinely ambiguous (the whole workflow branches on it).
-- More than ~4 consequential slots are still open (you couldn't fit them in one batch).
-- A batch-1 answer was vague, or arrived as "Other" free-text that *opened a new unknown* the options didn't cover.
-
-Rules for the dig loop:
-
-1. **Hard cap: 3 batches.** Past that, you're not converging — you're interviewing in circles.
-2. **Each batch is narrower than the last.** Batch 2 digs into what batch 1 revealed; it does not pick fresh cold slots. If you find yourself opening *new* topics in batch 2, you mis-prioritised batch 1.
-3. **An open picture after 3 batches is itself the finding.** Stop and write a `[NEEDS CLARIFICATION: <who> — <what>]` at the spot it matters. Guessing to "finish" the interview is the exact failure this loop exists to prevent.
-
-The dig loop is the escape hatch for real ambiguity — the kind of open-ended product work this skill claims to own. It is *not* license to turn every interview into an interrogation; narrow concrete tasks still get one batch.
-
-## Specification by Example — ground AC in concrete cases
-
-Adapted from Specification by Example / BDD: the cheapest place to catch a mis-spec'd acceptance criterion is *before* it's written down, by forcing a real `input → expected output` pair. An AC stated only in the abstract ("user can export their data") hides the requirements that actually bite — size limits, formats, timeouts — until someone hits them in prod.
-
-For every AC whose one-line behaviour isn't self-evident, capture one concrete example during the interview and carry it into the spec as an `e.g.:` sub-bullet:
+The cheapest place to catch a mis-spec'd AC is *before* it's written, by forcing a real `input → expected output`. For every AC whose behaviour isn't self-evident, capture one example and carry it into the spec as an `e.g.:` sub-bullet. **Never invent the values** — an invented example is a guessed requirement in a contract's clothes; if the user can't give one, the AC isn't understood yet → dig or mark `[NEEDS CLARIFICATION]`.
 
 | Abstract AC (hides requirements) | AC + example (surfaces them) |
 |----------------------------------|------------------------------|
 | "User can export their data" | "User exports their data" · *e.g.:* `account with 200k rows` → `CSV with columns A,B,C, downloaded in <30s` |
-| "Search returns relevant results" | "Search returns matches ranked by recency" · *e.g.:* `query "invoice" with 3 matches from 2021/2023/2024` → `2024, 2023, 2021 order` |
+| "Search returns relevant results" | "Search returns matches ranked by recency" · *e.g.:* `query "invoice", 3 matches from 2021/2023/2024` → `2024, 2023, 2021 order` |
 | "Login rejects bad credentials" | "Login rejects bad credentials without leaking which field was wrong" · *e.g.:* `valid email + wrong password` → `same 401 + message as unknown email` |
-
-The example is doing the work the pre-mortem's "mis-spec'd AC" scan does — but *up front*, where it's cheapest. When the user can't give a concrete example for an AC, that's a signal the AC isn't understood well enough to build yet → dig (above) or mark `[NEEDS CLARIFICATION]`. **Never invent the example values** — an invented example is a guessed requirement wearing a contract's clothes.
 
 ## Handling `revise` follow-ups (in `/dev`)
 
-If the user picks `revise <notes>` at the gate (Phase 1 — `orchestrator.md` step 9), or just chats free-form about the spec/plan, you don't necessarily re-run a full batch. The orchestrator treats all of it as an incremental, in-run edit (never a fresh Phase 1). Decide:
+`revise <notes>` at the gate (orchestrator step 9) or free-form chat about the spec/plan is an incremental in-run edit, never a fresh Phase 1. Route by what the notes touch:
 
-- **Notes affect requirements** (changed AC, added scope, changed users) → re-interview only the affected slots. A 1–2 question batch is fine. Re-spawn `pm` in spec-patch mode to edit only the affected sections.
-- **Notes are spec-only** (rewording, clarifying an existing slot, fixing a contradiction) → don't re-interview. Re-spawn `pm` in spec-patch mode to edit `spec.md` in place — resolve any related `[NEEDS CLARIFICATION]` markers, or add a new one AT THE SPOT the ambiguity sits.
-- **Notes affect approach only** (user wants Option B instead of A; requirements unchanged) → no interview, skip `pm`; re-spawn `lead` in plan-revise mode to edit only the affected plan steps (no re-fanout, no LSP re-walk).
+- **Requirements** (changed AC, added scope, changed users) → re-interview only the affected slots (a 1–2 question batch is fine); re-spawn `pm` spec-patch.
+- **Spec-only** (rewording, clarifying a slot, fixing a contradiction) → no interview; `pm` spec-patch in place — resolve/add `[NEEDS CLARIFICATION]` at the spot.
+- **Approach-only** (Option B instead of A, requirements unchanged) → no interview, skip `pm`; `lead` plan-revise on the affected steps (no re-fanout, no LSP re-walk).
 
-Don't treat `revise` as "start over." It's surgical.
+Surgical, not "start over".
 
 ## The `Type=fix` reproduction question
 
-`Reproduction` is the most important free-text answer in `/dev`. The regression test depends on it.
-
-Ask shape:
-> Q: How do we make the bug appear? Walk us through the steps that trigger it, what you expected to happen, and what actually happens.
-
-Three things the answer must contain:
-1. **Steps** — concrete enough to encode in a test. "Click X, then Y, then Z" or "POST /api/foo with body {…}".
-2. **Expected** — what the user thought would happen.
-3. **Actual** — what does happen (with the error message / wrong value if there is one).
-
-If the answer is missing one of these, ask one targeted follow-up. **Do not invent steps.** A spec with invented reproduction means the regression test is testing the wrong thing — and the bug will come back.
-
-## Anti-patterns specific to the interview
-
-- **Asking about a slot the intent already answered** — wastes a question. Re-read the intent before each question.
-- **Five-option menus** — too many choices; the user defaults to the first or refuses to pick. Three with a lead is the format.
-- **Combining two questions** — "What stack and what's the deploy target?" forces the user to answer both or one well. Split.
-- **Free-text when multi-choice works** — "How should users authenticate?" with no options. Give them email/password vs OAuth vs SSO vs magic link and let them pick.
-- **No "Recommended" tag** — without a lead the user is forced to evaluate cold. If you genuinely don't have a preference, say so in the question text and offer all options equally — but that's rare.
-- **Designing the question batch without reading `FOLLOWUPS.md`** — the interview is the time to fold in carry-overs. If a follow-up could be in scope, ask "should we also handle <follow-up X> in this run?" as one of the batch slots.
+The most important free-text answer in `/dev` — the regression test depends on it. Ask: *"How do we make the bug appear? Walk through the steps, what you expected, and what actually happens."* The answer must carry three things: **Steps** (concrete enough to encode — "POST /api/foo {…}"), **Expected**, **Actual** (with the error / wrong value). Missing one → one targeted follow-up. **Never invent steps** — invented repro means the regression test tests the wrong thing and the bug comes back.
 
 ## The Mom Test for spec interviews
 
-Adapted from Rob Fitzpatrick's *The Mom Test*: three rules for getting useful information out of an interview, applied to the `/dev` spec interview. Same failure modes appear when interviewing about an internal feature, refactor scope, or bug repro.
+Adapted from Rob Fitzpatrick's *The Mom Test* — three rules for getting useful information out of an interview. The same failure modes appear interviewing about a feature, refactor scope, or bug repro.
 
-### The three rules
-
-**Rule 1 — Talk about their life, not your idea.** Don't pitch the feature; ask about the problem they already have. The moment you describe the solution, you've stopped learning and started selling.
+**Rule 1 — Talk about their life, not your idea.** Ask about the problem they already have; the moment you describe the solution you've stopped learning and started selling.
 
 | Don't ask | Ask instead |
 |-----------|-------------|
-| "Would you use an export feature?" | "How do you currently get data out of the system when you need it?" |
-| "Do you think a dashboard would help?" | "How do you keep tabs on the metrics that matter to you right now?" |
-| "Want me to add a notification when X happens?" | "What do you do today to know when X has happened?" |
+| "Would you use an export feature?" | "How do you currently get data out when you need it?" |
+| "Do you think a dashboard would help?" | "How do you keep tabs on the metrics that matter right now?" |
+| "Want a notification when X happens?" | "What do you do today to know X has happened?" |
 
-**Rule 2 — Ask about specifics in the past, not opinions about the future.** Past behaviour is observable; future opinions are imagination, and people are bad at predicting their own future behaviour. "Tell me about the last time…" is the single most useful question shape.
+**Rule 2 — Ask about specifics in the past, not opinions about the future.** Past behaviour is observable; future opinions are imagination. "Tell me about the last time…" is the single most useful question shape.
 
 | Don't ask | Ask instead |
 |-----------|-------------|
-| "Would you pay for this?" | "Tell me about the last time you paid for something to solve this problem — what was it, how much, did it work?" |
-| "How often do you think you'd export data?" | "When did you last export data? What was the format and what did you do with the file?" |
+| "Would you pay for this?" | "Tell me about the last time you paid to solve this — what, how much, did it work?" |
+| "How often would you export?" | "When did you last export data? What format, and what did you do with the file?" |
 | "Would this be useful?" | "Walk me through the last time you needed this and didn't have it — what did you do instead?" |
 
-**Rule 3 — Talk less, listen more.** Silence is a tool. When the user trails off, resist filling the gap — they almost always continue with the most honest sentence of the conversation. Don't paraphrase in a way that softens or sharpens it.
+**Rule 3 — Talk less, listen more.** Silence is a tool; when the user trails off, don't fill the gap — they usually continue with the most honest sentence. In `AskUserQuestion`: no 200-word framing, no pre-answering in option labels, no bundled follow-ups. One question, lean framing.
 
-In `/dev` via `AskUserQuestion`: don't write a 200-word framing, don't pre-answer in option labels, don't bundle follow-ups into descriptions. One question, lean framing.
+**Three types of bad data** — when an answer feels great, check it isn't one of these:
+- **Compliments** ("I love this," "you should build it") — praise, not data. Redirect to the last time they tried to solve it themselves.
+- **Hypothetical fluff** ("I'd probably use it," "in theory…") — future-tense, conditional. Redirect to the last time the problem came up.
+- **Wishlists** ("you should also add Y") — projections wearing requirement's clothes. Ignore for this spec; log to `FOLLOWUPS.md` if multiple users recur with concrete examples.
 
-### Three types of bad data (also from *The Mom Test*)
-
-When a user answer feels great and you find yourself excited, check whether it's actually one of these three failure modes:
-
-1. **Compliments** — "I love this idea," "this is exactly what we need," "you should definitely build this." Praise feels like validation; it isn't data. Redirect: "What was the last time you tried to solve this on your own, and how did it go?"
-2. **Hypothetical fluff** — "I would probably use it," "I could see myself reaching for that," "in theory that would work for me." Future-tense, conditional, hand-wavy. Redirect: "Walk me through the last time the problem came up."
-3. **Wishlists** — "you should also add Y," "while you're in there, can it do Z?" Wishlists are seductive because they sound like requirements; they're usually projections. Redirect: ignore for the current spec, log to `FOLLOWUPS.md` if they recur from multiple users with concrete examples.
-
-Filter these *as you receive them* — every minute you spend designing AC against a hypothetical is a minute you haven't spent designing against a real workflow.
-
-### When the user IS the user (you, your team, solo project)
-
-The Mom Test is usually framed for talking to external customers. When the spec is for an internal feature where the user is the same person you're interviewing (and especially when "the user" is the engineer themselves), the same rules apply but the *tell* shifts:
-
-- "Compliments" become **self-justification** — "this will make us so much faster." Redirect: which past task would have been faster, and by how much?
-- "Hypothetical fluff" becomes **scope-creep enthusiasm** — "while we're refactoring, we should also..." Redirect: was this a real pain point on a real task last week, or a tidy-up wish?
-- "Wishlists" become **gold-plating** — "let's make it generic so we can reuse it later." Redirect: name one concrete second use case that exists today. If you can't, defer.
-
-Reading the rules this way prevents the spec from drifting from "what we actually need this run" to "what would feel satisfying to build."
+**When the user IS the user** (internal feature, solo project, the engineer themselves) — same rules, shifted tells:
+- Compliments → **self-justification** ("this'll make us so much faster"). Redirect: which past task, faster by how much?
+- Hypothetical fluff → **scope-creep enthusiasm** ("while we're in here, also…"). Redirect: real pain on a real task last week, or a tidy-up wish?
+- Wishlists → **gold-plating** ("make it generic for reuse later"). Redirect: name one concrete second use case that exists today, or defer.
 
 ## Pre-mortem at the gate
 
-The 5th self-review scan (principle 7 of `SKILL.md`), adapted from Amazon PR/FAQ. Shape:
-
-> Imagine it's three weeks from now. This work shipped, and it was a disappointment. Name the top three reasons.
-
-For each reason, classify the response and act:
+The 5th self-review scan (SKILL.md principle 7), from the Amazon PR/FAQ. Shape: *"It's three weeks from now, this shipped and disappointed — name the top three reasons."* Three, not fewer. Classify each and act:
 
 | Reason category | What to do |
 |-----------------|------------|
-| **Mis-spec'd AC** — the AC was satisfied but the user wasn't | Rewrite the AC to be specific enough that satisfying it satisfies the user. |
-| **Hidden dependency** — something we don't own had to deliver | Add a `Risks` bullet; surface as an `Open question` if it changes the plan. |
-| **Scope mis-read** — the team will build something different from what was meant | Add a sentence to `Scope > In` or `Scope > Out` that makes the intended reading unambiguous. |
-| **Approach risk** — option A was wrong for this context | Reconsider the approach options from principle 4 before locking the spec. |
+| **Mis-spec'd AC** — satisfied but the user wasn't | Rewrite the AC so satisfying it satisfies the user (often add a concrete example). |
+| **Hidden dependency** — something we don't own had to deliver | Add a `Risks` bullet; surface as `[NEEDS CLARIFICATION]` if it changes the plan. |
+| **Scope mis-read** — team builds something different from what was meant | Add a `Scope > In/Out` sentence that makes the intended reading unambiguous. |
+| **Approach risk** — the chosen option was wrong for this context | Reconsider the principle-4 approach options before locking the spec. |
 | **Operational gap** — works in dev, breaks in prod | Promote to `Constraints` or add an observability AC. |
 
-Three — not fewer, not more. If you can't find three, sit with it longer before skipping the scan.
-
-The pre-mortem is *not* a Risks dump — Risks list things that might go wrong. The pre-mortem asks: *which would I be most embarrassed about in three weeks?*
-
-### Worked example — pre-mortem on "export user data" spec
-
-Imagining the work shipped and disappointed:
-
-1. **Mis-spec'd AC** — "user can export their data" passed because the endpoint returns *something*, but the CSV doesn't include the columns the user actually wanted. **Fix:** add a specific column list to the AC.
-2. **Operational gap** — works on test data (1k rows), times out in prod (200k rows). **Fix:** add an AC that the export completes within 30s for the 95th-percentile account size; promote the timeout/streaming question from "implementation detail" to a `Constraint`.
-3. **Scope mis-read** — the team built a one-shot download because the spec said "download," but the user actually expected a scheduled weekly email. **Fix:** add `Out (non-goals): scheduled / recurring exports — manual one-shot only this run.`
-
-Three concrete risks, three concrete spec edits. Pre-mortem done.
+It's not a Risks dump (things that *might* go wrong) — it asks which you'd be most *embarrassed* about in three weeks.

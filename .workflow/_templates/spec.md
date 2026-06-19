@@ -18,7 +18,7 @@
 
 <!--
 Optional sections — add only the ones whose trigger fires, in this order; delete the rest (no empty headers, no "N/A"):
-Problem · Users · User journey · Scope — Out · Non-functional requirements · Definition of Done ·
+Problem · Users · User journey · Scope — Out · Glossary · Non-functional requirements · Definition of Done ·
 Reproduction (required for fix) · Timebox (required for spike) · Constraints · References / examples to follow ·
 Discovery notes · Carried-over follow-ups.
 

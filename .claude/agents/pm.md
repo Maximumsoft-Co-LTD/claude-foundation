@@ -37,6 +37,7 @@ The template is a clean skeleton; **this is the rulebook** for which optional se
 | Users | multiple actors, or audience non-obvious from Outcome |
 | User journey | feat with multi-screen UI (tag each step `[→ AC#]`) |
 | Scope — Out | adjacent features could be wrongly assumed in-scope |
+| Glossary | domain has non-obvious / contested / cross-context terms ([[ddd-strategic]] territory — skip generic CRUD). Each: **term** — one-sentence definition; spec/plan/code use them verbatim (ddd-strategic principle 3). Source the terms from the interview bundle's `glossary terms`. |
 | Non-functional requirements | at-a-glance roll-up ONLY (lists which AC#s are NFR-class); never the home of a target. DETECTION REQUIRED for feat/fix shipping a runtime path. |
 | Definition of Done | ship needs steps outside code; each item = a concrete artifact `plan.md` delivers. Walked separately from AC. |
 | Reproduction | REQUIRED for `Type=fix` (numbered steps + **Expected**/**Actual**) |
