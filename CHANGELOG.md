@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.6] - 2026-06-19
+
+### Added
+
+- **Team-mode plan slices now ask before guessing — `/dev-plan`, `/test-plan`, and `/uxui-plan` clarify any open decision in their own remit before spawning the worker, mirroring `/spec`'s interview.** A standalone slice can run cold against an older spec; each command's main agent (workers can't `AskUserQuestion`) now asks one ≤ 3 `AskUserQuestion` batch only on genuinely-open decisions it owns — `/dev-plan`: approach/tech/placement/rollback · `/test-plan`: test levels/fixtures/env/`e2e_visual` · `/uxui-plan`: devices/style/reference — never re-asking spec-settled slots, and routing a contract gap (ambiguous requirement, undefined AC, security/data hole) to `/spec` rather than patching it here. The discipline lives once in `interview.md > Team-slice clarify` (the canonical interview reference); the three commands carry one-line pointers + their remit, so a future change touches one file. Nothing open → ask nothing, proceed. Files: `.claude/orchestrator/references/interview.md`, `.claude/commands/dev-plan.md`, `.claude/commands/test-plan.md`, `.claude/commands/uxui-plan.md`.
+
 ## [2.5.5] - 2026-06-19
 
 ### Changed
@@ -384,7 +390,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.5...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.6...HEAD
+[2.5.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.5...v2.5.6
 [2.5.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.4...v2.5.5
 [2.5.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.3...v2.5.4
 [2.5.3]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.2...v2.5.3

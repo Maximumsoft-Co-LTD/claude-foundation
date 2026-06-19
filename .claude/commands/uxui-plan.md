@@ -15,7 +15,7 @@ This is the **UX/UI slice of team mode** — design-time, before the frontend is
 
 2. **UI gate.** Confirm the run actually has a rendered surface. If `spec.md` (or the intent) describes a pure API / CLI / backend change with no UI, say so and stop — there's nothing to design. Borderline? Ask the user once.
 
-3. **Gather missing UX direction (only what's unspecified).** Sub-agents can't interview, so you collect any UX input the spec and prior conversation leave genuinely open — and only that. If the spec already carries `References / examples to follow`, a design system, or a stated style/audience/devices, don't re-ask. Otherwise a single small `AskUserQuestion` batch (≤ 3) on the open ones: target devices/breakpoints, visual style or an existing design system to match, any reference to model after. **Fetch + inline any external-URL reference** (the `uxui` agent has no web access) so it reaches the agent self-contained.
+3. **Clarify any open UX-direction decision** (target devices/breakpoints, visual style or a design system to match, a reference to model after) before spawning `uxui` — [`references/interview.md > Team-slice clarify`](../orchestrator/references/interview.md). Don't re-ask what the spec settles; requirement-level gaps (what screens exist, what an AC means) stay `[NEEDS CLARIFICATION]` for `uxui` (step 5), not asked here.
 
 4. **Spawn `uxui`.** `Agent({ subagent_type: "uxui" })` with the run id, type, `repo_root` / `branch`, the intent, the gathered UX direction, and any `References / examples to follow` (URLs inlined). Point it at `spec.md` as authoritative; don't re-list the ACs inline. `uxui` reads the spec + the existing design system, drives `ui-ux-pro-max` / `frontend-design` for direction, and writes `uxui-plan.md`.
 
