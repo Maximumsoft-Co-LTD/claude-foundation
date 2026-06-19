@@ -8,12 +8,14 @@ const SCRIPT = [
   { step: 3, log: "user → approve", cls: "success" },
   { step: 4, log: "engineer · scaffolding Vite + React + TS", cls: "accent" },
   { step: 4, log: "engineer · acceptance criteria ticked", cls: "success" },
-  { step: 5, log: "lead (review) · 1 finding · cycles.review = 1", cls: "warn", cycle: "review" },
+  { step: 5, log: "qa · 1 failing test · cycles.test = 1", cls: "warn", cycle: "test" },
+  { step: 4, log: "engineer · fixing failure", cls: "accent" },
+  { step: 5, log: "qa · 14 tests, all pass", cls: "success" },
+  { step: 6, log: "lead (review) · 1 finding · cycles.review = 1", cls: "warn", cycle: "review" },
   { step: 4, log: "engineer · addressing finding", cls: "accent" },
-  { step: 5, log: "lead (review) · clean", cls: "success" },
-  { step: 6, log: "orchestrator · no sensitive paths → skip", cls: "muted", skip: 6 },
-  { step: 7, log: "qa · 14 tests, all pass · cycles.test = 1", cls: "success", cycle: "test" },
-  { step: 7.5, log: "orchestrator · greenfield feat → improve skipped", cls: "muted", skip: 7.5 },
+  { step: 5, log: "qa · re-run → 14 tests pass (re-validate)", cls: "success" },
+  { step: 6, log: "lead (review) · clean", cls: "success" },
+  { step: 7, log: "orchestrator · no sensitive paths → skip", cls: "muted", skip: 7 },
   { step: 8, log: "engineer (docs) · README updated", cls: "accent" },
   { step: 9, log: "engineer (ship) · commit 8a3f2c1 · PR #42 opened", cls: "success" },
   { step: 10, log: "retro · 1 skill candidate · react-vite-bootstrap", cls: "success" },
@@ -91,7 +93,7 @@ export function initFlow() {
     // Log line
     const line = document.createElement("div");
     line.className = `log-line ${ev.cls || ""}`;
-    line.textContent = `[${ev.step === 7.5 ? "7½" : pad2(ev.step)}] ${ev.log}`;
+    line.textContent = `[${pad2(ev.step)}] ${ev.log}`;
     $log.appendChild(line);
     $log.scrollTop = $log.scrollHeight;
 

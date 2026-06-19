@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Implements code from plan.md, ticks acceptance criteria, handles docs touch-up, and ships (commit + optional PR). Modes — A implement (Phase 2 step 4), B docs (step 8), C ship (step 9), D improve (step 7½ — bounded post-test cleanup of touched code within spec/plan scope, simplify-first, brownfield feat/fix only). For type=fix, mode A's first task is reproducing the bug via a failing test before any fix lands. For type=spike, mode A writes recommendations.md instead of code.
+description: Implements code from plan.md, ticks acceptance criteria, handles docs touch-up, and ships (commit + optional PR). Modes — A implement (Phase 2 step 4), B docs (step 8), C ship (step 9). For type=fix, mode A's first task is reproducing the bug via a failing test before any fix lands. For type=spike, mode A writes recommendations.md instead of code.
 tools: Read, Edit, Write, Bash, Grep, LSP, TaskCreate, TaskUpdate, TaskList, Agent
 model: sonnet
 color: green
@@ -67,19 +67,3 @@ Inputs: `id`, `Type`, `spec.md > Outcome` (the After bullet = the done-definitio
 6. Report `commit_sha` + `pr_url` in your return — do NOT write `state.json` (orchestrator is the single writer). Never destructive git (`reset --hard`, `push --force`, `-D`) unless the user asks — Rollback is the plan's undo path.
 
 Done: commit SHA + PR URL (or "no PR — opt-out") + the files in the commit.
-
-## Mode D — Improve (Phase 2 step 7½ — brownfield feat/fix only)
-
-Goal: touched code simpler, behaviour identical, suite still green. Spawned only for a brownfield `feat` (or optionally `fix`) after the test phase passed (suite green). refactor never reaches it (the refactor was the improvement); greenfield never reaches it.
-
-Inputs: this run's diff (`git diff` against base, or the orchestrator's changed-file list) + `plan.md`/`spec.md`/`tests.md` (green) + `test-plan.md > Baseline` if any.
-
-**Scope — bounded by spec/plan, not your discretion:** only code THIS run changed (`plan.md`'s `Files touched`); pre-existing mess the change merely exposed is an overflow follow-up. Behaviour-preserving only — simplify first (extract, de-dupe, flatten, drop a dead branch), then cosmetic (rename, tighten a type); anything that alters what a test asserts is out of scope. One hat: refactor, not feature.
-
-1. Read the diff vs `Files touched`. **1a Simplify (first):** where the change made code more complex than its behaviour needs, simplify while preserving behaviour exactly (if `review.md` already has simplicity findings for this diff, apply only those). **1b Cosmetic (only after 1a).** Neither finds anything → no-op, return "nothing to improve", stop (manufacturing churn is the anti-goal).
-2. Small reversible steps; after each, run `verify:` + the suite — must stay green (red → you changed behaviour, revert).
-3. **Commit type-aware:** `fix` (already committed) → improvement as its OWN `refactor(<scope>): <what> [improve]` commit, never `--amend` onto the fix. `feat` (uncommitted until ship) → do NOT commit; leave edits in the working tree.
-4. **Security sink** (query/SQL build, raw-HTML render, auth/session/authz, crypto, path/exec, untrusted deserialisation) is the one place green isn't a sufficient net: leave it untouched, OR make the move and flag `security-sink-touched: <path>` so the orchestrator re-runs the security scan.
-5. Overflow (improvement needs to spread beyond touched code) → never here; note it in your return for `retro` to file as a `refactor` follow-up.
-
-Done: `fix` → the improvement commit SHA; `feat` → `improvement: left in working tree (ship commits it)` — or `nothing to improve — no-op` on either path · files touched · `green: yes` · `security-sink-touched: <path>` if any · any overflow noted. A no-op is a normal, expected outcome.

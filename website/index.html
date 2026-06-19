@@ -6,7 +6,7 @@
     <title>claude-foundation — a /dev workflow for Claude Code</title>
     <meta
       name="description"
-      content="One command — /dev <intent> — runs a small team of specialist agents through spec → plan → gate → implement → review → (security) → test → (improve) → docs → ship → retro. Type-aware, resumable, every artifact on disk. Built for AI engineers using Claude Code."
+      content="One command — /dev <intent> — runs a small team of specialist agents through spec → plan → gate → implement → test → review → (security) → docs → ship → retro. Type-aware, resumable, every artifact on disk. Built for AI engineers using Claude Code."
     />
     <meta name="color-scheme" content="light" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="claude-foundation — a /dev workflow for Claude Code" />
     <meta
       property="og:description"
-      content="One command runs a small team of specialist agents through spec → plan → gate → implement → review → (security) → test → (improve) → docs → ship → retro. Type-aware, resumable, artifacts on disk."
+      content="One command runs a small team of specialist agents through spec → plan → gate → implement → test → review → (security) → docs → ship → retro. Type-aware, resumable, artifacts on disk."
     />
     <meta property="og:url" content="https://maximumsoft-co-ltd.github.io/claude-foundation/" />
 
@@ -37,6 +37,7 @@
           <a href="#flow" class="hide-sm">Workflow</a>
           <a href="#agents" class="hide-sm">Agents</a>
           <a href="#skills" class="hide-sm">Skills</a>
+          <a href="#wiring" class="hide-sm">Wiring</a>
           <a href="#dashboard" class="hide-sm">Dashboard</a>
           <a href="#demo" class="hide-sm">Demo</a>
           <a href="#install" class="hide-sm">Install</a>
@@ -69,7 +70,7 @@
           <p class="hero-sub reveal in" data-d="2">
             Drop <code>claude-foundation</code> into a repo and get one entry point —
             <code>/dev &lt;intent&gt;</code> — that runs specialist agents through
-            <strong>spec → plan → gate → implement → review → (security) → test → (improve) → docs → ship → retro</strong>.
+            <strong>spec → plan → gate → implement → test → review → (security) → docs → ship → retro</strong>.
             Type-aware, resumable, every artifact written to disk.
           </p>
           <div class="hero-cta reveal in" data-d="3">
@@ -181,13 +182,13 @@
           <h2>Two phases. Ten steps. One gate between them.</h2>
           <p>
             Phase&nbsp;1 is interactive — you shape the spec and approve the plan. Phase&nbsp;2 is
-            autonomous — agents implement, review, test, and ship, only stopping on blocking issues.
+            autonomous — agents implement, test, review, and ship, only stopping on blocking issues.
           </p>
         </div>
 
         <!-- Workflow diagram -->
         <div class="flow-diagram reveal">
-          <svg viewBox="0 0 1160 430" role="img" aria-label="The /dev workflow: Phase 1 (spec, plan, gate) hands off to Phase 2 (implement, review, security trigger, test, improve for brownfield feat/fix, docs, ship, retro), with review and test feedback loops back to implement.">
+          <svg viewBox="0 0 1160 430" role="img" aria-label="The /dev workflow: Phase 1 (spec, plan, gate) hands off to Phase 2 (implement, test, review, security trigger, docs, ship, retro), with test and review feedback loops back to implement.">
             <defs>
               <marker id="ah-ink" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
                 <path d="M0,0 L7,3 L0,6 Z" fill="#3a3d44" />
@@ -208,20 +209,19 @@
             <path class="fd-handoff" d="M520,118 L520,148 L100,148 L100,202" marker-end="url(#ah-mk)" />
             <text class="fd-handoff-label" x="118" y="142">approve →</text>
 
-            <!-- phase 2 chain (8 nodes, pitch 140) -->
+            <!-- phase 2 chain (7 nodes, pitch 140) -->
             <line class="fd-conn" x1="160" y1="240" x2="176" y2="240" marker-end="url(#ah-ink)" />
             <line class="fd-conn" x1="300" y1="240" x2="316" y2="240" marker-end="url(#ah-ink)" />
             <line class="fd-conn" x1="440" y1="240" x2="456" y2="240" marker-end="url(#ah-ink)" />
             <line class="fd-conn" x1="580" y1="240" x2="596" y2="240" marker-end="url(#ah-ink)" />
             <line class="fd-conn" x1="720" y1="240" x2="736" y2="240" marker-end="url(#ah-ink)" />
             <line class="fd-conn" x1="860" y1="240" x2="876" y2="240" marker-end="url(#ah-ink)" />
-            <line class="fd-conn" x1="1000" y1="240" x2="1016" y2="240" marker-end="url(#ah-ink)" />
 
-            <!-- feedback loops -->
+            <!-- feedback loops (Test at x≈240 → implement; Review at x≈380 → implement) -->
             <path class="fd-loop" d="M240,270 C240,326 96,326 90,276" marker-end="url(#ah-mk)" />
-            <text class="fd-loop-label" x="140" y="320">review · ≤ 2 cycles</text>
-            <path class="fd-loop" d="M520,270 C520,378 120,378 124,276" marker-end="url(#ah-mk)" />
-            <text class="fd-loop-label" x="290" y="400">test · ≤ 3 cycles</text>
+            <text class="fd-loop-label" x="140" y="320">test · ≤ 3 cycles</text>
+            <path class="fd-loop" d="M380,270 C380,378 120,378 124,276" marker-end="url(#ah-mk)" />
+            <text class="fd-loop-label" x="290" y="400">review · ≤ 2 cycles</text>
 
             <!-- Phase 1 nodes -->
             <g class="fd-node p1">
@@ -248,45 +248,39 @@
             <g class="fd-node p2">
               <rect x="180" y="210" width="120" height="60" rx="12" />
               <text class="fd-num" x="196" y="235">05</text>
-              <text class="fd-label" x="196" y="255">Review</text>
-            </g>
-            <g class="fd-node p2 trig">
-              <rect x="320" y="210" width="120" height="60" rx="12" />
-              <text class="fd-num" x="336" y="232">06</text>
-              <text class="fd-label" x="336" y="250">Security</text>
-              <text class="fd-sub" x="336" y="263">trigger-based</text>
+              <text class="fd-label" x="196" y="255">Test</text>
             </g>
             <g class="fd-node p2">
-              <rect x="460" y="210" width="120" height="60" rx="12" />
-              <text class="fd-num" x="476" y="235">07</text>
-              <text class="fd-label" x="476" y="255">Test</text>
+              <rect x="320" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="336" y="235">06</text>
+              <text class="fd-label" x="336" y="255">Review</text>
             </g>
             <g class="fd-node p2 trig">
+              <rect x="460" y="210" width="120" height="60" rx="12" />
+              <text class="fd-num" x="476" y="232">07</text>
+              <text class="fd-label" x="476" y="250">Security</text>
+              <text class="fd-sub" x="476" y="263">trigger-based</text>
+            </g>
+            <g class="fd-node p2">
               <rect x="600" y="210" width="120" height="60" rx="12" />
-              <text class="fd-num" x="616" y="232">7½</text>
-              <text class="fd-label" x="616" y="250">Improve</text>
-              <text class="fd-sub" x="616" y="263">brownfield</text>
+              <text class="fd-num" x="616" y="235">08</text>
+              <text class="fd-label" x="616" y="255">Docs</text>
             </g>
             <g class="fd-node p2">
               <rect x="740" y="210" width="120" height="60" rx="12" />
-              <text class="fd-num" x="756" y="235">08</text>
-              <text class="fd-label" x="756" y="255">Docs</text>
+              <text class="fd-num" x="756" y="235">09</text>
+              <text class="fd-label" x="756" y="255">Ship</text>
             </g>
             <g class="fd-node p2">
               <rect x="880" y="210" width="120" height="60" rx="12" />
-              <text class="fd-num" x="896" y="235">09</text>
-              <text class="fd-label" x="896" y="255">Ship</text>
-            </g>
-            <g class="fd-node p2">
-              <rect x="1020" y="210" width="120" height="60" rx="12" />
-              <text class="fd-num" x="1036" y="235">10</text>
-              <text class="fd-label" x="1036" y="255">Retro</text>
+              <text class="fd-num" x="896" y="235">10</text>
+              <text class="fd-label" x="896" y="255">Retro</text>
             </g>
           </svg>
 
           <div class="fd-legend">
             <span><i class="lg lg-gate"></i> gate — you approve / revise / skip / run / swap</span>
-            <span><i class="lg lg-trig"></i> conditional — security (sensitive diff) &amp; improve (brownfield feat/fix)</span>
+            <span><i class="lg lg-trig"></i> conditional — security (sensitive diff)</span>
             <span><i class="lg lg-loop"></i> review &amp; test loops back to implement</span>
             <span><i class="lg lg-resume"></i> <code>--resume</code> re-enters at the saved step</span>
           </div>
@@ -328,19 +322,15 @@
               </li>
               <li class="step">
                 <span class="step-n">5</span>
-                <div class="step-body"><strong>Review</strong><span><span class="agent">lead</span> checks the diff row-by-row against the plan <em>and</em> spec — no "looks good."</span></div>
+                <div class="step-body"><strong>Test</strong><span><span class="agent">qa</span> writes &amp; runs unit + integration + e2e, mapping every criterion to a test — before review, so reviewers judge a green suite.</span></div>
               </li>
               <li class="step">
                 <span class="step-n">6</span>
-                <div class="step-body"><strong>Security review</strong><span>Trigger-based — fires only when the diff touches auth, SQL, crypto, secrets, exec…</span></div>
+                <div class="step-body"><strong>Review</strong><span><span class="agent">lead</span> checks the diff row-by-row against the plan <em>and</em> spec — no "looks good."</span></div>
               </li>
               <li class="step">
                 <span class="step-n">7</span>
-                <div class="step-body"><strong>Test</strong><span><span class="agent">qa</span> writes &amp; runs unit + integration + e2e, mapping every criterion to a test.</span></div>
-              </li>
-              <li class="step">
-                <span class="step-n">7½</span>
-                <div class="step-body"><strong>Improve</strong><span><em>Brownfield <code>feat</code>/<code>fix</code> only</em> — <span class="agent">engineer</span> makes a bounded, behaviour-preserving cleanup of the touched code, suite still green. <code>refactor</code> &amp; greenfield skip it.</span></div>
+                <div class="step-body"><strong>Security review</strong><span>Trigger-based — fires only when the diff touches auth, SQL, crypto, secrets, exec…</span></div>
               </li>
               <li class="step">
                 <span class="step-n">8</span>
@@ -365,7 +355,7 @@
           <div>
             <strong>The gate is non-negotiable.</strong> Reply
             <span class="kbd">approve</span><span class="kbd">revise&nbsp;&lt;notes&gt;</span><span class="kbd">skip&nbsp;&lt;n&gt;</span><span class="kbd">run&nbsp;&lt;n&gt;</span><span class="kbd">swap&nbsp;&lt;n&gt;</span>.
-            The <code>lead</code> proposes a per-task phase plan; any deviation from the type matrix — and <code>skip</code>/<code>run</code> on a discretionary phase (review · test · improve · docs) — needs your explicit per-line OK. Once you approve, Phase&nbsp;2 only stops on blocking review issues, failing tests, or genuine ambiguity.
+            The <code>lead</code> proposes a per-task phase plan; any deviation from the type matrix — and <code>skip</code>/<code>run</code> on a discretionary phase (test · review · docs) — needs your explicit per-line OK. Once you approve, Phase&nbsp;2 only stops on blocking review issues, failing tests, or genuine ambiguity.
           </div>
         </div>
       </div>
@@ -417,7 +407,7 @@
           </article>
 
           <article class="agent-card reveal" data-d="1">
-            <div class="agent-top"><span class="agent-name"><span class="at">@</span>lead</span><span class="agent-phase">2 · 5 · 6</span></div>
+            <div class="agent-top"><span class="agent-name"><span class="at">@</span>lead</span><span class="agent-phase">2 · 6 · 7</span></div>
             <p>Three modes: <b>plan</b>, <b>review</b>, <b>security</b>. Writes the plan, then reviews the diff row-by-row against that plan and the spec's acceptance criteria.</p>
             <div class="agent-io">
               <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>plan.md</b> · review.md · security.md</span></div>
@@ -426,8 +416,8 @@
           </article>
 
           <article class="agent-card reveal" data-d="2">
-            <div class="agent-top"><span class="agent-name"><span class="at">@</span>engineer</span><span class="agent-phase">4 · 7½ · 8 · 9</span></div>
-            <p>Four modes: <b>implement</b>, <b>docs</b>, <b>ship</b>, <b>improve</b>. Executes the plan with progress tracking, ticks each criterion, then commits and opens the PR. On a brownfield <code>feat</code>/<code>fix</code>, the improve pass cleans the touched code with the suite green.</p>
+            <div class="agent-top"><span class="agent-name"><span class="at">@</span>engineer</span><span class="agent-phase">4 · 8 · 9</span></div>
+            <p>Three modes: <b>implement</b>, <b>docs</b>, <b>ship</b>. Executes the plan with progress tracking, ticks each criterion, then commits and opens the PR.</p>
             <div class="agent-io">
               <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>code</b> · commit · PR</span></div>
               <div class="io-row"><span class="io-k">reads</span><span class="io-v">plan.md · spec.md</span></div>
@@ -555,6 +545,148 @@
           <span class="chip">ui-ux-pro-max</span>
           <span class="chip">tailwind-design-system</span>
           <span class="chip">skill-creator</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================== WIRING ======= -->
+    <section class="section sot-section" id="wiring">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Single source of truth</span>
+          <h2>One router. One writer. No cycle.</h2>
+          <p>
+            Every run <em>reads skills</em>, <em>fires phases</em>, and <em>calls rules</em> down the same
+            spine — so each fact lives in exactly one place. Here's the control plane and the five
+            properties that keep it from looping or drifting.
+          </p>
+        </div>
+
+        <!-- Control-plane diagram -->
+        <div class="flow-diagram reveal">
+          <svg viewBox="0 0 1160 540" role="img" aria-label="Control plane: a slash command invokes the orchestrator (main agent), which spawns an agent per phase and owns the single-writer state.json. Every code task consults the always-on router .claude/rules/fundamentals.md — the single source of truth for triggers and run order — which loads exactly one skill body on demand. CLAUDE.md, README.md and WORKFLOW.md mirror the router and name it canonical.">
+            <defs>
+              <marker id="sot-ah" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+                <path d="M0,0 L7,3 L0,6 Z" fill="#3a3d44" />
+              </marker>
+              <marker id="sot-ahm" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+                <path d="M0,0 L7,3 L0,6 Z" fill="#e8501e" />
+              </marker>
+              <marker id="sot-ahs" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+                <path d="M0,0 L7,3 L0,6 Z" fill="#2c46f0" />
+              </marker>
+            </defs>
+
+            <!-- edges (under nodes) -->
+            <line class="sot-edge" x1="580" y1="72" x2="580" y2="106" marker-end="url(#sot-ah)" />
+            <path class="sot-edge" d="M440,202 C440,230 300,224 290,248" marker-end="url(#sot-ah)" />
+            <line class="sot-edge-s" x1="512" y1="325" x2="642" y2="325" marker-end="url(#sot-ahs)" />
+            <line class="sot-edge-s" x1="872" y1="400" x2="872" y2="432" marker-end="url(#sot-ahs)" />
+            <line class="sot-edge" x1="820" y1="150" x2="852" y2="150" marker-end="url(#sot-ah)" />
+            <path class="sot-edge-m" d="M474,436 C560,436 604,418 648,404" marker-end="url(#sot-ahm)" />
+
+            <!-- ENTRY bar -->
+            <g>
+              <rect class="sot-bar" x="40" y="26" width="1080" height="46" rx="11" />
+              <text class="sot-bar-k" x="60" y="54">ENTRY</text>
+              <text class="sot-bar-v" x="580" y="54" text-anchor="middle">/dev&#160;&#160;·&#160;&#160;/spec&#160;&#160;·&#160;&#160;/dev-plan&#160;&#160;·&#160;&#160;/test-plan&#160;&#160;·&#160;&#160;/uxui-plan&#160;&#160;·&#160;&#160;/implement</text>
+            </g>
+
+            <!-- ORCHESTRATOR (dark hub) -->
+            <g>
+              <rect class="sot-orch" x="340" y="110" width="480" height="92" rx="14" />
+              <text class="sot-orch-t" x="362" y="144">ORCHESTRATOR · the main agent</text>
+              <text class="sot-orch-s" x="362" y="168">runs the interview · owns the GATE · dispatches fanout</text>
+              <text class="sot-orch-s" x="362" y="188">playbook .claude/orchestrator.md — there is no orchestrator sub-agent</text>
+            </g>
+
+            <!-- state.json tag -->
+            <g>
+              <rect class="sot-state" x="856" y="118" width="264" height="68" rx="11" />
+              <text class="sot-state-t" x="878" y="146">state.json</text>
+              <text class="sot-state-s" x="878" y="166">single writer ·</text>
+              <text class="sot-state-s" x="878" y="180">slices fold at the gate</text>
+            </g>
+
+            <!-- AGENTS -->
+            <g>
+              <rect class="sot-agents" x="64" y="248" width="448" height="152" rx="14" />
+              <text class="sot-agents-t" x="88" y="284">AGENTS · spawned per phase</text>
+              <text class="sot-agents-v" x="88" y="314">pm · lead · engineer</text>
+              <text class="sot-agents-v" x="88" y="338">qa · retro · uxui · team-*</text>
+              <text class="sot-agents-s" x="88" y="368">each code task loads the router first —</text>
+              <text class="sot-agents-s" x="88" y="386">one skill body, not the whole library</text>
+            </g>
+
+            <!-- ROUTER (single source of truth) -->
+            <g>
+              <rect class="sot-router" x="648" y="248" width="448" height="152" rx="14" />
+              <rect class="sot-router-badge" x="672" y="262" width="214" height="23" rx="11.5" />
+              <text class="sot-router-bt" x="682" y="278">★ SINGLE SOURCE OF TRUTH</text>
+              <text class="sot-router-t" x="672" y="312">ALWAYS-ON ROUTER</text>
+              <text class="sot-router-v" x="672" y="336">.claude/rules/fundamentals.md</text>
+              <text class="sot-router-s" x="672" y="362">maps every trigger → exactly one skill</text>
+              <text class="sot-router-s" x="672" y="382">+ owns the cross-skill run order</text>
+            </g>
+
+            <!-- MIRRORS -->
+            <g>
+              <rect class="sot-mirror" x="64" y="436" width="448" height="84" rx="14" />
+              <text class="sot-mirror-t" x="88" y="466">MIRRORS · reference only</text>
+              <text class="sot-mirror-v" x="88" y="490">CLAUDE.md · README.md · WORKFLOW.md</text>
+              <text class="sot-mirror-s" x="88" y="508">restate the chain, point to ★ — never redefine it</text>
+            </g>
+
+            <!-- SKILLS -->
+            <g>
+              <rect class="sot-skills" x="648" y="436" width="448" height="84" rx="14" />
+              <text class="sot-skills-t" x="672" y="466">SKILL BODIES · loaded on demand</text>
+              <text class="sot-skills-v" x="672" y="490">Process → Construction chain → Delivery</text>
+              <text class="sot-skills-s" x="672" y="508">ddd-strategic → … → observability · linear, no back-edge</text>
+            </g>
+
+            <!-- step badges -->
+            <g class="sot-step"><circle cx="580" cy="90" r="10" /><text x="580" y="94">1</text></g>
+            <text class="sot-elabel" x="598" y="94">invoke</text>
+            <g class="sot-step"><circle cx="362" cy="230" r="10" /><text x="362" y="234">2</text></g>
+            <text class="sot-elabel" x="377" y="234">spawn · per phase</text>
+            <g class="sot-step"><circle cx="578" cy="325" r="10" /><text x="578" y="329">3</text></g>
+            <text class="sot-elabel" x="578" y="348" text-anchor="middle">trigger → skill (every code task)</text>
+            <g class="sot-step"><circle cx="872" cy="418" r="10" /><text x="872" y="422">4</text></g>
+            <text class="sot-elabel" x="888" y="422">load one body on demand</text>
+            <g class="sot-step"><circle cx="560" cy="420" r="10" /><text x="560" y="424">5</text></g>
+            <text class="sot-elabel" x="576" y="424">names it canonical</text>
+          </svg>
+
+          <div class="fd-legend">
+            <span><i class="lg lg-sot-router"></i> the router is canonical — triggers &amp; run order live here only</span>
+            <span><i class="lg lg-sot-write"></i> one writer for <code>state.json</code> — slices fold at the gate</span>
+            <span><i class="lg lg-sot-mirror"></i> mirrors point back, never redefine</span>
+          </div>
+        </div>
+
+        <!-- audit properties -->
+        <div class="sot-checks">
+          <article class="sot-check reveal">
+            <h4><span class="tick">✓</span> One source of truth</h4>
+            <p><code>.claude/rules/fundamentals.md</code> owns every trigger and the cross-skill run order. <code>CLAUDE.md</code>, <code>README.md</code> and <code>WORKFLOW.md</code> only mirror it and name it canonical — they never restate a trigger as fact.</p>
+          </article>
+          <article class="sot-check reveal" data-d="1">
+            <h4><span class="tick">✓</span> No cycle in the chain</h4>
+            <p>Construction skills run in one fixed line — <code>ddd-strategic → … → observability</code>. A skill never re-invokes one earlier in the chain, so the dependency graph is a line, not a loop.</p>
+          </article>
+          <article class="sot-check reveal" data-d="2">
+            <h4><span class="tick">✓</span> One writer for state</h4>
+            <p>Only the orchestrator writes <code>state.json</code>. Team-mode <code>/dev-plan</code> · <code>/test-plan</code> · <code>/uxui-plan</code> each write a <code>state.&lt;slice&gt;.json</code> shard; the gate folds them in once. Sub-agents never touch the cursor.</p>
+          </article>
+          <article class="sot-check reveal" data-d="1">
+            <h4><span class="tick">✓</span> The only loops are bounded</h4>
+            <p>The sole back-edges are <strong>test → implement ≤ 3×</strong> and <strong>review → implement ≤ 2×</strong>, both capped. Every other edge flows forward; <code>--resume</code> re-enters at the saved step, it doesn't loop.</p>
+          </article>
+          <article class="sot-check reveal" data-d="2">
+            <h4><span class="tick">✓</span> Loaded lazily</h4>
+            <p>A trigger pulls exactly one skill body on demand — and on the hot path, at most one targeted <code>references/&lt;file&gt;</code>. Nothing reads the whole library per turn.</p>
+          </article>
         </div>
       </div>
     </section>

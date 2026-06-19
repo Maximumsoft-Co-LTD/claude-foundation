@@ -30,7 +30,7 @@ All written into `docs/` (create it if absent):
 
 ## When to use / when to skip
 
-**Use it** when there is existing code to read and the user wants it documented or wants to onboard onto it. This is brownfield work — the `understand` half of the repo's understand → lock → change → improve discipline, delivered as durable docs.
+**Use it** when there is existing code to read and the user wants it documented or wants to onboard onto it. This is brownfield work — the `understand` half of the repo's understand → lock → change discipline, delivered as durable docs.
 
 **Skip / adapt** when:
 - There is **no code yet** (greenfield) — there is nothing to read; this skill would invent. Design docs come from `plan-writing` / `brainstorming` instead.

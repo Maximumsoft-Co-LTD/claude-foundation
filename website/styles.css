@@ -824,6 +824,112 @@ body::after {
   color: var(--ink-soft);
 }
 
+/* --- Single source of truth / control-plane chart ------------------------- */
+.sot-section { background: var(--paper); }
+
+/* edges */
+.sot-edge { fill: none; stroke: var(--ink-soft); stroke-width: 1.5; }
+.sot-edge-s { fill: none; stroke: var(--signal); stroke-width: 1.6; }
+.sot-edge-m {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  opacity: 0.8;
+}
+
+/* entry bar */
+.sot-bar { fill: var(--paper-3); stroke: var(--line); stroke-width: 1.4; }
+.sot-bar-k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  fill: var(--muted);
+}
+.sot-bar-v { font-family: var(--mono); font-size: 13px; font-weight: 500; fill: var(--ink); }
+
+/* orchestrator hub */
+.sot-orch { fill: var(--ink); stroke: var(--ink); }
+.sot-orch-t { font-family: var(--body); font-weight: 600; font-size: 15px; fill: var(--paper); }
+.sot-orch-s { font-family: var(--mono); font-size: 11px; fill: #a7adba; }
+
+/* state tag */
+.sot-state { fill: var(--card); stroke: color-mix(in srgb, var(--marker) 35%, var(--line)); stroke-width: 1.4; }
+.sot-state-t { font-family: var(--mono); font-weight: 700; font-size: 13px; fill: var(--ink); }
+.sot-state-s { font-family: var(--mono); font-size: 10px; fill: var(--muted); }
+
+/* agents */
+.sot-agents { fill: rgba(44, 70, 240, 0.05); stroke: color-mix(in srgb, var(--signal) 38%, var(--line)); stroke-width: 1.4; }
+.sot-agents-t { font-family: var(--mono); font-weight: 700; font-size: 11.5px; letter-spacing: 0.04em; fill: var(--signal); }
+.sot-agents-v { font-family: var(--body); font-weight: 600; font-size: 14px; fill: var(--ink); }
+.sot-agents-s { font-family: var(--body); font-size: 12px; fill: var(--muted); }
+
+/* router — the single source of truth */
+.sot-router { fill: var(--marker-soft); stroke: var(--marker); stroke-width: 1.7; }
+.sot-router-badge { fill: var(--marker); }
+.sot-router-bt { font-family: var(--mono); font-weight: 700; font-size: 10.5px; letter-spacing: 0.03em; fill: #fff; }
+.sot-router-t { font-family: var(--mono); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; fill: var(--marker); }
+.sot-router-v { font-family: var(--mono); font-weight: 500; font-size: 13px; fill: var(--ink); }
+.sot-router-s { font-family: var(--body); font-size: 12px; fill: var(--ink-soft); }
+
+/* mirrors */
+.sot-mirror { fill: var(--card); stroke: var(--line); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.sot-mirror-t { font-family: var(--mono); font-weight: 700; font-size: 11.5px; fill: var(--muted); }
+.sot-mirror-v { font-family: var(--mono); font-weight: 500; font-size: 12.5px; fill: var(--ink-soft); }
+.sot-mirror-s { font-family: var(--body); font-size: 11.5px; fill: var(--faint); }
+
+/* skills */
+.sot-skills { fill: var(--paper-2); stroke: var(--line); stroke-width: 1.4; }
+.sot-skills-t { font-family: var(--mono); font-weight: 700; font-size: 11.5px; fill: var(--ink-soft); }
+.sot-skills-v { font-family: var(--body); font-weight: 600; font-size: 13.5px; fill: var(--ink); }
+.sot-skills-s { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+
+/* step badges + edge labels */
+.sot-step circle { fill: var(--marker); }
+.sot-step text { font-family: var(--mono); font-weight: 700; font-size: 11px; fill: #fff; text-anchor: middle; }
+.sot-elabel { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+
+/* legend swatches */
+.fd-legend .lg-sot-router { background: var(--marker-soft); border: 1.6px solid var(--marker); }
+.fd-legend .lg-sot-write { background: var(--ink); }
+.fd-legend .lg-sot-mirror { background: var(--card); border: 1.4px dashed var(--line); }
+
+/* audit property cards */
+.sot-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+.sot-check {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px 17px;
+}
+.sot-check h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-family: var(--display);
+  font-size: 16.5px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
+  margin: 0 0 7px;
+}
+.sot-check .tick { color: var(--ok); font-weight: 700; font-size: 15px; }
+.sot-check p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.sot-check code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--paper-3);
+  padding: 1px 5px;
+  border-radius: 5px;
+  color: var(--ink-soft);
+}
+.sot-check strong { color: var(--ink); font-weight: 600; }
+
 /* --- Type matrix ---------------------------------------------------------- */
 .matrix-tabs {
   display: flex;

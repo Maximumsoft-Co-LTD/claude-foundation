@@ -20,14 +20,14 @@ const AGENTS = {
     writes: "plan.md · review.md · security.md",
   },
   engineer: {
-    phases: "4 · implement  ·  7½ · improve  ·  8 · docs  ·  9 · ship",
-    body: "Executes plan.md step by step using TaskCreate. For fix runs, the first task is the failing regression test as its own commit. Improve mode (7½, brownfield feat/fix) is a bounded, behaviour-preserving cleanup of the touched code with the suite green — refactor and greenfield skip it. Stages, commits, opens the PR if the gate opted in.",
+    phases: "4 · implement  ·  8 · docs  ·  9 · ship",
+    body: "Executes plan.md step by step using TaskCreate. For fix runs, the first task is the failing regression test as its own commit. Stages, commits, opens the PR if the gate opted in.",
     reads: "plan.md · spec.md · diff",
     writes: "source · commit · PR",
   },
   qa: {
-    phases: "phase 2½ · test plan + phase 7 · tests",
-    body: "Phase 2½ (test-plan mode): writes test-plan.md before code — which level proves each AC, edge cases to probe, fixtures, regression/baseline contract — signed off at the gate. Phase 7 (execute mode): runs unit + integration + e2e against that plan, records tests.md with advisory diff-coverage floors (unit 80% / integration 70% / e2e 50% of critical journeys). For fix: verifies regression test fails on pre-fix code, passes now. Stub-skips for chore / docs / spike.",
+    phases: "phase 2½ · test plan + phase 5 · tests",
+    body: "Phase 2½ (test-plan mode): writes test-plan.md before code — which level proves each AC, edge cases to probe, fixtures, regression/baseline contract — signed off at the gate. Phase 5 (execute mode): runs before review so reviewers judge a green suite — unit + integration + e2e against that plan, records tests.md with advisory diff-coverage floors (unit 80% / integration 70% / e2e 50% of critical journeys). For fix: verifies regression test fails on pre-fix code, passes now. Stub-skips for chore / docs / spike.",
     reads: "spec.md · plan.md · test-plan.md · source",
     writes: "test-plan.md · tests · tests.md",
   },

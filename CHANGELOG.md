@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.5] - 2026-06-19
+
+### Changed
+
+- **Phase 2 now runs `test` before `review` — reviewers judge code that already passes its suite, and test becomes the true pre-ship gate.** The autonomous build order changes from `implement → review → security → test → improve → docs → ship` to `implement → test → review → security → docs → ship` (the `improve` phase is also removed this release — see below). Three adjacent phases rotate in both numbering schemes — phase-matrix `{5,6,7}` and operational `{11,12,13}` — so **test = 5/11, review = 6/12, security = 7/13**; every other step number (implement 4/10, docs 8/14, ship 9/15, retro 10/16) is unchanged. **Loop-back added so the reorder stays correct:** a `review` or `security` fix routed back to `engineer` now **re-enters test** before re-review, so a review/security-driven code change can never ship untested (previously test sat last and re-validated those fixes implicitly). Cycle counters are clarified to bump **only on a real fix-routing** — `cycles.test` on a failing test sent to `engineer`, `cycles.review` on a review/security fix sent to `engineer` — so the re-validation runs don't inflate the budgets. The test↔review **`team-pr-test-analyzer` dedup reverses direction**: test runs first now, so review folds in test's coverage findings (was the other way). No phase is added or removed; the gate, security trigger, type matrix, and protected set are unchanged. Files: `.claude/orchestrator.md`, `.claude/orchestrator/references/phase-2-guards.md`, `.claude/orchestrator/references/fanout.md`, `.claude/orchestrator/references/surface-fanout.md`, `.claude/orchestrator/references/gate.md`, `.claude/agents/lead.md`, `.claude/agents/qa.md`, `.claude/agents/references/qa.md`, `.claude/commands/dev.md`, `.claude/commands/implement.md`, `.claude/skills/fanout-team-agents/SKILL.md`, `.claude/skills/plan-writing/SKILL.md`, `WORKFLOW.md`, `README.md`.
+
+### Removed
+
+- **The `improve` phase (7½ / engineer Mode D) is removed entirely.** Phase 2 is now `implement → test → review → security → docs → ship → retro` — the post-test, behaviour-preserving cleanup leg is gone as a phase. Rationale: it was the most-gated, lowest-stakes discretionary phase, and writing clean code is the engineer's job at implement-time (`coding-discipline` / Ponytail) with `review` catching residual mess; touched-code cleanup that genuinely needs its own pass becomes a follow-up `refactor` run. The brownfield discipline contracts from `understand → lock → change → improve` to **`understand → lock → change`** — the lock/characterization leg stays (the load-bearing brownfield safety). **No renumbering** (7½ was a half-step; docs 8 / ship 9 / retro 10 unchanged). `engineer` drops Mode D; `state.json > phase_plan` keys drop `improve`; the discretionary set is now `test`/`review`/`docs`. Files: `.claude/orchestrator.md`, `.claude/orchestrator/references/{phase-2-guards,gate,size-execution,xs-s-fast-path,resume}.md`, `.claude/agents/{engineer,lead,retro}.md`, `.claude/agents/references/lead.md`, `.claude/commands/{dev,implement}.md`, `.claude/skills/plan-writing/references/size-tiering.md`, `.claude/skills/{refactoring-fundamentals,init-project-docs}/SKILL.md`, `WORKFLOW.md`, `README.md`, `CLAUDE.md`, plus the marketing/demo surface (`website/`).
+
 ## [2.5.4] - 2026-06-19
 
 ### Added
@@ -374,7 +384,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.4...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.5...HEAD
+[2.5.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.4...v2.5.5
 [2.5.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.3...v2.5.4
 [2.5.3]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.2...v2.5.3
 [2.5.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.1...v2.5.2

@@ -19,7 +19,7 @@ A complete `.workflow/<id>/retro.md` (every required section filled), `.workflow
 - `.workflow/<id>/spec.md`, `plan.md`, `review.md`, and (if present) `test-plan.md` (feat/fix/refactor — its `Out of test scope` + surviving `undefined → spec gap` edge cases are follow-up candidates), `tests.md` (absent for `spike`), `security.md`, `recommendations.md`
 - `.workflow/<id>/state.json` — commit SHA, PR URL, cycle counts, security-trigger flag, `repos`
 - `.workflow/_templates/retro.md`, `.workflow/FOLLOWUPS.md`
-- The full diff — **across every changed repo, not just `repo_root`**. Multi-repo run (`state.repos` set) → read each changed repo's diff (`git -C <r> diff`/`log`). This is a **single multi-repo-aware pass, not a per-repo fanout** — per-repo detail lives in the unified `review.md`/`tests.md`/`security.md` sections (synthesise those), so skim each diff. (Ship tracks only `repo_root`'s commit/PR — `WORKFLOW.md > Multi-repo boundary`; note other repos' commits in `Ship` if made.)
+- The full diff — **across every changed repo, not just `repo_root`**. Multi-repo run (`state.repos` set) → read each changed repo's diff (`git -C <r> diff`/`log`). This is a **single multi-repo-aware pass, not a per-repo fanout** — per-repo detail lives in the unified `review.md`/`tests.md`/`security.md` sections (synthesise those), so skim each diff. (Ship tracks only `repo_root`'s commit/PR — `.claude/orchestrator/references/size-execution.md > Multi-repo boundary`; note other repos' commits in `Ship` if made.)
 - Memory index `~/.claude/projects/<project-slug>/memory/MEMORY.md` (read-only)
 - Skill names/descriptions under `~/.claude/skills/` and `.claude/skills/` (read-only — metadata first; full bodies only for likely collisions/update candidates)
 
@@ -31,7 +31,7 @@ A complete `.workflow/<id>/retro.md` (every required section filled), `.workflow
 4. Write `.workflow/<id>/retro.md`:
    - **Ship**: lift `commit_sha`/`pr_url` from `state.json` (`spike` no commit → `skipped (spike — recommendations only)`).
    - **Total cycles**: from `state.json > cycles`.
-   - **Run metrics**: from `state.json` — `created_at → done_at` ("build→ship"; `done_at` null → fall back to `last_updated`, note approximate), `size`+`type`, `skipped_steps` count, `security_triggered`. One header line. **Also summarise `state.json > fanout_log`** (e.g. `fanout=plan✓ review✓ test=single`): which eligible phases fanned out (`direct`/`signal`) vs single-pass. A gated-`on` phase that logged `single` (or a fanout that should've been single) is a **calibration finding for `What to change`** (`WORKFLOW.md > Fanout plan`).
+   - **Run metrics**: from `state.json` — `created_at → done_at` ("build→ship"; `done_at` null → fall back to `last_updated`, note approximate), `size`+`type`, `skipped_steps` count, `security_triggered`. One header line. **Also summarise `state.json > fanout_log`** (e.g. `fanout=plan✓ review✓ test=single`): which eligible phases fanned out (`direct`/`signal`) vs single-pass. A gated-`on` phase that logged `single` (or a fanout that should've been single) is a **calibration finding for `What to change`** (`.claude/orchestrator/references/fanout-plan.md`).
    - **Acceptance criteria status**: copy from `spec.md > Acceptance criteria` with the set checkbox state; unticked → one-line outcome (`deferred → see Follow-ups`, `wont-do (reason)`).
    - **What worked**: specific, repeatable.
    - **What to change**: each item + WHY (vague entries cut).
@@ -43,7 +43,6 @@ A complete `.workflow/<id>/retro.md` (every required section filled), `.workflow
      - For every `spec.md > Carried-over follow-ups` item that landed: move its `FOLLOWUPS.md` row `Open` → `Closed`, status `consumed-by: <run id>`, fill `Date consumed`.
      - Mirror both lists in `retro.md > Follow-ups`.
    - **Security findings (carry-over)**: if `security.md` exists, **mirror** its medium/low findings here — already appended to `FOLLOWUPS.md` at security-review time, so **do NOT re-append** (double-count). Any still-open `high` is a process bug → flag under `What to change`.
-   - **Improve-phase overflow (carry-over)**: if improve flagged overflow, the orchestrator already appended it to `FOLLOWUPS.md` as a `refactor` follow-up — **mirror** here, don't re-append. A no-op / skipped improve produces no entry.
 5. Update `.workflow/INDEX.md`: status → `done`, `Finished` = today.
 6. Surface memory + skill candidates in the return. **Only surface candidates that clear the save-worthy bar.** A rejected candidate (duplicates repo/CLAUDE.md/existing skill, ephemeral, borderline) is reported `not proposing — <reason>`, **never raised as a question**. **Do not save memory or create skill files yourself** — the orchestrator drives the handoff.
 

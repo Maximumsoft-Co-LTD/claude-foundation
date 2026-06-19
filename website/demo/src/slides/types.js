@@ -6,41 +6,40 @@ const PHASES = [
   { n: 2, label: "plan" },
   { n: 3, label: "gate" },
   { n: 4, label: "implement" },
-  { n: 5, label: "review" },
-  { n: 6, label: "security" },
-  { n: 7, label: "test" },
-  { n: "7½", label: "improve" },
+  { n: 5, label: "test" },
+  { n: 6, label: "review" },
+  { n: 7, label: "security" },
   { n: 8, label: "docs" },
   { n: 9, label: "ship" },
   { n: 10, label: "retro" },
 ];
 
-// For each type, define per-phase state (11 entries, in PHASES order).
+// For each type, define per-phase state (10 entries, in PHASES order — test before review).
 // run = always runs, skip = always skips, trigger = conditional, light = thinner pass.
 const MATRIX = {
   feat: {
-    states: ["run", "run", "run", "run", "run", "trigger", "run", "trigger", "run", "run", "run"],
-    note: "New capability. Full flow. Security fires only on a sensitive diff; Improve runs when the feat is brownfield (touches existing code), and skips on greenfield.",
+    states: ["run", "run", "run", "run", "run", "run", "trigger", "run", "run", "run"],
+    note: "New capability. Full flow. Security fires only on a sensitive diff.",
   },
   fix: {
-    states: ["run", "run", "run", "run", "run", "trigger", "run", "trigger", "run", "run", "run"],
-    note: "Step 1 of implement is a failing regression test. Test phase verifies it fails on pre-fix code, passes now. Improve is an optional light cleanup of the touched code (brownfield).",
+    states: ["run", "run", "run", "run", "run", "run", "trigger", "run", "run", "run"],
+    note: "Step 1 of implement is a failing regression test. Test phase verifies it fails on pre-fix code, passes now.",
   },
   refactor: {
-    states: ["run", "run", "run", "run", "run", "trigger", "run", "skip", "run", "run", "run"],
-    note: "Plan includes a behavior-equivalence note. QA runs the existing suite and adds tests only for uncovered behaviour. Improve is skipped — the refactor itself was the improvement.",
+    states: ["run", "run", "run", "run", "run", "run", "trigger", "run", "run", "run"],
+    note: "Plan includes a behavior-equivalence note. QA runs the existing suite and adds tests only for uncovered behaviour.",
   },
   chore: {
-    states: ["run", "run", "run", "run", "run", "trigger", "skip", "skip", "run", "run", "run"],
-    note: "Test + Improve skipped. Docs touch-up still happens if relevant. Security trigger-based; review is skipped at XS (size×type default).",
+    states: ["run", "run", "run", "run", "skip", "run", "trigger", "run", "run", "run"],
+    note: "Test skipped. Docs touch-up still happens if relevant. Security trigger-based; review is skipped at XS (size×type default).",
   },
   docs: {
-    states: ["run", "run", "run", "run", "run", "trigger", "skip", "skip", "run", "run", "run"],
-    note: "Documentation work. No test phase, no Improve. Docs phase 8 is the main payload, not a touch-up; review is skipped at XS.",
+    states: ["run", "run", "run", "run", "skip", "run", "trigger", "run", "run", "run"],
+    note: "Documentation work. No test phase. Docs phase 8 is the main payload, not a touch-up; review is skipped at XS.",
   },
   spike: {
-    states: ["run", "run", "run", "run", "light", "skip", "skip", "skip", "skip", "skip", "run"],
-    note: "Timeboxed exploration. Review is a light pass. No test or Improve. Recommendations.md replaces test + ship. Commit only if user opts in.",
+    states: ["run", "run", "run", "run", "skip", "light", "skip", "skip", "skip", "run"],
+    note: "Timeboxed exploration. Review is a light pass. No test. Recommendations.md replaces test + ship. Commit only if user opts in.",
   },
 };
 

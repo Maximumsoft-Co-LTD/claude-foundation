@@ -26,8 +26,8 @@ const AGENTS = {
     writes: "source · commit · PR",
   },
   qa: {
-    phases: "phase 7 · tests",
-    body: "Writes and runs unit + integration + e2e. Records in tests.md. For fix: verifies regression test fails on pre-fix code, passes now. Stub-skips for chore / docs / spike.",
+    phases: "phase 5 · tests",
+    body: "Runs before review so reviewers judge a green suite. Writes and runs unit + integration + e2e. Records in tests.md. For fix: verifies regression test fails on pre-fix code, passes now. Stub-skips for chore / docs / spike.",
     reads: "plan.md · spec.md · source",
     writes: "tests · tests.md",
   },

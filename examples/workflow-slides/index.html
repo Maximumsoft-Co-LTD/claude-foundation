@@ -52,7 +52,7 @@
               <span class="kicker">02 · the shape</span>
               <h2>Two phases, ten numbered steps.</h2>
               <p class="lede">
-                Phase 1 is interactive: a human approves the plan. Phase 2 is autonomous: agents implement, review, test, ship, reflect.
+                Phase 1 is interactive: a human approves the plan. Phase 2 is autonomous: agents implement, test, review, ship, reflect.
               </p>
             </header>
 
@@ -235,11 +235,11 @@
                 </div>
                 <div class="gate-row">
                   <span class="gate-label">Will run</span>
-                  <span>1 · 2 · 3 · 4 · 5 · 7 · 8 · 9 · 10</span>
+                  <span>1 · 2 · 3 · 4 · 5 · 6 · 8 · 9 · 10</span>
                 </div>
                 <div class="gate-row">
                   <span class="gate-label">Skipping</span>
-                  <span>6 — no sensitive paths planned</span>
+                  <span>7 — no sensitive paths planned</span>
                 </div>
               </div>
               <div class="gate-actions">
@@ -275,9 +275,9 @@
               <div class="flow-step" data-step="2"><span class="fs-n">2</span><span class="fs-l">plan</span></div>
               <div class="flow-step gate-step" data-step="3"><span class="fs-n">3</span><span class="fs-l">gate</span></div>
               <div class="flow-step" data-step="4"><span class="fs-n">4</span><span class="fs-l">implement</span></div>
-              <div class="flow-step" data-step="5"><span class="fs-n">5</span><span class="fs-l">review</span></div>
-              <div class="flow-step trigger-step" data-step="6"><span class="fs-n">6</span><span class="fs-l">security</span></div>
-              <div class="flow-step" data-step="7"><span class="fs-n">7</span><span class="fs-l">test</span></div>
+              <div class="flow-step" data-step="5"><span class="fs-n">5</span><span class="fs-l">test</span></div>
+              <div class="flow-step" data-step="6"><span class="fs-n">6</span><span class="fs-l">review</span></div>
+              <div class="flow-step trigger-step" data-step="7"><span class="fs-n">7</span><span class="fs-l">security</span></div>
               <div class="flow-step" data-step="8"><span class="fs-n">8</span><span class="fs-l">docs</span></div>
               <div class="flow-step" data-step="9"><span class="fs-n">9</span><span class="fs-l">ship</span></div>
               <div class="flow-step" data-step="10"><span class="fs-n">10</span><span class="fs-l">retro</span></div>
@@ -294,7 +294,7 @@
           <div class="slide-inner">
             <header class="slide-head">
               <span class="kicker">06 · security · trigger-based</span>
-              <h2>Phase 6 fires only when the diff earns it.</h2>
+              <h2>Phase 7 fires only when the diff earns it.</h2>
               <p class="lede">Click a path on the left. If it matches the sensitive list, the security review fires automatically.</p>
             </header>
 
@@ -312,7 +312,7 @@
               <div class="sec-panel" id="sec-panel">
                 <div class="sec-state" id="sec-state">click a path</div>
                 <div class="sec-detail" id="sec-detail">
-                  The orchestrator checks each changed file against the sensitive-paths list before phase 6. No match → recorded as skipped. Match → <code>lead</code> spawned in security mode.
+                  The orchestrator checks each changed file against the sensitive-paths list before phase 7. No match → recorded as skipped. Match → <code>lead</code> spawned in security mode.
                 </div>
                 <ul class="sec-list">
                   <li>auth / session / token</li>
@@ -426,11 +426,11 @@
                   <li>interview → spec (Type=feat)</li>
                   <li>plan: Vite + React + TS, 10 steps</li>
                   <li>gate → approve</li>
-                  <li>scaffold → implement → review</li>
-                  <li>tests pass → docs → commit + PR</li>
+                  <li>scaffold → implement → tests pass</li>
+                  <li>review clean → docs → commit + PR</li>
                   <li>retro → 1 skill candidate created</li>
                 </ol>
-                <div class="ex-foot">skips: 6 (no sensitive paths)</div>
+                <div class="ex-foot">skips: 7 (no sensitive paths)</div>
               </article>
 
               <article class="ex">
@@ -444,7 +444,7 @@
                   <li>security review fires (auth diff)</li>
                   <li>commit only (no PR) → retro</li>
                 </ol>
-                <div class="ex-foot">fires: 6 · skips: 8 (docs)</div>
+                <div class="ex-foot">fires: 7 · skips: 8 (docs)</div>
               </article>
 
               <article class="ex">
@@ -458,7 +458,7 @@
                   <li>recommendations.md drafted</li>
                   <li>retro → maybe a follow-up feat</li>
                 </ol>
-                <div class="ex-foot">skips: 6, 7, 8 · 9 optional</div>
+                <div class="ex-foot">skips: 5, 7, 8 · 9 optional</div>
               </article>
             </div>
           </div>

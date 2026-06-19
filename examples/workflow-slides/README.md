@@ -15,7 +15,7 @@ Single-file static site. No build step, no dependencies. Open `index.html` in an
 5. **Artifacts** — clickable file tree of `.workflow/<id>/`; each artifact card explains its owner + purpose.
 6. **The gate** — mock approval card with `approve | revise | swap` buttons.
 7. **Live flow** — press play and watch a `feat` run animate through the strip, including a review cycle bump.
-8. **Security trigger** — click changed paths to see which ones fire phase 6 and why.
+8. **Security trigger** — click changed paths to see which ones fire phase 7 and why.
 9. **State + resume** — tick to advance one step; `state.json` updates live like a real run.
 10. **Cycle limits** — review at 2, test at 3, escalation rule.
 11. **Examples** — three end-to-end runs (feat / fix / spike) side by side.

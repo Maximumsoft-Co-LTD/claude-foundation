@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Two modes. Test plan (Phase 1, design-time) — writes test-plan.md (coverage plan per AC, edge cases to probe, fixtures, regression/baseline contract) from spec + plan BEFORE any code, surfaced at the gate. Execute (Phase 2 step 7) — runs the planned unit/integration/e2e tests after engineer implements and records tests.md. Type-aware — full for feat/refactor, regression-first for fix, stub-skipped for chore/docs (spike never reaches qa — its test phase is skipped entirely). Maps every spec acceptance criterion to at least one test. Blocks Phase 2 step 9 (ship) until tests pass (or are skipped per type).
+description: Two modes. Test plan (Phase 1, design-time) — writes test-plan.md (coverage plan per AC, edge cases to probe, fixtures, regression/baseline contract) from spec + plan BEFORE any code, surfaced at the gate. Execute (Phase 2 step 5 — runs before review so reviewers judge a green suite) — runs the planned unit/integration/e2e tests after engineer implements and records tests.md. Type-aware — full for feat/refactor, regression-first for fix, stub-skipped for chore/docs (spike never reaches qa — its test phase is skipped entirely). Maps every spec acceptance criterion to at least one test. Blocks Phase 2 step 9 (ship) until tests pass (or are skipped per type).
 tools: Read, Write, Edit, Bash, Grep, LSP, Agent
 model: sonnet
 color: yellow
@@ -36,14 +36,14 @@ Design how the change will be proven before the engineer writes a line. No diff 
 
 **Done (Test plan):** `test-plan.md` path + count of ACs mapped + count of edge cases (and whether any is a blocking spec gap) + the type-specialised section written (regression contract / baseline / none) + (spec-only) count of `[pending plan]` rows, or (backfill) count filled.
 
-## Mode: Execute (Phase 2 step 7)
+## Mode: Execute (Phase 2 step 5 — before review)
 
 Run the tests `test-plan.md` designed against the diff, record in `tests.md` — the plan already chose levels + edge cases; execute it, don't re-derive. Read `test-plan.md` + `plan.md` + `spec.md` + the diff (`git -C <repo_root> diff` when `repo_root` is set — use `git -C <repo_root>` for every commit/branch command below).
 
 **Mode pick** (tick in `tests.md > Type-aware mode`): **Full** (feat/refactor) — all steps; **Fix** (fix) — all steps + regression verification; **Skipped** (chore/docs) — fill `Skipped` with reason + risk accepted, write no tests, return. (`spike` never reaches qa — if somehow spawned, return a one-line note.)
 
 1. Write the tests `test-plan.md > Coverage plan` calls for (levels + assertions already chosen) + its `Edge cases to probe`. **Assert the behaviour the plan specified — never weaken an assertion to go green** (coverage theatre). A defined boundary the plan genuinely missed → add a test, tag `[plan-missed]`.
-1a. **Single-pass-first; fan out only when the suite splits** — run the suite in one pass by default; fan out per `references/qa.md > Recruit help` (load when the plan spans ≥ 2 levels AND a level has ≥ 3 tests). Required dedup with review's findings lives there.
+1a. **Single-pass-first; fan out only when the suite splits** — run the suite in one pass by default; fan out per `references/qa.md > Recruit help` (load when the plan spans ≥ 2 levels AND a level has ≥ 3 tests). Test runs **before** review now, so there's no review test-analysis to dedup against — run every planned category; review folds in *your* findings (dedup direction noted there).
 2. **Acceptance-criteria coverage** — map each Coverage-plan row to the **actual test** + pass/fail. Every `spec.md` AC checkbox traces to a real test — incl. its `on error / at boundary:` clause and any `measured:` target. Flag executed-level drift; untestable → carry the plan's justification, tag for retro.
 2a. **Execution-time edge pass** — now code exists, a bounded light pass for diff-reachable inputs the plan didn't list. New **Undefined** input → `tests.md > Edge-case gaps`, non-blocking by default; blocking only for a reachable security/data-integrity hole (escalate).
 2b. **Specified-but-violated → reconcile, don't defer** (plan-adherence, NOT an edge-gap). The gate-approved `plan.md`/`test-plan.md` **named** the behaviour and the diff does the **opposite**. Assert the specified behaviour; on failure: **code wrong** → failing test, route to `engineer` (consumes a cycle); **deviation defensible** AND no `(amended during implement: …)` note → **escalate to the orchestrator** (amend at a mini-gate or send back), never ship as a follow-up. Tag `[plan-contradiction]`.

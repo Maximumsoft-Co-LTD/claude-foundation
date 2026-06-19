@@ -11,7 +11,7 @@ const RESPONSES = {
   },
   skip: {
     cls: "revise",
-    text: "⤳ skip 8 · flips a discretionary phase off (review · test · 7½ improve · docs only) and records it in state.json > phase_plan — protected phases (interview · plan · gate · security check · retro) refuse a skip",
+    text: "⤳ skip 8 · flips a discretionary phase off (test · review · docs only) and records it in state.json > phase_plan — protected phases (interview · plan · gate · security check · retro) refuse a skip",
   },
   run: {
     cls: "revise",

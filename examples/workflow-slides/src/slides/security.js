@@ -26,8 +26,8 @@ export function initSecurity() {
         $detail.innerHTML = `<code>${path}</code> matched the sensitive-paths list. Orchestrator spawns <code>lead</code> in security mode against the diff. High-severity findings are blocking and count against the review cycle budget.`;
       } else {
         $state.className = "sec-state skip";
-        $state.textContent = "✓ no trigger · phase 6 recorded as skipped";
-        $detail.innerHTML = `<code>${path}</code> doesn't match any sensitive path. <code>state.security_triggered = false</code>. Orchestrator advances directly to phase 7 (test).`;
+        $state.textContent = "✓ no trigger · phase 7 recorded as skipped";
+        $detail.innerHTML = `<code>${path}</code> doesn't match any sensitive path. <code>state.security_triggered = false</code>. Orchestrator advances past the security review (phase 7) to docs.`;
       }
     });
   });

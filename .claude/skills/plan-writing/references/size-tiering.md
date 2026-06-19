@@ -28,7 +28,6 @@ Orthogonal to size, every run is one of two **fields**, recorded in `state.json 
 
 - **Understand** — a `Current state` map before designing the change (`plan-writing > principle 3`). All brownfield work.
 - **Lock** — a characterization baseline pinning the touched behaviour *before* it is edited (`test-plan.md > Baseline`), for brownfield `feat` and `refactor`; `fix` locks via its regression contract instead.
-- **Improve** — the bounded post-test cleanup phase (7½) on the code the change touched: brownfield `feat` (and optionally `fix`); a `refactor` **skips** it, since the refactor itself *is* the improvement.
 
 ## Picker — answer in order
 

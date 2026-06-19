@@ -31,11 +31,11 @@ Tools report the whole diff, not the logic-vs-boundary split — so split unit v
 
 ## Recruit help when the test surface is large (direct nesting)
 
-**Load when:** the plan spans ≥ 2 of {unit, integration, e2e} AND a level has ≥ 3 tests worth a focused pass, after subtracting categories already covered by review's `team-pr-test-analyzer` findings. You hold `Agent` — spawn analysis helpers yourself (v2.1.172+) instead of only signalling `FANOUT_REQUESTED: test` (the fallback). You still write every test and `tests.md`.
+**Load when:** the plan spans ≥ 2 of {unit, integration, e2e} AND a level has ≥ 3 tests worth a focused pass. You hold `Agent` — spawn analysis helpers yourself (v2.1.172+) instead of only signalling `FANOUT_REQUESTED: test` (the fallback). You still write every test and `tests.md`.
 
 - **Split + spawn** — one `team-pr-test-analyzer` per category, **one message** (parallel), **cap 3**, each scoped to that category's diff slice (pass the slice + `test-plan.md` coverage rows + what to return).
 - **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → by name; `inline-fallback` → `general-purpose` with `.claude/agents/team-pr-test-analyzer.md` inlined; `unknown` → try named, fall to inline on `not found`, report the path used.
-- **Required dedup** — if the prompt already carries `team-pr-test-analyzer` findings from review (same diff), fold them in and fanout only for uncovered categories; if review ran it but the findings are omitted, return `BLOCKER: missing review test-analysis findings for qa dedup`.
+- **Dedup direction (test runs before review now)** — test is the first analysis pass, so there are no review findings to fold in; run every planned category. Review (step 6) instead dedups its test-coverage lens against *your* `team-pr-test-analyzer` findings, so leave them legible in `tests.md`.
 - **Integrate** the returned coverage-gap findings into your test design + `tests.md`.
 - **Guardrails** — helpers are read-only, never write tests/`tests.md`/`state.json`. **One level of split:** end every helper prompt with `You are a nested helper: handle this one sub-scope directly and do NOT spawn further agents.`
 

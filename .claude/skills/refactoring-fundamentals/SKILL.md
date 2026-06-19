@@ -73,7 +73,7 @@ Good: PR 1 `refactor(auth): extract TokenVerifier port` (behavior identical, sui
 - Covered already? Run the suite, confirm green, then refactor. Green-to-green is the loop.
 - Uncovered? Before touching the code, write characterization tests: feed representative inputs, capture whatever the code returns/writes *now*, and assert that. A golden-master / snapshot test is the fast path when output is large. Pin the behavior even where it looks wrong — fixing it is a separate, later hat.
 - Can't get the code under test because it's too tangled to instantiate? Find a *seam* — a place to break a dependency so you can call the unit in isolation — before you refactor the logic. The deep technique (seams, cover-and-modify, golden master) is in `references/characterization-tests.md`.
-- In `/dev` this baseline is the brownfield **lock** step; when the workflow schedules characterization capture is owned by `WORKFLOW.md > Improve phase` (and its understand→lock→change→improve discipline) — don't restate it here.
+- In `/dev` this baseline is the brownfield **lock** step; when the workflow schedules characterization capture is owned by `WORKFLOW.md > Greenfield vs brownfield` (its understand → lock → change discipline) — don't restate it here.
 
 **Example:**
 ```
