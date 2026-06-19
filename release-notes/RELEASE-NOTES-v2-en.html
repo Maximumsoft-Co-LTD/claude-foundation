@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>claude-foundation v2 — Release Notes</title>
+<style>
+  :root{
+    --bg:#faf8f5; --surface:#ffffff; --ink:#211c17; --muted:#6c6359;
+    --accent:#c15f3c; --accent-2:#da7756; --line:#ece5dc;
+    --code-bg:#2a2620; --code-ink:#f3ede3; --pill:#f0e7dd;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);line-height:1.65;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Thai",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:0 24px}
+  code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.92em}
+  a{color:var(--accent)}
+
+  /* hero */
+  .hero{background:linear-gradient(135deg,#231f1a 0%,#3a2f26 55%,#5a3a2a 100%);color:#f5efe7;padding:76px 0 60px}
+  .hero .wrap{position:relative}
+  .langswitch{position:absolute;top:0;right:24px;font-size:.85rem}
+  .langswitch a{color:#e9d9c9;text-decoration:none;border:1px solid rgba(255,255,255,.25);padding:5px 12px;border-radius:999px}
+  .langswitch a:hover{background:rgba(255,255,255,.1)}
+  .pill{display:inline-block;background:rgba(218,119,86,.22);color:#f1c4ab;border:1px solid rgba(218,119,86,.5);
+    padding:5px 14px;border-radius:999px;font-size:.8rem;font-weight:600;letter-spacing:.04em;margin-bottom:20px}
+  .hero h1{font-size:2.5rem;line-height:1.15;margin:0 0 16px;font-weight:800;letter-spacing:-.02em}
+  .hero h1 .accent{color:var(--accent-2)}
+  .hero p.lead{font-size:1.18rem;color:#e4d6c8;max-width:680px;margin:0 0 28px}
+  .upgrade{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .codeblock{background:var(--code-bg);color:var(--code-ink);padding:12px 18px;border-radius:10px;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.95rem;display:inline-flex;gap:10px;align-items:center}
+  .codeblock .dollar{color:#8f857a}
+  .ver{color:#f1c4ab;font-weight:700}
+
+  /* sections */
+  section{padding:52px 0;border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:none}
+  h2{font-size:1.6rem;margin:0 0 6px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  h2 .vtag{font-size:.72rem;color:var(--muted);font-weight:600;background:var(--pill);padding:3px 9px;border-radius:6px;letter-spacing:.02em}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:1.02rem}
+
+  /* highlight grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-top:8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;
+    box-shadow:0 1px 2px rgba(40,30,20,.04)}
+  .card .ic{font-size:1.5rem;line-height:1;display:block;margin-bottom:10px}
+  .card h3{margin:0 0 6px;font-size:1.02rem}
+  .card p{margin:0;color:var(--muted);font-size:.93rem}
+
+  ul.feat{list-style:none;padding:0;margin:0}
+  ul.feat li{position:relative;padding:9px 0 9px 30px;border-bottom:1px solid var(--line)}
+  ul.feat li:last-child{border-bottom:none}
+  ul.feat li::before{content:"";position:absolute;left:4px;top:17px;width:8px;height:8px;border-radius:50%;
+    background:var(--accent-2)}
+  ul.feat strong{font-weight:700}
+
+  table{width:100%;border-collapse:collapse;margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);font-size:.95rem}
+  th{background:#f6efe7;font-weight:700}
+  tr:last-child td{border-bottom:none}
+  td code{background:#f3ece3;padding:2px 7px;border-radius:5px}
+
+  /* timeline */
+  .tl{list-style:none;padding:0;margin:14px 0 0}
+  .tl li{display:grid;grid-template-columns:78px 1fr;gap:16px;padding:11px 0;border-bottom:1px dashed var(--line)}
+  .tl li:last-child{border-bottom:none}
+  .tl .v{font-weight:800;color:var(--accent);font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:.9rem}
+  .tl .d{color:var(--muted);font-size:.95rem}
+  .tl .d b{color:var(--ink);font-weight:600}
+
+  /* footer */
+  footer{background:#231f1a;color:#e4d6c8;padding:44px 0;text-align:center}
+  footer .codeblock{margin:14px auto 0}
+  footer a{color:#f1c4ab}
+  .muted{color:var(--muted)}
+  @media(max-width:560px){.hero h1{font-size:2rem}.langswitch{position:static;display:block;margin-bottom:18px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="langswitch"><a href="RELEASE-NOTES-v2-th.html">🇹🇭 ภาษาไทย</a></div>
+    <span class="pill">VERSION 2 · v2.0.0 → v2.5.7</span>
+    <h1>claude-foundation v2<br>From a <span class="accent">/dev pipeline</span> to a full dev team in your editor</h1>
+    <p class="lead">v1 gave you one <code>/dev</code> pipeline (spec → plan → ship). v2 turns it into a real team — split work by role, design tests before code, understand UX/UI, parallelize safely, and right-size the process to the work.</p>
+    <div class="upgrade">
+      <span class="codeblock"><span class="dollar">$</span> brew upgrade claude-foundation</span>
+      <span>→ latest <span class="ver">v2.5.7</span></span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <div class="wrap">
+    <h2>✨ Highlights <span class="vtag">30-second read</span></h2>
+    <p class="sub">The biggest things v2 brings to your workflow.</p>
+    <div class="grid">
+      <div class="card"><span class="ic">🧑‍🤝‍🧑</span><h3>Team Mode</h3><p>Split <code>/dev</code> into 5 role-scoped commands — <code>/spec</code>, <code>/dev-plan</code>, <code>/test-plan</code>, <code>/uxui-plan</code>, <code>/implement</code> — that share one run folder and run in parallel.</p></div>
+      <div class="card"><span class="ic">✅</span><h3>Test-first</h3><p><code>test-plan.md</code> is designed <em>before</em> any code and signed off at the gate. You know <em>how it'll be proven</em> up front — plus coverage floors, visual &amp; a11y checks.</p></div>
+      <div class="card"><span class="ic">🎨</span><h3>UX/UI as first-class</h3><p>A new <code>uxui</code> agent + <code>uxui-plan.md</code> with <strong>ASCII wireframes</strong>; the engineer now builds to the approved design.</p></div>
+      <div class="card"><span class="ic">⚡</span><h3>Auto right-sizing</h3><p>Greenfield/brownfield axis, a <strong>patch lane</strong> for tiny work, single-pass-first, and e2e/visual as <strong>opt-in</strong> (no Chromium download every run).</p></div>
+      <div class="card"><span class="ic">🔀</span><h3>Visible fanout</h3><p>Parallel work is planned, gated, and logged — fan out across many repos at once, with no state clobber even on concurrent runs.</p></div>
+      <div class="card"><span class="ic">🧹</span><h3>Leaner prompts, sharper interview</h3><p>16 rule files collapsed into one router, terse-output discipline, and a <strong>grill-me</strong> interview that walks the design tree.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🧑‍🤝‍🧑 Team Mode — divide work by role <span class="vtag">v2.1</span></h2>
+    <p class="sub"><code>/dev</code> runs the whole pipeline at once, but real teams split the work. v2 breaks it into 5 role-scoped commands that all write into the same run folder — they still compose into one resumable run via <code>/dev --resume &lt;id&gt;</code>.</p>
+    <table>
+      <thead><tr><th>Command</th><th>Owner</th><th>Does</th></tr></thead>
+      <tbody>
+        <tr><td><code>/spec</code></td><td>PM</td><td>Interview + write <code>spec.md</code></td></tr>
+        <tr><td><code>/dev-plan</code></td><td>Tech Lead</td><td>Write the implementation <code>plan.md</code></td></tr>
+        <tr><td><code>/test-plan</code></td><td>QA</td><td>Design the test strategy before any code</td></tr>
+        <tr><td><code>/uxui-plan</code></td><td>Designer</td><td>Design Scenes / wireframes / user flows</td></tr>
+        <tr><td><code>/implement</code></td><td>Engineer</td><td>Gate → autonomous build through to ship</td></tr>
+      </tbody>
+    </table>
+    <p class="sub" style="margin-top:18px">Later (v2.3 / v2.5.4), the Phase-1 slices (plan/test/uxui) became <strong>truly parallel</strong> — each writes its own state shard (no clobbering), and the gate folds them together.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>✅ Test-first — know <em>how it's proven</em> before code <span class="vtag">v2.0–v2.2</span></h2>
+    <ul class="feat">
+      <li><strong>test-plan.md (Phase-1 step 2½)</strong> — maps every acceptance criterion (happy path <em>and</em> its <code>on error / at boundary</code> clause) to the test level that owns it, written <strong>before a single line of code</strong> and <strong>signed off at the gate</strong> alongside the spec.</li>
+      <li><strong>Coverage floors on the diff</strong> — unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys (measured on changed code only; a ratchet, not a hard wall).</li>
+      <li><strong>Visual verification</strong> — UI-touching changes get screenshotted and eyeballed, catching defects DOM assertions miss (e.g. a title breaking mid-word on a phone).</li>
+      <li><strong>a11y + contract tests</strong> — axe-core in the same browser session + a contract test whenever an API/event contract is declared.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🎨 UX/UI as a first-class citizen <span class="vtag">v2.1–v2.5</span></h2>
+    <ul class="feat">
+      <li><strong>uxui agent + uxui-plan.md</strong> — Scenes (including the empty/error states everyone forgets), Scenarios, UX direction, and an AC↔scene mapping that catches orphan scenes (scope creep) and unmapped ACs (design gaps).</li>
+      <li><strong>ASCII wireframes</strong> are now a required part of every scene (v2.5.0) — see the layout before any code.</li>
+      <li><strong>The engineer builds to the approved design</strong> (v2.5.4) instead of guessing the layout.</li>
+      <li><strong>DESIGN.md</strong> — documents the UX/UI of an existing codebase via <code>/init-project-docs</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>⚡ Right-size to the work — and go faster <span class="vtag">v2.0.2–v2.5.0</span></h2>
+    <ul class="feat">
+      <li><strong>Greenfield vs brownfield axis</strong> is first-class — work on existing code enforces the <strong>understand → lock → change</strong> discipline (a characterization baseline so the old behaviour can't silently break); new code skips it.</li>
+      <li><strong>Patch lane</strong> — a tiny one-file change with no risky behaviour takes a shortcut instead of paying full process cost.</li>
+      <li><strong>e2e + visual are opt-in (default off)</strong> — no more downloading Chromium every run; tests are noticeably faster, turn it on when you need it.</li>
+      <li><strong>single-pass-first</strong> (v2.4) — fanout fires only when it clearly pays, not by default.</li>
+      <li><strong>Size scorecard</strong> — helps decide XS/S/M/L for borderline work.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🔀 Parallelism done safely <span class="vtag">v2.0–v2.3</span></h2>
+    <ul class="feat">
+      <li><strong>Fanout is planned, gated &amp; recorded</strong> — a <code>## Fanout plan</code> in plan.md, signed off at the gate, with every outcome logged to <code>fanout_log</code> for retro to review.</li>
+      <li><strong>Surface (per-repo) fanout</strong> — a multi-repo control-plane run reviews/security/tests each repo in parallel, then merges the results.</li>
+      <li><strong>State durability</strong> — fixes for state clobbering under concurrent runs/resume, and collision-proof follow-up IDs.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🧹 Leaner prompts, sharper interview <span class="vtag">v2.3.1–v2.5.7</span></h2>
+    <ul class="feat">
+      <li><strong>16 rule files → one router</strong> (<code>fundamentals.md</code>) — one file loaded per turn instead of sixteen; the full skill body still loads on demand.</li>
+      <li><strong>Terse-output</strong> is now an always-on rule — concise, but never lossy.</li>
+      <li><strong>grill-me interview (v2.5.7)</strong> — questions walk the <strong>design tree</strong> (resolve the decision others depend on first), every choice leads with a <strong>(Recommended)</strong> option to veto rather than author from scratch, and <strong>glossary + ADR</strong> are captured as you talk.</li>
+      <li><strong>clarify-before-spawn</strong> — team slices ask the open questions in their own remit before starting.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>📚 Onboard an existing codebase <span class="vtag">v2.2–v2.3.2</span></h2>
+    <p class="sub"><code>/init-project-docs</code> reads the real code and generates a 7-doc suite — OVERVIEW · ARCHITECTURE · TECHSTACK · DATAMODEL · COREFEATURE · API · <strong>DESIGN</strong> — plus a self-contained <code>document.html</code> viewer.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🗓️ Version timeline</h2>
+    <ul class="tl">
+      <li><span class="v">2.0.0</span><span class="d"><b>test-plan.md shift-left</b>, diff-coverage floors, plan Scaffold, surface fanout, delegation-first, state durability</span></li>
+      <li><span class="v">2.0.1</span><span class="d"><b>CLI subcommands</b> — init / version / help + a root VERSION file</span></li>
+      <li><span class="v">2.0.2</span><span class="d"><b>Visual verification</b>, greenfield right-sizing, trivial-work cost cuts</span></li>
+      <li><span class="v">2.1.0</span><span class="d"><b>Team Mode</b> — 5 role commands + the uxui agent &amp; uxui-plan.md</span></li>
+      <li><span class="v">2.1.1</span><span class="d">XS/S fast path writes spec + plan + test-plan in one spawn</span></li>
+      <li><span class="v">2.2.0</span><span class="d"><b>Fanout planned/gated/recorded</b>, /init-project-docs, greenfield/brownfield axis, contract + a11y tests</span></li>
+      <li><span class="v">2.3.0</span><span class="d"><b>Phase-1 state sharding</b> — parallel plan slices without clobber</span></li>
+      <li><span class="v">2.3.1</span><span class="d">Ponytail decision ladder in coding-discipline; doc de-bloat</span></li>
+      <li><span class="v">2.3.2</span><span class="d">DESIGN.md — a 7th doc in init-project-docs</span></li>
+      <li><span class="v">2.4.0</span><span class="d"><b>single-pass-first</b> fanout default; 16 rules → one router</span></li>
+      <li><span class="v">2.5.0</span><span class="d"><b>ASCII wireframes</b>, e2e/visual opt-in, patch lane, size scorecard</span></li>
+      <li><span class="v">2.5.1</span><span class="d">Modularization into on-demand <code>references/</code></span></li>
+      <li><span class="v">2.5.2</span><span class="d">Word-minimization pass across the prompt surface</span></li>
+      <li><span class="v">2.5.3</span><span class="d">Terse-output promoted to an always-on rule</span></li>
+      <li><span class="v">2.5.4</span><span class="d">Parallel Phase-1 plan slices + de-duplication</span></li>
+      <li><span class="v">2.5.5</span><span class="d"><b>test before review</b>; the improve phase removed</span></li>
+      <li><span class="v">2.5.6</span><span class="d">clarify-before-spawn for team plan/test/uxui slices</span></li>
+      <li><span class="v">2.5.7</span><span class="d"><b>grill-me design-tree interview</b> + grill-with-docs glossary/ADR</span></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div style="font-size:1.15rem;font-weight:700">Upgrade now</div>
+    <span class="codeblock"><span class="dollar">$</span> brew upgrade claude-foundation</span>
+    <p class="muted" style="margin-top:16px">claude-foundation <span class="ver" style="color:#f1c4ab">v2.5.7</span> · the <code>/dev</code> workflow for Claude Code · <a href="https://github.com/Maximumsoft-Co-LTD/claude-foundation">GitHub</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
