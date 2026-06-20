@@ -7,35 +7,56 @@
 **Run metrics**: wall-clock=<created_at → done_at (duration)> · size=<XS|S|M|L> · skipped=<n steps> · security=<fired|not-fired> · fanout=<phases fired vs single-pass, from state.json fanout_log>
 **Ship**: commit=<sha> | PR=<url> | skipped (reason)
 
-## What worked
+## What worked *(required)*
+
 Specific + repeatable. "LSP-first nav saved a grep round on the auth middleware" beats "good process".
+
 - ...
 
-## What to change next time
+## What to change next time *(required)*
+
 Each item paired with WHY. Vague entries get cut.
+
 - ...
 
-## Acceptance criteria status
+## Acceptance criteria status *(required)*
+
 Final state of every checkbox in `spec.md > Acceptance criteria`.
 
 - [x] Criterion 1 — shipped
 - [ ] Criterion 2 — deferred → see Follow-ups
 
-## Memory candidates (facts)
+## Memory candidates (facts) *(required)*
+
 A single rule / preference / reference / user trait. Surface to the user for confirmation; never auto-save. Write "none this run" if empty. (Routing rules + save-worthy filters live in the retro agent.)
 
-- **type**: feedback | project | reference | user · **body**: <fact> · **why**: <reason> · **how to apply**: <when it kicks in>  (why + how required for feedback/project)
+- **type**: feedback | project | reference | user
+  **body**: <fact>
+  **why**: <reason>
+  **how to apply**: <when it kicks in>
 
-## Skill candidates (procedures)
-A multi-step procedure — ≥3 steps OR conditional logic, AND a clear trigger, AND plausibly ≥3 future runs. Surface to the user for confirmation; never auto-create. Write "none this run" if empty.
+  *(why + how required for feedback / project)*
 
-- **name**: <kebab> · **scope**: personal | project · **trigger description**: <phrase / task type> · **action**: new | update `<name>` | promote memory `<slug>` · **steps**: 1… 2… 3… · **why a skill not a memory**: … · **handoff prompt for skill-creator**: <copy-paste-ready brief>  (leave status blank — orchestrator fills it after the approval round)
+## Skill candidates (procedures) *(required)*
 
-<!--
-Sections above = always required. Add a section below ONLY when this run produced it, then DELETE the rest:
-- Deviations from plan — actual ≠ plan (Step X became Y — reason)
-- Follow-ups — append each verbatim to FOLLOWUPS.md > Open, then mirror here:
-    - **item**: <one line> · **type hint**: feat|fix|refactor|chore|docs|spike · **priority**: low|med|high
-    - **consumed**: <followup-id> — landed via step <n>
-- Security findings (carry-over) — when security.md exists (its non-blocking medium/low findings)
--->
+A multi-step procedure — ≥ 3 steps OR conditional logic, AND a clear trigger, AND plausibly ≥ 3 future runs. Surface to the user for confirmation; never auto-create. Write "none this run" if empty.
+
+- **name**: <kebab>
+  **scope**: personal | project
+  **trigger description**: <phrase / task type>
+  **action**: new | update `<name>` | promote memory `<slug>`
+  **steps**: 1… 2… 3…
+  **why a skill not a memory**: …
+  **handoff prompt for skill-creator**: <copy-paste-ready brief>
+
+  *(leave status blank — orchestrator fills it after the approval round)*
+
+---
+
+**Optional sections** — add when this run produced it, delete the rest:
+
+- **Deviations from plan** — actual ≠ plan (Step X became Y — reason)
+- **Follow-ups** — append each verbatim to FOLLOWUPS.md > Open, then mirror here:
+  - **item**: <one line> · **type hint**: feat | fix | … · **priority**: low | med | high
+  - **consumed**: <followup-id> — landed via step <n>
+- **Security findings (carry-over)** — when security.md exists (its non-blocking medium / low findings)

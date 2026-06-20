@@ -1,110 +1,72 @@
 # Orchestrator reference — Surface (per-repo) fanout
 
-> Loaded on demand by the main agent (`.claude/orchestrator.md`). The **third, orthogonal fanout axis**: split the read-and-judge phases — **test (11), review (12), security (13)** — one agent per changed repo on a **multi-repo control-plane run** (`state.repos` size > 1). Read this **only** when the changed-repo set is > 1; a single-repo run (the common case) never needs it. Shared dispatch mechanics: `fanout.md > Surface (per-repo) fanout`; this holds the per-step decisions + the non-primary-repo dead-ends + the agent contracts.
->
-> **Common shape (steps 11/12/13).** The per-step dispatch is the `fanout.md > Surface (per-repo) fanout` mechanics — one foreground coordinator (`lead` review/security, `qa` test) in its **Surface-coordinator variant** nests one `general-purpose` per-repo helper per repo (Per-repo contract inlined, `repo_root=<r>`, foreground, one message), then writes the unified artifact in the **same spawn**; **cap 6**; each helper single-pass (no inner lens/bucket/category fanout); **you** write `state.json` on return; resume fanout-granular. Each step below adds only its changed-repo-set computation + non-primary-repo dead-end.
+> Loaded on demand by the main agent (`.claude/orchestrator.md`). The **third, orthogonal fanout axis**: split the read-and-judge phases — **test (11), review (12), security (13)** — one agent per changed repo on a **multi-repo control-plane run** (`state.repos` size > 1). Read this **only** when the changed-repo set is > 1; a single-repo run (the common case) never needs it. Core fanout model (signal recognition, registry, synthesis): `fanout.md`.
 
-## Step 11 (test) — surface fanout decision
+**Common shape (all three steps).** One foreground coordinator (`lead` review/security, `qa` test) in its **Surface-coordinator variant** nests one `general-purpose` per-repo helper per repo (Per-repo contract inlined, `repo_root=<r>`, foreground, one message), then writes the unified artifact in the **same spawn**; **cap 6** (group beyond); each helper single-pass (no inner lens/bucket/category fanout — don't nest the 6-lens or per-category, 6×N); **you** write `state.json` on return; the cycle counter bumps **once per fanout, per run**, never per repo; resume fanout-granular. Helpers are `general-purpose` **on purpose** — a same-message foreground batch of the 5 /dev-worker types self-blocks on the 2nd spawn under `dev-agent-guard.sh` Case 3, but `general-purpose` falls through. (Degradation: a coordinator that can't nest reviews the repos sequentially itself, single-pass.) **Retro (16)** reads across repos too but is multi-repo-aware **single-pass, not surface-fanned**, and holds no `Agent`.
 
-**Surface (per-repo) fanout — decide this FIRST, it is the outer loop around everything else in this step.** Compute the **changed-repo set**: the repos this run actually wrote to. **Take the engineer's returned per-repo changed-file list as the authoritative source** — it knows what it touched, and for `fix` (which commits test+fix and leaves a *clean tree*, so `git status` shows nothing) it is the *only* reliable signal. Confirm each candidate with `git -C <r> status --porcelain` non-empty OR new commits ahead of `<r>`'s base branch, and **restrict to repos in `state.repos`** (or `[repo_root]` when `repos` is `null`) — don't pull in a sibling repo carrying stray changes the run never touched. **This compute is the canonical one — review (step 12) and security (step 13) reuse it.** Apply the **common shape** above; coordinator is `qa` in its **Surface-coordinator variant** (QA — Execute, below).
+## Per-step decision (shared)
 
-- **Set size ≤ 1 → single-repo path (unchanged).** Run the rest of step 11 exactly as written against `repo_root` (or the one changed repo) — the default for every non-control-plane run. If `state.repos` lists sibling repos but the engineer's authoritative report confirms only the primary `repo_root` changed, stay here.
-- **Set size > 1 → surface fanout.** Each per-repo helper runs that repo's suite over its slice of `test-plan.md` and returns a per-repo result block, and the coordinator writes the unified `tests.md` (one `### Repo: <path>` subsection per repo under `## Per-repo results`, plus the global AC-coverage walk mapping each `spec.md` AC to whichever repo's tests prove it). **Aggregate status = `passing` iff every repo passes**; any repo `failing` makes the run `failing`. **`cycles.test` bumps once for the whole fanout.** For `fix`, the regression contract lives in the one repo that holds the bug — only that repo's per-repo helper runs the pre-fix verification.
+Decide surface fanout **first** in each step — it's the outer loop around everything else.
 
-**Non-primary-repo failing test.** A failing test in a repo ≠ `repo_root` can't be auto-fixed this slice. When the aggregate `failing` is driven by a repo ≠ `repo_root`, surface it via `AskUserQuestion` (fix manually, or accept/defer); route only `repo_root` failures to `engineer`.
+**Changed-repo set (compute once at step 11; review and security reuse this canonical compute).** The repos this run actually wrote to. Take the **engineer's returned per-repo changed-file list as authoritative** — it knows what it touched, and for `fix` (commits test+fix → *clean tree*, so `git status` shows nothing) it's the *only* reliable signal. Confirm each candidate with `git -C <r> status --porcelain` non-empty OR new commits ahead of `<r>`'s base branch, and **restrict to `state.repos`** (or `[repo_root]` when `repos` is `null`) — don't pull in a sibling carrying stray changes the run never touched.
 
-**Visual verification in multi-repo fanout.** Restate the visual instruction in each per-repo qa prompt whose repo's diff touches UI; the coordinator carries per-repo visual findings + deferrals up (QA — Execute, below), and you run the MCP backstop for any repo that deferred.
+- **Set size ≤ 1 → single-repo path (unchanged).** Run the rest of the step exactly as written against `repo_root` (or the one changed repo) — the default for every non-control-plane run. Siblings listed in `state.repos` but confirmed unchanged by the engineer's authoritative report → stay here.
+- **Set size > 1 → surface fanout.** Apply the **common shape**; coordinator is the step's agent (test → `qa`; review/security → `lead`). Each per-repo helper returns a `### Repo: <r>` block; the coordinator writes the unified artifact (one `### Repo: <path>` subsection per repo) plus the global cross-repo walk.
 
-## Step 12 (review) — surface fanout
+**Non-primary-repo blocking item (all three steps).** `engineer` (step 10) and ship (step 15) are scoped to the primary `repo_root` (`size-execution.md > Multi-repo boundary`), so a blocking item in a repo ≠ `repo_root` — a failing test (11), a `fix-required` finding (12), or a `high` (13) — **can't be auto-fixed this slice**. Surface it via `AskUserQuestion` (fix manually in that repo, or accept/defer); route **only** `repo_root` items to `engineer`. A `high` you can't auto-fix is still blocking — never downgrade it to fit the boundary.
 
-**Surface (per-repo) fanout — decide first (same changed-repo-set compute as step 11), the outer loop around the rest of this step.** Apply the **common shape** above; coordinator is `lead` in its **Surface-coordinator variant** (Lead — Mode B, below).
+## Step 11 (test) — deltas
 
-- **Set size ≤ 1 → single-repo path (unchanged).** Run the rest of step 12 exactly as written against `repo_root` (or the one changed repo) — the default for every non-control-plane run. If `state.repos` lists sibling repos but only the primary `repo_root` changed, stay here.
-- **Set size > 1 → surface fanout.** Each per-repo helper reviews only that repo's diff against its slice of `plan.md`/`spec.md` and returns a per-repo block; the coordinator writes the unified `review.md` (one `### Repo: <path>` subsection per repo under `## Per-repo review`, plus the global anti-bias walk ticking each `spec.md` AC against whichever repo's block implements it). The model-override + lens rules apply **to each per-repo helper** (decide per repo from that repo's plan slice); the coordinator keeps the high-stakes-model rule (opus when any repo earned it). Resume re-runs the whole coordinator. **Aggregate verdict = `pass` iff every repo passes**; any repo `fix-required` makes the run `fix-required`. **`cycles.review` bumps once for the whole fanout, not per repo.**
+Coordinator `qa` (QA — Execute, below). Each per-repo helper runs that repo's suite over its `test-plan.md` slice; coordinator writes `tests.md`. **Aggregate `passing` iff every repo passes**; any `failing` → run `failing`. **`cycles.test` bumps once for the whole fanout.** For `fix`, the regression contract lives in the one repo holding the bug — only that repo's helper runs the pre-fix verification.
 
-**Non-primary-repo blocking finding.** `engineer` (step 10) and ship (step 15) are scoped to the primary `repo_root` (`.claude/orchestrator/references/size-execution.md > Multi-repo boundary`), so they can only remediate findings *in* `repo_root`. When the aggregate `fix-required` is driven by a finding in a repo ≠ `repo_root`, **do not route it to `engineer`** — surface it via `AskUserQuestion` (fix manually in that repo, or accept/defer), and route only the `repo_root` findings to `engineer`.
+**Visual verification.** Restate the visual instruction in each per-repo qa prompt whose diff touches UI; the coordinator carries per-repo visual findings + deferrals up, and you run the MCP backstop for any repo that deferred.
 
-## Step 13 (security) — surface fanout
+## Step 12 (review) — deltas
 
-**Surface (per-repo) fanout (same common shape; changed-repo-set compute per step 11).** Security-review set size > 1 → coordinator is `lead` in its **Surface-coordinator variant** (Lead — Mode C, below), passing the tripping-repo set; each per-repo helper returns a per-repo block and the coordinator writes the unified `security.md` (one `### Repo: <path>` subsection each). Set size ≤ 1 → single-pass.
+Coordinator `lead` (Lead — Mode B, below). Each per-repo helper reviews only that repo's diff against its `plan.md`/`spec.md` slice; coordinator writes `review.md`. The model-override + lens rules apply **per per-repo helper** (decide per repo from that repo's plan slice); the coordinator keeps the high-stakes-model rule (opus when any repo earned it). **Aggregate `pass` iff every repo passes**; any `fix-required` → run `fix-required`. **`cycles.review` bumps once for the whole fanout, not per repo.** Resume re-runs the whole coordinator.
 
-**Non-primary-repo high finding.** A `high` in a repo ≠ `repo_root` can't be auto-fixed this slice (`engineer` scoped to `repo_root`). Surface it via `AskUserQuestion` (fix manually, or accept the risk) instead of routing to `engineer`; route only `repo_root` highs. A `high` you can't auto-fix is still blocking — never downgrade it to fit the boundary.
+## Step 13 (security) — deltas
+
+Runs only when the **security-review** set size > 1; coordinator `lead` (Lead — Mode C, below), passing the tripping-repo set. Each per-repo helper returns a block; coordinator writes `security.md`. Set size ≤ 1 → single-pass.
 
 ---
 
 # Agent contracts — per-repo + surface-coordinator variants
 
-> These were inline in `lead.md` / `qa.md` but only ever run on a multi-repo control-plane run, so they live here off the always-loaded agent bodies. The agent docs carry a one-line pointer; the orchestrator (or the coordinator nesting helpers) passes the relevant section to each spawn. A single-repo run never reads this.
+> These were inline in `lead.md` / `qa.md` but only run on a multi-repo control-plane run, so they live here off the always-loaded agent bodies. The agent docs carry a one-line pointer; the orchestrator (or the coordinator nesting helpers) passes the relevant section to each spawn. A single-repo run never reads this.
+
+**Per-repo variant — shared rules (all three modes).** You are **one per-repo helper** — a `general-purpose` agent the Surface-coordinator nested with this contract inlined, `repo_root=<r>` one of the run's repos (security: one of the tripping repos). Act on **only that repo** (scope every command to `<r>`, e.g. `git -C <r> …`) and **return** a `### Repo: <r>` text block — you do **NOT** write the shared artifact (single-writer; the coordinator owns it). **Single-pass** — no inner lens/bucket/category fanout for one repo. Walk only this repo's slice of plan/spec/test-plan; an AC another repo proves is `not-in-this-repo` so the synthesizer reconciles it globally (anti-bias still binds within the slice). Mode-specific diff source + return fields below.
+
+**Surface-coordinator variant — shared protocol (all three modes).** The orchestrator spawns you as the coordinator (it passes the changed/tripping-repo list; review/security always on `opus`). Run the whole phase in **one spawn**:
+1. **Nest one `general-purpose` helper per repo** — foreground, all in one message, each carrying the **Per-repo variant** contract inlined + `repo_root=<r>`. Dispatch mechanics: **Common shape** above.
+2. **Collect** every helper's `### Repo: <r>` block (note `Dispatched-as: general-purpose` once in the artifact), then write the single artifact: one `### Repo: <path>` subsection per repo under the mode's `## Per-repo …` heading. Apply the mode's global walk + aggregate rule + the single **run-level** `Cycle` counter (not per-repo), then return the mode's tuple.
 
 ## Lead — Mode B (Review)
 
-### Per-repo variant (one repo of a multi-repo run)
+**Per-repo:** diff = `git -C <r> diff` + any new commits this run made on `<r>`'s branch — that repo only. Walk the plan steps whose `path#anchor` is in `<r>` and ACs satisfiable here (every in-slice step → one row; no "looks good"). **Lens-fanout exception:** lens-fanout (tiered review workers — core 3 at M, full 6 at L/high-stakes) only if *this repo's own* diff is genuinely non-trivial AND the orchestrator's concurrency cap allows; else one direct pass. **Return:** `### Repo: <r>` — Plan adherence (this repo's steps), Acceptance-criteria evidence (with `not-in-this-repo` where applicable), Blocking / Non-blocking findings (`path:line`), one-line verdict (`pass` | `fix-required`).
 
-When you are dispatched as **one per-repo reviewer** of a control-plane run's surface fanout (step 12) — a `general-purpose` helper nested by the Surface-coordinator with this contract inlined — `repo_root=<r>` is one of `state.repos`. Review **only that repo's diff** and **return** a per-repo findings block; you do **NOT** write the shared `review.md` (single-writer; the Surface-coordinator owns it).
-
-- The diff is `git -C <r> diff` plus any new commits this run made on the branch in `<r>` — that repo only.
-- Walk the **slice** of `plan.md`/`spec.md` this repo implements: plan steps whose `path#anchor` is in `<r>`, and ACs satisfiable here. Do **not** fail an AC that another repo implements — mark it `not-in-this-repo` so the synthesizer reconciles it globally. The anti-bias discipline still binds within your slice (every in-slice step → one row; no "looks good").
-- **Single-pass by default.** Only lens-fanout (the tiered review workers — core 3 at M, full 6 at L/high-stakes) if *this repo's own* diff is genuinely non-trivial AND the orchestrator's concurrency cap allows — otherwise one direct pass.
-- **Return shape (text, not a file):** a `### Repo: <r>` block — Plan adherence (this repo's steps), Acceptance-criteria evidence (this repo's slice, with `not-in-this-repo` where applicable), Blocking / Non-blocking findings (`path:line`), and a one-line per-repo verdict (`pass` | `fix-required`).
-
-### Surface-coordinator variant (nests per-repo helpers, then writes the unified review.md)
-
-When the orchestrator spawns you as the **surface-fanout coordinator** for a multi-repo run (it passes the changed-repo list; always on `opus`), you run the whole per-repo review in **one spawn** — nest, collect, write:
-
-1. **Nest one per-repo helper per repo** — `Agent(subagent_type="general-purpose", …)` per `<r>`, foreground, all in one message, each carrying the **Per-repo variant** contract above inlined + `repo_root=<r>`. Dispatch mechanics canonical in `fanout.md > Surface (per-repo) fanout`.
-2. **Collect** every helper's `### Repo: <r>` block (note `Dispatched-as: general-purpose` once in the artifact), then write the single `review.md`:
-
-- One `### Repo: <path>` subsection per repo under `## Per-repo review`, carrying that repo's plan-adherence + findings (mirrors the `## Per-agent findings` shape).
-- **The global anti-bias walk still binds:** walk every `spec.md` AC **once across all repos** in the top-level `Acceptance-criteria check` — tick each against whichever repo's block provides the evidence; an AC **no** repo implements is a blocking finding. Same for plan steps and `Files touched`.
-- **Cross-repo coherence (coupled changes only).** If the changed repos **share a contract** this change touches — a proto/schema/IDL bump, a shared client/server signature (the *coupled* case; an independent sweep has none) — verify it is **consistent across every repo**: same contract version, compatible regenerated signatures/wire shape, no repo left on the old version. A skew (repo A regenerated, repo B not; two repos on different versions) is a **blocking** finding — the one defect per-repo isolation structurally cannot see. Read the shared artifact across the repos **yourself** to confirm; don't infer it from the per-repo blocks alone.
+**Coordinator** — write `review.md`, subsections under `## Per-repo review` (mirrors the `## Per-agent findings` shape):
+- **Global anti-bias walk:** walk every `spec.md` AC **once across all repos** in the top-level `Acceptance-criteria check` — tick each against whichever repo's block provides the evidence; an AC **no** repo implements is a blocking finding. Same for plan steps and `Files touched`.
+- **Cross-repo coherence (coupled changes only).** If the changed repos **share a contract** this change touches — a proto/schema/IDL bump, a shared client/server signature (the *coupled* case; an independent sweep has none) — verify it's **consistent across every repo** (same contract version, compatible regenerated signatures/wire shape, no repo left on the old version). A skew is a **blocking** finding — the one defect per-repo isolation structurally can't see. Read the shared artifact across the repos **yourself**; don't infer it from the per-repo blocks alone.
 - **Aggregate `Verdict` = `pass` iff every repo passed**; lift all repos' blocking findings into the top-level `### Blocking`.
-- Set the single **run-level** `Cycle` counter (not per-repo).
-- Return: review.md path + aggregate verdict + cycle + total blocking count + unticked-AC count + the repo count.
+- **Return:** review.md path + aggregate verdict + cycle + total blocking count + unticked-AC count + repo count.
 
 ## Lead — Mode C (Security review)
 
-### Per-repo variant (one repo of a multi-repo run)
+**Per-repo:** scope the diff to `<r>` (`git -C <r> diff`); walk only the buckets *this repo's* paths trip. **Return:** `### Repo: <r>` — Threat model (this repo), Checklist marks, Blocking (high) / Non-blocking (medium/low) findings (`path:line`), one-line verdict (`pass` | `fix-required`).
 
-When you are dispatched as **one per-repo security reviewer** of a control-plane run's surface fanout (step 13) — a `general-purpose` helper nested by the Surface-coordinator with this contract inlined — `repo_root=<r>` is one of the repos that tripped sensitive paths. Threat-model and check **only that repo's diff** and **return** a per-repo block; you do **NOT** write the shared `security.md` (single-writer; the Surface-coordinator owns it).
-
-- Scope the diff to `<r>` (`git -C <r> diff`). Walk only the buckets *this repo's* paths trip.
-- **Single-pass** — do not nest the per-bucket fanout for one repo. One threat model, one checklist walk for `<r>`.
-- **Return shape (text):** a `### Repo: <r>` block — Threat model (this repo), Checklist marks, Blocking (high) / Non-blocking (medium/low) findings (`path:line`), and a one-line per-repo verdict (`pass` | `fix-required`).
-
-### Surface-coordinator variant (nests per-repo helpers, then writes the unified security.md)
-
-When the orchestrator spawns you as the **surface-fanout coordinator** for a multi-repo security review (it passes the tripping-repo set), you run the whole per-repo security pass in **one spawn** — nest, collect, write:
-
-1. **Nest one per-repo helper per tripping repo** — `Agent(subagent_type="general-purpose", …)` per `<r>`, foreground, all in one message, each carrying the **Per-repo variant** contract above inlined + `repo_root=<r>`. Dispatch mechanics canonical in `fanout.md > Surface (per-repo) fanout`.
-2. **Collect** every helper's `### Repo: <r>` block (note `Dispatched-as: general-purpose` once), then write the single `security.md`:
-
-- One `### Repo: <path>` subsection per tripping repo under `## Per-repo security`, each carrying that repo's threat model + findings.
-- **Aggregate `Verdict` = `fix-required` iff any repo has a `high`** (a high in any repo is blocking); lift every repo's high findings into the top-level `### Blocking (severity = high)`, medium/low into Non-blocking.
+**Coordinator** — write `security.md`, subsections under `## Per-repo security` (each = that repo's threat model + findings):
+- **Aggregate `Verdict` = `fix-required` iff any repo has a `high`** (a high in any repo is blocking); lift every high into the top-level `### Blocking (severity = high)`, medium/low into Non-blocking.
 - `Trigger` lists the union of buckets that fired across all repos.
-- Return: security.md path + aggregate verdict + total high/medium/low counts + the per-repo verdicts + repo count.
+- **Return:** security.md path + aggregate verdict + total high/medium/low counts + per-repo verdicts + repo count.
 
 ## QA — Execute (Test)
 
-### Per-repo variant (one repo of a multi-repo run)
+**Per-repo:** run that repo's suite inside `<r>` over its `test-plan.md > Coverage plan` rows; honour the **batch-the-run** rule per repo (one suite command in `<r>`, never one Bash call per file). **For `fix`:** only the repo holding the bug runs the regression pre-fix verification (`test-plan.md > Regression contract`); a tester for a repo with no regression contract skips that step. **Return:** `### Repo: <r>` — Results table, Acceptance-criteria coverage (this repo's slice), any Failing, this repo's diff-coverage vs floor, **any Visual verification findings or a `visual: deferred to orchestrator MCP backstop` note (when this repo's diff touches UI)**, one-line status (`passing` | `failing` — a blocking visual defect makes it `failing`).
 
-When you are dispatched as **one per-repo tester** of a control-plane run's surface fanout (step 11) — a `general-purpose` helper nested by the Surface-coordinator with this contract inlined — `repo_root=<r>` is one of `state.repos`. Run **only that repo's suite** over its slice of `test-plan.md` and **return** a per-repo result block; you do **NOT** write the shared `tests.md` (single-writer; the Surface-coordinator owns it).
-
-- Scope every command to `<r>` (`git -C <r> …`, run the suite inside `<r>`). Honour the **batch-the-run** rule per repo: one suite command in `<r>`, never one Bash call per file.
-- Cover the `test-plan.md > Coverage plan` rows whose tests live in `<r>`; an AC another repo proves is `not-in-this-repo` for you.
-- **For `fix`:** only the repo that holds the bug runs the regression pre-fix verification (`test-plan.md > Regression contract`); a per-repo tester for a repo with no regression contract skips that step.
-- Single-pass by default — don't nest the per-category fanout for one repo's slice.
-- **Return shape (text, not a file):** a `### Repo: <r>` block — Results table, Acceptance-criteria coverage (this repo's slice), any Failing, this repo's diff-coverage vs floor, **any Visual verification findings or a `visual: deferred to orchestrator MCP backstop` note (when this repo's diff touches UI)**, and a one-line per-repo status (`passing` | `failing` — a blocking visual defect makes it `failing`).
-
-### Surface-coordinator variant (nests per-repo helpers, then writes the unified tests.md)
-
-When the orchestrator spawns you as the **surface-fanout coordinator** for a multi-repo run (it passes the changed-repo list), you run the whole per-repo test phase in **one spawn** — nest, collect, write:
-
-1. **Nest one per-repo helper per repo** — `Agent(subagent_type="general-purpose", …)` per `<r>`, foreground, all in one message, each carrying the **Per-repo variant** contract above inlined + `repo_root=<r>`. Dispatch mechanics canonical in `fanout.md > Surface (per-repo) fanout`.
-2. **Collect** every helper's `### Repo: <r>` block (note `Dispatched-as: general-purpose` once), then write the single `tests.md`:
-
-- One `### Repo: <path>` subsection per repo under `## Per-repo results`, carrying that repo's results + coverage.
+**Coordinator** — write `tests.md`, subsections under `## Per-repo results` (each = that repo's results + coverage):
 - **Global AC-coverage walk:** map every `spec.md` AC **once across all repos** to whichever repo's actual test proves it (including each AC's `on error / at boundary:` clause and `measured:` target) — an AC no repo's tests cover is an unmapped-AC finding.
 - **Cross-repo coherence (coupled changes).** If the changed repos share a contract this change touches, confirm a **cross-repo integration/e2e test actually exercises the shared boundary** (a client in one repo against the server in another) — per-repo suites run in isolation and pass even when two repos sit on incompatible contract versions. A failing cross-repo test is `failing` like any other; the **absence** of any such test on a coupled change is a coverage gap — record it, don't let isolated green suites imply the boundary is proven.
-- **Aggregate `Status` = `passing` iff every repo passed**; any repo `failing` ⇒ run `failing`. Collect every repo's failures into the top-level `Failing`.
-- Set the single **run-level** `Cycle` counter. Carry each repo's below-floor coverage rows, edge-case gaps, and any `[plan-contradiction]` findings up so the orchestrator can escalate them once. **Carry each repo's Visual verification findings up too** — surface any blocking visual defect (→ `failing`) and any `visual: deferred to orchestrator MCP backstop` note; a UI defect in a non-primary repo must not vanish in synthesis.
-- Return: tests.md path + aggregate status + cycle + total failure count + unmapped-AC count + per-repo coverage summary + repo count.
+- **Aggregate `Status` = `passing` iff every repo passed**; any `failing` ⇒ run `failing`. Collect all failures into the top-level `Failing`.
+- Carry each repo's below-floor coverage rows, edge-case gaps, and `[plan-contradiction]` findings up so the orchestrator escalates them once. **Carry each repo's Visual verification findings up too** — surface any blocking visual defect (→ `failing`) and any `visual: deferred to orchestrator MCP backstop` note; a UI defect in a non-primary repo must not vanish in synthesis.
+- **Return:** tests.md path + aggregate status + cycle + total failure count + unmapped-AC count + per-repo coverage summary + repo count.

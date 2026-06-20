@@ -1,6 +1,8 @@
 # Security review: <title>
 
-**Plan**: [./plan.md](./plan.md) · **Reviewed**: YYYY-MM-DD · **Verdict**: pass | fix-required
+**Plan**: [./plan.md](./plan.md)
+**Reviewed**: YYYY-MM-DD
+**Verdict**: pass | fix-required
 **Trigger**: <bucket(s) the diff touched — auth | crypto | sql | html | path | exec | deserialise | secrets | network>
 
 ## Threat model *(required)*
@@ -20,17 +22,21 @@ Walk ONLY the buckets your `Trigger` names; mark ✓ / ✗ / N/A with a one-line
 ## Findings *(required)*
 
 ### Blocking (severity = high)
+
 - `path:line` — <issue> → <fix>
 
 ### Non-blocking (severity = medium / low)
+
 - `path:line` — <issue> → <fix or accepted risk>
 
 ## Sign-off *(required)*
 
 pass | fix-required (counts against the review cycle budget)
 
-<!--
-Fanout-only section — add when surface-axis fanout ran:
-Per-repo security (one `### Repo: <path>` per tripping repo; Trigger / Verdict / Findings stay global).
-Shape + when: see  orchestrator/references/surface-fanout.md > Lead — Mode C (Security review).
--->
+---
+
+**Fanout-only section** — add when surface-axis fanout ran:
+
+- **Per-repo security** — one `### Repo: <path>` per tripping repo; Trigger / Verdict / Findings stay global
+
+Shape → **orchestrator/references/surface-fanout.md > Lead — Mode C**.
