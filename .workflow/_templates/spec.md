@@ -1,44 +1,68 @@
 # Spec: <title>
 
 **ID**: `NNNN-type-slug`
-
 **Type**: feat | fix | refactor | chore | docs | spike
-
 **Status**: draft | approved
-
 **Ship as**: one-drop | staged
-
 **Open PR on ship**: yes | no
-
 **E2E + visual**: off | on
-
 **Parent**: none | `<parent-id>`
 
-## Outcome *(required)*
+## User Stories *(required)*
 
-Why this run exists — the user-facing change the Acceptance criteria below verify.
+Priority-ordered, each independently testable — build P1 alone and you still have a viable MVP. Acceptance scenarios carry stable ids (`AC1`, `AC2`, …) that plan / tasks / test / review all reference.
 
-- **Before**: <the gap or pain today, e.g. "users can't reset a password without emailing support">
-- **After**: <the one-sentence outcome the acceptance criteria verify>
-- **Benefit**: <who gets what>
+### US1 — <title> (Priority: P1) 🎯 MVP
 
-## Acceptance criteria *(required)*
+<one plain-language sentence: who does what, to what end>
 
-Each AC is one observable, testable behaviour. Write the happy path and its boundary on separate lines, using real values (never invented ones).
+**Why this priority**: <why this is the most critical slice>
+**Independent test**: <how to verify US1 alone delivers value>
 
-- [ ] **AC1**: <observable behaviour, e.g. "submitting a valid form creates the record">
-  - **Example**: <real input> → <expected output>
-  - **On error / at boundary**: <bad input / limit / unauthorized> — or `none — <default>`
+**Acceptance scenarios**
 
-- [ ] **AC2**: <measurable target, e.g. "list endpoint returns in < 300ms at p95">
-  - **measured**: <command / observable>
-
-*Mark an open requirement inline:* `<behaviour>` [NEEDS CLARIFICATION: what is unspecified?]
+- [ ] **AC1** — **Given** <initial state>, **When** <action>, **Then** <expected outcome>.
+- [ ] **AC2** — **Given** <state>, **When** <boundary / bad input>, **Then** <on-error outcome> — or `none — <default>`.
 
 ---
 
-**Optional sections** — add one only when its trigger fires, in this order; delete the rest (no empty headers, no "N/A"):
+### US2 — <title> (Priority: P2)
 
-Problem · Users · User journey · Scope—Out · Glossary · Non-functional requirements · Definition of Done · Reproduction (fix) · Timebox (spike) · Constraints · References / examples · Discovery notes · Carried-over follow-ups
+<one plain-language sentence>
 
-Triggers + hard rules (NFR→AC, no invented values, [NEEDS CLARIFICATION]) → **pm.md > Spec sections**.
+**Why this priority**: <value, and why lower than P1>
+**Independent test**: <how to verify US2 alone>
+
+**Acceptance scenarios**
+
+- [ ] **AC3** — **Given** <state>, **When** <action>, **Then** <outcome>.
+
+### Edge Cases
+
+- What happens when <boundary condition>? → <handling> (FR-###).
+- How does the system handle <error scenario>? → <handling> (FR-###).
+
+## Requirements *(required)*
+
+### Functional Requirements
+
+- **FR-001**: System MUST <specific capability, e.g. "add a task with a non-empty trimmed title">.
+- **FR-002**: Users MUST be able to <key interaction>.
+
+### Key Entities *(include when the feature involves data)*
+
+- **<Entity>** — <what it represents; key attributes, no implementation>.
+
+## Success Criteria *(required)*
+
+Measurable, technology-agnostic outcomes.
+
+- **SC-001**: <measurable metric, e.g. "a first-time user adds their first item in under 5 s">.
+- **SC-002**: <measurable performance / volume metric>.
+
+## Assumptions
+
+- <reasonable default chosen where the request was silent>.
+
+---
+*Optional — add when triggered, delete the rest: Problem · Users · User journey · Scope—Out · Glossary · NFR · Definition of Done · Reproduction (fix) · Timebox (spike) · Constraints · References · Discovery notes · Carried-over follow-ups. Structure + hard rules (priority, Given/When/Then with AC ids, FR/SC, no invented values, [NEEDS CLARIFICATION]) → **pm.md > Spec sections**.*

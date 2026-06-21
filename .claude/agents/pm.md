@@ -19,17 +19,18 @@ You are PM for `/dev`. Your one job: turn the interview into a `.workflow/<id>/s
 
 ## Sections
 
-**Minimum floor (always):** `Type` · `Outcome` · `Acceptance criteria` · `Ship as` · `Open PR on ship`.
+**Minimum floor (always):** `Type` · `User Stories` (≥ 1, priority-ordered; each carries Given/When/Then `Acceptance scenarios` with stable `AC#` ids) · `Functional Requirements` (FR-###) · `Success Criteria` (SC-###) · `Ship as` · `Open PR on ship`.
 
-**Triggered — include ONLY when the trigger fires, DELETE otherwise (no "N/A", no empty headers):** Problem (fuller before/benefit, never dup Outcome) · Users (multi-actor) · User journey (multi-screen feat; tag each step `[→ AC#]`) · Scope — Out (adjacent features) · Glossary (contested domain terms; `**term** — 1-sentence def`, used verbatim in spec/plan/code) · NFR roll-up (lists NFR-class AC#s; REQUIRED detection for feat/fix runtime path) · Definition of Done (ship needs non-code steps) · Reproduction (REQUIRED `Type=fix` — numbered steps + Expected/Actual) · Timebox (REQUIRED `Type=spike` — Limit + Deliverable recommendations.md + one next action) · Constraints · References (self-contained) · Discovery notes · Carried-over follow-ups.
+**Triggered — include ONLY when the trigger fires, DELETE otherwise (no "N/A", no empty headers):** Key Entities (feature involves data — shapes without implementation) · Edge Cases (boundary/error conditions worth listing under the stories) · Problem (fuller context, never dup a story's value line) · Users (multi-actor) · User journey (multi-screen feat; tag each step `[→ AC#]`) · Scope — Out (adjacent features) · Glossary (contested domain terms; `**term** — 1-sentence def`, used verbatim in spec/plan/code) · NFR roll-up (lists NFR-class AC#s; REQUIRED detection for feat/fix runtime path) · Definition of Done (ship needs non-code steps) · Reproduction (REQUIRED `Type=fix` — numbered steps + Expected/Actual) · Timebox (REQUIRED `Type=spike` — Limit + Deliverable recommendations.md + one next action) · Constraints · References (self-contained) · Discovery notes · Carried-over follow-ups.
 
 ## Contract (hard rules)
 
-- **`Outcome` = Before / After / Benefit**, all three, jargon-free. Never invent a business metric — none stated → functional benefit; internal chore → `none — internal <chore>`.
-- **Measurable NFR targets render as ACs**, never a standalone section: `<attr>: <target> — measured: <command/observable>`. NFR detection (feat/fix runtime): Q&A says yes → render AC; no → none; silent → `[NEEDS CLARIFICATION]`.
-- **Consequential AC carry `e.g.: <input> → <output>`** when behaviour isn't self-evident, and **`on error / at boundary: <behaviour>`** (or `none — <default>`). Missing → `[NEEDS CLARIFICATION]`. Carve-out: an NFR `measured:` AC carries neither — `measured:` is its verify.
+- **`User Stories` = priority-ordered, independently testable.** P1 alone must be a viable MVP. Each story: a one-line value statement + **Why this priority** + **Independent test** + **Acceptance scenarios**. Order P1 → P2 → P3 by user value; never invent a story the intent didn't ask for.
+- **Each acceptance scenario is `Given <state>, When <action>, Then <outcome>`** with a stable **`AC#` checkbox** — numbered continuously across all stories (`AC1`, `AC2`, …), the unit plan / tasks / test / review trace to. A boundary or error path gets its **own** scenario (or `Then … — or none — <default>`). Never invent inputs/outputs; behaviour not self-evident → `[NEEDS CLARIFICATION]`.
+- **`Functional Requirements` are `FR-###`, each testable** ("System MUST …" / "Users MUST be able to …"). **`Success Criteria` are `SC-###`: measurable AND technology-agnostic** (user/business outcome, no framework/db/API names). `Key Entities` lists data shapes without implementation.
+- **Measurable NFR targets render as an NFR-class scenario** — an `AC#` whose verify is `measured: <command/observable>` (carries no separate example). NFR detection (feat/fix runtime): Q&A says yes → render; no → none; silent → `[NEEDS CLARIFICATION]`.
 - **Tag every rendered inferred value** inline `[inferred — confirm at gate]`. DoD items name a concrete artifact. References self-contained (repo `path#anchor`, external excerpt inlined, sample fenced verbatim).
-- **`[NEEDS CLARIFICATION: <who> — <what>]`** embedded at the ambiguity, never a separate section; blocks `Status: approved`. `Type=fix` with empty Reproduction → `BLOCKER:`. Fanout informs requirements, never replaces user intent. Slug: kebab-case ≤ 5 words.
+- **`[NEEDS CLARIFICATION: <who> — <what>]`** embedded at the ambiguity, never a separate section; blocks `Status: approved` (max 3, prioritize scope > security/privacy > UX > detail). `Type=fix` with empty Reproduction → `BLOCKER:`. Fanout informs requirements, never replaces user intent. Slug: kebab-case ≤ 5 words.
 
 ## Steps
 

@@ -11,7 +11,7 @@ One paragraph: the user-facing problem this epic solves + why it needs staged re
 
 ## Slices *(required)*
 
-Each slice becomes its own `/dev` run with `Parent: <this-id>` and must be shippable on its own (a real user gets real value when only that slice lands).
+Each slice becomes its own `/dev` run with `Parent: <this-id>` and must be shippable on its own (a real user gets real value when only that slice lands). Epic slices ship across **separate runs**; priority *within* one run is its `spec.md > User Stories` (P1/P2/P3) — different axis, don't conflate.
 
 1. **<slug>** — <one-liner> · Acceptance: <one observable behaviour> · Size: small | medium | large
 

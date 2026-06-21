@@ -65,7 +65,7 @@ You don't need 100% — you need the behavior *that your change could affect*. C
 ## The /dev baseline-capture contract
 
 This technique is what the `/dev` workflow's refactor path operationalizes:
-- **plan** (`lead`): when the touched behavior isn't already covered, plan step 1 is "capture characterization baseline for `<behaviour>` at `path#anchor`."
+- **plan** (`lead`): when the touched behavior isn't already covered, `tasks.md` task 1 is "capture characterization baseline for `<behaviour>` at `path#anchor`."
 - **implement** (`engineer`): write the characterization/golden-master tests first, confirm they pass on the unchanged code, commit them *before* the structural change.
 - **test** (`qa`): verify a baseline existed and the refactor still satisfies it; *no baseline + uncovered behavior = blocking gap* (the equivalence claim is unverifiable). Recorded in `tests.md > Baseline`.
 

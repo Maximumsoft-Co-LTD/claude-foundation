@@ -1,24 +1,24 @@
 # Review: <title>
 
-**Plan**: [./plan.md](./plan.md)
+**Plan**: [./plan.md](./plan.md) · **Tasks**: [./tasks.md](./tasks.md)
 **Spec**: [./spec.md](./spec.md)
 **Reviewed**: YYYY-MM-DD
 **Verdict**: pass | fix-required
 **Cycle**: 1 of max 2
 
-## Plan adherence *(required)*
+## Tasks adherence *(required)*
 
-One row per plan step — no skipping rows. A deviation needs a one-line reason.
+One row per task (`tasks.md`) — no skipping rows. A deviation needs a one-line reason.
 
-- [x] Step 1 — implemented as planned
-- [ ] Step 2 — deviation: <what + why>
+- [x] T001 — implemented as planned
+- [ ] T002 — deviation: <what + why>
 
 ## Acceptance-criteria check *(required)*
 
-One row per spec.md AC, including each `on error / at boundary` clause and any `measured:` target. Re-verify against the diff + running code (don't trust the checkbox). Any criterion that can't be ticked = **blocking**.
+One row per spec.md acceptance scenario (`AC#`), including each boundary/error scenario and any `measured:` target. Re-verify against the diff + running code (don't trust the checkbox). Any scenario that can't be ticked = **blocking**.
 
-- [ ] Criterion 1 — evidence: `path:line` / behaviour observed
-- [ ] Criterion 1 (on error / at boundary) — evidence: `path:line` / behaviour observed
+- [ ] AC1 — evidence: `path:line` / behaviour observed
+- [ ] AC1 (boundary / error scenario) — evidence: `path:line` / behaviour observed
 
 ## Non-AC slot check *(required when spec has a Definition of Done or Constraints)*
 

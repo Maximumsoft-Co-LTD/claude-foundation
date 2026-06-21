@@ -21,10 +21,10 @@ Each item paired with WHY. Vague entries get cut.
 
 ## Acceptance criteria status *(required)*
 
-Final state of every checkbox in `spec.md > Acceptance criteria`.
+Final state of every acceptance scenario (`AC#`) in `spec.md > User Stories`.
 
-- [x] Criterion 1 — shipped
-- [ ] Criterion 2 — deferred → see Follow-ups
+- [x] AC1 — shipped
+- [ ] AC2 — deferred → see Follow-ups
 
 ## Memory candidates (facts) *(required)*
 
@@ -55,8 +55,8 @@ A multi-step procedure — ≥ 3 steps OR conditional logic, AND a clear trigger
 
 **Optional sections** — add when this run produced it, delete the rest:
 
-- **Deviations from plan** — actual ≠ plan (Step X became Y — reason)
+- **Deviations from plan** — actual ≠ plan (Task X became Y — reason)
 - **Follow-ups** — append each verbatim to FOLLOWUPS.md > Open, then mirror here:
   - **item**: <one line> · **type hint**: feat | fix | … · **priority**: low | med | high
-  - **consumed**: <followup-id> — landed via step <n>
+  - **consumed**: <followup-id> — landed via task <n>
 - **Security findings (carry-over)** — when security.md exists (its non-blocking medium / low findings)

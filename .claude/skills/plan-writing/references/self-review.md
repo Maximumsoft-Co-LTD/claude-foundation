@@ -17,45 +17,45 @@ Search the entire plan for these strings. Every hit is a fix-before-draft:
 | `see spec`, `as discussed`, `per the design` | Forces reader to dereference. Plan should be self-contained for the slice it owns. |
 | `etc.`, `and so on`, `among others` | Hides scope. List it or scope it out. |
 | `path/to/file`, `foo/bar`, `<file>` | Template residue. Replace with a real `path#anchor` (symbol or unique snippet) or delete the bullet. |
-| `e.g.`, `for example` *in Steps* | Steps are imperative actions, not illustrations. Move examples to `Approach`. |
-| `should`, `would`, `might` *in Steps* | Steps are commitments, not hedges. "Add `getUserById` at `src/users.ts#getUserById`", not "should probably add a lookup". |
-| `consider X`, `think about Y` *in Steps* | Steps are decisions already made. If it still needs deciding, it's an `Open question` in spec, not a Step. |
+| `e.g.`, `for example` *in tasks* | tasks are imperative actions, not illustrations. Move examples to `Summary`. |
+| `should`, `would`, `might` *in tasks* | tasks are commitments, not hedges. "Add `getUserById` at `src/users.ts#getUserById`", not "should probably add a lookup". |
+| `consider X`, `think about Y` *in tasks* | tasks are decisions already made. If it still needs deciding, it's an `Open question` in spec, not a task. |
 
-If any pattern appears in `Approach`, that's usually OK — `Approach` carries the *why* and may use hedging. The hard rule is **`Steps` and `Files touched` must be placeholder-free**.
+If any pattern appears in `Summary`, that's usually OK — `Summary` carries the *why* and may use hedging. The hard rule is **the `tasks.md` tasks must be placeholder-free**.
 
 ### Scan 2 — Requirement coverage: acceptance criteria + Definition of Done
 
-Tag presence is the floor; sufficiency is the bar. Open `spec.md > Acceptance criteria`. For each checkbox:
+Tag presence is the floor; sufficiency is the bar. Open `spec.md > User Stories`. For each acceptance scenario (`AC#`):
 
-1. Search the plan for the AC's number (`[AC1]`, `[AC2]`, ...).
-2. Confirm at least one `Step` carries that tag.
-3. Read those Steps. Taken *together*, do they fully deliver the AC — not merely touch it? If the connection is hand-wavy, the Step is too abstract — split it.
-4. Confirm the AC's *acceptance check actually runs*: at least one tagged Step's `verify:` clause exercises the AC's behaviour. When the spec AC carries an `e.g.: <input> → <expected output>` example, that example is the verify target — the verify should produce that output for that input. A tagged AC with no verify that checks it is coverage on paper only.
-5. **Cover the error/boundary clause and any measured target.** When the spec AC carries an `on error / at boundary:` line, the happy path is not enough: a Step must deliver the unhappy path AND a `verify:` must exercise it (feed the bad input / hit the limit / send the unauthorized caller, assert the recorded behaviour). When the AC carries a `measured:` perf/security/a11y target, a Step's verify runs that measurement. An AC whose boundary clause or measured target has no delivering+verifying Step is the silent-guess gap this scan exists to catch.
+1. Search `tasks.md` for the AC's number (`[AC1]`, `[AC2]`, ...).
+2. Confirm at least one task carries that tag.
+3. Read those tasks. Taken *together*, do they fully deliver the scenario — not merely touch it? If the connection is hand-wavy, the task is too abstract — split it.
+4. Confirm the scenario's *acceptance check actually runs*: at least one tagged task's `verify:` clause exercises the `Then <outcome>`. A tagged AC with no verify that checks it is coverage on paper only.
+5. **Cover the boundary/error scenario and any measured target.** When the AC has a separate boundary/error scenario, the happy path is not enough: a task must deliver the unhappy path AND a `verify:` must exercise it (feed the bad input / hit the limit / send the unauthorized caller, assert the recorded behaviour). When the AC carries a `measured:` perf/security/a11y target, a task's verify runs that measurement. An AC whose boundary scenario or measured target has no delivering+verifying task is the silent-guess gap this scan exists to catch.
 
-If an AC has no step:
-- The plan is incomplete → add the steps.
+If an AC has no task:
+- The plan is incomplete → add the tasks.
 - OR the AC is out of scope for this run → state it in `Out of scope` and confirm with the orchestrator/user.
 
-If a Step has no AC tag:
+If a task has no AC tag:
 - It may legitimately deliver a `spec.md > Definition of Done` item (telemetry, a doc, a rollback flag — these don't thread through `[AC#]` tags) → tag it `[DoD]` so it doesn't read as scope-creep.
 - Else the step doesn't earn its place → delete it, OR it's scope-creep → move to `FOLLOWUPS.md`.
 - OR the spec is missing an AC the work actually delivers → go back and add the AC to spec first, then re-tag.
 
-**Definition-of-Done coverage** (skip if the spec has no `Definition of Done`). DoD items are deliverables but carry no `[AC#]` tag, so the AC checks above won't catch a missing one — and review (`lead` Mode B) only catches it in the diff, a cycle later. For each DoD item: either a `[DoD]`-tagged Step delivers the named artifact AND its `verify:` confirms it exists (the metric emits, the doc path is present, the flag toggles), OR the item is genuinely post-ship ("watch error rate for a week") and carries an explicit one-line deferred note in `Approach`/`Out of scope`. An in-run DoD item with neither is the gap this check exists to catch — fix it before draft, not at review.
+**Definition-of-Done coverage** (skip if the spec has no `Definition of Done`). DoD items are deliverables but carry no `[AC#]` tag, so the AC checks above won't catch a missing one — and review (`lead` Mode B) only catches it in the diff, a cycle later. For each DoD item: either a `[DoD]`-tagged task delivers the named artifact AND its `verify:` confirms it exists (the metric emits, the doc path is present, the flag toggles), OR the item is genuinely post-ship ("watch error rate for a week") and carries an explicit one-line deferred note in `Summary`/`Out of scope`. An in-run DoD item with neither is the gap this check exists to catch — fix it before draft, not at review.
 
-Every Step ↔ at least one AC **or** a DoD item. Every AC ↔ at least one Step. Every in-run DoD item ↔ a delivering+verifying Step (or an explicit deferred note).
+Every task ↔ at least one AC **or** a DoD item. Every AC ↔ at least one task. Every in-run DoD item ↔ a delivering+verifying task (or an explicit deferred note).
 
-### Scan 3 — Diagram ↔ Files alignment
+### Scan 3 — Diagram ↔ tasks alignment
 
 Walk the `Architecture diagram`:
 
-- Every node marked `★` (new piece) → must appear in `Files touched` as a `new` row.
-- Every node marked `~~strikethrough~~` (removal) → must appear in `Files touched` as a `delete` row.
-- Every `new` row in `Files touched` → must appear as a `★` node in the diagram.
-- Every `delete` row → must appear with strikethrough.
+- Every node marked `★` (new piece) → must appear as a `tasks.md` task with `(new)`.
+- Every node marked `~~strikethrough~~` (removal) → must appear as a `tasks.md` task with `(delete)`.
+- Every `(new)` task in `tasks.md` → must appear as a `★` node in the diagram.
+- Every `(delete)` task → must appear with strikethrough.
 
-Edit rows (existing files modified) don't have to be in the diagram unless the edit is a structural change — but if a file is edited in a way the diagram should show (new exported function, new dependency arrow), surface it with a labeled edge or annotation.
+Edit tasks (existing files modified) don't have to be in the diagram unless the edit is a structural change — but if a file is edited in a way the diagram should show (new exported function, new dependency arrow), surface it with a labeled edge or annotation.
 
 XS plans where Diagram = `Impact: N/A` skip this scan.
 
@@ -63,7 +63,7 @@ XS plans where Diagram = `Impact: N/A` skip this scan.
 
 Skip this scan when principle 3 says skip — i.e. **greenfield** work (a feat in isolated new files with no edits to existing code), chore/docs not touching live code, or spike. A brownfield feat that edits existing code does NOT skip even at XS/S (it carries the proportional note). Otherwise walk it.
 
-Open `## Current state` and `## Files touched` side by side. For each row in `Files touched`:
+Open `## Current state` and `tasks.md` side by side. For each task's `(new | edit | delete)` disposition:
 
 - **`new`** — no current-state coverage required (the file doesn't exist yet).
 - **`edit`** — the file must appear in one of:
@@ -85,43 +85,44 @@ If any check fails, the section is paraphrase rather than mapping — re-walk wi
 
 ### Scan 5 — Verify-per-step completeness
 
-Walk every Step. For each:
+Walk every task. For each:
 
 - Has a `verify:` clause? (Required for S/M/L; optional for XS.)
 - Verify clause is a **command** (`npm test src/foo.test.ts`, `curl -s :8080/health | jq .status`, `psql -c "\d users"`) OR a **concrete observable** (`column email_verified exists`, `feature flag returns true for opt-in users`)?
 - If verify is `manually check`, `visually inspect`, `looks correct` → reject. Name what you're checking for, or the verify isn't real.
 
-If a Step doesn't have a clean verify, split until each piece is verifiable atomically.
+If a task doesn't have a clean verify, split until each piece is verifiable atomically.
 
-### Scan 6 — Outcome reads for a non-technical reader
+### Scan 6 — Summary reads for a non-technical reader
 
 Check:
 
-- All three bullets are present: **Before**, **After**, **Benefit**.
-- **Before** and **After** are *plain language* — no `path#anchor`, no symbol names a stakeholder wouldn't know. The `path#anchor`-cited version of "before" is `## Current state`; Outcome is the prose summary, not a second copy of it.
-- **Benefit** links to `spec.md > Outcome` rather than restating the product win (a restated benefit drifts from its source).
-- The before→after pair actually describes *this* change — not a generic "improves the system". A reader who stops after Outcome should know what changes and why it's worth doing.
+- `## Summary` + `## Technical Context` + `## Gate check` are all present.
+- **Summary** is *plain language* — no `path#anchor`, no symbol names a stakeholder wouldn't know. The `path#anchor`-cited version of "before" is `## Current state`; Summary is the prose summary, not a second copy of it.
+- **Summary** links the spec's User Stories rather than restating the product win (a restated benefit drifts from its source).
+- **Gate check** names the `rules/fundamentals.md` layers the work crosses (trust boundary, new dependency, a11y/concurrency/db/observability) — a violation needs justification, not silent omission.
+- The Summary actually describes *this* change — not a generic "improves the system". A reader who stops after Summary should know what changes and how.
 
-A failing Outcome usually means the planner jumped to Steps without framing the change — fix before draft.
+A failing Summary usually means the planner jumped to tasks without framing the change — fix before draft.
 
 ## Extra checks for M / L plans
 
-### Scaffold matches the Steps (M/L — required section)
+### Scaffold matches the tasks (M/L — required section)
 
 The `## Scaffold` section (principle 10) is the concrete skeleton the gate signs off and the engineer builds first — so it must agree with the rest of the plan, not drift from it. Walk it:
 
 - The section **exists** for M/L. A missing Scaffold means the reviewer approves a long build from prose alone and the engineer invents the layout — the failure principle 10 exists to prevent.
-- Every `★` (new file) in the tree maps to a `(new)` row in `Files touched` / a `(new)` Step (and vice versa) — the same `★`↔`new` correspondence Scan 3 runs for the diagram.
-- Every signature shown is one a Step actually fills. A signature with no Step behind it is a contract nobody builds; a `(new)` file a Step creates but the Scaffold omits is a hole in the skeleton.
+- Every `★` (new file) in the tree maps to a `(new)` task in `tasks.md` (and vice versa) — the same `★`↔`new` correspondence Scan 3 runs for the diagram.
+- Every signature shown is one a task actually fills. A signature with no task behind it is a contract nobody builds; a `(new)` file a task creates but the Scaffold omits is a hole in the skeleton.
 - Where a type the signatures consume carries a decision (discriminated union / value object / state enum), its **definition** is shown — not just the consuming signature. A signature that takes `ChargeResult` with the union defined nowhere leaves the most expensive shape decision (illegal-state-representable) unreviewed at the gate.
-- The block stays **signatures + type shapes + at most a one-line stub body** (`throw new Error('not implemented')` / `raise NotImplementedError`), inside the fence. Real bodies are early implementation smuggled past the gate — move them to the Steps.
+- The block stays **signatures + type shapes + at most a one-line stub body** (`throw new Error('not implemented')` / `raise NotImplementedError`), inside the fence. Real bodies are early implementation smuggled past the gate — move them to the tasks.
 - No separate `## Folder structure` section duplicates the tree (for M/L the tree lives in Scaffold; Folder structure is the new-project / S fallback).
 
 ### Alternatives section is honest (M/L feat/refactor)
 
 If you wrote `Alternatives considered`, the rejected options must be plausible — not strawmen. "Considered X, rejected because it would be slower" without naming *why* or *by how much* is a strawman. Either give a real reason (benchmark, complexity argument, ecosystem maturity) or drop the section.
 
-If there really *was* only one reasonable approach, write a one-line note in `Approach` saying so (`Approach is the only obvious path because <constraint>`) and skip the section.
+If there really *was* only one reasonable approach, write a one-line note in `Summary` saying so (`Approach is the only obvious path because <constraint>`) and skip the section.
 
 ### Rollback is real (L plans)
 
@@ -135,11 +136,11 @@ If `Rollback` says anything beyond "revert the commit", read it as a runbook:
 
 `External: some library` is not a dependency — `External: pg-listen >= 1.7.2 (for LISTEN/NOTIFY support added in 1.7)` is. `Internal: prior PR` is not a dependency — `Internal: must land after PR #482 (schema migration adds users.tenant_id)` is.
 
-The same pinning rule applies to any package a **Step** introduces, not just the Dependencies section: an exact version that exists, with the Step's verify confirming it resolves (lockfile entry / `npm ls pkg@ver`). An unpinned or unconfirmed package name in a Step is how a hallucinated or typo-squatted dependency lands.
+The same pinning rule applies to any package a **task** introduces, not just the Dependencies section: an exact version that exists, with the task's verify confirming it resolves (lockfile entry / `npm ls pkg@ver`). An unpinned or unconfirmed package name in a task is how a hallucinated or typo-squatted dependency lands.
 
 ### Phases are coherent (L plans with optional Phases)
 
-If you grouped Steps under Phases (>12 steps in L), each phase should have a clear name (`schema migration`, `write path`, `read path`, `consumer cutover`) and be roughly independently committable. A phase that's "miscellaneous" is a smell — either it doesn't deserve its own phase, or the steps in it should be split across the named phases.
+If you grouped tasks under Phases (>12 steps in L), each phase should have a clear name (`schema migration`, `write path`, `read path`, `consumer cutover`) and be roughly independently committable. A phase that's "miscellaneous" is a smell — either it doesn't deserve its own phase, or the steps in it should be split across the named phases.
 
 ## When to fail the self-review and rewrite
 

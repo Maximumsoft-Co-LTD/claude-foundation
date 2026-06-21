@@ -61,7 +61,7 @@ that needs to happen alongside merging.]
 - **Test plan** — checkable items, not "I tested it." The reviewer should be able to walk down the list and reproduce. For backend changes, that often means `curl` invocations or test names. For UI, click paths.
 - **Screenshots** — for any UI change. A 2-second screenshot saves the reviewer from spinning up the app.
 
-This project's `/dev` flow auto-generates a description close to this shape, pulling the *what* from `spec.md` and the *how-verified* from `tests.md`. The engineer agent can lift the spec's `Acceptance criteria` directly into the test-plan checkboxes.
+This project's `/dev` flow auto-generates a description close to this shape, pulling the *what* from `spec.md` and the *how-verified* from `tests.md`. The engineer agent can lift the spec's acceptance scenarios (`AC#`) directly into the test-plan checkboxes.
 
 ## Draft vs ready
 

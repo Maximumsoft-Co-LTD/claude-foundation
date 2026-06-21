@@ -100,7 +100,7 @@ classDiagram
   note for StripeAdapter "★ new adapter"
 ```
 
-The `Approach` behaviour-equivalence statement says *what* stays the same; the diagram shows *how the shape changes*. Both are required for refactor.
+The `Summary` behaviour-equivalence statement says *what* stays the same; the diagram shows *how the shape changes*. Both are required for refactor.
 
 ### `chore` / `docs` — one line, OR `N/A`
 

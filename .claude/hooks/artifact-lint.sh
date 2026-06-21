@@ -3,9 +3,10 @@
 #
 # Validates a `.workflow/<id>/` run directory against the artifact templates:
 #   1. Required sections per artifact:
-#        spec.md       — a `**Type**:` declaration AND a `## Acceptance criteria` section.
-#        plan.md       — a fenced `mermaid` block, at least one inline AC tag (`[AC<n>]`
-#                        or `[DoD]`), and a runnable verify section (a `verify:` clause).
+#        spec.md       — a `**Type**:` declaration AND a `## User Stories` section.
+#        plan.md       — a fenced `mermaid` block.
+#        tasks.md      — at least one `T###` task, an inline AC tag (`[AC<n>]` or
+#                        `[DoD]`), and a runnable verify section (a `verify:` clause).
 #        test-plan.md  — a `## Coverage plan` section AND at least one AC reference
 #                        (`AC<n>`), so the test strategy maps to the spec's criteria.
 #   2. No leftover placeholder markers anywhere in any linted artifact:
@@ -36,7 +37,7 @@ set -eu
 
 # Recognised artifacts. spec.md / plan.md / test-plan.md also get required-section
 # checks; every file here gets the placeholder scan.
-ARTIFACTS='spec.md plan.md test-plan.md review.md security.md tests.md retro.md recommendations.md epic.md'
+ARTIFACTS='spec.md plan.md tasks.md test-plan.md review.md security.md tests.md retro.md recommendations.md epic.md'
 
 PROG="$(basename "$0")"
 
@@ -73,13 +74,18 @@ check_spec() {
   require_section "$file" "Type declaration"     F '**Type**:'
   # Anchor the heading at line start so a mention of the section name in prose
   # or an HTML comment does not satisfy the check.
-  require_section "$file" "Acceptance criteria"  E '^#+[[:space:]]+Acceptance criteria'
+  require_section "$file" "User Stories"         E '^#+[[:space:]]+User Stories'
 }
 
 check_plan() {
   file="$1"
   require_section "$file" "mermaid diagram"      E '^[[:space:]]*```mermaid'
-  require_section "$file" "inline AC tag"        E '\[(AC[0-9]+|DoD)\]'
+}
+
+check_tasks() {
+  file="$1"
+  require_section "$file" "T### task"            E '\bT[0-9]+\b'
+  require_section "$file" "inline AC tag"        E '\[(AC[0-9]+|DoD|SC-[0-9]+)\]'
   require_section "$file" "runnable verify section" F 'verify:'
 }
 
@@ -204,6 +210,7 @@ main() {
     case "$name" in
       spec.md)      check_spec "$file" ;;
       plan.md)      check_plan "$file" ;;
+      tasks.md)     check_tasks "$file" ;;
       test-plan.md) check_test_plan "$file" ;;
     esac
     scan_placeholders "$file"

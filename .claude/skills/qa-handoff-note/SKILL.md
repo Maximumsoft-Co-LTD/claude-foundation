@@ -26,7 +26,7 @@ Complements `tests.md` (automated); this note targets the manual on-environment 
 
 Mine these so the note is accurate; QA never sees them:
 
-1. `.workflow/<id>/spec.md` — `Outcome`, `Acceptance criteria` (incl. each `on error / at boundary:` clause), `Type`, `Reproduction` (fix), `Non-goals` / `Scope — Out`. The AC are what the scenarios must exercise.
+1. `.workflow/<id>/spec.md` — `User Stories` / acceptance scenarios (`AC#`, incl. each boundary/error scenario), `Type`, `Reproduction` (fix), `Non-goals` / `Scope — Out`. The AC are what the scenarios must exercise.
 2. `.workflow/<id>/plan.md` — what was built, blast radius, `Risks`. Feeds Focus areas and Known limits.
 3. **The diff** — to know which screens / flows / endpoints actually changed. You translate it into *user-facing* terms for the note; you never paste code into it.
 4. **Deployment facts** — the environment URL, what build/branch is on dev, test accounts, feature-flag state. If you don't know these, ask before writing — a note with a guessed URL or account is worse than none.

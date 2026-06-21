@@ -1,13 +1,13 @@
 # Test plan: <title>
 
 **Spec**: [./spec.md](./spec.md)
-**Plan**: [./plan.md](./plan.md)
+**Plan**: [./plan.md](./plan.md) · **Tasks**: [./tasks.md](./tasks.md)
 **Status**: draft | approved
 **Mode**: Full (feat / refactor) | Fix (fix)
 
 ## Coverage plan *(required)*
 
-One row per spec.md AC — happy path AND its `on error / at boundary:` clause are separate rows. Every AC maps to ≥ 1 planned test; pick the level that owns the behaviour. (e2e opt-in — only when `e2e_visual=on`; under `off`, map a user journey to integration.)
+One row per spec.md acceptance scenario (`AC#`) — happy path AND its boundary/error scenario are separate rows. Every scenario maps to ≥ 1 planned test; pick the level that owns the behaviour. (e2e opt-in — only when `e2e_visual=on`; under `off`, map a user journey to integration.)
 
 | AC | Level (unit / integration / e2e) | What the test asserts | Notes |
 |----|----------------------------------|-----------------------|-------|

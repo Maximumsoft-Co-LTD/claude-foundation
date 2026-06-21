@@ -152,20 +152,7 @@ Default = single L plan, single `/dev` run. Crossing three layers is normal full
 
 ## What each size requires (cross-link to template)
 
-| Section | XS | S | M | L |
-|---------|----|----|----|----|
-| `Approach` (2–3 sentences) | ✓ | ✓ | ✓ | ✓ |
-| `Step order` line | skip | optional | ✓ | ✓ |
-| `Architecture diagram` | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
-| `Steps` (action — path#anchor — verify — [AC#]) | verify optional | ✓ | ✓ | ✓ |
-| (Optional) Phases above Steps | skip | skip | skip | ✓ if >12 steps |
-| `Files touched` table | ✓ | ✓ | ✓ | ✓ |
-| `Alternatives considered` | skip | skip | when non-obvious | ✓ |
-| `Risks` table | skip | optional | ✓ | ✓ |
-| `Observability` | N/A | required if feat/fix | required if feat/fix | ✓ |
-| `Dependencies` | skip unless present | skip unless present | skip unless present | ✓ |
-| `Rollback` | "revert commit" line | "revert commit" or specific | ✓ if destructive | ✓ runbook |
-| `Out of scope` | ✓ | ✓ | ✓ | ✓ |
+The authoritative size-gating table is **`SKILL.md > Section gating by Size`** — per XS/S/M/L it lists which `plan.md` sections (Summary · Technical Context · Gate check · Phases · Fanout · Architecture diagram · Current state · Scaffold · …) and which `tasks.md` content (the `T###` tasks, task phases) are required / optional / deleted. Don't keep a second copy here — the two drift.
 
 `skip` means *delete the section*, not leave it empty with placeholder text. Empty sections erode the gating discipline.
 

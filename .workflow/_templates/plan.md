@@ -6,44 +6,40 @@
 **Field**: greenfield | brownfield
 **Status**: draft | approved | done
 
-## Outcome *(required)*
+## Summary
 
-- **Before**: <how the system behaves today>
-- **After**: <how it behaves once these Steps land>
-- **Benefit**: → spec.md > Outcome
+<2–3 sentences: the technical approach + why this over the obvious alternative. Each user story = one vertical slice.>
 
-## Approach *(required)*
+## Technical Context
 
-<2–3 sentences: the strategy + why this over the obvious alternative>
+**Language**: <lang + version> · **Framework**: <key deps>
+**Storage**: <db / files / none> · **Testing**: <framework>
+**Target**: <platform> · **Perf**: <goal, links SC-###> · **Scale**: <volume>
 
-## Phases for this task *(required)*
+## Gate check
 
-<matrix defaults for type=<feat | fix | refactor | chore | docs | spike> — no deviations>
+Against `.claude/rules/fundamentals.md` — name the layers this work crosses + the one-line conduct check:
 
-## Fanout plan *(required)*
+- **Trust boundary**: <untrusted input → where validated; or "none — no external input">
+- **Ponytail**: <cheapest construction that holds; a new dependency needs justification>
+- **<other fundamental that fires>**: <a11y / concurrency / database / observability — one line each>
+
+## Phases for this task
+
+<matrix defaults for type=<feat | fix | refactor | chore | docs | spike>, size=<XS|S|M|L> — no deviations>
+
+## Fanout plan
 
 No fanout — single-pass.
 
-## Architecture diagram *(required)*
+## Architecture diagram
 
 ```mermaid
 flowchart LR
-  A[Client] --> B[★ New handler]
-  B --> C[(DB)]
+  U[User] --> A[★ New entry point]
+  A --> B[★ New module]
+  B --> C[(Store)]
 ```
 
-## Steps *(required)*
-
-Format: `<action> — path#anchor (new | edit | delete) — verify: <command or observable> [AC#]` · use `[DoD]` for a Definition-of-Done item.
-
-1. <action> — `path/to/file.ext#symbolOrSnippet` (new) — verify: `npm test path/to/foo.test.ts` [AC1]
-
 ---
-
-**Optional sections** — add when its trigger fires, delete the rest:
-
-Folder structure · Scaffold · Current state · Risks · Rollback
-
-- Section triggers + size gating → **plan-writing > references/plan-sections.md** & **SKILL.md**
-- Strict Steps format + self-review → **lead.md > Mode A (Plan)**
-- Diagram shape by Type → **plan-writing > references/diagrams.md**
+*Tasks (the executable steps, `T001…`) live in [./tasks.md](./tasks.md). Optional — add when triggered, delete the rest: Current state (brownfield) · Scaffold / Project structure (M/L) · Risks · Rollback · Alternatives. Rules → **lead.md > Mode A** · **plan-writing**.*

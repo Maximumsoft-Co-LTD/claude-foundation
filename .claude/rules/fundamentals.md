@@ -8,7 +8,7 @@ The always-on **detection layer**: match a trigger below, then load that one ski
 
 ## Output discipline (always-on)
 
-Terse-first — every response, artifact, agent report. Cut preamble, restated context, narration. **Terse ≠ lossy**: never drop a result, caveat, or needed step. Throwaway prose (chat, agent report, `state.json notes`) → minimize hard, tags not paragraphs. Consumed artifacts → trim prose, but keep every field a later phase reads (ACs, plan steps, mermaid diagram, `path#anchor` citations, regression contract, `--resume` keys) — cut those and the next phase breaks.
+Terse-first — every response, artifact, agent report. Cut preamble, restated context, narration. **Terse ≠ lossy**: never drop a result, caveat, or needed step. Throwaway prose (chat, agent report, `state.json notes`) → minimize hard, tags not paragraphs. Consumed artifacts → trim prose, but keep every field a later phase reads (ACs, tasks, mermaid diagram, `path#anchor` citations, regression contract, `--resume` keys) — cut those and the next phase breaks.
 
 ## Process layer (wraps the work)
 

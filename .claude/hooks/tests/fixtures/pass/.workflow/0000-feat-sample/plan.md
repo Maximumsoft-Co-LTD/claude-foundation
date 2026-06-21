@@ -1,20 +1,25 @@
 # Plan: Sample passing fixture
 
-**Spec**: [./spec.md](./spec.md) · **Type**: feat · **Size**: XS · **Status**: approved
+**Spec**: [./spec.md](./spec.md)
+**Type**: feat
+**Size**: XS
+**Field**: greenfield
+**Status**: approved
 
-## Outcome
-- **Before:** no clean plan fixture exists.
-- **After:** this plan has a mermaid diagram, an AC tag, and a verify clause, so it lints clean.
-- **Benefit:** proves the linter's plan checks pass on a complete plan.
+## Summary
 
-## Approach
-Hand-write a minimal complete plan that satisfies every required-section check.
+A minimal complete plan whose only structural requirement is a mermaid diagram; the executable task lives in tasks.md.
+
+## Technical Context
+
+**Language**: n/a (fixture) · **Testing**: shell
+
+## Gate check
+
+- Trust boundary: none — fixture only.
 
 ## Architecture diagram
 ```mermaid
 flowchart LR
   A[input] --> B[linter] --> C[exit 0]
 ```
-
-## Steps
-1. Provide a complete plan — `plan.md` (new) — verify: the linter exits 0 on this directory [AC1]

@@ -68,8 +68,9 @@ assert_report_contains() {
 }
 
 # --- helpers to build temp run dirs ---
-mk_clean_spec() { printf '# Spec\n\n**Type**: feat\n\n## Acceptance criteria\n- [x] AC1: ok\n' > "$1/spec.md"; }
-mk_clean_plan() { printf '# Plan\n\n## Architecture diagram\n```mermaid\nflowchart LR\nA-->B\n```\n\n## Steps\n1. do — verify: x [AC1]\n' > "$1/plan.md"; }
+mk_clean_spec() { printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1: ok\n' > "$1/spec.md"; }
+mk_clean_plan() { printf '# Plan\n\n## Architecture diagram\n```mermaid\nflowchart LR\nA-->B\n```\n' > "$1/plan.md"; }
+mk_clean_tasks() { printf '# Tasks\n\n## Phase 1\n- [x] T001 [AC1] do — verify: x\n' > "$1/tasks.md"; }
 
 echo "Running artifact-lint test suite..."
 echo
@@ -77,35 +78,37 @@ echo
 # AC6 — the brief's required committed-fixture assertions.
 assert_exit_zero    "AC6 pass-fixture"  "$PASS_DIR"
 assert_exit_nonzero "AC6 fail-fixture"  "$FAIL_DIR"
-assert_report_contains "AC6 fail-fixture report" "$FAIL_DIR" "MISSING required section: Acceptance criteria"
+assert_report_contains "AC6 fail-fixture report" "$FAIL_DIR" "MISSING required section: User Stories"
 assert_report_contains "AC6 fail-fixture report" "$FAIL_DIR" "placeholder marker"
 
 # AC1 — a fully clean run dir exits 0; a dir with no recognised artifact fails.
-d="$TMPROOT/ac1-clean"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"
+d="$TMPROOT/ac1-clean"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"; mk_clean_tasks "$d"
 assert_exit_zero "AC1 clean dir" "$d"
 d="$TMPROOT/ac1-noart"; mkdir -p "$d"; echo '{}' > "$d/state.json"
 assert_exit_nonzero "AC1 no recognised artifact" "$d"
 assert_report_contains "AC1 no-artifact message" "$d" "no lintable artifacts found"
 
-# AC2 — spec missing the acceptance section is named + fails.
-d="$TMPROOT/ac2"; mkdir -p "$d"; printf '# Spec\n\n**Type**: feat\n\n## Outcome\nx\n' > "$d/spec.md"
-assert_exit_nonzero "AC2 spec missing acceptance" "$d"
-assert_report_contains "AC2 names missing section" "$d" "MISSING required section: Acceptance criteria"
+# AC2 — spec missing the User Stories section is named + fails.
+d="$TMPROOT/ac2"; mkdir -p "$d"; printf '# Spec\n\n**Type**: feat\n\n## Summary\nx\n' > "$d/spec.md"
+assert_exit_nonzero "AC2 spec missing User Stories" "$d"
+assert_report_contains "AC2 names missing section" "$d" "MISSING required section: User Stories"
 # spec missing Type is named too.
-d="$TMPROOT/ac2b"; mkdir -p "$d"; printf '# Spec\n\n## Acceptance criteria\n- [x] AC1\n' > "$d/spec.md"
+d="$TMPROOT/ac2b"; mkdir -p "$d"; printf '# Spec\n\n## User Stories\n- [x] AC1\n' > "$d/spec.md"
 assert_report_contains "AC2 names missing Type" "$d" "MISSING required section: Type declaration"
 
-# AC3 — plan missing each required element is named + fails.
-d="$TMPROOT/ac3"; mkdir -p "$d"; mk_clean_spec "$d"
-printf '# Plan\n\n## Approach\nno diagram, no tag, no verify\n' > "$d/plan.md"
-assert_exit_nonzero "AC3 plan missing elements" "$d"
+# AC3 — plan missing its mermaid; tasks missing AC tag + verify, each named + fails.
+d="$TMPROOT/ac3"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_tasks "$d"
+printf '# Plan\n\n## Summary\nno diagram here\n' > "$d/plan.md"
+assert_exit_nonzero "AC3 plan missing mermaid" "$d"
 assert_report_contains "AC3 names missing mermaid" "$d" "MISSING required section: mermaid diagram"
-assert_report_contains "AC3 names missing AC tag" "$d" "MISSING required section: inline AC tag"
-assert_report_contains "AC3 names missing verify" "$d" "MISSING required section: runnable verify section"
+d="$TMPROOT/ac3-tasks"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_plan "$d"
+printf '# Tasks\n\n## Phase 1\n- [ ] T001 do something\n' > "$d/tasks.md"
+assert_report_contains "AC3 names missing AC tag in tasks" "$d" "MISSING required section: inline AC tag"
+assert_report_contains "AC3 names missing verify in tasks" "$d" "MISSING required section: runnable verify section"
 
 # AC4 — placeholder markers (word + angle) reported with line numbers; fenced/backticked ignored.
 d="$TMPROOT/ac4"; mkdir -p "$d"; mk_clean_plan "$d"
-printf '# Spec\n\n**Type**: feat\n\n## Acceptance criteria\n- [x] AC1\n- TODO finish\n- handle <id>\n- lorem ipsum\n- FIXME this\n' > "$d/spec.md"
+printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1\n- TODO finish\n- handle <id>\n- lorem ipsum\n- FIXME this\n' > "$d/spec.md"
 assert_exit_nonzero "AC4 placeholders present" "$d"
 assert_report_contains "AC4 reports TODO" "$d" "placeholder marker: TODO"
 assert_report_contains "AC4 reports angle"  "$d" "placeholder marker: <...>"
@@ -113,7 +116,7 @@ assert_report_contains "AC4 reports lorem"  "$d" "placeholder marker: lorem"
 assert_report_contains "AC4 reports FIXME"  "$d" "placeholder marker: FIXME"
 # code-span + fence exclusion: documented markers do NOT fail.
 d="$TMPROOT/ac4-doc"; mkdir -p "$d"; mk_clean_plan "$d"
-printf '# Spec\n\n**Type**: feat\n\n## Acceptance criteria\n- [x] AC1: we document `TODO` and `<id>` here\n```\nTODO inside a fence is ignored\n```\n' > "$d/spec.md"
+printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1: we document `TODO` and `<id>` here\n```\nTODO inside a fence is ignored\n```\n' > "$d/spec.md"
 assert_exit_zero "AC4 documented markers ignored" "$d"
 
 # AC5 — usage / not-a-directory / empty-directory all fail.

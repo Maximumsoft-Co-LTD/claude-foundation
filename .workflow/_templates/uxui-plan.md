@@ -28,7 +28,7 @@ Low-fi structure only (boxes, hierarchy, ordering, responsive changes). One per 
 
 ## Scenarios *(required)*
 
-Key journeys, each a walk across scenes. Cover the happy path AND the alternate/error flows the spec's `on error / at boundary` clauses imply.
+Key journeys, each a walk across scenes. Cover the happy path AND the alternate/error flows the spec's boundary/error scenarios imply.
 
 ### SC1: <scenario name> (happy path)
 

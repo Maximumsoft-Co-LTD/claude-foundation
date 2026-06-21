@@ -6,7 +6,7 @@ The gate is **non-negotiable** and never shrinks at any size. It is a **loop** u
 
 ### Summary contents (print a tight block)
 
-- Spec goal + Type + `Ship as`. **The acceptance criteria as the contract** — every AC (with `e.g.:`, `on error/at boundary:`, `measured:`), *"done when each is true — confirm each line, or correct it."* Per-line confirmation is the only user-validated link in spec→plan→code.
+- Spec goal + Type + `Ship as`. **The acceptance scenarios as the contract** — every scenario (Given/When/Then `AC#`, with its boundary/error scenario + any `measured:`), grouped under its User Story by priority, *"done when each is true — confirm each line, or correct it."* Per-line confirmation is the only user-validated link in spec→plan→code.
 - **`Assumptions (inferred — correct any wrong)`** (step-6 list; omit if empty). Constraints/stack. **`Hard-to-reverse decisions`** (from `plan.md`, one line each, *"expensive to undo — confirm each"*). Plan outline + risks + rollback. **Scaffold (M/L)** when present.
 - **Test plan (feat/fix/refactor)** — Coverage plan + edge cases + out-of-scope; surface a veto line for any new test runner. **E2E+visual** — one line, default `off`; `e2e on` to add.
 - **Per-task phase plan** from `plan.md > Phases for this task` (e.g. `"Will run: …. Skipping: 7 (no sensitive paths)."`; Review is a default skip for chore/docs at XS). **`Phase deviations (confirm each)`** — each `(deviates from matrix)` row; does NOT ride a plain `approve`; a `5 Test` skip on feat/fix/refactor is highest-stakes (waives the regression/baseline contract). **Fanout plan** one line (`fanout <phase> on|off`); it's a prediction. Open follow-ups flagged as candidates.
