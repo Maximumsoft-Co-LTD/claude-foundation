@@ -1,10 +1,10 @@
 # Follow-ups
 
-Items surfaced by past `retro` runs that didn't fit in their original scope. `retro` appends. `pm` reads on every new interview and asks the user whether any open item is now in scope. When a run consumes a follow-up, `retro` marks its status `consumed-by: <run-id>` and leaves the row in place for auditability.
+Items surfaced by past `retro` runs, out of their original scope. `retro` appends + marks consumed; `pm` reads every interview and asks if any open item is now in scope.
 
 ## Open
 
-<!-- First retro appends here. Use a run-namespaced ID `F-<run-id>-01` (run folder + per-run counter). -->
+<!-- ID `F-<run-id>-NN`: run folder + per-run counter from 01. -->
 
 | ID | From run | Item | Type hint | Priority | Status |
 |----|----------|------|-----------|----------|--------|
@@ -12,18 +12,15 @@ Items surfaced by past `retro` runs that didn't fit in their original scope. `re
 
 ## Closed
 
-Items consumed by a later run. Keep these — they're the audit trail.
-
-<!-- `retro` moves rows here when a later run consumes the item, or when the user marks `wont-do`. -->
+Audit trail — keep. `retro` moves rows here on `consumed-by:` or `wont-do`.
 
 | ID | From run | Item | Consumed by | Date consumed |
 |----|----------|------|-------------|---------------|
 
 ## Conventions
 
-- **ID** — run-namespaced `F-<run-id>-NN` (`<run-id>` is the surfacing run's folder name, `NN` a per-run counter from `01`) — collision-proof under parallel runs. `retro` mints these; it never picks "the next number after the highest existing ID" (which races when two runs claim the same number). Legacy global `F0001`-style IDs (any remaining from before this scheme) keep their form — a mixed ID space is expected; history is not renumbered.
-- **From run** — the `NNNN-type-slug` of the run that surfaced the item.
-- **Type hint** — what *kind* of `/dev` run would consume this. Not binding; `pm` can override after interview.
-- **Priority** — `low | med | high`. `high` is reserved for known-broken behaviour or security carry-over from `security.md`.
-- **Status** — `open | in-progress | consumed-by:<run-id> | wont-do (reason)`.
-- Move rows from `Open` to `Closed` when status becomes `consumed-by:…` or `wont-do`.
+- **ID** — `F-<run-id>-NN` (`<run-id>` = surfacing run's folder, `NN` per-run from `01`); collision-proof under parallel runs. `retro` mints; never "next after highest" (races). Legacy `F0001`-style IDs keep their form; history not renumbered.
+- **From run** — `NNNN-type-slug` of the surfacing run.
+- **Type hint** — which `/dev` run kind would consume it. Non-binding; `pm` can override.
+- **Priority** — `low | med | high`. `high` = known-broken or security carry-over from `security.md`.
+- **Status** — `open | in-progress | consumed-by:<run-id> | wont-do (reason)`. Move `Open`→`Closed` on `consumed-by:…` or `wont-do`.
