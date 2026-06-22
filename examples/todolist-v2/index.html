@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Todo List App</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- StorageBanner: inserted by JS when localStorage is unavailable -->
+  <div id="storage-banner" class="storage-banner hidden" role="alert" aria-live="assertive">
+    <span class="storage-banner__text">
+      &#9888; Storage unavailable — your todos won't be saved this session. (Working in-memory only.)
+    </span>
+    <button
+      class="storage-banner__dismiss"
+      id="storage-banner-dismiss"
+      aria-label="Dismiss storage warning"
+      type="button"
+    >&#10005;</button>
+  </div>
+
+  <div class="app-shell">
+    <header class="app-header">
+      <h1 class="app-title">Todo List App</h1>
+    </header>
+
+    <main class="app-main">
+      <!-- S2: Add-todo form -->
+      <section class="add-form-section" aria-label="Add a new todo">
+        <form id="add-form" class="add-form" novalidate>
+          <div class="add-form__title-row">
+            <input
+              type="text"
+              id="add-title"
+              class="add-form__title-input"
+              placeholder="What needs doing?"
+              aria-label="New todo title"
+              aria-describedby="add-title-error"
+              autocomplete="off"
+              maxlength="201"
+            />
+            <button
+              type="submit"
+              id="add-btn"
+              class="btn btn--accent"
+              aria-label="Add todo"
+            >+ Add</button>
+          </div>
+          <div class="add-form__meta-row">
+            <input
+              type="date"
+              id="add-due-date"
+              class="add-form__date-input"
+              aria-label="Due date"
+            />
+            <select
+              id="add-priority"
+              class="add-form__priority-select"
+              aria-label="Priority"
+            >
+              <option value="">Priority</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+            <input
+              type="text"
+              id="add-tag"
+              class="add-form__tag-input"
+              placeholder="Category/tag…"
+              aria-label="Tag or category"
+              autocomplete="off"
+            />
+          </div>
+          <div
+            id="add-title-error"
+            class="inline-error hidden"
+            role="alert"
+            aria-live="assertive"
+          ></div>
+        </form>
+      </section>
+
+      <!-- S4: Toolbar -->
+      <section class="toolbar" aria-label="Filter and sort todos">
+        <div class="toolbar__top">
+          <div
+            class="filter-tabs"
+            role="tablist"
+            aria-label="Filter todos by status"
+          >
+            <button
+              role="tab"
+              class="filter-tab filter-tab--active"
+              data-filter="all"
+              aria-selected="true"
+              id="filter-all"
+            >All</button>
+            <button
+              role="tab"
+              class="filter-tab"
+              data-filter="active"
+              aria-selected="false"
+              id="filter-active"
+            >Active</button>
+            <button
+              role="tab"
+              class="filter-tab"
+              data-filter="completed"
+              aria-selected="false"
+              id="filter-completed"
+            >Completed</button>
+          </div>
+
+          <div class="tag-filter-wrap">
+            <label for="tag-filter" class="sr-only">Filter by tag</label>
+            <select
+              id="tag-filter"
+              class="tag-filter"
+              aria-label="Filter by tag"
+            >
+              <option value="">All tags</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="toolbar__bottom">
+          <div class="sort-controls" aria-label="Sort todos">
+            <button
+              class="btn btn--sort"
+              data-sort="date"
+              aria-label="Sort by due date"
+              aria-pressed="false"
+              type="button"
+            >By date &#8593;</button>
+            <button
+              class="btn btn--sort"
+              data-sort="priority"
+              aria-label="Sort by priority"
+              aria-pressed="false"
+              type="button"
+            >By priority</button>
+          </div>
+
+          <span
+            id="active-count"
+            class="active-count"
+            aria-live="polite"
+            aria-atomic="true"
+          >0 items left</span>
+        </div>
+      </section>
+
+      <!-- S3: Todo list -->
+      <section class="todo-list-section" aria-label="Todo list">
+        <ul
+          id="todo-list"
+          class="todo-list"
+          role="list"
+          aria-label="Todo items"
+        ></ul>
+
+        <!-- S3: Empty state -->
+        <div id="empty-state" class="empty-state hidden" aria-live="polite">
+          <div class="empty-state__icon" aria-hidden="true">&#9989;</div>
+          <p class="empty-state__text">Nothing here yet — add your first todo!</p>
+        </div>
+      </section>
+
+      <!-- S4: Footer bar -->
+      <footer class="app-footer" aria-label="Todo list actions">
+        <span
+          id="footer-count"
+          class="footer-count"
+          aria-live="polite"
+          aria-atomic="true"
+        >0 items left</span>
+        <button
+          id="clear-completed"
+          class="btn btn--ghost hidden"
+          aria-label="Clear all completed todos"
+          type="button"
+        >Clear completed</button>
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
