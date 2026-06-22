@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.9] - 2026-06-22
+
+### Changed
+
+- **Two skills minimized and split into on-demand `references/` — `api-design-fundamentals` and `fanout-team-agents`, no load-bearing content lost.** `api-design-fundamentals/SKILL.md` 259 → 115 lines (~56%): each of the 8 principles drops to its Rule + a one-line how-to + a reference pointer, with the worked examples, decision tables, and full mechanics moved into three new references (`resource-modeling.md`, `contracts-and-errors.md`, `evolution.md`) — these were already named by the skill's "Reference files" section but never existed (dangling pointers, now resolved; auth/principle 7 deliberately keeps a fuller body and defers to `security-fundamentals`). `fanout-team-agents/SKILL.md` 193 → 58 lines (~70%): the body keeps the when-to-use eligibility table, the worker roster, and the always-hold invariants; the dispatch mechanism, the per-repo surface axis, the run procedure, and the anti-patterns move into three new references (`dispatch-mechanism.md`, `surface-fanout.md`, `running-a-fanout.md`). Same triggers, same cross-skill citations, the `FANOUT_REQUESTED:` allowlist regex and the `AC8`/spec-0002 citations all preserved — terser trigger-time read, depth pulled only when a friction needs it (the critical-path "load no full skill body unless required" stance). Files: `.claude/skills/api-design-fundamentals/{SKILL.md,references/*}`, `.claude/skills/fanout-team-agents/{SKILL.md,references/*}`.
+
 ## [2.5.8] - 2026-06-22
 
 ### Added
@@ -412,7 +418,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.8...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.9...HEAD
+[2.5.9]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.8...v2.5.9
 [2.5.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.7...v2.5.8
 [2.5.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.6...v2.5.7
 [2.5.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.5...v2.5.6
