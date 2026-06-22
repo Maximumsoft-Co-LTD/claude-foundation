@@ -410,17 +410,17 @@
             <div class="agent-top"><span class="agent-name"><span class="at">@</span>lead</span><span class="agent-phase">2 · 6 · 7</span></div>
             <p>Three modes: <b>plan</b>, <b>review</b>, <b>security</b>. Writes the plan, then reviews the diff row-by-row against that plan and the spec's acceptance criteria.</p>
             <div class="agent-io">
-              <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>plan.md</b> · review.md · security.md</span></div>
+              <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>plan.md</b> · <b>tasks.md</b> · review.md · security.md</span></div>
               <div class="io-row"><span class="io-k">reads</span><span class="io-v">spec.md · the diff</span></div>
             </div>
           </article>
 
           <article class="agent-card reveal" data-d="2">
             <div class="agent-top"><span class="agent-name"><span class="at">@</span>engineer</span><span class="agent-phase">4 · 8 · 9</span></div>
-            <p>Three modes: <b>implement</b>, <b>docs</b>, <b>ship</b>. Executes the plan with progress tracking, ticks each criterion, then commits and opens the PR.</p>
+            <p>Three modes: <b>implement</b>, <b>docs</b>, <b>ship</b>. Works through <code>tasks.md</code> with progress tracking, ticks each criterion, then commits and opens the PR.</p>
             <div class="agent-io">
               <div class="io-row"><span class="io-k">writes</span><span class="io-v"><b>code</b> · commit · PR</span></div>
-              <div class="io-row"><span class="io-k">reads</span><span class="io-v">plan.md · spec.md</span></div>
+              <div class="io-row"><span class="io-k">reads</span><span class="io-v">tasks.md · spec.md</span></div>
             </div>
           </article>
 
@@ -704,7 +704,8 @@
           <pre class="filetree reveal" aria-hidden="true"><span class="ft-dir">.workflow/</span>
 ├── <span class="ft-id">0003-fix-login-redirect/</span>
 │   ├── <span class="ft-file">spec.md</span>        <span class="ft-cmt"># the contract</span>
-│   ├── <span class="ft-file">plan.md</span>        <span class="ft-cmt"># executable steps</span>
+│   ├── <span class="ft-file">plan.md</span>        <span class="ft-cmt"># design &amp; strategy</span>
+│   ├── <span class="ft-file">tasks.md</span>       <span class="ft-cmt"># executable T### list</span>
 │   ├── <span class="ft-file">test-plan.md</span>   <span class="ft-cmt"># test strategy</span>
 │   ├── <span class="ft-file">review.md</span>      <span class="ft-cmt"># row-by-row</span>
 │   ├── <span class="ft-file">security.md</span>    <span class="ft-cmt"># if triggered</span>
@@ -716,7 +717,8 @@
 
           <div class="artifact-list reveal" data-d="1">
             <div class="artifact"><div class="af-name">spec.md <span class="af-owner">· pm</span></div><div class="af-desc">Outcome (before → after → benefit), users, scope, non-goals, acceptance criteria, Type.</div></div>
-            <div class="artifact"><div class="af-name">plan.md <span class="af-owner">· lead</span></div><div class="af-desc">Steps with path#anchor refs, diagram, risks, verification.</div></div>
+            <div class="artifact"><div class="af-name">plan.md <span class="af-owner">· lead</span></div><div class="af-desc">Design &amp; strategy: approach, path#anchor refs, diagram, risks, verification.</div></div>
+            <div class="artifact"><div class="af-name">tasks.md <span class="af-owner">· lead</span></div><div class="af-desc">Dependency-ordered T### task list — each tagged with its acceptance criteria + a runnable verify line.</div></div>
             <div class="artifact"><div class="af-name">test-plan.md <span class="af-owner">· qa</span></div><div class="af-desc">Test strategy before code: level per criterion, edge cases, fixtures. Signed off at the gate.</div></div>
             <div class="artifact"><div class="af-name">review.md <span class="af-owner">· lead</span></div><div class="af-desc">One check per file, one row per acceptance criterion.</div></div>
             <div class="artifact"><div class="af-name">security.md <span class="af-owner">· lead</span></div><div class="af-desc">Inline checklist; high findings are blocking.</div></div>

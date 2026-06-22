@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.8] - 2026-06-22
+
+### Added
+
+- **The plan phase now produces a dedicated `tasks.md` — a dependency-ordered, executable task list — split out from `plan.md`.** `plan.md` stays the design/strategy artifact (approach, phases, `path#anchor` refs, risks, verification); the new `tasks.md` carries the *do-this* list: numbered `T###` tasks, each tagged with the acceptance criteria it delivers (`[AC#]`) and a runnable `verify:` line, dependency-ordered and XS/S/M/L-sized. `lead` plan mode writes both; `engineer` implement mode executes `tasks.md` (was: "executes the plan"); the gate's pre-gate consistency scan now maps every AC to a delivering+verifying task in `tasks.md` and the plan check requires ≥1 `T###` task with an `[AC#]` tag + `verify:`. New `_templates/tasks.md`. Files: `.claude/skills/plan-writing/SKILL.md` (+ `references/`), `.claude/orchestrator.md`, `.claude/agents/{lead,engineer}.md`, `.workflow/_templates/tasks.md`, `WORKFLOW.md`, `README.md`, `website/`.
+- **A full worked example of a `/dev` run — `examples/todolist-v2/`.** A complete reference app (vanilla JS to-do list with due dates, priorities, tags, filtering) shipped with its real test pyramid — unit (`pure-helpers`), integration (CRUD, filters, due-date/priority/tags, regression), and opt-in Playwright e2e (a11y, keyboard, responsive, sort, visual snapshots) plus coverage output — and its **complete on-disk run folder** `.workflow/0002-feat-todolist/` (spec, plan, tasks, test-plan, uxui-plan, tests, review, retro, session-summary, state shards). It shows, end to end, what a real run leaves behind. 28 files / ~6.5k LOC.
+
+### Changed
+
+- **Prompt-surface condensation pass — no load-bearing content lost.** `.claude/orchestrator.md` rewritten 98 → 50 lines (~49%); the agent prompts (`pm`, `lead`, `engineer`, `qa`, `retro`, `uxui`, every `team-*`), the orchestrator `references/`, the `plan-writing` skill, and all 11 `_templates/*` tightened (templates net +285/−142 as `tasks.md` lands and the others shrink). Same triggers, same run order, same fields each phase reads — terser prose. `.workflow/FOLLOWUPS.md` doc tightened for clarity. Files: `.claude/orchestrator.md` (+ `references/`), `.claude/agents/*`, `.claude/skills/plan-writing/*`, `.workflow/_templates/*`, `.workflow/FOLLOWUPS.md`.
+
 ## [2.5.7] - 2026-06-19
 
 ### Added
@@ -401,7 +412,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.7...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.8...HEAD
+[2.5.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.7...v2.5.8
 [2.5.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.6...v2.5.7
 [2.5.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.5...v2.5.6
 [2.5.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.4...v2.5.5
