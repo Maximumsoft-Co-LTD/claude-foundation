@@ -118,7 +118,7 @@ test('transfer fails and moves no money when the source is overdrawn', () => {
 
 ## Boundary testing
 
-Off-by-one is the most common logic bug; boundaries are where you catch it. For any limit `n`, test `0, 1, n-1, n, n+1`. For any collection, test empty, single-element, and "more than one." For any range, test below-min, min, max, above-max. Boundaries are the highest-value-per-test inputs you can write — they're exactly where the happy-path test passes and production fails.
+Off-by-one is the most common logic bug; boundaries are where you catch it. For any limit `n`, test `0, 1, n-1, n, n+1`. For any collection, test empty, single-element, and "more than one." For any range, test below-min, min, max, above-max. Boundaries are the highest-value-per-test inputs you can write — they're exactly where the happy-path test passes and production fails. Mnemonic for the conditions worth a boundary probe — **CORRECT**: Conformance, Ordering, Range, Reference, Existence, Cardinality, Time.
 
 ## Edge-case checklist
 
@@ -130,7 +130,7 @@ The requirement usually spells out the happy path. These are the inputs that bre
 - **Strings / text** — unicode, emoji, combining chars, leading/trailing whitespace, very long input, injection-ish payloads (`'`, `<`, `;`, `../`), mixed newline styles.
 - **Time** — timezone boundaries, DST, leap year/second, clock skew, expiry exactly at `now`, events with equal timestamps.
 - **Collections / ordering** — duplicates, unsorted input where sorted is assumed, ordering not guaranteed, pagination at the boundary.
-- **Concurrency / repetition** — same request twice (idempotency), retry after partial success, two writers racing one row, out-of-order delivery.
+- **Concurrency / repetition** — retry after partial success, two writers racing one row, out-of-order delivery. (Multi-step repeat / double-submit → the sequence axis below.)
 - **Failure / partial state** — dependency times out or errors mid-operation, network drops between a DB write and its side effect, transaction rolls back.
 - **Auth / tenancy** — unauthenticated, authenticated-but-unauthorized, one tenant reaching another's data.
 
@@ -139,6 +139,19 @@ For each case the code under test can actually reach, decide one of three:
 - **Covered** — a test (or an acceptance criterion's `on error / at boundary` clause) already asserts it → nothing to do.
 - **Specified** — the requirement clearly implies the correct behaviour → write the test now.
 - **Reachable-but-undefined** — the code can hit this input but the requirement never says what *should* happen → do **not** invent the assertion. Surface it as a gap (input · why reachable · the open question). Guessing an assertion here bakes a guess into the suite and hides the missing decision.
+
+## Beyond single inputs: interaction, sequence & combination
+
+The checklist above is one bad input at a time. These dimensions break when **multiple operations or settings interact** — walk them with the same Covered / Specified / Reachable-but-undefined disposition. Reach for them whenever behaviour depends on order, prior state, or more than one setting at once.
+
+- **State & transitions** — model the states + events, then probe every *invalid* transition (an event fired from the wrong state — "pay" a cancelled order, edit a deleted row). One invalid transition per negative test, or a red test can't tell you which one broke. A *sequence* of valid transitions catches state not reset between operations.
+- **Sequences / interrupt / repeat** — vary the order of operations; undo/redo/reverse; run the same action twice without resetting (double-submit → idempotency); interrupt mid-flight (kill, network drop, cancel, timeout) then resume → no corruption, no half-written state.
+- **Combinations** — ≥ 2 independent settings whose effects interact (filter × sort × tag): **pairwise / all-pairs** to bound the case explosion (most real faults need only 2 factors interacting — NIST); several stacked conditions with distinct outcomes → a **decision table**, one row per combination.
+- **Persisted round-trip** — data written then read back: assert `load(save(x)) == x`; a malformed / stale / old-schema stored value on load must degrade, not crash; read-after-delete returns absence, not a stale or tombstoned copy.
+
+**Property-based** — when a rule must hold for *all* valid inputs, assert the property, not hand-picked examples: round-trip (`decode(encode(x)) == x`), idempotence (`f(f(x)) == f(x)`), an invariant (sort preserves length + multiset), or a model/oracle (vs a naive reference impl). The generator + shrinker hunts the minimal breaker your examples skipped — `0`, `[]`, `null`, max-int, unicode (Hypothesis · fast-check · jqwik).
+
+Techniques cited: state-transition / N-switch (Chow 1978; ISTQB), pairwise (NIST), property-based (QuickCheck); boundary/what-to-test mnemonics CORRECT & Right-BICEP (Pragmatic Unit Testing); interaction/flow heuristics from Hendrickson's Test Heuristics Cheat Sheet & Bach's HTSM.
 
 ## When tests are painful to write
 
