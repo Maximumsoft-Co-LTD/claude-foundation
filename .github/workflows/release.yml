@@ -1,0 +1,167 @@
+name: Release
+
+# One-action release. You do the editorial part — write the changelog entries
+# under `## [Unreleased]` and push them to main — then trigger this workflow
+# with the new version. It runs everything mechanical end-to-end on a
+# current-Xcode macOS runner (so Homebrew's toolchain check passes here):
+#   1. rename [Unreleased] -> [X.Y.Z] (dated), add a fresh [Unreleased], fix link refs
+#   2. bump VERSION + the WORKFLOW.md version mirror
+#   3. commit `chore(release): vX.Y.Z`, tag vX.Y.Z, push
+#   4. compute the source-tarball sha256, bump the formula url + sha256
+#   5. publish the GitHub release from the new changelog section
+#   6. build the Homebrew bottle, upload it, arm the formula's bottle block
+#   7. commit `chore(brew): formula for vX.Y.Z`, push
+# Result: 2 bot commits + a tag + a published, bottled release from one click.
+#
+# `dry_run: true` does steps 1-2, 6 (build the bottle to prove it works) WITHOUT
+# any push/tag/publish/upload — use it to rehearse a release safely.
+#
+# bottle.yml stays as the manual tool for retro-fixing/rebuilding an old tag.
+# See RELEASING.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version, no v prefix (e.g. 2.5.11)"
+        required: true
+      dry_run:
+        description: "Rehearse: do edits + build the bottle, but don't push/tag/publish"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # commit the release + push the tag + create/upload the release
+
+jobs:
+  release:
+    # Pinned (not macos-latest, which flip-flops during OS migrations) so the
+    # bottle tag is deterministic. An older-macOS bottle pours on newer macOS
+    # (forward-compatible), so arm64_sequoia also covers arm64_tahoe/macOS 26.
+    # Only arm64 macOS is bottled here; Intel/Linux/older macOS fall back to
+    # build-from-source. Add a CI matrix + per-tag sha lines to widen coverage.
+    runs-on: macos-15
+    env:
+      NEW: ${{ github.event.inputs.version }}
+      DRY: ${{ github.event.inputs.dry_run }}
+      TAP: maximumsoft-co-ltd/claude-foundation
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate inputs + repo state
+        run: |
+          set -euo pipefail
+          [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version '$NEW' is not X.Y.Z"; exit 1; }
+          PREV=$(tr -d '[:space:]' < VERSION)
+          echo "PREV=$PREV" >> "$GITHUB_ENV"
+          [ "$PREV" != "$NEW" ] || { echo "::error::VERSION is already $NEW"; exit 1; }
+          if git rev-parse "v$NEW" >/dev/null 2>&1 || git ls-remote --tags origin "v$NEW" | grep -q .; then
+            echo "::error::tag v$NEW already exists"; exit 1
+          fi
+          # The editorial part you write by hand must be present.
+          body=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | tr -d '[:space:]')
+          [ -n "$body" ] || { echo "::error::## [Unreleased] is empty — add changelog entries first"; exit 1; }
+          echo "PREV=$PREV NEW=$NEW DRY=$DRY"
+
+      - name: Rewrite changelog + bump version mirrors
+        run: |
+          set -euo pipefail
+          DATE=$(date +%F)
+          REPO="https://github.com/${GITHUB_REPOSITORY}"
+
+          # Add a dated [NEW] section directly under [Unreleased].
+          awk -v new="$NEW" -v date="$DATE" '
+            !done && /^## \[Unreleased\]$/ { print; print ""; print "## [" new "] - " date; done=1; next }
+            { print }' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
+
+          # Bump the [Unreleased] link ref + add the [NEW] compare line.
+          awk -v new="$NEW" -v prev="$PREV" -v repo="$REPO" '
+            /^\[Unreleased\]:/ {
+              print "[Unreleased]: " repo "/compare/v" new "...HEAD"
+              print "[" new "]: " repo "/compare/v" prev "...v" new
+              next }
+            { print }' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
+
+          printf '%s\n' "$NEW" > VERSION
+          perl -pi -e "s/\*\*Version \Q${PREV}\E\*\*/**Version ${NEW}**/" WORKFLOW.md
+          grep -q "\*\*Version $NEW\*\*" WORKFLOW.md || { echo "::error::WORKFLOW.md version line not updated"; exit 1; }
+
+          # Release notes = the new section body (header line dropped).
+          awk -v new="$NEW" '$0 ~ ("^## \\[" new "\\]") {f=1; next} /^## \[/{f=0} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          echo "----- release notes -----"; cat "$RUNNER_TEMP/notes.md"
+
+      - name: Commit, tag, push
+        if: env.DRY != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION WORKFLOW.md CHANGELOG.md
+          git commit -m "chore(release): v$NEW"
+          git tag -a "v$NEW" -m "Release v$NEW"
+          git push origin HEAD:main
+          git push origin "v$NEW"
+
+      - name: Compute tarball sha256 + bump formula url/sha
+        if: env.DRY != 'true'
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v$NEW.tar.gz"
+          SHA=""
+          for i in $(seq 1 12); do
+            if SHA=$(curl -fsSL "$URL" | shasum -a 256 | awk '{print $1}') && [ -n "$SHA" ]; then break; fi
+            echo "tarball not ready yet ($i)"; sleep 5
+          done
+          [ -n "$SHA" ] || { echo "::error::could not fetch source tarball sha256"; exit 1; }
+          perl -pi -e "s#archive/refs/tags/v\Q${PREV}\E\.tar\.gz#archive/refs/tags/v${NEW}.tar.gz#" Formula/claude-foundation.rb
+          perl -0pi -e "s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"$SHA\"/m" Formula/claude-foundation.rb
+          grep -q "v$NEW.tar.gz" Formula/claude-foundation.rb && grep -q "sha256 \"$SHA\"" Formula/claude-foundation.rb \
+            || { echo "::error::formula url/sha not updated"; exit 1; }
+
+      - name: Publish the GitHub release
+        if: env.DRY != 'true'
+        run: |
+          set -euo pipefail
+          gh release create "v$NEW" --title "v$NEW" --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Build the bottle, arm the formula (upload/commit only when not dry)
+        run: |
+          set -euo pipefail
+          ROOT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v$NEW"
+
+          brew tap-new "$TAP" --no-git
+          cp Formula/claude-foundation.rb "$(brew --repository "$TAP")/Formula/"
+          brew install --build-bottle "$TAP/claude-foundation"
+          brew bottle --json --no-rebuild --root-url "$ROOT_URL" "$TAP/claude-foundation" | tee bottle.out
+
+          # brew writes name--version (double dash); a custom root_url downloads
+          # via url_encode = name-version (single dash). Rename to match.
+          for f in claude-foundation--*.bottle.tar.gz; do mv "$f" "${f/--/-}"; done
+
+          # Replace the formula's existing bottle block with the generated one.
+          sed -n '/^  bottle do$/,/^  end$/p' bottle.out > bottle_block.txt
+          grep -q 'sha256 cellar:' bottle_block.txt || { echo "::error::failed to extract bottle block"; exit 1; }
+          awk '
+            /^  bottle do$/ { while ((getline line < "bottle_block.txt") > 0) print line; skip=1; next }
+            skip && /^  end$/ { skip=0; next }
+            skip { next }
+            { print }
+          ' Formula/claude-foundation.rb > Formula/claude-foundation.rb.tmp && mv Formula/claude-foundation.rb.tmp Formula/claude-foundation.rb
+
+          ruby -c Formula/claude-foundation.rb
+          brew style Formula/claude-foundation.rb
+
+          if [ "$DRY" = "true" ]; then
+            echo "::notice::DRY RUN — built the bottle and rewrote the formula but pushed nothing. Diff:"
+            git --no-pager diff -- Formula/claude-foundation.rb
+            exit 0
+          fi
+
+          gh release upload "v$NEW" claude-foundation-*.bottle.tar.gz --clobber
+          git add Formula/claude-foundation.rb
+          git commit -m "chore(brew): formula for v$NEW (url/sha + bottle)"
+          git push origin HEAD:main

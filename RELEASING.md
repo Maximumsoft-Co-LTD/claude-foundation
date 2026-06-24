@@ -9,9 +9,24 @@ The formula (`Formula/claude-foundation.rb`) ships **two** install paths:
 
 We follow [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/). Tags are `vMAJOR.MINOR.PATCH` (e.g. `v1.3.0`).
 
-## Cutting a release
+## One-action release (recommended)
 
-Replace `X.Y.Z` with the new version throughout.
+`.github/workflows/release.yml` does the whole mechanical release on a current-Xcode macOS runner. You do only the editorial part:
+
+1. **Write the changelog.** Add the release's entries under `## [Unreleased]` in `CHANGELOG.md` and push to `main`. (This is the only hand-written part; everything below is automated.)
+2. **Trigger the release.** Actions tab → **Release** → *Run workflow* → enter the new version (e.g. `2.5.11`). Or: `gh workflow run release.yml -f version=2.5.11`.
+
+The workflow then: renames `## [Unreleased]` → `## [X.Y.Z]` (dated) + adds a fresh `## [Unreleased]` + fixes the link refs · bumps `VERSION` + the `WORKFLOW.md` mirror · commits `chore(release): vX.Y.Z` + tags + pushes · computes the tarball `sha256` and bumps the formula `url`/`sha256` · publishes the GitHub release from the new changelog section · builds + uploads the bottle and arms the formula's `bottle do` block · commits `chore(brew): formula for vX.Y.Z`. **Result: 2 bot commits + a tag + a published, bottled release.**
+
+It refuses to run if the version is malformed, the tag already exists, or `## [Unreleased]` is empty (nothing to release).
+
+> **Rehearse first.** Run it with **`dry_run: true`** (`gh workflow run release.yml -f version=2.5.11 -f dry_run=true`) to do the edits + build the bottle and print the diffs **without** pushing, tagging, or publishing anything. Recommended before the first real use, and any time the release machinery changed.
+
+> **Coverage.** The bottle is built on one pinned arm64 macOS runner (`macos-15` → `arm64_sequoia`, which also pours on `arm64_tahoe`/macOS 26 via forward-compat). Intel macOS, Linux, and macOS older than Sequoia fall back to build-from-source. To widen coverage, build on a CI matrix and add one `sha256 … <tag>:` line per platform. `bottle.yml` remains the manual tool for retro-fixing/rebuilding the bottle for an already-tagged release.
+
+## Cutting a release (manual fallback)
+
+Use this if the workflow is unavailable or you're releasing by hand. Replace `X.Y.Z` with the new version throughout.
 
 1. **Bump the version + changelog.**
    - Write the bare version (no `v` prefix) into `VERSION`, e.g. `echo "X.Y.Z" > VERSION`. This is the source of truth for `claude-foundation version`; keep it in lockstep with the tag below.
