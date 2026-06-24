@@ -69,7 +69,13 @@ jobs:
       - name: Upload the bottle to the release
         run: |
           set -euo pipefail
-          gh release upload "$TAG" claude-foundation--*.bottle.tar.gz \
+          # brew writes the file as `name--version` (double dash), but a custom
+          # root_url downloads via url_encode = `name-version` (single dash).
+          # Rename so the uploaded asset matches the URL brew will request.
+          for f in claude-foundation--*.bottle.tar.gz; do
+            mv "$f" "${f/--/-}"
+          done
+          gh release upload "$TAG" claude-foundation-*.bottle.tar.gz \
             --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Emit the bottle block to paste into the formula

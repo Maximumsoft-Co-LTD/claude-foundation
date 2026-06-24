@@ -83,6 +83,8 @@ The gate is purely `pour_bottle?` — it never inspects whether a compiler is ac
 
 **The bottle must be built where Xcode is current** — building a bottle is itself a build-from-source op, so it can't be produced on the very machine that hits the error. That's why the workflow runs on `macos-latest`. To cover more platforms, build the bottle on each (a CI matrix) and add one `sha256 … <tag>:` line per platform.
 
+> **Asset filename gotcha.** `brew bottle` writes the file as `name--version.<tag>.bottle.tar.gz` (**double** dash), but with a custom `root_url` brew *downloads* via `url_encode` = `name-version.<tag>.bottle.tar.gz` (**single** dash). The asset uploaded to the release must use the **single-dash** name or `brew install` 404s. The workflow renames it automatically before upload; if you ever upload by hand, rename `--` → `-` first. (Content is identical, so the `sha256` is unchanged.)
+
 **Retro-fixing an already-released version**: trigger the workflow by hand — `gh workflow run bottle.yml -f tag=vX.Y.Z` (or the Actions tab → *Build Homebrew bottle* → Run workflow → enter the tag). It uploads the bottle to that existing release and prints the block; paste it into the formula and push a formula-only commit. No re-tag.
 
 > **Note on tarball hashes.** GitHub's `archive/refs/tags/*.tar.gz` checksums are stable, so the `sha256` you compute once stays valid. If you ever re-tag the same version (don't), the hash changes and the formula must be re-bumped.
