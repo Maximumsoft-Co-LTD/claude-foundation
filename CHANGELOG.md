@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **One-action release — `.github/workflows/release.yml` automates the whole mechanical release.** Write the changelog under `## [Unreleased]` and trigger the *Release* workflow with a version; on a current-Xcode `macos-15` runner it renames the changelog (`[Unreleased]` → dated `[X.Y.Z]` + fresh `[Unreleased]` + link refs), bumps `VERSION`/`WORKFLOW.md`, tags + pushes, computes the source-tarball `sha256` and bumps the formula `url`/`sha256`, publishes the GitHub release, builds + uploads the bottle and arms the formula's `bottle do` block, then commits — turning ~15 manual steps into one trigger (2 bot commits + a tag + a bottled release). A `dry_run` input rehearses the edits + bottle build with no push/tag/publish. Files: `.github/workflows/release.yml`, `RELEASING.md`.
+
 ## [2.5.10] - 2026-06-24
 
 ### Added
