@@ -10,18 +10,18 @@ class ClaudeFoundation < Formula
   # runs its fatal "Xcode/CLT too outdated" check on every *build-from-source*
   # install (formula_installer.rb: `!pour_bottle? && DevelopmentTools.installed?`),
   # so without a bottle, users on a newer macOS with an older Xcode are blocked
-  # for a toolchain they never need. Publishing a bottle makes `pour_bottle?`
-  # true on a matching platform and skips that check there.
+  # for a toolchain they never need. The bottle below makes `pour_bottle?` true
+  # on a matching platform and skips that check there.
   #
   # The `bin` wrapper bakes an absolute prefix, so brew produces a *per-platform*
-  # bottle (e.g. arm64_tahoe), not an `:all` one; platforms without a line fall
-  # back to build-from-source. .github/workflows/bottle.yml builds + uploads it
-  # on release; paste the printed block here at release time (see RELEASING.md):
-  #
-  #   bottle do
-  #     root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/vX.Y.Z"
-  #     sha256 cellar: :any_skip_relocation, arm64_tahoe: "<sha256 from the bottle job>"
-  #   end
+  # bottle (not an `:all` one). An older-macOS bottle pours on newer macOS
+  # (forward-compatible), so arm64_sequoia also covers arm64_tahoe; add a
+  # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
+  # RELEASING.md). Platforms with no line fall back to build-from-source.
+  bottle do
+    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.5.10"
+    sha256 cellar: :any_skip_relocation, arm64_sequoia: "eef1ca3b4ea9077884d826a78ecc5eebdf4fc842c41a06d6f2c76dc97a66d59f"
+  end
 
   def install
     libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
