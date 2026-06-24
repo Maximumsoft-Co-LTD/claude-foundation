@@ -6,6 +6,21 @@ class ClaudeFoundation < Formula
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
+  # This formula compiles nothing — `install` only copies files. But Homebrew
+  # runs its fatal "Xcode/CLT too outdated" check on every *build-from-source*
+  # install (formula_installer.rb: `!pour_bottle? && DevelopmentTools.installed?`),
+  # so without a bottle, users on a newer macOS with an older Xcode are blocked
+  # for a toolchain they never need. Publishing one platform-independent `:all`
+  # bottle makes `pour_bottle?` true and skips that check on every platform.
+  #
+  # The bottle is built + uploaded by .github/workflows/bottle.yml on release;
+  # paste the printed block here at release time (see RELEASING.md). Shape:
+  #
+  #   bottle do
+  #     root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/vX.Y.Z"
+  #     sha256 cellar: :any_skip_relocation, all: "<sha256 from the bottle job>"
+  #   end
+
   def install
     libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
                     "install.sh", "install-cursor.sh", "cli.sh", "dashboard"
