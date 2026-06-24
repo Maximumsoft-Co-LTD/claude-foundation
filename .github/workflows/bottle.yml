@@ -1,4 +1,4 @@
-name: Build :all bottle
+name: Build Homebrew bottle
 
 # Why this exists
 # ---------------
@@ -8,12 +8,14 @@ name: Build :all bottle
 #   `if !pour_bottle? && DevelopmentTools.installed?` -> perform_build_from_source_checks).
 # With no bottle published, every `brew install` is build-from-source, so users
 # on a newer macOS with an older Xcode are blocked for a toolchain they never
-# need. Shipping one platform-independent `:all` bottle makes `pour_bottle?`
-# true and skips the check entirely.
+# need. Publishing a bottle makes `pour_bottle?` true and skips the check.
 #
-# This job builds that `:all` bottle on a current-Xcode runner (so the check
-# passes *here*), uploads it to the release, and prints the `bottle do` block to
-# paste into Formula/claude-foundation.rb. See RELEASING.md.
+# This builds the bottle on a current-Xcode runner (so the check passes *here*),
+# uploads it to the release, and prints the `bottle do` block to paste into the
+# formula. The formula bakes an absolute prefix into its `bin` wrapper, so brew
+# produces a *per-platform* bottle (e.g. `arm64_tahoe`), not an `:all` bottle —
+# each platform that wants the no-toolchain install gets its own bottle line;
+# platforms with no matching line fall back to build-from-source. See RELEASING.md.
 
 on:
   release:
@@ -21,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to (re)build the bottle for, e.g. v2.5.9"
+        description: "Release tag to (re)build the bottle for, e.g. v2.5.10"
         required: true
 
 permissions:
@@ -36,12 +38,15 @@ jobs:
       TAP: maximumsoft-co-ltd/claude-foundation
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Check out the tagged formula
+      # Check out `main`, not the tag: the formula's `url`/`sha256` bump lands in
+      # a commit *after* the tag (see RELEASING.md), so the tagged tree still
+      # points at the previous version. `main` carries the just-released formula.
+      - name: Check out the released formula (from main)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          ref: main
 
-      - name: Build the :all bottle
+      - name: Build the bottle
         run: |
           set -euo pipefail
           ROOT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
@@ -50,31 +55,30 @@ jobs:
           brew tap-new "$TAP" --no-git
           cp Formula/claude-foundation.rb "$(brew --repository "$TAP")/Formula/"
 
-          # --build-bottle installs from the tagged source tarball (the formula's
-          # `url`). brew bottle auto-detects platform independence and emits an
-          # `:all` bottle by default (opt out with --no-all-checks); --root-url
-          # bakes the release-download URL into the generated block.
+          # --build-bottle installs from the released source tarball (the formula's
+          # `url`); brew bottle emits a per-platform bottle + a DSL block on stdout.
+          # --root-url bakes the release-download URL into that block.
           brew install --build-bottle "$TAP/claude-foundation"
           brew bottle --json --no-rebuild \
             --root-url "$ROOT_URL" \
             "$TAP/claude-foundation" | tee bottle.out
 
           echo "Built artifacts:"
-          ls -1 claude-foundation--*.all.bottle.tar.gz
+          ls -1 claude-foundation--*.bottle.tar.gz
 
       - name: Upload the bottle to the release
         run: |
           set -euo pipefail
-          gh release upload "$TAG" claude-foundation--*.all.bottle.tar.gz \
+          gh release upload "$TAG" claude-foundation--*.bottle.tar.gz \
             --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Emit the bottle block to paste into the formula
         run: |
           set -euo pipefail
           {
-            echo "## :all bottle built for \`${TAG}\`"
+            echo "## Bottle built for \`${TAG}\`"
             echo
-            echo "Uploaded to the \`${TAG}\` release. Paste this block into"
+            echo "Uploaded to the \`${TAG}\` release. Paste/merge this block into"
             echo "\`Formula/claude-foundation.rb\` right after the \`head\` line, then"
             echo "commit + merge (see RELEASING.md):"
             echo

@@ -52,19 +52,19 @@ Replace `X.Y.Z` with the new version throughout.
    gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/## \[X.Y.Z\]/,/## \[/p' CHANGELOG.md)
    ```
 
-8. **Ship the `:all` bottle** (skips Homebrew's Xcode/CLT check — see below). Publishing the release in step 7 fires `.github/workflows/bottle.yml` on a `macos-latest` runner, which builds the platform-independent bottle, uploads it to the `vX.Y.Z` release, and prints a `bottle do` block in the job summary. Copy that block into `Formula/claude-foundation.rb` **right after the `head` line**, then commit + merge (a formula-only commit — no re-tag needed; `root_url` points at the already-published release):
+8. **Ship the bottle** (skips Homebrew's Xcode/CLT check — see below). Publishing the release in step 7 fires `.github/workflows/bottle.yml` on a `macos-latest` runner. It checks out the formula **from `main`** (the tag predates the formula bump, so it must not build from the tag), builds a per-platform bottle, uploads it to the `vX.Y.Z` release, and prints a `bottle do` block in the job summary. Copy/merge that block into `Formula/claude-foundation.rb` **right after the `head` line**, then commit + merge (a formula-only commit — no re-tag needed; `root_url` points at the already-published release):
    ```ruby
    bottle do
      root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/vX.Y.Z"
-     sha256 cellar: :any_skip_relocation, all: "<sha256 from the bottle job summary>"
+     sha256 cellar: :any_skip_relocation, arm64_tahoe: "<sha256 from the bottle job summary>"
    end
    ```
-   Re-run `brew style` after pasting (component order: `… → license → head → bottle → def install`).
+   The job runs per platform you build on — add a `sha256 … <tag>:` line per platform; tags with no line fall back to build-from-source. Re-run `brew style` after pasting (component order: `… → license → head → bottle → def install`).
 
 9. **Verify the upgrade path** on a machine that has the tap:
    ```bash
    brew update
-   brew upgrade claude-foundation          # pours the :all bottle — no toolchain check
+   brew upgrade claude-foundation          # pours the bottle on a matching platform — no toolchain check
    brew info claude-foundation             # confirm it reports the new version
    ```
 
@@ -79,11 +79,11 @@ if !pour_bottle? && DevelopmentTools.installed?
 end
 ```
 
-The gate is purely `pour_bottle?` — it never inspects whether a compiler is actually used. With **no bottle**, every stable `brew install` is build-from-source, so a user on a newer macOS (e.g. Tahoe 26) with an older Xcode is blocked for a toolchain the formula never needs. Publishing **one `:all` bottle** (`cellar: :any_skip_relocation`, valid for every OS/arch — `find_matching_tag` falls back to `:all`) makes `pour_bottle?` true and skips the check. `brew install --HEAD` still builds from source (HEAD ignores bottles), which is expected.
+The gate is purely `pour_bottle?` — it never inspects whether a compiler is actually used. With **no bottle**, every stable `brew install` is build-from-source, so a user on a newer macOS (e.g. Tahoe 26) with an older Xcode is blocked for a toolchain the formula never needs. Publishing a bottle (`cellar: :any_skip_relocation`) makes `pour_bottle?` true **on a matching platform** and skips the check. The formula's `bin` wrapper bakes an absolute prefix, so it is **not** `:all`-eligible — brew emits a per-platform bottle (e.g. `arm64_tahoe`); platforms without a `sha256 … <tag>:` line keep building from source. `brew install --HEAD` always builds from source (HEAD ignores bottles), which is expected.
 
-**The bottle must be built where Xcode is current** — building a bottle is itself a build-from-source op, so it can't be produced on the very machine that hits the error. That's why the workflow runs on `macos-latest`.
+**The bottle must be built where Xcode is current** — building a bottle is itself a build-from-source op, so it can't be produced on the very machine that hits the error. That's why the workflow runs on `macos-latest`. To cover more platforms, build the bottle on each (a CI matrix) and add one `sha256 … <tag>:` line per platform.
 
-**Retro-fixing an already-released version** (e.g. the current `v2.5.9`, broken for these users today): trigger the workflow by hand — `gh workflow run bottle.yml -f tag=v2.5.9` (or the Actions tab → *Build :all bottle* → Run workflow → enter the tag). It uploads the bottle to that existing release and prints the block; paste it into the formula and push a formula-only commit. No re-tag.
+**Retro-fixing an already-released version**: trigger the workflow by hand — `gh workflow run bottle.yml -f tag=vX.Y.Z` (or the Actions tab → *Build Homebrew bottle* → Run workflow → enter the tag). It uploads the bottle to that existing release and prints the block; paste it into the formula and push a formula-only commit. No re-tag.
 
 > **Note on tarball hashes.** GitHub's `archive/refs/tags/*.tar.gz` checksums are stable, so the `sha256` you compute once stays valid. If you ever re-tag the same version (don't), the hash changes and the formula must be re-bumped.
 
