@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.10] - 2026-06-24
+
+### Added
+
+- **Ship no longer auto-commits — the commit is opt-in at the gate, default `no`.** Phase 9 (Ship) always runs — it isolates the run's diff and scans for secrets — but whether it *commits* is now the gate's call via a new **`commit on|off`** lever (`state.json > commit_on_ship`, asked **every run**, default `off`). `off` → the engineer leaves the tree as built and hands back a **ready-to-run commit command** (no commit, no push, no PR — `open_pr_on_ship` is forced `no`); `on` → it commits with the spec-aware message and opens a PR when a remote exists and `Open PR on ship = yes`. Independent of the in-`implement` commits `fix`/`refactor` make for the regression/baseline contract (those still land at phase 4). Files: `.claude/agents/engineer.md`, `.claude/orchestrator/references/gate.md`, `.workflow/_templates/state.json`, `.claude/orchestrator.md`, `.claude/agents/{INDEX.md,retro.md}`, `.claude/commands/implement.md`, `WORKFLOW.md`, `README.md`.
+
+### Fixed
+
+- **`brew install claude-foundation` no longer demands an up-to-date Xcode / Command Line Tools.** The formula compiles nothing — `install` only copies files — but Homebrew runs its fatal *"Your Xcode/Command Line Tools are too outdated"* check on every **build-from-source** install (`formula_installer.rb`: `if !pour_bottle? && DevelopmentTools.installed?`), and with no bottle published every stable install was build-from-source. So a user on a newer macOS (e.g. Tahoe 26) with an older Xcode was blocked for a toolchain the formula never uses. Fixed by shipping a single platform-independent **`:all` bottle** (`cellar: :any_skip_relocation`, matched on every OS/arch via Homebrew's `:all`-tag fallback) so `pour_bottle?` is true and the check is skipped. A new `.github/workflows/bottle.yml` builds the bottle on a current-Xcode `macos-latest` runner (building a bottle is itself build-from-source, so it cannot be produced on the machine that hits the error), uploads it to the GitHub release, and prints the `bottle do` block to paste into the formula; `RELEASING.md` documents the per-release step and how to retro-fix an already-published version. `brew install --HEAD` still builds from source (HEAD ignores bottles), as expected. Files: `.github/workflows/bottle.yml`, `Formula/claude-foundation.rb`, `RELEASING.md`.
+
+### Changed
+
+- **`testing-fundamentals` test-design reference — boundary-testing guidance expanded.** Adds a mnemonic for the conditions worth probing and a new note on interaction / sequence / combination testing, and tightens the edge-case checklist. Files: `.claude/skills/testing-fundamentals/references/test-design.md`.
+
 ## [2.5.9] - 2026-06-22
 
 ### Changed
@@ -418,7 +432,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.9...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.10...HEAD
+[2.5.10]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.9...v2.5.10
 [2.5.9]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.8...v2.5.9
 [2.5.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.7...v2.5.8
 [2.5.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.6...v2.5.7
