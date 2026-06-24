@@ -20,6 +20,7 @@
   "fanout_log": [],
   "team_registry": null,
   "impl_phases_done": [],
+  "commit_on_ship": null,
   "open_pr_on_ship": null,
   "e2e_visual": null,
   "security_triggered": null,

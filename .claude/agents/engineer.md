@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Implements code from tasks.md (against plan.md), ticks acceptance scenarios, handles docs touch-up, and ships (commit + optional PR). Modes — A implement (Phase 2 step 4), B docs (step 8), C ship (step 9). For type=fix, mode A's first task is reproducing the bug via a failing test before any fix lands. For type=spike, mode A writes recommendations.md instead of code.
+description: Implements code from tasks.md (against plan.md), ticks acceptance scenarios, handles docs touch-up, and ships (gate-decided commit, default no → ready-to-run commit command; + optional PR). Modes — A implement (Phase 2 step 4), B docs (step 8), C ship (step 9). For type=fix, mode A's first task is reproducing the bug via a failing test before any fix lands. For type=spike, mode A writes recommendations.md instead of code.
 tools: Read, Edit, Write, Bash, Grep, LSP, TaskCreate, TaskUpdate, TaskList, Agent
 model: sonnet
 color: green
@@ -30,13 +30,14 @@ Done: changed files + ticked ACs + any `BLOCKER:` + task notes for `lead` (spike
 Re-read the diff (after qa; after review for chore/docs/spike). Fix any stale inline comment. Update user-facing docs (README/API) ONLY if the change affects users AND `spec.md` scoped docs in — else skip; never create new docs unless the spec asked. `docs` runs = the work (light comment pass); fix/refactor/chore light by default; spike skip. Done: files touched, or "no doc changes needed".
 > XS/S fast path: orchestrator may merge B+C into one spawn — run B steps then C steps, never ship before the docs pass.
 
-## Mode C — Ship (step 9) · this run's diff committed cleanly (+ optional PR), SHA reported
-Inputs: `id`, `Type`, `spec.md` acceptance scenarios (all P1 `AC#` ticked = done-definition), `Open PR on ship`, the diff, `repo_root`/`branch` from `state.json` when set. **Repo scope:** `repo_root` passed → prefix every git call `git -C <repo_root>` and `cd <repo_root>` before any source op; `.workflow/<id>/` artifacts stay in the orchestrator's CWD.
-1. `git status` first (no VCS → "no VCS — ship skipped", stop). Confirm the only uncommitted changes are this run's diff; unfamiliar files → STOP/ask, never `git add -A`.
-2. Stage this run's files explicitly by path. Never commit secrets (`.env`, `credentials.json`, `*.pem`) — warn + ask.
-3. Commit via HEREDOC: `<type>(<scope>): <one-line goal from spec>` / blank / `Run: .workflow/<id>/` / `Spec: <one-sentence summary>` / (fix: `Closes: <id>`) / blank / `Co-Authored-By: Claude <noreply@anthropic.com>`. `<type>` mirrors run Type; spike skips the commit unless the user opted in at the gate.
-4. Pre-commit hook fails → fix the issue + a NEW commit, never `--no-verify`/`--amend` past the failure. Capture the SHA.
-5. **PR** only if `Open PR on ship = yes` AND a remote exists: push `-u` if untracked, `gh pr create` with a HEREDOC body (spec summary + ACs + `tests.md` results + Claude Code footer), capture the URL.
-6. Report `commit_sha` + `pr_url` in your return — do NOT write `state.json` (orchestrator is single writer). No destructive git (`reset --hard`, `push --force`, `-D`) unless the user asks — Rollback is the plan's undo path.
+## Mode C — Ship (step 9) · `commit_on_ship=yes` → diff committed cleanly (+ optional PR), SHA reported · `=no` (default) → diff uncommitted, ready-to-run commit command returned
+Inputs: `id`, `Type`, `spec.md` acceptance scenarios (all P1 `AC#` ticked = done-definition), **`commit_on_ship`**, `Open PR on ship`, the diff, `repo_root`/`branch` from `state.json` when set. **Repo scope:** `repo_root` passed → prefix every git call `git -C <repo_root>` and `cd <repo_root>` before any source op; `.workflow/<id>/` artifacts stay in the orchestrator's CWD.
+1. `git status` first (no VCS → "no VCS — ship skipped", stop). Confirm the only uncommitted changes are this run's diff; unfamiliar files → STOP/ask, never `git add -A`. Scan this run's files for secrets (`.env`, `credentials.json`, `*.pem`) — found → warn + ask.
+2. **`commit_on_ship=no` (default)** → **no commit/push/PR**; leave the tree as built, return the **ready-to-run command** (`git add <run's paths>` + the step-4 HEREDOC); `commit_sha=null`. fix/refactor already committed at implement (clean tree) → return the existing SHA(s) + a `git push` command. Stop.
+3. **`commit_on_ship=yes`** → stage this run's files explicitly by path (never `git add -A`, never secrets).
+4. Commit via HEREDOC: `<type>(<scope>): <one-line goal from spec>` / blank / `Run: .workflow/<id>/` / `Spec: <one-sentence summary>` / (fix: `Closes: <id>`) / blank / `Co-Authored-By: Claude <noreply@anthropic.com>`. `<type>` mirrors run Type.
+5. Pre-commit hook fails → fix the issue + a NEW commit, never `--no-verify`/`--amend` past the failure. Capture the SHA.
+6. **PR** only if `Open PR on ship = yes` AND a remote exists (implies `commit_on_ship=yes`): push `-u` if untracked, `gh pr create` with a HEREDOC body (spec summary + ACs + `tests.md` results + Claude Code footer), capture the URL.
+7. Report `commit_sha` + `pr_url` in your return — do NOT write `state.json` (orchestrator is single writer). No destructive git (`reset --hard`, `push --force`, `-D`) unless the user asks — Rollback is the plan's undo path.
 
-Done: commit SHA + PR URL (or "no PR — opt-out") + the files in the commit.
+Done: commit=yes → SHA + PR URL (or "no PR — opt-out") + files committed; commit=no → "not committed" + the ready-to-run command + the run's files.

@@ -38,7 +38,7 @@ flowchart TD
         S6{"6. Review<br/>lead vs plan + acceptance"}
         S7{"7. Security<br/>trigger-based · lead"}
         S8["8. Docs touch-up<br/>engineer"]
-        S9["9. Ship<br/>engineer · commit + PR"]
+        S9["9. Ship<br/>engineer · opt-in commit/PR (default no)"]
         S10["10. Retro<br/>retro.md · memory + skill candidates"]
         S4 --> S5
         S5 -- "pass" --> S6
@@ -142,8 +142,10 @@ Type decides *which* phases run. The same numbered phases run for every type, bu
 | 6. Review | ✓ | ✓ | ✓ | ✓ · skip @XS | ✓ · skip @XS | light |
 | 7. Security review | trigger-based | trigger-based | trigger-based | trigger-based | trigger-based | skip |
 | 8. Docs touch-up | ✓ | optional | optional | optional | ✓ | skip |
-| 9. Ship (commit + PR) | ✓ | ✓ | ✓ | ✓ | ✓ | optional (commit only) |
+| 9. Ship (stage + opt-in commit/PR) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 10. Retro | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**Ship commit — opt-in, asked every run (default `no`).** Phase 9 always runs (isolates the diff, scans secrets) but **the commit is the gate's call** (`state.json > commit_on_ship`, lever `commit on|off`): `no` → ship hands back a ready-to-run commit command, no push/PR (`open_pr_on_ship` forced `no`); `yes` → commit + optional PR. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at phase 4.
 
 **Review at XS for `chore`/`docs` — default skip.** A `chore`/`docs` change sized **XS** (one file, pure text/config, no behaviour surface) skips phase 6 by default — the lint hook + the gate's per-line AC confirmation cover it. The gate's run-plan line shows it (`review:type=<chore|docs>@XS`); `run 6` keeps the pass. A **size×type matrix default** (not a per-line deviation): `chore`/`docs` at **S or larger** still review, every other type reviews at XS; the orchestrator enforces it at Review.
 
@@ -223,7 +225,7 @@ Build the approved contract and prove it — implement, then close the test/revi
 6. **Review** — `lead` (review mode) reads the diff against `tasks.md` + `plan.md` AND the `spec.md` acceptance scenarios (each boundary/error scenario and any `measured:` target), AND the non-AC correctness slots — `Definition of Done` (artifact present?) and `Constraints` (diff honours each?). May fan out to the tiered review lenses (core 3 at M, full 6 at L/high-stakes); otherwise reviews directly. Writes `review.md`. Blocking issues → `engineer` fixes → **re-validate (re-run test, step 5) → re-review** (max 2 cycles before escalation), so a review-driven fix never ships untested.
 7. **Security review** — *trigger-based* (see `Security trigger` above). If the diff trips the list, `orchestrator` spawns `lead` in security mode → `security.md`. `high` findings block; `medium` and below carry into `retro.md`. After a `high` fix, the change re-enters test (5) → review (6) → security (7) on the new diff — same cycle budget as review.
 8. **Docs touch-up** — `engineer` updates inline comments where the *why* is non-obvious and any user-facing docs the change touches. No new docs unless the spec asked. Light for `fix`/`refactor`/`chore`; skipped for `spike`.
-9. **Ship** — `engineer` (ship mode) stages the changed files, writes a commit referencing the run ID + spec goal, and (if there's a remote and the user opted in at the gate) opens a PR. Commit hash + PR URL → `state.json` → `retro.md`. Skipped for `spike` unless the user asks to commit.
+9. **Ship** — `engineer` (ship mode) isolates the diff + scans secrets. **Commit opted in at the gate, asked every run, default `no`:** off → leave uncommitted + hand back a ready-to-run commit command (no push/PR); on → commit (run ID + spec goal) + PR if remote and `Open PR on ship=yes`. Commit/PR URL → `state.json` → `retro.md`.
 10. **Retro** — `retro` reads `plan.md` + `review.md` + `security.md` (if any) + `tests.md` + diff + commit, writes `retro.md`, appends new follow-ups to `FOLLOWUPS.md`, marks consumed ones closed. Surfaces *memory candidates* (facts) and *skill candidates* (procedures) for user confirmation; the orchestrator then asks which skill candidates to create and spawns `skill-creator` for each approved one, then prints the final summary (artifacts, files changed, commit, PR, open follow-ups, skills created) — the run's terminator, not a numbered phase.
 
 After every step `orchestrator` updates `state.json` (`phase`, `step`, relevant `cycle` counter); if the session dies mid-run, `/dev --resume <id>` reads it and continues.
