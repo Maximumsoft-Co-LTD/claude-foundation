@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.12] - 2026-06-25
+
 ### Added
 
 - **Specs now require a one-line `## Goal` — what's built, for whom, to what outcome.** Added to the spec minimum floor: a `## Goal` section (one sentence; *not* a metric → that's `Success Criteria`, *not* a feature list → that's `User Stories`). The `pm` agent writes it from the interview's goal capture (unknown goal → `BLOCKER:`, not `[NEEDS CLARIFICATION]`); the `brainstorming` interview captures it; and the `artifact-lint` hook now enforces `## Goal` alongside `**Type**:` and `## User Stories`, with a new pass-fixture section and dedicated test assertions. Files: `.claude/agents/pm.md`, `.claude/hooks/artifact-lint.sh`, `.claude/hooks/tests/run-artifact-lint-tests.sh`, `.claude/hooks/tests/fixtures/pass/.workflow/0000-feat-sample/spec.md`, `.claude/skills/brainstorming/SKILL.md`, `.workflow/_templates/spec.md`, `WORKFLOW.md`.
@@ -446,7 +448,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.11...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.12...HEAD
+[2.5.12]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.11...v2.5.12
 [2.5.11]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.10...v2.5.11
 [2.5.10]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.9...v2.5.10
 [2.5.9]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.8...v2.5.9
