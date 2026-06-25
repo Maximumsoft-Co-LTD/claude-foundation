@@ -5,6 +5,8 @@
 **Status**: draft | approved
 **Mode**: Full (feat / refactor) | Fix (fix)
 
+> **For humans** — one row per spec promise (`AC#`): what each test checks, at which level (unit/integration/e2e). The rest is detail for the test agent.
+
 ## Coverage plan *(required)*
 
 One row per spec.md acceptance scenario (`AC#`) — happy path AND its boundary/error scenario are separate rows. Every scenario maps to ≥ 1 planned test; pick the level that owns the behaviour. (e2e opt-in — only when `e2e_visual=on`; under `off`, map a user journey to integration.)

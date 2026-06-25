@@ -4,6 +4,8 @@
 **Plan**: [./plan.md](./plan.md)
 **Status**: draft | approved
 
+> **For humans** — the design before any UI: Scenes (screens/states) → wireframes → Scenarios (user journeys) → AC map. Read top to bottom; `S1`/`AC1` just cross-link.
+
 ## Scenes *(required)*
 
 Every screen / view / distinct UI state. A scene is a coherent surface (page, modal, panel); a different state of the same surface is a *state* (States column), not a new row.

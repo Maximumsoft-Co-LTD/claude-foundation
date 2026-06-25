@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The three most code/table-dense artifacts now open with a one-line `> For humans` lede.** `tasks.md`, `test-plan.md`, and `uxui-plan.md` each begin with a single plain-language blockquote that says how to skim the file and which codes a human can skip (`T###` / `[AC#]` / `S1`, `path#anchor`); the `For humans` label also signals downstream agents the line is skippable. Additive only — every machine-read field is untouched and the `Output discipline` terse-first contract for AI-to-AI artifacts is unchanged. The owning skill/agent guidance pins the lede as always-on (one line, never stripped in self-review). Files: `.workflow/_templates/tasks.md`, `.workflow/_templates/test-plan.md`, `.workflow/_templates/uxui-plan.md`, `.claude/skills/plan-writing/SKILL.md`, `.claude/agents/qa.md`, `.claude/agents/uxui.md`.
+
 ## [2.5.12] - 2026-06-25
 
 ### Added

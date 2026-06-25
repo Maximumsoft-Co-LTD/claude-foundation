@@ -74,7 +74,7 @@ When Current state (principle 3) is present, the Architecture diagram is the *to
 
 ### 5. Tasks use the strict format: `T### [P?] [AC#] action — path#anchor (new|edit|delete) — verify: <command or observable>`
 
-Tasks live in `tasks.md`, grouped into phases (Setup → Foundational → one per User Story in priority order → Polish). Every task has a `T###` id and all four parts. No exceptions.
+Tasks live in `tasks.md`, grouped into phases (Setup → Foundational → one per User Story in priority order → Polish). Every task has a `T###` id and all four parts. No exceptions. `tasks.md` opens with a **one-line** `> **For humans**` blockquote (plain language — what one task line is; the `T###`/`[P]`/`[AC#]`/`path#anchor` codes are for build agents). Always-on, **not** a triggered section — keep it (one line, don't let it grow); do not strip it in the principle-8 self-review.
 
 - **T### + [P?]** — sequential id in execution order; add `[P]` only when the task is parallel-safe (different files, no unmet dependency).
 - **[AC#]** — which acceptance scenario this task lands (`[DoD]` / `[SC-###]` for a non-AC task). A task with no tag is either scope-creep or evidence that the spec is missing a scenario the work actually delivers — go fix the spec first.
