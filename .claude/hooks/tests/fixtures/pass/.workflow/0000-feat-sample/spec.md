@@ -7,6 +7,10 @@
 **Open PR on ship**: no
 **Parent**: none
 
+## Goal
+
+A clean committed fixture that exercises every spec required-section check so the linter's pass verdict is provable.
+
 ## User Stories
 
 ### US1 — Lint a clean run (Priority: P1)

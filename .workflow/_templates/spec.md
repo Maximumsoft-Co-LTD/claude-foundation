@@ -8,6 +8,10 @@
 **E2E + visual**: off | on
 **Parent**: none | `<parent-id>`
 
+## Goal *(required)*
+
+<one sentence: what we build, for whom, to what outcome. Not a metric (→ Success Criteria) or feature list (→ User Stories).>
+
 ## User Stories *(required)*
 
 Priority-ordered, each independently testable — build P1 alone and you still have a viable MVP. Acceptance scenarios carry stable ids (`AC1`, `AC2`, …) that plan / tasks / test / review all reference.

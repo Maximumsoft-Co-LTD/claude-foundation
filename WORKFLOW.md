@@ -100,7 +100,7 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 
 | File | Owner | Purpose |
 |---------|---------------|----------|
-| `spec.md` | `pm` | **User Stories** (priority-ordered P1/P2/P3, each with Given/When/Then **acceptance scenarios** carrying `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities, edge cases, users, scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
+| `spec.md` | `pm` | **Goal** (one line), **User Stories** (priority-ordered P1/P2/P3, each with Given/When/Then **acceptance scenarios** carrying `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities, edge cases, users, scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
 | `plan.md` | `lead` (plan mode) | **Summary** + **Technical Context** + **Gate check** (vs `rules/fundamentals.md`), **phases for this task**, architecture diagram, current-state + research notes, **scaffold skeleton** (M/L), files to touch (`path#anchor`), risks, **rollback** |
 | `tasks.md` | `lead` (plan mode) | **Executable task breakdown** — phased (Setup → Foundational → one per User Story by priority → Polish) `T### [P] [AC#] … verify:` tasks, dependency-ordered, each tied to an acceptance scenario; the engineer builds from this |
 | `test-plan.md` | `lead` combined (XS/S) or `qa` (M/L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan (level per AC), edge cases, out-of-test-scope, fixtures/data/env, regression contract (fix) / baseline (refactor or brownfield feat editing uncovered code), coverage targets. Authored after `plan.md`, **signed off at the gate**; `qa` executes it at the test phase |
@@ -122,7 +122,7 @@ sh .claude/hooks/artifact-lint.sh .workflow/<id>/
 ```
 
 Checks, per directory:
-- **Required sections** — `spec.md` declares a `**Type**:` and `## User Stories` (with `AC#` acceptance scenarios); `tasks.md` has ≥ 1 `T###` task with an inline AC tag (`[AC<n>]`/`[DoD]`) and a runnable verify (`verify:` clause); `plan.md` has a fenced `mermaid` block.
+- **Required sections** — `spec.md` declares a `**Type**:`, a `## Goal`, and a `## User Stories` (with `AC#` acceptance scenarios); `tasks.md` has ≥ 1 `T###` task with an inline AC tag (`[AC<n>]`/`[DoD]`) and a runnable verify (`verify:` clause); `plan.md` has a fenced `mermaid` block.
 - **No leftover placeholder markers** — `TODO`/`TBD`/`FIXME`/`lorem` (word markers, case-insensitive) and `<...>` placeholders, in bare prose only — a marker inside a code span or fenced block is treated as documentation and ignored.
 
 Prints a per-check report (`[OK]` / `[FAIL] <file>:<line>: …`) and **exits non-zero on any failure** (or a missing/empty/artifact-less path). Dependency-light (POSIX `sh` + `grep`/`awk`); the rules are encoded in the script, so it doesn't need `_templates/` at runtime. Fixtures: [`.claude/hooks/tests/run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).

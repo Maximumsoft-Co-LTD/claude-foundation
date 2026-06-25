@@ -3,7 +3,8 @@
 #
 # Validates a `.workflow/<id>/` run directory against the artifact templates:
 #   1. Required sections per artifact:
-#        spec.md       — a `**Type**:` declaration AND a `## User Stories` section.
+#        spec.md       — a `**Type**:` declaration, a `## Goal` section, AND a
+#                        `## User Stories` section.
 #        plan.md       — a fenced `mermaid` block.
 #        tasks.md      — at least one `T###` task, an inline AC tag (`[AC<n>]` or
 #                        `[DoD]`), and a runnable verify section (a `verify:` clause).
@@ -74,6 +75,7 @@ check_spec() {
   require_section "$file" "Type declaration"     F '**Type**:'
   # Anchor the heading at line start so a mention of the section name in prose
   # or an HTML comment does not satisfy the check.
+  require_section "$file" "Goal"                 E '^#+[[:space:]]+Goal'
   require_section "$file" "User Stories"         E '^#+[[:space:]]+User Stories'
 }
 

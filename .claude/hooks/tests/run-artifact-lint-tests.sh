@@ -68,7 +68,7 @@ assert_report_contains() {
 }
 
 # --- helpers to build temp run dirs ---
-mk_clean_spec() { printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1: ok\n' > "$1/spec.md"; }
+mk_clean_spec() { printf '# Spec\n\n**Type**: feat\n\n## Goal\nShip X for Y.\n\n## User Stories\n- [x] AC1: ok\n' > "$1/spec.md"; }
 mk_clean_plan() { printf '# Plan\n\n## Architecture diagram\n```mermaid\nflowchart LR\nA-->B\n```\n' > "$1/plan.md"; }
 mk_clean_tasks() { printf '# Tasks\n\n## Phase 1\n- [x] T001 [AC1] do — verify: x\n' > "$1/tasks.md"; }
 
@@ -89,12 +89,16 @@ assert_exit_nonzero "AC1 no recognised artifact" "$d"
 assert_report_contains "AC1 no-artifact message" "$d" "no lintable artifacts found"
 
 # AC2 — spec missing the User Stories section is named + fails.
-d="$TMPROOT/ac2"; mkdir -p "$d"; printf '# Spec\n\n**Type**: feat\n\n## Summary\nx\n' > "$d/spec.md"
+d="$TMPROOT/ac2"; mkdir -p "$d"; printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## Summary\nx\n' > "$d/spec.md"
 assert_exit_nonzero "AC2 spec missing User Stories" "$d"
 assert_report_contains "AC2 names missing section" "$d" "MISSING required section: User Stories"
 # spec missing Type is named too.
-d="$TMPROOT/ac2b"; mkdir -p "$d"; printf '# Spec\n\n## User Stories\n- [x] AC1\n' > "$d/spec.md"
+d="$TMPROOT/ac2b"; mkdir -p "$d"; printf '# Spec\n\n## Goal\ng\n\n## User Stories\n- [x] AC1\n' > "$d/spec.md"
 assert_report_contains "AC2 names missing Type" "$d" "MISSING required section: Type declaration"
+# spec missing the Goal section is named + fails.
+d="$TMPROOT/ac2-goal"; mkdir -p "$d"; printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1\n' > "$d/spec.md"
+assert_exit_nonzero "AC2 spec missing Goal" "$d"
+assert_report_contains "AC2 names missing Goal" "$d" "MISSING required section: Goal"
 
 # AC3 — plan missing its mermaid; tasks missing AC tag + verify, each named + fails.
 d="$TMPROOT/ac3"; mkdir -p "$d"; mk_clean_spec "$d"; mk_clean_tasks "$d"
@@ -108,7 +112,7 @@ assert_report_contains "AC3 names missing verify in tasks" "$d" "MISSING require
 
 # AC4 — placeholder markers (word + angle) reported with line numbers; fenced/backticked ignored.
 d="$TMPROOT/ac4"; mkdir -p "$d"; mk_clean_plan "$d"
-printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1\n- TODO finish\n- handle <id>\n- lorem ipsum\n- FIXME this\n' > "$d/spec.md"
+printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## User Stories\n- [x] AC1\n- TODO finish\n- handle <id>\n- lorem ipsum\n- FIXME this\n' > "$d/spec.md"
 assert_exit_nonzero "AC4 placeholders present" "$d"
 assert_report_contains "AC4 reports TODO" "$d" "placeholder marker: TODO"
 assert_report_contains "AC4 reports angle"  "$d" "placeholder marker: <...>"
@@ -116,7 +120,7 @@ assert_report_contains "AC4 reports lorem"  "$d" "placeholder marker: lorem"
 assert_report_contains "AC4 reports FIXME"  "$d" "placeholder marker: FIXME"
 # code-span + fence exclusion: documented markers do NOT fail.
 d="$TMPROOT/ac4-doc"; mkdir -p "$d"; mk_clean_plan "$d"
-printf '# Spec\n\n**Type**: feat\n\n## User Stories\n- [x] AC1: we document `TODO` and `<id>` here\n```\nTODO inside a fence is ignored\n```\n' > "$d/spec.md"
+printf '# Spec\n\n**Type**: feat\n\n## Goal\nclean goal line\n\n## User Stories\n- [x] AC1: we document `TODO` and `<id>` here\n```\nTODO inside a fence is ignored\n```\n' > "$d/spec.md"
 assert_exit_zero "AC4 documented markers ignored" "$d"
 
 # AC5 — usage / not-a-directory / empty-directory all fail.
@@ -164,7 +168,7 @@ assert_exit_nonzero "AC8 consumed row left in Open" "$d"
 assert_report_contains "AC8 names consumed-in-open" "$d" "left in ## Open"
 
 echo
-total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8" | wc -w) ))
+total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8" | wc -w) ))
 if [ "$failures" -eq 0 ]; then
   echo "artifact-lint tests: ALL PASS ($total_pass/$total_pass assertions)"
   exit 0
