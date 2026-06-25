@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Specs now require a one-line `## Goal` — what's built, for whom, to what outcome.** Added to the spec minimum floor: a `## Goal` section (one sentence; *not* a metric → that's `Success Criteria`, *not* a feature list → that's `User Stories`). The `pm` agent writes it from the interview's goal capture (unknown goal → `BLOCKER:`, not `[NEEDS CLARIFICATION]`); the `brainstorming` interview captures it; and the `artifact-lint` hook now enforces `## Goal` alongside `**Type**:` and `## User Stories`, with a new pass-fixture section and dedicated test assertions. Files: `.claude/agents/pm.md`, `.claude/hooks/artifact-lint.sh`, `.claude/hooks/tests/run-artifact-lint-tests.sh`, `.claude/hooks/tests/fixtures/pass/.workflow/0000-feat-sample/spec.md`, `.claude/skills/brainstorming/SKILL.md`, `.workflow/_templates/spec.md`, `WORKFLOW.md`.
 
+### Changed
+
+- **Code-bearing plans now require a `sequenceDiagram`.** `feat` / `fix` / `refactor` plans MUST carry a `sequenceDiagram` of the call path — the interaction order that prose hides — with a structural `flowchart` / `classDiagram` demoted to an optional companion (used when shape matters as much as order). `chore` / `docs` / `spike` stay exempt. The diagram table, the per-Type templates, and the XS (≤3 participants) / L (sequence + before/after pair) sizing notes in `plan-writing` are updated to match. Files: `.claude/skills/plan-writing/SKILL.md`, `.claude/skills/plan-writing/references/diagrams.md`.
+
 ## [2.5.11] - 2026-06-24
 
 ### Added

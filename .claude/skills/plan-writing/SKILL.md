@@ -58,13 +58,13 @@ Full field-by-field examples + LSP-walk technique are in `references/current-sta
 
 ### 4. Architecture diagram is required, always
 
-Pick the cheapest form that conveys the change. Mark new pieces with `★`. Diagram type defaults from the run's `Type` (full templates and worked examples in `references/diagrams.md`):
+Mark new pieces with `★`. **Code-bearing plans (`feat`/`fix`/`refactor`) MUST carry a `sequenceDiagram`**; a structural diagram is an optional companion. `chore`/`docs`/`spike` are exempt. Templates in `references/diagrams.md`:
 
-| Type | Default diagram |
+| Type | Required diagram (+ optional companion) |
 |------|-----------------|
-| `feat` | `flowchart LR` showing where the new piece plugs in |
-| `fix` | `sequenceDiagram` of the bug path with the fix point marked, OR before/after flowchart |
-| `refactor` | before/after `flowchart` or `classDiagram` of the structural shift |
+| `feat` | **`sequenceDiagram`** of the new call path; optional `flowchart LR` companion when shape matters |
+| `fix` | **`sequenceDiagram`** of the bug path with the fix point marked; optional before/after `flowchart` when the fix changes control flow |
+| `refactor` | **`sequenceDiagram`** (call order, unchanged) + before/after `flowchart`/`classDiagram` of the structural shift |
 | `chore` / `docs` | one line: `<file> (<change>)` OR `**Impact:** N/A — <reason>` |
 | `spike` | `flowchart` with `?` on unanswered nodes |
 
@@ -153,7 +153,7 @@ Before writing any section of plan.md:
   - Queue / broker / async worker → [[queue-fundamentals]]
   - A task crossing a **trust boundary** — renders untrusted input into the DOM/HTML, builds a SQL/shell/HTML/template string, or handles auth/session/secrets → [[security-fundamentals]]. **Name the safe construction in the task itself; never write a dangerous sink as shorthand** (render user text with `textContent`, not `innerHTML`; open `security-fundamentals/references/input-and-output.md` only when you need the side-by-side detail). The always-on security rule fires at *code-write* time, so on the combined fast path (skill-loading deliberately light) the **planner** is the first place an injection gets designed out — not the last.
   - Bug with unknown cause → [[debug-fundamentals]] *before* this skill
-- [ ] Pick diagram type from `Type` (table in principle 4). Even XS keeps the section — one line is fine.
+- [ ] Pick diagram from `Type` (principle 4 table). Code-bearing → `sequenceDiagram` required (XS: ≤3 participants). Even XS keeps the section.
 - [ ] Use **LSP first** for existing-code references (definitions, references, diagnostics) before citing `path#anchor` (symbol / snippet, not a bare line). Grep is the fallback.
 - [ ] If the change mimics an existing pattern, find that pattern now and have its `path#anchor` ready to cite in tasks.
 - [ ] **Map current state** (principle 3) for **brownfield** work (the `field`, not Type/Size) — full section for M/L + refactor/fix, a proportional entry-point + blast-radius note for a brownfield `feat` at XS/S. Walk entry point → flow → callers (LSP find-references) → invariants with `path#anchor` citations, *before* drafting tasks. Skip only for greenfield (brand-new files in an isolated module), chore/docs not touching live code, and spike.

@@ -2,17 +2,21 @@
 
 Always required in `plan.md`. Form scales with `Size`; type defaults from the run's `Type`. Format: Mermaid. Keep diagrams small — they exist to make the *seam* of the change legible at a glance.
 
+**Code-bearing plans (`feat` / `fix` / `refactor`) MUST include a `sequenceDiagram`** of the call order across the slice — that order is the half of the design prose hides. A structural diagram (`flowchart` / `classDiagram`) is an optional companion when shape matters too. `chore` / `docs` / `spike` are exempt — no real interaction order to draw.
+
 ## Conventions
 
 - **Mark new pieces with `★`** — both in node labels and in narration. `[★ NewService]`, `★ writes new column`.
 - **Mark deleted / removed pieces with `~~strikethrough~~`** in labels: `[~~OldHandler~~]`.
 - **Use mermaid's defaults for shape**: `[...]` for processes / components, `(...)` for data stores, `[(...)]` for databases, `>...` for actors / users.
 - **Direction**: `LR` (left-to-right) is the default and the most readable. Use `TB` only when you have layers (e.g., a 3-tier app showing top-down).
-- **One diagram per plan by default.** L plans may carry two (before + after) — never more without an explicit reason.
+- **One or two diagrams** — the required `sequenceDiagram`, plus a structural companion only when shape matters (L: a before/after pair). Never more without a reason.
 
 ## Templates per Type
 
-### `feat` — flowchart, where the new piece plugs in
+### `feat` — required `sequenceDiagram` of the new call path; optional `flowchart` companion
+
+Sequence form as in `fix` below, new participant(s)/message(s) marked `★`. Add a `flowchart LR` companion when *where the new piece sits* matters as much as the order:
 
 ```mermaid
 flowchart LR
@@ -23,9 +27,7 @@ flowchart LR
   S --> C[★ Cache layer]
 ```
 
-Worked example: adding a `/reports` endpoint. `★` marks the two new pieces; everything else is existing.
-
-**UI-heavy `feat` (multi-screen / multi-state flows)** — prefer mermaid `journey` or `sequenceDiagram` over a plain flowchart, so the *user-visible order* is legible. The spec's `## User journey` section names the steps; this diagram visualises them.
+**UI-heavy `feat`** — a mermaid `journey` may substitute for the sequence only when the flow is pure user-visible step order with no client↔server round-trip; otherwise the `sequenceDiagram` stays required.
 
 ```mermaid
 journey
@@ -40,8 +42,6 @@ journey
     Stripe redirect: 3: User, System
     Land on receipt: 5: User
 ```
-
-Use `sequenceDiagram` instead when the back-and-forth between User / UI / Server matters (e.g., async validation, optimistic updates, retries from the client). Use plain `flowchart` when the change is a single screen or the seam is structural, not user-facing.
 
 ### `fix` — sequenceDiagram of the bug path, with the fix marked
 
@@ -61,9 +61,11 @@ sequenceDiagram
   Svc-->>API: 200
 ```
 
-Alternative for `fix`: a before/after `flowchart` showing the broken branch and the corrected branch — use when the fix changes control flow rather than adding a guard.
+Optional companion: a before/after `flowchart` when the fix changes control flow rather than adding a guard.
 
-### `refactor` — before/after flowchart, OR classDiagram
+### `refactor` — required `sequenceDiagram` (call order, unchanged) + before/after `flowchart`/`classDiagram` (shape change)
+
+The sequence is the visual half of the behaviour-equivalence `Summary` (same order in/out; only internals move) — drawn once, form as in `fix`. Then show the shape change:
 
 Before/after flowchart for behavioural restructuring:
 
@@ -100,8 +102,6 @@ classDiagram
   note for StripeAdapter "★ new adapter"
 ```
 
-The `Summary` behaviour-equivalence statement says *what* stays the same; the diagram shows *how the shape changes*. Both are required for refactor.
-
 ### `chore` / `docs` — one line, OR `N/A`
 
 Most chore/docs work has no architecture impact. State that:
@@ -116,7 +116,7 @@ When there *is* impact (e.g., a chore that swaps a dep that touches many call si
 package.json (lodash 4.17.x → 4.17.y) → triggers re-bundle in 14 packages under src/
 ```
 
-Never delete the section entirely. The discipline is "always have a diagram slot" — even when the content is "no diagram needed".
+Never delete the section entirely — "always have a diagram slot", even when the content is "no diagram needed".
 
 ### `spike` — flowchart with `?` on unanswered nodes
 
@@ -129,17 +129,15 @@ flowchart LR
   B --> DB
 ```
 
-The diagram for a spike is a *question*, not an answer. Multiple branches are explicit. The spike's job is to pick one — `recommendations.md` lands that pick.
+The diagram for a spike is a *question*, not an answer. The spike's job is to pick one — `recommendations.md` lands that pick.
 
 ## When Size = XS
 
-XS plans still keep the section. Acceptable: `**Impact:** N/A — <reason>`, a one-line file summary, or a 3-node mermaid. Do not skip.
+Keep the section. Code-bearing XS still needs the `sequenceDiagram` — minimal (≤3 participants). `chore`/`docs`/`spike`: `**Impact:** N/A — <reason>`, a one-line summary, or a 3-node mermaid. Do not skip.
 
 ## When Size = L
 
-L plans usually need **two** diagrams: **Before** (current system) + **After** (post-change, `★` on additions, `~~strikethrough~~` on removals). Two separate blocks are usually clearer than subgraphs.
-
-For L plans with multiple actors, add a `sequenceDiagram` alongside the flowchart — flowchart shows *shape*, sequence shows *interaction order*.
+The required `sequenceDiagram` plus a structural **Before** + **After** pair (`★` on additions, `~~strikethrough~~` on removals). Separate blocks beat subgraphs — flowchart shows *shape*, sequence shows *interaction order*.
 
 ## Choosing between diagram kinds
 
@@ -152,8 +150,6 @@ For L plans with multiple actors, add a `sequenceDiagram` alongside the flowchar
 | How does the system shape change pre → post? | `flowchart` with before/after subgraphs |
 | What's the data shape stored where? | `erDiagram` (rare; only for DB-heavy L plans) |
 | What states does an entity move through? | `stateDiagram-v2` (rare; for state-machine features) |
-
-If two questions matter equally, two diagrams. Otherwise one is enough.
 
 ## Anti-patterns
 
