@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.14] - 2026-06-25
+
 ### Changed
 
 - **`/dev` test phase now runs tiered — impacted tests on every inner cycle, the full suite once at a final convergence gate — to cut test-phase wall-clock (~5×).** The test step is the re-validation gate every fix re-enters (failing test, review fix, security fix); combined with the "passing must be a full-suite one-command run" rule, a large suite could re-run on every cycle — the dominant test-phase cost. Inner cycles (steps 11/12/13) now run impacted/related tests only; the full suite runs once as a final ship-blocking gate at convergence (review ∧ security clean, pre-docs — step 13a) that sets the authoritative `passing`. The invariant "ship only on a green full suite of the final diff" is preserved. Files: `.claude/agents/qa.md`, `.claude/agents/references/qa.md`, `.claude/orchestrator.md`, `.claude/orchestrator/references/phase-2-guards.md`, `.workflow/_templates/test-plan.md`.
@@ -460,7 +462,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.13...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.14...HEAD
+[2.5.14]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.13...v2.5.14
 [2.5.13]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.12...v2.5.13
 [2.5.12]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.11...v2.5.12
 [2.5.11]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.10...v2.5.11
