@@ -30,8 +30,9 @@
 # work possible: a single jq parse pulls tool_name + subagent_type (both
 # newline-free tokens) in one process; the spawn-heavy `description` field is
 # only parsed in Case 2, where it's actually needed. The Case 3 freshness check
-# uses bash globbing + `-nt` (no subprocesses). Net: the common worker spawn
-# pays for exactly one jq invocation, not three.
+# uses bash globbing + `-nt` (no subprocesses) plus one jq to read `size` for
+# the XS/S enforcement skip. Net: a non-/dev Agent spawn pays one jq; a /dev
+# worker spawn pays two (fields + size), never three.
 
 set -euo pipefail
 
@@ -100,6 +101,17 @@ case "$subagent_type" in
         [[ "$active_count" -eq 1 ]] || active_state=""
       fi
       if [[ -n "$active_state" ]]; then
+        # Size-aware enforcement. XS/S runs spawn few workers and are cheap to
+        # re-run from scratch, so the inter-spawn freshness block costs more
+        # (a BLOCKED retry loop) than the resume granularity it buys. The
+        # orchestrator still WRITES state on XS/S (orchestrator.md > State
+        # discipline) — we just drop the hard block. M/L keep it, where a
+        # mid-run crash is expensive to redo. Legacy/malformed state with no
+        # `size` field falls through to enforcement (safe default).
+        run_size="$(jq -r '.size // ""' "$active_state" 2>/dev/null || printf '')"
+        case "$run_size" in
+          XS|S) exit 0 ;;
+        esac
         run_dir="$(dirname "$active_state")"
         run_id="$(basename "$run_dir")"
         marker="$run_dir/.last_worker_return"
