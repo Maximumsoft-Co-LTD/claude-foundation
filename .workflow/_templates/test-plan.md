@@ -19,6 +19,16 @@ One row per spec.md acceptance scenario (`AC#`) — happy path AND its boundary/
 
 ---
 
+## Execution mechanism *(runnable types)*
+
+Two one-command runners (+ web runner / Playwright `channel` when `e2e_visual=on`):
+- **Full-suite** (final gate, sets ship-blocking `passing`): `<npm test | pytest | go test ./... | cargo test | aggregator>`
+- **Impacted** (inner cycles, related-test): `<vitest related | jest --findRelatedTests | pytest --testmon/-k | go test <pkg> | cargo test <mod>>` — no related mode → Impacted = full suite (state it).
+
+Full suite runs **once per run**; every cycle uses Impacted. See `qa.md > Execute`, `references/qa.md > Tiered run & targeted re-validation`.
+
+---
+
 **Optional sections** — add when it applies, delete the rest:
 
 Edge cases to probe · Out of test scope · Fixtures / data / env · Regression contract (fix) · Baseline (refactor / brownfield feat) · Coverage targets · Visual verification (e2e_visual=on)
