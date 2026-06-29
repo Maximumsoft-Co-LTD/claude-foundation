@@ -121,6 +121,7 @@ A broken diagram is worse than none — it renders as an error box in `document.
 
 ## Relation to other skills
 
+- [[claude-md]] — the lean **agent-facing** companion: revises/optimises the root `CLAUDE.md` (the per-session guide Claude reads) into a fixed nine-section, depth-2 shape that links back to this `docs/` suite. Run it after these docs (or on its own) for the agent guide; this skill no longer writes `CLAUDE.md` itself.
 - [[fanout-team-agents]] — for a large repo, fan out the step-1/2 codebase exploration across parallel workers, then synthesise.
 - [[refactoring-fundamentals]] — its current-state mapping is the same "understand what's there before you touch it" stance; these docs are that map made durable.
 - [[architecture-fundamentals]] — vocabulary for describing component boundaries and runtime relationships in ARCHITECTURE.md.
