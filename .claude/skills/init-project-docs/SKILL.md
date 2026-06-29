@@ -1,13 +1,13 @@
 ---
 name: init-project-docs
-description: Generate a standard onboarding documentation suite for an EXISTING (brownfield) codebase — OVERVIEW.md, ARCHITECTURE.md, TECHSTACK.md, DATAMODEL.md, COREFEATURE.md (with mermaid sequence diagrams), API.md, DESIGN.md (the UX/UI design system, screen map, and interaction patterns of the frontend), and a self-contained document.html viewer that renders them all. Use whenever the user wants to document, map, or onboard an existing project — phrasings like "document this codebase", "init docs for this repo", "generate project documentation", "create ARCHITECTURE.md / DATAMODEL.md / DESIGN.md", "document the design system / UX", "I need an overview of this system", "write onboarding docs", "ทำเอกสารโปรเจกต์", "สร้าง docs ให้โปรเจกต์นี้", "อธิบายสถาปัตยกรรมของโปรเจกต์" — even when they don't list every file. This documents code that already exists by reading it; it is NOT for a greenfield project with no code yet.
+description: Generate or update a standard onboarding documentation suite for an EXISTING (brownfield) codebase — OVERVIEW.md, ARCHITECTURE.md, TECHSTACK.md, DATAMODEL.md, COREFEATURE.md (with mermaid sequence diagrams), API.md, DESIGN.md (the UX/UI design system, screen map, and interaction patterns of the frontend), and a self-contained document.html viewer that renders them all. Use whenever the user wants to document, map, or onboard an existing project — phrasings like "document this codebase", "init docs for this repo", "generate project documentation", "create ARCHITECTURE.md / DATAMODEL.md / DESIGN.md", "document the design system / UX", "I need an overview of this system", "write onboarding docs", "update/refresh the docs", "the docs are out of date / stale", "improve the project docs", "ทำเอกสารโปรเจกต์", "สร้าง docs ให้โปรเจกต์นี้", "อธิบายสถาปัตยกรรมของโปรเจกต์", "อัปเดต docs", "docs ไม่ตรงกับโค้ดแล้ว" — even when they don't list every file. This documents code that already exists by reading it; it is NOT for a greenfield project with no code yet. **If a `docs/` suite already exists, it updates/improves the docs in place against the current code instead of regenerating from scratch** (see Two modes).
 ---
 
 # Init Project Docs (brownfield)
 
 ## Why this exists
 
-Brownfield docs are only useful when they describe what exists, not a plausible-sounding system. This skill produces a **fixed, predictable documentation suite** by reading the actual code — same seven topics every time — plus a `document.html` viewer (no server needed). The hard part is **accuracy**: read the code first, refuse to invent.
+Brownfield docs are only useful when they describe what exists, not a plausible-sounding system. This skill produces a **fixed, predictable documentation suite** by reading the actual code — same seven topics every time — plus a `document.html` viewer (no server needed). The hard part is **accuracy**: read the code first, refuse to invent — and when a suite already exists, re-read and reconcile rather than rubber-stamp.
 
 ## What it produces
 
@@ -30,101 +30,115 @@ All written into `docs/` (create it if absent):
 
 ## When to use / when to skip
 
-**Use it** when there is existing code to read and the user wants it documented or wants to onboard onto it. This is brownfield work — the `understand` half of the repo's understand → lock → change discipline, delivered as durable docs.
+**Use it** when there is existing code to read and the user wants it documented, wants to onboard onto it, or wants an existing suite brought back in sync with the code. This is brownfield work — the `understand` half of the repo's understand → lock → change discipline, delivered as durable docs.
 
 **Skip / adapt** when:
 - There is **no code yet** (greenfield) — there is nothing to read; this skill would invent. Design docs come from `plan-writing` / `brainstorming` instead.
 - The user wants **one specific doc** about a narrow change, not a whole-project suite — write that directly.
 - A doc's domain genuinely **doesn't exist** (a CLI with no HTTP API, a stateless service with no datastore, a headless backend or library with no user-facing UI → no `DESIGN.md`). Don't pad it — write a one-line "Not applicable: this project has no persistent datastore" and move on. An honest stub beats a fabricated schema or a design system that isn't there. (You may also drop the file entirely if the user prefers; the viewer adapts to whatever `.md` files are present.)
 
+## Two modes: fresh vs. update
+
+First, check the target dir for an existing suite — any canonical file (`OVERVIEW.md`…`DESIGN.md`) or `document.html`:
+
+- **Fresh** — none exists. Generate the whole suite (default flow below).
+- **Update** — a suite exists. Treat the docs as **input, not a blank slate**: re-ground against the code, then revise in place. Surgical diffs, not a rewrite. Report the delta as a changelog.
+
+Default to update when a suite is found; regenerate only if the user asks or the docs are unsalvageable (say so first). The grounding rule (step 2) holds in both modes: **every surviving claim must still trace to code.**
+
 ## Workflow
 
-Run these in order. Steps 1–2 are most of the value — never skip them.
+Run in order. Steps 1–2 are most of the value — never skip them. In update mode the existing docs are an extra input you read and reconcile, not output you overwrite blind.
 
 ### 1. Scope the repo
 
-Locate the project root and confirm where docs should go (`docs/` by default). Get a high-level lay of the land before reading deeply:
+Locate the project root and confirm where docs go (`docs/` by default). Get a high-level lay of the land before reading deeply:
 
-- The dependency manifests: `package.json`, `pyproject.toml` / `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml`, `Gemfile`, `composer.json`, etc. — these answer TECHSTACK almost entirely.
-- The entry points: `main`, `index`, `app`, `cmd/`, `server`, framework bootstrap files.
-- Top-level layout (`src/`, `internal/`, `apps/`, `services/`, `migrations/`, `infra/`), the README, and any existing `docs/`.
+- Dependency manifests: `package.json`, `pyproject.toml` / `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml`, `Gemfile`, `composer.json` — these answer TECHSTACK almost entirely.
+- Entry points: `main`, `index`, `app`, `cmd/`, `server`, framework bootstrap files.
+- Top-level layout (`src/`, `internal/`, `apps/`, `services/`, `migrations/`, `infra/`), the README, and any existing `docs/`. **If that `docs/` already holds the suite, you're in update mode — read it now as your starting point.**
 - Config: `Dockerfile`, `docker-compose.yml`, CI workflows, `.env.example`, IaC.
 
-Use `LSP`, `Grep`, and the search tools. For a large repo, this is exactly the kind of breadth-first mapping to delegate to parallel `Explore` / `team-codebase-explorer` agents (one per subsystem) and synthesise — see [[fanout-team-agents]].
+Use `LSP`, `Grep`, and the search tools. For a large repo, delegate this breadth-first mapping to parallel `Explore` / `team-codebase-explorer` agents (one per subsystem) and synthesise — see [[fanout-team-agents]].
 
 ### 2. Understand before writing (the grounding rule)
 
-**Every claim in every doc must trace to something you actually read.** This is the single rule that separates a useful brownfield doc from a confident fiction. Concretely:
+**Every claim in every doc must trace to something you actually read** — the single rule separating a useful brownfield doc from confident fiction:
 
-- Source TECHSTACK from the **manifests** (and lockfiles for real versions), not from what the framework "usually" uses.
-- Source DATAMODEL from **migrations, ORM models, schema files, or `CREATE TABLE` statements** — the real fields, types, and foreign keys. Don't infer columns from variable names.
-- Source API from **route definitions, controllers, decorators, or an OpenAPI/GraphQL schema** if one exists — the real methods, paths, and status codes.
-- Source COREFEATURE sequence diagrams by **tracing one call from the entry point through to its effects** — read the handler, the service it calls, the repository, the external client. The arrows are real function/HTTP/query calls, not a guess at how it "should" flow.
-- Source DESIGN from the **frontend code** — the design-token/theme file, the Tailwind/CSS config or `:root` custom properties, the component directory, and the router/page definitions. The palette, type scale, components, and screen map are the ones the UI *uses*, not the design language a framework ships with by default. (For UX vocabulary, [[ui-ux-pro-max]] names the patterns; [[tailwind-design-system]] names the token mechanics.)
-- When you cannot determine something from the code, **say so** ("auth mechanism not found in the reviewed files") rather than filling the gap. A documented unknown is honest; an invented answer is a trap that outlives you.
-- Prefer citing real anchors — file paths, route strings, table names, function names — so a reader can verify and so the doc resists drift.
+- TECHSTACK from the **manifests** (lockfiles for real versions), not what the framework "usually" uses.
+- DATAMODEL from **migrations, ORM models, schema files, or `CREATE TABLE`** — real fields, types, foreign keys. Don't infer columns from variable names.
+- API from **route definitions, controllers, decorators, or an OpenAPI/GraphQL schema** — real methods, paths, status codes.
+- COREFEATURE diagrams by **tracing one call from entry point to effects** (handler → service → repository → external client). The arrows are real calls, not a guess at how it "should" flow.
+- DESIGN from the **frontend code** — the theme/token file, Tailwind/CSS config or `:root` properties, the component dir, the router/pages. The palette, type scale, components, and screen map the UI *uses*, not a framework's defaults. ([[ui-ux-pro-max]] names the patterns; [[tailwind-design-system]] the token mechanics.)
+- When the code doesn't tell you, **say so** ("auth mechanism not found in the reviewed files"). A documented unknown is honest; an invented answer is a trap.
+- Cite real anchors — file paths, route strings, table names — so a reader can verify and the doc resists drift.
 
-Read [[refactoring-fundamentals]]'s current-state mapping mindset if the codebase is large or tangled: map what's there before you describe it.
+**Update mode** — read each existing doc against its code and sort every claim: **keep** (accurate — including human prose), **fix** (drifted), **add** (in code, not the doc), **remove** (in the doc, gone from code). That four-bucket diff is your edit plan for step 3.
 
-### 3. Write the Markdown docs
+Read [[refactoring-fundamentals]]'s current-state mapping mindset if the codebase is large or tangled.
 
-Write each file into `docs/`. Open **`references/doc-templates.md`** for the exact section skeleton and a worked mermaid example for each file — follow those skeletons so the suite is consistent across projects. Keep prose tight and skimmable; lead with structure (tables, bullets, diagrams) over paragraphs.
+### 3. Write (or update) the Markdown docs
 
-Pick the **3–6 genuinely core** features for `COREFEATURE.md` — the flows that define the product (sign-up/auth, the primary create/update path, the money path, the main read path). Not every endpoint; the important journeys. One sequence diagram each.
+**Fresh** — write each file into `docs/`. Open **`references/doc-templates.md`** for the exact section skeleton and a worked mermaid example per file; follow them so the suite is consistent across projects. Lead with structure (tables, bullets, diagrams) over prose.
 
-Write `DESIGN.md` **only when the project has a user-facing UI** (a web/mobile/desktop frontend). Capture the design tokens, the reusable component inventory, the screen/navigation map, and the key per-screen states — all read from the frontend code. For a headless service, a pure-API backend, or a library, drop it or leave the one-line "Not applicable" stub (skip rule).
+**Update** — apply the four-bucket diff as **surgical edits**: rewrite only what drifted, add for new code, delete the stale, leave accurate content (especially human-authored prose) untouched. Minimise the diff. Realign to `references/doc-templates.md` only if the docs predate the current skeleton — preserving project substance.
+
+Pick the **3–6 genuinely core** features for `COREFEATURE.md` — the flows that define the product (auth, primary create/update, the money path, the main read path), one sequence diagram each. Not every endpoint. (Update mode: keep the existing set unless a flow was added/removed/materially changed.)
+
+Write `DESIGN.md` **only when there's a user-facing UI**. Capture design tokens, the component inventory, the screen/navigation map, and key per-screen states — from the frontend code. Else drop it or leave the one-line "Not applicable" stub.
 
 ### 4. Build the viewer
 
-Generate the self-contained `document.html` with the bundled script (do **not** hand-write the HTML — the script handles escaping, ordering, and mermaid wiring):
+Generate `document.html` with the bundled script (do **not** hand-write it — the script handles escaping, ordering, mermaid wiring):
 
 ```bash
 python3 .claude/skills/init-project-docs/scripts/build_doc_viewer.py --docs-dir docs --title "<Project Name>"
 ```
 
-It embeds the current Markdown into one HTML file (marked.js + mermaid.js from CDN) with a sidebar in canonical order. Because content is embedded, `document.html` is a **snapshot** — re-run the script after editing any `.md`. Tell the user it opens by double-clicking, no server needed.
+It embeds the current Markdown into one file (marked.js + mermaid.js from CDN) with a sidebar in canonical order. Content is embedded, so it's a **snapshot** — re-run after editing any `.md` (update mode too). Opens by double-clicking, no server needed.
 
 ### 5. Self-review (see Quality bar) and report
 
-Validate the mermaid blocks, re-run the script, and tell the user what was produced and the one or two things you couldn't determine from the code.
+Validate the mermaid, re-run the script, and tell the user what was produced and the one or two things you couldn't determine from code. **Update mode: lead with a changelog** — fixed / added / removed / kept.
 
 ## Mermaid: keep it valid
 
-A broken diagram is worse than none — it renders as an error box in `document.html`. Guard against the common breakers:
+A broken diagram renders as an error box — worse than none. Guard the common breakers:
 
-- Use fenced ` ```mermaid ` blocks (the script promotes them automatically).
-- `sequenceDiagram` (COREFEATURE), `erDiagram` (DATAMODEL), `flowchart TD`/`graph LR` (ARCHITECTURE), `flowchart`/`stateDiagram-v2` (DESIGN — screen/navigation map or a single screen's UI states).
-- Quote labels containing spaces or punctuation: `API->>DB: "fetch by id"`. Avoid raw parentheses/semicolons/`#` in unquoted labels.
-- Declare participants/actors before use in sequence diagrams; keep node ids alphanumeric in flowcharts.
-- After writing, eyeball each block against the examples in `references/doc-templates.md`. If unsure, render `document.html` in a browser once and confirm no error boxes.
+- Fenced ` ```mermaid ` blocks (the script promotes them automatically).
+- `sequenceDiagram` (COREFEATURE), `erDiagram` (DATAMODEL), `flowchart TD`/`graph LR` (ARCHITECTURE), `flowchart`/`stateDiagram-v2` (DESIGN).
+- Quote labels with spaces/punctuation: `API->>DB: "fetch by id"`. Avoid raw parens/semicolons/`#` in unquoted labels.
+- Declare participants/actors before use; keep flowchart node ids alphanumeric.
+- Eyeball each block against the examples in `references/doc-templates.md`; if unsure, render `document.html` once and confirm no error boxes.
 
-## Quality bar — self-review before you hand it over
+## Quality bar — self-review before handing over
 
 - **Grounded**: every component, table, endpoint, and arrow traces to a file you read. No invented fields or routes.
-- **Honest gaps**: anything undetermined is labelled as such, not papered over.
-- **Right files for the project**: a doc whose domain doesn't exist says "Not applicable" in one line — it isn't padded with plausible filler.
-- **Diagrams render**: COREFEATURE has a sequence diagram per flow; DATAMODEL has an ER diagram; ARCHITECTURE has a component/flow diagram; DESIGN (when present) has a screen/navigation map; all valid mermaid.
-- **Skimmable**: tables and diagrams over walls of prose; a reader is oriented in minutes.
-- **Viewer built last**: `document.html` regenerated from the final `.md` set so it isn't stale.
-- **No secrets**: never copy real credentials, tokens, or `.env` values into the docs — name the variable, not the value (mirrors the repo's `protect-secrets.sh`).
+- **Honest gaps**: anything undetermined is labelled, not papered over.
+- **Right files**: a doc whose domain doesn't exist says "Not applicable" in one line — no plausible filler.
+- **Diagrams render**: valid mermaid — sequence per flow (COREFEATURE), ER (DATAMODEL), component/flow (ARCHITECTURE), screen map (DESIGN when present).
+- **Skimmable**: tables and diagrams over walls of prose.
+- **Update — faithful delta**: stale fixed, new reflected, removed dropped, accurate human edits preserved; you can name what changed.
+- **Viewer built last**: `document.html` regenerated from the final `.md` set.
+- **No secrets**: name the variable, never the value (mirrors `protect-secrets.sh`).
 
 ## Anti-patterns (do not do these)
 
-- **Documenting the framework instead of the project** — "Express apps typically have middleware for…". Describe *this* repo's middleware, by file.
-- **Inventing a schema or endpoints** that aren't in the code because they'd "make sense." The reader will trust them and be wrong.
-- **Describing a default or invented design system** in DESIGN.md — the colours/fonts/spacing a UI framework ships with, or a component that isn't built. Read the theme file and the component directory; document the tokens and components this UI actually defines.
-- **A COREFEATURE diagram that's a guess** — if you didn't trace the actual call chain, you can't draw the sequence. Trace it or leave the flow out.
-- **Hand-writing `document.html`** — escaping `</script>` and wiring mermaid by hand is exactly what the script exists to prevent.
-- **Padding "Not applicable" sections** with plausible-sounding filler.
-- **A wall of prose** where a table or diagram is clearer.
-- **Forgetting to rebuild the viewer** after editing the Markdown, leaving it stale.
+- **Documenting the framework, not the project** — "Express apps typically have…". Describe *this* repo's middleware, by file.
+- **Inventing a schema or endpoints** because they'd "make sense." The reader trusts them and is wrong.
+- **A default or invented design system** in DESIGN.md — read the theme file and component dir; document what this UI defines.
+- **A guessed COREFEATURE diagram** — trace the real call chain or leave the flow out.
+- **Hand-writing `document.html`** — that's what the script prevents.
+- **Padding "Not applicable" sections** with filler; **a wall of prose** where a table/diagram is clearer; **forgetting to rebuild the viewer**.
+- **Regenerating over an existing suite** — blowing away human edits when a surgical update would do. Update in place by default; rebuild wholesale only when asked or unsalvageable.
+- **Leaving stale claims in place** when updating — a doc that *looks* maintained but describes code that's gone is a worse trap than an obvious gap.
 
 ## Relation to other skills
 
-- [[claude-md]] — the lean **agent-facing** companion: revises/optimises the root `CLAUDE.md` (the per-session guide Claude reads) into a fixed nine-section, depth-2 shape that links back to this `docs/` suite. Run it after these docs (or on its own) for the agent guide; this skill no longer writes `CLAUDE.md` itself.
-- [[fanout-team-agents]] — for a large repo, fan out the step-1/2 codebase exploration across parallel workers, then synthesise.
-- [[refactoring-fundamentals]] — its current-state mapping is the same "understand what's there before you touch it" stance; these docs are that map made durable.
-- [[architecture-fundamentals]] — vocabulary for describing component boundaries and runtime relationships in ARCHITECTURE.md.
-- [[database-fundamentals]] / [[api-design-fundamentals]] — vocabulary for describing the schema in DATAMODEL.md and the surface in API.md accurately.
-- [[ui-ux-pro-max]] / [[frontend-design]] / [[tailwind-design-system]] — vocabulary for describing the UX patterns, visual language, and design tokens in DESIGN.md accurately (the UX/UI counterpart to the two above).
-- `plan-writing` / `brainstorming` own *forward-looking* design docs for code that doesn't exist yet; this skill documents code that does. The same split holds for UX: the `uxui` agent / `/uxui-plan` command design the UX of UI not yet built, while DESIGN.md here documents the UX the frontend already implements.
+- [[claude-md]] — the lean **agent-facing** companion: revises the root `CLAUDE.md` into a fixed nine-section, depth-2 shape that links back to this `docs/` suite. Run it after these docs (or alone); this skill no longer writes `CLAUDE.md` itself.
+- [[fanout-team-agents]] — for a large repo, fan out the step-1/2 exploration across parallel workers, then synthesise.
+- [[refactoring-fundamentals]] — its current-state mapping is the same "understand before you touch it" stance; update mode applies it to the docs themselves.
+- [[architecture-fundamentals]] — vocabulary for component boundaries and runtime relationships in ARCHITECTURE.md.
+- [[database-fundamentals]] / [[api-design-fundamentals]] — vocabulary for the schema in DATAMODEL.md and the surface in API.md.
+- [[ui-ux-pro-max]] / [[frontend-design]] / [[tailwind-design-system]] — vocabulary for the UX patterns, visual language, and design tokens in DESIGN.md.
+- `plan-writing` / `brainstorming` own *forward-looking* design docs for code that doesn't exist yet; this skill documents code that does. Same split for UX: `uxui` / `/uxui-plan` design UI not yet built, DESIGN.md documents the UX the frontend already implements.
