@@ -25,7 +25,7 @@ When in doubt, draft from the summary and ship — Mode B catches a missed funda
 
 Required for **brownfield** (by `field`, not Type/Size): full when Size ∈ {M,L} or Type ∈ {refactor,fix}; a proportional entry-point + blast-radius note for a brownfield `feat` at XS/S; skip for greenfield isolated new files, `chore`/`docs` not touching live code, `spike`.
 
-If the prompt has plan-prep `team-codebase-explorer` findings, **synthesise them** — re-cite each `path#anchor`, spot-check load-bearing claims, LSP-walk only points prep didn't cover. For points you walk, use **LSP find-references + go-to-definition**, not memory:
+If the prompt has **`context.md`** (shared brownfield-M/L map from `/spec`) or plan-prep findings, **synthesise them** — re-cite each `path#anchor`, spot-check load-bearing claims (re-resolve a sample), LSP-walk only what they didn't cover; `plan.md > ## Current state` cites `context.md`. **Evidence, not authority** — you own the final map; an unre-resolvable claim is a finding, not a fact. For points you walk, use **LSP find-references + go-to-definition**, not memory:
 - Entry point(s) with `path#anchor`
 - Data/control flow (3–7 hops, each `path#anchor`)
 - Callers / blast radius for every symbol whose contract changes (LSP find-references)
@@ -61,7 +61,7 @@ Optional sections, two passes:
 
 **API / event contracts.** If the task introduces/changes public HTTP endpoints, event schemas, cross-service message formats, **OR a new internal port/interface boundary**, write `## API / event contracts`: transport → method · path · request/response fields · error codes per endpoint; internal port → interface name + method signatures. **Name the contract BEFORE the `tasks.md` tasks that implement it** — for M/L the signature is already in `## Scaffold`, so write this only when a contract needs field/error-code detail beyond that one-liner. These live in `plan.md` after `## Architecture diagram`.
 
-**Existing-code research (step 9 of the original — folds into step 3/9 here).** LSP first, grep second. **Single-pass-first** (`orchestrator.md > Single-pass-first`): write `plan.md` from your own walk by default. Self-dispatch a worker per point (see *Recruit help*), or return `FANOUT_REQUESTED: plan:<point-list>` (integration-point names from `spec.md > Constraints > Integration points`) as the fallback, **only** when **2+ integration points in disjoint surfaces** (separate modules/folders/repos) AND the research is substantial. **Disjoint surface, not raw count, is the bar.** If plan-prep already mapped current state, signal fanout only for residual best-practice research. Skip fanout for XS/pure-greenfield/straightforward.
+**Existing-code research (step 9 of the original — folds into step 3/9 here).** LSP first, grep second. **Single-pass-first** (`orchestrator.md > Single-pass-first`): write `plan.md` from your own walk by default. Self-dispatch a worker per point (see *Recruit help*), or return `FANOUT_REQUESTED: plan:<point-list>` (integration-point names from `spec.md > Constraints > Integration points`) as the fallback, **only** when **2+ integration points in disjoint surfaces** (separate modules/folders/repos) AND the research is substantial. **Disjoint surface, not raw count, is the bar.** If `context.md` (or plan-prep) already mapped current state, signal fanout only for residual best-practice research — never to re-map current state. Skip fanout for XS/pure-greenfield/straightforward.
 
 ## Parallel-phase integrity scan (Mode A self-review — when any `Parallelizable: yes`)
 

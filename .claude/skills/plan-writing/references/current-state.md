@@ -2,6 +2,8 @@
 
 Reverse-engineer the existing code *before* designing the change. Deep-dive for `plan-writing > principle 3`: LSP queries, hop count, what counts as an invariant, and worked examples per Type.
 
+> **Brownfield M/L — mapped once, shared.** This map is produced **once** as `.workflow/<id>/context.md` (step 7a) and read by every plan slice (`lead`/`qa`/`uxui`) — walked once, not per slice. When it's in your prompt: synthesise + cite it, spot-check load-bearing claims (re-resolve a sample), verify only what it misses; `plan.md > ## Current state` cites it. **Evidence, not authority** — you own the final map; an unre-resolvable claim is a finding. Same boundary-depth discipline produces `context.md` and an absent-`context.md` cold walk.
+
 ## Boundary-depth, not full-depth — read less, defer the rest
 
 The plan needs to read deep on three things only: **blast radius**, **invariants** the change must preserve, and **insertion points**. That safety-critical subset is what the gate signs off on. Everything else is the engineer's to read **at edit time** — pre-reading code whose *contract you don't change* is a read done twice.

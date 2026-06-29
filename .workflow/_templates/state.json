@@ -3,6 +3,7 @@
   "type": "feat",
   "size": null,
   "field": null,
+  "context_built": false,
   "repo_root": null,
   "repos": null,
   "branch": null,
