@@ -8,6 +8,7 @@ Section skeletons for each file. Follow the structure, fill from what you read, 
 - [TECHSTACK.md](#techstackmd)
 - [DATAMODEL.md](#datamodelmd)
 - [COREFEATURE.md](#corefeaturemd)
+- [BUSINESSRULE.md](#businessrulemd)
 - [API.md](#apimd)
 - [DESIGN.md](#designmd)
 
@@ -211,6 +212,68 @@ sequenceDiagram
 ```
 
 Sequence diagram rules: declare `participant`/`actor` before use; `->>` solid call, `-->>` dashed return; quote labels with punctuation; use `Note over A,B: ...` for error/boundary behaviour; `alt`/`else`/`opt` for branching when it matters.
+
+---
+
+## BUSINESSRULE.md
+
+The domain rules the code *enforces* — the behavioural counterpart to DATAMODEL's constraints and the *why* behind COREFEATURE's flows. Sourced from validators, domain services, conditional logic, enums, and named constants — **not** policies that "should" exist; a rule you can't point at in code doesn't go in.
+
+```markdown
+# Business Rules
+
+## Domain glossary
+The domain terms the rules use, defined as the code uses them — not a dictionary.
+| Term | Meaning (as the code uses it) | Defined in |
+|------|-------------------------------|------------|
+| Order | A customer's basket once submitted | `src/domain/order.ts` |
+
+## Rules
+Grouped by area. Each rule: trigger → effect, with its source line.
+| ID | Rule | Condition → Effect | Source |
+|----|------|--------------------|--------|
+| BR-1 | An order must contain at least one item | `items.length === 0` → reject `EmptyOrderError` | `src/services/order.ts:42` |
+| BR-2 | Orders over $10k need manual review | `total > 10_000` → status `pending_review` | `src/services/order.ts:88` |
+
+## Validation rules
+Input/field constraints enforced in code — required, format, range, uniqueness — with the validator.
+| Field | Constraint | Source |
+|-------|-----------|--------|
+| email | RFC-5322 shape, unique | `src/validators/user.ts:15` |
+| quantity | integer, 1–99 | `src/validators/order.ts:8` |
+
+## Calculations & derived values
+The formulas the code computes — totals, fees, scores, prorations. State the *actual* formula, not an idealised one.
+- **Order total** = `Σ(item.price × qty) − discount + tax` — `src/pricing/total.ts:12`
+- **Discount cap**: clamped to 30% (`MAX_DISCOUNT = 0.3`) — `src/pricing/discount.ts:7`
+
+## State transitions
+The allowed lifecycle transitions and their guards. Include this section **only when an entity genuinely has a state machine in code.**
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> pending
+  pending --> paid: "payment captured"
+  pending --> cancelled: "cancel or timeout"
+  paid --> shipped: "fulfilment"
+  paid --> refunded: "refund issued"
+  shipped --> [*]
+\`\`\`
+
+## Authorization & eligibility
+Who may do what, and the conditions gating an action — role checks, ownership, quota/limit gates — by source.
+| Action | Allowed when | Source |
+|--------|-------------|--------|
+| Cancel order | caller owns it AND status = pending | `src/services/order.ts:120` |
+
+## Thresholds & constants
+The magic numbers that encode policy — limits, timeouts, fees, retry counts. Name the constant, cite the file; never the secret value.
+| Constant | Value | Meaning | Source |
+|----------|-------|---------|--------|
+| `MAX_LOGIN_ATTEMPTS` | 5 | account lockout threshold | `src/auth/policy.ts:9` |
+| `SESSION_TTL` | 30 min | idle session expiry | `src/auth/policy.ts:14` |
+```
+
+State-transition diagram optional — `stateDiagram-v2` for a lifecycle, `flowchart` for a decision tree; quote labels with spaces (`paid --> shipped: "fulfilment"`). Drop any sub-section with no real instances; a thin CRUD/static project may have no `BUSINESSRULE.md` at all.
 
 ---
 

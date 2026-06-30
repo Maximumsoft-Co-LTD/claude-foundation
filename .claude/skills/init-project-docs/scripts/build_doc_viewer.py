@@ -13,7 +13,7 @@ Usage:
                                 [--title "My Project"]
 
 The known suite files (OVERVIEW, ARCHITECTURE, TECHSTACK, DATAMODEL, COREFEATURE,
-API, DESIGN) are ordered first with friendly titles; any other *.md in the directory
+BUSINESSRULE, API, DESIGN) are ordered first with friendly titles; any other *.md in the directory
 is appended (alphabetically) so the viewer stays useful for extra docs too.
 """
 from __future__ import annotations
@@ -31,6 +31,7 @@ KNOWN = [
     ("TECHSTACK.md", "Tech Stack"),
     ("DATAMODEL.md", "Data Model"),
     ("COREFEATURE.md", "Core Features"),
+    ("BUSINESSRULE.md", "Business Rules"),
     ("API.md", "API"),
     ("DESIGN.md", "Design (UX/UI)"),
 ]
