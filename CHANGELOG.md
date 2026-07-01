@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`BUSINESSRULE.md` — 8th doc in the `init-project-docs` suite.** Captures the domain rules the code enforces (invariants, validation, formulas, eligibility, state guards), grounded in validators/services/named constants; placed after COREFEATURE, before API, with an optional state/decision diagram. Skipped for thin-CRUD/static projects. Files: `.claude/skills/init-project-docs/{SKILL.md,references/doc-templates.md,scripts/build_doc_viewer.py}`.
+
 ## [2.5.14] - 2026-06-25
 
 ### Changed
