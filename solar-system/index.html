@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solar System 3D</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+      }
+      #app {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      canvas {
+        display: block;
+      }
+
+      #info-panel {
+        position: absolute;
+        top: 24px;
+        right: 24px;
+        width: 280px;
+        padding: 20px 24px;
+        background: rgba(10, 12, 24, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        color: #eef2ff;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        backdrop-filter: blur(6px);
+        display: none;
+        z-index: 10;
+      }
+      #info-panel.visible {
+        display: block;
+      }
+      #info-panel h2 {
+        margin: 0 0 12px 0;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      #info-panel dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 12px;
+        font-size: 13px;
+      }
+      #info-panel dt {
+        color: #9aa5c9;
+      }
+      #info-panel dd {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      #info-panel-close {
+        position: absolute;
+        top: 12px;
+        right: 14px;
+        background: none;
+        border: none;
+        color: #cdd3ee;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 4px;
+      }
+      #info-panel-close:hover {
+        color: #fff;
+      }
+
+      #hint {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        color: rgba(255, 255, 255, 0.55);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 12px;
+        z-index: 10;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="info-panel">
+      <button id="info-panel-close" aria-label="Close">&times;</button>
+      <h2 id="info-name">Planet</h2>
+      <dl>
+        <dt>Diameter</dt>
+        <dd id="info-diameter">--</dd>
+        <dt>Distance from Sun</dt>
+        <dd id="info-distance">--</dd>
+        <dt>Orbital period</dt>
+        <dd id="info-period">--</dd>
+      </dl>
+    </div>
+
+    <div id="hint">
+      Drag to rotate &middot; scroll to zoom &middot; right-drag to pan &middot;
+      click a planet
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+      /* ---------------------------------------------------------------------
+       * planet-data
+       * ------------------------------------------------------------------- */
+      const PLANETS = [
+        {
+          name: "Mercury",
+          orbitalRadius: 12,
+          orbitalSpeed: 0.9,
+          visualRadius: 0.6,
+          color: 0x9c9c94,
+          facts: {
+            diameter: "4,879 km",
+            distance: "57.9 million km",
+            period: "88 days",
+          },
+        },
+        {
+          name: "Venus",
+          orbitalRadius: 17,
+          orbitalSpeed: 0.7,
+          visualRadius: 0.95,
+          color: 0xe0c88f,
+          facts: {
+            diameter: "12,104 km",
+            distance: "108.2 million km",
+            period: "225 days",
+          },
+        },
+        {
+          name: "Earth",
+          orbitalRadius: 22,
+          orbitalSpeed: 0.55,
+          visualRadius: 1.0,
+          color: 0x3f7fe0,
+          facts: {
+            diameter: "12,742 km",
+            distance: "149.6 million km",
+            period: "365.25 days",
+          },
+        },
+        {
+          name: "Mars",
+          orbitalRadius: 28,
+          orbitalSpeed: 0.44,
+          visualRadius: 0.75,
+          color: 0xc1522b,
+          facts: {
+            diameter: "6,779 km",
+            distance: "227.9 million km",
+            period: "687 days",
+          },
+        },
+        {
+          name: "Jupiter",
+          orbitalRadius: 40,
+          orbitalSpeed: 0.24,
+          visualRadius: 2.4,
+          color: 0xd9b28c,
+          facts: {
+            diameter: "139,820 km",
+            distance: "778.5 million km",
+            period: "11.9 years",
+          },
+        },
+        {
+          name: "Saturn",
+          orbitalRadius: 52,
+          orbitalSpeed: 0.18,
+          visualRadius: 2.1,
+          color: 0xe3d3a6,
+          facts: {
+            diameter: "116,460 km",
+            distance: "1.43 billion km",
+            period: "29.5 years",
+          },
+        },
+        {
+          name: "Uranus",
+          orbitalRadius: 63,
+          orbitalSpeed: 0.13,
+          visualRadius: 1.6,
+          color: 0x9fd9e6,
+          facts: {
+            diameter: "50,724 km",
+            distance: "2.87 billion km",
+            period: "84 years",
+          },
+        },
+        {
+          name: "Neptune",
+          orbitalRadius: 74,
+          orbitalSpeed: 0.1,
+          visualRadius: 1.55,
+          color: 0x4166f5,
+          facts: {
+            diameter: "49,244 km",
+            distance: "4.50 billion km",
+            period: "165 years",
+          },
+        },
+      ];
+
+      const SUN = { visualRadius: 4.2, color: 0xffcc55, emissive: 0xffaa33 };
+
+      /* ---------------------------------------------------------------------
+       * scene-setup
+       * ------------------------------------------------------------------- */
+      const container = document.getElementById("app");
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000005);
+
+      const camera = new THREE.PerspectiveCamera(
+        55,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        2000,
+      );
+      const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 60, 130);
+      camera.position.copy(DEFAULT_CAMERA_POSITION);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+      scene.add(ambientLight);
+
+      const sunLight = new THREE.PointLight(0xffffff, 3.2, 0, 0.15);
+      sunLight.position.set(0, 0, 0);
+      scene.add(sunLight);
+
+      /* simple starfield for depth cues */
+      {
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 1500;
+        const positions = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount; i++) {
+          const radius = 400 + Math.random() * 600;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+          positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+          positions[i * 3 + 2] = radius * Math.cos(phi);
+        }
+        starGeometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(positions, 3),
+        );
+        const starMaterial = new THREE.PointsMaterial({
+          color: 0xffffff,
+          size: 0.7,
+          sizeAttenuation: true,
+        });
+        scene.add(new THREE.Points(starGeometry, starMaterial));
+      }
+
+      /* ---------------------------------------------------------------------
+       * sun-mesh
+       * ------------------------------------------------------------------- */
+      const sunGeometry = new THREE.SphereGeometry(SUN.visualRadius, 32, 32);
+      const sunMaterial = new THREE.MeshBasicMaterial({ color: SUN.emissive });
+      const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+      sunMesh.name = "Sun";
+      scene.add(sunMesh);
+
+      /* ---------------------------------------------------------------------
+       * planet-meshes
+       * ------------------------------------------------------------------- */
+      const planetMeshes = PLANETS.map((planet) => {
+        const geometry = new THREE.SphereGeometry(planet.visualRadius, 32, 32);
+        const material = new THREE.MeshStandardMaterial({
+          color: planet.color,
+          roughness: 0.8,
+          metalness: 0.05,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(planet.orbitalRadius, 0, 0);
+        mesh.userData.planet = planet;
+        scene.add(mesh);
+        return mesh;
+      });
+
+      /* ---------------------------------------------------------------------
+       * orbit-rings
+       * ------------------------------------------------------------------- */
+      PLANETS.forEach((planet) => {
+        const segments = 128;
+        const points = [];
+        for (let i = 0; i <= segments; i++) {
+          const angle = (i / segments) * Math.PI * 2;
+          points.push(
+            new THREE.Vector3(
+              Math.cos(angle) * planet.orbitalRadius,
+              0,
+              Math.sin(angle) * planet.orbitalRadius,
+            ),
+          );
+        }
+        const ringGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const ringMaterial = new THREE.LineBasicMaterial({
+          color: 0x445077,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const ring = new THREE.LineLoop(ringGeometry, ringMaterial);
+        scene.add(ring);
+      });
+
+      /* ---------------------------------------------------------------------
+       * orbit-controls
+       * ------------------------------------------------------------------- */
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.minDistance = 10;
+      controls.maxDistance = 400;
+      controls.target.set(0, 0, 0);
+
+      /* ---------------------------------------------------------------------
+       * raycaster-click / selection / info-panel / deselect / rapid-click /
+       * sun-click-guard / click-empty-noop
+       * ------------------------------------------------------------------- */
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+
+      const infoPanel = document.getElementById("info-panel");
+      const infoName = document.getElementById("info-name");
+      const infoDiameter = document.getElementById("info-diameter");
+      const infoDistance = document.getElementById("info-distance");
+      const infoPeriod = document.getElementById("info-period");
+      const infoPanelClose = document.getElementById("info-panel-close");
+
+      let selectedMesh = null;
+      let cameraAnim = null; // { fromPos, toPos, fromTarget, toTarget, startTime, duration }
+
+      const CAMERA_ANIM_DURATION = 700; // ms, well under SC-003's 1.5s budget
+
+      function easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      }
+
+      function startCameraAnimation(toPosition, toTarget) {
+        cameraAnim = {
+          fromPos: camera.position.clone(),
+          toPos: toPosition.clone(),
+          fromTarget: controls.target.clone(),
+          toTarget: toTarget.clone(),
+          startTime: performance.now(),
+          duration: CAMERA_ANIM_DURATION,
+        };
+      }
+
+      function focusPlanet(mesh) {
+        selectedMesh = mesh;
+        const planet = mesh.userData.planet;
+
+        const offset = new THREE.Vector3(
+          0,
+          planet.visualRadius * 1.5,
+          planet.visualRadius * 5 + 4,
+        );
+        const targetPos = mesh.position.clone().add(offset);
+        startCameraAnimation(targetPos, mesh.position);
+
+        infoName.textContent = planet.name;
+        infoDiameter.textContent = planet.facts.diameter;
+        infoDistance.textContent = planet.facts.distance;
+        infoPeriod.textContent = planet.facts.period;
+        infoPanel.classList.add("visible");
+      }
+
+      function deselect() {
+        selectedMesh = null;
+        infoPanel.classList.remove("visible");
+        startCameraAnimation(
+          DEFAULT_CAMERA_POSITION,
+          new THREE.Vector3(0, 0, 0),
+        );
+      }
+
+      function onPointerClick(event) {
+        // ignore clicks on the info panel itself
+        if (event.target.closest("#info-panel")) return;
+
+        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+        pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(planetMeshes, false); // Sun excluded: not in planetMeshes
+
+        if (intersects.length > 0) {
+          focusPlanet(intersects[0].object);
+        } else if (selectedMesh) {
+          deselect();
+        }
+        // else: empty space clicked with nothing selected -> no-op
+      }
+
+      renderer.domElement.addEventListener("click", onPointerClick);
+      infoPanelClose.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deselect();
+      });
+
+      /* ---------------------------------------------------------------------
+       * resize-handler
+       * ------------------------------------------------------------------- */
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      /* ---------------------------------------------------------------------
+       * animation-loop
+       * ------------------------------------------------------------------- */
+      const clock = new THREE.Clock();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const elapsed = clock.getElapsedTime();
+
+        planetMeshes.forEach((mesh) => {
+          const planet = mesh.userData.planet;
+          const angle = elapsed * planet.orbitalSpeed;
+          mesh.position.x = Math.cos(angle) * planet.orbitalRadius;
+          mesh.position.z = Math.sin(angle) * planet.orbitalRadius;
+        });
+
+        // keep camera framing the selected planet as it moves along its orbit,
+        // unless a manual camera animation/user drag is in flight
+        if (selectedMesh && !cameraAnim) {
+          controls.target.copy(selectedMesh.position);
+        }
+
+        if (cameraAnim) {
+          const t = Math.min(
+            (performance.now() - cameraAnim.startTime) / cameraAnim.duration,
+            1,
+          );
+          const eased = easeInOutCubic(t);
+          camera.position.lerpVectors(
+            cameraAnim.fromPos,
+            cameraAnim.toPos,
+            eased,
+          );
+          controls.target.lerpVectors(
+            cameraAnim.fromTarget,
+            cameraAnim.toTarget,
+            eased,
+          );
+          if (t >= 1) {
+            cameraAnim = null;
+          }
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+      }
+
+      animate();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+{
+  "id": "0003-feat-solar-system-3d",
+  "type": "feat",
+  "size": "S",
+  "field": "greenfield",
+  "context_built": false,
+  "repo_root": "/home/user/claude-foundation",
+  "repos": null,
+  "branch": "claude/solar-system-threejs-vls39x",
+  "branch_existed": true,
+  "phase": "done",
+  "step": "done",
+  "next_step": null,
+  "cycles": {
+    "review": 0,
+    "test": 0
+  },
+  "skipped_steps": ["security"],
+  "phase_plan": {
+    "implement": "run",
+    "test": "run",
+    "review": "run",
+    "security": "trigger",
+    "docs": "run",
+    "ship": "run"
+  },
+  "fanout_plan": {},
+  "fanout_log": [],
+  "team_registry": null,
+  "impl_phases_done": [],
+  "commit_on_ship": "no",
+  "open_pr_on_ship": "no",
+  "e2e_visual": "off",
+  "security_triggered": false,
+  "commit_sha": null,
+  "pr_url": null,
+  "last_agent": "main",
+  "created_at": "2026-07-01T14:16:46Z",
+  "last_updated": "2026-07-01T14:33:34Z",
+  "done_at": "2026-07-01T14:33:34Z",
+  "notes": "fast-path, greenfield, branch_existed=true, browser-verified rendering, review: pass, security: no triggers"
+}
