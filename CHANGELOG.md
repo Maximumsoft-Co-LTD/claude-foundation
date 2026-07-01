@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-01
+
 ### Added
 
 - **`BUSINESSRULE.md` — 8th doc in the `init-project-docs` suite.** Captures the domain rules the code enforces (invariants, validation, formulas, eligibility, state guards), grounded in validators/services/named constants; placed after COREFEATURE, before API, with an optional state/decision diagram. Skipped for thin-CRUD/static projects. Files: `.claude/skills/init-project-docs/{SKILL.md,references/doc-templates.md,scripts/build_doc_viewer.py}`.
@@ -466,7 +468,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.14...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.14...v2.6.0
 [2.5.14]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.13...v2.5.14
 [2.5.13]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.12...v2.5.13
 [2.5.12]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.11...v2.5.12
