@@ -1,0 +1,1257 @@
+<title>Workflow Report — Solar System 3D</title>
+<style>
+  :root {
+    --bg: #080c18;
+    --surface: #10162a;
+    --surface-raised: #161e38;
+    --border: #1e2a4a;
+    --text: #e2e6f0;
+    --text-dim: #7a83a0;
+    --text-faint: #4e5672;
+    --gold: #f5c542;
+    --gold-dim: rgba(245, 197, 66, 0.12);
+    --blue: #4a9eff;
+    --blue-dim: rgba(74, 158, 255, 0.1);
+    --emerald: #34d399;
+    --emerald-dim: rgba(52, 211, 153, 0.1);
+    --violet: #a78bfa;
+    --violet-dim: rgba(167, 139, 250, 0.1);
+    --coral: #f87171;
+    --coral-dim: rgba(248, 113, 113, 0.1);
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family:
+      "SF Pro Text",
+      "Segoe UI",
+      system-ui,
+      -apple-system,
+      sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 56px 0 40px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 12px;
+  }
+  .hero h1 {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .badge-gold {
+    background: var(--gold-dim);
+    color: var(--gold);
+  }
+  .badge-blue {
+    background: var(--blue-dim);
+    color: var(--blue);
+  }
+  .badge-emerald {
+    background: var(--emerald-dim);
+    color: var(--emerald);
+  }
+  .badge-violet {
+    background: var(--violet-dim);
+    color: var(--violet);
+  }
+
+  .hero-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    margin-top: 20px;
+  }
+  .hero-stat {
+    display: flex;
+    flex-direction: column;
+  }
+  .hero-stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+  .hero-stat-value {
+    font-family:
+      "SF Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  /* ── KPI Cards ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    padding: 32px 0;
+  }
+  @media (max-width: 640px) {
+    .kpi-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+  .kpi--gold::before {
+    background: var(--gold);
+  }
+  .kpi--blue::before {
+    background: var(--blue);
+  }
+  .kpi--emerald::before {
+    background: var(--emerald);
+  }
+  .kpi--violet::before {
+    background: var(--violet);
+  }
+
+  .kpi-number {
+    font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .kpi-number--gold {
+    color: var(--gold);
+  }
+  .kpi-number--blue {
+    color: var(--blue);
+  }
+  .kpi-number--emerald {
+    color: var(--emerald);
+  }
+  .kpi-number--violet {
+    color: var(--violet);
+  }
+
+  .kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .kpi-detail {
+    font-size: 13px;
+    color: var(--text-faint);
+  }
+
+  /* ── Sections ── */
+  .section {
+    padding: 32px 0;
+    border-top: 1px solid var(--border);
+  }
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 20px;
+    color: var(--text);
+  }
+
+  /* ── Phase Timeline ── */
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    padding-left: 28px;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border);
+  }
+  .tl-item {
+    position: relative;
+    padding: 10px 0 10px 20px;
+  }
+  .tl-dot {
+    position: absolute;
+    left: -24px;
+    top: 14px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tl-dot--done {
+    border-color: var(--emerald);
+    background: var(--emerald-dim);
+  }
+  .tl-dot--done::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--emerald);
+  }
+  .tl-dot--skip {
+    border-color: var(--text-faint);
+    background: var(--bg);
+  }
+  .tl-dot--skip::after {
+    content: "—";
+    font-size: 9px;
+    color: var(--text-faint);
+    line-height: 1;
+  }
+  .tl-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .tl-detail {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .tl-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .tl-badge {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+
+  /* ── Tables ── */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .status-pass {
+    color: var(--emerald);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .status-skip {
+    color: var(--text-faint);
+    font-weight: 500;
+    font-size: 12px;
+  }
+  .mono {
+    font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  /* ── Findings ── */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    border-left: 3px solid var(--violet);
+  }
+  .finding-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .finding-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* ── Efficiency ── */
+  .eff-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 640px) {
+    .eff-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .eff-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .eff-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .eff-value {
+    font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .eff-note {
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+
+  /* ── Bar chart ── */
+  .bar-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .bar-label {
+    width: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .bar-track {
+    flex: 1;
+    height: 24px;
+    background: var(--surface-raised);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--bg);
+    min-width: fit-content;
+    transition: width 0.6s ease;
+  }
+  .bar-fill--gold {
+    background: var(--gold);
+  }
+  .bar-fill--blue {
+    background: var(--blue);
+  }
+  .bar-fill--emerald {
+    background: var(--emerald);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 24px 0;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+
+  /* ── Gauge ── */
+  .gauge-row {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    flex-wrap: wrap;
+    margin: 24px 0;
+  }
+  .gauge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .gauge svg {
+    width: 100px;
+    height: 100px;
+  }
+  .gauge-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+</style>
+
+<div class="container">
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-eyebrow">Workflow Performance Report</div>
+    <h1>Interactive 3D Solar System</h1>
+    <div class="hero-meta">
+      <span class="badge badge-gold">feat</span>
+      <span class="badge badge-blue">size S</span>
+      <span class="badge badge-emerald">greenfield</span>
+      <span class="badge badge-violet">fast-path</span>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <span class="hero-stat-label">Run ID</span>
+        <span class="hero-stat-value">0003-feat-solar-system-3d</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-label">Started</span>
+        <span class="hero-stat-value">2026-07-01 14:16:46 UTC</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-label">Finished</span>
+        <span class="hero-stat-value">2026-07-01 14:33:34 UTC</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-label">Duration</span>
+        <span class="hero-stat-value" style="color: var(--gold)">16m 48s</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-label">Branch</span>
+        <span class="hero-stat-value">claude/solar-system-threejs-vls39x</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi kpi--gold">
+      <div class="kpi-number kpi-number--gold">9/9</div>
+      <div class="kpi-label">Acceptance Criteria</div>
+      <div class="kpi-detail">100% first pass</div>
+    </div>
+    <div class="kpi kpi--blue">
+      <div class="kpi-number kpi-number--blue">17/17</div>
+      <div class="kpi-label">Tasks Completed</div>
+      <div class="kpi-detail">0 rework cycles</div>
+    </div>
+    <div class="kpi kpi--emerald">
+      <div class="kpi-number kpi-number--emerald">11/11</div>
+      <div class="kpi-label">Tests Passed</div>
+      <div class="kpi-detail">Playwright + SwiftShader</div>
+    </div>
+    <div class="kpi kpi--violet">
+      <div class="kpi-number kpi-number--violet">PASS</div>
+      <div class="kpi-label">Review Verdict</div>
+      <div class="kpi-detail">0 blocking findings</div>
+    </div>
+  </div>
+
+  <!-- Gauges -->
+  <div class="section">
+    <div class="section-title">Overall Efficiency</div>
+    <div class="gauge-row">
+      <div class="gauge">
+        <svg viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#1e2a4a"
+            stroke-width="6"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#f5c542"
+            stroke-width="6"
+            stroke-dasharray="264"
+            stroke-dashoffset="0"
+            stroke-linecap="round"
+            transform="rotate(-90 50 50)"
+          />
+          <text
+            x="50"
+            y="48"
+            text-anchor="middle"
+            fill="#f5c542"
+            font-family="SF Mono,Cascadia Code,ui-monospace,monospace"
+            font-size="20"
+            font-weight="700"
+          >
+            100%
+          </text>
+          <text
+            x="50"
+            y="63"
+            text-anchor="middle"
+            fill="#7a83a0"
+            font-size="9"
+            font-weight="500"
+          >
+            AC PASS
+          </text>
+        </svg>
+        <span class="gauge-label">Acceptance</span>
+      </div>
+      <div class="gauge">
+        <svg viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#1e2a4a"
+            stroke-width="6"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#34d399"
+            stroke-width="6"
+            stroke-dasharray="264"
+            stroke-dashoffset="0"
+            stroke-linecap="round"
+            transform="rotate(-90 50 50)"
+          />
+          <text
+            x="50"
+            y="48"
+            text-anchor="middle"
+            fill="#34d399"
+            font-family="SF Mono,Cascadia Code,ui-monospace,monospace"
+            font-size="20"
+            font-weight="700"
+          >
+            100%
+          </text>
+          <text
+            x="50"
+            y="63"
+            text-anchor="middle"
+            fill="#7a83a0"
+            font-size="9"
+            font-weight="500"
+          >
+            TEST PASS
+          </text>
+        </svg>
+        <span class="gauge-label">Test Coverage</span>
+      </div>
+      <div class="gauge">
+        <svg viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#1e2a4a"
+            stroke-width="6"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#4a9eff"
+            stroke-width="6"
+            stroke-dasharray="264"
+            stroke-dashoffset="0"
+            stroke-linecap="round"
+            transform="rotate(-90 50 50)"
+          />
+          <text
+            x="50"
+            y="48"
+            text-anchor="middle"
+            fill="#4a9eff"
+            font-family="SF Mono,Cascadia Code,ui-monospace,monospace"
+            font-size="20"
+            font-weight="700"
+          >
+            0
+          </text>
+          <text
+            x="50"
+            y="63"
+            text-anchor="middle"
+            fill="#7a83a0"
+            font-size="9"
+            font-weight="500"
+          >
+            REWORK
+          </text>
+        </svg>
+        <span class="gauge-label">Review Cycles</span>
+      </div>
+      <div class="gauge">
+        <svg viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#1e2a4a"
+            stroke-width="6"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke="#a78bfa"
+            stroke-width="6"
+            stroke-dasharray="264"
+            stroke-dashoffset="0"
+            stroke-linecap="round"
+            transform="rotate(-90 50 50)"
+          />
+          <text
+            x="50"
+            y="48"
+            text-anchor="middle"
+            fill="#a78bfa"
+            font-family="SF Mono,Cascadia Code,ui-monospace,monospace"
+            font-size="20"
+            font-weight="700"
+          >
+            0
+          </text>
+          <text
+            x="50"
+            y="63"
+            text-anchor="middle"
+            fill="#7a83a0"
+            font-size="9"
+            font-weight="500"
+          >
+            BLOCKING
+          </text>
+        </svg>
+        <span class="gauge-label">Blockers Found</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase Timeline -->
+  <div class="section">
+    <div class="section-title">Phase Timeline</div>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Spec + Plan (Combined)</div>
+        <div class="tl-detail">
+          Fast-path: S-sized greenfield merged spec and plan into a single agent
+          spawn
+        </div>
+        <div class="tl-badges">
+          <span class="tl-badge badge-gold">3 user stories</span>
+          <span class="tl-badge badge-blue">9 ACs</span>
+          <span class="tl-badge badge-violet">9 FRs</span>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Gate</div>
+        <div class="tl-detail">
+          User approved spec + plan, declined commit-on-ship
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Implement</div>
+        <div class="tl-detail">
+          17 tasks across 6 phases, single self-contained HTML file (~494 lines)
+        </div>
+        <div class="tl-badges">
+          <span class="tl-badge badge-emerald">17/17 tasks</span>
+          <span class="tl-badge badge-blue">single file</span>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Test</div>
+        <div class="tl-detail">
+          Playwright headless Chromium with SwiftShader WebGL, 11 checks
+          verified
+        </div>
+        <div class="tl-badges">
+          <span class="tl-badge badge-emerald">11/11 PASS</span>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Review</div>
+        <div class="tl-detail">
+          Full task adherence + AC-evidence check, every task with path:line
+          citations
+        </div>
+        <div class="tl-badges">
+          <span class="tl-badge badge-emerald">pass</span>
+          <span class="tl-badge badge-violet">5 non-blocking</span>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--skip"></div>
+        <div class="tl-title">Security</div>
+        <div class="tl-detail">
+          Skipped: no trust boundaries triggered (no auth, server, DB, secrets,
+          or external write surface)
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Docs + Ship (Merged)</div>
+        <div class="tl-detail">
+          Fast-path: S-size merged docs touch-up and ship into one step
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot tl-dot--done"></div>
+        <div class="tl-title">Retro</div>
+        <div class="tl-detail">
+          Inline retro: clean run, no follow-ups surfaced, no skill/memory
+          candidates
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Efficiency Metrics -->
+  <div class="section">
+    <div class="section-title">Efficiency Breakdown</div>
+    <div class="eff-grid">
+      <div class="eff-card">
+        <div class="eff-label">Time per Task</div>
+        <div class="eff-value">~59s</div>
+        <div class="eff-note">16m 48s / 17 tasks</div>
+      </div>
+      <div class="eff-card">
+        <div class="eff-label">First-pass Rate</div>
+        <div class="eff-value">100%</div>
+        <div class="eff-note">0 review cycles, 0 test cycles</div>
+      </div>
+      <div class="eff-card">
+        <div class="eff-label">AC Density</div>
+        <div class="eff-value">1.9</div>
+        <div class="eff-note">tasks per AC (17 tasks / 9 ACs)</div>
+      </div>
+      <div class="eff-card">
+        <div class="eff-label">Code Output</div>
+        <div class="eff-value">~494</div>
+        <div class="eff-note">lines (HTML + CSS + JS)</div>
+      </div>
+      <div class="eff-card">
+        <div class="eff-label">Lines per Minute</div>
+        <div class="eff-value">~29</div>
+        <div class="eff-note">494 lines / 16.8 min</div>
+      </div>
+      <div class="eff-card">
+        <div class="eff-label">Defect Density</div>
+        <div class="eff-value">0</div>
+        <div class="eff-note">blocking findings per 100 lines</div>
+      </div>
+    </div>
+
+    <div class="bar-chart" style="margin-top: 28px">
+      <div
+        style="
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-dim);
+          margin-bottom: 4px;
+        "
+      >
+        Phase Weight (estimated)
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Spec + Plan</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-fill--gold" style="width: 20%">~20%</div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Gate</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-fill--blue" style="width: 5%">~5%</div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Implement</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-fill--emerald" style="width: 45%">~45%</div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Test</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-fill--emerald" style="width: 15%">~15%</div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Review</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-fill--gold" style="width: 10%">~10%</div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Ship + Retro</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-fill--blue" style="width: 5%">~5%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AC Coverage Table -->
+  <div class="section">
+    <div class="section-title">Acceptance Criteria Coverage</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>AC</th>
+            <th>Description</th>
+            <th>Tasks</th>
+            <th>Test</th>
+            <th>Review</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">AC1</td>
+            <td>Sun + 8 planets + rings + dark background</td>
+            <td class="mono">T002-T006</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC2</td>
+            <td>Distinct orbit speeds, inner faster, smooth 60fps</td>
+            <td class="mono">T007</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC3</td>
+            <td>Distinct color + size per planet (stylized)</td>
+            <td class="mono">T006</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC4</td>
+            <td>Left-drag orbits camera</td>
+            <td class="mono">T008</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC5</td>
+            <td>Scroll zoom with min/max clamp</td>
+            <td class="mono">T008</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC6</td>
+            <td>Click planet: camera animation + info panel</td>
+            <td class="mono">T009, T010</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC7</td>
+            <td>Deselect via empty click or close button</td>
+            <td class="mono">T011</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">AC8</td>
+            <td>Click different planet switches target + panel</td>
+            <td class="mono">T012-T014</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td class="mono">Edge</td>
+            <td>Window resize maintains aspect ratio</td>
+            <td class="mono">T015</td>
+            <td><span class="status-pass">PASS</span></td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Test Results -->
+  <div class="section">
+    <div class="section-title">Test Results Detail</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Method</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>AC1 &mdash; scene + Sun + planets + rings</td>
+            <td>
+              Screenshot: Sun at center, 8 rings, planets at distinct positions
+            </td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC2 &mdash; orbital motion</td>
+            <td>Two timed screenshots: planets moved, inner moved more</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC3 &mdash; distinct colors + sizes</td>
+            <td>Visual inspection of distinct colors and sizes</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC4 &mdash; camera rotation</td>
+            <td>OrbitControls enableDamping + left-drag wired</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC5 &mdash; zoom limits</td>
+            <td>minDistance / maxDistance configured</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC6 &mdash; click planet + panel</td>
+            <td>Raycaster targets planetMeshes, selectPlanet shows panel</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC7 &mdash; deselect</td>
+            <td>Empty click + close button both call deselect</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>AC8 &mdash; switch planet</td>
+            <td>selectPlanet redirects mid-flight, empty no-op</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>FR-005 &mdash; Sun excluded</td>
+            <td>sunMesh not in planetMeshes array</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>FR-006 &mdash; rapid multi-click</td>
+            <td>startCameraAnimation overwrites animation state</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+          <tr>
+            <td>Edge &mdash; responsive resize</td>
+            <td>Resize listener updates aspect + renderer size</td>
+            <td><span class="status-pass">PASS</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Review Findings -->
+  <div class="section">
+    <div class="section-title">Review Findings</div>
+    <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 16px">
+      Verdict: <strong style="color: var(--emerald)">PASS</strong> &mdash; 0
+      blocking, 5 non-blocking observations
+    </p>
+
+    <div class="finding">
+      <div class="finding-title">
+        Plan vs. implementation structure mismatch
+      </div>
+      <div class="finding-desc">
+        Plan described a multi-file split (js/main.js, planets.js, controls.js,
+        selection.js); implementation shipped as a single index.html with
+        comment-delimited sections. Functionally equivalent, tasks.md
+        consistently targeted index.html.
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-title">AC9 numbering undefined in spec</div>
+      <div class="finding-desc">
+        tasks.md, test-plan.md, and tests.md reference "AC9" for resize, but
+        spec.md's acceptance scenarios stop at AC8. Resize is covered by Edge
+        Case + FR-009 but never assigned AC9.
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-title">Camera tracking drift on fast planets</div>
+      <div class="finding-desc">
+        After camera animation completes, only controls.target tracks the
+        planet's orbit; camera.position stays fixed, so framing drifts over time
+        on fast-orbiting inner planets like Mercury.
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-title">No SRI hash on CDN import</div>
+      <div class="finding-desc">
+        Three.js loaded from CDN without Subresource Integrity hash. Not
+        required by spec (no trust boundary), but a cheap hardening follow-up
+        for public deployment.
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-title">
+        Zoom/animation parameter mismatch in notes
+      </div>
+      <div class="finding-desc">
+        Earlier review stub noted zoom clamps 15-200 and 1s animation; actual
+        code uses minDistance=10, maxDistance=400, and 700ms duration. Corrected
+        in final review.
+      </div>
+    </div>
+  </div>
+
+  <!-- Run Configuration -->
+  <div class="section">
+    <div class="section-title">Run Configuration</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Type</td>
+            <td><span class="badge badge-gold">feat</span></td>
+          </tr>
+          <tr>
+            <td>Size</td>
+            <td><span class="badge badge-blue">S</span></td>
+          </tr>
+          <tr>
+            <td>Field</td>
+            <td><span class="badge badge-emerald">greenfield</span></td>
+          </tr>
+          <tr>
+            <td>Fast path</td>
+            <td>
+              Yes (XS/S combined spec+plan, merged docs+ship, inline retro)
+            </td>
+          </tr>
+          <tr>
+            <td>Commit on ship</td>
+            <td>No (user declined)</td>
+          </tr>
+          <tr>
+            <td>Open PR on ship</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>E2E + visual</td>
+            <td>Off</td>
+          </tr>
+          <tr>
+            <td>Security triggered</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Skipped steps</td>
+            <td>security</td>
+          </tr>
+          <tr>
+            <td>Fanout</td>
+            <td>None (single-pass)</td>
+          </tr>
+          <tr>
+            <td>Technology</td>
+            <td>Three.js r160, vanilla JS, no build tooling</td>
+          </tr>
+          <tr>
+            <td>Deliverable</td>
+            <td class="mono">solar-system/index.html</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Artifacts Produced -->
+  <div class="section">
+    <div class="section-title">Artifacts Produced</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Artifact</th>
+            <th>Agent</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">spec.md</td>
+            <td>pm</td>
+            <td>3 user stories, 9 ACs, 9 FRs, 4 SCs</td>
+          </tr>
+          <tr>
+            <td class="mono">plan.md</td>
+            <td>lead</td>
+            <td>Technical approach, folder structure, architecture diagram</td>
+          </tr>
+          <tr>
+            <td class="mono">tasks.md</td>
+            <td>lead</td>
+            <td>17 tasks across 6 phases, AC-to-task coverage table</td>
+          </tr>
+          <tr>
+            <td class="mono">test-plan.md</td>
+            <td>qa</td>
+            <td>18 coverage rows, execution mechanism, edge cases</td>
+          </tr>
+          <tr>
+            <td class="mono">tests.md</td>
+            <td>qa</td>
+            <td>11 verification results, all PASS</td>
+          </tr>
+          <tr>
+            <td class="mono">review.md</td>
+            <td>lead</td>
+            <td>Task adherence + AC evidence check, 5 non-blocking findings</td>
+          </tr>
+          <tr>
+            <td class="mono">retro.md</td>
+            <td>retro</td>
+            <td>Post-mortem: clean run, no follow-ups</td>
+          </tr>
+          <tr>
+            <td class="mono">state.json</td>
+            <td>orchestrator</td>
+            <td>Phase progression, timestamps, configuration</td>
+          </tr>
+          <tr>
+            <td class="mono">index.html</td>
+            <td>engineer</td>
+            <td>Self-contained 3D solar system (~494 lines)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Generated from
+    <code style="color: var(--text-dim)"
+      >.workflow/0003-feat-solar-system-3d/</code
+    >
+    &mdash; /dev workflow run
+  </footer>
+</div>
