@@ -90,6 +90,99 @@
         z-index: 10;
         pointer-events: none;
       }
+
+      #gate {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      #gate.visible {
+        display: flex;
+      }
+      #gate-panel {
+        width: min(320px, 90vw);
+        padding: 28px 32px;
+        background: rgba(10, 12, 24, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        color: #eef2ff;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        backdrop-filter: blur(6px);
+      }
+      #gate-panel h2 {
+        margin: 0 0 16px 0;
+        font-size: 20px;
+        font-weight: 600;
+        text-align: center;
+      }
+      #gate-label {
+        display: block;
+        font-size: 13px;
+        color: #9aa5c9;
+        margin-bottom: 6px;
+      }
+      #gate-input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.06);
+        color: #eef2ff;
+        font-size: 14px;
+        margin-bottom: 14px;
+      }
+      #gate-input:focus {
+        outline: 2px solid rgba(159, 217, 230, 0.6);
+        outline-offset: 2px;
+      }
+      #gate-submit {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.1);
+        color: #eef2ff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #gate-submit:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+      #gate-error {
+        margin-top: 12px;
+        min-height: 16px;
+        font-size: 12px;
+        color: #ff8a8a;
+        text-align: center;
+      }
+
+      #logout-btn {
+        position: absolute;
+        top: 24px;
+        left: 24px;
+        display: none;
+        padding: 8px 16px;
+        background: rgba(10, 12, 24, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        color: #eef2ff;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+        backdrop-filter: blur(6px);
+        cursor: pointer;
+        z-index: 10;
+      }
+      #logout-btn.visible {
+        display: block;
+      }
+      #logout-btn:hover {
+        color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -113,6 +206,25 @@
       click a planet
     </div>
 
+    <div id="gate">
+      <div id="gate-panel">
+        <h2 id="gate-title">Enter Passcode</h2>
+        <form id="gate-form" novalidate>
+          <label id="gate-label" for="gate-input">Passcode</label>
+          <input
+            id="gate-input"
+            name="passcode"
+            type="password"
+            autocomplete="off"
+          />
+          <button id="gate-submit" type="submit">Unlock</button>
+        </form>
+        <div id="gate-error" role="alert" aria-live="assertive"></div>
+      </div>
+    </div>
+
+    <button id="logout-btn" type="button">Logout</button>
+
     <script type="importmap">
       {
         "imports": {
@@ -125,6 +237,14 @@
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+      /* ---------------------------------------------------------------------
+       * auth-config — single top-of-script block; change the passcode here
+       * ------------------------------------------------------------------- */
+      // ponytail: client-side passcode — upgrade path is a backend if real auth is ever needed
+      const PASSCODE = "solaris42";
+      const SESSION_KEY = "solar-system-auth";
+      const SESSION_VALUE = "unlocked";
 
       /* ---------------------------------------------------------------------
        * planet-data
@@ -231,264 +351,362 @@
       const SUN = { visualRadius: 4.2, color: 0xffcc55, emissive: 0xffaa33 };
 
       /* ---------------------------------------------------------------------
-       * scene-setup
+       * scene-init — wraps the original top-level scene setup + animation loop;
+       * called once, after the passcode gate unlocks (see passcode-gate below)
        * ------------------------------------------------------------------- */
-      const container = document.getElementById("app");
+      let sceneInitialized = false;
 
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x000005);
+      function initScene() {
+        if (sceneInitialized) return;
+        sceneInitialized = true;
 
-      const camera = new THREE.PerspectiveCamera(
-        55,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        2000,
-      );
-      const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 60, 130);
-      camera.position.copy(DEFAULT_CAMERA_POSITION);
+        /* ---------------------------------------------------------------------
+         * scene-setup
+         * ------------------------------------------------------------------- */
+        const container = document.getElementById("app");
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      container.appendChild(renderer.domElement);
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000005);
 
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
-      scene.add(ambientLight);
-
-      const sunLight = new THREE.PointLight(0xffffff, 3.2, 0, 0.15);
-      sunLight.position.set(0, 0, 0);
-      scene.add(sunLight);
-
-      /* simple starfield for depth cues */
-      {
-        const starGeometry = new THREE.BufferGeometry();
-        const starCount = 1500;
-        const positions = new Float32Array(starCount * 3);
-        for (let i = 0; i < starCount; i++) {
-          const radius = 400 + Math.random() * 600;
-          const theta = Math.random() * Math.PI * 2;
-          const phi = Math.acos(2 * Math.random() - 1);
-          positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-          positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-          positions[i * 3 + 2] = radius * Math.cos(phi);
-        }
-        starGeometry.setAttribute(
-          "position",
-          new THREE.BufferAttribute(positions, 3),
+        const camera = new THREE.PerspectiveCamera(
+          55,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          2000,
         );
-        const starMaterial = new THREE.PointsMaterial({
-          color: 0xffffff,
-          size: 0.7,
-          sizeAttenuation: true,
-        });
-        scene.add(new THREE.Points(starGeometry, starMaterial));
-      }
+        const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 60, 130);
+        camera.position.copy(DEFAULT_CAMERA_POSITION);
 
-      /* ---------------------------------------------------------------------
-       * sun-mesh
-       * ------------------------------------------------------------------- */
-      const sunGeometry = new THREE.SphereGeometry(SUN.visualRadius, 32, 32);
-      const sunMaterial = new THREE.MeshBasicMaterial({ color: SUN.emissive });
-      const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
-      sunMesh.name = "Sun";
-      scene.add(sunMesh);
-
-      /* ---------------------------------------------------------------------
-       * planet-meshes
-       * ------------------------------------------------------------------- */
-      const planetMeshes = PLANETS.map((planet) => {
-        const geometry = new THREE.SphereGeometry(planet.visualRadius, 32, 32);
-        const material = new THREE.MeshStandardMaterial({
-          color: planet.color,
-          roughness: 0.8,
-          metalness: 0.05,
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(planet.orbitalRadius, 0, 0);
-        mesh.userData.planet = planet;
-        scene.add(mesh);
-        return mesh;
-      });
-
-      /* ---------------------------------------------------------------------
-       * orbit-rings
-       * ------------------------------------------------------------------- */
-      PLANETS.forEach((planet) => {
-        const segments = 128;
-        const points = [];
-        for (let i = 0; i <= segments; i++) {
-          const angle = (i / segments) * Math.PI * 2;
-          points.push(
-            new THREE.Vector3(
-              Math.cos(angle) * planet.orbitalRadius,
-              0,
-              Math.sin(angle) * planet.orbitalRadius,
-            ),
-          );
-        }
-        const ringGeometry = new THREE.BufferGeometry().setFromPoints(points);
-        const ringMaterial = new THREE.LineBasicMaterial({
-          color: 0x445077,
-          transparent: true,
-          opacity: 0.5,
-        });
-        const ring = new THREE.LineLoop(ringGeometry, ringMaterial);
-        scene.add(ring);
-      });
-
-      /* ---------------------------------------------------------------------
-       * orbit-controls
-       * ------------------------------------------------------------------- */
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-      controls.minDistance = 10;
-      controls.maxDistance = 400;
-      controls.target.set(0, 0, 0);
-
-      /* ---------------------------------------------------------------------
-       * raycaster-click / selection / info-panel / deselect / rapid-click /
-       * sun-click-guard / click-empty-noop
-       * ------------------------------------------------------------------- */
-      const raycaster = new THREE.Raycaster();
-      const pointer = new THREE.Vector2();
-
-      const infoPanel = document.getElementById("info-panel");
-      const infoName = document.getElementById("info-name");
-      const infoDiameter = document.getElementById("info-diameter");
-      const infoDistance = document.getElementById("info-distance");
-      const infoPeriod = document.getElementById("info-period");
-      const infoPanelClose = document.getElementById("info-panel-close");
-
-      let selectedMesh = null;
-      let cameraAnim = null; // { fromPos, toPos, fromTarget, toTarget, startTime, duration }
-
-      const CAMERA_ANIM_DURATION = 700; // ms, well under SC-003's 1.5s budget
-
-      function easeInOutCubic(t) {
-        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      }
-
-      function startCameraAnimation(toPosition, toTarget) {
-        cameraAnim = {
-          fromPos: camera.position.clone(),
-          toPos: toPosition.clone(),
-          fromTarget: controls.target.clone(),
-          toTarget: toTarget.clone(),
-          startTime: performance.now(),
-          duration: CAMERA_ANIM_DURATION,
-        };
-      }
-
-      function focusPlanet(mesh) {
-        selectedMesh = mesh;
-        const planet = mesh.userData.planet;
-
-        const offset = new THREE.Vector3(
-          0,
-          planet.visualRadius * 1.5,
-          planet.visualRadius * 5 + 4,
-        );
-        const targetPos = mesh.position.clone().add(offset);
-        startCameraAnimation(targetPos, mesh.position);
-
-        infoName.textContent = planet.name;
-        infoDiameter.textContent = planet.facts.diameter;
-        infoDistance.textContent = planet.facts.distance;
-        infoPeriod.textContent = planet.facts.period;
-        infoPanel.classList.add("visible");
-      }
-
-      function deselect() {
-        selectedMesh = null;
-        infoPanel.classList.remove("visible");
-        startCameraAnimation(
-          DEFAULT_CAMERA_POSITION,
-          new THREE.Vector3(0, 0, 0),
-        );
-      }
-
-      function onPointerClick(event) {
-        // ignore clicks on the info panel itself
-        if (event.target.closest("#info-panel")) return;
-
-        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-        pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObjects(planetMeshes, false); // Sun excluded: not in planetMeshes
-
-        if (intersects.length > 0) {
-          focusPlanet(intersects[0].object);
-        } else if (selectedMesh) {
-          deselect();
-        }
-        // else: empty space clicked with nothing selected -> no-op
-      }
-
-      renderer.domElement.addEventListener("click", onPointerClick);
-      infoPanelClose.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deselect();
-      });
-
-      /* ---------------------------------------------------------------------
-       * resize-handler
-       * ------------------------------------------------------------------- */
-      window.addEventListener("resize", () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.PointLight(0xffffff, 3.2, 0, 0.15);
+        sunLight.position.set(0, 0, 0);
+        scene.add(sunLight);
+
+        /* simple starfield for depth cues */
+        {
+          const starGeometry = new THREE.BufferGeometry();
+          const starCount = 1500;
+          const positions = new Float32Array(starCount * 3);
+          for (let i = 0; i < starCount; i++) {
+            const radius = 400 + Math.random() * 600;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+            positions[i * 3 + 2] = radius * Math.cos(phi);
+          }
+          starGeometry.setAttribute(
+            "position",
+            new THREE.BufferAttribute(positions, 3),
+          );
+          const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.7,
+            sizeAttenuation: true,
+          });
+          scene.add(new THREE.Points(starGeometry, starMaterial));
+        }
+
+        /* ---------------------------------------------------------------------
+         * sun-mesh
+         * ------------------------------------------------------------------- */
+        const sunGeometry = new THREE.SphereGeometry(SUN.visualRadius, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: SUN.emissive });
+        const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+        sunMesh.name = "Sun";
+        scene.add(sunMesh);
+
+        /* ---------------------------------------------------------------------
+         * planet-meshes
+         * ------------------------------------------------------------------- */
+        const planetMeshes = PLANETS.map((planet) => {
+          const geometry = new THREE.SphereGeometry(planet.visualRadius, 32, 32);
+          const material = new THREE.MeshStandardMaterial({
+            color: planet.color,
+            roughness: 0.8,
+            metalness: 0.05,
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(planet.orbitalRadius, 0, 0);
+          mesh.userData.planet = planet;
+          scene.add(mesh);
+          return mesh;
+        });
+
+        /* ---------------------------------------------------------------------
+         * orbit-rings
+         * ------------------------------------------------------------------- */
+        PLANETS.forEach((planet) => {
+          const segments = 128;
+          const points = [];
+          for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            points.push(
+              new THREE.Vector3(
+                Math.cos(angle) * planet.orbitalRadius,
+                0,
+                Math.sin(angle) * planet.orbitalRadius,
+              ),
+            );
+          }
+          const ringGeometry = new THREE.BufferGeometry().setFromPoints(points);
+          const ringMaterial = new THREE.LineBasicMaterial({
+            color: 0x445077,
+            transparent: true,
+            opacity: 0.5,
+          });
+          const ring = new THREE.LineLoop(ringGeometry, ringMaterial);
+          scene.add(ring);
+        });
+
+        /* ---------------------------------------------------------------------
+         * orbit-controls
+         * ------------------------------------------------------------------- */
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = 10;
+        controls.maxDistance = 400;
+        controls.target.set(0, 0, 0);
+
+        /* ---------------------------------------------------------------------
+         * raycaster-click / selection / info-panel / deselect / rapid-click /
+         * sun-click-guard / click-empty-noop
+         * ------------------------------------------------------------------- */
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+
+        const infoPanel = document.getElementById("info-panel");
+        const infoName = document.getElementById("info-name");
+        const infoDiameter = document.getElementById("info-diameter");
+        const infoDistance = document.getElementById("info-distance");
+        const infoPeriod = document.getElementById("info-period");
+        const infoPanelClose = document.getElementById("info-panel-close");
+
+        let selectedMesh = null;
+        let cameraAnim = null; // { fromPos, toPos, fromTarget, toTarget, startTime, duration }
+
+        const CAMERA_ANIM_DURATION = 700; // ms, well under SC-003's 1.5s budget
+
+        function easeInOutCubic(t) {
+          return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        function startCameraAnimation(toPosition, toTarget) {
+          cameraAnim = {
+            fromPos: camera.position.clone(),
+            toPos: toPosition.clone(),
+            fromTarget: controls.target.clone(),
+            toTarget: toTarget.clone(),
+            startTime: performance.now(),
+            duration: CAMERA_ANIM_DURATION,
+          };
+        }
+
+        function focusPlanet(mesh) {
+          selectedMesh = mesh;
+          const planet = mesh.userData.planet;
+
+          const offset = new THREE.Vector3(
+            0,
+            planet.visualRadius * 1.5,
+            planet.visualRadius * 5 + 4,
+          );
+          const targetPos = mesh.position.clone().add(offset);
+          startCameraAnimation(targetPos, mesh.position);
+
+          infoName.textContent = planet.name;
+          infoDiameter.textContent = planet.facts.diameter;
+          infoDistance.textContent = planet.facts.distance;
+          infoPeriod.textContent = planet.facts.period;
+          infoPanel.classList.add("visible");
+        }
+
+        function deselect() {
+          selectedMesh = null;
+          infoPanel.classList.remove("visible");
+          startCameraAnimation(
+            DEFAULT_CAMERA_POSITION,
+            new THREE.Vector3(0, 0, 0),
+          );
+        }
+
+        function onPointerClick(event) {
+          // ignore clicks on the info panel itself
+          if (event.target.closest("#info-panel")) return;
+
+          pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+          pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+          raycaster.setFromCamera(pointer, camera);
+          const intersects = raycaster.intersectObjects(planetMeshes, false); // Sun excluded: not in planetMeshes
+
+          if (intersects.length > 0) {
+            focusPlanet(intersects[0].object);
+          } else if (selectedMesh) {
+            deselect();
+          }
+          // else: empty space clicked with nothing selected -> no-op
+        }
+
+        renderer.domElement.addEventListener("click", onPointerClick);
+        infoPanelClose.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deselect();
+        });
+
+        /* ---------------------------------------------------------------------
+         * resize-handler
+         * ------------------------------------------------------------------- */
+        window.addEventListener("resize", () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        /* ---------------------------------------------------------------------
+         * animation-loop
+         * ------------------------------------------------------------------- */
+        const clock = new THREE.Clock();
+
+        function animate() {
+          requestAnimationFrame(animate);
+          const elapsed = clock.getElapsedTime();
+
+          planetMeshes.forEach((mesh) => {
+            const planet = mesh.userData.planet;
+            const angle = elapsed * planet.orbitalSpeed;
+            mesh.position.x = Math.cos(angle) * planet.orbitalRadius;
+            mesh.position.z = Math.sin(angle) * planet.orbitalRadius;
+          });
+
+          // keep camera framing the selected planet as it moves along its orbit,
+          // unless a manual camera animation/user drag is in flight
+          if (selectedMesh && !cameraAnim) {
+            controls.target.copy(selectedMesh.position);
+          }
+
+          if (cameraAnim) {
+            const t = Math.min(
+              (performance.now() - cameraAnim.startTime) / cameraAnim.duration,
+              1,
+            );
+            const eased = easeInOutCubic(t);
+            camera.position.lerpVectors(
+              cameraAnim.fromPos,
+              cameraAnim.toPos,
+              eased,
+            );
+            controls.target.lerpVectors(
+              cameraAnim.fromTarget,
+              cameraAnim.toTarget,
+              eased,
+            );
+            if (t >= 1) {
+              cameraAnim = null;
+            }
+          }
+
+          controls.update();
+          renderer.render(scene, camera);
+        }
+
+        animate();
+      }
+
+      /* ---------------------------------------------------------------------
+       * passcode-gate
+       * ------------------------------------------------------------------- */
+      const gate = document.getElementById("gate");
+      const gateForm = document.getElementById("gate-form");
+      const gateInput = document.getElementById("gate-input");
+      const gateError = document.getElementById("gate-error");
+      const logoutBtn = document.getElementById("logout-btn");
+
+      function readSession() {
+        try {
+          return localStorage.getItem(SESSION_KEY);
+        } catch {
+          return null;
+        }
+      }
+
+      function writeSession() {
+        try {
+          localStorage.setItem(SESSION_KEY, SESSION_VALUE);
+        } catch {
+          /* localStorage unavailable (e.g. private mode) — session just won't persist */
+        }
+      }
+
+      function clearSession() {
+        try {
+          localStorage.removeItem(SESSION_KEY);
+        } catch {
+          /* localStorage unavailable — nothing to clear */
+        }
+      }
+
+      function showGate() {
+        gate.classList.add("visible");
+        gateInput.focus();
+      }
+
+      function hideGate() {
+        gate.classList.remove("visible");
+      }
+
+      function unlock() {
+        writeSession();
+        hideGate();
+        initScene();
+        logoutBtn.classList.add("visible");
+      }
+
+      gateForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const value = gateInput.value.trim();
+
+        if (!value) {
+          gateError.textContent = "Enter a passcode.";
+          gateInput.value = "";
+          gateInput.focus();
+          return;
+        }
+
+        if (value !== PASSCODE) {
+          gateError.textContent = "Incorrect passcode.";
+          gateInput.value = "";
+          gateInput.focus();
+          return;
+        }
+
+        gateError.textContent = "";
+        unlock();
+      });
+
+      logoutBtn.addEventListener("click", () => {
+        clearSession();
+        // ponytail: full reload chosen over manual WebGL teardown for a showcase
+        location.reload();
       });
 
       /* ---------------------------------------------------------------------
-       * animation-loop
+       * bootstrap
        * ------------------------------------------------------------------- */
-      const clock = new THREE.Clock();
-
-      function animate() {
-        requestAnimationFrame(animate);
-        const elapsed = clock.getElapsedTime();
-
-        planetMeshes.forEach((mesh) => {
-          const planet = mesh.userData.planet;
-          const angle = elapsed * planet.orbitalSpeed;
-          mesh.position.x = Math.cos(angle) * planet.orbitalRadius;
-          mesh.position.z = Math.sin(angle) * planet.orbitalRadius;
-        });
-
-        // keep camera framing the selected planet as it moves along its orbit,
-        // unless a manual camera animation/user drag is in flight
-        if (selectedMesh && !cameraAnim) {
-          controls.target.copy(selectedMesh.position);
-        }
-
-        if (cameraAnim) {
-          const t = Math.min(
-            (performance.now() - cameraAnim.startTime) / cameraAnim.duration,
-            1,
-          );
-          const eased = easeInOutCubic(t);
-          camera.position.lerpVectors(
-            cameraAnim.fromPos,
-            cameraAnim.toPos,
-            eased,
-          );
-          controls.target.lerpVectors(
-            cameraAnim.fromTarget,
-            cameraAnim.toTarget,
-            eased,
-          );
-          if (t >= 1) {
-            cameraAnim = null;
-          }
-        }
-
-        controls.update();
-        renderer.render(scene, camera);
+      if (readSession() === SESSION_VALUE) {
+        initScene();
+        logoutBtn.classList.add("visible");
+      } else {
+        showGate();
       }
-
-      animate();
     </script>
   </body>
 </html>

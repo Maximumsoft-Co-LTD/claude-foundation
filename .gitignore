@@ -7,3 +7,13 @@ docs/
 
 # Serena MCP server (per-project config/cache/memories, auto-generated)
 .serena/
+
+# solar-system: dev-only Playwright functional test harness (FR-010 —
+# the shipped app is a single static HTML file; none of this ships)
+solar-system/node_modules/
+solar-system/package.json
+solar-system/package-lock.json
+solar-system/playwright.config.js
+solar-system/tests/
+solar-system/test-results/
+solar-system/playwright-report/

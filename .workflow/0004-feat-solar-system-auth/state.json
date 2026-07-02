@@ -1,0 +1,43 @@
+{
+  "id": "0004-feat-solar-system-auth",
+  "type": "feat",
+  "size": "S",
+  "field": "brownfield",
+  "context_built": false,
+  "repo_root": "/Users/hashtagf/Desktop/Work/claude-foundation",
+  "repos": null,
+  "branch": "claude/solar-system-threejs-vls39x",
+  "branch_existed": true,
+  "phase": "done",
+  "step": "done",
+  "next_step": null,
+  "cycles": {
+    "review": 0,
+    "test": 0
+  },
+  "skipped_steps": ["docs:gate-confirmed — single static file, no docs section covers solar-system specifics"],
+  "phase_plan": {
+    "implement": "run",
+    "test": "run",
+    "review": "run",
+    "security": "trigger-expected-fire (auth/session bucket)",
+    "docs": "skip",
+    "ship": "run",
+    "retro": "run"
+  },
+  "fanout_plan": {},
+  "fanout_log": [],
+  "team_registry": null,
+  "impl_phases_done": [],
+  "commit_on_ship": false,
+  "open_pr_on_ship": false,
+  "e2e_visual": false,
+  "security_triggered": true,
+  "commit_sha": null,
+  "pr_url": null,
+  "last_agent": "retro",
+  "created_at": "2026-07-02T08:25:06Z",
+  "last_updated": "2026-07-02T10:15:35Z",
+  "done_at": "2026-07-02T10:15:35Z",
+  "notes": "gate approved; test runner=Playwright dev-only (git-ignored, channel:chrome fallback — bundled chromium corrupted); docs skipped (deviation); commit_on_ship=no; review pass c1/0-blocking; security pass 0-high/1-low (change default passcode → followup); final full-suite gate green 15/15 (serial); Full-suite cmd flaky under parallel workers, needs --workers=1 in git-ignored config (harness note for retro)"
+}

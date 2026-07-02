@@ -8,3 +8,4 @@ Registry of every `/dev` run. `orchestrator` appends a row when Phase 1 starts; 
 |------|--------|----------------------|--------|------------|------------|
 | 0001 | feat | _example: todolist_ | done | 2026-05-13 | 2026-05-14 |
 | 0003 | feat | Solar system 3D Three.js | done | 2026-07-01 | 2026-07-01 |
+| 0004 | feat | Solar system auth feature | done | 2026-07-02 | 2026-07-02 |
