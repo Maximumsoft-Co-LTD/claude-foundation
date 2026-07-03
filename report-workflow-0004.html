@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>/dev Workflow Trace &amp; Scorecard — 0004-feat-solar-system-auth</title>
+<style>
+  :root{
+    --bg:#070912; --bg2:#0d1120; --panel:rgba(18,22,40,.82); --panel2:rgba(28,34,58,.6);
+    --border:rgba(255,255,255,.12); --border2:rgba(255,255,255,.08);
+    --text:#e8ecf7; --muted:#93a0bd; --dim:#6b7799;
+    --accent:#6ea8ff; --accent2:#b58bff;
+    --good:#43d19e; --warn:#ffc860; --bad:#ff6b7a; --info:#5ec8ff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:var(--sans);color:var(--text);line-height:1.55;
+    background:
+      radial-gradient(1200px 700px at 80% -10%,rgba(110,168,255,.10),transparent 60%),
+      radial-gradient(900px 600px at 10% 10%,rgba(181,139,255,.08),transparent 55%),
+      var(--bg);
+    background-attachment:fixed;
+  }
+  .stars{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%,#fff,transparent),
+      radial-gradient(1px 1px at 70% 60%,#cfe0ff,transparent),
+      radial-gradient(1px 1px at 40% 80%,#fff,transparent),
+      radial-gradient(1px 1px at 85% 20%,#e8d8ff,transparent),
+      radial-gradient(1px 1px at 55% 15%,#fff,transparent),
+      radial-gradient(1px 1px at 15% 65%,#cfe0ff,transparent);}
+  .wrap{position:relative;z-index:1;max-width:1040px;margin:0 auto;padding:40px 22px 80px}
+  header.hero{margin-bottom:30px}
+  .kicker{font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--accent);}
+  h1{font-size:30px;margin:12px 0 6px;letter-spacing:-.01em}
+  h1 .id{font-family:var(--mono);font-size:16px;color:var(--muted);font-weight:500}
+  .sub{color:var(--muted);max-width:70ch}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0}
+  .badge{font:600 12px var(--mono);padding:5px 10px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--muted)}
+  .badge b{color:var(--text)}
+  .badge.good{color:var(--good);border-color:rgba(67,209,158,.4)}
+  .badge.grade{color:var(--accent2);border-color:rgba(181,139,255,.45);font-size:13px}
+
+  section{margin:34px 0}
+  h2{font-size:19px;margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:10px}
+  h2 .n{font:700 12px var(--mono);color:var(--bg);background:var(--accent);border-radius:6px;padding:3px 7px}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--text)}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px 20px;backdrop-filter:blur(8px)}
+
+  .grid{display:grid;gap:14px}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:720px){.g4,.g3,.g2{grid-template-columns:1fr 1fr}}
+  .stat{background:var(--panel2);border:1px solid var(--border2);border-radius:12px;padding:14px}
+  .stat .v{font:700 24px var(--sans);letter-spacing:-.02em}
+  .stat .l{font:500 12px var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+  .stat .v.good{color:var(--good)} .stat .v.acc{color:var(--accent)} .stat .v.acc2{color:var(--accent2)}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border2);vertical-align:top}
+  th{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
+  td code,code{font-family:var(--mono);font-size:12.5px;background:rgba(110,168,255,.10);padding:1px 5px;border-radius:5px;color:#cfe0ff}
+  tr:last-child td{border-bottom:none}
+  .pill{font:600 11px var(--mono);padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .p-good{background:rgba(67,209,158,.15);color:var(--good)}
+  .p-warn{background:rgba(255,200,96,.15);color:var(--warn)}
+  .p-bad{background:rgba(255,107,122,.15);color:var(--bad)}
+  .p-info{background:rgba(94,200,255,.13);color:var(--info)}
+  .p-dim{background:rgba(255,255,255,.06);color:var(--muted)}
+  .agent{font-family:var(--mono);font-size:12px;color:var(--accent2)}
+  .num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+  /* score bars */
+  .score-row{display:grid;grid-template-columns:210px 1fr 52px;gap:14px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border2)}
+  .score-row:last-child{border-bottom:none}
+  .score-row .name{font-weight:600;font-size:13.5px}
+  .score-row .name small{display:block;color:var(--dim);font-weight:400;font-size:11.5px;margin-top:2px}
+  .bar{height:9px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .score-row .val{text-align:right;font:700 15px var(--mono);color:var(--text)}
+  @media(max-width:600px){.score-row{grid-template-columns:1fr 44px;}.score-row .bar{grid-column:1/3}}
+
+  .overall{display:flex;flex-wrap:wrap;align-items:center;gap:22px}
+  .gradecircle{--v:89;width:130px;height:130px;border-radius:50%;flex:0 0 auto;
+    background:conic-gradient(var(--accent) 0,var(--accent2) calc(var(--v)*1%),rgba(255,255,255,.08) 0);
+    display:grid;place-items:center;position:relative}
+  .gradecircle::before{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--bg2)}
+  .gradecircle .inner{position:relative;text-align:center}
+  .gradecircle .g{font:800 30px var(--sans);letter-spacing:-.02em;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .gradecircle .p{font:600 12px var(--mono);color:var(--muted)}
+
+  ul.clean{margin:6px 0;padding-left:18px} ul.clean li{margin:5px 0}
+  .note{color:var(--muted);font-size:13px}
+  .callout{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 10px 10px 0;padding:12px 16px;margin:10px 0}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout.bad{border-left-color:var(--bad)}
+  .callout .t{font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
+  footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--border2);color:var(--dim);font-size:12px;font-family:var(--mono)}
+  a{color:var(--accent)}
+  .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font:600 12px var(--mono)}
+  .flow .step{padding:5px 9px;border-radius:8px;background:var(--panel2);border:1px solid var(--border2)}
+  .flow .step.skip{color:var(--dim);text-decoration:line-through;opacity:.7}
+  .flow .arrow{color:var(--dim)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:720px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">/dev workflow · trace &amp; scorecard</div>
+    <h1>Passcode gate for the 3D solar system <span class="id">0004-feat-solar-system-auth</span></h1>
+    <p class="sub">Autonomous <code>/dev</code> pipeline run: intent <em>“solar system add authen feature”</em> → a client-side passcode gate on the static Three.js showcase. This report traces every phase, the agents dispatched, and scores how the workflow itself executed.</p>
+    <div class="badges">
+      <span class="badge grade">Grade: A− · 89 / 100</span>
+      <span class="badge good">Outcome: shipped (uncommitted)</span>
+      <span class="badge"><b>feat</b> · S · brownfield</span>
+      <span class="badge">8/8 ACs · <b>15/15</b> tests</span>
+      <span class="badge">rework cycles: <b>0</b></span>
+      <span class="badge">wall clock: <b>~1h50m</b></span>
+    </div>
+  </header>
+
+  <!-- OVERVIEW -->
+  <section>
+    <h2><span class="n">01</span> At a glance</h2>
+    <div class="grid g4">
+      <div class="stat"><div class="v good">PASS</div><div class="l">Final verdict</div></div>
+      <div class="stat"><div class="v good">15/15</div><div class="l">Playwright (serial)</div></div>
+      <div class="stat"><div class="v acc">7</div><div class="l">Sub-agent spawns</div></div>
+      <div class="stat"><div class="v acc2">9</div><div class="l">Artifacts written</div></div>
+      <div class="stat"><div class="v">0 / 0</div><div class="l">Review / test cycles used</div></div>
+      <div class="stat"><div class="v">0 high</div><div class="l">Security findings</div></div>
+      <div class="stat"><div class="v num">~472k</div><div class="l">Sub-agent tokens</div></div>
+      <div class="stat"><div class="v num">222</div><div class="l">Sub-agent tool calls</div></div>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      <div class="t">Type-aware phase flow (feat · S · brownfield)</div>
+      <div class="flow">
+        <span class="step">interview</span><span class="arrow">→</span>
+        <span class="step">spec+plan+test-plan (combined)</span><span class="arrow">→</span>
+        <span class="step">gate ✓</span><span class="arrow">→</span>
+        <span class="step">implement</span><span class="arrow">→</span>
+        <span class="step">test</span><span class="arrow">→</span>
+        <span class="step">review</span><span class="arrow">→</span>
+        <span class="step">security</span><span class="arrow">→</span>
+        <span class="step">full-suite gate</span><span class="arrow">→</span>
+        <span class="step skip">docs</span><span class="arrow">→</span>
+        <span class="step">ship</span><span class="arrow">→</span>
+        <span class="step">retro</span>
+      </div>
+      <p class="note" style="margin:10px 0 0">S fast path: <code>pm</code> skipped; <code>lead</code> combined-mode wrote all Phase-1 artifacts in one spawn. Docs skipped by gate-confirmed deviation (single static file). Security fired on the <code>auth/session</code> trigger. Single-pass throughout — no fanout warranted.</p>
+    </div>
+  </section>
+
+  <!-- PHASE TRACE -->
+  <section>
+    <h2><span class="n">02</span> Phase-by-phase trace</h2>
+    <div class="panel" style="padding:6px 12px">
+    <table>
+      <thead><tr><th>#</th><th>Phase</th><th>Agent / model</th><th>Duration</th><th>Tokens</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="num">1</td><td><b>Interview</b><br><span class="note">4 Qs, 1 batch</span></td>
+          <td class="agent">main (orchestrator)</td><td class="num">—</td><td class="num">—</td>
+          <td><span class="pill p-good">resolved</span> architecture fork surfaced: static app, no backend → chose <b>client-side passcode gate</b></td>
+        </tr>
+        <tr>
+          <td class="num">2</td><td><b>Spec + Plan + Test-plan</b><br><span class="note">combined (fast path)</span></td>
+          <td class="agent">lead · opus</td><td class="num">8.4 min</td><td class="num">74,062</td>
+          <td><span class="pill p-good">clean</span> 8 ACs w/ boundaries, 13 tasks, security non-goal recorded; no size/field upgrade</td>
+        </tr>
+        <tr>
+          <td class="num">3</td><td><b>Gate</b></td>
+          <td class="agent">main (orchestrator)</td><td class="num">—</td><td class="num">—</td>
+          <td><span class="pill p-good">approved</span> + 3 decisions: Playwright dev-only · docs skip · no-commit</td>
+        </tr>
+        <tr>
+          <td class="num">4</td><td><b>Implement</b></td>
+          <td class="agent">engineer · sonnet</td><td class="num">10.1 min</td><td class="num">100,091</td>
+          <td><span class="pill p-good">13/13 tasks</span> one file (+436/−218); self-verified AC1–AC8 via headless-Chrome CDP</td>
+        </tr>
+        <tr>
+          <td class="num">5</td><td><b>Test</b><br><span class="note">incl. env recovery</span></td>
+          <td class="agent">qa · sonnet</td><td class="num">39.4 min</td><td class="num">128,356</td>
+          <td><span class="pill p-good">15/15 green</span> <span class="pill p-warn">env fallback</span> bundled Chromium corrupt → <code>channel:chrome</code></td>
+        </tr>
+        <tr>
+          <td class="num">6</td><td><b>Review</b></td>
+          <td class="agent">lead · sonnet</td><td class="num">3.1 min</td><td class="num">47,647</td>
+          <td><span class="pill p-good">pass · c1</span> 0 blocking, 0 unticked ACs; 3 non-blocking notes</td>
+        </tr>
+        <tr>
+          <td class="num">7</td><td><b>Security</b><br><span class="note">trigger: auth/session</span></td>
+          <td class="agent">lead · opus</td><td class="num">3.0 min</td><td class="num">41,163</td>
+          <td><span class="pill p-good">pass</span> 0 high / 0 med / 1 low; <b>fails-closed verified</b></td>
+        </tr>
+        <tr>
+          <td class="num">8</td><td><b>Final full-suite gate</b></td>
+          <td class="agent">main (Bash)</td><td class="num">~4 min</td><td class="num">—</td>
+          <td><span class="pill p-warn">flake → green</span> parallel 15/15 fail (infra) → serial <b>15/15 in 15.2s</b></td>
+        </tr>
+        <tr>
+          <td class="num">9</td><td><b>Docs</b></td>
+          <td class="agent">—</td><td class="num">—</td><td class="num">—</td>
+          <td><span class="pill p-dim">skipped</span> gate-confirmed deviation (single static file)</td>
+        </tr>
+        <tr>
+          <td class="num">10</td><td><b>Ship</b></td>
+          <td class="agent">engineer · sonnet</td><td class="num">0.8 min</td><td class="num">26,028</td>
+          <td><span class="pill p-info">no-commit</span> harness confirmed git-ignored; commit command handed off; <code>commit_sha=null</code></td>
+        </tr>
+        <tr>
+          <td class="num">11</td><td><b>Retro</b></td>
+          <td class="agent">retro · haiku/sonnet</td><td class="num">6.1 min</td><td class="num">55,153</td>
+          <td><span class="pill p-good">closed</span> 3 follow-ups filed; 2 memory candidates; 0 skill candidates</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="note" style="margin-top:8px">Started <code>2026-07-02T08:25:06Z</code> · finished <code>2026-07-02T10:15:35Z</code>. The 39-min test phase includes a dead-end wait on a corrupted Chromium reinstall before the orchestrator intervened and redirected QA to the system Chrome channel.</p>
+  </section>
+
+  <!-- AC STATUS -->
+  <section>
+    <h2><span class="n">03</span> Acceptance criteria — 8/8 shipped &amp; verified</h2>
+    <div class="panel" style="padding:6px 12px">
+    <table>
+      <thead><tr><th>AC</th><th>Story</th><th>Scenario</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><code>AC1</code></td><td>US1 · P1</td><td>Fresh load → gate only, scene NOT initialized (no <code>&lt;canvas&gt;</code>/WebGL)</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC2</code></td><td>US1</td><td>Wrong passcode → error, stays gated, no session</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC3</code></td><td>US1</td><td>Empty/whitespace → rejected before compare</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC4</code></td><td>US1</td><td>Correct → scene inits, drag/zoom/click-planet work, logout appears</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC5</code></td><td>US2 · P2</td><td>Prior unlock + reload → scene loads directly</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC6</code></td><td>US2</td><td>Absent/tampered session value → gate returns (no false unlock)</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC7</code></td><td>US3 · P3</td><td>Logout clears session + returns to gate</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>AC8</code></td><td>US3</td><td>Post-logout reload → still gated; re-unlock works</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>SC-001</code></td><td>baseline</td><td>Scene renders identically post-change, zero new console errors (diffed vs <code>2ee4302</code>)</td><td><span class="pill p-good">pass</span></td></tr>
+        <tr><td><code>SC-002</code></td><td>perf</td><td>Un-unlocked load creates no WebGL context</td><td><span class="pill p-good">pass</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- FRICTION -->
+  <section>
+    <h2><span class="n">04</span> Friction &amp; how it was handled</h2>
+    <div class="two">
+      <div class="panel">
+        <h3 style="margin-top:0">🧩 Corrupted Playwright Chromium</h3>
+        <p class="note">Bundled Chromium download was truncated (~432 KB vs ~330 MB, missing framework) → <code>dlopen</code> launch failure. QA paused waiting on a reinstall.</p>
+        <p class="note"><b>Resolution:</b> orchestrator resumed QA with a directive to launch the working <b>system Google Chrome 149</b> via <code>channel:'chrome'</code> — the same engine the engineer already used. One-line config change, no download. <span class="pill p-good">recovered</span></p>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">⚠️ Full-suite gate failed 15/15</h3>
+        <p class="note">The authoritative gate run failed <em>every</em> test with an identical “page setup timeout” — under default <b>parallel workers</b>, multiple Chrome launches raced one <code>http.server</code>.</p>
+        <p class="note"><b>Key judgement:</b> diagnosed as <b>infra contention, not a code regression</b> (QA had it green 3×; a single worker passed in 2.1s). Re-ran serially → 15/15. <b>Correctly did NOT bump <code>cycles.test</code> or route to engineer</b> — no false blame. <span class="pill p-good">recovered</span></p>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">🔎 Context-read compression</h3>
+        <p class="note">The environment auto-compressed large file reads (orchestrator.md, spec.md), risking loss of load-bearing detail.</p>
+        <p class="note"><b>Resolution:</b> retrieved full uncompressed content by hash before acting on the playbook / contract. <span class="pill p-good">handled</span></p>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">🛡️ Security non-goal discipline</h3>
+        <p class="note">A client-side passcode is not real auth — tempting to “fix” with a backend (scope the user declined).</p>
+        <p class="note"><b>Held the line:</b> recorded as an explicit spec non-goal + <code>ponytail:</code> comment; security phase <em>documented</em> it rather than inflating it to a blocker or downgrading a real vuln. <span class="pill p-good">correct</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCORECARD -->
+  <section>
+    <h2><span class="n">05</span> Workflow scorecard</h2>
+    <div class="panel">
+      <div class="score-row"><div class="name">Protocol adherence<small>state discipline · gate · phase order · no agent misuse</small></div><div class="bar"><i style="width:96%"></i></div><div class="val">9.5</div></div>
+      <div class="score-row"><div class="name">Requirements &amp; interview<small>caught the architecture fork; informed trade-off</small></div><div class="bar"><i style="width:92%"></i></div><div class="val">9.2</div></div>
+      <div class="score-row"><div class="name">Design artifacts<small>spec / plan / tasks / test-plan quality</small></div><div class="bar"><i style="width:92%"></i></div><div class="val">9.2</div></div>
+      <div class="score-row"><div class="name">Implementation<small>surgical, fail-closed, no sink, accessible, YAGNI</small></div><div class="bar"><i style="width:91%"></i></div><div class="val">9.1</div></div>
+      <div class="score-row"><div class="name">Test rigor<small>real-browser 15/15 + baseline diff; harness fragile</small></div><div class="bar"><i style="width:84%"></i></div><div class="val">8.4</div></div>
+      <div class="score-row"><div class="name">Review &amp; security<small>per-row anti-bias; fails-closed hard check</small></div><div class="bar"><i style="width:92%"></i></div><div class="val">9.2</div></div>
+      <div class="score-row"><div class="name">Resilience / friction handling<small>infra-vs-code triage; no false blame</small></div><div class="bar"><i style="width:93%"></i></div><div class="val">9.3</div></div>
+      <div class="score-row"><div class="name">Efficiency<small>fast path, single-pass, 0 rework; QA dead-end wait</small></div><div class="bar"><i style="width:83%"></i></div><div class="val">8.3</div></div>
+    </div>
+  </section>
+
+  <!-- OVERALL -->
+  <section>
+    <h2><span class="n">06</span> Overall assessment</h2>
+    <div class="panel overall">
+      <div class="gradecircle" style="--v:89"><div class="inner"><div class="g">A−</div><div class="p">89 / 100</div></div></div>
+      <div style="flex:1;min-width:260px">
+        <p style="margin-top:0">A <b>clean, well-scoped S run</b> that hit every protocol beat: the interview caught the load-bearing “static app has no backend” fork instead of guessing; the gate secured an <em>informed</em> trade-off; implementation was a single-file surgical diff that made “scene not initialized” literally true (extracted <code>initScene()</code>) and <b>failed closed</b>; test/review/security all passed on the <b>first cycle</b> with zero rework.</p>
+        <p class="note">The standout was <b>failure triage</b>: when the authoritative gate went 15/15 red, the workflow correctly attributed it to parallel-worker infra contention rather than the code, avoiding a false <code>cycles.test</code> bump and a pointless engineer round-trip.</p>
+      </div>
+    </div>
+    <div class="two" style="margin-top:16px">
+      <div class="panel">
+        <h3 style="margin-top:0">What worked</h3>
+        <ul class="clean note">
+          <li>Correct S fast path (skipped <code>pm</code>; combined <code>lead</code> spawn)</li>
+          <li>Brownfield “characterize → extract → gate” with a baseline diff vs pre-change commit</li>
+          <li>Dev-only Playwright kept git-ignored — shipped artifact stays one static file (FR-010)</li>
+          <li>Security posture handled honestly: documented, not inflated, not downgraded</li>
+          <li>Environment recovery (system-Chrome fallback) without derailing the run</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">What cost points</h3>
+        <ul class="clean note">
+          <li>~39-min test phase — a dead-end wait on the corrupted-Chromium reinstall before intervention (could have been diagnosed faster)</li>
+          <li>Test harness is fragile: bundled-browser dependency + flaky under parallel workers (needs <code>workers:1</code>)</li>
+          <li>SC-002 &lt;100 ms paint asserted only qualitatively, not measured</li>
+          <li>Shipped feature is a <b>deterrent gate, not real auth</b> — by design, but worth restating loudly</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARTIFACTS + FOLLOWUPS -->
+  <section>
+    <h2><span class="n">07</span> Artifacts &amp; follow-ups</h2>
+    <div class="two">
+      <div class="panel">
+        <h3 style="margin-top:0">Artifacts (<code>.workflow/0004-feat-solar-system-auth/</code>)</h3>
+        <ul class="clean note">
+          <li><code>spec.md</code> · <code>plan.md</code> · <code>tasks.md</code></li>
+          <li><code>test-plan.md</code> · <code>tests.md</code></li>
+          <li><code>review.md</code> · <code>security.md</code> · <code>retro.md</code></li>
+          <li><code>state.json</code> (single-writer, <code>done</code>)</li>
+        </ul>
+        <h3>Shipped change (uncommitted)</h3>
+        <ul class="clean note">
+          <li><code>solar-system/index.html</code> <span class="num">+447 / −219</span></li>
+          <li><code>.gitignore</code> (ignore dev harness)</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">Open follow-ups (<code>FOLLOWUPS.md</code>)</h3>
+        <ul class="clean note">
+          <li><span class="pill p-warn">med</span> <code>F-0004-…-01</code> — change default placeholder passcode <code>solaris42</code> (<code>index.html:245</code>) before real use</li>
+          <li><span class="pill p-info">low</span> <code>F-0004-…-02</code> — pin <code>workers:1</code> for the flaky-under-parallel full-suite command</li>
+          <li><span class="pill p-info">low</span> <code>F-0004-…-03</code> — review notes: reload-based logout; SC-002 timing not measured</li>
+        </ul>
+        <div class="callout warn" style="margin-top:14px">
+          <div class="t">Deliverable security posture</div>
+          <span class="note">The passcode gate is a <b>casual-access deterrent, not confidentiality</b>: the passcode is visible in page source and bypassable via devtools. This was the user’s explicit, accepted design choice — upgrade path (a real backend) is recorded as a <code>ponytail:</code> comment, not built.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Generated for run <code>0004-feat-solar-system-auth</code> · saved to <code>report-workflow-0004.html</code> (repo root).<br>
+    Scores are an evidence-based self-assessment of the <code>/dev</code> workflow execution, not an external audit. Metrics sourced from <code>state.json</code>, per-agent return summaries (durations/tokens/tool-calls), and phase outcomes captured during the session.
+  </footer>
+
+</div>
+</body>
+</html>
