@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`/dev` engineer no longer front-loads every plan reference before writing code — references and `## To explore` areas now open lazily, per-task.** Mode A told the engineer to *"open every cited reference (exempt from skill budget) + LSP-open each `## To explore at implement` area **before editing**"* — an unbounded expansion that scaled with plan length, not task size, so a reference-heavy plan burned hundreds of thousands of tokens (and reasoning over that inflated context) before the first edit. Now the engineer reads the plan core up front (`Summary`/`Technical Context`/`Scaffold`/`Architecture` + `## Current state`, where the blast-radius invariants live) + spec ACs, and opens each `[ref: …]` / its `## To explore` area only when it **starts the task that cites it**; a cross-task invariant surfacing only under `## To explore` is a plan gap the engineer flags (`BLOCKER:`) rather than silently absorbing. The `tasks.md` template now surfaces the `[ref: path#anchor]` tag (legend + task format) so `lead` reliably emits the per-task pin the lazy load keys off — previously the tag was documented only in `plan-writing`. `qa` and `lead` review were checked and carry no equivalent front-load (both are bounded by the diff/test-plan they consume, not an unbounded reference expansion). Files: `.claude/agents/engineer.md`, `.workflow/_templates/tasks.md`.
+
 ## [2.6.0] - 2026-07-01
 
 ### Added

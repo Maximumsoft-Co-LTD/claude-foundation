@@ -5,9 +5,9 @@
 
 > **For humans** — each `- [ ]` is one build step, in order; read the action + its `verify:`. The `T001`/`[P]`/`[AC1]`/`path#anchor` codes are for the build agents. `🎯` = smallest shippable slice.
 
-Phased + dependency-ordered. `[P]` = parallel-safe (different files, no unmet dependency). `[AC#]` ties the task to the acceptance scenario it delivers/verifies (`[DoD]` / `[SC-###]` for a Definition-of-Done or measurable-outcome task). MVP = the Phase 3 (P1) block.
+Phased + dependency-ordered. `[P]` = parallel-safe (different files, no unmet dependency). `[AC#]` ties the task to the acceptance scenario it delivers/verifies (`[DoD]` / `[SC-###]` for a Definition-of-Done or measurable-outcome task). `[ref: path#anchor]` pins the reference / `## To explore` area the engineer opens **when starting this task** (lazy, not up front) — tag every task whose build needs one. MVP = the Phase 3 (P1) block.
 
-Task format: `T### [P?] [AC#] <action> — path#anchor (new | edit | delete) — verify: <command or observable>`
+Task format: `T### [P?] [AC#] [ref: path#anchor]? <action> — path#anchor (new | edit | delete) — verify: <command or observable>`
 
 ## Phase 1: Setup
 
