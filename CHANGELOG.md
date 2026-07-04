@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-07-04
+
 ### Changed
 
 - **`/dev` engineer no longer front-loads every plan reference before writing code — references and `## To explore` areas now open lazily, per-task.** Mode A told the engineer to *"open every cited reference (exempt from skill budget) + LSP-open each `## To explore at implement` area **before editing**"* — an unbounded expansion that scaled with plan length, not task size, so a reference-heavy plan burned hundreds of thousands of tokens (and reasoning over that inflated context) before the first edit. Now the engineer reads the plan core up front (`Summary`/`Technical Context`/`Scaffold`/`Architecture` + `## Current state`, where the blast-radius invariants live) + spec ACs, and opens each `[ref: …]` / its `## To explore` area only when it **starts the task that cites it**; a cross-task invariant surfacing only under `## To explore` is a plan gap the engineer flags (`BLOCKER:`) rather than silently absorbing. The `tasks.md` template now surfaces the `[ref: path#anchor]` tag (legend + task format) so `lead` reliably emits the per-task pin the lazy load keys off — previously the tag was documented only in `plan-writing`. `qa` and `lead` review were checked and carry no equivalent front-load (both are bounded by the diff/test-plan they consume, not an unbounded reference expansion). Files: `.claude/agents/engineer.md`, `.workflow/_templates/tasks.md`.
@@ -472,7 +474,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.14...v2.6.0
 [2.5.14]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.13...v2.5.14
 [2.5.13]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.12...v2.5.13
