@@ -52,6 +52,7 @@ For L + structural refactor, draw an "as-is" mermaid alongside the to-be diagram
 Optional sections, two passes:
 - **Pass 1 — trigger check**: `_templates/plan.md` is a clean skeleton; the authoritative trigger + placement list for every optional section (Reviewer summary, Hard-to-reverse decisions, Current state, Scaffold, **Folder structure**, API/event contracts, UI component & state plan, Risks, Rollback, …) lives in `plan-writing > references/plan-sections.md` (size-axis companion: `plan-writing > SKILL.md > Section gating by Size`). Any firing condition MUST include the section.
 - **Pass 2 — active reasoning**: for each non-firing section, ask "given THIS task's risk/blast-radius/unfamiliar-paths and what a reviewer needs, would omitting it cause a miss or a follow-up?" Include if yes. The trigger list is a floor.
+- **Current state → tasks Guardrails (brownfield):** when `## Current state` fires, digest its invariants into the `tasks.md > ## Guardrails` header (backticked `` `path#anchor` `` + why per line) — the engineer's **only** up-front invariant read; the full map stays in `plan.md`, pulled per-task via `[ref:]`.
 
 **Hard-to-reverse decisions.** When the plan commits to anything expensive to undo (schema/migration shape, public API/event contract, architecture/topology, data backfill/destructive script), list each under `## Hard-to-reverse decisions` (one line: decision · why now · cost to reverse), right after `## Summary`. The gate surfaces these for per-line confirmation. Omit when nothing qualifies.
 

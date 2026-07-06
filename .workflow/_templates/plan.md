@@ -6,6 +6,8 @@
 **Field**: greenfield | brownfield
 **Status**: draft | approved | done
 
+> Sections split **build-time** (engineer reads at implement — pulled per-task via `[ref:]`) vs **plan-time** (gate/reviewer only). Reader · Budget · trigger per section → `plan-writing > references/plan-sections.md`.
+
 ## Summary
 
 <2–3 sentences: the technical approach + why this over the obvious alternative. Each user story = one vertical slice.>

@@ -9,6 +9,13 @@ Phased + dependency-ordered. `[P]` = parallel-safe (different files, no unmet de
 
 Task format: `T### [P?] [AC#] [ref: path#anchor]? <action> — path#anchor (new | edit | delete) — verify: <command or observable>`
 
+## Guardrails
+
+> Must-not-break invariants — the engineer's **only** up-front invariant read (rest pulled per-task via `[ref:]`). One backticked `` `path#anchor` `` + why per line. **Brownfield only** (greenfield → `none`); ≤~8 bullets — deeper detail stays in `plan.md > ## Current state`, pulled per-task.
+
+- `` `path#anchor` `` — <invariant that must keep holding + why a task must not break it>
+- `none — no existing code to break` *(greenfield)*
+
 ## Phase 1: Setup
 
 - [ ] **T001** Scaffold project + tooling — `path` (new) — verify: <command>

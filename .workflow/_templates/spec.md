@@ -14,7 +14,7 @@
 
 ## User Stories *(required)*
 
-Priority-ordered, each independently testable — build P1 alone and you still have a viable MVP. Acceptance scenarios carry stable ids (`AC1`, `AC2`, …) that plan / tasks / test / review all reference.
+Priority-ordered, each independently testable — build P1 alone and you still have a viable MVP. Acceptance scenarios carry stable ids (`AC1`, `AC2`, …) that plan / tasks / test / review reference **by id** — the `Given/When/Then` text lives here only, nowhere else.
 
 ### US1 — <title> (Priority: P1) 🎯 MVP
 

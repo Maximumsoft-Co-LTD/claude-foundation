@@ -184,6 +184,21 @@ check_followups() {
   fi
 }
 
+# AC-text locality: the bold `**Given**/**When**/**Then**` scenario syntax is
+# spec.md's alone — every other artifact references ACs by `AC<n>` id. Flag a copy
+# elsewhere (drift). Lines with a backtick are skipped (example syntax).
+check_ac_text_locality() {
+  file="$1"
+  hits="$(grep -nE '\*\*Given\*\*' "$file" | grep -v '`' || true)"
+  if [ -n "$hits" ]; then
+    report FAIL "$(basename "$file"): acceptance-scenario prose (**Given**/**When**/**Then**) belongs only in spec.md — reference by \`AC<n>\` id here"
+    n="$(printf '%s\n' "$hits" | grep -c '')"
+    fail_count=$((fail_count + n))
+  else
+    report OK "$(basename "$file"): no AC prose outside spec (id-only)"
+  fi
+}
+
 main() {
   if [ "$#" -ne 1 ]; then
     usage
@@ -215,6 +230,9 @@ main() {
       tasks.md)     check_tasks "$file" ;;
       test-plan.md) check_test_plan "$file" ;;
     esac
+    # NB: check_* helpers clobber the global $name (see require, line ~64), so key
+    # this skip off the file's own basename, not the loop var.
+    [ "$(basename "$file")" = "spec.md" ] || check_ac_text_locality "$file"
     scan_placeholders "$file"
   done
 
