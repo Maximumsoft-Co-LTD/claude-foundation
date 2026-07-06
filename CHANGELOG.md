@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.3] - 2026-07-06
+
 ### Changed
 
 - **`/dev` implement no longer front-loads five whole plan artifacts — `tasks.md` is the single up-front read; everything else is pulled per-task.** v2.6.1 made the engineer's *references* lazy; this extends the same discipline to the sibling artifacts. Mode A previously read `tasks.md` + `plan.md` (Summary/Scaffold/Architecture + Current state) + spec ACs + `test-plan.md` + `uxui-plan.md` whole before the first edit — a payload that scaled with plan size, not task size. Now the engineer's entire up-front read is `tasks.md` — carrying a new `## Guardrails` header (the must-not-break blast-radius invariants, digested from `plan.md > ## Current state`) — plus `plan.md > ## Summary` & `## Technical Context`; Scaffold, Architecture, AC text, test-plan Coverage rows and uxui Scenes open per-task via the row's `[ref: path#anchor]` pointer, only when the citing task starts. Two supporting levers land with it: `plan-sections.md` gains a **Reader** column (`eng` build-time vs `gate` plan-time — the engineer never loads plan-time sections) and a **Budget** column (per-section prose caps, never dropping a consumed field); and `artifact-lint.sh` gains an AC-text-locality check flagging `**Given**/**When**/**Then**` prose leaking outside `spec.md` (acceptance text stays single-sourced, referenced by `AC#` id elsewhere). Files: `.claude/agents/{engineer,lead,pm,qa,uxui}.md`, `.claude/agents/references/lead.md`, `.claude/orchestrator.md`, `.claude/skills/plan-writing/{SKILL.md,references/plan-sections.md}`, `.claude/hooks/artifact-lint.sh`, `.workflow/_templates/{tasks,plan,spec}.md`.
@@ -485,7 +487,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.2...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.3...HEAD
+[2.6.3]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.14...v2.6.0
