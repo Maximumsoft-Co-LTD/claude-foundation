@@ -1,129 +1,74 @@
 # Instrumentation
 
-Instrumentation turns a system that "doesn't work" into one that *tells you* what it's doing. Most stuck sessions are stuck because the engineer reasons about what the code *should* do rather than what it *did*. A well-placed log replaces an hour of theorizing with a fact.
+Make the system *tell* you what it did instead of reasoning about what it *should* do. A well-placed log replaces an hour of theorizing with a fact.
 
-## The hierarchy
+## The hierarchy — use the lightest tool that answers
 
-Use the lightest tool that gives you the answer:
+1. **Print / log** — universal, fast, ~80% of bugs.
+2. **Structured logs** — to filter / correlate across requests.
+3. **Debuggers / breakpoints** — to walk state interactively or inspect deep objects (~15%).
+4. **Distributed tracing / APM** — when the bug crosses service boundaries.
+5. **System-level** (`strace`, `dtrace`, `eBPF`, `tcpdump`) — OS/network layer, when the app can't see it (~5%).
 
-1. **Print / log statements** — universal, dumb, fast. Always available. Almost always enough.
-2. **Structured logs** — when you need to filter or correlate across requests.
-3. **Debuggers / breakpoints** — when you want to walk through state interactively or inspect deep objects.
-4. **Tracing (distributed tracing, APM)** — when the bug crosses service boundaries.
-5. **System-level tracing** — `strace`, `dtrace`, `eBPF`, `tcpdump` — when the bug is at the OS or network layer and the application can't see it.
+## Print debugging, done well
 
-Don't reach for the heavy tool first. A `console.log` solves 80% of bugs; a debugger another 15%; eBPF is for the last 5% where the application itself is lying to you.
+For each suspect variable, print in this order — most "wrong value" bugs are actually wrong *type* or *shape*:
+1. **Existence** — `log('got here')` — proves the line ran.
+2. **Identity** — `log('handler for user', user.id)` — proves *which* invocation.
+3. **Type** — `log(typeof x, x?.constructor?.name, x)` — runtime type beats declared type.
+4. **Shape** — `log(Object.keys(x))` — what the object actually has.
+5. **Value** — structured (`JSON.stringify(x,null,2)`, `%#v`) so nested objects don't render as `[Object]`.
 
-## Print debugging — done well
-
-Done well, it's almost always the fastest path.
-
-### What to print
-
-For each suspect variable, print these in roughly this order:
-
-1. **Existence.** `console.log('got here')` or `print('after fetch')` — proves the line executed.
-2. **Identity.** `console.log('handler called for user', user.id)` — proves *which* invocation you're watching.
-3. **Type.** `console.log(typeof x, x?.constructor?.name, x)` — most surprise bugs are "I thought this was a number, it's a string." The runtime type beats the declared type.
-4. **Shape.** `console.log(Object.keys(x))` or `pp x.attributes` — what does the object *actually* have on it?
-5. **Value.** The thing itself. Print it with structure (`JSON.stringify(x, null, 2)`, `pprint`, `%#v`) so nested objects don't render as `[Object]`.
-
-The order matters because most "I expected this value" bugs are actually "I expected this *type* or this *shape*." Print the meta-info before you print the data and the bug often outs itself.
-
-### Where to put them
-
-Put logs at the **boundaries** of the suspect region: where data enters the function, where it leaves, and at any branch. If the boundary values are right, the bug is inside the boundary. If they're wrong, it's outside. That's the bisection move from `references/bisection.md` in miniature.
-
-### Make logs distinguishable
-
-A wall of `value: 12` lines tells you nothing. Tag every log:
-
+- **Where:** at the **boundaries** of the suspect region (enter, leave, each branch). Boundary values right → bug is inside; wrong → outside. (Bisection in miniature.)
+- **Tag every log** so you can grep it out of 200 noisy lines:
 ```ts
-console.log('[chargeOrder] before validate:', { orderId: order.id, total: order.total })
 console.log('[chargeOrder] after validate:', { orderId: order.id, total: order.total })
 ```
-
-When you run the repro and 200 lines fly by, you can `grep '[chargeOrder]'` and see only the relevant ones.
-
-### Clean up
-
-Every debug log is technical debt. After the bug is fixed, either:
-- Delete them.
-- Or, if they encode something genuinely useful (a structured event at a key boundary), promote them to proper logs with the project's logger and a sensible log level.
-
-Don't leave naked `console.log('here 4')` in the codebase. Future-you will hate present-you.
+- **Clean up:** debug logs are debt — delete after the fix, or promote genuinely-useful boundary events to the project logger. Never leave naked `console.log('here 4')`.
 
 ## Structured logging
 
-Once you graduate from one-off prints, structured logs are the next tool. Every log line is a JSON object with consistent fields:
-
+Every line a JSON object with consistent fields:
 ```json
-{"ts": "2026-05-13T14:32:01Z", "level": "info", "event": "order.charge.start",
- "request_id": "req_abc", "order_id": "ord_123", "user_id": "u_999",
- "total_cents": 1000, "currency": "USD"}
+{"ts":"2026-05-13T14:32:01Z","level":"info","event":"order.charge.start",
+ "request_id":"req_abc","order_id":"ord_123","total_cents":1000}
 ```
+Buys you: filter by `request_id` (one request's whole path), by `event` (all charge attempts), pivots in your log tool (`total_cents == 0`), context carried across service boundaries. Learn the codebase's conventions before adding; if none exist and the bug is cross-cutting, adding them may be the fix.
 
-What this buys you during debugging:
+**Levels:** bump suspect components to `debug`/`trace` in dev; in prod beware hot-path debug logs (pipeline swamp, PII) — sample or flag; in tests, unbuffer / pass through suppressed logs.
 
-- **Filter by `request_id`** to see one request's entire path through the system.
-- **Filter by `event`** to see every charge attempt across all users.
-- **Pivot in your log tool** (Datadog, Honeycomb, Cloud Logging, `jq`) — "show me all `order.charge.start` events where `total_cents == 0`."
-- **Carry context across boundaries.** When the next service logs the same `request_id`, you can stitch the path.
+## Debuggers
 
-If the codebase already has structured logging, learn the conventions (the field names, the levels, the propagation) before you add anything. If it doesn't, and you're debugging something cross-cutting, that may be the right fix.
+When state is rich and nested, a debugger beats a hundred prints:
+- **Conditional breakpoints** — break only when `order.id === 'ord_123'`.
+- **Logpoints** — print at a line without stopping or recompiling.
+- **Watch expressions** — track `user.permissions.length` as you step.
+- **Step into / over / out** — over when you trust the callee, into when you don't.
 
-### Log levels during debugging
-
-- Default app log level in dev: bump to `debug` or `trace` for the suspect components.
-- In prod: be careful. A debug log on a hot path can swamp the log pipeline or leak PII. Use sampling or temporary feature flags.
-- In tests: many test frameworks suppress logs. Pass through or unbuffer when chasing a test bug.
-
-## Debuggers / breakpoints
-
-When the state is rich and the values are nested, a debugger beats a hundred prints.
-
-- **Conditional breakpoints** — "break only when `order.id === 'ord_123'`." Crucial when the bug is one bad request in a hot path.
-- **Logpoints** — most modern debuggers can print a value at a line without stopping. Like a print, but without recompiling.
-- **Watch expressions** — keep an eye on `user.permissions.length` as you step.
-- **Step into / over / out** — know the difference. Step *over* when you trust the callee; step *into* when you don't.
-
-Debugger usage in agentic contexts is awkward (no interactive UI). When you can't use a debugger, fall back to dense, structured prints at every step the debugger would have shown.
+No interactive UI (agentic context)? Fall back to dense structured prints at every step the debugger would've shown.
 
 ## Tracing
 
-For multi-service bugs, distributed tracing (OpenTelemetry, Jaeger, Tempo, Honeycomb, Datadog APM) is the only sane tool. The trace is a tree of spans with timing and attributes, propagated across service boundaries via trace headers. It shows the exact path, which span was slow, which span errored, and where a value changed shape.
-
-When a span is missing a useful attribute (order id, user id, payload size), add it. Trace attributes during debugging are usually the lowest-effort, highest-value instrumentation in a distributed system.
-
-If the system has no tracing and a distributed bug is wasting days, *adding tracing is the right fix*. It pays back on every future incident.
+Multi-service bugs → distributed tracing (OpenTelemetry, Jaeger, Honeycomb, Datadog): a tree of spans with timing + attributes propagated via trace headers — shows the exact path, the slow/errored span, where a value changed shape. Missing a useful attribute (order id, payload size)? Add it — lowest-effort, highest-value. No tracing + a distributed bug wasting days → adding it is the right fix.
 
 ## System-level tracing
 
-When the app says "it succeeded" but nothing happened, drop a layer:
+When the app says "success" but nothing happened, drop a layer:
+- **`strace -p <pid>` / `dtruss`** — every syscall ("is it even opening the file?").
+- **`tcpdump` / Wireshark** — actual bytes on the wire (TLS, HTTP/2, proxy misbehaving).
+- **`eBPF`** (`bpftrace`, `bcc-tools`) — prod-safe: `tcpconnect`, `opensnoop`, `execsnoop`, `biolatency`.
+- **`/proc/<pid>/`** — fds, maps, status. **`lsof`, `netstat`, `ss`** — what's open / connected / listening.
 
-- **`strace -p <pid>` / `dtruss`** — every system call. Good for "is the process even opening the file?"
-- **`tcpdump` / Wireshark** — what bytes are actually on the wire. The honest answer when TLS, HTTP/2, or a proxy is misbehaving.
-- **`eBPF` tools** (`bpftrace`, `bcc-tools`) — production-safe tracing: `tcpconnect`, `opensnoop`, `execsnoop`, `biolatency`.
-- **`/proc/<pid>/`** — fds, maps, status.
-- **`lsof`, `netstat`, `ss`** — what's open, connected, listening.
-
-Reach for these when the bug is *below* the application layer: weird timeouts not in app logs, "file not found" when the file is there, DNS misery, mysterious EAGAIN/EINTR loops.
+For bugs *below* the app layer: timeouts not in logs, "file not found" when it's there, DNS misery, EAGAIN/EINTR loops.
 
 ## Production instrumentation
 
-Some bugs only happen in production. Make production carry the evidence on the next occurrence:
-
-- Add a log at the failure point with full context (sanitized).
-- Add a metric counter on the failure shape — `order.charge.zero_total`.
-- Add a trace attribute so the next failing trace has the values you need.
-- Deploy. Wait. The next occurrence is no longer wasted.
-
-Resist deploying a "fix" instead of an instrumented build. A fix-without-repro is a guess; an instrumented build is a hypothesis-collector.
+Make prod carry the evidence on the next occurrence: log the failure point with full context (sanitized), add a metric on the failure shape (`order.charge.zero_total`), add a trace attribute, deploy, wait. Ship an instrumented build, not a "fix" — a fix-without-repro is a guess.
 
 ## Anti-patterns
 
-- **`console.log(x)` with no label.** Three of those in a hot loop and you can't tell which is which.
-- **Logging only on the happy path.** The interesting log lines are usually in the error branch.
-- **Logging *after* the crash.** The line after the throw doesn't execute. Put the log *before*.
-- **Reading values in a debugger by mousing over them, but never writing them down.** The bug is often the pattern across calls, not one value. Capture; don't just look.
-- **Removing instrumentation before you've confirmed the fix.** Keep the logs in until the regression test passes; then clean up.
+- Unlabeled `console.log(x)` in a hot loop — can't tell which is which.
+- Logging only the happy path — the interesting lines are in the error branch.
+- Logging *after* the crash — the line after the throw never runs; log *before*.
+- Mousing over debugger values without recording them — the bug is often the pattern across calls. Capture, don't just look.
+- Removing instrumentation before the regression test passes.

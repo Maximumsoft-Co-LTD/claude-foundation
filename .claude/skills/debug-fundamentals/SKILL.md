@@ -1,226 +1,45 @@
 ---
 name: debug-fundamentals
-description: Apply debugging fundamentals — reproduce, read the evidence, bisect, change one thing at a time, fix the right layer, pin with a regression test. Use BEFORE guessing at fixes for any unknown-cause failure — bug, crash, regression, flaky test, perf cliff, or unexpected production behavior, in any stack. The trigger is any "fix this / why is X happening / this used to work" investigation, even when the user doesn't say "debug". Skip one-line typo fixes with the cause already on screen, and greenfield work where nothing is broken.
+description: Apply debugging fundamentals as a six-phase loop — refine the ticket, reproduce, plan the fix, fix the right layer one change at a time, pin with a regression test, report the root cause. Use BEFORE guessing at fixes for any unknown-cause failure — bug, crash, regression, flaky test, perf cliff, or unexpected production behavior, in any stack. The trigger is any "fix this / why is X happening / this used to work" investigation, even when the user doesn't say "debug". Skip one-line typo fixes with the cause already on screen, and greenfield work where nothing is broken.
 ---
 
 # Debug Fundamentals
 
-## Why this exists
+Days get eaten when you change five things at once, silence a symptom with a try/catch, or fix the layer where the bug *surfaced* instead of where it *started*. Find the cause before you change code — the loop below runs the seven principles from ticket to close-out.
 
-Classic failure modes that eat days:
+## Workflow
 
-- Changing five things at once, the bug goes away, nobody knows why, it comes back next week.
-- "Adding a try/catch" so the symptom stops without finding what produced it — the program now silently continues with bad state.
-- Reading the *first* line of the stack trace, guessing the rest, fixing the wrong layer.
-- Re-running the failing test until it passes "to unblock the build," leaving a real race in production.
-- Assuming the framework is broken before assuming the code is.
+| Phase | Do | Principles |
+|---|---|---|
+| **1. Refine** | Sharp problem statement before touching code: expected vs actual, env/version/timestamp, artifacts (error, logs, request id, screenshot), what "fixed" means. A vague ticket debugged as-is wastes the repro. | feeds P1–2 |
+| **2. Reproduce** | Smallest, most reliable trigger; then read the full evidence it produces. | P1, P2 |
+| **3. Plan** | Facts vs assumptions, bisect to the cause, find the layer where data *first* turns wrong, decide fix + blast radius. | P3, P4, P6 |
+| **4. Fix** | One change at a time, at the source layer, prediction written first. | P5, P6 |
+| **5. Test** | Regression test red without the fix, green with it; then the surrounding suite. | P7 |
+| **6. Report** | Root cause = the wrong assumption that let the bug exist; + layer, fix, test, blast radius (what else read the same bad data), follow-ups. Update the ticket. | P7 |
 
-Apply these before you start changing code, not after the third "let me try…" round.
+Iterate, don't march: if phase 3 disproves the theory or phase 5 stays red, drop back to phase 2 with what you learned.
 
 ## The 7 principles
 
-Each principle has a one-line rule, a *why*, and a worked example. Apply them roughly in order — the early ones unlock the later ones.
+1. **Reproduce before you diagnose** — smallest reliable trigger; a fix you can't reproduce is a guess. Flaky? Turn up the knob that raises the rate (concurrency, cold cache, a specific row) until it's reliable.
+2. **Read what the system said** — full error, stack trace, log, *before* theorizing. The cause is usually frames down in your code, not the top frame; note timestamp / request-id / version.
+3. **Separate facts from assumptions** — for each load-bearing belief ask *how do I know?*; verify the cheap ones with one print. Suspect "should / must be / can't be," and data shape / nullability / ordering.
+4. **Bisect the search space** — halve it each step: `git bisect`, midpoint logging, half the failing payload, flags in pairs. O(log n), not O(n).
+5. **Change one thing at a time** — one hypothesis, one change, one written prediction. Put the bug back to prove the fix causes the cure; strip all scaffolding after.
+6. **Fix the right layer** — trace symptom → source, fix where data *first* turns wrong, not where it surfaced. Most cross-layer bugs live in boundary translations: units, timezones, encoding, coercion.
+7. **Fix the cause + regression test** — a test red without the fix and green with it, committed together. Prefer encoding the invariant in types/schema ([[programming-fundamentals]] P2) over a runtime check.
 
----
+## Skip when
 
-### 1. Reproduce reliably before you diagnose
+One-line typo with the cause on screen; greenfield (nothing broken yet — use [[programming-fundamentals]]); obvious reversible config edits. Anything else — even "I think I see it," even "just a quick fix" — applies.
 
-**Rule:** Find the smallest, most reliable trigger before you start hypothesizing about causes. If you can't make the bug happen on demand, every "fix" you ship is a guess you can't verify.
+## Run order & references
 
-**Why:** A repro is the only loop where "with this change, the bug is gone" is verifiable, not guesswork. Stripping it down forces the bug to commit to a shape — "sometimes it 500s" becomes "it 500s when `order.total === 0`".
+Load *this first* to find the cause, then the construction skill that owns the fix layer, then pin it ([[testing-fundamentals]] owns test design). Most bugs violate [[programming-fundamentals]] — the fix is usually "make illegal states unrepresentable." Full run order: `.claude/rules/fundamentals.md`.
 
-**How to apply:**
-- Capture the exact input, environment, time, user, and request that produced the failure. "It didn't work" is not a repro; `curl -X POST .../orders -d @failing-payload.json` is.
-- Strip the repro down. Remove every step that, when omitted, still produces the bug. What's left is the actual trigger.
-- For intermittent bugs, find what increases the rate. Concurrency? A specific clock minute? A cold cache? A particular row in the database? Increase that knob until the bug is reliable, then debug.
-- If a real repro is genuinely impossible, increase observability *in production* until the next occurrence carries enough evidence.
-- See `references/reproduction.md` for the deeper guide on minimization and flaky-bug strategies.
-
-**Example:**
-```
-Bad path:  "Users report orders sometimes don't go through." → engineer reads code, guesses, deploys a retry, ships.
-Good path: Pull failing request from logs → replay against staging → fails 1/20 times → run in a 100-iteration loop → fails 5/100
-           when concurrent with a status webhook → now you have a race to find.
-```
-
----
-
-### 2. Read what the system actually said
-
-**Rule:** Read the full error, the full stack trace, the full log line — *before* you form a theory. Most bugs name themselves in the first or last frame.
-
-**Why:** The error message is the system's testimony about what it actually saw. Pattern-matching to a familiar shape without reading it means debugging your imagination.
-
-**How to apply:**
-- Read the whole stack trace, not just the top. The top frame is *where it crashed*; the cause is usually three to ten frames down, in your code, not in the framework.
-- Read the error *text*. `NullPointerException at User.getEmail()` and `NullPointerException at OrderItem.getEmail()` look the same and are completely different bugs.
-- Note the timestamp, the request id, the host, the version. "This started at 14:32" plus "deploy at 14:30" is half the investigation.
-- For UI bugs: open the devtools network tab and the console *first*. The browser already told you what happened.
-- For a silent failure: turn up the verbosity. Default log level is rarely enough during a real debug session.
-
-**Example:**
-```
-Stack trace ends with:
-  at processOrder (orders.ts:84)
-  at handler (api.ts:23)
-  TypeError: Cannot read properties of undefined (reading 'currency')
-
-Bad: "must be a null check thing, add `?.` to all the property reads."
-Good: orders.ts:84 dereferences `order.total.currency`. So `order.total` is undefined. Why? → grep the writes to `order.total` →
-      one write path sets it from `req.body.amount`, which is a number, not the `Money` object the rest of the code assumes. Found.
-```
-
----
-
-### 3. Separate facts from assumptions
-
-**Rule:** Before each new step, write down (literally or mentally) what you *know* (verified) versus what you *assume* (plausible but unchecked). Most stuck sessions are stuck on a wrong assumption everyone forgot was an assumption.
-
-**Why:** Bugs hide in the gap between "obviously X is true" and "X is actually true." Every long debugging story has a "wait — is it even running the new code?" moment. Catch it early by asking *how do I know that?* for each load-bearing belief.
-
-**How to apply:**
-- For each load-bearing belief, ask: *how do I know that?* If the answer is "it's always been that way" or "the docs say so" or "obviously," it's an assumption, not a fact.
-- Verify the cheap ones immediately: print the config, print the version, print the input as the function actually received it, print the env var. One log line beats one hour of theorizing.
-- Watch for the words "should," "must be," "can't be." Those are flags. "The cache *must be* invalidating" → go check.
-- Especially suspect: data shape (`number` vs `string` that looks like one), nullability, ordering, identity.
-
-**Example:**
-```
-Assumption: "The webhook handler is idempotent — we check the dedup table."
-Fact-check: Read the handler. The dedup check runs *after* the row insert. Under concurrency, two webhooks both miss the check
-            and both insert. Bug found by interrogating the assumption instead of accepting it.
-```
-
----
-
-### 4. Bisect the search space
-
-**Rule:** Halve the suspect region with each step. Don't read code linearly hoping to spot the bug — drive a wedge into the search space and split it.
-
-**Why:** Reading sequentially is O(n); bisecting is O(log n). On a 200-commit regression window: 7 steps vs 200. The same logic applies to inputs, configs, and dependencies.
-
-**How to apply:**
-- *When did it break?* → `git bisect` between a known-good and known-bad commit. Automate the test if you can; the bisect runs itself.
-- *Where in the code path?* → drop a print/log at the midpoint of the suspect call stack. If the value is still right there, the bug is downstream; if it's already wrong, upstream. Halve again.
-- *Which input field?* → start with a minimal payload that works; add half the failing payload's fields; if it now fails, the trigger is in the half you added. Repeat.
-- *Which dependency?* → pin all versions, then bisect by half-reverting the lockfile diff.
-- *Which feature flag/config knob?* → flip them in pairs.
-- See `references/bisection.md` for `git bisect` mechanics, automation, and the dual to "binary search" when the search dimension isn't ordered.
-
-**Example:**
-```
-"It worked Tuesday, breaks today." Tuesday's commit = abc123. Today's = z999. 200 commits between.
-git bisect start z999 abc123 → checkout midpoint → run the repro → good/bad → ~8 steps → "the bug arrived at commit 47fa1c."
-That single commit is now your entire search space.
-```
-
----
-
-### 5. Change one thing at a time
-
-**Rule:** Vary one variable per experiment. If you change three things and the bug disappears, you've learned nothing — you've just added three new unknowns to the codebase.
-
-**Why:** Pile-on changes make causality impossible. Clean one-variable experiments isolate the cause. The corollary: revert all scaffolding (prints, debug flags) once done — otherwise you're shipping extra surface area for the next bug.
-
-**How to apply:**
-- One hypothesis, one change, one observation. Write the prediction down before you run the experiment — "if I change X, I expect Y." If you got Z, the hypothesis was wrong; don't quietly adopt the new theory without saying so.
-- When you find what fixes it, *put back the bug* and verify it returns. Then put the fix back and verify it's gone. This proves the fix actually causes the cure.
-- Throw away all the failed experiments. Don't leave the "for safety" try/catch, the "just in case" retry, the commented-out block. Each one is a future debugging trap.
-- Commit your debug instrumentation separately so you can drop the commit cleanly.
-
-**Example:**
-```
-Bug: API returns 500 intermittently.
-Bad: "Bumped the DB pool, added a retry decorator, increased the timeout, swapped to a different JSON lib." Bug goes away. Why? Unknown.
-     Returns 2 weeks later. None of the four changes can be safely reverted because nobody knows which was the fix.
-Good: Bumped DB pool → no change. Reverted. Added retry → masks the symptom, not a fix. Reverted. Increased timeout → no change.
-      Reverted. Swapped JSON lib → bug gone. Confirmed: the original lib mis-parses a specific Unicode escape under load. Real fix.
-```
-
----
-
-### 6. Trace causality through the right layer
-
-**Rule:** Walk the causality chain from the symptom back through the stack — UI → API → service → DB → infra — and stop at the first place the data turned wrong. Fix it there, not where it surfaced.
-
-**Why:** Bugs surface far from where they originate. "Fixing" the dashboard formatter when the cause is a SQL truncation hides the bug everywhere else that reads the same column. Every layer above the root cause is downstream of the lie.
-
-**How to apply:**
-- Start at the symptom. Capture the actual wrong value and the expected one.
-- At each layer boundary, ask: "what does this layer receive, and is it already wrong here?" Log it if you can't tell.
-- The first layer where the value is already wrong is the layer above the bug. Look there.
-- Resist the urge to "patch the display" once you find a workaround higher up. Note the real bug, schedule it, don't lose it.
-- Pay attention to layer-boundary translations: serialization, type coercion, units (cents vs dollars, ms vs s), timezones, encoding. Most cross-layer bugs live there.
-
-**Example:**
-```
-Symptom: invoice PDF shows $0.10 instead of $10.00.
-Trace:
-  PDF renderer receives `amount: 0.10`. ← already wrong here.
-  API response from invoice service: `amount: 0.10`. ← already wrong here.
-  DB query result: `amount_cents: 1000`. ← right here.
-  → service does `amount_cents / 10000` instead of `/ 100`. Bug is at the service/db boundary. Fix at the source; every downstream
-    consumer is now correct without changes.
-```
-
----
-
-### 7. Fix the cause; prove it with a regression test
-
-**Rule:** Once you know the cause, fix it where it lives, then write a test that fails without the fix and passes with it. Commit both together.
-
-**Why:** The fix changes behavior; the test pins it. Without the test, the same bug returns the moment someone "refactors that ugly bit" — and it will. A bug that happened once is likely to happen again; one test buys a permanent guarantee.
-
-**How to apply:**
-- Write the test first if you can — it's the cleanest verification that you fixed *this* bug and not a different one.
-- The test should target the specific failure shape (the exact race, the exact input, the exact boundary), not just "the broader feature works." Otherwise it'll go green from any unrelated change.
-- If the cause is a missing invariant, prefer encoding it in the types or schema (see [[programming-fundamentals]] principle 2) over relying on a runtime test.
-- If the bug is in shared state (DB, queue, cache), the regression test usually wants a real instance — mocks lose the very interaction that produced the bug. (See [[database-fundamentals]] and [[queue-fundamentals]] for the patterns.)
-- Write the postmortem note even for small fixes — what was the wrong assumption that allowed this bug to exist?
-
-**Example:**
-```
-Cause: duplicate webhook delivery, dedup check ran after insert under concurrency.
-Fix: move dedup into a `UNIQUE` constraint on `(provider, external_id)` — illegal state now unrepresentable in the schema.
-Test: integration test that fires two identical webhooks concurrently against a real Postgres; asserts exactly one row inserted.
-      Fails on the old code, passes on the new.
-```
-
----
-
-## Pre-flight checklist
-
-Before you start changing code to fix a bug, run through these in your head:
-
-1. **Repro:** Can I trigger this on demand, with the smallest possible input?
-2. **Evidence:** Have I read the full error message, stack trace, and relevant logs — not just the first line?
-3. **Facts vs assumptions:** What's verified, what's assumed? What's the cheapest assumption I can convert to a fact right now?
-4. **Search space:** Have I bisected (commits, code path, input, dependency) instead of skimming linearly?
-5. **One variable:** Am I changing exactly one thing per experiment, with a prediction written down?
-6. **Right layer:** Where does the data first turn wrong? Am I about to fix the symptom layer instead of the source layer?
-7. **Proof:** Once I think I've fixed it, do I have a test that fails without my change and passes with it?
-
-If any answer is "I don't know," stop and find out before continuing. The cost of a wrong "fix" is days; the cost of one more verification step is minutes.
-
-## When to skip this skill
-
-- One-line typo or obvious off-by-one where the cause is already visible on the screen and the fix is trivial.
-- Greenfield feature work — nothing is broken yet; use [[programming-fundamentals]] instead.
-- Pure config edits whose effect is obvious and reversible (formatter rules, package versions).
-
-For anything else — yes, even "I think I see the bug," even "this is just a quick fix" — these fundamentals apply. The bugs that eat days are almost always the ones where the first instinct was "I see it, I'll just…"
-
-## Relation to other skills
-
-Run order and the sibling-skill triggers live in the always-on router (`.claude/rules/fundamentals.md`): use *this skill first* to find the cause, then the construction skill that owns the fix layer, and pin it with a regression test ([[testing-fundamentals]] owns test design).
-
-The debug-specific nuance: most bugs are violations of [[programming-fundamentals]] (illegal states, impure functions, swallowed errors), so once you find the cause, fixing it almost always means applying one of its principles — most often "make illegal states unrepresentable."
-
-## Reference files
-
-Deeper guides for individual moves. Read the one that matches what you're stuck on; you don't need to read them all upfront.
-
-- `references/reproduction.md` — building a reliable repro, minimizing it, taming flaky failures, getting a repro out of production-only bugs.
-- `references/bisection.md` — `git bisect` (manual and `run`-mode), binary search through code paths, inputs, configs, dependencies.
-- `references/instrumentation.md` — strategic logging, structured logs, breakpoints, tracing, `strace`/`dtrace`/eBPF — what to print, where to put it, and how to read it back.
-- `references/distributed-debugging.md` — correlation IDs, distributed traces, races, ordering, retries, partial failures, time-skew bugs.
+Deeper technique, load on demand:
+- `references/reproduction.md` — reliable + minimal repros, flaky failures, prod-only bugs.
+- `references/bisection.md` — `git bisect`, binary search over code paths, inputs, configs, deps.
+- `references/instrumentation.md` — strategic logging, tracing, `strace`/`dtrace`/eBPF.
+- `references/distributed-debugging.md` — correlation IDs, traces, races, retries, time-skew.
