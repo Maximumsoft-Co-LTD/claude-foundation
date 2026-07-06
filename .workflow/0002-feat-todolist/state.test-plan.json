@@ -1,7 +1,0 @@
-{
-  "status": "done",
-  "last_agent": "qa",
-  "last_updated": "2026-06-21T00:25:00Z",
-  "pending_plan_backfill": true,
-  "notes": "test-plan.md (spec-only): 24 ACs -> 43 rows; runner=vitest+jsdom (unit/integration) + Playwright channel:chrome via file:// (e2e/visual+a11y); greenfield (no regression/baseline); 6 [pending plan] param rows; 1 non-blocking spec gap (localStorage-unavailable). Gate must backfill once plan.md lands."
-}
