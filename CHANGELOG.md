@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-07-06
+
 ### Changed
 
 - **`git-workflow` and `debug-fundamentals` skill bodies minimized — same guidance, far terser trigger-time read.** `git-workflow/SKILL.md` 266 → 36 lines (~86%): the branching/committing/rebasing/PR mechanics condense to their load-bearing rules, dropping restated context and worked-out prose while keeping every destructive-op guardrail. `debug-fundamentals/SKILL.md` 226 → 45 lines (~80%): the body is recast around the explicit six-phase debugging loop (reproduce → isolate → instrument → hypothesize → fix → verify) in a phase/principle table, and its four `references/` are streamlined in step — `bisection.md` 142 → 89, `distributed-debugging.md` 146 → 66, `instrumentation.md` 129 → 74, `reproduction.md` 87 → 58 — each tightened to its actionable core (deterministic standalone repros, high-signal instrumentation, bisection procedure). Same triggers and cross-skill citations; the router's construction/debug run-order is untouched. Files: `.claude/skills/git-workflow/SKILL.md`, `.claude/skills/debug-fundamentals/{SKILL.md,references/*}`.
@@ -479,7 +481,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.2...HEAD
+[2.6.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.14...v2.6.0
 [2.5.14]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.5.13...v2.5.14
