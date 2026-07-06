@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`git-workflow` and `debug-fundamentals` skill bodies minimized — same guidance, far terser trigger-time read.** `git-workflow/SKILL.md` 266 → 36 lines (~86%): the branching/committing/rebasing/PR mechanics condense to their load-bearing rules, dropping restated context and worked-out prose while keeping every destructive-op guardrail. `debug-fundamentals/SKILL.md` 226 → 45 lines (~80%): the body is recast around the explicit six-phase debugging loop (reproduce → isolate → instrument → hypothesize → fix → verify) in a phase/principle table, and its four `references/` are streamlined in step — `bisection.md` 142 → 89, `distributed-debugging.md` 146 → 66, `instrumentation.md` 129 → 74, `reproduction.md` 87 → 58 — each tightened to its actionable core (deterministic standalone repros, high-signal instrumentation, bisection procedure). Same triggers and cross-skill citations; the router's construction/debug run-order is untouched. Files: `.claude/skills/git-workflow/SKILL.md`, `.claude/skills/debug-fundamentals/{SKILL.md,references/*}`.
+- **`.gitignore` now ignores the local `solar-system/` scratch directory.** Files: `.gitignore`.
+
 ## [2.6.1] - 2026-07-04
 
 ### Changed
