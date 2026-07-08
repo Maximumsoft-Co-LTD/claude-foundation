@@ -2,15 +2,15 @@
 
 Reverse-engineer the existing code *before* designing the change. Deep-dive for `plan-writing > principle 3`: LSP queries, hop count, what counts as an invariant, and worked examples per Type.
 
-> **Brownfield M/L — mapped once, shared.** This map is produced **once** as `.workflow/<id>/context.md` (step 7a) and read by every plan slice (`lead`/`qa`/`uxui`) — walked once, not per slice. When it's in your prompt: synthesise + cite it, spot-check load-bearing claims (re-resolve a sample), verify only what it misses; `plan.md > ## Current state` cites it. **Evidence, not authority** — you own the final map; an unre-resolvable claim is a finding. Same boundary-depth discipline produces `context.md` and an absent-`context.md` cold walk.
+> **Brownfield M/L — mapped once, shared.** Produced **once** as `.workflow/<id>/context.md` (step 7a), read by every plan slice (`lead`/`qa`/`uxui`). When it's in your prompt: synthesise + cite, spot-check load-bearing claims (re-resolve a sample), verify only what it misses. **Evidence, not authority** — you own the final map; an unre-resolvable claim is a finding.
 
 ## Boundary-depth, not full-depth — read less, defer the rest
 
-The plan needs to read deep on three things only: **blast radius**, **invariants** the change must preserve, and **insertion points**. That safety-critical subset is what the gate signs off on. Everything else is the engineer's to read **at edit time** — pre-reading code whose *contract you don't change* is a read done twice.
+Read deep on three things only: **blast radius**, **invariants** the change must preserve, **insertion points** — the safety-critical subset the gate signs off on. Everything else the engineer reads **at edit time**; pre-reading code whose *contract you don't change* is a read done twice.
 
-So when a file is in scope but its internals don't constrain the plan — a contained edit, a flow you won't alter, a helper you'll call but not change — **don't walk it here.** Write a one-line pointer in `plan.md > ## To explore at implement` (*what to read · why it was safe to defer*) and move on. That section is the sanctioned home for deferral, not a confession of laziness: it tells the engineer exactly where to go deep, and it keeps `## Current state` to the load-bearing subset (the "stop when actionable for the engineer" bar below — now with somewhere to put what you stopped short of). What you write there is **instead of** walking those areas, not in addition — the Current state shrinks to the blast-radius subset, it does not grow a second list.
+A file in scope whose internals don't constrain the plan (a contained edit, a flow you won't alter, a helper you call but don't change) → **don't walk it here.** Write a one-line pointer in `plan.md > ## To explore at implement` (*what to read · why safe to defer*) — **instead of** walking it, so `## Current state` shrinks to the blast-radius subset rather than growing a second list.
 
-Depth bar: **(a)** gate can make a sound go/no-go, **(b)** approach is feasible, **(c)** blast radius is known. Not "know the file." When approach is uncertain — read a thin feasibility slice, then defer the rest. **Never defer a blast-radius invariant** — that belongs in `## Current state`, mapped and cited. Defer mechanics, never safety.
+Depth bar: **(a)** gate can make a sound go/no-go, **(b)** approach is feasible, **(c)** blast radius is known — not "know the file". Uncertain approach → read a thin feasibility slice, then defer. **Never defer a blast-radius invariant** — it belongs in `## Current state`, mapped and cited. Defer mechanics, never safety.
 
 ## The LSP-walk technique
 
@@ -232,12 +232,4 @@ When you do draw one, put it directly under the `## Current state` heading (befo
 - **Treating the type signature as the invariant** — invariants are what the compiler *can't* tell you (ordering, idempotency, error semantics).
 - **Bug path that's just the stack trace** — mark the data-turned-wrong step with `← BUG`, often *above* the symptom.
 
-## When to skip Current state
-
-The principle table is the source of truth. As a quick reference:
-
-- **Greenfield** `feat` (always XS/S) — entirely new files in an isolated module, no edits to existing code → skip. **A brownfield `feat` that *edits* existing code does NOT skip even at XS/S** — write the proportional note (entry point + blast radius of the touched code); the `field`, not the size, is the trigger.
-- `chore` / `docs` not touching live code paths → skip.
-- `spike` → skip (write findings to `recommendations.md` instead).
-
-Everything else (all brownfield work): write the section — full for M/L + refactor/fix, proportional for a brownfield feat at XS/S. When borderline, write it — three minutes spent now saves a cycle later.
+Skip triggers (greenfield / chore-docs off live paths / spike) live in `SKILL.md > principle 3`.

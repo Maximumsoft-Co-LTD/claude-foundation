@@ -1,155 +1,95 @@
 # Plan Self-Review
 
-Run before setting `Status: draft` in `plan.md`. Filters known failure modes that otherwise surface at review time.
+Run before `Status: draft` in `plan.md`. Filters failure modes that otherwise surface at review time. ~30s for XS/S, ~2min for L. Walk in order; if any fails, fix before draft.
 
-## The six scans
+## Scan 1 — Anti-placeholder
 
-Walk in order. ~30 seconds for XS/S, ~2 minutes for L.
-
-### Scan 1 — Anti-placeholder
-
-Search the entire plan for these strings. Every hit is a fix-before-draft:
+Search the whole plan. Every hit is a fix-before-draft:
 
 | Pattern | Why it's bad |
 |---------|--------------|
-| `TBD`, `TODO`, `???` | A placeholder is a hole. Either fill it, move it to `Out of scope`, or replace with an inline `[NEEDS CLARIFICATION: <who> — <what>]` marker in spec.md AT THE SPOT it matters. Plans should not carry placeholders past `Status: draft`. |
-| `appropriate error handling`, `proper validation`, `as needed`, `where appropriate` | Vague — no engineer can implement "appropriate". State the actual behaviour. |
-| `see spec`, `as discussed`, `per the design` | Forces reader to dereference. Plan should be self-contained for the slice it owns. |
+| `TBD`, `TODO`, `???` | A placeholder is a hole. Fill it, move to `Out of scope`, or replace with an inline `[NEEDS CLARIFICATION: <who> — <what>]` in spec.md at the spot it matters. |
+| `appropriate error handling`, `proper validation`, `as needed`, `where appropriate` | Vague — no one can implement "appropriate". State the actual behaviour. |
+| `see spec`, `as discussed`, `per the design` | Forces a dereference. The plan is self-contained for the slice it owns. |
 | `etc.`, `and so on`, `among others` | Hides scope. List it or scope it out. |
-| `path/to/file`, `foo/bar`, `<file>` | Template residue. Replace with a real `path#anchor` (symbol or unique snippet) or delete the bullet. |
-| `e.g.`, `for example` *in tasks* | tasks are imperative actions, not illustrations. Move examples to `Summary`. |
-| `should`, `would`, `might` *in tasks* | tasks are commitments, not hedges. "Add `getUserById` at `src/users.ts#getUserById`", not "should probably add a lookup". |
-| `consider X`, `think about Y` *in tasks* | tasks are decisions already made. If it still needs deciding, it's an `Open question` in spec, not a task. |
+| `path/to/file`, `foo/bar`, `<file>` | Template residue. Replace with a real `path#anchor` or delete the bullet. |
+| `e.g.`, `for example` *in tasks* | Tasks are actions, not illustrations. Move examples to `Summary`. |
+| `should`, `would`, `might` *in tasks* | Tasks are commitments. "Add `getUserById` at `src/users.ts#getUserById`", not "should probably add a lookup". |
+| `consider X`, `think about Y` *in tasks* | Tasks are decisions made. Still deciding → it's an `Open question` in spec. |
 
-If any pattern appears in `Summary`, that's usually OK — `Summary` carries the *why* and may use hedging. The hard rule is **the `tasks.md` tasks must be placeholder-free**.
+Hedging in `Summary` is usually OK (it carries the *why*). The hard rule: **`tasks.md` tasks are placeholder-free**.
 
-### Scan 2 — Requirement coverage: acceptance criteria + Definition of Done
+## Scan 2 — Requirement coverage: AC + Definition of Done
 
-Tag presence is the floor; sufficiency is the bar. Open `spec.md > User Stories`. For each acceptance scenario (`AC#`):
+Tag presence is the floor; sufficiency is the bar. For each acceptance scenario (`AC#`) in `spec.md > User Stories`:
 
-1. Search `tasks.md` for the AC's number (`[AC1]`, `[AC2]`, ...).
-2. Confirm at least one task carries that tag.
-3. Read those tasks. Taken *together*, do they fully deliver the scenario — not merely touch it? If the connection is hand-wavy, the task is too abstract — split it.
-4. Confirm the scenario's *acceptance check actually runs*: at least one tagged task's `verify:` clause exercises the `Then <outcome>`. A tagged AC with no verify that checks it is coverage on paper only.
-5. **Cover the boundary/error scenario and any measured target.** When the AC has a separate boundary/error scenario, the happy path is not enough: a task must deliver the unhappy path AND a `verify:` must exercise it (feed the bad input / hit the limit / send the unauthorized caller, assert the recorded behaviour). When the AC carries a `measured:` perf/security/a11y target, a task's verify runs that measurement. An AC whose boundary scenario or measured target has no delivering+verifying task is the silent-guess gap this scan exists to catch.
+1. Search `tasks.md` for its number (`[AC1]`, …). Confirm ≥ 1 task carries the tag.
+2. Read those tasks — taken *together*, do they **fully deliver** the scenario, not merely touch it? Hand-wavy connection → task too abstract, split it.
+3. Confirm the acceptance check *runs*: ≥ 1 tagged task's `verify:` exercises the `Then <outcome>`. A tagged AC with no verify checking it is coverage on paper only.
+4. **Cover the boundary/error scenario + any measured target.** A separate boundary/error scenario needs a task that delivers the unhappy path AND a `verify:` exercising it (feed bad input / hit the limit / send the unauthorized caller). A `measured:` perf/security/a11y target needs a verify that runs the measurement.
 
-If an AC has no task:
-- The plan is incomplete → add the tasks.
-- OR the AC is out of scope for this run → state it in `Out of scope` and confirm with the orchestrator/user.
+If an AC has no task → add tasks, or state it in `Out of scope` and confirm with orchestrator/user. If a task has no AC tag → tag `[DoD]` if it delivers a `Definition of Done` item (telemetry, doc, flag), else delete/move to `FOLLOWUPS.md`, or add the missing AC to spec first.
 
-If a task has no AC tag:
-- It may legitimately deliver a `spec.md > Definition of Done` item (telemetry, a doc, a rollback flag — these don't thread through `[AC#]` tags) → tag it `[DoD]` so it doesn't read as scope-creep.
-- Else the step doesn't earn its place → delete it, OR it's scope-creep → move to `FOLLOWUPS.md`.
-- OR the spec is missing an AC the work actually delivers → go back and add the AC to spec first, then re-tag.
+**Definition-of-Done coverage** (skip if the spec has none). DoD items carry no `[AC#]`, so the AC checks miss a missing one and review catches it a cycle later. For each DoD item: a `[DoD]` task delivers the artifact AND its `verify:` confirms it (metric emits, doc path present, flag toggles), OR it's genuinely post-ship with an explicit deferred note in `Summary`/`Out of scope`.
 
-**Definition-of-Done coverage** (skip if the spec has no `Definition of Done`). DoD items are deliverables but carry no `[AC#]` tag, so the AC checks above won't catch a missing one — and review (`lead` Mode B) only catches it in the diff, a cycle later. For each DoD item: either a `[DoD]`-tagged task delivers the named artifact AND its `verify:` confirms it exists (the metric emits, the doc path is present, the flag toggles), OR the item is genuinely post-ship ("watch error rate for a week") and carries an explicit one-line deferred note in `Summary`/`Out of scope`. An in-run DoD item with neither is the gap this check exists to catch — fix it before draft, not at review.
+Net: every task ↔ ≥ 1 AC **or** a DoD item · every AC ↔ ≥ 1 task · every in-run DoD item ↔ a delivering+verifying task (or an explicit deferred note).
 
-Every task ↔ at least one AC **or** a DoD item. Every AC ↔ at least one task. Every in-run DoD item ↔ a delivering+verifying task (or an explicit deferred note).
+## Scan 3 — Diagram ↔ tasks alignment
 
-### Scan 3 — Diagram ↔ tasks alignment
-
-Walk the `Architecture diagram`:
-
-- Every node marked `★` (new piece) → must appear as a `tasks.md` task with `(new)`.
-- Every node marked `~~strikethrough~~` (removal) → must appear as a `tasks.md` task with `(delete)`.
-- Every `(new)` task in `tasks.md` → must appear as a `★` node in the diagram.
-- Every `(delete)` task → must appear with strikethrough.
-
-Edit tasks (existing files modified) don't have to be in the diagram unless the edit is a structural change — but if a file is edited in a way the diagram should show (new exported function, new dependency arrow), surface it with a labeled edge or annotation.
+- Every `★` node → a `(new)` task, and vice versa.
+- Every `~~strikethrough~~` node → a `(delete)` task, and vice versa.
+- Edit tasks needn't be in the diagram unless the edit is structural (new exported function, new dependency arrow) — then surface it with a labeled edge.
 
 XS plans where Diagram = `Impact: N/A` skip this scan.
 
-### Scan 4 — Current-state coverage
+## Scan 4 — Current-state coverage
 
-Skip this scan when principle 3 says skip — i.e. **greenfield** work (a feat in isolated new files with no edits to existing code), chore/docs not touching live code, or spike. A brownfield feat that edits existing code does NOT skip even at XS/S (it carries the proportional note). Otherwise walk it.
+Skip when principle 3 says skip (greenfield, chore/docs not touching live code, spike). A brownfield feat editing existing code does NOT skip (it carries the proportional note). Otherwise, for each task's `(new|edit|delete)`:
 
-Open `## Current state` and `tasks.md` side by side. For each task's `(new | edit | delete)` disposition:
-
-- **`new`** — no current-state coverage required (the file doesn't exist yet).
-- **`edit`** — the file must appear in one of:
-  - the `Data / control flow` bullets (i.e., this file is in the flow we walked), OR
-  - the `Invariants` list (i.e., the edit preserves or breaks a named invariant on this file), OR
-  - `## To explore at implement` — the edit there is **contained**: you mapped its blast radius but deliberately deferred its internals for the engineer to read at edit time (`references/current-state.md > Boundary-depth, not full-depth`). Valid **only** when no blast-radius invariant the change depends on lives in that file. If one does, deferring it is the gap this scan catches — move it into `Current state`, mapped and cited.
-  If the edit is in none of the three, ask: do we actually understand what the current file does at the line we're editing? If yes and it constrains the change, add the bullet/invariant; if yes and it's contained, defer it explicitly to `## To explore at implement`. If no, walk it with LSP now.
-- **`delete`** — must appear in the caller-walk (we know nothing else points at it) AND in the as-is flow (we know what it currently does at the call site).
+- **`new`** — no coverage required (file doesn't exist yet).
+- **`edit`** — the file must appear in `Data/control flow`, OR `Invariants`, OR `## To explore at implement` (a **contained** edit: blast radius mapped, internals deferred — valid **only** when no blast-radius invariant the change depends on lives there; if one does, move it to `Current state`, mapped and cited). In none of the three → do we understand the current file at the edited line? If yes + it constrains → add the bullet/invariant; if yes + contained → defer explicitly; if no → walk it with LSP now.
+- **`delete`** — must appear in the caller-walk (nothing else points at it) AND the as-is flow (what it does at the call site).
 
 Then walk `## Current state` itself:
+- Every invariant has a `path#anchor` ("the hook fails open on missing `jq` at `dev-state-mark.sh#"command -v jq"`", not "the hook fails open").
+- The caller walk gives a concrete count (0 / N / "many — listing non-obvious") per contract-changing symbol.
+- `refactor`: Anti-goals tie to Approach's equivalence statement (same invariants, opposite sides). `fix`: Bug path has `← BUG` on the wrong-data step, not the symptom.
+- If the orchestrator provided **plan-prep findings**, Current state **synthesises** them (re-cited `path#anchor`, load-bearing claims spot-checked) — do NOT re-derive a prep-covered point; that defeats the push-prep speed-up.
 
-- Every invariant has a `path#anchor` citation. "The hook fails open" is not an invariant; "the hook fails open on missing `jq` at `.claude/hooks/dev-state-mark.sh#"command -v jq"`" is.
-- The caller walk gives a concrete number (0 / N / "many — listing non-obvious") for every symbol whose contract changes. "Some callers" is not a count.
-- For `refactor`: the Anti-goals list ties to the Approach's behaviour-equivalence statement — both name the same invariants from opposite sides.
-- For `fix`: the Bug path has a `← BUG` marker on the wrong-data step, not on the symptom step.
-- If the orchestrator provided **plan-prep findings**, Current state **synthesises** them — re-cited `path#anchor`, load-bearing claims spot-checked — and does **NOT** re-derive a point the prep already mapped. A from-scratch re-walk of a prep-covered point defeats the push-prep speed-up; cite the prep, don't redo it.
+Any check failing = paraphrase, not mapping — re-walk with LSP and cite.
 
-If any check fails, the section is paraphrase rather than mapping — re-walk with LSP and cite.
+## Scan 5 — Verify-per-task completeness
 
-### Scan 5 — Verify-per-step completeness
+Every task: has a `verify:` (required S/M/L; optional XS) that is a **command** or a **concrete observable**? `manually check`/`visually inspect`/`looks correct` → reject; name what you check for, or split until each piece is verifiable atomically.
 
-Walk every task. For each:
+## Scan 6 — Summary reads for a non-technical reader
 
-- Has a `verify:` clause? (Required for S/M/L; optional for XS.)
-- Verify clause is a **command** (`npm test src/foo.test.ts`, `curl -s :8080/health | jq .status`, `psql -c "\d users"`) OR a **concrete observable** (`column email_verified exists`, `feature flag returns true for opt-in users`)?
-- If verify is `manually check`, `visually inspect`, `looks correct` → reject. Name what you're checking for, or the verify isn't real.
+- `## Summary` + `## Technical Context` + `## Gate check` all present.
+- **Summary** is plain language — no `path#anchor`, no symbol a stakeholder wouldn't know (the cited "before" is `## Current state`).
+- **Summary** links the spec's User Stories rather than restating the product win.
+- **Gate check** names the `rules/fundamentals.md` layers crossed (trust boundary, new dependency, a11y/concurrency/db/observability).
+- Summary describes *this* change, not "improves the system". A reader who stops after Summary knows what changes and how.
 
-If a task doesn't have a clean verify, split until each piece is verifiable atomically.
-
-### Scan 6 — Summary reads for a non-technical reader
-
-Check:
-
-- `## Summary` + `## Technical Context` + `## Gate check` are all present.
-- **Summary** is *plain language* — no `path#anchor`, no symbol names a stakeholder wouldn't know. The `path#anchor`-cited version of "before" is `## Current state`; Summary is the prose summary, not a second copy of it.
-- **Summary** links the spec's User Stories rather than restating the product win (a restated benefit drifts from its source).
-- **Gate check** names the `rules/fundamentals.md` layers the work crosses (trust boundary, new dependency, a11y/concurrency/db/observability) — a violation needs justification, not silent omission.
-- The Summary actually describes *this* change — not a generic "improves the system". A reader who stops after Summary should know what changes and how.
-
-A failing Summary usually means the planner jumped to tasks without framing the change — fix before draft.
+A failing Summary usually means the planner jumped to tasks without framing the change.
 
 ## Extra checks for M / L plans
 
-### Scaffold matches the tasks (M/L — required section)
+**Scaffold matches tasks (M/L — required):** `## Scaffold` exists · every `★` file ↔ a `(new)` task · every signature is one a task fills · every decision-bearing type (union/value object/state enum) shown as a **definition**, not just a consuming signature · block stays signatures + type shapes + ≤1-line stub bodies inside the fence · no separate `## Folder structure` duplicating the tree.
 
-The `## Scaffold` section (principle 10) is the concrete skeleton the gate signs off and the engineer builds first — so it must agree with the rest of the plan, not drift from it. Walk it:
+**Alternatives honest (M/L feat/refactor):** rejected options are plausible, not strawmen — each names *why*/*by how much* (benchmark, complexity, ecosystem maturity). Only one reasonable approach → a one-line note in `Summary` and skip the section.
 
-- The section **exists** for M/L. A missing Scaffold means the reviewer approves a long build from prose alone and the engineer invents the layout — the failure principle 10 exists to prevent.
-- Every `★` (new file) in the tree maps to a `(new)` task in `tasks.md` (and vice versa) — the same `★`↔`new` correspondence Scan 3 runs for the diagram.
-- Every signature shown is one a task actually fills. A signature with no task behind it is a contract nobody builds; a `(new)` file a task creates but the Scaffold omits is a hole in the skeleton.
-- Where a type the signatures consume carries a decision (discriminated union / value object / state enum), its **definition** is shown — not just the consuming signature. A signature that takes `ChargeResult` with the union defined nowhere leaves the most expensive shape decision (illegal-state-representable) unreviewed at the gate.
-- The block stays **signatures + type shapes + at most a one-line stub body** (`throw new Error('not implemented')` / `raise NotImplementedError`), inside the fence. Real bodies are early implementation smuggled past the gate — move them to the tasks.
-- No separate `## Folder structure` section duplicates the tree (for M/L the tree lives in Scaffold; Folder structure is the new-project / S fallback).
+**Rollback real (L):** anything beyond "revert the commit" reads as a runbook — an on-call engineer could execute it from the text at 2am, steps copy-pasteable and ordered, `Data loss?` honest (almost nothing that wrote data is truly "no data loss").
 
-### Alternatives section is honest (M/L feat/refactor)
+**Dependencies concrete:** `External: pg-listen >= 1.7.2 (LISTEN/NOTIFY added in 1.7)`, not "some library". Same pinning applies to any package a **task** introduces — exact existing version, verify confirms it resolves (lockfile / `npm ls pkg@ver`). Unpinned/unconfirmed = how a hallucinated or typo-squatted dep lands.
 
-If you wrote `Alternatives considered`, the rejected options must be plausible — not strawmen. "Considered X, rejected because it would be slower" without naming *why* or *by how much* is a strawman. Either give a real reason (benchmark, complexity argument, ecosystem maturity) or drop the section.
+**Phases coherent (L with Phases):** each phase has a clear name (`schema migration`, `write path`, `read path`, `consumer cutover`) and is roughly independently committable. A "miscellaneous" phase is a smell.
 
-If there really *was* only one reasonable approach, write a one-line note in `Summary` saying so (`Approach is the only obvious path because <constraint>`) and skip the section.
+## When to rewrite
 
-### Rollback is real (L plans)
-
-If `Rollback` says anything beyond "revert the commit", read it as a runbook:
-
-- Could an on-call engineer at 2am execute it from the text alone?
-- Are the steps copy-pasteable, in order, with no implicit context?
-- Is `Data loss?` honest? (Almost no rollback is truly "no data loss" if the change wrote anything — be precise about *what* might be lost.)
-
-### Dependencies are concrete
-
-`External: some library` is not a dependency — `External: pg-listen >= 1.7.2 (for LISTEN/NOTIFY support added in 1.7)` is. `Internal: prior PR` is not a dependency — `Internal: must land after PR #482 (schema migration adds users.tenant_id)` is.
-
-The same pinning rule applies to any package a **task** introduces, not just the Dependencies section: an exact version that exists, with the task's verify confirming it resolves (lockfile entry / `npm ls pkg@ver`). An unpinned or unconfirmed package name in a task is how a hallucinated or typo-squatted dependency lands.
-
-### Phases are coherent (L plans with optional Phases)
-
-If you grouped tasks under Phases (>12 steps in L), each phase should have a clear name (`schema migration`, `write path`, `read path`, `consumer cutover`) and be roughly independently committable. A phase that's "miscellaneous" is a smell — either it doesn't deserve its own phase, or the steps in it should be split across the named phases.
-
-## When to fail the self-review and rewrite
-
-If more than 3 items need fixing, re-draft rather than patch in place. If Scan 4 (Current-state) is failing, fix it *first* — most downstream gaps trace back to the planner not knowing what the existing code does.
+More than 3 items need fixing → re-draft rather than patch. If Scan 4 (Current-state) fails, fix it *first* — most downstream gaps trace to the planner not knowing what the existing code does.
 
 ## The final question
 
-Before marking `Status: draft`:
+> Could an engineer who has never seen the spec implement this without asking anything except ambiguities already flagged with `[NEEDS CLARIFICATION]`?
 
-> Could an engineer who has never seen the spec implement this without asking anything except about ambiguities already flagged with `[NEEDS CLARIFICATION]` markers?
-
-If yes → draft. If no → which scan caught it? Run that scan again. If unsure → run all scans.
+Yes → draft. No → which scan caught it? Run that scan again. Unsure → run all scans.
