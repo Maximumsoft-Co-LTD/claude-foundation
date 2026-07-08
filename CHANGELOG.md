@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`plan-writing` skill tersed 1028 → 849 lines (~17%) — same rules, far shorter trigger-time read.** A two-pass minimization of the skill `lead` loads at plan time. Pass one compressed prose and de-duplicated repeated rules (`SKILL.md` 270 → 208, `references/size-tiering.md` 168 → 119, `references/self-review.md` 155 → 95; the greenfield S-cap rule went from ~6 restatements to one canonical definition + pointers). Pass two removed duplicate/back-reference *sections* outright: the `Pre-flight checklist` (a restatement of the 10 principles — kept only the non-dup `Draft order`), `When to skip` (duplicated the frontmatter skip list), `size-tiering`'s `Edge cases` (merged into `Signals`, its three overlapping cases folded in as inline examples), and `current-state`'s `When to skip Current state` (a self-labeled "quick reference" of principle 3). Every principle (numbers unchanged), gating/tiers/scorecard/diagram table, worked example, and cross-file anchor (`Section gating by Size`, `Greenfield vs brownfield`, `Boundary-depth`) is preserved — only prose and duplicate headings were cut. Files: `.claude/skills/plan-writing/{SKILL.md,references/size-tiering.md,references/self-review.md,references/current-state.md}`.
+
 ## [2.6.3] - 2026-07-06
 
 ### Changed
