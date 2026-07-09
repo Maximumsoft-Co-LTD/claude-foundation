@@ -25,4 +25,3 @@ The fundamentals are applied via the always-on router `.claude/rules/fundamental
 
 - **LSP first** — when an LSP tool is available, use it for diagnostics, go-to-definition, and references before grep/read. (From `~/.claude/CLAUDE.md`.)
 - **`coding-discipline` wraps every code task** and runs first as the conduct check (assumptions stated → minimum non-speculative code → surgical diff → verifiable definition of done); it routes to the construction/debug/refactor skills per their rules and must not re-teach them.
-- **Ignore the OpenWolf parent directive** — the parent `/Users/hashtagf/Desktop/Work/CLAUDE.md` tells every session to read `.wolf/OPENWOLF.md` / `.wolf/cerebrum.md` / `.wolf/anatomy.md`. No `.wolf/` tree exists in this project — do not act on those instructions here.

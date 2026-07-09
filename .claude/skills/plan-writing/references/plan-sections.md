@@ -5,14 +5,14 @@
 Add a section ONLY when its trigger fires; delete it otherwise (no empty headers, no "N/A").
 
 **Two per-section axes** (columns below):
-- **Reader** — `eng` = engineer reads it at implement (**build-time**, pulled per-task via `[ref:]`); `gate` = **plan-time**, only gate/reviewer/orchestrator read it. Always-required sections: `## Summary` + `## Technical Context` are engineer up-front reads; `## Architecture diagram` + Scaffold are `eng` (pulled per-task); `## Gate check`/`## Phases`/`## Fanout plan` are `gate`.
+- **Reader** — `eng` = engineer reads it at implement (**build-time**, pulled per-task via `[ref:]`); `gate` = **plan-time**, only gate/reviewer/orchestrator read it. Always-required sections: `## Summary` + `## Technical Context` are engineer up-front reads (+ `## Current state` up-front for brownfield orientation — pointer target when `context.md` exists); `## Architecture diagram` + Scaffold are `eng` (pulled per-task); `## Gate check`/`## Phases`/`## Fanout plan` are `gate`.
 - **Budget** — a prose cap (concretizes `rules/fundamentals.md > Output discipline`); cap prose, never drop a consumed field (`[AC#]`, `path#anchor`, `verify:`, mermaid).
 
 | Section | Reader | Budget | Include WHEN | Placement |
 |---|---|---|---|---|
 | Reviewer summary | gate | ≤10 lines | Size=L OR ≥3 decisions need sign-off (goal · decisions needing sign-off · top risks) | before Summary |
 | Hard-to-reverse decisions | gate | 1 line each | schema/migration · public API/event contract · architecture/topology · destructive script (decision · why now · cost to reverse) | after Summary; gate confirms each |
-| Current state | eng | ≤~15 lines | brownfield: full for M/L OR refactor OR fix; proportional note for brownfield feat at XS/S. Skip greenfield. LSP-walk, cite `path#anchor`: entry points · flow 3–7 hops · blast radius · invariants — **digest the invariants into `tasks.md > ## Guardrails`** | before Diagram |
+| Current state | eng (up-front, brownfield) | ≤~15 lines | brownfield: full for M/L OR refactor OR fix; proportional note for brownfield feat at XS/S. Skip greenfield. LSP-walk, cite `path#anchor`: entry points · flow 3–7 hops · blast radius · invariants — **digest the invariants into `tasks.md > ## Guardrails`**; engineer reads this up-front to orient. **When `context.md` exists → pointer (`> Full map: context.md > ## Current state`) + overlay only, never a paste.** | before Diagram |
 | To explore at implement | eng | 1 line each | brownfield deferred internals: pointer list `path/area — what to read — why safe to defer` (no blast-radius invariant — those go to Guardrails) | after Current state |
 | References / examples | eng | 1 line each | spec carries it; restate repo refs as `path#anchor` + tag the `tasks.md` tasks `[ref: …]` | after Architecture diagram |
 | Scaffold | eng | tree + signatures; stub body ≤1 line | M/L required · optional mini for S touching existing code · skip XS. Target file tree (★ new · ~ edited) + each new/changed file's key signatures + inlined decision-bearing types. Subsumes Folder structure for M/L | after Diagram |

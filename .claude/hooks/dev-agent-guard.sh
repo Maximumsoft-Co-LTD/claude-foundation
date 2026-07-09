@@ -43,14 +43,14 @@
 #      workers by name, so fork is never the sanctioned path mid-run. Outside a
 #      /dev run fork is a normal harness feature and passes through.
 #
-#   6. subagent_type="general-purpose" during an active /dev run without
-#      model=sonnet. general-purpose has no `model:` frontmatter, so an absent
-#      or non-sonnet model inherits the main-session tier — an opus main session
-#      then runs every fanout / inline-fallback / surface helper on opus. /dev
-#      only needs general-purpose at sonnet (parallel read-and-judge workers),
-#      so require it explicitly. Named team-* keep their own tier via Case 4;
-#      this sonnet floor only governs the generic/inline-fallback spawn. Outside
-#      a /dev run general-purpose passes through at any tier.
+#   6. subagent_type in {general-purpose, Explore} on any spawn without
+#      model=sonnet — in or out of a /dev run. Neither built-in has a `model:`
+#      frontmatter, so an absent or non-sonnet model inherits the main-session
+#      tier — an opus main session then runs the search/explore helper on opus.
+#      These generic built-ins only ever need sonnet, so require it explicitly.
+#      Named team-* keep their own tier via Case 4; this sonnet floor only
+#      governs the generic built-ins. A job that genuinely needs a higher tier
+#      should spawn a named worker instead.
 #
 # This hook sits on the critical path of EVERY Agent spawn, so it does the least
 # work possible: a single jq parse pulls tool_name + subagent_type (both
@@ -183,13 +183,13 @@ case "$subagent_type" in
     ;;
 esac
 
-# Cases 5 & 6 both key off "is a /dev run active?" — compute it once here. Both
-# a fork and a bare general-purpose spawn would inherit the main agent's tier
-# (opus) inside a run, bypassing the worker `model:` frontmatter; outside a run
-# both are normal harness features and pass through untouched. The glob runs
-# only for these two subagent_types, so the common spawn never pays for it.
+# fork and the generic built-ins (general-purpose, Explore) all inherit the
+# main agent's tier (opus), bypassing the worker `model:` frontmatter. They
+# diverge on scope: fork is only a problem inside a /dev run (Case 5), so
+# compute "is a run active?" once here; the generic built-ins are pinned to
+# sonnet on every spawn (Case 6) and ignore the run state.
 case "$subagent_type" in
-  fork|general-purpose)
+  fork|general-purpose|Explore)
     PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
     WF_DIR="$PROJECT_DIR/.workflow"
     active=""
@@ -213,17 +213,17 @@ case "$subagent_type" in
       exit 0
     fi
 
-    # Case 6: general-purpose inside an active /dev run must set model=sonnet.
-    # general-purpose has no `model:` frontmatter, so an absent or non-sonnet
-    # model inherits the main-session tier — an opus main session then runs every
-    # fanout / inline-fallback / surface helper on opus. /dev only ever needs
-    # general-purpose at sonnet (parallel read-and-judge workers), so require it
-    # explicitly and block anything else. (Named team-* keep their own tier via
-    # Case 4; the sonnet floor here only governs the generic/inline-fallback spawn.)
-    if [[ -n "$active" && "$subagent_type" == "general-purpose" ]]; then
+    # Case 6: the generic search/explore built-ins (general-purpose, Explore) must
+    # set model=sonnet on every spawn — in or out of a /dev run. Neither has a
+    # `model:` frontmatter, so an absent or non-sonnet model inherits the main-
+    # session tier — an opus main session then runs the search/explore helper on
+    # opus. They only ever need sonnet, so require it explicitly and block anything
+    # else. (Named team-* keep their own tier via Case 4; a job that genuinely needs
+    # a higher tier should spawn a named worker, not a generic built-in.)
+    if [[ "$subagent_type" == "general-purpose" || "$subagent_type" == "Explore" ]]; then
       gp_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
       if [[ "$gp_model" != "sonnet" ]]; then
-        reason="BLOCKED by /dev guard: subagent_type=\"general-purpose\" inside an active /dev run must set model=\"sonnet\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so an opus main session silently runs the fanout / inline-fallback / surface helper on opus. Pass model=\"sonnet\" on the general-purpose spawn."
+        reason="BLOCKED by agent guard: subagent_type=\"$subagent_type\" must set model=\"sonnet\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so an opus main session silently runs a search / explore / inline-fallback helper on opus. Pass model=\"sonnet\"; if the job genuinely needs a higher tier, spawn a named worker instead."
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi

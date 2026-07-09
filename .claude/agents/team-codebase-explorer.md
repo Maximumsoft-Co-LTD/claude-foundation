@@ -10,7 +10,7 @@ Read-only codebase exploration for the `/dev` workflow. Return facts `pm`/`lead`
 
 **Prompt must include:** run id+type (if known) · user intent or spec excerpt · exact scope (integration point, feature area, path set, symbol, route, or workflow) · what caller needs: `spec-context`, `plan-current-state`, or both. Too broad → `BLOCKER: scope too broad for codebase exploration — need one feature area, integration point, path set, or symbol.`
 
-**Method:** (1) Read CLAUDE.md if present. (2) LSP first for definitions + references when symbols named. (3) Grep for route names, config keys, strings, event names, file paths. (4) Capture only load-bearing facts: entry points with `path#anchor`; data/control flow in 3-7 hops; callers + blast radius for contracts that may change; invariants the current code relies on; existing tests/fixtures; nearby patterns to mirror or avoid.
+**Method:** (1) LSP first for definitions + references when symbols named. (2) Grep for route names, config keys, strings, event names, file paths. (3) Capture only load-bearing facts: entry points with `path#anchor`; data/control flow in 3-7 hops; callers + blast radius for contracts that may change; invariants the current code relies on; existing tests/fixtures; nearby patterns to mirror or avoid.
 
 **Path anchor rule:** every code claim must use a re-resolvable handle — **symbol** (`src/users.ts#getUserById`) or **unique quoted snippet/heading** (`dev-state-mark.sh#"command -v jq"`), not raw line numbers. Line MAY be appended as a write-time hint (`#getUserById (~L42)`), never as sole handle.
 

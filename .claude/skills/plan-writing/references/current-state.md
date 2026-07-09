@@ -2,7 +2,7 @@
 
 Reverse-engineer the existing code *before* designing the change. Deep-dive for `plan-writing > principle 3`: LSP queries, hop count, what counts as an invariant, and worked examples per Type.
 
-> **Brownfield M/L — mapped once, shared.** Produced **once** as `.workflow/<id>/context.md` (step 7a), read by every plan slice (`lead`/`qa`/`uxui`). When it's in your prompt: synthesise + cite, spot-check load-bearing claims (re-resolve a sample), verify only what it misses. **Evidence, not authority** — you own the final map; an unre-resolvable claim is a finding.
+> **Brownfield M/L — mapped once, shared.** Produced **once** as `.workflow/<id>/context.md` (step 7a), read by every plan slice (`lead`/`qa`/`uxui`) **and by the engineer at implement (orientation)**. When it's in your prompt: synthesise + cite, spot-check load-bearing claims (re-resolve a sample), verify only what it misses. **Don't duplicate it** — `plan.md > ## Current state` points to it (`> Full map: context.md > ## Current state`) + this change's overlay only, never a re-paste. **Evidence, not authority** — you own the final map; an unre-resolvable claim is a finding.
 
 ## Boundary-depth, not full-depth — read less, defer the rest
 

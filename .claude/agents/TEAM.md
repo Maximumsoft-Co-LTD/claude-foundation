@@ -43,6 +43,10 @@ Forked: **2026-05-21**. Source plugin: **`pr-review-toolkit`** at `~/.claude/plu
 
 Fork date: 2026-05-21
 
+## Local edits (post-fork)
+
+- **2026-07-09** — added `LSP` to `team-code-reviewer`, `team-silent-failure-hunter`, `team-type-design-analyzer` (read-only: go-to-def / find-references for cross-diff verification). Does **not** touch the `Agent`/`Write`/`Bash` boundaries — these workers stay report-only and, except `team-code-reviewer`, still hold no `Agent`.
+
 ## Drift awareness
 
 Upstream parity is **not** enforced for forked agents. Drift is expected — the local forks are owned by this repo and pick up local conventions (this repo's `CLAUDE.md` rules, logging functions, test framework). Foundation-native workers (`team-codebase-explorer`, `team-best-practice-researcher`) have no upstream-parity obligation. The rules:

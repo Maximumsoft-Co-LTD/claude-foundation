@@ -1,7 +1,7 @@
 ---
 name: team-silent-failure-hunter
 description: Use this agent to identify silent failures, inadequate error handling, and inappropriate fallback behavior in code changes. Invoke proactively after completing work that involves error handling, catch blocks, error callbacks, fallback logic, or any code that could suppress errors — and when reviewing a PR whose diff contains try/catch or fallback paths.
-tools: Read, Grep
+tools: Read, Grep, LSP
 model: sonnet
 color: yellow
 ---

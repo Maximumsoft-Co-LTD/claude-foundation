@@ -1,7 +1,7 @@
 ---
 name: team-code-reviewer
 description: Use this agent to review code for adherence to project guidelines (CLAUDE.md), style, and best practices. Invoke proactively after writing or modifying code, before committing, or as a final pre-PR check. Specify which files or diff to focus on in the agent input (default is the unstaged `git diff`).
-tools: Read, Grep, Agent
+tools: Read, Grep, LSP, Agent
 model: sonnet
 color: green
 ---
