@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/dev` spawn guard now enforces model tier — a worker can no longer silently run on the wrong model.** `dev-agent-guard.sh` gains two cases. **Case 4:** a `model` override on a named worker (`pm`, `engineer`, `qa`, `retro`, `uxui`) must match that worker's pinned `model:` frontmatter — a `model` param outranks the agent-definition model, so without this an opus main session could silently run a sonnet-pinned worker on opus. `lead` stays exempt (the playbook tunes it sonnet↔opus per phase); the pinned value is re-read from disk each spawn, so flipping a worker's own `model:` needs no hook change. **Case 5:** `subagent_type="fork"` is blocked during an active `/dev` run — a fork inherits the main agent's model **and** context, bypassing worker frontmatter entirely, so an opus main session would drag opus onto every forked worker; outside a run, fork is a normal harness feature and passes through untouched. Both cases sit off the common spawn path (Case 4 adds one `jq` plus a `sed` only when a `model` param is present; Case 5 runs globbing only for a fork spawn), so a plain worker spawn still pays two reads. Files: `.claude/hooks/dev-agent-guard.sh`.
+
+### Changed
+
+- **`pm` worker promoted to `opus`** (was `sonnet`) — spec quality over spec cost for the one artifact every later phase is anchored on. Files: `.claude/agents/pm.md`.
+- **Phase-2 orchestration hardened for context discipline — the orchestrator stops re-reading its guide and stops pulling large payloads into its own context.** Four levers: (1) `references/phase-2-guards.md` is read **once** on entering step 10 and kept resident through the final gate (13a) — no per-step re-open; (2) the **changed-repo set** is computed once at step 11 (engineer's returned files, ground-truthed by one `git status --porcelain`) and **held for steps 12/13/13a** instead of recomputed downstream; (3) the **security trigger is decided name-only** — a `git diff -G'<sink tokens>' --name-only` pickaxe returns only the *files* whose added/removed lines carry a sink token, so a large diff body never enters the orchestrator's context (the boolean only picks whether to spawn `lead` security, which reads the actual code itself); (4) the **final full-suite gate captures only the exit code + a bounded tail** (`<cmd> 2>&1 | tail -40; echo "exit=${PIPESTATUS[0]}"`) rather than the whole suite stdout — a red tail still carries the failing lines. Files: `.claude/orchestrator.md`, `.claude/orchestrator/references/phase-2-guards.md`.
+
 ## [2.6.4] - 2026-07-08
 
 ### Changed

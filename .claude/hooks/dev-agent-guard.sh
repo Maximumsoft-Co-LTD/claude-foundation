@@ -26,13 +26,31 @@
 #      state.json" can name a DIFFERENT run than this spawn, so the check
 #      fails OPEN rather than block the wrong run with a stale id.
 #
+#   4. model override that contradicts a named worker's `model:` frontmatter.
+#      A `model` param outranks the agent-definition model, so the orchestrator
+#      (or a stray override) can silently run a sonnet-pinned worker on the
+#      opus main-session tier. Block when a non-exempt worker (pm, engineer,
+#      qa, retro, uxui) is spawned with model != its pinned frontmatter value.
+#      `lead` is exempt — the playbook tunes it sonnet<->opus per phase. Reads
+#      the pinned value from disk, so flipping a worker's own `model:` (e.g.
+#      pm -> opus) is honoured with no hook change.
+#
+#   5. subagent_type="fork" during an active /dev run. A fork inherits the main
+#      agent's model AND context, bypassing the worker frontmatter entirely, so
+#      an opus main session drags opus onto every forked worker. /dev spawns
+#      workers by name, so fork is never the sanctioned path mid-run. Outside a
+#      /dev run fork is a normal harness feature and passes through.
+#
 # This hook sits on the critical path of EVERY Agent spawn, so it does the least
 # work possible: a single jq parse pulls tool_name + subagent_type (both
 # newline-free tokens) in one process; the spawn-heavy `description` field is
 # only parsed in Case 2, where it's actually needed. The Case 3 freshness check
 # uses bash globbing + `-nt` (no subprocesses) plus one jq to read `size` for
-# the XS/S enforcement skip. Net: a non-/dev Agent spawn pays one jq; a /dev
-# worker spawn pays two (fields + size), never three.
+# the XS/S enforcement skip. Cases 4 (one jq for `model`, then a sed only when a
+# model param is present) and 5 (run globbing only for a fork spawn) are off the
+# common path. Net: a non-/dev Agent spawn pays one jq; a plain /dev worker
+# spawn pays two (fields + size); a model-override or fork spawn pays one extra
+# cheap read.
 
 set -euo pipefail
 
@@ -127,5 +145,52 @@ case "$subagent_type" in
     fi
     ;;
 esac
+
+# Case 4: a model override on a named /dev worker must match that worker's
+# pinned `model:` frontmatter, so an opus main session can't silently run a
+# sonnet-pinned worker on opus (a `model` param outranks the frontmatter).
+# `lead` is the sanctioned exception — the playbook tunes it sonnet<->opus per
+# phase; to give another worker that freedom, drop it from the list below.
+# Frontmatter-driven: flipping a worker's own `model:` (e.g. pm -> opus) needs
+# no change here — the pinned value is re-read from disk each spawn.
+case "$subagent_type" in
+  pm|engineer|qa|retro|uxui)
+    req_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
+    if [[ -n "$req_model" ]]; then
+      def="${CLAUDE_PROJECT_DIR:-$PWD}/.claude/agents/$subagent_type.md"
+      pinned="$(sed -n 's/^model:[[:space:]]*//p' "$def" 2>/dev/null | head -1 | tr -d '[:space:]')"
+      if [[ -n "$pinned" && "$req_model" != "$pinned" ]]; then
+        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. A model override here silently runs the wrong tier (e.g. the opus main session leaking onto a sonnet-pinned worker). Drop the model param so the frontmatter governs — only lead may vary sonnet/opus per phase. (To let $subagent_type vary too, remove it from the Case 4 list in dev-agent-guard.sh.)"
+        jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+        exit 0
+      fi
+    fi
+    ;;
+esac
+
+# Case 5: fork inside an active /dev run. A fork inherits the main agent's
+# model AND context, ignoring the worker's `model:` frontmatter entirely, so an
+# opus main session drags opus onto every forked worker. /dev always spawns
+# workers by name; block fork while a run is active. Outside /dev (no active
+# run) fork is a normal harness feature and passes through.
+if [[ "$subagent_type" == "fork" ]]; then
+  PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+  WF_DIR="$PROJECT_DIR/.workflow"
+  active=""
+  if [[ -n "${CLAUDE_DEV_RUN_ID:-}" && -f "$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json" ]]; then
+    active="1"
+  elif [[ -d "$WF_DIR" ]]; then
+    for f in "$WF_DIR"/*/state.json; do
+      [[ -f "$f" ]] || continue
+      [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
+      active="1"; break
+    done
+  fi
+  if [[ -n "$active" ]]; then
+    reason="BLOCKED by /dev guard: subagent_type=\"fork\" inside an active /dev run. A fork inherits the main agent's model and context and ignores the worker's agent-definition model:, so an opus main session silently runs a sonnet-pinned worker on opus. Spawn the worker by name instead (pm, lead, engineer, qa, retro; team-mode: uxui)."
+    jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+    exit 0
+  fi
+fi
 
 exit 0
