@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse guard for the /dev workflow.
 #
-# Catches three known failure modes when the orchestrator (main agent) delegates work:
+# Catches the following known failure modes when the orchestrator (main agent) delegates work:
 #
 #   1. subagent_type="orchestrator" — there is no orchestrator sub-agent;
 #      the main agent IS the orchestrator. Spawn would fail with
@@ -28,12 +28,14 @@
 #
 #   4. model override that contradicts a named worker's `model:` frontmatter.
 #      A `model` param outranks the agent-definition model, so the orchestrator
-#      (or a stray override) can silently run a sonnet-pinned worker on the
+#      (or a stray override) can silently run a cheaper-pinned worker on the
 #      opus main-session tier. Block when a non-exempt worker (pm, engineer,
-#      qa, retro, uxui) is spawned with model != its pinned frontmatter value.
-#      `lead` is exempt — the playbook tunes it sonnet<->opus per phase. Reads
-#      the pinned value from disk, so flipping a worker's own `model:` (e.g.
-#      pm -> opus) is honoured with no hook change.
+#      qa, retro, uxui, or any team-* fanout worker) is spawned with model !=
+#      its pinned frontmatter value — each keeps the tier its own agent file
+#      sets (the haiku analyzers stay haiku). `lead` is exempt — the playbook
+#      tunes it sonnet<->opus per phase. Reads the pinned value from disk, so
+#      flipping a worker's own `model:` (e.g. pm -> opus) is honoured with no
+#      hook change.
 #
 #   5. subagent_type="fork" during an active /dev run. A fork inherits the main
 #      agent's model AND context, bypassing the worker frontmatter entirely, so
@@ -41,16 +43,26 @@
 #      workers by name, so fork is never the sanctioned path mid-run. Outside a
 #      /dev run fork is a normal harness feature and passes through.
 #
+#   6. subagent_type="general-purpose" during an active /dev run without
+#      model=sonnet. general-purpose has no `model:` frontmatter, so an absent
+#      or non-sonnet model inherits the main-session tier — an opus main session
+#      then runs every fanout / inline-fallback / surface helper on opus. /dev
+#      only needs general-purpose at sonnet (parallel read-and-judge workers),
+#      so require it explicitly. Named team-* keep their own tier via Case 4;
+#      this sonnet floor only governs the generic/inline-fallback spawn. Outside
+#      a /dev run general-purpose passes through at any tier.
+#
 # This hook sits on the critical path of EVERY Agent spawn, so it does the least
 # work possible: a single jq parse pulls tool_name + subagent_type (both
 # newline-free tokens) in one process; the spawn-heavy `description` field is
 # only parsed in Case 2, where it's actually needed. The Case 3 freshness check
 # uses bash globbing + `-nt` (no subprocesses) plus one jq to read `size` for
-# the XS/S enforcement skip. Cases 4 (one jq for `model`, then a sed only when a
-# model param is present) and 5 (run globbing only for a fork spawn) are off the
-# common path. Net: a non-/dev Agent spawn pays one jq; a plain /dev worker
-# spawn pays two (fields + size); a model-override or fork spawn pays one extra
-# cheap read.
+# the XS/S enforcement skip. Case 4 adds one jq for `model` (then a sed only when
+# a model param is present); Cases 5 & 6 share one `.workflow` glob that runs
+# only for a fork or general-purpose spawn (Case 6 adds one more jq for `model`).
+# Net: a non-/dev Agent spawn pays one jq; a plain /dev worker spawn pays two
+# (fields + size); a model-override, fork, or general-purpose spawn pays one
+# extra cheap read.
 
 set -euo pipefail
 
@@ -148,13 +160,16 @@ esac
 
 # Case 4: a model override on a named /dev worker must match that worker's
 # pinned `model:` frontmatter, so an opus main session can't silently run a
-# sonnet-pinned worker on opus (a `model` param outranks the frontmatter).
-# `lead` is the sanctioned exception — the playbook tunes it sonnet<->opus per
-# phase; to give another worker that freedom, drop it from the list below.
-# Frontmatter-driven: flipping a worker's own `model:` (e.g. pm -> opus) needs
-# no change here — the pinned value is re-read from disk each spawn.
+# cheaper-pinned worker on opus (a `model` param outranks the frontmatter).
+# Covers the core workers plus every team-* fanout worker (the `team-*` glob) —
+# each runs at the tier its own agent file sets (e.g. the haiku analyzers stay
+# haiku, not the opus main tier). `lead` is the sanctioned exception — the
+# playbook tunes it sonnet<->opus per phase; to give another worker that
+# freedom, drop it from the list below. Frontmatter-driven: flipping a worker's
+# own `model:` (e.g. pm -> opus) needs no change here — the pinned value is
+# re-read from disk each spawn, and `$subagent_type.md` already resolves team-*.
 case "$subagent_type" in
-  pm|engineer|qa|retro|uxui)
+  pm|engineer|qa|retro|uxui|team-*)
     req_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
     if [[ -n "$req_model" ]]; then
       def="${CLAUDE_PROJECT_DIR:-$PWD}/.claude/agents/$subagent_type.md"
@@ -168,29 +183,52 @@ case "$subagent_type" in
     ;;
 esac
 
-# Case 5: fork inside an active /dev run. A fork inherits the main agent's
-# model AND context, ignoring the worker's `model:` frontmatter entirely, so an
-# opus main session drags opus onto every forked worker. /dev always spawns
-# workers by name; block fork while a run is active. Outside /dev (no active
-# run) fork is a normal harness feature and passes through.
-if [[ "$subagent_type" == "fork" ]]; then
-  PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
-  WF_DIR="$PROJECT_DIR/.workflow"
-  active=""
-  if [[ -n "${CLAUDE_DEV_RUN_ID:-}" && -f "$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json" ]]; then
-    active="1"
-  elif [[ -d "$WF_DIR" ]]; then
-    for f in "$WF_DIR"/*/state.json; do
-      [[ -f "$f" ]] || continue
-      [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
-      active="1"; break
-    done
-  fi
-  if [[ -n "$active" ]]; then
-    reason="BLOCKED by /dev guard: subagent_type=\"fork\" inside an active /dev run. A fork inherits the main agent's model and context and ignores the worker's agent-definition model:, so an opus main session silently runs a sonnet-pinned worker on opus. Spawn the worker by name instead (pm, lead, engineer, qa, retro; team-mode: uxui)."
-    jq -n --arg r "$reason" '{decision:"block", reason:$r}'
-    exit 0
-  fi
-fi
+# Cases 5 & 6 both key off "is a /dev run active?" — compute it once here. Both
+# a fork and a bare general-purpose spawn would inherit the main agent's tier
+# (opus) inside a run, bypassing the worker `model:` frontmatter; outside a run
+# both are normal harness features and pass through untouched. The glob runs
+# only for these two subagent_types, so the common spawn never pays for it.
+case "$subagent_type" in
+  fork|general-purpose)
+    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+    WF_DIR="$PROJECT_DIR/.workflow"
+    active=""
+    if [[ -n "${CLAUDE_DEV_RUN_ID:-}" && -f "$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json" ]]; then
+      active="1"
+    elif [[ -d "$WF_DIR" ]]; then
+      for f in "$WF_DIR"/*/state.json; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
+        active="1"; break
+      done
+    fi
+
+    # Case 5: fork inside an active /dev run. A fork inherits the main agent's
+    # model AND context, ignoring the worker's `model:` frontmatter entirely, so
+    # an opus main session drags opus onto every forked worker. /dev always
+    # spawns workers by name; block fork while a run is active.
+    if [[ -n "$active" && "$subagent_type" == "fork" ]]; then
+      reason="BLOCKED by /dev guard: subagent_type=\"fork\" inside an active /dev run. A fork inherits the main agent's model and context and ignores the worker's agent-definition model:, so an opus main session silently runs a sonnet-pinned worker on opus. Spawn the worker by name instead (pm, lead, engineer, qa, retro; team-mode: uxui)."
+      jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+      exit 0
+    fi
+
+    # Case 6: general-purpose inside an active /dev run must set model=sonnet.
+    # general-purpose has no `model:` frontmatter, so an absent or non-sonnet
+    # model inherits the main-session tier — an opus main session then runs every
+    # fanout / inline-fallback / surface helper on opus. /dev only ever needs
+    # general-purpose at sonnet (parallel read-and-judge workers), so require it
+    # explicitly and block anything else. (Named team-* keep their own tier via
+    # Case 4; the sonnet floor here only governs the generic/inline-fallback spawn.)
+    if [[ -n "$active" && "$subagent_type" == "general-purpose" ]]; then
+      gp_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
+      if [[ "$gp_model" != "sonnet" ]]; then
+        reason="BLOCKED by /dev guard: subagent_type=\"general-purpose\" inside an active /dev run must set model=\"sonnet\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so an opus main session silently runs the fanout / inline-fallback / surface helper on opus. Pass model=\"sonnet\" on the general-purpose spawn."
+        jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+        exit 0
+      fi
+    fi
+    ;;
+esac
 
 exit 0

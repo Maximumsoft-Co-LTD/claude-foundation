@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/dev` spawn guard now closes the model-tier leak on `general-purpose` and every `team-*` fanout worker — no spawn silently inherits the opus main tier.** Two extensions to `dev-agent-guard.sh` (building on v2.6.5's Cases 4/5). **Case 4 extended:** the frontmatter-model match now covers every `team-*` fanout worker (via a `team-*` glob), not just `pm|engineer|qa|retro|uxui` — a stray `model` override on a named team worker is blocked, so each runs at the tier its own agent file pins (the `haiku` analyzers — codebase-explorer, comment-analyzer, pr-test-analyzer, type-design-analyzer, code-simplifier — stay haiku). `lead` remains the sole exempt worker. **New Case 6:** a `general-purpose` spawn during an active `/dev` run must set `model="sonnet"` — general-purpose has no `model:` frontmatter, so without the pin it inherits the main-session tier and an opus session runs every fanout / inline-fallback / surface helper on opus; the guard now blocks an absent or non-sonnet model. Cases 5 & 6 share one `.workflow` probe that runs only for a fork or general-purpose spawn, so the common worker spawn is unaffected. The four sanctioned general-purpose dispatch paths (inline-fallback in `pm`/`lead`/`qa`, `orchestrator/references/fanout.md`; surface-coordinator helpers in both `surface-fanout.md` refs) are updated to pass `model="sonnet"` so they satisfy Case 6 without a wasted block-and-retry. Files: `.claude/hooks/dev-agent-guard.sh`, `.claude/agents/references/{pm,lead,qa}.md`, `.claude/orchestrator/references/{fanout,surface-fanout}.md`, `.claude/skills/fanout-team-agents/references/{running-a-fanout,surface-fanout}.md`.
+
 ## [2.6.5] - 2026-07-09
 
 ### Added
