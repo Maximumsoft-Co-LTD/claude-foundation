@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.7] - 2026-07-09
+
 ### Added
 
 - **Read-only LSP for the three `team-*` reviewers — `team-code-reviewer`, `team-silent-failure-hunter`, `team-type-design-analyzer` now resolve symbols across the diff instead of grep-only.** Each gains the `LSP` tool (read-only: go-to-definition / find-references for cross-diff verification); the `Agent`/`Write`/`Bash` boundaries are untouched, so these workers stay report-only (and, except `team-code-reviewer`, still hold no `Agent`). Logged as a post-fork local edit in `TEAM.md`. Files: `.claude/agents/{team-code-reviewer,team-silent-failure-hunter,team-type-design-analyzer,TEAM}.md`.
@@ -524,7 +526,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.6...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.7...HEAD
+[2.6.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.5...v2.6.6
 [2.6.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.4...v2.6.5
 [2.6.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.3...v2.6.4
