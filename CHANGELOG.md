@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.5] - 2026-07-09
+
 ### Added
 
 - **`/dev` spawn guard now enforces model tier — a worker can no longer silently run on the wrong model.** `dev-agent-guard.sh` gains two cases. **Case 4:** a `model` override on a named worker (`pm`, `engineer`, `qa`, `retro`, `uxui`) must match that worker's pinned `model:` frontmatter — a `model` param outranks the agent-definition model, so without this an opus main session could silently run a sonnet-pinned worker on opus. `lead` stays exempt (the playbook tunes it sonnet↔opus per phase); the pinned value is re-read from disk each spawn, so flipping a worker's own `model:` needs no hook change. **Case 5:** `subagent_type="fork"` is blocked during an active `/dev` run — a fork inherits the main agent's model **and** context, bypassing worker frontmatter entirely, so an opus main session would drag opus onto every forked worker; outside a run, fork is a normal harness feature and passes through untouched. Both cases sit off the common spawn path (Case 4 adds one `jq` plus a `sed` only when a `model` param is present; Case 5 runs globbing only for a fork spawn), so a plain worker spawn still pays two reads. Files: `.claude/hooks/dev-agent-guard.sh`.
@@ -502,7 +504,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.4...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.5...HEAD
+[2.6.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.4...v2.6.5
 [2.6.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.1...v2.6.2
