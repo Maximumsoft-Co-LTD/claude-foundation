@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "Drop the /dev workflow (spec → plan → ship) + team-mode role commands"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
-  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.6.4.tar.gz"
-  sha256 "29431f69fd390921c937215b1c8344c5d991ce453b3bd598231e16fe1de20097"
+  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.6.5.tar.gz"
+  sha256 "fb6e3c6c23862e44fe12926e17d2c0eefc84ba3df0afb675dd649491319ba94b"
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
@@ -19,8 +19,8 @@ class ClaudeFoundation < Formula
   # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
   # RELEASING.md). Platforms with no line fall back to build-from-source.
   bottle do
-    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.6.4"
-    sha256 cellar: :any_skip_relocation, arm64_sequoia: "3bcb5e41925f7d1236d4f1387d96db74e81b0ba86ebb9c3e3dfe84c652ce5587"
+    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.6.5"
+    sha256 cellar: :any_skip_relocation, arm64_sequoia: "89f5abdb2832547a3b9d10e6c1732f1dd62c1511063ee3b9360acb4450c9d2b1"
   end
 
   def install
