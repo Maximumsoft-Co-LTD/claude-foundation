@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.8] - 2026-07-14
+
 ### Changed
 
 - **Team-slice clarify now names the grill-me tactics explicitly — `/dev-plan`, `/test-plan`, `/uxui-plan` grill via the `brainstorming` interview-tactics reference when a decision is open, not just a bare `Team-slice clarify` link.** Each command's clarify step now drives its open plan/test/UX decision through `brainstorming/references/interview-tactics.md` (recommend-lead questions + tree-ordered dig loop), gated on "when open" and still scoped by `interview.md > Team-slice clarify` for each slice's remit; `/uxui-plan` also points at the sibling `visual-companion.md` for visual UX questions. It targets the 11 KB reference, not the 26 KB `brainstorming` skill body, per `interview.md`'s "reach for one reference, not the full body" on the critical path — same grilling discipline at ~half the tokens, no pull to re-scope an already-approved spec. Files: `.claude/commands/{dev-plan,test-plan,uxui-plan}.md`.
@@ -530,7 +532,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.7...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.8...HEAD
+[2.6.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.7...v2.6.8
 [2.6.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.5...v2.6.6
 [2.6.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.4...v2.6.5
