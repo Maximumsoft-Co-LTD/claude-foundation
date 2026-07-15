@@ -36,9 +36,7 @@ The orchestrator dispatches all workers in the **same message** — Claude Code'
 Agent(subagent_type="team-codebase-explorer", prompt=<focused-prompt-1>)
 Agent(subagent_type="team-best-practice-researcher", prompt=<focused-prompt-2>)
 Agent(subagent_type="team-code-reviewer", prompt=<focused-prompt-3>)
-Agent(subagent_type="team-code-simplifier", prompt=<focused-prompt-4>)
-Agent(subagent_type="team-comment-analyzer", prompt=<focused-prompt-5>)
-Agent(subagent_type="team-pr-test-analyzer", prompt=<focused-prompt-6>)
+Agent(subagent_type="team-pr-test-analyzer", prompt=<focused-prompt-4>)
 Agent(subagent_type="team-silent-failure-hunter", prompt=<focused-prompt-7>)
 Agent(subagent_type="team-type-design-analyzer", prompt=<focused-prompt-8>)
 ```
@@ -86,7 +84,7 @@ The inline-fallback artifact is byte-identical in shape to a real parallel-dispa
 The three failure modes from the upstream skill apply here unchanged:
 
 - **Too broad prompts.** "Review the codebase" → the worker gets lost. Always scope to a specific diff slice, file set, or path range. The team-`<role>` workers will silently expand scope if not constrained — give them the diff and the path filter.
-- **No constraints.** A `team-code-simplifier` with no "tests are out of scope" constraint will start recommending rewrites of test files you didn't ask about (the review/advisory workers are report-only, so the risk is scope-creep in what they flag, not unwanted edits). State what the worker must NOT cover — every prompt has a one-line constraints stanza.
+- **No constraints.** A review worker with no "tests are out of scope" constraint will start flagging rewrites of test files you didn't ask about (the review/advisory workers are report-only, so the risk is scope-creep in what they flag, not unwanted edits). State what the worker must NOT cover — every prompt has a one-line constraints stanza.
 - **Vague output shape.** "Return your findings" → workers return free-form prose that doesn't merge cleanly. Specify the section shape (the agent files already document this; cite it in the prompt — "return your output in the format documented in your agent file's Output Format section").
 
 Five more apply to `/dev` specifically:

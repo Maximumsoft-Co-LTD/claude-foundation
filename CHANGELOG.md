@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-07-15
+
+### Changed (complexity-cut release — less for the model to hold, nothing load-bearing dropped)
+
+- **Dual step-numbering killed:** cross-file references now go by phase NAME (Interview, Spec, Plan, Test-plan, Gate, Implement, Test, Review, Security, Docs, Ship, Retro); numbers are file-local only. 26 files swept; orchestrator.md keeps its op counter internally; the hand-maintained op↔matrix translation table is gone.
+- **`FANOUT_REQUESTED:` narrowed to `implement:` only.** Every splittable worker holds `Agent` and direct-nests its own read/research/review helpers (dispatch-mechanism contract), so the five read-shape signals (`review`, `security:`, `plan:`, `test:`, `research:`) were a redundant second dispatch path — retired. Implement keeps the signal (background phase-dispatch needs orchestrator-owned resume granularity). A retired-shape signal gets one corrective re-spawn, then BLOCKER.
+- **Review lenses 6 → 4:** `team-code-simplifier` + `team-comment-analyzer` retired; their checklists live on as Simplification and Comment Accuracy lenses inside `team-code-reviewer`. Tiers are now core-3 (M) / full-4 (L). Two fewer spawns + synthesis inputs per L review; TEAM.md ledger records the fold.
+- **`fanout_log` records outcomes, not non-events:** append only when a fanout point was eligible or fired; ineligible points log nothing (retro reads absence as not-eligible). Cuts per-run bookkeeping writes.
+- **Five heaviest skill bodies slimmed to ≤ ~1.2k words** (`ddd-strategic` 3.8k→1.1k, `delivery-engineering` 3.8k→1.1k, `security-fundamentals` 3.5k→1.2k, `queue-fundamentals` 3.4k→1.1k, `skill-creator` 3.5k→0.6k) — detail moved verbatim into references/ (line-level zero-loss verified per skill); frontmatter byte-identical, so triggering is unchanged. A triggered load now costs ~⅓ the context.
+
 ## [2.7.2] - 2026-07-15
 
 ### Added

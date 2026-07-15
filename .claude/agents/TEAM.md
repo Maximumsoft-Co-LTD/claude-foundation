@@ -25,7 +25,7 @@ Since Claude Code v2.1.172 a worker with `Agent` in its `tools` can spawn nested
 - `team-best-practice-researcher` — splits a multi-part question into sub-questions → sub-researchers.
 - `team-code-reviewer` — splits a large diff into per-area slices → sub-reviewers.
 
-The other five review workers (`team-code-simplifier`, `team-comment-analyzer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) stay read-only with **no `Agent`** — their work doesn't split. Each `Agent`-holder's "Recruit help when the work is large" section caps the fan-out and stamps every helper prompt with a no-further-spawn line, so nesting is one level deep only.
+The other review workers (`team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) stay read-only with **no `Agent`** — their work doesn't split. Each `Agent`-holder's "Recruit help when the work is large" section caps the fan-out and stamps every helper prompt with a no-further-spawn line, so nesting is one level deep only.
 
 The team-mode command worker **`uxui`** (spawned by `/uxui-plan`, not by the `/dev` orchestrator — see [`INDEX.md`](./INDEX.md)) also holds `Agent` and follows the same one-level-deep rule: it self-dispatches `team-best-practice-researcher` (UX-pattern probes) and `team-codebase-explorer` (existing-UI mapping) when the surface is large, caps at 4, and stamps every helper prompt with the no-further-spawn line.
 
@@ -34,8 +34,8 @@ The team-mode command worker **`uxui`** (spawned by `/uxui-plan`, not by the `/d
 Forked: **2026-05-21**. Source plugin: **`pr-review-toolkit`** at `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/pr-review-toolkit/agents/`. Version inferred from the marketplace cache at fork-time (not pinned to a release tag — `pr-review-toolkit` did not carry a version manifest in the cache snapshot).
 
 - team-code-reviewer — `pr-review-toolkit/agents/code-reviewer.md` → `.claude/agents/team-code-reviewer.md`
-- team-code-simplifier — `pr-review-toolkit/agents/code-simplifier.md` → `.claude/agents/team-code-simplifier.md`
-- team-comment-analyzer — `pr-review-toolkit/agents/comment-analyzer.md` → `.claude/agents/team-comment-analyzer.md`
+- team-code-simplifier — `pr-review-toolkit/agents/code-simplifier.md` → RETIRED 2026-07-15 (folded into `team-code-reviewer` as the Simplification lens)
+- team-comment-analyzer — `pr-review-toolkit/agents/comment-analyzer.md` → RETIRED 2026-07-15 (folded into `team-code-reviewer` as the Comment Accuracy lens)
 - team-pr-test-analyzer — `pr-review-toolkit/agents/pr-test-analyzer.md` → `.claude/agents/team-pr-test-analyzer.md`
 - team-silent-failure-hunter — `pr-review-toolkit/agents/silent-failure-hunter.md` → `.claude/agents/team-silent-failure-hunter.md`
 - team-type-design-analyzer — `pr-review-toolkit/agents/type-design-analyzer.md` → `.claude/agents/team-type-design-analyzer.md`
@@ -46,6 +46,7 @@ Fork date: 2026-05-21
 ## Local edits (post-fork)
 
 - **2026-07-09** — added `LSP` to `team-code-reviewer`, `team-silent-failure-hunter`, `team-type-design-analyzer` (read-only: go-to-def / find-references for cross-diff verification). Does **not** touch the `Agent`/`Write`/`Bash` boundaries — these workers stay report-only and, except `team-code-reviewer`, still hold no `Agent`.
+- **2026-07-15 (b)** — `team-code-simplifier` + `team-comment-analyzer` RETIRED: their checklists folded into `team-code-reviewer` as the Simplification and Comment Accuracy lenses. Rationale: heavy scope overlap with the reviewer, lowest marginal signal of the six, and two fewer spawns/synthesis inputs per L review. Review tiers are now core-3 / full-4.
 - **2026-07-15** — `team-code-reviewer` scoring contract changed: report ALL findings with confidence + severity (was: pre-filter to ≥ 80). The ≥ 80 precision gate moved to `lead`'s synthesis (`references/lead.md > Review fanout`), where cross-worker context lives. Rationale: pre-filtering in the worker suppresses recall irrecoverably; current-generation models over-obey "don't be nitpicky" and drop true positives.
 
 ## Drift awareness

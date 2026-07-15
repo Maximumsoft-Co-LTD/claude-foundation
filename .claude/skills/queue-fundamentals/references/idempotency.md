@@ -2,6 +2,43 @@
 
 Companion to principle 3 of [[queue-fundamentals]]. If duplicates can't break you, retries and redeliveries stop being dangerous — most operational concerns become routine.
 
+## Principle 3, in full: make consumers idempotent
+
+**Rule:** Every message handler must produce the same observable effect whether called once, twice, or N times with the same message.
+
+**Why:** At-least-once means duplicates *will* happen. Idempotency is the single highest-leverage defense — it turns retries, redeliveries, replays, and rebalances from incidents into non-events. A consumer without an idempotency story is one crash away from a billing incident.
+
+**How to apply:**
+- Prefer **naturally idempotent** operations: `SET balance = 100` (idempotent) vs `INCREMENT balance BY 5` (not). When the domain allows, model state as absolute rather than relative.
+- Use **conditional writes** to make non-idempotent operations idempotent: `UPDATE order SET status='shipped' WHERE id=? AND status='paid'`. The second call updates zero rows — a no-op, not a duplicate ship.
+- When neither works, add an **idempotency key** (often the message ID, or a domain-level operation ID the producer chose). On receive, the consumer checks a dedup table inside the same DB transaction as the side effect; if the key is present, drop the message.
+- For external side effects (charging a card, sending an email), pass the idempotency key *through* to the external API when it supports one (Stripe, SendGrid, etc.). When it doesn't, record "I started this work" before the call and "I finished it" after — recovery checks the marker.
+- **Your own public mutation API should accept an `Idempotency-Key` header too.** The Stripe-style contract (UUID v4 from the client, server stores key + response for ≥24h, replays cached status+body on duplicate) is now an IETF draft and a near-universal expectation for any POST/DELETE that costs money or sends an irreversible side effect. This is the HTTP-layer cousin of the queue-consumer dedup table — same idea, different boundary.
+
+**Example (TypeScript, dedup table + conditional write):**
+```ts
+// Bad — at-least-once will double-charge eventually.
+async function handleOrderPaid(msg: OrderPaidMessage) {
+  await stripe.charge(msg.customerId, msg.amount)
+  await db.query('UPDATE orders SET status=$1 WHERE id=$2', ['paid', msg.orderId])
+}
+
+// Good — idempotent at every step.
+async function handleOrderPaid(msg: OrderPaidMessage) {
+  // 1. Pass the broker's message ID to Stripe as their idempotency key.
+  //    Stripe will collapse retries to the same charge.
+  await stripe.charges.create(
+    { customer: msg.customerId, amount: msg.amount },
+    { idempotencyKey: msg.messageId },
+  )
+  // 2. Conditional write — second call updates 0 rows, harmlessly.
+  await db.query(
+    `UPDATE orders SET status='paid' WHERE id=$1 AND status='pending'`,
+    [msg.orderId],
+  )
+}
+```
+
 ## The three layers of idempotency
 
 Reach for them in order — earlier layers are simpler with fewer failure modes.

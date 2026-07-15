@@ -1,6 +1,6 @@
-# Orchestrator reference — Interview (step 6 sub-steps)
+# Orchestrator reference — Interview
 
-> Loaded on demand by the main agent (`.claude/orchestrator.md`). Step 6's headline (**you** run the interview — sub-agents can't `AskUserQuestion`) stays inline; this is the sub-step procedure. Read it when you reach step 6.
+> Loaded on demand by the main agent (`.claude/orchestrator.md`). Interview's headline (**you** run the interview — sub-agents can't `AskUserQuestion`) stays inline; this is the sub-step procedure. Read it when you reach Interview.
 
 0. **Ingest prior conversation FIRST** into a **requirements digest** (every goal, constraint, decision, example, scope boundary, edge case in the user's words) — an authoritative source (only repo-derived facts go in `Assumptions (inferred)`). **Estimate `size`, classify `field`** (default brownfield). Capture `References / examples to follow`; **fetch URLs now** (you have `WebFetch`; pm/engineer don't) and inline the excerpt.
 1. `brainstorming` is on the critical path (~47KB) — default to slot discipline + the always-on summary; reach for one reference only when scope is genuinely ambiguous.

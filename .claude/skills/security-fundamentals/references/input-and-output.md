@@ -2,6 +2,67 @@
 
 Injection = attacker-controlled data read as instructions by a downstream interpreter (SQL, shell, HTML/JS, LDAP). Two defenses: **validate on the way in** (is this the shape I expect?) and **encode/parameterize on the way out** (keep data on the data side). Not interchangeable — you need both.
 
+## Principle 2 (from SKILL.md): Validate input at the boundary — canonicalize *before* you check
+
+**Rule:** Validate every untrusted input where it enters, against an allow-list of what is permitted, *after* reducing it to a single canonical form. Reject what does not match; never try to sanitize hostile input into safe input.
+
+**Why:** A check on a non-canonical input is bypassable — `../`, `..%2f`, `..%252f` are the same path wearing disguises. **Canonicalize first, then validate**: decode, normalize Unicode, resolve the path, lowercase the host, *then* compare. Allow-list over deny-list always: a deny-list enumerates attacks you thought of; the attacker only needs the one you didn't.
+
+**How to apply:**
+- Validate at the boundary, once, into a typed value — then the rest of the code works with a value it can trust. This is [[programming-fundamentals]] "parse, don't validate": the output of the boundary is a `Email`, a `SafePath`, a `UserId`, not a raw `string` you re-check everywhere.
+- Canonicalize before comparing: URL-decode (until stable), Unicode-normalize (NFC), resolve `..` and symlinks for paths, lowercase hosts. Then check.
+- Use allow-lists for format (regex anchored with `^...$`), range (numeric bounds), length (cap it — unbounded input is a DoS vector), and set membership (one of an enum).
+- Validation is not output encoding (principle 3). Validating that an input is a well-formed name does **not** make it safe to drop into HTML or SQL — that is the sink's job. Do both.
+- For structured input, validate against a schema (zod, pydantic, JSON Schema) and reject unknown fields rather than ignoring them.
+
+**Example:**
+```python
+# Bad — checks the raw input, attacker sends an encoded form to slip past
+def get_file(name: str):
+    if ".." in name:                      # deny-list, pre-canonicalization
+        raise Forbidden()
+    return open(f"/data/{name}")          # name = "%2e%2e%2fsecret" decodes later → escape
+
+# Good — canonicalize, then validate against the real boundary
+import os
+BASE = "/data"
+def get_file(name: str):
+    if not re.fullmatch(r"[a-zA-Z0-9._-]{1,64}", name):   # allow-list, anchored
+        raise BadRequest()
+    full = os.path.realpath(os.path.join(BASE, name))     # canonicalize (resolves .. and symlinks)
+    if os.path.commonpath([BASE, full]) != BASE:          # confinement check on canonical form
+        raise Forbidden()
+    return open(full)
+```
+
+## Principle 3 (from SKILL.md): Output encoding is contextual — escape for the sink, never "for safety"
+
+**Rule:** Encode data for the specific place it is going — HTML body, HTML attribute, JavaScript, URL, SQL, shell, LDAP — at the moment it goes there. For queries and commands, don't escape at all: parameterize. There is no such thing as generically "sanitized" data.
+
+**Why:** Injection = attacker-controlled data interpreted as code by a downstream parser (SQL, shell, HTML/JS, LDAP). HTML-escaping a value then dropping it in SQL does nothing — contexts have different metacharacters. "I sanitized it" is meaningless without "for what sink." For SQL and shell, the only robust answer is not to build the string at all — one missed escape is a full compromise.
+
+**How to apply:**
+- SQL: parameterize. `db.query("... WHERE id = $1", [id])`, never `"... WHERE id = " + id`. Identifiers that can't be parameters (table/column names) must come from an allow-list, never from user input.
+- OS commands: pass an argument array to `execFile`/`spawn`/`subprocess.run([...])`, never a string to a shell. If you find yourself reaching for `shell=True` or `exec(cmd)`, stop — restructure so there is no shell.
+- HTML: escape contextually (`<`, `>`, `&`, `"`, `'`) and remember the context within HTML differs — body text, attribute value, inside a `<script>`, inside a URL attribute, and inside CSS each need different encoding. Use the framework's auto-escaping (React, Jinja2 autoescape, Razor) and treat any "raw"/`dangerouslySetInnerHTML`/`mark_safe` as a red flag requiring justification.
+- URLs: `encodeURIComponent` for query/path segments. LDAP, XML, CSV (formula injection), and shell each have their own escaping; reach for a vetted encoder for that sink, not a hand-rolled regex.
+- Encode at the sink, late — not early and stored. Storing pre-escaped data causes double-encoding bugs and means the same value can't be safely reused in a different context.
+
+**Example:**
+```ts
+// Bad — string-built SQL and a shell command, both injectable
+db.query(`SELECT * FROM users WHERE email = '${email}'`)   // ' OR '1'='1
+exec(`convert ${filename} out.png`)                        // ; rm -rf /
+
+// Good — parameterized query; argument array, no shell
+db.query('SELECT * FROM users WHERE email = $1', [email])
+execFile('convert', ['--', filename, 'out.png'])           // argv defeats shell injection; `--` (or rejecting a leading `-`) stops the filename being parsed as a flag
+
+// HTML: let the framework escape; raw insertion is the exception that needs a reason
+element.textContent = userComment            // safe — text node, not parsed as HTML
+element.innerHTML = userComment              // XSS — userComment = "<img src=x onerror=...>"
+```
+
 ## Validation: at the boundary, allow-list, canonical-first
 
 ### Canonicalize, *then* check

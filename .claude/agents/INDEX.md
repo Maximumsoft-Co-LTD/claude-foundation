@@ -33,8 +33,6 @@ Focused workers the orchestrator dispatches in parallel during fanout phases (sp
 | [`team-best-practice-researcher`](./team-best-practice-researcher.md) | sonnet | Researches best practices for a domain/framework/API/security/testing/UX question before pm or lead synthesises. |
 | [`team-codebase-explorer`](./team-codebase-explorer.md) | haiku | Read-only codebase mapping — entry points, current behaviour, invariants, and blast radius — for spec/plan fanout. |
 | [`team-code-reviewer`](./team-code-reviewer.md) | sonnet | Reviews code (a diff or named files) for CLAUDE.md adherence, style, and best practices. |
-| [`team-code-simplifier`](./team-code-simplifier.md) | haiku | Recommends simplifications for recently modified code — clarity and maintainability while preserving behaviour (advisory; report-only). |
-| [`team-comment-analyzer`](./team-comment-analyzer.md) | haiku | Analyses code comments for accuracy, completeness, comment-rot, and long-term maintainability. |
 | [`team-pr-test-analyzer`](./team-pr-test-analyzer.md) | haiku | Reviews a PR for test-coverage quality and completeness — new functionality and edge cases. |
 | [`team-silent-failure-hunter`](./team-silent-failure-hunter.md) | sonnet | Hunts silent failures, inadequate error handling, and inappropriate fallback behaviour in code changes. |
 | [`team-type-design-analyzer`](./team-type-design-analyzer.md) | haiku | Analyses type design — encapsulation, invariant expression, usefulness, enforcement — with qualitative + quantitative ratings. |

@@ -2,13 +2,13 @@
 
 A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal.
 
-**Version 2.7.2** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
+**Version 2.8.0** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
 
 Primary entry point: `/dev <intent>` (or `/dev --resume <id>`). The command detects context (new vs. existing codebase) and runs the same two-phase flow, branching on **run type** so a `chore` isn't dragged through e2e and a `fix` reproduces before it changes anything. Same artifacts either way, in `.workflow/<id>/`.
 
 **Team mode** ([below](#team-mode--run-one-role-on-its-own)) splits that flow into role-scoped commands — `/spec` (pm), `/dev-plan` (lead), `/test-plan` (qa), `/uxui-plan` (uxui), `/implement` (Phase 2) — each writing into the **same** `.workflow/<id>/` run and sharing the gate, so the artifacts compose exactly as a one-shot `/dev` run; `/dev --resume <id>` (or `/implement`) carries a hand-assembled run the rest of the way.
 
-> **Orchestration runs in the main agent, not a sub-agent.** A Claude Code sub-agent **cannot call `AskUserQuestion`**, so the `/dev` command loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent runs the interview + drives the flow; sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) do the file work. **Fan-out has two paths:** splittable agents (`pm`, `lead`, `qa`, `engineer`, the self-splitting `team-*` workers) hold `Agent` and **spawn helpers directly** when work is large (direct nesting, Claude Code v2.1.172+); the orchestrator-mediated `FANOUT_REQUESTED:` signal is the fallback (and the path for background implement-fanout). `state.json` stays single-writer (the orchestrator) regardless — helpers never write it.
+> **Orchestration runs in the main agent, not a sub-agent.** A Claude Code sub-agent **cannot call `AskUserQuestion`**, so the `/dev` command loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent runs the interview + drives the flow; sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) do the file work. **Fan-out has two paths:** splittable agents (`pm`, `lead`, `qa`, `engineer`, the self-splitting `team-*` workers) hold `Agent` and **spawn helpers directly** when work is large (direct nesting, Claude Code v2.1.172+); the orchestrator-mediated `FANOUT_REQUESTED: implement:` signal is the fallback, restricted to background implement-fanout. `state.json` stays single-writer (the orchestrator) regardless — helpers never write it.
 
 ## Flow at a glance
 
@@ -146,17 +146,17 @@ Type decides *which* phases run: `orchestrator` **skips or specializes** some by
 | 9. Ship (stage + opt-in commit/PR) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 10. Retro | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Ship commit — opt-in, asked every run (default `no`).** Phase 9 always runs (isolates the diff, scans secrets) but **the commit is the gate's call** (`state.json > commit_on_ship`, lever `commit on|off`): `no` → ship hands back a ready-to-run commit command, no push/PR (`open_pr_on_ship` forced `no`); `yes` → commit + optional PR. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at phase 4.
+**Ship commit — opt-in, asked every run (default `no`).** Ship always runs (isolates the diff, scans secrets) but **the commit is the gate's call** (`state.json > commit_on_ship`, lever `commit on|off`): `no` → ship hands back a ready-to-run commit command, no push/PR (`open_pr_on_ship` forced `no`); `yes` → commit + optional PR. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at Implement.
 
 **Review at XS for `chore`/`docs` — default skip.** Size×type default, not a per-line deviation. Mechanics: `.claude/orchestrator/references/size-execution.md` (Review row).
 
-**Test plan.** Design-time coverage/edge-case/regression contract; signed off at the gate, run at phase 5 (type-skip in matrix row 2½). Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
+**Test plan.** Design-time coverage/edge-case/regression contract; signed off at the gate, run at Test (type-skip in the Test-plan matrix row). Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
 
 **Greenfield vs brownfield (the `field`).** Gates the brownfield **understand → lock → change** discipline (greenfield skips both). Canonical def + picker: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
 
 ### Security trigger
 
-Phase 7 runs when the diff touches any of: auth/session/token, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell, deserialisation of untrusted input, secret-bearing files (env/config), or new external network endpoints. **Not a trigger on its own — first-party browser-storage round-trip:** the app reading back its own single-user `localStorage`/`sessionStorage`/`IndexedDB` via `JSON.parse` is *not* untrusted deserialisation and does not fire phase 7 — **provided** the diff has no dangerous sink (`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`Function`/`dangerouslySetInnerHTML`/jQuery `.html()`/any HTML-injection sink — **open list**; any such sink is itself a "raw HTML rendering" trigger and fires regardless). It also fires when the stored data crosses a real trust boundary (multi-user/shared-device threat model, or data written by a server or another principal). `orchestrator` decides; `lead` executes in security mode via the inline checklist.
+Security review runs when the diff touches any of: auth/session/token, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell, deserialisation of untrusted input, secret-bearing files (env/config), or new external network endpoints. **Not a trigger on its own — first-party browser-storage round-trip:** the app reading back its own single-user `localStorage`/`sessionStorage`/`IndexedDB` via `JSON.parse` is *not* untrusted deserialisation and does not fire Security review — **provided** the diff has no dangerous sink (`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`Function`/`dangerouslySetInnerHTML`/jQuery `.html()`/any HTML-injection sink — **open list**; any such sink is itself a "raw HTML rendering" trigger and fires regardless). It also fires when the stored data crosses a real trust boundary (multi-user/shared-device threat model, or data written by a server or another principal). `orchestrator` decides; `lead` executes in security mode via the inline checklist.
 
 ### E2E + visual (opt-in)
 
@@ -164,11 +164,11 @@ Browser-based **e2e** and the **visual + a11y verification** pass are **off by d
 
 ### Per-task phase plan (deviation from the matrix)
 
-The matrix is the **default, not the final word**. `lead` (plan mode) writes a reasoned **`## Phases for this task`** block in `plan.md` that starts from the matrix and may **deviate** when a discretionary phase isn't needed. Three phases are **discretionary**: **5 Test**, **6 Review**, **8 Docs**. A disposition turning a matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification. No deviation → one line (`Matrix defaults for type=<T> — no deviations.`).
+The matrix is the **default, not the final word**. `lead` (plan mode) writes a reasoned **`## Phases for this task`** block in `plan.md` that starts from the matrix and may **deviate** when a discretionary phase isn't needed. Three phases are **discretionary**: **Test**, **Review**, **Docs**. A disposition turning a matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification. No deviation → one line (`Matrix defaults for type=<T> — no deviations.`).
 
-**Protected — never deviatable, at any size:** **1 Interview + spec**, **2 Plan**, **3 Gate**, the **7 security-trigger *check*** (the scan always runs; the plan may *predict* whether it fires, never suppress it), and **10 Retro** — plus state-discipline writes and the per-line AC confirmation. Implement (4) and Ship (9) aren't discretionary either.
+**Protected — never deviatable, at any size:** **Interview + Spec**, **Plan**, **Gate**, the **security-trigger *check*** (the scan always runs; the plan may *predict* whether it fires, never suppress it), and **Retro** — plus state-discipline writes and the per-line AC confirmation. Implement and Ship aren't discretionary either.
 
-**The gate owns the deviation, not the plan.** Every deviation is surfaced at the gate for **explicit per-line confirmation**; it does **not** ride a plain `approve`. `lead` proposes, the user disposes. Levers: `approve | skip <n> | run <n> | revise <notes>` — `skip <n>`/`run <n>` flip a discretionary phase directly (a `skip` of a protected phase is refused). Approved dispositions land in `state.json > phase_plan` (`test`/`review`/`docs` → `run|light|skip`; empty `{}` = matrix defaults); Phase 2 honours them (a skipped phase is recorded in `skipped_steps` as `<phase>:per-task-plan (user-approved)`). **Skipping `5 Test` on `fix`/`refactor` also waives that type's regression/baseline contract** — highest justification bar.
+**The gate owns the deviation, not the plan.** Every deviation is surfaced at the gate for **explicit per-line confirmation**; it does **not** ride a plain `approve`. `lead` proposes, the user disposes. Levers: `approve | skip <n> | run <n> | revise <notes>` — `skip <n>`/`run <n>` flip a discretionary phase directly (a `skip` of a protected phase is refused). Approved dispositions land in `state.json > phase_plan` (`test`/`review`/`docs` → `run|light|skip`; empty `{}` = matrix defaults); Phase 2 honours them (a skipped phase is recorded in `skipped_steps` as `<phase>:per-task-plan (user-approved)`). **Skipping `Test` on `fix`/`refactor` also waives that type's regression/baseline contract** — highest justification bar.
 
 This subsection is the **canonical definition**; `plan.md`, `lead.md`, and `orchestrator.md` point here.
 
@@ -186,19 +186,19 @@ Skill-per-decision routing, triggers, and full run order: `.claude/rules/fundame
 
 Default: load no full skill body on the hot path — at most one targeted `references/<file>` section. Canonical: `.claude/rules/fundamentals.md` + `CLAUDE.md > Working agreements`.
 
-Phase numbering below matches the matrix (1–10). The orchestrator runs setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1 — internal, not numbered.
+Phase names below match the matrix; row numbers stay display-only in the table and diagram. The orchestrator runs setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1 — internal, not numbered.
 
 ## Phase 1 — Requirements (interactive)
 
 Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract.
 
-**1 Interview + spec** (orchestrator interviews, fanout spec-prep when risky, `pm` writes `spec.md`) → **2 Plan** (`lead` writes `plan.md` + `tasks.md`, type/size-aware — new vs existing code, fix/refactor/spike/epic variants) → **2½ Test plan** (`qa` writes `test-plan.md`: coverage + edge cases + regression/baseline lock) → **3 Gate** (per-line AC confirmation + phase/fanout plan; `approve` / `skip <n>` / `run <n>` / `revise <notes>` / `swap <n>`; revise is always an in-run edit, never a restart). Executable step-by-step script: `.claude/orchestrator.md` (Phase 1 ops).
+**Interview + Spec** (orchestrator interviews, fanout spec-prep when risky, `pm` writes `spec.md`) → **Plan** (`lead` writes `plan.md` + `tasks.md`, type/size-aware — new vs existing code, fix/refactor/spike/epic variants) → **Test-plan** (`qa` writes `test-plan.md`: coverage + edge cases + regression/baseline lock) → **Gate** (per-line AC confirmation + phase/fanout plan; `approve` / `skip <n>` / `run <n>` / `revise <notes>` / `swap <n>`; revise is always an in-run edit, never a restart). Executable step-by-step script: `.claude/orchestrator.md` (Phase 1 ops).
 
 ## Phase 2 — Implementation (autonomous after approval)
 
 Build the approved contract and prove it — implement, then close the test/review/security loops and ship. Runs without further prompts; a blocking finding bounces back to implement.
 
-**4 Implement** (`engineer`; `fix` reproduces first) → **5 Test** (`qa`, before review, so reviewers judge a green suite; diff-coverage floors are advisory ratchets, not ship-blocks) → **6 Review** (`lead` vs plan + acceptance) → **7 Security** (trigger-based, `high` blocks) → **8 Docs touch-up** → **9 Ship** (opt-in commit/PR, default no) → **10 Retro** (`retro.md`, follow-ups, memory/skill candidates). Cycle budgets: test fail → re-run implement (≤3); review/security blocking → fix → re-test → re-review (≤2). `state.json` updated after every step; `/dev --resume <id>` continues a dead run. Executable step-by-step script: `.claude/orchestrator.md` (Phase 2 ops).
+**Implement** (`engineer`; `fix` reproduces first) → **Test** (`qa`, before review, so reviewers judge a green suite; diff-coverage floors are advisory ratchets, not ship-blocks) → **Review** (`lead` vs plan + acceptance) → **Security** (trigger-based, `high` blocks) → **Docs touch-up** → **Ship** (opt-in commit/PR, default no) → **Retro** (`retro.md`, follow-ups, memory/skill candidates). Cycle budgets: test fail → re-run implement (≤3); review/security blocking → fix → re-test → re-review (≤2). `state.json` updated after every step; `/dev --resume <id>` continues a dead run. Executable step-by-step script: `.claude/orchestrator.md` (Phase 2 ops).
 
 ## Scope: when to split (rare path)
 
@@ -235,7 +235,7 @@ Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (
 
 Sub-agent constraints:
 - **Direct nesting (v2.1.172+):** splittable agents are granted `Agent` and spawn helpers when work is large — `pm`, `lead`, `qa`, `engineer`, and the self-splitting `team-codebase-explorer` / `team-best-practice-researcher` / `team-code-reviewer`. Other `team-*` review workers stay read-only. Helpers do one level of split only and never write `state.json`.
-- **Surface (per-repo) fanout:** on a multi-repo control-plane run, test/review/security can additionally split one `general-purpose` helper per changed repo (cap 6), with `lead`/`qa` coordinating the unified artifact — see `.claude/orchestrator/references/fanout-dispatch.md`. Implement/gate/ship stay pinned to the primary `repo_root` **by design** (blocking findings elsewhere surface to the user; see `size-execution.md > Multi-repo boundary`). `pm` can also raise a step-1 `research:` signal that dispatches `team-best-practice-researcher`.
+- **Surface (per-repo) fanout:** on a multi-repo control-plane run, test/review/security can additionally split one `general-purpose` helper per changed repo (cap 6), with `lead`/`qa` coordinating the unified artifact — see `.claude/orchestrator/references/fanout-dispatch.md`. Implement/gate/ship stay pinned to the primary `repo_root` **by design** (blocking findings elsewhere surface to the user; see `size-execution.md > Multi-repo boundary`). `pm` also direct-nests `team-best-practice-researcher` itself at step 1 when research is warranted (no signal).
 - **Enforced by Claude Code:** sub-agents cannot call `AskUserQuestion` — any user prompt comes from the main agent. Sub-agents that hit ambiguity return a `BLOCKER:` line and the orchestrator surfaces the question.
 
 External: when `retro` surfaces skill candidates and the user approves, the orchestrator invokes `skill-creator` for each. The handoff is explicit — no candidate is created silently.
@@ -279,9 +279,9 @@ Phase 2 → engineer explores both → writes `recommendations.md` → light rev
 Where the run pauses, loops, or escalates instead of charging ahead.
 
 - User says `revise` at the gate (or chats free-form about the spec/plan/test-plan) → targeted in-run edit of only the affected sections, then re-verify and re-present the changed parts. Never a fresh Phase 1 run.
-- User says `skip <n>` / `run <n>` at the gate → flip that discretionary phase's disposition (5 Test / 6 Review / 8 Docs only; a `skip` of a protected phase is refused), record it in `state.json > phase_plan`, re-present, stay in the gate loop until `approve`.
+- User says `skip <n>` / `run <n>` at the gate → flip that discretionary phase's disposition (Test / Review / Docs only; a `skip` of a protected phase is refused), record it in `state.json > phase_plan`, re-present, stay in the gate loop until `approve`.
 - Test failures → fix → re-run, max 3 cycles, then escalate.
-- Reviewer blocking issues → fix → re-run test (step 5) → re-review, max 2 cycles, then escalate.
+- Reviewer blocking issues → fix → re-run Test → re-review, max 2 cycles, then escalate.
 - Security review `high` finding → fix → re-run test → re-review → re-security, counts against the review cycle budget.
 - Any agent unsure → stop and ask the user, never invent requirements.
 - Context exhaustion / cancel → next `/dev --resume <id>` reads `state.json` and continues from the recorded step.

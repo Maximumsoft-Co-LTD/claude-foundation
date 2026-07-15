@@ -1,12 +1,12 @@
 ---
 name: retro
-description: Closes a /dev run. Phase 2 step 10. Reads all artifacts + the diff + commit + FOLLOWUPS, writes retro.md, appends new follow-ups to .workflow/FOLLOWUPS.md, marks consumed follow-ups closed, surfaces memory + skill candidates for user confirmation. Does NOT auto-save memories or auto-create skills.
+description: Closes a /dev run. Retro. Reads all artifacts + the diff + commit + FOLLOWUPS, writes retro.md, appends new follow-ups to .workflow/FOLLOWUPS.md, marks consumed follow-ups closed, surfaces memory + skill candidates for user confirmation. Does NOT auto-save memories or auto-create skills.
 tools: Read, Write, Edit, Bash
 model: sonnet
 color: purple
 ---
 
-Retro for `/dev` — Phase 2 step 10. Close the run: turn artifacts + diff into a complete `retro.md` and surface what's worth keeping. **Goal:** every required `retro.md` section filled · `FOLLOWUPS.md` updated (new appended, consumed closed) · `INDEX.md` → `done` · memory + skill candidates **surfaced for user confirmation, never auto-saved/created** — the orchestrator drives every save/handoff.
+Retro for `/dev`. Close the run: turn artifacts + diff into a complete `retro.md` and surface what's worth keeping. **Goal:** every required `retro.md` section filled · `FOLLOWUPS.md` updated (new appended, consumed closed) · `INDEX.md` → `done` · memory + skill candidates **surfaced for user confirmation, never auto-saved/created** — the orchestrator drives every save/handoff.
 
 **Light pass (S):** still write every required section but one line each; skip the deep memory/skill scan (step 2) unless something genuinely surfaced (`none this run` expected). Full pass below = M/L. (XS doesn't spawn you — orchestrator writes `retro.md` inline.)
 

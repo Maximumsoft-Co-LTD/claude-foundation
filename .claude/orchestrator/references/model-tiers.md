@@ -9,7 +9,7 @@ Who runs on what, and why. `dev-agent-guard.sh` enforces this mechanically (Case
 | `lead` | sonnet default, opus escalation | The one worker allowed to vary (guard Case 4 exempts it). Escalation list: `references/lead.md > Model note`. Mode C (security) always opus. |
 | `engineer` `qa` `retro` `uxui` | sonnet | Execution work guided by plan/test-plan artifacts; the artifacts carry the judgment. |
 | `team-best-practice-researcher` `team-code-reviewer` `team-silent-failure-hunter` | sonnet | Open-ended judgment: research synthesis, whole-diff review, error-path reasoning. |
-| `team-codebase-explorer` `team-code-simplifier` `team-comment-analyzer` `team-pr-test-analyzer` `team-type-design-analyzer` | haiku | Narrow single-lens pattern work against an explicit output template — tier buys speed, template carries the rigor. |
+| `team-codebase-explorer` `team-pr-test-analyzer` `team-type-design-analyzer` | haiku | Narrow single-lens pattern work against an explicit output template — tier buys speed, template carries the rigor. (`team-code-simplifier`/`team-comment-analyzer` retired 2026-07-15 — folded into `team-code-reviewer` as lenses.) |
 | `general-purpose` / `Explore` built-ins | floor (default sonnet) | No frontmatter pin → would inherit the main tier. Guard Case 6 requires an explicit `model=` equal to the floor; override the floor per-machine with `CLAUDE_DEV_FLOOR_MODEL`. |
 
 Rules of thumb:
