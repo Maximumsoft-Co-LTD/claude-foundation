@@ -101,7 +101,7 @@ You hold `Agent` — when scope is too big for one serial pass, **spawn helpers 
 
 **How** — split into non-overlapping sub-scopes; one helper per sub-scope **in one message** (parallel), **cap 6**; self-contained prompt (scope + what to return + what NOT to touch). **Integrate + verify** each return; re-drive a strayed result.
 
-**Guardrails** — helpers are read-only, never write your artifact or `state.json`. **One level of split only:** end every helper prompt with `You are a nested helper: handle this one sub-scope directly and do NOT spawn further agents.`
+**Guardrails** — helpers are read-only, never write your artifact or `state.json`. One level of split; dispatch mechanics + stop-line: `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
 
 ## Review fanout (Mode B step 1) — tiering + simplicity lens
 
@@ -126,4 +126,4 @@ Write `epic.md` instead of `plan.md`. Decompose into 2–5 vertical slices, each
 
 ## Surface (multi-repo) variants (Mode B / Mode C)
 
-On a multi-repo control-plane run you may be spawned as a **per-repo reviewer/security-reviewer** or the **surface-coordinator** (which nests per-repo helpers and writes the unified `review.md`/`security.md`). Both contracts live in `orchestrator/references/surface-fanout.md > Lead — Mode B (Review)` / `> Lead — Mode C (Security review)` — loaded on demand; a single-repo run never needs them.
+On a multi-repo control-plane run you may be spawned as a **per-repo reviewer/security-reviewer** or the **surface-coordinator** (which nests per-repo helpers and writes the unified `review.md`/`security.md`). Both contracts live in `orchestrator/references/fanout-dispatch.md > Lead — Mode B (Review)` / `> Lead — Mode C (Security review)` — loaded on demand; a single-repo run never needs them.

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.2] - 2026-07-15
+
+### Added
+
+- **`.claude/hooks/tests/run-hook-tests.sh`** — 28-assertion suite for the four wired hooks (guard Cases 1/3/4/5/6 incl. floor override + fail-closed pin, state-validate dup-key paths, state-mark foreground/background/team-slice, protect-secrets allow/deny) — previously only artifact-lint had tests.
+- **`.claude/agents/references/engineer.md`** — agent-side view of the phase-/integration-engineer contract (source stays `implement-fanout.md`); `INDEX.md` now states when an agent earns a references file.
+- **`CLAUDE.md > Skills outside the router`** — documents the second (frontmatter/pipeline) trigger system for the ten non-lifecycle skills; `fundamentals.md` notes the split and its mirror claim now matches reality (README mirrors the chain; CLAUDE/WORKFLOW only name it canonical).
+
+### Changed
+
+- **Fanout references consolidated 3→1:** `fanout.md` + `fanout-plan.md` + `surface-fanout.md` merged into `orchestrator/references/fanout-dispatch.md` (dispatch mechanics · registry preflight · gate-steerable plan · surface fanout), zero rule loss, each rule stated once; every pointer repo-wide updated; the coordinator-model ambiguity resolved (security always opus, review conditional per `model-tiers.md`). `implement-fanout.md` stays separate.
+- **Recruit-help boilerplate deduped 7→1:** the worker-side nesting contract (one-message dispatch, stop-line, merge rule, registry-miss fallback) now lives once in `fanout-team-agents > references/dispatch-mechanism.md`; the seven carrier files keep only their split criterion + cap.
+- **`ui-ux-pro-max` split** to SKILL.md (~1.3k words) + 3 references (rule catalog, search tool, app-UI tables), frontmatter byte-identical, line-exact zero-loss verified.
+- **Multi-repo boundary declared permanent** (implement/gate/ship pinned to primary `repo_root` by design; cross-repo blocking findings surface to the user) — `size-execution.md`, `WORKFLOW.md`.
+
 ## [2.7.1] - 2026-07-15
 
 ### Changed

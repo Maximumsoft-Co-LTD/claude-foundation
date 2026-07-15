@@ -15,6 +15,15 @@ Key surface area:
 - `.claude/hooks/` — `dev-agent-guard.sh` (PreToolUse spawn guard), `dev-state-mark.sh` (PostToolUse state marker), `lint.sh` (PostToolUse linter), `protect-secrets.sh` (PreToolUse `.env`/credential read guard). `no-direct-main-commit.sh` is shipped but **opt-in** (wire it under `PreToolUse`/`Bash` in `settings.json` to block commits on `main`/`master`).
 - `WORKFLOW.md` + `.workflow/` — the type-aware phase matrix, run templates, and per-run `state.json`/artifacts that drive `/dev --resume`. Gated by three axes: `Type` (which phases), `size` (how much machinery), `field` (**greenfield | brownfield**). Brownfield gates the **understand → lock → change** discipline (current-state map, characterization baseline); greenfield skips both. Canonical `field` def: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
 
+## Skills outside the router
+
+Ten skills deliberately sit outside `.claude/rules/fundamentals.md` (which scopes itself to the code/construction/delivery lifecycle). They trigger two other ways — this split is intentional:
+
+| Trigger path | Skills |
+|---|---|
+| `/dev`-pipeline wiring (orchestrator/agents invoke them) | `brainstorming` (interview), `plan-writing` (lead), `fanout-team-agents` (fanout dispatch), `skill-creator` (post-retro, user-approved only) |
+| Frontmatter-description match on explicit ask | `claude-md`, `qa-handoff-note`, `init-project-docs`, `frontend-design`, `tailwind-design-system`, `ui-ux-pro-max` |
+
 ## Related references in this workspace
 
 - `../claude-foundation-template/` — earlier template with `.claude/`, `brain/`, `docs/`, `install.sh`. Reference for house style only — do **not** copy it wholesale.

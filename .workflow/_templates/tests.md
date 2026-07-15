@@ -19,4 +19,4 @@ The execution record: qa runs the strategy from [./test-plan.md](./test-plan.md)
 
 Acceptance-criteria coverage · Regression test (fix) · Baseline (refactor / brownfield feat) · Edge-case gaps · Results · Coverage (diff vs floor) · Failing · Commands · Visual verification (e2e_visual=on) · Per-repo results (surface fanout) · Skipped
 
-When each applies → **qa.md > Mode: Execute** (per-repo → orchestrator/references/surface-fanout.md > QA — Execute (Test)).
+When each applies → **qa.md > Mode: Execute** (per-repo → orchestrator/references/fanout-dispatch.md > QA — Execute (Test)).

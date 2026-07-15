@@ -12,6 +12,17 @@ The **orchestrator-mediated signal** (`FANOUT_REQUESTED:`, below) is retained as
 
 A sub-agent still **cannot call `AskUserQuestion`** (only the orchestrator asks the user — genuine ambiguity returns a `BLOCKER:`), and **`state.json` stays single-writer** — helpers return findings or write only their own disjoint files; they never write `state.json` or the calling agent's artifact. Helpers also do **not** re-escalate: one level of split (a helper handed a sub-scope does the work directly).
 
+## Worker-side nesting contract (canonical)
+
+Every splittable worker's "Recruit help" section points HERE — this is the single copy of the mechanics. The agent file keeps only its role's split criterion and cap; a change to this contract lands once, in this section.
+
+- **Split test:** the scope separates into non-overlapping sub-areas where no finding changes another — otherwise stay serial.
+- **Dispatch:** spawn ALL helpers in ONE message (they run in parallel); each prompt is self-contained — the sub-scope, the worker's own output template to return, `repo_root` + `branch`, and the stop-line.
+- **Stop-line (last line of every helper prompt, verb adapted to the role):** `You are a nested helper: <do> this one sub-scope directly and do NOT spawn further agents.` One level of split, never deeper.
+- **Caps are role-owned:** each agent file states its own N (helpers alive at once, not total).
+- **Merge:** the recruiting worker synthesises helper returns into its OWN single return/artifact — helper output is evidence, never the deliverable; raw helper text is never relayed upward.
+- **Registry miss** (a named `team-*` comes back `not found`): inline-fallback per the signal section below — `general-purpose` at the floor model (`CLAUDE_DEV_FLOOR_MODEL`, default sonnet), flagging the tier change when the role is haiku-pinned. A miss never retreats to a single serial pass.
+
 ## The `FANOUT_REQUESTED:` return-prefix convention
 
 When a /dev sub-agent (`pm`, `lead`, `qa`, `engineer`) decides fanout is warranted, it returns control to the orchestrator with a line prefixed `FANOUT_REQUESTED:` carrying the request shape. The orchestrator parses the line, dispatches the workers in parallel via `Agent(...)` calls (one per worker, all in the same message so they run concurrently), collects the returns, and re-spawns the calling sub-agent with the workers' outputs included in the prompt for synthesis.

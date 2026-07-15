@@ -2,7 +2,7 @@
 
 A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal.
 
-**Version 2.7.1** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
+**Version 2.7.2** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
 
 Primary entry point: `/dev <intent>` (or `/dev --resume <id>`). The command detects context (new vs. existing codebase) and runs the same two-phase flow, branching on **run type** so a `chore` isn't dragged through e2e and a `fix` reproduces before it changes anything. Same artifacts either way, in `.workflow/<id>/`.
 
@@ -175,7 +175,7 @@ This subsection is the **canonical definition**; `plan.md`, `lead.md`, and `orch
 ### Fanout plan & size-aware execution (split out)
 
 Two canonical blocks live in their own reference files (gate-owned, unchanged in force):
-- **Fanout plan** (the gated `## Fanout plan` block `lead` declares, the gate lever, telemetry) → [`.claude/orchestrator/references/fanout-plan.md`](.claude/orchestrator/references/fanout-plan.md).
+- **Fanout plan** (the gated `## Fanout plan` block `lead` declares, the gate lever, telemetry) → [`.claude/orchestrator/references/fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md).
 - **Size-aware execution matrix** (how much machinery each phase gets per XS/S/M/L, the patch lane, fanout availability, the multi-repo boundary) → [`.claude/orchestrator/references/size-execution.md`](.claude/orchestrator/references/size-execution.md).
 
 ## Skill routing
@@ -235,7 +235,7 @@ Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (
 
 Sub-agent constraints:
 - **Direct nesting (v2.1.172+):** splittable agents are granted `Agent` and spawn helpers when work is large — `pm`, `lead`, `qa`, `engineer`, and the self-splitting `team-codebase-explorer` / `team-best-practice-researcher` / `team-code-reviewer`. Other `team-*` review workers stay read-only. Helpers do one level of split only and never write `state.json`.
-- **Surface (per-repo) fanout:** on a multi-repo control-plane run, test/review/security can additionally split one `general-purpose` helper per changed repo (cap 6), with `lead`/`qa` coordinating the unified artifact — see `.claude/orchestrator/references/surface-fanout.md`. `pm` can also raise a step-1 `research:` signal that dispatches `team-best-practice-researcher`.
+- **Surface (per-repo) fanout:** on a multi-repo control-plane run, test/review/security can additionally split one `general-purpose` helper per changed repo (cap 6), with `lead`/`qa` coordinating the unified artifact — see `.claude/orchestrator/references/fanout-dispatch.md`. Implement/gate/ship stay pinned to the primary `repo_root` **by design** (blocking findings elsewhere surface to the user; see `size-execution.md > Multi-repo boundary`). `pm` can also raise a step-1 `research:` signal that dispatches `team-best-practice-researcher`.
 - **Enforced by Claude Code:** sub-agents cannot call `AskUserQuestion` — any user prompt comes from the main agent. Sub-agents that hit ambiguity return a `BLOCKER:` line and the orchestrator surfaces the question.
 
 External: when `retro` surfaces skill candidates and the user approves, the orchestrator invokes `skill-creator` for each. The handoff is explicit — no candidate is created silently.

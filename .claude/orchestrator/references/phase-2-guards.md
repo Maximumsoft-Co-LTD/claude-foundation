@@ -14,7 +14,7 @@
 
 ### Step 12 — Review (details)
 
-- **Reuse the changed-repo set from step 11** — don't recompute; you already hold it (`state.repos` else `[repo_root]`). Single-repo → review `repo_root`. Multi-repo → surface fanout (`references/surface-fanout.md`). *(Fresh `--resume` into step 12 with no set in memory → compute it once as in step 11.)*
+- **Reuse the changed-repo set from step 11** — don't recompute; you already hold it (`state.repos` else `[repo_root]`). Single-repo → review `repo_root`. Multi-repo → surface fanout (`references/fanout-dispatch.md`). *(Fresh `--resume` into step 12 with no set in memory → compute it once as in step 11.)*
 - Spawn `lead` review mode. **Model: `sonnet` by default; keep opus** for plan `Size=L`, a `## API/event contracts` section, or a substantial test-**infra** change. Pass `state.json > size`. INDEX → `review`. State: `step=review, next_step=security`. **Dedup:** test (step 11) ran first — if it fanned out `team-pr-test-analyzer`, pass its `tests.md` coverage findings so the review test-coverage lens folds them in instead of re-deriving on the same diff. `FANOUT_REQUESTED: review` → dispatch tiered workers (core 3 for M, full 6 for L) per `## Fanout dispatch`, then re-spawn `lead` (synthesis keeps opus). **Artifact check:** `review.md` first line missing → re-spawn.
 - Verdict `fix-required` + `cycles.review` < 2 → `cycles.review++`, route to `engineer` with findings, then **re-enter test (11) targeted** (`re-validate targeted: <files>`; Impacted + AC-mapped only, no full suite) before re-review. ≥2 → escalate (`AskUserQuestion`, max 2). (Multi-repo non-primary blocker → surface, never auto-fix.)
 

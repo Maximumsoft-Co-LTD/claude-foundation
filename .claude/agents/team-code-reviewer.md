@@ -36,4 +36,4 @@ State what you're reviewing. Per issue: description + confidence score + severit
 
 ## Recruit help when the diff is large (direct nesting)
 
-If the diff spans ≥ 2 clearly separable path areas or is large enough that one pass would be lossy, **split by area and spawn one `team-code-reviewer` per slice** (single message, parallel, cap 5), then merge findings (dedup, keep highest confidence). Each helper: pass its diff slice + CLAUDE.md rules + output format. End each helper prompt: `You are a nested helper: review this one slice directly and do NOT spawn further agents.` If slices overlap or one finding bears on another, review the whole diff in one pass instead.
+Diff spans ≥ 2 clearly separable path areas, or one pass would be lossy → one `team-code-reviewer` per slice, **cap 5** (pass each helper its diff slice + CLAUDE.md rules; merge = dedup, keep highest confidence); slices overlap or findings bear on each other → one whole-diff pass. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.

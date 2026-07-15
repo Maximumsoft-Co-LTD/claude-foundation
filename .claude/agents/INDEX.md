@@ -2,6 +2,8 @@
 
 Which model each agent in `.claude/agents/` runs on and what it does (model from each file's frontmatter `model:`). Tier *policy* — who gets which tier and why, floors, escalation — lives in [`../orchestrator/references/model-tiers.md`](../orchestrator/references/model-tiers.md); this table mirrors it. For how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — the prose companion to this table, not an agent itself.
 
+**When an agent gets a `references/<agent>.md`:** the base file carries the always-loaded core (role, modes, rules); mode *variants* and rarely-hit procedures overflow to a references file once the base would exceed roughly a page (~1,200 words) — never split below that, and never let the same rule live in both (`pm`, `lead`, `qa`, `engineer` have one; `retro`/`uxui` don't need one yet).
+
 ## `/dev` workers
 
 The five sub-agents the orchestrator (main agent) spawns for the `/dev` file work. The orchestrator is **not** listed — there is no `orchestrator` sub-agent; the main agent plays that role (see [`../orchestrator.md`](../orchestrator.md)).

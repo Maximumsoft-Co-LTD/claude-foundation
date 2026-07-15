@@ -39,4 +39,4 @@ pass | fix-required (counts against the review cycle budget)
 
 - **Per-repo security** — one `### Repo: <path>` per tripping repo; Trigger / Verdict / Findings stay global
 
-Shape → **orchestrator/references/surface-fanout.md > Lead — Mode C**.
+Shape → **orchestrator/references/fanout-dispatch.md > Lead — Mode C**.

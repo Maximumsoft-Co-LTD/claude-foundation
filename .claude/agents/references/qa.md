@@ -51,8 +51,8 @@ Tools report the whole diff, not the logic-vs-boundary split — so split unit v
 - **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → by name; `inline-fallback` → `general-purpose` + `model="sonnet"` with `.claude/agents/team-pr-test-analyzer.md` inlined (Case 6 blocks an unpinned general-purpose spawn); `unknown` → try named, fall to inline on `not found`, report the path used. Inline fallback for the haiku-pinned analyzer runs a tier UP (sonnet floor) — say so in the path report so cost drift stays auditable.
 - **Dedup direction (test runs before review now)** — test is the first analysis pass, so there are no review findings to fold in; run every planned category. Review (step 6) instead dedups its test-coverage lens against *your* `team-pr-test-analyzer` findings, so leave them legible in `tests.md`.
 - **Integrate** the returned coverage-gap findings into your test design + `tests.md`.
-- **Guardrails** — helpers are read-only, never write tests/`tests.md`/`state.json`. **One level of split:** end every helper prompt with `You are a nested helper: handle this one sub-scope directly and do NOT spawn further agents.`
+- **Guardrails** — helpers are read-only, never write tests/`tests.md`/`state.json`. One level of split; dispatch mechanics + stop-line: `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
 
 ## Surface (multi-repo) variants
 
-**Load when:** spawned on a multi-repo control-plane run as a **per-repo tester** or the **surface-coordinator** (which nests per-repo helpers and writes the unified `tests.md`). Both contracts live in `orchestrator/references/surface-fanout.md > QA — Execute (Test)`. A single-repo run (the common case) never needs them.
+**Load when:** spawned on a multi-repo control-plane run as a **per-repo tester** or the **surface-coordinator** (which nests per-repo helpers and writes the unified `tests.md`). Both contracts live in `orchestrator/references/fanout-dispatch.md > QA — Execute (Test)`. A single-repo run (the common case) never needs them.
