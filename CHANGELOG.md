@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-07-15
+
+### Changed
+
+- **Context rations no longer trade correctness margin** (three surgical relaxations): the team-mode gate fold spot-checks one AC per shard after the set-compare (a shard listing every AC no longer passes on its own say-so — `team-mode-sharding.md`, `orchestrator.md > Pre-gate consistency scan`); the name-only security trigger gains a bounded one-file near-miss peek to downgrade obviously-false trips (doubt → still fires — `phase-2-guards.md`); the final full-suite gate re-captures `tail -200` on red so diagnosis isn't starved by the green-path 40-line window (`phase-2-guards.md`).
+
 ## [2.7.0] - 2026-07-15
 
 ### Added
