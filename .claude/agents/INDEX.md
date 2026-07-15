@@ -1,6 +1,6 @@
 # Agent index
 
-Which model each agent in `.claude/agents/` runs on and what it does (model from each file's frontmatter `model:`). For how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — the prose companion to this table, not an agent itself.
+Which model each agent in `.claude/agents/` runs on and what it does (model from each file's frontmatter `model:`). Tier *policy* — who gets which tier and why, floors, escalation — lives in [`../orchestrator/references/model-tiers.md`](../orchestrator/references/model-tiers.md); this table mirrors it. For how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — the prose companion to this table, not an agent itself.
 
 ## `/dev` workers
 

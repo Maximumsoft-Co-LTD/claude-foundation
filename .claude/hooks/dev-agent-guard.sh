@@ -226,16 +226,18 @@ case "$subagent_type" in
     fi
 
     # Case 6: the generic search/explore built-ins (general-purpose, Explore) must
-    # set model=sonnet on every spawn — in or out of a /dev run. Neither has a
-    # `model:` frontmatter, so an absent or non-sonnet model inherits the main-
-    # session tier — an opus main session then runs the search/explore helper on
-    # opus. They only ever need sonnet, so require it explicitly and block anything
-    # else. (Named team-* keep their own tier via Case 4; a job that genuinely needs
+    # set model=<floor> on every spawn — in or out of a /dev run. Neither has a
+    # `model:` frontmatter, so an absent/mismatched model inherits the main-
+    # session tier — a higher-tier main session then runs the search/explore
+    # helper at that tier. The floor is sonnet by default; override per-machine
+    # with CLAUDE_DEV_FLOOR_MODEL (policy: orchestrator/references/model-tiers.md).
+    # (Named team-* keep their own tier via Case 4; a job that genuinely needs
     # a higher tier should spawn a named worker, not a generic built-in.)
     if [[ "$subagent_type" == "general-purpose" || "$subagent_type" == "Explore" ]]; then
+      floor="${CLAUDE_DEV_FLOOR_MODEL:-sonnet}"
       gp_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
-      if [[ "$gp_model" != "sonnet" ]]; then
-        reason="BLOCKED by agent guard: subagent_type=\"$subagent_type\" must set model=\"sonnet\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so a higher-tier main session (opus, or above) silently runs a search / explore / inline-fallback helper at that tier. Pass model=\"sonnet\"; if the job genuinely needs a higher tier, spawn a named worker instead."
+      if [[ "$gp_model" != "$floor" ]]; then
+        reason="BLOCKED by agent guard: subagent_type=\"$subagent_type\" must set model=\"$floor\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so a higher-tier main session silently runs a search / explore / inline-fallback helper at that tier. Pass model=\"$floor\" (floor = CLAUDE_DEV_FLOOR_MODEL, default sonnet); if the job genuinely needs a higher tier, spawn a named worker instead."
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi

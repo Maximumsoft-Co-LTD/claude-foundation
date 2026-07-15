@@ -19,7 +19,7 @@ Construction skills — **summary, not body** (same budget). At most ONE constru
 
 When in doubt, draft from the summary and ship — Mode B catches a missed fundamental cheaper than loading a 100 KB body. (One `SKILL.md`-body exception: `plan-writing > ## Parallelizable phases`, for a parallel-phase feat plan.)
 
-**Model note:** sonnet by default (plan/review are `plan-writing`-guided, sonnet ≈ opus at ~½ wall-clock); opus only for high-stakes (L-tier, cross-subsystem, schema migration, public API/event contract, breaking change, large/cross-module critical-path review, public-contract/type-shape change). Mode C always opus.
+**Model note:** sonnet by default (plan/review are `plan-writing`-guided; measured on the Claude 4-era family as ≈ opus at ~½ wall-clock — generation-dated, re-validate before leaning on it); opus only for high-stakes (L-tier, cross-subsystem, schema migration, public API/event contract, breaking change, large/cross-module critical-path review, public-contract/type-shape change). Mode C always opus. Policy home: `orchestrator/references/model-tiers.md`.
 
 ## Current state (Mode A — current-state map) — full stance
 
@@ -93,7 +93,7 @@ When re-spawned with gate-revise notes (Phase 1 step 3 (gate) `revise`), you pat
 
 ## Recruit help when the work is large (direct nesting — all modes)
 
-You hold `Agent` — when scope is too big for one serial pass, **spawn helpers directly** (v2.1.172+), integrate their returns, stay the sole writer of your artifact. This is the primary path (skips the orchestrator's collect-then-re-spawn round-trip); `FANOUT_REQUESTED:` is the fallback. **Honour the gated `## Fanout plan`** (`state.json > fanout_plan`): `off` → single-pass, `on` → fan out even if your heuristic would skip. **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → `team-*` by name; `inline-fallback` → `general-purpose` + `model="sonnet"` with `.claude/agents/team-<role>.md` inlined (Case 6 blocks an unpinned general-purpose spawn); `unknown` → try named, fall to inline on `not found`, report the path used. A miss never drops you to single-pass.
+You hold `Agent` — when scope is too big for one serial pass, **spawn helpers directly** (v2.1.172+), integrate their returns, stay the sole writer of your artifact. This is the primary path (skips the orchestrator's collect-then-re-spawn round-trip); `FANOUT_REQUESTED:` is the fallback. **Honour the gated `## Fanout plan`** (`state.json > fanout_plan`): `off` → single-pass, `on` → fan out even if your heuristic would skip. **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → `team-*` by name; `inline-fallback` → `general-purpose` + `model="sonnet"` with `.claude/agents/team-<role>.md` inlined (Case 6 blocks an unpinned general-purpose spawn); `unknown` → try named, fall to inline on `not found`, report the path used (an inline fallback for a haiku-pinned role runs a tier UP at the sonnet floor — say so, cost drift stays auditable). A miss never drops you to single-pass.
 
 - **Plan mode** — ≥ 2 integration points **in disjoint surfaces** → **one `team-codebase-explorer` per point**; ≥ 1 unfamiliar framework/API/security choice → add a `team-best-practice-researcher`. **Dedup:** if the prompt already has plan-prep explorer findings, recruit ONLY for uncovered points + residual best-practice research.
 - **Review mode** — follow the Review-fanout tiering below.

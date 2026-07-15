@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-07-15
+
+### Added
+
+- **Opus 4.8 main-model profile** — the workflow now closes the self-verification gap when the main session runs Opus 4.8 instead of a Mythos-class model: `artifact-lint.sh --hook` PostToolUse adapter (warn-only lint of the artifact just written, wired in `settings.json`; test suite → 40 assertions); `lint.sh` typechecks `.ts/.tsx` via the nearest tsconfig (`tsc --noEmit`, diagnostics filtered to the edited file, 20s cap) and `.py` via pyright when present; `orchestrator.md` preamble gains an effort ≥ high check for 4.8 sessions and a whole-brief-per-spawn rule.
+- **`orchestrator/references/model-tiers.md`** — single policy note for who runs on which tier and why (workers, analyzers, built-ins floor, escalation guidance); `INDEX.md` points at it; guard Case 6's sonnet floor is now `CLAUDE_DEV_FLOOR_MODEL`-overridable.
+
+### Changed
+
+- **Review recall fix:** `team-code-reviewer` reports ALL findings scored 0-100 (was: pre-filter to ≥ 80, which over-obeyed "don't be nitpicky" and dropped true positives); the ≥ 80 precision gate moves to `lead`'s synthesis, where cross-worker context lives. Fork ledger updated; the `team-*` forks are declared **DETACHED** from `pr-review-toolkit`.
+- **Review fanout defaults ON at M/L** (core-3 at M, full-6 at L); a `no` in the Fanout-plan Review row needs a stated reason. Other phases stay single-pass-first.
+- `engineer`: small decisions (naming, defaults, internal shapes) are chosen and noted, never `BLOCKER:`-ed. Inline-fallback dispatches must flag the haiku→sonnet tier upgrade in their path report. `lead`'s "sonnet ≈ opus at ½ wall-clock" claim marked generation-dated.
+
 ## [2.6.9] - 2026-07-15
 
 ### Fixed
