@@ -1,5 +1,31 @@
 # Event Storming and domain discovery
 
+## Principle 2 (from SKILL.md): Discover boundaries from events, not entities
+
+**Rule:** When bounded contexts aren't yet known, find them by walking the domain's *events* — what happens, in what order, with what consequences — not by listing nouns. Run an Event Storming or Domain Storytelling workshop with domain experts present; contexts reveal themselves at seams where language and actors change.
+
+**Why:** Entity-first design ("we have User, Order, Product, Invoice — draw boxes around each") produces god-objects because the same noun means different things to different parts of the business. Event-first design ("someone places an order → payment captured → inventory reserved → invoice issued") makes seams visible: the team that talks about "placing an order" is not the team that talks about "recognizing revenue."
+
+**How to apply:**
+- **Don't skip the workshop just because it sounds heavy.** A 3-hour Event Storming session with five domain experts and four engineers can save quarters of refactoring. Events become domain events, commands become use-case methods, policies become event handlers, read models become projections — the output is an executable plan.
+- **Three flavors of Event Storming:** *Big Picture* (whole business line, find contexts), *Process Modelling* (one process end-to-end with commands, policies, and reactions), *Software Design* (zoom into one process, identify aggregates and contexts). Pick the flavor matching the question.
+- **Domain Storytelling** is the lighter alternative — pictographic actor/work-object/activity diagrams via facilitator interview. Better for narrative cooperation flows; weaker for event-driven systems.
+- **Boundary signals:** language changes ("order" until it ships, then "shipment"); actors change (sales hands off to operations); clock changes (real-time vs. nightly batch); hotspot pink stickies cluster.
+- The output is a *list of candidate bounded contexts* plus events that cross them. Validate against principles 3–4 before cementing in code.
+- See [[event-storming]] for the workshop format, sticky-color grammar, facilitation tips, and artifact-to-code mapping.
+
+**Example:**
+```
+Wrong: team lists nouns: User, Order, Product, Invoice. Draws boxes, calls them services.
+       Six months later, every feature touches User and Order because each noun means four
+       things. The "model" is the source of friction.
+
+Right: 3-hour Event Storming reveals: cart-built → payment-captured → order-confirmed →
+       inventory-reserved → shipment-scheduled → invoice-issued → revenue-recognized.
+       Natural seams: Checkout owns cart-to-confirmed; Fulfillment owns reserved-through-
+       delivered; Finance owns invoice-and-revenue. Each has its own "order" concept. No god-object.
+```
+
 ## Why event-first discovery
 
 The temptation when modeling a new domain is to start with the nouns: "we have users, orders, products, invoices — let's draw boxes around each and call them services." This is the canonical path to god-objects, because the same noun means different things to different parts of the business. The `User` in Identity is not the `User` in Marketing is not the `User` in Support. A model trying to satisfy all three satisfies none, and every feature that touches `User` becomes a coordination problem across the whole company.

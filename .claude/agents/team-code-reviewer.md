@@ -20,6 +20,10 @@ In the `/dev` fanout, the orchestrator passes the diff slice to review in your p
 
 **Code Quality**: code duplication, missing critical error handling, accessibility problems, inadequate test coverage.
 
+**Comment Accuracy** (absorbed from the retired `team-comment-analyzer` lens): comments/docstrings must match what the code actually does — flag stale or wrong comments (comment rot), comments that narrate the obvious instead of stating a non-obvious constraint, and missing docs on a tricky public surface.
+
+**Simplification** (absorbed from the retired `team-code-simplifier` lens, advisory): places where the diff adds avoidable complexity — a simpler equivalent structure, dead branches, over-abstraction, needless indirection. Behavior-preserving suggestions only; score these honestly (they'll usually sit in the 26-75 advisory band).
+
 ## Issue Confidence Scoring
 
 Rate each issue 0-100 and **report ALL findings with their score** — the ≥ 80 precision gate is applied downstream at synthesis (`lead` review, `references/lead.md > Fanout`), where cross-worker context lives. Do NOT pre-filter: a finding you suppress here is unrecoverable, one you report low is a one-line skip for the synthesiser.

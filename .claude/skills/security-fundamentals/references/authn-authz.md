@@ -5,6 +5,70 @@
 
 The overwhelming majority of serious web bugs are **authorization** failures — the authn happy path is obvious and tested; the authz check is the one nobody notices is missing until an attacker increments an id.
 
+## Principle 4 (from SKILL.md): Authenticate once, authorize every access — deny by default, on the server
+
+**Rule:** Authentication (who are you) happens once per request and establishes identity. Authorization (may you do *this*, to *this object*) happens at every access, on the server, derived from that identity — never from a value the client supplied. Default to deny.
+
+**Why:** **Broken access control is the most common serious web vulnerability** — the happy path works perfectly; the bug only appears when an attacker changes the id in the URL. Authn proves identity; it says nothing about whether this user may read invoice 4012. Deny by default: absence of explicit allow = denial; new endpoints start locked so a forgotten check fails closed. The check must be server-side — a hidden UI element is not authorization.
+
+**How to apply:**
+- Derive the actor's identity from the authenticated session/token on the server. Never trust a `userId`, `role`, `isAdmin`, or `tenantId` that arrived in the request body, query string, or a client-set header — those are attacker-controlled (principle 1).
+- Authorize the *specific object and action*, not just "is logged in." The check is `can(actor, 'read', invoice)`, and it must run on the actual object you are about to return, after you load it. Function-level checks (is this user an admin) and object-level checks (does this invoice belong to this user) are different; you need both.
+- Default deny: route guards and policy checks should reject unless a rule explicitly permits. Prefer a central policy layer over scattered `if (user.role === ...)` checks that drift.
+- Sessions and tokens: cookies `HttpOnly` + `Secure` + `SameSite`; rotate the session id on privilege change (login, role elevation) to prevent fixation; short-lived access tokens with refresh; validate JWT signature *and* `alg` (reject `none`), `exp`, `aud`, `iss` — see below.
+- Enforce authorization at the lowest layer that has the object — ideally in the use case / service, so every transport (HTTP, gRPC, job) inherits it, not bolted onto one controller.
+
+**Example:**
+```ts
+// Bad — authenticated but not authorized; trusts the id and never checks ownership
+app.get('/invoices/:id', requireLogin, async (req, res) => {
+  const invoice = await db.invoices.find(req.params.id)   // any logged-in user reads ANY invoice
+  res.json(invoice)                                       // IDOR — change :id, read the world
+})
+
+// Bad — trusts a client-supplied role
+if (req.body.role === 'admin') { /* ... */ }              // attacker just sends role=admin
+
+// Good — identity from the session, object-level authz, deny by default
+app.get('/invoices/:id', requireLogin, async (req, res) => {
+  const invoice = await db.invoices.find(req.params.id)
+  if (!invoice) return res.sendStatus(404)
+  if (invoice.ownerId !== req.session.userId) return res.sendStatus(404)  // not 403: don't confirm existence
+  res.json(invoice)
+})
+```
+
+## Principle 5 (from SKILL.md): Secrets and crypto — vetted primitives, the right tool, never in the repo
+
+**Rule:** Never invent your own cryptography. Use a vetted library, pick the primitive that matches the job (hashing ≠ encryption ≠ signing, and password hashing is its own category), and keep secrets out of source control and out of logs.
+
+**Why:** Crypto is the one area where "looks correct and round-trips" is no evidence of security — a reused nonce destroys a stream cipher, a non-constant-time compare leaks a token byte by byte, and a fast hash for passwords means an attacker brute-forces the DB overnight. Choosing the wrong primitive is as fatal as a weak one: encryption ≠ integrity, signature ≠ confidentiality, passwords need a *slow* hash. Call the vetted library for the purpose it was built for; tune the cost, don't replace the algorithm.
+
+**How to apply:**
+- Passwords → `argon2id` (preferred), `scrypt`, or `bcrypt`. Never a general-purpose hash, never homegrown salting. The library handles the salt and work factor; tune the cost, don't replace the algorithm.
+- Symmetric encryption → authenticated encryption (AES-GCM, ChaCha20-Poly1305) via libsodium / your platform's vetted module. Never ECB. Never reuse a nonce. If you're choosing a mode by hand, you're already in danger.
+- Integrity/authenticity → HMAC (shared secret) or a digital signature (asymmetric, e.g. Ed25519). Compare MACs and tokens with a **constant-time** comparison (`crypto.timingSafeEqual`, `hmac.compare_digest`), never `==`.
+- Randomness for anything security-relevant (tokens, ids, nonces, salts) → a CSPRNG (`crypto.randomBytes`, `secrets.token_bytes`), never `Math.random()` / `random.random()`.
+- Secrets (API keys, DB passwords, signing keys) → environment / a secrets manager, injected at runtime. Never committed — and this repo's `protect-secrets.sh` hook blocks reading `.env` and credential files for exactly this reason. Keep them out of logs, error messages, and exception traces, and assume any secret ever committed (even removed in a later commit) is compromised and must be rotated.
+- See the primitive-selection table below for the password-hashing and crypto decision rules.
+
+**Example:**
+```python
+# Bad — homemade "encryption", fast hash for passwords, leaky comparison
+token = base64.b64encode(user_id.encode())          # encoding, not encryption — trivially reversed
+pw_hash = hashlib.sha256(password.encode()).digest()  # fast hash → whole DB cracked offline
+if provided_token == stored_token: ...                # timing leak — guess the token byte by byte
+
+# Good — vetted primitives, right tool for each job, constant-time compare
+from argon2 import PasswordHasher                     # slow, salted, tuned
+ph = PasswordHasher()
+pw_hash = ph.hash(password)                           # store this; verify with ph.verify()
+
+import secrets, hmac
+token = secrets.token_urlsafe(32)                     # CSPRNG, unguessable
+if hmac.compare_digest(provided_token, stored_token): ...  # constant-time
+```
+
 ## Sessions vs tokens
 
 ### Cookie sessions (server-side state)

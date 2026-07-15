@@ -2,6 +2,42 @@
 
 Companion to principle 7 of [[queue-fundamentals]]. Use whenever a use case must change DB state and emit an event to a broker atomically — almost any meaningful event-driven backend.
 
+## Principle 7, in full: don't dual-write to DB and queue
+
+**Rule:** Never write to a database and publish to a broker as two separate steps. They cannot be made atomic across systems, and the gap is where data gets corrupted in production.
+
+**Why:** "Save the row, then publish the event" looks fine until the process crashes between the two — DB commits but broker is down, or broker accepts but DB rolls back. Each leaves an inconsistency no retry fixes. This is the single most common source of "we lost the event" bugs.
+
+**How to apply:**
+- **Transactional outbox.** Write the outgoing message into an `outbox` table *in the same DB transaction* as the state change. A separate relay process polls the outbox (or uses CDC on it) and publishes to the broker. The relay marks rows as published. Producers never talk to the broker directly.
+- **CDC (Change Data Capture).** Read the DB's write-ahead log (Postgres logical replication, MySQL binlog, MongoDB oplog) with a tool like Debezium, and turn DB changes into events automatically. Higher ops cost than outbox; lower application-code cost.
+- The relay/CDC is at-least-once → publish duplicates are possible → consumers must be idempotent (principle 3). The two principles compose: outbox eliminates *lost* events, idempotency eliminates *duplicate* effects.
+
+**Example (TypeScript, outbox write inside the same transaction):**
+```ts
+// Bad — dual write. Crash between the two = lost event, no way to recover.
+async function placeOrder(cmd: PlaceOrderCommand) {
+  const order = Order.create(cmd)
+  await db.query('INSERT INTO orders ...', [order])
+  await broker.publish('order.placed', order) // ← if this fails, the event is gone
+}
+
+// Good — single DB transaction; relay publishes from the outbox later.
+async function placeOrder(cmd: PlaceOrderCommand) {
+  const order = Order.create(cmd)
+  await db.transaction(async (tx) => {
+    await tx.query('INSERT INTO orders ...', [order])
+    await tx.query(
+      `INSERT INTO outbox (id, topic, payload, created_at)
+       VALUES ($1, $2, $3, now())`,
+      [order.eventId, 'order.placed', JSON.stringify(order)],
+    )
+  })
+  // A separate relay process reads outbox rows and publishes them. The use case
+  // doesn't know the broker exists.
+}
+```
+
 ## The problem in one diagram
 
 ```

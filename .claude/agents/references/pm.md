@@ -13,7 +13,7 @@ Load a section only when its trigger fires; the core `pm.md` carries everything 
 
 ## Recruit help (direct nesting)
 
-**Load when:** the draft `spec.md` needs facts you lack and leaves ≥ 2 independent probes. You hold `Agent` — spawn research helpers yourself (v2.1.172+) and refine the spec from their returns. `FANOUT_REQUESTED: research` is the orchestrator-mediated fallback. **Draft-first always:** write the spec, *then* escalate.
+**Load when:** the draft `spec.md` needs facts you lack and leaves ≥ 2 independent probes. You hold `Agent` — spawn research helpers yourself (v2.1.172+) and refine the spec from their returns. No signal fallback — if you genuinely can't direct-nest, return `BLOCKER:` naming why. **Draft-first always:** write the spec, *then* escalate.
 
 - **When** — ≥ 2 independent probes the digest + repo don't answer. One probe → resolve inline.
 - **Split + spawn** — one `team-codebase-explorer` per `codebase-*` fact, one `team-best-practice-researcher` per `best-practice-*` question, in **one message** (parallel), **cap 4**. Give each: run id/type, the spec excerpt, its question, the sections to return.

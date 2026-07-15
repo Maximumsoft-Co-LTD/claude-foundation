@@ -1,5 +1,62 @@
 # Bounded contexts
 
+## Principle 3 (from SKILL.md): One ubiquitous language per bounded context
+
+**Rule:** Inside a bounded context, code, conversations, tickets, dashboards, schemas, and API contracts all use the *same words the domain experts use*, with the same meanings. Across contexts, the same word may mean a different thing — that's correct. Translation, if needed, happens at the boundary via an anticorruption layer or published language, never in code that pretends one model serves both contexts.
+
+**Why:** The translation tax — `record` in code, `row` in DB, `entity` in API, `account` in CRM, `user` in talk-track — is paid on every conversation, review, onboarding, and bug report, forever. Worse, when language drifts, bugs drift: developers and domain experts agree they understood each other and then ship the wrong thing because "an active customer" meant two different things.
+
+**How to apply:**
+- **Build a glossary per bounded context.** Twenty terms, one sentence each, ratified by domain experts. Living document. Code must use these terms verbatim.
+- **Rename ruthlessly.** When the glossary says `policy`, rename `record`/`entry`/`agreement`/`contract` to `policy` across the codebase, DB schema, API, dashboards, and runbooks. The translation cost is paid once at rename time and saved forever after. (This deliberate, glossary-driven rename is a scoped change — not the incidental adjacent-code rename [[coding-discipline]]'s *surgical-changes* warns against.)
+- **The same word in two contexts is two different concepts.** `IdentityCustomer` and `BillingCustomer` can both exist, different fields, invariants, lifecycles. They share an ID but not a model.
+- **The smell:** developers and domain experts have parallel vocabularies. Domain expert says "renewal grace period"; engineer says "the field on the subscription table that controls whether we still let them log in for 7 days." Close it by adopting the expert's term in code.
+
+**Example:**
+```
+Wrong: insurance system uses `Policy` in three contexts (underwriting: draft proposal; billing:
+       recurring relationship; claims: coverage agreement). One class with thirty nullable fields.
+       Every bug is "we treated a quoted policy as a billable one."
+
+Right: three bounded contexts, three named concepts: `Quote` (underwriting), `BillableSubscription`
+       (billing), `CoverageAgreement` (claims). Each has its own fields and lifecycle. The shared
+       identifier is a `PolicyNumber`. Translation at explicit integration points.
+```
+
+## Principle 4 (from SKILL.md): Name the relationship between contexts deliberately
+
+**Rule:** For each pair of bounded contexts that must integrate, pick one of the seven context-mapping patterns and *name it* — in the context map, in team vocabulary, and (when relevant) in code. The pattern names what the contract is, who owns the translation, and what the failure modes are.
+
+**Why:** Most cross-context pain is unnamed coupling. Two contexts agreed-by-accident to share a model and now neither can evolve. The seven names let two teams have a five-minute conversation about which one applies instead of a six-month conversation about who broke the build.
+
+**How to apply (the seven patterns):**
+
+| Pattern | When to use it | Cost / risk |
+|---|---|---|
+| **Shared Kernel** — two contexts jointly own a small shared model. | Concept is genuinely identical in both contexts AND teams cooperate closely. Examples: a `Money` type, a small shared protobuf. | Brittle; any change needs coordination. Use *sparingly* — most "shared" things differ subtly between contexts. |
+| **Customer / Supplier** — downstream depends on upstream but has political pull on upstream's roadmap. | Both teams inside the same org; supplier *accepts responsibility* for serving customer's needs. | Real cooperation cost; works only when the relationship the pattern names is real. |
+| **Conformist** — downstream slavishly accepts whatever upstream publishes. | Upstream won't accommodate (different org, vendor, regulator) AND downstream model fits cleanly onto upstream. | Couples downstream forever to upstream's choices. Acceptable when upstream is stable and fine. |
+| **Anticorruption Layer (ACL)** — translation shell at the boundary. | Upstream's model leaks concepts you don't want in your domain: vendor APIs, legacy systems. **Most common defensive pattern.** | Real translation code at the boundary; pay it deliberately, not implicitly throughout the codebase. |
+| **Open Host Service (OHS)** — upstream publishes a stable, deliberately-designed protocol for *many* consumers. | Upstream is consumed by enough downstreams that pairwise integration is unmaintainable. Pair with Published Language. | Upstream pays the cost of a stable public surface forever. |
+| **Published Language** — a shared, deliberately-designed interchange schema neither side owns. | Industry-standard formats (HL7, FIX, ISO 20022) or internal org-standard schemas in a schema registry. | Governance cost — but replaces N pairwise translations. |
+| **Separate Ways** — explicit decision *not* to integrate. | Integration genuinely isn't worth its cost; two contexts are near-duplicates by accident. | The cost of *not* using this when it applies is dragging a useless integration for years. |
+
+- **A context map** is a single diagram listing every integrating pair and the pattern between them. Keep it one page. Update when the relationship changes.
+- **Most common patterns in practice:** ACL when integrating with anything outside your team's control; OHS + Published Language when you are upstream for many consumers; Customer/Supplier for two friendly internal teams; Separate Ways when someone proposes an integration nobody actually needs.
+- **Be suspicious of:** Shared Kernel (ages badly) and Conformist (often means you skipped the ACL conversation).
+- See [[bounded-contexts]] for the full pattern catalog, context-map drawing recipe, and ACL depth.
+
+**Example:**
+```
+Wrong: platform integrates with a legacy ERP; maps cryptic field names (`STK_BAL`, `LOC_CD`,
+       `WHSE_NUM`) directly into its types. Six months in, half the domain model speaks the
+       ERP's language; renaming ERP fields requires touching forty files.
+
+Right: platform puts an ACL at the boundary. `LegacyErpInventoryAdapter` emits clean
+       `InventoryLevel` values in the platform's ubiquitous language. When the ERP changes,
+       only one module changes. The rest of the codebase stays unpoisoned.
+```
+
 ## What a bounded context actually is
 
 A **bounded context** is the region of the domain inside which a model is consistent and the language is shared. It is not a service. It is not a module. It is not a team boundary. It is a *linguistic + semantic* boundary — the area where every concept has one definition that everyone (engineers, domain experts, the database schema, the API, the dashboards) agrees on.
