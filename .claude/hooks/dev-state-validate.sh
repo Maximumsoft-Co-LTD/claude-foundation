@@ -62,15 +62,41 @@ if ! jq empty "$fp" 2>/dev/null; then
   emit_block "BLOCKED by /dev state validator: $fp is not valid JSON after this edit — /dev --resume parses it verbatim, so this breaks resume. Re-Write the COMPLETE state.json object as valid JSON, then continue."
 fi
 
-# 2. No duplicated top-level key. jq silently keeps the LAST of a duplicate, so
-#    a dup parses clean but means a targeted Edit inserted a second copy instead
-#    of replacing the value — the two-`notes`-keys corruption class. Top-level
-#    keys are 2-space indented in the canonical layout; nested keys are deeper
-#    and never match, so this checks only the object root.
-dup="$(grep -oE '^  "[A-Za-z0-9_]+"[[:space:]]*:' "$fp" 2>/dev/null | sort | uniq -d | head -1 || true)"
-if [[ -n "$dup" ]]; then
-  key="$(printf '%s' "$dup" | sed -E 's/^  "([A-Za-z0-9_]+)".*/\1/')"
-  emit_block "BLOCKED by /dev state validator: $fp has a duplicate top-level key \"$key\" — a targeted Edit must REPLACE an existing key's value, never insert a second copy (this is the corruption that breaks /dev --resume). Re-Write the COMPLETE object with exactly one of each key."
+# 2. No duplicated key. jq silently keeps the LAST of a duplicate, so a dup
+#    parses clean but means a targeted Edit inserted a second copy instead of
+#    replacing the value — the two-`notes`-keys corruption class. Primary check
+#    is python3's object_pairs_hook (exact, indent-proof, catches nested dups);
+#    without python3 fall back to the old 2-space-indent grep heuristic, which
+#    only sees the canonical layout's object root.
+key=""
+if command -v python3 >/dev/null 2>&1; then
+  key="$(python3 - "$fp" 2>/dev/null <<'PY' || true
+import json, sys
+
+def pairs(p):
+    seen = set()
+    for k, _ in p:
+        if k in seen:
+            print(k)
+            sys.exit(0)
+        seen.add(k)
+    return dict(p)
+
+try:
+    with open(sys.argv[1]) as f:
+        json.load(f, object_pairs_hook=pairs)
+except SystemExit:
+    raise
+except Exception:
+    pass
+PY
+)"
+else
+  dup="$(grep -oE '^  "[A-Za-z0-9_]+"[[:space:]]*:' "$fp" 2>/dev/null | sort | uniq -d | head -1 || true)"
+  [[ -n "$dup" ]] && key="$(printf '%s' "$dup" | sed -E 's/^  "([A-Za-z0-9_]+)".*/\1/')"
+fi
+if [[ -n "$key" ]]; then
+  emit_block "BLOCKED by /dev state validator: $fp has a duplicate key \"$key\" — a targeted Edit must REPLACE an existing key's value, never insert a second copy (this is the corruption that breaks /dev --resume). Re-Write the COMPLETE object with exactly one of each key."
 fi
 
 exit 0

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.9] - 2026-07-15
+
+### Fixed
+
+- **`dev-state-validate.sh` duplicate-key check is now indent-proof** — the old check greped for exactly-2-space-indented top-level keys, so any state.json written at a different indent silently defeated the guard that exists because a two-`notes`-keys corruption once broke `/dev --resume`. Primary check is now python3 `json.load(object_pairs_hook=…)` (exact, catches nested dups too); the grep heuristic remains as the no-python3 fallback. Files: `.claude/hooks/dev-state-validate.sh`.
+- **`dev-agent-guard.sh` Case 4 no longer fails open (or crashes) on an unreadable model pin** — a `model` override on a named worker whose frontmatter pin can't be read (file missing / frontmatter reformatted) previously either slipped through or killed the hook via `set -euo pipefail` on the `sed` of a missing file. The pin read is now crash-proof and an override with an unreadable pin is refused with an explicit reason (no-override spawns are untouched). Files: `.claude/hooks/dev-agent-guard.sh`.
+- **`INDEX.md` pm row said `sonnet`; `pm.md` pins `opus`** (promoted in 2.6.5) — the only registry row that disagreed with its agent file. Files: `.claude/agents/INDEX.md`.
+
+### Changed
+
+- **Docs de-staled:** `dev.md` XS/S fast-path line now mentions `test-plan.md` folding into the combined spawn; `WORKFLOW.md` sub-agent constraints gain the surface (per-repo) fanout axis + pm's step-1 `research:` signal; `state-edge-cases.md` spells out that guard Case 3 fails OPEN with 0 or ≥2 concurrent runs (state discipline is then manual); guard Case 6 message no longer assumes an "opus" main session; `no-direct-main-commit.sh` header stamped OPT-IN. Files: `.claude/commands/dev.md`, `WORKFLOW.md`, `.claude/orchestrator/references/state-edge-cases.md`, `.claude/hooks/{dev-agent-guard,no-direct-main-commit}.sh`.
+
 ## [2.6.8] - 2026-07-14
 
 ### Changed

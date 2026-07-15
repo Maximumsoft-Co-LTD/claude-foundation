@@ -173,9 +173,21 @@ case "$subagent_type" in
     req_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
     if [[ -n "$req_model" ]]; then
       def="${CLAUDE_PROJECT_DIR:-$PWD}/.claude/agents/$subagent_type.md"
-      pinned="$(sed -n 's/^model:[[:space:]]*//p' "$def" 2>/dev/null | head -1 | tr -d '[:space:]')"
-      if [[ -n "$pinned" && "$req_model" != "$pinned" ]]; then
-        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. A model override here silently runs the wrong tier (e.g. the opus main session leaking onto a sonnet-pinned worker). Drop the model param so the frontmatter governs — only lead may vary sonnet/opus per phase. (To let $subagent_type vary too, remove it from the Case 4 list in dev-agent-guard.sh.)"
+      # `|| true`: under `set -euo pipefail` a missing/unreadable $def made this
+      # assignment kill the whole hook (rc=1, fail-open-by-crash) before any
+      # branch below could run.
+      pinned="$(sed -n 's/^model:[[:space:]]*//p' "$def" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
+      if [[ -z "$pinned" ]]; then
+        # Fail CLOSED: an override is being requested but the pin can't be read
+        # (file missing or frontmatter reformatted). Allowing here would let the
+        # override run unchecked at whatever tier it names — the exact leak this
+        # case exists to stop. No-override spawns never reach this branch.
+        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its pinned model: frontmatter could not be read from $def (file missing or frontmatter reformatted). Cannot verify the override matches the pin, so it is refused — drop the model param to spawn at the agent file's own tier, or fix the frontmatter (a top-level 'model: <tier>' line)."
+        jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+        exit 0
+      fi
+      if [[ "$req_model" != "$pinned" ]]; then
+        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. A model override here silently runs the wrong tier (e.g. a higher-tier main session leaking onto a sonnet-pinned worker). Drop the model param so the frontmatter governs — only lead may vary sonnet/opus per phase. (To let $subagent_type vary too, remove it from the Case 4 list in dev-agent-guard.sh.)"
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi
@@ -223,7 +235,7 @@ case "$subagent_type" in
     if [[ "$subagent_type" == "general-purpose" || "$subagent_type" == "Explore" ]]; then
       gp_model="$(printf '%s' "$input" | jq -r '.tool_input.model // ""')"
       if [[ "$gp_model" != "sonnet" ]]; then
-        reason="BLOCKED by agent guard: subagent_type=\"$subagent_type\" must set model=\"sonnet\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so an opus main session silently runs a search / explore / inline-fallback helper on opus. Pass model=\"sonnet\"; if the job genuinely needs a higher tier, spawn a named worker instead."
+        reason="BLOCKED by agent guard: subagent_type=\"$subagent_type\" must set model=\"sonnet\" (got \"${gp_model:-<none>}\"). Without it the spawn inherits the main agent's tier, so a higher-tier main session (opus, or above) silently runs a search / explore / inline-fallback helper at that tier. Pass model=\"sonnet\"; if the job genuinely needs a higher tier, spawn a named worker instead."
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi
