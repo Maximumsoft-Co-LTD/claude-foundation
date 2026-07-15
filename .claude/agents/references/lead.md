@@ -105,12 +105,14 @@ You hold `Agent` — when scope is too big for one serial pass, **spawn helpers 
 
 ## Review fanout (Mode B step 1) — tiering + simplicity lens
 
-**Single-pass-first** (`orchestrator.md > Single-pass-first`) — the most expensive fanout; default to one direct pass. **Tier by size + risk:**
+**Tier by size + risk** (review is the one phase where the default flips to fanout at M/L — models under-reach for parallelism, so the default carries the reach; `orchestrator.md > Single-pass-first` still governs every other phase):
 - XS/S → always direct (or `SIZE_UPGRADE` if the diff proves larger).
-- M → defaults direct; may recruit only the **core 3 lenses** (`team-code-reviewer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`) for a cross-module/test-/fallback-sensitive diff.
-- L-tier / public-contract / type-shape / high-stakes → may use the **full 6** (+ `team-code-simplifier`, `team-comment-analyzer`, `team-type-design-analyzer`) when six passes repay their cost.
+- M → **default the core 3 lenses** (`team-code-reviewer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`); go direct only with a stated reason in the `## Fanout plan` Review row (a trivially-scoped diff is a valid reason — "cheaper" alone is not).
+- L-tier / public-contract / type-shape / high-stakes → **default the full 6** (+ `team-code-simplifier`, `team-comment-analyzer`, `team-type-design-analyzer`), minus the per-lens skip rules below; direct needs a stated reason.
 
 A comment-sparse diff skips `team-comment-analyzer`; no new types skips `team-type-design-analyzer`; an already-simple diff skips `team-code-simplifier`. Fanout per-agent sections go in `review.md > Per-agent findings`; Tasks-adherence + Acceptance-criteria rows are still walked one-by-one (`WORKFLOW.md > Anti-bias rule`).
+
+**Synthesis precision gate.** `team-code-reviewer` (and the other lenses) return **all** findings scored 0-100 — they do not pre-filter. YOU apply the gate at synthesis: findings ≥ 80 become `review.md` findings; 26-79 collapse to one-line FYIs under `Per-agent findings` (path:line + a clause); ≤ 25 drop silently. Cross-worker duplicates merge, keeping the highest score.
 
 **Simplicity lens (single-pass reviews only — when fanout ran, `team-code-simplifier` owns it).** Scan against `coding-discipline > Simplicity First` + its decision ladder: speculative abstraction, unrequested config/flags, a hand-rolled routine the stdlib/an installed dep does, a block that could be a fraction of its size. Flag genuine over-engineering as **non-blocking** (`path:line`, name the simpler form) — blocking only if it hides a real correctness/security risk. "Could be shorter" is not a finding.
 

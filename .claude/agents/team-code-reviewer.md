@@ -22,7 +22,7 @@ In the `/dev` fanout, the orchestrator passes the diff slice to review in your p
 
 ## Issue Confidence Scoring
 
-Rate each issue 0-100. **Only report issues with confidence ≥ 80.**
+Rate each issue 0-100 and **report ALL findings with their score** — the ≥ 80 precision gate is applied downstream at synthesis (`lead` review, `references/lead.md > Fanout`), where cross-worker context lives. Do NOT pre-filter: a finding you suppress here is unrecoverable, one you report low is a one-line skip for the synthesiser.
 
 - **0-25**: Likely false positive or pre-existing issue
 - **26-50**: Minor nitpick not explicitly in CLAUDE.md
@@ -32,7 +32,7 @@ Rate each issue 0-100. **Only report issues with confidence ≥ 80.**
 
 ## Output Format
 
-State what you're reviewing. Per high-confidence issue: description + confidence score · file:line · CLAUDE.md rule or bug explanation · concrete fix. Group by severity (Critical 90-100, Important 80-89). If none, confirm standards met with brief summary. Filter aggressively — quality over quantity.
+State what you're reviewing. Per issue: description + confidence score + severity · file:line · CLAUDE.md rule or bug explanation · concrete fix. Group by confidence band (Critical 91-100, Important 76-90, then the rest, descending). If none, confirm standards met with brief summary. Precision comes from honest scoring, not from withholding findings.
 
 ## Recruit help when the diff is large (direct nesting)
 

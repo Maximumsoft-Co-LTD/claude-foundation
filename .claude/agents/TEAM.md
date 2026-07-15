@@ -46,11 +46,11 @@ Fork date: 2026-05-21
 ## Local edits (post-fork)
 
 - **2026-07-09** — added `LSP` to `team-code-reviewer`, `team-silent-failure-hunter`, `team-type-design-analyzer` (read-only: go-to-def / find-references for cross-diff verification). Does **not** touch the `Agent`/`Write`/`Bash` boundaries — these workers stay report-only and, except `team-code-reviewer`, still hold no `Agent`.
+- **2026-07-15** — `team-code-reviewer` scoring contract changed: report ALL findings with confidence + severity (was: pre-filter to ≥ 80). The ≥ 80 precision gate moved to `lead`'s synthesis (`references/lead.md > Review fanout`), where cross-worker context lives. Rationale: pre-filtering in the worker suppresses recall irrecoverably; current-generation models over-obey "don't be nitpicky" and drop true positives.
 
 ## Drift awareness
 
 Upstream parity is **not** enforced for forked agents. Drift is expected — the local forks are owned by this repo and pick up local conventions (this repo's `CLAUDE.md` rules, logging functions, test framework). Foundation-native workers (`team-codebase-explorer`, `team-best-practice-researcher`) have no upstream-parity obligation. The rules:
 
 - Any change to a `team-*` agent file must update the corresponding `Fork source:` block (top of the file, under the YAML) — at minimum, set a new `forked:` date or add a `local-edit:` line citing what changed.
-- An audit pass against upstream is a follow-up, not a recurring obligation. The audit diffs each local file against the source path above and decides per-finding whether to keep the local divergence or pull upstream.
-- If upstream `pr-review-toolkit` ships a new version with a structural change (new YAML fields, new output format), the audit is the trigger to re-evaluate the forks; this file's fork-date stamp is the reference point.
+- **DETACHED (decided 2026-07-15):** the forks are permanently detached from `pr-review-toolkit` — no upstream audit is planned or owed. The forks evolve with this repo's review pipeline only; anyone wanting upstream behaviour should install the plugin, not these files. (The fork-date stamp above remains the reference point for archaeology.)

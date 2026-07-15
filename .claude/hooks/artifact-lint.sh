@@ -27,10 +27,15 @@
 # when clean. Dependency-light: POSIX sh + the standard `awk`/`grep` toolchain;
 # no new packages, no JSON, does not read `.workflow/_templates/` at runtime.
 #
-# This is an OPTIONAL gate — invoke it by hand or in CI. It is NOT wired into the
-# /dev state machine and never blocks a tool call.
+# Two modes, neither ever blocks a tool call:
+#   CLI  — invoke by hand or in CI against a run dir (jq-free, POSIX sh).
+#   HOOK — `artifact-lint.sh --hook` as PostToolUse on Write|Edit (wired in
+#          settings.json): lints just the artifact that was written and surfaces
+#          findings as a warn-only additionalContext note. Requires jq (fails
+#          open without it); skips .workflow/_templates/.
 #
 # Usage:  sh artifact-lint.sh <path-to-.workflow/<id>/-dir>
+#         sh artifact-lint.sh --hook   (PostToolUse JSON on stdin)
 # Exit:   0 = clean (>=1 artifact found, every check passed)
 #         1 = any failed check, no recognised artifact, or a usage/argument error
 
@@ -199,6 +204,57 @@ check_ac_text_locality() {
   fi
 }
 
+# All per-file checks for one artifact. Shared by the CLI dir walk (main) and
+# the PostToolUse adapter (hook_main).
+lint_file() {
+  file="$1"
+  case "$(basename "$file")" in
+    spec.md)      check_spec "$file" ;;
+    plan.md)      check_plan "$file" ;;
+    tasks.md)     check_tasks "$file" ;;
+    test-plan.md) check_test_plan "$file" ;;
+  esac
+  # NB: check_* helpers clobber the global $name (see require, line ~64), so key
+  # this skip off the file's own basename, not the caller's loop var.
+  [ "$(basename "$file")" = "spec.md" ] || check_ac_text_locality "$file"
+  scan_placeholders "$file"
+}
+
+# PostToolUse adapter (`artifact-lint.sh --hook`): lint ONLY the artifact the
+# tool call just wrote, and WARN via additionalContext — never block, always
+# exit 0. Wired in settings.json under PostToolUse/Write|Edit so the model gets
+# placeholder/section findings as immediate feedback while drafting. jq is
+# required here (hook payloads are JSON); absent jq we fail open like the
+# other hooks. The CLI mode below stays jq-free.
+hook_main() {
+  command -v jq >/dev/null 2>&1 || exit 0
+  input="$(cat)"
+  fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null || true)"
+  case "$fp" in
+    */.workflow/_templates/*) exit 0 ;;  # templates carry placeholders by design
+    */.workflow/*) ;;
+    *) exit 0 ;;
+  esac
+  [ -f "$fp" ] || exit 0
+  base="$(basename "$fp")"
+  tmp="$(mktemp)"
+  if [ "$base" = "FOLLOWUPS.md" ]; then
+    check_followups "$fp" >"$tmp" 2>&1
+  else
+    case " $ARTIFACTS " in
+      *" $base "*) lint_file "$fp" >"$tmp" 2>&1 ;;
+      *) rm -f "$tmp"; exit 0 ;;
+    esac
+  fi
+  if [ "$fail_count" -gt 0 ]; then
+    findings="$(grep '^\[FAIL\]' "$tmp" || true)"
+    jq -n --arg m "artifact-lint (warn-only) — $fail_count finding(s) in $base; fix before the phase hands off:
+$findings" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
+  fi
+  rm -f "$tmp"
+  exit 0
+}
+
 main() {
   if [ "$#" -ne 1 ]; then
     usage
@@ -224,16 +280,7 @@ main() {
     file="$dir/$name"
     [ -f "$file" ] || continue
     found=$((found + 1))
-    case "$name" in
-      spec.md)      check_spec "$file" ;;
-      plan.md)      check_plan "$file" ;;
-      tasks.md)     check_tasks "$file" ;;
-      test-plan.md) check_test_plan "$file" ;;
-    esac
-    # NB: check_* helpers clobber the global $name (see require, line ~64), so key
-    # this skip off the file's own basename, not the loop var.
-    [ "$(basename "$file")" = "spec.md" ] || check_ac_text_locality "$file"
-    scan_placeholders "$file"
+    lint_file "$file"
   done
 
   # FOLLOWUPS.md governance. The shared backlog lives at .workflow/FOLLOWUPS.md
@@ -263,4 +310,8 @@ main() {
   fi
 }
 
-main "$@"
+if [ "${1:-}" = "--hook" ]; then
+  hook_main
+else
+  main "$@"
+fi
