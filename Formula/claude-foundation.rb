@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "Drop the /dev workflow (spec → plan → ship) + team-mode role commands"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
-  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.6.8.tar.gz"
-  sha256 "fffdaf72a724d669e92a852be6ca646fe10e0c2d40dad9c2563d60a3060e71b5"
+  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.8.1.tar.gz"
+  sha256 "b11569b307514d4aebe8dfd5c5911a817b226b8018a7a0d749050746018a0477"
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
@@ -18,10 +18,7 @@ class ClaudeFoundation < Formula
   # (forward-compatible), so arm64_sequoia also covers arm64_tahoe; add a
   # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
   # RELEASING.md). Platforms with no line fall back to build-from-source.
-  bottle do
-    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.6.8"
-    sha256 cellar: :any_skip_relocation, arm64_sequoia: "6aeeabe7961da2eb168030a7546b7cf0904dd1114fe48fc979c23e5eae33bbe2"
-  end
+  # bottle block re-added after the v2.8.1 bottle build (bottle.yml)
 
   def install
     libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
