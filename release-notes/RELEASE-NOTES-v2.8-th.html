@@ -109,6 +109,43 @@
 
 <section>
   <div class="wrap">
+    <h2>🥊 ทำไมต้องใช้ — เทียบกันตรงๆ <span class="vtag">strengths &amp; weaknesses</span></h2>
+    <p class="sub">เทียบกับการใช้ Claude Code เปล่าๆ และเทียบกับ spec-workflow ตัวอื่น — รวมจุดอ่อนของเราเองแบบไม่อ้อม</p>
+
+    <h3 style="margin:8px 0 4px;font-size:1.08rem">เทียบกับไม่ใช้ (vanilla Claude Code)</h3>
+    <table>
+      <tr><th style="width:32%">เรื่อง</th><th>Vanilla</th><th>claude-foundation</th></tr>
+      <tr><td>ความต้องการ → โค้ด</td><td>prompt เดียว ตีความเอง ผิดแล้วรื้อ</td><td>interview → <code>spec.md</code> เป็นสัญญา → <b>gate ยืนยันราย AC ก่อนเขียนโค้ดบรรทัดแรก</b></td></tr>
+      <tr><td>ใครตรวจงาน</td><td>โมเดลตรวจงานตัวเองใน context เดิม — มองข้ามจุดบอดตัวเอง</td><td>review/QA เป็น <b>agent แยก context สด</b> + ยุบเหลือ 4 lenses ที่ไม่ทับซ้อน — จับสิ่งที่ self-review ไม่เห็น</td></tr>
+      <tr><td>งานพังกลางทาง</td><td>เริ่มใหม่ เล่าใหม่</td><td><code>state.json</code> + <code>--resume</code> กลับมาต่อได้ทุก phase (implement fanout ต่อได้ราย phase)</td></tr>
+      <tr><td>Bug fix</td><td>แก้เลย ไม่มีหลักฐานว่าแก้ถูก</td><td>type=fix <b>บังคับ failing regression test ก่อน</b> แล้วค่อยแก้</td></tr>
+      <tr><td>Security</td><td>นึกได้ก็ตรวจ</td><td>trigger อัตโนมัติจาก path+content ทุก run — ลืมไม่ได้</td></tr>
+      <tr><td>วินัย</td><td>ขอร้องใน prompt ("อย่าลืม…")</td><td><b>shell hooks บังคับจริง</b> — state ผิด/spawn ผิด tier/แตะ secrets = โดน block ไม่ใช่โดนเตือน</td></tr>
+    </table>
+
+    <h3 style="margin:26px 0 4px;font-size:1.08rem">เทียบกับ spec-workflow ตัวอื่น (spec-kit, agent-os, ฯลฯ)</h3>
+    <ul class="feat">
+      <li><strong>Type-aware + size-aware ไม่ใช่ one-size-fits-all</strong> — fix/refactor/spike/docs เดินคนละเส้น, งาน XS มี patch lane ที่ spawn เดียวจบ ส่วนใหญ่ในตลาดบังคับ machinery เต็มกับทุกงาน</li>
+      <li><strong>Enforcement เป็นโค้ด ไม่ใช่ความหวัง</strong> — ตัวอื่นเกือบทั้งหมดเป็น prompt ล้วน ของเรามี PreToolUse/PostToolUse hooks 4 ตัว + เทสต์ 68 assertions ครอบตัว hooks เอง</li>
+      <li><strong>เศรษฐศาสตร์ model tier ในตัว</strong> — haiku/sonnet/opus ปักราย role มี guard กันเผลอรันแพง + นโยบายรวมที่ <code>model-tiers.md</code> — จ่าย opus เฉพาะจุดที่คุ้ม</li>
+      <li><strong>Skill เป็น on-demand references</strong> — always-on layer บางมาก (~1.3k คำ) ความรู้ 26 skills โหลดเฉพาะตอน trigger และหลัง v2.8.1 โหลดครั้งละ ~⅓ ของเดิม</li>
+      <li><strong>ยอมรับ trade-off เป็นลายลักษณ์อักษร</strong> — ทุก shortcut ที่แลก correctness ถูกบันทึกและมี backstop (spot-check, near-miss peek) ไม่ใช่ magic ที่พังเงียบ</li>
+    </ul>
+
+    <h3 style="margin:26px 0 4px;font-size:1.08rem">จุดอ่อนของเรา (พูดตรงๆ)</h3>
+    <ul class="feat">
+      <li><strong>Overhead ต่อ run สูงกว่า vanilla</strong> — run M/L เต็มรูปกิน token และเวลามากกว่าถามตรงๆ หลายเท่า — คุ้มเมื่องานมี blast radius จริง ไม่คุ้มกับ quick hack (ซึ่งไม่ควรเข้า <code>/dev</code> ตั้งแต่แรก)</li>
+      <li><strong>State machine ฝั่ง prompt ยังไม่มี regression test</strong> — hooks มีเทสต์แล้ว แต่ orchestrator flow ทั้งเส้นพิสูจน์ด้วยการใช้จริง golden-run smoke test อยู่ในแผน v2.9</li>
+      <li><strong>Multi-repo เขียนได้ทีละ repo</strong> — อ่าน/รีวิว/ตรวจข้าม repo ขนานได้ แต่ implement/ship ปักที่ repo หลัก by design — finding ข้าม repo ต้องให้คนตัดสิน</li>
+      <li><strong>ผูกกับ Claude Code รุ่นใหม่</strong> — direct nesting ต้อง v2.1.172+ และ convention ทั้งชุดมี learning curve ก่อนอ่าน run แรกออก</li>
+      <li><strong>คุณภาพ spec ขึ้นกับคำตอบ interview</strong> — ระบบ grill ให้ แต่ตอบมั่วก็ได้ spec มั่วแบบมีพิธีการ</li>
+      <li><strong><code>team-*</code> reviewers ตัดขาดจาก upstream แล้ว</strong> — ได้ความสอดคล้องกับไปป์ไลน์ แลกกับไม่ได้ของใหม่จาก pr-review-toolkit อัตโนมัติ</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
     <h2>🛡️ แก้ bug จริงใน hooks <span class="vtag">v2.6.9</span></h2>
     <p class="sub">สอง fail-open ที่ซ่อนอยู่ในกลไกป้องกัน state — เจอจากการ audit ทั้งระบบ</p>
     <ul class="feat">

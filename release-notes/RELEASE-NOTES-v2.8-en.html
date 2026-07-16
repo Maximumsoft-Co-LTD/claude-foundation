@@ -109,6 +109,43 @@
 
 <section>
   <div class="wrap">
+    <h2>🥊 Why use it — an honest comparison <span class="vtag">strengths &amp; weaknesses</span></h2>
+    <p class="sub">Against vanilla Claude Code, against other spec workflows — our own weaknesses included, no spin</p>
+
+    <h3 style="margin:8px 0 4px;font-size:1.08rem">vs. not using it (vanilla Claude Code)</h3>
+    <table>
+      <tr><th style="width:32%">Concern</th><th>Vanilla</th><th>claude-foundation</th></tr>
+      <tr><td>Requirements → code</td><td>one prompt, self-interpreted; wrong = rework</td><td>interview → <code>spec.md</code> as the contract → <b>a gate confirms every AC before the first line of code</b></td></tr>
+      <tr><td>Who reviews</td><td>the model reviews itself in the same context — blind to its own blind spots</td><td>review/QA run as <b>fresh-context agents</b> with 4 non-overlapping lenses — they catch what self-review can't</td></tr>
+      <tr><td>Interrupted work</td><td>start over, re-explain</td><td><code>state.json</code> + <code>--resume</code> continues from any phase (implement fanout resumes per-phase)</td></tr>
+      <tr><td>Bug fixes</td><td>patch and hope</td><td>type=fix <b>requires a failing regression test first</b>, then the fix</td></tr>
+      <tr><td>Security</td><td>checked if remembered</td><td>automatic path+content trigger on every run — can't be forgotten</td></tr>
+      <tr><td>Discipline</td><td>pleaded for in prompts ("remember to…")</td><td><b>shell hooks enforce it</b> — bad state writes, wrong-tier spawns, secret reads get blocked, not warned about</td></tr>
+    </table>
+
+    <h3 style="margin:26px 0 4px;font-size:1.08rem">vs. other spec workflows (spec-kit, agent-os, …)</h3>
+    <ul class="feat">
+      <li><strong>Type-aware + size-aware, not one-size-fits-all</strong> — fix/refactor/spike/docs each take a different path; XS work gets a single-spawn patch lane. Most alternatives run full machinery on everything</li>
+      <li><strong>Enforcement is code, not hope</strong> — most alternatives are prompt-only; this ships 4 PreToolUse/PostToolUse hooks with a 68-assertion test suite over the hooks themselves</li>
+      <li><strong>Model-tier economics built in</strong> — haiku/sonnet/opus pinned per role, guard-enforced, one policy file (<code>model-tiers.md</code>) — opus is spent only where it pays</li>
+      <li><strong>Skills are on-demand references</strong> — the always-on layer is ~1.3k words; 26 skills load only when triggered, and after v2.8.1 each load costs ~⅓ of what it did</li>
+      <li><strong>Trade-offs are written down</strong> — every correctness-for-context shortcut is documented with a backstop (spot-check, near-miss peek), not silent magic</li>
+    </ul>
+
+    <h3 style="margin:26px 0 4px;font-size:1.08rem">Our weaknesses (plainly)</h3>
+    <ul class="feat">
+      <li><strong>Higher per-run overhead than vanilla</strong> — a full M/L run costs multiples in tokens and time; worth it when the blast radius is real, not for quick hacks (which shouldn't enter <code>/dev</code> anyway)</li>
+      <li><strong>The prompt-side state machine has no regression test yet</strong> — hooks are tested; the orchestrator flow is proven by use. A golden-run smoke test is planned for v2.9</li>
+      <li><strong>Multi-repo writes one repo at a time</strong> — read/review/security fan out across repos, but implement/ship stay pinned to the primary by design; cross-repo findings go to a human</li>
+      <li><strong>Tied to recent Claude Code</strong> — direct nesting needs v2.1.172+, and the conventions carry a learning curve before your first run reads fluently</li>
+      <li><strong>Spec quality depends on interview answers</strong> — the system grills, but garbage answers still produce ceremonial garbage</li>
+      <li><strong><code>team-*</code> reviewers are detached from upstream</strong> — pipeline coherence gained, automatic pr-review-toolkit improvements lost</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
     <h2>🛡️ Real hook bugs fixed <span class="vtag">v2.6.9</span></h2>
     <p class="sub">Two silent fail-opens hiding inside the state-protection machinery — found by the full audit</p>
     <ul class="feat">
