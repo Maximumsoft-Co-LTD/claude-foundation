@@ -5,7 +5,7 @@ Who runs on what, and why. `dev-agent-guard.sh` enforces this mechanically (Case
 | Role | Tier | Why |
 |---|---|---|
 | Orchestrator (main agent) | session model | Judgment-heavy: interview, gate fold, size/field calls, fanout arbitration. On Opus 4.8 sessions verify effort ≥ high (`orchestrator.md` preamble). |
-| `pm` | opus | Spec quality over spec cost — every later phase anchors on `spec.md` (promoted 2.6.5). |
+| `pm` | opus | Spec quality over spec cost — every later phase anchors on `spec.md` (promoted 2.6.5). One-shot `/dev` spawns `pm` at **L only** (XS–M: `lead` combined mode writes the spec — opus at M); `/spec` team mode always spawns `pm`. |
 | `lead` | sonnet default, opus escalation | The one worker allowed to vary (guard Case 4 exempts it). Escalation list: `references/lead.md > Model note`. Mode C (security — rides the review spawn when the trigger fires) always opus: a fired trigger makes the merged review+security spawn opus. |
 | `engineer` `qa` `retro` `uxui` | sonnet | Execution work guided by plan/test-plan artifacts; the artifacts carry the judgment. |
 | `team-best-practice-researcher` `team-code-reviewer` `team-silent-failure-hunter` | sonnet | Open-ended judgment: research synthesis, whole-diff review, error-path reasoning. |

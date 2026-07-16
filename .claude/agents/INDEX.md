@@ -10,7 +10,7 @@ The five sub-agents the orchestrator (main agent) spawns for the `/dev` file wor
 
 | Agent | Model | One-line role |
 |-------|-------|---------------|
-| [`pm`](./pm.md) | opus | Writes `spec.md` from the orchestrator's interview answers (Phase 1 spec; cannot interview the user itself). |
+| [`pm`](./pm.md) | opus | Writes `spec.md` from the orchestrator's interview answers (Phase 1 spec; cannot interview the user itself). One-shot `/dev`: L only — XS–M use `lead` combined mode; `/spec` always spawns it. |
 | [`lead`](./lead.md) | opus frontmatter; plan/review default sonnet override | Tech lead — three modes: plan (`plan.md`/`epic.md`), review (`review.md`), and trigger-based security (`security.md`; rides the review spawn when the trigger fires — one spawn, two artifacts). Opus is kept for security and high-stakes review/plan cases. |
 | [`engineer`](./engineer.md) | sonnet | Implements from `plan.md`, ticks acceptance criteria, does the docs touch-up, and ships (gate-decided commit — default no → ready-to-run commit command + optional PR). |
 | [`qa`](./qa.md) | sonnet | Test-plan mode (Phase 1) writes `test-plan.md` before code; execute mode (Phase 2) runs unit/integration/e2e against it; type-aware; blocks ship until tests pass or are skipped. |

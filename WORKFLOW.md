@@ -20,7 +20,7 @@ flowchart TD
 
     subgraph P1["Phase 1 — Requirements (interactive)"]
         direction TB
-        S1["1. Interview + spec<br/>orchestrator asks · pm writes spec.md"]
+        S1["1. Interview + spec<br/>orchestrator asks · pm (L) / combined lead (XS–M) writes spec.md"]
         S2["2. Plan<br/>lead → plan.md (or epic.md)"]
         S2T["Test plan<br/>qa → test-plan.md (feat/fix/refactor)"]
         S3{"3. Gate"}
@@ -100,11 +100,11 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 
 | File | Owner | Purpose |
 |---------|---------------|----------|
-| `spec.md` | `pm` | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
-| `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built once after the spec so `lead`/`qa`/`uxui`/`engineer` skip re-walking (`engineer` reads its `## Current state`). Optional — greenfield/XS-S skip it |
+| `spec.md` | `pm` (L · `/spec`) · `lead` combined (XS–M) | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
+| `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built once (M: digest-seeded, before the combined spawn; L: after the spec) so `lead`/`qa`/`uxui`/`engineer` skip re-walking (`engineer` reads its `## Current state`). Optional — greenfield/XS-S skip it |
 | `plan.md` | `lead` (plan mode) | **Summary** + **Technical Context** + **Gate check** (vs `rules/fundamentals.md`), **phases for this task**, architecture diagram, current-state + research notes, **scaffold skeleton** (M/L), files to touch (`path#anchor`), risks, **rollback** |
 | `tasks.md` | `lead` (plan mode) | **Executable task breakdown** — phased (Setup → Foundational → one per User Story by priority → Polish) `T### [P] [AC#] … verify:` tasks, dependency-ordered, each tied to an acceptance scenario; the engineer builds from this |
-| `test-plan.md` | `lead` combined (XS/S) or `qa` (M/L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan per AC, edge cases, out-of-scope, fixtures/env, regression (fix) / baseline (refactor) contract, coverage targets. Written after `plan.md`, signed off at the gate; `qa` executes it at Test |
+| `test-plan.md` | `lead` combined (XS–M) or `qa` (L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan per AC, edge cases, out-of-scope, fixtures/env, regression (fix) / baseline (refactor) contract, coverage targets. Written after `plan.md`, signed off at the gate; `qa` executes it at Test |
 | `uxui-plan.md` | `uxui` (team mode) | **Design-time UX plan** for UI work — Scenes, ASCII wireframes, Scenarios, UX direction & components, AC↔scene mapping. Written by `/uxui-plan` (not a linear state-machine step); `frontend-design` builds from it, `qa`'s Visual verification checks against it |
 | `review.md` | `lead` (review mode) | Tasks-adherence + **acceptance verification** against `spec.md` |
 | `security.md` | `lead` (security mode) | Security findings; only when the diff trips the sensitive-paths trigger |
@@ -186,7 +186,7 @@ Phase names below match the matrix; row numbers stay display-only in the table a
 
 ## Phase 1 — Requirements (interactive)
 
-Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract. **Interview + Spec** (`pm` writes `spec.md`) → **Plan** (`lead` writes `plan.md`+`tasks.md`) → **Test-plan** (`qa` writes `test-plan.md`) → **Gate** (per-line AC confirmation; loops until `approve` — see [Stop conditions](#stop-conditions)). Script: `.claude/orchestrator.md` (Phase 1 ops).
+Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract. **Interview + Spec** (`pm` writes `spec.md` at L; XS–M: `lead` combined) → **Plan** (`lead` writes `plan.md`+`tasks.md`) → **Test-plan** (`qa` writes `test-plan.md` at L; XS–M folded) → **Gate** (per-line AC confirmation; loops until `approve` — see [Stop conditions](#stop-conditions)). Script: `.claude/orchestrator.md` (Phase 1 ops).
 
 ## Phase 2 — Implementation (autonomous after approval)
 
@@ -233,7 +233,7 @@ Because `lead` reviews the plan they wrote, review mode is checklist-driven (one
 
 ## Team mode — run one role on its own
 
-Build the same artifacts role-by-role instead of one monolithic run, each writing into the **same `.workflow/<id>/` folder** so they compose; carry it the rest of the way with `/dev --resume <id>`. **Cost note:** team mode skips the XS/S combined fast path (`/spec` always spawns `pm`), so tiny/patch-lane work prefers one-shot `/dev`.
+Build the same artifacts role-by-role instead of one monolithic run, each writing into the **same `.workflow/<id>/` folder** so they compose; carry it the rest of the way with `/dev --resume <id>`. **Cost note:** team mode skips the XS–M combined fast path (`/spec` always spawns `pm`), so anything below L prefers one-shot `/dev` when a single flow will do.
 
 | Command | Role | Writes | Notes |
 |---------|------|--------|-------|

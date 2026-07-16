@@ -6,18 +6,18 @@ Canonical definition of **how much machinery each phase gets** (type decides *wh
 
 The orchestrator estimates size (XS/S/M/L — picker in `plan-writing > references/size-tiering.md`) right after the requirements digest and records it in `state.json`; for borderline or operationally risky work the same reference has a scorecard fallback (layers, data, cache, deploy, observability, security, test scope) that calibrates without replacing the hard picker overrides. The plan's `Size` field is a different knob: it governs plan *section gating* and `lead` sets it from the code walk (smaller than the estimate is fine), while `state.json > size` governs *machinery* and only moves up — a larger plan `Size` is a `SIZE_UPGRADE` signal, a smaller one never shrinks the machinery mid-run.
 
-| Step | XS | S | M / L |
-|------|----|---|-------|
-| Setup + interview questions | one merged batch (≤4 questions) | one merged batch | setup batch + interview batch (+ bounded dig loop) |
-| Spec + plan | one `lead` spawn (combined mode, `pm` skipped), no prep fanout | same as XS | `pm` + `lead` spawns, prep fanout default when independent points exist |
-| Test plan (feat/fix/refactor) | folded into combined `lead` spawn | folded into combined `lead` spawn | `qa` test-plan spawn |
-| Gate (per-line AC confirm) | full | full | full |
-| Implement | one `engineer` spawn | one spawn | one spawn (+ parallel-phase fanout: default when the **L-tier** feat plan declares disjoint phases) |
-| Test | inline (`e2e_visual=off`) — engineer writes the planned tests, orchestrator runs Impacted + writes `tests.md`; `on` → `qa` spawn | same as XS | `qa` execute spawn, per type matrix (+ category fanout only when suite splits enough to repay coordination) |
-| Review | `lead` sonnet, fanout refused (skipped for `chore`/`docs` at XS — size×type default) | sonnet, fanout refused | sonnet by default; M may use core 3-lens fanout when justified; L/high-stakes may use opus + full 6-lens |
-| Security review | trigger-based — check runs before Review; fired → folded into the review spawn | same | same |
-| Docs + ship | one merged `engineer` spawn | one merged spawn | M: one merged spawn · L: two spawns |
-| Retro | inline (orchestrator writes `retro.md`) | inline | M: `retro` spawn, light pass · L: full |
+| Step | XS | S | M | L |
+|------|----|---|---|---|
+| Setup + interview questions | one merged batch (≤4 questions) | one merged batch | setup batch + interview batch (+ bounded dig loop) | same as M |
+| Spec + plan | one `lead` spawn (combined mode, `pm` skipped), no prep fanout | same as XS | one `lead` combined spawn, **opus** (`pm` skipped); brownfield builds `context.md` first (digest-seeded, op 7a) | `pm` + `lead` spawns, prep fanout default when independent points exist |
+| Test plan (feat/fix/refactor) | folded into combined `lead` spawn | folded | folded | `qa` test-plan spawn |
+| Gate (per-line AC confirm) | full | full | full | full |
+| Implement | one `engineer` spawn | one spawn | one spawn | one spawn (+ parallel-phase fanout: default when the L-tier feat plan declares disjoint phases) |
+| Test | inline (`e2e_visual=off`) — engineer writes the planned tests, orchestrator runs Impacted + writes `tests.md`; `on` → `qa` spawn | same as XS | `qa` execute spawn, per type matrix | `qa` execute spawn (+ category fanout only when suite splits enough to repay coordination) |
+| Review | `lead` sonnet, fanout refused (skipped for `chore`/`docs` at XS — size×type default) | sonnet, fanout refused | sonnet by default; core 3-lens fanout when justified | sonnet default; L/high-stakes may use opus + full lens set |
+| Security review | trigger-based — check runs before Review; fired → folded into the review spawn | same | same | same |
+| Docs + ship | one merged `engineer` spawn | one merged spawn | one merged spawn | two spawns |
+| Retro | inline (orchestrator writes `retro.md`) | inline | `retro` spawn, light pass | `retro` spawn, full |
 
 **Never shrinks at any size:** the interview (merged, not skipped) · the gate + per-line AC confirmation · `state.json` discipline · the security trigger check · the type matrix. **Upgrades are one-way:** any worker can return `SIZE_UPGRADE: <S|M|L> — <reason>` as its first line; the orchestrator re-records `size` and runs the remaining steps with the bigger tier's machinery. Size never moves down mid-run. Mechanics: `.claude/orchestrator.md > Size-aware execution`.
 
