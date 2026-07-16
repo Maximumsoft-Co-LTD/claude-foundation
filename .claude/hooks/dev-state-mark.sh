@@ -107,6 +107,7 @@ BEFORE your next \`Agent\` spawn, update \`.workflow/${run_id}/state.json\` via 
   - \`next_step\`: per the type matrix in WORKFLOW.md (use \`"skipped:<reason>"\` for matrix-skipped steps)
   - \`cycles.review\` / \`cycles.test\`: bump only on actual cycle increments
   - \`last_updated\`: fresh ISO timestamp
+  - \`phase_times.<step>\`: same timestamp — completed-at per step (cycle re-entry overwrites; add the key if the run predates it)
   - \`last_agent\`: \`${subagent_type}\`
 
 The PreToolUse guard (\`.claude/hooks/dev-agent-guard.sh\` Case 3) blocks the next worker spawn until the mtime of \`state.json\` is newer than \`.last_worker_return\`. Skipping this is the single most common reason a /dev run gets BLOCKED and needs \`/dev --resume\`.
