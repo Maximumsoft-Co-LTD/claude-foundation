@@ -1,5 +1,54 @@
 # Boundaries
 
+Moved from `SKILL.md` — principles 1 and 2's full rule/why/how-to-apply/example, ahead of the topic-organized detail below.
+
+## Principle 1 (from SKILL.md): Draw the boundaries before the boxes
+
+**Rule:** Decide what's *one thing* before deciding whether to put it in one module, one service, or one team. Boundaries follow the domain, not the org chart or the technology you happen to like.
+
+**Why:** Every painful rewrite is a boundary problem. Conway's Law: the system mirrors your communication structure — if you don't choose boundaries deliberately, your org chart, your last hire, and your "we already have a service for that" reflex will choose them for you, and those choices last a decade.
+
+**How to apply:**
+- Name the **bounded contexts** — clusters of concepts where words have one definition. "Customer" in billing is not the same as "customer" in CRM; one model cannot serve both. The boundary goes where the language changes.
+- Within a bounded context, prefer the **smallest deployment unit that lets the team own a coherent piece of business value**. A new service is a permanent operational cost — separate deploy, monitoring, on-call, a network call where a function call used to be. Pay that cost only when the boundary buys genuine independence a module couldn't. **The 2024 Fowler/Newman consensus is "monolith unless you have a really good reason"** — extraction to services (via the strangler fig, see below) happens when a specific piece earns its way out. Starting microservices-first is a known anti-pattern.
+- **Boundaries hide implementation.** If exposing internals is the only way to make a feature work across a boundary, the boundary is in the wrong place. Move it before cementing it.
+- Watch the "two services that always deploy together" smell. They're really one. Either merge them, or fix the contract so changes don't ripple.
+
+**Example:**
+```
+Wrong: split "user profile" and "user authentication" into two services because they "feel different".
+       Every signup touches both. Every login changes both. They redeploy in lockstep forever.
+       Two services' worth of operational cost for one cohesive concept.
+
+Right: one Identity service owns the user concept end-to-end. Months later, when notifications grow
+       into a multi-channel product with its own backlog and on-call rotation, pull it out then —
+       when the boundary has earned its cost.
+```
+
+## Principle 2 (from SKILL.md): One owner per piece of data
+
+**Rule:** Every piece of state has exactly one component that owns its write path. Everyone else reads through that owner — via API, an event stream, or a read-only projection — and never writes directly to the owner's store.
+
+**Why:** Two writers to the same data = two truths, no tie-breaker. "The data is right in service A but the dashboard shows it wrong" and "we changed it in one place but the other place never noticed" both trace back to unnamed ownership. A single owner is one place to enforce invariants, run migrations, and add new fields.
+
+**How to apply:**
+- Pick the component whose **business rules govern the data** — that's the owner. Billing owns invoices, even though Support reads them.
+- Other components have three legitimate options, in order of preference:
+  1. **Read through the owner's API.** Always consistent at read time, costs a network hop.
+  2. **Subscribe to the owner's event stream** and build a local projection. Fast reads, eventually consistent, requires the outbox pattern (see [[queue-fundamentals]]).
+  3. **Shared read-only view or read replica.** Last resort — couples the consumer to the owner's storage schema.
+- **No shared writable store.** "We'll just have both services write to the same table to keep things simple" is the single most regretted decision in service-oriented systems. The "simplicity" lasts six weeks; the cleanup lasts six quarters.
+- If two components genuinely co-own a concept, you have two concepts hiding inside one name. Each owns its own version.
+
+**Example:**
+```
+Wrong: Orders and Inventory both write to `products` table. Schema migrations need both teams.
+       Bugs ping-pong: "who set the stock to -1?"
+
+Right: Catalog owns `products`. Inventory writes to its own `stock_levels` keyed by product ID.
+       Orders reads display name through Catalog's API. One owner per row, one place for invariants.
+```
+
 ## Bounded contexts
 
 A **bounded context** is a region of the domain where a word means one thing. "Order" inside Checkout (an in-progress cart waiting to be paid) is a different concept from "Order" inside Fulfillment (a packed box on a truck) and from "Order" inside Finance (a line on a revenue ledger). Trying to model all three as one `Order` entity produces a class with thirty fields, most of them nullable, and ten rules about when each field applies. That class becomes the thing no one wants to touch.

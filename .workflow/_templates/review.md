@@ -37,7 +37,7 @@ One row per spec.md acceptance scenario (`AC#`), including each boundary/error s
 
 ## Sign-off *(required)*
 
-pass | fix-required → see Phase 2 step 5
+pass | fix-required → see Test
 
 ---
 

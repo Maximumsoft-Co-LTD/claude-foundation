@@ -4,6 +4,26 @@ The deep technique behind principle 7. The failure mode — a long-lived branch 
 
 The enemy: "rewrite this subsystem on a branch, merge when done." It drifts, the merge is a multi-day conflict, and "we can't ship until it lands" holds the team hostage.
 
+## Principle 7 (from SKILL.md): Keep large refactorings shippable — Mikado and strangler
+
+**Rule:** When a refactor is too big for one sitting, don't open a long-lived branch and disappear. Keep the trunk green and shippable the whole way: discover the dependency graph and work it leaf-first (Mikado), or grow the new structure alongside the old and switch over incrementally (strangler / parallel change).
+
+**Why:** Big-bang refactors on long branches drift from `main`, block releases, and produce nightmarish merges. The alternative: decompose into small, independently shippable, always-green steps. Mikado finds that sequence safely (try the goal change, note what breaks, revert, record prerequisites, work leaves-first); strangler-fig / parallel-change applies the same idea to replacing a whole subsystem.
+
+**How to apply:**
+- Mikado: attempt the goal change directly. When it breaks something, don't push through — undo it, write down the prerequisite it revealed, and recurse. Implement leaves first (each a small green commit), erasing the graph as you go. Full technique in `references/large-scale.md`.
+- Replacing a component: use **branch by abstraction** (introduce a seam/interface, build the new implementation behind it, flip consumers one by one, delete the old) or **parallel change** (expand → migrate callers → contract). Never a flag-day cutover if you can avoid it.
+- Stay mergeable: short-lived branches, merge to trunk daily, be able to *stop at any point* and still have shipped value. If stopping would leave the system broken, your steps are too big.
+- When the refactor crosses service or process boundaries, [[architecture-fundamentals]] owns the runtime-boundary and strangler-migration decisions; this skill owns the keep-it-green mechanics.
+
+**Example:**
+```
+Goal: replace the home-grown ORM with a real one across 80 call sites.
+Big-bang: 3-week branch, 80 files at once, un-reviewable, blocks releases. ✗
+Mikado/branch-by-abstraction: introduce a Repository seam (commit). Migrate one aggregate behind it (commit, ship). Repeat per
+aggregate, trunk green and shipping the entire time. Delete the old ORM once the last caller moves. Stoppable at every step. ✓
+```
+
 ---
 
 ## The Mikado Method

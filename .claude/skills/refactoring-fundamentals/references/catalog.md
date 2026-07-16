@@ -4,6 +4,27 @@ Named refactorings are the vocabulary of principle 4 (small reversible steps). E
 
 **Golden rule under every move: run the tests after each micro-step; commit when green.** If a step reddens the suite, undo that one step — never push through.
 
+## Principle 4 (from SKILL.md): Small reversible steps, green between every one
+
+**Rule:** Move in the smallest behavior-preserving steps the catalog offers — Extract Function, Inline, Move, Rename, Replace Conditional with Polymorphism — running the tests after each and committing per step. Refactoring is a sequence of tiny safe moves, not one big edit.
+
+**Why:** Named moves are mechanical transformations with known mechanics; done one at a time with a green run between, a mistake is caught instantly and the diff is trivial to undo. This is the bright line between refactoring (code stays working at every step) and rewriting (throws away correctness, re-discovers every edge case). If you're estimating effort across a batch of changes, that's a rewrite — treat it as principle 7.
+
+**How to apply:**
+- Prefer the catalog's named moves over freehand edits — they have a tested sequence of micro-steps that never goes red. See `references/catalog.md`.
+- Run the test suite (or the affected subset) after each move. Commit when green. A refactor branch should be green at every commit, never "green again by Friday."
+- Lean on automated refactorings (IDE/LSP rename, extract) when available — they're behavior-preserving by construction and faster than hand-editing.
+- If a single step can't be made small and safe, you're missing a precursor step (often a characterization test or a seam). Add it first.
+
+**Example:**
+```
+Goal: replace a 6-branch type-code switch with polymorphism.
+Steps (green after each, one commit each):
+  1. Extract the switch into its own method.   2. Introduce the subclass hierarchy (empty overrides).
+  3. Move one branch into its subclass.  4. …repeat per branch…  5. Make the base method abstract.
+Each step is reversible; if step 3 reddens the suite, you undo one tiny commit, not a day's work.
+```
+
 ## Contents
 - Composing functions (Extract, Inline, Extract Variable, Replace Temp with Query, Split Phase)
 - Moving things (Move Function/Field, Extract Class, Inline Class)

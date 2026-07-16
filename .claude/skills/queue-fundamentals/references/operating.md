@@ -2,6 +2,78 @@
 
 Companion to principle 5 of [[queue-fundamentals]]. Use when wiring up retries, dashboards, DLQ handling, or shaping messages. Most queue incidents are operational — these controls turn a queue from a liability into load-bearing infrastructure.
 
+## Principle 4, in full: ack only after the work is durably done — and respect the visibility timeout
+
+**Rule:** Acknowledge a message *after* its effect is durable. Until then, the broker should consider the message in-flight and redeliver it if you crash. If your work might exceed the broker's visibility timeout, extend it explicitly.
+
+**Why:** **Ack-before-work** loses messages on crash (broker thinks done, work never ran). **Ack-after-work** is correct but causes duplicates on crash — exactly what principle 3 handles. Third trap: the visibility timeout. A broker hides a delivered message for a window; miss the window and it redelivers. A 30-second timeout on a 5-minute job means the job runs three times in parallel.
+
+**How to apply:**
+- Ack pattern: receive → do work → write result → **then** ack. Never the other order.
+- Set the visibility timeout longer than your p99 work time, with margin. If work time is unpredictable, **heartbeat / extend** the visibility window from inside the handler.
+- For long-running jobs (minutes+), consider a "claim" model: write `job.status='running', claimed_at=now()` in your DB before starting, and have a separate watchdog reclaim stuck jobs by timestamp, independent of the broker's visibility timeout.
+- Never `await broker.ack()` inside a `try` block whose `catch` is wide — a thrown exception after ack leaves you in an "acked but unfinished" state, which is silent message loss.
+- For Kafka, the analog is **commit offsets after** the work is durable, not on every poll. Auto-commit is a footgun; turn it off for anything that matters.
+
+**Example (Go, SQS-style):**
+```go
+// Bad — acks before the side effect commits. Crash between ack and DB write loses the message.
+func handle(ctx context.Context, msg Message) error {
+    if err := broker.Ack(ctx, msg); err != nil { return err }
+    return processAndSave(ctx, msg) // if this panics, message is gone
+}
+
+// Good — ack only after the durable effect is committed.
+func handle(ctx context.Context, msg Message) error {
+    if err := processAndSave(ctx, msg); err != nil {
+        return err // do not ack; broker will redeliver after visibility timeout
+    }
+    return broker.Ack(ctx, msg)
+}
+
+// Better — for long work, extend visibility while we run, then ack at the end.
+func handleLong(ctx context.Context, msg Message) error {
+    stop := startHeartbeat(ctx, msg, 20*time.Second) // extend visibility every 20s
+    defer stop()
+    if err := processAndSave(ctx, msg); err != nil {
+        return err
+    }
+    return broker.Ack(ctx, msg)
+}
+```
+
+## Principle 5, in full: plan for poison messages — retries, backoff, and a dead-letter queue
+
+**Rule:** Every consumer needs three numbers and one destination: max attempts, backoff strategy, jitter, and a DLQ. Decide these before the first message flows.
+
+**Why:** Some messages will always fail — bad payloads, schema drift, deleted references. Without a cap, a single poison message spins forever and starves healthy ones. Without backoff, a downstream blip becomes a thundering herd. Without a DLQ, you have no visibility and no replay path after a fix. These are not optional; they are the operational floor.
+
+**How to apply:**
+- **Cap retries.** Pick a max attempts (commonly 3–10 depending on side-effect cost). After the cap, send the message to a DLQ instead of retrying forever.
+- **Exponential backoff with jitter.** Doubles the gap on each retry (1s, 2s, 4s, 8s...) plus a random fraction so retries don't synchronize across consumers. Most brokers support this natively; turn it on.
+- **Distinguish retryable from permanent errors.** A 5xx from a downstream service or a network timeout is retryable. A schema-validation failure or a 4xx from a downstream is not — those should DLQ on the first attempt. Retrying a permanent failure is just delaying the inevitable while wasting attempts.
+- **DLQ is a human inbox.** Alert on DLQ depth > 0 (or > N for noisier systems). Have a runbook for triaging: inspect payload, fix the bug or the data, redrive. A DLQ nobody watches is the same as no DLQ.
+
+**Example (config sketch):**
+```yaml
+consumer:
+  max_attempts: 5
+  backoff:
+    initial: 1s
+    multiplier: 2
+    max: 5m
+    jitter: 0.2          # ±20% randomization
+  dead_letter:
+    target: orders-dlq
+    on:
+      - any error after max_attempts
+      - SchemaValidationError on first attempt   # don't retry permanent errors
+      - DependencyDeletedError on first attempt
+alerts:
+  - dlq_depth > 0 for 5m   → page on-call
+  - oldest_message_age > 1h → page on-call
+```
+
 ## Retries: the three numbers and one destination
 
 Configure all four before the first message flows:

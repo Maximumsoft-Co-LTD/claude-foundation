@@ -1,5 +1,39 @@
 # Indexing
 
+Moved from `SKILL.md` — principle 3's full detail: matching indexes to the queries you actually run.
+
+## Principle 3 (from SKILL.md): Indexes match queries, not tables
+
+**Rule:** Index for the queries you actually run. Composite indexes are ordered — the column order matters. Don't index every column; writes pay the cost.
+
+**Why:** The right index turns O(n) scans into O(log n); every index taxes every write. Right indexes turn 10s into 10ms; wrong ones slow writes with no read benefit.
+
+**How to apply:**
+- Read the `WHERE`, `JOIN`, and `ORDER BY` clauses of your hottest queries. Those columns — together — are your index candidates.
+- A composite index on `(a, b, c)` accelerates queries that filter on `a`, or `a AND b`, or `a AND b AND c`. It does **not** help a query that filters only on `b` or only on `c`. The leftmost prefix rule. Put the most-filtered column first.
+- High-selectivity columns (`user_id`, `email`) benefit more from indexing than low-selectivity ones (`status` with three values, `is_active` boolean) — for low-selectivity, prefer composite or partial indexes.
+- A foreign key column should almost always be indexed. The database does not index `REFERENCES` columns for you automatically (Postgres doesn't; MySQL InnoDB does). Without it, deletes/updates on the referenced parent scan the child table.
+- Index on what the query already filters by, not on what feels important. `created_at` is rarely the right index unless you actually order by or filter on it.
+- See `references/indexing.md` for composite ordering, covering indexes, partial indexes, when not to index, and how to find unused indexes.
+
+**Example:**
+```sql
+-- Query: list a user's recent orders for a given status
+SELECT * FROM orders
+WHERE user_id = $1 AND status = $2
+ORDER BY placed_at DESC
+LIMIT 20;
+
+-- Bad — single-column index, can use it but still sorts in memory
+CREATE INDEX ON orders (user_id);
+
+-- Better — composite matches the WHERE; sort still happens
+CREATE INDEX ON orders (user_id, status);
+
+-- Best — index supports filter AND order, no sort step
+CREATE INDEX ON orders (user_id, status, placed_at DESC);
+```
+
 ## The two rules that catch most engineers
 
 ### 1. The leftmost prefix rule

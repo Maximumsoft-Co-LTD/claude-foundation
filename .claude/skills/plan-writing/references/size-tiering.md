@@ -1,6 +1,6 @@
 # Size Tiering for Plans
 
-Size gates which `plan.md` sections are required/optional/deleted. Borderline → **larger tier**. XS floor: describable in one sentence.
+Size gates which `plan.md` sections are required/optional/deleted. Borderline → **larger tier** — under-covering burns a review cycle; over-covering costs a few skipped sections. XS floor: describable in one sentence.
 
 ## The four tiers
 
@@ -103,9 +103,29 @@ File count is a proxy; each signal pushes size up or down regardless, with its w
 - **Spike** — size is exploration scope, not code spread (none lands). Most spikes S/M; use `Timebox` in `spec.md`.
 - **Full-stack (DB + API + UI)** — default = single L plan, single run. Three layers is normal, NOT a split reason. Split only when `Ship as: staged` AND the spec lists ≥ 2 independently shippable capabilities (`WORKFLOW.md > Scope`).
 
-## Cross-links
+## Section gating by Size
 
-The authoritative size-gating table is **`SKILL.md > Section gating by Size`** (per XS/S/M/L, which `plan.md`/`tasks.md` content is required/optional/deleted). `skip` = *delete the section*, not leave it empty.
+The authoritative table for `SKILL.md > Section gating by Size` — per XS/S/M/L, which `plan.md`/`tasks.md` content is required/optional/deleted. `skip` = *delete the section*, not leave it empty.
+
+| Section | XS | S | M | L |
+|---------|----|----|----|----|
+| Summary + Technical Context + Gate check | ✓ | ✓ | ✓ | ✓ |
+| Tasks (in `tasks.md`: `T###` + verify + AC tag) | ✓ | ✓ | ✓ | ✓ |
+| Task phases (Setup/Foundational/per-US/Polish) | optional | optional | ✓ | ✓ |
+| Current state (principle 3) | brownfield → proportional note (entry point + blast radius); greenfield → skip | brownfield → proportional note (full for refactor/fix); greenfield → skip | ✓ | ✓ (+ as-is mermaid for refactor) |
+| Guardrails header (in `tasks.md`; digest of Current-state invariants) | brownfield → invariants, else `none` | brownfield → invariants, else `none` | brownfield → ✓ | brownfield → ✓ |
+| To explore at implement (deferred internals) | skip | brownfield → when deferred | brownfield → when deferred | brownfield → when deferred |
+| Architecture diagram | one-line / N/A | mini mermaid (3–5 nodes) | full mermaid by Type | full + before/after |
+| Scaffold (tree + signatures) | skip | optional (when touching existing code) | ✓ required | ✓ required |
+| (Optional) Parallelizable phases (in `tasks.md`) | skip | skip | skip | ✓ if >12 tasks; feat-only |
+| Alternatives considered (+ Verified line) | skip | skip | when non-obvious | ✓ |
+| Risks | skip | optional | ✓ | ✓ |
+| Observability | skip | when feat/fix ships runtime + new op surface | required if feat/fix | ✓ |
+| Dependencies (WHEN-only) | skip unless present | skip unless present | skip unless present | when blocking handoffs exist |
+| Rollback | skip (revert commit) | skip unless destructive | ✓ if destructive | ✓ runbook |
+| Out of scope | skip if no creep risk | skip if no creep risk | when creep risk | ✓ |
+
+Sections marked `skip` are **DELETED entirely** — no empty headers, no "N/A" lines.
 
 ## Plan-write time budget
 

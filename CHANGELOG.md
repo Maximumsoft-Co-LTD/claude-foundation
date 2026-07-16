@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-07-16
+
+### Changed (token/speed pass — zero behavior change)
+
+- **Twelve more skill bodies slimmed to ≤ ~1.3k words each** (total ~34.9k → ~13.1k): `brainstorming` 4.1k→1.3k, `plan-writing` 3.1k→1.4k, `architecture-fundamentals` 3.3k→1.0k, `observability-fundamentals` 3.3k→1.2k, `testing-fundamentals` 3.2k→1.3k, `database-fundamentals` 3.1k→0.8k, `refactoring-fundamentals` 2.9k→1.3k, `concurrency-fundamentals` 2.9k→0.7k, `tailwind-design-system` 2.4k→0.6k, `init-project-docs` 2.3k→1.3k, `qa-handoff-note` 2.1k→1.0k, `hexagonal-backend` 2.0k→1.3k. Same discipline as 2.8.0: elaboration moved verbatim into references/ (two-directional line verification per skill), frontmatter byte-identical (triggering unchanged), every principle/step still named in the body as a complete checklist, all cross-file `skill > section` anchors verified resolving (13/13 for plan-writing incl. the canonical `size-tiering.md > Greenfield vs brownfield`). A triggered load now costs roughly a third of the tokens; `brainstorming` + `plan-writing` sit on the /dev interview/plan critical path.
+- **`WORKFLOW.md` deduplicated against the canonical references** (4,347 → 3,314 words): agent-map tool columns → `INDEX.md`; team-mode walkthrough → commands + `team-mode-sharding.md`; fanout/sub-agent bullets → `fanout-dispatch.md`; gate-lever lists → `gate.md`; size-tier prose → `size-execution.md`. All 24 headings byte-identical (every `WORKFLOW.md > <section>` anchor resolves); the mermaid flow, type matrix, artifacts table, and every fact with no other canonical home stay.
+
+## [2.8.0] - 2026-07-15
+
+### Changed (complexity-cut release — less for the model to hold, nothing load-bearing dropped)
+
+- **Dual step-numbering killed:** cross-file references now go by phase NAME (Interview, Spec, Plan, Test-plan, Gate, Implement, Test, Review, Security, Docs, Ship, Retro); numbers are file-local only. 26 files swept; orchestrator.md keeps its op counter internally; the hand-maintained op↔matrix translation table is gone.
+- **`FANOUT_REQUESTED:` narrowed to `implement:` only.** Every splittable worker holds `Agent` and direct-nests its own read/research/review helpers (dispatch-mechanism contract), so the five read-shape signals (`review`, `security:`, `plan:`, `test:`, `research:`) were a redundant second dispatch path — retired. Implement keeps the signal (background phase-dispatch needs orchestrator-owned resume granularity). A retired-shape signal gets one corrective re-spawn, then BLOCKER.
+- **Review lenses 6 → 4:** `team-code-simplifier` + `team-comment-analyzer` retired; their checklists live on as Simplification and Comment Accuracy lenses inside `team-code-reviewer`. Tiers are now core-3 (M) / full-4 (L). Two fewer spawns + synthesis inputs per L review; TEAM.md ledger records the fold.
+- **`fanout_log` records outcomes, not non-events:** append only when a fanout point was eligible or fired; ineligible points log nothing (retro reads absence as not-eligible). Cuts per-run bookkeeping writes.
+- **Five heaviest skill bodies slimmed to ≤ ~1.2k words** (`ddd-strategic` 3.8k→1.1k, `delivery-engineering` 3.8k→1.1k, `security-fundamentals` 3.5k→1.2k, `queue-fundamentals` 3.4k→1.1k, `skill-creator` 3.5k→0.6k) — detail moved verbatim into references/ (line-level zero-loss verified per skill); frontmatter byte-identical, so triggering is unchanged. A triggered load now costs ~⅓ the context.
+
 ## [2.7.2] - 2026-07-15
 
 ### Added

@@ -1,10 +1,30 @@
 # Interview tactics
 
-> Deep reference for SKILL.md's interview steps — consult for: picking slots, framing multi-choice options, `revise` follow-ups, `Type=fix` reproduction, the Mom Test. The **dig loop, Specification-by-Example, and pre-mortem are owned inline by SKILL.md principles 3 & 7**; only their extra detail lives here.
+> Deep reference for SKILL.md's interview steps — consult for: exploring context, decomposing scope, picking slots, batching questions, the dig loop, framing multi-choice options, `revise` follow-ups, `Type=fix` reproduction, the Mom Test. SKILL.md principles 3 & 7 keep only a one-line anchor for the dig loop, Specification-by-Example, and pre-mortem; full detail for all three lives here.
+
+## Explore context before asking anything (principle 1)
+
+The intent is one sentence; the codebase already has answers. Read `CLAUDE.md`, `.workflow/INDEX.md`, the last few commits, and any file the intent names *before* the first question.
+
+**Log what the repo answered as an assumption, not a fact.** When the repo (not the user) answers a slot — stack from `package.json`, integration point from the file the intent names, a convention from a sibling module — that inference can be wrong. Keep a short running list and hand it to the orchestrator to surface at the gate as `Assumptions (inferred — correct me if wrong)`. A wrong inference silently corrupts the spec; a one-line veto at the gate is cheap.
+
+## Decompose oversized scope before refining details (principle 2)
+
+If the intent describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), surface that immediately.
+
+The test: can this be one approved spec that produces one ship-able thing? If not, name the pieces, ask the user which one to scope first, and carry the rest to `FOLLOWUPS.md` as candidates for separate `/dev` runs. Inside `/dev`, this is also what triggers the `epic.md` path — the gate will split it anyway, so flag it here.
 
 ## Pick the 3–4 most consequential UNSPECIFIED slots
 
 Walk `pm.md > Spec sections` + `_templates/spec.md`. Classify each slot — **pinned by intent** (user said it) / **pinned by repo** (`package.json`, `README`, commits, the named file) → don't ask; **open** (neither) → candidate. Of the open ones, ask the 3–4 highest in **consequence × ambiguity**, where a wrong guess cascades through spec/plan/code. Skip slots with safe gate-flippable defaults (`Open PR: yes` for feat). Read `FOLLOWUPS.md` first and fold any in-scope carry-over in as a slot ("also handle `<F-id>` this run?").
+
+### Minimum floor & triggered slots (at a glance)
+
+**Minimum floor (always asked or pulled from intent):** `Type`, `Goal` (one sentence — what's built, for whom, to what outcome), `User Stories` (priority-ordered P1/P2/P3; each carries a value statement + Why-this-priority + Given/When/Then `Acceptance scenarios` — capture the *why / who-benefits* during the interview, not just what "done" is), `Functional Requirements` (FR-###), `Success Criteria` (SC-###, measurable + tech-agnostic), `Ship as`, `Open PR on ship`. AC may be just 1 for XS; each consequential *behavioural* AC also carries an `on error / at boundary:` line (the unhappy-path decision, or an explicit `none — <default>`) and edges live as sub-bullets under the AC they edge (NOT a separate section). Measurable perf/security/a11y targets are themselves ACs (verify = the `measured:` clause), not a separate untestable section — an NFR-class AC carries neither `e.g.` nor `on error / at boundary`.
+
+**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References / examples to follow`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. `pm.md > Spec sections` names the trigger condition for each; ask only when it fires.
+
+Walk the intent. For each triggered slot, first decide whether the trigger fires at all. If not, the slot is not just unanswered — it does not exist for this spec. If yes: *did the user already answer this, or did the repo answer it?* Only the **triggered AND unanswered** slots become interview questions. **Never** assume defaults for slots you didn't ask about, and **never** include a triggered section just because the template mentions it.
 
 ### Consequence ranking (rule of thumb)
 
@@ -24,6 +44,16 @@ Walk `pm.md > Spec sections` + `_templates/spec.md`. Classify each slot — **pi
 ### Then order by the design tree, not just consequence
 
 Consequence tells you *which* slots matter; the design tree tells you *what order*. Decisions depend on each other — the right AC depends on the chosen approach, the right data shape on the actor, the right index on the store. **Resolve the upstream slot first; never ask a dependent slot cold while its parent is open** (you'd guess against an unconfirmed assumption and re-ask once it flips). So **batch 1** = the roots nothing depends on (Type, approach, actor, the load-bearing Constraint); **later batches** = what a batch-1 answer shapes — the dig loop (SKILL.md principle 3) walks these. E.g. "add export": resolve transport (sync/async) in batch 1 because it shapes the format question — don't ask both at once.
+
+**Sequencing.** Resolve open slots through the dig loop *before* framing approach options (principle 4) — clarification precedes design choice, never the reverse. And if the mandatory NFR-detection question (below) crowds a consequential slot out of batch 1, treat that pressure as a signal to run a second batch, not a reason to drop either question.
+
+## Batching the question set
+
+In `/dev`, the orchestrator's `AskUserQuestion` is **one batch of 3–4 questions by default**. Pick the most consequential unanswered slots and **order them by the design tree** — a decision others hinge on (approach, data shape, actor) is resolved first; never ask a slot cold whose right answer depends on an unanswered upstream one, defer it to a later batch so the prior answer shapes it. Prefer multi-choice options with one-line descriptions, and **lead every choice with a recommended option** (first in the list, labelled `(Recommended)`, one-line why — the harness renders the label) so the user vetoes instead of authoring from scratch; principle 4's "recommend, don't punt" applies to clarifying questions too, not just approach options. Reserve free-text for genuinely open answers (`Reproduction` for `fix` runs is the canonical free-text slot).
+
+## Bounded multi-round digging — when one batch is too shallow
+
+One batch is enough for narrow, concrete work. It is *not* enough for the genuinely ambiguous work this skill claims to own, because the Mom Test is iterative by nature: a good past-behaviour answer opens the next question, and you can't follow that thread inside a single batch. So when ambiguity is high — `Type` still unclear after batch 1, more than ~4 consequential slots open, or a batch-1 answer arrived vague / as "Other" free-text that raised a new unknown — you may run a **second (at most third) batch that digs into what the previous answer revealed**, not new slots picked cold. Three rules: (a) hard cap of **3 batches**; (b) each follow-up batch is *narrower* than the last — you are converging, not re-opening; (c) if the picture is still open after 3 batches, that is itself the finding — stop and surface it as a `[NEEDS CLARIFICATION]` rather than guessing. The default stays one batch; the dig loop is the escape hatch for real ambiguity, not the norm. **The driver is the design tree, not the counter:** keep going while a load-bearing decision (one a later choice depends on) is unresolved; stop when every consequential branch is resolved or explicitly deferred — the 3-batch cap is the safety stop, not a target to fill.
 
 ## Question shape — multi-choice > open-ended > free-text
 
@@ -56,6 +86,12 @@ Two failure modes: **loaded** (Option A = a paragraph of upside, B = a one-line 
 ❌ Loaded: "Should we use a queue? — Yes (scalable, future-proof, recommended) / No (just download)".
 ❌ False-binary: "Sync or async?" with only those two when a hybrid exists.
 
+## Frame trigger questions to detect, not to fill
+
+Bad: "What are the NFRs?" — assumes there are some, invites TBD. Good: "Is there a measurable perf/security/a11y target that needs a number? If not, we don't write one." The detection question is binary; only on `yes` do you ask for the actual value — and then it becomes an AC (verify = its `measured:` clause), not a separate section.
+
+**The NFR detection question is mandatory for any run that ships runtime code (`feat`/`fix` with a real runtime path)** — ask it even when slots are tight, because a missing-but-needed NFR is the one failure mode that passes every internal-consistency scan and only surfaces in prod. This makes the *question* mandatory, not the *section*: if the answer is "no target needed", there is no NFR — anti-bloat still wins. On a real, measurable number, **render it as an Acceptance criterion** (its `measured:` clause becomes that AC's verify) so it threads through plan/qa/review; do NOT park it in a standalone NFR section, which orphans it (no task, no test, no review row).
+
 ## Ground AC in concrete examples (Specification by Example)
 
 The cheapest place to catch a mis-spec'd AC is *before* it's written, by forcing a real `input → expected output`. For every AC whose behaviour isn't self-evident, capture one example and carry it into the spec as an `e.g.:` sub-bullet. **Never invent the values** — an invented example is a guessed requirement in a contract's clothes; if the user can't give one, the AC isn't understood yet → dig or mark `[NEEDS CLARIFICATION]`.
@@ -65,6 +101,12 @@ The cheapest place to catch a mis-spec'd AC is *before* it's written, by forcing
 | "User can export their data" | "User exports their data" · *e.g.:* `account with 200k rows` → `CSV with columns A,B,C, downloaded in <30s` |
 | "Search returns relevant results" | "Search returns matches ranked by recency" · *e.g.:* `query "invoice", 3 matches from 2021/2023/2024` → `2024, 2023, 2021 order` |
 | "Login rejects bad credentials" | "Login rejects bad credentials without leaking which field was wrong" · *e.g.:* `valid email + wrong password` → `same 401 + message as unknown email` |
+
+The example is where hidden requirements surface *up front* (size limits, formats, timeouts) instead of late in the pre-mortem. Carry it into the spec as an `e.g.:` sub-bullet under the AC (format in `.workflow/_templates/spec.md`). Skip only for AC whose one line is already unambiguous.
+
+## Capture the unhappy path too (on error / at boundary)
+
+For each consequential *behavioural* AC (not an NFR-class measured target), also capture its `on error / at boundary:` behaviour: what happens for bad input, a hit limit, or an unauthorized caller. This is the EARS IF/THEN clause, and it's where AI silently guesses (exports soft-deleted rows, skips the authz check, picks the wrong API among two — the documented #1 "runs but does the wrong thing" failures). Frame it to *detect*, not to fill: "On bad input / over the limit / not allowed — does anything special happen, or is the generic default fine?" An explicit `none — <default>` is a valid recorded answer; silence is not. Carry it into the spec as the `on error / at boundary:` sub-bullet. This question is mandatory for consequential AC for the same reason NFR detection is: the missing-but-needed boundary passes every internal-consistency scan and only bites in prod.
 
 ## Handling `revise` follow-ups (in `/dev`)
 
@@ -92,7 +134,7 @@ Adapted from Rob Fitzpatrick's *The Mom Test* — three rules for getting useful
 | "Do you think a dashboard would help?" | "How do you keep tabs on the metrics that matter right now?" |
 | "Want a notification when X happens?" | "What do you do today to know X has happened?" |
 
-**Rule 2 — Ask about specifics in the past, not opinions about the future.** Past behaviour is observable; future opinions are imagination. "Tell me about the last time…" is the single most useful question shape.
+**Rule 2 — Ask about specifics in the past, not opinions about the future.** Past behaviour is observable; future opinions are imagination. "Tell me about the last time…" is the single most useful question shape. "Would you use a feature that does X?" is hypothetical fluff — the user will say yes and you'll learn nothing; "When did you last hit this problem, and what did you do?" gets you a concrete behaviour to design against.
 
 | Don't ask | Ask instead |
 |-----------|-------------|
@@ -125,3 +167,13 @@ The 5th self-review scan (SKILL.md principle 7), from the Amazon PR/FAQ. Shape: 
 | **Operational gap** — works in dev, breaks in prod | Promote to `Constraints` or add an observability AC. |
 
 It's not a Risks dump (things that *might* go wrong) — it asks which you'd be most *embarrassed* about in three weeks.
+
+## Anti-patterns
+
+- **Assuming defaults for slots you didn't ask about** — "I'll just use React + Tailwind" / "I'll store it in Postgres" when the user said nothing about either. The interview missed the slot or the repo answers it — pick one; don't invent.
+- **Including triggered sections "just in case"** — `Users: end users` when the actor is singular and obvious, `Constraints: None` when there's no real boundary, `Discovery notes: N/A` when no research ran. These defeat the minimum-floor principle and become placeholder magnets. DELETE the whole section instead.
+- **Inventing NFR numbers** — writing "p95 < 200ms" because you felt a target was expected and needed something to fill the blank. If the user didn't give a number and no constraint forces one, there is no NFR — don't write the AC, or replace the value with `[NEEDS CLARIFICATION]`. (When a real number does exist, it's an AC, not a standalone section.)
+- **Burning the question batch on slots the repo already answered** — language, framework, deploy target are usually visible in 30 seconds of reading; don't ask them.
+- **Asking a dependent question before its prerequisite** — batching "which index?" with "SQL or NoSQL?" wastes the index answer if the store flips. Order questions by the design tree: resolve the upstream decision, let it shape the downstream one.
+- **One mega-question** — "tell me about goals, constraints, AC, and integration points?" The user answers half of it. Split into 3–4 crisp questions; multi-choice when you can.
+- **Treating compliments / hypotheticals / wishlists as signal** — "I love this idea," "I would totally use that," "add X someday" aren't data. Re-ask about past behaviour ("when did you last hit this?"). If all evidence is future-tense, the spec isn't ready.

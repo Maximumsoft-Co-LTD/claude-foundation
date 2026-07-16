@@ -1,5 +1,48 @@
 # Observability
 
+Moved from `SKILL.md` — principle 6's full rule/why/how-to-apply/example, ahead of the topic-organized detail below.
+
+## Principle 6 (from SKILL.md): Build observability in from day one
+
+**Rule:** Every request path produces structured logs, useful metrics, and a trace that crosses every component boundary. Define SLIs and SLOs *before* you ship — not after the first outage.
+
+**Why:** In a distributed system, "what happened" is a relationship across N components — you can't reconstruct it without correlation IDs, propagated trace context, and metrics over time. Teams that bolt observability on after the first outage spend months instrumenting while trust burns.
+
+**How to apply:**
+- **Three pillars, all on, structured.**
+  - **Logs:** structured (JSON), with `trace_id` and `span_id` on every line. No bare `console.log("got here")`.
+  - **Metrics:** **RED** for request paths (Rate, Errors, Duration) and **USE** for resources (Utilization, Saturation, Errors). Use histograms for latency — averages hide the tail.
+  - **Traces:** OpenTelemetry (OTel) is the default — CNCF standard, vendor-neutral; as of 2025 logs joined traces and metrics as stable signals over OTLP. Trace context propagates across every hop. (Pick vendor-specific SDK only with hard reason; OTel is portable across Datadog, Honeycomb, Tempo, Jaeger, New Relic, X-Ray.)
+- **Define SLIs and SLOs.** SLI = what you measure; SLO = the target; error budget = the gap. The budget funds feature velocity vs. reliability work.
+- **Track DORA delivery metrics alongside SLOs.** Deployment frequency, lead time, change failure rate, and failed-deployment recovery time (renamed from MTTR in 2023) describe how *fast and safely* you ship; SLOs describe how *well the running system performs*.
+- **Correlate everything.** One trace ID generated at the edge flows through every hop and into every log line. Without this, multi-hop debugging is archaeology.
+- **Alert on symptoms, not causes.** Page on "users are seeing errors," not "CPU is over 80%."
+
+**Example:**
+```ts
+// Bad — unstructured, uncorrelated, no measurable signal.
+console.log("processing order", orderId)
+try {
+  await chargeCard(orderId)
+} catch (e) {
+  console.log("error", e)
+}
+
+// Good — structured, correlated, measurable. RED in three lines, trace propagation, error class.
+log.info({ event: "order.charge.start", order_id: orderId, trace_id: ctx.traceId })
+const stop = metrics.histogram("order.charge.duration_ms", { route: "checkout" }).start()
+try {
+  await chargeCard(orderId, { ctx })           // ctx propagates trace context to the downstream
+  metrics.counter("order.charge", { result: "success" }).inc()
+} catch (e) {
+  metrics.counter("order.charge", { result: "failure", reason: classify(e) }).inc()
+  log.error({ event: "order.charge.failed", order_id: orderId, trace_id: ctx.traceId, err: serialize(e) })
+  throw e
+} finally {
+  stop()
+}
+```
+
 ## The three pillars (and what each is for)
 
 | Pillar | Question it answers | Time scale | Cardinality |

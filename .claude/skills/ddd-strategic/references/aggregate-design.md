@@ -1,5 +1,61 @@
 # Aggregate design
 
+## Principle 5 (from SKILL.md): Size aggregates around invariants, not entities
+
+**Rule:** An aggregate is a *transactional consistency boundary* — the smallest set of entities and value objects that must change atomically to keep a business invariant true. Design aggregates *small*, reference other aggregates *by identity*, modify *one aggregate per transaction*, and let everything outside the boundary be *eventually consistent*. The test: "what business rule is invalidated if these two things are modified in separate transactions?" If you can't name one, they belong in different aggregates.
+
+**Why:** The classic DDD-gone-wrong shape is an oversized aggregate — a `Project` owning all `Releases` owning all `Sprints` owning all `BacklogItems` — and it fails in production via transactional contention: two users modify the same root, the optimistic lock collides, retries pile up, throughput collapses. Vernon's empirical observation: ~70% of well-designed aggregates are a single root entity with only value-typed properties; ~30% have 2–3 entities total. Bigger is almost always a smell.
+
+**How to apply (Vernon's four rules):**
+1. **Model true invariants in consistency boundaries.** An aggregate's job is to enforce one or a few business rules atomically. Everything else lives outside.
+2. **Design small aggregates.** Default to root + value-typed properties. Add entities only when an invariant *requires* them in the same transaction. Beware `0..*` collections inside an aggregate — they grow unbounded.
+3. **Reference other aggregates by identity.** Hold an `OrderId`, not a reference to the `Order` object. Cross-aggregate modification becomes impossible by construction.
+4. **Use eventual consistency outside the aggregate.** Aggregate A commits → emits domain event → handler updates aggregate B in a *separate* transaction. Combine with the **outbox** pattern (see [[queue-fundamentals]]).
+
+- **The sizing test.** Before putting two entities in the same aggregate, name the invariant that breaks if they're in separate transactions. "It's convenient to load them together" is not an invariant — that's a query concern, solvable with a read model.
+- **The collection trap.** Bounded, small collections inside the aggregate are fine (a `Cart` with ≤50 items). Unbounded collections (`Project.backlogItems`, `Customer.orders`) mean the items are their own aggregates referenced by ID.
+- **When the rule pushes back:** if the business *requires* strong consistency across what looks like two aggregates, they're probably one. Verify by asking the domain expert "what breaks if these are inconsistent for 200ms?"
+- **Aggregates and the rest of the library:** the code inside is governed by [[programming-fundamentals]] (illegal states unrepresentable, invariants in constructors); persistence via [[hexagonal-backend]]'s repository ports; the transaction by [[database-fundamentals]]; emitted events cross to [[queue-fundamentals]] when leaving the context.
+- See [[aggregate-design]] for the four rules with worked examples, the sizing test, the Vernon Scrum-aggregate split walkthrough, and ORM/persistence concerns.
+
+**Example:**
+```
+Wrong: `Project` aggregate owns `Release` → `Sprint` → `BacklogItem`. Adding an item loads the
+       entire graph, modifies the root, saves. Two users adding items concurrently fight for the
+       root's optimistic lock. Under load, throughput collapses.
+
+Right: four aggregates — `Project` (id, name, code, owner), `Release` (id, project_id, name,
+       window), `Sprint` (id, release_id, capacity, start, end), `BacklogItem` (id, sprint_id,
+       title, story_points, state). Each holds *its own* invariants. Cross-aggregate coordination
+       via domain events in separate transactions. Throughput scales with aggregates touched.
+```
+
+## Principle 6 (from SKILL.md): Separate internal domain events from cross-context integration events
+
+**Rule:** Domain events *inside* one bounded context can be rich, evolve freely, and use the full ubiquitous language. Events crossing *into* another context (or external consumers) are a *contract* — narrower, versioned, deliberately stable, often a different shape. Don't publish your internal event directly as an integration event; that couples model evolution to every downstream forever.
+
+**Why:** Internal domain events and integration events look similar but have opposite lifecycle properties. Internal events are *implementation detail*: rename a field, restructure an aggregate, and the internal event changes in lockstep in one repo. Integration events are *contract*: every change must respect every downstream consumer, deploy on a different schedule, and survive consumer versions not yet upgraded. Conflating them is one of the top DDD failure modes — every internal refactor breaks downstream, and "small" changes ship over quarters.
+
+**How to apply:**
+- **Two distinct event types in the codebase.** `OrderConfirmed` (internal domain event, rich, evolves with the model) and `OrderConfirmedV1` (integration event, narrow contract, versioned, lives in a schema registry). The integration event is *produced from* the internal at the boundary, never *equated* to it.
+- **Integration events are smaller, not bigger.** Strip internal-only fields, denormalise what downstream consumers actually need, version explicitly. Tolerant readers make backwards-compatible evolution safe.
+- **Outbox pattern for the publish.** Internal events emitted by the aggregate inside the same DB transaction as the state change; an outbox relay publishes the translated, contract-shaped integration event to the broker. This is [[queue-fundamentals]]' territory operationally — this skill's contribution is *which event is which* and *where the translation happens*.
+- **Naming convention.** Domain events use the ubiquitous language verbatim (`PolicyBound`, `ClaimSubmitted`). Integration events use the same verb with a version suffix (`PolicyBoundV1`). The version is part of the name, not a header.
+- **Schema registries** (Avro/Protobuf/JSON Schema) encode compatibility rules and reject breaking changes in CI.
+- **The cross-context boundary is the same line as the language boundary (principle 3).** Translation of payload and translation of language happen at the same point.
+
+**Example:**
+```
+Wrong: Billing publishes its internal `InvoiceCreated` event directly to the broker. It carries
+       `pricing_engine_version`, `applied_promotion_tree`, `tax_jurisdiction_resolution_trace`
+       — internal debug fields. Three downstream consumers code against them. Six months later,
+       Billing rewrites its pricing engine; all three consumers break overnight.
+
+Right: Billing emits an internal `InvoiceCreated` to its own outbox. A relay translates each into
+       `InvoiceCreatedV1` — invoice id, customer ref, amount, currency, line items, due date —
+       and publishes that to the broker. Internal evolution and external contract are decoupled.
+```
+
 ## What an aggregate actually is
 
 An **aggregate** is a *transactional consistency boundary*: the smallest cluster of entities and value objects that must change atomically to keep a business invariant true. It has a single **root entity** (the aggregate root) — the only object outside code can hold a reference to. All access to the aggregate's internals goes through the root.

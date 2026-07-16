@@ -1,5 +1,28 @@
 # Subdomain classification
 
+## Principle 1 (from SKILL.md): Classify the subdomain before applying DDD
+
+**Rule:** Before designing aggregates, drawing context maps, or running event storming, classify the subdomain: **core** (your differentiator — full custom design), **supporting** (necessary but not differentiating — build pragmatically), or **generic** (commodity — buy or use off-the-shelf). DDD investment follows the classification.
+
+**Why:** The most common DDD failure is "we did it everywhere." Teams apply full tactical DDD to a 5-table admin tool and pay full tax for zero domain leverage — then under-invest in the one subdomain that actually differentiates by shipping it as anemic CRUD. Classification flips both errors at once.
+
+**How to apply:**
+- **Core** is the subdomain that gives the business its reason to exist. Invest senior engineers, deep domain conversations, full tactical DDD if it earns its cost, event sourcing/CQRS if justified. *Always* build in-house.
+- **Supporting** is necessary infrastructure that isn't the moat — internal tools, admin surfaces, workflow glue. Build pragmatically: clean module, rich enough model, no heroic abstraction. Often a well-modularised piece of a monolith.
+- **Generic** is commodity — auth, billing infrastructure, search, email, storage, payment processing for standard cases. *Buy* it (Auth0, Stripe, Algolia, SendGrid, S3) or use a well-maintained OSS package. Every "but we have unique requirements" justification on a generic subdomain deserves three rounds of "are you sure?" before any code lands.
+- The boundary is not fixed. Re-classify periodically — a core subdomain today (a recommendation algorithm) can become supporting tomorrow; a generic subdomain can become supporting when your scale outgrows the commodity.
+- See [[subdomain-classification]] for the differentiation test, the Wardley mapping relationship, and the build/buy/borrow decision frame.
+
+**Example:**
+```
+Wrong: small e-commerce startup builds custom auth, billing, search, and transactional email.
+       All four are generic. 60% of engineering quarters on commodity work; the actual
+       differentiator — curated recommendations — ships as anemic CRUD with a single SQL query.
+
+Right: Auth/billing/search/email → generic, buy. Order management/inventory → supporting, clean
+       modules in the monolith. Recommendations → core, full design effort, dedicated team.
+```
+
 ## The three categories
 
 A **subdomain** is a coherent area of the business problem space — not a piece of the software, but a piece of *what the business does*. A typical company has 5–30 subdomains in active use; some are visible to customers, some are internal infrastructure.

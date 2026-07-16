@@ -2,6 +2,43 @@
 
 A migration runs against a live DB while old application instances are still running. Every migration must be safe under those conditions. The schema is a **public API contract** — breaking it, even briefly, breaks every running instance.
 
+Moved from `SKILL.md` — principle 7's full detail: migrations as forward-only expand → backfill → contract contracts.
+
+## Principle 7 (from SKILL.md): Migrations are forward-only contracts — expand → backfill → contract
+
+**Rule:** A migration runs against a live database under load with an old version of the application still pointing at it. Every migration must be safe to apply *while the old code is still running*. The pattern is: expand the schema (additive, backwards-compatible) → backfill data → deploy the new code → contract (drop the old shape) in a later release.
+
+**Why:** "Easy" migrations take down production: renaming a column the running app reads, adding `NOT NULL` with null rows, `CREATE INDEX` without `CONCURRENTLY` — each locks or errors. A migration is a public API change; treat it that way.
+
+**How to apply:**
+- **Never** combine schema changes with code changes that depend on them in the same deploy. Ship the schema change first; ship the code that uses it next.
+- **Rename a column:** add the new column → backfill → write to both → switch reads to new → stop writing to old → drop old. Multiple deploys. Never a single `ALTER COLUMN RENAME`.
+- **Add a `NOT NULL` column:** add it nullable with a default → backfill existing rows → flip to `NOT NULL` once full. On Postgres 11+ a default on `ADD COLUMN` doesn't rewrite the table, but the `NOT NULL` flip still requires a full check; for big tables, use a `CHECK NOT VALID` then `VALIDATE`.
+- **Add an index on a big table:** Postgres → `CREATE INDEX CONCURRENTLY`. MySQL → use `pt-online-schema-change` or `gh-ost` for anything large.
+- **Drop a column:** ship code that stops reading and writing it first → then drop in a later release. Never drop a column the app still references.
+- Migrations are versioned, ordered, and forward-only. You don't "down-migrate" production — you roll forward with a corrective migration.
+- See `references/migrations.md` for the full expand-contract sequences and lock-aware migration patterns per engine.
+
+**Example:**
+```sql
+-- Bad — single migration that breaks the running app
+ALTER TABLE users RENAME COLUMN full_name TO display_name;
+-- → all running app instances suddenly hit "column full_name does not exist"
+
+-- Good — expand → backfill → contract over multiple deploys
+
+-- Migration 1 (expand): add new column, sync from old
+ALTER TABLE users ADD COLUMN display_name TEXT;
+UPDATE users SET display_name = full_name WHERE display_name IS NULL;
+-- (app code: writes to BOTH columns now; reads from full_name still)
+
+-- Migration 2 (switch reads): app deploys reading display_name first
+-- No schema change; only code change.
+
+-- Migration 3 (stop writing old, drop): only after the new code is fully rolled out
+ALTER TABLE users DROP COLUMN full_name;
+```
+
 ## The cardinal rule: never break the running app
 
 At deploy time, you have a mix of old and new application instances. Both must work against the schema as it exists *now*. That means:
