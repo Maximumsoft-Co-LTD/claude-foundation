@@ -15,7 +15,7 @@ The orchestrator estimates size (XS/S/M/L — picker in `plan-writing > referenc
 | Implement | one `engineer` spawn | one spawn | one spawn (+ parallel-phase fanout: default when the **L-tier** feat plan declares disjoint phases) |
 | Test | inline (`e2e_visual=off`) — engineer writes the planned tests, orchestrator runs Impacted + writes `tests.md`; `on` → `qa` spawn | same as XS | `qa` execute spawn, per type matrix (+ category fanout only when suite splits enough to repay coordination) |
 | Review | `lead` sonnet, fanout refused (skipped for `chore`/`docs` at XS — size×type default) | sonnet, fanout refused | sonnet by default; M may use core 3-lens fanout when justified; L/high-stakes may use opus + full 6-lens |
-| Security review | trigger-based (unchanged) | trigger-based | trigger-based |
+| Security review | trigger-based — check runs before Review; fired → folded into the review spawn | same | same |
 | Docs + ship | one merged `engineer` spawn | one merged spawn | M: one merged spawn · L: two spawns |
 | Retro | inline (orchestrator writes `retro.md`) | inline | M: `retro` spawn, light pass · L: full |
 
