@@ -11,7 +11,7 @@ This is the **UX/UI slice of team mode** — design-time, before the frontend is
 
 ## What to do
 
-1. **Resolve the run** — shared selection in [`.claude/orchestrator/references/resolve-run.md`](../orchestrator/references/resolve-run.md). Delta: **new intent + no run** → prefer `/spec <intent>` first (AC↔scene needs a spec); if the user wants UX *before* a spec, create a lightweight run (mirror orchestrator `On invocation > Fresh run` — don't re-derive the bookkeeping) and design UX-from-intent — `uxui` marks requirement gaps `[NEEDS CLARIFICATION]`.
+1. **Resolve the run** — shared selection in [`.claude/orchestrator/references/resolve-run.md`](../orchestrator/references/resolve-run.md). Delta: **new intent + no run** → prefer `/spec <intent>` first (AC↔scene needs a spec); if the user wants UX *before* a spec, create a lightweight run (mirror orchestrator `Op 1 — Setup` — don't re-derive the bookkeeping) and design UX-from-intent — `uxui` marks requirement gaps `[NEEDS CLARIFICATION]`.
 
 2. **UI gate.** Confirm the run actually has a rendered surface. If `spec.md` (or the intent) describes a pure API / CLI / backend change with no UI, say so and stop — there's nothing to design. Borderline? Ask the user once.
 

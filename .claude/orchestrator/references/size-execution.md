@@ -9,7 +9,7 @@ The orchestrator estimates size (XS/S/M/L — picker in `plan-writing > referenc
 | Step | XS | S | M | L |
 |------|----|---|---|---|
 | Setup + interview questions | one merged batch (≤4 questions) | one merged batch | setup batch + interview batch (+ bounded dig loop) | same as M |
-| Spec + plan | one `lead` spawn (combined mode, `pm` skipped), no prep fanout | same as XS | one `lead` combined spawn, **opus** (`pm` skipped); brownfield builds `context.md` first (digest-seeded, op 7a) | `pm` + `lead` spawns, prep fanout default when independent points exist |
+| Spec + plan | one `lead` spawn (combined mode, `pm` skipped), no prep fanout | same as XS | one `lead` combined spawn, **opus** (`pm` skipped); brownfield builds `context.md` first (digest-seeded — Design's Context sub-step) | `pm` + `lead` spawns, prep fanout default when independent points exist |
 | Test plan (feat/fix/refactor) | folded into combined `lead` spawn | folded | folded | `qa` test-plan spawn |
 | Gate (per-line AC confirm) | full | full | full | full |
 | Implement | one `engineer` spawn | one spawn | one spawn | one spawn (+ parallel-phase fanout: default when the L-tier feat plan declares disjoint phases) |

@@ -1,11 +1,11 @@
 ---
 name: plan-writing
-description: Write an implementation plan (plan.md) plus an executable, verifiable task list (tasks.md) that maps a spec to dependency-ordered tasks with a required architecture diagram, sized XS/S/M/L. Use when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 step 2), or when the user asks to "write a plan", "plan this feature", "break this down", "draft an RFC". Owns size tiering, the mermaid diagram by Type, current-state mapping, inline AC tagging, runnable-verify and anti-placeholder rules, and the pre-draft self-review. Skip throwaway scripts, single-line config edits, and un-spec'd design conversations.
+description: Write an implementation plan (plan.md) plus an executable, verifiable task list (tasks.md) that maps a spec to dependency-ordered tasks with a required architecture diagram, sized XS/S/M/L. Use when drafting `.workflow/<id>/plan.md` in the /dev workflow (lead agent, Phase 1 Plan), or when the user asks to "write a plan", "plan this feature", "break this down", "draft an RFC". Owns size tiering, the mermaid diagram by Type, current-state mapping, inline AC tagging, runnable-verify and anti-placeholder rules, and the pre-draft self-review. Skip throwaway scripts, single-line config edits, and un-spec'd design conversations.
 ---
 
 # Plan Writing
 
-Pre-flight for `/dev` Phase 1 step 2 (lead, plan mode) and any plan draft. Plans that restate the spec, hide decisions in prose, leak "TBD", or lack runnable verifies fail at review.
+Pre-flight for `/dev` Phase 1 Plan (lead, plan mode) and any plan draft. Plans that restate the spec, hide decisions in prose, leak "TBD", or lack runnable verifies fail at review.
 
 ## The 10 principles
 

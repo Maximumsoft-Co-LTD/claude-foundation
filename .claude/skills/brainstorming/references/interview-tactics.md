@@ -110,7 +110,7 @@ For each consequential *behavioural* AC (not an NFR-class measured target), also
 
 ## Handling `revise` follow-ups (in `/dev`)
 
-`revise <notes>` at the gate (orchestrator step 9) or free-form chat about the spec/plan is an incremental in-run edit, never a fresh Phase 1. Route by what the notes touch:
+`revise <notes>` at the gate (orchestrator op 4) or free-form chat about the spec/plan is an incremental in-run edit, never a fresh Phase 1. Route by what the notes touch:
 
 - **Requirements** (changed AC, added scope, changed users) → re-interview only the affected slots (a 1–2 question batch is fine); re-spawn `pm` spec-patch.
 - **Spec-only** (rewording, clarifying a slot, fixing a contradiction) → no interview; `pm` spec-patch in place — resolve/add `[NEEDS CLARIFICATION]` at the spot.

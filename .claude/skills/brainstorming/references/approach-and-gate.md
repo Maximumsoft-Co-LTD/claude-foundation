@@ -33,7 +33,7 @@ Until the user has seen the design (Outcome + Scope + AC + chosen approach) and 
 
 "This is too simple to need a design" is the failure mode this gate exists to catch. Even a one-file utility goes through the gate; the design can be three sentences, but it gets presented and approved.
 
-In `/dev`, the formal gate is Phase 1 step 8 (orchestrator runs it with the user).
+In `/dev`, the formal gate is Phase 1's Gate (orchestrator runs it with the user).
 
 ### Anti-patterns
 

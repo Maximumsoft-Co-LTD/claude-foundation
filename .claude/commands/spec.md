@@ -11,12 +11,12 @@ This is the **PM slice of `/dev`, run on its own** — the first link of team mo
 
 ## What to do
 
-1. **Read [`.claude/orchestrator.md`](../orchestrator.md)** — sections **`On invocation`**, **`State discipline`**, and **`Phase 1 — Requirements`** (Interview → Spec). Those are the source of truth for setup, the interview discipline, the `pm` spawn contract, and the `state.json`/`INDEX.md` bookkeeping. Follow them as written, with the deltas below.
+1. **Read [`.claude/orchestrator.md`](../orchestrator.md)** — sections **`Op 1 — Setup`**, **`State discipline`**, and **`Phase 1 — Requirements`** (Interview → Design). Those are the source of truth for setup, the interview discipline, the `pm` spawn contract, and the `state.json`/`INDEX.md` bookkeeping. Follow them as written, with the deltas below.
 
 2. **Resolve the run.**
    - **`$ARGUMENTS` is empty** → ask the user for the intent via `AskUserQuestion`, then proceed as a new intent.
    - **`$ARGUMENTS` names an existing run** (a `NNNN-…` id or a path that resolves under `.workflow/`) → open that run to **refine** its spec. Read its `state.json` + `spec.md`; treat the new message as spec feedback and re-spawn `pm` in **spec-patch mode** (`references/pm.md > Spec-patch mode`) for a targeted edit — do not start a fresh run. Skip the new-run setup in step 3.
-   - **`$ARGUMENTS` is a new intent** → run the **Fresh run** setup verbatim from orchestrator `On invocation > Fresh run` (the run-id / branch / `.workflow/` / `INDEX.md` bookkeeping — don't re-derive it here), including the **not-actually-fresh guard** (Setup) so feedback on an in-flight run revises it instead of spinning up a duplicate.
+   - **`$ARGUMENTS` is a new intent** → run the fresh-run setup verbatim from orchestrator `Op 1 — Setup` (the run-id / branch / `.workflow/` / `INDEX.md` bookkeeping — don't re-derive it here), including the **not-actually-fresh guard** (Setup) so feedback on an in-flight run revises it instead of spinning up a duplicate.
 
 3. **Interview (you run it).** Run the orchestrator's **Interview** step in full (digest → size → spec-prep fanout → one `AskUserQuestion` batch — don't re-derive it). Two deltas to hold: the NFR-detection + per-AC error/boundary questions are mandatory for a runtime-shipping feat/fix, and you must fetch + inline any external-URL reference before saving (the `pm` agent has no web access).
 

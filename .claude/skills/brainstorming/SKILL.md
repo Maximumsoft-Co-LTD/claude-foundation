@@ -7,7 +7,7 @@ description: Turn a rough idea into an approved design before any code lands —
 
 ## Why this exists
 
-Pre-spec discipline for the `/dev` Phase 1 step 6 interview (before `pm` writes `spec.md`), and any time a design conversation is needed before code lands. Promise: explore context first, name the unknowns, ask only what the intent didn't pin, propose 2–3 approaches with a recommendation, and self-review before `approved`.
+Pre-spec discipline for the `/dev` Phase 1 Interview (before `pm`/`lead` writes `spec.md`), and any time a design conversation is needed before code lands. Promise: explore context first, name the unknowns, ask only what the intent didn't pin, propose 2–3 approaches with a recommendation, and self-review before `approved`.
 
 ## The 7 principles
 
@@ -29,7 +29,7 @@ Lead with the recommended option + one-line why; show trade-offs for the rest �
 
 ### 5. HARD-GATE: no code, no `Status: approved`, no `plan.md` until the design is acknowledged
 
-Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes: no production code, no spawning `engineer` or `lead` plan mode, no flipping `spec.md` to `approved`. Applies even to a one-file utility — "too simple to need a design" is exactly the failure mode this gate exists to catch. In `/dev`, the formal gate is Phase 1 step 8. Full: `references/approach-and-gate.md`.
+Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes: no production code, no spawning `engineer` or `lead` plan mode, no flipping `spec.md` to `approved`. Applies even to a one-file utility — "too simple to need a design" is exactly the failure mode this gate exists to catch. In `/dev`, the formal gate is Phase 1's Gate. Full: `references/approach-and-gate.md`.
 
 ### 6. Visual companion is optional, opt-in, and lives in its own message
 
@@ -68,7 +68,7 @@ Brainstorming is the **pre-spec** skill — it composes, it does not replace:
 - [[debug-fundamentals]] — for `Type=fix` runs, debug-fundamentals runs *before* this skill: find the actual cause first, then brainstorm the fix (including the regression test the fix step will encode).
 - [[git-workflow]] — pairs later at ship time, not here. Brainstorming produces a spec; plan-writing produces a plan; git-workflow lands the commit.
 
-The `/dev` orchestrator (`.claude/orchestrator.md`) is the **caller** in Phase 1: loads this skill at step 6 (interview) and step 7 (spawn `pm`). `pm` receives the Q&A and writes `spec.md` — it does *not* re-run the interview.
+The `/dev` orchestrator (`.claude/orchestrator.md`) is the **caller** in Phase 1: loads this skill at Interview (op 2) and Design (op 3 — the `pm`/combined-`lead` spawn). `pm` receives the Q&A and writes `spec.md` — it does *not* re-run the interview.
 
 ## References
 

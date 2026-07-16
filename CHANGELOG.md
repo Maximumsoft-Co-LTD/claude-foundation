@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-07-16
+
+### Changed
+
+- **Orchestrator ops collapsed 22 → 9** (Setup · Interview · Design · Gate · Implement · Test · Review+Security · Ship · Close) — setup 0–5 folded into one op, Phase-1 spec/context/plan/test-plan into one size-routed Design op, review+security and final-gate/docs/ship and retro/skills/done each into one op with lettered sub-steps. Pure renumbering + prose consolidation: `state.json` step vocabulary, phase names, the type matrix, and all v2.9.0 behaviour are unchanged (in-flight runs `--resume` fine). Cross-file references swept to phase names per the file's own local-counter rule; fixed pre-existing stale ones (`brainstorming` pointed at old step numbers).
+
 ## [2.9.0] - 2026-07-16
 
 ### Changed (wall-clock pass — fewer sequential spawns, same guarantees)
