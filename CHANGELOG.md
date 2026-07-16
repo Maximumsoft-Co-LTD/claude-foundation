@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.9.2] - 2026-07-16
-
 ### Changed (skill-load diet — fewer tokens per task, same rules)
 
 - **Conduct digest in the always-on router** — `rules/fundamentals.md` now carries the 4-principle core of `coding-discipline` (think-before-coding · Simplicity/Ponytail · surgical changes · goal-driven); the full body loads **on friction only** instead of on every code task (~1,300 words saved per ordinary coding task). `Ponytail` heading and anchor unchanged.
