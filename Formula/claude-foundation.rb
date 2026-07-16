@@ -19,8 +19,8 @@ class ClaudeFoundation < Formula
   # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
   # RELEASING.md). Platforms with no line fall back to build-from-source.
   bottle do
-    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.8.1"
-    sha256 cellar: :any_skip_relocation, arm64_tahoe: "815eab549e2e5e6842409d4fa96f5893c25066a4e396a79edc9b53698a8d1f66"
+    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.9.2"
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "e0209707ff57dbd49cd914c19f76cf67062d22d2cd01179fd2de020a45ca093e"
   end
 
   def install
