@@ -117,7 +117,10 @@ jobs:
             echo "tarball not ready yet ($i)"; sleep 5
           done
           [ -n "$SHA" ] || { echo "::error::could not fetch source tarball sha256"; exit 1; }
-          perl -pi -e "s#archive/refs/tags/v\Q${PREV}\E\.tar\.gz#archive/refs/tags/v${NEW}.tar.gz#" Formula/claude-foundation.rb
+          # Version-agnostic: the formula may lag more than one version behind
+          # (releases can skip versions), so never anchor on $PREV here —
+          # v2.9.2 failed on exactly that (formula still at v2.8.1, PREV=2.9.1).
+          perl -pi -e "s#archive/refs/tags/v[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz#archive/refs/tags/v${NEW}.tar.gz#" Formula/claude-foundation.rb
           perl -0pi -e "s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"$SHA\"/m" Formula/claude-foundation.rb
           grep -q "v$NEW.tar.gz" Formula/claude-foundation.rb && grep -q "sha256 \"$SHA\"" Formula/claude-foundation.rb \
             || { echo "::error::formula url/sha not updated"; exit 1; }
