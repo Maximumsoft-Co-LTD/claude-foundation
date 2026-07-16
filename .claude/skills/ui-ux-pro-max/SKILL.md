@@ -75,47 +75,9 @@ Steps 1–4 (design-system generation, domain searches, stack guidelines), the f
 
 ---
 
-## Pre-Delivery Checklist
+## App UI Pre-Delivery Checklist
 
-Before delivering UI code, verify these items:
-Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
-
-### Visual Quality
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons come from a consistent icon family and style
-- [ ] Official brand assets are used with correct proportions and clear space
-- [ ] Pressed-state visuals do not shift layout bounds or cause jitter
-- [ ] Semantic theme tokens are used consistently (no ad-hoc per-screen hardcoded colors)
-
-### Interaction
-- [ ] All tappable elements provide clear pressed feedback (ripple/opacity/elevation)
-- [ ] Touch targets meet minimum size (>=44x44pt iOS, >=48x48dp Android)
-- [ ] Micro-interaction timing stays in the 150-300ms range with native-feeling easing
-- [ ] Disabled states are visually clear and non-interactive
-- [ ] Screen reader focus order matches visual order, and interactive labels are descriptive
-- [ ] Gesture regions avoid nested/conflicting interactions (tap/drag/back-swipe conflicts)
-
-### Light/Dark Mode
-- [ ] Primary text contrast >=4.5:1 in both light and dark mode
-- [ ] Secondary text contrast >=3:1 in both light and dark mode
-- [ ] Dividers/borders and interaction states are distinguishable in both modes
-- [ ] Modal/drawer scrim opacity is strong enough to preserve foreground legibility (typically 40-60% black)
-- [ ] Both themes are tested before delivery (not inferred from a single theme)
-
-### Layout
-- [ ] Safe areas are respected for headers, tab bars, and bottom CTA bars
-- [ ] Scroll content is not hidden behind fixed/sticky bars
-- [ ] Verified on small phone, large phone, and tablet (portrait + landscape)
-- [ ] Horizontal insets/gutters adapt correctly by device size and orientation
-- [ ] 4/8dp spacing rhythm is maintained across component, section, and page levels
-- [ ] Long-form text measure remains readable on larger devices (no edge-to-edge paragraphs)
-
-### Accessibility
-- [ ] All meaningful images/icons have accessibility labels
-- [ ] Form fields have labels, hints, and clear error messages
-- [ ] Color is not the only indicator
-- [ ] Reduced motion and dynamic text size are supported without layout breakage
-- [ ] Accessibility traits/roles/states (selected, disabled, expanded) are announced correctly
+Before delivering **App UI** (iOS/Android/React Native/Flutter), run the full sign-off list — Visual Quality, Interaction, Light/Dark Mode, Layout, Accessibility — in `references/app-ui-rules.md > Pre-Delivery Checklist`.
 
 ## Reference Files
 
@@ -125,4 +87,4 @@ Read the one that matches the work in front of you; you don't need to read them 
 |------|-----------|
 | `references/quick-reference.md` | Reviewing or building UI against the 10 rule categories (§1 Accessibility … §10 Charts & Data) — every rule ID with its one-line standard. |
 | `references/search-tool.md` | Running `search.py` — prerequisites, Steps 1–4 (design system, domain, stack searches), domain/stack tables, persist pattern, output formats, query strategy. |
-| `references/app-ui-rules.md` | Delivering native App UI (iOS/Android/React Native/Flutter) — icon/visual, interaction, light/dark contrast, and layout/spacing Do/Don't tables. |
+| `references/app-ui-rules.md` | Delivering native App UI (iOS/Android/React Native/Flutter) — icon/visual, interaction, light/dark contrast, layout/spacing Do/Don't tables, and the pre-delivery sign-off checklist. |

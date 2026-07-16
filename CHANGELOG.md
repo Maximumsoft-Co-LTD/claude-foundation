@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.2] - 2026-07-16
+
+### Changed (skill-load diet — fewer tokens per task, same rules)
+
+- **Conduct digest in the always-on router** — `rules/fundamentals.md` now carries the 4-principle core of `coding-discipline` (think-before-coding · Simplicity/Ponytail · surgical changes · goal-driven); the full body loads **on friction only** instead of on every code task (~1,300 words saved per ordinary coding task). `Ponytail` heading and anchor unchanged.
+- **Body diet on the 10 SKILL.md files over the ~1,200-word page cap** — all now ≤1,150 words: `programming-fundamentals` 1701→983, `api-design-fundamentals` 1399→1145, `plan-writing` 1394→1150, `ui-ux-pro-max` 1362→1024, `init-project-docs` 1331→1141, `hexagonal-backend` 1286→1149, `brainstorming` 1282→1148, `testing-fundamentals` 1270→1148, `coding-discipline` 1267→1022, `refactoring-fundamentals` 1255→1113. Move-don't-delete: every cut detail lives verbatim in that skill's `references/` (new: `programming-fundamentals/references/details.md`, `api-design-fundamentals/references/auth-and-limits.md`, `coding-discipline/references/details.md`); frontmatter descriptions byte-identical (triggers unchanged); externally-referenced section headings preserved (`coding-discipline > Simplicity First`, `plan-writing > Parallelizable phases` / `Section gating by Size` / principle 8).
+- Net effect: a typical code task's skill-text overhead drops ~3,200 → ~900 words; any skill body that does load is 10–40% lighter.
+
 ## [2.9.1] - 2026-07-16
 
 ### Changed

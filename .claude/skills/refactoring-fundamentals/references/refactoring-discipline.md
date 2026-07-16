@@ -2,6 +2,16 @@
 
 Moved from `SKILL.md` — principles 1 and 2's full detail: the behavior-equivalence contract and the one-hat-per-commit discipline.
 
+## Common failure modes (from SKILL.md > Why this exists)
+
+Refactoring turns into breaking when:
+
+- Restructuring code that has no tests, then "it still looks right" ships a behavior change nobody noticed.
+- One commit that *both* renames things *and* fixes a bug — unreviewable, impossible to revert selectively.
+- A big-bang "rewrite this module properly" that's 80% done for three weeks while `main` can't ship.
+- Refactoring for its own sake — gold-plating code that was about to be deleted.
+- Calling it "refactoring" while actually changing behavior, so no one writes the test that would have caught the regression.
+
 ## Principle 1 (from SKILL.md): Refactoring changes structure, never behavior
 
 **Rule:** A refactoring changes the internal structure of code without changing its observable behavior. If a change alters what the system *does* — a different output, a new validation, a fixed bug — it is not a refactoring, and it must not travel under that name.

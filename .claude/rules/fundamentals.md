@@ -2,6 +2,10 @@
 
 The always-on **detection layer**: match a trigger below, then load that one skill (`.claude/skills/<name>/SKILL.md`) — why/how, checklist, skip list — **before** the work it governs. Thin by design; the prose lives in each skill body.
 
+## Conduct digest (always-on)
+
+The 4-principle core of `coding-discipline`, applied to **every** code task without loading the body (load it only on friction — see the Process table): **(1) Think before coding** — state assumptions; >1 reasonable reading → name them, never pick silently; a genuinely open design → `brainstorming`. **(2) Simplicity first** — the Ponytail section below. **(3) Surgical changes** — every changed line traces to the request; no reformat/rename/refactor riding along; mention nearby bugs, don't fix them inline; remove only what *your* change orphaned. **(4) Goal-driven** — restate the task as a checkable definition of done before starting; loop until met.
+
 ## Ponytail (always-on minimalism)
 
 **The best code is the code you never wrote.** Before writing code, stop at the first rung that holds: (1) does it need to exist? → no: skip it (YAGNI); (2) stdlib / built-in does it? → use it; (3) native platform/framework feature? → use it; (4) already-installed dependency? → use it (a *new* dependency is **not** free — `security-fundamentals` owns that call); (5) one line? → one line; (6) only then: the minimum that works. **Lazy, not negligent** — never cut trust-boundary validation, error/data-loss handling, security, or accessibility. Mark deliberate shortcuts inline with a `ponytail: <upgrade path>` comment. Always-on digest of `coding-discipline` principle 2.
@@ -14,7 +18,7 @@ Terse-first — every response, artifact, agent report. Cut preamble, restated c
 
 | When the task is… | Load skill | Order |
 |---|---|---|
-| Producing or editing **code** (implement, fix, refactor, "clean up") | `coding-discipline` | **first** — conduct check that wraps the rest |
+| Producing or editing **code** (implement, fix, refactor, "clean up") | `coding-discipline` | **on friction only** — the always-on Conduct digest above is the default pre-flight; load the body when a checklist answer is genuinely unclear (ambiguous ask, oversized scope, contested diff shape) |
 | An **unknown-cause failure** (bug, crash, regression, flaky test, perf cliff, prod surprise) | `debug-fundamentals` | first — find the cause, *then* the construction skill for the fix layer |
 | **Restructuring** working code without changing behaviour (extract, rename, untangle, de-dupe, simplify, pay down debt) | `refactoring-fundamentals` | first — pick safe path + baseline, *then* construction skill |
 | Writing tests / deciding what to test / choosing a test level / reviewing coverage | `testing-fundamentals` | design-time companion to the construction skills |

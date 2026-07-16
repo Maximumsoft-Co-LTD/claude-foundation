@@ -7,45 +7,44 @@ description: Apply hexagonal architecture (ports & adapters) to backend code. Us
 
 ## Why this exists
 
-Standing preference: every backend with real domain logic uses hexagonal architecture. The goal is **resilience to requirement changes** — swapping a database, framework, broker, or external API touches only adapters, never the core. "Postgres → DynamoDB?" or "REST → gRPC?" is days in a hexagonal codebase, months in a coupled one.
+Standing preference: every backend with real domain logic uses hexagonal architecture for **resilience to requirement changes** — swapping a database, framework, broker, or external API touches only adapters, never the core. "Postgres → DynamoDB?" or "REST → gRPC?" is days in a hexagonal codebase, months in a coupled one.
 
-> **Runnable examples live in references.** This body is the conceptual layer — the 3 layers, the two port kinds, the dependency rule, transactions/errors/query/testing *concepts*, pitfalls, and the workflow. Every pattern's full runnable code is in [`references/typescript.md`](references/typescript.md) and [`references/go.md`](references/go.md); read the matching reference file when you implement. The TypeScript examples call the concrete use case; the Go examples use a driving port — both correct.
+> **Runnable examples live in references** — [`references/typescript.md`](references/typescript.md) (calls the concrete use case) and [`references/go.md`](references/go.md) (uses a driving port); both correct, read the matching file when you implement. This body stays conceptual.
 
 ## The 3 layers
 
 ### Domain (core)
 - Entities, value objects, domain services, business rules
-- **Zero external dependencies** — no ORM imports, no HTTP libs, no framework types, no `fetch`, no `db.query`
-- Pure functions and plain types only; must compile and test in isolation
+- **Zero external dependencies** — no ORM/HTTP/framework imports, no `fetch`, no `db.query`
+- Pure functions and plain types only; compiles and tests in isolation
 
 ### Application (use cases)
-- Orchestrates domain logic to fulfill a single user-facing intent (`PlaceOrder`, `CancelSubscription`, `RefundPayment`)
-- Defines **ports** — both the *driven* interfaces it needs from outside (`OrderRepository`, `PaymentGateway`) and, optionally, the *driving* interface it offers callers (`OrderService`). See *Two kinds of ports* below.
-- Depends on: domain only. Never imports infrastructure.
+- Orchestrates domain logic for one user-facing intent (`PlaceOrder`, `CancelSubscription`, `RefundPayment`)
+- Defines **ports** — *driven* interfaces it needs from outside (`OrderRepository`, `PaymentGateway`) and, optionally, the *driving* interface it offers callers (`OrderService`); see *Two kinds of ports*.
+- Depends on domain only; never imports infrastructure.
 
 ### Infrastructure (adapters)
-Two flavors:
-- **Driving adapters** (call into the application): HTTP controllers, gRPC handlers, CLI commands, message consumers, cron jobs
-- **Driven adapters** (called by the application via ports): DB repositories, external API clients, message publishers, file storage, email senders
+- **Driving** (call into the application): HTTP controllers, gRPC handlers, CLI commands, message consumers, cron jobs
+- **Driven** (called by the application via ports): DB repositories, external API clients, message publishers, file storage, email senders
 
 ## Two kinds of ports: driving and driven
 
-A *port* is an interface the application owns. Two kinds:
+A *port* is an interface the application owns:
 
-- **Driven (secondary) ports** — what the application *needs* from outside: `OrderRepository`, `PaymentGateway`, `Clock`. The application declares them; **driven adapters implement** them.
-- **Driving (primary) ports** — what the application *offers* its callers: the use-case surface (`OrderService`). **Driving adapters depend on** it. Publish as an interface when multiple entry points (HTTP, queue, cron) share one application surface.
+- **Driven (secondary)** — what the application *needs* from outside: `OrderRepository`, `PaymentGateway`, `Clock`. The application declares them; **driven adapters implement** them.
+- **Driving (primary)** — what the application *offers* callers: the use-case surface (`OrderService`), depended on by driving adapters. Publish as an interface when multiple entry points (HTTP, queue, cron) share one surface.
 
-One caller → the concrete class is simpler ([[coding-discipline]] *simplicity-first*); many entry points → the driving port earns its keep. (The reference files show both: Go uses a driving port `port.OrderService`; TypeScript calls the concrete use case.)
+One caller → the concrete class is simpler ([[coding-discipline]] *simplicity-first*); many entry points → the driving port earns its keep.
 
 ## The one rule you must not break
 
 **Dependency direction: Infrastructure → Application → Domain**
 
-Never the other way. Domain must compile without adapters. Application must compile without adapters. If a domain file imports anything from `adapters/` (or any concrete framework/library), the architecture is broken.
+Never the other way. Domain and application must both compile without adapters. If a domain file imports anything from `adapters/` (or any concrete framework/library), the architecture is broken.
 
 ## Folder structure
 
-Both stacks express the same logical rule (*The one rule you must not break*) with different names — the physical layout is a style choice (see *Relation to Vertical Slice Architecture*). TypeScript uses `domain/ application/ adapters/`; Go uses the community `core/ port/ adapter/` idiom (all ports in one `core/port` package). Full annotated trees: [`references/typescript.md`](references/typescript.md) and [`references/go.md`](references/go.md).
+Same logical rule (*The one rule you must not break*), different names — physical layout is a style choice (see *Relation to Vertical Slice Architecture*). TypeScript: `domain/ application/ adapters/`; Go: the community `core/ port/ adapter/` idiom (all ports in one `core/port` package). Full annotated trees: [`references/typescript.md`](references/typescript.md), [`references/go.md`](references/go.md).
 
 ## Patterns
 
@@ -60,21 +59,21 @@ Six building blocks; full detail in `references/patterns-and-pitfalls.md`, runna
 
 ## Cross-cutting concerns
 
-Full sections in `references/patterns-and-pitfalls.md`:
+Full detail in `references/patterns-and-pitfalls.md`:
 
-- **Transactions & atomicity** — the boundary lives behind a **Unit of Work port** (never pass a raw `db.Tx` into a use case); DB+broker crossings use a transactional outbox — an adapter concern. Mechanics: [[database-fundamentals]] / [[queue-fundamentals]].
-- **Errors: domain → application → adapter** — each layer translates the one beneath: domain errors in business language, application errors for broken preconditions, infra errors re-raised with domain meaning; driving adapters map to status codes at the edge. Taxonomy: [[api-design-fundamentals]].
-- **Query ports (CQRS seam)** — reads that don't fit `save`/`findById` get a separate query port returning behavior-free DTOs; add it only when read-only methods accrete.
-- **Testing strategy** — domain: pure unit tests, no mocks; use case: in-memory fakes at port boundaries (never mock the domain); adapter: integration tests against real dependencies. Level discipline: [[testing-fundamentals]].
+- **Transactions & atomicity** — boundary lives behind a **Unit of Work port** (never a raw `db.Tx` in a use case); DB+broker crossings use a transactional outbox — an adapter concern. Mechanics: [[database-fundamentals]] / [[queue-fundamentals]].
+- **Errors: domain → application → adapter** — each layer translates the one beneath: domain errors in business language, application errors for broken preconditions, infra errors re-raised with domain meaning; driving adapters map to status codes. Taxonomy: [[api-design-fundamentals]].
+- **Query ports (CQRS seam)** — reads that don't fit `save`/`findById` get a separate query port returning behavior-free DTOs; add only when read-only methods accrete.
+- **Testing strategy** — domain: pure unit tests, no mocks; use case: in-memory fakes at port boundaries (never mock the domain); adapter: integration tests against real dependencies. Levels: [[testing-fundamentals]].
 
 ## Common pitfalls
 
-All ❌, full fixes in `references/patterns-and-pitfalls.md > Common pitfalls`: ORM model in domain · domain entity doubling as DB/JSON model · use case returning DB rows/framework types · domain calling out (`fetch`/`db.query`) · adapter doing business logic · one mega-port · hidden time/randomness (inject `Clock`/`Random`) · use case depending on framework · anemic domain · skipping the composition root.
+All ❌, fixes in `references/patterns-and-pitfalls.md > Common pitfalls`: ORM model in domain · domain entity doubling as DB/JSON model · use case returning DB rows/framework types · domain calling out (`fetch`/`db.query`) · adapter doing business logic · one mega-port · hidden time/randomness (inject `Clock`/`Random`) · use case depending on framework · anemic domain · skipping the composition root.
 
 ## Workflow when starting a new backend feature
 
 1. **Name the use case.** One verb + noun: `PlaceOrder`, `RefundPayment`, `ResetPassword`.
-2. **Sketch the domain.** What entities/value objects? What invariants must hold?
+2. **Sketch the domain.** Entities/value objects? Invariants?
 3. **List the ports.** Each external dependency = one narrow *driven* port. Multiple entry points (HTTP, queue, cron) → add a *driving* port too.
 4. **Write the use case** against ports. No real adapters yet.
 5. **Test domain + use case** with in-memory fakes for ports.
@@ -90,24 +89,20 @@ All ❌, full fixes in `references/patterns-and-pitfalls.md > Common pitfalls`: 
 
 For everything else — business rules, multiple data sources, or any chance of changing requirements — apply by default.
 
-**Ports are not the speculative abstraction [[coding-discipline]]'s *simplicity-first* warns against.** A port is the *deliberate* seam that buys requirement-change resilience; it earns its keep wherever this skill applies. The skip-list above is where simplicity-first wins.
+**Ports aren't the speculative abstraction [[coding-discipline]]'s *simplicity-first* warns against** — a port is the *deliberate* seam that buys requirement-change resilience, earning its keep wherever this skill applies; the skip-list above is where simplicity-first wins.
 
 ## Relation to Vertical Slice Architecture
 
-Complementary, not competing: VSA's per-feature folder is a *physical layout choice*; hexagonal's dependency direction is a *logical invariant* — organize by feature, keep domain pure, inject via ports inside the slice. Full comparison: `references/patterns-and-pitfalls.md > Relation to Vertical Slice Architecture`.
+Complementary, not competing: VSA's per-feature folder is a *physical layout choice*; hexagonal's dependency direction is a *logical invariant* — organize by feature, keep domain pure, inject via ports inside the slice. Details: `references/patterns-and-pitfalls.md > Relation to Vertical Slice Architecture`.
 
 ## How to use this skill in a conversation
 
-Always-on for backend work with real domain logic (per `.claude/rules/fundamentals.md`). If the task matches "When NOT to apply strictly," say so in one sentence and proceed without hexagonal.
-
-- **Starting fresh** — propose folder structure first, then sketch domain entities and ports before code.
-- **Refactoring** — classify existing code into domain/application/infrastructure; migrate one use case at a time.
-- **Writing code** — follow the patterns above and the runnable reference for the stack in use. On a non-obvious call (a `Clock` port, unit-of-work, query port), say *why* in one sentence. Cite relevant pitfalls.
+Always-on for backend work with real domain logic; skip per *When NOT to apply strictly* (say why, in one sentence). Starting fresh: structure, then domain/ports, before code. Refactoring: classify into layers, migrate one use case at a time. Writing code: follow *Patterns* + the stack reference; flag non-obvious calls (`Clock` port, unit-of-work, query port) in one sentence. Full version: `references/patterns-and-pitfalls.md > Conversation guidance`.
 
 ## Reference files
 
 | File | Read when |
 |---|---|
-| `references/patterns-and-pitfalls.md` | Need the full pattern write-ups, transactions/errors/query-port/testing sections, the pitfall fixes, or the VSA comparison |
-| `references/typescript.md` | Implementing in TypeScript — annotated tree + runnable domain/port/adapter/use-case/UnitOfWork/`toHttp` code |
-| `references/go.md` | Implementing in Go — `core/port/adapter` tree + runnable code, driving-port style, fakes-vs-generated-mocks note |
+| `references/patterns-and-pitfalls.md` | Full pattern write-ups, transactions/errors/query-port/testing sections, pitfall fixes, VSA comparison, conversation guidance |
+| `references/typescript.md` | TypeScript — annotated tree + runnable domain/port/adapter/use-case/UnitOfWork/`toHttp` code |
+| `references/go.md` | Go — `core/port/adapter` tree + runnable code, driving-port style, fakes-vs-generated-mocks note |

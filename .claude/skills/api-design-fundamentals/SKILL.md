@@ -7,9 +7,9 @@ description: Apply API-design fundamentals to the surface a client codes against
 
 ## The 8 principles
 
-The api/architecture/hexagonal seam and cross-skill run order are owned by the always-on router (`.claude/rules/fundamentals.md` → "Seams that blur"): this skill owns one service's published surface — after [[hexagonal-backend]] defines the port, before [[architecture-fundamentals]] draws runtime relationships. The per-principle pointers below name [[security-fundamentals]], [[ddd-strategic]], and [[database-fundamentals]] where their ownership touches the surface.
+Seam ownership and cross-skill run order live in the always-on router (`.claude/rules/fundamentals.md` → "Seams that blur"). This skill owns one service's published surface — after [[hexagonal-backend]] defines the port, before [[architecture-fundamentals]] draws runtime relationships.
 
-This body is the **pre-flight digest** — each principle is its Rule plus the operative how-to in one line. The *why*, the worked examples, decision tables, and full mechanics live in the reference files linked per principle (and listed at the end); pull the one that matches the work, not all of them.
+Each principle states its **Rule** plus a one-line how-to; the *why*, examples, and full mechanics live in the linked reference files (indexed at the end) — pull the one matching the work in front of you.
 
 ---
 
@@ -17,7 +17,7 @@ This body is the **pre-flight digest** — each principle is its Rule plus the o
 
 **Rule:** Design around domain **nouns** (resources) named in the ubiquitous language ([[ddd-strategic]]); let the HTTP method carry the verb. A URL identifies a *thing*, not an action — names are the public vocabulary, and they are forever. Pick REST / GraphQL / gRPC for the access pattern, not fashion.
 
-Pluralize collections, address members by id, nest ≤2 levels for genuine ownership, model an action's *result* as a resource (`POST /orders/{id}/refunds`), keep casing consistent everywhere. → `references/resource-modeling.md` (URL conventions, protocol decision matrix).
+→ `references/resource-modeling.md` (URL conventions, nesting depth, protocol decision matrix).
 
 ---
 
@@ -25,7 +25,7 @@ Pluralize collections, address members by id, nest ≤2 levels for genuine owner
 
 **Rule:** The method says what the call does to state; the status code says what happened, in a class (2xx/3xx/4xx/5xx) the client branches on without parsing the body. Never `200 {"success": false}`. The 4xx/5xx split is a retry contract — a 5xx invites a retry, a 4xx tells the client to fix its request.
 
-Match method semantics (principle 5); honour `GET` cacheability (`ETag`/`Cache-Control`/`304`). → `references/resource-modeling.md` (status-code table, caching).
+→ `references/resource-modeling.md` (status-code table, caching semantics).
 
 ---
 
@@ -63,22 +63,17 @@ Match method semantics (principle 5); honour `GET` cacheability (`ETag`/`Cache-C
 
 ### 7. Authentication, authorization, and rate-limiting live at the boundary
 
-**Rule:** Every endpoint authenticates the caller, authorizes the **specific action on the specific object** (deny by default), and carries a rate limit. The endpoint is the trust boundary — enforce at the edge, not in scattered helpers.
+**Rule:** Every endpoint authenticates the caller, authorizes the **specific action on the specific object** (deny by default — a missing object-level check is the BOLA/IDOR hole, OWASP API Top 10 #1), and carries a rate limit; a caller who may not see a resource gets `404`, not a confirming `403`. The endpoint is the trust boundary — enforce at the edge, not in scattered helpers.
 
-- **Authenticate** with a standard scheme (`Authorization: Bearer` for users, API keys for services); `401` when missing/expired.
-- **Authorize the object, not just "is logged in"** — owner (`order.user_id == caller.id`), role/scope, tenant isolation. A missing object-level check is the BOLA/IDOR hole (OWASP API Top 10 #1).
-- **Rate-limit** every endpoint, tighter on auth/expensive/write paths; `429` + `Retry-After`, surface the budget so clients self-throttle.
-- **Hide existence** from unauthorized callers: a resource they may not see is `404`, not a `403` that confirms it exists.
-
-The crypto/token mechanics and full threat model are [[security-fundamentals]] (its `authn-authz.md` reference); this principle's job is to ensure *every endpoint* has an answer for authn, authz, and rate limit before it ships. *(Auth is the one principle with no dedicated api-design reference — it defers to security-fundamentals.)*
+The crypto/token mechanics and full threat model are [[security-fundamentals]]; this principle ensures every endpoint has an answer for authn, authz, and rate limit before it ships. → `references/auth-and-limits.md`.
 
 ---
 
 ### 8. Version for backwards-compatibility; break only with a deprecation cycle
 
-**Rule:** Evolve the surface **additively** — add optional fields and new endpoints freely; never rename, remove, retype, or change the meaning of an existing field without a versioned, deprecation-cycled migration that gives consumers time to move. Prefer additive over a version bump (a new major version is a parallel surface to maintain). A schema-diff / contract-compatibility check in CI ([[delivery-engineering]]) rejects accidental breaks before they ship.
+**Rule:** Evolve the surface **additively** — add optional fields and new endpoints freely; never rename, remove, retype, or change the meaning of an existing field without a versioned, deprecation-cycled migration that gives consumers time to move.
 
-→ `references/evolution.md` (additive-vs-breaking table, versioning schemes, the deprecation lifecycle).
+→ `references/evolution.md` (additive-vs-breaking table, versioning schemes, deprecation lifecycle, CI contract-compatibility checks — [[delivery-engineering]]).
 
 ---
 
@@ -86,16 +81,16 @@ The crypto/token mechanics and full threat model are [[security-fundamentals]] (
 
 Before designing or changing any endpoint, run through these:
 
-1. **Resource model:** is the surface organized around domain nouns in the ubiquitous language, with verbs in the HTTP method — not RPC actions in the path? Are names consistent and would a client guess the next route from the last?
-2. **HTTP semantics:** does every response use the honest status code and class (no `200` wrapping a failure)? Are `GET` reads cacheable and is the right method chosen for each operation?
-3. **Body contract:** is every request/response shape written down in a schema, validated at the boundary, and mapped from a *separate* wire DTO so internal renames don't leak? Is nullability explicit?
-4. **Errors:** one consistent error envelope, stable machine `code`s decoupled from human text, field-level validation detail, no leaked internals, documented per endpoint?
-5. **Idempotency & safety:** are `GET`/`HEAD` safe and `PUT`/`DELETE` idempotent? Does every non-idempotent mutation accept an idempotency key so retries are safe?
-6. **Pagination:** is every collection bounded with a default and max page size, cursor pagination for anything large/mutating, and an allow-listed filter/sort surface?
-7. **Auth & limits:** does every endpoint authenticate, authorize the specific object/action (deny by default — no BOLA hole), and carry a rate limit? Is existence hidden from unauthorized callers?
-8. **Versioning:** is this change additive? If it must break, is there an explicit version and a deprecation cycle with usage instrumentation — and a CI contract-compatibility check?
+1. **Resource model:** domain nouns in the ubiquitous language, verbs in the HTTP method — not RPC actions in the path? Names consistent enough that a client could guess the next route?
+2. **HTTP semantics:** honest status code and class on every response (no `200` wrapping a failure)? `GET` reads cacheable, right method per operation?
+3. **Body contract:** every shape written in a schema, validated at the boundary, mapped from a separate wire DTO (no internal leaks)? Nullability explicit?
+4. **Errors:** one error envelope, stable machine `code`s decoupled from human text, field-level validation detail, no leaked internals, documented per endpoint?
+5. **Idempotency & safety:** `GET`/`HEAD` safe, `PUT`/`DELETE` idempotent? Every non-idempotent mutation accepts an idempotency key?
+6. **Pagination:** every collection bounded (default + max page size), cursor pagination for large/mutating sets, allow-listed filter/sort?
+7. **Auth & limits:** every endpoint authenticates, authorizes the specific object (deny by default — no BOLA hole), rate-limits, and hides existence from unauthorized callers?
+8. **Versioning:** is this change additive? If it must break: explicit version, deprecation cycle with usage instrumentation, CI contract-compatibility check?
 
-If any answer is "I don't know," stop and decide before publishing the surface — it's far cheaper now than after a client has coded against it.
+If any answer is "I don't know," stop and decide now — cheaper before a client has coded against it.
 
 ## When to skip this skill
 
@@ -107,8 +102,9 @@ For everything else — any endpoint another team, client, or future version of 
 
 ## Reference files
 
-Deeper guides for individual principles. Read the one that matches the work in front of you; you don't need to read them all upfront.
+Read the one matching the work in front of you — not all of them upfront.
 
-- `references/resource-modeling.md` — resources vs RPC, URL design and nesting depth, collection/member conventions, the REST-vs-GraphQL-vs-gRPC decision matrix and when each wins. Use when shaping the surface (principles 1–2).
-- `references/contracts-and-errors.md` — OpenAPI/SDL/proto as source of truth, edge validation, wire-DTO vs domain-model mapping, the RFC 9457 Problem Details error envelope, stable error codes, field-level validation detail. Use when designing request/response bodies and the error surface (principles 3–4).
-- `references/evolution.md` — idempotency keys, optimistic concurrency with ETags, cursor vs offset pagination, allow-listed filtering, additive-vs-breaking change rules, versioning schemes, the deprecation lifecycle, and CI contract-compatibility checks. Use when designing for safe retries, large collections, and long-term evolution (principles 5, 6, 8).
+- `references/resource-modeling.md` — resources vs RPC, URL design and nesting depth, collection/member conventions, REST-vs-GraphQL-vs-gRPC decision matrix. Principles 1–2.
+- `references/contracts-and-errors.md` — OpenAPI/SDL/proto as source of truth, edge validation, wire-DTO vs domain-model mapping, RFC 9457 error envelope, stable error codes, field-level validation. Principles 3–4.
+- `references/evolution.md` — idempotency keys, optimistic concurrency with ETags, cursor vs offset pagination, allow-listed filtering, additive-vs-breaking rules, versioning schemes, deprecation lifecycle, CI contract checks. Principles 5, 6, 8.
+- `references/auth-and-limits.md` — authentication scheme, object-level authorization (BOLA/IDOR), rate-limiting, hiding existence from unauthorized callers. Principle 7.

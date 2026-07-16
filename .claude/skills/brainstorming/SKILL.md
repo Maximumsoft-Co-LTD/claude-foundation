@@ -21,19 +21,19 @@ Test: does the intent reduce to one approved spec that produces one ship-able th
 
 ### 3. Ask only about UNSPECIFIED slots — never re-ask what the intent already pinned
 
-Authoritative slot list + triggers: `.claude/agents/pm.md > Spec sections`. Minimum floor (always asked/pulled): `Type`, `Goal`, `User Stories` (w/ Given/When/Then AC), `Functional Requirements`, `Success Criteria`, `Ship as`, `Open PR`. Everything else is triggered (`Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References`, `Reproduction`, `Timebox`, `Discovery notes`, `Carry-over`) — ask only when the trigger fires, never "just in case". Frame to **detect, not fill** ("is there a target?" not "what's the target?"); the NFR-detection question is **mandatory** for any feat/fix shipping runtime code, and a real number becomes an AC (`measured:` clause), never a standalone section. Batch 3–4 questions, ordered by the design tree (resolve the upstream decision first), lead every choice with a recommended option; reserve free-text for genuinely open answers. **Dig loop:** up to 3 batches total when ambiguity is high, each narrower than the last, converging on load-bearing decisions — stop and surface `[NEEDS CLARIFICATION]` if the picture is still open after 3. Ground each consequential AC in a concrete `e.g.: input → expected output` (never invent the values). Capture the unhappy path too — an `on error / at boundary:` line per consequential behavioural AC; `none — <default>` is a valid recorded answer, silence is not. Frame behavioural questions past-tense/specific, not hypothetical (Mom Test). Full tactics + worked examples: `references/interview-tactics.md`.
+Slot list + triggers: `.claude/agents/pm.md > Spec sections` — minimum floor always asked/pulled, everything else triggered (ask only when the trigger fires, never "just in case"). Frame to **detect, not fill** ("is there a target?" not "what's the target?"); NFR-detection is **mandatory** for any feat/fix shipping runtime code, and a real number becomes an AC (`measured:` clause), never a standalone section. Batch 3–4 questions ordered by the design tree, lead every choice with a recommendation. **Dig loop:** up to 3 batches, each narrower, converging on load-bearing decisions — else surface `[NEEDS CLARIFICATION]`. Ground each consequential AC in a concrete `e.g.: input → expected output` (never invent values), and capture the unhappy path (`on error / at boundary:`; `none — <default>` valid, silence isn't). Frame behavioural questions past-tense/specific, not hypothetical (Mom Test). Full tactics, slot list, and worked examples: `references/interview-tactics.md`.
 
 ### 4. Propose 2–3 approaches with a recommendation when "how" is open
 
-Lead with the recommended option + one-line why; show trade-offs for the rest — never a silent single pick, never a five-option menu. Load the relevant construction-fundamentals skill first (run order: `.claude/rules/fundamentals.md`) — it decides *what* to build, this decides *how to surface the choice*. Record the decision trail (chosen + rejected + why) into the plan's `Alternatives considered`/`Hard-to-reverse decisions`; new domain terms go to the spec `Glossary`. Full format + anti-patterns: `references/approach-and-gate.md`.
+Lead with a recommended option + one-line why, show trade-offs for the rest — never a silent pick, never a five-option menu; load the relevant construction-fundamentals skill first (`.claude/rules/fundamentals.md`) — it decides *what* to build, this decides *how to surface the choice*. Record the decision trail (chosen + rejected + why) into the plan; new domain terms go to the spec `Glossary`. Full format + anti-patterns: `references/approach-and-gate.md`.
 
 ### 5. HARD-GATE: no code, no `Status: approved`, no `plan.md` until the design is acknowledged
 
-Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes: no production code, no spawning `engineer` or `lead` plan mode, no flipping `spec.md` to `approved`. Applies even to a one-file utility — "too simple to need a design" is exactly the failure mode this gate exists to catch. In `/dev`, the formal gate is Phase 1's Gate. Full: `references/approach-and-gate.md`.
+Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes: no production code, no spawning `engineer`/`lead` plan mode, no flipping `spec.md` to `approved` — applies even to a one-file utility ("too simple" is the failure mode this gate catches). In `/dev`, the formal gate is Phase 1's Gate. Full: `references/approach-and-gate.md`.
 
 ### 6. Visual companion is optional, opt-in, and lives in its own message
 
-Offer only when upcoming questions are genuinely visual (UI mockups, layout comparisons, diagrams the user needs to *see*); the offer is its own message, no clarifying question attached. Decide per-question, after acceptance, whether the answer is better seen or read. If declined, proceed text-only. Full rules: `references/visual-companion.md`.
+Offer only when upcoming questions are genuinely visual (mockups, layout comparisons, diagrams); the offer is its own message, never bundled with a clarifying question. Decide per-question, after acceptance, seen vs read; if declined, proceed text-only. Full rules: `references/visual-companion.md`.
 
 ### 7. Spec self-review before `Status: approved` (5 scans)
 
@@ -63,16 +63,16 @@ Full list + more: `references/interview-tactics.md > Anti-patterns`, `references
 
 Brainstorming is the **pre-spec** skill — it composes, it does not replace:
 
-- [[plan-writing]] — the next planning aid when complexity warrants it. Once `Status: approved`, planning decides *how to sequence and verify* the work. Brainstorming hands the spec to the plan phase; never bypasses planning.
-- The construction-fundamentals skills (run order in `.claude/rules/fundamentals.md`) — load whichever layer the work touches BEFORE drafting approach options in principle 4. They decide *what* to build; this skill decides *how to surface the choice and get to a yes*.
-- [[debug-fundamentals]] — for `Type=fix` runs, debug-fundamentals runs *before* this skill: find the actual cause first, then brainstorm the fix (including the regression test the fix step will encode).
-- [[git-workflow]] — pairs later at ship time, not here. Brainstorming produces a spec; plan-writing produces a plan; git-workflow lands the commit.
+- [[plan-writing]] — next planning aid once `Status: approved`; decides *how to sequence and verify*. Brainstorming hands off the spec; never bypasses planning.
+- Construction-fundamentals skills (run order: `.claude/rules/fundamentals.md`) — load whichever layer applies BEFORE drafting approach options (principle 4). They decide *what* to build; this skill decides *how to surface the choice and get to a yes*.
+- [[debug-fundamentals]] — for `Type=fix`, runs *before* this skill: find the cause first, then brainstorm the fix (incl. the regression test).
+- [[git-workflow]] — pairs later at ship time: brainstorming produces a spec, plan-writing a plan, git-workflow the commit.
 
-The `/dev` orchestrator (`.claude/orchestrator.md`) is the **caller** in Phase 1: loads this skill at Interview (op 2) and Design (op 3 — the `pm`/combined-`lead` spawn). `pm` receives the Q&A and writes `spec.md` — it does *not* re-run the interview.
+The `/dev` orchestrator (`.claude/orchestrator.md`) is the **caller**: loads this skill at Interview (op 2) and Design (op 3 — `pm`/combined-`lead` spawn). `pm` receives the Q&A and writes `spec.md` — it does *not* re-run the interview.
 
 ## References
 
-Pick the file that matches the friction:
+Pick the matching file:
 
 | File | Read when |
 |---|---|

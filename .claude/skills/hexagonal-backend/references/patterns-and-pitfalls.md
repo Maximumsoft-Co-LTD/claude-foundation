@@ -71,3 +71,11 @@ Ports make each layer testable in isolation — that is the hexagonal payoff. Th
 
 The **logical layering rule** (domain has zero external dependencies; ports define the interface; adapters depend inward) is load-bearing. Expressing it as `domain/`/`application/`/`infrastructure/` folders or feature-scoped slices is a style choice.
 
+## Conversation guidance
+
+Always-on for backend work with real domain logic (per `.claude/rules/fundamentals.md`). If the task matches *When NOT to apply strictly* in `SKILL.md`, say so in one sentence and proceed without hexagonal.
+
+- **Starting fresh** — propose folder structure first, then sketch domain entities and ports before code.
+- **Refactoring** — classify existing code into domain/application/infrastructure; migrate one use case at a time.
+- **Writing code** — follow the patterns above and the runnable reference for the stack in use. On a non-obvious call (a `Clock` port, unit-of-work, query port), say *why* in one sentence. Cite relevant pitfalls.
+
