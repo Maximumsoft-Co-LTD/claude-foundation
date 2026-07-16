@@ -18,7 +18,10 @@ class ClaudeFoundation < Formula
   # (forward-compatible), so arm64_sequoia also covers arm64_tahoe; add a
   # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
   # RELEASING.md). Platforms with no line fall back to build-from-source.
-  # bottle block re-added after the v2.8.1 bottle build (bottle.yml)
+  bottle do
+    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v2.8.1"
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "815eab549e2e5e6842409d4fa96f5893c25066a4e396a79edc9b53698a8d1f66"
+  end
 
   def install
     libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
