@@ -38,9 +38,12 @@ jobs:
       TAP: maximumsoft-co-ltd/claude-foundation
       GH_TOKEN: ${{ github.token }}
     steps:
-      # Check out `main`, not the tag: the formula's `url`/`sha256` bump lands in
-      # a commit *after* the tag (see RELEASING.md), so the tagged tree still
-      # points at the previous version. `main` carries the just-released formula.
+      # Check out `main` for the formula *shape* only. Its `url`/`sha256` are
+      # NOT trusted — depending on release order they may still point at the
+      # previous version (the bump can land after the tag; see RELEASING.md).
+      # The build step below always rewrites them to $TAG, so this workflow
+      # bottles the right source no matter which came first. (v2.8.1 shipped a
+      # 2.6.8-payload bottle because the old version trusted main's formula.)
       - name: Check out the released formula (from main)
         uses: actions/checkout@v4
         with:
@@ -51,7 +54,18 @@ jobs:
           set -euo pipefail
           ROOT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
 
-          # Put the checked-out formula into a local tap so brew can build it.
+          # Force the formula onto the tag being bottled: fetch the tag's source
+          # tarball (fails fast on a bad/missing tag), compute its sha, and
+          # rewrite the formula's `url` + source `sha256` (the bottle block's
+          # `sha256 cellar:` line is untouched — the pattern requires the quote).
+          SRC_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          curl -fsSL "$SRC_URL" -o src.tar.gz
+          SRC_SHA="$(shasum -a 256 src.tar.gz | cut -d' ' -f1)"
+          sed -i '' -E "s|^( *url ).*|\1\"${SRC_URL}\"|" Formula/claude-foundation.rb
+          sed -i '' -E "s|^( *sha256 )\"[0-9a-f]{64}\"|\1\"${SRC_SHA}\"|" Formula/claude-foundation.rb
+          grep -q "tags/${TAG}.tar.gz" Formula/claude-foundation.rb  # sanity: rewrite landed
+
+          # Put the patched formula into a local tap so brew can build it.
           brew tap-new "$TAP" --no-git
           cp Formula/claude-foundation.rb "$(brew --repository "$TAP")/Formula/"
 
