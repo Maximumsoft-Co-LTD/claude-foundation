@@ -108,7 +108,7 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 | `uxui-plan.md` | `uxui` (team mode) | **Design-time UX plan** for UI work — Scenes, ASCII wireframes, Scenarios, UX direction & components, AC↔scene mapping. Written by `/uxui-plan` (not a linear state-machine step); `frontend-design` builds from it, `qa`'s Visual verification checks against it |
 | `review.md` | `lead` (review mode) | Tasks-adherence + **acceptance verification** against `spec.md` |
 | `security.md` | `lead` (security mode) | Security findings; only when the diff trips the sensitive-paths trigger |
-| `tests.md` | `qa` (execute mode) | **Test execution record** — AC↔test mapping, run results, regression check (fix), measured diff coverage, edge-case gaps. Executes `test-plan.md` |
+| `tests.md` | `qa` (execute) · orchestrator inline at XS/S (`e2e_visual=off`) | **Test execution record** — AC↔test mapping, run results, regression check (fix), measured diff coverage, edge-case gaps. Executes `test-plan.md` |
 | `recommendations.md` | `engineer` (spike) | Spike deliverable — what we learned, recommended next step. Replaces test/ship phases. |
 | `retro.md` | `retro` | What worked, what to change, memory + skill candidates, commit/PR refs |
 | `epic.md` | `lead` (rare) | Decomposition into slices when `Ship as: staged` + ≥2 capabilities |
@@ -247,7 +247,7 @@ Same main-agent-as-orchestrator + spawn-guard mechanics as `/dev`. Typical flow:
 
 ## Example: `/dev create todolist app`
 
-S-size greenfield: one interview batch → `lead` combined mode writes `spec.md`+`plan.md`+`test-plan.md` in one spawn (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement → tests pass (no browser) → review → merged docs+ship → light retro → done.
+S-size greenfield: one interview batch → `lead` combined mode writes `spec.md`+`plan.md`+`test-plan.md` in one spawn (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement (engineer writes the planned tests too) → orchestrator runs the suite inline, green → review → merged docs+ship → inline retro → done.
 
 ## Example: `/dev fix login redirect loop`
 

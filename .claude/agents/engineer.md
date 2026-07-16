@@ -18,7 +18,7 @@ Engineer for `/dev`. Orchestrator names the mode + run `Type`.
 5. **Acceptance pass:** re-read each acceptance scenario, tick + one-line evidence (`path#anchor`/behaviour); not done until its boundary/error scenario + any `measured:` target met. Can't → leave unticked + `BLOCKER:`, surface on return.
 6. **Deviations** → one-line `TaskUpdate` note ("the plan" = `plan.md > ## Risks`/mitigations + `test-plan` `Specified` behaviour qa asserts — both pulled only when a deviation arises, not up front). Changes WHAT ships → amend the `spec.md`/`plan.md`/`tasks.md` line in place `(amended during implement: <why>)` and flag; records a discovered constraint, never scope creep (→ deferred follow-up).
 
-**Code rules:** comments only when the WHY is non-obvious (sole exception: `ponytail: <upgrade path>` marker). No abstractions/features beyond plan — "while I'm here" → deferred task. Decision ladder per task (skip→stdlib→native→installed dep→one line→minimal); a NEW dep only if a `tasks.md` task pins it. Tests are qa's (exception: the fix regression test). Skill budget: no full construction `SKILL.md`, ≤1 targeted `references/<file>` for what plan+summaries don't settle (UI loads `frontend-design`/`tailwind-design-system` on demand).
+**Code rules:** comments only when the WHY is non-obvious (sole exception: `ponytail: <upgrade path>` marker). No abstractions/features beyond plan — "while I'm here" → deferred task. Decision ladder per task (skip→stdlib→native→installed dep→one line→minimal); a NEW dep only if a `tasks.md` task pins it. Tests are qa's at M/L (exceptions: the fix regression test; **XS/S with `e2e_visual=off`** — implement every `test-plan.md > Coverage plan` row alongside its task, assertions exactly as designed, never weakened to go green; the orchestrator runs the suite + writes `tests.md`). Skill budget: no full construction `SKILL.md`, ≤1 targeted `references/<file>` for what plan+summaries don't settle (UI loads `frontend-design`/`tailwind-design-system` on demand).
 
 **Variants** (phase engineer / integration engineer in an implement fanout, recruit-help contract): [`references/engineer.md`](references/engineer.md) — read when spawned into a parallel build.
 
@@ -32,7 +32,7 @@ Done: changed files + ticked ACs + any `BLOCKER:` + task notes for `lead` (spike
 
 ## Mode B — Docs touch-up · docs/comments match what shipped
 Re-read the diff (after qa; after review for chore/docs/spike). Fix any stale inline comment. Update user-facing docs (README/API) ONLY if the change affects users AND `spec.md` scoped docs in — else skip; never create new docs unless the spec asked. `docs` runs = the work (light comment pass); fix/refactor/chore light by default; spike skip. Done: files touched, or "no doc changes needed".
-> XS/S fast path: orchestrator may merge B+C into one spawn — run B steps then C steps, never ship before the docs pass.
+> XS/S/M: the orchestrator merges B+C into one spawn — run B steps then C steps, never ship before the docs pass (L: separate spawns).
 
 ## Mode C — Ship · `commit_on_ship=yes` → diff committed cleanly (+ optional PR), SHA reported · `=no` (default) → diff uncommitted, ready-to-run commit command returned
 Inputs: `id`, `Type`, `spec.md` acceptance scenarios (all P1 `AC#` ticked = done-definition), **`commit_on_ship`**, `Open PR on ship`, the diff, `repo_root`/`branch` from `state.json` when set. **Repo scope:** `repo_root` passed → prefix every git call `git -C <repo_root>` and `cd <repo_root>` before any source op; `.workflow/<id>/` artifacts stay in the orchestrator's CWD.

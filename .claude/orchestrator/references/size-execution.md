@@ -13,11 +13,11 @@ The orchestrator estimates size (XS/S/M/L — picker in `plan-writing > referenc
 | Test plan (feat/fix/refactor) | folded into combined `lead` spawn | folded into combined `lead` spawn | `qa` test-plan spawn |
 | Gate (per-line AC confirm) | full | full | full |
 | Implement | one `engineer` spawn | one spawn | one spawn (+ parallel-phase fanout: default when the **L-tier** feat plan declares disjoint phases) |
-| Test | per type matrix (unchanged; coverage floor accounting can be deferred) | per type matrix (unchanged; coverage floor accounting can be deferred) | per type matrix (+ category fanout only when suite splits enough to repay coordination) |
+| Test | inline (`e2e_visual=off`) — engineer writes the planned tests, orchestrator runs Impacted + writes `tests.md`; `on` → `qa` spawn | same as XS | `qa` execute spawn, per type matrix (+ category fanout only when suite splits enough to repay coordination) |
 | Review | `lead` sonnet, fanout refused (skipped for `chore`/`docs` at XS — size×type default) | sonnet, fanout refused | sonnet by default; M may use core 3-lens fanout when justified; L/high-stakes may use opus + full 6-lens |
 | Security review | trigger-based (unchanged) | trigger-based | trigger-based |
-| Docs + ship | one merged `engineer` spawn | one merged spawn | two spawns |
-| Retro | inline (orchestrator writes `retro.md`) | `retro` spawn, light pass | `retro` spawn, full |
+| Docs + ship | one merged `engineer` spawn | one merged spawn | M: one merged spawn · L: two spawns |
+| Retro | inline (orchestrator writes `retro.md`) | inline | M: `retro` spawn, light pass · L: full |
 
 **Never shrinks at any size:** the interview (merged, not skipped) · the gate + per-line AC confirmation · `state.json` discipline · the security trigger check · the type matrix. **Upgrades are one-way:** any worker can return `SIZE_UPGRADE: <S|M|L> — <reason>` as its first line; the orchestrator re-records `size` and runs the remaining steps with the bigger tier's machinery. Size never moves down mid-run. Mechanics: `.claude/orchestrator.md > Size-aware execution`.
 
