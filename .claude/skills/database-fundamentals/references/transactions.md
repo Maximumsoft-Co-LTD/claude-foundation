@@ -1,5 +1,44 @@
 # Transactions
 
+Moved from `SKILL.md` — principle 6's full detail: keeping transactions short and knowing your isolation level.
+
+## Principle 6 (from SKILL.md): Transactions: keep them short, know your isolation level
+
+**Rule:** Wrap multi-step writes in a transaction so they succeed or fail together. Keep transactions short — open, do the work, commit. Know what isolation level you're running under and what anomalies it leaves possible.
+
+**Why:** Open transactions hold locks, block writers, consume connections, and prevent vacuum — the longer they live, the worse. Isolation level determines which anomalies are possible: `READ COMMITTED` (Postgres default) allows lost updates — two transactions read the same value, both write, one silently clobbered.
+
+**How to apply:**
+- The unit of a transaction is "a thing that must succeed or fail atomically together." Usually that's one HTTP request, one use case, one event handler. Not "the whole user session."
+- Never wait on external I/O (HTTP, message broker, user input) inside an open transaction. Load → close → call out → reopen if needed → commit.
+- For read-modify-write on a shared row, choose one:
+  - **Pessimistic:** `SELECT ... FOR UPDATE` locks the row until commit. Simple, blocks other readers-who-want-to-write.
+  - **Optimistic:** add a `version` column or use `WHERE updated_at = $1`. On update, check the affected row count — if zero, someone else wrote first, retry or fail.
+- Know your default *and that `REPEATABLE READ` means different things in different engines*. Postgres: `READ COMMITTED` by default; its `REPEATABLE READ` is snapshot isolation and prevents lost updates by aborting the second committer with error 40001. MySQL InnoDB: `REPEATABLE READ` by default; uses next-key locks to prevent phantoms but **still allows lost updates** on the read-modify-write pattern unless you take a row lock. SQLite: `SERIALIZABLE` (but it serializes everything).
+- For balance transfers, inventory decrements, ticket bookings — anything where lost updates would be money or correctness — bump isolation to `SERIALIZABLE` or use explicit row locks. **Postgres `SERIALIZABLE` (SSI — Serializable Snapshot Isolation)** is a real first-class option: the engine detects read-write conflicts and aborts the offending transaction with 40001; your app retries. Often a cleaner answer than `SELECT FOR UPDATE` when transactions are short and the retry cost is small.
+- See `references/transactions.md` for the anomalies table, lock types, and concrete patterns.
+
+**Example:**
+```sql
+-- Bad — two transactions both read 100, both write 90, one decrement is lost
+BEGIN;
+SELECT balance FROM accounts WHERE id = $1;     -- 100
+-- ... app subtracts 10 ...
+UPDATE accounts SET balance = 90 WHERE id = $1;
+COMMIT;
+
+-- Good — row lock prevents the race
+BEGIN;
+SELECT balance FROM accounts WHERE id = $1 FOR UPDATE;   -- locks the row
+UPDATE accounts SET balance = balance - 10 WHERE id = $1;
+COMMIT;
+
+-- Or optimistic: detect concurrent write and retry
+UPDATE accounts SET balance = balance - 10, version = version + 1
+WHERE id = $1 AND version = $expected_version;
+-- If affected_rows == 0 → someone else updated first, reload and retry
+```
+
 ## ACID, in one paragraph each
 
 - **Atomicity** — all the statements between `BEGIN` and `COMMIT` succeed together, or none of them take effect. A crash mid-transaction rolls back to the state before `BEGIN`.

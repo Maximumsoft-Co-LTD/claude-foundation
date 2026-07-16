@@ -2,6 +2,92 @@
 
 Two decisions dominate test design: *at which level* to test, and *what to replace the real dependencies with*. This file gives the decision rules for both, plus the taxonomy of doubles, the case for a real database, contract tests, and how to kill flakiness.
 
+Moved from `SKILL.md` — principles 2, 4, and 5's full detail: the pyramid, doubles discipline, and isolated/deterministic/fast tests.
+
+## Principle 2 (from SKILL.md): The test pyramid — push every test to the cheapest level that proves the thing
+
+**Rule:** Many fast unit tests at the base, fewer integration tests in the middle, a few end-to-end tests at the top. For each thing you want to prove, choose the lowest level that can actually prove it.
+
+**Why:** Levels trade speed against fidelity. A mostly-e2e suite (inverted pyramid / ice-cream cone) is slow to run, slow to diagnose, and quietly skipped under deadline. A units-only suite ships integration bugs. The discipline: "push down" — ask whether a unit test proves the same thing 10× faster before writing an e2e. Reserve expensive levels for what only they can prove (real wiring, real user journeys).
+
+**How to apply:**
+- Pure logic with branches → unit. Pricing, validation, state machines, parsers, formatters. This is the backbone; it should be most of your tests.
+- A boundary crossing (DB, filesystem, HTTP, IPC) → integration, against the *real* dependency (principle 4).
+- A user-observable journey across the whole stack → one e2e per critical path (sign up, checkout, refund), not one per variation. Test the variations at the unit level.
+- If a "unit" test takes seconds, it's secretly doing I/O — find it and move it down a level or fake the seam (principle 4).
+- Decision rules and the per-level mechanics live in `references/test-doubles-and-levels.md`.
+
+**Example:**
+```
+A checkout feature with: a discount rule, a tax calc, an order repository, a payment gateway.
+
+Inverted (bad):                       Pyramid (good):
+  12 e2e tests through the browser      ~40 unit: discount × tax × validation branches
+   2 unit tests                          ~6 integration: repository against a real test DB
+  → 4 min run, flaky, vague failures     ~2 e2e: "guest checks out", "refund a paid order"
+                                         → 8s run, sharp failures, real wiring proven
+```
+
+## Principle 4 (from SKILL.md): Use test doubles with discipline — fake at the seams, real for what you're testing
+
+**Rule:** Replace a dependency with a double only at an architectural seam (a port), and only when the real thing is slow, costly, non-deterministic, or out of scope. Use the *real* thing for the component you're actually testing — above all, a real database in integration tests.
+
+**Why:** Doubles enable isolation; they also let tests pass while the real system is broken. A mocked DB happily accepts queries the real one rejects for missing columns, violated constraints, or un-run migrations. Fake what you're *not* testing (third-party APIs, the clock); use the real thing for what you are — a repository test is testing "does this code talk to the DB correctly" and mocking the DB deletes the point. The taxonomy ("mock" names five distinct things); decision tree in `references/test-doubles-and-levels.md`. A second signal: 20 lines of mock setup for a 5-line assertion → fix the production design, not the mocks.
+
+**How to apply:**
+- Fake at ports/seams: the repository interface, the email-sender interface, the clock. Hexagonal code makes this natural — the port *is* the seam ([[hexagonal-backend]]).
+- Integration tests use a **real test database** — Docker, an in-memory engine of the same family, or transactional rollback per test. Never a mocked DB.
+- OK to mock: external APIs, slow services, things that cost money or send real email. Risky: your own database. Never: the function under test itself.
+- Prefer a fake (a working in-memory implementation of the port) over a forest of per-test stubs when many tests need the same collaborator.
+
+**Example:**
+```ts
+// Bad — mocked DB: this passes even if the real query references a dropped column
+const db = { query: vi.fn().mockResolvedValue([{ id: 1, total: 100 }]) }
+const repo = new OrderRepo(db)
+expect(await repo.findPaid(userId)).toHaveLength(1)   // proves nothing about real SQL
+
+// Good — integration test against a real test DB, rolled back after
+const db = await testDb()                              // real Postgres, migrated
+await seed(db, { orders: [{ userId, status: 'paid' }, { userId, status: 'open' }] })
+const repo = new OrderRepo(db)
+expect(await repo.findPaid(userId)).toHaveLength(1)    // proves the SQL + schema agree
+
+// Fake the gateway you are NOT testing — it costs money and is non-deterministic
+const gateway = new InMemoryPaymentGateway()           // a fake, not a mock
+```
+
+## Principle 5 (from SKILL.md): A good test is isolated, deterministic, and fast
+
+**Rule:** Each test sets up its own world, depends on nothing another test left behind, and produces the same result every run. No shared mutable state, no real clock/network/randomness unless that *is* what you're testing, no dependence on test order.
+
+**Why:** A flaky test is worse than no test — it trains the team to ignore red. Causes are always a determinism leak: shared DB rows, real clocks, unordered query assertions, fixed sleeps. Fast matters for the same reason the pyramid does: a minutes-long suite gets run on push instead of on save.
+
+**How to apply:**
+- No shared mutable state across tests. Each test builds its own fixtures and tears them down (transactional rollback, fresh temp dir, fresh in-memory store). If tests pass alone but fail together, you have leakage.
+- Inject the clock, the random source, and IDs so the test controls them. Assert on a frozen `now`, a seeded RNG, a fixed UUID — never the real ones, unless the behaviour under test *is* "it uses the real clock."
+- No order dependence — a test must pass when run alone, and the suite must pass when randomized. Many runners can shuffle order; turn it on to catch coupling.
+- Don't `sleep`. Wait on a condition (poll until true, await a signal, use fake timers). A fixed sleep is either flaky (too short) or slow (too long), usually both.
+- Flakiness-taming patterns (test containers, fake timers, retries-as-last-resort) are in `references/test-doubles-and-levels.md`.
+
+**Example:**
+```js
+// Bad — depends on the real clock and on running before the cleanup test
+test('token expires after 1h', () => {
+  const t = issueToken()                  // embeds Date.now()
+  // ...no way to advance time except to actually wait an hour
+  expect(isExpired(t)).toBe(false)        // and flaky near boundaries
+})
+
+// Good — inject the clock; the test owns time, runs in microseconds, never flakes
+test('token expires after 1h', () => {
+  const clock = fakeClock('2026-01-01T00:00:00Z')
+  const t = issueToken(clock)
+  clock.advance(hours(1) + seconds(1))
+  expect(isExpired(t, clock)).toBe(true)
+})
+```
+
 ## Levels: unit vs integration vs e2e
 
 The levels trade **speed** against **fidelity**. Pick the lowest level that can actually prove the thing.

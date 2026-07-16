@@ -13,143 +13,31 @@ Pre-spec discipline for the `/dev` Phase 1 step 6 interview (before `pm` writes 
 
 ### 1. Explore project context BEFORE asking anything
 
-The intent is one sentence; the codebase already has answers. Read `CLAUDE.md`, `.workflow/INDEX.md`, the last few commits, and any file the intent names *before* the first question.
-
-**Log what the repo answered as an assumption, not a fact.** When the repo (not the user) answers a slot — stack from `package.json`, integration point from the file the intent names, a convention from a sibling module — that inference can be wrong. Keep a short running list and hand it to the orchestrator to surface at the gate as `Assumptions (inferred — correct me if wrong)`. A wrong inference silently corrupts the spec; a one-line veto at the gate is cheap.
+Read `CLAUDE.md`, `.workflow/INDEX.md`, recent commits, and any file the intent names before question 1. Log repo-inferred answers (stack, integration point, convention) as **assumptions**, not facts — surface them at the gate as `Assumptions (inferred — correct me if wrong)`. Full: `references/interview-tactics.md > Explore context before asking anything`.
 
 ### 2. Decompose oversized scope BEFORE refining details
 
-If the intent describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), surface that immediately.
-
-The test: can this be one approved spec that produces one ship-able thing? If not, name the pieces, ask the user which one to scope first, and carry the rest to `FOLLOWUPS.md` as candidates for separate `/dev` runs. Inside `/dev`, this is also what triggers the `epic.md` path — the gate will split it anyway, so flag it here.
+Test: does the intent reduce to one approved spec that produces one ship-able thing? If it spans multiple independent subsystems, name the pieces, ask the user which to scope first, and carry the rest to `FOLLOWUPS.md` — this is also what triggers the `epic.md` path. Full: `references/interview-tactics.md > Decompose oversized scope before refining details`.
 
 ### 3. Ask only about UNSPECIFIED slots — never re-ask what the intent already pinned
 
-The **authoritative slot list and trigger rules live in `.claude/agents/pm.md > Spec sections`** (the template `.workflow/_templates/spec.md` is now a clean skeleton — required sections + a pointer). Read those before the interview — the model is **minimum floor + triggered**, and most slots only appear when the work justifies them.
-
-**Minimum floor (always asked or pulled from intent):** `Type`, `Goal` (one sentence — what's built, for whom, to what outcome), `User Stories` (priority-ordered P1/P2/P3; each carries a value statement + Why-this-priority + Given/When/Then `Acceptance scenarios` — capture the *why / who-benefits* during the interview, not just what "done" is), `Functional Requirements` (FR-###), `Success Criteria` (SC-###, measurable + tech-agnostic), `Ship as`, `Open PR on ship`. AC may be just 1 for XS; each consequential *behavioural* AC also carries an `on error / at boundary:` line (the unhappy-path decision, or an explicit `none — <default>`) and edges live as sub-bullets under the AC they edge (NOT a separate section). Measurable perf/security/a11y targets are themselves ACs (verify = the `measured:` clause), not a separate untestable section — an NFR-class AC carries neither `e.g.` nor `on error / at boundary`.
-
-**Everything else is triggered** — `Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References / examples to follow`, `Reproduction` (REQUIRED for `Type=fix`), `Timebox` (REQUIRED for `Type=spike`), `Discovery notes`, `Carry-over`. `pm.md > Spec sections` names the trigger condition for each; ask only when it fires.
-
-Walk the intent. For each triggered slot, first decide whether the trigger fires at all. If not, the slot is not just unanswered — it does not exist for this spec. If yes: *did the user already answer this, or did the repo answer it?* Only the **triggered AND unanswered** slots become interview questions. **Never** assume defaults for slots you didn't ask about, and **never** include a triggered section just because the template mentions it.
-
-**Frame trigger questions to detect, not to fill.** Bad: "What are the NFRs?" — assumes there are some, invites TBD. Good: "Is there a measurable perf/security/a11y target that needs a number? If not, we don't write one." The detection question is binary; only on `yes` do you ask for the actual value — and then it becomes an AC (verify = its `measured:` clause), not a separate section.
-
-**The NFR detection question is mandatory for any run that ships runtime code (`feat`/`fix` with a real runtime path)** — ask it even when slots are tight, because a missing-but-needed NFR is the one failure mode that passes every internal-consistency scan and only surfaces in prod. This makes the *question* mandatory, not the *section*: if the answer is "no target needed", there is no NFR — anti-bloat still wins. On a real, measurable number, **render it as an Acceptance criterion** (its `measured:` clause becomes that AC's verify) so it threads through plan/qa/review; do NOT park it in a standalone NFR section, which orphans it (no task, no test, no review row).
-
-In `/dev`, the orchestrator's `AskUserQuestion` is **one batch of 3–4 questions by default**. Pick the most consequential unanswered slots and **order them by the design tree** — a decision others hinge on (approach, data shape, actor) is resolved first; never ask a slot cold whose right answer depends on an unanswered upstream one, defer it to a later batch so the prior answer shapes it. Prefer multi-choice options with one-line descriptions, and **lead every choice with a recommended option** (first in the list, labelled `(Recommended)`, one-line why — the harness renders the label) so the user vetoes instead of authoring from scratch; principle 4's "recommend, don't punt" applies to clarifying questions too, not just approach options. Reserve free-text for genuinely open answers (`Reproduction` for `fix` runs is the canonical free-text slot).
-
-**Bounded multi-round digging — when one batch is too shallow.** One batch is enough for narrow, concrete work. It is *not* enough for the genuinely ambiguous work this skill claims to own, because the Mom Test is iterative by nature: a good past-behaviour answer opens the next question, and you can't follow that thread inside a single batch. So when ambiguity is high — `Type` still unclear after batch 1, more than ~4 consequential slots open, or a batch-1 answer arrived vague / as "Other" free-text that raised a new unknown — you may run a **second (at most third) batch that digs into what the previous answer revealed**, not new slots picked cold. Three rules: (a) hard cap of **3 batches**; (b) each follow-up batch is *narrower* than the last — you are converging, not re-opening; (c) if the picture is still open after 3 batches, that is itself the finding — stop and surface it as a `[NEEDS CLARIFICATION]` rather than guessing. The default stays one batch; the dig loop is the escape hatch for real ambiguity, not the norm. **The driver is the design tree, not the counter:** keep going while a load-bearing decision (one a later choice depends on) is unresolved; stop when every consequential branch is resolved or explicitly deferred — the 3-batch cap is the safety stop, not a target to fill.
-
-Two sequencing notes: resolve open slots through the dig loop *before* you frame approach options (principle 4) — clarification precedes design choice, never the reverse; and if the mandatory NFR-detection question (above) crowds a consequential slot out of batch 1, treat that pressure as a signal to run a second batch, not a reason to drop either question.
-
-**Ground each consequential AC in a concrete example.** For any AC where the right behaviour isn't obvious from a single line, capture one real `input → expected output` during the interview (Specification by Example). "Export their data" is a wish; "`account with 200k rows` → `CSV with columns A,B,C downloaded in <30s`" is a contract. The example is where hidden requirements surface *up front* (size limits, formats, timeouts) instead of late in the pre-mortem. Carry it into the spec as an `e.g.:` sub-bullet under the AC (format in `.workflow/_templates/spec.md`). Skip only for AC whose one line is already unambiguous.
-
-**Capture the unhappy path too — detect, don't fill.** For each consequential *behavioural* AC (not an NFR-class measured target), also capture its `on error / at boundary:` behaviour: what happens for bad input, a hit limit, or an unauthorized caller. This is the EARS IF/THEN clause, and it's where AI silently guesses (exports soft-deleted rows, skips the authz check, picks the wrong API among two — the documented #1 "runs but does the wrong thing" failures). Frame it to *detect*, not to fill: "On bad input / over the limit / not allowed — does anything special happen, or is the generic default fine?" An explicit `none — <default>` is a valid recorded answer; silence is not. Carry it into the spec as the `on error / at boundary:` sub-bullet. This question is mandatory for consequential AC for the same reason NFR detection is: the missing-but-needed boundary passes every internal-consistency scan and only bites in prod.
-
-**Frame behavioural questions in past-tense / specifics, not future opinions.** Adapted from Rob Fitzpatrick's *The Mom Test*: "Would you use a feature that does X?" is hypothetical fluff — the user will say yes and you'll learn nothing. "When did you last hit this problem, and what did you do?" gets you a concrete behaviour to design against. Filter the *answers* the same way — compliments, hypotheticals, and wishlists are not signal. See `references/interview-tactics.md > The Mom Test for spec interviews`.
+Authoritative slot list + triggers: `.claude/agents/pm.md > Spec sections`. Minimum floor (always asked/pulled): `Type`, `Goal`, `User Stories` (w/ Given/When/Then AC), `Functional Requirements`, `Success Criteria`, `Ship as`, `Open PR`. Everything else is triggered (`Problem`, `Users`, `User journey`, `Scope — Out`, `NFR`, `DoD`, `Constraints`, `References`, `Reproduction`, `Timebox`, `Discovery notes`, `Carry-over`) — ask only when the trigger fires, never "just in case". Frame to **detect, not fill** ("is there a target?" not "what's the target?"); the NFR-detection question is **mandatory** for any feat/fix shipping runtime code, and a real number becomes an AC (`measured:` clause), never a standalone section. Batch 3–4 questions, ordered by the design tree (resolve the upstream decision first), lead every choice with a recommended option; reserve free-text for genuinely open answers. **Dig loop:** up to 3 batches total when ambiguity is high, each narrower than the last, converging on load-bearing decisions — stop and surface `[NEEDS CLARIFICATION]` if the picture is still open after 3. Ground each consequential AC in a concrete `e.g.: input → expected output` (never invent the values). Capture the unhappy path too — an `on error / at boundary:` line per consequential behavioural AC; `none — <default>` is a valid recorded answer, silence is not. Frame behavioural questions past-tense/specific, not hypothetical (Mom Test). Full tactics + worked examples: `references/interview-tactics.md`.
 
 ### 4. Propose 2–3 approaches with a recommendation when "how" is open
 
-If the intent pins *what* but leaves *how* open ("add auth", "store these events", "ship a dashboard"), do not jump to one approach. Surface 2–3 with trade-offs and **lead with your recommended option** and the one-line reason it wins.
-
-Format:
-> **Option A (recommended):** <approach> — <why it wins for this context>
-> **Option B:** <alternative> — <trade-off>
-> **Option C:** <alternative> — <trade-off>
-> *Recommendation:* A, because <one sentence>.
-
-Two anti-patterns: (a) silently picking one and asking "does this work?" — that's leading the witness; (b) listing 5 options of equal weight — that punts the decision. Three with a clear lead is the sweet spot.
-
-If a relevant construction-fundamentals skill applies, load it BEFORE drafting the options (the layers and their run order live in `.claude/rules/fundamentals.md`) — they decide *what* to build; this skill decides *how to surface the choice*.
-
-**Record the decision trail — don't let it evaporate once the user picks.** Capture the chosen option + the rejected alternatives + the one-line why; that's the ADR the plan already carries in `Summary` / `Alternatives considered` / `Hard-to-reverse decisions` (no new artifact — feed those sections). Likewise, any domain term that surfaced and needed defining goes to the spec `Glossary` ([[ddd-strategic]] principle 3) so spec/plan/code use it verbatim. This is the grill-with-docs discipline: the grilling produces the docs as a by-product, it doesn't bolt them on after.
+Lead with the recommended option + one-line why; show trade-offs for the rest — never a silent single pick, never a five-option menu. Load the relevant construction-fundamentals skill first (run order: `.claude/rules/fundamentals.md`) — it decides *what* to build, this decides *how to surface the choice*. Record the decision trail (chosen + rejected + why) into the plan's `Alternatives considered`/`Hard-to-reverse decisions`; new domain terms go to the spec `Glossary`. Full format + anti-patterns: `references/approach-and-gate.md`.
 
 ### 5. HARD-GATE: no code, no `Status: approved`, no `plan.md` until the design is acknowledged
 
-Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes, you do not:
-- write production code
-- spawn `engineer` (or any implement-mode agent)
-- spawn `lead` in plan mode
-- flip `spec.md` from `Status: draft` to `Status: approved`
-
-"This is too simple to need a design" is the failure mode this gate exists to catch. Even a one-file utility goes through the gate; the design can be three sentences, but it gets presented and approved.
-
-In `/dev`, the formal gate is Phase 1 step 8 (orchestrator runs it with the user).
+Until the user has seen the design (Outcome + Scope + AC + chosen approach) and said yes: no production code, no spawning `engineer` or `lead` plan mode, no flipping `spec.md` to `approved`. Applies even to a one-file utility — "too simple to need a design" is exactly the failure mode this gate exists to catch. In `/dev`, the formal gate is Phase 1 step 8. Full: `references/approach-and-gate.md`.
 
 ### 6. Visual companion is optional, opt-in, and lives in its own message
 
-When upcoming questions are genuinely visual (UI mockups, layout comparisons, architecture diagrams the user needs to *see*), you may offer a browser-based companion. The offer is its own message — no clarifying questions attached, no context summary, just the offer:
-
-> "Some of what we're working on might be easier to explain with a visual. I can render mockups, diagrams, or side-by-side comparisons in the browser. This is opt-in and can be token-heavy — want to try it?"
-
-Two rules: (a) only offer when UI / layout / diagram questions are actually coming up; conceptual or scope questions are text-better. (b) Even after the user accepts, decide *per question* whether the answer is better seen or read. "What does 'personality' mean in this context?" is conceptual → terminal. "Which wizard layout works better?" is visual → browser.
-
-If the user declines, proceed text-only.
+Offer only when upcoming questions are genuinely visual (UI mockups, layout comparisons, diagrams the user needs to *see*); the offer is its own message, no clarifying question attached. Decide per-question, after acceptance, whether the answer is better seen or read. If declined, proceed text-only. Full rules: `references/visual-companion.md`.
 
 ### 7. Spec self-review before `Status: approved` (5 scans)
 
-After the spec is written, walk it once with fresh eyes. Fix issues inline; no need to re-review:
-
-1. **Placeholder + ambiguity scan** — any `TBD`, `TODO`, `???`, `appropriate X`, `as needed`, `etc.`, hedging modals (`should`, `would`, `might`) in concrete slots → either resolve or replace with `[NEEDS CLARIFICATION: <who> — <what>]` at the spot it matters.
-2. **Content discipline scan** — every section in the spec has its trigger firing; no empty headers, no "N/A"; measurable perf/security/a11y targets are written as ACs (`<attribute>: <target> — measured: <how>` as the AC's verify), not parked in a standalone untestable section; DoD items name concrete artifacts (specific metric / doc path / flag); error/boundary and edges live as sub-bullets under the AC they belong to, never as a standalone section.
-3. **Contradiction scan** — does any section contradict another (User journey vs AC, Scope > Out vs AC)? If yes, surface as inline `[NEEDS CLARIFICATION]`.
-4. **Scope check** — still one ship-able thing? If decomposition slipped back in, split now.
-5. **Verifiability + example + boundary + pre-mortem scan** — for each AC, can you name the exact command or observable that would verify it? If not, the AC is wishful — rewrite it. Then: every *consequential behavioural* AC (one whose behaviour isn't obvious from its single line) has a concrete `e.g.: input → expected output` sub-bullet AND an `on error / at boundary:` line (an explicit behaviour or `none — <default>`) — if either is missing, add it now (this is where mis-spec'd AC and silently-guessed unhappy paths are cheapest to catch). An NFR-class AC (a measurable target with a `measured:` clause) is exempt — its `measured:` clause is its verify and it carries neither sub-bullet. Then name the **top 3 ways this design could fail**: dependency that might not deliver, scope someone could mis-read, AC the implementation could satisfy without satisfying the user. Surface each as a plan `Risk`, a `[NEEDS CLARIFICATION]`, or a Discovery note. This is the "give the agent a way to verify its work" principle from [Claude Code best practices](https://code.claude.com/docs/en/best-practices) applied at spec time, with the pre-mortem half adapted from the Amazon PR/FAQ.
-
-Result: a clean spec, or a spec with inline `[NEEDS CLARIFICATION]` markers listing what's unknown. **Never** mark `approved` while any marker remains — that is what the marker exists to defer to the gate (Phase 1 step 8).
-
-## Pre-flight checklist (run top-to-bottom)
-
-Before the first question of the interview:
-
-- [ ] Read `CLAUDE.md`, recent commits (`git log -5 --oneline`), and any file the intent names.
-- [ ] Read `.workflow/_templates/spec.md` and `.workflow/FOLLOWUPS.md > Open` — fold any in-scope follow-up IDs into the interview.
-- [ ] Read `.claude/agents/pm.md > Spec sections` (the authoritative triggers; the template `.workflow/_templates/spec.md` is a clean skeleton). Walk the floor + triggered slots: which are answered by the intent + repo, which trigger fires, which are genuinely open?
-- [ ] Decide the run's `Type` (`feat | fix | refactor | chore | docs | spike`). If genuinely ambiguous, that is question 1.
-- [ ] Run the scope-decomposition test — is this one ship-able thing, or multiple? If multiple, surface that BEFORE asking detail questions.
-- [ ] Load the relevant construction-fundamentals skill(s) for the work that's coming — they shape the approach options in principle 4:
-  - Real code → [[programming-fundamentals]]
-  - Schema / query / migration → [[database-fundamentals]]
-  - Backend with real domain logic → [[hexagonal-backend]]
-  - Cross-service / system-level decisions → [[architecture-fundamentals]]
-  - Queue / broker / async worker → [[queue-fundamentals]]
-  - Unknown-cause bug → [[debug-fundamentals]] *before* this skill (find the cause, then brainstorm the fix)
-
-Then pick the 3–4 most consequential unanswered slots for the interview batch.
-
-## Process flow
-
-```mermaid
-flowchart TD
-    A[Read intent + repo context] --> B{Multiple independent subsystems?}
-    B -- yes --> C[Decompose: pick one, defer rest to FOLLOWUPS]
-    B -- no --> D[Walk required slots]
-    C --> D
-    D --> E{Type ambiguous?}
-    E -- yes --> F[Ask Type first]
-    E -- no --> G[Pick 3–4 UNSPECIFIED slots]
-    F --> G
-    G --> H{UI / layout / diagram questions coming?}
-    H -- yes --> I[Offer Visual Companion - own message]
-    H -- no --> J[Ask question batch]
-    I --> J
-    J --> DIG{High ambiguity + answer opened a new unknown?}
-    DIG -- "yes · ≤3 batches · narrower" --> J
-    DIG -- "no / cap hit" --> K{Approach 'how' open?}
-    K -- yes --> L[Propose 2–3 options with recommendation]
-    K -- no --> M[Present design: Outcome + Scope + AC + example + chosen approach]
-    L --> M
-    M --> N{User approves design?}
-    N -- no, revise --> J
-    N -- yes --> O[pm writes spec.md]
-    O --> P[Self-review: 5 scans, fix inline]
-    P --> Q{Gate: orchestrator presents to user}
-    Q -- "revise (targeted slots only)" --> J
-    Q -- approve --> R[Status: approved → plan-writing]
-```
-
-**Terminal state in `/dev`:** `Status: approved` and the orchestrator spawns `lead` in plan mode. Outside `/dev`: a clean design doc the user can hand to whatever workflow they use next. The next phase is planning — not implementation, not code-writing. Load [[plan-writing]] only when the plan complexity warrants the full skill body.
+After the spec is written, walk it once with fresh eyes, fix inline: placeholder/ambiguity scan, content-discipline scan, contradiction scan, scope check, and a verifiability + example + boundary + pre-mortem scan (name the top 3 ways the design could fail). Never mark `approved` while any `[NEEDS CLARIFICATION]` marker remains. Full scan detail: `references/self-review-scans.md`.
 
 ## When to skip
 
@@ -161,21 +49,15 @@ Skip this skill only when:
 
 If the request says "build", "design", "add feature", "scope", "explore", "brainstorm", or "what should we do about X" — do not skip.
 
-## Anti-patterns (do not do these)
+## Anti-patterns
 
-- **Assuming defaults for slots you didn't ask about** — "I'll just use React + Tailwind" / "I'll store it in Postgres" when the user said nothing about either. The interview missed the slot or the repo answers it — pick one; don't invent.
-- **Including triggered sections "just in case"** — `Users: end users` when the actor is singular and obvious, `Constraints: None` when there's no real boundary, `Discovery notes: N/A` when no research ran. These defeat the minimum-floor principle and become placeholder magnets. DELETE the whole section instead.
-- **Inventing NFR numbers** — writing "p95 < 200ms" because you felt a target was expected and needed something to fill the blank. If the user didn't give a number and no constraint forces one, there is no NFR — don't write the AC, or replace the value with `[NEEDS CLARIFICATION]`. (When a real number does exist, it's an AC, not a standalone section — see principle 3.)
-- **Burning the question batch on slots the repo already answered** — language, framework, deploy target are usually visible in 30 seconds of reading; don't ask them.
-- **Picking one approach silently and asking "does this work?"** — that's leading the witness, not exploring. Show ≥ 2 options with a lead.
-- **Five-option menus** — punts the choice back to the user. Three with a clear recommendation is the format.
-- **Asking a dependent question before its prerequisite** — batching "which index?" with "SQL or NoSQL?" wastes the index answer if the store flips. Order questions by the design tree: resolve the upstream decision, let it shape the downstream one.
-- **Combining the Visual Companion offer with a clarifying question** — the offer is its own message. Otherwise the user has to answer two things in one reply and one of them gets ignored.
-- **One mega-question** — "tell me about goals, constraints, AC, and integration points?" The user answers half of it. Split into 3–4 crisp questions; multi-choice when you can.
-- **Flipping `Status: approved` while any `[NEEDS CLARIFICATION]` marker remains** — `approved` means the spec is complete enough to plan against. If something is unresolved, the marker stays and the gate blocks.
-- **"This is too simple to need a design"** — the simplest projects are where unexamined assumptions hide. A three-sentence design with the user's yes is the minimum; that minimum applies always.
-- **Brainstorming with code in flight** — if you've already started writing the code, the brainstorm isn't a brainstorm anymore, it's a rationalization. Stop, present the design, get the yes, then continue.
-- **Treating compliments / hypotheticals / wishlists as signal** — "I love this idea," "I would totally use that," "add X someday" aren't data. Re-ask about past behaviour ("when did you last hit this?"). If all evidence is future-tense, the spec isn't ready.
+- Assuming defaults for slots you didn't ask about, or inventing NFR numbers — the interview missed the slot; don't invent.
+- Including triggered sections "just in case" (`Users: end users`, `Constraints: None`) — DELETE instead.
+- Picking one approach silently, or offering five options of equal weight — lead with a recommendation among 2–3.
+- Combining the Visual Companion offer with a clarifying question — it is always its own message.
+- Flipping `Status: approved` while any `[NEEDS CLARIFICATION]` marker remains.
+
+Full list + more: `references/interview-tactics.md > Anti-patterns`, `references/approach-and-gate.md`, `references/visual-companion.md > Anti-patterns`, `references/self-review-scans.md > Anti-pattern`.
 
 ## Relation to other skills
 
@@ -188,34 +70,14 @@ Brainstorming is the **pre-spec** skill — it composes, it does not replace:
 
 The `/dev` orchestrator (`.claude/orchestrator.md`) is the **caller** in Phase 1: loads this skill at step 6 (interview) and step 7 (spawn `pm`). `pm` receives the Q&A and writes `spec.md` — it does *not* re-run the interview.
 
-## Mini worked example (one-paragraph feature request)
-
-**Intent:** "add a way for users to export their data"
-
-**Step 1 — read repo:** `package.json` shows Next.js + Postgres; `app/api/` has REST handlers; no export-related file. → tech stack is answered; integration point is `app/api/` plus a new download route.
-
-**Step 2 — decomposition check:** one user-visible feature, one subsystem. Single spec works.
-
-**Step 3 — required-slots walk:**
-- Type: `feat` (clear from "add a way")
-- Outcome: After answered ("export their data"); Before + Benefit still to confirm in the interview
-- Users: not specified — *ask*
-- Scope/AC: not specified — *ask*
-- Constraints: stack visible; integration point inferable
-- `Ship as`: not specified — defaults to `one-drop`, confirm at gate
-- Open PR: default `yes` for feat, confirm at gate
-
-→ **Three open questions to batch:** (1) which user role and entry point, (2) what data and what format (CSV / JSON / both), (3) sync download vs async email with link.
-
-**Step 4 — approach options (after answers come in):** Option A: synchronous CSV download from a new `/api/export` route, recommended for ≤ 100k rows. Option B: background job + email link, better for large exports but adds a queue. Option C: hybrid — sync if under threshold, async otherwise. Lead with A unless answer 2 implied >100k rows.
-
-**Step 5 — present design, get yes, hand to `pm`.** `pm` writes `spec.md` with concrete AC ("CSV download from /api/export, ≤30s for accounts up to 100k rows, columns A/B/C"). **Step 6 — self-review (5 scans):** placeholder/ambiguity, content discipline, contradictions, scope, and verifiability + example + pre-mortem (confirm the CSV AC carries its concrete `e.g.:` example). Fix inline. **Step 7 — orchestrator runs the gate.**
-
 ## References
 
-Pick the one that matches the friction:
+Pick the file that matches the friction:
 
-- `references/interview-tactics.md` — picking which 3–4 slots to ask about, framing multi-choice options, handling `revise` follow-ups, the `Type=fix` reproduction question.
-- `references/visual-companion.md` — when to offer it (and when not to), per-question decision rule for browser vs terminal, anti-pattern: offering combined with another question.
-
-If you're unsure which to consult: *picking what to ask* → interview-tactics; *the user asked about a visual / mockup* → visual-companion.
+| File | Read when |
+|---|---|
+| `references/interview-tactics.md` | Exploring context, decomposing scope, picking which 3–4 slots to ask, framing multi-choice options, `revise` follow-ups, `Type=fix` reproduction, the Mom Test, detect-vs-fill framing, unhappy-path capture |
+| `references/approach-and-gate.md` | Framing 2–3 approach options, recording the decision trail, or confirming exactly what the hard-gate blocks |
+| `references/self-review-scans.md` | Running the pre-`approved` self-review in full detail |
+| `references/visual-companion.md` | The user asked about a visual/mockup, or deciding browser vs terminal per question |
+| `references/pre-flight-and-example.md` | Starting a fresh interview (checklist + process flow) or wanting one worked example end-to-end |
