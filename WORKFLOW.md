@@ -2,17 +2,17 @@
 
 A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal.
 
-**Version 2.6.8** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
+**Version 2.8.1** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
 
 Primary entry point: `/dev <intent>` (or `/dev --resume <id>`). The command detects context (new vs. existing codebase) and runs the same two-phase flow, branching on **run type** so a `chore` isn't dragged through e2e and a `fix` reproduces before it changes anything. Same artifacts either way, in `.workflow/<id>/`.
 
-**Team mode** ([below](#team-mode--run-one-role-on-its-own)) splits that flow into role-scoped commands — `/spec` (pm), `/dev-plan` (lead), `/test-plan` (qa), `/uxui-plan` (uxui), `/implement` (Phase 2) — each writing into the **same** `.workflow/<id>/` run and sharing the gate, so the artifacts compose exactly as a one-shot `/dev` run; `/dev --resume <id>` (or `/implement`) carries a hand-assembled run the rest of the way.
+**Team mode** ([below](#team-mode--run-one-role-on-its-own)) splits that flow into role-scoped commands — `/spec` (pm), `/dev-plan` (lead), `/test-plan` (qa), `/uxui-plan` (uxui), `/implement` (Phase 2) — each writing into the **same** `.workflow/<id>/` run so the artifacts compose exactly as a one-shot `/dev` run; `/dev --resume <id>` (or `/implement`) carries it the rest of the way.
 
-> **Orchestration runs in the main agent, not a sub-agent.** A Claude Code sub-agent **cannot call `AskUserQuestion`**, so the `/dev` command loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent runs the interview + drives the flow; sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) do the file work. **Fan-out has two paths:** splittable agents (`pm`, `lead`, `qa`, `engineer`, the self-splitting `team-*` workers) hold `Agent` and **spawn helpers directly** when work is large (direct nesting, Claude Code v2.1.172+); the orchestrator-mediated `FANOUT_REQUESTED:` signal is the fallback (and the path for background implement-fanout). `state.json` stays single-writer (the orchestrator) regardless — helpers never write it.
+> **Orchestration runs in the main agent, not a sub-agent** — a sub-agent **cannot call `AskUserQuestion`**, so `/dev` loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent runs the interview + drives the flow; sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) do the file work, mostly fanning out their own helpers directly (mechanics: [`fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md)). `state.json` stays single-writer regardless — helpers never write it.
 
 ## Flow at a glance
 
-The happy path with its three feedback loops (test, review, security): diamonds are decision points, the dotted edge is the `--resume` re-entry, and phase numbers match the [type-aware matrix](#type-aware-phase-matrix) and the prose below. **Test runs before review** so reviewers judge a green suite; because every blocking finding loops back through implement → test, a review/security fix is always re-validated before ship.
+The happy path with its three feedback loops (test, review, security): diamonds are decision points, the dotted edge is the `--resume` re-entry, and phase numbers match the [type-aware matrix](#type-aware-phase-matrix) below. **Test runs before review** so reviewers judge a green suite; every blocking finding loops back through implement → test before ship.
 
 ```mermaid
 flowchart TD
@@ -87,12 +87,12 @@ One self-contained folder per run, plus the shared registry and templates.
 ```
 
 Rules:
-- One folder per run — never mix two pieces of work.
-- `_templates/` is the source of truth for artifact shape: copy when starting, never write to it during a run.
-- `INDEX.md` is append-only on start, status-updated as phases progress; `retro` writes the `Finished` date.
-- `FOLLOWUPS.md` is shared — `retro` appends, `pm` reads on every new interview to ask if carry-overs are now in scope.
-- `state.json` is the per-run cursor the orchestrator writes after each step, so `/dev --resume <id>` knows where to pick up.
-- Parallel runs are fine (folder IDs make them independent); if two features touch the same files, `lead` flags it in `risks`.
+- One folder per run — never mix work.
+- `_templates/` is the source of truth for shape — copy on start, never edit in place.
+- `INDEX.md` append-only on start, status-updated as phases progress; `retro` writes `Finished`.
+- `FOLLOWUPS.md` shared — `retro` appends, `pm` reads each interview for in-scope carry-overs.
+- `state.json` is the per-run resume cursor, written after each step.
+- Parallel runs are independent (folder IDs); overlapping files → `lead` flags it in `risks`.
 
 ## Artifacts
 
@@ -100,15 +100,15 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 
 | File | Owner | Purpose |
 |---------|---------------|----------|
-| `spec.md` | `pm` | **Goal** (one line), **User Stories** (priority-ordered P1/P2/P3, each with Given/When/Then **acceptance scenarios** carrying `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities, edge cases, users, scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
-| `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built **once** after the spec so `lead`/`qa`/`uxui` (plan) **and `engineer` (implement — `## Current state` for orientation)** read it instead of each re-walking. Optional — greenfield / XS-S skip it (slices cold-walk) |
+| `spec.md` | `pm` | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
+| `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built once after the spec so `lead`/`qa`/`uxui`/`engineer` skip re-walking (`engineer` reads its `## Current state`). Optional — greenfield/XS-S skip it |
 | `plan.md` | `lead` (plan mode) | **Summary** + **Technical Context** + **Gate check** (vs `rules/fundamentals.md`), **phases for this task**, architecture diagram, current-state + research notes, **scaffold skeleton** (M/L), files to touch (`path#anchor`), risks, **rollback** |
 | `tasks.md` | `lead` (plan mode) | **Executable task breakdown** — phased (Setup → Foundational → one per User Story by priority → Polish) `T### [P] [AC#] … verify:` tasks, dependency-ordered, each tied to an acceptance scenario; the engineer builds from this |
-| `test-plan.md` | `lead` combined (XS/S) or `qa` (M/L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan (level per AC), edge cases, out-of-test-scope, fixtures/data/env, regression contract (fix) / baseline (refactor or brownfield feat editing uncovered code), coverage targets. Authored after `plan.md`, **signed off at the gate**; `qa` executes it at the test phase |
-| `uxui-plan.md` | `uxui` (team mode) | **Design-time UX plan** for UI work — Scenes (screens/states), ASCII wireframes, Scenarios (flows), UX direction & components, AC↔scene mapping. Written by `/uxui-plan` (not part of the linear state machine); `frontend-design` builds from it, `qa > Visual verification` checks against it |
+| `test-plan.md` | `lead` combined (XS/S) or `qa` (M/L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan per AC, edge cases, out-of-scope, fixtures/env, regression (fix) / baseline (refactor) contract, coverage targets. Written after `plan.md`, signed off at the gate; `qa` executes it at Test |
+| `uxui-plan.md` | `uxui` (team mode) | **Design-time UX plan** for UI work — Scenes, ASCII wireframes, Scenarios, UX direction & components, AC↔scene mapping. Written by `/uxui-plan` (not a linear state-machine step); `frontend-design` builds from it, `qa`'s Visual verification checks against it |
 | `review.md` | `lead` (review mode) | Tasks-adherence + **acceptance verification** against `spec.md` |
 | `security.md` | `lead` (security mode) | Security findings; only when the diff trips the sensitive-paths trigger |
-| `tests.md` | `qa` (execute mode) | **Test execution record** — AC mapping (actual tests), run results, regression verification (fix), measured per-level diff coverage, edge-case gaps. Executes `test-plan.md` |
+| `tests.md` | `qa` (execute mode) | **Test execution record** — AC↔test mapping, run results, regression check (fix), measured diff coverage, edge-case gaps. Executes `test-plan.md` |
 | `recommendations.md` | `engineer` (spike) | Spike deliverable — what we learned, recommended next step. Replaces test/ship phases. |
 | `retro.md` | `retro` | What worked, what to change, memory + skill candidates, commit/PR refs |
 | `epic.md` | `lead` (rare) | Decomposition into slices when `Ship as: staged` + ≥2 capabilities |
@@ -116,17 +116,13 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 
 ## Optional artifact gate
 
-An off-by-default structural check. [`.claude/hooks/artifact-lint.sh`](.claude/hooks/artifact-lint.sh) validates a run's artifacts against the templates. It is *not* wired into the state machine — invoke it by hand, in a pre-commit step, or in CI.
+Off-by-default structural check, not wired into the state machine — run by hand / pre-commit / CI:
 
 ```sh
 sh .claude/hooks/artifact-lint.sh .workflow/<id>/
 ```
 
-Checks, per directory:
-- **Required sections** — `spec.md` declares a `**Type**:`, a `## Goal`, and a `## User Stories` (with `AC#` acceptance scenarios); `tasks.md` has ≥ 1 `T###` task with an inline AC tag (`[AC<n>]`/`[DoD]`) and a runnable verify (`verify:` clause); `plan.md` has a fenced `mermaid` block.
-- **No leftover placeholder markers** — `TODO`/`TBD`/`FIXME`/`lorem` (word markers, case-insensitive) and `<...>` placeholders, in bare prose only — a marker inside a code span or fenced block is treated as documentation and ignored.
-
-Prints a per-check report (`[OK]` / `[FAIL] <file>:<line>: …`) and **exits non-zero on any failure** (or a missing/empty/artifact-less path). Dependency-light (POSIX `sh` + `grep`/`awk`); the rules are encoded in the script, so it doesn't need `_templates/` at runtime. Fixtures: [`.claude/hooks/tests/run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
+Per directory: **required sections** (`spec.md` a `**Type**:` + `## Goal` + `## User Stories` with `AC#` scenarios; `tasks.md` ≥1 `T###` task with an `[AC<n>]`/`[DoD]` tag + `verify:`; `plan.md` a fenced `mermaid` block) and **no leftover placeholders** (`TODO`/`TBD`/`FIXME`/`lorem`, `<...>`, bare prose only — code spans/fences are ignored). Prints `[OK]`/`[FAIL] <file>:<line>: …`, exits non-zero on failure. POSIX `sh`+`grep`/`awk`, no `_templates/` at runtime. Fixtures: [`run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
 
 ## Type-aware phase matrix
 
@@ -146,36 +142,36 @@ Type decides *which* phases run: `orchestrator` **skips or specializes** some by
 | 9. Ship (stage + opt-in commit/PR) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 10. Retro | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Ship commit — opt-in, asked every run (default `no`).** Phase 9 always runs (isolates the diff, scans secrets) but **the commit is the gate's call** (`state.json > commit_on_ship`, lever `commit on|off`): `no` → ship hands back a ready-to-run commit command, no push/PR (`open_pr_on_ship` forced `no`); `yes` → commit + optional PR. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at phase 4.
+**Ship commit — opt-in, default `no`.** Ship always runs (isolates the diff, scans secrets); whether it commits/pushes/PRs is the gate's call — lever + `commit_on_ship` mechanics: `.claude/orchestrator/references/gate.md`. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at Implement, not here.
 
-**Review at XS for `chore`/`docs` — default skip.** Size×type default, not a per-line deviation. Mechanics: `.claude/orchestrator/references/size-execution.md` (Review row).
+**Review at XS for `chore`/`docs` — default skip.** A size×type default, not a per-line deviation. Mechanics: `.claude/orchestrator/references/size-execution.md` (Review row).
 
-**Test plan.** Design-time coverage/edge-case/regression contract; signed off at the gate, run at phase 5 (type-skip in matrix row 2½). Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
+**Test plan.** Design-time coverage/edge-case/regression contract, signed off at the gate, run at Test. Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
 
 **Greenfield vs brownfield (the `field`).** Gates the brownfield **understand → lock → change** discipline (greenfield skips both). Canonical def + picker: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
 
 ### Security trigger
 
-Phase 7 runs when the diff touches any of: auth/session/token, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell, deserialisation of untrusted input, secret-bearing files (env/config), or new external network endpoints. **Not a trigger on its own — first-party browser-storage round-trip:** the app reading back its own single-user `localStorage`/`sessionStorage`/`IndexedDB` via `JSON.parse` is *not* untrusted deserialisation and does not fire phase 7 — **provided** the diff has no dangerous sink (`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`Function`/`dangerouslySetInnerHTML`/jQuery `.html()`/any HTML-injection sink — **open list**; any such sink is itself a "raw HTML rendering" trigger and fires regardless). It also fires when the stored data crosses a real trust boundary (multi-user/shared-device threat model, or data written by a server or another principal). `orchestrator` decides; `lead` executes in security mode via the inline checklist.
+Security review runs when the diff touches any of: auth/session/token, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell, deserialisation of untrusted input, secret-bearing files (env/config), or new external network endpoints. **Not a trigger on its own — first-party browser-storage round-trip:** the app reading back its own single-user `localStorage`/`sessionStorage`/`IndexedDB` via `JSON.parse` is *not* untrusted deserialisation and does not fire Security review — **provided** the diff has no dangerous sink (`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`Function`/`dangerouslySetInnerHTML`/jQuery `.html()`/any HTML-injection sink — **open list**; any such sink is itself a "raw HTML rendering" trigger and fires regardless). It also fires when the stored data crosses a real trust boundary (multi-user/shared-device threat model, or data written by a server or another principal). `orchestrator` decides; `lead` executes in security mode via the inline checklist.
 
 ### E2E + visual (opt-in)
 
-Browser-based **e2e** and the **visual + a11y verification** pass are **off by default**, turned on per-run via `e2e_visual` (`state.json > e2e_visual`). The orchestrator asks a binary opt-in in the interview for feat/fix shipping a UI surface and surfaces it at the gate (`e2e on|off` lever); a still-unset flag resolves to `off` at approve. **Why opt-in:** a browser run's wall-clock is dominated by installing the browser binary + slow journeys, while unit/integration over jsdom/happy-dom already cover UI *logic*. **Effect:** `off` → test phase plans/runs **unit + integration only** (a user journey maps to integration), no e2e level, no Visual pass, no e2e floor, no browser install; `on` → the full browser path (e2e where a journey owns the behaviour, the visual/a11y pass reusing one session, the e2e floor). `chore`/`docs`/`spike` skip the test phase regardless. Canonical effect on the test steps: `qa.md > e2e_visual`.
+Browser **e2e** + **visual/a11y verification** are **off by default** (`state.json > e2e_visual`) — opt-in asked in the interview for a feat/fix UI surface, surfaced at the gate (`e2e on|off`); unset → `off`. **Why:** browser-binary install + slow journeys dominate wall-clock, and jsdom/happy-dom unit/integration already cover UI logic. `off` → unit+integration only (a journey maps to integration); `on` → full browser path, one reused session. `chore`/`docs`/`spike` skip regardless. Mechanics: `qa.md > e2e_visual`.
 
 ### Per-task phase plan (deviation from the matrix)
 
-The matrix is the **default, not the final word**. `lead` (plan mode) writes a reasoned **`## Phases for this task`** block in `plan.md` that starts from the matrix and may **deviate** when a discretionary phase isn't needed. Three phases are **discretionary**: **5 Test**, **6 Review**, **8 Docs**. A disposition turning a matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification. No deviation → one line (`Matrix defaults for type=<T> — no deviations.`).
+The matrix is the **default, not the final word**. `lead` (plan mode) writes a reasoned **`## Phases for this task`** block in `plan.md` that starts from the matrix and may **deviate** when a discretionary phase isn't needed. Three phases are **discretionary**: **Test**, **Review**, **Docs**. A disposition turning a matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification. No deviation → one line (`Matrix defaults for type=<T> — no deviations.`).
 
-**Protected — never deviatable, at any size:** **1 Interview + spec**, **2 Plan**, **3 Gate**, the **7 security-trigger *check*** (the scan always runs; the plan may *predict* whether it fires, never suppress it), and **10 Retro** — plus state-discipline writes and the per-line AC confirmation. Implement (4) and Ship (9) aren't discretionary either.
+**Protected — never deviatable, at any size:** **Interview + Spec**, **Plan**, **Gate**, the **security-trigger *check*** (the scan always runs; the plan may *predict* whether it fires, never suppress it), and **Retro** — plus state-discipline writes and the per-line AC confirmation. Implement and Ship aren't discretionary either.
 
-**The gate owns the deviation, not the plan.** Every deviation is surfaced at the gate for **explicit per-line confirmation**; it does **not** ride a plain `approve`. `lead` proposes, the user disposes. Levers: `approve | skip <n> | run <n> | revise <notes>` — `skip <n>`/`run <n>` flip a discretionary phase directly (a `skip` of a protected phase is refused). Approved dispositions land in `state.json > phase_plan` (`test`/`review`/`docs` → `run|light|skip`; empty `{}` = matrix defaults); Phase 2 honours them (a skipped phase is recorded in `skipped_steps` as `<phase>:per-task-plan (user-approved)`). **Skipping `5 Test` on `fix`/`refactor` also waives that type's regression/baseline contract** — highest justification bar.
+**The gate owns the deviation, not the plan** — every deviation needs explicit per-line confirmation, never a plain `approve`; `lead` proposes, the user disposes. Lever syntax + `state.json > phase_plan` mechanics: `.claude/orchestrator/references/gate.md`. **Skipping `Test` on `fix`/`refactor` also waives that type's regression/baseline contract** — highest justification bar.
 
 This subsection is the **canonical definition**; `plan.md`, `lead.md`, and `orchestrator.md` point here.
 
 ### Fanout plan & size-aware execution (split out)
 
 Two canonical blocks live in their own reference files (gate-owned, unchanged in force):
-- **Fanout plan** (the gated `## Fanout plan` block `lead` declares, the gate lever, telemetry) → [`.claude/orchestrator/references/fanout-plan.md`](.claude/orchestrator/references/fanout-plan.md).
+- **Fanout plan** (the gated `## Fanout plan` block `lead` declares, the gate lever, telemetry) → [`.claude/orchestrator/references/fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md).
 - **Size-aware execution matrix** (how much machinery each phase gets per XS/S/M/L, the patch lane, fanout availability, the multi-repo boundary) → [`.claude/orchestrator/references/size-execution.md`](.claude/orchestrator/references/size-execution.md).
 
 ## Skill routing
@@ -186,19 +182,15 @@ Skill-per-decision routing, triggers, and full run order: `.claude/rules/fundame
 
 Default: load no full skill body on the hot path — at most one targeted `references/<file>` section. Canonical: `.claude/rules/fundamentals.md` + `CLAUDE.md > Working agreements`.
 
-Phase numbering below matches the matrix (1–10). The orchestrator runs setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1 — internal, not numbered.
+Phase names below match the matrix; row numbers stay display-only in the table and diagram. The orchestrator runs setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1 — internal, not numbered.
 
 ## Phase 1 — Requirements (interactive)
 
-Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract.
-
-**1 Interview + spec** (orchestrator interviews, fanout spec-prep when risky, `pm` writes `spec.md`) → **2 Plan** (`lead` writes `plan.md` + `tasks.md`, type/size-aware — new vs existing code, fix/refactor/spike/epic variants) → **2½ Test plan** (`qa` writes `test-plan.md`: coverage + edge cases + regression/baseline lock) → **3 Gate** (per-line AC confirmation + phase/fanout plan; `approve` / `skip <n>` / `run <n>` / `revise <notes>` / `swap <n>`; revise is always an in-run edit, never a restart). Executable step-by-step script: `.claude/orchestrator.md` (Phase 1 ops).
+Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract. **Interview + Spec** (`pm` writes `spec.md`) → **Plan** (`lead` writes `plan.md`+`tasks.md`) → **Test-plan** (`qa` writes `test-plan.md`) → **Gate** (per-line AC confirmation; loops until `approve` — see [Stop conditions](#stop-conditions)). Script: `.claude/orchestrator.md` (Phase 1 ops).
 
 ## Phase 2 — Implementation (autonomous after approval)
 
-Build the approved contract and prove it — implement, then close the test/review/security loops and ship. Runs without further prompts; a blocking finding bounces back to implement.
-
-**4 Implement** (`engineer`; `fix` reproduces first) → **5 Test** (`qa`, before review, so reviewers judge a green suite; diff-coverage floors are advisory ratchets, not ship-blocks) → **6 Review** (`lead` vs plan + acceptance) → **7 Security** (trigger-based, `high` blocks) → **8 Docs touch-up** → **9 Ship** (opt-in commit/PR, default no) → **10 Retro** (`retro.md`, follow-ups, memory/skill candidates). Cycle budgets: test fail → re-run implement (≤3); review/security blocking → fix → re-test → re-review (≤2). `state.json` updated after every step; `/dev --resume <id>` continues a dead run. Executable step-by-step script: `.claude/orchestrator.md` (Phase 2 ops).
+Build the approved contract and prove it — implement, then close the test/review/security loops and ship, without further prompts (a blocking finding bounces back to implement). **Implement** → **Test** (`qa`, before review; diff-coverage floors are advisory ratchets, not ship-blocks) → **Review** (`lead`) → **Security** (trigger-based) → **Docs** → **Ship** (opt-in commit/PR) → **Retro**. Cycle budgets: [Stop conditions](#stop-conditions). `state.json` updates after every step; `/dev --resume <id>` continues a dead run. Script: `.claude/orchestrator.md` (Phase 2 ops).
 
 ## Scope: when to split (rare path)
 
@@ -220,24 +212,20 @@ If only one is true → one `plan.md`. A heavy plan (say >15 steps) gets a note 
 
 ## Agent map
 
-Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (spawned only by `/uxui-plan`). The **orchestrator is not a sub-agent** — it's the role the main agent plays when `/dev` (or a team-mode command) runs, following [`.claude/orchestrator.md`](.claude/orchestrator.md). Several sub-agents have multiple modes so the count stays low.
+Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (spawned only by `/uxui-plan`). The **orchestrator is not a sub-agent** — the main agent plays that role, per [`.claude/orchestrator.md`](.claude/orchestrator.md). Models + tools per agent: [`.claude/agents/INDEX.md`](.claude/agents/INDEX.md) (canonical).
 
-| Role | Where it runs | Phase steps | Reads | Writes | Primary tools |
-|------|---------------|-------------|-------|--------|---------------|
-| `orchestrator` | main agent (`/dev`) | drives all + runs the interview | user input, INDEX, FOLLOWUPS, state.json | INDEX status, state.json, follow-up cursor | `AskUserQuestion`, `Agent`, `Bash` |
-| `pm` | sub-agent | 1 (spec) | intent + interview Q&A + FOLLOWUPS | `spec.md` | `Read`, `Write`, `Agent` |
-| `lead` | sub-agent | 2 (plan), 6 (review), 7 (security) | `spec.md`, codebase, diff | `plan.md` + `tasks.md` / `epic.md`, `review.md`, `security.md` | `Read`, `Grep`, `LSP`, `Write`, `Edit`, `Bash`, `Agent` |
-| `engineer` | sub-agent | 4 (implement), 8 (docs), 9 (ship) | `tasks.md`, `plan.md`, `spec.md`, diff | source, inline comments, commit, PR | `Read`, `Edit`, `Write`, `Bash`, `Grep`, `LSP`, `TaskCreate/Update/List`, `Agent` |
-| `qa` | sub-agent | 2½ (test plan), 5 (test) | `spec.md`, `plan.md`, `tasks.md`, `test-plan.md`, source, diff | `test-plan.md`, tests + `tests.md` | `Read`, `Write`, `Edit`, `Bash`, `LSP`, `Grep`, `Agent` |
-| `retro` | sub-agent | 10 | all artifacts + diff + existing memory/skills + FOLLOWUPS | `retro.md`, INDEX status, FOLLOWUPS append | `Read`, `Write`, `Edit`, `Bash` |
-| `uxui` | sub-agent (team mode) | `/uxui-plan` only | `spec.md`, design system/components, `ui-ux-pro-max` | `uxui-plan.md` | `Read`, `Grep`, `LSP`, `Write`, `Edit`, `Agent` |
-| `team-*` agents | sub-agents (workers) | dispatched from fanout phases (1, 2, 4, 5, 6, 7) | the spec question / codebase area / best-practice question / diff slice / bucket the orchestrator scopes | findings (returned to the calling sub-agent; no artifact write) | varies — see `.claude/agents/TEAM.md` |
+| Role | Where it runs | Phase steps | Reads | Writes |
+|------|---------------|-------------|-------|--------|
+| `orchestrator` | main agent | drives all + interview | user input, INDEX, FOLLOWUPS, `state.json` | INDEX, `state.json`, follow-up cursor |
+| `pm` | sub-agent | 1 (spec) | intent, interview Q&A, FOLLOWUPS | `spec.md` |
+| `lead` | sub-agent | 2, 6, 7 | `spec.md`, codebase, diff | `plan.md`/`tasks.md`/`epic.md`, `review.md`, `security.md` |
+| `engineer` | sub-agent | 4, 8, 9 | `tasks.md`, `plan.md`, `spec.md`, diff | source, commit, PR |
+| `qa` | sub-agent | 2½, 5 | `spec.md`, `plan.md`, `tasks.md`, `test-plan.md`, diff | `test-plan.md`, `tests.md` |
+| `retro` | sub-agent | 10 | all artifacts, diff, memory/skills, FOLLOWUPS | `retro.md`, INDEX, FOLLOWUPS |
+| `uxui` | sub-agent (team) | `/uxui-plan` only | `spec.md`, design system | `uxui-plan.md` |
+| `team-*` | workers | fanout phases (1,2,4,5,6,7) | scoped question/area/slice | findings only, no artifact write |
 
-Sub-agent constraints:
-- **Direct nesting (v2.1.172+):** splittable agents are granted `Agent` and spawn helpers when work is large — `pm`, `lead`, `qa`, `engineer`, and the self-splitting `team-codebase-explorer` / `team-best-practice-researcher` / `team-code-reviewer`. Other `team-*` review workers stay read-only. Helpers do one level of split only and never write `state.json`.
-- **Enforced by Claude Code:** sub-agents cannot call `AskUserQuestion` — any user prompt comes from the main agent. Sub-agents that hit ambiguity return a `BLOCKER:` line and the orchestrator surfaces the question.
-
-External: when `retro` surfaces skill candidates and the user approves, the orchestrator invokes `skill-creator` for each. The handoff is explicit — no candidate is created silently.
+**Sub-agent constraints** (full mechanics: [`fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md)): splittable agents (`pm`/`lead`/`qa`/`engineer`/self-splitting `team-*`) hold `Agent` and direct-nest helpers one level deep, never writing `state.json`; a multi-repo run additionally splits test/review/security one helper per changed repo (Implement/gate/ship stay pinned to `repo_root`). Sub-agents can't call `AskUserQuestion` — ambiguity returns `BLOCKER:` and the orchestrator surfaces it. **Skill handoff:** when `retro` surfaces candidates and the user approves, the orchestrator invokes `skill-creator` for each — never silently.
 
 ### Anti-bias rule
 
@@ -245,42 +233,38 @@ Because `lead` reviews the plan they wrote, review mode is checklist-driven (one
 
 ## Team mode — run one role on its own
 
-Build the same artifacts role-by-role instead of in one monolithic run, each writing into the **same `.workflow/<id>/` run folder** so they compose, and the run can be carried the rest of the way with `/dev --resume <id>`. **Cost note:** team mode deliberately skips the XS/S combined fast path (`/spec` always spawns `pm`; `/dev-plan` and `/test-plan` are separate slices), so for tiny or patch-lane work prefer one-shot `/dev`.
+Build the same artifacts role-by-role instead of one monolithic run, each writing into the **same `.workflow/<id>/` folder** so they compose; carry it the rest of the way with `/dev --resume <id>`. **Cost note:** team mode skips the XS/S combined fast path (`/spec` always spawns `pm`), so tiny/patch-lane work prefers one-shot `/dev`.
 
-| Command | Role (agent) | Writes | Notes |
-|---------|--------------|--------|-------|
-| [`/spec`](.claude/commands/spec.md) | `pm` | `spec.md` | Main agent runs the Phase-1 interview, then `pm` writes the spec; run stops at `step=spec`. Always spawns `pm`. Pass a run id instead of an intent to refine an existing spec (spec-patch mode). |
-| [`/dev-plan`](.claude/commands/dev-plan.md) | `lead` (plan mode) | `plan.md` / `epic.md` | Resolves a run, runs plan-prep fanout, then `lead` plans against `spec.md` (sonnet; opus for L). Needs a ready spec; stops at `step=plan`. No gate, no implement. |
-| [`/test-plan`](.claude/commands/test-plan.md) | `qa` (test-plan mode) | `test-plan.md` | Resolves a run, reads `spec.md` + `plan.md`, designs the strategy. Needs a spec; warns if no plan yet. `chore`/`docs`/`spike` get none. |
-| [`/uxui-plan`](.claude/commands/uxui-plan.md) | `uxui` | `uxui-plan.md` | UI work only. Reads `spec.md`, drives `ui-ux-pro-max` / `frontend-design`, writes Scenes + wireframes + Scenarios + UX direction + AC↔scene mapping. **Not a linear state-machine step** — leaves `step`/`next_step` untouched, records the artifact in `state.json > notes`. |
-| [`/implement`](.claude/commands/implement.md) | `engineer` + `lead` + `qa` + `retro` | source, `review.md`, `tests.md`, `retro.md`, commit/PR | **Phase 2 entry point.** Confirms the run is ready (spec + plan + test-plan), runs the **gate** if not yet approved, then the whole autonomous build — implement → test → review → security → docs → ship → retro. Same Phase 2 and `state.json` as `/dev`, interchangeable with `/dev --resume <id>` mid-build. |
+| Command | Role | Writes | Notes |
+|---------|------|--------|-------|
+| [`/spec`](.claude/commands/spec.md) | `pm` | `spec.md` | Runs the interview, `pm` writes the spec; stops at `step=spec`. Pass a run id (not an intent) to refine an existing spec. |
+| [`/dev-plan`](.claude/commands/dev-plan.md) | `lead` (plan) | `plan.md`/`epic.md` | Needs a ready spec; stops at `step=plan`. No gate, no implement. |
+| [`/test-plan`](.claude/commands/test-plan.md) | `qa` (test-plan) | `test-plan.md` | Needs a spec; spec-only if no plan yet. None for `chore`/`docs`/`spike`. |
+| [`/uxui-plan`](.claude/commands/uxui-plan.md) | `uxui` | `uxui-plan.md` | UI only — Scenes, wireframes, Scenarios, AC↔scene mapping; not a linear step. |
+| [`/implement`](.claude/commands/implement.md) | `engineer`+`lead`+`qa`+`retro` | source, `review.md`, `tests.md`, `retro.md`, commit/PR | **Phase 2 entry point** — confirms spec+plan+test-plan ready, gates if unapproved, then runs the full autonomous build. Interchangeable with `/dev --resume <id>` mid-build. |
 
-Mechanics shared with `/dev`: the command's **main agent plays the orchestrator** and the named worker does the file work. The spawn guard ([`dev-agent-guard.sh`](.claude/hooks/dev-agent-guard.sh)) still applies — spawn `pm`/`lead`/`engineer`/`qa`/`retro`/`uxui` by name, never `general-purpose`. Typical flow: `/spec` → then `/dev-plan`, `/test-plan`, `/uxui-plan` (if UI) **fired together** → `/implement` (gate → build → ship). **All three Phase-1 slices can run in parallel on one run** — each writes its own `state.<slice>.json` shard (carrying an `ac_covered` index so the gate fold is a cheap **set-compare**, not a full artifact re-read), and the gate folds them into `state.json` single-writer. `dev-plan`/`uxui-plan` need only `spec.md`; `test-plan` also consumes `plan.md`, so started first it runs **spec-only** (plan-derived rows `[pending plan]`) and the gate **backfills** them once `plan.md` exists — **inline for XS/S, a `qa` re-spawn only for M/L**. See [`.claude/orchestrator/references/team-mode-sharding.md`](.claude/orchestrator/references/team-mode-sharding.md).
+Same main-agent-as-orchestrator + spawn-guard mechanics as `/dev`. Typical flow: `/spec` → `/dev-plan`+`/test-plan`+`/uxui-plan` (if UI) fired together **in parallel**, each writing its own `state.<slice>.json` shard → `/implement` (gate folds the shards → build → ship). Full sharding + backfill mechanics: [`team-mode-sharding.md`](.claude/orchestrator/references/team-mode-sharding.md).
 
 ## Example: `/dev create todolist app`
 
-Phase 1 → interview (one merged batch — **Size S**: self-contained greenfield) → `lead` in **combined mode** (`pm` skipped, no scaffold for S greenfield) writes `spec.md` (Type=feat, CRUD tasks, single user, no auth, localStorage) + `plan.md` + `test-plan.md` in one spawn (each AC → unit/integration level; **e2e_visual=off**, so the UI journey maps to integration — no Visual row, no browser install) → **gate** ("Size: S → fast path"; "E2E + visual: off — say `e2e on` to add browser checks"; will run 1-2-2½-3-4-5-6-8-9-10; **skip 7** — a first-party localStorage round-trip rendered via `textContent` is no deserialise trigger, no dangerous sink) → `approve`.
-
-Phase 2 → implement → tests pass (unit + integration; **no browser**) → review (sonnet) → merged docs+ship → `retro.md` (light) → done.
+S-size greenfield: one interview batch → `lead` combined mode writes `spec.md`+`plan.md`+`test-plan.md` in one spawn (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement → tests pass (no browser) → review → merged docs+ship → light retro → done.
 
 ## Example: `/dev fix login redirect loop`
 
-Phase 1 → interview → `spec.md` (Type=fix, reproduction = "log in from /admin, lands back on /login") → `lead` writes `plan.md` + `tasks.md` (T001 = "add failing test `auth.spec.ts:redirect-loop`", T002 = "fix the redirect") → `qa` writes `test-plan.md` (regression contract) → **gate** (will run 1-2-2½-3-4-5-6-7-9-10; security on — diff touches auth; skip 8) → `approve`.
-Phase 2 → engineer writes failing test → fixes redirect → qa confirms regression test fails on pre-fix code, passes now → review → security (passes) → docs skipped → commit (no PR — flagged at gate) → `retro.md` → done.
+`spec.md` (fix, repro: admin login loops to `/login`) → `lead` writes `plan.md`+`tasks.md` (T001 = failing regression test, T002 = fix) → `qa` writes the regression contract → gate (security on — touches auth) → `approve` → engineer writes the failing test, fixes the redirect → qa confirms it fails pre-fix, passes now → review → security passes → commit (no PR) → retro → done.
 
 ## Example: `/dev spike compare bullmq vs sidekiq`
 
-Phase 1 → interview → `spec.md` (Type=spike, timebox=1 day, deliverable=recommendation) → `lead` writes exploration plan → **gate** (will run 1-2-3-4-6-10; skip 5,7,8 always, skip 9 unless user opts to commit) → `approve`.
-Phase 2 → engineer explores both → writes `recommendations.md` → light review → `retro.md` → user decides whether to open follow-up `feat` runs.
+`spec.md` (spike, 1-day timebox, deliverable=recommendation) → `lead` writes an exploration plan → gate (runs interview→plan→gate→implement→review→retro only) → `approve` → engineer explores both, writes `recommendations.md` → light review → retro → user decides on follow-up `feat` runs.
 
 ## Stop conditions
 
 Where the run pauses, loops, or escalates instead of charging ahead.
 
-- User says `revise` at the gate (or chats free-form about the spec/plan/test-plan) → targeted in-run edit of only the affected sections, then re-verify and re-present the changed parts. Never a fresh Phase 1 run.
-- User says `skip <n>` / `run <n>` at the gate → flip that discretionary phase's disposition (5 Test / 6 Review / 8 Docs only; a `skip` of a protected phase is refused), record it in `state.json > phase_plan`, re-present, stay in the gate loop until `approve`.
-- Test failures → fix → re-run, max 3 cycles, then escalate.
-- Reviewer blocking issues → fix → re-run test (step 5) → re-review, max 2 cycles, then escalate.
-- Security review `high` finding → fix → re-run test → re-review → re-security, counts against the review cycle budget.
-- Any agent unsure → stop and ask the user, never invent requirements.
-- Context exhaustion / cancel → next `/dev --resume <id>` reads `state.json` and continues from the recorded step.
+- `revise` at the gate (or free-form chat) → targeted in-run edit of the affected sections only, re-verify, re-present. Never a fresh Phase 1.
+- `skip <n>`/`run <n>` at the gate → flips that discretionary phase (Test/Review/Docs only; protected phases refuse), recorded in `state.json > phase_plan`, loop continues until `approve`.
+- Test failures → fix → re-run, ≤3 cycles, then escalate.
+- Reviewer blocking issues → fix → re-test → re-review, ≤2 cycles, then escalate.
+- Security `high` finding → fix → re-test → re-review → re-security, counts against the review budget.
+- Any agent unsure → stop and ask, never invent requirements.
+- Context exhaustion / cancel → `/dev --resume <id>` continues from `state.json`'s recorded step.

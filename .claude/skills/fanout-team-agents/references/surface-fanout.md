@@ -4,7 +4,7 @@ Deeper companion to the body's "How it works" digest. The eligibility table in t
 
 ## What it is
 
-A multi-repo run splits the three read-and-judge phases — **test** (step 11), **review** (step 12), and **security** (step 13) — **per repo**, so N repos are read in parallel instead of one agent crawling them serially. The repos are the ideal fanout target — separate trees, separate diffs, separate test suites, zero shared state. (**Retro** (step 16) also reads across repos but is **multi-repo-aware single-pass, not surface-fanned**: it synthesises the already-unified per-repo artifact sections and holds no `Agent`.)
+A multi-repo run splits the three read-and-judge phases — **test**, **review**, and **security** — **per repo**, so N repos are read in parallel instead of one agent crawling them serially. The repos are the ideal fanout target — separate trees, separate diffs, separate test suites, zero shared state. (**Retro** also reads across repos but is **multi-repo-aware single-pass, not surface-fanned**: it synthesises the already-unified per-repo artifact sections and holds no `Agent`.)
 
 This axis is **orchestrator-owned** (no `FANOUT_REQUESTED:` signal): the orchestrator knows the repo list from `state.repos` at dispatch time and leads directly. Full contract: `.claude/orchestrator.md > Fanout dispatch > Surface (per-repo) fanout`.
 

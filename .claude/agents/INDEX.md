@@ -1,6 +1,8 @@
 # Agent index
 
-Which model each agent in `.claude/agents/` runs on and what it does (model from each file's frontmatter `model:`). For how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — the prose companion to this table, not an agent itself.
+Which model each agent in `.claude/agents/` runs on and what it does (model from each file's frontmatter `model:`). Tier *policy* — who gets which tier and why, floors, escalation — lives in [`../orchestrator/references/model-tiers.md`](../orchestrator/references/model-tiers.md); this table mirrors it. For how these agents fit the `/dev` pipeline (which phase each runs in, how fanout dispatches them), see [`TEAM.md`](./TEAM.md) — the prose companion to this table, not an agent itself.
+
+**When an agent gets a `references/<agent>.md`:** the base file carries the always-loaded core (role, modes, rules); mode *variants* and rarely-hit procedures overflow to a references file once the base would exceed roughly a page (~1,200 words) — never split below that, and never let the same rule live in both (`pm`, `lead`, `qa`, `engineer` have one; `retro`/`uxui` don't need one yet).
 
 ## `/dev` workers
 
@@ -8,7 +10,7 @@ The five sub-agents the orchestrator (main agent) spawns for the `/dev` file wor
 
 | Agent | Model | One-line role |
 |-------|-------|---------------|
-| [`pm`](./pm.md) | sonnet | Writes `spec.md` from the orchestrator's interview answers (Phase 1 spec; cannot interview the user itself). |
+| [`pm`](./pm.md) | opus | Writes `spec.md` from the orchestrator's interview answers (Phase 1 spec; cannot interview the user itself). |
 | [`lead`](./lead.md) | opus frontmatter; plan/review default sonnet override | Tech lead — three modes: plan (`plan.md`/`epic.md`), review (`review.md`), and trigger-based security (`security.md`). Opus is kept for security and high-stakes review/plan cases. |
 | [`engineer`](./engineer.md) | sonnet | Implements from `plan.md`, ticks acceptance criteria, does the docs touch-up, and ships (gate-decided commit — default no → ready-to-run commit command + optional PR). |
 | [`qa`](./qa.md) | sonnet | Test-plan mode (Phase 1) writes `test-plan.md` before code; execute mode (Phase 2) runs unit/integration/e2e against it; type-aware; blocks ship until tests pass or are skipped. |
@@ -31,8 +33,6 @@ Focused workers the orchestrator dispatches in parallel during fanout phases (sp
 | [`team-best-practice-researcher`](./team-best-practice-researcher.md) | sonnet | Researches best practices for a domain/framework/API/security/testing/UX question before pm or lead synthesises. |
 | [`team-codebase-explorer`](./team-codebase-explorer.md) | haiku | Read-only codebase mapping — entry points, current behaviour, invariants, and blast radius — for spec/plan fanout. |
 | [`team-code-reviewer`](./team-code-reviewer.md) | sonnet | Reviews code (a diff or named files) for CLAUDE.md adherence, style, and best practices. |
-| [`team-code-simplifier`](./team-code-simplifier.md) | haiku | Recommends simplifications for recently modified code — clarity and maintainability while preserving behaviour (advisory; report-only). |
-| [`team-comment-analyzer`](./team-comment-analyzer.md) | haiku | Analyses code comments for accuracy, completeness, comment-rot, and long-term maintainability. |
 | [`team-pr-test-analyzer`](./team-pr-test-analyzer.md) | haiku | Reviews a PR for test-coverage quality and completeness — new functionality and edge cases. |
 | [`team-silent-failure-hunter`](./team-silent-failure-hunter.md) | sonnet | Hunts silent failures, inadequate error handling, and inappropriate fallback behaviour in code changes. |
 | [`team-type-design-analyzer`](./team-type-design-analyzer.md) | haiku | Analyses type design — encapsulation, invariant expression, usefulness, enforcement — with qualitative + quantitative ratings. |

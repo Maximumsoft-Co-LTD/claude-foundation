@@ -116,6 +116,12 @@ case "$FILE_PATH" in
     elif have pylint; then
       run_linter "pylint" pylint --score=n "$FILE_PATH"
     fi
+    # Typecheck in addition to style lint — immediate type feedback after an
+    # edit is the loop that lets the model self-correct. Optional like all
+    # linters here.
+    if have pyright; then
+      run_linter "pyright" pyright "$FILE_PATH"
+    fi
     ;;
 
   *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs)
@@ -128,6 +134,44 @@ case "$FILE_PATH" in
         run_linter "biome" "$bin" lint "$FILE_PATH"
       fi
     fi
+
+    # Typecheck (.ts/.tsx only): style lint alone misses type errors, and
+    # immediate type feedback after an edit is the self-correction loop that
+    # matters. Same per-file filter discipline as the Go arm: tsc must check
+    # the PROJECT (single-file tsc ignores tsconfig and false-positives), so
+    # run against the nearest tsconfig and surface ONLY diagnostics for the
+    # edited file — sibling type debt never blocks this edit. Best-effort:
+    # 20s cap via timeout/gtimeout when available (timeout -> skip silently);
+    # without a timeout binary the hook harness's own cap applies.
+    case "$FILE_PATH" in
+      *.ts|*.tsx)
+        tsc_bin="$(node_bin tsc)"
+        if [ -n "$tsc_bin" ]; then
+          tsdir="$(dirname "$FILE_PATH")"
+          while [ "$tsdir" != "/" ] && [ "$tsdir" != "." ]; do
+            [ -f "$tsdir/tsconfig.json" ] && break
+            tsdir="$(dirname "$tsdir")"
+          done
+          if [ -f "$tsdir/tsconfig.json" ]; then
+            rel="${FILE_PATH#"$tsdir"/}"
+            tbin="$(command -v timeout || command -v gtimeout || true)"
+            rc=0
+            if [ -n "$tbin" ]; then
+              full="$(cd "$tsdir" && "$tbin" 20 "$tsc_bin" --noEmit --pretty false -p . 2>&1)" || rc=$?
+            else
+              full="$(cd "$tsdir" && "$tsc_bin" --noEmit --pretty false -p . 2>&1)" || rc=$?
+            fi
+            if [ "$rc" -ne 124 ]; then  # 124 = timed out -> skip silently
+              out="$(printf '%s\n' "$full" | grep -F "$rel(" || true)"
+              if [ -n "$out" ]; then
+                printf '── tsc --noEmit: %s ──\n%s\n' "$FILE_PATH" "$out" >&2
+                exit 2
+              fi
+            fi
+          fi
+        fi
+        ;;
+    esac
     ;;
 
   *.html|*.htm)

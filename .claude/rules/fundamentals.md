@@ -52,4 +52,6 @@ Model & boundaries → code → in-process concurrency → storage → service l
 - **ddd-strategic vs architecture** — `ddd-strategic` decides semantic/model boundaries; `architecture-fundamentals` decides runtime/component boundaries afterward.
 - **security & observability are cross-cutting** — applied last, to whichever layer carries a trust boundary or op surface.
 
-This file is the single source of truth for triggers and cross-skill run order. `CLAUDE.md`, `README.md`, and `WORKFLOW.md` mirror the chain and name this file canonical; when you add/remove/reorder a skill, update all three together (grep chain head `ddd-strategic` to find them).
+**Outside this router:** the non-lifecycle skills (`brainstorming`, `plan-writing`, `fanout-team-agents`, `claude-md`, `qa-handoff-note`, `init-project-docs`, `frontend-design`, `tailwind-design-system`, `ui-ux-pro-max`, `skill-creator`) trigger by their own frontmatter descriptions or explicit `/dev`-pipeline wiring — intentional, not an omission; the table lives in `CLAUDE.md > Skills outside the router`.
+
+This file is the single source of truth for triggers and cross-skill run order. `README.md` mirrors the chain; `CLAUDE.md` and `WORKFLOW.md` name this file canonical without restating it. When you add/remove/reorder a skill, update the chain here + `README.md` (grep chain head `ddd-strategic`) and re-check the two canonical-pointer mentions.

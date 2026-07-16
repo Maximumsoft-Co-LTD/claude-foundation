@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # PreToolUse guard that blocks `git commit` while you're on main/master.
 #
+# OPT-IN — NOT wired into .claude/settings.json. To enable, add it under
+# PreToolUse/Bash there (see CLAUDE.md > hooks). Shipped as-is so adopting
+# repos can turn it on with one settings edit.
+#
 # The branch-first rule is otherwise advisory: a slip lands unreviewed work
 # straight on the default branch. This hook turns that slip into an immediate,
 # self-explanatory block. It fires only on a Bash event whose command is a

@@ -1,5 +1,85 @@
 # Communication
 
+Moved from `SKILL.md` — principles 3, 5, and 7's full rule/why/how-to-apply/example, ahead of the topic-organized detail below.
+
+## Principle 3 (from SKILL.md): Choose sync or async for each interaction, deliberately
+
+**Rule:** For every cross-boundary call, name whether the caller must wait for the callee to finish (sync) or can move on while work happens later (async). The right answer follows from whether the caller needs the result *now*, not from what's fashionable.
+
+**Why:** Sync couples in time — callee slow means caller slow; callee down means caller down. Long chains become outage multipliers ("service A waits on B waits on C waits on D, which has a 99.5% SLO, so the chain delivers 98%"). Async decouples time but introduces eventual consistency, duplicate-delivery, and ordering. Picking wrong is a permanent tax: sync-when-async-works creates cascade failures; async-when-sync-needed creates "I saved and nothing changed… then it did later."
+
+**How to apply:**
+- **Sync for:** queries the user is actively waiting on, operations where the caller needs the result to make the *next* decision, simple reads.
+- **Async for:** side effects the caller doesn't need to wait on (email, indexing, analytics), fan-out to many independent consumers, smoothing bursts, decoupling deploy/scale/failure between components.
+- **The wait-and-poll pattern is async with extra friction.** If the caller polls a status endpoint, you needed async events with a status update or a webhook.
+- **Chain depth matters.** Fan-out in parallel and gather rather than chain serially. Per-hop timeouts must fit inside the overall budget (see [[resilience]]).
+- **Async ≠ free.** At-least-once delivery, idempotency, outbox to avoid lost events, and operating a broker. Pay it where the decoupling is worth it.
+
+**Example:**
+```
+"Charge the customer's card during checkout"
+  Sync: user is staring at a spinner; next screen depends on whether charge succeeded.
+
+"Send the welcome email after signup"
+  Async: publish UserSignedUp; emailer consumes, retries on failure, DLQs on permanent failure.
+        Signup never breaks because SMTP is having a moment.
+
+"Recompute search index after a product update"
+  Async: seconds of search staleness is fine; blocking the product API on indexing is not.
+```
+
+## Principle 5 (from SKILL.md): Default to eventual consistency; treat strong consistency as opt-in
+
+**Rule:** Across components, assume changes propagate eventually. Reach for strong cross-component consistency only when the business *genuinely* requires it — and accept the cost deliberately.
+
+**Why:** Most "needs to be consistent" requirements relax when someone asks "for how long?" A 200ms propagation lag is invisible to users; engineering a distributed transaction to eliminate it costs availability, latency, and permanent complexity. On the other side, casual eventual consistency where the business needs strong (charging the right amount, not overselling the last unit) leads to irreconcilable data and refund emails.
+
+**How to apply:**
+- For each cross-boundary write, ask: **how stale can a reader be without the business breaking?** Seconds? Minutes? Never?
+- "Never" is rare. When it's real, **keep the consistent operation inside a single transactional boundary** — one component, one database, one transaction. Do not reach across components to enforce strong consistency.
+- Most cross-component patterns: write source-of-truth → publish event → downstream catches up. Combine with the **outbox** pattern (see [[queue-fundamentals]]).
+- For multi-step workflows across components, **start with sagas and compensating actions**. Reach for **2PC** only inside a narrow, homogeneous boundary where you can't tolerate a compensating window. The 2024 stance: sagas for user-facing flows, 2PC where participants and failure modes are tightly controlled.
+- **Surface staleness to readers.** `updated_at` timestamps, "last refreshed N seconds ago." Hidden staleness is worse than visible staleness.
+
+**Example:**
+```
+Wrong: "Dashboard must show the right account balance instantly" → synchronous cross-service
+       transaction. Slow, brittle, breaks when billing is down — the dashboard can't even render
+       a stale value because the design depended on freshness.
+
+Right: Billing owns the balance. Dashboard subscribes to balance-changed events, caches projection.
+       "Updated 2s ago." Strong consistency lives inside Billing; everything outside is eventual.
+
+Wrong: "Eventually consistent inventory is fine for flash sale" → oversold seats, refund emails.
+
+Right: Inventory is the consistency boundary for stock. Decrement-and-reserve inside one
+       transaction (conditional UPDATE WHERE qty > 0). Others consume reservation events.
+```
+
+## Principle 7 (from SKILL.md): Evolve contracts; don't break them
+
+**Rule:** Treat every public API, event schema, and shared message format as a contract. Add fields and behaviors backwards-compatibly. Remove only after an honest deprecation cycle, long enough for every consumer to migrate.
+
+**Why:** In any multi-component system, you can't atomically update producer and consumer — they deploy on different schedules. Breaking a contract turns "ship the feature" into "coordinate a multi-team rollout." Backwards-compatible evolution is invisible to consumers who haven't adopted it; a breaking change without versioning is an incident.
+
+**How to apply:**
+- **Add, don't replace.** New optional fields with defaults are safe. New required fields, renames, type changes, and removals are all breaks.
+- **Version explicitly when you must break.** `/v1/orders` and `/v2/orders` coexist; events carry `schema_version`. Both versions run until consumption hits zero, then v1 is removed.
+- **Tolerant reader.** Consumers ignore unknown fields; producers don't depend on consumers having every field.
+- **Deprecation is a long horizon.** Announce → instrument (count usage by consumer) → wait until usage is **zero** (not "low") → remove. "We told them six weeks ago" is not a deprecation.
+- **Idempotency keys are part of the public contract.** Any public mutation API accepts an `Idempotency-Key`. Not an optimization — the only way clients can safely retry.
+- **Schema registries help.** Avro, Protobuf, JSON Schema with a registry encodes compatibility rules so CI rejects breaking changes before they ship.
+
+**Example:**
+```
+Wrong: Rename `customer_email` to `email` in the user-created event. Half the consumers parse
+       the old field name and break on next producer deploy. Roll back, hold a meeting, ship
+       the rename over a quarter with manual consumer coordination.
+
+Right: Add `email` alongside `customer_email`. Both fields populated. Mark `customer_email`
+       deprecated. Track consumption metrics until zero. Then — only then — remove.
+```
+
 ## Sync vs async decision matrix
 
 | Question | Sync | Async |

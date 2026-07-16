@@ -35,7 +35,7 @@ Tools report the whole diff, not the logic-vs-boundary split — so split unit v
 
 **Inner loop (every cycle: test-fail / review-fix / security-fix) → Impacted only**, never per-file Bash. Label `re-validated (targeted): <scope> — passing|failing`; **never the authoritative `passing`** (never fake green).
 
-**Targeted re-entry** (orchestrator note `re-validate targeted: <files>`, guards step 12/13): run Impacted for those files + their AC-mapped tests; no full suite, no plan re-walk. Scope = files changed since last green — accumulated-edit correctness rests on the final gate.
+**Targeted re-entry** (orchestrator note `re-validate targeted: <files>`, guards Review/Security): run Impacted for those files + their AC-mapped tests; no full suite, no plan re-walk. Scope = files changed since last green — accumulated-edit correctness rests on the final gate.
 
 **Final gate:** at convergence (review ∧ security clean, pre-docs) the Full-suite cmd runs once on the final diff = authoritative `passing`. Orchestrator runs it via Bash from `tests.md > Commands`. Red → `cycles.test++` → engineer → re-enter. Safety net for cross-module regressions Impacted misses.
 
@@ -45,14 +45,14 @@ Tools report the whole diff, not the logic-vs-boundary split — so split unit v
 
 ## Recruit help when the test surface is large (direct nesting)
 
-**Load when:** the plan spans ≥ 2 of {unit, integration, e2e} AND a level has ≥ 3 tests worth a focused pass. You hold `Agent` — spawn analysis helpers yourself (v2.1.172+) instead of only signalling `FANOUT_REQUESTED: test` (the fallback). You still write every test and `tests.md`.
+**Load when:** the plan spans ≥ 2 of {unit, integration, e2e} AND a level has ≥ 3 tests worth a focused pass. You hold `Agent` — spawn analysis helpers yourself (v2.1.172+); no signal fallback — a genuine block returns `BLOCKER:` naming why. You still write every test and `tests.md`.
 
 - **Split + spawn** — one `team-pr-test-analyzer` per category, **one message** (parallel), **cap 3**, each scoped to that category's diff slice (pass the slice + `test-plan.md` coverage rows + what to return).
-- **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → by name; `inline-fallback` → `general-purpose` + `model="sonnet"` with `.claude/agents/team-pr-test-analyzer.md` inlined (Case 6 blocks an unpinned general-purpose spawn); `unknown` → try named, fall to inline on `not found`, report the path used.
-- **Dedup direction (test runs before review now)** — test is the first analysis pass, so there are no review findings to fold in; run every planned category. Review (step 6) instead dedups its test-coverage lens against *your* `team-pr-test-analyzer` findings, so leave them legible in `tests.md`.
+- **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → by name; `inline-fallback` → `general-purpose` + `model="sonnet"` with `.claude/agents/team-pr-test-analyzer.md` inlined (Case 6 blocks an unpinned general-purpose spawn); `unknown` → try named, fall to inline on `not found`, report the path used. Inline fallback for the haiku-pinned analyzer runs a tier UP (sonnet floor) — say so in the path report so cost drift stays auditable.
+- **Dedup direction (test runs before review now)** — test is the first analysis pass, so there are no review findings to fold in; run every planned category. Review instead dedups its test-coverage lens against *your* `team-pr-test-analyzer` findings, so leave them legible in `tests.md`.
 - **Integrate** the returned coverage-gap findings into your test design + `tests.md`.
-- **Guardrails** — helpers are read-only, never write tests/`tests.md`/`state.json`. **One level of split:** end every helper prompt with `You are a nested helper: handle this one sub-scope directly and do NOT spawn further agents.`
+- **Guardrails** — helpers are read-only, never write tests/`tests.md`/`state.json`. One level of split; dispatch mechanics + stop-line: `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
 
 ## Surface (multi-repo) variants
 
-**Load when:** spawned on a multi-repo control-plane run as a **per-repo tester** or the **surface-coordinator** (which nests per-repo helpers and writes the unified `tests.md`). Both contracts live in `orchestrator/references/surface-fanout.md > QA — Execute (Test)`. A single-repo run (the common case) never needs them.
+**Load when:** spawned on a multi-repo control-plane run as a **per-repo tester** or the **surface-coordinator** (which nests per-repo helpers and writes the unified `tests.md`). Both contracts live in `orchestrator/references/fanout-dispatch.md > QA — Execute (Test)`. A single-repo run (the common case) never needs them.

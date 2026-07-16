@@ -2,6 +2,29 @@
 
 Companion to principle 1 of [[queue-fundamentals]]. Match the shape of your problem to the shape of the broker.
 
+## Principle 1, in full: pick the right queue for the purpose
+
+**Rule:** Decide what the queue is *for* before you decide which broker to use. Different purposes need different shapes; the wrong broker turns a normal feature into an operational nightmare.
+
+**Why:** "We use Kafka" is not an architecture. A queue can be a burst buffer, an async decoupler, a task queue, a pub/sub fanout, or a replayable event log. Each purpose has a different natural fit — most queue pain comes from forcing the wrong tool into the wrong role (Kafka as a task queue, SQS as an event log, an in-memory channel expected to survive crashes).
+
+**How to apply:**
+- Name the purpose in one sentence before picking a broker. "Fan out user-signup events to N independent consumers" → log/pub-sub. "Run a slow image-resize off the request thread" → task queue. "Buffer a burst of webhooks so we don't drop any" → durable broker.
+- Match the durability to the cost of loss. If losing a message is fine (metrics, best-effort notifications), an in-memory channel is OK. If losing a message means losing money, the queue must survive a broker crash and a consumer crash.
+- Match the topology to who reads. Single worker pool draining a queue (point-to-point) is a task queue. Many independent subscribers each seeing every message is pub/sub. Replayable history is a log.
+
+**Example:**
+```
+"Send a welcome email when a user signs up"
+  Wrong: write directly to Kafka, because Kafka is what we have.
+  Right: a task queue (SQS, BullMQ, Sidekiq) with retries and a DLQ — point-to-point work, no replay needed.
+
+"Notify analytics, billing, and the recommender when an order is placed"
+  Wrong: have the order service call all three over HTTP.
+  Right: publish OrderPlaced to a log/pub-sub topic. Each consumer reads independently
+         at its own pace; adding a fourth consumer doesn't touch the order service.
+```
+
 ## Five shapes a queue can take
 
 1. **In-process buffer** — same process, decouple two pieces of code or smooth a burst. Lost on restart. Examples: Go `chan`, Node `EventEmitter` + array, Python `asyncio.Queue`.
@@ -26,6 +49,29 @@ The questions, in order:
 | Need strict per-entity ordering at high throughput? | Log with partition key, or SQS FIFO |
 | Need scheduled / delayed jobs (`run in 2h`)? | Task queue with delay support (BullMQ, Sidekiq, SQS DelaySeconds, DB-backed) |
 | Need exactly-once semantics tightly coupled to a DB write? | Outbox + your existing broker — see [[outbox]] |
+
+## Principle 2, in full: know your delivery semantics
+
+**Rule:** Pick one of {at-most-once, at-least-once, exactly-once} consciously, and know which one your broker actually delivers. "Exactly-once" is almost always at-least-once + an idempotent consumer.
+
+**Why:** Almost every production broker is **at-least-once** by default — duplicates happen on retries, consumer crashes, rebalances, and network blips. If your handler assumes "this runs once per message," you wrote a bug. Every "we double-charged" postmortem started here.
+
+**How to apply:**
+- Default mental model: at-least-once. Build for it (see principle 3).
+- At-most-once is fine *only* when loss is cheaper than duplicates (high-volume telemetry, ephemeral UI hints). Be honest about which side of that line you're on.
+- "Exactly-once" exists narrowly *within* a single broker's domain (Kafka transactions + idempotent producer + `isolation.level=read_committed` consumer, set up correctly, deliver true end-to-end EOS for Kafka-to-Kafka pipelines; the idempotent producer has been on by default since Kafka 3.0). It breaks the moment you cross to an external system (DB, HTTP, email, another broker). Treat any guarantee that ends at the broker's boundary as at-least-once for the rest of your code, and reach for the outbox pattern (principle 7) when the cross-system boundary matters.
+- Read your broker's docs for the *exact* semantics, including under failure: leader re-elections, consumer rebalances, ack timeouts. The defaults differ.
+
+**Example:**
+```
+SQS Standard:        at-least-once, no ordering.            → idempotent consumer required.
+SQS FIFO:            exactly-once *delivery* within 5 min,  → still treat as at-least-once
+                     per MessageGroupId.                       outside that window.
+RabbitMQ (ack mode): at-least-once.                          → idempotent consumer required.
+Kafka (default):     at-least-once.                          → idempotent consumer required.
+Kafka EOS:           exactly-once *between Kafka topics*     → still at-least-once if you
+                     within one transaction.                    write to a DB or call HTTP.
+```
 
 ## Per-broker cheat sheet
 
@@ -101,6 +147,34 @@ Behaviors that bite. Verify against current docs — defaults change.
 - **Transactional with DB writes:** yes, naturally. This is the killer feature — no outbox needed for use cases that only emit work to themselves, because the job insert is in the same DB transaction as the state change.
 - **Limits:** polling adds latency (LISTEN/NOTIFY helps); throughput ceiling is your DB's write throughput; doesn't scale to fan-out across services.
 - **Use when:** your team already runs Postgres well, throughput is moderate, and you want fewer moving parts.
+
+## Principle 6, in full: ordering is opt-in, not a default
+
+**Rule:** Most brokers do not preserve global message order. If your handler assumes order, prove the broker delivers it for the keys you care about — or make the handler order-tolerant.
+
+**Why:** "Process in the order sent" is the most-broken hidden assumption in queue code. SQS Standard is unordered; RabbitMQ preserves per-queue order but not across workers; Kafka guarantees order **per partition**, not per topic. Code that worked with one worker breaks the day you add a second.
+
+**How to apply:**
+- Ask "for what subset of messages does order need to hold?" — almost never *all* of them. Order usually matters per-entity (this user's events in order; this order's state transitions in order), not globally.
+- Route by **partition key / message group ID** so all messages for one entity go to one partition/consumer. Kafka partition key, Kinesis shard key, SQS FIFO `MessageGroupId`, RabbitMQ consistent-hash exchange.
+- For SQS-style queues, **SQS FIFO** gives ordering within a `MessageGroupId`. Standard SQS does not — don't assume.
+- Better than ordering: make the handler **version-aware** or **commutative** so out-of-order delivery is safe. Carry a monotonic version (`updated_at`, `seq`) on the message; the consumer applies a state change only if its version is newer than what's stored. Two messages arriving out of order produce the same final state.
+- Global ordering = one consumer = a bottleneck. If you genuinely need it, name it explicitly and accept the throughput ceiling.
+
+**Example (TypeScript, version-aware consumer):**
+```ts
+// Out-of-order safe: stale messages are dropped, latest wins.
+async function applyUserUpdate(msg: UserUpdatedMessage) {
+  // Conditional update on version: only apply if msg is newer than what we have.
+  const result = await db.query(
+    `UPDATE users SET name=$1, version=$2
+     WHERE id=$3 AND version < $2`,
+    [msg.name, msg.version, msg.userId],
+  )
+  // rowCount === 0 means a newer update already landed; this one is stale. Drop it.
+  if (result.rowCount === 0) return
+}
+```
 
 ## Common selection mistakes
 

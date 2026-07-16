@@ -14,7 +14,7 @@ Examples:
 - *Spec prep* — one worker explores the existing checkout flow while another researches current payment-provider webhook verification rules. The outputs shape the interview questions and `spec.md > Discovery notes`.
 - *Plan integration points* — fan out when the points sit in **disjoint surfaces** (separate modules/folders/repos) and can be researched independently — **not** for ≥ 2 points inside one cohesive module, which is a single serial `lead` walk. For each disjoint point, pair a `team-codebase-explorer` current-state pass with a `team-best-practice-researcher` best-practice pass. If `webhook-ingest` and `billing-api` both hinge on the same `users/repo.ts` contract, that shared surface is not disjoint — merge their codebase exploration into one pass but keep external best-practice research separate if the sources differ.
 
-**Same worker, N instances — the default shape.** Most fanouts spawn **N copies of the *same* `team-*` worker**, one per independent unit: one `team-codebase-explorer` per integration point, one `team-code-reviewer` per security bucket, one `team-pr-test-analyzer` per test category. Only the 6-lens review fanout mixes *different* workers. N is the count of genuinely independent units — cap at the concurrency limit (≈ 6) and group beyond it; never spawn N for N's sake. Horizontal scaling is first-class, not a one-of-each constraint. The plan's `## Fanout plan` records this N up front (`.claude/orchestrator/references/fanout-plan.md`).
+**Same worker, N instances — the default shape.** Most fanouts spawn **N copies of the *same* `team-*` worker**, one per independent unit: one `team-codebase-explorer` per integration point, one `team-code-reviewer` per security bucket, one `team-pr-test-analyzer` per test category. Only the 6-lens review fanout mixes *different* workers. N is the count of genuinely independent units — cap at the concurrency limit (≈ 6) and group beyond it; never spawn N for N's sake. Horizontal scaling is first-class, not a one-of-each constraint. The plan's `## Fanout plan` records this N up front (`.claude/orchestrator/references/fanout-dispatch.md`).
 
 ## 2. Construct focused prompts
 
@@ -36,9 +36,7 @@ The orchestrator dispatches all workers in the **same message** — Claude Code'
 Agent(subagent_type="team-codebase-explorer", prompt=<focused-prompt-1>)
 Agent(subagent_type="team-best-practice-researcher", prompt=<focused-prompt-2>)
 Agent(subagent_type="team-code-reviewer", prompt=<focused-prompt-3>)
-Agent(subagent_type="team-code-simplifier", prompt=<focused-prompt-4>)
-Agent(subagent_type="team-comment-analyzer", prompt=<focused-prompt-5>)
-Agent(subagent_type="team-pr-test-analyzer", prompt=<focused-prompt-6>)
+Agent(subagent_type="team-pr-test-analyzer", prompt=<focused-prompt-4>)
 Agent(subagent_type="team-silent-failure-hunter", prompt=<focused-prompt-7>)
 Agent(subagent_type="team-type-design-analyzer", prompt=<focused-prompt-8>)
 ```
@@ -86,7 +84,7 @@ The inline-fallback artifact is byte-identical in shape to a real parallel-dispa
 The three failure modes from the upstream skill apply here unchanged:
 
 - **Too broad prompts.** "Review the codebase" → the worker gets lost. Always scope to a specific diff slice, file set, or path range. The team-`<role>` workers will silently expand scope if not constrained — give them the diff and the path filter.
-- **No constraints.** A `team-code-simplifier` with no "tests are out of scope" constraint will start recommending rewrites of test files you didn't ask about (the review/advisory workers are report-only, so the risk is scope-creep in what they flag, not unwanted edits). State what the worker must NOT cover — every prompt has a one-line constraints stanza.
+- **No constraints.** A review worker with no "tests are out of scope" constraint will start flagging rewrites of test files you didn't ask about (the review/advisory workers are report-only, so the risk is scope-creep in what they flag, not unwanted edits). State what the worker must NOT cover — every prompt has a one-line constraints stanza.
 - **Vague output shape.** "Return your findings" → workers return free-form prose that doesn't merge cleanly. Specify the section shape (the agent files already document this; cite it in the prompt — "return your output in the format documented in your agent file's Output Format section").
 
 Five more apply to `/dev` specifically:

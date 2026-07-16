@@ -1,5 +1,67 @@
 # Query Performance
 
+Moved from `SKILL.md` — principles 4 and 5's full detail: reading the query plan before optimizing, and fetching in sets instead of loops.
+
+## Principle 4 (from SKILL.md): Read the query plan before you guess
+
+**Rule:** Before you decide a query is slow, before you add an index, before you "optimize" — run `EXPLAIN ANALYZE` and read the plan.
+
+**Why:** Intuition is usually wrong. `EXPLAIN ANALYZE` shows what the planner actually chose and why. Optimizing without a plan is guessing.
+
+**How to apply:**
+- Use `EXPLAIN ANALYZE` (Postgres / MySQL 8) — runs the query and reports actual times and row counts. Plain `EXPLAIN` only shows the estimated plan, which is often wrong.
+- Look for the operator type. `Seq Scan` on a large table is a red flag if you have a `WHERE`. `Index Scan` is good. `Index Only Scan` is best — the query is satisfied entirely from the index.
+- Compare `rows=` estimated vs `actual rows=`. A 100x mismatch means the planner has stale statistics and is making bad decisions — `ANALYZE` the table or rebuild statistics.
+- Look at the *bottom* of the plan first — that's where the data actually comes from. Costs and times accumulate upward.
+- Don't optimize until you have a slow query in front of you with a plan to show why. "Premature optimization" applies to SQL too.
+- See `references/query-performance.md` for reading plans, pagination patterns, and the slow-query diagnostic flow.
+
+**Example:**
+```sql
+EXPLAIN ANALYZE
+SELECT id, total_cents FROM orders
+WHERE user_id = '...' AND status = 'paid'
+ORDER BY placed_at DESC LIMIT 20;
+
+-- Bad plan you want to NOT see:
+-- Seq Scan on orders  (cost=0..100000 rows=200 actual rows=120)
+--   Filter: (user_id = '...' AND status = 'paid')
+--   Rows Removed by Filter: 1_000_000      ← scanned a million rows to find 120
+-- → Add (user_id, status, placed_at DESC) index. Re-run. Confirm Index Scan.
+```
+
+## Principle 5 (from SKILL.md): Fetch in sets, not loops (N+1 is the bug that hides everywhere)
+
+**Rule:** When you need data for many things, fetch it in one query, not one query per thing. The "loop and query" pattern is the most common database performance bug.
+
+**Why:** [[programming-fundamentals]] complexity applied to I/O. One query returning 1000 rows is cheap; 1000 queries returning one row is 1000× slower. ORMs hide this via lazy-loading — `user.orders` fires a query per user unless you opt out.
+
+**How to apply:**
+- Whenever a function loops and calls the database inside the loop, stop. That's an N+1 candidate. Either join, or batch-fetch by IDs, or use a dataloader.
+- ORM-side: every framework has the magic word. Sequelize `include`, Prisma `include`, Rails `includes`, SQLAlchemy `joinedload`/`selectinload`, Django `select_related`/`prefetch_related`, Hibernate `JOIN FETCH`, ActiveRecord `eager_load`. Learn the one for your stack and reach for it by default.
+- Watch out for "looks like one query, actually N." `users.map(u => formatUser(u))` is fine. `users.map(u => formatUser(u, await getOrders(u.id)))` is N+1.
+- For graph fetches across services, use the **dataloader pattern**: collect IDs during the request, fire one batch query, hand each consumer their slice.
+- See `references/query-performance.md` for the specific N+1 patterns and fixes.
+
+**Example:**
+```ts
+// Bad — N+1: one query for users, then one per user for orders
+const users = await db.users.findAll()
+for (const u of users) {
+  u.orders = await db.orders.find({ userId: u.id })   // N queries
+}
+
+// Good — one query for users, one batched query for all orders
+const users = await db.users.findAll()
+const userIds = users.map(u => u.id)
+const orders = await db.orders.find({ userId: { in: userIds } })  // 1 query
+const ordersByUser = groupBy(orders, o => o.userId)
+for (const u of users) u.orders = ordersByUser.get(u.id) ?? []
+
+// Or, in one shot via the ORM
+const users = await db.users.findAll({ include: { orders: true } })
+```
+
 ## Reading EXPLAIN ANALYZE
 
 `EXPLAIN ANALYZE` (Postgres / MySQL 8) runs the query and reports actual row counts and times. Plain `EXPLAIN` shows estimates only — often wrong.

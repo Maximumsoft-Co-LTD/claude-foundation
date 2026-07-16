@@ -1,5 +1,41 @@
 # Resilience
 
+Moved from `SKILL.md` — principle 4's full rule/why/how-to-apply/example, plus the "Below the principles" operational concerns, ahead of the topic-organized detail below.
+
+## Principle 4 (from SKILL.md): Every cross-process call can fail — design for it
+
+**Rule:** Set explicit timeouts, bounded retries with backoff and jitter, circuit breakers around dependencies, and bulkheads between failure domains. No infinite waits. No retry storms. No code path where one slow dependency takes the whole system down.
+
+**Why:** HTTP clients and ORMs default to infinite or 30-second timeouts — genuinely dangerous. The outage script is always the same: a dependency blips, connection pools fill with hung waits, the upstream becomes unresponsive, and a one-component blip cascades system-wide. Designing for failure costs hours upfront; not designing for it costs days of recovery and customer trust.
+
+**How to apply:**
+- **Timeouts everywhere.** Every outbound call (HTTP, DB, broker, gRPC, external API) gets an explicit timeout, shorter than the upstream's, with budget left for retries.
+- **Retries: bounded, with exponential backoff and jitter.** Only retry **idempotent** operations. Don't retry permanent errors (most 4xx except 408/429) — those just delay the inevitable.
+- **Retry budget.** A service might cap retries at X% of its request rate. Without a budget, retries amplify a downstream blip into a thundering herd that prevents recovery.
+- **Circuit breakers** around dependencies: after N failures, fail-fast for a cool-down period instead of stacking hung calls; half-open to test recovery. (Resilience4j on JVM, Polly on .NET, opossum on Node, gobreaker on Go, pybreaker/tenacity on Python. Netflix Hystrix is end-of-life — don't pick it for new work.)
+- **Bulkheads** isolate failure: separate thread pools, connection pools per dependency. One slow dependency cannot exhaust resources another needs.
+- **Graceful degradation.** When a non-critical dependency is down, return a degraded but useful response (cached data, defaults) rather than a 500. Decide what "non-critical" means *before* the incident.
+
+**Example (TypeScript sketch):**
+```ts
+// Bad — default-infinite timeout, no retries, no breaker, no fallback.
+const profile = await fetch(`${userService}/profile/${id}`).then(r => r.json())
+
+// Good — bounded, retried with backoff, circuit-broken, with a graceful fallback.
+const profile = await breaker.call(
+  () => withTimeout(2000, () =>
+    httpClient.get(`/profile/${id}`, { retries: 2, backoff: { initial: 100, max: 500, jitter: 0.2 } })),
+).catch(() => CACHED_OR_DEFAULT_PROFILE)
+```
+
+## Operational concerns (from SKILL.md)
+
+- **Statelessness scales; statefulness needs a strategy.** A stateless component scales horizontally with a load balancer. State must live in a shared store so any instance can serve any request. Sticky-session and in-memory caches are real but require explicit thought about cache coherence.
+- **Cache deliberately, with an invalidation story.** Decide: TTL or invalidation? Read-through, write-through, or aside? Stampede protection? "We'll add a cache" without those answers is how stale-data incidents are born.
+- **Security boundaries are architectural.** Every cross-component call crosses a trust boundary; auth and authz live at the boundary. Secrets live in a secret store, not in code or env files. A compromised service should compromise the minimum.
+- **Capacity planning is not optional.** Know the rough throughput each component must handle and where the next bottleneck will appear.
+- **Operations: deploys, rollbacks, runbooks.** Every component has a deploy story, a rollback story, and an on-call runbook with the top five known failure modes and first-response steps.
+
 ## Timeouts and time budgets
 
 **The default timeout in most HTTP clients is dangerous.** Node's `fetch` waits forever. Go's `http.DefaultClient` has no timeout. Java's URLConnection defaults vary. Python's `requests` defaults to no timeout. Every one of these will, on the wrong day, leave a connection pool full of hung waits that take the service down.

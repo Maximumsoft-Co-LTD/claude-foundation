@@ -14,8 +14,6 @@ The workers are the `team-<role>` agents under `.claude/agents/` (manifest at `.
 - `team-codebase-explorer` — read-only pre-diff exploration: entry points, current flow, invariants, blast radius, existing patterns.
 - `team-best-practice-researcher` — focused best-practice research: official docs, standards, current framework/API/security/testing guidance.
 - `team-code-reviewer` — diff review against CLAUDE.md, bugs, quality (confidence ≥ 80).
-- `team-code-simplifier` — clarity/maintainability of recently-modified code.
-- `team-comment-analyzer` — comment accuracy + rot-resistance.
 - `team-pr-test-analyzer` — test coverage gaps + brittleness.
 - `team-silent-failure-hunter` — silent failures, broad catches, unjustified fallbacks.
 - `team-type-design-analyzer` — invariants, encapsulation, illegal-state-unrepresentable.
@@ -28,12 +26,12 @@ This body is the **decision digest** — *when* to fan out and the invariants th
 
 | Phase / mode | Owner sub-agent | Default | Fan out only when (the eligibility bar) |
 |--------------|-----------------|-----------|---------|
-| Phase 2 step 6 — review | `lead` (Mode B) | **single-pass** | the diff is genuinely large, cross-module, or type/contract/test-infra-changing — big enough that six independent specialist passes repay their cost (the most expensive fanout in the system; small/moderate low-risk diffs stay single-pass) |
-| Phase 2 step 7 — security | `lead` (Mode C) | **single-pass** | the diff trips ≥ 2 distinct sensitive-paths buckets AND each is substantial (a single bucket, or a quick multi-bucket check, stays single-pass) |
-| Phase 1 step 1 — spec prep / research | main agent; `pm` via return-signal | **single-pass** | 2+ of {existing code, APIs, security-sensitive paths, unfamiliar domain, 2+ independent research questions} hold AND the research is substantial (always single-pass for XS/S and pure-greenfield) |
-| Phase 1 step 2 — plan | `lead` (Mode A) | **single-pass** | ≥ 2 independently-researchable integration points **in disjoint surfaces** (separate modules/folders/repos — not raw point count) whose research is genuinely substantial; dispatch both codebase and best-practice workers per point (single-pass for XS/S, pure-greenfield, one point, several points in one cohesive module, or a handful of quick reads) |
-| Phase 2 step 5 — test | `qa` | **single-pass** | the plan spans ≥ 2 of {unit, integration, e2e} AND any category has ≥ 3 tests (single-pass below that bar) |
-| Phase 2 step 4 — implement | `engineer` (Mode A) | **single-pass** | **feat-only, L-tier** (Phases exist only on L plans >12 steps): `plan.md` declares ≥ 2 `Parallelizable: yes` phases with disjoint `Files touched (exclusive)` + `Depends on: none`, plus a sequential integration phase (orchestrator re-verifies disjointness before dispatch). When the plan ships those markers, the decomposition is already done — fan out. |
+| Review | `lead` (Mode B) | **single-pass** | the diff is genuinely large, cross-module, or type/contract/test-infra-changing — big enough that six independent specialist passes repay their cost (the most expensive fanout in the system; small/moderate low-risk diffs stay single-pass) |
+| Security | `lead` (Mode C) | **single-pass** | the diff trips ≥ 2 distinct sensitive-paths buckets AND each is substantial (a single bucket, or a quick multi-bucket check, stays single-pass) |
+| Interview + Spec — spec prep / research | main agent; `pm` direct-nests | **single-pass** | 2+ of {existing code, APIs, security-sensitive paths, unfamiliar domain, 2+ independent research questions} hold AND the research is substantial (always single-pass for XS/S and pure-greenfield) |
+| Plan | `lead` (Mode A) | **single-pass** | ≥ 2 independently-researchable integration points **in disjoint surfaces** (separate modules/folders/repos — not raw point count) whose research is genuinely substantial; dispatch both codebase and best-practice workers per point (single-pass for XS/S, pure-greenfield, one point, several points in one cohesive module, or a handful of quick reads) |
+| Test | `qa` | **single-pass** | the plan spans ≥ 2 of {unit, integration, e2e} AND any category has ≥ 3 tests (single-pass below that bar) |
+| Implement | `engineer` (Mode A) | **single-pass** | **feat-only, L-tier** (Phases exist only on L plans >12 steps): `plan.md` declares ≥ 2 `Parallelizable: yes` phases with disjoint `Files touched (exclusive)` + `Depends on: none`, plus a sequential integration phase (orchestrator re-verifies disjointness before dispatch). When the plan ships those markers, the decomposition is already done — fan out. |
 
 **Don't use when** (these guardrails, plus the cost test, decide whether a phase clears its eligibility bar — stay single-pass unless ALL clear):
 - Sub-investigations are related (one finding might invalidate another).
@@ -43,7 +41,7 @@ This body is the **decision digest** — *when* to fan out and the invariants th
 
 ## How it works (the shape, in one screen)
 
-- **Two dispatch paths.** The splittable agents (`pm`, `lead`, `qa`, `engineer`, plus `team-codebase-explorer`/`team-best-practice-researcher`/`team-code-reviewer`) **self-dispatch helpers directly** — the primary path since Claude Code v2.1.172. The `FANOUT_REQUESTED:` orchestrator signal is the **fallback** and the path for implement-fanout. Six signal shapes: `review`, `security:`, `plan:`, `test:`, `implement:`, `research:`. → `references/dispatch-mechanism.md`
+- **Two dispatch paths.** The splittable agents (`pm`, `lead`, `qa`, `engineer`, plus `team-codebase-explorer`/`team-best-practice-researcher`/`team-code-reviewer`) **self-dispatch helpers directly** — the primary path since Claude Code v2.1.172. The `FANOUT_REQUESTED: implement:` orchestrator signal is the **fallback**, restricted to implement-fanout — the only signal shape. → `references/dispatch-mechanism.md`
 - **Multi-repo runs add a per-repo "surface" axis** — split the read-and-judge phases (test/review/security) per repo, orchestrator-owned. → `references/surface-fanout.md`
 - **The run procedure** — identify independent domains (independence + disjoint scope) → construct self-contained, scoped prompts → parallel dispatch (all `Agent(...)` calls in **one** message, else not parallel) → the caller **synthesises** the findings into one artifact. → `references/running-a-fanout.md`
 
@@ -53,6 +51,6 @@ This body is the **decision digest** — *when* to fan out and the invariants th
 
 Read the one that matches the work; you don't need all three upfront.
 
-- `references/dispatch-mechanism.md` — the two dispatch paths (direct nesting vs the `FANOUT_REQUESTED:` fallback), what stays centralized regardless of path, the six signal shapes with full payload semantics, and the orchestrator-side signal validator (the exact allowlist regex).
+- `references/dispatch-mechanism.md` — the two dispatch paths (direct nesting vs the `FANOUT_REQUESTED:` fallback), what stays centralized regardless of path, the one signal shape with full payload semantics, and the orchestrator-side signal validator (the exact allowlist regex).
 - `references/surface-fanout.md` — the per-repo (multi-repo control-plane) axis: when it fires, how the coordinator nests `general-purpose` helpers, why not to naively compose axes, the unified synthesis, and the read-and-judge-only scope boundary (no auto-fix path in non-primary repos).
 - `references/running-a-fanout.md` — the 4-step procedure (identify → prompt → dispatch → integrate) with worked examples and the guard-hook reality, the session-scoped registry caveat + inline fallback, and the full anti-pattern list (3 upstream + 5 /dev-specific).

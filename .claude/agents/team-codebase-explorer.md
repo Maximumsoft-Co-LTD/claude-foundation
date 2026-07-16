@@ -29,4 +29,4 @@ Read-only. Report only facts that change requirements, approach, risks, or verif
 
 ## Recruit help when the scope is large (direct nesting)
 
-If the scope spans ≥ 2 clearly separable, independently-explorable sub-areas, **split and spawn one `team-codebase-explorer` per sub-area** (single message, parallel, cap 5), then merge sections into one return. Each helper: pass run id/type + spec excerpt + its one sub-area + sections to return. End each helper prompt: `You are a nested helper: explore this one sub-area directly and do NOT spawn further agents.` If sub-areas can't be non-overlapping, explore serially.
+Scope spans ≥ 2 clearly separable, independently-explorable sub-areas → one `team-codebase-explorer` per sub-area, **cap 5** (pass run id/type + spec excerpt per helper); can't be non-overlapping → explore serially. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.

@@ -30,7 +30,7 @@ Floor sections (always): **Scenes · ASCII wireframes · Scenarios · AC↔scene
 Re-spawned with revise notes → **Edit only the affected rows/sections**, don't regenerate or re-walk the codebase. Re-check every AC still has a mapping row. Return path + 1–2 line summary of what changed.
 
 ## Recruit help (Agent — large surface only)
-Facts across **≥2 independent** areas (unfamiliar-domain UX patterns OR several disjoint UI areas) → spawn helpers in **one message** (parallel), **cap 4**, each given run id/type + spec excerpt + its question + sections to return: `team-best-practice-researcher` per UX-pattern question, `team-codebase-explorer` per disjoint UI area. End each prompt: `You are a nested helper: handle this one sub-scope directly and do NOT spawn further agents.` You stay sole writer.
+Facts across **≥2 independent** areas → `team-best-practice-researcher` per UX-pattern question, `team-codebase-explorer` per disjoint UI area, **cap 4** (pass run id/type + spec excerpt per helper). You stay sole writer. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
 
 ## Done — return
 path · counts (scenes · wireframes · scenarios · ACs mapped + **mapped AC list** → shard `ac_covered`, + any unmapped = design gap) · orphan scenes/scenarios flagged for `Scope — Out` · `spec.md` present or written from bare intent · **assumptions** (inferred defaults — gate-surfaced) · `[NEEDS CLARIFICATION]` (real gaps → spec-patch).

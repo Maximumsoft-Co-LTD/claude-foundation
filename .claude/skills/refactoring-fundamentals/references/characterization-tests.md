@@ -4,6 +4,26 @@ This is the deep technique behind principle 3 and the home of the `/dev` **basel
 
 The core problem: you must change code that has no tests. You can't safely refactor without a net, and you can't write "correct" unit tests because you don't yet know what correct *is* — the code is the only spec. The resolution: stop asking "what *should* this do?" and pin "what does it *actually* do, right now?"
 
+## Principle 3 (from SKILL.md): Get green before you touch; if there's no test, characterize first
+
+**Rule:** Refactoring is only safe on top of a passing test that exercises the behavior you're about to move. If that behavior isn't covered, write a *characterization test* that pins its current actual behavior — including any bugs — before you change a line.
+
+**Why:** The test is why you're allowed to restructure aggressively — it tells you after each step that behavior is still identical. Feathers' move for legacy code: "cover, *then* modify" — capture what the code *actually does* (not what it should do), make that the baseline, then refactor. Skipping this is the single biggest cause of refactors that silently break things.
+
+**How to apply:**
+- Covered already? Run the suite, confirm green, then refactor. Green-to-green is the loop.
+- Uncovered? Before touching the code, write characterization tests: feed representative inputs, capture whatever the code returns/writes *now*, and assert that. A golden-master / snapshot test is the fast path when output is large. Pin the behavior even where it looks wrong — fixing it is a separate, later hat.
+- Can't get the code under test because it's too tangled to instantiate? Find a *seam* — a place to break a dependency so you can call the unit in isolation — before you refactor the logic. The deep technique (seams, cover-and-modify, golden master) is in `references/characterization-tests.md`.
+- In `/dev` this baseline is the brownfield **lock** step; when the workflow schedules characterization capture is owned by `WORKFLOW.md > Greenfield vs brownfield` (its understand → lock → change discipline) — don't restate it here.
+
+**Example:**
+```
+Task: untangle a 200-line `exportReport()` with zero tests.
+Wrong: start extracting functions immediately → no way to know if output changed.
+Right: golden-master first — run exportReport on 5 saved fixtures, snapshot the exact bytes, assert them.
+       NOW extract functions one at a time, re-running the snapshot after each. Any drift = you broke something. Found instantly.
+```
+
 ## What a characterization test is
 
 > A characterization test documents the **actual** behavior of a piece of code — not its intended behavior.

@@ -23,6 +23,21 @@ Located at `evals/evals.json` within the skill directory.
 
 ---
 
+## eval_metadata.json
+
+Per-eval-run metadata, written alongside each with-skill/baseline run before grading. Located at `<run-dir>/eval_metadata.json`. Give each eval a descriptive name based on what it's testing (used for the directory name too) — assertions can be empty until Step 2 of the testing phase fills them in.
+
+```json
+{
+  "eval_id": 0,
+  "eval_name": "descriptive-name-here",
+  "prompt": "The user's task prompt",
+  "assertions": []
+}
+```
+
+---
+
 ## history.json
 
 Tracks version progression in Improve mode. Located at workspace root.
@@ -383,3 +398,22 @@ Output from post-hoc analyzer. Located at `<grading-dir>/analysis.json`.
   }
 }
 ```
+
+---
+
+## feedback.json
+
+Downloaded when the user clicks "Submit All Reviews" in the eval viewer. In headless/Cowork environments (no `webbrowser.open()` or no display), generate the viewer with `--static <output_path>` instead of starting a server; feedback still downloads as `feedback.json` — copy it into the workspace directory for the next iteration to pick up.
+
+```json
+{
+  "reviews": [
+    {"run_id": "eval-0-with_skill", "feedback": "the chart is missing axis labels", "timestamp": "..."},
+    {"run_id": "eval-1-with_skill", "feedback": "", "timestamp": "..."},
+    {"run_id": "eval-2-with_skill", "feedback": "perfect, love this", "timestamp": "..."}
+  ],
+  "status": "complete"
+}
+```
+
+**Fields:** empty `feedback` means the user thought that run was fine — focus improvements on runs with non-empty feedback.

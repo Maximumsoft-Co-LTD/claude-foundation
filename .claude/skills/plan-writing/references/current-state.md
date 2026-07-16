@@ -12,6 +12,8 @@ A file in scope whose internals don't constrain the plan (a contained edit, a fl
 
 Depth bar: **(a)** gate can make a sound go/no-go, **(b)** approach is feasible, **(c)** blast radius is known — not "know the file". Uncertain approach → read a thin feasibility slice, then defer. **Never defer a blast-radius invariant** — it belongs in `## Current state`, mapped and cited. Defer mechanics, never safety.
 
+Digest must-not-break invariants into `tasks.md > ## Guardrails` (backticked `` `path#anchor` `` + why each) — the engineer's only up-front invariant read; the map itself stays in `plan.md`, pulled per-task via `[ref:]`.
+
 ## The LSP-walk technique
 
 *Trace the change*, don't read every file. Do this in order:
@@ -80,7 +82,7 @@ A 12-bullet list with 8 trivia items is worse than 4 load-bearing bullets — tr
 
 ## Section template
 
-Structure for the `## Current state` section in `plan.md`. Adapt per Type — fields marked *(type)* apply only to that Type. **Scale it to the run** (principle 3's trigger is the `field`): a full M/L or refactor/fix walk fills every field below; a **brownfield `feat` at XS/S** needs only the proportional version — the **Entry point(s)** of the code you edit and its **Callers / blast radius** (one to three lines), enough to prove you walked it rather than guessed. Greenfield skips the section entirely.
+Structure for the `## Current state` section in `plan.md`. Adapt per Type — fields marked *(type)* apply only to that Type. **Scale it to the run** (principle 3's trigger is the `field`): a full M/L or refactor/fix walk fills every field below; a **brownfield `feat` at XS/S** needs only the proportional version — the **Entry point(s)** of the code you edit and its **Callers / blast radius** (one to three lines), enough to prove you walked it rather than guessed. Greenfield skips the section entirely — say so in one line under Summary; `programming-fundamentals` owns the new shape.
 
 ```markdown
 ## Current state

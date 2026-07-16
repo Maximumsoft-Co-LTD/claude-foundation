@@ -37,7 +37,7 @@ One row per spec.md acceptance scenario (`AC#`), including each boundary/error s
 
 ## Sign-off *(required)*
 
-pass | fix-required → see Phase 2 step 5
+pass | fix-required → see Test
 
 ---
 
@@ -46,4 +46,4 @@ pass | fix-required → see Phase 2 step 5
 - **Per-agent findings** — ≥ 2 review workers on one repo's diff; each `### team-<role>` with `**Dispatched-as**:` as its first line
 - **Per-repo review** — one `### Repo: <path>` per changed repo; AC check / Verdict / Cycle stay global
 
-Shape → **lead.md > Mode B (Review)** · per-repo → **orchestrator/references/surface-fanout.md > Lead — Mode B**.
+Shape → **lead.md > Mode B (Review)** · per-repo → **orchestrator/references/fanout-dispatch.md > Lead — Mode B**.

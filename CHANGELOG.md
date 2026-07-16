@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-07-16
+
+### Changed (token/speed pass — zero behavior change)
+
+- **Twelve more skill bodies slimmed to ≤ ~1.3k words each** (total ~34.9k → ~13.1k): `brainstorming` 4.1k→1.3k, `plan-writing` 3.1k→1.4k, `architecture-fundamentals` 3.3k→1.0k, `observability-fundamentals` 3.3k→1.2k, `testing-fundamentals` 3.2k→1.3k, `database-fundamentals` 3.1k→0.8k, `refactoring-fundamentals` 2.9k→1.3k, `concurrency-fundamentals` 2.9k→0.7k, `tailwind-design-system` 2.4k→0.6k, `init-project-docs` 2.3k→1.3k, `qa-handoff-note` 2.1k→1.0k, `hexagonal-backend` 2.0k→1.3k. Same discipline as 2.8.0: elaboration moved verbatim into references/ (two-directional line verification per skill), frontmatter byte-identical (triggering unchanged), every principle/step still named in the body as a complete checklist, all cross-file `skill > section` anchors verified resolving (13/13 for plan-writing incl. the canonical `size-tiering.md > Greenfield vs brownfield`). A triggered load now costs roughly a third of the tokens; `brainstorming` + `plan-writing` sit on the /dev interview/plan critical path.
+- **`WORKFLOW.md` deduplicated against the canonical references** (4,347 → 3,314 words): agent-map tool columns → `INDEX.md`; team-mode walkthrough → commands + `team-mode-sharding.md`; fanout/sub-agent bullets → `fanout-dispatch.md`; gate-lever lists → `gate.md`; size-tier prose → `size-execution.md`. All 24 headings byte-identical (every `WORKFLOW.md > <section>` anchor resolves); the mermaid flow, type matrix, artifacts table, and every fact with no other canonical home stay.
+
+## [2.8.0] - 2026-07-15
+
+### Changed (complexity-cut release — less for the model to hold, nothing load-bearing dropped)
+
+- **Dual step-numbering killed:** cross-file references now go by phase NAME (Interview, Spec, Plan, Test-plan, Gate, Implement, Test, Review, Security, Docs, Ship, Retro); numbers are file-local only. 26 files swept; orchestrator.md keeps its op counter internally; the hand-maintained op↔matrix translation table is gone.
+- **`FANOUT_REQUESTED:` narrowed to `implement:` only.** Every splittable worker holds `Agent` and direct-nests its own read/research/review helpers (dispatch-mechanism contract), so the five read-shape signals (`review`, `security:`, `plan:`, `test:`, `research:`) were a redundant second dispatch path — retired. Implement keeps the signal (background phase-dispatch needs orchestrator-owned resume granularity). A retired-shape signal gets one corrective re-spawn, then BLOCKER.
+- **Review lenses 6 → 4:** `team-code-simplifier` + `team-comment-analyzer` retired; their checklists live on as Simplification and Comment Accuracy lenses inside `team-code-reviewer`. Tiers are now core-3 (M) / full-4 (L). Two fewer spawns + synthesis inputs per L review; TEAM.md ledger records the fold.
+- **`fanout_log` records outcomes, not non-events:** append only when a fanout point was eligible or fired; ineligible points log nothing (retro reads absence as not-eligible). Cuts per-run bookkeeping writes.
+- **Five heaviest skill bodies slimmed to ≤ ~1.2k words** (`ddd-strategic` 3.8k→1.1k, `delivery-engineering` 3.8k→1.1k, `security-fundamentals` 3.5k→1.2k, `queue-fundamentals` 3.4k→1.1k, `skill-creator` 3.5k→0.6k) — detail moved verbatim into references/ (line-level zero-loss verified per skill); frontmatter byte-identical, so triggering is unchanged. A triggered load now costs ~⅓ the context.
+
+## [2.7.2] - 2026-07-15
+
+### Added
+
+- **`.claude/hooks/tests/run-hook-tests.sh`** — 28-assertion suite for the four wired hooks (guard Cases 1/3/4/5/6 incl. floor override + fail-closed pin, state-validate dup-key paths, state-mark foreground/background/team-slice, protect-secrets allow/deny) — previously only artifact-lint had tests.
+- **`.claude/agents/references/engineer.md`** — agent-side view of the phase-/integration-engineer contract (source stays `implement-fanout.md`); `INDEX.md` now states when an agent earns a references file.
+- **`CLAUDE.md > Skills outside the router`** — documents the second (frontmatter/pipeline) trigger system for the ten non-lifecycle skills; `fundamentals.md` notes the split and its mirror claim now matches reality (README mirrors the chain; CLAUDE/WORKFLOW only name it canonical).
+
+### Changed
+
+- **Fanout references consolidated 3→1:** `fanout.md` + `fanout-plan.md` + `surface-fanout.md` merged into `orchestrator/references/fanout-dispatch.md` (dispatch mechanics · registry preflight · gate-steerable plan · surface fanout), zero rule loss, each rule stated once; every pointer repo-wide updated; the coordinator-model ambiguity resolved (security always opus, review conditional per `model-tiers.md`). `implement-fanout.md` stays separate.
+- **Recruit-help boilerplate deduped 7→1:** the worker-side nesting contract (one-message dispatch, stop-line, merge rule, registry-miss fallback) now lives once in `fanout-team-agents > references/dispatch-mechanism.md`; the seven carrier files keep only their split criterion + cap.
+- **`ui-ux-pro-max` split** to SKILL.md (~1.3k words) + 3 references (rule catalog, search tool, app-UI tables), frontmatter byte-identical, line-exact zero-loss verified.
+- **Multi-repo boundary declared permanent** (implement/gate/ship pinned to primary `repo_root` by design; cross-repo blocking findings surface to the user) — `size-execution.md`, `WORKFLOW.md`.
+
+## [2.7.1] - 2026-07-15
+
+### Changed
+
+- **Context rations no longer trade correctness margin** (three surgical relaxations): the team-mode gate fold spot-checks one AC per shard after the set-compare (a shard listing every AC no longer passes on its own say-so — `team-mode-sharding.md`, `orchestrator.md > Pre-gate consistency scan`); the name-only security trigger gains a bounded one-file near-miss peek to downgrade obviously-false trips (doubt → still fires — `phase-2-guards.md`); the final full-suite gate re-captures `tail -200` on red so diagnosis isn't starved by the green-path 40-line window (`phase-2-guards.md`).
+
+## [2.7.0] - 2026-07-15
+
+### Added
+
+- **Opus 4.8 main-model profile** — the workflow now closes the self-verification gap when the main session runs Opus 4.8 instead of a Mythos-class model: `artifact-lint.sh --hook` PostToolUse adapter (warn-only lint of the artifact just written, wired in `settings.json`; test suite → 40 assertions); `lint.sh` typechecks `.ts/.tsx` via the nearest tsconfig (`tsc --noEmit`, diagnostics filtered to the edited file, 20s cap) and `.py` via pyright when present; `orchestrator.md` preamble gains an effort ≥ high check for 4.8 sessions and a whole-brief-per-spawn rule.
+- **`orchestrator/references/model-tiers.md`** — single policy note for who runs on which tier and why (workers, analyzers, built-ins floor, escalation guidance); `INDEX.md` points at it; guard Case 6's sonnet floor is now `CLAUDE_DEV_FLOOR_MODEL`-overridable.
+
+### Changed
+
+- **Review recall fix:** `team-code-reviewer` reports ALL findings scored 0-100 (was: pre-filter to ≥ 80, which over-obeyed "don't be nitpicky" and dropped true positives); the ≥ 80 precision gate moves to `lead`'s synthesis, where cross-worker context lives. Fork ledger updated; the `team-*` forks are declared **DETACHED** from `pr-review-toolkit`.
+- **Review fanout defaults ON at M/L** (core-3 at M, full-6 at L); a `no` in the Fanout-plan Review row needs a stated reason. Other phases stay single-pass-first.
+- `engineer`: small decisions (naming, defaults, internal shapes) are chosen and noted, never `BLOCKER:`-ed. Inline-fallback dispatches must flag the haiku→sonnet tier upgrade in their path report. `lead`'s "sonnet ≈ opus at ½ wall-clock" claim marked generation-dated.
+
+## [2.6.9] - 2026-07-15
+
+### Fixed
+
+- **`dev-state-validate.sh` duplicate-key check is now indent-proof** — the old check greped for exactly-2-space-indented top-level keys, so any state.json written at a different indent silently defeated the guard that exists because a two-`notes`-keys corruption once broke `/dev --resume`. Primary check is now python3 `json.load(object_pairs_hook=…)` (exact, catches nested dups too); the grep heuristic remains as the no-python3 fallback. Files: `.claude/hooks/dev-state-validate.sh`.
+- **`dev-agent-guard.sh` Case 4 no longer fails open (or crashes) on an unreadable model pin** — a `model` override on a named worker whose frontmatter pin can't be read (file missing / frontmatter reformatted) previously either slipped through or killed the hook via `set -euo pipefail` on the `sed` of a missing file. The pin read is now crash-proof and an override with an unreadable pin is refused with an explicit reason (no-override spawns are untouched). Files: `.claude/hooks/dev-agent-guard.sh`.
+- **`INDEX.md` pm row said `sonnet`; `pm.md` pins `opus`** (promoted in 2.6.5) — the only registry row that disagreed with its agent file. Files: `.claude/agents/INDEX.md`.
+
+### Changed
+
+- **Docs de-staled:** `dev.md` XS/S fast-path line now mentions `test-plan.md` folding into the combined spawn; `WORKFLOW.md` sub-agent constraints gain the surface (per-repo) fanout axis + pm's step-1 `research:` signal; `state-edge-cases.md` spells out that guard Case 3 fails OPEN with 0 or ≥2 concurrent runs (state discipline is then manual); guard Case 6 message no longer assumes an "opus" main session; `no-direct-main-commit.sh` header stamped OPT-IN. Files: `.claude/commands/dev.md`, `WORKFLOW.md`, `.claude/orchestrator/references/state-edge-cases.md`, `.claude/hooks/{dev-agent-guard,no-direct-main-commit}.sh`.
+
 ## [2.6.8] - 2026-07-14
 
 ### Changed

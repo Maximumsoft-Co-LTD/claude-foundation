@@ -4,6 +4,45 @@ A code smell is a surface symptom that *usually* points to a deeper structural p
 
 Each entry: what it looks like → why it costs you → the refactoring move(s) that resolve it (see `catalog.md` for mechanics).
 
+Moved from `SKILL.md` — principles 5 and 6's full detail: refactoring with a purpose, and knowing when not to.
+
+## Principle 5 (from SKILL.md): Refactor with a purpose — let smells and upcoming change drive it
+
+**Rule:** Don't refactor for its own sake. Refactor when a *code smell* is actively costing you, or to *prepare* for a change you're about to make — "make the change easy, then make the easy change."
+
+**Why:** Refactoring costs time and risk; without a purpose it's gold-plating. The payoff is real only when the code is what you keep paying to work around. The highest-leverage moment is *preparatory* refactoring — separating the restructure (safe, tested) from the behavior addition (new behavior, new tests), making both simpler than forcing a feature onto an awkward design.
+
+**How to apply:**
+- Name the trigger before you start: which smell, or which upcoming change does this enable? "It felt messy" is not a trigger; "Shotgun Surgery — every new payment type edits six files" is. The smell→move map is in `references/code-smells.md`.
+- Preparatory refactoring: when about to add feature X, ask "what shape would make X trivial?" Refactor to that shape first (commit), then add X (commit). Two clean diffs beat one tangled one.
+- Opportunistic tidying (the Boy Scout rule) is fine *in small doses and the right hat* — a rename or an extract you pass through. Anything bigger than a "tidying" gets its own planned, committed step, not a drive-by.
+- Apply the Rule of Three: duplication is cheap to tolerate twice; the third occurrence earns the extraction.
+
+**Example:**
+```
+Task: add a "gift card" payment method.
+Naive: bolt a 7th case onto the same six switch statements scattered across the codebase (Shotgun Surgery gets worse).
+Prepared: first refactor the six scattered switches into one PaymentMethod strategy (behavior identical, suite green, commit).
+          THEN add GiftCard as one new strategy class (new behavior, new test, commit). The feature became a one-file change.
+```
+
+## Principle 6 (from SKILL.md): Know when NOT to refactor
+
+**Rule:** Refactoring is a tool, not a virtue. Don't do it when the payoff is absent or the risk is unmanaged: code about to be deleted, a hard deadline with no test net, or a change so large it's really a rewrite in disguise.
+
+**Why:** Restructuring code you're about to delete is waste. Refactoring untested, tangled code under deadline without a characterization net turns a working-but-ugly system into a broken one. "Let's just rewrite it properly" discards hard-won correctness, takes far longer than estimated, and usually produces a new mess. Knowing when to leave code alone matters as much as knowing how to change it.
+
+**How to apply:**
+- Skip it when: the code is scheduled for deletion; it's stable and rarely touched (refactor what costs you *weekly*, not what merely offends you); or you're against a deadline and the safety net doesn't exist yet — note the debt, schedule it, move on.
+- Refactor vs rewrite test: if you're *estimating effort* on a batch of changes rather than making mechanical green-to-green moves, it's a rewrite. Default to incremental (principle 7) — reserve true rewrites for when the platform/language is genuinely a dead end.
+- No tests + no time + must-change code: build the *minimum* characterization net around just the change point (find a seam), make the change, defer the broader cleanup.
+
+**Example:**
+```
+"This module is ugly, let's rewrite it." → It's 4 years old, handles 30 edge cases encoded in 30 past bug fixes, and is touched
+twice a year. A rewrite re-opens all 30. Decision: leave it. Refactor the module you touch every sprint instead.
+```
+
 ## How to use this
 
 1. You're about to refactor, or you're reading code that's hard to change. Find the smell that matches.
@@ -77,5 +116,5 @@ Each entry: what it looks like → why it costs you → the refactoring move(s) 
 ## Pointers
 
 - Mechanics for every move: `catalog.md`.
-- Deciding *whether* the smell is worth fixing (payoff vs about-to-be-deleted/stable-backwater): SKILL.md principle 6.
+- Deciding *whether* the smell is worth fixing (payoff vs about-to-be-deleted/stable-backwater): principle 6 above ("Know when NOT to refactor").
 - A smell that signals a missing *concept* (Data Clumps, Primitive Obsession) is a [[programming-fundamentals]] data-modeling fix — this catalog routes you there; that skill says what the better shape is.

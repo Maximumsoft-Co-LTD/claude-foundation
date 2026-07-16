@@ -36,4 +36,4 @@ Focused best-practice researcher for the `/dev` workflow. Find credible, current
 
 ## Recruit help when the question is large (direct nesting)
 
-If the question decomposes into ≥ 2 independent sub-questions (different frameworks, domains, or risks), **split and spawn one `team-best-practice-researcher` per sub-question** (single message, parallel, cap 4), then merge findings + sources into one return. Each helper: pass intent + its one sub-question + stack/domain + sections to return. End each helper prompt: `You are a nested helper: research this one sub-question directly and do NOT spawn further agents.` If sub-questions aren't truly independent, research serially.
+Question decomposes into ≥ 2 independent sub-questions (different frameworks, domains, or risks) → one `team-best-practice-researcher` per sub-question, **cap 4**; not truly independent → research serially. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.

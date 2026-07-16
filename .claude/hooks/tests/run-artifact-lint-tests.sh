@@ -167,8 +167,39 @@ printf '# Follow-ups\n\n## Open\n| ID | Item | Status |\n|----|------|--------|\
 assert_exit_nonzero "AC8 consumed row left in Open" "$d"
 assert_report_contains "AC8 names consumed-in-open" "$d" "left in ## Open"
 
+# AC9 — hook adapter (`--hook`): warn-only PostToolUse mode. Emits an
+# additionalContext JSON note for a dirty artifact, stays silent for a clean
+# one, a non-artifact path, and _templates — and always exits 0. Needs jq
+# (the adapter fails open without it), so skip the block when jq is absent.
+if command -v jq >/dev/null 2>&1; then
+  run_hook() {  # $1 = file_path to report; captures $out/$rc
+    set +e
+    out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$1" | sh "$LINTER" --hook 2>&1)"
+    rc=$?
+    set -e
+  }
+  d="$TMPROOT/ac9/.workflow/0009-feat-h"; mkdir -p "$d"
+  printf '# Spec\n\n**Type**: feat\n\n## Goal\nTODO fill this in\n\n## User Stories\n- s\n' > "$d/spec.md"
+  run_hook "$d/spec.md"
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'additionalContext'; then pass "AC9 hook warns on dirty artifact (exit 0)"; else fail "AC9 hook warns on dirty artifact"; fi
+  mk_clean_spec "$d"
+  run_hook "$d/spec.md"
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then pass "AC9 hook silent on clean artifact"; else fail "AC9 hook silent on clean artifact"; fi
+  printf '{}\n' > "$d/state.json"
+  run_hook "$d/state.json"
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then pass "AC9 hook skips non-artifact file"; else fail "AC9 hook skips non-artifact file"; fi
+  t="$TMPROOT/ac9/.workflow/_templates"; mkdir -p "$t"
+  printf '# Spec\n\n**Type**: <type>\nTODO\n' > "$t/spec.md"
+  run_hook "$t/spec.md"
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then pass "AC9 hook skips _templates"; else fail "AC9 hook skips _templates"; fi
+else
+  echo "SKIP: AC9 hook adapter tests (jq not installed)"
+fi
+
 echo
 total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8" | wc -w) ))
+# AC9 runs only when jq is present (see the skip above).
+command -v jq >/dev/null 2>&1 && total_pass=$((total_pass + 4))
 if [ "$failures" -eq 0 ]; then
   echo "artifact-lint tests: ALL PASS ($total_pass/$total_pass assertions)"
   exit 0

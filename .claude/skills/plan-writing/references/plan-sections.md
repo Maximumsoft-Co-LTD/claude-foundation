@@ -30,3 +30,22 @@ Add a section ONLY when its trigger fires; delete it otherwise (no empty headers
 The per-file change list (new|edit|delete) lives in `tasks.md` — each task's `path#anchor (new|edit|delete)` — not a separate plan `Files touched` table. Task ordering is the `tasks.md` phase order + `T###` sequence.
 
 Sections marked with no placement (`—`) sit after `## Architecture diagram` in the order above. Sections marked `skip` for the run's Size in `SKILL.md > Section gating by Size` are DELETED entirely.
+
+## Scaffold — worked example (SKILL.md principle 10)
+
+`## Scaffold`: one fenced block, target file tree (★ new · ~ edited) with each new/changed file's **key exported signature(s)** inline — the skeleton the gate reviews and the engineer builds first.
+
+- **Required** M/L · optional mini for S touching existing code · skip XS.
+- **Placement** after the diagram; engineer builds the scaffold before the `tasks.md` tasks fill it.
+- **Subsumes `## Folder structure`** for M/L (don't write both). Keep a separate `## API / event contracts` only when a transport contract/port needs field-level/error-code detail richer than the one-line signature.
+- **Show decision-bearing type shapes as definitions** — a discriminated union, value object, or state enum where the wrong shape leaves an *illegal state representable* ([[programming-fundamentals]]). Don't expand every DTO — only types whose *shape is itself a choice*.
+- **Skeleton, not implementation** — signatures + type shapes + at most a one-line stub body (`throw new Error('not implemented')`) inside the fence. Real bodies rot (see anti-patterns).
+
+```
+src/payments/                          ★ new module
+  domain/charge.types.ts      ★  type ChargeResult = { ok: true; receiptId: string } | { ok: false; reason: DeclineReason }
+  ports/charge.port.ts        ★  interface ChargeProvider { charge(r: ChargeReq): Promise<ChargeResult> }
+  app/charge.usecase.ts       ★  chargeOrder(orderId: string): Promise<Receipt>
+  adapters/stripe.client.ts   ★  class StripeClient implements ChargeProvider
+  orders/order.service.ts     ~  + call chargeOrder() in placeOrder()
+```

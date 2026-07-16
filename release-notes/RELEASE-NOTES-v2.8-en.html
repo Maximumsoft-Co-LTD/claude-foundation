@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>claude-foundation v2.8 — Release Notes</title>
+<style>
+  :root{
+    --bg:#faf8f5; --surface:#ffffff; --ink:#211c17; --muted:#6c6359;
+    --accent:#c15f3c; --accent-2:#da7756; --line:#ece5dc;
+    --code-bg:#2a2620; --code-ink:#f3ede3; --pill:#f0e7dd;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);line-height:1.72;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:0 24px}
+  code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.92em}
+  a{color:var(--accent)}
+
+  .hero{background:linear-gradient(135deg,#231f1a 0%,#3a2f26 55%,#5a3a2a 100%);color:#f5efe7;padding:76px 0 60px}
+  .hero .wrap{position:relative}
+  .langswitch{position:absolute;top:0;right:24px;font-size:.85rem}
+  .langswitch a{color:#e9d9c9;text-decoration:none;border:1px solid rgba(255,255,255,.25);padding:5px 12px;border-radius:999px}
+  .langswitch a:hover{background:rgba(255,255,255,.1)}
+  .pill{display:inline-block;background:rgba(218,119,86,.22);color:#f1c4ab;border:1px solid rgba(218,119,86,.5);
+    padding:5px 14px;border-radius:999px;font-size:.8rem;font-weight:600;letter-spacing:.04em;margin-bottom:20px}
+  .hero h1{font-size:2.4rem;line-height:1.2;margin:0 0 16px;font-weight:800;letter-spacing:-.01em}
+  .hero h1 .accent{color:var(--accent-2)}
+  .hero p.lead{font-size:1.16rem;color:#e4d6c8;max-width:720px;margin:0 0 28px}
+  .upgrade{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .codeblock{background:var(--code-bg);color:var(--code-ink);padding:12px 18px;border-radius:10px;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.95rem;display:inline-flex;gap:10px;align-items:center}
+  .codeblock .dollar{color:#8f857a}
+  .ver{color:#f1c4ab;font-weight:700}
+
+  section{padding:52px 0;border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:none}
+  h2{font-size:1.55rem;margin:0 0 6px;letter-spacing:-.005em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  h2 .vtag{font-size:.72rem;color:var(--muted);font-weight:600;background:var(--pill);padding:3px 9px;border-radius:6px;letter-spacing:.02em}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:1.02rem}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-top:8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;
+    box-shadow:0 1px 2px rgba(40,30,20,.04)}
+  .card .ic{font-size:1.5rem;line-height:1;display:block;margin-bottom:10px}
+  .card h3{margin:0 0 6px;font-size:1.02rem}
+  .card p{margin:0;color:var(--muted);font-size:.93rem}
+
+  ul.feat{list-style:none;padding:0;margin:0}
+  ul.feat li{position:relative;padding:9px 0 9px 30px;border-bottom:1px solid var(--line)}
+  ul.feat li:last-child{border-bottom:none}
+  ul.feat li::before{content:"";position:absolute;left:4px;top:18px;width:8px;height:8px;border-radius:50%;
+    background:var(--accent-2)}
+  ul.feat strong{font-weight:700}
+
+  table{width:100%;border-collapse:collapse;margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);font-size:.95rem}
+  th{background:#f6efe7;font-weight:700}
+  tr:last-child td{border-bottom:none}
+  td code{background:#f3ece3;padding:2px 7px;border-radius:5px}
+
+  .tl{list-style:none;padding:0;margin:14px 0 0}
+  .tl li{display:grid;grid-template-columns:78px 1fr;gap:16px;padding:11px 0;border-bottom:1px dashed var(--line)}
+  .tl li:last-child{border-bottom:none}
+  .tl .v{font-weight:800;color:var(--accent);font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:.9rem}
+  .tl .d{color:var(--muted);font-size:.95rem}
+  .tl .d b{color:var(--ink);font-weight:600}
+
+  footer{background:#231f1a;color:#e4d6c8;padding:44px 0;text-align:center}
+  footer .codeblock{margin:14px auto 0}
+  footer a{color:#f1c4ab}
+  .muted{color:var(--muted)}
+  @media(max-width:560px){.hero h1{font-size:1.85rem}.langswitch{position:static;display:block;margin-bottom:18px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="langswitch"><a href="RELEASE-NOTES-v2.8-th.html">🇹🇭 ภาษาไทย</a></div>
+    <span class="pill">VERSION 2.8 · v2.6.9 → v2.8.1</span>
+    <h1>claude-foundation v2.8<br><span class="accent">3× lighter</span>, sharper across the pipeline</h1>
+    <p class="lead">A full-workflow audit for the new model era — everything the AI had to carry without payoff got cut: the dual step-numbering system is gone, skill loads cost a third of the tokens, review recall is fixed, hooks are safer — with zero behavior change.</p>
+    <div class="upgrade">
+      <span class="codeblock"><span class="dollar">$</span> brew upgrade claude-foundation</span>
+      <span>→ latest <span class="ver">v2.8.1</span></span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <div class="wrap">
+    <h2>✨ Highlights <span class="vtag">30-second read</span></h2>
+    <p class="sub">The biggest things across v2.6.9 → v2.8.1</p>
+    <div class="grid">
+      <div class="card"><span class="ic">🪶</span><h3>Skills 3× lighter</h3><p>The 17 heaviest skills slimmed to ~0.6–1.4k words each — elaboration moved verbatim into <code>references/</code>, triggers unchanged, a load now costs ~⅓ the context</p></div>
+      <div class="card"><span class="ic">🏷️</span><h3>Phase names, not dual numbering</h3><p>No more translating op 0–18 ↔ matrix 1–10 in your head — every cross-file reference uses names (Implement, Review, …); numbers are file-local only</p></div>
+      <div class="card"><span class="ic">🎯</span><h3>Sharper reviews</h3><p>Workers report ALL scored findings; <code>lead</code> applies the precision gate at synthesis — the recall-killing pre-filter is gone, and 6 overlapping lenses became 4 distinct ones</p></div>
+      <div class="card"><span class="ic">🛡️</span><h3>Safer hooks, now tested</h3><p>Fixed the indent-fooled dup-key check and a crash-fails-open guard — plus a new 28-assertion test suite covering the four wired hooks</p></div>
+      <div class="card"><span class="ic">⚡</span><h3>Opus 4.8 profile</h3><p>The verification loop is complete: warn-only artifact lint on every workflow write, instant typecheck (tsc/pyright) after edits, review fanout default-on at M/L</p></div>
+      <div class="card"><span class="ic">🧭</span><h3>One home for model tiers</h3><p><code>model-tiers.md</code> answers who runs on which tier and why — env-tunable floor via <code>CLAUDE_DEV_FLOOR_MODEL</code>, escalate runs not roles</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🥊 Why use it — an honest comparison <span class="vtag">strengths &amp; weaknesses</span></h2>
+    <p class="sub">Against vanilla Claude Code, against other spec workflows — our own weaknesses included, no spin</p>
+
+    <h3 style="margin:8px 0 4px;font-size:1.08rem">vs. not using it (vanilla Claude Code)</h3>
+    <table>
+      <tr><th style="width:32%">Concern</th><th>Vanilla</th><th>claude-foundation</th></tr>
+      <tr><td>Requirements → code</td><td>one prompt, self-interpreted; wrong = rework</td><td>interview → <code>spec.md</code> as the contract → <b>a gate confirms every AC before the first line of code</b></td></tr>
+      <tr><td>Who reviews</td><td>the model reviews itself in the same context — blind to its own blind spots</td><td>review/QA run as <b>fresh-context agents</b> with 4 non-overlapping lenses — they catch what self-review can't</td></tr>
+      <tr><td>Interrupted work</td><td>start over, re-explain</td><td><code>state.json</code> + <code>--resume</code> continues from any phase (implement fanout resumes per-phase)</td></tr>
+      <tr><td>Bug fixes</td><td>patch and hope</td><td>type=fix <b>requires a failing regression test first</b>, then the fix</td></tr>
+      <tr><td>Security</td><td>checked if remembered</td><td>automatic path+content trigger on every run — can't be forgotten</td></tr>
+      <tr><td>Discipline</td><td>pleaded for in prompts ("remember to…")</td><td><b>shell hooks enforce it</b> — bad state writes, wrong-tier spawns, secret reads get blocked, not warned about</td></tr>
+    </table>
+
+    <h3 style="margin:26px 0 4px;font-size:1.08rem">vs. other spec workflows (spec-kit, agent-os, …)</h3>
+    <ul class="feat">
+      <li><strong>Type-aware + size-aware, not one-size-fits-all</strong> — fix/refactor/spike/docs each take a different path; XS work gets a single-spawn patch lane. Most alternatives run full machinery on everything</li>
+      <li><strong>Enforcement is code, not hope</strong> — most alternatives are prompt-only; this ships 4 PreToolUse/PostToolUse hooks with a 68-assertion test suite over the hooks themselves</li>
+      <li><strong>Model-tier economics built in</strong> — haiku/sonnet/opus pinned per role, guard-enforced, one policy file (<code>model-tiers.md</code>) — opus is spent only where it pays</li>
+      <li><strong>Skills are on-demand references</strong> — the always-on layer is ~1.3k words; 26 skills load only when triggered, and after v2.8.1 each load costs ~⅓ of what it did</li>
+      <li><strong>Trade-offs are written down</strong> — every correctness-for-context shortcut is documented with a backstop (spot-check, near-miss peek), not silent magic</li>
+    </ul>
+
+    <h3 style="margin:26px 0 4px;font-size:1.08rem">Our weaknesses (plainly)</h3>
+    <ul class="feat">
+      <li><strong>Higher per-run overhead than vanilla</strong> — a full M/L run costs multiples in tokens and time; worth it when the blast radius is real, not for quick hacks (which shouldn't enter <code>/dev</code> anyway)</li>
+      <li><strong>The prompt-side state machine has no regression test yet</strong> — hooks are tested; the orchestrator flow is proven by use. A golden-run smoke test is planned for v2.9</li>
+      <li><strong>Multi-repo writes one repo at a time</strong> — read/review/security fan out across repos, but implement/ship stay pinned to the primary by design; cross-repo findings go to a human</li>
+      <li><strong>Tied to recent Claude Code</strong> — direct nesting needs v2.1.172+, and the conventions carry a learning curve before your first run reads fluently</li>
+      <li><strong>Spec quality depends on interview answers</strong> — the system grills, but garbage answers still produce ceremonial garbage</li>
+      <li><strong><code>team-*</code> reviewers are detached from upstream</strong> — pipeline coherence gained, automatic pr-review-toolkit improvements lost</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🛡️ Real hook bugs fixed <span class="vtag">v2.6.9</span></h2>
+    <p class="sub">Two silent fail-opens hiding inside the state-protection machinery — found by the full audit</p>
+    <ul class="feat">
+      <li><strong>Dup-key check is indent-proof</strong> — the old check grepped only 2-space-indented keys, so any reformat silently defeated the guard behind a real <code>--resume</code>-breaking regression. Now python3 <code>object_pairs_hook</code>: catches every indent, nested dups included</li>
+      <li><strong>Guard Case 4 fails closed</strong> — an unreadable worker <code>model:</code> pin used to crash the hook and wave the spawn through; now it refuses with a clear reason</li>
+      <li><strong>Docs match reality</strong> — the concurrent-run fail-open caveat, test-plan folding into the fast path, the surface-fanout axis in WORKFLOW.md</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>⚡ Opus 4.8 profile + model tiers <span class="vtag">v2.7.0</span></h2>
+    <p class="sub">Closing the self-verification gap with external feedback — the condition under which benchmarks show 4.8 matching higher tiers</p>
+    <ul class="feat">
+      <li><strong><code>artifact-lint.sh --hook</code></strong> — every artifact write under <code>.workflow/</code> gets an instant warn-only lint (never blocks) — leftover placeholders and missing sections surface while drafting</li>
+      <li><strong><code>lint.sh</code> typechecks</strong> — <code>.ts/.tsx</code> via the nearest tsconfig (diagnostics filtered to the edited file), <code>.py</code> via pyright — immediate error feedback after every edit</li>
+      <li><strong>Review recall fix</strong> — <code>team-code-reviewer</code> no longer pre-filters to confidence ≥ 80 (models over-obey "don't be nitpicky" and drop true positives); it reports everything scored, and lead gates at synthesis where cross-worker context lives</li>
+      <li><strong>Review fanout default-ON at M/L</strong> — turning it off needs a stated reason, not a cost reflex</li>
+      <li><strong><code>model-tiers.md</code></strong> — the whole tier policy in one file, plus an env-tunable floor for the generic built-ins</li>
+      <li><strong>Forks declared DETACHED</strong> — the <code>team-*</code> reviewers evolve with this pipeline, not upstream</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>⚖️ Correctness margins restored <span class="vtag">v2.7.1</span></h2>
+    <p class="sub">Three context-saving shortcuts that used to trade away safety</p>
+    <ul class="feat">
+      <li><strong>Gate-fold spot-check</strong> — a shard listing every AC no longer passes on its own say-so: one AC is verified in the actual artifact (a single grep) before the fold passes</li>
+      <li><strong>Security near-miss peek</strong> — a name-only trip (rename, comment sweep) earns one bounded look before deciding; any doubt still fires</li>
+      <li><strong>Failure-aware capture</strong> — red test runs re-capture <code>tail -200</code> instead of starving diagnosis at 40 lines</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🧹 Consolidation <span class="vtag">v2.7.2</span></h2>
+    <p class="sub">Tracing one dispatch signal used to span four files</p>
+    <ul class="feat">
+      <li><strong>Fanout refs 4 → 2</strong> — <code>fanout.md</code> + <code>fanout-plan.md</code> + <code>surface-fanout.md</code> merged into <code>fanout-dispatch.md</code>, every rule stated once, zero rule loss</li>
+      <li><strong>Recruit-help contract 7 → 1</strong> — the nesting contract that was copy-pasted across seven files now lives once in <code>dispatch-mechanism.md</code></li>
+      <li><strong>New hook test suite</strong> — 28 assertions across guard/validate/mark/secrets (only artifact-lint had tests before)</li>
+      <li><strong><code>references/engineer.md</code></strong> — closes the variant-doc gap, plus a stated rule for when an agent earns a references file</li>
+      <li><strong>Multi-repo boundary made permanent</strong> — implement/gate/ship stay pinned to the primary repo by design; cross-repo findings surface to the user</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>✂️ Complexity cut <span class="vtag">v2.8.0</span></h2>
+    <p class="sub">Removing what the model had to hold in its head without payoff</p>
+    <ul class="feat">
+      <li><strong>Phase names replace dual numbering</strong> — 26 files stop cross-referencing "Phase 2 step 4" / "op 12"; the hand-maintained translation table is gone entirely</li>
+      <li><strong>One signal shape: <code>implement:</code></strong> — every splittable worker direct-nests its own helpers now, so the five read-side signal shapes (review/security/plan/test/research) were a redundant second path — retired</li>
+      <li><strong>Review lenses 6 → 4</strong> — simplifier + comment-analyzer folded into <code>team-code-reviewer</code> as lenses; two fewer spawns per L review, no checklist lost</li>
+      <li><strong><code>fanout_log</code> records outcomes, not non-events</strong> — ineligible fanout points log nothing</li>
+      <li><strong>First five skills slimmed</strong> — ddd-strategic, delivery-engineering, security-fundamentals, queue-fundamentals, skill-creator → ~1.1k words each</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🪶 Token/speed pass <span class="vtag">v2.8.1</span></h2>
+    <p class="sub">Twelve more skills slimmed (34.9k → 13.1k words) + WORKFLOW.md deduplicated — zero behavior change, two-directional zero-loss verification on every one, frontmatter byte-identical</p>
+    <table>
+      <tr><th>Skill</th><th>Before → After (words)</th><th>Skill</th><th>Before → After (words)</th></tr>
+      <tr><td><code>brainstorming</code></td><td>4,117 → 1,282</td><td><code>refactoring-fundamentals</code></td><td>2,946 → 1,255</td></tr>
+      <tr><td><code>plan-writing</code></td><td>3,103 → 1,396</td><td><code>concurrency-fundamentals</code></td><td>2,895 → 736</td></tr>
+      <tr><td><code>architecture-fundamentals</code></td><td>3,321 → 1,046</td><td><code>tailwind-design-system</code></td><td>2,360 → 561</td></tr>
+      <tr><td><code>observability-fundamentals</code></td><td>3,305 → 1,168</td><td><code>init-project-docs</code></td><td>2,262 → 1,331</td></tr>
+      <tr><td><code>testing-fundamentals</code></td><td>3,194 → 1,270</td><td><code>qa-handoff-note</code></td><td>2,135 → 987</td></tr>
+      <tr><td><code>database-fundamentals</code></td><td>3,109 → 803</td><td><code>hexagonal-backend</code></td><td>2,032 → 1,286</td></tr>
+    </table>
+    <ul class="feat" style="margin-top:18px">
+      <li><strong><code>brainstorming</code> + <code>plan-writing</code> sit on the /dev critical path</strong> — every run's interview and plan mode get lighter immediately</li>
+      <li><strong>WORKFLOW.md 4,347 → 3,314 words</strong> — deduplicated against the canonical references; all 24 headings intact, every anchor other files rely on still resolves</li>
+      <li><strong>Every principle stays named in the body</strong> — the checklist is as complete as before; only the depth moved to on-demand references/</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>🗓️ Timeline <span class="vtag">v2.6.9 → v2.8.1</span></h2>
+    <ul class="tl">
+      <li><span class="v">2.6.9</span><span class="d"><b>Hook bug fixes</b> — indent-proof dup-key check, fail-closed guard, docs de-staled</span></li>
+      <li><span class="v">2.7.0</span><span class="d"><b>Opus 4.8 profile</b> — artifact-lint hook, typecheck feedback, review recall fix, fanout defaults, model-tiers.md</span></li>
+      <li><span class="v">2.7.1</span><span class="d"><b>Correctness margins</b> — gate spot-check, security near-miss peek, tail-200 on red</span></li>
+      <li><span class="v">2.7.2</span><span class="d"><b>Consolidation</b> — fanout refs 4→2, recruit dedup 7→1, 28-assertion hook test suite, ui-ux-pro-max split</span></li>
+      <li><span class="v">2.8.0</span><span class="d"><b>Complexity cut</b> — phase names, implement-only signal, review 6→4 lenses, first 5 skills slimmed</span></li>
+      <li><span class="v">2.8.1</span><span class="d"><b>Token/speed pass</b> — 12 skills to ~⅓ the load, WORKFLOW.md −24%</span></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><b>claude-foundation v2.8</b> — the same workflow, three times lighter</p>
+    <span class="codeblock"><span class="dollar">$</span> brew upgrade claude-foundation</span>
+    <p class="muted" style="margin-top:16px;font-size:.85rem">Every line item lives in <a href="../CHANGELOG.md">CHANGELOG.md</a> · <a href="RELEASE-NOTES-v2.8-th.html">ภาษาไทย</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
