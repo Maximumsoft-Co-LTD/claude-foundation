@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.2] - 2026-07-16
+
 ### Changed (skill-load diet — fewer tokens per task, same rules)
 
 - **Conduct digest in the always-on router** — `rules/fundamentals.md` now carries the 4-principle core of `coding-discipline` (think-before-coding · Simplicity/Ponytail · surgical changes · goal-driven); the full body loads **on friction only** instead of on every code task (~1,300 words saved per ordinary coding task). `Ponytail` heading and anchor unchanged.
@@ -618,7 +620,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.8...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.2...HEAD
+[2.9.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.1...v2.9.2
 [2.6.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.7...v2.6.8
 [2.6.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.5...v2.6.6
