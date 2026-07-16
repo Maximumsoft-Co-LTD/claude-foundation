@@ -2,13 +2,15 @@
 
 Size gates which `plan.md` sections are required/optional/deleted. Borderline → **larger tier** — under-covering burns a review cycle; over-covering costs a few skipped sections. XS floor: describable in one sentence.
 
+> **Machinery estimate is tie-broken differently.** The plan-section rule above stays conservative (sections are cheap). For the orchestrator's **machinery** estimate (`state.json > size` — how many spawns the run gets), a borderline XS/S or S/M with **no hard risk flag** (persisted-data/schema/API-contract change, security-sensitive path, cross-repo coupling, migration) picks the **smaller** tier: `SIZE_UPGRADE` ratchets up mid-run if the code walk proves bigger, while over-sized machinery never shrinks. Borderline M/L → **L** always.
+
 ## The four tiers
 
 | Size | Files | Logic | Contract / schema | Subsystem reach | Typical Types |
 |------|-------|-------|-------------------|-----------------|---------------|
 | **XS** | 1 | none | no | none | chore, docs |
-| **S**  | ≤ 2 | simple | no | 1 | fix, small feat, small refactor |
-| **M**  | 3–10 | real | no | 1 | feat, refactor |
+| **S**  | ≤ ~5 (one understood surface) | simple | no | 1 | fix, small feat, small refactor |
+| **M**  | ≤ ~10 | real | no | 1 | feat, refactor |
 | **L**  | any | real | **yes** (or breaking) | ≥ 2 | feat, refactor, fix at a seam |
 
 "Real logic" = branching, state, side effects. "Simple logic" = one branch, no state. "Contract/schema" = public REST/gRPC API, DB schema, queue message shape, IPC, event payload.
@@ -36,7 +38,7 @@ Orthogonal to size, every run is one of two **fields**, recorded in `state.json 
 4. **>2 files, OR any logic at all?** → **S**.
 5. **Single file, no logic, no user/caller-visible change?** (typo, dep bump, doc edit, formatter, comment) → **XS**.
 
-Two answers equally true → pick **larger**. Exception: the greenfield S-cap is a *defined route*, not a torn case — don't round a hermetic new module up to M for having several CRUD features.
+Two answers equally true → plan `Size`: pick **larger**; machinery (`state.json > size`): risk flag present → larger, none → **smaller** (header note). Exception: the greenfield S-cap is a *defined route*, not a torn case — don't round a hermetic new module up to M for having several CRUD features.
 
 ## Scorecard fallback — calibrate the picker
 
