@@ -15,6 +15,7 @@
     "review": 0,
     "test": 0
   },
+  "phase_times": {},
   "skipped_steps": [],
   "phase_plan": {},
   "fanout_plan": {},

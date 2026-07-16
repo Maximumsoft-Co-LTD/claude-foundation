@@ -32,14 +32,301 @@ if (!SHARED_KEY) {
   process.exit(1);
 }
 
+// ── Persistence (SQLite, zero-dep via node:sqlite — Node >= 24) ─────────────
+// On Railway attach a volume and we pick its mount up from
+// RAILWAY_VOLUME_MOUNT_PATH automatically; DB_PATH overrides. Without SQLite
+// support (old Node) the server still runs — in-memory only, like before.
+const HEARTBEAT_LOG_DAYS = toInt(process.env.HEARTBEAT_LOG_DAYS, 30);
+const DB_PATH = process.env.DB_PATH
+  || path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data'), 'dashboard.db');
+
+let db = null;
+try {
+  const { DatabaseSync } = require('node:sqlite');
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  db = new DatabaseSync(DB_PATH);
+  // v2: usage_daily gains a `project` dimension (PK reshape → drop, it repopulates
+  // from the next heartbeats); runs gains an `artifacts` column.
+  const dbVersion = db.prepare('PRAGMA user_version').get().user_version;
+  if (dbVersion < 2) {
+    db.exec('DROP TABLE IF EXISTS usage_daily;');
+    try { db.exec('ALTER TABLE runs ADD COLUMN artifacts TEXT;'); } catch { /* fresh db — CREATE below carries it */ }
+    db.exec('PRAGMA user_version = 2;');
+  }
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    CREATE TABLE IF NOT EXISTS agents (
+      agent_id   TEXT PRIMARY KEY,
+      git_user   TEXT, host TEXT, version TEXT, status TEXT,
+      first_seen INTEGER, last_seen INTEGER,
+      state      TEXT              -- full sanitized record (runs/changes/usage/…) as JSON
+    );
+    CREATE TABLE IF NOT EXISTS heartbeats (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts       INTEGER NOT NULL,
+      agent_id TEXT, git_user TEXT, host TEXT, version TEXT, status TEXT,
+      runs_n   INTEGER, changes_n INTEGER, files_n INTEGER, usage_n INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_hb_ts    ON heartbeats(ts);
+    CREATE INDEX IF NOT EXISTS idx_hb_agent ON heartbeats(agent_id, ts);
+    CREATE TABLE IF NOT EXISTS runs (
+      agent_id TEXT, repo TEXT, run_id TEXT,
+      git_user TEXT, type TEXT, phase TEXT,
+      started INTEGER, finished INTEGER, done INTEGER,
+      artifacts TEXT,               -- {"spec":<epoch>,"plan":<epoch>,…} for the phase funnel
+      PRIMARY KEY (agent_id, repo, run_id)
+    );
+    CREATE TABLE IF NOT EXISTS usage_daily (
+      agent_id TEXT, git_user TEXT, date TEXT, model TEXT, project TEXT,
+      input INTEGER, output INTEGER, cache_create INTEGER, cache_read INTEGER, count INTEGER,
+      PRIMARY KEY (agent_id, date, model, project)
+    );
+    CREATE TABLE IF NOT EXISTS sessions_daily (
+      agent_id TEXT, git_user TEXT, date TEXT, count INTEGER, seconds INTEGER,
+      PRIMARY KEY (agent_id, date)
+    );
+    CREATE TABLE IF NOT EXISTS tools (
+      agent_id TEXT, git_user TEXT, tool TEXT, count INTEGER, ts INTEGER,
+      PRIMARY KEY (agent_id, tool)
+    );
+    CREATE TABLE IF NOT EXISTS commits_daily (
+      repo_id TEXT, date TEXT, n INTEGER, reported_by TEXT, ts INTEGER,
+      PRIMARY KEY (repo_id, date)
+    );
+    CREATE TABLE IF NOT EXISTS followups (
+      repo_id TEXT PRIMARY KEY, open INTEGER, closed INTEGER, ts INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS file_edits (
+      day TEXT, repo_id TEXT, path TEXT, git_user TEXT,
+      PRIMARY KEY (day, repo_id, path, git_user)
+    );
+    CREATE TABLE IF NOT EXISTS conflict_log (
+      day TEXT, repo_id TEXT, path TEXT, users TEXT, last_ts INTEGER,
+      PRIMARY KEY (day, repo_id, path, users)
+    );
+    CREATE TABLE IF NOT EXISTS work_daily (
+      agent_id TEXT, git_user TEXT, date TEXT,
+      commits INTEGER, added INTEGER, deleted INTEGER, pushes INTEGER, prs INTEGER,
+      PRIMARY KEY (agent_id, date)
+    );
+  `);
+  console.log(`sqlite: persisting to ${DB_PATH} (heartbeat log kept ${HEARTBEAT_LOG_DAYS}d)`);
+} catch (err) {
+  console.warn(`sqlite unavailable (${err.message}) — running in-memory only; presence and history reset on restart.`);
+}
+
+const stmts = db && {
+  upsertAgent: db.prepare(`
+    INSERT INTO agents (agent_id, git_user, host, version, status, first_seen, last_seen, state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id) DO UPDATE SET
+      git_user=excluded.git_user, host=excluded.host, version=excluded.version,
+      status=excluded.status, last_seen=excluded.last_seen, state=excluded.state`),
+  deleteAgent: db.prepare('DELETE FROM agents WHERE agent_id = ?'),
+  insertBeat: db.prepare(`
+    INSERT INTO heartbeats (ts, agent_id, git_user, host, version, status, runs_n, changes_n, files_n, usage_n)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  upsertRun: db.prepare(`
+    INSERT INTO runs (agent_id, repo, run_id, git_user, type, phase, started, finished, done, artifacts)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, repo, run_id) DO UPDATE SET
+      git_user=excluded.git_user, type=excluded.type, phase=excluded.phase,
+      started=excluded.started, finished=excluded.finished, done=excluded.done,
+      artifacts=excluded.artifacts`),
+  upsertUsage: db.prepare(`
+    INSERT INTO usage_daily (agent_id, git_user, date, model, project, input, output, cache_create, cache_read, count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, date, model, project) DO UPDATE SET
+      git_user=excluded.git_user, input=excluded.input, output=excluded.output,
+      cache_create=excluded.cache_create, cache_read=excluded.cache_read, count=excluded.count`),
+  upsertSession: db.prepare(`
+    INSERT INTO sessions_daily (agent_id, git_user, date, count, seconds)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, date) DO UPDATE SET
+      git_user=excluded.git_user, count=excluded.count, seconds=excluded.seconds`),
+  upsertTool: db.prepare(`
+    INSERT INTO tools (agent_id, git_user, tool, count, ts)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, tool) DO UPDATE SET
+      git_user=excluded.git_user, count=excluded.count, ts=excluded.ts`),
+  upsertCommits: db.prepare(`
+    INSERT INTO commits_daily (repo_id, date, n, reported_by, ts)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(repo_id, date) DO UPDATE SET
+      n=MAX(n, excluded.n), reported_by=excluded.reported_by, ts=excluded.ts`),
+  upsertFollowups: db.prepare(`
+    INSERT INTO followups (repo_id, open, closed, ts)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(repo_id) DO UPDATE SET
+      open=excluded.open, closed=excluded.closed, ts=excluded.ts`),
+  upsertFileEdit: db.prepare(`
+    INSERT OR IGNORE INTO file_edits (day, repo_id, path, git_user) VALUES (?, ?, ?, ?)`),
+  upsertConflict: db.prepare(`
+    INSERT INTO conflict_log (day, repo_id, path, users, last_ts)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(day, repo_id, path, users) DO UPDATE SET last_ts=excluded.last_ts`),
+  upsertWork: db.prepare(`
+    INSERT INTO work_daily (agent_id, git_user, date, commits, added, deleted, pushes, prs)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, date) DO UPDATE SET
+      git_user=excluded.git_user, commits=excluded.commits, added=excluded.added,
+      deleted=excluded.deleted, pushes=excluded.pushes, prs=excluded.prs`),
+  presence: db.prepare(`
+    SELECT git_user AS user, ts/3600000 AS hour, COUNT(DISTINCT ts/60000) AS minutes
+    FROM heartbeats WHERE ts >= ? AND status != 'offline'
+    GROUP BY git_user, ts/3600000`),
+  historyUsage: db.prepare(`
+    SELECT date, model, SUM(input) AS input, SUM(output) AS output,
+           SUM(cache_create) AS cacheCreate, SUM(cache_read) AS cacheRead, SUM(count) AS count
+    FROM usage_daily WHERE date >= ? GROUP BY date, model`),
+  historyProjects: db.prepare(`
+    SELECT project, SUM(input) AS input, SUM(output) AS output, MAX(date) AS last
+    FROM usage_daily WHERE date >= ? AND project != ''
+    GROUP BY project ORDER BY SUM(input)+SUM(output) DESC LIMIT 30`),
+  hotspots: db.prepare(`
+    SELECT repo_id AS repoId, path, COUNT(DISTINCT day) AS days,
+           COUNT(DISTINCT git_user) AS users, MAX(day) AS last
+    FROM file_edits WHERE day >= ?
+    GROUP BY repo_id, path ORDER BY COUNT(DISTINCT git_user) DESC, COUNT(DISTINCT day) DESC LIMIT 40`),
+  conflictHistory: db.prepare(`
+    SELECT day, repo_id AS repoId, path, users, last_ts AS lastTs
+    FROM conflict_log ORDER BY last_ts DESC LIMIT 100`),
+  pruneBeats: db.prepare('DELETE FROM heartbeats WHERE ts < ?'),
+  loadAgents: db.prepare('SELECT * FROM agents'),
+  logBeats: db.prepare(`
+    SELECT ts, agent_id AS agentId, git_user AS gitUser, host, version, status,
+           runs_n AS runs, changes_n AS changes, files_n AS files, usage_n AS usage
+    FROM heartbeats
+    WHERE ts >= ? AND (? = '' OR agent_id = ?) AND (? = '' OR git_user = ?)
+    ORDER BY ts DESC LIMIT ?`),
+};
+
+/** Write one heartbeat through to SQLite: log row + agent state + run/usage history. */
+function persistHeartbeat(a, now) {
+  if (!db) return;
+  try {
+    const filesN = (a.changes || []).reduce((s, c) => s + (Array.isArray(c.files) ? c.files.length : 0), 0);
+    db.exec('BEGIN');
+    stmts.insertBeat.run(now, a.agentId, a.gitUser, a.host, a.version, a.status,
+      (a.runs || []).length, (a.changes || []).length, filesN, (a.usage || []).length);
+    if (a.status === 'offline') stmts.deleteAgent.run(a.agentId);
+    else stmts.upsertAgent.run(a.agentId, a.gitUser, a.host, a.version, a.status,
+      a.firstSeen, a.lastSeen,
+      JSON.stringify({ runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
+    for (const r of a.runs || []) {
+      stmts.upsertRun.run(a.agentId, r.repo, r.id, a.gitUser, r.type, r.phase,
+        r.started, r.finished, r.done ? 1 : 0, JSON.stringify(r.art || {}));
+    }
+    for (const u of a.usage || []) {
+      stmts.upsertUsage.run(a.agentId, a.gitUser, u.date, u.model, u.project || '',
+        u.input, u.output, u.cacheCreate, u.cacheRead, u.count);
+    }
+    for (const s of a.sessions || []) {
+      stmts.upsertSession.run(a.agentId, a.gitUser, s.date, s.count, s.seconds);
+    }
+    for (const t of a.tools || []) {
+      stmts.upsertTool.run(a.agentId, a.gitUser, t.tool, t.count, now);
+    }
+    const today = new Date(now).toISOString().slice(0, 10);
+    for (const c of a.changes || []) {
+      for (const cm of c.commits || []) stmts.upsertCommits.run(c.repoId, cm.date, cm.n, a.agentId, now);
+      if (c.fuOpen || c.fuClosed) stmts.upsertFollowups.run(c.repoId, c.fuOpen, c.fuClosed, now);
+      for (const f of c.files || []) stmts.upsertFileEdit.run(today, c.repoId, f.path, a.gitUser);
+    }
+    for (const w of workRowsFor(a)) {
+      stmts.upsertWork.run(a.agentId, a.gitUser, w.date, w.commits, w.added, w.deleted, w.pushes, w.prs);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch { /* not in a tx */ }
+    console.warn(`sqlite write failed: ${err.message}`);
+  }
+}
+
+/**
+ * One agent's per-day output, merged across their repos: commits + lines from
+ * git log, pushes from remote-ref reflogs, PRs from the gh CLI.
+ */
+function workRowsFor(a) {
+  const byDate = new Map();
+  const row = (date) => {
+    if (!byDate.has(date)) byDate.set(date, { date, commits: 0, added: 0, deleted: 0, pushes: 0, prs: 0 });
+    return byDate.get(date);
+  };
+  for (const c of a.changes || []) {
+    for (const w of c.work || []) {
+      const r = row(w.date);
+      r.commits += w.commits; r.added += w.added; r.deleted += w.deleted;
+    }
+    for (const p of c.pushes || []) row(p.date).pushes += p.n;
+  }
+  for (const p of a.prs || []) row(p.date).prs += p.n;
+  return [...byDate.values()];
+}
+
+/** Log today's live conflicts so "who keeps colliding" has history. */
+function persistConflicts(now) {
+  if (!db) return;
+  try {
+    const day = new Date(now).toISOString().slice(0, 10);
+    for (const c of computeConflicts(now)) {
+      const users = (c.parties || []).map((p) => p.gitUser).sort().join('+');
+      stmts.upsertConflict.run(day, c.repoId, c.path, users, now);
+    }
+  } catch (err) {
+    console.warn(`sqlite conflict log failed: ${err.message}`);
+  }
+}
+
+function dbDeleteAgent(agentId) {
+  if (!db) return;
+  try { stmts.deleteAgent.run(agentId); } catch (err) { console.warn(`sqlite delete failed: ${err.message}`); }
+}
+
+/** Reload the presence map from SQLite so a redeploy doesn't blank the board. */
+function restoreAgents(agentsMap) {
+  if (!db) return;
+  try {
+    for (const row of stmts.loadAgents.all()) {
+      let state = {};
+      try { state = JSON.parse(row.state || '{}'); } catch { /* corrupt row — presence only */ }
+      agentsMap.set(row.agent_id, {
+        agentId: row.agent_id,
+        gitUser: row.git_user, host: row.host, version: row.version, status: row.status,
+        runs: Array.isArray(state.runs) ? state.runs : [],
+        changes: Array.isArray(state.changes) ? state.changes : [],
+        usage: Array.isArray(state.usage) ? state.usage : [],
+        sessions: Array.isArray(state.sessions) ? state.sessions : [],
+        tools: Array.isArray(state.tools) ? state.tools : [],
+        prs: Array.isArray(state.prs) ? state.prs : [],
+        firstSeen: row.first_seen, lastSeen: row.last_seen,
+      });
+    }
+    if (agentsMap.size) console.log(`sqlite: restored ${agentsMap.size} agent(s) from ${DB_PATH}`);
+  } catch (err) {
+    console.warn(`sqlite restore failed: ${err.message}`);
+  }
+}
+
+// Trim the heartbeat log on boot and then hourly.
+function pruneHeartbeatLog() {
+  if (!db) return;
+  try { stmts.pruneBeats.run(Date.now() - HEARTBEAT_LOG_DAYS * 86400000); }
+  catch (err) { console.warn(`sqlite prune failed: ${err.message}`); }
+}
+pruneHeartbeatLog();
+setInterval(pruneHeartbeatLog, 3600_000).unref();
+
 // ── Presence store ──────────────────────────────────────────────────────────
 // agentId -> { agentId, gitUser, host, version, status, firstSeen, lastSeen }
 const agents = new Map();
+restoreAgents(agents);
 
 /** Drop agents we have not heard from in a long time. */
 function prune(now) {
   for (const [id, a] of agents) {
-    if (now - a.lastSeen > PRUNE_AFTER_MS) agents.delete(id);
+    if (now - a.lastSeen > PRUNE_AFTER_MS) { agents.delete(id); dbDeleteAgent(id); }
   }
 }
 
@@ -107,8 +394,71 @@ function cleanRuns(raw) {
       started: Math.max(0, toInt(r && r.started, 0)),
       finished: Math.max(0, toInt(r && r.finished, 0)),
       done: !!(r && r.done),
+      art: cleanArtifacts(r && r.art),
     }))
     .filter((r) => r.id);
+}
+
+/** Sanitize the run's artifact mtimes ({spec: <epoch>, plan: <epoch>, …}). */
+const ARTIFACT_KEYS = ['spec', 'plan', 'test-plan', 'tests', 'review', 'security', 'retro'];
+function cleanArtifacts(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') {
+    for (const k of ARTIFACT_KEYS) {
+      const v = toInt(raw[k], 0);
+      if (v > 0) out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Sanitize the reported Claude token usage rows (per day × model aggregates). */
+function cleanUsage(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 3000)
+    .map((u) => ({
+      date: clean(u && u.date, 10),
+      model: clean(u && u.model, 80),
+      project: clean(u && u.project, 80),
+      input: Math.max(0, toInt(u && u.input, 0)),
+      output: Math.max(0, toInt(u && u.output, 0)),
+      cacheCreate: Math.max(0, toInt(u && u.cacheCreate, 0)),
+      cacheRead: Math.max(0, toInt(u && u.cacheRead, 0)),
+      count: Math.max(0, toInt(u && u.count, 0)),
+    }))
+    .filter((u) => /^\d{4}-\d{2}-\d{2}$/.test(u.date) && u.model);
+}
+
+/** Sanitize the reported per-day Claude session stats. */
+function cleanSessions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 100)
+    .map((s) => ({
+      date: clean(s && s.date, 10),
+      count: Math.max(0, toInt(s && s.count, 0)),
+      seconds: Math.max(0, toInt(s && s.seconds, 0)),
+    }))
+    .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.date));
+}
+
+/** Sanitize a list of {date, <field>} count rows. */
+function cleanDateCounts(raw, field) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 20)
+    .map((c) => ({ date: clean(c && c.date, 10), [field]: Math.max(0, toInt(c && c[field], 0)) }))
+    .filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.date));
+}
+
+/** Sanitize the reported tool-call counts. */
+function cleanTools(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 100)
+    .map((t) => ({ tool: clean(t && t.tool, 60), count: Math.max(0, toInt(t && t.count, 0)) }))
+    .filter((t) => t.tool);
 }
 
 /** Sanitize a list of [start,end] line ranges. */
@@ -134,6 +484,21 @@ function cleanChanges(raw) {
       branch: clean(r && r.branch, 120),
       path: clean(r && r.path, 300),
       label: clean(r && r.label, 80),
+      fuOpen: Math.max(0, toInt(r && r.fuOpen, 0)),
+      fuClosed: Math.max(0, toInt(r && r.fuClosed, 0)),
+      commits: cleanDateCounts(r && r.commits, 'n'),
+      pushes: cleanDateCounts(r && r.pushes, 'n'),
+      work: Array.isArray(r && r.work)
+        ? r.work
+            .slice(0, 20)
+            .map((w) => ({
+              date: clean(w && w.date, 10),
+              commits: Math.max(0, toInt(w && w.commits, 0)),
+              added: Math.max(0, toInt(w && w.added, 0)),
+              deleted: Math.max(0, toInt(w && w.deleted, 0)),
+            }))
+            .filter((w) => /^\d{4}-\d{2}-\d{2}$/.test(w.date))
+        : [],
       files: Array.isArray(r && r.files)
         ? r.files
             .slice(0, 100)
@@ -247,10 +612,16 @@ async function handleHeartbeat(req, res, url) {
     status,
     runs: cleanRuns(body.value.runs),
     changes: cleanChanges(body.value.changes),
+    usage: cleanUsage(body.value.usage),
+    sessions: cleanSessions(body.value.sessions),
+    tools: cleanTools(body.value.tools),
+    prs: cleanDateCounts(body.value.prs, 'n'),
     firstSeen: existing ? existing.firstSeen : now,
     lastSeen: now,
   });
 
+  persistHeartbeat(agents.get(agentId), now);
+  persistConflicts(now);
   if (status === 'offline') agents.delete(agentId);
 
   prune(now);
@@ -337,6 +708,62 @@ function median(sortedNums) {
   return sortedNums.length ? sortedNums[Math.floor(sortedNums.length / 2)] : 0;
 }
 
+/**
+ * Flatten every agent's token-usage rows, tagged with who reported them.
+ * Rows are already per-machine (agentId) day × model aggregates, so no dedupe
+ * is needed — two agents are two machines, even for the same gitUser.
+ */
+function collectUsage() {
+  const out = [];
+  for (const a of agents.values()) {
+    for (const u of a.usage || []) out.push({ ...u, gitUser: a.gitUser, agentId: a.agentId });
+  }
+  return out.slice(0, 12000);
+}
+
+/** Flatten every agent's per-day session stats / tool counts, tagged with reporter. */
+function collectSessions() {
+  const out = [];
+  for (const a of agents.values()) {
+    for (const s of a.sessions || []) out.push({ ...s, gitUser: a.gitUser, agentId: a.agentId });
+  }
+  return out.slice(0, 2000);
+}
+function collectTools() {
+  const out = [];
+  for (const a of agents.values()) {
+    for (const t of a.tools || []) out.push({ ...t, gitUser: a.gitUser, agentId: a.agentId });
+  }
+  return out.slice(0, 2000);
+}
+
+/** Flatten every agent's per-day output (commits/lines/pushes/PRs), tagged with reporter. */
+function collectWork() {
+  const out = [];
+  for (const a of agents.values()) {
+    for (const w of workRowsFor(a)) out.push({ ...w, gitUser: a.gitUser, agentId: a.agentId });
+  }
+  return out.slice(0, 2000);
+}
+
+/** Per-repo commit activity + follow-up backlog, deduped by repoId (newest reporter wins). */
+function collectRepoStats() {
+  const idx = new Map();
+  const byRecency = [...agents.values()].sort((x, y) => y.lastSeen - x.lastSeen);
+  for (const a of byRecency) {
+    for (const c of a.changes || []) {
+      if (idx.has(c.repoId)) continue;
+      idx.set(c.repoId, {
+        repoId: c.repoId,
+        commits: c.commits || [],
+        fuOpen: c.fuOpen || 0,
+        fuClosed: c.fuClosed || 0,
+      });
+    }
+  }
+  return [...idx.values()].slice(0, 100);
+}
+
 /** Aggregate /dev completion stats across all known agents. */
 function computeStats(now) {
   const all = dedupeRuns(false);
@@ -413,6 +840,71 @@ function computeFeed() {
     }));
 }
 
+/**
+ * GET /api/log/heartbeats — the persisted heartbeat log (VIEW_KEY).
+ * Query: limit (<=2000, default 200), agent, user, since (epoch ms, default 24h ago).
+ */
+function handleHeartbeatLog(req, res, url) {
+  if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
+    return sendJson(res, 401, { ok: false, error: 'bad key' });
+  }
+  if (!db) return sendJson(res, 503, { ok: false, error: 'no database attached' });
+  const limit = Math.min(Math.max(toInt(url.searchParams.get('limit'), 200), 1), 2000);
+  const since = toInt(url.searchParams.get('since'), Date.now() - 86400000);
+  const agent = clean(url.searchParams.get('agent') || '', 64);
+  const user = clean(url.searchParams.get('user') || '', 80);
+  try {
+    const rows = stmts.logBeats.all(since, agent, agent, user, user, limit);
+    return sendJson(res, 200, { ok: true, since, count: rows.length, beats: rows });
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: 'query failed' });
+  }
+}
+
+/**
+ * GET /api/presence?days=7 — who was online when, from the heartbeat log (VIEW_KEY).
+ * Returns hour-bucketed online minutes per person; the client localizes and
+ * renders the work-hours heatmap + per-person totals.
+ */
+function handlePresence(req, res, url) {
+  if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
+    return sendJson(res, 401, { ok: false, error: 'bad key' });
+  }
+  if (!db) return sendJson(res, 503, { ok: false, error: 'no database attached' });
+  const days = Math.min(Math.max(toInt(url.searchParams.get('days'), 7), 1), 30);
+  try {
+    const buckets = stmts.presence.all(Date.now() - days * 86400000);
+    return sendJson(res, 200, { ok: true, days, buckets });
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: 'query failed' });
+  }
+}
+
+/**
+ * GET /api/history?days=120 — durable aggregates from SQLite (VIEW_KEY):
+ * long-range usage trend, top projects, file-edit hotspots, conflict history.
+ */
+function handleHistory(req, res, url) {
+  if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
+    return sendJson(res, 401, { ok: false, error: 'bad key' });
+  }
+  if (!db) return sendJson(res, 503, { ok: false, error: 'no database attached' });
+  const days = Math.min(Math.max(toInt(url.searchParams.get('days'), 120), 7), 365);
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  try {
+    return sendJson(res, 200, {
+      ok: true,
+      days,
+      usage: stmts.historyUsage.all(cutoff),
+      projects: stmts.historyProjects.all(cutoff),
+      hotspots: stmts.hotspots.all(cutoff),
+      conflicts: stmts.conflictHistory.all(),
+    });
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, error: 'query failed' });
+  }
+}
+
 function handleOnline(req, res, url) {
   if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
     return sendJson(res, 401, { ok: false, error: 'bad key' });
@@ -433,7 +925,15 @@ function handleOnline(req, res, url) {
     runs: dedupeRuns(true).slice(0, 400).map((r) => ({
       id: r.id, type: r.type, repo: r.repo, gitUser: r.gitUser,
       phase: r.phase, started: r.started, finished: r.finished, done: r.done,
+      art: r.art || {},
     })),
+    // Per-machine day × model × project token aggregates — the Usage tab renders
+    // totals, models in use, projects, and the daily trend from this.
+    usage: collectUsage(),
+    sessions: collectSessions(),
+    tools: collectTools(),
+    work: collectWork(),
+    repoStats: collectRepoStats(),
   });
 }
 
@@ -453,10 +953,13 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/health') {
     const online = [...agents.values()].filter((a) => Date.now() - a.lastSeen <= ONLINE_TTL_MS).length;
-    return sendJson(res, 200, { ok: true, online });
+    return sendJson(res, 200, { ok: true, online, db: db ? 'sqlite' : 'off' });
   }
   if (pathname === '/api/heartbeat' && req.method === 'POST') return handleHeartbeat(req, res, url);
   if (pathname === '/api/online' && req.method === 'GET') return handleOnline(req, res, url);
+  if (pathname === '/api/log/heartbeats' && req.method === 'GET') return handleHeartbeatLog(req, res, url);
+  if (pathname === '/api/presence' && req.method === 'GET') return handlePresence(req, res, url);
+  if (pathname === '/api/history' && req.method === 'GET') return handleHistory(req, res, url);
   if (pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, error: 'unknown endpoint' });
 
   return serveStatic(req, res, pathname);

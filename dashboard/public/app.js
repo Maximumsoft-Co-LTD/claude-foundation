@@ -10,6 +10,16 @@ const TYPE_COLOR = {
   feat: '#2c46f0', fix: '#e8501e', refactor: '#8a4fd6',
   chore: '#5c6470', docs: '#1d8f7a', spike: '#c08a1e', other: '#9a9caa',
 };
+// Color by model family so e.g. every opus-* version shares a hue.
+function modelColor(model) {
+  const m = String(model);
+  if (m.includes('opus')) return '#8a4fd6';
+  if (m.includes('fable') || m.includes('mythos')) return '#e8501e';
+  if (m.includes('sonnet')) return '#2c46f0';
+  if (m.includes('haiku')) return '#1d8f7a';
+  return '#9a9caa';
+}
+function shortModel(model) { return String(model).replace(/^claude-/, '').replace(/-\d{8}$/, ''); }
 
 const $ = (id) => document.getElementById(id);
 let timer = null;
@@ -24,6 +34,7 @@ function clearKey() { localStorage.removeItem(KEY_STORE); }
 
 function showGate(withError) {
   if (timer) { clearInterval(timer); timer = null; }
+  if (typeof extrasTimer !== 'undefined' && extrasTimer) { clearInterval(extrasTimer); extrasTimer = null; }
   $('gate').hidden = false;
   $('gate-error').hidden = !withError;
   $('gate-key').focus();
@@ -57,6 +68,38 @@ function fmtDur(sec) {
 function ago(epochSec) {
   return relTime(Date.now() - epochSec * 1000);
 }
+function fmtTok(n) {
+  n = Number(n) || 0;
+  if (n >= 1e9) return `${(n / 1e9).toFixed(n < 1e10 ? 1 : 0)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k`;
+  return String(n);
+}
+// List prices $/MTok by model family (cache write 1.25× input, cache read 0.1×).
+// An estimate: subscription plans and intro pricing make real spend differ.
+const PRICING = [
+  [/fable|mythos/, 10, 50],
+  [/opus/, 5, 25],
+  [/sonnet/, 3, 15],
+  [/haiku/, 1, 5],
+];
+function estCost(u) {
+  const m = String(u.model);
+  const p = PRICING.find(([re]) => re.test(m));
+  if (!p) return 0;
+  const [, inP, outP] = p;
+  return ((u.input || 0) * inP + (u.output || 0) * outP
+    + (u.cacheCreate || 0) * inP * 1.25 + (u.cacheRead || 0) * inP * 0.1) / 1e6;
+}
+function fmtUsd(n) {
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  if (n >= 100) return `$${n.toFixed(0)}`;
+  return `$${n.toFixed(n >= 1 ? 2 : 2)}`;
+}
+function fmtHours(min) {
+  const h = min / 60;
+  return h >= 10 ? `${Math.round(h)}h` : `${h.toFixed(1)}h`;
+}
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 function setTab(name) {
@@ -82,8 +125,9 @@ function renderCols(el, items) {
   const max = Math.max(1, ...items.map((i) => i.count));
   el.innerHTML = `<div class="cols-plot">${items.map((i) => {
     const h = i.count ? Math.max(Math.round((i.count / max) * 100), 6) : 0;
-    return `<div class="col" title="${escapeHtml(i.label)}: ${i.count}">
-      <span class="col-n">${i.count || ''}</span>
+    const text = i.text != null ? i.text : (i.count || '');
+    return `<div class="col" title="${escapeHtml(i.label)}: ${i.text != null ? escapeHtml(String(i.text)) : i.count}">
+      <span class="col-n">${escapeHtml(String(text))}</span>
       <span class="col-bar" style="height:${h}%"></span>
       <span class="col-lab">${escapeHtml(i.label)}</span>
     </div>`;
@@ -219,10 +263,346 @@ function renderActivity(feed) {
   }).join('');
 }
 
+// ── Phase funnel + repo stats (Insights) ────────────────────────────────────
+// Runs report artifact mtimes (spec/plan/…) — median gap between consecutive
+// artifacts shows where the /dev pipeline spends its time.
+const FUNNEL_STAGES = [
+  ['spec', 'plan'], ['plan', 'test-plan'], ['plan', 'tests'],
+  ['tests', 'review'], ['review', 'retro'],
+];
+function renderFunnel(runs) {
+  const gaps = {};
+  for (const r of runs) {
+    const art = r.art || {};
+    for (const [a, b] of FUNNEL_STAGES) {
+      if (art[a] && art[b] && art[b] >= art[a]) (gaps[`${a} → ${b}`] = gaps[`${a} → ${b}`] || []).push(art[b] - art[a]);
+    }
+  }
+  const rows = Object.entries(gaps).map(([label, arr]) => {
+    arr.sort((x, y) => x - y);
+    return { label, med: arr[Math.floor(arr.length / 2)], n: arr.length };
+  });
+  const max = Math.max(1, ...rows.map((r) => r.med));
+  renderBars($('ins-funnel'), rows.map((r) =>
+    barRow(`${r.label} (${r.n})`, r.med, max, 'var(--signal)', fmtDur(r.med))));
+}
+
+// Per-person output: commits + lines (git log), pushes (reflog), PRs (gh CLI).
+// Rows are per (person, date) — already range-filtered by the caller.
+function renderWork(rows) {
+  // Two machines of the same person scan the same repos and the same gh
+  // account — merge per (person, date) with MAX so they don't double-count.
+  const byUserDate = new Map();
+  for (const w of rows) {
+    const key = `${w.gitUser || 'unknown'}|${w.date}`;
+    const m = byUserDate.get(key) || { user: w.gitUser || 'unknown', commits: 0, pushes: 0, prs: 0, added: 0, deleted: 0 };
+    m.commits = Math.max(m.commits, w.commits || 0);
+    m.pushes = Math.max(m.pushes, w.pushes || 0);
+    m.prs = Math.max(m.prs, w.prs || 0);
+    m.added = Math.max(m.added, w.added || 0);
+    m.deleted = Math.max(m.deleted, w.deleted || 0);
+    byUserDate.set(key, m);
+  }
+  const byUser = {};
+  for (const m of byUserDate.values()) {
+    const u = byUser[m.user] || (byUser[m.user] = { commits: 0, pushes: 0, prs: 0, added: 0, deleted: 0 });
+    u.commits += m.commits; u.pushes += m.pushes; u.prs += m.prs;
+    u.added += m.added; u.deleted += m.deleted;
+  }
+  const list = Object.entries(byUser).sort((a, b) => b[1].commits - a[1].commits);
+  $('ins-work').innerHTML = list.length ? `
+    <div class="ml-row ml-row--work ml-row--head">
+      <span>person</span><span>commits</span><span>pushes</span><span>PRs</span><span>lines +</span><span>lines −</span>
+    </div>` + list.map(([u, v]) => `
+    <div class="ml-row ml-row--work">
+      <span class="ml-model">${escapeHtml(u)}</span>
+      <span>${fmtTok(v.commits)}</span><span>${fmtTok(v.pushes)}</span><span>${v.prs}</span>
+      <span class="wk-add">+${fmtTok(v.added)}</span><span class="wk-del">−${fmtTok(v.deleted)}</span>
+    </div>`).join('') : '<p class="empty empty--sm">no work reported yet (needs client v1.8+; PRs need the gh CLI)</p>';
+}
+
+function renderRepoStats(stats, now) {
+  stats = Array.isArray(stats) ? stats : [];
+  // Follow-ups backlog per repo
+  const fu = stats.filter((s) => (s.fuOpen || 0) + (s.fuClosed || 0) > 0);
+  $('ins-followups').innerHTML = fu.length ? fu.map((s) => `
+    <div class="mini-row">
+      <span class="mini-main">${escapeHtml(String(s.repoId).split('/').slice(-1)[0])}</span>
+      <span class="mini-meta"><b>${s.fuOpen}</b> open · ${s.fuClosed} closed</span>
+    </div>`).join('') : '<p class="empty empty--sm">no follow-ups reported</p>';
+
+  // Commits per day across tracked repos (git reports local dates — key locally)
+  const byDate = {};
+  for (const s of stats) for (const c of s.commits || []) byDate[c.date] = (byDate[c.date] || 0) + (c.n || 0);
+  const cols = [];
+  for (let i = 13; i >= 0; i--) {
+    const key = localDateStr(now - i * DAY);
+    const d = new Date(now - i * DAY);
+    cols.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, count: byDate[key] || 0 });
+  }
+  renderCols($('ins-commits'), cols);
+}
+
+// ── Presence + history (from SQLite via /api/presence and /api/history) ─────
+let lastPresence = null;
+let lastHistory = null;
+
+function renderPresence(p) {
+  const R = rangeInfo(Date.now());
+  const all = p && Array.isArray(p.buckets) ? p.buckets : [];
+  const buckets = all.filter((b) => {
+    const ms = b.hour * 3600000;
+    return ms >= R.fromMs && ms < R.toMsEx;
+  });
+  $('presence-empty').hidden = all.length > 0;
+  const heat = Array.from({ length: 7 }, () => new Array(24).fill(0)); // [dow][hour] minutes
+  const byUser = {}, byDay = {}, byHour = new Array(24).fill(0);
+  const today = new Date().toISOString().slice(0, 10);
+  let todayMin = 0;
+  for (const b of buckets) {
+    const d = new Date(b.hour * 3600000); // bucket → local time
+    heat[d.getDay()][d.getHours()] += b.minutes;
+    byHour[d.getHours()] += b.minutes;
+    byUser[b.user || 'unknown'] = (byUser[b.user || 'unknown'] || 0) + b.minutes;
+    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    byDay[dayKey] = (byDay[dayKey] || 0) + b.minutes;
+    if (dayKey === today) todayMin += b.minutes;
+  }
+  $('pr-people').textContent = Object.keys(byUser).length;
+  $('pr-hours').textContent = fmtHours(buckets.reduce((s, b) => s + b.minutes, 0));
+  const peak = byHour.indexOf(Math.max(...byHour));
+  $('pr-peak').textContent = byHour[peak] ? `${String(peak).padStart(2, '0')}:00` : '—';
+  $('pr-today').textContent = fmtHours(todayMin);
+
+  // Heatmap: rows Mon..Sun (start week on Monday), columns 0-23
+  const dows = [1, 2, 3, 4, 5, 6, 0];
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const maxCell = Math.max(1, ...heat.flat());
+  let html = '<div class="hm-grid"><span class="hm-corner"></span>';
+  for (let h = 0; h < 24; h++) html += `<span class="hm-collab">${h % 3 === 0 ? h : ''}</span>`;
+  for (const dow of dows) {
+    html += `<span class="hm-rowlab">${names[dow]}</span>`;
+    for (let h = 0; h < 24; h++) {
+      const v = heat[dow][h];
+      html += `<span class="hm-cell" style="opacity:${v ? (0.15 + 0.85 * (v / maxCell)).toFixed(2) : 0.04}" title="${names[dow]} ${h}:00 · ${Math.round(v)} min"></span>`;
+    }
+  }
+  html += '</div>';
+  $('pr-heatmap').innerHTML = html;
+
+  const people = Object.entries(byUser).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxP = Math.max(1, ...people.map(([, m]) => m));
+  renderBars($('pr-people-bars'), people.map(([u, m]) => barRow(u, m, maxP, 'var(--signal)', fmtHours(m))));
+
+  const spanDays = Math.min(31, Math.max(1, Math.round((R.toMsEx - R.fromMs) / DAY)));
+  const cols = [];
+  for (let i = spanDays - 1; i >= 0; i--) {
+    const d = new Date(R.toMsEx - DAY / 2 - i * DAY); // midpoint keeps local-day keys stable
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const min = byDay[key] || 0;
+    cols.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, count: Math.round(min), text: min ? fmtHours(min) : '' });
+  }
+  renderCols($('pr-daily'), cols);
+}
+
+function renderHistoryExtras(hist) {
+  const usage = hist && Array.isArray(hist.usage) ? hist.usage : [];
+  // Monthly token totals (in+out) from the durable usage table
+  const byMonth = {};
+  for (const u of usage) {
+    const m = String(u.date).slice(0, 7);
+    byMonth[m] = (byMonth[m] || 0) + (u.input || 0) + (u.output || 0);
+  }
+  const months = Object.keys(byMonth).sort().slice(-8);
+  renderCols($('us-monthly'), months.map((m) => ({ label: m.slice(2), count: byMonth[m], text: fmtTok(byMonth[m]) })));
+
+  const hs = hist && Array.isArray(hist.hotspots) ? hist.hotspots : [];
+  $('cf-hotspots').innerHTML = hs.length ? hs.slice(0, 15).map((h) => `
+    <div class="mini-row" title="${escapeHtml(h.repoId + ' · ' + h.path)}">
+      <span class="mini-main">${escapeHtml(String(h.path).split('/').slice(-2).join('/'))}</span>
+      <span class="mini-meta">${h.users}p · ${h.days}d · ${escapeHtml(h.last || '')}</span>
+    </div>`).join('') : '<p class="empty empty--sm">no history yet</p>';
+
+  const cf = hist && Array.isArray(hist.conflicts) ? hist.conflicts : [];
+  $('cf-history').innerHTML = cf.length ? cf.slice(0, 15).map((c) => `
+    <div class="mini-row" title="${escapeHtml(c.repoId + ' · ' + c.path)}">
+      <span class="mini-main">${escapeHtml(String(c.path).split('/').slice(-2).join('/'))}</span>
+      <span class="mini-meta">${escapeHtml(c.users)} · ${escapeHtml(c.day)}</span>
+    </div>`).join('') : '<p class="empty empty--sm">no conflicts recorded 🎉</p>';
+}
+
+const EXTRAS_MS = 60000;
+let extrasTimer = null;
+async function pollExtras() {
+  const key = getKey();
+  if (!key) return;
+  const headers = { 'x-cf-key': key };
+  const R = rangeInfo(Date.now());
+  const days = Math.min(30, Math.max(1, Math.ceil((Date.now() - R.fromMs) / DAY)));
+  try {
+    const [pr, hi] = await Promise.all([
+      fetch(`./api/presence?days=${days}`, { headers }),
+      fetch('./api/history?days=120', { headers }),
+    ]);
+    lastPresence = pr.ok ? await pr.json() : null;
+    lastHistory = hi.ok ? await hi.json() : null;
+  } catch (err) {
+    return; // keep last known extras on transient failures
+  }
+  renderPresence(lastPresence);
+  renderHistoryExtras(lastHistory);
+}
+
+// ── Usage (token + model) ───────────────────────────────────────────────────
+// Rows are per (machine, day, model) aggregates. "tokens" here = input + output
+// (the work the model actually did); cache create/read shown in the model table.
+// Build a column series across the range — daily up to ~5 weeks, weekly beyond.
+function dailySeries(R, valueByDate, fmt) {
+  const from = Date.parse(R.fromStr), to = Date.parse(R.toStr);
+  const span = Math.round((to - from) / DAY) + 1;
+  const step = span > 35 ? 7 : 1;
+  const cols = [];
+  for (let t = from; t <= to; t += step * DAY) {
+    let v = 0;
+    for (let k = 0; k < step; k++) v += valueByDate[new Date(t + k * DAY).toISOString().slice(0, 10)] || 0;
+    const d = new Date(t);
+    cols.push({ label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`, count: v, text: v ? fmt(v) : '' });
+  }
+  return cols;
+}
+
+function renderUsage(rows, sessions, tools, now, R) {
+  rows = Array.isArray(rows) ? rows : [];
+  R = R || rangeInfo(now);
+  $('usage-empty').hidden = rows.length > 0;
+  const tok = (u) => (u.input || 0) + (u.output || 0);
+
+  $('us-total').textContent = fmtTok(rows.reduce((s, u) => s + tok(u), 0));
+  $('us-week').textContent = fmtTok(rows.reduce((s, u) => s + (u.output || 0), 0));
+  $('us-cost').textContent = fmtUsd(rows.reduce((s, u) => s + estCost(u), 0));
+  $('us-models').textContent = new Set(rows.map((u) => u.model)).size;
+
+  const byProject = {};
+  for (const u of rows) { const p = u.project || 'unknown'; byProject[p] = (byProject[p] || 0) + tok(u); }
+  const projs = Object.entries(byProject).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxPr = Math.max(1, ...projs.map(([, n]) => n));
+  renderBars($('us-byproject'), projs.map(([p, n]) => barRow(p, n, maxPr, 'var(--marker)', fmtTok(n))));
+
+  const byTool = {};
+  for (const t of tools || []) byTool[t.tool] = (byTool[t.tool] || 0) + (t.count || 0);
+  const toolRows = Object.entries(byTool).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const maxT = Math.max(1, ...toolRows.map(([, n]) => n));
+  renderBars($('us-tools'), toolRows.map(([t, n]) => barRow(t, n, maxT, '#5c6470', fmtTok(n))));
+
+  const sessByDate = {};
+  for (const s of sessions || []) sessByDate[s.date] = (sessByDate[s.date] || 0) + (s.count || 0);
+  renderCols($('us-sessions'), dailySeries(R, sessByDate, String));
+
+  const byModel = {};
+  for (const u of rows) byModel[u.model] = (byModel[u.model] || 0) + tok(u);
+  const maxM = Math.max(1, ...Object.values(byModel));
+  renderBars($('us-bymodel'), Object.entries(byModel).sort((a, b) => b[1] - a[1])
+    .map(([m, n]) => barRow(shortModel(m), n, maxM, modelColor(m), fmtTok(n))));
+
+  const byPerson = {};
+  for (const u of rows) byPerson[u.gitUser || 'unknown'] = (byPerson[u.gitUser || 'unknown'] || 0) + tok(u);
+  const maxP = Math.max(1, ...Object.values(byPerson));
+  renderBars($('us-bypeople'), Object.entries(byPerson).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([p, n]) => barRow(p, n, maxP, 'var(--signal)', fmtTok(n))));
+
+  const tokByDate = {};
+  for (const u of rows) tokByDate[u.date] = (tokByDate[u.date] || 0) + tok(u);
+  renderCols($('us-daily'), dailySeries(R, tokByDate, fmtTok));
+
+  // One row per model: totals + cache traffic + when it was last used.
+  const models = {};
+  for (const u of rows) {
+    const m = models[u.model] || (models[u.model] = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, count: 0, last: '' });
+    m.input += u.input || 0; m.output += u.output || 0;
+    m.cacheCreate += u.cacheCreate || 0; m.cacheRead += u.cacheRead || 0;
+    m.count += u.count || 0;
+    if (u.date > m.last) m.last = u.date;
+  }
+  const list = Object.entries(models).sort((a, b) => (b[1].input + b[1].output) - (a[1].input + a[1].output));
+  $('us-modellist').innerHTML = list.length ? `
+    <div class="ml-row ml-row--head">
+      <span>model</span><span>msgs</span><span>input</span><span>output</span><span>cache write</span><span>cache read</span><span>est. cost</span><span>last used</span>
+    </div>` + list.map(([m, v]) => `
+    <div class="ml-row">
+      <span class="ml-model"><span class="ml-dot" style="background:${modelColor(m)}"></span>${escapeHtml(shortModel(m))}</span>
+      <span>${fmtTok(v.count)}</span><span>${fmtTok(v.input)}</span><span>${fmtTok(v.output)}</span>
+      <span>${fmtTok(v.cacheCreate)}</span><span>${fmtTok(v.cacheRead)}</span>
+      <span>${fmtUsd(estCost({ model: m, ...v }))}</span><span>${escapeHtml(v.last)}</span>
+    </div>`).join('') : '<p class="empty empty--sm">no data yet</p>';
+}
+
 // ── /dev run stats (client-side, so we can filter by teammate) ──────────────
 const DAY = 86400000;
+// ── Date-range filter (shared by Usage / Insights / Activity / Presence) ────
+// All range math runs on the viewer's LOCAL calendar: "Today" starts at the
+// viewer's midnight, and usage dates (localized by the client) key against it.
+const RANGE_PRESETS = [[1, 'Today'], [7, '7d'], [14, '14d'], [30, '30d']];
+let rangePreset = 30;   // preset days; 0 = custom from/to
+let rangeFrom = '';     // YYYY-MM-DD (custom)
+let rangeTo = '';
+
+function localDateStr(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function localMidnight(dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+function rangeInfo(now) {
+  let fromStr, toStr;
+  if (rangePreset > 0) {
+    fromStr = localDateStr(now - (rangePreset - 1) * DAY);
+    toStr = localDateStr(now);
+  } else {
+    fromStr = rangeFrom || localDateStr(now - 29 * DAY);
+    toStr = rangeTo || localDateStr(now);
+    if (fromStr > toStr) [fromStr, toStr] = [toStr, fromStr];
+  }
+  const fromMs = localMidnight(fromStr);
+  const toMsEx = localMidnight(toStr) + DAY; // exclusive end, local midnight
+  return { fromStr, toStr, fromMs, toMsEx };
+}
+
+const RANGE_CONTAINERS = ['use-range', 'ins-range', 'act-range', 'pr-range'];
+function renderRangeFilter() {
+  const chip = (d, label) =>
+    `<button class="mchip${rangePreset === d ? ' is-active' : ''}" data-range="${d}">${label}</button>`;
+  const html = '<span class="rf-lab">Range</span>'
+    + RANGE_PRESETS.map(([d, l]) => chip(d, l)).join('')
+    + chip(0, 'Custom')
+    + `<span class="rf-dates"${rangePreset === 0 ? '' : ' hidden'}>
+        <input type="date" class="rf-from" value="${rangeFrom}"> <span class="rf-sep">–</span>
+        <input type="date" class="rf-to" value="${rangeTo}">
+      </span>`;
+  for (const id of RANGE_CONTAINERS) { const el = $(id); if (el) el.innerHTML = html; }
+}
+
+function applyRange() {
+  renderRangeFilter();
+  applyFilter();
+  if (!$('demo-banner').hidden) {
+    const extras = demoExtras(Date.now());
+    renderPresence(extras.presence);
+    renderHistoryExtras(extras.history);
+  } else if (getKey()) {
+    pollExtras(); // presence window depends on the range — refetch
+  }
+}
+
 let currentUser = ''; // '' = whole team
 let lastRuns = [];
+let lastUsage = [];
+let lastSessions = [];
+let lastTools = [];
+let lastWork = [];
+let lastRepoStats = [];
 let lastNow = 0;
 
 function median(a) { return a.length ? a[Math.floor(a.length / 2)] : 0; }
@@ -266,33 +646,51 @@ function feedFrom(runs) {
   return runs.filter((r) => r.finished).slice().sort((a, b) => b.finished - a.finished).slice(0, 30)
     .map((r) => ({ ...r, durationSec: r.done && r.finished > r.started ? r.finished - r.started : 0 }));
 }
-function membersFrom(runs) {
+function membersFrom(runs, usage) {
   const c = {};
   for (const r of runs) { const u = r.gitUser || 'unknown'; c[u] = (c[u] || 0) + 1; }
+  // someone with usage but no /dev runs still gets a chip (count stays run-based)
+  for (const u of usage || []) { const n = u.gitUser || 'unknown'; if (!(n in c)) c[n] = 0; }
   return Object.entries(c).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 }
 function renderMemberFilter(members) {
   const chip = (name, label, count) =>
     `<button class="mchip${currentUser === name ? ' is-active' : ''}" data-user="${escapeHtml(name)}">${escapeHtml(label)}${count != null ? `<span class="mchip-n">${count}</span>` : ''}</button>`;
-  const html = chip('', 'Whole team') + members.map((m) => chip(m.name, m.name, m.count)).join('');
+  const html = chip('', 'Whole team') + members.map((m) => chip(m.name, m.name, m.count || null)).join('');
   $('ins-filter').innerHTML = html;
   $('act-filter').innerHTML = html;
+  $('use-filter').innerHTML = html;
 }
 function applyFilter() {
-  const runs = currentUser ? lastRuns.filter((r) => (r.gitUser || 'unknown') === currentUser) : lastRuns;
-  renderInsights(statsFrom(runs, lastNow));
+  const now = lastNow || Date.now();
+  const R = rangeInfo(now);
+  const by = (arr) => (currentUser ? arr.filter((x) => (x.gitUser || 'unknown') === currentUser) : arr);
+  const byDate = (arr) => arr.filter((x) => x.date >= R.fromStr && x.date <= R.toStr);
+  const runs = by(lastRuns).filter((r) => !r.finished || (r.finished * 1000 >= R.fromMs && r.finished * 1000 < R.toMsEx));
+  renderInsights(statsFrom(runs, now));
+  renderWork(byDate(by(lastWork)));
+  renderFunnel(runs);
+  renderRepoStats(lastRepoStats, now);
   renderActivity(feedFrom(runs));
+  renderUsage(byDate(by(lastUsage)), byDate(by(lastSessions)), by(lastTools), now, R);
 }
 
 function render(data) {
   lastData = data;
   lastRuns = Array.isArray(data.runs) ? data.runs : [];
+  lastUsage = Array.isArray(data.usage) ? data.usage : [];
+  lastSessions = Array.isArray(data.sessions) ? data.sessions : [];
+  lastTools = Array.isArray(data.tools) ? data.tools : [];
+  lastWork = Array.isArray(data.work) ? data.work : [];
+  lastRepoStats = Array.isArray(data.repoStats) ? data.repoStats : [];
   lastNow = data.now;
   renderTeam(data);
   renderConflicts(data);
   // drop a stale filter if that person no longer appears
-  if (currentUser && !lastRuns.some((r) => (r.gitUser || 'unknown') === currentUser)) currentUser = '';
-  renderMemberFilter(membersFrom(lastRuns));
+  if (currentUser
+      && !lastRuns.some((r) => (r.gitUser || 'unknown') === currentUser)
+      && !lastUsage.some((u) => (u.gitUser || 'unknown') === currentUser)) currentUser = '';
+  renderMemberFilter(membersFrom(lastRuns, lastUsage));
   applyFilter();
   setStatus('ok', `${data.onlineCount} online`);
 }
@@ -316,8 +714,11 @@ function start() {
   if (!key) return showGate(false);
   hideGate();
   poll();
+  pollExtras();
   if (timer) clearInterval(timer);
   timer = setInterval(poll, POLL_MS);
+  if (extrasTimer) clearInterval(extrasTimer);
+  extrasTimer = setInterval(pollExtras, EXTRAS_MS);
 }
 
 // ── Demo mode ───────────────────────────────────────────────────────────────
@@ -335,12 +736,76 @@ function demoRuns(now) {
     const type = pick(types);
     const finished = sec - Math.floor(rnd() * 14) * 86400 - Math.floor(rnd() * 50000);
     const dur = 600 + Math.floor(rnd() * 36000);
-    runs.push({ id: `${100 + i}-${type}-run`, type, repo: pick(repos), gitUser: people[pw[Math.floor(rnd() * pw.length)]], phase: 'done', started: finished - dur, finished, done: true });
+    const st = finished - dur;
+    const art = {
+      spec: Math.round(st + dur * 0.12), plan: Math.round(st + dur * 0.28),
+      'test-plan': Math.round(st + dur * 0.33), tests: Math.round(st + dur * 0.72),
+      review: Math.round(st + dur * 0.88), retro: finished,
+    };
+    runs.push({ id: `${100 + i}-${type}-run`, type, repo: pick(repos), gitUser: people[pw[Math.floor(rnd() * pw.length)]], phase: 'done', started: st, finished, done: true, art });
   }
   runs.push({ id: '0042-feat-stripe-retry', type: 'feat', repo: 'checkout-service', gitUser: 'alice', phase: 'phase-2-implementation', started: sec - 5000, finished: sec - 120, done: false });
   runs.push({ id: '0043-fix-charge-idempotency', type: 'fix', repo: 'checkout-service', gitUser: 'bob', phase: 'phase-2-implementation', started: sec - 8000, finished: sec - 300, done: false });
   runs.push({ id: '0044-refactor-checkout', type: 'refactor', repo: 'web', gitUser: 'carol', phase: 'phase-1-requirements', started: sec - 1000, finished: sec - 600, done: false });
   return runs;
+}
+
+function demoUsage(now) {
+  const people = ['alice', 'bob', 'carol'];
+  const models = ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'];
+  const weight = [3.0, 1.4, 0.8, 0.2]; // fable-heavy team
+  let seed = 4242;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const rows = [];
+  for (let i = 0; i < 21; i++) {
+    const date = new Date(now - i * 86400000).toISOString().slice(0, 10);
+    for (const p of people) {
+      for (let m = 0; m < models.length; m++) {
+        if (rnd() < 0.35) continue;
+        const out = Math.floor(rnd() * 400000 * weight[m]);
+        rows.push({
+          gitUser: p, agentId: `demo-${p}`, date, model: models[m],
+          project: ['checkout-service', 'web', 'infra', 'design-system'][Math.floor(rnd() * 4)],
+          input: Math.floor(out * (0.2 + rnd() * 0.4)), output: out,
+          cacheCreate: out * 8, cacheRead: out * 90, count: Math.floor(out / 900) + 1,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+function demoExtras(now) {
+  let seed = 777;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const people = ['alice', 'bob', 'carol'];
+  const buckets = [];
+  for (let i = 0; i < 14 * 24; i++) {
+    const hourEpoch = Math.floor(now / 3600000) - i;
+    const local = new Date(hourEpoch * 3600000);
+    const h = local.getHours(), dow = local.getDay();
+    if (dow === 0 || dow === 6) continue;
+    for (const u of people) {
+      if (h >= 9 && h <= 18 && rnd() > 0.25) buckets.push({ user: u, hour: hourEpoch, minutes: Math.round(20 + rnd() * 40) });
+      else if ((h === 8 || h > 18) && rnd() > 0.85) buckets.push({ user: u, hour: hourEpoch, minutes: Math.round(rnd() * 20) });
+    }
+  }
+  const usage = [];
+  for (let i = 0; i < 120; i++) {
+    const date = new Date(now - i * 86400000).toISOString().slice(0, 10);
+    usage.push({ date, model: 'claude-fable-5', input: 200000, output: Math.floor(rnd() * 900000), cacheCreate: 0, cacheRead: 0, count: 300 });
+    usage.push({ date, model: 'claude-sonnet-5', input: 100000, output: Math.floor(rnd() * 400000), cacheCreate: 0, cacheRead: 0, count: 200 });
+  }
+  const hotspots = [
+    { repoId: 'github.com/acme/checkout-service', path: 'src/payment/charge.ts', days: 9, users: 3, last: new Date(now).toISOString().slice(0, 10) },
+    { repoId: 'github.com/acme/web', path: 'src/routes/checkout.tsx', days: 6, users: 2, last: new Date(now - 86400000).toISOString().slice(0, 10) },
+    { repoId: 'github.com/acme/checkout-service', path: 'src/payment/refund.ts', days: 4, users: 2, last: new Date(now - 3 * 86400000).toISOString().slice(0, 10) },
+  ];
+  const conflicts = [
+    { day: new Date(now).toISOString().slice(0, 10), repoId: 'github.com/acme/checkout-service', path: 'src/payment/charge.ts', users: 'alice+bob', lastTs: now },
+    { day: new Date(now - 5 * 86400000).toISOString().slice(0, 10), repoId: 'github.com/acme/web', path: 'src/routes/checkout.tsx', users: 'bob+carol', lastTs: now - 5 * 86400000 },
+  ];
+  return { presence: { days: 14, buckets }, history: { usage, hotspots, conflicts } };
 }
 
 function demoData() {
@@ -367,17 +832,43 @@ function demoData() {
         repos: [{ repo: 'acme/infra', branch: 'chore/bump-deps', dir: '~/work/infra', label: '', files: 3 }], activity: [] },
     ],
     runs: demoRuns(now),
+    usage: demoUsage(now),
+    sessions: (() => {
+      const out = [];
+      for (let i = 0; i < 14; i++) {
+        const date = new Date(now - i * 86400000).toISOString().slice(0, 10);
+        for (const p of ['alice', 'bob', 'carol']) out.push({ gitUser: p, date, count: 2 + ((i * 7 + p.length) % 5), seconds: 3600 * (2 + ((i + p.length) % 6)) });
+      }
+      return out;
+    })(),
+    tools: ['Bash', 'Edit', 'Read', 'Write', 'Grep', 'Agent', 'WebSearch'].flatMap((tool, i) =>
+      ['alice', 'bob', 'carol'].map((p) => ({ gitUser: p, tool, count: Math.floor(3000 / (i + 1)) }))),
+    repoStats: [
+      { repoId: 'github.com/acme/checkout-service', fuOpen: 4, fuClosed: 11, commits: Array.from({ length: 14 }, (_, i) => ({ date: new Date(now - i * 86400000).toISOString().slice(0, 10), n: (i * 5) % 7 })) },
+      { repoId: 'github.com/acme/web', fuOpen: 1, fuClosed: 6, commits: Array.from({ length: 14 }, (_, i) => ({ date: new Date(now - i * 86400000).toISOString().slice(0, 10), n: (i * 3) % 5 })) },
+    ],
+    work: ['alice', 'bob', 'carol'].flatMap((p, pi) =>
+      Array.from({ length: 14 }, (_, i) => ({
+        gitUser: p,
+        date: new Date(now - i * 86400000).toISOString().slice(0, 10),
+        commits: ((i + pi) * 3) % 6, pushes: ((i + pi) * 2) % 4, prs: (i + pi) % 7 === 0 ? 1 : 0,
+        added: (((i + pi) * 97) % 400) + 40, deleted: ((i + pi) * 53) % 160,
+      }))),
   };
 }
 function isDemo() { return new URLSearchParams(location.search).has('demo'); }
 function enterDemo() {
   if (timer) { clearInterval(timer); timer = null; }
+  if (extrasTimer) { clearInterval(extrasTimer); extrasTimer = null; }
   hideGate();
   $('demo-banner').hidden = false;
   $('header-demo').hidden = true;
   $('signout').hidden = true;
   setStatus('ok', 'demo');
   render(demoData());
+  const extras = demoExtras(Date.now());
+  renderPresence(extras.presence);
+  renderHistoryExtras(extras.history);
   if (!isDemo()) history.replaceState(null, '', `${location.pathname}?demo`);
 }
 function exitDemo() {
@@ -392,13 +883,36 @@ function exitDemo() {
 document.querySelectorAll('.nav-item').forEach((n) => n.addEventListener('click', () => setTab(n.dataset.go)));
 setTab(localStorage.getItem(TAB_STORE) || 'team');
 
-['ins-filter', 'act-filter'].forEach((fid) => $(fid).addEventListener('click', (e) => {
+['ins-filter', 'act-filter', 'use-filter'].forEach((fid) => $(fid).addEventListener('click', (e) => {
   const btn = e.target.closest('.mchip');
   if (!btn) return;
   currentUser = btn.dataset.user || '';
-  renderMemberFilter(membersFrom(lastRuns));
+  renderMemberFilter(membersFrom(lastRuns, lastUsage));
   applyFilter();
 }));
+
+// Date-range chips + custom from/to, mirrored across the four tabs.
+RANGE_CONTAINERS.forEach((rid) => {
+  const el = $(rid);
+  el.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mchip');
+    if (!btn) return;
+    rangePreset = Number(btn.dataset.range);
+    if (rangePreset === 0 && !rangeFrom && !rangeTo) {
+      rangeFrom = new Date(Date.now() - 29 * DAY).toISOString().slice(0, 10);
+      rangeTo = new Date().toISOString().slice(0, 10);
+    }
+    applyRange();
+  });
+  el.addEventListener('change', (e) => {
+    if (e.target.classList.contains('rf-from')) rangeFrom = e.target.value;
+    else if (e.target.classList.contains('rf-to')) rangeTo = e.target.value;
+    else return;
+    rangePreset = 0;
+    applyRange();
+  });
+});
+renderRangeFilter();
 
 ['online-grid', 'recent-grid'].forEach((gid) => $(gid).addEventListener('click', (e) => {
   const btn = e.target.closest('.wk-more');

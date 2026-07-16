@@ -30,10 +30,14 @@
       <span class="brand-tag">dashboard</span>
 
       <nav class="nav">
+        <span class="nav-group">Live</span>
         <button class="nav-item" data-go="team"><span class="ni-ic">◍</span><span class="ni-label">Team</span><span id="nav-online" class="ni-badge"></span></button>
-        <button class="nav-item" data-go="conflicts"><span class="ni-ic">⚠</span><span class="ni-label">Conflicts</span><span id="nav-conflicts" class="ni-badge ni-badge--warn" hidden></span></button>
-        <button class="nav-item" data-go="insights"><span class="ni-ic">▤</span><span class="ni-label">Insights</span></button>
         <button class="nav-item" data-go="activity"><span class="ni-ic">≣</span><span class="ni-label">Activity</span></button>
+        <button class="nav-item" data-go="conflicts"><span class="ni-ic">⚠</span><span class="ni-label">Conflicts</span><span id="nav-conflicts" class="ni-badge ni-badge--warn" hidden></span></button>
+        <span class="nav-group">Analytics</span>
+        <button class="nav-item" data-go="usage"><span class="ni-ic">◔</span><span class="ni-label">Usage</span></button>
+        <button class="nav-item" data-go="insights"><span class="ni-ic">▤</span><span class="ni-label">Insights</span></button>
+        <button class="nav-item" data-go="presence"><span class="ni-ic">◷</span><span class="ni-label">Presence</span></button>
       </nav>
 
       <div class="side-foot">
@@ -73,6 +77,27 @@
         </section>
       </section>
 
+      <!-- PRESENCE -->
+      <section class="tab" data-tab="presence">
+        <header class="tab-head">
+          <h1>Presence</h1>
+          <p>When the team is online, from the heartbeat log — hours shown in your local time.</p>
+        </header>
+        <div class="mfilter mfilter--range" id="pr-range"></div>
+        <div class="stat-row">
+          <div class="stat"><span id="pr-people" class="stat-num">—</span><span class="stat-label">people seen</span></div>
+          <div class="stat"><span id="pr-hours" class="stat-num">—</span><span class="stat-label">online hours</span></div>
+          <div class="stat"><span id="pr-peak" class="stat-num">—</span><span class="stat-label">busiest hour</span></div>
+          <div class="stat"><span id="pr-today" class="stat-num">—</span><span class="stat-label">online hours today</span></div>
+        </div>
+        <div class="ins-grid">
+          <div class="panel panel--wide"><h3>Work-hours heatmap · weekday × hour</h3><div id="pr-heatmap" class="heatmap"></div></div>
+          <div class="panel"><h3>Online hours by person</h3><div id="pr-people-bars" class="bars"></div></div>
+          <div class="panel"><h3>Online hours per day</h3><div id="pr-daily" class="cols"></div></div>
+        </div>
+        <p id="presence-empty" class="empty" hidden>No presence history yet — the server needs its SQLite database attached.</p>
+      </section>
+
       <!-- CONFLICTS -->
       <section class="tab" data-tab="conflicts">
         <header class="tab-head">
@@ -81,6 +106,10 @@
         </header>
         <div id="conflicts-list" class="conflicts"></div>
         <p id="conflicts-empty" class="empty" hidden>No overlapping edits right now — all clear. 🎉</p>
+        <div class="ins-grid" style="margin-top:24px">
+          <div class="panel"><h3>File hotspots · 120d</h3><div id="cf-hotspots" class="mini-list"></div></div>
+          <div class="panel"><h3>Conflict history</h3><div id="cf-history" class="mini-list"></div></div>
+        </div>
       </section>
 
       <!-- INSIGHTS -->
@@ -90,6 +119,7 @@
           <p>How much the team has shipped through <code>/dev</code>.</p>
         </header>
         <div class="mfilter" id="ins-filter"></div>
+        <div class="mfilter mfilter--range" id="ins-range"></div>
         <div class="stat-row">
           <div class="stat"><span id="st-total" class="stat-num">—</span><span class="stat-label">runs completed</span></div>
           <div class="stat"><span id="st-week" class="stat-num">—</span><span class="stat-label">completed this week</span></div>
@@ -102,7 +132,38 @@
           <div class="panel panel--wide"><h3>Throughput · last 14 days</h3><div id="throughput" class="cols"></div></div>
           <div class="panel"><h3>Top contributors</h3><div id="lead-people" class="bars"></div></div>
           <div class="panel"><h3>Most active repos</h3><div id="lead-repos" class="bars"></div></div>
+          <div class="panel panel--wide"><h3>Output by person</h3><div id="ins-work" class="model-list"></div></div>
+          <div class="panel"><h3>Phase funnel · median time between artifacts</h3><div id="ins-funnel" class="bars"></div></div>
+          <div class="panel"><h3>Follow-ups backlog</h3><div id="ins-followups" class="mini-list"></div></div>
+          <div class="panel panel--wide"><h3>Commits · last 14 days (tracked repos)</h3><div id="ins-commits" class="cols"></div></div>
         </div>
+      </section>
+
+      <!-- USAGE -->
+      <section class="tab" data-tab="usage">
+        <header class="tab-head">
+          <h1>Usage</h1>
+          <p>Claude token usage and which models the team is running (selected range, per machine).</p>
+        </header>
+        <div class="mfilter" id="use-filter"></div>
+        <div class="mfilter mfilter--range" id="use-range"></div>
+        <div class="stat-row">
+          <div class="stat"><span id="us-total" class="stat-num">—</span><span class="stat-label">tokens · in+out</span></div>
+          <div class="stat"><span id="us-week" class="stat-num">—</span><span class="stat-label">output tokens</span></div>
+          <div class="stat"><span id="us-cost" class="stat-num">—</span><span class="stat-label">est. cost</span></div>
+          <div class="stat"><span id="us-models" class="stat-num">—</span><span class="stat-label">models in use</span></div>
+        </div>
+        <div class="ins-grid">
+          <div class="panel"><h3>Tokens by model</h3><div id="us-bymodel" class="bars"></div></div>
+          <div class="panel"><h3>Tokens by person</h3><div id="us-bypeople" class="bars"></div></div>
+          <div class="panel"><h3>Tokens by project</h3><div id="us-byproject" class="bars"></div></div>
+          <div class="panel"><h3>Tool calls · rolling 30d</h3><div id="us-tools" class="bars"></div></div>
+          <div class="panel panel--wide"><h3>Daily tokens</h3><div id="us-daily" class="cols"></div></div>
+          <div class="panel"><h3>Sessions per day</h3><div id="us-sessions" class="cols"></div></div>
+          <div class="panel"><h3>Monthly tokens (all history)</h3><div id="us-monthly" class="cols"></div></div>
+          <div class="panel panel--wide"><h3>Models in use</h3><div id="us-modellist" class="model-list"></div></div>
+        </div>
+        <p id="usage-empty" class="empty" hidden>No usage reported yet — clients on v1.6.0+ report it automatically.</p>
       </section>
 
       <!-- ACTIVITY -->
@@ -112,6 +173,7 @@
           <p>Recent <code>/dev</code> runs across the team, newest first.</p>
         </header>
         <div class="mfilter" id="act-filter"></div>
+        <div class="mfilter mfilter--range" id="act-range"></div>
         <div id="feed" class="feed"></div>
         <p id="feed-empty" class="empty" hidden>No runs reported yet.</p>
       </section>

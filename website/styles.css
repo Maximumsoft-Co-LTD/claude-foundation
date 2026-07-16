@@ -1847,3 +1847,32 @@ body::after {
 @media (max-width: 760px) {
   .dash-layout { grid-template-columns: 1fr; gap: 28px; }
 }
+
+/* ===== Focus visibility & skip link (a11y) ===== */
+.skip-link {
+  position: fixed;
+  top: -80px;
+  left: 12px;
+  z-index: 999;
+  padding: 10px 16px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius-sm);
+  font: 600 13px/1 var(--body);
+  text-decoration: none;
+  box-shadow: var(--shadow-lift);
+  transition: top 0.16s ease;
+}
+.skip-link:focus { top: 12px; }
+
+:where(a[href], button, [tabindex="0"], input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+#main { scroll-margin-top: 88px; }
+#main:focus { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
+}

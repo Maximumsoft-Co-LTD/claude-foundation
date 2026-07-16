@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-CLIENT_VERSION="1.5.0"
+CLIENT_VERSION="1.8.0"
 DEFAULT_SERVER="https://claude-foundation-dashboard-production.up.railway.app"
 
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -47,6 +47,7 @@ Options:
   --scan <dir>         Dir to scan for /dev runs + git repos (repeatable; default: \$HOME)
   --no-activity        Don't report what /dev runs are active (presence only)
   --no-conflicts       Don't report changed files/lines for conflict early-warning
+  --no-usage           Don't report Claude Code token/model usage
   --once               Send a single heartbeat and exit (run mode only)
   -h, --help           Show this help
 
@@ -71,10 +72,20 @@ INTERVAL=15
 ONCE="no"
 ACTIVITY="yes"                                             # report active /dev runs (repo+branch); --no-activity to opt out
 CONFLICTS="yes"                                            # report changed files+line-ranges per repo for conflict warning; --no-conflicts to opt out
+USAGE="yes"                                                # report Claude Code token/model usage from ~/.claude transcripts; --no-usage to opt out
 SCAN_ROOTS=()                                              # dirs to scan for .workflow runs + git repos (default: $HOME)
 SCAN_DEPTH="${CLAUDE_FOUNDATION_SCAN_DEPTH:-6}"        # .workflow repos sit ~4 levels under a work root; 6 covers nesting without walking deep trees
 ACTIVE_WINDOW="${CLAUDE_FOUNDATION_ACTIVE_WINDOW:-900}"    # secs since last state.json write to still count as "working"
 SCAN_INTERVAL="${CLAUDE_FOUNDATION_SCAN_INTERVAL:-60}"     # rescan cadence (decoupled from heartbeat)
+USAGE_DAYS="${CLAUDE_FOUNDATION_USAGE_DAYS:-30}"           # how far back to aggregate token usage
+USAGE_INTERVAL="${CLAUDE_FOUNDATION_USAGE_INTERVAL:-300}"  # transcripts are big — reaggregate at most this often
+PR_INTERVAL="${CLAUDE_FOUNDATION_PR_INTERVAL:-900}"        # gh API calls — refresh PR counts at most this often
+
+# Local-time offset in seconds (e.g. +0700 → 25200) — UTC timestamps from
+# transcripts/reflogs are shifted by this so days match the user's calendar.
+TZ_RAW="$(date +%z)"
+TZ_OFF=$(( 10#${TZ_RAW:1:2} * 3600 + 10#${TZ_RAW:3:2} * 60 ))
+[ "${TZ_RAW:0:1}" = "-" ] && TZ_OFF=$(( -TZ_OFF ))
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -91,6 +102,7 @@ while [ $# -gt 0 ]; do
     --scan=*)     SCAN_ROOTS+=("${1#*=}") ;;
     --no-activity) ACTIVITY="no" ;;
     --no-conflicts) CONFLICTS="no" ;;
+    --no-usage)   USAGE="no" ;;
     --once)       ONCE="yes" ;;
     --source)     shift ;;          # injected by the brew wrapper — ignore
     --source=*)   ;;                # ignore
@@ -154,9 +166,15 @@ json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; 
 # ── Run + change scans: /dev run history and per-repo edits on this machine ──
 RUNS_JSON="[]"
 CHANGES_JSON="[]"
+USAGE_JSON="[]"
+SESSIONS_JSON="[]"
+TOOLS_JSON="[]"
 LAST_SCAN=0
 RUNS_CACHE="$STATE_DIR/runs.json"      # background scan publishes results here
 CHG_CACHE="$STATE_DIR/changes.json"
+USAGE_CACHE="$STATE_DIR/usage.json"
+PRS_CACHE="$STATE_DIR/prs.json"
+PRS_JSON="[]"
 SCAN_LOCK="$STATE_DIR/scan.lock"
 
 # Join args with commas (bash-3.2 safe — never touches an empty array's [*]).
@@ -214,7 +232,15 @@ scan_runs() {
     started="$(dir_started "$rundir")"                  # run-dir birth ≈ created
     finished="$(file_mtime "$sj")"                      # state.json mtime ≈ last_updated
     doneflag=false; { [ "$phase" = "done" ] || [ "$step" = "done" ]; } && doneflag=true
-    ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"branch\":\"$(json_escape "$branch")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag}}")
+    # Artifact mtimes = phase completion timestamps (spec → plan → … → retro).
+    # The dashboard derives the phase funnel from these — no orchestrator change needed.
+    local art="" a af
+    for a in spec plan test-plan tests review security retro; do
+      af="$rundir/$a.md"
+      [ -f "$af" ] && art="$art,\"$a\":$(file_mtime "$af")"
+    done
+    art="{${art#,}}"
+    ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"branch\":\"$(json_escape "$branch")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag},\"art\":${art}}")
   done < <(find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
              \( -name node_modules -o -name .git -o -name Library -o -name .Trash -o -name .cache \) -prune \
              -o -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print 2>/dev/null)
@@ -281,16 +307,235 @@ scan_changes() {
                 if(f!="" && f!="/dev/null"){ rng[f]=rng[f] (rng[f]?",":"") s"-" (s+L-1); seen[f]=1 } }
         END{ for(f in seen) print f"\t"rng[f] }' | awk -v n="${CONFLICT_FILE_CAP:-80}" 'NR<=n')
     [ "${#file_items[@]}" -gt 0 ] || continue
-    repo_items+=("{\"repoId\":\"$(json_escape "$url")\",\"branch\":\"$(json_escape "$branch")\",\"path\":\"$(json_escape "$rel")\",\"label\":\"$(json_escape "$label")\",\"files\":[$(join_csv "${file_items[@]}")]}")
+    # Commit activity (all authors, last 14d, per day) + /dev follow-up backlog.
+    local commits fu fu_open fu_closed
+    commits="$(git -C "$root2" log --since=14.days --date=short --pretty='%ad' 2>/dev/null \
+      | sort | uniq -c | awk '{printf "%s{\"date\":\"%s\",\"n\":%d}", (NR>1?",":""), $2, $1}')"
+    # MY work in this repo: commits + lines added/deleted per day (author = this
+    # repo's git identity), and pushes per day from the remote-ref reflogs —
+    # "update by push" entries only exist on the machine that pushed.
+    local me work pushes gitdir
+    me="$(git -C "$root2" config user.name 2>/dev/null || true)"
+    work="$({ git -C "$root2" log --since=14.days --author="$me" --date=short --pretty='C|%ad' --numstat 2>/dev/null || true; } \
+      | awk -F'\t' '
+        /^C\|/ { split($0, x, "|"); cur = x[2]; C[cur]++; next }
+        NF >= 3 && cur != "" { if ($1 != "-") A[cur] += $1; if ($2 != "-") D[cur] += $2 }
+        END {
+          first = 1
+          for (d in C) {
+            if (!first) printf ","
+            first = 0
+            printf "{\"date\":\"%s\",\"commits\":%d,\"added\":%d,\"deleted\":%d}", d, C[d], A[d]+0, D[d]+0
+          }
+        }')"
+    gitdir="$(git -C "$root2" rev-parse --git-common-dir 2>/dev/null)"
+    case "$gitdir" in /*) ;; *) gitdir="$root2/$gitdir" ;; esac
+    pushes="$({ cat "$gitdir/logs/refs/remotes"/*/* 2>/dev/null || true; } \
+      | awk -v tzoff="$TZ_OFF" -v cutsec="$(( $(date +%s) - 14 * 86400 ))" '
+        function cfd(z,   era, doe, yoe, doy, mp, d, m, y) {
+          z += 719468
+          era = int((z >= 0 ? z : z - 146096) / 146097)
+          doe = z - era * 146097
+          yoe = int((doe - int(doe/1460) + int(doe/36524) - int(doe/146096)) / 365)
+          y = yoe + era * 400
+          doy = doe - (365 * yoe + int(yoe/4) - int(yoe/100))
+          mp = int((5 * doy + 2) / 153)
+          d = doy - int((153 * mp + 2) / 5) + 1
+          m = mp + (mp < 10 ? 3 : -9)
+          y += (m <= 2 ? 1 : 0)
+          return sprintf("%04d-%02d-%02d", y, m, d)
+        }
+        /update by push/ {
+          for (i = 1; i <= NF; i++) {
+            if ($i ~ /^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]$/ && $(i+1) ~ /^[+-][0-9][0-9][0-9][0-9]/) {
+              if ($i + 0 >= cutsec) P[cfd(int(($i + tzoff) / 86400))]++
+              break
+            }
+          }
+        }
+        END {
+          first = 1
+          for (d in P) {
+            if (!first) printf ","
+            first = 0
+            printf "{\"date\":\"%s\",\"n\":%d}", d, P[d]
+          }
+        }')"
+    fu_open=0; fu_closed=0
+    if [ -f "$root2/.workflow/FOLLOWUPS.md" ]; then
+      fu="$(awk '/^## Open/{s=1} /^## Closed/{s=2} /^\| *F/{ if(s==1)o++; else if(s==2)c++ } END{printf "%d %d", o+0, c+0}' "$root2/.workflow/FOLLOWUPS.md" 2>/dev/null)"
+      fu_open="${fu%% *}"; fu_closed="${fu##* }"
+    fi
+    repo_items+=("{\"repoId\":\"$(json_escape "$url")\",\"branch\":\"$(json_escape "$branch")\",\"path\":\"$(json_escape "$rel")\",\"label\":\"$(json_escape "$label")\",\"commits\":[${commits}],\"work\":[${work}],\"pushes\":[${pushes}],\"fuOpen\":${fu_open:-0},\"fuClosed\":${fu_closed:-0},\"files\":[$(join_csv "${file_items[@]}")]}")
   done < <(printf '%s\n' "${cand[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${CHANGES_REPO_CAP:-20}" 'NR<=n')
 
   CHANGES_JSON="[$(join_csv ${repo_items[@]+"${repo_items[@]}"})]"
 }
 
-# Run both scans and atomically publish their results to the cache files.
+# Aggregate Claude Code token usage per (day, model) from the local transcript
+# JSONL files (~/.claude/projects/**/*.jsonl). Each assistant line carries
+# `message.model` + `message.usage`; lines are deduped by message id (resumes /
+# compaction copy history into new session files). Heavy (transcripts run to
+# GBs), so it reuses its own cache and reaggregates at most every USAGE_INTERVAL.
+scan_usage() {
+  [ "$USAGE" = "yes" ] || { USAGE_JSON="[]"; SESSIONS_JSON="[]"; TOOLS_JSON="[]"; return; }
+  local now age
+  now="$(date +%s)"
+  if [ -s "$USAGE_CACHE" ]; then
+    age=$(( now - $(file_mtime "$USAGE_CACHE") ))
+    if [ "$age" -lt "$USAGE_INTERVAL" ]; then
+      USAGE_JSON="$(sed -n 1p "$USAGE_CACHE" 2>/dev/null)"
+      SESSIONS_JSON="$(sed -n 2p "$USAGE_CACHE" 2>/dev/null)"
+      TOOLS_JSON="$(sed -n 3p "$USAGE_CACHE" 2>/dev/null)"
+      [ -n "$USAGE_JSON" ] || USAGE_JSON="[]"
+      [ -n "$SESSIONS_JSON" ] || SESSIONS_JSON="[]"
+      [ -n "$TOOLS_JSON" ] || TOOLS_JSON="[]"
+      return
+    fi
+  fi
+  local proj="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  [ -d "$proj" ] || { USAGE_JSON="[]"; SESSIONS_JSON="[]"; TOOLS_JSON="[]"; return; }
+  local cut_epoch cutoff
+  cut_epoch=$(( now - USAGE_DAYS * 86400 ))
+  cutoff="$(date -r "$cut_epoch" +%Y-%m-%d 2>/dev/null || date -d "@$cut_epoch" +%Y-%m-%d 2>/dev/null || echo 1970-01-01)"
+  local tzoff="$TZ_OFF"
+  local files=() f out
+  while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done \
+    < <(find "$proj" -name '*.jsonl' -type f -mtime "-$USAGE_DAYS" 2>/dev/null | awk -v n="${USAGE_FILE_CAP:-4000}" 'NR<=n')
+  if [ "${#files[@]}" -eq 0 ]; then
+    USAGE_JSON="[]"; SESSIONS_JSON="[]"; TOOLS_JSON="[]"
+  else
+    # One streaming pass over the transcripts. Emits THREE lines:
+    #   1: usage rows per (date, model, project)   2: sessions per date   3: tool-call counts
+    out="$(awk -v cutoff="$cutoff" -v tzoff="$tzoff" '
+      # Civil-date <-> day-serial math (Hinnant) for shifting UTC dates to local.
+      function dfc(y, m, d,   era, yoe, doy, doe) {
+        y = y - (m <= 2 ? 1 : 0)
+        era = int((y >= 0 ? y : y - 399) / 400)
+        yoe = y - era * 400
+        doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+        doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+        return era * 146097 + doe - 719468
+      }
+      function cfd(z,   era, doe, yoe, doy, mp, d, m, y) {
+        z += 719468
+        era = int((z >= 0 ? z : z - 146096) / 146097)
+        doe = z - era * 146097
+        yoe = int((doe - int(doe/1460) + int(doe/36524) - int(doe/146096)) / 365)
+        y = yoe + era * 400
+        doy = doe - (365 * yoe + int(yoe/4) - int(yoe/100))
+        mp = int((5 * doy + 2) / 153)
+        d = doy - int((153 * mp + 2) / 5) + 1
+        m = mp + (mp < 10 ? 3 : -9)
+        y += (m <= 2 ? 1 : 0)
+        return sprintf("%04d-%02d-%02d", y, m, d)
+      }
+      index($0, "\"usage\"") == 0 { next }
+      index($0, "\"type\":\"assistant\"") == 0 { next }
+      {
+        if (match($0, /"model":"[^"]*"/) == 0) next
+        model = substr($0, RSTART+9, RLENGTH-10)
+        if (model == "" || model == "<synthetic>") next
+        if (match($0, /"timestamp":"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) == 0) next
+        date = substr($0, RSTART+13, 10)
+        tsec = substr($0, RSTART+24, 2)*3600 + substr($0, RSTART+27, 2)*60 + substr($0, RSTART+30, 2)
+        tsec += tzoff
+        if (tsec < 0)          { tsec += 86400; date = cfd(dfc(substr(date,1,4)+0, substr(date,6,2)+0, substr(date,9,2)+0) - 1) }
+        else if (tsec >= 86400) { tsec -= 86400; date = cfd(dfc(substr(date,1,4)+0, substr(date,6,2)+0, substr(date,9,2)+0) + 1) }
+        if (date < cutoff) next
+        mid = ""
+        if (match($0, /"id":"[^"]*"/)) mid = substr($0, RSTART+6, RLENGTH-7)
+        if (mid != "") { if (mid in seen) next; seen[mid] = 1 }
+        proj = ""
+        if (match($0, /"cwd":"[^"]*"/)) {
+          np = split(substr($0, RSTART+7, RLENGTH-8), pp, "/")
+          proj = pp[np]
+        }
+        it = 0; ot = 0; cc = 0; cr = 0
+        if (match($0, /"input_tokens":[0-9]+/))                it = substr($0, RSTART+15, RLENGTH-15) + 0
+        if (match($0, /"output_tokens":[0-9]+/))                ot = substr($0, RSTART+16, RLENGTH-16) + 0
+        if (match($0, /"cache_creation_input_tokens":[0-9]+/))  cc = substr($0, RSTART+30, RLENGTH-30) + 0
+        if (match($0, /"cache_read_input_tokens":[0-9]+/))      cr = substr($0, RSTART+26, RLENGTH-26) + 0
+        if (it + ot + cc + cr == 0) next
+        k = date "|" model "|" proj
+        I[k] += it; O[k] += ot; CC[k] += cc; CR[k] += cr; N[k]++
+        sk = FILENAME "|" date
+        if (!(sk in MN)) { MN[sk] = tsec; MX[sk] = tsec } else { if (tsec < MN[sk]) MN[sk] = tsec; if (tsec > MX[sk]) MX[sk] = tsec }
+        rest = $0
+        while (match(rest, /"type":"tool_use","id":"[^"]*","name":"[^"]*"/)) {
+          seg = substr(rest, RSTART, RLENGTH)
+          rest = substr(rest, RSTART + RLENGTH)
+          if (match(seg, /"name":"[^"]*"$/)) T[substr(seg, RSTART+8, RLENGTH-9)]++
+        }
+      }
+      END {
+        printf "["
+        first = 1
+        for (k in I) {
+          split(k, p, "|")
+          if (!first) printf ","
+          first = 0
+          printf "{\"date\":\"%s\",\"model\":\"%s\",\"project\":\"%s\",\"input\":%.0f,\"output\":%.0f,\"cacheCreate\":%.0f,\"cacheRead\":%.0f,\"count\":%.0f}", p[1], p[2], p[3], I[k], O[k], CC[k], CR[k], N[k]
+        }
+        printf "]\n["
+        for (sk in MN) { split(sk, q, "|"); d = q[2]; SC[d]++; SS[d] += MX[sk] - MN[sk] }
+        first = 1
+        for (d in SC) {
+          if (!first) printf ","
+          first = 0
+          printf "{\"date\":\"%s\",\"count\":%d,\"seconds\":%.0f}", d, SC[d], SS[d]
+        }
+        printf "]\n["
+        first = 1
+        for (t in T) {
+          if (!first) printf ","
+          first = 0
+          printf "{\"tool\":\"%s\",\"count\":%.0f}", t, T[t]
+        }
+        printf "]"
+      }' "${files[@]}" 2>/dev/null)"
+    USAGE_JSON="$(printf '%s\n' "$out" | sed -n 1p)"
+    SESSIONS_JSON="$(printf '%s\n' "$out" | sed -n 2p)"
+    TOOLS_JSON="$(printf '%s\n' "$out" | sed -n 3p)"
+    [ -n "$USAGE_JSON" ] || USAGE_JSON="[]"
+    [ -n "$SESSIONS_JSON" ] || SESSIONS_JSON="[]"
+    [ -n "$TOOLS_JSON" ] || TOOLS_JSON="[]"
+  fi
+  printf '%s\n%s\n%s' "$USAGE_JSON" "$SESSIONS_JSON" "$TOOLS_JSON" > "$USAGE_CACHE.tmp" 2>/dev/null \
+    && mv "$USAGE_CACHE.tmp" "$USAGE_CACHE" 2>/dev/null
+}
+
+# PRs I created in the last 14 days, counted per day via the gh CLI (one
+# `gh search prs` call covers every repo). Skips silently when gh is missing
+# or unauthenticated; throttled by PR_INTERVAL because it hits the GitHub API.
+scan_prs() {
+  PRS_JSON="[]"
+  command -v gh >/dev/null 2>&1 || return 0
+  local now age since
+  now="$(date +%s)"
+  if [ -s "$PRS_CACHE" ]; then
+    age=$(( now - $(file_mtime "$PRS_CACHE") ))
+    if [ "$age" -lt "$PR_INTERVAL" ]; then
+      PRS_JSON="$(cat "$PRS_CACHE" 2>/dev/null)"
+      PRS_JSON="${PRS_JSON:-[]}"
+      return 0
+    fi
+  fi
+  since="$(date -r "$(( now - 14 * 86400 ))" +%Y-%m-%d 2>/dev/null || date -d "@$(( now - 14 * 86400 ))" +%Y-%m-%d 2>/dev/null)"
+  PRS_JSON="$({ gh search prs --author "@me" --created ">=$since" --json createdAt --limit 100 2>/dev/null || true; } \
+    | { grep -o '"createdAt":"[^"]*"' || true; } | cut -d'"' -f4 | cut -c1-10 | sort | uniq -c \
+    | awk '{printf "%s{\"date\":\"%s\",\"n\":%d}", (NR>1?",":""), $2, $1}')"
+  PRS_JSON="[${PRS_JSON}]"
+  printf '%s' "$PRS_JSON" > "$PRS_CACHE.tmp" 2>/dev/null && mv "$PRS_CACHE.tmp" "$PRS_CACHE" 2>/dev/null
+}
+
+# Run the scans and atomically publish their results to the cache files.
+# (scan_usage publishes its own cache — it throttles itself off that file's age.)
 run_scans_to_cache() {
   scan_runs
   scan_changes
+  scan_usage
+  scan_prs
   printf '%s' "$RUNS_JSON" > "$RUNS_CACHE.tmp" 2>/dev/null && mv "$RUNS_CACHE.tmp" "$RUNS_CACHE" 2>/dev/null
   printf '%s' "$CHANGES_JSON" > "$CHG_CACHE.tmp" 2>/dev/null && mv "$CHG_CACHE.tmp" "$CHG_CACHE" 2>/dev/null
   rm -f "$SCAN_LOCK"
@@ -316,14 +561,24 @@ maybe_scan() {
 load_cache() {
   [ -s "$RUNS_CACHE" ] && RUNS_JSON="$(cat "$RUNS_CACHE" 2>/dev/null)"
   [ -s "$CHG_CACHE" ] && CHANGES_JSON="$(cat "$CHG_CACHE" 2>/dev/null)"
+  if [ "$USAGE" = "yes" ] && [ -s "$USAGE_CACHE" ]; then
+    USAGE_JSON="$(sed -n 1p "$USAGE_CACHE" 2>/dev/null)"
+    SESSIONS_JSON="$(sed -n 2p "$USAGE_CACHE" 2>/dev/null)"
+    TOOLS_JSON="$(sed -n 3p "$USAGE_CACHE" 2>/dev/null)"
+  fi
+  [ -s "$PRS_CACHE" ] && PRS_JSON="$(cat "$PRS_CACHE" 2>/dev/null)"
   [ -n "$RUNS_JSON" ] || RUNS_JSON="[]"
   [ -n "$CHANGES_JSON" ] || CHANGES_JSON="[]"
+  [ -n "$USAGE_JSON" ] || USAGE_JSON="[]"
+  [ -n "$SESSIONS_JSON" ] || SESSIONS_JSON="[]"
+  [ -n "$TOOLS_JSON" ] || TOOLS_JSON="[]"
+  [ -n "$PRS_JSON" ] || PRS_JSON="[]"
 }
 
 build_payload() {
-  printf '{"agentId":"%s","gitUser":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s}' \
+  printf '{"agentId":"%s","gitUser":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s,"usage":%s,"sessions":%s,"tools":%s,"prs":%s}' \
     "$(json_escape "$AGENT_ID")" "$(json_escape "$GIT_USER")" \
-    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$RUNS_JSON" "$CHANGES_JSON"
+    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$RUNS_JSON" "$CHANGES_JSON" "$USAGE_JSON" "$SESSIONS_JSON" "$TOOLS_JSON" "$PRS_JSON"
 }
 
 beat() {
@@ -357,8 +612,11 @@ run_loop() {
   if [ "$CONFLICTS" = "yes" ]; then
     info "conflicts: scanning git repos in the background for changed files/lines ${D}(top ${CHANGES_REPO_CAP:-20} by recency · --no-conflicts to disable)${N}"
   fi
+  if [ "$USAGE" = "yes" ]; then
+    info "usage:     aggregating Claude token/model usage over ${USAGE_DAYS}d, refreshed every ${USAGE_INTERVAL}s ${D}(--no-usage to disable)${N}"
+  fi
   # --once: run the scans synchronously so the single beat carries fresh data.
-  if [ "$ONCE" = "yes" ]; then scan_runs; scan_changes; beat online; exit 0; fi
+  if [ "$ONCE" = "yes" ]; then scan_runs; scan_changes; scan_usage; scan_prs; beat online; exit 0; fi
   info "heartbeat every ${INTERVAL}s — press Ctrl-C to stop"
   # Presence is never blocked by scanning: the first beat fires immediately, the
   # heavy repo scan runs detached (writes a cache), and beats load whatever the

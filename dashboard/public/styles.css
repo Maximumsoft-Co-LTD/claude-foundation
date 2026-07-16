@@ -565,3 +565,113 @@ body::before {
 .mchip:hover { border-color: var(--muted); }
 .mchip.is-active { background: var(--signal); border-color: var(--signal); color: #fff; }
 .mchip-n { font-family: var(--mono); font-size: 11px; opacity: 0.7; }
+
+/* --- Usage tab (token + model) --------------------------------------------- */
+.model-list { display: flex; flex-direction: column; overflow-x: auto; }
+.ml-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.5fr) repeat(6, minmax(62px, 1fr)) minmax(92px, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  min-width: 640px;
+}
+.ml-row:last-child { border-bottom: none; }
+.ml-row--head {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ml-model { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.ml-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+/* --- Presence heatmap ------------------------------------------------------- */
+.heatmap { overflow-x: auto; }
+.hm-grid {
+  display: grid;
+  grid-template-columns: 44px repeat(24, minmax(14px, 1fr));
+  gap: 3px;
+  min-width: 560px;
+  align-items: center;
+}
+.hm-corner { }
+.hm-collab, .hm-rowlab {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+}
+.hm-rowlab { text-align: right; padding-right: 6px; }
+.hm-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 3px;
+  background: var(--signal);
+  min-height: 14px;
+}
+
+/* --- Mini list (hotspots, conflict history, follow-ups) --------------------- */
+.mini-list { display: flex; flex-direction: column; }
+.mini-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.mini-row:last-child { border-bottom: none; }
+.mini-main {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-meta { color: var(--ink-soft); font-size: 12px; white-space: nowrap; }
+
+/* --- Date-range filter ------------------------------------------------------ */
+.mfilter--range { margin-top: -6px; }
+.rf-lab {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-right: 4px;
+  align-self: center;
+}
+.rf-dates { display: inline-flex; align-items: center; gap: 6px; }
+.rf-sep { color: var(--ink-soft); }
+.rf-from, .rf-to {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+/* --- Nav group labels ------------------------------------------------------- */
+.nav-group {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 14px 12px 4px;
+}
+.nav-group:first-child { padding-top: 2px; }
+
+/* --- Output-by-person table -------------------------------------------------- */
+.ml-row--work {
+  grid-template-columns: minmax(120px, 1.4fr) repeat(5, minmax(60px, 1fr));
+  min-width: 480px;
+}
+.wk-add { color: #1d8f7a; }
+.wk-del { color: #e8501e; }
