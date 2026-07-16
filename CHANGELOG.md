@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-07-16
+
+### Changed (wall-clock pass — fewer sequential spawns, same guarantees)
+
+- **Combined `lead` fast path extended to M** — an M run gets one opus `lead` combined spawn (spec + plan + tasks + test-plan) instead of `pm` + `lead` + `qa` test-plan; brownfield M builds `context.md` before the combined spawn, seeded from the requirements digest. `pm` and the `qa` test-plan spawn are now L-only in one-shot `/dev`; `/spec` and `/test-plan` team-mode commands are unchanged.
+- **Security folded into the Review spawn** — the trigger scan (name-only, never skippable) runs before Review; a fired trigger extends the same `lead` spawn with security mode (opus, one spawn, two artifacts). Standalone security spawn remains for user-requested audits and gate-skipped Review. Blocking semantics and cycle accounting unchanged.
+- **Test runs inline at XS/S** (`e2e_visual=off`) — the engineer implements the planned `test-plan.md` rows alongside the tasks; the orchestrator runs the Impacted command and writes `tests.md` itself. `qa` execute spawns at M/L or `e2e_visual=on`.
+- **Docs+ship merged through M** (one `engineer` spawn; L keeps two) and **retro inline through S** (light spawn at M, full at L).
+- **Size picker calibrated** — S widened to ~5 files on one understood surface; the machinery estimate tie-breaks borderline XS/S and S/M to the smaller tier when no hard risk flag is present (`SIZE_UPGRADE` ratchets up mid-run); borderline M/L stays L. Plan-section `Size` keeps the conservative round-up.
+- Net effect: a typical M run drops from ~10–11 sequential sub-agent spawns to ~6; the never-shrinks set (interview, gate + per-line AC confirm, state discipline, security-trigger check, type matrix) is untouched.
+
 ## [2.8.1] - 2026-07-16
 
 ### Changed (token/speed pass — zero behavior change)
