@@ -21,6 +21,21 @@ description: Apply the code-level fundamentals — data modeling, illegal-state 
 
 7. **Read before you write.** Read the surrounding code, the error message, and the actual failing function before writing or guessing — most fixes that fail address an imagined problem; reading first is free, rework is expensive. When debugging, read the full error message and stack trace first — most bugs name themselves in the first line (unknown-cause failures have their own procedure: `debug-fundamentals`). Before adding a utility, search for an existing one (LSP-first — `CLAUDE.md`) and match project convention. Before changing a function, read its callers — the contract is what they depend on, not the docstring. Details: `references/details.md > 7. Read before you write`.
 
+## Build sequence
+
+The principles ordered into the writing loop — each step feeds the next:
+
+1. **Read** (P7) — surrounding code, callers, full error; search for an existing utility first.
+2. **Model the data** (P1) — input/output types before any body; most constrained shape.
+3. **Lock out illegal states** (P2) — wrap ruled values; sum-type illegal combos. Now, not retrofitted.
+4. **Shape the functions** (P3) — one job each, name = contract; a name needing "and" splits.
+5. **Place the effects** (P4) — load → compute → write seams; time/randomness/I-O injected, pure middle.
+6. **Decide every failure path** (P5) — expected → return type, bugs crash, boundaries catch-log-translate.
+7. **Cost the loops** (P6) — O(n) lookup inside O(n) loop → `Set`/`Map`.
+8. **Write, then gate** — minimum satisfying 2–7; pre-flight checklist below as self-review.
+
+Bug fix: reproduce first (unknown cause → `debug-fundamentals`), re-enter at the touched step. Review: same order — data first, style last.
+
 ## Pre-flight checklist
 
 Before writing or substantially changing code, run through these in your head:
