@@ -7,9 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-07-17
+
+Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams from `feedback-notes/improvement-plan.md`.
+
 ### Added
 
-- **Dashboard: version display** — the server reads its version from `dashboard/package.json` (now aligned with the foundation release, 2.10.0) and surfaces it in `/api/health`, `/api/online`, and the sidebar footer (`vX.Y.Z`).
+- **XS micro-lane** — a single `run.md` artifact (`_templates/run.md`) replaces spec/plan/tasks/test-plan at `size=XS` (lint + `--resume` + team-mode wired); interview **fast-lane** (digest answers every slot → one confirmation question) and a **one-batch gate** at XS/S; a gate-flipped review on a patch-lane run executes inline (no `lead` spawn).
+- **Type-aware artifact shapes** — spec/plan/tasks templates carry per-Type contract blocks (`fix` → Reproduction & Expected, `refactor` → Equivalence contract, `chore` → Checklist, `docs` → Docs scope, `spike` → Questions & Timebox — each carrying its own `AC#`s); `artifact-lint.sh` validates the shape from `**Type**:` (chore/docs exempt from mermaid); canonical lookup table in `plan-writing > references/size-tiering.md > Artifact shape by Type`; the gate accepts **additive-only** shape deviations. Lint suite grows to 52 assertions.
+- **Context ledger** — workers return `CONTEXT: path#anchor — fact` lines; the orchestrator (single writer) folds them into `context.md > ## Discovered`; retro folds still-true lines up to a repo-level `.workflow/CONTEXT.md` that seeds the next run's Context step; **truth hierarchy** (code > docs > ledger; post-Implement the diff wins) added to the always-on router.
+- **Decision records** — retro appends architecture-level decisions to an append-only `docs/DECISIONS.md` (supersede by new row, never rewrite).
+- **Docs freshness** — `init-project-docs` gains a **diff-scoped** third mode + `last-verified` frontmatter stamps; engineer docs mode syncs only the sections the run's diff touches and recommends a full update run on heavy drift.
+- **SC measurement** — retro walks every `SC-###` (measured, or `unmeasurable at ship` → follow-up); new `## SC outcome` section in the retro template.
+- **Dashboard: version display** — the server reads its version from `dashboard/package.json` (aligned with the foundation release) and surfaces it in `/api/health`, `/api/online`, and the sidebar footer (`vX.Y.Z`).
+
+### Changed
+
+- **Vision** — `WORKFLOW.md` declares **fast first** as the tie-breaker plus a never-cut floor (gate · security-trigger check · state writes/`--resume` · `fix` regression contract · per-line AC confirm); the Conduct digest mirrors both.
+- **Spawn briefs** — every brief opens with a Goal line (run Goal + AC ids) and attaches the context ledger when present.
+- **Models** — `engineer` escalates to opus at `Size=L` / security paths; `team-type-design-analyzer` haiku → sonnet.
+- **Type rules single-sourced** — canonical in the type matrix; `lead`/`engineer` keep pointers; `lead` adds an adversarial pass at L review.
+- **Leaner agent bodies** — duplicated context-usage/task-format detail moved to references; the ledger contract is one line per agent; orchestrator ledger-fold mechanics live in `references/state-edge-cases.md`.
 
 ## [2.10.0] - 2026-07-17
 

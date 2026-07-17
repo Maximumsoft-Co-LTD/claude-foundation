@@ -1,6 +1,6 @@
 {
   "name": "claude-foundation-dashboard",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "private": true,
   "description": "Central presence dashboard — see which installed claude-foundation agents are online.",
   "main": "server.js",
