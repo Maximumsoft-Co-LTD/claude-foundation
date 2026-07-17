@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-17
+
 ### Added
 
 - **Dashboard: run ownership** — the orchestrator now writes `owner`/`owner_email` (git identity, `never guess`) into `state.json` at run creation (template gains both fields); `client.sh` reports them per run (+ `size` and a normalized `repoId`, with a first-commit-author fallback for older runs) and the server attributes each run to its **owner, never the reporter** — a teammate pulling your committed `.workflow/` dir can't show up as having run it. Runs dedupe by `repoId|runId` across clones and worktrees.
@@ -632,7 +634,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.2...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.2...v2.10.0
 [2.9.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.1...v2.9.2
 [2.6.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.7...v2.6.8
 [2.6.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.6...v2.6.7
