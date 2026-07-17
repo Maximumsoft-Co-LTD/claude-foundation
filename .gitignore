@@ -8,3 +8,6 @@ docs/
 # Serena MCP server (per-project config/cache/memories, auto-generated)
 .serena/
 solar-system/
+
+dashboard/data/dashboard.db
+dashboard/data/dashboard.db-wal
