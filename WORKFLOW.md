@@ -1,8 +1,8 @@
 # Workflow
 
-A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal.
+A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal. **Fast first** — when two compliant paths exist, take the faster one; speed comes from cutting overhead (round-trips, re-reads, ceremony), never from cutting verification. **Floor (never cut, at any size):** the gate, the security-trigger *check*, state writes / `--resume`, the `fix` regression contract, and per-line AC confirmation.
 
-**Version 2.10.0** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
+**Version 2.11.0** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
 
 Primary entry point: `/dev <intent>` (or `/dev --resume <id>`). The command detects context (new vs. existing codebase) and runs the same two-phase flow, branching on **run type** so a `chore` isn't dragged through e2e and a `fix` reproduces before it changes anything. Same artifacts either way, in `.workflow/<id>/`.
 
@@ -101,6 +101,7 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 | File | Owner | Purpose |
 |---------|---------------|----------|
 | `spec.md` | `pm` (L · `/spec`) · `lead` combined (XS–M) | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
+| `run.md` | `lead` combined (XS micro-lane) | **Single XS artifact** replacing spec/plan/tasks/test-plan — same contract core (Goal, `**Type**:`, `AC#`, `T###`+`verify:`, Coverage); `SIZE_UPGRADE: S` re-emits the four files (`xs-s-fast-path.md`) |
 | `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built once (M: digest-seeded, before the combined spawn; L: after the spec) so `lead`/`qa`/`uxui`/`engineer` skip re-walking (`engineer` reads its `## Current state`). Optional — greenfield/XS-S skip it |
 | `plan.md` | `lead` (plan mode) | **Summary** + **Technical Context** + **Gate check** (vs `rules/fundamentals.md`), **phases for this task**, architecture diagram, current-state + research notes, **scaffold skeleton** (M/L), files to touch (`path#anchor`), risks, **rollback** |
 | `tasks.md` | `lead` (plan mode) | **Executable task breakdown** — phased (Setup → Foundational → one per User Story by priority → Polish) `T### [P] [AC#] … verify:` tasks, dependency-ordered, each tied to an acceptance scenario; the engineer builds from this |
@@ -122,7 +123,7 @@ Off-by-default structural check, not wired into the state machine — run by han
 sh .claude/hooks/artifact-lint.sh .workflow/<id>/
 ```
 
-Per directory: **required sections** (`spec.md` a `**Type**:` + `## Goal` + `## User Stories` with `AC#` scenarios; `tasks.md` ≥1 `T###` task with an `[AC<n>]`/`[DoD]` tag + `verify:`; `plan.md` a fenced `mermaid` block) and **no leftover placeholders** (`TODO`/`TBD`/`FIXME`/`lorem`, `<...>`, bare prose only — code spans/fences are ignored). Prints `[OK]`/`[FAIL] <file>:<line>: …`, exits non-zero on failure. POSIX `sh`+`grep`/`awk`, no `_templates/` at runtime. Fixtures: [`run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
+Per directory: **required sections, type-aware** (the `**Type**:` value picks the shape — `spec.md` a `**Type**:` + `## Goal` + the type's contract block (`feat` → `## User Stories`; `fix` → `Reproduction & Expected`; `refactor` → `Equivalence contract`; `chore` → `Checklist`; `docs` → `Docs scope`; `spike` → `Questions & Timebox`, non-feat blocks carrying ≥1 `AC#`); `tasks.md` ≥1 `T###` task with an `[AC<n>]`/`[DoD]` tag + `verify:`; `plan.md` a fenced `mermaid` block — `chore`/`docs` exempt; canonical lookup: `plan-writing > references/size-tiering.md > Artifact shape by Type`) and **no leftover placeholders** (`TODO`/`TBD`/`FIXME`/`lorem`, `<...>`, bare prose only — code spans/fences are ignored). Prints `[OK]`/`[FAIL] <file>:<line>: …`, exits non-zero on failure. POSIX `sh`+`grep`/`awk`, no `_templates/` at runtime. Fixtures: [`run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
 
 ## Type-aware phase matrix
 

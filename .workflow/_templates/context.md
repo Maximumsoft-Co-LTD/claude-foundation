@@ -42,5 +42,11 @@ N. `<path#anchor>` — terminal write / return / external call
 **Fixtures / test data**: `<path#anchor>` — <seed, real-vs-doubled boundaries>
 **Coverage of touched behaviour**: <covered by `path#anchor` | uncovered → characterization baseline needed before change>
 
+## Discovered (ledger)
+
+> Run-lifetime read-cache — the orchestrator (**single writer**) folds workers' `CONTEXT:` return lines here at every worker return; every subsequent spawn brief points here first. Created lazily at ANY size/field on the first returned fact (the sections above stay brownfield-M/L-only). **The diff wins** — entries touching files Implement changed are stale; mark or prune on fold. One line per fact, load-bearing only (invariant · entry point · gotcha); prune superseded lines.
+
+- `path#anchor` — <fact> — [<phase>]
+
 ---
 *Optional — keep only sections the run needs; `## UI surface` and `## Test infra` are deleted when not applicable. This is a shared **read input**, never a per-slice shard.*

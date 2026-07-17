@@ -1,0 +1,20 @@
+{
+ "runs_collected": 1,
+ "runs": [
+  {
+   "id": "NNNN-type-slug",
+   "type": "feat",
+   "size": null,
+   "field": null,
+   "phase": "phase-1-requirements",
+   "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+   "done_at": null,
+   "phase_times": {},
+   "cycles": {
+    "review": 0,
+    "test": 0
+   },
+   "skipped_steps": []
+  }
+ ]
+}

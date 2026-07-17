@@ -12,7 +12,7 @@
 
 <2–3 sentences: the technical approach + why this over the obvious alternative. Each user story = one vertical slice.>
 
-## Technical Context
+## Technical Context *(chore/docs: `n/a` per line is fine)*
 
 **Language**: <lang + version> · **Framework**: <key deps>
 **Storage**: <db / files / none> · **Testing**: <framework>
@@ -34,7 +34,7 @@ Against `.claude/rules/fundamentals.md` — name the layers this work crosses + 
 
 No fanout — single-pass.
 
-## Architecture diagram
+## Architecture diagram *(feat/fix/refactor: required — sequenceDiagram for code-bearing work; spike: flowchart with `?` nodes; chore/docs: DELETE)*
 
 ```mermaid
 flowchart LR

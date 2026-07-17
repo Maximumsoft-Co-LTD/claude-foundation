@@ -196,8 +196,44 @@ else
   echo "SKIP: AC9 hook adapter tests (jq not installed)"
 fi
 
+# AC10 — type-aware shapes: each non-feat type passes with its own contract
+# block (no User Stories) and fails without it; the non-feat block must carry
+# an AC id; chore/docs plans are exempt from the mermaid requirement.
+mk_typed_spec() {  # $1=dir $2=type $3=contract-block heading
+  printf '# Spec\n\n**Type**: %s\n\n## Goal\ng\n\n## %s\n\n- [x] AC1 ok\n' "$2" "$3" > "$1/spec.md"
+}
+d="$TMPROOT/ac10-fix"; mkdir -p "$d"; mk_typed_spec "$d" fix "Reproduction & Expected"; mk_clean_plan "$d"; mk_clean_tasks "$d"
+assert_exit_zero "AC10 fix spec passes without User Stories" "$d"
+d="$TMPROOT/ac10-fix-miss"; mkdir -p "$d"; mk_typed_spec "$d" fix "Wrong section"
+assert_exit_nonzero "AC10 fix spec missing Reproduction" "$d"
+assert_report_contains "AC10 names Reproduction" "$d" "MISSING required section: Reproduction & Expected (fix)"
+d="$TMPROOT/ac10-refactor"; mkdir -p "$d"; mk_typed_spec "$d" refactor "Equivalence contract"; mk_clean_plan "$d"; mk_clean_tasks "$d"
+assert_exit_zero "AC10 refactor spec passes" "$d"
+d="$TMPROOT/ac10-spike"; mkdir -p "$d"; mk_typed_spec "$d" spike "Questions & Timebox"; mk_clean_plan "$d"; mk_clean_tasks "$d"
+assert_exit_zero "AC10 spike spec passes" "$d"
+d="$TMPROOT/ac10-noac"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: chore\n\n## Goal\ng\n\n## Checklist\n\n- [x] bump dep\n' > "$d/spec.md"
+assert_exit_nonzero "AC10 chore spec without AC id" "$d"
+assert_report_contains "AC10 names AC id" "$d" "MISSING required section: acceptance scenario id (AC#)"
+d="$TMPROOT/ac10-choreplan"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: chore\n\n## Goal\ng\n\n## Checklist\n\n- [x] AC1 bump\n' > "$d/spec.md"
+printf '# Plan\n\n**Type**: chore\n\n## Summary\nno diagram needed\n' > "$d/plan.md"
+assert_exit_zero "AC10 chore plan exempt from mermaid" "$d"
+assert_report_contains "AC10 chore plan exempt note" "$d" "mermaid not required (type=chore)"
+
+# AC11 — run.md (XS micro-lane single artifact): a dir with only run.md passes
+# when it carries the contract core; missing verify fails; AC prose is allowed
+# in run.md (spec-surrogate exemption from the locality check).
+d="$TMPROOT/ac11-clean"; mkdir -p "$d"
+printf '# Run\n\n**Type**: chore\n\n## Goal\ng\n\n## Acceptance\n- [x] **AC1** — **Given** a, **When** b, **Then** c.\n\n## Tasks\n- [x] T001 [AC1] do — verify: ok\n' > "$d/run.md"
+assert_exit_zero "AC11 clean run.md-only dir" "$d"
+d="$TMPROOT/ac11-noverify"; mkdir -p "$d"
+printf '# Run\n\n**Type**: chore\n\n## Goal\ng\n\n## Acceptance\n- [x] AC1 ok\n\n## Tasks\n- [x] T001 [AC1] do\n' > "$d/run.md"
+assert_exit_nonzero "AC11 run.md missing verify" "$d"
+assert_report_contains "AC11 names missing verify" "$d" "MISSING required section: runnable verify section"
+
 echo
-total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8" | wc -w) ))
+total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11" | wc -w) ))
 # AC9 runs only when jq is present (see the skip above).
 command -v jq >/dev/null 2>&1 && total_pass=$((total_pass + 4))
 if [ "$failures" -eq 0 ]; then

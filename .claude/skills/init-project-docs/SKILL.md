@@ -36,14 +36,17 @@ All written into `docs/` (create it if absent):
 - One **specific doc** for a narrow change, not a whole-project suite — write that directly.
 - A doc's domain genuinely **doesn't exist** — no HTTP API, no datastore, no user-facing UI → no `DESIGN.md`, no real domain logic → no `BUSINESSRULE.md`. Don't pad it: write a one-line "Not applicable" stub, or drop the file entirely — the viewer adapts to whatever `.md` files are present.
 
-## Two modes: fresh vs. update
+## Three modes: fresh vs. update vs. diff-scoped
 
 First, check the target dir for an existing suite — any canonical file (`OVERVIEW.md`…`DESIGN.md`) or `document.html`:
 
 - **Fresh** — none exists. Generate the whole suite.
 - **Update** — a suite exists. Treat it as **input, not a blank slate**: re-ground against the code, revise in place with surgical diffs, and report the delta as a changelog.
+- **Diff-scoped** — a suite exists AND the caller passes a diff (the `/dev` docs touch-up path — `engineer.md > Mode B`). Update ONLY the sections that diff touches (API/endpoint → `API.md`, schema → `DATAMODEL.md`, flow/feature → `COREFEATURE.md`, rules → `BUSINESSRULE.md`); leave every other file unopened. Cheapest lane — never walks the whole codebase.
 
-Default to update when found; regenerate only if asked or unsalvageable (say so first). The grounding rule holds in both modes: **every surviving claim must still trace to code.**
+Default to update when found (diff-scoped when a diff is passed); regenerate only if asked or unsalvageable (say so first). The grounding rule holds in every mode: **every surviving claim must still trace to code.**
+
+**Freshness stamp** — every suite file carries frontmatter `last-verified: <YYYY-MM-DD or short-sha>`; fresh/update stamp every file they ground, diff-scoped stamps only the files it edited. The stamp is how later runs (and humans) scope staleness (`git log --since` vs the stamp) without re-reading the code.
 
 ## Workflow
 

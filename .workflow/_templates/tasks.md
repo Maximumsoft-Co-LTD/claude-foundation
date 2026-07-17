@@ -9,6 +9,8 @@ Phased + dependency-ordered. `[P]` = parallel-safe (different files, no unmet de
 
 Task format: `T### [P?] [AC#] [ref: path#anchor]? <action> — path#anchor (new | edit | delete) — verify: <command or observable>`
 
+> **Shape by Type** — the phase skeleton below is the **feat** default. `fix`: flat list, no phases — T001 failing regression test, T002 the fix. `refactor`: T001 baseline capture, then the restructure. `chore`/`docs`: flat list. (Canonical: `WORKFLOW.md > Type-aware phase matrix`.)
+
 ## Guardrails
 
 > Must-not-break invariants — the engineer's **only** up-front invariant read (rest pulled per-task via `[ref:]`). One backticked `` `path#anchor` `` + why per line. **Brownfield only** (greenfield → `none`); ≤~8 bullets — deeper detail stays in `plan.md > ## Current state`, pulled per-task.

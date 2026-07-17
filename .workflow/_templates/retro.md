@@ -26,6 +26,13 @@ Final state of every acceptance scenario (`AC#`) in `spec.md > User Stories`.
 - [x] AC1 — shipped
 - [ ] AC2 — deferred → see Follow-ups
 
+## SC outcome *(required — feat/fix/refactor; others `n/a — type=<x>`)*
+
+Final state of every `SC-###` in `spec.md > Success Criteria` — measured, or explicitly unmeasurable (never silently dropped).
+
+- SC-1 — met: <measured value / evidence>
+- SC-2 — unmeasurable at ship → follow-up `F-<run-id>-NN` appended
+
 ## Memory candidates (facts) *(required)*
 
 A single rule / preference / reference / user trait. Surface to the user for confirmation; never auto-save. Write "none this run" if empty. (Routing rules + save-worthy filters live in the retro agent.)
@@ -60,3 +67,5 @@ A multi-step procedure — ≥ 3 steps OR conditional logic, AND a clear trigger
   - **item**: <one line> · **type hint**: feat | fix | … · **priority**: low | med | high
   - **consumed**: <followup-id> — landed via task <n>
 - **Security findings (carry-over)** — when security.md exists (its non-blocking medium / low findings)
+- **Context folded** — lines merged into `.workflow/CONTEXT.md` (repo ledger) this run
+- **Decisions recorded** — rows appended to `docs/DECISIONS.md` this run

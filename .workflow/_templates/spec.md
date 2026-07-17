@@ -12,7 +12,7 @@
 
 <one sentence: what we build, for whom, to what outcome. Not a metric (→ Success Criteria) or feature list (→ User Stories).>
 
-## User Stories *(required)*
+## User Stories *(feat — required; other types: DELETE — the run's `AC#` scenarios live in its Type block below)*
 
 Priority-ordered, each independently testable — build P1 alone and you still have a viable MVP. Acceptance scenarios carry stable ids (`AC1`, `AC2`, …) that plan / tasks / test / review reference **by id** — the `Given/When/Then` text lives here only, nowhere else.
 
@@ -46,7 +46,35 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 - What happens when <boundary condition>? → <handling> (FR-###).
 - How does the system handle <error scenario>? → <handling> (FR-###).
 
-## Requirements *(required)*
+## Type block *(non-feat — required; keep the run's Type heading, delete the rest — it carries this run's `AC#` scenarios)*
+
+### Reproduction & Expected *(fix)*
+
+**Repro**: <exact steps / failing input> · **Expected**: <correct behaviour> · **Actual**: <observed>
+
+- [ ] **AC1** — **Given** the repro state, **When** <the action>, **Then** <expected behaviour holds> (regression test passes).
+
+### Equivalence contract *(refactor)*
+
+<one line: behaviour unchanged — the baseline that proves it>
+
+- [ ] **AC1** — **Given** the captured baseline, **When** the restructure lands, **Then** the baseline suite passes unchanged.
+
+### Checklist *(chore)*
+
+- [ ] **AC1** — <checkable outcome, e.g. "dependency X at version Y, build green">.
+
+### Docs scope *(docs)*
+
+- [ ] **AC1** — <doc file> reflects <change>, verified against the code it describes.
+
+### Questions & Timebox *(spike)*
+
+**Timebox**: <hard limit> · **Deliverable**: `recommendations.md`
+
+- [ ] **AC1** — <question> → answered with evidence in `recommendations.md`.
+
+## Requirements *(feat — required; other types: add only when real FRs exist, else DELETE)*
 
 ### Functional Requirements
 
@@ -57,7 +85,7 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 
 - **<Entity>** — <what it represents; key attributes, no implementation>.
 
-## Success Criteria *(required)*
+## Success Criteria *(feat/fix/refactor — required; chore/docs/spike: DELETE unless genuinely measurable)*
 
 Measurable, technology-agnostic outcomes.
 
@@ -69,4 +97,4 @@ Measurable, technology-agnostic outcomes.
 - <reasonable default chosen where the request was silent>.
 
 ---
-*Optional — add when triggered, delete the rest: Problem · Users · User journey · Scope—Out · Glossary · NFR · Definition of Done · Reproduction (fix) · Timebox (spike) · Constraints · References · Discovery notes · Carried-over follow-ups. Structure + hard rules (priority, Given/When/Then with AC ids, FR/SC, no invented values, [NEEDS CLARIFICATION]) → **pm.md > Spec sections**.*
+*Optional — add when triggered, delete the rest: Problem · Users · User journey · Scope—Out · Glossary · NFR · Definition of Done · Constraints · References · Discovery notes · Carried-over follow-ups. (Reproduction and Timebox now live in the Type block above.) Structure + hard rules (priority, Given/When/Then with AC ids, FR/SC, no invented values, [NEEDS CLARIFICATION]) → **pm.md > Spec sections**.*

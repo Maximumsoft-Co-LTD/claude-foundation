@@ -139,3 +139,16 @@ Sections marked `skip` are **DELETED entirely** — no empty headers, no "N/A" l
 | L | 1–2 hr | Two diagrams + Dependencies + L-grade Rollback runbook |
 
 Spending 2× the budget at any tier = scope grew without a Size bump, or the spec is too vague to plan against — go back to spec, don't paper over with a longer plan.
+
+## Artifact shape by Type
+
+**Canonical lookup** — resolved by the orchestrator at Design time from inputs the interview already produced (`Type` × `Size`), passed in the spawn brief so no agent designs a shape per run. **Contract core (every shape, never removed):** `## Goal` · `**Type**:` · `AC#` scenarios · `T###` tasks with `verify:`. Evidence sections vary per row. Deviations are **additive only**, surfaced at the gate (`gate.md > Options`); `artifact-lint.sh` enforces the row per `**Type**:`.
+
+| Type | spec.md required blocks | plan.md | tasks.md shape |
+|------|------------------------|---------|----------------|
+| feat | User Stories (P-ordered, `AC#` per story) + FR + SC | Summary + Technical Context + mermaid (sequenceDiagram) | phased skeleton (Setup → Foundational → per-US → Polish) |
+| fix | `Reproduction & Expected` block (carries the `AC#`s) + SC | Summary + mermaid | flat — T001 failing regression test, T002 the fix |
+| refactor | `Equivalence contract` block + SC | Summary + mermaid + Current state | flat — T001 baseline capture, then restructure |
+| chore | `Checklist` block | Summary; mermaid exempt; Technical Context `n/a` OK | flat list |
+| docs | `Docs scope` block | Summary; mermaid exempt | flat — one task per doc file |
+| spike | `Questions & Timebox` block | exploration flowchart with `?` nodes | flat — exploration steps, deliverable `recommendations.md` |

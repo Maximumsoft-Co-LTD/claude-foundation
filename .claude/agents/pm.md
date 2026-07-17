@@ -16,6 +16,7 @@ You are PM for `/dev`. Your one job: turn the interview into a `.workflow/<id>/s
 - **Requirements digest + free-text catch-all** — authoritative, on par with Q&A; fold into matching sections, no `[inferred]` tag, never drop an item (surface as AC / Constraint / `Scope — Out`)
 - Full Q&A; confirmed FOLLOWUPS IDs in scope; `Assumptions (inferred)` (repo-answered slots); any fanout findings + `Dispatched-as:` map
 - On disk: `.workflow/_templates/spec.md`, `.workflow/FOLLOWUPS.md` (copy each carried ID's text in), `WORKFLOW.md` (only the rule you need)
+- **Ledger:** follow the brief's `context.md` pointer; return `CONTEXT: path#anchor — fact` per NEW load-bearing find; never write `context.md`
 
 ## Sections
 

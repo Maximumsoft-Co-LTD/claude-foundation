@@ -2,10 +2,19 @@
 # artifact-lint.sh — optional artifact gate for /dev runs.
 #
 # Validates a `.workflow/<id>/` run directory against the artifact templates:
-#   1. Required sections per artifact:
-#        spec.md       — a `**Type**:` declaration, a `## Goal` section, AND a
-#                        `## User Stories` section.
-#        plan.md       — a fenced `mermaid` block.
+#   1. Required sections per artifact (spec.md / plan.md are TYPE-AWARE — the
+#      `**Type**:` value picks the required shape; unknown/unset falls back to
+#      the strict feat shape):
+#        spec.md       — a `**Type**:` declaration, a `## Goal` section, AND the
+#                        type's contract block: feat → `## User Stories`;
+#                        fix → `Reproduction & Expected`; refactor → `Equivalence
+#                        contract`; chore → `Checklist`; docs → `Docs scope`;
+#                        spike → `Questions & Timebox`. Non-feat blocks must
+#                        also carry >=1 `AC<n>` scenario id.
+#        plan.md       — a fenced `mermaid` block (feat/fix/refactor/spike;
+#                        chore/docs are exempt).
+#        run.md        — the XS micro-lane single artifact: `**Type**:` +
+#                        `## Goal` + >=1 `AC<n>` + >=1 `T###` + a `verify:`.
 #        tasks.md      — at least one `T###` task, an inline AC tag (`[AC<n>]` or
 #                        `[DoD]`), and a runnable verify section (a `verify:` clause).
 #        test-plan.md  — a `## Coverage plan` section AND at least one AC reference
@@ -43,7 +52,7 @@ set -eu
 
 # Recognised artifacts. spec.md / plan.md / test-plan.md also get required-section
 # checks; every file here gets the placeholder scan.
-ARTIFACTS='spec.md plan.md tasks.md test-plan.md review.md security.md tests.md retro.md recommendations.md epic.md'
+ARTIFACTS='spec.md plan.md tasks.md test-plan.md run.md review.md security.md tests.md retro.md recommendations.md epic.md'
 
 PROG="$(basename "$0")"
 
@@ -75,18 +84,43 @@ require_section() {
   fi
 }
 
+# spec_type <file> — the declared `**Type**:` value (first token only). A
+# template line still listing every option ("feat | fix | ...") yields "feat",
+# which is also the fallback for a missing/unknown type — the strictest shape.
+spec_type() {
+  grep -m1 -F '**Type**:' "$1" 2>/dev/null \
+    | sed -e 's/.*\*\*Type\*\*:[[:space:]]*//' -e 's/[[:space:]|].*//'
+}
+
 check_spec() {
   file="$1"
   require_section "$file" "Type declaration"     F '**Type**:'
   # Anchor the heading at line start so a mention of the section name in prose
   # or an HTML comment does not satisfy the check.
   require_section "$file" "Goal"                 E '^#+[[:space:]]+Goal'
-  require_section "$file" "User Stories"         E '^#+[[:space:]]+User Stories'
+  # Type-aware contract block: each type carries its ACs in its own shape.
+  t="$(spec_type "$file")"
+  case "$t" in
+    fix)      require_section "$file" "Reproduction & Expected (fix)"   E '^#+[[:space:]]+Reproduction' ;;
+    refactor) require_section "$file" "Equivalence contract (refactor)" E '^#+[[:space:]]+Equivalence' ;;
+    chore)    require_section "$file" "Checklist (chore)"               E '^#+[[:space:]]+Checklist' ;;
+    docs)     require_section "$file" "Docs scope (docs)"               E '^#+[[:space:]]+Docs scope' ;;
+    spike)    require_section "$file" "Questions & Timebox (spike)"     E '^#+[[:space:]]+Questions' ;;
+    *)        require_section "$file" "User Stories"                    E '^#+[[:space:]]+User Stories' ;;
+  esac
+  case "$t" in
+    fix|refactor|chore|docs|spike)
+      require_section "$file" "acceptance scenario id (AC#)" E '\bAC[0-9]+\b' ;;
+  esac
 }
 
 check_plan() {
   file="$1"
-  require_section "$file" "mermaid diagram"      E '^[[:space:]]*```mermaid'
+  t="$(spec_type "$file")"
+  case "$t" in
+    chore|docs) report OK "$(basename "$file"): mermaid not required (type=$t)" ;;
+    *) require_section "$file" "mermaid diagram" E '^[[:space:]]*```mermaid' ;;
+  esac
 }
 
 check_tasks() {
@@ -94,6 +128,17 @@ check_tasks() {
   require_section "$file" "T### task"            E '\bT[0-9]+\b'
   require_section "$file" "inline AC tag"        E '\[(AC[0-9]+|DoD|SC-[0-9]+)\]'
   require_section "$file" "runnable verify section" F 'verify:'
+}
+
+# run.md — the XS micro-lane single artifact (replaces spec/plan/tasks/test-plan
+# at size=XS). Carries the whole contract core in one file.
+check_run() {
+  file="$1"
+  require_section "$file" "Type declaration"                F '**Type**:'
+  require_section "$file" "Goal"                            E '^#+[[:space:]]+Goal'
+  require_section "$file" "acceptance scenario id (AC#)"    E '\bAC[0-9]+\b'
+  require_section "$file" "T### task"                       E '\bT[0-9]+\b'
+  require_section "$file" "runnable verify section"         F 'verify:'
 }
 
 check_test_plan() {
@@ -213,10 +258,15 @@ lint_file() {
     plan.md)      check_plan "$file" ;;
     tasks.md)     check_tasks "$file" ;;
     test-plan.md) check_test_plan "$file" ;;
+    run.md)       check_run "$file" ;;
   esac
   # NB: check_* helpers clobber the global $name (see require, line ~64), so key
   # this skip off the file's own basename, not the caller's loop var.
-  [ "$(basename "$file")" = "spec.md" ] || check_ac_text_locality "$file"
+  # run.md is the XS spec surrogate, so like spec.md it owns its AC prose.
+  case "$(basename "$file")" in
+    spec.md|run.md) ;;
+    *) check_ac_text_locality "$file" ;;
+  esac
   scan_placeholders "$file"
 }
 

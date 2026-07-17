@@ -10,7 +10,7 @@ Main agent + `pm`/`lead`/`qa`/`engineer` can request parallel team-agent fanout.
 
 ### Signal recognition
 
-After every sub-agent return, scan the **first line**: case-insensitive `FANOUT_REQ` → validate against the regex; `BLOCKER:` → surface to user; `SIZE_UPGRADE:`/`FIELD_UPGRADE:` → `## Size-aware execution` (`FIELD_UPGRADE` also: record `field=brownfield`, backfill understand/lock artifacts to owners); else → success. Before advancing, run the step's **Return check** if defined — **only** on the primary worker return (`pm`/`lead`/`engineer`/`qa`/`retro`), never intermediate `team-*`; it's a presence/shape tripwire (one corrective re-spawn, then `AskUserQuestion`), not a quality review.
+After every sub-agent return, scan the **first line**: case-insensitive `FANOUT_REQ` → validate against the regex; `BLOCKER:` → surface to user; `SIZE_UPGRADE:`/`FIELD_UPGRADE:` → `## Size-aware execution` (`FIELD_UPGRADE` also: record `field=brownfield`, backfill understand/lock artifacts to owners); else → success. Trailing `CONTEXT:` lines in any return are ledger facts (`orchestrator.md > State discipline > Context-ledger fold`) — fold them; never treat them as a control signal. Before advancing, run the step's **Return check** if defined — **only** on the primary worker return (`pm`/`lead`/`engineer`/`qa`/`retro`), never intermediate `team-*`; it's a presence/shape tripwire (one corrective re-spawn, then `AskUserQuestion`), not a quality review.
 
 ```text
 ^FANOUT_REQUESTED: implement:[a-z0-9,\-]+$
