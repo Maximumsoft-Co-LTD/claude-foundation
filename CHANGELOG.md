@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard: version display** — the server reads its version from `dashboard/package.json` (now aligned with the foundation release, 2.10.0) and surfaces it in `/api/health`, `/api/online`, and the sidebar footer (`vX.Y.Z`).
+
 ## [2.10.0] - 2026-07-17
 
 ### Added

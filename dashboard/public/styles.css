@@ -469,6 +469,7 @@ body::before {
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
 .side-status { display: flex; align-items: center; gap: 8px; }
 .side-actions { display: flex; gap: 8px; }
+.side-version { font-size: 11px; color: var(--faint); letter-spacing: 0.04em; }
 .side-btn {
   font-size: 12px;
   color: var(--faint);

@@ -221,6 +221,7 @@ function renderTeam(data) {
   $('c-online').textContent = data.onlineCount;
   $('c-seen').textContent = data.totalCount;
   $('ttl').textContent = `${Math.round(data.ttlMs / 1000)}s`;
+  if (data.version) $('app-version').textContent = `v${data.version}`;
   $('c-updated').textContent = new Date(data.now).toTimeString().slice(0, 8);
   $('online-grid').innerHTML = online.map(agentCard).join('');
   $('online-empty').hidden = online.length > 0;

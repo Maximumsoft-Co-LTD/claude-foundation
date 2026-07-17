@@ -16,6 +16,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const APP_VERSION = require('./package.json').version; // surfaced in /api/health, /api/online, and the UI footer
 
 // ── Config (env) ────────────────────────────────────────────────────────────
 const PORT = toInt(process.env.PORT, 8473); // off the common dev ports; Railway overrides via PORT
@@ -1080,6 +1081,7 @@ function handleOnline(req, res, url) {
   all.sort((x, y) => (x.online === y.online ? x.gitUser.localeCompare(y.gitUser) : x.online ? -1 : 1));
   const payload = {
     now,
+    version: APP_VERSION,
     ttlMs: ONLINE_TTL_MS,
     onlineCount: all.filter((a) => a.online).length,
     totalCount: all.length,
@@ -1127,7 +1129,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/health') {
     const online = [...agents.values()].filter((a) => Date.now() - a.lastSeen <= ONLINE_TTL_MS).length;
-    return sendJson(res, 200, { ok: true, online, db: db ? 'sqlite' : 'off' });
+    return sendJson(res, 200, { ok: true, version: APP_VERSION, online, db: db ? 'sqlite' : 'off' });
   }
   if (pathname === '/api/heartbeat' && req.method === 'POST') return handleHeartbeat(req, res, url);
   if (pathname === '/api/online' && req.method === 'GET') return handleOnline(req, res, url);
