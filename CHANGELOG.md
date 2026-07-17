@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard: run ownership** — the orchestrator now writes `owner`/`owner_email` (git identity, `never guess`) into `state.json` at run creation (template gains both fields); `client.sh` reports them per run (+ `size` and a normalized `repoId`, with a first-commit-author fallback for older runs) and the server attributes each run to its **owner, never the reporter** — a teammate pulling your committed `.workflow/` dir can't show up as having run it. Runs dedupe by `repoId|runId` across clones and worktrees.
+- **Dashboard: profiles + multi-select teammate filter** — new `POST /api/profile` + `profiles` table (org, team tags, optional chart color per person) edited via a **My profile** modal; the per-teammate filter is now multi-select with one-click org / `#team` group chips; every person gets a stable color (hashed palette or their chosen one) used consistently across chips, charts, and tables.
+- **Dashboard: Workload panel** (Insights) — per-person effort points from size-weighted completed runs (XS=1 S=2 M=5 L=8, unknown→S) plus commits/lines, each compared against the previous equal-length window; `/api/history` now returns per-person daily `work[]` (MAX-merged across machines) so the comparison reaches beyond the live 14-day window. Activity rows now show the run's size tier.
+- **Dashboard: `presence_hourly` aggregate** — the Presence heatmap reads a compact per-hour-minutes table (backfilled from the raw beat log during migration) instead of scanning raw heartbeats; the raw log is debug-only and `HEARTBEAT_LOG_DAYS` drops 30 → 7. SQLite schema migrates v2 → v3 in place.
+
+### Changed
+
+- **Dashboard client scan coverage (`client.sh` 1.8.0 → 1.10.0)** — all `git log` scans use `--branches` (commits on any local branch count, deduped by hash); linked **worktrees** (`.git` as a file) are scanned; **clean** repos with a commit in the last 14 days still report commits/work/pushes/follow-ups (side cap `CLEAN_REPO_CAP` 10) instead of vanishing once you commit; repo-level stats are reported by only the first root per `repoId` so extra worktrees/clones never double-count; heartbeats now carry `gitEmail`.
+- **Dashboard defaults & load** — heartbeat `--interval` 15 → 30 s (new env `CLAUDE_FOUNDATION_DASHBOARD_INTERVAL`); `ONLINE_TTL_MS` 30000 → 75000 (2.5× the beat, so one dropped beat doesn't flicker); `/api/online` payload memoized for `ONLINE_CACHE_MS` (default 2000 ms) and shared across all viewers; new `HISTORY_DAYS` (default 400) prunes the date-keyed history tables that previously grew forever; browser polling pauses on hidden tabs; `/api/history` fetch window scales with the selected date range (2×, 120–365 d). README documents the new **ownership matrix** and honor-system-identity limitation.
+
 ## [2.9.2] - 2026-07-16
 
 ### Changed (skill-load diet — fewer tokens per task, same rules)

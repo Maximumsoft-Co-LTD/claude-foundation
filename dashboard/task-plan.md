@@ -1,5 +1,7 @@
 # Dashboard — วิเคราะห์ requirement + แผนงาน (จาก task.md)
 
+> **สถานะ: ทำครบทั้ง 4 WP แล้ว (2026-07-17)** — server v3 migration + client 1.9.0 + UI; ทดสอบ e2e ผ่าน (attribution, profiles, presence backfill, migration บนสำเนา DB จริง, UI demo) ยังไม่ commit
+
 **สรุปภาพรวม: ไม่ต้องทำใหม่ (no rebuild).** สถาปัตยกรรมเดิม (bash client → zero-dep Node + SQLite) รองรับ 100 คนได้ ถ้าปรับจุดที่ระบุใน WP-D. งานทั้งหมดจัดเป็น **4 work packages** — A กับ B ทำขนานกันได้, C ต้องรอ A+B, D อิสระทำเมื่อไหร่ก็ได้
 
 | WP | ครอบคลุมข้อ | ขนาด | ลำดับ |
@@ -65,6 +67,34 @@
 - ข้อมูลมีครบแล้ว (`work_daily`, `runs`, `usage_daily`) — งานส่วนใหญ่คือ frontend + ปรับ `/api/history` ให้รับ range
 
 ---
+
+## WP-E — Scan coverage fixes ✅ (ทำแล้ว 2026-07-17, client 1.10.0; e2e ผ่าน: branch-commit บน repo clean ถูกนับ, worktree ถูก scan + conflict ข้าม branch, work ไม่นับทบต่อ repoId)
+
+**เป้า:** ตัวเลข "งานของฉัน" ครบไม่ว่าจะทำงานท่าไหน — commit บน branch ไหน, ใน worktree, หรือ commit เสร็จจน tree สะอาดแล้ว. ขนาดรวม **S–M**, ไฟล์หลัก `client.sh` + จุดเล็กใน `server.js`, ไม่มี schema migration.
+
+### E1 — นับทุก local branch (ไม่ใช่แค่ HEAD)
+- `client.sh` จุด `commits_daily` (`git log --since=14.days --pretty='%ad'`) และ `work_daily` (`git log --since=14.days --author="$me" --numstat`): เติม `--branches`
+- commit เดียวกันที่อยู่หลาย branch นับครั้งเดียวตาม hash (พฤติกรรม git log ปกติ) — ไม่ต้อง dedupe เอง
+- ความเสี่ยง: branch เก่าค้าง repo → มี `--since=14.days` คุมอยู่แล้ว
+
+### E2 — รองรับ linked worktree (`.git` เป็นไฟล์)
+- pass-1 ของ `scan_changes`: `find ... -name .git -type d -prune -print` มองไม่เห็น worktree (`.git` เป็นไฟล์) → เพิ่ม `-o -name .git -type f -print` และเปลี่ยนเช็ค `[ -d "$root/.git" ]` → `[ -e ... ]`
+- **ต้องมาคู่กับ dedupe ต่อ repoId ภายในเครื่อง**: main checkout + worktree (และ repo ที่ clone ซ้ำสองที่) ชี้ remote เดียวกัน — ถ้าปล่อยให้ทุก root รายงาน `commits/work/pushes` จะบวกทบใน `workRowsFor()` (ฝั่ง server รวมข้าม changes[] entries). กติกา: root แรก (ใหม่สุดตาม recency) ของแต่ละ repoId เท่านั้นที่แนบ `commits/work/pushes/fuOpen`; root ถัดไปแนบเฉพาะ `files` (ยังต้องส่งเพื่อ conflict detection ข้าม branch — นั่นคือประโยชน์หลักของ worktree scan)
+- bash 3.2: เก็บ seen repoIds เป็น string + `case` match (ไม่มี assoc array)
+- โบนัส: ปิดบั๊กเดิม "clone ซ้ำสองที่ = work นับสองเท่า" ไปในตัว
+
+### E3 — repo ที่ clean แล้วต้องไม่หายจากสถิติ
+- pass-1: repo ที่ diff ว่าง → เช็คต่อ `git log -1 --since=14.days --branches --format=%ct`; ถ้ามี commit ล่าสุด ให้เข้ารอบ pass-2 แบบ "clean" (mt = เวลา commit ล่าสุด)
+- pass-2: clean repo ข้ามส่วน diff, ส่ง entry ที่ `files:[]` แต่มี `commits/work/pushes/fu*`
+- **ฝั่ง server ต้องแก้ 2 จุด**: (1) `cleanChanges()` ตอนนี้ทิ้ง entry ที่ `files` ว่าง → ผ่อนเป็น "รับถ้ามี files หรือ work/commits/pushes" (2) `snapshot()` การ์ด "working in" ให้แสดงเฉพาะ entry ที่ `files > 0` เหมือนเดิม (repo clean ไม่ใช่ "กำลังทำ")
+- cap: dirty repos ได้คิวก่อนเสมอ; clean เข้าเพิ่มด้วย cap แยก (`CLEAN_REPO_CAP` ~10) กันเบียด `CHANGES_REPO_CAP` 20
+
+### ทดสอบ (e2e กับ server local เหมือนรอบ WP-A–D)
+1. repo ปลอม: commit บน branch `feat/x` แล้ว checkout `main` → work_daily ต้องยังเห็น commit นั้น (E1)
+2. `git worktree add` + แก้ไฟล์ใน worktree → changes ต้องรายงาน branch ของ worktree และ work ไม่นับซ้ำ (E2)
+3. repo clean ที่มี commit เมื่อวาน → ยังโผล่ใน Workload/commits, ไม่โผล่ใน "working in" (E3)
+4. `bash -n client.sh`, `node --check server.js`, client `--once` จริง
+- bump `CLIENT_VERSION` → 1.10.0; README: อัพเดต Limitations (ลบ "tracked changes only" บางส่วน, เพิ่มพฤติกรรม branch/worktree/clean)
 
 ## ลำดับที่แนะนำ
 

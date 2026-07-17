@@ -21,6 +21,23 @@ function modelColor(model) {
 }
 function shortModel(model) { return String(model).replace(/^claude-/, '').replace(/-\d{8}$/, ''); }
 
+// ── Per-person colors ───────────────────────────────────────────────────────
+// Stable hashed palette; a profile's chosen color (My profile) overrides.
+const USER_PALETTE = [
+  '#2c46f0', '#e8501e', '#8a4fd6', '#1d8f7a', '#c08a1e', '#d63384',
+  '#0f766e', '#b45309', '#4f46e5', '#65a30d', '#0e7490', '#9f1239',
+];
+let profilesByUser = new Map(); // user -> { user, email, org, teams, color }
+function userColor(name) {
+  const p = profilesByUser.get(name);
+  if (p && p.color) return p.color;
+  const s = String(name || 'unknown');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff;
+  return USER_PALETTE[h % USER_PALETTE.length];
+}
+function userDot(name) { return `<span class="ml-dot" style="background:${userColor(name)}"></span>`; }
+
 const $ = (id) => document.getElementById(id);
 let timer = null;
 let lastData = null;
@@ -173,7 +190,7 @@ function agentCard(a) {
   const meta = [a.host && escapeHtml(a.host), a.version && `v${escapeHtml(a.version)}`, id].filter(Boolean).join(' · ');
   return `
     <article class="${cls}">
-      <div class="agent-head"><span class="agent-dot"></span><span class="agent-name">${escapeHtml(a.gitUser || 'unknown')}</span></div>
+      <div class="agent-head"><span class="agent-dot"></span><span class="agent-name">${userDot(a.gitUser)}${escapeHtml(a.gitUser || 'unknown')}</span></div>
       <div class="agent-meta">${meta}</div>
       ${working}${activity}${idle}
       <div class="agent-seen">${a.online ? 'online' : 'seen'} · ${relTime(a.ageMs)}</div>
@@ -187,7 +204,7 @@ function fmtRanges(ranges) {
 }
 function conflictCard(c) {
   const parties = (c.parties || []).map((p) =>
-    `<span class="cf-party"><b>${escapeHtml(p.gitUser)}</b><span class="cf-branch">⎇ ${escapeHtml(p.branch)}</span><span class="cf-lines">${fmtRanges(p.ranges)}</span></span>`
+    `<span class="cf-party"><b style="color:${userColor(p.gitUser)}">${escapeHtml(p.gitUser)}</b><span class="cf-branch">⎇ ${escapeHtml(p.branch)}</span><span class="cf-lines">${fmtRanges(p.ranges)}</span></span>`
   ).join('<span class="cf-vs">⨯</span>');
   return `<article class="conflict">
     <div class="cf-file"><span class="cf-repo">${shortRepo(c.repoId)}</span> <span class="cf-path">${escapeHtml(c.path)}</span></div>
@@ -240,7 +257,7 @@ function renderInsights(s) {
 
   const people = s.topPeople || [];
   const maxP = Math.max(1, ...people.map((p) => p.count));
-  renderBars($('lead-people'), people.map((p) => barRow(p.name, p.count, maxP, 'var(--signal)', p.count)));
+  renderBars($('lead-people'), people.map((p) => barRow(p.name, p.count, maxP, userColor(p.name), p.count)));
 
   const repos = s.topRepos || [];
   const maxR = Math.max(1, ...repos.map((r) => r.count));
@@ -255,9 +272,10 @@ function renderActivity(feed) {
     const state = f.done
       ? `<span class="fe-done">✓ shipped</span><span class="fe-dur">${fmtDur(f.durationSec)}</span>`
       : `<span class="fe-active">● ${escapeHtml(f.phase || 'in flight')}</span>`;
+    const size = f.size ? `<span class="fe-size" title="/dev size tier">${escapeHtml(f.size)}</span>` : '';
     return `<div class="feed-row">
       <span class="fe-type" style="background:${color}">${escapeHtml(f.type || '·')}</span>
-      <div class="fe-main"><span class="fe-id">${escapeHtml(f.id)}</span><span class="fe-meta">${escapeHtml(f.repo || '')} · ${escapeHtml(f.gitUser || '')}</span></div>
+      <div class="fe-main"><span class="fe-id">${escapeHtml(f.id)}${size}</span><span class="fe-meta">${escapeHtml(f.repo || '')} · ${userDot(f.gitUser)}${escapeHtml(f.gitUser || '')}</span></div>
       <div class="fe-state">${state}<span class="fe-when">${ago(f.finished)}</span></div>
     </div>`;
   }).join('');
@@ -315,7 +333,7 @@ function renderWork(rows) {
       <span>person</span><span>commits</span><span>pushes</span><span>PRs</span><span>lines +</span><span>lines −</span>
     </div>` + list.map(([u, v]) => `
     <div class="ml-row ml-row--work">
-      <span class="ml-model">${escapeHtml(u)}</span>
+      <span class="ml-model">${userDot(u)}${escapeHtml(u)}</span>
       <span>${fmtTok(v.commits)}</span><span>${fmtTok(v.pushes)}</span><span>${v.prs}</span>
       <span class="wk-add">+${fmtTok(v.added)}</span><span class="wk-del">−${fmtTok(v.deleted)}</span>
     </div>`).join('') : '<p class="empty empty--sm">no work reported yet (needs client v1.8+; PRs need the gh CLI)</p>';
@@ -392,7 +410,7 @@ function renderPresence(p) {
 
   const people = Object.entries(byUser).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const maxP = Math.max(1, ...people.map(([, m]) => m));
-  renderBars($('pr-people-bars'), people.map(([u, m]) => barRow(u, m, maxP, 'var(--signal)', fmtHours(m))));
+  renderBars($('pr-people-bars'), people.map(([u, m]) => barRow(u, m, maxP, userColor(u), fmtHours(m))));
 
   const spanDays = Math.min(31, Math.max(1, Math.round((R.toMsEx - R.fromMs) / DAY)));
   const cols = [];
@@ -435,14 +453,18 @@ const EXTRAS_MS = 60000;
 let extrasTimer = null;
 async function pollExtras() {
   const key = getKey();
-  if (!key) return;
+  if (!key || document.hidden) return;
   const headers = { 'x-cf-key': key };
   const R = rangeInfo(Date.now());
   const days = Math.min(30, Math.max(1, Math.ceil((Date.now() - R.fromMs) / DAY)));
+  // History must cover 2× the selected range so the workload comparison has
+  // its "previous window"; 120d keeps the fixed hotspot/monthly views stable.
+  const rangeDays = Math.max(1, Math.ceil((Date.now() - R.fromMs) / DAY));
+  const histDays = Math.min(365, Math.max(120, rangeDays * 2));
   try {
     const [pr, hi] = await Promise.all([
       fetch(`./api/presence?days=${days}`, { headers }),
-      fetch('./api/history?days=120', { headers }),
+      fetch(`./api/history?days=${histDays}`, { headers }),
     ]);
     lastPresence = pr.ok ? await pr.json() : null;
     lastHistory = hi.ok ? await hi.json() : null;
@@ -451,6 +473,7 @@ async function pollExtras() {
   }
   renderPresence(lastPresence);
   renderHistoryExtras(lastHistory);
+  renderWorkload(lastNow || Date.now());
 }
 
 // ── Usage (token + model) ───────────────────────────────────────────────────
@@ -508,7 +531,7 @@ function renderUsage(rows, sessions, tools, now, R) {
   for (const u of rows) byPerson[u.gitUser || 'unknown'] = (byPerson[u.gitUser || 'unknown'] || 0) + tok(u);
   const maxP = Math.max(1, ...Object.values(byPerson));
   renderBars($('us-bypeople'), Object.entries(byPerson).sort((a, b) => b[1] - a[1]).slice(0, 8)
-    .map(([p, n]) => barRow(p, n, maxP, 'var(--signal)', fmtTok(n))));
+    .map(([p, n]) => barRow(p, n, maxP, userColor(p), fmtTok(n))));
 
   const tokByDate = {};
   for (const u of rows) tokByDate[u.date] = (tokByDate[u.date] || 0) + tok(u);
@@ -596,7 +619,8 @@ function applyRange() {
   }
 }
 
-let currentUser = ''; // '' = whole team
+let selectedUsers = new Set(); // empty = whole team; multi-select via person/team/org chips
+let filterGroups = new Map();  // 'org:<name>' / 'team:<tag>' -> Set of users (rebuilt each render)
 let lastRuns = [];
 let lastUsage = [];
 let lastSessions = [];
@@ -654,9 +678,34 @@ function membersFrom(runs, usage) {
   return Object.entries(c).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 }
 function renderMemberFilter(members) {
-  const chip = (name, label, count) =>
-    `<button class="mchip${currentUser === name ? ' is-active' : ''}" data-user="${escapeHtml(name)}">${escapeHtml(label)}${count != null ? `<span class="mchip-n">${count}</span>` : ''}</button>`;
-  const html = chip('', 'Whole team') + members.map((m) => chip(m.name, m.name, m.count || null)).join('');
+  // Group chips (org / team tags) come from profiles; person chips from the data.
+  const known = new Set(members.map((m) => m.name));
+  filterGroups = new Map();
+  for (const [u, p] of profilesByUser) {
+    if (!known.has(u)) continue;
+    if (p.org) {
+      const k = `org:${p.org}`;
+      if (!filterGroups.has(k)) filterGroups.set(k, new Set());
+      filterGroups.get(k).add(u);
+    }
+    for (const t of p.teams || []) {
+      const k = `team:${t}`;
+      if (!filterGroups.has(k)) filterGroups.set(k, new Set());
+      filterGroups.get(k).add(u);
+    }
+  }
+  const groupActive = (set) =>
+    selectedUsers.size === set.size && [...set].every((u) => selectedUsers.has(u));
+  const chips = [`<button class="mchip${selectedUsers.size ? '' : ' is-active'}" data-user="">Whole team</button>`];
+  for (const [k, set] of [...filterGroups].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const [kind, name] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+    const sym = kind === 'org' ? '⌂' : '#';
+    chips.push(`<button class="mchip mchip--group${groupActive(set) ? ' is-active' : ''}" data-group="${escapeHtml(k)}" title="${kind}: select all ${set.size}">${sym} ${escapeHtml(name)}<span class="mchip-n">${set.size}</span></button>`);
+  }
+  for (const m of members) {
+    chips.push(`<button class="mchip${selectedUsers.has(m.name) ? ' is-active' : ''}" data-user="${escapeHtml(m.name)}"><span class="mchip-dot" style="background:${userColor(m.name)}"></span>${escapeHtml(m.name)}${m.count ? `<span class="mchip-n">${m.count}</span>` : ''}</button>`);
+  }
+  const html = chips.join('');
   $('ins-filter').innerHTML = html;
   $('act-filter').innerHTML = html;
   $('use-filter').innerHTML = html;
@@ -664,15 +713,87 @@ function renderMemberFilter(members) {
 function applyFilter() {
   const now = lastNow || Date.now();
   const R = rangeInfo(now);
-  const by = (arr) => (currentUser ? arr.filter((x) => (x.gitUser || 'unknown') === currentUser) : arr);
+  const by = (arr) => (selectedUsers.size ? arr.filter((x) => selectedUsers.has(x.gitUser || 'unknown')) : arr);
   const byDate = (arr) => arr.filter((x) => x.date >= R.fromStr && x.date <= R.toStr);
   const runs = by(lastRuns).filter((r) => !r.finished || (r.finished * 1000 >= R.fromMs && r.finished * 1000 < R.toMsEx));
   renderInsights(statsFrom(runs, now));
   renderWork(byDate(by(lastWork)));
+  renderWorkload(now);
   renderFunnel(runs);
   renderRepoStats(lastRepoStats, now);
   renderActivity(feedFrom(runs));
   renderUsage(byDate(by(lastUsage)), byDate(by(lastSessions)), by(lastTools), now, R);
+}
+
+// ── Workload: selected range vs the previous equal-length window ───────────
+// Points = completed /dev runs weighted by size tier (unknown size counts as S).
+// Commits/lines come from work rows (live 14d + /api/history beyond), MAX-merged
+// per (person, date) so two machines of one person don't double-count.
+const SIZE_POINTS = { XS: 1, S: 2, M: 5, L: 8 };
+function runPoints(r) { return SIZE_POINTS[String(r.size || '').toUpperCase()] || SIZE_POINTS.S; }
+function deltaCell(cur, prev) {
+  if (!prev && !cur) return '<span class="wl-flat">—</span>';
+  if (!prev) return '<span class="wl-up">new</span>';
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct > 0) return `<span class="wl-up">▲ ${pct}%</span>`;
+  if (pct < 0) return `<span class="wl-down">▼ ${Math.abs(pct)}%</span>`;
+  return '<span class="wl-flat">=</span>';
+}
+function renderWorkload(now) {
+  const el = $('ins-workload');
+  if (!el) return;
+  const R = rangeInfo(now);
+  const span = R.toMsEx - R.fromMs;
+  const prevFromMs = R.fromMs - span;
+  const prevFromStr = localDateStr(prevFromMs);
+  const prevToStr = localDateStr(R.fromMs - 1);
+  const selected = (u) => !selectedUsers.size || selectedUsers.has(u);
+  const agg = new Map();
+  const row = (u) => {
+    if (!agg.has(u)) agg.set(u, { points: 0, prevPoints: 0, runs: 0, prevRuns: 0, commits: 0, prevCommits: 0, lines: 0, prevLines: 0 });
+    return agg.get(u);
+  };
+  for (const r of lastRuns) {
+    if (!r.done || !r.finished) continue;
+    const u = r.gitUser || 'unknown';
+    if (!selected(u)) continue;
+    const ms = r.finished * 1000;
+    if (ms >= R.fromMs && ms < R.toMsEx) { row(u).points += runPoints(r); row(u).runs++; }
+    else if (ms >= prevFromMs && ms < R.fromMs) { row(u).prevPoints += runPoints(r); row(u).prevRuns++; }
+  }
+  const wByKey = new Map();
+  const histWork = (lastHistory && Array.isArray(lastHistory.work)) ? lastHistory.work : [];
+  for (const w of [...lastWork, ...histWork]) {
+    const u = w.gitUser || 'unknown';
+    if (!selected(u) || !w.date) continue;
+    const k = `${u}|${w.date}`;
+    const m = wByKey.get(k) || { user: u, date: w.date, commits: 0, added: 0, deleted: 0 };
+    m.commits = Math.max(m.commits, w.commits || 0);
+    m.added = Math.max(m.added, w.added || 0);
+    m.deleted = Math.max(m.deleted, w.deleted || 0);
+    wByKey.set(k, m);
+  }
+  for (const m of wByKey.values()) {
+    if (m.date >= R.fromStr && m.date <= R.toStr) { row(m.user).commits += m.commits; row(m.user).lines += m.added + m.deleted; }
+    else if (m.date >= prevFromStr && m.date <= prevToStr) { row(m.user).prevCommits += m.commits; row(m.user).prevLines += m.added + m.deleted; }
+  }
+  const days = Math.round(span / DAY);
+  const sub = $('wl-sub');
+  if (sub) sub.textContent = `${R.fromStr} → ${R.toStr} vs previous ${days}d`;
+  const list = [...agg.entries()]
+    .filter(([, v]) => v.points || v.prevPoints || v.commits || v.prevCommits)
+    .sort((a, b) => b[1].points - a[1].points || b[1].commits - a[1].commits);
+  el.innerHTML = list.length ? `
+    <div class="ml-row ml-row--wl ml-row--head">
+      <span>person</span><span title="completed /dev runs weighted XS=1 S=2 M=5 L=8 (unknown → S)">points</span><span>Δ</span><span>runs</span><span>commits</span><span>Δ</span><span>lines ±</span><span>Δ</span>
+    </div>` + list.map(([u, v]) => `
+    <div class="ml-row ml-row--wl">
+      <span class="ml-model">${userDot(u)}${escapeHtml(u)}</span>
+      <span><b>${v.points}</b></span><span>${deltaCell(v.points, v.prevPoints)}</span>
+      <span>${v.runs}</span>
+      <span>${fmtTok(v.commits)}</span><span>${deltaCell(v.commits, v.prevCommits)}</span>
+      <span>${fmtTok(v.lines)}</span><span>${deltaCell(v.lines, v.prevLines)}</span>
+    </div>`).join('') : '<p class="empty empty--sm">no completed runs or commits in this window yet</p>';
 }
 
 function render(data) {
@@ -684,12 +805,16 @@ function render(data) {
   lastWork = Array.isArray(data.work) ? data.work : [];
   lastRepoStats = Array.isArray(data.repoStats) ? data.repoStats : [];
   lastNow = data.now;
+  profilesByUser = new Map((Array.isArray(data.profiles) ? data.profiles : []).map((p) => [p.user, p]));
   renderTeam(data);
   renderConflicts(data);
-  // drop a stale filter if that person no longer appears
-  if (currentUser
-      && !lastRuns.some((r) => (r.gitUser || 'unknown') === currentUser)
-      && !lastUsage.some((u) => (u.gitUser || 'unknown') === currentUser)) currentUser = '';
+  // drop stale selections for people who no longer appear
+  if (selectedUsers.size) {
+    const present = new Set();
+    for (const r of lastRuns) present.add(r.gitUser || 'unknown');
+    for (const u of lastUsage) present.add(u.gitUser || 'unknown');
+    for (const u of [...selectedUsers]) if (!present.has(u)) selectedUsers.delete(u);
+  }
   renderMemberFilter(membersFrom(lastRuns, lastUsage));
   applyFilter();
   setStatus('ok', `${data.onlineCount} online`);
@@ -699,6 +824,7 @@ function render(data) {
 async function poll() {
   const key = getKey();
   if (!key) return showGate(false);
+  if (document.hidden) return; // hidden tab: skip; visibilitychange re-polls on return
   try {
     const res = await fetch('./api/online', { headers: { 'x-cf-key': key } });
     if (res.status === 401) { clearKey(); return showGate(true); }
@@ -742,7 +868,7 @@ function demoRuns(now) {
       'test-plan': Math.round(st + dur * 0.33), tests: Math.round(st + dur * 0.72),
       review: Math.round(st + dur * 0.88), retro: finished,
     };
-    runs.push({ id: `${100 + i}-${type}-run`, type, repo: pick(repos), gitUser: people[pw[Math.floor(rnd() * pw.length)]], phase: 'done', started: st, finished, done: true, art });
+    runs.push({ id: `${100 + i}-${type}-run`, type, size: pick(['XS', 'S', 'S', 'M', 'M', 'L']), repo: pick(repos), gitUser: people[pw[Math.floor(rnd() * pw.length)]], phase: 'done', started: st, finished, done: true, art });
   }
   runs.push({ id: '0042-feat-stripe-retry', type: 'feat', repo: 'checkout-service', gitUser: 'alice', phase: 'phase-2-implementation', started: sec - 5000, finished: sec - 120, done: false });
   runs.push({ id: '0043-fix-charge-idempotency', type: 'fix', repo: 'checkout-service', gitUser: 'bob', phase: 'phase-2-implementation', started: sec - 8000, finished: sec - 300, done: false });
@@ -812,6 +938,12 @@ function demoData() {
   const now = Date.now();
   return {
     now, ttlMs: 30000, onlineCount: 3, totalCount: 4,
+    profiles: [
+      { user: 'alice', org: 'acme', teams: ['payments'], color: '' },
+      { user: 'bob', org: 'acme', teams: ['payments'], color: '' },
+      { user: 'carol', org: 'acme', teams: ['web'], color: '' },
+      { user: 'erin', org: 'acme', teams: ['infra'], color: '' },
+    ],
     conflicts: [{
       repoId: 'github.com/acme/checkout-service', path: 'src/payment/charge.ts',
       parties: [
@@ -886,7 +1018,17 @@ setTab(localStorage.getItem(TAB_STORE) || 'team');
 ['ins-filter', 'act-filter', 'use-filter'].forEach((fid) => $(fid).addEventListener('click', (e) => {
   const btn = e.target.closest('.mchip');
   if (!btn) return;
-  currentUser = btn.dataset.user || '';
+  if (btn.dataset.group != null) {
+    // team/org chip: select the whole group; clicking it again deselects.
+    const set = filterGroups.get(btn.dataset.group) || new Set();
+    const same = selectedUsers.size === set.size && [...set].every((u) => selectedUsers.has(u));
+    selectedUsers = same ? new Set() : new Set(set);
+  } else {
+    const u = btn.dataset.user || '';
+    if (!u) selectedUsers = new Set(); // Whole team
+    else if (selectedUsers.has(u)) selectedUsers.delete(u);
+    else selectedUsers.add(u);
+  }
   renderMemberFilter(membersFrom(lastRuns, lastUsage));
   applyFilter();
 }));
@@ -933,7 +1075,59 @@ $('gate-demo').addEventListener('click', enterDemo);
 $('header-demo').addEventListener('click', enterDemo);
 $('demo-exit').addEventListener('click', exitDemo);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && !isDemo() && getKey()) poll();
+  if (document.visibilityState === 'visible' && !isDemo() && getKey()) { poll(); pollExtras(); }
+});
+
+// ── My profile (team tags / org / color) ───────────────────────────────────
+const ME_STORE = 'cf-dashboard-me';
+let pfColorAuto = true;
+function openProfile() {
+  const me = localStorage.getItem(ME_STORE) || '';
+  const p = profilesByUser.get(me);
+  $('pf-user').value = me;
+  $('pf-org').value = (p && p.org) || '';
+  $('pf-teams').value = p ? (p.teams || []).join(', ') : '';
+  pfColorAuto = !(p && p.color);
+  $('pf-color').value = (p && p.color) || userColor(me || 'unknown');
+  $('pf-users').innerHTML = membersFrom(lastRuns, lastUsage)
+    .map((m) => `<option value="${escapeHtml(m.name)}">`).join('');
+  $('pf-error').hidden = true;
+  $('profile-modal').hidden = false;
+  $('pf-user').focus();
+}
+$('profile-btn').addEventListener('click', openProfile);
+$('pf-cancel').addEventListener('click', () => { $('profile-modal').hidden = true; });
+$('pf-color').addEventListener('input', () => { pfColorAuto = false; });
+$('pf-color-clear').addEventListener('click', () => {
+  pfColorAuto = true;
+  $('pf-color').value = userColor($('pf-user').value.trim() || 'unknown');
+});
+$('profile-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const user = $('pf-user').value.trim();
+  if (!user) return;
+  const body = {
+    user,
+    org: $('pf-org').value.trim(),
+    teams: $('pf-teams').value.split(',').map((t) => t.trim()).filter(Boolean),
+    color: pfColorAuto ? '' : $('pf-color').value,
+  };
+  try {
+    const res = await fetch('./api/profile', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-cf-key': getKey() },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const out = await res.json();
+    localStorage.setItem(ME_STORE, user);
+    profilesByUser.set(user, out.profile || body);
+    $('profile-modal').hidden = true;
+    renderMemberFilter(membersFrom(lastRuns, lastUsage));
+    applyFilter();
+  } catch (err) {
+    $('pf-error').hidden = false;
+  }
 });
 
 if (isDemo()) enterDemo();

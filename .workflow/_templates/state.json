@@ -3,6 +3,8 @@
   "type": "feat",
   "size": null,
   "field": null,
+  "owner": null,
+  "owner_email": null,
   "context_built": false,
   "repo_root": null,
   "repos": null,

@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-CLIENT_VERSION="1.8.0"
+CLIENT_VERSION="1.10.0"
 DEFAULT_SERVER="https://claude-foundation-dashboard-production.up.railway.app"
 
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -43,7 +43,7 @@ Options:
   --key <key>          Shared dashboard key (or env CLAUDE_FOUNDATION_DASHBOARD_KEY)
   --server <url>       Dashboard server URL (or env CLAUDE_FOUNDATION_DASHBOARD_URL)
   --name <name>        Display name (default: git user.name, else \$USER)
-  --interval <secs>    Heartbeat interval (default: 15)
+  --interval <secs>    Heartbeat interval (default: 30)
   --scan <dir>         Dir to scan for /dev runs + git repos (repeatable; default: \$HOME)
   --no-activity        Don't report what /dev runs are active (presence only)
   --no-conflicts       Don't report changed files/lines for conflict early-warning
@@ -68,7 +68,7 @@ ARGS=("$@") # forwarded verbatim to the background child in `up`
 KEY="${CLAUDE_FOUNDATION_DASHBOARD_KEY:-}"
 SERVER="${CLAUDE_FOUNDATION_DASHBOARD_URL:-$DEFAULT_SERVER}"
 NAME=""
-INTERVAL=15
+INTERVAL="${CLAUDE_FOUNDATION_DASHBOARD_INTERVAL:-30}"
 ONCE="no"
 ACTIVITY="yes"                                             # report active /dev runs (repo+branch); --no-activity to opt out
 CONFLICTS="yes"                                            # report changed files+line-ranges per repo for conflict warning; --no-conflicts to opt out
@@ -158,6 +158,7 @@ derive_identity() {
   [ -n "$GIT_USER" ] || GIT_USER="$(git config --get user.name 2>/dev/null || true)"
   [ -n "$GIT_USER" ] || GIT_USER="$(git config --get user.email 2>/dev/null || true)"
   [ -n "$GIT_USER" ] || GIT_USER="${USER:-unknown}"
+  GIT_EMAIL="$(git config --get user.email 2>/dev/null || true)"
   HOST="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo unknown)"
 }
 
@@ -216,6 +217,7 @@ scan_runs() {
   [ "$ACTIVITY" = "yes" ] || { RUNS_JSON="[]"; return; }
   local tab; tab="$(printf '\t')"
   local ranked=() sj rundir id rtype repo branch phase step repo_root started finished doneflag
+  local owner oemail rsize rr rid last_rr= last_rid=
   while IFS= read -r sj; do
     [ -n "$sj" ] || continue
     case "$sj" in */_templates/*) continue ;; esac      # skip the blueprint state.json
@@ -229,6 +231,27 @@ scan_runs() {
     repo_root="$(json_get "$sj" repo_root)"
     if [ -n "$repo_root" ]; then repo="$(basename "$repo_root")"
     else repo="$(basename "$(dirname "$(dirname "$rundir")")")"; fi
+    # Owner = who actually ran this /dev run. Prefer state.json `owner`/`owner_email`
+    # (the orchestrator writes them at run creation); for older runs fall back to
+    # the author of the first commit that touched the run dir. Empty owner means
+    # the server falls back to attributing the run to whoever reported it.
+    owner="$(json_get "$sj" owner)"
+    oemail="$(json_get "$sj" owner_email)"
+    rsize="$(json_get "$sj" size)"
+    rr="$repo_root"; [ -n "$rr" ] || rr="$(dirname "$(dirname "$rundir")")"
+    if [ -z "$owner" ] && command -v git >/dev/null 2>&1; then
+      IFS="$tab" read -r owner oemail \
+        < <(git -C "$rr" log --reverse --format="%an${tab}%ae" -- ".workflow/$(basename "$rundir")" 2>/dev/null | head -1) || true
+    fi
+    # Stable cross-machine repo id (normalized remote URL, same as changes[]) so
+    # the server can dedupe the same run reported from different clones. One git
+    # call per repo — find emits a repo's runs consecutively, so cache the last.
+    if [ -n "$rr" ] && [ "$rr" = "$last_rr" ]; then rid="$last_rid"
+    else
+      rid="$(git -C "$rr" config --get remote.origin.url 2>/dev/null || true)"
+      [ -n "$rid" ] && rid="$(normalize_remote "$rid")"
+      last_rr="$rr"; last_rid="$rid"
+    fi
     started="$(dir_started "$rundir")"                  # run-dir birth ≈ created
     finished="$(file_mtime "$sj")"                      # state.json mtime ≈ last_updated
     doneflag=false; { [ "$phase" = "done" ] || [ "$step" = "done" ]; } && doneflag=true
@@ -240,7 +263,7 @@ scan_runs() {
       [ -f "$af" ] && art="$art,\"$a\":$(file_mtime "$af")"
     done
     art="{${art#,}}"
-    ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"branch\":\"$(json_escape "$branch")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag},\"art\":${art}}")
+    ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"repoId\":\"$(json_escape "$rid")\",\"branch\":\"$(json_escape "$branch")\",\"owner\":\"$(json_escape "$owner")\",\"ownerEmail\":\"$(json_escape "$oemail")\",\"size\":\"$(json_escape "$rsize")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag},\"art\":${art}}")
   done < <(find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
              \( -name node_modules -o -name .git -o -name Library -o -name .Trash -o -name .cache \) -prune \
              -o -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print 2>/dev/null)
@@ -266,29 +289,62 @@ scan_changes() {
   command -v git >/dev/null 2>&1 || { CHANGES_JSON="[]"; return; }
   local tab; tab="$(printf '\t')"
 
-  # ── Pass 1: discover dirty repos + recency (one git call each) ──
-  local cand=() gitdir root first mt count=0
+  # ── Pass 1: discover repos + recency (one git call each) ──
+  # Dirty repos (uncommitted edits) are the priority. Clean repos with a commit
+  # in the last 14d (any local branch) still qualify — otherwise finishing and
+  # committing your work makes it vanish from the stats. `.git` matches as a
+  # dir (normal clone) OR a file (linked worktree).
+  local cand=() clean_cand=() gitdir root first mt count=0
   while IFS= read -r gitdir; do
     [ -n "$gitdir" ] || continue
     root=${gitdir%/.git}
-    [ -d "$root/.git" ] || continue
+    [ -e "$root/.git" ] || continue
     count=$((count + 1)); [ "$count" -le "${CONFLICT_REPO_SCAN_CAP:-600}" ] || break
     first="$(git -C "$root" diff --name-only HEAD 2>/dev/null | head -1 || true)"
-    [ -n "$first" ] || continue                     # clean working tree → skip
-    mt="$(file_mtime "$root/$first")"
-    cand+=("${mt}${tab}${root}")
+    if [ -n "$first" ]; then
+      mt="$(file_mtime "$root/$first")"
+      cand+=("${mt}${tab}${root}")
+    else
+      mt="$(git -C "$root" log -1 --since=14.days --branches --format=%ct 2>/dev/null | head -1 || true)"
+      [ -n "$mt" ] || continue                      # clean AND idle 14d → skip
+      clean_cand+=("${mt}${tab}${root}")
+    fi
   done < <(find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
              \( -name node_modules -o -name Library -o -name .Trash -o -name .cache \) -prune \
-             -o -name .git -type d -prune -print 2>/dev/null)
-  [ "${#cand[@]}" -gt 0 ] || { CHANGES_JSON="[]"; return; }
+             -o -name .git -type d -prune -print \
+             -o -name .git -type f -print 2>/dev/null)
+  [ $(( ${#cand[@]} + ${#clean_cand[@]} )) -gt 0 ] || { CHANGES_JSON="[]"; return; }
 
   # ── Pass 2: full line-range diff for the top-N most-recently-edited repos ──
-  local repo_items=() rmt root2 url branch rel label
+  # Dirty repos get the main cap; clean-but-recent repos ride a smaller side cap
+  # so they can never crowd out live work. seen_ids dedupes repo-level stats
+  # when one repoId appears as several roots (main checkout + worktrees, or a
+  # second clone): only the first (most recent) root reports commits/work/
+  # pushes/follow-ups — they all share the same refs, so letting every root
+  # report them would double-count. Extra roots still report changed files,
+  # which is exactly what cross-branch conflict detection needs.
+  local repo_items=() rmt root2 url branch rel label primary seen_ids="|"
+  # Feed = dirty repos (newest first, main cap) then clean repos (side cap).
+  # Built as a variable + herestring — bash 3.2 mis-parses a multi-command
+  # { …; …; } group inside < <(…) here.
+  local feed="" cfeed=""
+  if [ "${#cand[@]}" -gt 0 ]; then
+    feed="$(printf '%s\n' "${cand[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${CHANGES_REPO_CAP:-20}" 'NR<=n')"
+  fi
+  if [ "${#clean_cand[@]}" -gt 0 ]; then
+    cfeed="$(printf '%s\n' "${clean_cand[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${CLEAN_REPO_CAP:-10}" 'NR<=n')"
+    if [ -n "$feed" ]; then feed="${feed}
+${cfeed}"; else feed="$cfeed"; fi
+  fi
   while IFS="$tab" read -r rmt root2; do
     [ -n "$root2" ] || continue
     url="$(git -C "$root2" config --get remote.origin.url 2>/dev/null || true)"
     [ -n "$url" ] || continue                       # need a remote to match across machines
     url="$(normalize_remote "$url")"
+    case "$seen_ids" in
+      *"|${url}|"*) primary=no ;;
+      *) primary=yes; seen_ids="${seen_ids}${url}|" ;;
+    esac
     branch="$(git -C "$root2" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
     [ -n "$branch" ] || branch="HEAD"
     # Disambiguators: home-relative folder path + optional `git config dashboard.label`.
@@ -306,17 +362,26 @@ scan_changes() {
         /^@@ /{ p=$3; sub(/^\+/,"",p); n=split(p,a,","); s=a[1]+0; L=(n>1?a[2]+0:1); if(L<1)L=1;
                 if(f!="" && f!="/dev/null"){ rng[f]=rng[f] (rng[f]?",":"") s"-" (s+L-1); seen[f]=1 } }
         END{ for(f in seen) print f"\t"rng[f] }' | awk -v n="${CONFLICT_FILE_CAP:-80}" 'NR<=n')
-    [ "${#file_items[@]}" -gt 0 ] || continue
-    # Commit activity (all authors, last 14d, per day) + /dev follow-up backlog.
-    local commits fu fu_open fu_closed
-    commits="$(git -C "$root2" log --since=14.days --date=short --pretty='%ad' 2>/dev/null \
+    # A secondary root (same repoId already reported) with no changed files has
+    # nothing left to contribute; a primary root stays even file-less (clean
+    # repo — its commits/work still count).
+    if [ "${#file_items[@]}" -eq 0 ] && [ "$primary" = "no" ]; then continue; fi
+    # Repo-level stats — primary root only (see seen_ids above). All git log
+    # calls use --branches: commits land on whatever branch you were on, not
+    # just the one checked out right now (same commit on N branches still
+    # counts once — git log dedupes by hash).
+    local commits="" fu fu_open=0 fu_closed=0
+    local me work="" pushes="" gitdir
+    if [ "$primary" = "yes" ]; then
+    # Commit activity (all authors, all local branches, last 14d, per day) +
+    # /dev follow-up backlog.
+    commits="$(git -C "$root2" log --branches --since=14.days --date=short --pretty='%ad' 2>/dev/null \
       | sort | uniq -c | awk '{printf "%s{\"date\":\"%s\",\"n\":%d}", (NR>1?",":""), $2, $1}')"
     # MY work in this repo: commits + lines added/deleted per day (author = this
     # repo's git identity), and pushes per day from the remote-ref reflogs —
     # "update by push" entries only exist on the machine that pushed.
-    local me work pushes gitdir
     me="$(git -C "$root2" config user.name 2>/dev/null || true)"
-    work="$({ git -C "$root2" log --since=14.days --author="$me" --date=short --pretty='C|%ad' --numstat 2>/dev/null || true; } \
+    work="$({ git -C "$root2" log --branches --since=14.days --author="$me" --date=short --pretty='C|%ad' --numstat 2>/dev/null || true; } \
       | awk -F'\t' '
         /^C\|/ { split($0, x, "|"); cur = x[2]; C[cur]++; next }
         NF >= 3 && cur != "" { if ($1 != "-") A[cur] += $1; if ($2 != "-") D[cur] += $2 }
@@ -361,13 +426,13 @@ scan_changes() {
             printf "{\"date\":\"%s\",\"n\":%d}", d, P[d]
           }
         }')"
-    fu_open=0; fu_closed=0
     if [ -f "$root2/.workflow/FOLLOWUPS.md" ]; then
       fu="$(awk '/^## Open/{s=1} /^## Closed/{s=2} /^\| *F/{ if(s==1)o++; else if(s==2)c++ } END{printf "%d %d", o+0, c+0}' "$root2/.workflow/FOLLOWUPS.md" 2>/dev/null)"
       fu_open="${fu%% *}"; fu_closed="${fu##* }"
     fi
-    repo_items+=("{\"repoId\":\"$(json_escape "$url")\",\"branch\":\"$(json_escape "$branch")\",\"path\":\"$(json_escape "$rel")\",\"label\":\"$(json_escape "$label")\",\"commits\":[${commits}],\"work\":[${work}],\"pushes\":[${pushes}],\"fuOpen\":${fu_open:-0},\"fuClosed\":${fu_closed:-0},\"files\":[$(join_csv "${file_items[@]}")]}")
-  done < <(printf '%s\n' "${cand[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${CHANGES_REPO_CAP:-20}" 'NR<=n')
+    fi  # primary
+    repo_items+=("{\"repoId\":\"$(json_escape "$url")\",\"branch\":\"$(json_escape "$branch")\",\"path\":\"$(json_escape "$rel")\",\"label\":\"$(json_escape "$label")\",\"commits\":[${commits}],\"work\":[${work}],\"pushes\":[${pushes}],\"fuOpen\":${fu_open:-0},\"fuClosed\":${fu_closed:-0},\"files\":[$(join_csv ${file_items[@]+"${file_items[@]}"})]}")
+  done <<< "$feed"
 
   CHANGES_JSON="[$(join_csv ${repo_items[@]+"${repo_items[@]}"})]"
 }
@@ -576,8 +641,8 @@ load_cache() {
 }
 
 build_payload() {
-  printf '{"agentId":"%s","gitUser":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s,"usage":%s,"sessions":%s,"tools":%s,"prs":%s}' \
-    "$(json_escape "$AGENT_ID")" "$(json_escape "$GIT_USER")" \
+  printf '{"agentId":"%s","gitUser":"%s","gitEmail":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s,"usage":%s,"sessions":%s,"tools":%s,"prs":%s}' \
+    "$(json_escape "$AGENT_ID")" "$(json_escape "$GIT_USER")" "$(json_escape "${GIT_EMAIL:-}")" \
     "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$RUNS_JSON" "$CHANGES_JSON" "$USAGE_JSON" "$SESSIONS_JSON" "$TOOLS_JSON" "$PRS_JSON"
 }
 

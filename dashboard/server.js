@@ -21,8 +21,9 @@ const crypto = require('crypto');
 const PORT = toInt(process.env.PORT, 8473); // off the common dev ports; Railway overrides via PORT
 const SHARED_KEY = process.env.SHARED_KEY || '';
 const VIEW_KEY = process.env.VIEW_KEY || SHARED_KEY; // who may read /api/online
-const ONLINE_TTL_MS = toInt(process.env.ONLINE_TTL_MS, 30_000); // online window
+const ONLINE_TTL_MS = toInt(process.env.ONLINE_TTL_MS, 75_000); // online window — 2.5x the client's 30s beat, so one dropped beat doesn't flicker
 const PRUNE_AFTER_MS = ONLINE_TTL_MS * 20; // forget agents gone this long
+const ONLINE_CACHE_MS = toInt(process.env.ONLINE_CACHE_MS, 2_000); // /api/online is recomputed at most this often, shared by all viewers
 const MAX_BODY_BYTES = 512 * 1024; // rich change payloads (many repos × files × ranges)
 const MAX_FIELD_LEN = 200;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -36,7 +37,8 @@ if (!SHARED_KEY) {
 // On Railway attach a volume and we pick its mount up from
 // RAILWAY_VOLUME_MOUNT_PATH automatically; DB_PATH overrides. Without SQLite
 // support (old Node) the server still runs — in-memory only, like before.
-const HEARTBEAT_LOG_DAYS = toInt(process.env.HEARTBEAT_LOG_DAYS, 30);
+const HEARTBEAT_LOG_DAYS = toInt(process.env.HEARTBEAT_LOG_DAYS, 7); // raw beat log is debug-only now — presence reads presence_hourly
+const HISTORY_DAYS = toInt(process.env.HISTORY_DAYS, 400); // retention for date-keyed history tables (usage/work/edits/conflicts/commits)
 const DB_PATH = process.env.DB_PATH
   || path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data'), 'dashboard.db');
 
@@ -53,12 +55,26 @@ try {
     try { db.exec('ALTER TABLE runs ADD COLUMN artifacts TEXT;'); } catch { /* fresh db — CREATE below carries it */ }
     db.exec('PRAGMA user_version = 2;');
   }
+  // v3: runs gain owner/owner_email/size/repo_id (true per-run attribution +
+  // effort points), agents gain git_email, and presence moves to an hourly
+  // aggregate (backfilled from the raw beat log below, after CREATE).
+  const needsV3 = dbVersion < 3;
+  if (needsV3) {
+    for (const sql of [
+      'ALTER TABLE runs ADD COLUMN owner TEXT',
+      'ALTER TABLE runs ADD COLUMN owner_email TEXT',
+      'ALTER TABLE runs ADD COLUMN size TEXT',
+      'ALTER TABLE runs ADD COLUMN repo_id TEXT',
+      'ALTER TABLE agents ADD COLUMN git_email TEXT',
+    ]) { try { db.exec(sql); } catch { /* fresh db — CREATE below carries them */ } }
+    db.exec('PRAGMA user_version = 3;');
+  }
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
     CREATE TABLE IF NOT EXISTS agents (
       agent_id   TEXT PRIMARY KEY,
-      git_user   TEXT, host TEXT, version TEXT, status TEXT,
+      git_user   TEXT, git_email TEXT, host TEXT, version TEXT, status TEXT,
       first_seen INTEGER, last_seen INTEGER,
       state      TEXT              -- full sanitized record (runs/changes/usage/…) as JSON
     );
@@ -75,6 +91,9 @@ try {
       git_user TEXT, type TEXT, phase TEXT,
       started INTEGER, finished INTEGER, done INTEGER,
       artifacts TEXT,               -- {"spec":<epoch>,"plan":<epoch>,…} for the phase funnel
+      owner TEXT, owner_email TEXT, -- who actually ran it (state.json / first-commit author) — '' = unknown, attribute to reporter
+      size TEXT,                    -- XS/S/M/L from state.json — powers effort points
+      repo_id TEXT,                 -- normalized remote URL (host/org/repo) — cross-clone dedupe key
       PRIMARY KEY (agent_id, repo, run_id)
     );
     CREATE TABLE IF NOT EXISTS usage_daily (
@@ -110,7 +129,30 @@ try {
       commits INTEGER, added INTEGER, deleted INTEGER, pushes INTEGER, prs INTEGER,
       PRIMARY KEY (agent_id, date)
     );
+    CREATE TABLE IF NOT EXISTS profiles (
+      user TEXT PRIMARY KEY,        -- the gitUser display string every aggregate groups by
+      email TEXT, org TEXT,
+      teams TEXT,                   -- JSON array of team tags, e.g. ["payments","platform"]
+      color TEXT,                   -- '#rrggbb' or '' = auto (hashed palette)
+      updated_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS presence_hourly (
+      hour INTEGER, git_user TEXT, minutes INTEGER,
+      PRIMARY KEY (hour, git_user)  -- hour = epoch_ms/3600000; replaces raw-beat presence scans
+    );
+    CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_daily(date);
+    CREATE INDEX IF NOT EXISTS idx_work_date  ON work_daily(date);
   `);
+  // One-time presence backfill so the heatmap doesn't reset when v3 lands.
+  if (needsV3) {
+    try {
+      db.exec(`
+        INSERT OR IGNORE INTO presence_hourly (hour, git_user, minutes)
+        SELECT ts/3600000, git_user, COUNT(DISTINCT ts/60000)
+        FROM heartbeats WHERE status != 'offline' GROUP BY ts/3600000, git_user;
+      `);
+    } catch (err) { console.warn(`presence backfill failed: ${err.message}`); }
+  }
   console.log(`sqlite: persisting to ${DB_PATH} (heartbeat log kept ${HEARTBEAT_LOG_DAYS}d)`);
 } catch (err) {
   console.warn(`sqlite unavailable (${err.message}) — running in-memory only; presence and history reset on restart.`);
@@ -118,22 +160,23 @@ try {
 
 const stmts = db && {
   upsertAgent: db.prepare(`
-    INSERT INTO agents (agent_id, git_user, host, version, status, first_seen, last_seen, state)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO agents (agent_id, git_user, git_email, host, version, status, first_seen, last_seen, state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_id) DO UPDATE SET
-      git_user=excluded.git_user, host=excluded.host, version=excluded.version,
+      git_user=excluded.git_user, git_email=excluded.git_email, host=excluded.host, version=excluded.version,
       status=excluded.status, last_seen=excluded.last_seen, state=excluded.state`),
   deleteAgent: db.prepare('DELETE FROM agents WHERE agent_id = ?'),
   insertBeat: db.prepare(`
     INSERT INTO heartbeats (ts, agent_id, git_user, host, version, status, runs_n, changes_n, files_n, usage_n)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
   upsertRun: db.prepare(`
-    INSERT INTO runs (agent_id, repo, run_id, git_user, type, phase, started, finished, done, artifacts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (agent_id, repo, run_id, git_user, type, phase, started, finished, done, artifacts, owner, owner_email, size, repo_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_id, repo, run_id) DO UPDATE SET
       git_user=excluded.git_user, type=excluded.type, phase=excluded.phase,
       started=excluded.started, finished=excluded.finished, done=excluded.done,
-      artifacts=excluded.artifacts`),
+      artifacts=excluded.artifacts, owner=excluded.owner, owner_email=excluded.owner_email,
+      size=excluded.size, repo_id=excluded.repo_id`),
   upsertUsage: db.prepare(`
     INSERT INTO usage_daily (agent_id, git_user, date, model, project, input, output, cache_create, cache_read, count)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -173,9 +216,22 @@ const stmts = db && {
       git_user=excluded.git_user, commits=excluded.commits, added=excluded.added,
       deleted=excluded.deleted, pushes=excluded.pushes, prs=excluded.prs`),
   presence: db.prepare(`
-    SELECT git_user AS user, ts/3600000 AS hour, COUNT(DISTINCT ts/60000) AS minutes
-    FROM heartbeats WHERE ts >= ? AND status != 'offline'
-    GROUP BY git_user, ts/3600000`),
+    SELECT git_user AS user, hour, MIN(minutes, 60) AS minutes
+    FROM presence_hourly WHERE hour >= ?`),
+  upsertPresence: db.prepare(`
+    INSERT INTO presence_hourly (hour, git_user, minutes) VALUES (?, ?, 1)
+    ON CONFLICT(hour, git_user) DO UPDATE SET minutes = minutes + 1`),
+  upsertProfile: db.prepare(`
+    INSERT INTO profiles (user, email, org, teams, color, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user) DO UPDATE SET
+      email=excluded.email, org=excluded.org, teams=excluded.teams,
+      color=excluded.color, updated_at=excluded.updated_at`),
+  loadProfiles: db.prepare('SELECT * FROM profiles'),
+  historyWork: db.prepare(`
+    SELECT date, git_user AS gitUser, MAX(commits) AS commits, MAX(added) AS added,
+           MAX(deleted) AS deleted, MAX(pushes) AS pushes, MAX(prs) AS prs
+    FROM work_daily WHERE date >= ? GROUP BY date, git_user`),
   historyUsage: db.prepare(`
     SELECT date, model, SUM(input) AS input, SUM(output) AS output,
            SUM(cache_create) AS cacheCreate, SUM(cache_read) AS cacheRead, SUM(count) AS count
@@ -193,6 +249,14 @@ const stmts = db && {
     SELECT day, repo_id AS repoId, path, users, last_ts AS lastTs
     FROM conflict_log ORDER BY last_ts DESC LIMIT 100`),
   pruneBeats: db.prepare('DELETE FROM heartbeats WHERE ts < ?'),
+  prunePresence: db.prepare('DELETE FROM presence_hourly WHERE hour < ?'),
+  pruneByDate: [
+    db.prepare('DELETE FROM usage_daily WHERE date < ?'),
+    db.prepare('DELETE FROM work_daily WHERE date < ?'),
+    db.prepare('DELETE FROM commits_daily WHERE date < ?'),
+    db.prepare('DELETE FROM file_edits WHERE day < ?'),
+    db.prepare('DELETE FROM conflict_log WHERE day < ?'),
+  ],
   loadAgents: db.prepare('SELECT * FROM agents'),
   logBeats: db.prepare(`
     SELECT ts, agent_id AS agentId, git_user AS gitUser, host, version, status,
@@ -211,12 +275,19 @@ function persistHeartbeat(a, now) {
     stmts.insertBeat.run(now, a.agentId, a.gitUser, a.host, a.version, a.status,
       (a.runs || []).length, (a.changes || []).length, filesN, (a.usage || []).length);
     if (a.status === 'offline') stmts.deleteAgent.run(a.agentId);
-    else stmts.upsertAgent.run(a.agentId, a.gitUser, a.host, a.version, a.status,
+    else stmts.upsertAgent.run(a.agentId, a.gitUser, a.gitEmail || '', a.host, a.version, a.status,
       a.firstSeen, a.lastSeen,
       JSON.stringify({ runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
+    // Presence: credit at most one minute-bucket per beat into the hourly aggregate.
+    const minuteBucket = Math.floor(now / 60000);
+    if (a.status !== 'offline' && a.lastPresenceMin !== minuteBucket) {
+      a.lastPresenceMin = minuteBucket;
+      stmts.upsertPresence.run(Math.floor(now / 3600000), a.gitUser);
+    }
     for (const r of a.runs || []) {
       stmts.upsertRun.run(a.agentId, r.repo, r.id, a.gitUser, r.type, r.phase,
-        r.started, r.finished, r.done ? 1 : 0, JSON.stringify(r.art || {}));
+        r.started, r.finished, r.done ? 1 : 0, JSON.stringify(r.art || {}),
+        r.owner || '', r.ownerEmail || '', r.size || '', r.repoId || '');
     }
     for (const u of a.usage || []) {
       stmts.upsertUsage.run(a.agentId, a.gitUser, u.date, u.model, u.project || '',
@@ -293,7 +364,7 @@ function restoreAgents(agentsMap) {
       try { state = JSON.parse(row.state || '{}'); } catch { /* corrupt row — presence only */ }
       agentsMap.set(row.agent_id, {
         agentId: row.agent_id,
-        gitUser: row.git_user, host: row.host, version: row.version, status: row.status,
+        gitUser: row.git_user, gitEmail: row.git_email || '', host: row.host, version: row.version, status: row.status,
         runs: Array.isArray(state.runs) ? state.runs : [],
         changes: Array.isArray(state.changes) ? state.changes : [],
         usage: Array.isArray(state.usage) ? state.usage : [],
@@ -309,14 +380,38 @@ function restoreAgents(agentsMap) {
   }
 }
 
-// Trim the heartbeat log on boot and then hourly.
+// Trim the heartbeat log + long-tail history tables on boot and then hourly.
 function pruneHeartbeatLog() {
   if (!db) return;
-  try { stmts.pruneBeats.run(Date.now() - HEARTBEAT_LOG_DAYS * 86400000); }
+  try {
+    const now = Date.now();
+    stmts.pruneBeats.run(now - HEARTBEAT_LOG_DAYS * 86400000);
+    stmts.prunePresence.run(Math.floor((now - HISTORY_DAYS * 86400000) / 3600000));
+    const cutoffDay = new Date(now - HISTORY_DAYS * 86400000).toISOString().slice(0, 10);
+    for (const stmt of stmts.pruneByDate) stmt.run(cutoffDay);
+  }
   catch (err) { console.warn(`sqlite prune failed: ${err.message}`); }
 }
 pruneHeartbeatLog();
 setInterval(pruneHeartbeatLog, 3600_000).unref();
+
+// ── Profiles (who's on which team) ──────────────────────────────────────────
+// user -> { user, email, org, teams: [..], color, updatedAt }. Read-through
+// memory map (served on every /api/online), written through to SQLite.
+const profiles = new Map();
+if (db) {
+  try {
+    for (const row of stmts.loadProfiles.all()) {
+      let teams = [];
+      try { teams = JSON.parse(row.teams || '[]'); } catch { /* corrupt row — keep empty */ }
+      profiles.set(row.user, {
+        user: row.user, email: row.email || '', org: row.org || '',
+        teams: Array.isArray(teams) ? teams : [], color: row.color || '', updatedAt: row.updated_at || 0,
+      });
+    }
+    if (profiles.size) console.log(`sqlite: restored ${profiles.size} profile(s)`);
+  } catch (err) { console.warn(`sqlite profile restore failed: ${err.message}`); }
+}
 
 // ── Presence store ──────────────────────────────────────────────────────────
 // agentId -> { agentId, gitUser, host, version, status, firstSeen, lastSeen }
@@ -354,7 +449,8 @@ function snapshot(a, now) {
     activity: deriveActivity(a.runs, now),
     // Compact "working in" summary — repo + branch + file count, derived from the
     // reported changes. Full paths/line-ranges stay server-side for conflict math.
-    repos: (a.changes || []).map((c) => ({
+    // Only dirty entries: a clean repo reporting history stats isn't "working in".
+    repos: (a.changes || []).filter((c) => Array.isArray(c.files) && c.files.length).map((c) => ({
       repo: String(c.repoId).split('/').slice(-2).join('/'),
       branch: c.branch,
       dir: c.path || '',
@@ -389,7 +485,11 @@ function cleanRuns(raw) {
       id: clean(r && r.id, 80),
       type: clean(r && r.type, 20),
       repo: clean(r && r.repo, 120),
+      repoId: clean(r && r.repoId, 200),
       branch: clean(r && r.branch, 120),
+      owner: clean(r && r.owner, 80),
+      ownerEmail: clean(r && r.ownerEmail, 120),
+      size: clean(r && r.size, 8),
       phase: clean(r && r.phase, 40),
       started: Math.max(0, toInt(r && r.started, 0)),
       finished: Math.max(0, toInt(r && r.finished, 0)),
@@ -506,7 +606,9 @@ function cleanChanges(raw) {
             .filter((f) => f.path && f.ranges.length)
         : [],
     }))
-    .filter((r) => r.repoId && r.files.length);
+    // File-less entries are legit since client 1.10: a clean-but-recently-active
+    // repo still reports commits/work/pushes so finished work keeps counting.
+    .filter((r) => r.repoId && (r.files.length || r.work.length || r.commits.length || r.pushes.length));
 }
 
 /** Constant-time string compare that tolerates length differences. */
@@ -604,9 +706,11 @@ async function handleHeartbeat(req, res, url) {
   const now = Date.now();
   const status = clean(body.value.status) || 'online';
   const existing = agents.get(agentId);
+  const lastPresenceMin = existing ? existing.lastPresenceMin : undefined;
   agents.set(agentId, {
     agentId,
     gitUser: clean(body.value.gitUser) || 'unknown',
+    gitEmail: clean(body.value.gitEmail, 120).toLowerCase(),
     host: clean(body.value.host),
     version: clean(body.value.version),
     status,
@@ -618,6 +722,7 @@ async function handleHeartbeat(req, res, url) {
     prs: cleanDateCounts(body.value.prs, 'n'),
     firstSeen: existing ? existing.firstSeen : now,
     lastSeen: now,
+    lastPresenceMin,
   });
 
   persistHeartbeat(agents.get(agentId), now);
@@ -691,14 +796,26 @@ function computeConflicts(now) {
 
 const DAY_MS = 86400 * 1000;
 
-/** Dedupe runs across all agents by repo|id; first/most-recent reporter wins. */
+/**
+ * Dedupe runs across all agents by repoId|id (repo basename as fallback).
+ * Freshness: first/most-recent reporter wins the run's live fields. Attribution:
+ * the run's own `owner` (state.json / first-commit author) ALWAYS beats the
+ * reporting agent's identity — a teammate re-reporting your pulled .workflow/
+ * dir must not steal the credit. Reporter identity is only the last resort.
+ */
 function dedupeRuns(pickNewest) {
   const seen = new Map();
   for (const a of agents.values()) {
     for (const r of a.runs || []) {
-      const key = `${r.repo}|${r.id}`;
+      const key = `${r.repoId || r.repo}|${r.id}`;
       const cur = seen.get(key);
-      if (!cur || (pickNewest && r.finished > cur.finished)) seen.set(key, { ...r, gitUser: a.gitUser });
+      if (!cur || (pickNewest && r.finished > cur.finished)) {
+        const owner = r.owner || (cur && cur.owner) || '';
+        seen.set(key, { ...r, owner, gitUser: owner || a.gitUser });
+      } else if (!cur.owner && r.owner) {
+        cur.owner = r.owner;
+        cur.gitUser = r.owner;
+      }
     }
   }
   return [...seen.values()];
@@ -873,11 +990,43 @@ function handlePresence(req, res, url) {
   if (!db) return sendJson(res, 503, { ok: false, error: 'no database attached' });
   const days = Math.min(Math.max(toInt(url.searchParams.get('days'), 7), 1), 30);
   try {
-    const buckets = stmts.presence.all(Date.now() - days * 86400000);
+    const buckets = stmts.presence.all(Math.floor((Date.now() - days * 86400000) / 3600000));
     return sendJson(res, 200, { ok: true, days, buckets });
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: 'query failed' });
   }
+}
+
+/**
+ * POST /api/profile — upsert one person's profile (VIEW_KEY: any dashboard
+ * viewer may edit; it's team-membership metadata, not measurement data).
+ * Body: { user, email?, org?, teams?: ["tag", …], color?: "#rrggbb" }.
+ */
+async function handleProfile(req, res, url) {
+  if (!keyMatches(presentedKey(req, url), VIEW_KEY) && !keyMatches(presentedKey(req, url), SHARED_KEY)) {
+    return sendJson(res, 401, { ok: false, error: 'bad key' });
+  }
+  const body = await readJsonBody(req);
+  if (!body.ok) return sendJson(res, 400, { ok: false, error: body.error });
+  const user = clean(body.value.user, 80);
+  if (!user) return sendJson(res, 400, { ok: false, error: 'user required' });
+  const teams = (Array.isArray(body.value.teams) ? body.value.teams : [])
+    .map((t) => clean(t, 40).toLowerCase()).filter(Boolean).slice(0, 10);
+  const color = /^#[0-9a-fA-F]{6}$/.test(String(body.value.color || '')) ? String(body.value.color).toLowerCase() : '';
+  const p = {
+    user,
+    email: clean(body.value.email, 120).toLowerCase(),
+    org: clean(body.value.org, 80),
+    teams: [...new Set(teams)],
+    color,
+    updatedAt: Date.now(),
+  };
+  profiles.set(user, p);
+  if (db) {
+    try { stmts.upsertProfile.run(p.user, p.email, p.org, JSON.stringify(p.teams), p.color, p.updatedAt); }
+    catch (err) { console.warn(`sqlite profile write failed: ${err.message}`); }
+  }
+  return sendJson(res, 200, { ok: true, profile: p });
 }
 
 /**
@@ -899,32 +1048,50 @@ function handleHistory(req, res, url) {
       projects: stmts.historyProjects.all(cutoff),
       hotspots: stmts.hotspots.all(cutoff),
       conflicts: stmts.conflictHistory.all(),
+      // Per-person per-day output, MAX-merged across machines — powers the
+      // workload comparison beyond the live clients' 14-day reporting window.
+      work: stmts.historyWork.all(cutoff),
     });
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: 'query failed' });
   }
 }
 
+// Building /api/online walks every agent's full state (conflict math is
+// O(files × parties²)) — memoize the serialized payload so 100 viewers polling
+// every 5s cost one recompute per ONLINE_CACHE_MS, not one per request.
+let onlineCache = { at: 0, body: '' };
+
 function handleOnline(req, res, url) {
   if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
     return sendJson(res, 401, { ok: false, error: 'bad key' });
   }
   const now = Date.now();
+  if (onlineCache.body && now - onlineCache.at < ONLINE_CACHE_MS) {
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*',
+      'cache-control': 'no-store',
+    });
+    return res.end(onlineCache.body);
+  }
   prune(now);
   const all = [...agents.values()].map((a) => snapshot(a, now));
   all.sort((x, y) => (x.online === y.online ? x.gitUser.localeCompare(y.gitUser) : x.online ? -1 : 1));
-  return sendJson(res, 200, {
+  const payload = {
     now,
     ttlMs: ONLINE_TTL_MS,
     onlineCount: all.filter((a) => a.online).length,
     totalCount: all.length,
     agents: all,
+    profiles: [...profiles.values()],
     conflicts: computeConflicts(now),
     // Deduped run list — the client computes stats + feed from this so it can
     // filter by teammate and use the viewer's own timezone for day buckets.
+    // gitUser is already owner-corrected by dedupeRuns.
     runs: dedupeRuns(true).slice(0, 400).map((r) => ({
-      id: r.id, type: r.type, repo: r.repo, gitUser: r.gitUser,
-      phase: r.phase, started: r.started, finished: r.finished, done: r.done,
+      id: r.id, type: r.type, repo: r.repo, gitUser: r.gitUser, owner: r.owner || '',
+      size: r.size || '', phase: r.phase, started: r.started, finished: r.finished, done: r.done,
       art: r.art || {},
     })),
     // Per-machine day × model × project token aggregates — the Usage tab renders
@@ -934,7 +1101,14 @@ function handleOnline(req, res, url) {
     tools: collectTools(),
     work: collectWork(),
     repoStats: collectRepoStats(),
+  };
+  onlineCache = { at: now, body: JSON.stringify(payload) };
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'cache-control': 'no-store',
   });
+  return res.end(onlineCache.body);
 }
 
 // ── Server ──────────────────────────────────────────────────────────────────
@@ -957,6 +1131,7 @@ const server = http.createServer((req, res) => {
   }
   if (pathname === '/api/heartbeat' && req.method === 'POST') return handleHeartbeat(req, res, url);
   if (pathname === '/api/online' && req.method === 'GET') return handleOnline(req, res, url);
+  if (pathname === '/api/profile' && req.method === 'POST') return handleProfile(req, res, url);
   if (pathname === '/api/log/heartbeats' && req.method === 'GET') return handleHeartbeatLog(req, res, url);
   if (pathname === '/api/presence' && req.method === 'GET') return handlePresence(req, res, url);
   if (pathname === '/api/history' && req.method === 'GET') return handleHistory(req, res, url);

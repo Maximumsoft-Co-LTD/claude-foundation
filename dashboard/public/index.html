@@ -20,6 +20,25 @@
     </form>
   </div>
 
+  <!-- My profile (org / team tags / color) -->
+  <div id="profile-modal" class="gate" hidden>
+    <form id="profile-form" class="gate-card">
+      <h1 class="gate-title">My profile</h1>
+      <p class="gate-sub">Pick who you are and tag your org + team(s). Filters, grouping, and chart colors use this — visible to the whole dashboard.</p>
+      <input id="pf-user" class="gate-input" list="pf-users" placeholder="display name (your git user.name)" autocomplete="off" spellcheck="false" />
+      <datalist id="pf-users"></datalist>
+      <input id="pf-org" class="gate-input" placeholder="org (e.g. hpk)" autocomplete="off" spellcheck="false" />
+      <input id="pf-teams" class="gate-input" placeholder="teams, comma-separated (e.g. payments, platform)" autocomplete="off" spellcheck="false" />
+      <label class="pf-color-row"><span>chart color</span>
+        <input id="pf-color" type="color" value="#2c46f0" />
+        <button type="button" id="pf-color-clear" class="gate-demo">auto</button>
+      </label>
+      <button class="gate-btn" type="submit">Save profile</button>
+      <button type="button" id="pf-cancel" class="gate-demo">cancel</button>
+      <p id="pf-error" class="gate-error" hidden>Save failed — check your key / connection.</p>
+    </form>
+  </div>
+
   <div class="shell">
     <!-- ── Sidebar ── -->
     <aside class="sidebar">
@@ -43,6 +62,7 @@
       <div class="side-foot">
         <div class="side-status"><span id="pulse" class="pulse" data-state="loading"></span><span id="status-text" class="status-text">connecting…</span></div>
         <div class="side-actions">
+          <button id="profile-btn" class="side-btn" title="Set your org / team tags / color">my profile</button>
           <button id="header-demo" class="side-btn side-btn--accent" title="Preview with sample data">demo</button>
           <button id="signout" class="side-btn" title="Forget key">sign out</button>
         </div>
@@ -127,6 +147,7 @@
           <div class="stat"><span id="st-median" class="stat-num">—</span><span class="stat-label">median duration</span></div>
         </div>
         <div class="ins-grid">
+          <div class="panel panel--wide"><h3>Workload · vs previous window <span id="wl-sub" class="panel-sub"></span></h3><div id="ins-workload" class="model-list"></div></div>
           <div class="panel"><h3>Completed by type</h3><div id="bytype" class="bars"></div></div>
           <div class="panel"><h3>Median duration by type</h3><div id="durtype" class="bars"></div></div>
           <div class="panel panel--wide"><h3>Throughput · last 14 days</h3><div id="throughput" class="cols"></div></div>
