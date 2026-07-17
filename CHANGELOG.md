@@ -656,7 +656,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.2...v2.10.0
 [2.9.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.9.1...v2.9.2
 [2.6.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v2.6.7...v2.6.8
