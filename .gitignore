@@ -9,5 +9,7 @@ docs/
 .serena/
 solar-system/
 
-dashboard/data/dashboard.db
-dashboard/data/dashboard.db-wal
+# SQLite runtime artifacts (db + WAL + shared-memory)
+dashboard/data/*.db
+dashboard/data/*.db-shm
+dashboard/data/*.db-wal
