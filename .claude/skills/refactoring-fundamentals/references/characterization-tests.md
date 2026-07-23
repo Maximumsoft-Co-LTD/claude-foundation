@@ -32,6 +32,12 @@ You feed the code representative inputs, observe whatever it currently produces 
 
 Crucially: **pin the behavior even where it looks wrong.** If the code has a bug, the characterization test asserts the buggy output. You are not fixing anything yet (that would be a different hat — principle 2). You're building the net. Once the net is green, *then* you can decide to fix the bug as a separate, tested behavior change.
 
+### When the baseline reveals a bug — the mechanism
+Don't leave this at "a later hat" — pin it with a trace so it isn't lost:
+1. Assert the wrong output as-is, and mark the assertion `// pinned-bug: <what's wrong>` — grep-able, mirrors the `ponytail:` marker.
+2. **Never fix it inline in the refactor.** A behaviour change riding a refactor is exactly what the baseline exists to catch, and it makes the equivalence diff unreadable. Pin, mark, move on.
+3. In `/dev`: `engineer` pins + notes it, `qa`'s Baseline verify treats a `pinned-bug:` assertion as *expected* (not a red to chase green), and `retro` appends the `fix` follow-up (`F-<run-id>-NN` — retro owns that counter, so engineer never mints the id). Fixing it later is its own `/dev fix` run whose regression test flips the pinned assertion deliberately. Outside `/dev`: pin, comment, file a ticket — same rule, lighter bookkeeping.
+
 ### Writing one when you don't know the expected value
 A useful trick: assert a value you *know is wrong*, run the test, and let the failure message tell you the actual output. Then paste the actual value into the assertion. You've now characterized it.
 
@@ -45,7 +51,7 @@ test("exportReport characterization", () => {
 
 ## Golden master / approval testing
 
-When the output is large or messy (a generated file, an HTML page, a big JSON blob, a report), don't hand-write assertions field by field — snapshot the whole thing.
+**Snapshot or hand-assert?** Hand-assert when the behaviour is a handful of semantically meaningful values — assert them directly; a targeted regression reads clearly and tells you *what* broke. Golden-master (snapshot the whole output) when it's large, opaque, or positional (a generated file, an HTML page, a big JSON blob, a report), where field-by-field asserts are unreadable. Reach back for hand-assert if a snapshot diff would be too coarse to localize the regression.
 
 1. Run the code on a set of representative inputs (the more varied, the more behavior you pin).
 2. Capture the full output to an approved/golden file.
@@ -53,6 +59,8 @@ When the output is large or messy (a generated file, an HTML page, a big JSON bl
 4. Refactor. The diff stays empty → behavior preserved. The diff shows exactly what drifted → you broke (or intentionally changed) something, visible to the byte.
 
 This is the fastest way to throw a wide net around legacy behavior before a big restructure. Generate inputs broadly — random or combinatorial inputs often surface behavior you didn't know existed.
+
+**Comparison precision (the Baseline contract's *how compared*).** A golden master is only as good as its diff. Before capturing, normalize what legitimately varies — timestamps, generated ids, map/set ordering, float rounding — or the master is flaky and every run cries wolf. State the comparison mode explicitly: **exact bytes** · **normalized** (which fields masked) · **numeric tolerance**. That statement *is* the `what · where · how compared` that `qa`'s Baseline contract asks for.
 
 ## Seams — getting tangled code under test at all
 
@@ -65,6 +73,11 @@ Seams are how you insert a test double to break the dependency that's stopping y
 - **Preprocessing / link seam**: language-level substitution (build flags, link-time swaps, module mocking) when you can't change the call site cleanly.
 
 Finding and exploiting a seam is itself a tiny, careful refactor — and one of the few you may have to do *without* a full net. Keep it minimal (e.g., "extract the `new Clock()` into a constructor parameter"), lean on automated/IDE moves, and change as little as possible to get the seam in.
+
+**When even a seam is too risky — add tested code beside the untested code.** If breaking the dependency is itself a big change, don't cut it — grow next to it. Feathers' low-risk moves:
+- **Sprout method/class** — write the new behaviour as a fresh, fully-tested function/class and call it from the old code with a one-line insertion. The legacy body stays untested; the new logic is born covered.
+- **Wrap method/class** — rename the old method, add a new one under the original name that calls the old plus your step (or a wrapper/decorator class). You add behaviour *around* untested code without editing its body.
+These buy a tested foothold when characterizing the whole unit up front is too expensive.
 
 ## The cover-and-modify workflow (the legacy change algorithm)
 
@@ -80,7 +93,7 @@ Feathers' loop:
 
 ## How much to cover
 
-You don't need 100% — you need the behavior *that your change could affect*. Characterize the change point and its blast radius (what reads the same state, what the same function feeds). A focused net you can build in an hour beats a comprehensive suite you never finish, and beats refactoring blind every time.
+You don't need 100% — you need the behavior *that your change could affect*. Characterize the change point and its blast radius (what reads the same state, what the same function feeds). **In `/dev` that list already exists:** the brownfield **understand** step wrote every caller/blast-radius symbol with a `path#anchor` into `plan.md > Current state` — characterize *those*, and you've covered exactly what the change can reach, no more. A focused net you can build in an hour beats a comprehensive suite you never finish, and beats refactoring blind every time.
 
 ## The /dev baseline-capture contract
 

@@ -254,6 +254,10 @@ S-size greenfield: one interview batch → `lead` combined mode writes `spec.md`
 
 `spec.md` (fix, repro: admin login loops to `/login`) → `lead` writes `plan.md`+`tasks.md` (T001 = failing regression test, T002 = fix) → `qa` writes the regression contract → gate (security on — touches auth) → `approve` → engineer writes the failing test, fixes the redirect → qa confirms it fails pre-fix, passes now → review → security passes → commit (no PR) → retro → done.
 
+## Example: `/dev refactor extract pricing engine from OrderService`
+
+M-size brownfield: `spec.md` (refactor, equivalence contract — pricing output stays identical) → `lead` maps `## Current state` (entry `OrderService.total()` → 4-hop flow → blast radius `applyDiscount`/`roundTax`, invariants each `path#anchor`), coverage thin → `tasks.md` T001 = capture characterization baseline over those blast-radius symbols, T002+ = extract → `qa` writes the Baseline contract (golden-master on 8 order fixtures · how compared: exact) → gate (a `skip 5` here would waive the baseline — kept) → `approve` → engineer writes the golden-master first, green on unchanged code, commits it alone; a fixture exposes a rounding bug → pins the wrong output with a `pinned-bug:` marker + notes it, does NOT fix inline → extracts the engine in small green steps, golden-master stays green → qa verifies the baseline held before/after → review → commit → retro logs the pinned bug as a `fix` follow-up → done.
+
 ## Example: `/dev spike compare bullmq vs sidekiq`
 
 `spec.md` (spike, 1-day timebox, deliverable=recommendation) → `lead` writes an exploration plan → gate (runs interview→plan→gate→implement→review→retro only) → `approve` → engineer explores both, writes `recommendations.md` → light review → retro → user decides on follow-up `feat` runs.
