@@ -11,7 +11,7 @@ Classic anti-patterns: implementation tests that break on every refactor, an inv
 
 **Pre-flight**: read before writing a test, choosing a level, or designing a suite — design-time companion to the construction skills (`.claude/rules/fundamentals.md`) and the "how to test well" `/dev`'s `qa` agent reaches for at its test phases (mechanics in `WORKFLOW.md`).
 
-Adjacent territory: [[refactoring-fundamentals]] owns **characterization tests** (captured before reshaping untested code); [[debug-fundamentals]] owns **reproduction** (pinning a failure into a reliable repro). For a `fix`, the regression test comes first and must fail on the old code; for a `refactor`, the safety net is a characterization test captured before the structural change. This skill owns everything else: shape, level, doubles, assertions.
+Adjacent territory: [[refactoring-fundamentals]] owns **characterization tests** (captured before reshaping untested code — the full technique + `/dev` baseline-capture contract live in its `references/characterization-tests.md`); [[debug-fundamentals]] owns **reproduction** (pinning a failure into a reliable repro). For a `fix`, the regression test comes first and must fail on the old code; for a `refactor`, the safety net is a characterization test captured before the structural change. This skill owns everything else: shape, level, doubles, assertions.
 
 Composes with [[programming-fundamentals]] (pure cores are easiest to test) and [[hexagonal-backend]] (ports are exactly the seams you fake at).
 

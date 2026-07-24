@@ -62,6 +62,26 @@ This is the fastest way to throw a wide net around legacy behavior before a big 
 
 **Comparison precision (the Baseline contract's *how compared*).** A golden master is only as good as its diff. Before capturing, normalize what legitimately varies — timestamps, generated ids, map/set ordering, float rounding — or the master is flaky and every run cries wolf. State the comparison mode explicitly: **exact bytes** · **normalized** (which fields masked) · **numeric tolerance**. That statement *is* the `what · where · how compared` that `qa`'s Baseline contract asks for.
 
+### Running one in practice (pick your stack's equivalent)
+Characterization is a technique, not a library — every ecosystem ships a golden-master/approval mechanism; use it rather than hand-rolling file I/O:
+- **JS/TS** — Jest/Vitest `toMatchSnapshot()` (inline/opaque) or `toMatchFileSnapshot()` / `jest-file-snapshot` for a real golden file; `approvals` (Node).
+- **Python** — `syrupy` or `pytest --snapshot-update`; `approvaltests`.
+- **Go** — golden files under `testdata/`, gated by a `-update` flag (`if *update { os.WriteFile(golden, got, 0o644) }`).
+- **Java/.NET/others** — the `ApprovalTests.*` family.
+
+**Where golden files live + the update rule:** commit the golden beside the test (`__snapshots__/`, `testdata/`, `*.approved.*`) so it's reviewed in the diff. Regenerating a golden (`-u`/`--update`) is a **reviewed, intentional behaviour change** — it does NOT bypass `qa`'s "never weaken an assertion to go green": an unexplained golden churn inside a refactor diff is a red flag, not a convenience. A changed golden either proves a behaviour change you meant (spec it) or one you didn't (a bug you just caught).
+
+### The canonical shape (language-agnostic)
+```
+// arrange: representative fixtures (the more varied, the wider the net)
+for (const fixture of fixtures) {
+  const actual = subjectUnderChange(fixture)       // run the UNTOUCHED code
+  expect(actual).toMatchGolden(`golden/${fixture.name}`)  // diff vs committed golden; -u regenerates
+}
+// a fixture whose golden is knowingly wrong → keep it, mark: // pinned-bug: <desc>
+```
+One golden per fixture, named by fixture — a failing case points straight at the input that drifted.
+
 ## Seams — getting tangled code under test at all
 
 Often you can't even *call* the unit in isolation: it news up a database connection in its constructor, calls a global clock, hits the network. Feathers' concept:
@@ -94,6 +114,8 @@ Feathers' loop:
 ## How much to cover
 
 You don't need 100% — you need the behavior *that your change could affect*. Characterize the change point and its blast radius (what reads the same state, what the same function feeds). **In `/dev` that list already exists:** the brownfield **understand** step wrote every caller/blast-radius symbol with a `path#anchor` into `plan.md > Current state` — characterize *those*, and you've covered exactly what the change can reach, no more. A focused net you can build in an hour beats a comprehensive suite you never finish, and beats refactoring blind every time.
+
+**Partial coverage is the common case.** Rarely is the *whole* blast radius untested — lean on the existing suite where it already exercises a touched symbol, and characterize only the **uncovered slice**. The baseline task fills the gap, it doesn't re-test what's already green; `qa` verifies the union (existing suite + new baseline) covers every blast-radius symbol before the change.
 
 ## The /dev baseline-capture contract
 
