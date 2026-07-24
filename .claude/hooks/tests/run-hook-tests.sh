@@ -133,15 +133,22 @@ assert_allowed "guard C6 general-purpose model=sonnet"
 run_hook "$GUARD" "$PROJ_A" "$(agent_json Explore haiku)" CLAUDE_DEV_FLOOR_MODEL=haiku
 assert_allowed "guard C6 floor override haiku + model=haiku"
 
-# --- Case 5: fork blocked only while a /dev run is active ------------------
+# --- Case 5: fork blocked in an active run EXCEPT phase-1 (warm drafting) ---
 PROJ_RUN="$TMPROOT/proj-run"
 mk_run "$PROJ_RUN" "0001-feat-x" '{"run_id":"0001-feat-x","size":"M","phase":"phase-2","step":"implement"}'
 
 run_hook "$GUARD" "$PROJ_RUN" "$(agent_json fork "")"
-assert_blocked "guard C5 fork with active run" "inside an active /dev run"
+assert_blocked "guard C5 fork blocked in phase-2" "inside an active /dev run"
 
 run_hook "$GUARD" "$PROJ_A" "$(agent_json fork "")"
 assert_allowed "guard C5 fork with no active run"
+
+# Phase 1 (requirements) is the sanctioned warm-drafting exception: fork inherits
+# the pre-work context instead of a lossy digest, so it is ALLOWED there.
+PROJ_P1="$TMPROOT/proj-p1"
+mk_run "$PROJ_P1" "0003-feat-z" '{"run_id":"0003-feat-z","size":"S","phase":"phase-1-requirements","step":"spec"}'
+run_hook "$GUARD" "$PROJ_P1" "$(agent_json fork "")"
+assert_allowed "guard C5 fork allowed in phase-1-requirements"
 
 # --- Case 3: state.json freshness between worker spawns --------------------
 # Marker NEWER than state.json → next worker spawn on an M-size run blocks.

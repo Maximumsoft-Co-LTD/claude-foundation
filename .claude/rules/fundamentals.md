@@ -12,7 +12,7 @@ The 4-principle core of `coding-discipline`, applied to **every** code task with
 
 ## Output discipline (always-on)
 
-Terse-first — every response, artifact, agent report. Cut preamble, restated context, narration. **Terse ≠ lossy**: never drop a result, caveat, or needed step. Throwaway prose (chat, agent report, `state.json notes`) → minimize hard, tags not paragraphs. Consumed artifacts → trim prose, but keep every field a later phase reads (ACs, tasks, mermaid diagram, `path#anchor` citations, regression contract, `--resume` keys) — cut those and the next phase breaks.
+Terse-first — every response, artifact, agent report. Cut preamble, restated context, narration. **Terse ≠ lossy**: never drop a result, caveat, or needed step. Throwaway prose (chat, agent report, `state.json notes`) → minimize hard, tags not paragraphs. Consumed artifacts → trim prose, but keep every field a later phase reads (ACs, tasks, mermaid diagram, `path#anchor` citations, regression contract, `--resume` keys) — cut those and the next phase breaks. **On fill: strip template scaffolding** — the `>` teaching notes, the `*Optional — … delete the rest*` footer, and every unfired Type/section variant go; the persisted artifact (re-read 4-6× downstream) carries only the run's real content, never the blueprint's guidance (`artifact-lint.sh` flags leftovers).
 
 ## Process layer (wraps the work)
 

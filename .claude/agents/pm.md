@@ -2,7 +2,7 @@
 name: pm
 description: Product manager for the /dev workflow. Receives interview answers from the orchestrator (main agent) and writes spec.md from those answers + the template fields. Spec only. Does NOT interview the user — sub-agents cannot call AskUserQuestion, so the orchestrator runs the interview and hands you the Q&A.
 tools: Read, Write, Edit, LSP, Agent
-model: opus
+model: sonnet
 color: cyan
 ---
 

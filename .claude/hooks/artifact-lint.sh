@@ -191,6 +191,26 @@ scan_placeholders() {
   fi
 }
 
+# scan_scaffold_leftover <file>
+# Template teaching scaffolding the author must strip on fill (rules/fundamentals.md
+# > Output discipline): the guidance footer / section notes that say "delete the
+# rest" (spec.md / plan.md carry it). A filled artifact is re-read 4-6x downstream,
+# so leftover scaffolding is dead weight. Backtick lines are skipped (a documented
+# example, not a live leftover). Bumps fail_count per hit.
+scan_scaffold_leftover() {
+  file="$1"
+  hits="$(grep -niE 'delete the rest' "$file" | grep -v '`' || true)"
+  if [ -n "$hits" ]; then
+    echo "$hits" | while IFS= read -r h; do
+      report FAIL "$(basename "$file"): scaffold leftover (strip on fill): line ${h%%:*}"
+    done
+    n="$(printf '%s\n' "$hits" | grep -c '')"
+    fail_count=$((fail_count + n))
+  else
+    report OK "$(basename "$file"): no template scaffold leftover"
+  fi
+}
+
 # check_followups <file>
 # Governance scan of the shared FOLLOWUPS.md backlog. Two findings:
 #   - a follow-up ID used as the leading ID of >1 table row (the parallel-run
@@ -268,6 +288,7 @@ lint_file() {
     *) check_ac_text_locality "$file" ;;
   esac
   scan_placeholders "$file"
+  scan_scaffold_leftover "$file"
 }
 
 # PostToolUse adapter (`artifact-lint.sh --hook`): lint ONLY the artifact the

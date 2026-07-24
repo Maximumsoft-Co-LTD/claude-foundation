@@ -205,24 +205,34 @@ case "$subagent_type" in
     PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
     WF_DIR="$PROJECT_DIR/.workflow"
     active=""
+    active_state=""
     if [[ -n "${CLAUDE_DEV_RUN_ID:-}" && -f "$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json" ]]; then
-      active="1"
+      active="1"; active_state="$WF_DIR/$CLAUDE_DEV_RUN_ID/state.json"
     elif [[ -d "$WF_DIR" ]]; then
       for f in "$WF_DIR"/*/state.json; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$(dirname "$f")")" == "_templates" ]] && continue
-        active="1"; break
+        active="1"; active_state="$f"; break
       done
     fi
 
-    # Case 5: fork inside an active /dev run. A fork inherits the main agent's
-    # model AND context, ignoring the worker's `model:` frontmatter entirely, so
-    # an opus main session drags opus onto every forked worker. /dev always
-    # spawns workers by name; block fork while a run is active.
+    # Case 5: fork inside an active /dev run — blocked EXCEPT Phase 1
+    # (requirements). A fork inherits the main agent's model AND context, ignoring
+    # the worker's `model:` frontmatter, so an opus main session drags opus onto
+    # the fork. Phase 1 (spec/plan/tasks/test-plan/uxui) ACCEPTS that opus cost to
+    # stay WARM on the pre-workflow context (POC / spec discussion) instead of
+    # cold-spawning pm/lead and losing it to a lossy digest — the sanctioned warm
+    # drafting path. Phase 2+ fork stays blocked: execution workers are sonnet-
+    # pinned and must never silently run opus. Phase read from the active run's
+    # state.json; unknown/unreadable phase fails CLOSED (blocks) — a fork is only
+    # waved through on a positive phase-1-requirements match.
     if [[ -n "$active" && "$subagent_type" == "fork" ]]; then
-      reason="BLOCKED by /dev guard: subagent_type=\"fork\" inside an active /dev run. A fork inherits the main agent's model and context and ignores the worker's agent-definition model:, so an opus main session silently runs a sonnet-pinned worker on opus. Spawn the worker by name instead (pm, lead, engineer, qa, retro; team-mode: uxui)."
-      jq -n --arg r "$reason" '{decision:"block", reason:$r}'
-      exit 0
+      run_phase="$(jq -r '.phase // ""' "$active_state" 2>/dev/null || printf '')"
+      if [[ "$run_phase" != "phase-1-requirements" ]]; then
+        reason="BLOCKED by /dev guard: subagent_type=\"fork\" inside an active /dev run (phase=${run_phase:-unknown}). A fork inherits the main agent's model and context and ignores the worker's agent-definition model:, so an opus main session silently runs a sonnet-pinned execution worker on opus. Fork is sanctioned ONLY in phase-1-requirements (warm spec/plan drafting); for Phase 2+ spawn the worker by name (engineer, qa, lead, retro)."
+        jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+        exit 0
+      fi
     fi
 
     # Case 6: the generic search/explore built-ins (general-purpose, Explore) must

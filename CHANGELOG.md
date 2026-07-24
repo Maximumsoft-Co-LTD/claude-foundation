@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Warm-drafting, effort-by-size, and run telemetry for the `/dev` pipeline — cheaper cold path, right-sized thinking, measurable mechanism.
+
+### Added
+
+- **Warm Phase-1 drafting** — a new **execution-mode axis** (inline / fork / cold-spawn; canonical in `orchestrator/references/size-execution.md > Execution mode`, chosen once at size time by a cheap lookup). When substantial pre-work is resident this session (POC / extended spec discussion), Phase 1 drafts **warm** — the orchestrator `fork`s itself and writes the resolved artifact shape directly instead of cold-spawning `pm`/`lead` through a lossy digest. `dev-agent-guard.sh` now permits `fork` **only** in `phase-1-requirements` (reads `phase` from the active run's `state.json`, fails **closed** on unknown/unreadable phase); Phase 2+ `fork` stays blocked so sonnet-pinned execution workers never silently run opus. Hook test suite adds the phase-1 allow case.
+- **Effort-by-size dial** — the main (opus 4.8) session's reasoning effort now scales with size (`size-execution.md > Effort by size`): **xhigh** for L or any security-triggered run, **high** for M (and whenever main is the requirement-verifier), **medium** for XS/S — xhigh on a 10-line change is pure think:output waste. Floor items (gate, per-line AC confirm, security-trigger check) never depend on the dial.
+- **Run telemetry (speed benchmark)** — `state.json` gains `spawn_count` + `exec_mode`; the orchestrator bumps `spawn_count` on every `Agent` spawn (inline not counted) and records the per-phase mode at Design and Implement. New `orchestrator/references/dev-metrics.sh <run-dir>` prints the mechanism + timing row — mechanism metrics (spawn_count/exec_mode/size) are deterministic proof a change worked; wall-clock is noisy — and retro folds it into the report.
+- **Scaffold-leftover lint** — `artifact-lint.sh` adds `scan_scaffold_leftover`: a filled artifact that still carries template teaching scaffolding (the "delete the rest" guidance footer / section notes) fails the lint — it's re-read 4–6× downstream, so leftover scaffolding is dead weight; backtick example lines stay exempt. `rules/fundamentals.md > Output discipline` gains the matching **strip-on-fill** rule.
+
+### Changed
+
+- **`pm` model opus → sonnet** — draft-cheap + verify-in-main: spec drafting from a good interview is template-filling, and the resident main session (opus, holding the full interview) runs the semantic requirement verify while plan/gate backstop downstream. Cold `pm` runs sonnet and is cold-spawned only at **L** / thin pre-work / `/spec`; substantial pre-work drafts Phase 1 warm instead (`model-tiers.md`, `INDEX.md`, `pm.md`).
+- **Per-repo fanout gated** — surface (per-repo) review/security/test fanout now fires **only** when the run is M/L or the repos share a changed contract (coupling); a wide-but-shallow XS/S multi-repo sweep is reviewed in one inline pass. Repo count alone never triggers per-repo fanout — the same principle that keeps it out of M/L sizing.
+
 ## [2.11.0] - 2026-07-17
 
 Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams from `feedback-notes/improvement-plan.md`.
