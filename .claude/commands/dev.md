@@ -1,6 +1,6 @@
 ---
 description: Start the /dev workflow (spec → plan → gate → implement → test → review → security → docs → ship → retro). Pass --resume <id> to continue an interrupted run.
-argument-hint: <intent> | --resume <id>
+argument-hint: <intent> | --resume <id> | --yes <intent>
 ---
 
 Run the `/dev` workflow on this intent: **$ARGUMENTS**
@@ -20,5 +20,6 @@ You — the main agent — are the Orchestrator. Sub-agents can't call `AskUserQ
 Behavior:
 - If `$ARGUMENTS` is empty, ask the user for the intent via `AskUserQuestion` before proceeding.
 - If `$ARGUMENTS` starts with `--resume`, read `.workflow/<id>/state.json` and continue from the recorded step instead of starting fresh, following `orchestrator.md > Resume`. If the run was built via team-mode commands (`/spec`, `/dev-plan`, `/test-plan`, `/uxui-plan`), `.workflow/<id>/` will hold `state.*.json` shards and the cursor may read stale — Resume step 4 reconciles them by routing to the gate, whose fold absorbs the shards (`orchestrator.md > State discipline > Team-mode Phase-1 sharding`). If `state.json` is missing or malformed, ask the user whether to start fresh.
+- If `$ARGUMENTS` carries a leading `--yes`, run **non-interactive** (headless benchmark / CI): the interview and gate still *run*, but you issue no `AskUserQuestion` — fill unspecified slots from the intent then the `(Recommended)` default, and auto-approve the gate **only when the plan has no `(deviates from matrix)` row**. A missing load-bearing answer or an unconfirmed deviation stops with `NON_INTERACTIVE_BLOCKER:`. Full semantics: `orchestrator.md > Non-interactive`. Normal runs keep the human interview + gate.
 
 Reference: [`WORKFLOW.md`](../../WORKFLOW.md) for the full flow definition, [`.claude/orchestrator.md`](../orchestrator.md) for the step-by-step orchestration script.
