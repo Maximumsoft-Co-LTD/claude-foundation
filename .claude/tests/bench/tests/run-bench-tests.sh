@@ -15,6 +15,10 @@ CMP="$BENCH/compare.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq required for bench tests" >&2; exit 1; }
 
+TMPROOT="$(mktemp -d)"
+trap 'rm -rf "$TMPROOT"' EXIT INT TERM
+TMP_OUT="$TMPROOT/out.jsonl"
+
 echo "Running benchmark self-test..."
 echo
 
@@ -48,6 +52,20 @@ assert_contains "ratchet names quality regression"  "$out" "quality"
 ab="$(sh "$CMP" --ab "$FIX/ab.jsonl" 2>&1)"
 assert_contains "ab verdict worth-it" "$ab" "worth-it"
 assert_contains "ab reports both arms cost" "$ab" "wf 0.1"
+
+# --- runner arg parsing: --out keeps concurrent runs from clobbering ---------
+# Two runners sharing results/scorecards.jsonl destroyed each other's rows once;
+# --out is the fix, so its parsing is guarded here (dry-run: no tokens spent).
+if sh "$BENCH/run-bench.sh" --dry-run --out "$TMP_OUT" --tasks 01-task-list >/dev/null 2>&1; then
+  pass "run-bench accepts --out"
+else
+  fail "run-bench rejects --out (concurrent runs would clobber)"
+fi
+if sh "$BENCH/run-bench.sh" --dry-run --bogus-flag >/dev/null 2>&1; then
+  fail "run-bench silently accepts an unknown flag"
+else
+  pass "run-bench rejects an unknown flag"
+fi
 
 # --- task lint: every benchmark task is well-formed BEFORE it costs money ----
 # A malformed task (missing arm prompt, empty acceptance, a baseline prompt that

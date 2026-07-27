@@ -29,8 +29,13 @@ done
 read_input() { if [ -n "$file" ]; then cat "$file"; else cat; fi; }
 
 agg="$(read_input | jq -s '
+  # True median: odd n takes the middle, even n averages the two middles. Taking
+  # the lower-middle on even n silently reports the worse of two samples as "the"
+  # number — misleading when the two disagree, which live runs often do.
   def med(f): map(f) | map(select(. != null)) | sort
-              | if length == 0 then null else .[((length - 1) / 2) | floor] end;
+              | if length == 0 then null
+                elif (length % 2) == 1 then .[(length - 1) / 2]
+                else ((.[length/2 - 1] + .[length/2]) / 2) end;
   map(select(type == "object"))
   | group_by([.task, .arm])
   | map({

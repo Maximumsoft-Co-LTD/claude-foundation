@@ -44,6 +44,7 @@ while [ "$#" -gt 0 ]; do
     --repeats) REPEATS="$2"; shift ;;
     --arm) ARMSEL="$2"; shift ;;
     --tasks) TASKSEL="$2"; shift ;;
+    --out) OUT="$2"; PROG="$(dirname "$2")/progress-$(basename "$2" .jsonl).txt"; shift ;;
     --keep) KEEP=1 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -84,9 +85,15 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 command -v jq >/dev/null 2>&1 || { echo "bench: jq required" >&2; exit 2; }
 
-mkdir -p "$RESULTS"
+mkdir -p "$RESULTS" "$(dirname "$OUT")"
+# Concurrency guard: two runners sharing one scorecard file silently destroy each
+# other's rows (observed: a runner whose parent died kept going and overwrote a
+# second run's results). Warn loudly; `--out <file>` is the fix.
+if [ -f "$OUT" ] && [ -n "$(find "$OUT" -newermt '-90 seconds' 2>/dev/null)" ]; then
+  echo "⚠ $OUT was written <90s ago — another bench may be running. Use --out <file> to keep runs separate." >&2
+fi
 : > "$OUT"
-PROG="$RESULTS/progress.txt"
+PROG="${PROG:-$RESULTS/progress.txt}"
 
 # Total units + a live percent counter. progress() overwrites PROG (pollable via
 # `cat`/`tail -f`) and echoes, so a watcher sees "[k/N pct%] label" climb.

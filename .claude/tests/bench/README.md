@@ -30,7 +30,17 @@ sh tests/run-bench-tests.sh              # deterministic: prove the median/ratch
 sh run-bench.sh                          # dry-run: print the plan
 sh run-bench.sh --run --repeats 3        # live: 3 repeats/arm for stable medians
 sh run-bench.sh --run --arm workflow     # workflow arm only (skip the A/B baseline)
+sh run-bench.sh --run --out results/a.jsonl   # separate scorecard file (see below)
 ```
+
+**Never run two benches into the same scorecard file.** Both truncate
+`results/scorecards.jsonl` on start, so the second run destroys the first's rows —
+this happened for real (a runner whose parent process died kept going and
+overwrote a later run's results). Pass `--out <file>` for any concurrent or
+salvage run; the runner also warns when the target was written in the last 90s.
+`BENCH_TIMEOUT` (default 1800s) bounds each run — a full `/dev` arm on an app-sized
+task can exceed 30 minutes, so raise it rather than let the watchdog kill a run
+mid-cycle (a killed run yields no cost envelope and an artificially low judge score).
 
 Then:
 
