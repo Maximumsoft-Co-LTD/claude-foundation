@@ -6,9 +6,11 @@ Size gates which `plan.md` sections are required/optional/deleted. Borderline �
 
 ## The four tiers
 
-| Size | Files | Logic | Contract / schema | Subsystem reach | Typical Types |
-|------|-------|-------|-------------------|-----------------|---------------|
-| **XS** | 1 | none | no | none | chore, docs |
+Read the columns right-to-left: **contract, blast radius, and logic decide the tier**; the file count is the weakest column, kept only as a rough sanity signal. Lines changed is deliberately absent — it is an output of planning, not an input to it, and it prices typing volume rather than the risk and coordination the machinery actually exists to manage (a 5-line auth edit outranks a 500-line hermetic UI).
+
+| Size | Files (proxy only) | Logic | Contract / schema | Subsystem reach | Typical Types |
+|------|--------------------|-------|-------------------|-----------------|---------------|
+| **XS** | 1 | none — or **simple, in one hermetic unit** | no | none | chore, docs, a single new helper/pure function |
 | **S**  | ≤ ~5 (one understood surface) | simple | no | 1 | fix, small feat, small refactor |
 | **M**  | ≤ ~10 | real | no | 1 | feat, refactor |
 | **L**  | any | real | **yes** (or breaking) | ≥ 2 | feat, refactor, fix at a seam |
@@ -35,8 +37,9 @@ Orthogonal to size, every run is one of two **fields**, recorded in `state.json 
 1. **Touches a public contract or schema?** (REST/gRPC API, DB schema migration, queue message format, public signature, breaking change) → **L**. Stop.
 2. **Crosses >1 subsystem in a way that *couples* them?** (API + worker that must agree; two bounded contexts; a service + a sibling sharing its contract) → **L**. Stop. It's *coupling*, not raw count — the same trivial edit swept across N **independent** surfaces is a parallel sweep (see Signals → "Wide but shallow"), sized by its deepest single surface.
 3. **Real logic to design?** (branching, state machine, retry policy, ordering, concurrency) → **M** if single-subsystem — **unless it's a self-contained greenfield module**, which caps at **S** (logic is real but blast radius ~zero).
-4. **>2 files, OR any logic at all?** → **S**.
-5. **Single file, no logic, no user/caller-visible change?** (typo, dep bump, doc edit, formatter, comment) → **XS**.
+4. **One hermetic unit?** — a single new file nothing imports yet (a pure function, helper, or self-contained module), **simple** logic, ≲3 acceptance scenarios, no persisted data / contract / security path → **XS (micro-lane)**. The whole design fits one `run.md`; **Test and Review still run** — this buys cheaper *ceremony*, never weaker verification. Stateful, integrating, or contract-bearing → **S**, not here.
+5. **Wires into existing code, shares state across the touched surfaces, or has a caller that must stay compatible?** → **S**. This is the S gate — *integration and shared state*, not spread. File count is a **signal** here, not a threshold: many files each getting the same trivial independent edit is a sweep (see "Wide but shallow"), while one file that other code depends on is a real S.
+6. **Single file, no logic, no user/caller-visible change?** (typo, dep bump, doc edit, formatter, comment) → **XS**.
 
 Two answers equally true → plan `Size`: pick **larger**; machinery (`state.json > size`): risk flag present → larger, none → **smaller** (header note). Exception: the greenfield S-cap is a *defined route*, not a torn case — don't round a hermetic new module up to M for having several CRUD features.
 
@@ -86,12 +89,14 @@ Calibration examples — apply hard overrides after scoring.
 | Add MongoDB migration/backfill for `conversation_id` index used by existing queries | 9 | L | Schema/index/backfill is a hard override: rollback, deploy sequencing, plan verification. | Backfill completes on staging; query plan uses the index; rollback documented. |
 | Change a public API/event schema used by multiple services | 10 | L | Coupled multi-service contract; per-repo review can't see version skew. | Producer + consumer contract tests pass; generated clients consistent. |
 | Self-contained greenfield todolist app with localStorage | 4 | S | Real UI/state logic but isolated: no callers, no contract, first-party storage. Greenfield cap → S. | Add/edit/delete/filter/persist pass unit + integration; no e2e unless opted in. |
+| A CSV-serializer helper: one new pure function, quoting/escaping rules, 3 ACs | 1 | XS | One hermetic unit — nothing imports it, no state, no contract. Picker step 4 → micro-lane `run.md`, not a four-artifact set. Test + Review still run. | Unit tests cover each quoting rule and its edge case. |
 | Consolidated chat inbox spanning Next.js, Go, RabbitMQ, Redis, MongoDB, ClickHouse | 13 | L / split | UI, API, cache, queue, persistence, analytics, security, E2E. | Split into independently shippable slices where possible. |
 
 ## Signals that override file count
 
 File count is a proxy; each signal pushes size up or down regardless, with its worked example inline:
 
+- **One hermetic unit, simple logic** (a new pure function/helper nothing imports yet — format, parse, validate, transform; ≲3 ACs, no state, no I/O beyond its arguments) → **XS micro-lane**, not S. Measured: routing this class through the four-artifact S path spent **more wall-clock designing than implementing** (6m22s design vs 3m37s implement on a CSV serializer). One `run.md` carries the same contract core; Test and Review are untouched. It re-enters S the moment it gains state, a caller it must stay compatible with, or a contract.
 - **One file, real logic** (branching/state/retry, a 200-line state machine) → at least S, often M. Logic density beats file count; a state machine also earns a diagram, per-transition AC tags, and observability.
 - **One file, public API signature or DB migration** → L. Contract changes are always L. Blast radius decides, not line count — a one-line guard inside a function is S (fix → regression test first); a one-line change to a public API is L.
 - **Many files, pure rename/formatter/mechanical sweep** → still XS/S. No design risk.
