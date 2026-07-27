@@ -24,6 +24,17 @@
 # out and its row is marked ok=false; the prompts are written to avoid it.
 # An optional tasks/<name>/seed/ dir is copied into BOTH arms' sandboxes before
 # the run (for brownfield tasks that need starter code); absent => empty sandbox.
+#
+# A failed row also carries `fail_reason`, because "the workflow wrote bad code"
+# and "we killed the run at the watchdog" are different problems that a bare
+# ok=false conflates. It happened for real: a /dev arm hit the 1800s ceiling, the
+# judge then graded a half-built sandbox at 3/fail, and the scorecard read like a
+# quality regression. The reasons:
+#   timeout      — the watchdog ended it; nothing here grades the workflow
+#   no_envelope  — exited without emitting JSON (stall / crash)
+#   api_error    — the envelope itself reports is_error
+#   exit_<n>     — exited nonzero on its own, envelope still parsed
+# aggregate.sh keeps these rows out of every median and reports the tally.
 
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -110,11 +121,22 @@ progress() {
 
 # Portable watchdog (no `timeout` binary here): run the captured command in the
 # background, kill it after N seconds so a stalled interview can't hang the run.
-# $1 secs · $2 outfile · $3 sandbox · $4 prompt-file
+# The watchdog touches the flag at $5 before killing, so the caller can tell
+# "we ended this" from "it ended itself" — the two demand opposite fixes, and a
+# bare nonzero exit looks identical either way.
+#
+# BOTH bench artifacts live OUTSIDE the sandbox. They used to be written into it,
+# where `git add -A` swept them into the graded diff: on a trivial CSV task the
+# 30KB envelope plus __pycache__ made up 94% of what the judge read (1.8KB of
+# actual solution) and ate half the 60KB diff cap. On a longer run the envelope
+# grows with turn count, pushing the real code out of the cap entirely — the
+# judge then grades bench metadata and scores the run 0.
+# $1 secs · $2 outfile · $3 sandbox (cwd) · $4 prompt-file · $5 timeout-flag path
 run_capture() {
+  rm -f "$5"
   ( cd "$3" && claude -p "$(cat "$4")" --output-format json --dangerously-skip-permissions --model "$MODEL" ) >"$2" 2>/dev/null &
   cpid=$!
-  ( sleep "$1"; kill -TERM "$cpid" 2>/dev/null; sleep 3; kill -KILL "$cpid" 2>/dev/null ) &
+  ( sleep "$1"; : > "$5"; kill -TERM "$cpid" 2>/dev/null; sleep 3; kill -KILL "$cpid" 2>/dev/null ) &
   wpid=$!
   wait "$cpid" 2>/dev/null; rc=$?
   kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
@@ -152,8 +174,12 @@ emit() {  # all values already JSON-literal-safe strings ("null" when absent)
     --arg task "$1" --arg arm "$2" --argjson repeat "$3" --argjson ok "$4" \
     --argjson cost "$5" --argjson intok "$6" --argjson outtok "$7" --argjson turns "$8" --argjson dur "$9" \
     --argjson spawn "${10}" --argjson cyt "${11}" --argjson cyr "${12}" --argjson skip "${13}" \
-    --argjson jscore "${14}" --arg jverd "${15}" --argjson wall "${16}" \
-    '{task:$task, arm:$arm, repeat:$repeat, ok:$ok, cost_usd:$cost, in_tokens:$intok, out_tokens:$outtok, turns:$turns, duration_ms:$dur, wall_s:$wall, spawn_count:$spawn, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip, judge_score:$jscore, judge_verdict:$jverd}' >> "$OUT"
+    --argjson jscore "${14}" --arg jverd "${15}" --argjson wall "${16}" --arg freason "${17}" \
+    '{task:$task, arm:$arm, repeat:$repeat, ok:$ok,
+      fail_reason:(if $freason == "" then null else $freason end),
+      cost_usd:$cost, in_tokens:$intok, out_tokens:$outtok, turns:$turns, duration_ms:$dur, wall_s:$wall,
+      spawn_count:$spawn, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip,
+      judge_score:$jscore, judge_verdict:$jverd}' >> "$OUT"
 }
 
 runs=0
@@ -172,11 +198,18 @@ for n in $(task_dirs); do
       # Real wall-clock — the envelope's duration_ms only counts the top session,
       # not sub-agent spawns, so it wildly under-reports a /dev run (65s vs a true
       # 13min). Measure it ourselves; this is the honest time axis.
+      # Siblings of the sandbox, never inside it — anything under $sb lands in the
+      # graded diff via `git add -A` and displaces the solution the judge is meant
+      # to read. --keep preserves $SANDROOT, so these stay inspectable either way.
+      envf="$SANDROOT/$n-$a-$r.envelope.json"
+      tmof="$SANDROOT/$n-$a-$r.timeout"
       t0="$(date +%s 2>/dev/null || echo 0)"
-      run_capture "$TIMEOUT_S" "$sb/.bench-envelope.json" "$sb" "$prompt_file" || echo "   ! run exited nonzero (watchdog kill or error)"
+      rc=0
+      run_capture "$TIMEOUT_S" "$envf" "$sb" "$prompt_file" "$tmof" || rc=$?
+      [ "$rc" = "0" ] || echo "   ! run exited nonzero (watchdog kill or error)"
       wall_s=$(( $(date +%s 2>/dev/null || echo 0) - t0 ))
-      envj="$(cat "$sb/.bench-envelope.json" 2>/dev/null || true)"
-      ok=false; cost=null; intok=null; outtok=null; turns=null; dur=null
+      envj="$(cat "$envf" 2>/dev/null || true)"
+      ok=false; cost=null; intok=null; outtok=null; turns=null; dur=null; freason=""
       if [ -n "$envj" ] && printf '%s' "$envj" | jq -e . >/dev/null 2>&1; then
         # `--output-format json` may be a single result object OR a stream array
         # (CLI-version dependent) — normalize to the result object either way.
@@ -185,7 +218,7 @@ for n in $(task_dirs); do
         # _get: read a field, always yield a JSON-literal ("null" on miss/error)
         # so the later --argjson never sees an empty string.
         _get() { _v="$(printf '%s' "$robj" | jq -r "($1) // \"null\"" 2>/dev/null || true)"; [ -n "$_v" ] && printf '%s' "$_v" || printf 'null'; }
-        printf '%s' "$robj" | jq -e '.is_error == true' >/dev/null 2>&1 && ok=false || ok=true
+        if printf '%s' "$robj" | jq -e '.is_error == true' >/dev/null 2>&1; then ok=false; freason="api_error"; else ok=true; fi
         cost="$(_get '.total_cost_usd // .cost_usd')"
         intok="$(_get '.usage.input_tokens')"
         outtok="$(_get '.usage.output_tokens')"
@@ -193,6 +226,16 @@ for n in $(task_dirs); do
         dur="$(_get '.duration_ms')"
       else
         echo "   ! claude run produced no JSON envelope (timeout/stall)"
+        ok=false; freason="no_envelope"
+      fi
+      # The watchdog's verdict outranks the envelope: when WE ended the run, a
+      # missing or errored envelope is our doing, and nothing downstream should
+      # read the row as evidence about the workflow.
+      if [ -f "$tmof" ]; then
+        ok=false; freason="timeout"
+        echo "   ! watchdog fired at ${TIMEOUT_S}s — row excluded from medians (raise BENCH_TIMEOUT)"
+      elif [ "$ok" = "true" ] && [ "$rc" != "0" ]; then
+        ok=false; freason="exit_$rc"
       fi
 
       spawn=null; cyt=null; cyr=null; skip=null
@@ -207,6 +250,8 @@ for n in $(task_dirs); do
         fi
       fi
 
+      # The judge still runs on a failed row: the score is forensics (how far did
+      # it get before dying), not a quality measurement — aggregate.sh drops it.
       jscore=null; jverd=skip
       jout="$(sh "$HERE/judge-outcome.sh" "$sb" "$acc" --base "$base_sha" --model "$MODEL" 2>/dev/null || true)"
       if [ -n "$jout" ] && printf '%s' "$jout" | jq -e . >/dev/null 2>&1; then
@@ -217,9 +262,9 @@ for n in $(task_dirs); do
         echo "   judge-outcome: skipped"
       fi
 
-      emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}"
+      emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}" "$freason"
       runs=$((runs + 1)); DONE=$((DONE + 1)); r=$((r + 1))
-      progress "$n · arm=$a done — ok=$ok cost=\$$cost judge=$jscore/$jverd"
+      progress "$n · arm=$a done — ok=$ok${freason:+ ($freason)} cost=\$$cost judge=$jscore/$jverd"
     done
   done
 done

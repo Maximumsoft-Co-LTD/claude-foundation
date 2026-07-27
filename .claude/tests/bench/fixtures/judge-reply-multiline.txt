@@ -1,0 +1,6 @@
+{
+  "score": 8,
+  "subscores": {"ac_met": 2, "tested": 1, "correctness": 2, "simplicity": 2, "fit": 1},
+  "verdict": "pass",
+  "notes": "All ACs met; tests cover the happy path only."
+}

@@ -29,6 +29,127 @@ assert_eq "aggregate n"           "3"    "$(printf '%s' "$agg" | jq -r '.[0].n')
 if printf '%s' "$agg" | jq -e '.[0].cost_usd == 0.10' >/dev/null; then pass "aggregate cost median (== 0.10)"; else fail "aggregate cost median — expected 0.10, got $(printf '%s' "$agg" | jq -r '.[0].cost_usd')"; fi
 assert_eq "aggregate spawn median" "5"   "$(printf '%s' "$agg" | jq -r '.[0].spawn_count')"
 assert_eq "aggregate judge median" "8"   "$(printf '%s' "$agg" | jq -r '.[0].judge_score')"
+assert_eq "aggregate n_ok (all rows usable)" "3" "$(printf '%s' "$agg" | jq -r '.[0].n_ok')"
+assert_eq "aggregate no fail_reasons when all ok" "null" "$(printf '%s' "$agg" | jq -r '.[0].fail_reasons')"
+assert_eq "aggregate sd of identical scores is 0" "0" "$(printf '%s' "$agg" | jq -r '.[0].judge_sd')"
+
+# --- spread: the median alone hides the thing that decides adoption ---------
+# Live runs of ONE prompt scored 9 and 4 on this suite. A median of 6.5 reads as
+# "mediocre but steady" when the truth is "a coin flip" — so sd and p10 ship
+# alongside it, and p10 is what a bad day actually costs you.
+var="$(sh "$AGG" "$FIX/variance.jsonl")"
+if printf '%s' "$var" | jq -e '.[0].judge_score == 6.5' >/dev/null; then pass "variance judge median (== 6.5)"; else fail "variance judge median — expected 6.5, got $(printf '%s' "$var" | jq -r '.[0].judge_score')"; fi
+# sample sd of {9,4} = sqrt(((9-6.5)^2+(4-6.5)^2)/1) = sqrt(12.5) ≈ 3.5355
+if printf '%s' "$var" | jq -e '.[0].judge_sd > 3.535 and .[0].judge_sd < 3.536' >/dev/null; then pass "variance judge sd (≈ 3.5355)"; else fail "variance judge sd — expected ≈3.5355, got $(printf '%s' "$var" | jq -r '.[0].judge_sd')"; fi
+assert_eq "variance judge p10 = worst observed" "4" "$(printf '%s' "$var" | jq -r '.[0].judge_p10')"
+# One sample cannot estimate spread. null says so; 0 would claim consistency.
+one="$(head -1 "$FIX/variance.jsonl" | sh "$AGG")"
+assert_eq "sd is null at n<2" "null" "$(printf '%s' "$one" | jq -r '.[0].judge_sd')"
+
+# --- failed rows stay out of every median -----------------------------------
+# A watchdog kill still produces a judge score, but it grades a half-built
+# sandbox — folding it in reports a quality regression that never happened
+# (observed live: a timed-out /dev arm scored 3/fail and read as bad code).
+fl="$(sh "$AGG" "$FIX/failed.jsonl")"
+t2="$(printf '%s' "$fl" | jq -c '.[] | select(.task == "t2")')"
+assert_eq "failed: n counts every row"        "2" "$(printf '%s' "$t2" | jq -r '.n')"
+assert_eq "failed: n_ok counts usable rows"   "1" "$(printf '%s' "$t2" | jq -r '.n_ok')"
+assert_eq "failed: judge median skips the timeout row" "8" "$(printf '%s' "$t2" | jq -r '.judge_score')"
+assert_eq "failed: mechanism median skips it too"      "5" "$(printf '%s' "$t2" | jq -r '.spawn_count')"
+assert_eq "failed: sd null once the bad row is dropped" "null" "$(printf '%s' "$t2" | jq -r '.judge_sd')"
+assert_eq "failed: fail_reasons names the cause" "1" "$(printf '%s' "$t2" | jq -r '.fail_reasons.timeout')"
+# All rows failed => no measurement exists. A null beats a number built from wreckage.
+t3="$(printf '%s' "$fl" | jq -c '.[] | select(.task == "t3")')"
+assert_eq "failed: all-failed task reports no quality" "null" "$(printf '%s' "$t3" | jq -r '.judge_score')"
+assert_eq "failed: all-failed task ok_rate 0"          "0"    "$(printf '%s' "$t3" | jq -r '.ok_rate')"
+# Rows written before fail_reason existed must still be classified, not dropped.
+assert_eq "failed: legacy row without fail_reason => unknown" "1" "$(printf '%s' "$t3" | jq -r '.fail_reasons.unknown')"
+# The table has to SAY a row was excluded, or the exclusion is just silent loss.
+tbl="$(sh "$AGG" "$FIX/failed.jsonl" --table)"
+assert_contains "table flags excluded rows" "$tbl" "excluded from medians"
+assert_contains "table names the reason"    "$tbl" "timeout"
+
+# --- the runner's fail_reason vocabulary matches what aggregate reports ------
+# aggregate groups on whatever string the runner writes; a rename on one side
+# silently splits the tally into two buckets, so the sets are pinned together.
+for reason in timeout no_envelope api_error; do
+  if grep -q "freason=\"$reason\"" "$BENCH/run-bench.sh"; then pass "run-bench emits fail_reason '$reason'"; else fail "run-bench no longer emits fail_reason '$reason'"; fi
+done
+if grep -q 'fail_reason:' "$BENCH/run-bench.sh"; then pass "run-bench writes fail_reason into the scorecard"; else fail "run-bench scorecard is missing fail_reason"; fi
+# Assert the MECHANISM, not the flag's filename: the watchdog drops a marker file
+# and the classifier reads it back, which is what separates "we killed it" from
+# "it died on its own". (An earlier version of this check pinned the literal
+# `.bench-timeout` name and broke the moment the flag moved out of the sandbox.)
+if grep -q ': > "\$5"' "$BENCH/run-bench.sh"; then pass "run-bench watchdog drops a kill marker"; else fail "run-bench watchdog no longer marks its own kills"; fi
+if grep -q 'if \[ -f "\$tmof" \]' "$BENCH/run-bench.sh"; then pass "run-bench reads the kill marker back"; else fail "run-bench cannot distinguish a watchdog kill from a self-exit"; fi
+
+# --- judge reply parsing: a missing score is not a zero ---------------------
+# The rubric asks for single-line JSON; models pretty-print anyway. A line-wise
+# `grep -o '{.*}'` then grabbed the nested "subscores" object — valid JSON with
+# no .score — and a `// 0` default recorded a real 8/pass as 0/fail. Three /dev
+# arms with different behaviour (spawn_count 4, 4 and 0) all landed on exactly 0
+# that way while every baseline scored 8-10. These run off canned replies, so the
+# parser is proven without spending a token.
+JUDGE="$BENCH/judge-outcome.sh"
+JSB="$TMPROOT/judge-sb"
+mkdir -p "$JSB"
+( cd "$JSB" && git init -q \
+  && printf '# sandbox\n' > README.md \
+  && git add -A && git -c user.email=t@bench -c user.name=bench commit -qm base ) >/dev/null 2>&1
+printf 'export const toCsv = (rows) => rows.join(",")\n' > "$JSB/index.js"   # the "solution" diff
+JBASE="$(git -C "$JSB" rev-parse HEAD 2>/dev/null || echo HEAD)"
+ACC="$BENCH/tasks/02-csv-format/acceptance.txt"
+
+judge_out() {  # $1 reply fixture -> the judge's stdout (empty when unjudgeable)
+  JUDGE_REPLY_FILE="$FIX/$1" sh "$JUDGE" "$JSB" "$ACC" --base "$JBASE" 2>/dev/null || true
+}
+judge_rc() {   # $1 reply fixture -> the judge's exit code
+  _rc=0
+  JUDGE_REPLY_FILE="$FIX/$1" sh "$JUDGE" "$JSB" "$ACC" --base "$JBASE" >/dev/null 2>&1 || _rc=$?
+  printf '%s' "$_rc"
+}
+
+assert_eq "judge parses pretty-printed reply"   "8"    "$(judge_out judge-reply-multiline.txt | jq -r '.score')"
+assert_eq "judge keeps verdict on pretty reply" "pass" "$(judge_out judge-reply-multiline.txt | jq -r '.verdict')"
+assert_eq "judge parses fenced reply"           "6"    "$(judge_out judge-reply-fenced.txt   | jq -r '.score')"
+assert_eq "judge parses reply wrapped in prose" "9"    "$(judge_out judge-reply-prose.txt    | jq -r '.score')"
+# The whole point: no numeric .score => unjudgeable (exit 2, no stdout), NOT 0.
+assert_eq "judge exits 2 when the reply has no score" "2" "$(judge_rc judge-reply-noscore.txt)"
+assert_eq "judge emits nothing when it cannot score"  ""  "$(judge_out judge-reply-noscore.txt)"
+# A scoreless reply must never be salvaged with a default anywhere in the script.
+if grep -q "score // 0" "$JUDGE"; then fail "judge still defaults a missing score to 0"; else pass "judge has no silent score-0 default"; fi
+
+# --- the graded diff carries the SOLUTION, not the harness's own droppings ----
+# A trivial CSV run once handed the judge 33KB of diff of which 31KB (94%) was
+# `.bench-envelope.json` + `__pycache__`, leaving 1.8KB of real code and half the
+# 60KB cap already spent. Longer runs write bigger envelopes, so real code fell
+# off the end and the judge graded metadata. A sandbox whose ONLY changes are
+# such artifacts must read as an EMPTY solution diff (exit 2), not as a solution.
+NSB="$TMPROOT/noise-sb"
+mkdir -p "$NSB/__pycache__"
+( cd "$NSB" && git init -q \
+  && printf '# sandbox\n' > README.md \
+  && git add -A && git -c user.email=t@bench -c user.name=bench commit -qm base ) >/dev/null 2>&1
+NBASE="$(git -C "$NSB" rev-parse HEAD 2>/dev/null || echo HEAD)"
+printf '{"cost":1,"turns":80}\n'      > "$NSB/.bench-envelope.json"
+printf 'cached\n'                     > "$NSB/__pycache__/mod.cpython-312.pyc"
+printf 'noise\n'                      > "$NSB/build.log"
+_rc=0
+JUDGE_REPLY_FILE="$FIX/judge-reply-multiline.txt" sh "$JUDGE" "$NSB" "$ACC" --base "$NBASE" >/dev/null 2>&1 || _rc=$?
+assert_eq "judge ignores a diff of only harness artifacts" "2" "$_rc"
+# Add one real source file and the same sandbox becomes judgeable.
+printf 'export const toCsv = (r) => r.join(",")\n' > "$NSB/index.js"
+assert_eq "judge grades the solution once real code exists" "8" \
+  "$(JUDGE_REPLY_FILE="$FIX/judge-reply-multiline.txt" sh "$JUDGE" "$NSB" "$ACC" --base "$NBASE" 2>/dev/null | jq -r '.score')"
+# Truncation must announce itself — a silently cut diff scores low and reads as bad code.
+if grep -q "truncated to 60000B" "$JUDGE"; then pass "judge warns when it truncates the diff"; else fail "judge truncates the diff silently"; fi
+
+# --- the runner keeps its artifacts out of the sandbox ----------------------
+# `git add -A` sweeps anything under the sandbox into the graded diff, so the
+# envelope and the timeout flag must be written as SIBLINGS of it.
+if grep -q 'sb/.bench-envelope.json' "$BENCH/run-bench.sh"; then fail "run-bench still writes its envelope inside the sandbox"; else pass "run-bench keeps the envelope out of the sandbox"; fi
+if grep -q 'SANDROOT/\$n-\$a-\$r.envelope.json' "$BENCH/run-bench.sh"; then pass "run-bench writes the envelope beside the sandbox"; else fail "run-bench envelope path is not a sandbox sibling"; fi
+if grep -q 'SANDROOT/\$n-\$a-\$r.timeout' "$BENCH/run-bench.sh"; then pass "run-bench writes the timeout flag beside the sandbox"; else fail "run-bench timeout flag is not a sandbox sibling"; fi
 
 # --- ratchet PASS: after-good does not regress vs before --------------------
 if sh "$CMP" --ratchet "$FIX/before.jsonl" "$FIX/after-good.jsonl" >/dev/null 2>&1; then
