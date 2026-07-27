@@ -1,0 +1,2 @@
+# Committed ratchet baselines live here (copy a results/scorecards.jsonl in as
+# <name>.jsonl to set a before/after reference). Kept so the dir exists in git.

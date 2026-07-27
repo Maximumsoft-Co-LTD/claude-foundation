@@ -1,0 +1,1 @@
+Build a single-page task list app in this repository. Requirements — AC1: adding "buy milk" to an empty list shows it as an open item; AC2: toggling an item persists its completed state across a page reload via localStorage; AC3: an empty title is rejected. Write the code and unit tests directly. Do not use any workflow, do not create planning or spec files — just implement it.

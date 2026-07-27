@@ -1,0 +1,78 @@
+# Workflow test harness
+
+Tests the `/dev` workflow itself — not the apps it produces. Three layers, one
+entry point.
+
+```sh
+sh .claude/tests/run-all.sh              # deterministic suites (fast, free, CI-safe)
+CLAUDE_E2E=1 sh .claude/tests/run-all.sh # + live /dev e2e smoke (needs claude CLI, costs tokens)
+```
+
+Dependency: `jq` (and `python3` for a couple of nested-JSON hook checks). POSIX
+`sh` + `grep`/`awk` otherwise — no test framework.
+
+## Layers
+
+| Layer | What it proves | Cost | Where |
+|-------|----------------|------|-------|
+| **1 — deterministic** | hooks behave; every artifact is structurally valid; a run conforms to the type-aware phase matrix | free, sub-second | `hooks/tests/` (existing) + `scenarios/` |
+| **1 — doc consistency** | the docs that *drive* the prose workflow don't rot: version single-sourced, agent model pins valid, `phase-matrix.tsv` ↔ `WORKFLOW.md` in sync | free | `docs/` |
+| **2 — e2e (live)** | a real `/dev` run on a fresh sandbox produces valid, on-axis artifacts | tokens + `claude` CLI | `e2e/` |
+| **3 — judge** | the artifacts are *good*, not just well-shaped (AC quality, plan↔spec fit, task executability) | tokens | `e2e/judge/` |
+
+Why the split: most of the workflow is prose the model interprets live, so it
+can't be unit-tested directly. Layer 1 pins everything *around* that prose (the
+deterministic surface). Layers 2–3 exercise the prose itself by running it.
+
+## The executable matrix
+
+`phase-matrix.tsv` is a machine-readable copy of `WORKFLOW.md`'s type-aware phase
+matrix. The scenario suite reads it to derive which artifacts a run of a given
+type must NOT contain (e.g. `chore` skips test-plan/test → no `test-plan.md`,
+no `tests.md`). `docs/run-doc-consistency.sh` cross-checks the load-bearing skip
+cells against `WORKFLOW.md`. Flip a `skip`→`yes` in one place and the harness
+fails until all three (TSV, WORKFLOW.md, the fixture's artifact set) agree.
+
+## Scenarios (Core 6)
+
+Golden `.workflow/<id>/` fixtures under `scenarios/fixtures/`, one per meaningfully
+distinct phase-sequence, registered in `scenarios/scenarios.tsv`:
+
+| Fixture | type · size · field | Exercises |
+|---------|---------------------|-----------|
+| `01-feat-s-greenfield` | feat · S · greenfield | full plan set, no `context.md`, greenfield size cap |
+| `02-feat-m-brownfield` | feat · M · brownfield | `context.md` required |
+| `03-fix-s-brownfield` | fix · S · brownfield | regression-first tasks, regression contract |
+| `04-refactor-m-brownfield` | refactor · M · brownfield | baseline contract, `context.md` |
+| `05-chore-xs` | chore · XS · brownfield | `run.md` micro-lane, test-plan/test skipped |
+| `06-spike` | spike · S · brownfield | `recommendations.md`, test/security/docs skipped |
+
+Each fixture asserts: artifact-lint passes · `state.json` type/size/field match
+the declared axes and the run-id slug · required artifacts present · matrix-skip
+artifacts absent · field invariants (greenfield ⇒ size ≤ S, no `context.md`).
+
+## Add a scenario
+
+1. `mkdir -p scenarios/fixtures/<name>/.workflow/<NNNN-type-slug>/` and drop in the
+   golden artifacts (keep them lint-clean — no `TODO`/`<...>`; note the linter's
+   `todo` check is a **case-insensitive substring**, so avoid words like "todo").
+2. Add one row to `scenarios/scenarios.tsv`:
+   `<name> <type> <size> <field> <comma,joined,required,artifacts>`.
+3. `sh scenarios/run-scenario-tests.sh` — the forbid rules and field invariants
+   apply automatically from the matrix.
+
+For a live e2e prompt, add `e2e/prompts/NN-<type>-<slug>.txt` (a fully-specified
+`/dev` intent that steers the interview to no-op).
+
+## Live e2e caveat
+
+`/dev`'s Phase 1 interview uses `AskUserQuestion`, which a headless `claude -p`
+session can't answer. The prompts are written fully-specified ("do not ask
+clarifying questions — assume …") to make the interview a no-op, but a run that
+still stops to ask times out and is reported **SKIP**, not pass. Treat live e2e
+as a best-effort smoke, not a merge gate. Preview without spending tokens:
+
+```sh
+sh .claude/tests/e2e/run-e2e.sh          # dry-run: prints the plan
+sh .claude/tests/e2e/run-e2e.sh --run    # live
+```
