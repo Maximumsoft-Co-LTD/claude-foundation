@@ -52,7 +52,7 @@ case "$mode" in
               ]) as $fails
               | {task: $r.task, fails: $fails, fail: (($fails | length) > 0),
                  cost: {base: $b.cost_usd, cur: $r.cost_usd},
-                 dur:  {base: $b.duration_ms, cur: $r.duration_ms}}
+                 dur:  {base: $b.wall_s, cur: $r.wall_s}}
             end
         )
     ')"
@@ -60,7 +60,7 @@ case "$mode" in
     printf '%s' "$result" | jq -r '.[] |
       if .fail then "  ✗ \(.task): " + (.fails | join("; "))
       elif .verdict then "  • \(.task): \(.verdict)"
-      else "  ✓ \(.task): within budget (cost \(.cost.base // "-")→\(.cost.cur // "-"), dur \(.dur.base // "-")→\(.dur.cur // "-")ms)" end'
+      else "  ✓ \(.task): within budget (cost \(.cost.base // "-")→\(.cost.cur // "-"), wall \(.dur.base // "-")→\(.dur.cur // "-")s)" end'
     if printf '%s' "$result" | jq -e 'any(.fail)' >/dev/null; then
       echo "ratchet: FAIL — a task regressed" >&2; exit 1
     else
@@ -86,7 +86,7 @@ case "$mode" in
           | (if $jw > $jb then "worth-it (higher quality)"
              elif ($jw == $jb and $cw <= $cb) then "worth-it (equal quality, no cost premium)"
              else "questionable (quality \($jw) vs \($jb), cost \($cw) vs \($cb))" end) as $v
-          | "  • \(.task): \($v)\n      cost: wf \($cw) / bl \($cb)   quality: wf \($jw) / bl \($jb)   spawns(wf): \(.wf.spawn_count // "-")"
+          | "  • \(.task): \($v)\n      cost: wf \($cw) / bl \($cb)   wall(s): wf \(.wf.wall_s // "-") / bl \(.bl.wall_s // "-")   quality: wf \($jw) / bl \($jb)"
         end'
     exit 0
     ;;

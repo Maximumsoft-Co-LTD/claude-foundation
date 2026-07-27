@@ -145,8 +145,8 @@ emit() {  # all values already JSON-literal-safe strings ("null" when absent)
     --arg task "$1" --arg arm "$2" --argjson repeat "$3" --argjson ok "$4" \
     --argjson cost "$5" --argjson intok "$6" --argjson outtok "$7" --argjson turns "$8" --argjson dur "$9" \
     --argjson spawn "${10}" --argjson cyt "${11}" --argjson cyr "${12}" --argjson skip "${13}" \
-    --argjson jscore "${14}" --arg jverd "${15}" \
-    '{task:$task, arm:$arm, repeat:$repeat, ok:$ok, cost_usd:$cost, in_tokens:$intok, out_tokens:$outtok, turns:$turns, duration_ms:$dur, spawn_count:$spawn, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip, judge_score:$jscore, judge_verdict:$jverd}' >> "$OUT"
+    --argjson jscore "${14}" --arg jverd "${15}" --argjson wall "${16}" \
+    '{task:$task, arm:$arm, repeat:$repeat, ok:$ok, cost_usd:$cost, in_tokens:$intok, out_tokens:$outtok, turns:$turns, duration_ms:$dur, wall_s:$wall, spawn_count:$spawn, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip, judge_score:$jscore, judge_verdict:$jverd}' >> "$OUT"
 }
 
 runs=0
@@ -162,7 +162,12 @@ for n in $(task_dirs); do
       if [ "$a" = "workflow" ]; then setup_workflow "$sb" "$n"; else setup_baseline "$sb" "$n"; fi
       base_sha="$(git -C "$sb" rev-parse HEAD 2>/dev/null || echo HEAD)"   # judge diffs against this (survives a /dev commit)
 
+      # Real wall-clock — the envelope's duration_ms only counts the top session,
+      # not sub-agent spawns, so it wildly under-reports a /dev run (65s vs a true
+      # 13min). Measure it ourselves; this is the honest time axis.
+      t0="$(date +%s 2>/dev/null || echo 0)"
       run_capture "$TIMEOUT_S" "$sb/.bench-envelope.json" "$sb" "$prompt_file" || echo "   ! run exited nonzero (watchdog kill or error)"
+      wall_s=$(( $(date +%s 2>/dev/null || echo 0) - t0 ))
       envj="$(cat "$sb/.bench-envelope.json" 2>/dev/null || true)"
       ok=false; cost=null; intok=null; outtok=null; turns=null; dur=null
       if [ -n "$envj" ] && printf '%s' "$envj" | jq -e . >/dev/null 2>&1; then
@@ -205,7 +210,7 @@ for n in $(task_dirs); do
         echo "   judge-outcome: skipped"
       fi
 
-      emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd"
+      emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}"
       runs=$((runs + 1)); DONE=$((DONE + 1)); r=$((r + 1))
       progress "$n · arm=$a done — ok=$ok cost=\$$cost judge=$jscore/$jverd"
     done

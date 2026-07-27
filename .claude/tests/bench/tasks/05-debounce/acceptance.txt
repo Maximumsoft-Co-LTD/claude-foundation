@@ -1,0 +1,5 @@
+AC1: debounce(fn, ms) returns a function that delays fn until ms after the last call (trailing edge).
+AC2: rapid calls within the window coalesce into a single fn invocation, using the latest arguments.
+AC3: the returned function exposes cancel() that prevents a pending invocation from firing.
+AC4: calls separated by more than ms each invoke fn once.
+Trap: a happy-path implementation typically omits cancel(), passes stale arguments, or fires per-call instead of coalescing.

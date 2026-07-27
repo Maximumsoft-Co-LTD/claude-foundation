@@ -42,6 +42,7 @@ agg="$(read_input | jq -s '
       out_tokens:   med(.out_tokens),
       turns:        med(.turns),
       duration_ms:  med(.duration_ms),
+      wall_s:       med(.wall_s),
       spawn_count:  med(.spawn_count),
       cycles_test:  med(.cycles_test),
       cycles_review:med(.cycles_review),
@@ -50,18 +51,18 @@ agg="$(read_input | jq -s '
 ')"
 
 if [ "$table" = "1" ]; then
-  printf '%-26s %-9s %3s %6s %9s %5s %6s %6s %6s\n' task arm n okR costUSD outTok turns spawn judge
+  printf '%-24s %-9s %3s %5s %9s %7s %5s %5s %5s\n' task arm n okR costUSD wallSec turns spawn judge
   printf '%s' "$agg" | jq -r '.[] |
     [ .task, .arm, .n,
       (.ok_rate*100|floor|tostring + "%"),
       (.cost_usd // "-"|tostring),
-      (.out_tokens // "-"|tostring),
+      (.wall_s // "-"|tostring),
       (.turns // "-"|tostring),
       (.spawn_count // "-"|tostring),
       (.judge_score // "-"|tostring)
     ] | @tsv' \
-    | while IFS="$(printf '\t')" read -r t a n ok c o tu s j; do
-        printf '%-26s %-9s %3s %6s %9s %5s %6s %6s %6s\n' "$t" "$a" "$n" "$ok" "$c" "$o" "$tu" "$s" "$j"
+    | while IFS="$(printf '\t')" read -r t a n ok c w tu s j; do
+        printf '%-24s %-9s %3s %5s %9s %7s %5s %5s %5s\n' "$t" "$a" "$n" "$ok" "$c" "$w" "$tu" "$s" "$j"
       done
 else
   printf '%s\n' "$agg"
