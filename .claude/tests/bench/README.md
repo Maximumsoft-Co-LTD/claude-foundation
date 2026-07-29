@@ -141,6 +141,27 @@ sh compare.sh --ratchet baselines/v2.12.jsonl results/scorecards.jsonl
 sh compare.sh --gain baselines/v2.12.jsonl results/after.jsonl --target 0.5
 ```
 
+### Where the wall clock goes — `profile-phases.sh`
+
+The scorecard says a run cost $6.50 and took 845s; it does not say which phase
+spent it. `state.json > phase_times` does, and `profile-phases.sh` turns those
+stamps into durations, shares and a stage roll-up — free, no model, reading only
+`--keep` sandboxes:
+
+```sh
+sh profile-phases.sh --find --root /var/folders/xv --task 09-api-compat --newer 5400
+sh profile-phases.sh /path/to/sandbox/.workflow/0002-feat-…    # explicit dirs
+```
+
+Two things it gets right that a naive reading does not. **Phases written in ONE
+state write share a stamp** — the combined Design write stamps spec/plan/test-plan
+identically — so those collapse into a single `spec+plan+test-plan` row instead of
+three zeros and one real number. And **a block spanning two stages is reported as
+`MIXED:`, never split**, because dividing an unseparable block across buckets
+invents a number the stamps do not contain. Always pass `--task` and `--newer`:
+mixing configurations in one profile averages away the thing you are looking for,
+since a change's before and after land in the same column.
+
 `--ratchet` and `--gain` ask opposite questions and you need both. The ratchet is a
 **guard**: it passes a run that costs 19% *more*, because its job is to catch
 regressions, not to reward savings. `--gain` is the **goal**: it prints the per-task
@@ -233,6 +254,39 @@ carries the **requirements the user never said**. That gap is the thing being
 measured — a workflow earns its cost by surfacing unstated requirements, not by
 following a list it was already given. A prompt that enumerates its own ACs
 measures transcription, not judgement.
+
+### The headroom has evaporated — re-measured 2026-07-29
+
+The table below was written when the baseline arm still failed these tasks. On a
+**fixed sandbox** (see the answer-key leak above) with n=3–4 per arm, it no longer
+reproduces:
+
+| task | ask | vibe-code baseline | `/dev` workflow | verdict |
+|---|---|---|---|---|
+| `08-name-migration` | precise | **$0.44 / 110s / judge 8** (7,8,9 — 0 fails) | $11.40 / 1310s / judge 9 | +1 point for **26×** |
+| `11-recent-window` | precise | **$0.27 / 51s / judge 10** (9,10,10) | $2.81 / 432s / judge 9, 1 fail in 6 | **−1 point** for 10× |
+| `12-contact-search` | deliberately vague | **$0.26 / 49s / judge 10** (10,10,9,10) | not run — 10/pass means no headroom | — |
+
+`08`'s documented **6/fail** baseline was **n=1**; at n=3 it passes every time.
+`12` was built specifically to test the workflow's core claim — a one-sentence ask
+(*"give them a way to search it"*) hiding five unstated requirements including a
+`name: null` row that crashes the naive `c.name.toLowerCase()`. The plain prompt
+handled all of it unprompted.
+
+**Read this as a statement about model capability, not about workflow design.**
+The suite was calibrated against a weaker generation; the base model now covers
+what the pipeline used to add at this scale. What follows:
+
+- **A no-headroom task cannot measure a workflow change.** Before trusting any A/B
+  here, re-run the baseline arm — it is under a dollar — and check it still fails.
+- **The remaining value of `/dev` at XS/S is not in the judged code.** It is the
+  artifacts, the AC→test traceability, `--resume`, and the human gate — none of
+  which `judge-outcome.sh` grades. Do not read "judge 9 vs 10" as "the workflow is
+  useless"; read it as "the code-quality premium at this size is now zero", which
+  is what `orchestrator.md > Size-aware execution > XS value check` exists to say.
+- **The untested regime is M/L**, where coordination, disjoint-file fanout and
+  multi-surface blast radius are the actual problem. Every task in this suite is
+  XS/S. Any claim that the machinery pays must be earned there.
 
 | Task | Headroom comes from |
 |---|---|
@@ -338,6 +392,87 @@ has no headroom yet — fix the task before spending a workflow arm on it.
   precisely the blind spot its own tests pin, seen in the wild. If the walk is worth
   another attempt, scope it to the ACs that *name a mechanism* instead of to every
   AC, and measure it alone.
+- **THE SANDBOX WAS LEAKING THE ANSWER KEY — every quality number predating
+  2026-07-29 is suspect.** `setup_workflow` built the sandbox with `cp -R .claude`,
+  which includes `.claude/tests/bench/tasks/<t>/acceptance.txt` — the graded
+  criteria with the trap written out in plain English — plus every baseline and
+  past result. The **baseline arm gets a bare repo and never saw it**, so only the
+  workflow arm was handed the answer key: precisely the asymmetry the "a task is
+  only useful if the baseline can fail it" rule exists to prevent, arriving via the
+  sandbox layout instead of the prompt. Not hypothetical — a captured run ran
+  `cat …/tasks/11-recent-window/design.txt` and Read `acceptance.txt` out of its
+  own tree. `rm -rf "$s/.claude/tests"` now fixes it, pinned by two tests.
+  Measured impact on `11-recent-window`: removing the crib moved the workflow arm
+  from **$2.22 / 362s / 51 turns** to **$2.81 / 432s / 67.5 turns** — the leak was
+  inflating *efficiency* as much as quality, because a run that can read the ACs
+  skips the work of deriving them. **Re-earn any A/B or quality claim on the fixed
+  sandbox; cost comparisons between two workflow configs survive** (both sides
+  carried the leak equally).
+- **Know the resolution floor BEFORE trusting a delta.** Pooled clean-sandbox cost
+  on `11-recent-window` is mean **$2.72, sd $0.77** — so at n=6 the standard error
+  is 12% of the mean and **nothing below ~23% is resolvable.** Two verdicts in one
+  session were reported at −6.5% and −13% and then failed to reproduce: measured
+  honestly, the session-start config came in at **$2.63** and the "optimised" one
+  at **$2.81** — no improvement at all. Compute `2·sd/√n` first and refuse to
+  report anything under it; a median that moved less than that is a coin landing.
+- **Cost is not instruction bytes — but it is not playbook overhead either.** Two
+  independent ~26 KB cuts to resident instructions moved cost **+16.4%** and
+  **−0.3%**. Removing genuine round-trip waste (a `date -u` shell-out per
+  timestamp, seven per run; the per-phase state ritual collapsing from 3 calls to
+  1) cut tool calls **68 → 50** and still did not move clean-sandbox cost outside
+  the noise floor. The conclusion those three results share: on a fair sandbox the
+  run's turns go into **the work** — reading the seed, deriving requirements that
+  were never stated, writing a regression test, reviewing — and the playbook
+  overhead around that work is too small to matter. Optimise scope, not overhead.
+  (`profile-turns.sh` still earns its place: it is how the 19-touch `state.json`
+  ritual and the answer-key read were both found.)
+- **But the bookkeeping is load-bearing — don't "optimise" it.** `state.json` is
+  the most-touched path of an XS run (19 Read/Write/Edit), and state+INDEX+
+  timestamps are ~44% of all tool calls, which looks like the obvious target.
+  Cutting the between-phase re-reads did drop turns 25% and cost with them — and
+  blew the cost spread from 1.03× to **2.59×**, dropped `judge_p10` 9 → 6, and
+  produced the task's first hard acceptance failure: one run drifted to 39 turns
+  and shipped too little, another flailed to 92. The re-read is the orchestrator's
+  anchor between phases. The saving was the run doing less.
+- **Cost variance and quality variance are different numbers.** `11-recent-window`
+  looked immune to the S lane's spread problem — 1.04× cost across its first three
+  runs — and its quality is nonetheless bimodal: most runs land 9–10, roughly one
+  in nine takes the wrong-layer trap and scores 6. So a `judge_p10` of 6 at n=3
+  says nothing about a change; it is the task's own failure rate showing through.
+  **Calibrate the unchanged config at n≥6 and read median cost + failure count,
+  not `p10`.** Two verdicts in this session were wrong at n=3 and reversed at n=9.
+- **Re-baseline before crediting yourself with someone else's numbers.** The
+  brownfield-S reference in `baselines/brownfield-s-after.jsonl` reads $4.92 on
+  `09-api-compat`, but it was recorded two commits earlier. Re-measured at
+  `50f1f74` the same task and config is **$6.50 / 845s / judge 10, `judge_p10` 10**
+  (n=3, `baselines/brownfield-s-09-current.jsonl`) — 32% pricier and a full point
+  better, `judge_p10` 8 → 10. Both movements belong to the intervening commits, not
+  to whatever you are about to try. A stale reference silently books that swing into
+  your change's column, in whichever direction flatters it least. **The `--gain`
+  "before" must come from the tree you are about to edit**; the cost of finding out
+  is one extra 3-repeat run.
+- **Rejected: a smaller design read (`lead-design.md` + the shape table inlined).**
+  The theory came straight from the XS lane — this suite's cost is input-token
+  dominated roughly 6:1, so cut what main re-carries every turn. Three
+  content-neutral cuts, ≈ **−26 KB resident per S run**: split the 24.5 KB
+  `agents/references/lead.md` into a design half (17.2 KB) and a review/fanout half
+  (8.3 KB) so a design pass stops loading review-fanout, security-fanout and
+  multi-repo sections it cannot execute; inline the 12-line `Artifact shape by Type`
+  table into the fast path so S design stops reading 18.8 KB of `size-tiering.md` to
+  reach it; move the fast path's measurement narrative into a non-resident rationale
+  file. No design content removed, no spawn, check or artifact touched; all four
+  suites green. **It did not pay:** $6.50 → **$7.57 (+16.4%)**, wall 845 → 892s
+  (+5.6%), judge median 10 → 9 and `judge_p10` 10 → 9. Ratchet FAIL, `--gain` FAIL,
+  reverted byte-exactly (`baselines/brownfield-s-lean-design-refs-rejected.jsonl`).
+  Two honest caveats: the phase clock showed Design collapsing from ~295s to **~76s**
+  while the total still rose, so whatever was saved up front came back later; and
+  the after-spread ($5.10–$8.03) overlaps the before ($5.49–$6.82), so the fair claim
+  is **"no gain demonstrated"**, not "proven harmful". Either way the ratchet's rule
+  stands — a configuration that moves cost, wall and quality the wrong way is not
+  adopted on the hope that it was noise. What this closes off is the whole family of
+  *"same content, fewer bytes to read at design time"* ideas at S: reading less at
+  Design behaves like rationing it even when not one sentence of the contract is cut.
+  The kept sandboxes agree weakly — median `spec.md` 4804 B → 4076 B.
 - **What works at XS can break S.** The same session tried capping artifact
   length and restricting which reference sections `lead` may read. At XS
   (`run.md` ≤ 40 lines) that was free — a hermetic unit with ≤3 stated ACs has no
