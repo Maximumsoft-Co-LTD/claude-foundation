@@ -3,7 +3,7 @@
 # Python bytecode (skill scripts under .claude/skills/*/scripts/)
 __pycache__/
 *.pyc
-docs/
+/docs/
 
 # Serena MCP server (per-project config/cache/memories, auto-generated)
 .serena/
