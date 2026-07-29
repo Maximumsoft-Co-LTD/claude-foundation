@@ -141,11 +141,45 @@ Type decides *which* phases run: `orchestrator` **skips or specializes** some by
 | 7. Security review | trigger-based | trigger-based | trigger-based | trigger-based | trigger-based | skip |
 | 8. Docs touch-up | ✓ | optional | optional | optional | ✓ | skip |
 | 9. Ship (stage + opt-in commit/PR) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 10. Retro | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 10. Retro | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ |
+
+**Required vs optional — the phase contract.** Only four phases are **required** and
+cannot be turned off: **Interview + spec · Plan · Gate · Implement**. They are the
+run's spine — what you asked for, how it will be built, your approval, and the
+code. Everything else — **Test plan · Test · Review · Security review · Docs ·
+Ship · Retro** — is **optional**: the matrix below is its *default*, and the plan's
+`## Phases for this task` or a gate `skip <n>` can set any of them to
+`light`/`skip`, recorded in `state.json > phase_plan` + `skipped_steps`.
+
+Two things stay on no matter what you skip, because both are near-free and cover a
+failure you cannot see afterwards: **the `state.json` writes** (they are what
+`--resume` keys off, and cutting them was measured to make runs drift — see
+`orchestrator/references/fast-path-rationale.md`) and **the security-trigger scan**
+(a name-only path check, not the review; it costs one pass over the changed-file
+list and is the only thing standing between a trust-boundary diff and silence). If
+you want the trigger scan off too, say so — it is one line — but it is off by
+choice, never by default.
+
+**Skipping Test on `fix`/`refactor` waives a contract you asked for.** `fix`'s
+regression test is what stops the bug coming back; `refactor`'s baseline is what
+makes "behaviour unchanged" checkable. Skipping them is allowed and recorded — just
+know that is the thing being traded.
+
+**Retro at XS writes no `retro.md` — and this one is safe to cut on argument, not just measurement.**
+Close still runs: `done_at` is stamped, `INDEX` moves to done, follow-ups are appended, and the
+run's deltas fold into `.workflow/KNOWLEDGE.md` (that fold is the part that pays — it is what makes
+the *next* run cheaper). What goes is the retrospective *document* for a one-line change nobody
+will reopen. **Why it is safe:** Close runs after Ship, so nothing it does can change the delivered
+code — a retro cannot make the diff better or worse. Measured: Close is **22% of an XS run's
+stamped wall clock**. When Review + Docs + Retro were skipped together the judge fell 9 → 8, so the
+quality cost lived in Review or Docs; Retro is provably not where it came from, and it is the only
+one of the three that can be cut on a proof rather than a hope. M/L keep the full retro.
 
 **Ship commit — opt-in, default `no`.** Ship always runs (isolates the diff, scans secrets); whether it commits/pushes/PRs is the gate's call — lever + `commit_on_ship` mechanics: `.claude/orchestrator/references/gate.md`. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at Implement, not here.
 
 **Review at XS for `chore`/`docs` — default skip.** A size×type default, not a per-line deviation. Mechanics: `.claude/orchestrator/references/size-execution.md` (Review row).
+
+**Defaulting Review/Docs/Retro to `skip` at XS was measured and rejected** (n=6, fixed sandbox): cost $2.81 → $2.22 (−21%, *under* this suite's ~23% resolution floor) while judge median fell 9 → 8. Turning phases off does not make the run cheap, because the cost is not in the phases — boot is 44% of an XS run's wall clock and Design another 39%. They stay **optional** (you can skip any of them at the gate); they are just not off by default.
 
 **Test plan.** Design-time coverage/edge-case/regression contract, signed off at the gate, run at Test. Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
 
@@ -267,7 +301,7 @@ M-size brownfield: `spec.md` (refactor, equivalence contract — pricing output 
 Where the run pauses, loops, or escalates instead of charging ahead.
 
 - `revise` at the gate (or free-form chat) → targeted in-run edit of the affected sections only, re-verify, re-present. Never a fresh Phase 1.
-- `skip <n>`/`run <n>` at the gate → flips that discretionary phase (Test/Review/Docs only; protected phases refuse), recorded in `state.json > phase_plan`, loop continues until `approve`.
+- `skip <n>`/`run <n>` at the gate → flips any **optional** phase (Test plan / Test / Review / Security review / Docs / Ship / Retro), recorded in `state.json > phase_plan`, loop continues until `approve`. The four required phases (Interview+spec / Plan / Gate / Implement) refuse.
 - Test failures → fix → re-run, ≤3 cycles, then escalate.
 - Reviewer blocking issues → fix → re-test → re-review, ≤2 cycles, then escalate.
 - Security `high` finding → fix → re-test → re-review → re-security, counts against the review budget.

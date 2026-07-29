@@ -318,6 +318,41 @@ printf '{\n  "phase": "one",\n  "notes": "a"\n}\n' > "$VRUN/state.json"
 run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
 assert_allowed "validate clean state.json"
 
+# --- "__now__" sentinel substitution ------------------------------------------
+# The orchestrator has no clock, so it writes the literal "__now__" and this hook
+# stamps real UTC. That replaced seven `date -u` Bash turns per XS run. Pin the
+# behaviour: the sentinel must vanish everywhere (including nested), real values
+# must survive untouched, and the sentinel must not leak past the hook — a run
+# that resumes off a literal "__now__" has a corrupt clock.
+printf '{\n  "phase": "one",\n  "last_updated": "__now__",\n  "created_at": "2020-01-02T03:04:05Z",\n  "phase_times": { "plan": "__now__" },\n  "done_at": null\n}\n' > "$VRUN/state.json"
+run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
+assert_allowed "validate stamps __now__ sentinel"
+if grep -q '__now__' "$VRUN/state.json"; then
+  fail "sentinel __now__ survived the hook (resume would read a corrupt clock)"
+else
+  pass "sentinel __now__ replaced everywhere"
+fi
+if jq -e '.last_updated | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")' "$VRUN/state.json" >/dev/null 2>&1; then
+  pass "last_updated stamped as ISO-8601 UTC"
+else
+  fail "last_updated not stamped as ISO-8601 UTC"
+fi
+if jq -e '.phase_times.plan | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")' "$VRUN/state.json" >/dev/null 2>&1; then
+  pass "nested phase_times sentinel stamped too"
+else
+  fail "nested phase_times sentinel not stamped"
+fi
+if [ "$(jq -r '.created_at' "$VRUN/state.json")" = "2020-01-02T03:04:05Z" ]; then
+  pass "an already-real timestamp is left alone"
+else
+  fail "hook overwrote a real timestamp"
+fi
+if [ "$(jq -r '.done_at' "$VRUN/state.json")" = "null" ]; then
+  pass "null done_at untouched by substitution"
+else
+  fail "hook disturbed a null field"
+fi
+
 # Shard file (state.plan.json) is out of scope — even when invalid.
 printf 'not json at all' > "$VRUN/state.plan.json"
 run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.plan.json")"

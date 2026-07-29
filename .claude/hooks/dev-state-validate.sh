@@ -45,6 +45,29 @@ esac
 
 [[ -f "$fp" ]] || exit 0
 
+# 0. Stamp the clock. The orchestrator has no clock of its own, so the rule used
+#    to be "every timestamp = `$(date -u …)` output — run it, never guess". That
+#    guarantee is worth keeping (a hand-typed ISO is hallucinated) but the shell
+#    -out is not: a turn inventory of an XS run counted SEVEN separate `date -u`
+#    Bash calls, each its own turn, each re-sending the whole context. Cost on
+#    this workflow tracks turns, not bytes — two ~26 KB instruction cuts moved it
+#    under 1%, while bookkeeping was ~44% of all tool calls.
+#
+#    So the orchestrator now writes the literal sentinel "__now__" wherever a
+#    timestamp goes and this hook substitutes real UTC after the write. The model
+#    still never types a clock value; it just stops paying a turn to read one.
+#    Substitution runs BEFORE the validity checks so they see final content, and
+#    it cannot break parseability — a JSON string is replaced by a JSON string.
+if grep -q '"__now__"' "$fp" 2>/dev/null; then
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  tmp="$fp.now.$$"
+  if sed "s/\"__now__\"/\"$now\"/g" "$fp" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+    mv "$tmp" "$fp"
+  else
+    rm -f "$tmp"
+  fi
+fi
+
 emit_block() {
   # Surface the reason both ways so it lands regardless of how the running
   # Claude Code version reads PostToolUse output: `decision: block` (prompts

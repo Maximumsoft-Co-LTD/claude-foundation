@@ -138,4 +138,31 @@ if [ -f "$FAST" ] && [ -f "$SIZEX" ]; then
   assert_file_contains "fast path records the docs+ship rejection" "$FAST" "measured and REJECTED, twice"
 fi
 
+# --- 8. the required/optional phase contract -----------------------------------
+# Only four phases are required: Interview+spec, Plan, Gate, Implement. Everything
+# else is optional and a gate `skip <n>` may turn it off. Three files state this
+# and they must agree — a stale "protected set" in gate.md silently refuses a skip
+# the contract allows, which reads to the user as a broken option rather than a
+# doc drift.
+WF="$ROOT/WORKFLOW.md"
+GATE="$ROOT/.claude/orchestrator/references/gate.md"
+SIZEX2="$ROOT/.claude/orchestrator/references/size-execution.md"
+if [ -f "$WF" ] && [ -f "$GATE" ] && [ -f "$ORCH" ] && [ -f "$SIZEX2" ]; then
+  assert_file_contains "WORKFLOW.md declares the required/optional contract" "$WF" "Required vs optional"
+  # The old protected set named Security and Retro as unskippable. If any file
+  # still refuses them, the contract and the gate disagree.
+  for f in "$GATE" "$ORCH" "$SIZEX2"; do
+    if grep -qF 'refuse protected (Interview+Spec / Plan / Gate / Security / Retro)' "$f"; then
+      fail "$(basename "$f") still refuses Security/Retro skips — contradicts Required vs optional"
+    else
+      pass "$(basename "$f") does not refuse an optional-phase skip"
+    fi
+  done
+  # The two things that stay on regardless must stay named, in the same files —
+  # they are the floor the "everything else is optional" rule is safe on top of.
+  assert_file_contains "gate.md keeps the security-trigger scan on a skipped review" "$GATE" "security-trigger scan still runs"
+  assert_file_contains "WORKFLOW.md names the always-on floor" "$WF" "security-trigger scan"
+  assert_file_contains "orchestrator.md never-shrink names the required four" "$ORCH" "required** phases"
+fi
+
 finish "doc-consistency tests"
