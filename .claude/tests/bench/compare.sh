@@ -51,6 +51,21 @@ AGG="$HERE/aggregate.sh"
 command -v jq >/dev/null 2>&1 || { echo "compare: jq required" >&2; exit 2; }
 TOL="${BENCH_COST_TOL:-0.20}"
 
+# --- resolution floor -----------------------------------------------------------
+# This suite's cost spread is wide enough that most "wins" are noise: on
+# 11-recent-window, sd is ~$0.7 on a ~$2.7 mean, so at n=6 the smallest honestly
+# detectable difference is roughly 25%. Three separate verdicts in one session were
+# reported at -6.5%, -13% and -15%, adopted, and then failed to reproduce; a fourth
+# read -29% at n=6 and -20% at n=12. Reporting a delta smaller than the measurement
+# can resolve is how that happens, so the comparison now refuses to.
+#
+# MDE = 2 * sqrt(se_base^2 + se_cur^2) expressed as a % of the baseline, where
+# se = sd/sqrt(n) — the ordinary two-sample standard error at ~95%. A |delta|
+# under it prints UNRESOLVED and counts as NO CHANGE: not a win, not a regression.
+# Override with BENCH_MDE_OFF=1 only to inspect raw numbers, never to decide.
+MIN_N="${BENCH_MIN_N:-6}"
+MDE_OFF="${BENCH_MDE_OFF:-0}"
+
 mode="${1:-}"; shift 2>/dev/null || true
 
 case "$mode" in
@@ -115,6 +130,23 @@ case "$mode" in
     exit 0
     ;;
 
+  --mde)
+    # Standalone: what can this scorecard actually resolve, and how many repeats
+    # would a given effect need? Answer BEFORE spending a run, not after.
+    f="${1:?usage: compare.sh --mde <scorecards.jsonl> [effect-pct]}"
+    want="${2:-20}"
+    sh "$AGG" "$f" | jq -r --arg want "$want" --arg minn "$MIN_N" '
+      .[] | select(.arm == "workflow") | select(.n_ok > 1)
+      | (.cost_sd / (.n_ok | sqrt)) as $se
+      | (2 * $se * 1.4142 / .cost_usd * 100) as $mde
+      | ((2 * 1.4142 * .cost_sd / (.cost_usd * ($want|tonumber) / 100)) | . * . | ceil) as $need
+      | "\(.task): n=\(.n_ok)  sd=$\(.cost_sd*100|round/100)  median=$\(.cost_usd*100|round/100)",
+        "   smallest resolvable effect at this n:  \($mde*10|round/10)%",
+        "   repeats needed to resolve \($want)%:      n=\($need) per side",
+        (if .n_ok < ($minn|tonumber) then "   ⚠ UNDERPOWERED — below BENCH_MIN_N=\($minn); treat any delta as unmeasured" else empty end)
+    '
+    exit 0
+    ;;
   --gain)
     base="${1:?usage: compare.sh --gain <baseline> <current> [--target <fraction>]}"
     cur="${2:?usage: compare.sh --gain <baseline> <current> [--target <fraction>]}"
@@ -129,7 +161,7 @@ case "$mode" in
     done
     ab="$(sh "$AGG" "$base")"
     ac="$(sh "$AGG" "$cur")"
-    result="$(jq -n --argjson base "$ab" --argjson cur "$ac" --arg target "$target" '
+    result="$(jq -n --argjson base "$ab" --argjson cur "$ac" --arg target "$target" --argjson MINN "$MIN_N" --arg MDEOFF "$MDE_OFF" '
       (if $target == "" then null else ($target | tonumber) end) as $T
       | ($base | map(select(.arm == "workflow")) | INDEX(.task)) as $B
       | ($cur  | map(select(.arm == "workflow")))
@@ -146,11 +178,21 @@ case "$mode" in
               | (if ($b.wall_s // 0) > 0 and $r.wall_s != null
                  then (1 - ($r.wall_s / $b.wall_s)) else null end) as $dw
               | (($r.judge_score // 0) < ($b.judge_score // 0)) as $qdrop
-              | {task: $r.task, status: "measured", counted: true,
+              # Resolution floor: a cost delta smaller than this measurement can
+              # separate from noise is NOT a saving. Two-sample SE at ~95%.
+              | (if ($b.cost_sd != null and $r.cost_sd != null and $b.n_ok > 1 and $r.n_ok > 1 and $b.cost_usd > 0)
+                 then (2 * (((($b.cost_sd / ($b.n_ok|sqrt)) | . * .) + (($r.cost_sd / ($r.n_ok|sqrt)) | . * .)) | sqrt) / $b.cost_usd)
+                 else null end) as $mde
+              | (($mde != null) and (($dc | fabs) < $mde) and ($MDEOFF != "1")) as $unres
+              | (($b.n_ok < $MINN) or ($r.n_ok < $MINN)) as $under
+              | {task: $r.task, status: (if $unres then "unresolved" else "measured" end),
+                 counted: true, mde: $mde, unresolved: $unres, underpowered: $under,
                  cost: {base: $b.cost_usd, cur: $r.cost_usd, drop: $dc},
                  wall: {base: $b.wall_s, cur: $r.wall_s, drop: $dw},
                  judge: {base: $b.judge_score, cur: $r.judge_score, drop: $qdrop},
-                 fail: ($qdrop or ($T != null and ($dc < $T or ($dw == null or $dw < $T)))) }
+                 # An unresolved cost delta can never satisfy a target — claiming a
+                 # win off noise is the exact failure this guard exists to stop.
+                 fail: ($qdrop or ($T != null and ($unres or $dc < $T or ($dw == null or $dw < $T)))) }
             end
         )
       | . as $rows
@@ -180,6 +222,8 @@ case "$mode" in
       if .status == "new" then "  • \(.task): new (no baseline) — not counted"
       elif .status == "unmeasured" then "  ✗ \(.task): no usable rows to compare (\(.detail))"
       else "  \(if .fail then "✗" else "✓" end) \(.task): "
+           + (if .unresolved then "UNRESOLVED  |Δcost| < MDE \((.mde*1000|round/10))% — not a saving, not a regression; raise n\n      " else "" end)
+           + (if .underpowered then "⚠ underpowered — below the min-n guard; read as unmeasured\n      " else "" end)
            + "cost \(.cost.base)→\(.cost.cur) (\(pct(.cost.drop)))  "
            + "wall \(.wall.base // "-")→\(.wall.cur // "-")s (\(pct(.wall.drop)))  "
            + "judge \(.judge.base // "-")→\(.judge.cur // "-")"

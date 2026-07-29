@@ -409,8 +409,113 @@ for d in "$TASKS"/*/; do
   if grep -qE '^[[:space:]]*/dev[[:space:]]' "$d/baseline.txt" 2>/dev/null; then fail "task $t: baseline prompt must not invoke /dev (control arm)"; else pass "task $t: baseline prompt does not invoke the workflow"; fi
   # And it must say so explicitly, so the control arm can't drift into using it.
   if grep -qi 'not use any workflow' "$d/baseline.txt" 2>/dev/null; then pass "task $t: baseline prompt states no-workflow"; else fail "task $t: baseline prompt should state 'do not use any workflow'"; fi
+  # The prompt must NOT enumerate the acceptance criteria. README > "A task is only
+  # useful if the baseline can fail it": `workflow.txt`/`baseline.txt` carry the
+  # USER'S ASK, `acceptance.txt` carries the requirements the user never stated —
+  # that gap is the entire thing being measured. A prompt listing its own ACs
+  # measures transcription, not judgement, and both arms score ~10. Tasks 07-11
+  # were written this way; 01-06 predate the rule and are grandfathered below.
+  case "$t" in
+    01-task-list|02-csv-format|03-form-validator|04-paginate|05-debounce|06-landing-site)
+      : ;;   # grandfathered: known to enumerate ACs, kept only as a cost/latency floor
+    *)
+      for arm in workflow baseline; do
+        if grep -qE '\bAC[0-9]' "$d/$arm.txt" 2>/dev/null; then
+          fail "task $t: $arm.txt enumerates AC ids — measures transcription, not judgement"
+        else
+          pass "task $t: $arm.txt does not leak the acceptance criteria"
+        fi
+      done ;;
+  esac
+
   # Acceptance is what both arms are judged against — it must carry criteria.
   if grep -qE '\bAC[0-9]' "$d/acceptance.txt" 2>/dev/null; then pass "task $t: acceptance lists AC ids"; else fail "task $t: acceptance has no AC ids"; fi
 done
+
+# --- the sandbox must never contain the bench itself ----------------------------
+# `.claude/tests/bench/tasks/<t>/acceptance.txt` is the answer key, with the trap
+# written out. Copying `.claude/` wholesale put it inside the workflow arm's own
+# sandbox while the baseline arm (bare repo) never saw it — an asymmetry that
+# inflates workflow quality scores and measures transcription, not judgement.
+# Observed live: a run ran `cat .../tasks/11-recent-window/design.txt` and Read
+# `acceptance.txt` out of its own tree.
+if grep -q 'rm -rf "$s/.claude/tests"' "$HERE/../run-bench.sh"; then
+  pass "run-bench.sh strips .claude/tests from the workflow sandbox"
+else
+  fail "run-bench.sh ships .claude/tests (answer keys) into the graded sandbox"
+fi
+if grep -q 'rm -rf "$sb/.claude/tests"' "$HERE/../profile-turns.sh"; then
+  pass "profile-turns.sh strips .claude/tests from its sandbox"
+else
+  fail "profile-turns.sh ships .claude/tests into its sandbox"
+fi
+
+# --- the resolution floor is enforced, not advisory -----------------------------
+# Three verdicts in one session were reported at -6.5%, -13% and -15%, adopted,
+# and failed to reproduce; a fourth read -29% at n=6 and -20% at n=12. Each was
+# under the smallest effect the sample could separate from noise. `--gain` now
+# refuses to call such a delta a saving, and `--mde` sizes the run beforehand.
+tmpd="$(mktemp -d)"; trap 'rm -rf "$tmpd"' EXIT
+# Two arms with a real spread: a ~16% median drop that the noise cannot resolve.
+{ echo '{"task":"t","arm":"workflow","ok":true,"cost_usd":2.0,"wall_s":100,"judge_score":9,"judge_verdict":"pass","turns":10,"spawn_count":0,"cycles_test":0,"cycles_review":0}'
+  echo '{"task":"t","arm":"workflow","ok":true,"cost_usd":3.6,"wall_s":100,"judge_score":9,"judge_verdict":"pass","turns":10,"spawn_count":0,"cycles_test":0,"cycles_review":0}'
+  echo '{"task":"t","arm":"workflow","ok":true,"cost_usd":2.8,"wall_s":100,"judge_score":9,"judge_verdict":"pass","turns":10,"spawn_count":0,"cycles_test":0,"cycles_review":0}'
+} > "$tmpd/base.jsonl"
+{ echo '{"task":"t","arm":"workflow","ok":true,"cost_usd":1.7,"wall_s":90,"judge_score":9,"judge_verdict":"pass","turns":10,"spawn_count":0,"cycles_test":0,"cycles_review":0}'
+  echo '{"task":"t","arm":"workflow","ok":true,"cost_usd":3.1,"wall_s":90,"judge_score":9,"judge_verdict":"pass","turns":10,"spawn_count":0,"cycles_test":0,"cycles_review":0}'
+  echo '{"task":"t","arm":"workflow","ok":true,"cost_usd":2.35,"wall_s":90,"judge_score":9,"judge_verdict":"pass","turns":10,"spawn_count":0,"cycles_test":0,"cycles_review":0}'
+} > "$tmpd/cur.jsonl"
+out="$(sh "$HERE/../compare.sh" --gain "$tmpd/base.jsonl" "$tmpd/cur.jsonl" 2>&1 || true)"
+if printf '%s' "$out" | grep -q 'UNRESOLVED'; then
+  pass "gain flags a sub-MDE cost drop as UNRESOLVED"
+else
+  fail "gain reported a sub-MDE cost drop as a saving: $out"
+fi
+# With the guard off the same delta prints as a number — proving the guard, not the data, is what suppressed it.
+out2="$(BENCH_MDE_OFF=1 sh "$HERE/../compare.sh" --gain "$tmpd/base.jsonl" "$tmpd/cur.jsonl" 2>&1 || true)"
+if printf '%s' "$out2" | grep -q 'UNRESOLVED'; then
+  fail "BENCH_MDE_OFF=1 did not disable the resolution guard"
+else
+  pass "BENCH_MDE_OFF=1 disables the guard for raw inspection"
+fi
+# --mde sizes the next run instead of guessing.
+out3="$(sh "$HERE/../compare.sh" --mde "$tmpd/base.jsonl" 20 2>&1 || true)"
+if printf '%s' "$out3" | grep -q 'repeats needed to resolve'; then
+  pass "--mde reports the repeats needed for a target effect"
+else
+  fail "--mde did not report a required n: $out3"
+fi
+if printf '%s' "$out3" | grep -q 'UNDERPOWERED'; then
+  pass "--mde warns when n is below the min-n guard"
+else
+  fail "--mde did not warn at n=3 (below BENCH_MIN_N=6): $out3"
+fi
+# The trimmed mean ships next to the median, and only once a trim is meaningful.
+tm="$(sh "$HERE/../aggregate.sh" "$tmpd/base.jsonl" | jq -r '.[0].cost_trimmed')"
+if [ "$tm" = "null" ]; then
+  pass "trimmed mean is null below n=5 (a 1-from-each-end trim needs a middle)"
+else
+  fail "trimmed mean should be null at n=3, got $tm"
+fi
+
+# --- a halted run says WHY it halted --------------------------------------------
+# `incomplete_at_*` conflated "stopped to ask a human" with "fell over". On the M
+# lane one halted run had caught a real contradiction between the spec's rounding
+# rule and its own acceptance criteria — the pipeline doing its job — and it read
+# identically to four that merely ran out. The split needs the orchestrator to
+# record the stop, so pin both halves.
+if grep -q 'blocked_at_' "$HERE/../run-bench.sh"; then
+  pass "run-bench distinguishes blocked_at_* from incomplete_at_*"
+else
+  fail "run-bench still reports every halt as incomplete_at_*"
+fi
+ORCHF="$HERE/../../../orchestrator.md"
+if [ -f "$ORCHF" ]; then
+  if grep -qF 'notes += "BLOCKED:' "$ORCHF"; then
+    pass "orchestrator records a BLOCKED stop in state before halting"
+  else
+    fail "orchestrator halts on NON_INTERACTIVE_BLOCKER without recording it — the bench cannot tell why"
+  fi
+fi
 
 finish "benchmark tests"

@@ -62,6 +62,15 @@ agg="$(read_input | jq -s '
                elif (($s | length) % 2) == 1 then $s[(($s | length) - 1) / 2]
                else (($s[($s | length) / 2 - 1] + $s[($s | length) / 2]) / 2) end;
 
+  # Trimmed mean — drop the single highest and lowest run, average the rest.
+  # The median is robust but throws away most of the sample; at the n=5..12 this
+  # suite can afford, a 1-from-each-end trim keeps the robustness and uses the
+  # middle of the distribution, so the same tokens buy a tighter estimate.
+  # Reported ALONGSIDE the median, never instead of it: when the two disagree the
+  # distribution is skewed and neither number should be quoted on its own.
+  def trimmed($a): ($a | sort) as $s | ($s | length) as $n
+                 | if $n < 5 then null else (($s[1:-1] | add) / ($n - 2)) end;
+
   # Sample stddev (n-1). null at n<2 — one sample carries no spread information,
   # and 0 would read as "perfectly consistent", the opposite of the truth.
   def sd($a): ($a | length) as $n
@@ -96,6 +105,7 @@ agg="$(read_input | jq -s '
                            else (group_by(.) | map({key: .[0], value: length}) | from_entries) end),
           cost_usd:     med($C),
           cost_sd:      sd($C),
+          cost_trimmed: trimmed($C),
           out_tokens:   med($g | map(.out_tokens) | nn),
           turns:        med($g | map(.turns) | nn),
           duration_ms:  med($g | map(.duration_ms) | nn),

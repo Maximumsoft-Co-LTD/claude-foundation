@@ -197,6 +197,16 @@ git_base() { ( cd "$1" && git init -q && git add -A && git -c user.email=b@bench
 setup_workflow() {  # $1 sandbox, $2 task
   s="$1"; t="$2"; mkdir -p "$s/.workflow"
   cp -R "$ROOT/.claude" "$s/.claude"
+  # NEVER ship the bench into the sandbox it is grading. `.claude/tests/bench`
+  # holds `tasks/<t>/acceptance.txt` — the graded criteria WITH the trap spelled
+  # out — plus every baseline and past result. Copying it handed the workflow arm
+  # an answer key the baseline arm (bare repo, no `.claude/`) never gets, which is
+  # exactly the asymmetry README > "A task is only useful if the baseline can fail
+  # it" exists to prevent. Observed live: a run ran `cat …/tasks/11-recent-window/
+  # design.txt; cat …/baseline.txt` and Read `acceptance.txt` from its own tree.
+  # It also made every `grep -r .` in the sandbox wade through results/ and
+  # sandboxes/, and swept them into the graded `git add -A` diff.
+  rm -rf "$s/.claude/tests"
   [ -f "$ROOT/WORKFLOW.md" ] && cp "$ROOT/WORKFLOW.md" "$s/WORKFLOW.md"
   [ -f "$ROOT/CLAUDE.md" ]   && cp "$ROOT/CLAUDE.md"   "$s/CLAUDE.md"
   cp -R "$ROOT/.workflow/_templates" "$s/.workflow/_templates"
@@ -305,8 +315,24 @@ for n in $(task_dirs); do
           elif [ "$(jq -r '.done_at // "null"' "$rd/state.json")" = "null" ]; then
             _at="$(jq -r '.next_step // .step // "unknown"' "$rd/state.json")"
             ok=false
-            [ -n "$freason" ] || freason="incomplete_at_$_at"
-            echo "   ! run never completed — stopped before '$_at' (no done_at); excluded from medians"
+            # `incomplete_at_*` conflates two opposite outcomes, and the difference
+            # decides whether the row is a workflow defect or the workflow working.
+            # Seen live on the M lane: of five halted runs, one had returned a
+            # legitimate BLOCKER (the spec's stated rounding rule contradicted its
+            # own acceptance criteria — the plain prompt silently guessed instead),
+            # while the others simply ran out mid-flight after passing 28/31 tests.
+            # Both landed in the scorecard as the same `incomplete_at_review`.
+            # A run that stopped to ask a human did its job; a run that fell over
+            # did not. `notes` is where the orchestrator records a stop, so read it.
+            _notes="$(jq -r '.notes // ""' "$rd/state.json")"
+            if printf '%s' "$_notes" | grep -qiE '(^|[^a-z])(blocked|blocker|non_interactive_blocker)'; then
+              [ -n "$freason" ] || freason="blocked_at_$_at"
+              echo "   ! run BLOCKED before '$_at' — stopped for a human, not a failure; excluded from medians"
+              echo "     reason: $(printf '%s' "$_notes" | tr ';' '\n' | grep -iE 'block' | head -1 | cut -c1-160)"
+            else
+              [ -n "$freason" ] || freason="incomplete_at_$_at"
+              echo "   ! run never completed — stopped before '$_at' (no done_at, no BLOCKER recorded); excluded from medians"
+            fi
           fi
           spawn="$(jq -r '.spawn_count // "null"' "$rd/state.json")"
           # Observed spawns, counted by the PreToolUse guard hook rather than
