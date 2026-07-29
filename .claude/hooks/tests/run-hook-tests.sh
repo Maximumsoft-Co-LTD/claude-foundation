@@ -174,6 +174,25 @@ touch -t 202601010100 "$PROJ_XS/.workflow/0003-fix-z/.last_worker_return"
 run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer "")"
 assert_allowed "guard C3 XS run skips freshness block"
 
+# ...but the XS/S skip is scoped to FRESHNESS and must not take the tier guard
+# with it. It used to `exit 0`, which left the hook and silently disabled Case 4
+# on exactly the lanes that exist to control cost: a brownfield-S benchmark
+# caught three of six runs buying opus for `lead` with nothing to stop them.
+# These fixtures need an agents dir, since Case 4 reads the pin from disk.
+mkdir -p "$PROJ_XS/.claude/agents"
+printf -- '---\nname: qa\nmodel: sonnet\n---\n'       > "$PROJ_XS/.claude/agents/qa.md"
+printf -- '---\nname: engineer\nmodel: sonnet\n---\n' > "$PROJ_XS/.claude/agents/engineer.md"
+run_hook "$GUARD" "$PROJ_XS" "$(agent_json qa opus)"
+assert_blocked "guard C4 tier guard applies on an XS run too" "pins model: sonnet"
+# The one sanctioned override: `phase-2.md` op 5 escalates implement to opus at
+# L or on a security-trigger path. Blocking it cost a wasted spawn and then ran
+# the security-sensitive implement on sonnet anyway.
+run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer opus)"
+assert_allowed "guard C4 engineer may escalate to opus"
+# Escalation only — a downward override is still the leak this case stops.
+run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer haiku)"
+assert_blocked "guard C4 engineer may not be downgraded" "pins model: sonnet"
+
 # =============================================================================
 # dev-state-validate.sh
 # =============================================================================

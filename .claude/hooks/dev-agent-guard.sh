@@ -138,16 +138,28 @@ case "$subagent_type" in
         # discipline) — we just drop the hard block. M/L keep it, where a
         # mid-run crash is expensive to redo. Legacy/malformed state with no
         # `size` field falls through to enforcement (safe default).
+        #
+        # This skip is scoped to the FRESHNESS block and nothing else. It used to
+        # be `XS|S) log_spawn; exit 0`, which left the hook entirely and so also
+        # skipped Case 4 (model tier), Case 5 (fork) and Case 6 (the floor pin) —
+        # none of which the reasoning above justifies. The effect was that the
+        # tier guard was off on exactly the lanes that exist to control cost:
+        # `engineer` with model=opus was ALLOWED at XS/S and BLOCKED at M/L, and
+        # a brownfield-S benchmark caught the drift live (three of six runs bought
+        # opus for `lead` because no `model` param was passed). Set a flag, fall
+        # through; the allowed-path `log_spawn` at the end of the file still
+        # records the spawn exactly once.
         run_size="$(jq -r '.size // ""' "$active_state" 2>/dev/null || printf '')"
+        skip_freshness=0
         case "$run_size" in
-          XS|S) exit 0 ;;
+          XS|S) skip_freshness=1 ;;
         esac
         run_dir="$(dirname "$active_state")"
         run_id="$(basename "$run_dir")"
         marker="$run_dir/.last_worker_return"
         # Block only if both files exist AND marker is newer. If marker is
         # missing, this is the first worker spawn of the run — let it through.
-        if [[ -f "$marker" ]] && [[ "$marker" -nt "$active_state" ]]; then
+        if [[ "$skip_freshness" -eq 0 ]] && [[ -f "$marker" ]] && [[ "$marker" -nt "$active_state" ]]; then
           state_rel=".workflow/$run_id/state.json"
           reason="BLOCKED by /dev guard: $state_rel was not updated after the last worker returned. orchestrator.md > State discipline requires writing state.json (phase, step, next_step, cycles, last_updated, last_agent) after EVERY step, before spawning the next worker — otherwise /dev --resume $run_id is broken. Update $state_rel via Write/Edit, then retry the spawn."
           jq -n --arg reason "$reason" '{decision: "block", reason: $reason}'
@@ -186,8 +198,19 @@ case "$subagent_type" in
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi
-      if [[ "$req_model" != "$pinned" ]]; then
-        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. A model override here silently runs the wrong tier (e.g. a higher-tier main session leaking onto a sonnet-pinned worker). Drop the model param so the frontmatter governs — only lead may vary sonnet/opus per phase. (To let $subagent_type vary too, remove it from the Case 4 list in dev-agent-guard.sh.)"
+      # `engineer` gets ONE sanctioned override: an escalation to opus. The
+      # playbook asks for it in two places — `phase-2.md` op 5 and
+      # `orchestrator.md` op 5, "model opus when Size=L or the plan touches a
+      # security-trigger path — implement is where defects are born" — and this
+      # case used to block it, so a security-triggered run burned a blocked spawn
+      # and then quietly implemented on sonnet anyway. Observed live as
+      # `engineer req:opus` on a migration task. Escalation only: a DOWNWARD
+      # override (haiku on an implement) is still the tier leak this case exists
+      # to stop, and every other worker still matches its pin exactly.
+      if [[ "$subagent_type" == "engineer" && "$req_model" == "opus" ]]; then
+        :
+      elif [[ "$req_model" != "$pinned" ]]; then
+        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. A model override here silently runs the wrong tier (e.g. a higher-tier main session leaking onto a sonnet-pinned worker). Drop the model param so the frontmatter governs — lead may vary sonnet/opus per phase, and engineer may escalate to opus (L / security-trigger path); nothing else varies. (To let $subagent_type vary too, adjust the Case 4 list in dev-agent-guard.sh.)"
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi
