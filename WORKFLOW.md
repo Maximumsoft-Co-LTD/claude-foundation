@@ -248,7 +248,7 @@ Same main-agent-as-orchestrator + spawn-guard mechanics as `/dev`. Typical flow:
 
 ## Example: `/dev create todolist app`
 
-S-size greenfield: one interview batch → `lead` combined mode writes `spec.md`+`plan.md`+`test-plan.md` in one spawn (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement (engineer writes the planned tests too) → orchestrator runs the suite inline, green → review → merged docs+ship → inline retro → done.
+S-size greenfield: one interview batch → the orchestrator writes `spec.md`+`plan.md`+`tasks.md`+`test-plan.md` inline (no design spawn at S) (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement **inline** (Phase 1 drafted warm, so the plan is retained rather than re-read; the planned tests are written alongside the code) → orchestrator runs the suite inline, green → review (cold `lead` spawn — the plan's author must not be its only reader) → merged docs+ship → inline retro → done. **Two spawns for the whole run.**
 
 ## Example: `/dev fix login redirect loop`
 
