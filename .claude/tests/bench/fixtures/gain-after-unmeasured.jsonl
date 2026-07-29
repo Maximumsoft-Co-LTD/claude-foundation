@@ -1,0 +1,2 @@
+{"task":"t1","arm":"workflow","repeat":1,"ok":true,"fail_reason":null,"cost_usd":0.40,"out_tokens":6000,"turns":14,"duration_ms":180000,"wall_s":400,"spawn_count":3,"cycles_test":0,"cycles_review":0,"skipped":0,"judge_score":9,"judge_verdict":"pass"}
+{"task":"t2","arm":"workflow","repeat":1,"ok":false,"fail_reason":"timeout","cost_usd":null,"out_tokens":null,"turns":null,"duration_ms":null,"wall_s":2400,"spawn_count":null,"cycles_test":null,"cycles_review":null,"skipped":null,"judge_score":3,"judge_verdict":"fail"}

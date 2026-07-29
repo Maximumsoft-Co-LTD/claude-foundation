@@ -19,7 +19,8 @@ uses, and how **good** the delivered code is. Answers three questions:
 | **Speed** | `duration_ms`, `phase_times` | envelope / `state.json` | noisy → median ≥3 repeats |
 | **Cost** | `total_cost_usd`, in/out tokens, `num_turns` | `claude -p --output-format json` | the signal `state.json` doesn't carry |
 | **Quality** | outcome-judge score + `judge_sd`, `judge_p10` | `judge-outcome.sh` | arm-agnostic, so A/B is fair |
-| **Reliability** | `ok`, `fail_reason`, `n_ok`, `ok_rate` | runner (watchdog + envelope) | separates a broken run from bad code |
+| **Reliability** | `ok`, `fail_reason`, `n_ok`, `ok_rate` | runner (watchdog + envelope + `done_at`) | separates a broken run from bad code |
+| **Provenance** | `workflow_sha`, `spawn_observed` | `git rev-parse` + guard-hook ledger | says which `/dev` ran, and counts spawns independently |
 
 ### Reliability: why a failed run needs a reason
 
@@ -36,6 +37,20 @@ So a failed row carries `fail_reason`:
 | `no_envelope` | exited without emitting JSON (stall / crash) |
 | `api_error` | the envelope itself reports `is_error` |
 | `exit_<n>` | exited nonzero on its own, envelope still parsed |
+| `incomplete_at_<step>` | `state.json` has no `done_at` — the run stopped early **and exited cleanly** |
+
+`incomplete_at_*` is the quiet one. A `/dev` run that halts at the gate returns a
+healthy envelope, so the row looked like a success: `ok=true`, no error, the judge
+simply finding no code. One such run — stalled on its own benign `Docs: light`
+deviation — burned **$2.80 over 640s and delivered zero lines**, and nothing in the
+scorecard said so. `done_at` is the run's own completion stamp; its absence is the
+only reliable signal, because the exit code lies.
+
+`spawn_count` vs `spawn_observed`: the first is what the orchestrator wrote into
+`state.json`, the second is counted by `dev-agent-guard.sh` on the spawns it
+actually saw. They have disagreed — a run reported `spawn_count: 0` while its own
+notes said "combined lead spawn". **Trust `spawn_observed`**; a gap between them is
+a finding about the orchestrator's bookkeeping, not about the run.
 
 **`aggregate.sh` folds only `ok==true` rows into every median** and prints the
 excluded tally beneath the table. `n` counts all rows, `n_ok` the usable ones.
@@ -68,6 +83,8 @@ sh run-bench.sh                          # dry-run: print the plan
 sh run-bench.sh --run --repeats 3        # live: 3 repeats/arm for stable medians
 sh run-bench.sh --run --arm workflow     # workflow arm only (skip the A/B baseline)
 sh run-bench.sh --run --out results/a.jsonl   # separate scorecard file (see below)
+sh run-bench.sh --run --arm design        # Phase 1 only — 62% cheaper, 57% faster
+sh run-parallel.sh --arm design --tasks 09-api-compat --repeats 3 --out results/d.jsonl
 ```
 
 **Never run two benches into the same scorecard file.** Both truncate
@@ -75,6 +92,36 @@ sh run-bench.sh --run --out results/a.jsonl   # separate scorecard file (see bel
 this happened for real (a runner whose parent process died kept going and
 overwrote a later run's results). Pass `--out <file>` for any concurrent or
 salvage run; the runner also warns when the target was written in the last 90s.
+
+**A live bench outlives most shells that start it.** Three repeats of an S-tier
+task run 30–70 minutes, longer than the timeout on many agent/CI shell wrappers.
+When the parent is reaped mid-run the runner's `claude` children are **orphaned,
+not stopped** — they keep spending tokens with nobody left to collect the envelope
+or write a row. Start long runs in their own session so the parent survives:
+
+```sh
+nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- \
+  sh run-bench.sh --run --arm workflow --tasks 08-name-migration --repeats 3 \
+  --out results/bf08-before.jsonl > results/bf08-before.log 2>&1 &
+```
+
+Check liveness with `pgrep -fl run-bench.sh`, not `ps | grep` — the runner's
+command line is long enough to be truncated out of a `ps` match, which reads as
+"the run died" when it is healthy and mid-repeat. **The progress file is silent
+between repeats by design**: it only updates at run boundaries, so a run in its
+fifteenth minute looks identical to a dead one. To abort, `pkill -f run-bench.sh`
+**and** `pkill -f "claude -p /dev"` — the runner alone leaves the children behind.
+
+**That runaway runner had a cause, now fixed.** `trap cleanup EXIT INT TERM` with a
+`cleanup` that doesn't `exit` **swallows** the signal: the handler runs — deleting
+`$SANDROOT` — and the script resumes at the next statement. Every later repeat then
+ran against a sandbox root that no longer existed and appended `no_envelope` rows,
+and `kill`/Ctrl-C could not stop it. Reproduced live while collecting the brownfield
+baseline: eight unkillable runners racing garbage into two scorecard files. `INT`/
+`TERM` now clean up **and exit** (`EXIT` alone still just cleans up), and
+`tests/run-bench-tests.sh` TERMs a runner behind a `claude` stub to prove it dies
+and writes no rows. If you ever see a scorecard full of `no_envelope` rows with
+tiny `wall_s`, this is the shape to look for: the runner outlived its children.
 `BENCH_TIMEOUT` (default 1800s) bounds each run — a full `/dev` arm on an app-sized
 task can exceed 30 minutes, so raise it rather than let the watchdog kill a run
 mid-cycle (a killed run yields no cost envelope and an artificially low judge score).
@@ -89,7 +136,19 @@ sh compare.sh   --ab results/scorecards.jsonl      # is the machinery worth it?
 cp results/scorecards.jsonl baselines/v2.12.jsonl   # set a reference (commit it)
 # … change the workflow, re-run …
 sh compare.sh --ratchet baselines/v2.12.jsonl results/scorecards.jsonl
+
+# did an optimisation pass actually pay? (the ratchet's mirror image)
+sh compare.sh --gain baselines/v2.12.jsonl results/after.jsonl --target 0.5
 ```
+
+`--ratchet` and `--gain` ask opposite questions and you need both. The ratchet is a
+**guard**: it passes a run that costs 19% *more*, because its job is to catch
+regressions, not to reward savings. `--gain` is the **goal**: it prints the per-task
+and suite-total cost/wall deltas and, with `--target 0.5`, fails unless BOTH dropped
+by half. Its quality rule is not opt-in — a judge-score drop fails at any saving,
+with or without a target, the same ordering `--ratchet` and `--ab` enforce. A task
+whose rows are all `ok=false` on either side fails a targeted run rather than
+reporting a delta against a null: an unmeasured task cannot be claimed as a win.
 
 `compare.sh --ratchet` fails (exit 1) if the workflow arm regresses: spawn_count
 or cycles increase, cost exceeds baseline by more than `BENCH_COST_TOL` (default
@@ -98,20 +157,207 @@ cost/speed use the median and a tolerance because live runs vary.
 
 ## Tasks & arms
 
-A task is `tasks/<name>/` with three files:
+A task is `tasks/<name>/` with four files:
 
 - `workflow.txt` — the `/dev` prompt (workflow arm; sandbox has the machinery)
 - `baseline.txt` — a plain "just build it" prompt (baseline arm; bare repo)
-- `acceptance.txt` — the criteria the outcome-judge grades BOTH arms against
+- `design.txt` — `/dev --yes --plan-only`: Phase 1 only, stops at the gate
+- `acceptance.txt` — the criteria the outcome-judge grades the first two against
 
-Shipped tasks are greenfield `feat` (both arms build from the same empty sandbox
-— the fair A/B start). For a brownfield task, add `tasks/<name>/seed/` — its
-contents are copied into both sandboxes before the run as the starting code.
+### The design arm — iterate in a third of the time
+
+A full workflow arm is 12–25 minutes and $5–9, so a 6-run verdict cycle is ~30
+minutes and ~$35. That is too slow to iterate on, and most workflow changes are
+**structural** — who writes an artifact, how many spawns, which phase runs where.
+Design alone is **39–49% of a brownfield-S run**, so `--arm design` measures the
+phase most changes actually touch at roughly a third of the cost:
+
+```sh
+sh run-parallel.sh --arm design --tasks 08-name-migration --repeats 3 \
+   --out results/d08.jsonl                                   # repeats run CONCURRENTLY
+sh compare.sh --mechanism baselines/<ref>.jsonl results/d08.jsonl   # honest at --repeats 1
+```
+
+Measured on `09-api-compat`: a design run is **$1.86 / 357s** against the full
+workflow arm's **$4.92 / 827s** — **62% cheaper, 57% faster**, `spawn_count 0`,
+graded 10/pass with all five acceptance ids tasked and covered. With
+`run-parallel.sh` the repeats overlap instead of queueing, so a 3-repeat, 2-task
+design cycle is **~6 minutes and ~$11** where the equivalent workflow cycle is
+~30 minutes and ~$35. Same tokens, a third of the waiting: repeats are independent
+by construction (own sandbox, own envelope, own row), so serialising them bought
+nothing but delay. Each child still writes its **own** scorecard file — sharing one
+`--out` is the truncation incident documented above.
+
+It is graded by **`grade-design.sh`** — deterministic, no model, no tokens, no
+variance: artifact-lint clean, every acceptance id carries a delivering task, and
+(feat/fix/refactor) every one carries a Coverage row. Because it is deterministic
+it needs no repeats to be trusted, unlike cost and the outcome judge.
+
+**What it cannot tell you** — whether the spec caught the requirements the user
+never stated. That gap is the entire headroom rule below, and only delivered code
+exposes it. A 10 here means "the design set hangs together", never "this is a good
+design". Iterate on the design arm; **decide on the workflow arm.**
+
+`--plan-only` is a real `/dev` mode, not a benchmark hook: it runs Phase 1 in full,
+stops before implementing, and leaves the run resumable with `/dev --resume <id>`
+(`orchestrator.md > Plan-only`). The design arm measures the same code path a real
+`/dev` run takes — which the team-mode slice commands (`/spec`, `/dev-plan`) would
+NOT, since they spawn `pm`/`lead`/`qa` per slice instead of drafting inline.
+
+For a brownfield task, add `tasks/<name>/seed/` — its contents are copied into
+both sandboxes before the run as the starting code.
+
+### A task is only useful if the baseline can fail it
+
+The first five tasks (csv, paginate, debounce, form-validator, task-list) are
+greenfield pure functions, and a **plain prompt scores 10/10 on every one of
+them**. That is the whole problem: a benchmark whose control is already perfect
+has no headroom, so no change to `/dev` can show up as an improvement. Those five
+still earn their place as a cost/latency baseline — they just cannot answer "is
+the machinery worth it".
+
+Discrimination comes from tasks with a **trap**: something a competent-looking
+first draft gets wrong, written into `acceptance.txt` so the judge checks for it.
+
+**The prompt must not contain the trap.** This was learned the expensive way. The
+first draft of tasks 07–09 spelled every AC out in both arm prompts — including
+"use a constant-time comparison" and "do not log the token" — and the plain
+baseline scored **10/pass on all of them**. Of course it did: it had been handed
+the answer key. Rewriting the prompts as what a person would actually type
+("issue(userId) gives me a token, verify(token) tells me if it's good; sessions
+last 15 minutes") while leaving `acceptance.txt` untouched moved the same baseline
+to **7/pass** and **6/fail**.
+
+So: `workflow.txt` and `baseline.txt` carry the **user's ask**; `acceptance.txt`
+carries the **requirements the user never said**. That gap is the thing being
+measured — a workflow earns its cost by surfacing unstated requirements, not by
+following a list it was already given. A prompt that enumerates its own ACs
+measures transcription, not judgement.
+
+| Task | Headroom comes from |
+|---|---|
+| `06-landing-site` | non-functional ACs — no-CDN, one `h1`, 375px overflow, focus styles, dark mode |
+| `07-session-token` | trust boundary — unsigned "tokens", `===` on a signature, caller-supplied `exp`, `Math.random()`, secrets in logs |
+| `08-name-migration` | data loss — `name.split(" ")` blanks a mononym, drops a third name part, no backup, not idempotent |
+| `09-api-compat` | contract break — returning `{data,total}` satisfies the ask and breaks every existing caller |
+| `10-rounding-fix` | the `fix` lane's own discipline — pin the reported case with a regression test, and fix the money layer rather than the formatter that prints it |
+
+`10-rounding-fix` was headroom-checked before any workflow arm ran it, per the rule
+below: the plain baseline scored **8/pass at $0.43 / 97s** — short of the 10/pass
+that would mean the task measures nothing, so the two points it drops are real
+headroom. Its seed is verified to reproduce: order #1183 prints lines
+4.97 + 1.52 + 11.18 = 17.67 against a total of 17.68, while whole-quantity orders
+still reconcile — so "round everything" is not a free fix either.
+
+Write the trap paragraph FIRST, then the ACs that catch it, then a prompt that
+mentions **none of it**. If you cannot name a plausible way a good-faith attempt
+fails, the task will score 10/10 on both arms and measure nothing.
+
+**Check a new task before trusting it:** run the baseline arm alone
+(`--arm baseline --tasks <name>`, well under a dollar). A 10/pass means the task
+has no headroom yet — fix the task before spending a workflow arm on it.
 
 ## Interpreting it honestly
 
-- **Mechanism first.** A workflow change that cuts `spawn_count` with equal
-  quality is a real, reproducible win. Trust it over a 5% cost delta.
+- **Mechanism first — but `spawn_count` is not where the money is.** Measured on
+  the XS lane: cutting 4 spawns to 1 moved cost only **$4.78 → $4.18**. Trimming
+  what stays *resident* (a shorter fast-path reference, an explicit value check,
+  design written inline instead of spawned) took the same task to **$1.77 / 300s
+  at an unchanged judge 10** — **−63% cost, −55% wall**. An XS run costs roughly
+  `resident playbook × turns`; a spawn is a rounding error next to what every
+  turn re-carries. Cut context and turns, not delegations.
+- **The brownfield-S lane, measured end to end (2026-07-28).** Two tasks × 3 repeats
+  per side, every run `ok=true`. Baseline: `08-name-migration` **$8.34 / 1516s /
+  4 spawns / judge 7**, `09-api-compat` **$8.81 / 1357s / 4 spawns / judge 9**, ~102
+  turns each. The phase clock said where it went — **Design was 39–49% of the wall
+  clock in every run**, a cold `lead` spawn re-reading a 29 KB brief to re-derive the
+  size, field and intent the orchestrator had just settled. Routing Design (and with
+  it Implement, now warm) inline at S: **08 → $6.29 / 944s / 2 spawns / judge 9**,
+  **09 → $5.49 / 693s / 2 spawns / judge 9**. Suite **−31.4% cost, −43% wall**,
+  ratchet PASS, median quality up on one task and flat on the other. Two things this
+  measurement is worth more than the numbers: (1) the artifacts did not change — the
+  earlier attempt that *rationed* them lost 9/pass → 8/fail, and this one moved only
+  who holds the pen; (2) **`judge_p10` on 08 went 7 → 6, crossing pass→fail**, so the
+  median's improvement hides a worse bad day. Read the spread before quoting the win.
+  A second pass adding the Guardrails-evidence rule (below) landed at **$6.38 / 934s
+  (08)** and **$4.92 / 827s (09)** — suite **−34.1% cost, −38.7% wall**, `judge_p10`
+  back to 7 on 08 and down to 8 on 09. The two passes differ by −4% cost and +7.6%
+  wall, i.e. **less than this suite's own run-to-run spread at n=3** — so read them as
+  one result (≈ −⅓ cost, ≈ −40% wall) rather than as a trend, and re-measure at
+  `--repeats 5` before ranking them.
+- **What reading the artifacts found that no metric did.** A `--keep` run on
+  `08-name-migration` graded **9/pass** while silently failing two of its acceptance
+  criteria — no backup or atomic write (AC4), and a test suite that exercised the
+  name-splitting helper instead of the migration against a copy of the real fixture
+  (AC5). The cause was upstream of the code: `plan.md > ## Current state` quoted the
+  seed comment *"Do not change its contract"* and then appended *"never touches `fs`
+  directly"*, which the comment never said. That inflation reached `tasks.md >
+  ## Guardrails` — the engineer's only up-front invariant read — and so **forbade the
+  temp-file-and-rename AC4 required**. A wrong guardrail costs more than a missing one,
+  because it gets obeyed. `plan-writing` and `lead` now require each guardrail to say
+  no more than its citation and to be cross-checked against the AC set (a guardrail
+  that blocks an `AC#` is a `BLOCKER:`). **The judge did not catch any of this** —
+  budget one `--keep` run per configuration and read what it built.
+- **Chasing the last 15 points made it worse — the negative result.** With Design
+  inline the lane sat at −34% cost / −39% wall, and the obvious next cuts were the
+  two remaining spawns' worth of overhead: inline docs+ship at S, and stop keeping
+  the M/L-shaped `phase-2-guards.md` resident on a lane that cannot reach most of it.
+  Measured at n=3 per task, both together took `08-name-migration` from **$6.38 to
+  $8.44** — a 32% cost regression that blew the ratchet, back to baseline cost — and
+  widened `09-api-compat`'s quality to `judge_sd` **3.46** with a **4/fail**, the
+  worst row in the whole programme. Suite: −19.6% cost / −29.2% wall, i.e. **worse on
+  both axes than doing less**. Reverted. The lesson is the XS lane's, arriving from
+  the other direction: inlining *relocates* work, and by the time S has Design and
+  Implement in main, main is not the cheap place to put anything else. **Inlining
+  docs+ship at S is now measured-and-rejected twice, on two different shapes** — the
+  fast path and the size matrix both pin it, and `run-doc-consistency.sh` fails if a
+  later pass quietly re-adopts it.
+- **Review never fired, in 18 of 18 runs.** Across the whole brownfield-S programme
+  (6 baseline + 12 post-change) every row carries `cycles_test = 0` **and**
+  `cycles_review = 0` — the Test and Review phases never once routed a fix. That
+  includes the run whose delivered migration overwrote the store with no backup
+  (AC4) and tested the helper instead of the migration (AC5), and the rows the judge
+  graded 6/fail and 8/fail. Review costs ~3 min and one of the two remaining spawns.
+  Read this as a finding about the **review specification**, not a licence to delete
+  the phase: `lead` Mode B is told to walk every AC against the diff with `path:line`
+  evidence, and a walk that had actually reached AC4 would have seen the missing
+  backup. Before trading the phase away for the ~10% it costs, fix the walk and
+  re-measure — a cheaper workflow that ships the same acceptance failures is not the
+  win the cost column makes it look like.
+- **So the walk was strengthened, and it failed on both axes.** The rule: an AC that
+  names a mechanism (a backup, an atomic write, an unchanged caller, a test against
+  the real fixture) may be ticked only by pointing at that mechanism's line — "the
+  code looks right" and "the suite is green" barred as evidence. It did change
+  behaviour: `cycles.review` fired for the **first time in 25 runs**. It also took
+  `09-api-compat` from **$4.92 to $7.37 (+50%)** while never routing a fix there,
+  and `08-name-migration`'s judge median from **9 down to 7**. Ratchet: FAIL on both
+  tasks. Reverted (`baselines/brownfield-s-strict-review-rejected.jsonl`). Two things
+  survive it: a stricter reviewer is not automatically a better one — the extra
+  walking cost 50% and bought a *lower* grade — and **`--mechanism` PASSED this
+  configuration**, because spawn counts and median cycles were unchanged. That is
+  precisely the blind spot its own tests pin, seen in the wild. If the walk is worth
+  another attempt, scope it to the ACs that *name a mechanism* instead of to every
+  AC, and measure it alone.
+- **What works at XS can break S.** The same session tried capping artifact
+  length and restricting which reference sections `lead` may read. At XS
+  (`run.md` ≤ 40 lines) that was free — a hermetic unit with ≤3 stated ACs has no
+  design space to starve. At S the identical idea graded **9/pass → 8/fail** and
+  the ratchet rejected it. Size is not a dial on the same lane; the lanes differ.
+- **At S, n=1 measures nothing. This was tested, not assumed.** Two runs of the
+  *identical* configuration and prompt on `06-landing-site` came back **$3.88 /
+  1386s / 1 spawn / 9-pass** and **$9.41 / 1790s / 3 spawns / 8-fail** — a **2.4×
+  cost spread and a flipped verdict with nothing changed**. Across five runs:
+  median $8.53, judge median 8, `judge_sd` 0.5, one run lost to
+  `incomplete_at_implement`. Two earlier "regressions" that the ratchet rejected
+  sat entirely inside that spread; the rejection was noise, not signal.
+  **Budget ~5 repeats per configuration before believing any S-level verdict** —
+  roughly $40 at this task's cost. The XS claims above are trustworthy for the
+  opposite reason: judge 10 is the ceiling and every single run hit it, so the
+  cost curve is the only thing moving.
+- **`compare.sh --ratchet` inherits that limit.** It compares medians, so it is
+  only as trustworthy as the `n` behind them. On a task with real spread, run it
+  against `--repeats 3`+ per side or it will fail on noise — exactly as it did
+  here, twice.
 - **Cost/speed need repeats.** One run is anecdote; use `--repeats 3`+ and read
   the median. A single number in a slide is noise.
 - **Quality gates the cost story.** "Cheaper" only counts at equal-or-better

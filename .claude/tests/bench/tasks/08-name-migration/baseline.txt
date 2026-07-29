@@ -1,0 +1,1 @@
+Our user store in this repository keeps a single `name` field and we now need first and last names separately. Write the migration. Write the code and tests directly. Do not use any workflow, do not create planning or spec files — just implement it.

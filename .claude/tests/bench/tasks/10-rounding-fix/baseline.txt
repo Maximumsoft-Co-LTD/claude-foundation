@@ -1,0 +1,1 @@
+Accounting flagged order #1183 in this repository — the invoice prints a total one cent higher than the line amounts add up to, and they re-key it by hand every time. Fix it. Write the code and tests directly. Do not use any workflow, do not create planning or spec files — just implement it.

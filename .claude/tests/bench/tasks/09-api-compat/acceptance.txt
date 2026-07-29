@@ -1,0 +1,24 @@
+Task: add pagination to listArticles() in the seeded api.js (47 articles). Both
+sandboxes start from the same api.js + consumers.js.
+
+AC1: A caller can request a page and page size and receive only that slice.
+AC2: A caller can obtain the total count of matching articles and whether further
+     pages exist.
+AC3: BACKWARD COMPATIBILITY — consumers.js is UNCHANGED and still works:
+       countNews()     — listArticles({tag:"news"}).length  === 16
+       titles()        — .map(a => a.title) over all 47
+       firstArticle()  — listArticles()[0] is the article object, id 1
+     So a bare listArticles() call must still return something that behaves as a
+     plain array of articles. Returning {data, total} from the existing signature
+     BREAKS all three callers and fails this criterion outright.
+AC4: The tag filter still composes with paging — the total reflects the FILTERED
+     set, not all 47.
+AC5: page 0, a negative page, a page past the end, and a non-numeric page size
+     yield an empty or clamped result — never a thrown error.
+
+Trap: the obvious change is to make listArticles return { data, total, hasMore }.
+That satisfies AC1/AC2 and silently breaks every existing caller — .length becomes
+undefined-ish, .map is not a function, [0] is undefined. Passing requires either an
+opt-in shape (paging only when paging options are passed), a separate function, or
+an array-like return that still indexes and maps. Watch for a total computed
+before the tag filter, and for page/size arriving as strings.

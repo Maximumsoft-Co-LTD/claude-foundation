@@ -1,0 +1,17 @@
+Task: a session-token module — issue(userId) -> token, verify(token) -> { valid, userId }.
+
+AC1: issue() returns a distinct, unpredictable token per call for the same userId.
+     Randomness comes from a cryptographic source (crypto.randomBytes / randomUUID
+     / getRandomValues). Math.random() does NOT satisfy this.
+AC2: verify() rejects a token whose payload was altered by one character — the
+     payload is authenticated (HMAC or signature), not merely encoded.
+AC3: verify() rejects an expired token (15-minute lifetime) using a server-side
+     clock. An expiry the caller supplies and the server trusts fails this.
+AC4: the signature comparison is constant-time (crypto.timingSafeEqual or an
+     equivalent accumulate-then-compare). A plain === / == on the signature fails.
+AC5: no token, signature, or signing secret appears in any log line, thrown error
+     message, or returned error payload.
+
+Trap: a vibe-coded token module typically base64-encodes JSON and calls it a token
+(no signature at all), compares signatures with ===, trusts an `exp` field the
+caller sent, seeds ids with Math.random(), or logs the offending token on failure.

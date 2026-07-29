@@ -1,0 +1,1 @@
+{"task":"02-csv-format","arm":"workflow","repeat":1,"ok":true,"fail_reason":null,"workflow_sha":"a12581c-dirty","cost_usd":1.7735796000000001,"in_tokens":88,"out_tokens":22865,"turns":44,"duration_ms":298885,"wall_s":300,"spawn_count":0,"spawn_observed":null,"cycles_test":0,"cycles_review":0,"skipped":0,"judge_score":10,"judge_verdict":"pass"}

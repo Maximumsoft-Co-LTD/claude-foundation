@@ -18,8 +18,32 @@
 #     heuristic verdict (worth-it when workflow quality is higher, or equal
 #     quality at no higher cost). Report-only — always exit 0.
 #
+#   --gain <baseline.jsonl> <current.jsonl> [--target <fraction>]
+#     The ratchet's mirror image. --ratchet asks "did we get worse?"; --gain asks
+#     "did we get better, by how much, and did quality survive it?" — the question
+#     an optimisation pass is actually trying to answer, and one a pass/fail
+#     regression guard cannot express (staying inside +20% is not a win).
+#     Reports per-task and suite-total cost/wall deltas against the baseline.
+#     `--target 0.5` asserts BOTH cost and wall dropped >= 50%.
+#     A quality drop fails outright at any saving: cheaper-but-worse is not a gain,
+#     the same ordering --ratchet and --ab already enforce. A task with no usable
+#     row on either side (n_ok == 0) fails too when a target is set — an unmeasured
+#     task cannot be claimed as a win.
+#
+#   --mechanism <baseline.jsonl> <current.jsonl>
+#     The FAST check. Compares only the deterministic fields — spawn_count and the
+#     two cycle counters — and ignores cost, wall and judge entirely. Those three
+#     are what a structural change actually moves, and unlike cost/quality they do
+#     not need repeats to be trusted (README: "Mechanism metrics are DETERMINISTIC
+#     — the primary proof a change worked"). So this runs meaningfully at
+#     `--repeats 1`: one run per task, ~5 minutes, and it catches the shape
+#     regressions (a spawn that came back, a review cycle that started firing)
+#     that would otherwise cost a full 6-run median cycle to see. Use it to
+#     iterate; use --gain/--ratchet to decide.
+#
 # Usage:  sh compare.sh --ratchet baselines/x.jsonl results/x.jsonl
 #         sh compare.sh --ab results/scorecards.jsonl
+#         sh compare.sh --gain baselines/x.jsonl results/x.jsonl --target 0.5
 
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -91,8 +115,132 @@ case "$mode" in
     exit 0
     ;;
 
+  --gain)
+    base="${1:?usage: compare.sh --gain <baseline> <current> [--target <fraction>]}"
+    cur="${2:?usage: compare.sh --gain <baseline> <current> [--target <fraction>]}"
+    shift 2 2>/dev/null || true
+    target=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --target) target="${2:?--target needs a fraction, e.g. 0.5}"; shift ;;
+        *) echo "compare --gain: unknown arg: $1" >&2; exit 2 ;;
+      esac
+      shift
+    done
+    ab="$(sh "$AGG" "$base")"
+    ac="$(sh "$AGG" "$cur")"
+    result="$(jq -n --argjson base "$ab" --argjson cur "$ac" --arg target "$target" '
+      (if $target == "" then null else ($target | tonumber) end) as $T
+      | ($base | map(select(.arm == "workflow")) | INDEX(.task)) as $B
+      | ($cur  | map(select(.arm == "workflow")))
+      | map(
+          . as $r | $B[$r.task] as $b
+          | if $b == null then {task: $r.task, status: "new", counted: false, fail: false}
+            # An unmeasured side is not a saving. Reporting a delta off a null
+            # would print "-100%" for a task that simply never produced a row.
+            elif ($b.n_ok == 0 or $r.n_ok == 0 or $b.cost_usd == null or $r.cost_usd == null)
+              then {task: $r.task, status: "unmeasured", counted: false, fail: ($T != null),
+                    detail: "n_ok base=\($b.n_ok) cur=\($r.n_ok)"}
+            else
+              (1 - ($r.cost_usd / $b.cost_usd)) as $dc
+              | (if ($b.wall_s // 0) > 0 and $r.wall_s != null
+                 then (1 - ($r.wall_s / $b.wall_s)) else null end) as $dw
+              | (($r.judge_score // 0) < ($b.judge_score // 0)) as $qdrop
+              | {task: $r.task, status: "measured", counted: true,
+                 cost: {base: $b.cost_usd, cur: $r.cost_usd, drop: $dc},
+                 wall: {base: $b.wall_s, cur: $r.wall_s, drop: $dw},
+                 judge: {base: $b.judge_score, cur: $r.judge_score, drop: $qdrop},
+                 fail: ($qdrop or ($T != null and ($dc < $T or ($dw == null or $dw < $T)))) }
+            end
+        )
+      | . as $rows
+      | ($rows | map(select(.counted))) as $m
+      | {rows: $rows,
+         suite: (if ($m | length) == 0 then null else
+           ($m | map(.cost.base) | add) as $cb | ($m | map(.cost.cur) | add) as $cc
+           | ($m | map(.wall.base // 0) | add) as $wb | ($m | map(.wall.cur // 0) | add) as $wc
+           | {cost: {base: $cb, cur: $cc, drop: (if $cb > 0 then (1 - ($cc / $cb)) else null end)},
+              wall: {base: $wb, cur: $wc, drop: (if $wb > 0 then (1 - ($wc / $wb)) else null end)}}
+           end),
+         target: $T,
+         fail: ($rows | any(.fail))}
+    ')"
+    if [ -n "$target" ]; then
+      echo "gain (workflow arm, target −$(printf '%.0f' "$(echo "$target*100" | bc 2>/dev/null || echo 50)")% on BOTH cost and wall; quality must not drop)"
+    else
+      echo "gain (workflow arm, no target — deltas reported; quality must still not drop)"
+    fi
+    printf '%s' "$result" | jq -r '
+      # Sign it here, not at the call site: a NEGATIVE drop is an increase, and a
+      # hardcoded "−" prefix rendered it as "−-1.5%".
+      def pct($x): if $x == null then "n/a"
+                   else ((($x * 1000) | round) / 10) as $p
+                        | (if $p >= 0 then "−" else "+" end) + (($p | fabs | tostring) + "%") end;
+      .rows[] |
+      if .status == "new" then "  • \(.task): new (no baseline) — not counted"
+      elif .status == "unmeasured" then "  ✗ \(.task): no usable rows to compare (\(.detail))"
+      else "  \(if .fail then "✗" else "✓" end) \(.task): "
+           + "cost \(.cost.base)→\(.cost.cur) (\(pct(.cost.drop)))  "
+           + "wall \(.wall.base // "-")→\(.wall.cur // "-")s (\(pct(.wall.drop)))  "
+           + "judge \(.judge.base // "-")→\(.judge.cur // "-")"
+           + (if .judge.drop then "  ← quality regressed; a cheaper worse run is not a gain" else "" end)
+      end'
+    printf '%s' "$result" | jq -r '
+      # Sign it here, not at the call site: a NEGATIVE drop is an increase, and a
+      # hardcoded "−" prefix rendered it as "−-1.5%".
+      def pct($x): if $x == null then "n/a"
+                   else ((($x * 1000) | round) / 10) as $p
+                        | (if $p >= 0 then "−" else "+" end) + (($p | fabs | tostring) + "%") end;
+      if .suite == null then "  suite: nothing comparable" else
+      "  suite total: cost \(.suite.cost.base)→\(.suite.cost.cur) (\(pct(.suite.cost.drop)))  "
+      + "wall \(.suite.wall.base)→\(.suite.wall.cur)s (\(pct(.suite.wall.drop)))" end'
+    if printf '%s' "$result" | jq -e '.fail' >/dev/null; then
+      echo "gain: FAIL — target not met or quality regressed" >&2; exit 1
+    else
+      echo "gain: PASS"; exit 0
+    fi
+    ;;
+
+  --mechanism)
+    base="${1:?usage: compare.sh --mechanism <baseline> <current>}"
+    cur="${2:?usage: compare.sh --mechanism <baseline> <current>}"
+    ab="$(sh "$AGG" "$base")"
+    ac="$(sh "$AGG" "$cur")"
+    result="$(jq -n --argjson base "$ab" --argjson cur "$ac" '
+      ($base | map(select(.arm == "workflow")) | INDEX(.task)) as $B
+      | ($cur  | map(select(.arm == "workflow")))
+      | map(
+          . as $r | $B[$r.task] as $b
+          | if $b == null then {task: $r.task, status: "new", fail: false}
+            elif $r.n_ok == 0 then {task: $r.task, status: "unmeasured", fail: true}
+            else
+              ([ {k: "spawn_count",   b: ($b.spawn_count   // 0), c: ($r.spawn_count   // 0)},
+                 {k: "cycles_test",   b: ($b.cycles_test   // 0), c: ($r.cycles_test   // 0)},
+                 {k: "cycles_review", b: ($b.cycles_review // 0), c: ($r.cycles_review // 0)} ]) as $f
+              | {task: $r.task, status: "measured",
+                 rose:  ($f | map(select(.c > .b)) | map("\(.k) \(.b)->\(.c)")),
+                 fell:  ($f | map(select(.c < .b)) | map("\(.k) \(.b)->\(.c)")),
+                 fail:  (($f | map(select(.c > .b)) | length) > 0)}
+            end
+        )
+      | {rows: ., fail: (map(.fail) | any)}
+    ')"
+    echo "mechanism (workflow arm — deterministic fields only; no medians needed)"
+    printf '%s' "$result" | jq -r '.rows[] |
+      if .status == "new" then "  • \(.task): new (no baseline)"
+      elif .status == "unmeasured" then "  ✗ \(.task): no usable row"
+      elif .fail then "  ✗ \(.task): " + (.rose | join("; "))
+      elif (.fell | length) > 0 then "  ✓ \(.task): improved — " + (.fell | join("; "))
+      else "  ✓ \(.task): unchanged" end'
+    if printf '%s' "$result" | jq -e '.fail' >/dev/null; then
+      echo "mechanism: FAIL — machinery grew" >&2; exit 1
+    else
+      echo "mechanism: PASS"; exit 0
+    fi
+    ;;
+
   *)
-    echo "usage: compare.sh --ratchet <baseline> <current> | --ab <scorecards>" >&2
+    echo "usage: compare.sh --ratchet <baseline> <current> | --ab <scorecards> | --gain <baseline> <current> [--target <f>] | --mechanism <baseline> <current>" >&2
     exit 2
     ;;
 esac

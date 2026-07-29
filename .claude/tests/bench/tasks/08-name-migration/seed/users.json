@@ -1,0 +1,8 @@
+[
+  { "id": 1, "name": "Ada Lovelace",        "email": "ada@example.com" },
+  { "id": 2, "name": "Prince",              "email": "prince@example.com" },
+  { "id": 3, "name": "Jean-Luc  Picard",    "email": "jl@example.com" },
+  { "id": 4, "name": "",                    "email": "blank@example.com" },
+  { "id": 5, "name": "Grace Brewster Hopper","email": "grace@example.com" },
+  { "id": 6, "name": "  Alan Turing  ",     "email": "alan@example.com" }
+]

@@ -5,11 +5,19 @@
 # the delivered code with judge-outcome.sh, and appends one scorecard row per run.
 # aggregate.sh + compare.sh then turn the rows into medians and a verdict.
 #
-# Two arms per task:
+# Three arms per task:
 #   workflow  — sandbox has the /dev machinery; the prompt drives `/dev`.
 #   baseline  — a bare repo, plain "just build it" prompt, no workflow.
+#   design    — `/dev --yes --plan-only`: Phase 1 only, stops at the gate. ~a third
+#               of a full run's cost and wall, because Design alone is 39-49% of a
+#               brownfield-S run. Graded DETERMINISTICALLY by grade-design.sh (no
+#               model, no tokens, no variance) on whether the design set is complete
+#               and self-consistent. It CANNOT see whether the spec caught unstated
+#               requirements — only delivered code shows that — so use it to iterate
+#               on structural changes and confirm with the workflow arm.
 # The outcome judge grades only the code diff (excludes .workflow/.claude), so the
-# arms compare fairly — that's the A/B "is the machinery worth it?" measurement.
+# workflow/baseline arms compare fairly — that's the A/B "is the machinery worth
+# it?" measurement. The design arm is not part of that A/B; it has no code.
 #
 # NON-DETERMINISTIC + COSTS TOKENS. Dry-run by default. The comparison MATH is
 # unit-tested separately (tests/run-bench-tests.sh) with no tokens.
@@ -18,6 +26,7 @@
 #   sh run-bench.sh --run                    # live (needs claude CLI + jq)
 #   sh run-bench.sh --run --repeats 3        # 3 repeats/arm for stable medians
 #   sh run-bench.sh --run --arm workflow     # workflow arm only (skip A/B)
+#   sh run-bench.sh --run --arm design       # Phase-1 only: fast iteration loop
 #   sh run-bench.sh --run --tasks 01-task-list
 #
 # Same interview caveat as e2e: a /dev run that stalls on AskUserQuestion times
@@ -62,7 +71,12 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-case "$ARMSEL" in workflow) ARMS="workflow" ;; baseline) ARMS="baseline" ;; *) ARMS="workflow baseline" ;; esac
+case "$ARMSEL" in
+  workflow) ARMS="workflow" ;;
+  baseline) ARMS="baseline" ;;
+  design)   ARMS="design" ;;
+  *)        ARMS="workflow baseline" ;;
+esac
 
 task_dirs() {
   for d in "$TASKS"/*/; do
@@ -143,11 +157,40 @@ run_capture() {
   return "$rc"
 }
 
+# Which /dev produced this row. Without it, rows collected across commits are not
+# comparable and a ratchet silently compares two different workflows — the runs
+# taken while the harness itself was being fixed are exactly that hazard. `-dirty`
+# marks an uncommitted tree, where the sha alone does not identify what ran.
+workflow_sha() {
+  _s="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+  [ -n "$_s" ] || { printf ''; return; }
+  # Only the workflow surface matters; a dirty bench harness does not change /dev.
+  if [ -n "$(git -C "$ROOT" status --porcelain -- .claude WORKFLOW.md CLAUDE.md 2>/dev/null | grep -v '\.claude/tests/' || true)" ]; then
+    printf '%s-dirty' "$_s"
+  else
+    printf '%s' "$_s"
+  fi
+}
+
+WFSHA="$(workflow_sha)"
 echo "progress file: $PROG   (watch live: tail -f $RESULTS/run.log  |  cat $PROG)"
+echo "workflow under test: ${WFSHA:-unknown}"
+case "$WFSHA" in *-dirty)
+  echo "⚠ the workflow tree has uncommitted changes — this row is not reproducible from the sha alone" >&2 ;;
+esac
 progress "starting — $TOTAL unit(s)"
 SANDROOT="$(mktemp -d)"
 cleanup() { [ "$KEEP" = "1" ] && echo "sandboxes kept under $SANDROOT" || rm -rf "$SANDROOT"; }
-trap cleanup EXIT INT TERM
+# A signal trap that does not exit SWALLOWS the signal: the handler runs and the
+# script resumes at the next statement. This one deleted $SANDROOT and carried on
+# — every later repeat then ran against a sandbox root that no longer existed,
+# emitting `no_envelope` rows into the scorecard, and `kill`/Ctrl-C could not stop
+# it. That is the "runner whose parent process died kept going and overwrote a
+# later run's results" incident in README.md; the cause was here, not upstream.
+# EXIT alone cleans up; INT/TERM must clean up AND leave.
+on_signal() { cleanup; trap - EXIT; exit 130; }
+trap cleanup EXIT
+trap on_signal INT TERM
 
 git_base() { ( cd "$1" && git init -q && git add -A && git -c user.email=b@bench -c user.name=bench commit -qm base >/dev/null 2>&1 ); }
 
@@ -175,10 +218,12 @@ emit() {  # all values already JSON-literal-safe strings ("null" when absent)
     --argjson cost "$5" --argjson intok "$6" --argjson outtok "$7" --argjson turns "$8" --argjson dur "$9" \
     --argjson spawn "${10}" --argjson cyt "${11}" --argjson cyr "${12}" --argjson skip "${13}" \
     --argjson jscore "${14}" --arg jverd "${15}" --argjson wall "${16}" --arg freason "${17}" \
+    --arg wfsha "${18}" --argjson spawnobs "${19}" \
     '{task:$task, arm:$arm, repeat:$repeat, ok:$ok,
       fail_reason:(if $freason == "" then null else $freason end),
+      workflow_sha:(if $wfsha == "" then null else $wfsha end),
       cost_usd:$cost, in_tokens:$intok, out_tokens:$outtok, turns:$turns, duration_ms:$dur, wall_s:$wall,
-      spawn_count:$spawn, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip,
+      spawn_count:$spawn, spawn_observed:$spawnobs, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip,
       judge_score:$jscore, judge_verdict:$jverd}' >> "$OUT"
 }
 
@@ -192,7 +237,7 @@ for n in $(task_dirs); do
     while [ "$r" -le "$REPEATS" ]; do
       progress "$n · arm=$a · run $r/$REPEATS — launching claude (≤${TIMEOUT_S}s)"
       sb="$SANDROOT/$n-$a-$r"
-      if [ "$a" = "workflow" ]; then setup_workflow "$sb" "$n"; else setup_baseline "$sb" "$n"; fi
+      case "$a" in workflow|design) setup_workflow "$sb" "$n" ;; *) setup_baseline "$sb" "$n" ;; esac
       base_sha="$(git -C "$sb" rev-parse HEAD 2>/dev/null || echo HEAD)"   # judge diffs against this (survives a /dev commit)
 
       # Real wall-clock — the envelope's duration_ms only counts the top session,
@@ -238,11 +283,36 @@ for n in $(task_dirs); do
         ok=false; freason="exit_$rc"
       fi
 
-      spawn=null; cyt=null; cyr=null; skip=null
-      if [ "$a" = "workflow" ]; then
+      spawn=null; spawnobs=null; cyt=null; cyr=null; skip=null
+      if [ "$a" = "workflow" ] || [ "$a" = "design" ]; then
         rd="$(find "$sb/.workflow" -mindepth 1 -maxdepth 1 -type d ! -name _templates 2>/dev/null | head -n1)"
         if [ -n "$rd" ] && [ -f "$rd/state.json" ]; then
+          # A /dev run that stops early exits CLEANLY — the CLI returns a healthy
+          # envelope, so ok stays true and the judge just finds no code. Observed:
+          # a run halted at the gate on a benign "Docs: light" deviation, burned
+          # $2.80 over 640s, delivered zero code, and scored as a successful run.
+          # `done_at` is the run's own completion stamp: absent means it never
+          # reached Close, whatever the exit code said.
+          # `--plan-only` halts at the gate on purpose and leaves done_at unset
+          # (the run is paused, not finished — orchestrator.md > Plan-only), so the
+          # design arm is graded on reaching the gate, not on completing a run.
+          if [ "$a" = "design" ]; then
+            if [ "$(jq -r '.next_step // "null"' "$rd/state.json")" != "implement" ]; then
+              ok=false
+              [ -n "$freason" ] || freason="design_incomplete_at_$(jq -r '.step // "unknown"' "$rd/state.json")"
+              echo "   ! design arm never reached the gate; excluded from medians"
+            fi
+          elif [ "$(jq -r '.done_at // "null"' "$rd/state.json")" = "null" ]; then
+            _at="$(jq -r '.next_step // .step // "unknown"' "$rd/state.json")"
+            ok=false
+            [ -n "$freason" ] || freason="incomplete_at_$_at"
+            echo "   ! run never completed — stopped before '$_at' (no done_at); excluded from medians"
+          fi
           spawn="$(jq -r '.spawn_count // "null"' "$rd/state.json")"
+          # Observed spawns, counted by the PreToolUse guard hook rather than
+          # self-reported — the two disagree when the orchestrator forgets to bump
+          # (seen: spawn_count=0 on a run whose notes say "combined lead spawn").
+          if [ -f "$rd/.spawn_log" ]; then spawnobs="$(wc -l < "$rd/.spawn_log" | tr -d ' ')"; fi
           cyt="$(jq -r '.cycles.test // "null"' "$rd/state.json")"
           cyr="$(jq -r '.cycles.review // "null"' "$rd/state.json")"
           skip="$(jq -r '(.skipped_steps // []) | length' "$rd/state.json")"
@@ -253,6 +323,23 @@ for n in $(task_dirs); do
       # The judge still runs on a failed row: the score is forensics (how far did
       # it get before dying), not a quality measurement — aggregate.sh drops it.
       jscore=null; jverd=skip
+      if [ "$a" = "design" ]; then
+        # Deterministic grade — no model, no tokens, no variance (grade-design.sh).
+        # It measures whether the design set is complete and self-consistent, NOT
+        # whether it captured unstated requirements; only delivered code shows that.
+        dout="$(sh "$HERE/grade-design.sh" "$sb" 2>/dev/null || true)"
+        if [ -n "$dout" ] && printf '%s' "$dout" | jq -e . >/dev/null 2>&1; then
+          jscore="$(printf '%s' "$dout" | jq -r '.score // "null"')"
+          jverd="$(printf '%s' "$dout"  | jq -r '.verdict // "skip"')"
+          echo "   grade-design: $dout"
+        else
+          echo "   grade-design: unjudgeable (no run dir)"
+        fi
+        emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}" "$freason" "$WFSHA" "$spawnobs"
+        runs=$((runs + 1)); DONE=$((DONE + 1)); r=$((r + 1))
+        progress "$n · arm=$a done — ok=$ok${freason:+ ($freason)} cost=\$$cost design=$jscore/$jverd"
+        continue
+      fi
       jout="$(sh "$HERE/judge-outcome.sh" "$sb" "$acc" --base "$base_sha" --model "$MODEL" 2>/dev/null || true)"
       if [ -n "$jout" ] && printf '%s' "$jout" | jq -e . >/dev/null 2>&1; then
         jscore="$(printf '%s' "$jout" | jq -r '.score // "null"')"
@@ -262,7 +349,7 @@ for n in $(task_dirs); do
         echo "   judge-outcome: skipped"
       fi
 
-      emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}" "$freason"
+      emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}" "$freason" "$WFSHA" "$spawnobs"
       runs=$((runs + 1)); DONE=$((DONE + 1)); r=$((r + 1))
       progress "$n · arm=$a done — ok=$ok${freason:+ ($freason)} cost=\$$cost judge=$jscore/$jverd"
     done

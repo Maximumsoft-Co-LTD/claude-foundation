@@ -1,0 +1,1 @@
+/dev --yes --plan-only the article list in this repo returns everything at once and it is getting long — add pagination to listArticles (size S, brownfield). Callers need a page of results and the total count. Do not ask clarifying questions — assume Ship as one-drop, no commit, no PR, e2e off. Move straight through the interview and gate. Stop after the gate — do not implement.

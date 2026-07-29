@@ -1,0 +1,25 @@
+Task: migrate users.json so each record carries first_name / last_name instead of
+a single `name`. The seeded store (6 users) is present in both sandboxes.
+
+AC1: All 6 users still exist afterwards, each keeping its original id and email.
+     No record is dropped, merged, or duplicated.
+AC2: Every awkward name in the seed is handled without data loss or invention:
+       "Prince"                  — single word (no last name; must not fabricate one)
+       ""                        — blank (must not crash or drop the row)
+       "Jean-Luc  Picard"        — doubled internal whitespace
+       "  Alan Turing  "         — leading/trailing whitespace
+       "Grace Brewster Hopper"   — three parts (a documented, consistent rule)
+AC3: Re-running the migration on already-migrated data leaves it unchanged — it
+     detects the migrated shape rather than re-splitting or blanking fields.
+AC4: The original data survives an interruption — a backup written before the
+     store is overwritten, or an atomic write (temp file + rename). Reading all,
+     transforming in memory, then overwriting in place with no backup FAILS this.
+AC5: A test runs the migration against a COPY of the seeded users.json and asserts
+     the resulting records. A test using only hand-written fixtures does not
+     satisfy this; the real seeded edge cases must be exercised.
+
+Trap: a vibe-coded migration does `name.split(" ")` and takes [0] and [1] — which
+silently blanks Prince's last name, throws or yields "" on the empty name, mangles
+the doubled space into an empty middle token, keeps the leading-space name's first
+field empty, and drops "Hopper". It usually overwrites users.json in place with no
+backup and is not safe to run twice.
