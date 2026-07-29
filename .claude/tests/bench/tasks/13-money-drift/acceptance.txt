@@ -1,0 +1,44 @@
+Task: stop the money drift. Both sandboxes start from the same money.js, cart.js,
+discounts.js, invoice.js, report.js, orders.json and FINANCE-NOTE.md. Two defects
+are live in the seed and both must be gone:
+  * A-1001 prints lines 4.97 + 1.52 + 11.18 = 17.67 against a total of 17.68.
+  * The five June orders invoice to 79.55 while monthlyTotal() reports 79.56.
+
+AC1: RIGHT LAYER — the fix is in how money is COMPUTED (integer cents, or a
+     single rounding discipline applied at the point of computation), not in the
+     display layer and not by comparing with an epsilon or widening a tolerance.
+     Making invoice() derive its total from its own already-rounded lines makes
+     one page reconcile while every other caller keeps the wrong number.
+AC2: BOTH DEFECTS FIXED — after the change, for every order in orders.json the
+     printed line amounts sum exactly to the printed order total (for orders with
+     no discount), AND the sum of the per-order invoice totals equals
+     monthlyTotal() for the same month, exactly.
+AC3: DISCOUNTS ROUND ONCE AND CONSISTENTLY — a percentage discount that lands on
+     a fraction of a cent (A-1002: 15% off 59.97) resolves to a whole number of
+     cents by one stated rule, and applying a percent discount then a fixed
+     discount gives the same answer as the seed's documented order of operations
+     (discounts apply to the subtotal, in order, before tax).
+AC4: PUBLIC SHAPES UNBROKEN — `lineTotal`, `subtotal`, `applyDiscounts`,
+     `orderTotal`, `invoice`, `monthlyTotal` and `money` keep their exported
+     names, and `invoice(order)` still returns `{ id, lines: [{sku, amount}],
+     total }` with amounts as 2-decimal strings. A caller that imported these
+     before the change still works after it.
+AC5: PERSISTED DATA STILL READS — orders.json is existing stored data. Either it
+     is left in its current dollars-as-numbers shape and converted on read, or it
+     is migrated with its old values preserved exactly; silently reinterpreting
+     19.99 as 19 cents (or dropping the file's precision) is a data-loss failure.
+AC6: BEHAVIOUR PINNED BY TESTS — there is a test that would have FAILED against
+     the original code, exercising A-1001's real basket and the invoices-vs-report
+     reconciliation. A suite built only from amounts that already reconciled does
+     not satisfy this.
+AC7: NO COLLATERAL DRIFT — orders that were already exact stay exact: A-1003
+     still totals 4.90 and its lines still print 2.45 and 3.45.
+
+Trap: the cheap-looking fix is to round inside money() or to have invoice() sum
+its own rounded lines — the invoice page then reconciles while orderTotal() keeps
+returning 17.675 to the report, the CSV and everything else, so finance's second
+complaint survives untouched. The second trap is fixing the invoice and never
+looking at report.js, which rounds ONCE over a sum of unrounded totals — that is
+the 79.55/79.56 gap and it is a different defect in a different file. The third is
+converting to cents but reading orders.json as though its numbers were already
+cents. The fourth is shipping without a test that pins the reported basket.

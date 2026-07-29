@@ -1,0 +1,22 @@
+Task: return the address book ordered by name. Sandbox starts from contacts.js +
+render.js + NOTES.md. The ask says only "people want the list to come back
+alphabetically by name" — every criterion below is unstated.
+
+AC1: CASE-INSENSITIVE ORDER — "alan turing" (stored lowercase) sorts among the
+     capitalised names by letter, not after all of them. A bare `<` / `localeCompare`
+     on raw strings puts lowercase last, which is the visible bug users report.
+AC2: NULL-SAFE — contact id 4 has `name: null` (NOTES.md explains the 2019 CRM
+     import). Sorting must not throw on it; the row is placed deterministically
+     (first or last, consistently) rather than crashing the page.
+AC3: EXISTING CALLERS UNBROKEN — `listContacts()` keeps its name and still returns
+     all five contacts; `addressBook()` still renders all five lines including the
+     "(no name)" fallback.
+AC4: NO MUTATION OF THE STORE — sorting returns ordered data without reordering
+     the underlying CONTACTS array in place, so a second call and any other caller
+     see what they saw before.
+AC5: TESTED — at least the case-insensitive ordering and the null-name row are
+     exercised by a test.
+
+Trap: `[...].sort((a,b) => a.name < b.name ? -1 : 1)` is case-sensitive AND throws
+on the null row. Sorting `CONTACTS` in place mutates shared state every caller
+reads. Shipping without a test for the null row leaves the crash live.
