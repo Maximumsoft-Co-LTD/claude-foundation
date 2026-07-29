@@ -76,6 +76,65 @@ IFS=$'\t' read -r tool_name subagent_type < <(
 
 [[ "$tool_name" != "Agent" ]] && exit 0
 
+# Spawn ledger (telemetry, never blocks). Call ONLY on paths where the spawn is
+# allowed to proceed — a blocked spawn never happened and must not be counted.
+#
+# `state.json > spawn_count` is self-reported by the orchestrator, and the
+# instruction to bump it is one clause inside a ~1000-word paragraph
+# (orchestrator.md > State discipline). It gets missed: a benchmarked run
+# reported spawn_count=0 while its own notes said "combined lead spawn" and it
+# produced four artifacts. That makes the headline MECHANISM metric — the one
+# the benchmark treats as deterministic — quietly wrong.
+#
+# Counted here instead, where the evidence is. This deliberately does NOT touch
+# state.json: that file is single-writer by design (the orchestrator) and
+# dev-state-validate.sh rejects malformed or duplicate-key writes, so a hook
+# editing it would race the very discipline this guard enforces. dev-metrics.sh
+# prints both numbers; a mismatch is a finding about the orchestrator.
+log_spawn() {
+  case "$subagent_type" in
+    pm|lead|engineer|qa|retro|uxui|team-*) ;;
+    *) return 0 ;;
+  esac
+  local _pd _wf _rd _d _n
+  _pd="${CLAUDE_PROJECT_DIR:-$PWD}"
+  _wf="$_pd/.workflow"
+  [[ -d "$_wf" ]] || return 0
+  if [[ -n "${CLAUDE_DEV_RUN_ID:-}" && -d "$_wf/$CLAUDE_DEV_RUN_ID" ]]; then
+    _rd="$_wf/$CLAUDE_DEV_RUN_ID"
+  else
+    # Single active run only. With two runs in flight the newest state.json can
+    # name the wrong one, and a miscounted ledger is worse than no ledger.
+    # `_templates/` ships its own state.json blueprint, so it counts as a second
+    # "run" and silently disables the ledger unless excluded — which is exactly
+    # what happened on the first live run after this was added.
+    _n=0; _rd=""
+    for _d in "$_wf"/*/; do
+      [[ "$(basename "$_d")" == "_templates" ]] && continue
+      [[ -f "$_d/state.json" ]] || continue
+      _n=$((_n + 1)); _rd="${_d%/}"
+    done
+    [[ "$_n" -eq 1 ]] || return 0
+  fi
+  # Third column: which TIER this spawn actually ran at. `lead` is the one worker
+  # allowed to vary (Case 4 exempts it), and the playbook says sonnet at XS/S,
+  # opus only on escalation — but when the orchestrator passes no `model` param
+  # the frontmatter pin silently decides, and nothing recorded which happened.
+  # Two lead spawns per S run at the wrong tier is the single largest cost item
+  # a scorecard cannot currently see. `req:<m>` = an explicit override was passed;
+  # `pin:<m>` = the agent file's own `model:` governed. Appended, never inserted:
+  # every consumer reads this ledger with `wc -l` or a name grep.
+  local _tier _reqm _pinm
+  _reqm="$(printf '%s' "$input" | jq -r '.tool_input.model // ""' 2>/dev/null || true)"
+  if [[ -n "$_reqm" ]]; then
+    _tier="req:$_reqm"
+  else
+    _pinm="$(sed -n 's/^model:[[:space:]]*//p' "$_pd/.claude/agents/$subagent_type.md" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
+    _tier="pin:${_pinm:-unknown}"
+  fi
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$subagent_type" "$_tier" >> "$_rd/.spawn_log" 2>/dev/null || true
+}
+
 # Case 1: orchestrator is never a valid sub-agent
 if [[ "$subagent_type" == "orchestrator" ]]; then
   jq -n '{
@@ -277,5 +336,9 @@ case "$subagent_type" in
     fi
     ;;
 esac
+
+# The spawn is allowed. Record it (see log_spawn above).
+log_spawn
+
 
 exit 0

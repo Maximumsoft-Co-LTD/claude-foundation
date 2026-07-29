@@ -87,6 +87,17 @@ mk_run() {
   printf '%s' "$3" > "$1/.workflow/$2/state.json"
 }
 
+# The guard also writes a side-effect file (the spawn ledger), so these two
+# compare values rather than the hook's stdout that assert_blocked/allowed read.
+# assert_eq <label> <expected> <actual>
+assert_eq() {
+  if [ "$2" = "$3" ]; then pass "$1 (= $2)"; else fail "$1 — expected '$2', got '$3'"; fi
+}
+# assert_file_contains <label> <path> <fixed-substring>
+assert_file_contains() {
+  if grep -qF -- "$3" "$2" 2>/dev/null; then pass "$1"; else fail "$1 — '$3' not in $2"; fi
+}
+
 echo "Running hook test suite..."
 echo
 
@@ -192,6 +203,79 @@ assert_allowed "guard C4 engineer may escalate to opus"
 # Escalation only — a downward override is still the leak this case stops.
 run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer haiku)"
 assert_blocked "guard C4 engineer may not be downgraded" "pins model: sonnet"
+
+# --- spawn ledger: count what actually went out ----------------------------
+# state.json > spawn_count is self-reported and has been wrong in practice (0 on
+# a run whose own notes said "combined lead spawn"). The guard sees every spawn,
+# so it keeps an append-only ledger the orchestrator cannot forget to write.
+# XS/S matter most here: they take the early return above, so the ledger has to
+# be recorded on that path too — the size range where the metric was first wrong.
+spawn_lines() {  # redirect fails before `wc` runs when the ledger is absent
+  if [ -f "$1/.spawn_log" ]; then wc -l < "$1/.spawn_log" | tr -d ' '; else printf 0; fi
+}
+
+PROJ_LED="$TMPROOT/proj-ledger"
+mk_run "$PROJ_LED" "0007-feat-led" '{"run_id":"0007-feat-led","size":"XS","phase":"phase-2","step":"implement"}'
+LED_RUN="$PROJ_LED/.workflow/0007-feat-led"
+
+# Every real .workflow/ ships _templates/state.json as a blueprint. It is not a
+# run, but a naive "count dirs holding state.json" reads it as a second one and
+# silently disables the ledger — which is exactly how the first live run came
+# back with spawn_observed: null. Every ledger fixture carries it from here on.
+mkdir -p "$PROJ_LED/.workflow/_templates"
+printf '{"id":"NNNN-type-slug","spawn_count":0}' > "$PROJ_LED/.workflow/_templates/state.json"
+
+assert_eq "ledger absent before any spawn" "0" "$(spawn_lines "$LED_RUN")"
+run_hook "$GUARD" "$PROJ_LED" "$(agent_json engineer "")"
+assert_eq "ledger records an XS worker spawn" "1" "$(spawn_lines "$LED_RUN")"
+run_hook "$GUARD" "$PROJ_LED" "$(agent_json lead "")"
+assert_eq "ledger accumulates across spawns" "2" "$(spawn_lines "$LED_RUN")"
+assert_file_contains "ledger names the worker" "$LED_RUN/.spawn_log" "lead"
+
+# --- ledger column 3: the TIER the spawn actually ran at ---------------------
+# `lead` may vary sonnet<->opus (Case 4 exempts it), and the playbook says sonnet
+# at XS/S. But with no `model` param the frontmatter pin decides silently, so a
+# run could pay opus twice and no scorecard would show it. The ledger now records
+# which of the two governed. Column, not a new file: every consumer reads this
+# with `wc -l` or a name grep, and both survive an appended field.
+mkdir -p "$PROJ_LED/.claude/agents"
+printf -- '---\nname: lead\nmodel: opus\n---\n'     > "$PROJ_LED/.claude/agents/lead.md"
+printf -- '---\nname: engineer\nmodel: sonnet\n---\n' > "$PROJ_LED/.claude/agents/engineer.md"
+run_hook "$GUARD" "$PROJ_LED" "$(agent_json lead "")"
+assert_file_contains "ledger records the frontmatter pin when no model is passed" \
+  "$LED_RUN/.spawn_log" "pin:opus"
+run_hook "$GUARD" "$PROJ_LED" "$(agent_json engineer sonnet)"
+assert_file_contains "ledger records an explicit override as req:" \
+  "$LED_RUN/.spawn_log" "req:sonnet"
+assert_eq "tier column did not change the row count" "4" "$(spawn_lines "$LED_RUN")"
+
+# A BLOCKED spawn never happened — counting it would overstate the machinery.
+run_hook "$GUARD" "$PROJ_LED" "$(agent_json orchestrator "")"
+assert_blocked "guard C1 still blocks with ledger in place" "there is no"
+assert_eq "ledger ignores a blocked spawn" "4" "$(spawn_lines "$LED_RUN")"
+
+# Non-worker built-ins are not /dev machinery and stay out of the count.
+run_hook "$GUARD" "$PROJ_LED" "$(agent_json general-purpose sonnet)"
+assert_allowed "guard C6 general-purpose allowed in a run"
+assert_eq "ledger ignores generic built-ins" "4" "$(spawn_lines "$LED_RUN")"
+
+# M-size runs reach the end of the hook instead of the XS/S early return — the
+# ledger must be written on BOTH paths, or the counts silently depend on size.
+PROJ_LEDM="$TMPROOT/proj-ledger-m"
+mk_run "$PROJ_LEDM" "0008-feat-ledm" '{"run_id":"0008-feat-ledm","size":"M","phase":"phase-2","step":"implement"}'
+run_hook "$GUARD" "$PROJ_LEDM" "$(agent_json qa "")"
+assert_eq "ledger records an M worker spawn too" "1" "$(spawn_lines "$PROJ_LEDM/.workflow/0008-feat-ledm")"
+
+# Two active runs → the ledger cannot tell which run this spawn belongs to. It
+# writes nothing rather than charging the spawn to the wrong run.
+PROJ_TWO="$TMPROOT/proj-two-runs"
+mk_run "$PROJ_TWO" "0009-feat-a" '{"run_id":"0009-feat-a","size":"M","phase":"phase-2","step":"implement"}'
+mk_run "$PROJ_TWO" "0010-feat-b" '{"run_id":"0010-feat-b","size":"M","phase":"phase-2","step":"implement"}'
+run_hook "$GUARD" "$PROJ_TWO" "$(agent_json engineer "")"
+assert_eq "ledger stays silent when the run is ambiguous" "0" "$(spawn_lines "$PROJ_TWO/.workflow/0009-feat-a")"
+# …unless the orchestrator named the run explicitly.
+run_hook "$GUARD" "$PROJ_TWO" "$(agent_json engineer "")" CLAUDE_DEV_RUN_ID=0010-feat-b
+assert_eq "ledger uses CLAUDE_DEV_RUN_ID to disambiguate" "1" "$(spawn_lines "$PROJ_TWO/.workflow/0010-feat-b")"
 
 # =============================================================================
 # dev-state-validate.sh
