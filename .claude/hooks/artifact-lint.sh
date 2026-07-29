@@ -121,6 +121,18 @@ check_plan() {
     chore|docs) report OK "$(basename "$file"): mermaid not required (type=$t)" ;;
     *) require_section "$file" "mermaid diagram" E '^[[:space:]]*```mermaid' ;;
   esac
+  # `## Current state` is the *understand* half of brownfield's understand → lock
+  # → change discipline (`plan-writing > SKILL.md` principle 3, gated by `field`,
+  # not Type/Size). Its invariants are what `tasks.md > ## Guardrails` digests, so
+  # a run missing this is missing the source of the other. The exemptions are
+  # `lead.md` step 2's own: chore/docs may not touch live code, and a spike
+  # explores rather than changes — every other brownfield type maps first.
+  case "$t" in
+    chore|docs|spike) ;;
+    *) if [ "$(run_field "$file")" = "brownfield" ]; then
+         require_section "$file" "## Current state (brownfield understand step)" E '^##[[:space:]]+Current state'
+       fi ;;
+  esac
 }
 
 check_tasks() {
@@ -128,6 +140,46 @@ check_tasks() {
   require_section "$file" "T### task"            E '\bT[0-9]+\b'
   require_section "$file" "inline AC tag"        E '\[(AC[0-9]+|DoD|SC-[0-9]+)\]'
   require_section "$file" "runnable verify section" F 'verify:'
+  check_guardrails "$file"
+}
+
+# run_field <file> — the run's `field` from the sibling state.json, jq-free (CLI
+# mode is deliberately jq-free). Empty when there is no state.json or no field.
+run_field() {
+  _st="$(dirname "$1")/state.json"
+  [ -f "$_st" ] || { printf ''; return 0; }
+  # Strip braces as well as quotes/spaces: a one-line state.json leaves the last
+  # key glued to `}`, so `field:brownfield}` never matched and the check silently
+  # never fired — the exact failure mode this whole section exists to end.
+  tr -d ' "{}' < "$_st" | tr ',' '\n' | sed -n 's/^field:\(.*\)$/\1/p' | head -1
+}
+
+# Guardrails — the brownfield contract, and the one artifact section unique to
+# brownfield work. `tasks.md > ## Guardrails` is the engineer's ONLY up-front
+# invariant read (`agents/lead.md` step 4; a miss is a `BLOCKER:` per
+# `plan-writing > SKILL.md`), with the full map staying in `plan.md > ## Current
+# state` and pulled per-task via `[ref:]`. It was mandatory in prose and checked
+# NOWHERE — not here, not in the scenario suite — and all three golden brownfield
+# fixtures shipped without it, which is what an exemplar then teaches. Keyed off
+# `state.json > field`: greenfield legitimately has nothing to guard, and a run
+# with no state.json is skipped rather than failed.
+check_guardrails() {
+  file="$1"
+  [ "$(run_field "$file")" = "brownfield" ] || return 0
+  if ! grep -qE '^##[[:space:]]+Guardrails' "$file" 2>/dev/null; then
+    report FAIL "$(basename "$file"): MISSING required section: ## Guardrails (brownfield must-not-break invariants — the engineer's only up-front invariant read)"
+    note_fail
+    return 0
+  fi
+  # A header with no cited invariant is the same miss wearing a hat: the point is
+  # the `path#anchor` the engineer must not break, not the heading.
+  if awk '/^##[[:space:]]+Guardrails/{f=1;next} /^##[[:space:]]/{f=0} f' "$file" \
+     | grep -qE '`[^`]+#'; then
+    report OK "$(basename "$file"): brownfield Guardrails cite a \`path#anchor\`"
+  else
+    report FAIL "$(basename "$file"): ## Guardrails cites no backticked \`path#anchor\` invariant (brownfield)"
+    note_fail
+  fi
 }
 
 # run.md — the XS micro-lane single artifact (replaces spec/plan/tasks/test-plan

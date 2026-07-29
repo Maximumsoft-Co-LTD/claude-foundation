@@ -1,5 +1,11 @@
 # Tasks: CSV export for reports
 
+## Guardrails
+
+- `` `app/services/report_service.rb#rows` `` — already tenant-scoped; the CSV branch must consume this method, not re-query, or the export leaks across tenants.
+- `` `app/controllers/report_controller.rb#show` `` — the single authorisation point for the report; the `.csv` format must branch inside it rather than gain its own route.
+- `` `app/views/reports/show.html.erb` `` — the HTML surface stays byte-identical; CSV is additive only.
+
 ## Phase 1 — Foundational
 
 - [x] T001 [AC1] Add the `.csv` format branch to `ReportController` over `ReportService.rows` — verify: `rspec spec/requests/report_csv_spec.rb` returns a CSV body with a header line.

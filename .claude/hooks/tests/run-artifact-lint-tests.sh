@@ -232,8 +232,58 @@ printf '# Run\n\n**Type**: chore\n\n## Goal\ng\n\n## Acceptance\n- [x] AC1 ok\n\
 assert_exit_nonzero "AC11 run.md missing verify" "$d"
 assert_report_contains "AC11 names missing verify" "$d" "MISSING required section: runnable verify section"
 
+# AC12 — the brownfield contract, gated on `state.json > field`. `## Guardrails`
+# (tasks.md) and `## Current state` (plan.md) are the *lock* and *understand*
+# halves of brownfield's understand → lock → change discipline, mandatory in
+# prose since forever and checked nowhere: all three golden brownfield fixtures
+# shipped without Guardrails, which is what an exemplar teaches. Greenfield has
+# nothing to guard, so the checks must stay silent there — an over-eager version
+# would fail every greenfield run and get switched off.
+mk_state() { printf '{"id":"%s","type":"%s","size":"S","field":"%s"}' "$2" "$3" "$4" > "$1/state.json"; }
+TASKS_BODY='# Tasks\n\n## Phase 1\n\n- [x] T001 [AC1] do the thing — verify: the suite is green\n'
+PLAN_BODY='# Plan\n\n**Type**: feat\n\n## Summary\ns\n\n```mermaid\nflowchart LR\n  A --> B\n```\n'
+
+d="$TMPROOT/ac12-bf-no-guard"; mkdir -p "$d"; mk_state "$d" 0012-feat-x feat brownfield
+printf "$TASKS_BODY" > "$d/tasks.md"
+assert_exit_nonzero "AC12 brownfield tasks.md without Guardrails" "$d"
+assert_report_contains "AC12 names the missing Guardrails" "$d" "MISSING required section: ## Guardrails"
+
+d="$TMPROOT/ac12-bf-empty-guard"; mkdir -p "$d"; mk_state "$d" 0012-feat-x feat brownfield
+printf "# Tasks\n\n## Guardrails\n\n- keep it working\n\n- [x] T001 [AC1] do — verify: green\n" > "$d/tasks.md"
+assert_exit_nonzero "AC12 Guardrails header with no cited invariant" "$d"
+assert_report_contains "AC12 names the uncited Guardrails" "$d" "cites no backticked"
+
+d="$TMPROOT/ac12-bf-ok"; mkdir -p "$d"; mk_state "$d" 0012-feat-x feat brownfield
+printf "# Tasks\n\n## Guardrails\n\n- \`\`\`app/svc.rb#total\`\`\` — returns cents; callers depend on it\n\n- [x] T001 [AC1] do — verify: green\n" > "$d/tasks.md"
+assert_exit_zero "AC12 brownfield Guardrails citing a path#anchor" "$d"
+
+d="$TMPROOT/ac12-gf"; mkdir -p "$d"; mk_state "$d" 0012-feat-x feat greenfield
+printf "$TASKS_BODY" > "$d/tasks.md"
+assert_exit_zero "AC12 greenfield needs no Guardrails" "$d"
+
+# No state.json => no field => skipped, never a false failure (the linter runs on
+# hand-made dirs and on legacy runs predating the `field` axis).
+d="$TMPROOT/ac12-nostate"; mkdir -p "$d"
+printf "$TASKS_BODY" > "$d/tasks.md"
+assert_exit_zero "AC12 no state.json skips the brownfield checks" "$d"
+
+d="$TMPROOT/ac12-bf-plan"; mkdir -p "$d"; mk_state "$d" 0012-feat-x feat brownfield
+printf "$PLAN_BODY" > "$d/plan.md"
+assert_exit_nonzero "AC12 brownfield plan.md without Current state" "$d"
+assert_report_contains "AC12 names the missing Current state" "$d" "## Current state (brownfield understand step)"
+
+d="$TMPROOT/ac12-bf-plan-ok"; mkdir -p "$d"; mk_state "$d" 0012-feat-x feat brownfield
+printf "$PLAN_BODY\n## Current state\n\n- Entry — \`app/svc.rb#total\`\n" > "$d/plan.md"
+assert_exit_zero "AC12 brownfield plan.md with Current state" "$d"
+
+# A spike explores rather than changes — `lead.md` step 2 exempts it, so must the
+# linter, or the 06-spike scenario fixture fails for conforming to the playbook.
+d="$TMPROOT/ac12-spike"; mkdir -p "$d"; mk_state "$d" 0012-spike-x spike brownfield
+printf '# Plan\n\n**Type**: spike\n\n## Summary\ns\n\n```mermaid\nflowchart LR\n  A --> B\n```\n' > "$d/plan.md"
+assert_exit_zero "AC12 spike plan exempt from Current state" "$d"
+
 echo
-total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11" | wc -w) ))
+total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12" | wc -w) ))
 # AC9 runs only when jq is present (see the skip above).
 command -v jq >/dev/null 2>&1 && total_pass=$((total_pass + 4))
 if [ "$failures" -eq 0 ]; then

@@ -10,6 +10,14 @@ Add a `GET /reports.csv` route that serializes the existing `ReportService.rows`
 
 The HTML report and the CSV export share one row source, so the two surfaces cannot drift.
 
+## Current state
+
+- Entry point — `app/controllers/report_controller.rb#show` renders HTML from `ReportService.rows`.
+- Flow — `report_controller.rb#show` → `app/services/report_service.rb#rows` → `app/views/reports/show.html.erb`.
+- Blast radius — `ReportService.rows` has one caller today (`report_controller.rb#show`); the CSV branch becomes the second.
+- Invariant — `app/services/report_service.rb#rows` returns rows already scoped to the caller's tenant; a new surface that re-queries would bypass that scoping.
+- Invariant — `app/controllers/report_controller.rb#show` is the only place the report is authorised; a format branch must stay inside it.
+
 ## Architecture diagram
 
 ```mermaid

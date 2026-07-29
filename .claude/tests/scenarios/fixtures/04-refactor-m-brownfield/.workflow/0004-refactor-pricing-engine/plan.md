@@ -10,6 +10,13 @@ Introduce `PricingEngine` and delegate from `OrderService`, moving the math in s
 
 Coverage over the pricing path is thin today, so a characterization baseline is captured before any code moves.
 
+## Current state
+
+- Entry point — `app/services/order_service.rb#total`.
+- Flow — `order_service.rb#total` → `order_service.rb#apply_discount` → `order_service.rb#round_tax` → returns cents.
+- Blast radius — `order_service.rb#total` is called by the checkout controller and the nightly invoice job; both must see identical output.
+- Anti-goals (behaviour that stays identical) — rounding direction in `order_service.rb#round_tax`, discount ordering in `order_service.rb#apply_discount`, and the integer-cents return shape of `order_service.rb#total`.
+
 ## Architecture diagram
 
 ```mermaid

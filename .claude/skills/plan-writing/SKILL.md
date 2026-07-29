@@ -56,7 +56,7 @@ Walk before `draft` — scans + examples: `references/self-review.md`; any failu
 - **Verify-per-task** (Scan 5) — command or observable, every task.
 - **Summary readable** (Scan 6) — Summary/Technical Context/Gate check present.
 - **Trigger discipline** — every section's trigger fires; DELETE empty sections.
-- **Guardrails** *(brownfield)* — no invariant only in Current state/To-explore (miss = `BLOCKER:`).
+- **Guardrails** *(brownfield)* — no invariant only in Current state/To-explore (miss = `BLOCKER:`); **each line says no more than its citation** (a quote's scope is not a licence to generalise), and **none makes an `AC#` unachievable** — a guardrail that blocks an acceptance criterion is a contradiction to raise (`BLOCKER:`), not to obey. A wrong guardrail costs more than a missing one, because it is the engineer's only up-front invariant read and it gets followed.
 - **Budget** — within `plan-sections.md` Budgets; never drop `[AC#]`/`path#anchor`/`verify:`/mermaid.
 - **Scaffold integrity** *(M/L)* — Scaffold ↔ tasks (`self-review.md`).
 - **Parallel-phase integrity** *(feat)* — fanout contract holds (`references/parallel-phases.md`).
