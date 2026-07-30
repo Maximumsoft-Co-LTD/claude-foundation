@@ -165,4 +165,36 @@ if [ -f "$WF" ] && [ -f "$GATE" ] && [ -f "$ORCH" ] && [ -f "$SIZEX2" ]; then
   assert_file_contains "orchestrator.md never-shrink names the required four" "$ORCH" "required** phases"
 fi
 
+# --- 9. the fix input-domain rule ----------------------------------------------
+# ADOPTED 2026-07-30 on measured evidence: without it, 6/6 /dev runs and 6/6
+# plain-prompt runs on tests/bench/11-recent-window fixed the reported input
+# (a window of 0) and shipped the identical bug one input over (a window of 0.4
+# still returned the whole list), while the model judge graded all twelve 8-10/pass.
+# With it, every run satisfies every AC at no measurable cost.
+#
+# It lives in the template rather than a resident file because template teaching
+# notes are stripped on fill — it costs nothing per turn and is read exactly when
+# the ACs are being written. That also makes it easy to delete by accident, hence
+# this assertion. If it fails, acceptance coverage silently reverts to 5/6.
+RUNTPL="$ROOT/.workflow/_templates/run.md"
+if [ -f "$RUNTPL" ]; then
+  assert_file_contains "run.md template carries the fix input-domain rule" "$RUNTPL" "cover the input domain"
+  assert_file_contains "the rule names the neighbours to walk" "$RUNTPL" "fractional"
+fi
+
+# --- 10. never end a turn with a spawn outstanding ------------------------------
+# The liveness rule. Backgrounding a phase worker and then ending the message to
+# "wait for the completion notification" kills the run: headless `claude -p` has no
+# later turn for that notification to arrive in. Measured at M on 13-money-drift,
+# 2 of 3 runs died this way with zero code delivered — one of them after its lead
+# had already written 36 KB of correct spec/plan/tasks. Both files must carry it:
+# the resident rule so it is always in context, the reference so the reason is.
+SEC="$ROOT/.claude/orchestrator/references/state-edge-cases.md"
+if [ -f "$ORCH" ] && [ -f "$SEC" ]; then
+  assert_file_contains "orchestrator.md forbids ending a turn with a spawn outstanding" "$ORCH" "NEVER end a turn with a spawn outstanding"
+  assert_file_contains "orchestrator.md names the headless no-next-turn reason" "$ORCH" "has no next turn"
+  assert_file_contains "state-edge-cases.md explains the dead-run mechanism" "$SEC" "dead run"
+  assert_file_contains "state-edge-cases.md keeps the phase worker foreground" "$SEC" "phase worker is always foreground"
+fi
+
 finish "doc-consistency tests"

@@ -518,4 +518,119 @@ if [ -f "$ORCHF" ]; then
   fi
 fi
 
+# --- deterministic AC oracle (11-recent-window) --------------------------------
+# judge-outcome.sh is a model: identical diffs have scored 9 and 4 on this suite,
+# and one --keep run graded 9/pass while silently failing AC4 and AC5. The oracle
+# replaces that guess with per-AC assertions and a SWE-bench FAIL_TO_PASS check
+# (the shipped test must pass on the delivered tree AND fail once the original
+# window.js is restored — a suite that stays green does not pin the bug).
+#
+# An unvalidated oracle is worse than no oracle, so it is pinned against four
+# fixtures whose verdicts are known by construction. Free: no model, no tokens.
+ORACLE="$HERE/../tasks/11-recent-window/oracle/run.sh"
+FIX="$HERE/../fixtures/oracle-11"
+if [ -f "$ORACLE" ] && [ -d "$FIX" ] && command -v node >/dev/null 2>&1; then
+  oracle_score() { sh "$ORACLE" "$FIX/$1" 2>/dev/null | sed -n 's/.*"score":\([0-9]*\).*/\1/p'; }
+  oracle_ac()    { sh "$ORACLE" "$FIX/$1" 2>/dev/null | grep -c "\"$2\":\"pass\""; }
+
+  # A correct fix, in the right layer, with a test that pins the report.
+  [ "$(oracle_score good)" = "6" ] \
+    && pass "oracle scores a correct solution 6/6" \
+    || fail "oracle scores the known-good fixture $(oracle_score good)/6 — it would reject real work"
+
+  # The documented trap: guard bolted into feed.js, window.js untouched.
+  [ "$(oracle_ac trap-feed AC2_right_layer)" = "0" ] \
+    && pass "oracle catches the wrong-layer trap (guard in feed.js)" \
+    || fail "oracle passes AC2 for a fix that never touched window.js"
+
+  # A green suite that does not pin the reported case.
+  [ "$(oracle_ac trap-feed AC1_regression_first)" = "0" ] \
+    && pass "oracle catches a suite that stays green with the bug restored" \
+    || fail "oracle's FAIL_TO_PASS check does not fail on an unpinning suite"
+
+  # Right fix, no regression test at all.
+  [ "$(oracle_ac no-test AC1_regression_first)" = "0" ] \
+    && pass "oracle catches a fix shipped with no test" \
+    || fail "oracle passes AC1 for a sandbox with no test file"
+
+  # Collateral damage to dropLastN, which was already correct.
+  [ "$(oracle_ac collateral AC3_no_collateral)" = "0" ] \
+    && pass "oracle catches collateral damage to dropLastN" \
+    || fail "oracle passes AC3 for a solution that broke dropLastN"
+
+  # Everything except AC3 must still pass there — an oracle that fails everything
+  # on one defect cannot tell a small regression from a wrong solution.
+  [ "$(oracle_score collateral)" = "5" ] \
+    && pass "oracle isolates the failing AC instead of collapsing the score" \
+    || fail "oracle scored the collateral fixture $(oracle_score collateral)/6, expected 5"
+fi
+
+# --- deterministic AC oracle (13-money-drift) ----------------------------------
+# Same contract as the 11- oracle, on a task with two live defects in five files.
+# The first assertion is the one that matters most: an oracle that passes the
+# UNFIXED seed is measuring nothing, and would silently bless every future run.
+ORACLE13="$HERE/../tasks/13-money-drift/oracle/run.sh"
+SEED13="$HERE/../tasks/13-money-drift/seed"
+FIX13="$HERE/../fixtures/oracle-13"
+if [ -f "$ORACLE13" ] && [ -d "$FIX13" ] && command -v node >/dev/null 2>&1; then
+  o13_score() { sh "$ORACLE13" "$1" 2>/dev/null | sed -n 's/.*"score":\([0-9]*\).*/\1/p'; }
+  o13_ac()    { sh "$ORACLE13" "$1" 2>/dev/null | grep -c "\"$2\":\"pass\""; }
+
+  seedcopy="$(mktemp -d)"; cp -R "$SEED13/." "$seedcopy/" 2>/dev/null || true
+  [ "$(o13_ac "$seedcopy" AC2_reconciles)" = "0" ] \
+    && pass "oracle-13 fails the unfixed seed (both live defects detected)" \
+    || fail "oracle-13 passes AC2 on the seed — it cannot detect the defect it grades"
+  rm -rf "$seedcopy"
+
+  [ "$(o13_score "$FIX13/good")" = "7" ] \
+    && pass "oracle-13 scores a correct cents-discipline fix 7/7" \
+    || fail "oracle-13 scores the known-good fixture $(o13_score "$FIX13/good")/7"
+
+  # The documented trap: invoice() sums its own rounded lines, orderTotal untouched.
+  [ "$(o13_ac "$FIX13/trap-invoice" AC1_right_layer)" = "0" ] \
+    && pass "oracle-13 catches the invoice-sums-its-own-lines trap" \
+    || fail "oracle-13 passes AC1 for a fix that left orderTotal wrong"
+
+  # Trap 3: converted to cents but reinterpreted the stored dollar amounts.
+  [ "$(o13_ac "$FIX13/trap-cents-misread" AC5_persisted_data)" = "0" ] \
+    && pass "oracle-13 catches stored-precision loss in orders.json" \
+    || fail "oracle-13 passes AC5 for a solution that lost orders.json precision"
+fi
+
+# --- deterministic AC oracle (12-contact-search) -------------------------------
+# The hard one: the ask is "give them a way to search it", so the search function's
+# name and signature are unspecified and the oracle has to DISCOVER it. The third
+# assertion is the subtle one — the task's own trap (`c.name.includes(q)`) throws on
+# the name:null row for every query, so a naive discovery pass sees nothing and
+# reports "no search delivered", which is the wrong diagnosis for the same score.
+ORACLE12="$HERE/../tasks/12-contact-search/oracle/run.sh"
+FIX12="$HERE/../fixtures/oracle-12"
+if [ -f "$ORACLE12" ] && [ -d "$FIX12" ] && command -v node >/dev/null 2>&1; then
+  o12() { sh "$ORACLE12" "$FIX12/$1" 2>/dev/null; }
+
+  [ "$(o12 good | sed -n 's/.*"score":\([0-9]*\).*/\1/p')" = "5" ] \
+    && pass "oracle-12 scores a correct search 5/5" \
+    || fail "oracle-12 rejects the known-good fixture"
+
+  [ "$(o12 good | grep -c '"search":"contacts.js:searchContacts"')" = "1" ] \
+    && pass "oracle-12 discovers an unspecified search export by behaviour" \
+    || fail "oracle-12 could not find the search function in the known-good fixture"
+
+  [ "$(o12 naive | grep -c '"search":null')" = "0" ] \
+    && pass "oracle-12 reports a throwing search as broken, not missing" \
+    || fail "oracle-12 mis-diagnoses the null-unsafe trap as 'no search delivered'"
+
+  [ "$(o12 naive | grep -c '"AC2_null_safe":"pass"')" = "0" ] \
+    && pass "oracle-12 catches the name:null crash" \
+    || fail "oracle-12 passes AC2 for a search that throws on the null-name row"
+
+  [ "$(o12 naive | grep -c '"AC5_match_is_tested":"pass"')" = "0" ] \
+    && pass "oracle-12 catches a happy-path-only test suite" \
+    || fail "oracle-12 passes AC5 for a suite that stays green against a naive search"
+
+  [ "$(o12 no-search | grep -c '"search":null')" = "1" ] \
+    && pass "oracle-12 reports a genuinely missing search as missing" \
+    || fail "oracle-12 invented a search function in the no-search fixture"
+fi
+
 finish "benchmark tests"

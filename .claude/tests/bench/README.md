@@ -38,6 +38,29 @@ So a failed row carries `fail_reason`:
 | `api_error` | the envelope itself reports `is_error` |
 | `exit_<n>` | exited nonzero on its own, envelope still parsed |
 | `incomplete_at_<step>` | `state.json` has no `done_at` — the run stopped early **and exited cleanly** |
+| `blocked_at_<step>` | the orchestrator recorded a `BLOCKED:` note and halted for a human — **not a workflow failure** (see below) |
+
+### `blocked_at_*` is the pipeline succeeding, and the scorecard calls it a failure
+
+This is an **outcome-validity** hole, not a bookkeeping nit. Measured at M on
+`13-money-drift`: one run wrote spec/plan/tasks/test-plan, then its `lead` caught a
+real contradiction — the round-half-up default chosen at interview conflicts with AC6,
+because `A-1004` (8.01 × 0.5 = 4.005) and `A-1005` (4.01 × 0.5 = 2.005) are *both*
+exact half-cents. It recommended round-half-even, showed that it satisfies AC1–6 with
+all five fixture totals byte-identical, and **refused to auto-resolve under `--yes`**
+because the choice belongs to a human. The same ambiguity is what **4 of 6 plain-prompt
+runs silently guessed wrong**, failing AC1/AC3/AC7 on the oracle.
+
+That is the pipeline doing the one thing a plain prompt cannot. It scores `ok=false`,
+folds into no median, and contributes nothing to any A/B — so **the harness cannot
+currently observe `/dev` succeeding at its actual job.** Any M-tier verdict built on
+`ok=true` rows alone is measuring only the runs where nothing needed a human.
+
+Until the runner reports it separately, read `blocked_at_*` by hand before concluding
+anything about M: `jq -r 'select(.fail_reason|startswith("blocked_at"))' results/*.jsonl`
+and then read the run's `state.json > notes`. A substantive `BLOCKED:` clause naming a
+real contradiction is a **design-phase success with no code**; an empty or procedural
+one is a stall. The two look identical in the `ok` column.
 
 `incomplete_at_*` is the quiet one. A `/dev` run that halts at the gate returns a
 healthy envelope, so the row looked like a success: `ok=true`, no error, the judge
@@ -71,6 +94,66 @@ Identical prompts have scored **9 and 4** on this suite. A median of 6.5 reads a
 
 A workflow scoring 7±1 beats one scoring 8±4 for real work: the second means some
 runs land at 4 and a human pays to clean them up. Read `judge_p10` before `judge_score`.
+
+### The judge is not an AC oracle — measured, 2026-07-30
+
+`judge-outcome.sh` asks a model whether a diff meets the task's prose acceptance
+criteria. `grade-oracle.sh` asserts each criterion directly — no model, no tokens,
+no variance. Running both over 12 kept sandboxes on `11-recent-window` (6 `/dev`,
+6 plain baseline) produced the same answer twelve times, and it was not the judge's:
+
+| arm | judge (median) | oracle | AC4 |
+|---|---|---|---|
+| `/dev` workflow | 9 · all pass | **5/6** | **fails 6/6** |
+| vibe baseline | 10 · all pass | **5/6** | **fails 6/6** |
+
+Every run — both arms — ships
+
+```js
+if (n <= 0) return [];
+return items.slice(-n);
+```
+
+which handles zero and negatives and **puts bug #412 straight back for any
+fractional window**: `lastN(items, 0.4)` → `slice(-0.4)` → `slice(0)` → the entire
+array, the 900-row hang the ticket describes. `acceptance.txt` AC4 names this in so
+many words ("NEGATIVE AND **NON-INTEGER** INPUT does not resurrect the bug"). The
+judge scored those diffs 8–10 and called all twelve `pass`.
+
+Three things follow, and they change how every quality number in this file reads:
+
+- **A judge score is not evidence an AC holds.** It was already known that the
+  judge graded one run 9/pass while failing AC4 and AC5; that was treated as an
+  anecdote. At n=12 with a deterministic oracle beside it, it is the normal case.
+  Quote `judge_score` for *simplicity* and *fit* — the dimensions no test can
+  express — and cite the oracle for anything of the form "the criteria are met".
+- **The judge's between-arm difference on this task is noise.** It ranked the
+  baseline **higher** (10 vs 9) than `/dev` while both were objectively identical
+  at 5/6. Any A/B verdict that rested on a 1-point judge gap on this task rested
+  on nothing.
+- **`/dev` and a plain prompt are equally correct here, at 7.4× the price.** That
+  is the `XS/S value check` in `orchestrator.md`, now measured objectively instead
+  of inferred from a model's opinion — and the pipeline's core claim (that it
+  surfaces requirements the user never stated) **failed on this instance for both
+  arms**: AC4 appears in neither prompt, and neither arm found it.
+
+```sh
+sh grade-oracle.sh <sandbox-dir> 11-recent-window   # per-AC pass/fail, $0
+```
+
+Oracles live in `tasks/<task>/oracle/` and are **never** copied into a sandbox
+(`run-bench.sh` copies only `tasks/<task>/seed/`), so they cannot leak the answer
+key the way `.claude/tests` once did. AC1 is a SWE-bench **FAIL_TO_PASS** check —
+the shipped suite must pass on the delivered tree *and fail* once the pristine
+`window.js` is restored, because a suite that stays green does not pin the bug.
+The oracle itself is pinned by four fixtures in `fixtures/oracle-11/` with verdicts
+known by construction (`good` 6/6, `trap-feed` 3/6, `no-test` 5/6, `collateral`
+5/6) — an unvalidated oracle is worse than no oracle. Only `11-recent-window` has
+one so far.
+
+**Watch for this when writing the next oracle:** `node --test <dir>` prints
+"Could not find" and still **exits 0** on Node 26, which scores a sandbox with zero
+tests as a green suite. Pass explicit file paths and run from inside the tree.
 
 ## Run it
 
@@ -272,6 +355,22 @@ reproduces:
 (*"give them a way to search it"*) hiding five unstated requirements including a
 `name: null` row that crashes the naive `c.name.toLowerCase()`. The plain prompt
 handled all of it unprompted.
+
+**That claim was judge-based, and it now survives objective grading — 2026-07-30.**
+Six fresh baseline runs on `12-contact-search`, graded by the deterministic oracle
+rather than the model: **6/6 at 5/5 ACs**, every run building a
+`contacts.js:searchContacts` that is case-insensitive, survives the `name: null`
+row, returns the full list for an empty query, leaves `listContacts()` and
+`addressBook()` intact, **and ships a suite that goes red when the search is swapped
+for the naive `c.name.includes(q)`**. The plain prompt really does surface all five
+unstated requirements here.
+
+Read that beside the `11-recent-window` result above, where the same judge passed
+12/12 diffs that objectively failed AC4. **The judge is not uniformly wrong — it is
+unreliable in a way you cannot predict from its own output**, agreeing with the
+oracle on one task and blind on another. Which case a given task is in is exactly
+what the oracle exists to tell you, and it is why a headroom claim should be
+re-checked with `grade-oracle.sh` before it is used to retire a task.
 
 **Read this as a statement about model capability, not about workflow design.**
 The suite was calibrated against a weaker generation; the base model now covers

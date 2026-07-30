@@ -2,6 +2,23 @@
 
 > Loaded on demand by the main agent (`.claude/orchestrator.md`). The core single-writer rule + hook enforcement stay inline in `## State discipline`; this holds the corner cases — **background spawns** (state writes not hook-enforced), **git worktrees / concurrent runs** (`CLAUDE_DEV_RUN_ID` scoping). Read it only when you spawn background workers or run `/dev` inside a worktree / two runs at once.
 
+**A background spawn you then stop working for is a dead run.** The notification that
+carries a background completion can only arrive in a *later* turn, and headless
+`claude -p` — every `/dev` bench run, every CI/cron invocation — has no later turn.
+So "spawn in background, end the message, wait for the notification" terminates the
+pipeline silently: the envelope is healthy, the exit code is 0, `state.json` has no
+`done_at`, and the runner records `incomplete_at_<step>`. Measured at M on
+`13-money-drift` (n=3, 3600s ceiling, nothing timed out): **two runs of three** ended
+on precisely that sentence, one of them *after* its `lead` had already written
+`spec.md`, `plan.md` and `tasks.md` — 36 KB of correct design work, abandoned. Zero
+code, $2.22 and $2.37.
+
+Rule: **the phase worker is always foreground.** Background is for the fanout shapes
+that name it (`implement-fanout.md > Dispatch parallel, background, one message`), and
+those keep the orchestrator working — verifying writes, folding state — until the last
+completion lands. If you catch yourself about to explain that you are waiting, you
+have already lost the run: spawn foreground instead.
+
 **Background spawns are exempt from the marker.** An `Agent` call with `run_in_background: true` returns a launch ack, not a worker return, so `dev-state-mark.sh` doesn't touch the marker (else a one-message background batch self-blocks). The flip side: a background *completion* is a task notification firing no PostToolUse — so state-discipline is **not** hook-enforced for background workers. Write `state.json` yourself when each completion notification lands, before acting on its result.
 
 **Git worktrees / concurrent runs.** The hooks resolve `.workflow/` against `$CLAUDE_PROJECT_DIR` (the main checkout), **not** a `git worktree` — so inside a worktree whose `.workflow/` differs, the marker-freshness check is unreliable. Supported path: run `/dev` from the main checkout. If you must run inside a worktree, or run two `/dev` runs at once, export `CLAUDE_DEV_RUN_ID=<id>` so the guard scopes its check to your run (without it, the guard uses the single active run and fails open when 0 or ≥2 are active). Fail-open means the Case 3 state-freshness block is silently OFF for **every** run in that situation — single-writer discipline is then enforced only by you, so treat every worker return as an immediate write-state-now obligation.

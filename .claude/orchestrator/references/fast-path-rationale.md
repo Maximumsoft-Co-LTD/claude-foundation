@@ -178,6 +178,120 @@ and ≈ −40% wall, quality up on one task and flat on the other. Review keeps 
 spawn: the plan's author reading their own diff is the bias `WORKFLOW.md > Anti-bias
 rule` exists to break.
 
+## Rejected: "the artifact IS the cursor" (OpenSpec's no-ledger model at XS)
+
+Imported from OpenSpec, whose changes carry no state file at all — `openspec list`
+derives status from the filesystem and `tasks.md` checkboxes are the cursor. The XS
+analogue looked airtight: the lane runs a **0-spawn budget**, so `dev-state-mark.sh`
+never fires and the per-boundary `state.json` write has nobody to synchronise with.
+So: write `state.json` at 3 points only (Setup / gate / Close), let `run.md`'s
+existing `**Status**` field and `T###` checkboxes carry the cursor, and point the
+between-phase re-read at `run.md` — a **richer** anchor than a cursor scalar, and a
+read Implement/Test/Review already make. Explicitly *not* the turn diet below, which
+deleted the anchor outright.
+
+Measured, n=9 per side, same task (`11-recent-window`), same 9-way parallel
+concurrency, decision rule pre-registered before the after-run returned:
+
+| | cost median | cost sd | spread | turns | wall | judge | `judge_p10` |
+|---|---|---|---|---|---|---|---|
+| before | $2.01 | $0.37 | 1.75× | 47 | 302s | 9 | 7 |
+| after | **$2.01** | $0.39 | 1.73× | **48** | 301s | 9 | **6** |
+
+**Zero movement on every cost axis, and `judge_p10` down one.** Rejected on the
+pre-registered rule (adopt only at ≥17.4% cost drop with quality held). The p10 move
+is probably this task's documented bimodality showing through — one 6-scoring run in
+nine is its known base rate — but with no gain to weigh against it there is nothing
+to trade.
+
+**The finding worth more than the verdict: `turns` did not move (47 → 48).** The
+change cannot have removed bookkeeping calls, because there were none left to
+remove. The before-run's `phase_times` already carried **one identical timestamp
+across all seven phases** — the current tree writes `state.json` in a batch, not per
+boundary. So the "state+INDEX+timestamps ≈ 44% of every tool call" figure that
+motivated this — and that the turn diet below was also aimed at — is **stale**; it
+describes a tree several optimisation passes ago. Anyone planning a bookkeeping cut
+should re-measure the tally with `profile-turns.sh` **first**: on this tree the
+bookkeeping is already gone, and what remains at XS is the work.
+
+Two process notes from the run. The historical baseline (`$2.74 / 65 turns`) was
+**32% higher than the tree actually measured at** ($2.01 / 47) — re-baselining
+first, per the standing caveat below, is what kept this from being reported as a
+−27% win that was really someone else's earlier commits. And the doc-consistency
+suite is where a change like this pays even when reverted: adding the rule surfaced
+**two live contradictions** in prose that already said "don't re-read artifacts" and
+"never skip the `state.json` re-read".
+
+## Rejected: banning the harness task list at XS/S
+
+`profile-turns.sh` on an XS run tallied **16 of 69 tool calls (23%) as
+`TaskCreate`/`TaskUpdate`** — a third ledger for facts `run.md > ## Tasks` and
+`state.json > step` already hold, used only because the harness prompts for it (the
+playbook has never mentioned those tools). Removing an unambiguously duplicate
+ledger looked free.
+
+Measured, n=9 per side, same task, pre-registered rule:
+
+| | cost median | sd | spread | turns | wall | judge distribution |
+|---|---|---|---|---|---|---|
+| before | $2.01 | $0.37 | 1.75× | 47 | 302s | 7 7 8 8 9 9 9 9 10 |
+| after | **$2.19** | $0.34 | 1.59× | **51** | 314s | 7 7 8 8 9 9 9 9 10 |
+
+Cost **+9%**, turns **+4** — the wrong direction on both, from banning a tool that
+was supposedly burning 16 turns. Quality was *bit-identical* across the two judge
+distributions, so nothing was traded; the change simply did not do what the
+diagnostic predicted. Rejected and reverted.
+
+**The methodological error, which is the reusable part.** The 23% came from **one**
+`profile-turns.sh` run, and that run took **69 turns against a measured median of
+47** — above every row in the 9-run baseline (max 66). It was an outlier, and its
+task-tool usage is plausibly *why* it was one. Sizing an effect from a single
+instrumented run, when the quantity being sized has CV ≈ 17%, produced a 23%
+estimate for something worth roughly nothing in a typical run — and then cost $18 to
+disprove. **`profile-turns.sh` tells you which tools a run uses; it does not tell you
+how much a typical run uses them.** Profile to generate hypotheses, never to size
+them: for that, n must match the noise.
+
+Second reading, less certain but worth recording: a run that keeps a task list may
+be *better organised* for it, in which case the list is doing the same anchoring
+work the `state.json` re-read does. Both rejections this session point the same way —
+**at XS, the bookkeeping is not the overhead, it is the control loop.**
+
+## Adopted: the `fix` input-domain rule — the first correctness win here
+
+Not a cost change. The deterministic oracle (`tests/bench/grade-oracle.sh`) showed
+that **6/6 `/dev` runs and 6/6 plain-prompt runs** on `11-recent-window` fixed the
+reported input (`lastN(items, 0)`) and left the identical bug one input over
+(`lastN(items, 0.4)` → the whole list), while the model judge graded every one of
+the twelve 8–10/`pass`. The defect was never in the code the pipeline wrote — it was
+in the **AC set** the pipeline derived: nobody asked what happens beside the value in
+the ticket.
+
+So `_templates/run.md > ## Acceptance` gained a `fix`-scoped teaching note: a ticket
+names ONE input; before writing AC2, walk that parameter's neighbours (number → zero,
+negative, fractional, out-of-range; collection → empty, single, oversize; string →
+empty, blank, case, `null`) and pin the ones that reproduce the symptom. Template
+notes are stripped on fill, so it costs **nothing resident** and is read exactly when
+the ACs are being written.
+
+Measured, n=6 per side, same `--keep` config, rule pre-registered:
+
+| | AC4 (oracle) | oracle score | judge | cost | turns |
+|---|---|---|---|---|---|
+| before | **fail 6/6** | 5/6 | 9 | $2.37 | 55 |
+| after | **pass 6/6** | **6/6** | **10** | $2.64 | 58 |
+
+Every run now satisfies every acceptance criterion. Cost +11.4% against an MDE of
+**21.3%** at this n — i.e. no demonstrable cost increase — and the judge median rose
+with it. Adopted.
+
+**Two honest caveats.** The rule was derived from a dev-set task and measured on that
+same task; it is a general engineering principle rather than a task-specific hack,
+but it has not been validated on a holdout, which is exactly the benchmark-overfitting
+trap. And the primary metric here was a **deterministic** pass rate, which is why n=6
+sufficed — a judge-based verdict on the same change would still need n≈9+ and would
+have missed the defect entirely.
+
 ## Standing caveat: how much `n` a verdict needs
 
 At S, two runs of an identical configuration came back **$3.88 / 9-pass** and
