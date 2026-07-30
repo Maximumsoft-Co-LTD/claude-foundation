@@ -16,7 +16,8 @@ Dependency: `jq` (and `python3` for a couple of nested-JSON hook checks). POSIX
 | Layer | What it proves | Cost | Where |
 |-------|----------------|------|-------|
 | **1 — deterministic** | hooks behave; every artifact is structurally valid; a run conforms to the type-aware phase matrix | free, sub-second | `hooks/tests/` (existing) + `scenarios/` |
-| **1 — doc consistency** | the docs that *drive* the prose workflow don't rot: version single-sourced, agent model pins valid, `phase-matrix.tsv` ↔ `WORKFLOW.md` in sync | free | `docs/` |
+| **1 — doc consistency** | the docs that *drive* the prose workflow don't rot: version single-sourced, agent model pins valid, `phase-matrix.tsv` ↔ `WORKFLOW.md` in sync, no shipped file cites a path or reference that isn't there | free | `docs/` |
+| **1 — ledger** | the repo context ledger can be pruned without data loss: a dead `path#anchor` goes, every survivor stays byte-identical, and anything unverifiable is kept | free | `ledger/` |
 | **2 — e2e (live)** | a real `/dev` run on a fresh sandbox produces valid, on-axis artifacts | tokens + `claude` CLI | `e2e/` |
 | **3 — judge** | the artifacts are *good*, not just well-shaped (AC quality, plan↔spec fit, task executability) | tokens | `e2e/judge/` |
 

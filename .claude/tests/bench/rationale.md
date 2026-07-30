@@ -368,14 +368,24 @@ Read of a ≤100-line file per run, with staleness bounded by two rules that wer
 already load-bearing (evidence-not-authority; code > docs > ledger, and post-Implement
 the diff wins). The write side's cost is unchanged — retro already wrote the file.
 
-**How to measure it when there is a harness for it.** Extend `run-bench.sh` with a
-two-run mode over ONE sandbox: run A (`/dev` on task T1) leaves a `CONTEXT.md`; run B
-(`/dev` on task T2 touching the same surface) either reads it or has it deleted first.
-Primary metric is **run B's** cost and wall, n ≥ 9 per side given the ~23% resolution
-floor. Pre-register the same rule its cousin was rejected under: adopt-as-measured only
-at ≥17.4% cost drop on run B with the judge held. Blocker: the suite has no task *pair*
-sharing a surface — `08-name-migration` and `09-api-compat` are the closest shapes and
-would need building out.
+**How to measure it when there is a harness for it — and where.** Extend `run-bench.sh`
+with a two-run mode over ONE sandbox: run A (`/dev` on task T1) leaves a `CONTEXT.md`;
+run B (`/dev` on task T2 touching the same surface) either reads it or has it deleted
+first. Primary metric is **run B's** cost and wall, n ≥ 9 per side given the ~23%
+resolution floor. Pre-register the same rule its cousin was rejected under: adopt only at
+≥17.4% cost drop on run B with the oracle held.
+
+**Build that pair at M/L, not at XS.** The size of this effect is bounded by what the
+ledger displaces, and at XS that is a handful of greps inside a run whose measured
+inventory is 68 tool calls — plausibly 3–4 turns, i.e. **~5–8%, under the floor before
+the first token is spent**. Measuring it there buys a predictable "no gain demonstrated"
+for the price of a full n=9 verdict. At M/L the current-state walk is not a grep, it is a
+`team-codebase-explorer` **spawn** — and a cold spawn is the most expensive unit in this
+system (the one large adopted win, inlining Design at S, came from deleting exactly one
+of them: −⅓ cost, −40% wall). A ledger that lets a run skip even one explorer is the only
+version of this effect big enough for the instrument to see. Blocker either way: the
+suite has no task *pair* sharing a surface, and every task in it is XS/S — the pair has
+to be **built**, at M, before this is measurable at all.
 
 **Second-order change adopted with it (cost-neutral, same write).** The fold now groups
 lines under `## <area>` headings, keeps a durable `## Test infra` group, replaces a

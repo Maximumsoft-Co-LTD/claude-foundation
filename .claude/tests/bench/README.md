@@ -530,9 +530,15 @@ has no headroom yet — fix the task before spending a workflow arm on it.
   overhead around that work is too small to matter. Optimise scope, not overhead.
   (`profile-turns.sh` still earns its place: it is how the 19-touch `state.json`
   ritual and the answer-key read were both found.)
-- **But the bookkeeping is load-bearing — don't "optimise" it.** `state.json` is
+- **But the bookkeeping is load-bearing — don't "optimise" it.** `state.json` was
   the most-touched path of an XS run (19 Read/Write/Edit), and state+INDEX+
-  timestamps are ~44% of all tool calls, which looks like the obvious target.
+  timestamps were ~44% of all tool calls, which looked like the obvious target.
+  **Both figures are stale — re-measure before you use either.** A later run's
+  `phase_times` carried one identical stamp across all seven phases, i.e. the tree
+  now writes `state.json` in a batch, not per boundary; a change aimed at that 44%
+  moved `turns` 47 → 48, because there was nothing left to remove
+  (`rationale.md > Rejected: "the artifact IS the cursor"`). The advice below still
+  holds — the numbers behind it do not.
   Cutting the between-phase re-reads did drop turns 25% and cost with them — and
   blew the cost spread from 1.03× to **2.59×**, dropped `judge_p10` 9 → 6, and
   produced the task's first hard acceptance failure: one run drifted to 39 turns
