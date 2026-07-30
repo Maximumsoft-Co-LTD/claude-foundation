@@ -1,85 +1,112 @@
-# Orchestrator (main-agent role)
+# Foundation change loop
 
-Orchestration runs in the **main agent** because workers cannot ask the user. Main owns every spawn, user question, and the single-writer `state.json`; workers are `pm`, `lead`, `engineer`, `qa`, `retro`, and `team-*`. The type-aware flow is interview → spec → plan → gate → autonomous Phase 2 → ship → retro. Acceptance criteria are the contract.
+Foundation is an OpenSpec-native software-change harness. The main agent owns one
+short loop:
 
-Scale main-session effort by size per `references/size-execution.md > Effort by size`: medium for XS/S, high for M or main-as-verifier, xhigh for L/security. Set it before Phase 2; gate, AC confirmation, and security checks never depend on effort. Ops 1–9 are local counters; cross-file references use phase names.
+```text
+Investigate? → Change → Build → Prove → Land
+```
 
-## Workload profile and orchestrator economics
-Size is a ceiling, not the router. After the requirements digest classify and record
-`work_profile`, `risk`, `ambiguity`, `evidence[]`, `volume`, and `coupling` using
-`references/size-execution.md > Workload profile resolver`. Each axis owns one
-decision: ambiguity→interview depth · evidence→verification · volume→Implement
-executor · risk→Review/Security · coupling→context/fanout · field→understand/lock.
+There are no lifecycle subagents or fixed phases. OpenSpec owns durable intent,
+the native agent owns implementation, and `.claude/harness/foundation.mjs` owns
+deterministic state, evidence validity, budgets, and land guards.
 
-Opus main owns judgment, not phase-local production: classification, user decisions,
-contract semantics, arbitration, independent risk review, and final synthesis.
-Implementation-local test writing/fix loops, noisy tool output, browser tooling, and
-mechanical work stay with the selected phase executor or deterministic scripts.
-Record the profile's main-turn target/hard ceiling in `orchestrator_budget`; at the
-ceiling stop with `ORCHESTRATOR_BUDGET_EXCEEDED:` (phase, cause, remaining
-uncertainty, continue/split/re-scope). Never keep spending invisibly.
+## Sources of truth
 
-## Single-pass-first
-Default to **one sequential spawn per phase**; fan out only when **all three** hold: (a) work decomposes into independent sub-investigations (no finding changes another), (b) helpers write **disjoint** files/symbols, (c) coordination + N× cold-start < wall-clock saved — else single-pass. Governs both push fanouts and the `FANOUT_REQUESTED: implement:` signal (a request to *evaluate*, not an order — honour when (a)–(c) hold, else refuse with a one-line reason). **Type forbids implement fanout** for `fix`/`refactor`/`spike`. **Never changes:** single-writer state, the synthesis pass when fanout fires (fanout output is evidence, never the artifact), pre-implement disjointness re-verification, and the gate.
+- `openspec/changes/<id>/`: proposal, delta specs, design, tasks, evidence claims.
+- Code and tests: implementation truth.
+- `.foundation/runtime/<id>.json`: machine lifecycle and resolver output.
+- `.foundation/receipts/<id>/`: content-bound evidence.
+- `tasks.md`: the only task ledger. Never mirror each checkbox into native tasks.
 
-## Speed profiles
-Choose once with size and record `state.json > speed_profile`; this is a **spawn ceiling**, not a routing table. **fast** (default XS/S, or explicit `--fast`) targets 0 spawns at XS / ≤2 at S (one volume-routed Implement plus the measured Docs+Ship exception). **standard** (default M) targets ≤3. **deep** (default L) targets ≤5. Every phase still runs the Execution resolver below; M/L do not imply cold-spawn. Exceeding a ceiling requires a recorded `exec_reason`, not silent machinery. A fired security trigger upgrades Review/Security only. Never spawn merely because an agent exists.
+Do not create `.workflow/` state for new work. Existing `.workflow/` runs are
+read-only legacy records and may be migrated with `foundation migrate`.
 
-## Execution resolver (every phase)
-Default **inline**. Choose `fork`/`spawn` only when at least one **spawn proof** is true: **independence** (fresh judgment must not share author bias); **context gap** (main lacks the authoritative map); **isolation/tooling** (browser/e2e, new harness, multi-repo, noisy output); **parallel payoff** (Single-pass-first); or **execution volume** (repeated Opus coding turns cost more than one bounded Sonnet worker). Implement volume fires on ≥3 code-producing tasks, ≥3 source/test files, a planned test-fix loop, or >~2K expected generated tokens; use one `engineer`, `exec_reason.implement=model-economy:<signal>`. Size alone never fires it. Deterministic shell/checklist/docs/git/state work stays inline. Record every mode and shortest true reason. If no proof can be named, spawning is forbidden.
+## Resolve
 
-## Op 1 — Setup (fresh run)
-a. **Not-actually-fresh guard.** Scan `.workflow/*/state.json` for non-`done` runs still in Phase 1; if the message reads as feedback on the latest such spec/plan, resume it into its gate `revise` path (op 4) — never spin a fresh Phase 1. Ambiguous → ask once; >1 in-flight → offer to close older (`INDEX.md` status `abandoned`).
-b. Read `.workflow/INDEX.md` + `.workflow/FOLLOWUPS.md`; consult `WORKFLOW.md` only for the section needed.
-c. **Repo detection.** `find . -maxdepth 2 -name .git \( -type d -o -type f \)` (match `.git` dir OR file — submodules). `./.git` only → single-repo `repo_root=$(pwd)`; any subdir `.git` → control-plane, ask once which repo is primary, record `state.repos`; no `.git` → no-git, `repo_root=null`, skip every VCS gate thereafter (append `ship:no-vcs` to `skipped_steps` at ship).
-d. Pick run ID `NNNN-<type>-<kebab-slug>` (`feat|fix|refactor|chore|docs|spike`). Estimate size first (op 2 sub-step 0). XS/S → fold setup (type, branch) into the merged interview batch; M/L → ask ≤2 (type if unclear, branch). As soon as the branch returns: warn + offer default if not on main, then `git -C <repo_root> checkout -b <branch>` (exists → `checkout` + note `branch_existed=true`), confirm before proceeding. Skip only when `repo_root` null.
-e. Create `.workflow/<id>/`; copy `_templates/state.json` → `.workflow/<id>/state.json`; fill `id type size speed_profile field repo_root repos branch phase=phase-1-requirements step=interview`, `owner`/`owner_email` = `git -C <repo_root> config user.name` / `user.email` output (null when `repo_root` null — the dashboard attributes the run to these, never guess them) + timestamps `created_at`=`last_updated` (timestamp rule: `## State discipline` — run the command, never type one), `done_at=null`. Also fill the six workload axes and the profile's `orchestrator_budget`; unresolved axes are explicit `null` only until Interview completes, never through Contract Gate.
-f. Append `INDEX.md` row, status `spec`.
+Resolve five independent values before building:
 
-**Resume (`/dev --resume <id>`)** — mechanics (branch re-checkout, hard-stop on git failure, shard reconciliation, mid-fanout `step=implement` guard, legacy missing-`size`/`field`) → **`references/resume.md`** (read only when resuming).
+- ambiguity: `clear|unclear` — unclear work uses `/investigate`;
+- impact: `low|medium|high`;
+- coupling: `isolated|coupled`;
+- evidence capabilities required by observable claims;
+- size: budget and slicing only, never phases.
 
-## State discipline
-Update `state.json` after every worker return, phase boundary, and eligible/fired fanout point; fold spawn-free micro-steps into the next write. `Edit` routine scalars, but `Write` the complete object for structural changes. Every write must remain valid JSON with unique keys.
+Use `foundation resolve <change> ...` to persist the decision. Choose
+`foundation-rapid` only when impact is low, coupling is isolated, unit/static
+evidence is sufficient, and there is no public contract, persistent migration,
+security boundary, irreversible effect, or sensitive data.
 
-- Record completed `phase`/`step`, matrix-derived `next_step`, `last_agent`, real cycle increments, and terse tag-only `notes`.
-- Write `"__now__"` for `last_updated`, Setup `created_at`, Close `done_at`, and `phase_times.<step>`; the hook substitutes UTC. Never call `date` or type an ISO timestamp.
-- Record `exec_mode.<phase>` + shortest true `exec_reason.<phase>`; increment `spawn_count` for every fork/cold spawn.
-- Before a phase worker starts set `worker_lifecycle={status:"started",worker,phase,started_at:"__now__",terminal_at:null}`. A phase transition is illegal until its structured return sets terminal `done|blocker|failed|size-upgrade`, after which fold the result and return lifecycle to `idle`.
-- Append `fanout_log` only when eligible/fired. Fold returned `CONTEXT:` facts with the same write; mechanics are in `references/state-edge-cases.md`.
-- Re-read `state.json` between phases; it is the resume/control anchor. `dev-state-validate.sh` enforces shape and `dev-agent-guard.sh` enforces a fresh M/L write before the next spawn.
+Security is semantic. Trigger it for identity/access, secrets, permissions,
+cross-user access, network trust, irreversible mutation, sensitive storage,
+unsafe sinks, public security contracts, or security-relevant migrations.
+Generic syntax such as JSON parsing, DOM use, or HTTP use is not a trigger alone.
 
-**NEVER end a turn with a spawn outstanding.** Phase workers run foreground. While a phase worker is `started`, main does not read, test, review, or mutate that worker's owned tree; doing so observes a partial result and creates Reconcile work. Background is limited to named fanout paths, and main continues until every completion lands; headless `claude -p` has no next turn. Background/worktree details → `references/state-edge-cases.md`; team shards → `references/team-mode-sharding.md`.
+## Build
 
-Use state + compact structured worker summaries as the working set; raw logs stay in files and passing command output is counts only. Do not re-read artifacts already held. Batch independent boot reads in one message, but never speculative reads or a state write with the spawn it gates. Spawn prompts start with Goal + owned AC ids, then authoritative pointers + delta + `repo_root`/branch/context pointer; never drip-feed context.
+Give the native harness only the goal, change path, delta specs, design
+constraints, tasks, evidence obligations, sandbox descriptor, and budget.
+Implementation order and tool choice belong to the harness.
 
-## Size-aware execution
-Size definitions, picker, field rules, patch lane, and the matrix live in `references/size-execution.md` plus `plan-writing > references/size-tiering.md`; read the needed section after the requirements digest. Size sets depth and a spawn ceiling, never the executor. `state.json > size` only ratchets upward. Required phases are type/trigger-aware: Interview+Spec, Plan, Contract Gate, and Implement always; Test + Ship Gate for feat/fix/refactor; independent Review and Security review when their triggers fire. State writes and the security-trigger scan also remain on. Other phases follow the type matrix and gate-approved deviations. Every size reads `.workflow/CONTEXT.md` before a code/test walk and verifies only missing load-bearing anchors. XS alone loads `references/xs-s-fast-path.md`; S/M/L use the normal phase references. `SIZE_UPGRADE:` raises the tier and preserves valid artifacts; `FIELD_UPGRADE:` enables brownfield understand/lock work.
-**Field (greenfield|brownfield, orthogonal, one-way).** Classify at digest, record `field`. **Default brownfield** unless genuinely new isolated code (every fix/refactor, every M/L, every mixed run is brownfield). Brownfield turns on **understand** (current-state map) + **lock** (characterization baseline). **At M/L the understand map is built ONCE → `context.md`** (op 3a; read by all three plan slices instead of each re-walking, `context_built=true`); greenfield / XS-S build none — but **every run, at every size and either field, reads the repo ledger `.workflow/CONTEXT.md` BEFORE it walks anything** (retro accrues it from every prior run — `agents/retro.md` step 5b): one read, then walk only what it doesn't cover. A fact a previous run already established here is not worth re-deriving with greps and LSP hops. Absent (first run in this repo) → walk as before. **Evidence, not authority** — spot-check load-bearing claims and code beats the ledger (truth hierarchy). Both maps are pure optimisation, never a hard dependency. `FIELD_UPGRADE: brownfield — <reason>` → set `field=brownfield`, run remaining brownfield, and **backfill** understand/lock (XS/S: add the `test-plan.md > Baseline` row inline yourself; M/L backfill mechanics → `references/ml-design-chain.md > Field upgrade backfill`). Only ratchets greenfield → brownfield.
+- Read only relevant repository context.
+- Update `tasks.md` checkboxes as work completes.
+- Use native tasks/subagents only for independently verifiable work packages,
+  genuine parallelism, resumption, or cross-repository work.
+- Prefer focused checks while editing. Do not repeat the full suite at phase
+  boundaries; there are no phase boundaries.
+- Never weaken an evidence obligation to fit a budget.
 
-## Phase 1 — Requirements (ops 2–4)
-Full procedure → **`references/phase-1.md`** — read it when a fresh run starts; `/implement` needs only its op 4.
-2. **Interview (you run it).** Requirements digest from prior conversation, estimate `size` + classify `field`, the three detections, ONE `AskUserQuestion` batch of 3–4 (each leading with `(Recommended)`) + a free-text catch-all; save the bundle for the design spawn.
-3. **Design (spec + plan + tasks + test-plan — one artifact set, resolver-routed).** Main/fork writes when interview + code map are warm; otherwise one combined `lead`. L uses `pm → lead → qa` only when independent requirement/test slices are genuinely needed. Size alone never selects the chain. Then run artifact checks + state write, `next_step=gate`.
-4. **Contract Gate.** Fold Phase-1 shards → resolve test-plan backfill → run/reuse `artifact-lint.sh --contract` → build the type-aware run plan → resolve ship disposition (`commit_on_ship` asked every run, default `no`) → present intent and hard-to-reverse decisions for human approval (`references/gate.md`). Loops until `approve`; free-form = `revise` for this run.
+For medium/large coupled work, slice by coherent behavior. Each slice follows
+Build → Prove; finish with one integration proof.
 
-## Non-interactive (`--yes`)
+## Prove
 
-For headless benchmark/CI (`/dev --yes <intent>`), suppress only `AskUserQuestion`; Interview, Contract Gate, and all required quality gates still run. Interview fills unspecified slots from intent, then `(Recommended)` defaults; no safe load-bearing default → write state and stop `NON_INTERACTIVE_BLOCKER: <slot>`. Contract Gate auto-approves only with no `BLOCKER:` and no required-phase deviation. Refuse any attempted code-type Test/Ship-Gate skip or fired Review/Security skip as invalid. Optional Docs, commit/PR Ship effects, Retro, and non-triggered Review deviations are verification-neutral and may auto-approve; record each in notes. Resolve null `commit_on_ship=no` and `e2e_visual=off`. Cycle-limit escalation → write state, then stop `NON_INTERACTIVE_BLOCKER: <limit>`. Every blocker stop records `notes += "BLOCKED: <reason>"` before halting.
+`/prove` is evidence-driven:
 
-## Plan-only (`--plan-only`)
+1. validate the OpenSpec change;
+2. compute the relevant workspace hash;
+3. resolve claims to providers;
+4. reuse receipts only when their hash and provider version match;
+5. run missing or stale providers;
+6. verify test discovery;
+7. run the required full suite once after convergence;
+8. perform independent review only when risk triggers it;
+9. re-run evidence invalidated by a proof-time edit;
+10. run `foundation prove <change>`.
 
-Run Phase 1 and stop: interview → Design → Gate, then **halt before op 5** instead of entering the autonomous stretch. Everything in Phase 1 runs exactly as written — nothing is skipped or thinned, and the gate still resolves (a human `approve`, or the `--yes` rules above). On halt: leave `phase=phase-1-requirements`, `step=gate`, `next_step=implement`, do **not** stamp `done_at` (the run is paused, not finished), leave INDEX at `planned`, and print the artifact paths plus the exact resume command — `/dev --resume <id>` picks it up at op 5 with the machinery its `size` calls for. Combines with `--yes`. Use it to review a design before paying for the build.
+Provider results are `pass|fail|inconclusive|error`. Required `inconclusive`
+evidence blocks landing. A mutation crash is not a behavioral kill. Required
+rendered behavior cannot pass through a provider lacking the declared input and
+foreground capabilities.
 
-## Phase 2 — Implementation (ops 5–9, autonomous)
-Full procedure → **`references/phase-2.md`** (read once on entering op 5). Deep mechanics → open only the current step's named section in **`references/phase-2-guards.md`**; never preload the whole guard file. Phase 1 loads neither.
-5. **Implement.** XS/small-volume warm work stays inline. Execution-volume, context-gap, isolation, or parallel proof → bounded `engineer` (Sonnet by default); L alone never upgrades it to Opus. `tasks.md` is the entry.
-6. **Change Gate — Test** (before review; required for feat/fix/refactor). Known Impacted runner + no browser/new harness → inline at any size; isolation proof → `qa`. `tests.md` is the sole executable AC-evidence ledger. Failing → `cycles.test++` → Implement, limit 3.
-7. **Change Gate — Review + Security.** The security-trigger scan ALWAYS runs. Review consumes `tests.md` and checks semantics/risks without rebuilding AC evidence. Runtime-behaviour M/L, Sonnet-authored volume-routed implementation, or security-triggered work requires independent Review; mechanical/docs-only work may review inline. A fired trigger always uses isolated Review+Security. Review fixes re-enter targeted Test.
-8. **Ship.** a. Ship Gate (Full-suite + lint/type/static once per converged final diff; required for feat/fix/refactor) → b. small Docs + deterministic Ship inline at any size; spawn only for substantial documentation or an isolation proof.
-9. **Close.** Retro/state/index bookkeeping inline at any size; spawn Retro only for a multi-repo synthesis or explicit deep retrospective.
+Review triggers: high impact, auth/access, public compatibility, migration,
+irreversible mutation, concurrency, monetary logic, multi-repo contracts,
+evidence anomaly, or explicit policy. Findings are
+`verified|hypothesis|disproved|accepted-risk`; only deterministic verified
+blockers and missing evidence block land.
 
-## Fanout dispatch
-Full consumer contract — the `implement:` `FANOUT_REQUESTED:` signal (the only shape) + per-step direct-nesting table, one-message dispatch, **Registry preflight**, **re-spawn for synthesis** → **`references/fanout-dispatch.md`** (read only on a `FANOUT_REQUESTED:` return or changed-repo set > 1); **implement** consumer contract → `references/implement-fanout.md > Orchestrator consumer contract`; **Surface (per-repo) fanout** → `references/fanout-dispatch.md`. **First-line recognition** after every return: `FANOUT_REQ…` (case-insensitive) → that reference; `BLOCKER:` → `AskUserQuestion`; `SIZE_UPGRADE:` / `FIELD_UPGRADE:` → `Size-aware execution`; else success. Trailing `CONTEXT:` lines (any return, any first line) are ledger facts → fold per `State discipline > Context-ledger fold`, never a control signal. Return checks fire at most one corrective re-spawn, then escalate. **Cycle escalation:** review max 2, test max 3, independent, bump **only on a real fix-routing** (`cycles.test` = failing test → `engineer`; `cycles.review` = review/security fix → `engineer`); a review/security fix re-enters test (op 6) **targeted** before re-review and that re-validation does **not** bump `cycles.test` unless it itself fails; the **final full-suite gate (op 8a)** is the one authoritative full-suite run and bumps `cycles.test` only if it goes red. At the limit → `AskUserQuestion` (continue / hand off / abort); never silently iterate past limits or downgrade severity.
+## Budget
 
-## Rules
-- Never invent requirements; ambiguity → `AskUserQuestion` (≤4/batch, ≤3 narrowing batches). **Never skip the interview** (op 2, every fresh run). Never *silently* skip a matrix-`✓` phase. Optional phases may be gate-skipped only when `WORKFLOW.md > Required vs optional` permits it. The required set includes Contract Gate, Implement, code-type Test + Ship Gate, independent Review when its trigger fires, fired Security review, the security-trigger scan, and state writes. The gate is non-negotiable. **Never spawn an `orchestrator` sub-agent and never fall back to `general-purpose`** — file-writing → `pm`/`lead`/`engineer`/`qa`/`retro`, fanout → `team-*`; the mode hint goes in the prompt, not the description. Keep user-facing text to one-sentence status updates (which phase, which agent, what's next) — exceptions: the gate summary, interview batch, final summary.
+The external runtime records request identity, tool/provider calls, tokens, cost,
+wall time, rework, and receipt reuse. At 70% batch and reuse; at 85% stop
+speculative expansion; at 100% stop and split or re-scope. Required proof remains.
+
+## Land
+
+Landing is explicit and transactional:
+
+1. `foundation land-check <change>` rejects stale or incomplete proof;
+2. apply only the proven sandbox diff;
+3. verify the applied workspace hash;
+4. use OpenSpec archive/spec sync;
+5. record commit/PR only when explicitly authorized;
+6. finalize metrics and clean the sandbox.
+
+Never archive before code application, never apply a diff whose proof hash
+changed, and never overwrite unrelated user changes.
+
+## Compatibility
+
+`/dev <intent>` composes `/change → /build → /prove`. It does not land, commit,
+or open a PR. `--plan-only` maps to `/change`; `--resume <id>` resumes the named
+OpenSpec change. Legacy active runs are routed through `/migrate-workflow`.

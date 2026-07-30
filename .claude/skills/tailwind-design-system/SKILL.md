@@ -13,7 +13,7 @@ Only when Tailwind v4 itself is part of the work: tokens, variants, CSS-first co
 
 - [[ui-ux-pro-max]] first when deciding what the interface should feel like.
 - [[frontend-design]] when the design is settled and no shared Tailwind system change is needed.
-- In `/dev`: lead planning for design-system work; engineer for shared primitive changes.
+- In the change loop: record shared-token/API decisions in `design.md`, then apply this skill during `/build`.
 
 ## Key v4 Changes
 

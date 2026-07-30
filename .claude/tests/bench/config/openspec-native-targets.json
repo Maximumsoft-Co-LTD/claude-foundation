@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "workflow": "openspec-native",
+  "scenarios": {
+    "todolist-r2": {
+      "baseline": {
+        "wall_minutes": 58.5,
+        "cost_usd": 33.15,
+        "model_requests": 289,
+        "control_plane_requests": 195,
+        "browser_calls": 69,
+        "task_mirror_operations": 42
+      },
+      "target": {
+        "wall_minutes_max": 25,
+        "cost_usd_max": 16,
+        "model_requests_max": 130,
+        "control_plane_requests_max": 50,
+        "browser_calls_max": 8,
+        "task_mirror_operations_max": 0
+      }
+    },
+    "auth-profile": {
+      "baseline": {
+        "wall_minutes": 68,
+        "cost_usd": 29.21,
+        "model_requests": 257,
+        "review_cycles": 2
+      },
+      "target": {
+        "wall_minutes_max": 40,
+        "cost_usd_max": 20,
+        "model_requests_max": 160,
+        "review_cycles_max": 1,
+        "known_data_loss_blocked_before_land": true
+      }
+    }
+  },
+  "quality_invariants": [
+    "known_incidents_detected",
+    "test_discovery_cannot_silently_drop",
+    "mutation_crash_is_not_a_kill",
+    "rendered_claim_requires_capable_provider",
+    "stale_proof_cannot_land",
+    "required_inconclusive_evidence_blocks",
+    "request_identity_and_cost_metrics_complete"
+  ]
+}

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OpenSpec-native change loop** — replaces the fixed phase orchestrator with
+  `/investigate → /change → /build → /prove → /land`; `/dev` remains a
+  compatibility composition through proof.
+- **Foundation standard and rapid OpenSpec schemas** — proposal, delta specs,
+  load-bearing design, one task ledger, and claim-oriented `evidence.yaml`.
+- **Deterministic harness runtime** — content hashing, provider receipts,
+  discovery enforcement, stale-proof invalidation, semantic risk resolution,
+  review triggers, watchdog events, migration candidates, Git worktree isolation,
+  transactional apply checks, and OpenSpec-owned safe archive/spec sync.
+- **Upgrade-safe installer migration** — preserves legacy `.workflow/` history
+  and project-owned OpenSpec content while removing old lifecycle agents,
+  phase commands, templates, hooks, hook wiring, and orchestration references.
+
+### Removed
+
+- **Phase control plane** — PM/lead/engineer/QA/retro lifecycle agents, fanout
+  roles, duplicated task/state ledgers, phase references, artifact reconciliation,
+  and phase-specific workflow templates are no longer shipped.
+
 - **Multi-axis workload profiles** — `/dev` records workload profile, risk,
   ambiguity, evidence classes, implementation volume, and coupling separately from
   Size; profile-specific Opus-main turn budgets stop invisible runaway orchestration.

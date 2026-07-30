@@ -2,16 +2,6 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "matcher": "Read|Grep|Bash",
         "hooks": [
           {
@@ -30,26 +20,6 @@
             "type": "command",
             "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/lint.sh",
             "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-state-validate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/artifact-lint.sh --hook",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-state-mark.sh",
-            "timeout": 5
           }
         ]
       }

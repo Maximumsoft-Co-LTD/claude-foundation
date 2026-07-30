@@ -4,7 +4,7 @@ The always-on **detection layer**: match a trigger below, then load that one ski
 
 ## Conduct digest (always-on)
 
-The 4-principle core of `coding-discipline`, applied to **every** code task without loading the body (load it only on friction — see the Process table): **(1) Think before coding** — state assumptions; >1 reasonable reading → name them, never pick silently; a genuinely open design → `brainstorming`. **(2) Simplicity first** — the Ponytail section below. **(3) Surgical changes** — every changed line traces to the request; no reformat/rename/refactor riding along; mention nearby bugs, don't fix them inline; remove only what *your* change orphaned. **(4) Goal-driven** — restate the task as a checkable definition of done before starting; loop until met. **Fast first (tie-breaker)** — two compliant paths → take the faster; a consequence of (2)+(4), never a licence to cut verification (the gate, the security-trigger check, state writes, the `fix` regression contract, and per-line AC confirmation are the floor). **Truth hierarchy** — code > docs > context ledger; after Implement the diff wins over any pre-built map; a conflict is a finding to flag, never a fact to follow.
+The 4-principle core of `coding-discipline`, applied to **every** code task without loading the body (load it only on friction — see the Process table): **(1) Think before coding** — state assumptions; >1 reasonable reading → name them, never pick silently; a genuinely open design → `brainstorming`. **(2) Simplicity first** — the Ponytail section below. **(3) Surgical changes** — every changed line traces to the request; no reformat/rename/refactor riding along; mention nearby bugs, don't fix them inline; remove only what *your* change orphaned. **(4) Goal-driven** — restate the task as a checkable definition of done before starting; loop until met. **Fast first (tie-breaker)** — two compliant paths → take the faster; never cut a required evidence claim, security trigger, regression contract, or land guard. **Truth hierarchy** — code and tests > current specs > investigation notes; a conflict is a finding to resolve, never a fact to follow blindly.
 
 ## Ponytail (always-on minimalism)
 
@@ -12,7 +12,7 @@ The 4-principle core of `coding-discipline`, applied to **every** code task with
 
 ## Output discipline (always-on)
 
-Terse-first — every response, artifact, agent report. Cut preamble, restated context, narration. **Terse ≠ lossy**: never drop a result, caveat, or needed step. Throwaway prose (chat, agent report, `state.json notes`) → minimize hard, tags not paragraphs. Consumed artifacts → trim prose, but keep every field a later phase reads (ACs, tasks, mermaid diagram, `path#anchor` citations, regression contract, `--resume` keys) — cut those and the next phase breaks. **On fill: strip template scaffolding** — the `>` teaching notes, the `*Optional — … delete the rest*` footer, and every unfired Type/section variant go; the persisted artifact (re-read 4-6× downstream) carries only the run's real content, never the blueprint's guidance (`artifact-lint.sh` flags leftovers).
+Terse-first — every response and artifact. Cut preamble, repeated context, and lifecycle narration. **Terse ≠ lossy**: never drop a result, caveat, decision, evidence obligation, or needed step. Durable OpenSpec artifacts keep only information later work consumes; runtime status belongs in `.foundation/`, not Markdown. Strip template guidance when filling an artifact.
 
 ## Process layer (wraps the work)
 

@@ -6,9 +6,7 @@
 # here without piling into the installer.
 #
 # Subcommands:
-#   init [target-path] [options]
-#                      → the installer    (install.sh), e.g.
-#                        `claude-foundation init [target-path] [options]`
+#   init [target-path] [options] → install the OpenSpec-native harness
 #   version | --version | -v
 #                      → print the version (from the VERSION file beside this
 #                        script; falls back to `git describe`)
@@ -44,10 +42,10 @@ print_version() {
 
 usage() {
   cat <<'EOF'
-claude-foundation — drop the /dev workflow into any project
+claude-foundation — OpenSpec-native software-change harness
 
 Usage:
-  claude-foundation init [target-path] [options]   Install the /dev workflow (default target: current dir)
+  claude-foundation init [target-path] [options]   Install the change loop (default target: current dir)
   claude-foundation version                        Print the installed version
   claude-foundation help                           Show this help
   claude-foundation dashboard-up --key <key>       Start the team-presence client (background)
@@ -56,6 +54,10 @@ Usage:
 
 Run `claude-foundation init --help` for the full installer options
 (--source, --force, --yes, --dry-run).
+
+Installed workflow:
+  /investigate → /change → /build → /prove → /land
+  /dev remains a compatibility alias through proof.
 
 With no subcommand, claude-foundation installs into the current directory —
 equivalent to `claude-foundation init`.

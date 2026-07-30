@@ -1,0 +1,27 @@
+name: foundation-rapid
+version: 1
+description: Low-impact isolated change with minimal artifacts
+
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Brief intent, scope, and rapid-lane eligibility
+    template: proposal.md
+    instruction: Explain what changes, why, and why this is low-risk and isolated.
+    requires: []
+  - id: tasks
+    generates: tasks.md
+    description: Single implementation ledger
+    template: tasks.md
+    instruction: Write a short list of independently verifiable implementation tasks.
+    requires: [proposal]
+  - id: evidence
+    generates: evidence.yaml
+    description: Unit or static evidence claims
+    template: evidence.yaml
+    instruction: Map the intended outcome to unit or static evidence.
+    requires: [proposal]
+
+apply:
+  requires: [tasks, evidence]
+  tracks: tasks.md

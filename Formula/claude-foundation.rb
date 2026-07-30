@@ -1,5 +1,5 @@
 class ClaudeFoundation < Formula
-  desc "Drop the /dev workflow (spec → plan → ship) + team-mode role commands"
+  desc "OpenSpec-native change harness for AI coding agents"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
   url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.12.0.tar.gz"
   sha256 "0a7ea51b74094832339addcaabc8ecd265e76bc41a3ba1c5587871964b98b9dc"
@@ -24,7 +24,8 @@ class ClaudeFoundation < Formula
   end
 
   def install
-    libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
+    libexec.install ".claude", ".foundation", ".workflow", "openspec",
+                    "WORKFLOW.md", "CLAUDE.md", "package.json", "package-lock.json",
                     "install.sh", "install-cursor.sh", "cli.sh", "dashboard"
 
     # VERSION is cli.sh's source of truth for `claude-foundation version`.

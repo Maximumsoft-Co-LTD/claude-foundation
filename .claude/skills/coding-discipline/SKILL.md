@@ -63,7 +63,7 @@ Whatever rung you land on: no features/options/config beyond what was asked, no 
 - Restate the task as a checkable goal: "add validation" → "tests for the invalid inputs pass"; "fix the bug" → "a test that reproduces it now passes"; "refactor X" → "the existing tests stay green before and after."
 - For multi-step work, name each step's own verification (`step → verify: check`); template: `references/details.md > 4. Goal-Driven Execution`.
 
-**Defer to:** the *stance* lives here, the *machinery* elsewhere. In `/dev`, `qa` authors/runs tests and maps them to acceptance criteria. For a bug, [[debug-fundamentals]] owns "reproduce first, fix the cause, pin it with a regression test." Adopt the goal-driven framing; route actual verification to them.
+**Defer to:** the *stance* lives here, the *machinery* elsewhere. OpenSpec evidence claims define what must be proven and `/prove` runs the applicable deterministic providers. For a bug, [[debug-fundamentals]] owns "reproduce first, fix the cause, pin it with a regression test."
 
 ## Pre-flight checklist
 
@@ -78,7 +78,7 @@ If any answer is "I don't know," resolve it before writing.
 
 ## Relation to other skills
 
-Thin **behavioral wrapper** — routes, doesn't re-teach: [[brainstorming]] (scope/ambiguity), [[programming-fundamentals]] (code mechanics), `/simplify` (post-hoc cleanup), [[git-workflow]] (commits enabled by surgical diffs), [[debug-fundamentals]] + `qa` (verification). Full per-skill mapping: `references/details.md > Relation to other skills`.
+Thin **behavioral wrapper** — routes, doesn't re-teach: [[brainstorming]] (scope/ambiguity), [[programming-fundamentals]] (code mechanics), `/simplify` (post-hoc cleanup), [[git-workflow]] (commits enabled by surgical diffs), [[debug-fundamentals]] and `/prove` (verification). Full per-skill mapping: `references/details.md > Relation to other skills`.
 
 Run order: this skill *first* as the conduct check, then the layer-appropriate domain skill (canonical order: `.claude/rules/fundamentals.md`; for a bug, `debug-fundamentals` runs first).
 

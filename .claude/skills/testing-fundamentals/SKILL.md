@@ -9,7 +9,7 @@ description: Apply testing fundamentals — test behaviour not implementation, t
 
 Classic anti-patterns: implementation tests that break on every refactor, an inverted pyramid of slow flaky e2e tests the team stops running, a mocked database that keeps tests green while the real integration is broken, and bugs that recur because nobody pinned them with a regression test.
 
-**Pre-flight**: read before writing a test, choosing a level, or designing a suite — design-time companion to the construction skills (`.claude/rules/fundamentals.md`) and the "how to test well" `/dev`'s `qa` agent reaches for at its test phases (mechanics in `WORKFLOW.md`).
+**Pre-flight**: read before writing a test, choosing a level, or designing a suite. Evidence claims define what must be proven; this skill selects the cheapest trustworthy level.
 
 Adjacent territory: [[refactoring-fundamentals]] owns **characterization tests** (captured before reshaping untested code — the full technique + `/dev` baseline-capture contract live in its `references/characterization-tests.md`); [[debug-fundamentals]] owns **reproduction** (pinning a failure into a reliable repro). For a `fix`, the regression test comes first and must fail on the old code; for a `refactor`, the safety net is a characterization test captured before the structural change. This skill owns everything else: shape, level, doubles, assertions.
 
@@ -46,7 +46,7 @@ If any answer is "I don't know," stop and find out before writing.
 ## When to skip this skill
 
 - Throwaway scripts/prototypes deleted within the hour — no suite to design.
-- `chore`, `docs`, `spike` work (config bump, docs edit, research spike) — no executable surface to test (in `/dev`, `qa`'s skipped types; see `WORKFLOW.md`).
+- Documentation or investigation with no executable behavior—use structural or manual evidence instead.
 - Trivial config edits — formatter rules, env vars, dependency version bumps — no logic to assert.
 - Generated code or thin pass-through wrappers around an already-tested library: test what *you* added, not the library.
 
@@ -56,7 +56,7 @@ Otherwise — branching logic, a boundary crossing, a caller's contract, a bug f
 
 Always-on for testing-design work (per `.claude/rules/fundamentals.md`). Don't ask the user to opt in. If the task matches "When to skip", say so in one sentence and proceed.
 
-Design-time: in `/dev`, `qa` and `engineer` both reach for these fundamentals to decide *what good looks like* (test phases defined in `WORKFLOW.md`). Fix/refactor hand-offs to [[debug-fundamentals]]/[[refactoring-fundamentals]] as in "Why this exists" above; this skill governs any *new* tests you add beyond that baseline.
+Use while writing `evidence.yaml` and during `/build` to decide what good looks like. Fix/refactor hand-offs to [[debug-fundamentals]]/[[refactoring-fundamentals]] as above; `/prove` owns execution and receipts.
 
 When making a non-obvious call (faking a collaborator that could be real, choosing an e2e where a unit test wouldn't suffice, leaving a reachable input untested because spec-undefined), say *why* in one sentence. Don't emit tests silently.
 
