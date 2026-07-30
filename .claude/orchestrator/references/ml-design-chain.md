@@ -23,8 +23,10 @@ neither covers**) mapping current state (entry→flow→callers/blast-radius→i
 slices, so each spot-checks load-bearing claims and owns its final map; it never gates
 correctness (Phase-2 review/test/baseline still backstop).
 
-Skip (greenfield / XS / S) → none; the slices cold-walk (pure optimisation, never a hard
-dependency).
+Skip (greenfield / XS / S) → no `context.md`; the slices walk instead — but every run at
+every size **reads `.workflow/CONTEXT.md` (repo ledger) before walking** and covers only
+the remainder (`orchestrator.md > Size-aware execution`). Both maps are pure optimisation,
+never a hard dependency.
 
 ## c. L — full chain
 

@@ -5,7 +5,7 @@
 **Spec**: [./spec.md](./spec.md)
 **Field**: brownfield · **Size**: M | L
 **Built by**: `/spec` (or `/dev` orchestrator) after the spec check — brownfield M/L only.
-**Consumed by**: `lead` (`/dev-plan`) → `## Current state` · `qa` (`/test-plan`) → `## Test infra` + invariants · `uxui` (`/uxui-plan`) → `## UI surface` · `engineer` (Phase-2 implement) → `## Current state` (orientation only — locate + flow, not a re-walk; loaded when `context_built`). Each reads this as the shared baseline and LSP-verifies only its own deltas; greenfield / XS-S runs skip this file entirely (slices cold-walk as before).
+**Consumed by**: `lead` (`/dev-plan`) → `## Current state` · `qa` (`/test-plan`) → `## Test infra` + invariants · `uxui` (`/uxui-plan`) → `## UI surface` · `engineer` (Phase-2 implement) → `## Current state` (orientation only — locate + flow, not a re-walk; loaded when `context_built`). Each reads this as the shared baseline and LSP-verifies only its own deltas; greenfield / XS-S runs skip this file entirely (they seed from the repo ledger `.workflow/CONTEXT.md` instead and walk only the remainder).
 **Evidence, not authority**: a wrong fact here hits all three slices, so every consumer **spot-checks load-bearing claims** (re-resolve a sample of `path#anchor`s) and **owns its final map** (`plan.md` Current state / `test-plan.md` Baseline / `uxui-plan.md` UI surface) — never a blind copy of this file.
 
 Procedure: `plan-writing > references/current-state.md` (boundary-depth, not a file tour — blast radius + invariants + insertion points, each `path#anchor`).

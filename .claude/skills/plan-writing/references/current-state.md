@@ -18,6 +18,8 @@ Digest must-not-break invariants into `tasks.md > ## Guardrails` (backticked `` 
 
 *Trace the change*, don't read every file. Do this in order:
 
+0. **Read the repo ledger first — `.workflow/CONTEXT.md`.** One read, before the first grep or LSP call. It holds the `path#anchor — fact` lines every prior run in this repo established (entry points, callers, invariants, test infra), grouped by area, accrued at each run's retro. Treat what it covers as walked and start the steps below on the remainder — re-deriving a fact this repo already recorded is a walk paid twice. **Evidence, not authority**: spot-check load-bearing claims by re-resolving a sample of anchors, and code beats the ledger whenever they disagree. Absent (first run here), or a claim that won't re-resolve → walk it yourself.
+
 1. **Anchor on the spec's integration points.** Open `spec.md > Constraints > Integration points` (or the equivalent — the spec's list of existing files this run will touch). Each one is a starting node for the walk. If the spec doesn't list integration points, the spec is under-specified — fix the spec first.
 
 2. **Entry-point query.** For each integration point, ask: "where does control enter this file?" Examples:

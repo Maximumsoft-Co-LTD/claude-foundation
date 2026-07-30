@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The repo context ledger is now spent, not just written** — `.workflow/CONTEXT.md` has been written by every run's retro since 2.11.0 but was read by **one** consumer (brownfield M/L Context); `phase-1.md` sent greenfield / XS / S off to cold-walk instead. Now every run, every size, either field, reads it **once before the first grep or LSP call** of the current-state walk and walks only what it doesn't cover — the cross-run form of the lever that made inline-Design pay: don't re-derive what is already settled. Wired in `orchestrator.md > Size-aware execution` (rule), `orchestrator/references/xs-s-fast-path.md`, and `plan-writing > references/current-state.md > The LSP-walk technique` (step 0, the procedure). **Evidence, not authority** — spot-check load-bearing claims; code beats the ledger; absent ledger → walk as before. Extracted from OpenSpec (`docs/research/openspec.md`), whose spec library is read before every proposal and accrues per shipped change; its delta-spec artifact, archive-merge command and no-gate flow are deliberately not adopted. **Unmeasured** — the bench runs each task once in a fresh sandbox, so no run has a predecessor's ledger to read; rationale, downside bound and the two-run measurement plan are in `.claude/tests/bench/rationale.md`.
+- **Ledger fold keeps what survives** — retro step 5b now groups lines under `## <area>` headings with a durable `## Test infra` group, replaces a superseded line **in full** rather than appending beside it, and prunes by **load-bearingness, not age** (oldest-first eviction dropped the stable invariants and kept the latest one-off gotcha). Cost-neutral: same write, better retention.
+
+### Fixed
+
+- **Dangling reference in a shipped file** — `orchestrator.md > State discipline` cited `references/fast-path-rationale.md`, which does not exist (that rationale moved to the bench when evidence was split from the rules). A resident pointer to a missing file costs a wasted read at runtime; the rule stands, the pointer is gone.
+
+### Added
+
+- **Two doc-consistency guards** — check 11 fails on any `references/*.md` a shipped file cites that exists nowhere under `.claude/**/references/` (check 10 only caught pointers into paths that never ship); check 12 pins the context ledger's writer **and** all four readers, so a later pass can't drop one end and leave the other paying for nothing.
+
 ## [2.12.0] - 2026-07-24
 
 Warm-drafting, effort-by-size, and run telemetry for the `/dev` pipeline — cheaper cold path, right-sized thinking, measurable mechanism.

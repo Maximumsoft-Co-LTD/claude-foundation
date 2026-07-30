@@ -326,6 +326,80 @@ single-`run.md` micro-lane, which carries the same contract core with Test and R
 untouched. Rule: `plan-writing > references/size-tiering.md > Signals that override
 file count`.
 
+## Adopted on reasoning, NOT measured: spending the repo ledger at every size
+
+The write side has existed since the context-ledger change — `agents/retro.md` step 5b
+folds `context.md > ## Discovered` up into a repo-level `.workflow/CONTEXT.md` at the
+end of **every** run, at every size. The read side had exactly one consumer:
+`ml-design-chain.md > Context`, gated on `field=brownfield AND size ∈ {M,L}`.
+`phase-1.md` op 3a spelled out the other branch — *"Greenfield / XS / S → skip; the
+slices cold-walk"*. So every run paid to record what it learned about the repo, and
+only the rarest tier ever spent it; the lane the suite actually measures cold-walked
+past a file its own predecessor wrote.
+
+Now every run, every size, either field, reads the ledger once before the first grep
+or LSP call of the current-state walk, then walks only the remainder. Wired at four
+points: `orchestrator.md > Size-aware execution` (rule), `xs-s-fast-path.md` (the lane
+that cold-walked), `current-state.md > The LSP-walk technique` step 0 (the procedure),
+`ml-design-chain.md` (already did it).
+
+**Mechanism — the same lever that made inline-Design pay.** That win removed
+re-derivation *within* a run: a cold `lead` re-reading a 29 KB brief to re-derive the
+size, field and intent the orchestrator had already settled. This removes re-derivation
+*across* runs: run N+1 walking for entry points, callers, invariants and test-runner
+facts that run N recorded and retro already filed. Nothing else on the remaining-cost
+list ("reading the seed, deriving unstated requirements, writing the regression test,
+reviewing") is addressable by a rule change — this one is, because the answer is
+already on disk.
+
+**Provenance: OpenSpec** (`docs/research/openspec.md`). Their whole bet is a spec
+library read before every proposal that accrues per shipped change and is never
+back-filled. We had the accrue half and not the read half. Taken: read-before-walk,
+capability grouping, supersede-in-full. **Not** taken: the delta-spec artifact, the
+archive-merge command, and the no-gate flow — the last of which is already measured
+and rejected here ("the artifact IS the cursor", n=9, zero movement).
+
+**Status: unmeasured, and this harness cannot measure it.** Every bench task runs
+`/dev` once in a fresh sandbox with no prior run, so `.workflow/CONTEXT.md` is absent
+and the new rule is a no-op in every arm — expect a bench delta of zero plus a few
+resident bytes, which the byte-cut rows at the top of this file say is nothing. The
+payoff is cross-run by construction. Downside if the reasoning is wrong: one extra
+Read of a ≤100-line file per run, with staleness bounded by two rules that were
+already load-bearing (evidence-not-authority; code > docs > ledger, and post-Implement
+the diff wins). The write side's cost is unchanged — retro already wrote the file.
+
+**How to measure it when there is a harness for it.** Extend `run-bench.sh` with a
+two-run mode over ONE sandbox: run A (`/dev` on task T1) leaves a `CONTEXT.md`; run B
+(`/dev` on task T2 touching the same surface) either reads it or has it deleted first.
+Primary metric is **run B's** cost and wall, n ≥ 9 per side given the ~23% resolution
+floor. Pre-register the same rule its cousin was rejected under: adopt-as-measured only
+at ≥17.4% cost drop on run B with the judge held. Blocker: the suite has no task *pair*
+sharing a surface — `08-name-migration` and `09-api-compat` are the closest shapes and
+would need building out.
+
+**Second-order change adopted with it (cost-neutral, same write).** The fold now groups
+lines under `## <area>` headings, keeps a durable `## Test infra` group, replaces a
+superseded line **in full** instead of appending beside it, and prunes by
+load-bearingness rather than age. Oldest-first pruning evicted precisely the facts that
+survive across runs — stable invariants and entry points — in favour of the latest
+one-off gotcha, which is what would have made the read not worth making by run N+20.
+Both the grouping and the replace-in-full rule are OpenSpec's (capability sections;
+`MODIFIED` must carry the complete updated text).
+
+Pinned by `docs/run-doc-consistency.sh` check 12 — writer plus all four readers — so a
+later pass cannot silently drop one end and leave the other paying for nothing.
+
+## Fixed in passing: a pointer to a reference that does not exist
+
+`orchestrator.md > State discipline` cited `references/fast-path-rationale.md >
+Rejected: the bookkeeping turn diet` for the turn-diet reversal. No such file exists —
+that rationale lives in this file, and it moved here when evidence was split out of the
+shipped playbook. A resident pointer to a missing file costs a wasted read at runtime
+and returns nothing. The rule it annotated stands; only the pointer is gone.
+`run-doc-consistency.sh` check 11 now fails on any `references/*.md` a shipped file
+cites that exists nowhere under `.claude/**/references/` — check 10 caught pointers into
+paths that never ship, not ones into files that were renamed or moved out.
+
 ## Standing caveat: how much `n` a verdict needs
 
 At S, two runs of an identical configuration came back **$3.88 / 9-pass** and

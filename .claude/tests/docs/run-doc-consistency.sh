@@ -227,4 +227,43 @@ else
   fail "shipped file(s) point at non-shipped paths (dangling in every installed repo): $(printf '%s' "$leaks" | tr '\n' ' ')"
 fi
 
+# --- 11. every cited `references/<file>.md` actually exists -------------------
+# Check 10 catches a pointer into a path that never ships; this catches one into
+# a file that does not exist at all — a reference renamed, or moved out to the
+# bench when its evidence was split from its rule. Following it costs a wasted
+# read at runtime and returns nothing. Matched on basename against every
+# `references/` dir under `.claude/`, deliberately loose: a skill-relative
+# citation (`plan-writing > references/size-tiering.md`) then needs no path
+# resolution, and the check still fails on a name that exists nowhere.
+have_refs="$(find "$ROOT/.claude" -type d -name references -exec ls -1 '{}' \; 2>/dev/null | sort -u || true)"
+dangling=""
+for p in $SHIPPED; do
+  [ -e "$p" ] || continue
+  for r in $(grep -rhoE 'references/[A-Za-z0-9._-]+\.md' "$p" 2>/dev/null | sort -u || true); do
+    b="${r#references/}"
+    printf '%s\n' "$have_refs" | grep -qxF "$b" || dangling="$dangling$b "
+  done
+done
+if [ -z "$dangling" ]; then
+  pass "every references/*.md cited by a shipped file exists"
+else
+  fail "shipped file(s) cite non-existent references: $dangling"
+fi
+
+# --- 12. the repo context ledger is written AND read --------------------------
+# `.workflow/CONTEXT.md` accrues at retro and is what lets a later run start
+# from what this repo already established instead of re-walking for it. A write
+# side with no reader is pure cost: every run pays to record facts nobody spends.
+# Rule: `orchestrator.md > Size-aware execution` (read-before-walk, every size).
+LEDGER=".workflow/CONTEXT.md"
+[ -f "$AGENTS/retro.md" ] && \
+  assert_file_contains "retro writes the repo context ledger" "$AGENTS/retro.md" "$LEDGER"
+for f in "$ROOT/.claude/orchestrator.md" \
+         "$ROOT/.claude/orchestrator/references/xs-s-fast-path.md" \
+         "$ROOT/.claude/orchestrator/references/ml-design-chain.md" \
+         "$ROOT/.claude/skills/plan-writing/references/current-state.md"; do
+  [ -f "$f" ] || continue
+  assert_file_contains "$(basename "$f") reads the repo context ledger" "$f" "$LEDGER"
+done
+
 finish "doc-consistency tests"
