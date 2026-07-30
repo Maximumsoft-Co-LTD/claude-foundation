@@ -5,7 +5,9 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**.
 
-Read [the change loop](../orchestrator.md). Validate the change. If it has no
+Read [the change loop](../orchestrator.md). Start from
+`claude-foundation packet <change>` as the compact handoff; do not reconstruct
+the work by replaying prior conversation. Validate the change. If it has no
 isolated workspace, run
 `claude-foundation sandbox create <change>` and perform edits
 at the returned path. Read its proposal/delta specs/design/tasks/evidence and

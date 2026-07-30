@@ -66,6 +66,9 @@ Implementation order and tool choice belong to the harness.
   genuine parallelism, resumption, or cross-repository work.
 - Prefer focused checks while editing. Do not repeat the full suite at phase
   boundaries; there are no phase boundaries.
+- Keep the orchestrator on control-plane decisions. Batch independent reads and
+  provider claims, and pass a compact change packet to implementation or review
+  work instead of replaying the full conversation.
 - Never weaken an evidence obligation to fit a budget.
 
 For medium/large coupled work, slice by coherent behavior. Each slice follows
@@ -83,8 +86,9 @@ stale. Never continue with different change artifacts in target and sandbox.
 1. validate the OpenSpec change;
 2. compute the relevant workspace hash;
 3. resolve claims to providers;
-4. reuse receipts only when their hash and provider version match;
-5. run missing or stale providers;
+4. reuse receipts only when their hash, provider protocol/version/fingerprint,
+   and claim scope match;
+5. batch missing or stale claims by provider and run each suite once;
 6. verify test discovery;
 7. run the required full suite once after convergence;
 8. perform independent review only when risk triggers it;
@@ -104,8 +108,9 @@ blockers and missing evidence block land.
 
 ## Budget
 
-The external runtime records request identity, tool/provider calls, tokens, cost,
-wall time, rework, and receipt reuse. At 70% batch and reuse; at 85% stop
+The native runtime records command duration and result. External runtimes submit
+request identity, tool/provider calls, tokens, cache, and cost as events; absent
+external measurements remain unknown, never zero. At 70% batch and reuse; at 85% stop
 speculative expansion; at 100% stop and split or re-scope. Required proof remains.
 
 ## Land

@@ -36,6 +36,9 @@ assert_file_exists "delta spec created" "openspec/changes/profile-owner-update/s
 output="$(node .claude/harness/foundation.mjs resolve profile-owner-update --impact medium --coupling isolated)"
 assert_contains "resolver records impact" "$output" "impact: medium"
 assert_cmd_zero "standard change validates" node .claude/harness/foundation.mjs validate profile-owner-update
+packet="$(node .claude/harness/foundation.mjs packet profile-owner-update)"
+assert_contains "compact packet carries required providers" "$packet" '"provider": "test"'
+assert_contains "compact packet carries task count" "$packet" '"pendingTaskCount":'
 
 if node .claude/harness/foundation.mjs run-provider profile-owner-update unknown-provider -- \
   sh -c 'printf unsafe > should-not-exist.txt' >/dev/null 2>&1; then
@@ -45,12 +48,42 @@ else
 fi
 assert_file_absent "unknown provider command has no side effect" "should-not-exist.txt"
 
+if node .claude/harness/foundation.mjs run-provider profile-owner-update test -- \
+  sh -c 'printf unsafe > missing-claims.txt' >/dev/null 2>&1; then
+  fail "run-provider requires an explicit claim scope"
+else
+  pass "run-provider requires an explicit claim scope"
+fi
+assert_file_absent "missing claim scope prevents command execution" "missing-claims.txt"
+
 sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/profile-owner-update/tasks.md
 rm openspec/changes/profile-owner-update/tasks.md.bak
 assert_cmd_zero "test provider receipt" node .claude/harness/foundation.mjs receipt profile-owner-update test pass
 assert_cmd_zero "discovery provider receipt" node .claude/harness/foundation.mjs receipt profile-owner-update discovery pass --discovered 3 --minimum 1
 assert_cmd_zero "complete evidence proves" node .claude/harness/foundation.mjs prove profile-owner-update
 assert_cmd_zero "fresh proof is land-ready" node .claude/harness/foundation.mjs land-check profile-owner-update
+
+cp .foundation/receipts/profile-owner-update/test.json "$TMP/test-receipt.json"
+jq '.providerFingerprint = "tampered"' .foundation/receipts/profile-owner-update/test.json \
+  > "$TMP/tampered.json"
+cp "$TMP/tampered.json" .foundation/receipts/profile-owner-update/test.json
+if node .claude/harness/foundation.mjs land-check profile-owner-update >/dev/null 2>&1; then
+  fail "tampered provider fingerprint invalidates receipt"
+else
+  pass "tampered provider fingerprint invalidates receipt"
+fi
+cp "$TMP/test-receipt.json" .foundation/receipts/profile-owner-update/test.json
+
+printf '\nContract revision after proof.\n' >> openspec/changes/profile-owner-update/proposal.md
+if node .claude/harness/foundation.mjs land-check profile-owner-update >/dev/null 2>&1; then
+  fail "change packet edit invalidates proof"
+else
+  pass "change packet edit invalidates proof"
+fi
+node .claude/harness/foundation.mjs receipt profile-owner-update test pass >/dev/null
+node .claude/harness/foundation.mjs receipt profile-owner-update discovery pass \
+  --discovered 3 --minimum 1 >/dev/null
+node .claude/harness/foundation.mjs prove profile-owner-update >/dev/null
 
 printf 'changed\n' > app.txt
 if node .claude/harness/foundation.mjs land-check profile-owner-update >/dev/null 2>&1; then
@@ -71,11 +104,11 @@ assert_cmd_zero "production provider capabilities validate" \
 plan="$(node .claude/harness/foundation.mjs proof-plan production-provider-coverage)"
 assert_contains "proof plan selects deployment evidence" "$plan" "deployment: missing"
 assert_contains "proof plan selects migration evidence" "$plan" "data-migration: missing"
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/production-provider-coverage/tasks.md
+rm openspec/changes/production-provider-coverage/tasks.md.bak
 for provider in static-analysis data-migration accessibility resilience observability deployment dependency-supply-chain; do
   node .claude/harness/foundation.mjs receipt production-provider-coverage "$provider" pass >/dev/null
 done
-sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/production-provider-coverage/tasks.md
-rm openspec/changes/production-provider-coverage/tasks.md.bak
 assert_cmd_zero "new provider receipts produce a complete proof" \
   node .claude/harness/foundation.mjs prove production-provider-coverage
 
@@ -84,9 +117,13 @@ assert_contains "creates rapid change" "$output" "foundation-rapid"
 node .claude/harness/foundation.mjs resolve tiny-copy-edit --impact low --coupling isolated --security auth >/dev/null
 schema="$(jq -r '.schema' .foundation/runtime/tiny-copy-edit.json 2>/dev/null || true)"
 assert_eq "semantic security upgrades rapid lane" "foundation-standard" "$schema"
+sed -i.bak \
+  's/"capabilities": \["test"\]/"capabilities": ["browser", "mutation"]/' \
+  openspec/changes/tiny-copy-edit/evidence.yaml
+rm openspec/changes/tiny-copy-edit/evidence.yaml.bak
 
 if node .claude/harness/foundation.mjs receipt tiny-copy-edit browser pass \
-  --foreground required >/dev/null 2>&1; then
+  --foreground-required yes --foreground-available no --input-mode os-input >/dev/null 2>&1; then
   fail "browser foreground mismatch cannot pass"
 else
   pass "browser foreground mismatch cannot pass"
@@ -102,6 +139,12 @@ fi
 event="$(node .claude/harness/foundation.mjs event tiny-copy-edit --request req-1 --operation build)"
 assert_contains "watchdog records request" "$event" "BUDGET tiny-copy-edit"
 assert_file_exists "event ledger created" ".foundation/logs/tiny-copy-edit/events.jsonl"
+if node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-1 --operation build >/dev/null 2>&1; then
+  fail "watchdog rejects duplicate request identity"
+else
+  pass "watchdog rejects duplicate request identity"
+fi
 
 # Non-Git repositories use a manifest-guarded isolated copy.
 node .claude/harness/foundation.mjs new 'Copy sandbox' --rapid >/dev/null
@@ -119,6 +162,23 @@ assert_cmd_zero "isolated copy applies transactionally" \
   node .claude/harness/foundation.mjs sandbox apply copy-sandbox
 copy_applied="$(tr -d '\n' < app.txt)"
 assert_eq "non-git target matches isolated copy" "copy-applied" "$copy_applied"
+
+mkdir -p "$TMP/bin"
+cp /dev/null "$TMP/bin/openspec"
+chmod +x "$TMP/bin/openspec"
+printf '%s\n' '#!/usr/bin/env sh' \
+  'if [ "${1:-}" = "--version" ]; then echo "1.7.0"; exit 0; fi' \
+  'if [ "${1:-}" = "archive" ]; then' \
+  '  mkdir -p "openspec/changes/archive"' \
+  '  mv "openspec/changes/$2" "openspec/changes/archive/$2"' \
+  '  echo "archived $2"' \
+  '  exit 0' \
+  'fi' > "$TMP/bin/openspec"
+chmod +x "$TMP/bin/openspec"
+archive_output="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs archive copy-sandbox)"
+assert_contains "archive delegates once to pinned OpenSpec" "$archive_output" "ARCHIVED copy-sandbox"
+archive_again="$(node .claude/harness/foundation.mjs archive copy-sandbox)"
+assert_contains "archive is idempotent after spec sync" "$archive_again" "ALREADY ARCHIVED copy-sandbox"
 
 # A separate clean Git fixture exercises the complete worktree proof/apply path.
 mkdir -p "$TMP/git-project/.claude/harness" "$TMP/git-project/openspec" "$TMP/git-project/.foundation"

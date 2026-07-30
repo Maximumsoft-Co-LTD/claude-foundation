@@ -72,7 +72,7 @@ to the workspace hash.
 
 ```bash
 claude-foundation proof plan <change>
-claude-foundation evidence run <change> test -- npm test
+claude-foundation evidence run <change> test --claims declared -- npm test
 claude-foundation evidence record <change> discovery pass --discovered 42 --minimum 1
 claude-foundation proof finalize <change>
 ```
@@ -184,6 +184,11 @@ Each receipt records provider/version, change, claims, workspace hash, result,
 observations, capability metadata, command/log, and timestamps. Status is one of
 `pass`, `fail`, `inconclusive`, or `error`.
 
+The provider protocol is deny-by-default: a provider may cover only claims that
+declare it, executable providers require an explicit `--claims` scope, and a
+provider protocol/version/fingerprint change invalidates old receipts. Browser
+receipts record `foreground-required` and `foreground-available` independently.
+
 ## Review
 
 Review is required for high impact, authentication/authorization, public
@@ -206,6 +211,22 @@ Foundation hashes relevant project content plus the selected change artifacts.
 It excludes runtime receipts, sandboxes, dependencies, legacy workflow records,
 other active changes, and archived changes. Any relevant edit makes prior
 receipts and proof stale.
+
+## Preflight and telemetry
+
+Run `claude-foundation doctor --require-archive` when the intended flow includes
+landing. It checks Node, the pinned OpenSpec CLI, current hooks, stale packaged
+tests, and the opt-in direct-main policy.
+
+Native CLI operations append duration and exit state to
+`.foundation/logs/<change>/operations.jsonl`. Request, token, cache, and cost
+fields stay `null` until an external runtime submits uniquely identified
+`event` records; unknown usage is never reported as zero.
+
+`claude-foundation packet <change>` emits the bounded handoff for a fresh
+execution context: active paths, revision, claims, providers, task count, hash,
+and budget. Build and Prove consume this packet instead of replaying the full
+orchestrator transcript.
 
 ## Sandbox safety
 

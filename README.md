@@ -49,6 +49,11 @@ The installer preserves:
 Foundation-owned commands, schemas, harness code, rules, skills, and hooks are
 refreshed during upgrades.
 
+`protect-secrets.sh` and `lint.sh` are wired by default.
+`no-direct-main-commit.sh` is intentionally opt-in because some repositories
+allow controlled commits on their default branch; `claude-foundation doctor`
+reports whether that policy is enabled.
+
 ## The workflow
 
 ```mermaid
@@ -94,11 +99,13 @@ native CLI:
 
 ```bash
 claude-foundation providers
+claude-foundation doctor
 claude-foundation changes
+claude-foundation packet <change>
 claude-foundation validate <change>
 claude-foundation proof plan <change>
 claude-foundation proof finalize <change>
-claude-foundation evidence run <change> <provider> -- <command>
+claude-foundation evidence run <change> <provider> --claims declared -- <command>
 claude-foundation sandbox create <change>
 claude-foundation land check <change>
 ```
@@ -107,6 +114,11 @@ The CLI finds the project from the current directory or `--project <path>` and
 uses that project's installed runtime. Run `claude-foundation help` for the full
 surface. Direct source installations may call the runtime file as a compatibility
 fallback when the packaged CLI is unavailable.
+
+`packet <change>` is the compact handoff between Change, Build, and Prove. It
+contains paths, revision, claims, required providers, task count, hash, and
+budget—not the accumulated conversation—so a new execution context can resume
+without making the orchestrator replay the whole run.
 
 ## `/investigate` — explore without committing
 
@@ -314,6 +326,10 @@ Prove:
 8. invokes independent review only when risk triggers it;
 9. creates `proof.json`.
 
+`tasks.md` contains implementation work only. `/prove` and `/land` are
+lifecycle commands, not checkboxes; putting them in the ledger creates a
+self-referential gate and validation rejects it.
+
 Supported evidence capabilities:
 
 | Provider ID | Use it to prove |
@@ -347,6 +363,25 @@ These providers are evidence contracts, not bundled vendor tools. Prove can run
 the repository's existing tool with `run-provider`, or record a receipt from an
 external system. A change selects only the providers justified by its observable
 claims; it does not run all providers by default.
+
+For an executable provider, declare the claim scope before the command:
+
+```bash
+claude-foundation evidence run add-profile test --claims declared -- npm test
+```
+
+`declared` means only claims whose `capabilities` include that provider.
+Receipts cannot claim unrelated outcomes. A receipt is reusable only while its
+workspace hash, provider protocol, provider version/fingerprint, status, and
+claim coverage remain valid.
+
+For browser evidence, record requirement and availability separately:
+
+```bash
+claude-foundation evidence record add-profile browser pass \
+  --claims declared --input-mode os-input \
+  --foreground-required yes --foreground-available yes
+```
 
 Receipts are stored under:
 
@@ -411,6 +446,17 @@ Land never:
 
 OpenSpec CLI 1.7.0 currently owns semantic spec synchronization and archive.
 Foundation owns proof guards, sandbox application, and state-identity checks.
+`land archive` is idempotent: an already archived change reports its archived
+state without trying to synchronize specs again.
+
+Check archive readiness before starting a run:
+
+```bash
+claude-foundation doctor --require-archive
+```
+
+Without `--require-archive`, a missing OpenSpec CLI is a warning because Change,
+Build, and Prove still work; archive remains blocked.
 
 ## `/changes` — inspect active work
 

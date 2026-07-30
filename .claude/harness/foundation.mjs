@@ -9,8 +9,9 @@ import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-const VERSION = "1.0.0";
-const RUNTIME_API_VERSION = "1";
+const VERSION = "1.1.0";
+const RUNTIME_API_VERSION = "2";
+const PROVIDER_PROTOCOL_VERSION = "2";
 const PROVIDER_CONTRACTS = {
   "test": "Executable behavioral checks for the declared claim.",
   "discovery": "Expected tests were found and the discovered count meets the floor.",
@@ -64,6 +65,23 @@ mkdirSync(RECEIPTS, { recursive: true });
 mkdirSync(LOGS, { recursive: true });
 mkdirSync(CHANGES, { recursive: true });
 
+const operationStartedAt = Date.now();
+let operationChangeId = null;
+let operationName = null;
+process.on("exit", (code) => {
+  if (process.env.FOUNDATION_TELEMETRY !== "1" || !operationChangeId || !operationName) return;
+  const path = join(LOGS, operationChangeId, "operations.jsonl");
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify({
+    version: 1, changeId: operationChangeId, operation: operationName,
+    status: code === 0 ? "completed" : "failed", exitCode: code,
+    startedAt: new Date(operationStartedAt).toISOString(), finishedAt: now(),
+    durationMs: Date.now() - operationStartedAt,
+    requests: null, inputTokens: null, outputTokens: null, cacheTokens: null, cost: null,
+    measurement: "command-observed; model usage requires external event ingestion"
+  })}\n`);
+});
+
 function readJson(path, fallback = null) {
   try { return JSON.parse(readFileSync(path, "utf8")); }
   catch (error) {
@@ -78,10 +96,43 @@ function writeJson(path, value) {
 }
 
 function now() { return new Date().toISOString(); }
+function isPinnedOpenSpecVersion(value) {
+  return /(^|[^0-9])1\.7\.0([^0-9]|$)/.test(value);
+}
 function runtimePath(id) { return join(RUNTIME, `${id}.json`); }
 function changePath(id) { return join(CHANGES, id); }
 function receiptPath(id, provider) { return join(RECEIPTS, id, `${provider}.json`); }
 function proofPath(id) { return join(RECEIPTS, id, "proof.json"); }
+function currentChangeRelativePath(id) { return `openspec/changes/${id}`; }
+
+function isCurrentChangePath(rel, id) {
+  const base = currentChangeRelativePath(id);
+  return rel === base || rel.startsWith(`${base}/`);
+}
+
+function activeChangePath(id, state = loadRuntime(id)) {
+  if (state.status === "archived" && state.archivedChangePath) {
+    const archived = join(ROOT, state.archivedChangePath);
+    if (existsSync(archived)) return archived;
+  }
+  const workspace = state.workspace;
+  if (workspace && ["worktree", "copy"].includes(workspace.mode) &&
+      workspace.path && existsSync(workspace.path)) {
+    const candidate = join(workspace.path, "openspec", "changes", id);
+    if (existsSync(candidate)) return candidate;
+  }
+  return changePath(id);
+}
+
+function archivedChangeRelativePath(id) {
+  const archiveRoot = join(CHANGES, "archive");
+  if (!existsSync(archiveRoot)) return null;
+  const candidates = readdirSync(archiveRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() &&
+      (entry.name === id || entry.name.endsWith(`-${id}`)))
+    .map((entry) => entry.name).sort();
+  return candidates.length ? `openspec/changes/archive/${candidates.at(-1)}` : null;
+}
 
 function slugify(value) {
   return value.toLowerCase().trim()
@@ -154,8 +205,7 @@ function relevantHash(id, workspaceOverride = null) {
       const path = join(dir, entry.name);
       const rel = relative(workspace, path).replaceAll("\\", "/");
       if (rel.startsWith("openspec/changes/archive/")) continue;
-      if (rel.startsWith("openspec/changes/") &&
-          !rel.startsWith(`openspec/changes/${id}/`)) continue;
+      if (rel.startsWith("openspec/changes/") && !isCurrentChangePath(rel, id)) continue;
       if (entry.isDirectory()) collect(path);
       else if (entry.isFile()) files.push([rel, path]);
     }
@@ -179,7 +229,7 @@ function workspaceManifest(workspace, id, excludeChange = false) {
       const rel = relative(workspace, path).replaceAll("\\", "/");
       if (rel.startsWith("openspec/changes/archive/")) continue;
       if (rel.startsWith("openspec/changes/") &&
-          (excludeChange || !rel.startsWith(`openspec/changes/${id}/`))) continue;
+          (excludeChange || !isCurrentChangePath(rel, id))) continue;
       if (entry.isDirectory()) collect(path);
       else if (entry.isFile())
         result[rel] = createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -222,7 +272,10 @@ function createChange(intent, flags) {
     coupling: schema === "foundation-rapid" ? "isolated" : null,
     securityTriggers: [], reviewRequired: false, evidenceCapabilities: [],
     workspace: { mode: "current", path: ROOT, baseHead: gitHead(ROOT) },
-    budget: { targetRequests: schema === "foundation-rapid" ? 80 : 160, usedRequests: 0 },
+    budget: {
+      targetRequests: schema === "foundation-rapid" ? 80 : 160,
+      usedRequests: null, measurement: "unavailable-until-external-events"
+    },
     createdAt: now(), updatedAt: now()
   };
   saveRuntime(state);
@@ -259,8 +312,8 @@ function resolveChange(id, flags) {
   console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  security: ${state.securityTriggers.join(", ") || "none"}`);
 }
 
-function evidence(id) {
-  const path = join(changePath(id), "evidence.yaml");
+function evidence(id, dir = activeChangePath(id)) {
+  const path = join(dir, "evidence.yaml");
   const value = readJson(path);
   if (value.version !== 1 || !Array.isArray(value.claims) || value.claims.length === 0)
     die(`${id}/evidence.yaml must contain at least one claim`);
@@ -276,17 +329,33 @@ function evidence(id) {
   return value;
 }
 
-function pendingTasks(id) {
-  const state = loadRuntime(id);
-  const workspace = state.workspace?.path || ROOT;
-  const content = readFileSync(join(workspace, "openspec", "changes", id, "tasks.md"), "utf8");
-  return content.split("\n").filter((line) =>
-    /^\s*-\s*\[\s\]/.test(line) && !line.includes("/prove"));
+function taskBlocks(content) {
+  const blocks = [];
+  let current = null;
+  for (const line of content.split("\n")) {
+    const match = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)$/);
+    if (match) {
+      if (current) blocks.push(current);
+      current = { done: match[1].toLowerCase() === "x", lines: [line], text: match[2] };
+    } else if (current && (/^\s+/.test(line) || line.trim() === "")) {
+      current.lines.push(line); current.text += ` ${line.trim()}`;
+    } else if (current) {
+      blocks.push(current); current = null;
+    }
+  }
+  if (current) blocks.push(current);
+  return blocks;
 }
 
-function validate(id) {
+function pendingTasks(id) {
+  const content = readFileSync(join(activeChangePath(id), "tasks.md"), "utf8");
+  return taskBlocks(content).filter((task) => !task.done);
+}
+
+function validate(id, source = "root") {
   const state = loadRuntime(id);
-  const dir = changePath(id);
+  if (state.status === "archived") die(`change '${id}' is already archived`);
+  const dir = source === "active" ? activeChangePath(id, state) : changePath(id);
   const required = state.schema === "foundation-rapid"
     ? ["proposal.md", "tasks.md", "evidence.yaml"]
     : ["proposal.md", "design.md", "tasks.md", "evidence.yaml"];
@@ -301,7 +370,12 @@ function validate(id) {
     die(`resolve impact for '${id}'`);
   if (!["isolated", "coupled"].includes(state.coupling || ""))
     die(`resolve coupling for '${id}'`);
-  const claims = evidence(id).claims;
+  const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
+  const lifecycleTasks = taskBlocks(tasks).filter((task) =>
+    !task.done && /\/(?:prove|land)\b/.test(task.text));
+  if (lifecycleTasks.length)
+    die("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
+  const claims = evidence(id, dir).claims;
   state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
   saveRuntime(state);
   console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)`);
@@ -315,17 +389,27 @@ function requiredProviders(id) {
   return [...required].sort();
 }
 
+function claimsForProvider(id, provider) {
+  return evidence(id).claims.filter((claim) =>
+    claim.capabilities.includes(provider) ||
+    (provider === "discovery" && claim.capabilities.includes("test")) ||
+    provider === "review");
+}
+
 function receiptValidity(id, provider, hash = relevantHash(id)) {
   const path = receiptPath(id, provider);
   if (!existsSync(path)) return { provider, validity: "missing" };
   const value = readJson(path);
+  if (String(value.providerProtocolVersion || "") !== PROVIDER_PROTOCOL_VERSION)
+    return { provider, validity: "provider-version-stale", status: value.status };
+  const expectedFingerprint = createHash("sha256").update(JSON.stringify({
+    provider, providerVersion: value.providerVersion, command: value.command || null
+  })).digest("hex");
+  if (value.providerFingerprint !== expectedFingerprint)
+    return { provider, validity: "provider-fingerprint-stale", status: value.status };
   if (value.workspaceHash !== hash) return { provider, validity: "stale", status: value.status };
   if (value.status !== "pass") return { provider, validity: value.status };
-  const requiredClaims = evidence(id).claims
-    .filter((claim) => claim.capabilities.includes(provider) ||
-      (provider === "discovery" && claim.capabilities.includes("test")) ||
-      provider === "review")
-    .map((claim) => claim.id);
+  const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
   const covered = new Set(value.claims || []);
   if (requiredClaims.some((claim) => !covered.has(claim)))
     return { provider, validity: "incomplete-claims", status: value.status };
@@ -333,7 +417,7 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
 }
 
 function proofPlan(id) {
-  validate(id);
+  validate(id, "active");
   const hash = relevantHash(id);
   const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
   console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
@@ -344,18 +428,37 @@ function recordReceipt(id, provider, status, flags = {}) {
   if (!PROVIDERS.has(provider)) die(`unknown provider '${provider}'`);
   if (!["pass", "fail", "inconclusive", "error"].includes(status)) die(`invalid receipt status '${status}'`);
   const allClaims = evidence(id).claims.map((claim) => claim.id);
-  const requestedClaims = String(flags.claims || allClaims.join(",")).split(",").filter(Boolean);
+  const allowedClaims = claimsForProvider(id, provider).map((claim) => claim.id);
+  const requestedClaims = String(
+    !flags.claims || flags.claims === "declared" ? allowedClaims.join(",") : flags.claims
+  ).split(",").filter(Boolean);
+  if (requestedClaims.length === 0) die(`provider '${provider}' has no declared claims`);
   const unknownClaims = requestedClaims.filter((claim) => !allClaims.includes(claim));
   if (unknownClaims.length) die(`receipt references unknown claim(s): ${unknownClaims.join(", ")}`);
+  const forbiddenClaims = requestedClaims.filter((claim) => !allowedClaims.includes(claim));
+  if (forbiddenClaims.length)
+    die(`provider '${provider}' is not declared for claim(s): ${forbiddenClaims.join(", ")}`);
+  const legacyForeground = flags.foreground || null;
+  const foregroundRequired = flags["foreground-required"] !== undefined
+    ? flags["foreground-required"] === "yes"
+    : legacyForeground === "required";
+  const foregroundAvailable = flags["foreground-available"] !== undefined
+    ? flags["foreground-available"] === "yes"
+    : legacyForeground === "available" || legacyForeground === "not-required";
+  if (legacyForeground) console.error("WARNING: --foreground is deprecated; use --foreground-required and --foreground-available");
+  const command = flags.command || null;
+  const providerVersion = flags.version || "1";
   const receipt = {
-    version: 1, changeId: id, provider, providerVersion: flags.version || "1",
+    version: 2, changeId: id, provider, providerVersion,
+    providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
+    providerFingerprint: createHash("sha256")
+      .update(JSON.stringify({ provider, providerVersion, command })).digest("hex"),
     workspaceHash: relevantHash(id), claims: requestedClaims,
     status, observed: flags.observed || "", capability: {
       inputMode: flags["input-mode"] || null,
-      foregroundRequired: flags.foreground === "required",
-      foregroundAvailable: flags.foreground === "available" || flags.foreground === "not-required"
+      foregroundRequired, foregroundAvailable
     },
-    command: flags.command || null, log: flags.log || null,
+    command, log: flags.log || null,
     startedAt: flags.started || now(), finishedAt: now()
   };
   if (provider === "browser" && status === "pass" && receipt.capability.foregroundRequired &&
@@ -363,6 +466,10 @@ function recordReceipt(id, provider, status, flags = {}) {
   if (provider === "browser" && status === "pass" &&
       !["dom-event", "os-input", "both"].includes(receipt.capability.inputMode))
     die("passing browser receipt requires --input-mode dom-event|os-input|both");
+  if (provider === "browser" && status === "pass" &&
+      ["os-input", "both"].includes(receipt.capability.inputMode) &&
+      (!receipt.capability.foregroundRequired || !receipt.capability.foregroundAvailable))
+    die("passing OS-input browser receipt requires foreground-required=yes and foreground-available=yes");
   if (provider === "discovery" && status === "pass") {
     const discovered = Number(flags.discovered);
     const minimum = Number(flags.minimum);
@@ -382,6 +489,9 @@ function runProvider(id, provider, values) {
   if (!PROVIDERS.has(provider)) die(`unknown provider '${provider}'`);
   const split = values.indexOf("--");
   if (split < 0 || split === values.length - 1) die("run-provider requires '-- <command> [args...]'");
+  const { flags, rest } = parseFlags(values.slice(0, split));
+  if (rest.length) die(`unexpected run-provider argument(s): ${rest.join(", ")}`);
+  if (!flags.claims) die("run-provider requires --claims <a,b|declared> before '--'");
   const command = values[split + 1];
   const commandArgs = values.slice(split + 2);
   const started = now();
@@ -394,6 +504,7 @@ function runProvider(id, provider, values) {
   const logPath = join(logDir, `${provider}-${Date.now()}.log`);
   writeFileSync(logPath, `${result.stdout || ""}${result.stderr || ""}`);
   recordReceipt(id, provider, result.status === 0 ? "pass" : "fail", {
+    ...flags,
     started, command: [command, ...commandArgs].join(" "),
     log: relative(ROOT, logPath), observed: `exit ${result.status ?? "error"}`
   });
@@ -401,7 +512,9 @@ function runProvider(id, provider, values) {
 }
 
 function prove(id) {
-  validate(id);
+  const stateBefore = loadRuntime(id);
+  if (stateBefore.status === "archived") die(`change '${id}' is already archived`);
+  validate(id, "active");
   const pending = pendingTasks(id);
   if (pending.length) die(`${pending.length} implementation task(s) remain unchecked`);
   const hash = relevantHash(id);
@@ -418,6 +531,11 @@ function prove(id) {
 }
 
 function landCheck(id) {
+  const state = loadRuntime(id);
+  if (state.status === "archived") {
+    console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
+    return { archived: true, state };
+  }
   const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
   if (!proof || proof.status !== "pass") die(`change '${id}' has no passing proof`);
   const hash = relevantHash(id);
@@ -427,6 +545,7 @@ function landCheck(id) {
     if (check.validity !== "valid") die(`${provider} evidence is ${check.validity}`);
   }
   console.log(`LAND READY ${id}\n  workspace: ${hash}`);
+  return { archived: false, state, hash };
 }
 
 function createCopySandbox(id, state, reason) {
@@ -454,7 +573,8 @@ function createCopySandbox(id, state, reason) {
 
 function createSandbox(id) {
   const state = loadRuntime(id);
-  if (state.workspace?.mode === "worktree" && existsSync(state.workspace.path))
+  if (state.status === "archived") die(`change '${id}' is already archived`);
+  if (["worktree", "copy"].includes(state.workspace?.mode) && existsSync(state.workspace.path))
     die(`sandbox already exists: ${state.workspace.path}`);
   if (!gitHead(ROOT)) {
     createCopySandbox(id, state, "no-git");
@@ -532,7 +652,8 @@ function applyChangeArtifacts(id, sandboxPath) {
 }
 
 function applySandbox(id) {
-  landCheck(id);
+  const readiness = landCheck(id);
+  if (readiness.archived) return;
   const state = loadRuntime(id);
   if (state.workspace?.mode === "copy") {
     if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
@@ -559,6 +680,7 @@ function applySandbox(id) {
       ...state.workspace, path: ROOT, applied: true,
       sandboxPath: state.workspace.path, baseline: undefined
     };
+    state.status = "applied";
     saveRuntime(state);
     const targetHash = relevantHash(id, ROOT);
     if (targetHash !== sandboxHash) die("post-apply isolated-copy identity mismatch");
@@ -586,6 +708,7 @@ function applySandbox(id) {
   const sandboxHash = relevantHash(id, state.workspace.path);
   applyChangeArtifacts(id, state.workspace.path);
   state.workspace = { ...state.workspace, path: ROOT, applied: true, sandboxPath: state.workspace.path };
+  state.status = "applied";
   saveRuntime(state);
   const targetHash = relevantHash(id, ROOT);
   if (targetHash !== sandboxHash) die("post-apply workspace identity mismatch");
@@ -593,19 +716,29 @@ function applySandbox(id) {
 }
 
 function archive(id) {
-  landCheck(id);
-  const state = loadRuntime(id);
-  if (state.workspace?.mode === "worktree" && !state.workspace.applied)
+  const readiness = landCheck(id);
+  if (readiness.archived) return;
+  const state = readiness.state;
+  if (["worktree", "copy"].includes(state.workspace?.mode) && !state.workspace.applied)
     die("sandbox diff has not been applied");
+  const pending = pendingTasks(id);
+  if (pending.length) die(`${pending.length} implementation task(s) remain unchecked`);
+  const preArchiveWorkspaceHash = readiness.hash;
   const installed = spawnSync("openspec", ["--version"], { cwd: ROOT, encoding: "utf8" });
   if (installed.error?.code === "ENOENT")
     die("OpenSpec CLI is required for safe spec sync and archive (@fission-ai/openspec@1.7.0)");
   const installedVersion = `${installed.stdout || ""}${installed.stderr || ""}`;
-  if (!installedVersion.includes("1.7.0"))
+  if (!isPinnedOpenSpecVersion(installedVersion))
     die(`OpenSpec version mismatch; required 1.7.0, found '${installedVersion.trim()}'`);
   const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: ROOT, encoding: "utf8" });
   if (cli.status !== 0) die(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
-  state.status = "archived"; state.archivedAt = now(); saveRuntime(state);
+  state.status = "archived";
+  state.archivedAt = now();
+  state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
+  state.archivedChangePath = archivedChangeRelativePath(id);
+  saveRuntime(state);
+  if (!state.archivedChangePath)
+    console.error("WARNING: OpenSpec reported success but the archived change directory was not found");
   console.log(cli.stdout.trim());
   console.log(`ARCHIVED ${id}`);
 }
@@ -628,26 +761,105 @@ function showProviders() {
     console.log(`${provider}\t${contract}`);
 }
 
+function showPacket(id) {
+  const state = loadRuntime(id);
+  const activePath = activeChangePath(id, state);
+  const claims = evidence(id, activePath).claims;
+  const hash = relevantHash(id);
+  const providers = requiredProviders(id).map((provider) => ({
+    provider, ...receiptValidity(id, provider, hash)
+  }));
+  console.log(JSON.stringify({
+    version: 1, changeId: id, intent: state.intent, schema: state.schema,
+    status: state.status, revision: Number(state.revision || 0),
+    impact: state.impact, coupling: state.coupling,
+    reviewRequired: Boolean(state.reviewRequired),
+    changePath: relative(ROOT, activePath) || ".",
+    workspacePath: state.workspace?.path || ROOT,
+    workspaceHash: hash,
+    pendingTaskCount: pendingTasks(id).length,
+    claims: claims.map((claim) => ({
+      id: claim.id, scenario: claim.scenario, capabilities: claim.capabilities
+    })),
+    providers,
+    budget: state.budget
+  }, null, 2));
+}
+
 function recordEvent(id, flags) {
   const state = loadRuntime(id);
   const event = {
     runId: flags.run || id, operationId: flags.operation || "unknown",
     agentId: flags.agent || null, modelId: flags.model || null,
     requestId: flags.request || null, parentRequestId: flags.parent || null,
-    timestamp: now(), inputTokens: Number(flags.input || 0), outputTokens: Number(flags.output || 0),
-    cacheTokens: Number(flags.cache || 0), cost: Number(flags.cost || 0),
+    timestamp: now(),
+    inputTokens: flags.input === undefined ? null : Number(flags.input),
+    outputTokens: flags.output === undefined ? null : Number(flags.output),
+    cacheTokens: flags.cache === undefined ? null : Number(flags.cache),
+    cost: flags.cost === undefined ? null : Number(flags.cost),
     tool: flags.tool || null, workspaceHash: relevantHash(id), changeId: id
   };
   if (!event.requestId) die("event requires --request for unique telemetry identity");
   const path = join(LOGS, id, "events.jsonl"); mkdirSync(dirname(path), { recursive: true });
+  if (existsSync(path)) {
+    const duplicate = readFileSync(path, "utf8").split("\n").filter(Boolean).some((line) => {
+      try { return JSON.parse(line).requestId === event.requestId; }
+      catch { die(`invalid telemetry ledger: ${relative(ROOT, path)}`); }
+    });
+    if (duplicate) die(`duplicate telemetry request '${event.requestId}'`);
+  }
   appendFileSync(path, `${JSON.stringify(event)}\n`);
   state.budget.usedRequests = Number(state.budget.usedRequests || 0) + 1;
+  state.budget.measurement = "external-events";
   const ratio = state.budget.usedRequests / Number(state.budget.targetRequests || 1);
   saveRuntime(state);
   const action = ratio >= 1 ? "STOP_AND_SPLIT" : ratio >= 0.85 ? "STOP_EXPLORATION" :
     ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
   console.log(`BUDGET ${id}: ${(ratio * 100).toFixed(1)}% ${action}`);
   if (ratio >= 1) process.exit(2);
+}
+
+function doctor(flags = {}) {
+  const checks = [];
+  const nodeParts = process.versions.node.split(".").map(Number);
+  const nodeOk = nodeParts[0] > 20 || (nodeParts[0] === 20 && nodeParts[1] >= 19);
+  checks.push({ level: nodeOk ? "ok" : "error", name: "node", detail: process.versions.node });
+
+  const openspec = spawnSync("openspec", ["--version"], { cwd: ROOT, encoding: "utf8" });
+  const openspecText = `${openspec.stdout || ""}${openspec.stderr || ""}`.trim();
+  const openspecOk = openspec.status === 0 && isPinnedOpenSpecVersion(openspecText);
+  checks.push({
+    level: openspecOk ? "ok" : (flags["require-archive"] ? "error" : "warn"),
+    name: "openspec", detail: openspec.error?.code === "ENOENT" ? "missing; archive unavailable" :
+      openspecOk ? openspecText : `${openspecText || "unavailable"}; required 1.7.0`
+  });
+
+  for (const hook of ["protect-secrets.sh", "lint.sh"]) {
+    checks.push({
+      level: existsSync(join(ROOT, ".claude", "hooks", hook)) ? "ok" : "error",
+      name: `hook:${hook}`, detail: existsSync(join(ROOT, ".claude", "hooks", hook)) ? "installed" : "missing"
+    });
+  }
+  const legacyHookTests = ["run-hook-tests.sh", "run-artifact-lint-tests.sh"]
+    .filter((name) => existsSync(join(ROOT, ".claude", "hooks", "tests", name)));
+  checks.push({
+    level: legacyHookTests.length ? "warn" : "ok",
+    name: "legacy-hook-tests",
+    detail: legacyHookTests.length ?
+      `stale packaged tests found (${legacyHookTests.join(", ")}); reinstall Foundation` : "absent"
+  });
+
+  const settings = readJson(join(ROOT, ".claude", "settings.json"), {});
+  const settingsText = JSON.stringify(settings);
+  const directMainEnabled = settingsText.includes("no-direct-main-commit.sh");
+  checks.push({
+    level: "info", name: "no-direct-main",
+    detail: directMainEnabled ? "enabled" : "disabled (opt-in policy)"
+  });
+
+  for (const check of checks)
+    console.log(`${check.level.toUpperCase().padEnd(5)} ${check.name}: ${check.detail}`);
+  if (checks.some((check) => check.level === "error")) process.exitCode = 1;
 }
 
 function migrate(values) {
@@ -678,10 +890,12 @@ function usage() {
   console.log(`Foundation harness ${VERSION}
 
 Commands:
+  doctor [--require-archive]
   new <intent> [--id <id>] [--rapid]
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
   changes
   providers
+  packet <change>
   validate <change>
   hash <change>
   proof-plan <change>
@@ -696,6 +910,10 @@ Commands:
 }
 
 const [command, ...values] = process.argv.slice(2);
+operationName = command || null;
+operationChangeId = command === "sandbox" ? values[1] :
+  ["resolve", "validate", "hash", "packet", "proof-plan", "receipt", "run-provider", "prove",
+    "land-check", "archive", "event"].includes(command) ? values[0] : null;
 switch (command) {
   case "new": {
     const { flags, rest } = parseFlags(values);
@@ -709,6 +927,12 @@ switch (command) {
   }
   case "changes": showChanges(); break;
   case "providers": showProviders(); break;
+  case "packet": showPacket(values[0]); break;
+  case "doctor": {
+    const { flags, rest } = parseFlags(values);
+    if (rest.length) die(`unexpected doctor argument(s): ${rest.join(", ")}`);
+    doctor(flags); break;
+  }
   case "validate": validate(values[0]); break;
   case "hash": console.log(relevantHash(values[0])); break;
   case "proof-plan": proofPlan(values[0]); break;

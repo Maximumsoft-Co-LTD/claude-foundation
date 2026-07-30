@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=1
+EXPECTED_RUNTIME_API=2
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -52,7 +52,7 @@ run_runtime() {
     printf "claude-foundation: warning: project runtime API '%s' differs from CLI API '%s'\n" \
       "${actual_api:-unknown}" "$EXPECTED_RUNTIME_API" >&2
   fi
-  exec node "$runtime" "$@"
+  FOUNDATION_TELEMETRY=1 exec node "$runtime" "$@"
 }
 
 need_arg() {
@@ -86,11 +86,13 @@ claude-foundation — OpenSpec-native software-change harness
 Usage:
   claude-foundation init [target-path] [options]   Install the change loop (default target: current dir)
   claude-foundation providers                     List evidence provider contracts
+  claude-foundation doctor [--require-archive]    Check runtime, hooks, and archive readiness
   claude-foundation changes                       List active changes
+  claude-foundation packet <change>               Print a compact phase handoff
   claude-foundation validate <change>              Validate a change packet
   claude-foundation proof plan <change>            Show missing or stale evidence
   claude-foundation proof finalize <change>        Create a proof from valid receipts
-  claude-foundation evidence run <change> <provider> -- <command>
+  claude-foundation evidence run <change> <provider> --claims <scope> -- <command>
                                                   Run a provider and record its receipt
   claude-foundation evidence record <change> <provider> <status> [options]
                                                   Record external provider evidence
@@ -139,9 +141,15 @@ case "${1:-}" in
   providers)
     shift; [ "$#" -eq 0 ] || fail "providers takes no arguments"
     run_runtime read providers ;;
+  doctor)
+    shift
+    run_runtime read doctor "$@" ;;
   changes)
     shift; [ "$#" -eq 0 ] || fail "changes takes no arguments"
     run_runtime read changes ;;
+  packet)
+    shift; need_arg "packet" "${1:-}"
+    run_runtime read packet "$@" ;;
   validate)
     shift; need_arg "validate" "${1:-}"
     run_runtime write validate "$@" ;;
@@ -189,7 +197,7 @@ case "${1:-}" in
   runtime)
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
-    case "$1" in version|api-version|hash) access=read ;; *) access=write ;; esac
+    case "$1" in version|api-version|hash|doctor|packet) access=read ;; *) access=write ;; esac
     run_runtime "$access" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)
     sub="$1"; shift

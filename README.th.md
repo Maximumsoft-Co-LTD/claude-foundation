@@ -49,6 +49,11 @@ Installer จะรักษา:
 Foundation-owned commands, schemas, harness, rules, skills และ hooks จะถูกอัปเดต
 เป็นเวอร์ชันใหม่
 
+`protect-secrets.sh` และ `lint.sh` ถูก wire เป็นค่าเริ่มต้น ส่วน
+`no-direct-main-commit.sh` จงใจเป็น opt-in เพราะบาง repository อนุญาต controlled
+commit บน default branch; `claude-foundation doctor` จะรายงานว่า policy นี้
+เปิดอยู่หรือไม่
+
 ## Flow ทำงานอย่างไร
 
 ```mermaid
@@ -93,11 +98,13 @@ Slash commands ใช้ควบคุม AI workflow ส่วน deterministi
 
 ```bash
 claude-foundation providers
+claude-foundation doctor
 claude-foundation changes
+claude-foundation packet <change>
 claude-foundation validate <change>
 claude-foundation proof plan <change>
 claude-foundation proof finalize <change>
-claude-foundation evidence run <change> <provider> -- <command>
+claude-foundation evidence run <change> <provider> --claims declared -- <command>
 claude-foundation sandbox create <change>
 claude-foundation land check <change>
 ```
@@ -106,6 +113,11 @@ CLI จะค้น project จาก directory ปัจจุบันหร�
 ที่ติดตั้งอยู่ใน project นั้น ดูคำสั่งทั้งหมดด้วย `claude-foundation help`
 ถ้าติดตั้งตรงจาก source และยังไม่มี packaged CLI บน `PATH` สามารถเรียก runtime
 file โดยตรงเป็น compatibility fallback ได้
+
+`packet <change>` คือ compact handoff ระหว่าง Change, Build และ Prove โดยมี
+เฉพาะ path, revision, claims, required providers, task count, hash และ budget
+ไม่แบก conversation ที่สะสมมาทั้งหมด จึงเริ่ม execution context ใหม่และทำงาน
+ต่อได้โดย orchestrator ไม่ต้อง replay ทั้ง run
 
 ## `/investigate` — สำรวจโดยยังไม่ผูกมัด
 
@@ -312,6 +324,10 @@ Prove จะ:
 8. เรียก independent review เฉพาะเมื่อ risk trigger
 9. สร้าง `proof.json`
 
+`tasks.md` เก็บเฉพาะ implementation work เท่านั้น `/prove` และ `/land`
+เป็น lifecycle commands ไม่ใช่ checkbox เพราะถ้าใส่ไว้ใน ledger จะเกิด gate
+ที่รอตัวเองและ validation จะไม่ยอมให้ผ่าน
+
 Evidence providers ที่รองรับ:
 
 | Provider ID | ใช้พิสูจน์ |
@@ -345,6 +361,26 @@ Provider เหล่านี้คือ evidence contract ไม่ใช่ 
 harness ทั้งหมด Prove สามารถเรียก tool เดิมของ repository ด้วย `run-provider`
 หรือบันทึก receipt จาก external system ได้ แต่ละ change เลือกเฉพาะ provider
 ที่ observable claim ต้องใช้ ไม่ได้รันทั้งหมดโดยอัตโนมัติ
+
+เวลารัน executable provider ต้องระบุ claim scope ก่อน command:
+
+```bash
+claude-foundation evidence run add-profile test --claims declared -- npm test
+```
+
+`declared` หมายถึงเฉพาะ claims ที่ประกาศ provider นี้ไว้ใน `capabilities`
+receipt อ้างผลของ claim อื่นไม่ได้ และ reuse ได้ต่อเมื่อ workspace hash,
+provider protocol, provider version/fingerprint, status และ claim coverage
+ยังตรงทั้งหมด
+
+Browser evidence แยก “scenario ต้องใช้ foreground” ออกจาก
+“environment มี foreground ให้ใช้จริง”:
+
+```bash
+claude-foundation evidence record add-profile browser pass \
+  --claims declared --input-mode os-input \
+  --foreground-required yes --foreground-available yes
+```
 
 Receipts อยู่ที่:
 
@@ -409,6 +445,17 @@ Land จะไม่:
 
 ตอนนี้ OpenSpec CLI 1.7.0 ใช้สำหรับ semantic spec sync และ archive ส่วน
 sandbox apply และ proof guards เป็นของ Foundation
+`land archive` เรียกซ้ำได้อย่างปลอดภัย ถ้า change ถูก archive แล้วจะรายงาน
+สถานะเดิมและไม่ sync spec ซ้ำ
+
+ตรวจความพร้อมก่อนเริ่มงาน:
+
+```bash
+claude-foundation doctor --require-archive
+```
+
+ถ้าไม่ใส่ `--require-archive` การไม่มี OpenSpec CLI จะเป็น warning เพราะ
+Change, Build และ Prove ยังทำได้ แต่ archive จะถูก block
 
 ## `/changes` — ดูสถานะงานทั้งหมด
 

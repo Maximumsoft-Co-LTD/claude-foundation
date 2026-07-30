@@ -5,4 +5,3 @@
 
 - [ ] **T001** <implementation outcome> — `<path or surface>` — verify: `<focused check>`
 - [ ] **T002** <boundary/compatibility outcome> — `<path or surface>` — verify: `<focused check>`
-- [ ] **T003** Complete required evidence and full-suite convergence — verify: `/prove <change>`

@@ -92,6 +92,7 @@ LEGACY=(
   ".claude/agents/references/engineer.md" ".claude/agents/references/qa.md"
   ".claude/hooks/dev-agent-guard.sh" ".claude/hooks/dev-state-mark.sh"
   ".claude/hooks/dev-state-validate.sh" ".claude/hooks/artifact-lint.sh"
+  ".claude/hooks/tests"
   ".claude/orchestrator/references"
   ".claude/skills/fanout-team-agents" ".claude/skills/qa-handoff-note"
   ".claude/skills/brainstorming/references" ".claude/skills/plan-writing/references"

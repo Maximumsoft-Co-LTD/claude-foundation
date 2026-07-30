@@ -21,6 +21,7 @@ assert_file_exists "change command installed" "$TARGET/.claude/commands/change.m
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
+assert_file_absent "obsolete packaged hook tests removed" "$TARGET/.claude/hooks/tests"
 assert_file_exists "legacy run preserved" "$TARGET/.workflow/0001-legacy/state.json"
 assert_file_absent "legacy lifecycle agent removed" "$TARGET/.claude/agents/pm.md"
 if grep -qF "dev-agent-guard.sh" "$TARGET/.claude/settings.json"; then
@@ -33,6 +34,9 @@ assert_file_contains "user CLAUDE content preserved" "$TARGET/CLAUDE.md" "# User
 assert_file_contains "managed change-loop pointer added" "$TARGET/CLAUDE.md" "claude-foundation:change-loop:start"
 assert_cmd_zero "installed harness starts" \
   node "$TARGET/.claude/harness/foundation.mjs" version
+doctor="$(bash "$ROOT/cli.sh" --project "$TARGET" doctor)"
+assert_contains "native doctor reports runtime readiness" "$doctor" "node:"
+assert_contains "native doctor exposes opt-in branch policy" "$doctor" "no-direct-main:"
 
 CLI="bash $ROOT/cli.sh"
 providers="$(bash "$ROOT/cli.sh" --project "$TARGET" providers)"
@@ -42,12 +46,19 @@ assert_cmd_zero "native CLI discovers project from a subdirectory" \
   sh -c 'cd "$1" && bash "$2" changes' _ "$TARGET/nested/path" "$ROOT/cli.sh"
 
 bash "$ROOT/cli.sh" --project "$TARGET" runtime new "CLI proof route" --rapid >/dev/null
+packet="$(bash "$ROOT/cli.sh" --project "$TARGET" packet cli-proof-route)"
+assert_contains "native CLI exposes compact handoff packet" "$packet" '"changeId": "cli-proof-route"'
+assert_file_exists "native CLI records operation telemetry" \
+  "$TARGET/.foundation/logs/cli-proof-route/operations.jsonl"
+assert_file_contains "unknown host usage remains null" \
+  "$TARGET/.foundation/logs/cli-proof-route/operations.jsonl" '"inputTokens":null'
 assert_cmd_zero "native validate routes to project runtime" \
   bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route
 sed -i.bak 's/- \[ \]/- [x]/g' "$TARGET/openspec/changes/cli-proof-route/tasks.md"
 rm "$TARGET/openspec/changes/cli-proof-route/tasks.md.bak"
 assert_cmd_zero "native evidence run preserves command arguments" \
-  bash "$ROOT/cli.sh" --project "$TARGET" evidence run cli-proof-route test -- \
+  bash "$ROOT/cli.sh" --project "$TARGET" evidence run cli-proof-route test \
+  --claims declared -- \
   sh -c 'test "$1" = "two words"' _ "two words"
 assert_cmd_zero "native evidence record routes receipt flags" \
   bash "$ROOT/cli.sh" --project "$TARGET" evidence record cli-proof-route \
@@ -73,7 +84,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "1"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "2"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then

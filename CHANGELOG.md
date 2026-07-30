@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Preflight and honest operation telemetry** — `claude-foundation doctor`
+  checks runtime, hooks, pinned OpenSpec archive support, legacy packaged tests,
+  and opt-in branch policy; native operations record duration/status while
+  unknown request, token, cache, and cost values remain `null`.
+- **Compact execution handoff** — `claude-foundation packet <change>` gives
+  Build and Prove the active paths, revision, claims, providers, tasks, hash,
+  and budget without replaying the orchestrator transcript.
 - **Native `claude-foundation` control surface** — project-aware provider,
   change, proof, evidence, sandbox, land, and migration namespaces now forward
   to the runtime installed in the current repository, including subdirectory
@@ -29,6 +36,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Upgrade-safe installer migration** — preserves legacy `.workflow/` history
   and project-owned OpenSpec content while removing old lifecycle agents,
   phase commands, templates, hooks, hook wiring, and orchestration references.
+
+### Fixed
+
+- **Content-bound proof over the complete change packet** — edits to the active
+  proposal, design, tasks, delta specs, or evidence now invalidate receipts and
+  proof; sandbox validation consistently reads its active packet.
+- **Deny-by-default provider receipts** — executable providers require explicit
+  claim scope, receipts cannot claim undeclared outcomes, protocol/fingerprint
+  drift invalidates reuse, and browser foreground requirement is distinct from
+  foreground availability.
+- **Task and archive lifecycle semantics** — implementation tasks are never
+  silently ignored because they mention `/prove`; lifecycle commands are no
+  longer generated as tasks, isolated work must be applied before archive, and
+  repeated archive/land checks return the archived state without resyncing.
+- **Shipped self-tests** — obsolete phase-hook suites are removed from installs
+  and replaced by tests for the hooks that are actually shipped.
 
 ### Removed
 
