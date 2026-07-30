@@ -102,6 +102,10 @@ Usage:
                                                   Incrementally ingest native Claude request usage
   claude-foundation telemetry import <change> <file> [--format generic|codex|claude]
                                                   Import authoritative host usage without prompts
+  claude-foundation runtime new <intent> [--rapid]
+                                                  Create a change through the project runtime
+  claude-foundation runtime resolve <change> [options]
+                                                  Persist change risk and coupling decisions
   claude-foundation validate <change>              Validate a change packet
   claude-foundation proof plan <change>            Show missing or stale evidence
   claude-foundation proof preflight <change>       Validate execution topology without running it

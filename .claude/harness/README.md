@@ -150,8 +150,12 @@ claude-foundation land archive <change>
 
 `land archive` verifies the content-bound proof, applies the isolated diff when
 needed, checks state identity, synchronizes the specs, archives the OpenSpec
-change, and cleans up a safely owned sandbox. It is designed to be idempotent
-when resumed after an interruption.
+change, and cleans up a safely owned sandbox. Before mutation it builds an
+immutable touched-path projection, backs up those paths, and writes an apply
+journal. Each write is verified; failure rolls the projection back while
+leaving unrelated target edits alone. The sandbox remains the proof subject
+until archive completes, so an interrupted OpenSpec archive can resume without
+invalidating proof. Transaction backups are removed only after archive audit.
 
 Foundation does not commit, push, or open a pull request implicitly.
 

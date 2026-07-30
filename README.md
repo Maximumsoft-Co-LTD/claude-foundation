@@ -473,15 +473,19 @@ The transaction is:
 Verify proof freshness
 → Verify required receipts
 → Detect target conflicts
+→ Prepare touched-path backups and apply journal
 → Apply the proven sandbox diff
-→ Verify target identity matches the sandbox
+→ Verify the touched-path projection
 → Synchronize delta specs
 → Archive the change
 ```
 
 `land archive` performs the apply and archive transaction itself; calling
 `sandbox apply` first remains available for inspection but is no longer
-required.
+required. Unrelated target edits are preserved and do not participate in the
+projection identity. If apply fails, touched paths roll back from backup. If
+archive fails after apply, retry resumes from the verified journal while proof
+continues to bind the unchanged sandbox.
 
 Land never:
 

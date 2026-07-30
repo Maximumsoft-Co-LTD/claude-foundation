@@ -469,14 +469,18 @@ next: /land add-profile
 ตรวจ proof freshness
 → ตรวจ required receipts
 → ตรวจ target conflicts
+→ เตรียม backup ของ touched paths และ apply journal
 → apply proven sandbox diff
-→ ตรวจ target identity ตรงกับ sandbox
+→ ตรวจ touched-path projection
 → sync delta specs
 → archive change
 ```
 
 `land archive` ทำ apply และ archive ใน transaction เดียว `sandbox apply`
-ยังเรียกแยกเพื่อตรวจสอบได้ แต่ไม่จำเป็นต้องเรียกก่อนแล้ว
+ยังเรียกแยกเพื่อตรวจสอบได้ แต่ไม่จำเป็นต้องเรียกก่อน unrelated target edits
+จะถูกรักษาไว้และไม่ถูกนำมาเทียบ projection ถ้า apply พัง touched paths จะ
+rollback จาก backup และถ้า archive พังหลัง apply สามารถเรียกซ้ำเพื่อทำต่อจาก
+journal ที่ verify แล้วได้ โดย proof ยังผูกกับ sandbox เดิม
 
 Land จะไม่:
 

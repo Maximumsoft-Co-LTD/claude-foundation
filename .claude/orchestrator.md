@@ -124,14 +124,18 @@ Landing is explicit and transactional:
    digest-invalid proof;
 2. `claude-foundation land archive <change>` applies only the proven sandbox
    diff when needed;
-3. the same transaction verifies the applied workspace hash;
+3. the same transaction verifies the touched-path projection against the
+   immutable apply plan; unrelated target edits are outside that identity;
 4. the same transaction uses OpenSpec archive/spec sync;
 5. audit archived receipts and artifact digests;
 6. record commit/PR only when explicitly authorized;
 7. finalize metrics and clean the sandbox through the resumable Land journal.
 
-Never archive before code application, never apply a diff whose proof hash
-changed, and never overwrite unrelated user changes.
+The proof subject remains the sandbox until archive completes. A prepared
+transaction backs up touched paths, journals each mutation, rolls back on
+failure, and resumes after interruption. Never archive before code application,
+never apply a diff whose proof hash changed, and never overwrite unrelated user
+changes.
 
 ## Compatibility
 

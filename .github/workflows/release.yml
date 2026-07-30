@@ -139,6 +139,7 @@ jobs:
           brew tap-new "$TAP" --no-git
           cp Formula/claude-foundation.rb "$(brew --repository "$TAP")/Formula/"
           brew install --build-bottle "$TAP/claude-foundation"
+          brew test "$TAP/claude-foundation"
           brew bottle --json --no-rebuild --root-url "$ROOT_URL" "$TAP/claude-foundation" | tee bottle.out
 
           # brew writes name--version (double dash); a custom root_url downloads

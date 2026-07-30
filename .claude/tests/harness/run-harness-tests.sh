@@ -200,6 +200,58 @@ assert_eq "behavioral contract no longer carries provider commands" "false" \
 assert_eq "execution file receives migrated provider commands" "test-discovery" \
   "$(jq -r '.providers.test.adapter' openspec/changes/executable-evidence/execution.yaml)"
 
+# Discovery accepts only an actual non-negative integer. JavaScript-coercible
+# values are unknown evidence, while a numeric zero is a real empty suite.
+node .claude/harness/foundation.mjs new 'Numeric report semantics' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve numeric-report-semantics \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' 'cat numeric-report.json' > numeric-report.sh
+chmod +x numeric-report.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "test": {"adapter":"test-discovery","command":["sh","numeric-report.sh"],"minimum":1}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"numeric-report-outcome","scenario":"Test discovery is measurable","impact":"low","capabilities":["test"]}' \
+  '  ]' \
+  '}' > openspec/changes/numeric-report-semantics/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' \
+  openspec/changes/numeric-report-semantics/tasks.md
+rm openspec/changes/numeric-report-semantics/tasks.md.bak
+for fixture in null array false empty string-number; do
+  case "$fixture" in
+    null) value='null' ;;
+    array) value='[]' ;;
+    false) value='false' ;;
+    empty) value='""' ;;
+    string-number) value='"29"' ;;
+  esac
+  printf '{"totalTests":%s}\n' "$value" > numeric-report.json
+  if node .claude/harness/foundation.mjs proof-execute \
+    numeric-report-semantics >/dev/null 2>&1; then
+    fail "non-numeric discovery fixture '$fixture' cannot prove"
+  else
+    pass "non-numeric discovery fixture '$fixture' cannot prove"
+  fi
+  assert_eq "non-numeric discovery fixture '$fixture' is inconclusive" \
+    "inconclusive" \
+    "$(jq -r '.status' .foundation/receipts/numeric-report-semantics/discovery.json)"
+done
+printf '{"totalTests":0}\n' > numeric-report.json
+if node .claude/harness/foundation.mjs proof-execute \
+  numeric-report-semantics >/dev/null 2>&1; then
+  fail "numeric zero cannot satisfy discovery minimum"
+else
+  pass "numeric zero cannot satisfy discovery minimum"
+fi
+assert_eq "numeric zero is a measured failure" "fail" \
+  "$(jq -r '.status' .foundation/receipts/numeric-report-semantics/discovery.json)"
+printf '{"totalTests":29}\n' > numeric-report.json
+assert_cmd_zero "positive integer discovery can prove" \
+  node .claude/harness/foundation.mjs proof-execute numeric-report-semantics
+
 node .claude/harness/foundation.mjs new 'Parallel evidence' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve parallel-evidence \
   --impact low --coupling isolated >/dev/null
@@ -478,15 +530,28 @@ chmod +x "$TMP/bin/openspec"
 printf '%s\n' '#!/usr/bin/env sh' \
   'if [ "${1:-}" = "--version" ]; then echo "1.7.0"; exit 0; fi' \
   'if [ "${1:-}" = "archive" ]; then' \
+  '  if [ "${FOUNDATION_TEST_OPEN_SPEC_FAIL:-0}" = "1" ]; then echo "injected archive failure" >&2; exit 1; fi' \
   '  mkdir -p "openspec/changes/archive"' \
   '  mv "openspec/changes/$2" "openspec/changes/archive/$2"' \
   '  echo "archived $2"' \
   '  exit 0' \
   'fi' > "$TMP/bin/openspec"
 chmod +x "$TMP/bin/openspec"
+printf 'user-owned and unrelated\n' > NOTES.md
+if PATH="$TMP/bin:$PATH" FOUNDATION_TEST_OPEN_SPEC_FAIL=1 \
+  node .claude/harness/foundation.mjs archive copy-sandbox >/dev/null 2>&1; then
+  fail "archive failure is surfaced after code apply"
+else
+  pass "archive failure is surfaced after code apply"
+fi
+assert_eq "failed archive retains recoverable applied state" "applied" \
+  "$(jq -r '.status' .foundation/runtime/copy-sandbox.json)"
+assert_eq "code remains applied for archive retry" "copy-applied" \
+  "$(tr -d '\n' < app.txt)"
+assert_file_contains "unrelated target file survives apply" NOTES.md \
+  "user-owned and unrelated"
 archive_output="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs archive copy-sandbox)"
 assert_contains "archive delegates once to pinned OpenSpec" "$archive_output" "ARCHIVED copy-sandbox"
-assert_contains "archive applies isolated workspace transactionally" "$archive_output" "APPLIED copy-sandbox"
 copy_applied="$(tr -d '\n' < app.txt)"
 assert_eq "non-git target matches isolated copy" "copy-applied" "$copy_applied"
 assert_file_absent "archive cleans the applied temporary copy" "$copy_path"
@@ -534,11 +599,35 @@ fi
 node .claude/harness/foundation.mjs receipt sandbox-copy test pass >/dev/null
 node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass --discovered 2 --minimum 1 >/dev/null
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
+printf 'user-conflict\n' > app.txt
+if node .claude/harness/foundation.mjs sandbox apply sandbox-copy >/dev/null 2>&1; then
+  fail "touched-path conflict blocks before mutation"
+else
+  pass "touched-path conflict blocks before mutation"
+fi
+assert_eq "conflicting target content is preserved" "user-conflict" \
+  "$(tr -d '\n' < app.txt)"
+printf 'before\n' > app.txt
+printf 'unrelated during build\n' > NOTES.md
+if FOUNDATION_TEST_MODE=1 FOUNDATION_TEST_FAIL_APPLY_AFTER=1 \
+  node .claude/harness/foundation.mjs sandbox apply sandbox-copy >/dev/null 2>&1; then
+  fail "injected partial apply fails"
+else
+  pass "injected partial apply fails"
+fi
+assert_eq "failed partial apply rolls target back" "before" \
+  "$(tr -d '\n' < app.txt)"
+assert_eq "rollback keeps proof state retryable" "proven" \
+  "$(jq -r '.status' .foundation/runtime/sandbox-copy.json)"
+assert_file_contains "rollback preserves unrelated target edits" NOTES.md \
+  "unrelated during build"
 assert_cmd_zero "proven sandbox applies transactionally" \
   node .claude/harness/foundation.mjs sandbox apply sandbox-copy
 applied="$(tr -d '\n' < app.txt)"
 assert_eq "target matches sandbox content" "after" "$applied"
 assert_file_contains "land returns completed task ledger" \
   openspec/changes/sandbox-copy/tasks.md "- [x]"
+assert_file_contains "successful apply preserves unrelated target edits" NOTES.md \
+  "unrelated during build"
 
 finish "harness contracts"

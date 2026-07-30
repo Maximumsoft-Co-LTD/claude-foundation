@@ -261,13 +261,17 @@ packet instead of replaying the full orchestrator transcript.
 - Git projects use detached temporary worktrees.
 - The target HEAD must remain at the recorded base before apply.
 - `git apply --check` runs before target mutation.
-- The applied target and proven sandbox hashes must match.
+- Apply identity covers only paths changed by the proven sandbox. Unrelated
+  target edits are preserved and excluded from the projection comparison.
+- Touched paths and change artifacts are backed up and journaled before writes;
+  failures roll back and interrupted transactions recover on retry.
+- The sandbox remains the proof subject until archive and proof audit finish.
 - Conflicts stop without overwriting unrelated user edits.
 - Mutation testing happens only in isolation.
 
 Non-Git projects use an isolated temporary copy with a before/after content
-manifest. Apply rejects any target path changed since the baseline, then verifies
-that target and sandbox identities match. Multi-repository changes use one
+manifest. Apply rejects any touched target path changed since the baseline,
+then verifies the expected touched-path projection. Multi-repository changes use one
 OpenSpec change plus a repository manifest and require cross-repository contract
 evidence before each repository is landed in its declared order.
 
@@ -304,9 +308,14 @@ runtime installed in that project so schemas and runtime behavior stay aligned.
 Use `proof plan|execute|finalize`, `evidence run|record|upgrade`, `sandbox create|sync|apply`,
 and `land check|archive` rather than calling the runtime file directly.
 
-Projects installed directly from source can use
-`node .claude/harness/foundation.mjs` as a compatibility fallback when the
-packaged CLI is not on `PATH`.
+When the packaged CLI is not on `PATH`, use the source checkout's public router:
+
+```bash
+bash /path/to/claude-foundation/cli.sh --project "$PWD" proof plan <change>
+```
+
+Do not bypass it with `foundation.mjs`; that file intentionally exposes the
+hyphenated low-level runtime API rather than the public nested command grammar.
 
 ## Runtime layout
 

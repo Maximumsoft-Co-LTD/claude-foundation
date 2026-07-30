@@ -2,8 +2,8 @@
 
 import {
   appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync,
-  readSync, readdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync,
-  writeFileSync
+  readSync, readdirSync, lstatSync, mkdtempSync, readlinkSync, realpathSync,
+  renameSync, rmSync, statSync, symlinkSync, writeFileSync
 } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
@@ -71,12 +71,14 @@ const RECEIPTS = join(ROOT, ".foundation", "receipts");
 const LOGS = join(ROOT, ".foundation", "logs");
 const EVIDENCE_VAULT = join(ROOT, ".foundation", "evidence");
 const SNAPSHOTS = join(ROOT, ".foundation", "snapshots");
+const TRANSACTIONS = join(ROOT, ".foundation", "transactions");
 const CHANGES = join(ROOT, "openspec", "changes");
 mkdirSync(RUNTIME, { recursive: true });
 mkdirSync(RECEIPTS, { recursive: true });
 mkdirSync(LOGS, { recursive: true });
 mkdirSync(EVIDENCE_VAULT, { recursive: true });
 mkdirSync(SNAPSHOTS, { recursive: true });
+mkdirSync(TRANSACTIONS, { recursive: true });
 mkdirSync(CHANGES, { recursive: true });
 
 const operationStartedAt = Date.now();
@@ -1653,7 +1655,9 @@ function proofAudit(id, quiet = false) {
 }
 
 function landCheck(id) {
-  const state = loadRuntime(id);
+  let state = loadRuntime(id);
+  recoverPendingApply(id, state);
+  state = loadRuntime(id);
   if (state.status === "archived") {
     const audit = proofAudit(id, true);
     if (!audit.valid) die(`archived proof audit failed: ${audit.reason}`);
@@ -1670,6 +1674,10 @@ function landCheck(id) {
   for (const provider of requiredProviders(id)) {
     const check = receiptValidity(id, provider, hash);
     if (check.validity !== "valid") die(`${provider} evidence is ${check.validity}`);
+  }
+  if (state.workspace?.applied) {
+    const applied = verifyAppliedProjection(state);
+    if (!applied.valid) die(`applied projection is invalid: ${applied.reason}`);
   }
   console.log(`LAND READY ${id}\n  workspace: ${hash}`);
   return { archived: false, state, hash };
@@ -1778,78 +1786,297 @@ function syncSandbox(id) {
   console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}`);
 }
 
-function applyChangeArtifacts(id, sandboxPath) {
-  const target = changePath(id);
-  const source = join(sandboxPath, "openspec", "changes", id);
-  if (existsSync(target)) rmSync(target, { recursive: true });
-  mkdirSync(dirname(target), { recursive: true });
-  cpSync(source, target, { recursive: true });
+function pathIdentity(path) {
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) return `symlink:${readlinkSync(path)}`;
+    if (stat.isFile()) return fileDigest(path);
+    if (stat.isDirectory()) return `directory:${directoryHash(path)}`;
+    return `unsupported:${stat.mode}`;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function safeRootPath(rel) {
+  const path = resolve(ROOT, rel);
+  if (!pathInside(ROOT, path) || path === ROOT)
+    throw new Error(`unsafe transaction path '${rel}'`);
+  return path;
+}
+
+function copyPath(source, destination) {
+  const stat = lstatSync(source);
+  mkdirSync(dirname(destination), { recursive: true });
+  if (stat.isSymbolicLink())
+    symlinkSync(readlinkSync(source), destination);
+  else
+    cpSync(source, destination, {
+      recursive: stat.isDirectory(),
+      dereference: false,
+      verbatimSymlinks: true
+    });
+}
+
+function applyTransactionRoot(id, transactionId) {
+  return join(TRANSACTIONS, id, transactionId);
+}
+
+function transactionJournalPath(id, transactionId) {
+  return join(applyTransactionRoot(id, transactionId), "journal.json");
+}
+
+function saveApplyJournal(journal) {
+  journal.updatedAt = now();
+  writeJson(transactionJournalPath(journal.changeId, journal.transactionId), journal);
+}
+
+function gitApplyInputs(id, sandboxPath) {
+  git(["add", "-N", "."], sandboxPath);
+  const pathspec = [
+    ".",
+    `:(exclude)openspec/changes/${id}/**`,
+    ":(exclude)coverage/**", ":(exclude)test-results/**",
+    ":(exclude)playwright-report/**", ":(exclude).foundation/**"
+  ];
+  const diff = git(["diff", "--binary", "HEAD", "--", ...pathspec], sandboxPath);
+  if (diff.status !== 0 || !diff.stdout) die("sandbox has no applicable diff");
+  const check = spawnSync("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
+    cwd: ROOT, input: diff.stdout, encoding: "utf8"
+  });
+  if (check.status !== 0)
+    die(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
+  const names = git(["diff", "--name-only", "-z", "HEAD", "--", ...pathspec], sandboxPath);
+  if (names.status !== 0) die(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
+  return names.stdout.split("\0").filter(Boolean).sort();
+}
+
+function buildApplyEntries(id, state) {
+  const sandboxPath = state.workspace.path;
+  let codePaths;
+  if (state.workspace.mode === "copy") {
+    const baseline = state.workspace.baseline || {};
+    const sandbox = workspaceManifest(sandboxPath, id, true);
+    const target = workspaceManifest(ROOT, id, true);
+    codePaths = [...new Set([...Object.keys(baseline), ...Object.keys(sandbox)])]
+      .filter((path) => baseline[path] !== sandbox[path]).sort();
+    for (const path of codePaths)
+      if ((target[path] ?? null) !== (baseline[path] ?? null))
+        die(`isolated-copy conflict at '${path}'`);
+  } else if (state.workspace.mode === "worktree") {
+    if (gitHead(ROOT) !== state.workspace.baseHead)
+      die("target HEAD moved since sandbox creation");
+    codePaths = gitApplyInputs(id, sandboxPath);
+  } else {
+    die("change has no isolated sandbox");
+  }
+  const entries = codePaths.map((rel) => {
+    const source = resolve(sandboxPath, rel);
+    const target = safeRootPath(rel);
+    return {
+      path: rel,
+      role: "code",
+      before: pathIdentity(target),
+      after: pathIdentity(source)
+    };
+  });
+  const changeRel = currentChangeRelativePath(id);
+  entries.push({
+    path: changeRel,
+    role: "change-artifacts",
+    before: pathIdentity(changePath(id)),
+    after: pathIdentity(join(sandboxPath, changeRel))
+  });
+  return entries;
+}
+
+function prepareApplyTransaction(id, state) {
+  if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
+    die("active change was edited after the last sandbox sync");
+  const entries = buildApplyEntries(id, state);
+  const transactionId = `apply-${Date.now()}-${process.pid}`;
+  const root = applyTransactionRoot(id, transactionId);
+  mkdirSync(root, { recursive: true });
+  entries.forEach((entry, index) => {
+    entry.backup = `backup/${index}`;
+    if (entry.before !== null)
+      copyPath(safeRootPath(entry.path), join(root, entry.backup));
+  });
+  const proof = readJson(proofPath(id));
+  const journal = {
+    version: 1,
+    changeId: id,
+    transactionId,
+    proofRunId: proof.proofRunId,
+    mode: state.workspace.mode,
+    status: "prepared",
+    sandboxPath: state.workspace.path,
+    targetPath: ROOT,
+    projectionHash: stableHash(entries.map(({ path, after }) => ({ path, after }))),
+    entries,
+    appliedPaths: [],
+    inFlightPaths: [],
+    createdAt: now()
+  };
+  saveApplyJournal(journal);
+  return journal;
+}
+
+function applyTransactionEntry(journal, entry, index) {
+  const target = safeRootPath(entry.path);
+  const current = pathIdentity(target);
+  if (current !== entry.before)
+    throw new Error(`target changed during apply at '${entry.path}'`);
+  journal.inFlightPaths = [entry.path];
+  saveApplyJournal(journal);
+  if (entry.after === null) {
+    if (current !== null) rmSync(target, { recursive: true });
+  } else {
+    const source = resolve(journal.sandboxPath, entry.path);
+    const stage = join(applyTransactionRoot(journal.changeId, journal.transactionId),
+      "stage", String(index));
+    if (existsSync(stage)) rmSync(stage, { recursive: true });
+    copyPath(source, stage);
+    mkdirSync(dirname(target), { recursive: true });
+    if (current !== null) rmSync(target, { recursive: true });
+    renameSync(stage, target);
+  }
+  if (pathIdentity(target) !== entry.after)
+    throw new Error(`post-apply projection mismatch at '${entry.path}'`);
+  journal.appliedPaths.push(entry.path);
+  journal.inFlightPaths = [];
+  saveApplyJournal(journal);
+  const failAfter = process.env.FOUNDATION_TEST_MODE === "1"
+    ? Number(process.env.FOUNDATION_TEST_FAIL_APPLY_AFTER || 0) : 0;
+  if (failAfter > 0 && journal.appliedPaths.length >= failAfter)
+    throw new Error(`injected apply failure after ${journal.appliedPaths.length} path(s)`);
+}
+
+function restoreTransactionEntry(journal, entry) {
+  const target = safeRootPath(entry.path);
+  const current = pathIdentity(target);
+  if (current === entry.before) return;
+  const possiblyApplied = journal.appliedPaths.includes(entry.path) ||
+    journal.inFlightPaths.includes(entry.path);
+  if (!possiblyApplied || (current !== entry.after && current !== null))
+    throw new Error(`rollback requires manual recovery at '${entry.path}'`);
+  if (current !== null) rmSync(target, { recursive: true });
+  if (entry.before !== null)
+    copyPath(join(applyTransactionRoot(journal.changeId, journal.transactionId),
+      entry.backup), target);
+  if (pathIdentity(target) !== entry.before)
+    throw new Error(`rollback verification failed at '${entry.path}'`);
+}
+
+function rollbackApplyTransaction(journal, reason) {
+  journal.status = "rolling-back";
+  journal.failure = String(reason?.message || reason);
+  saveApplyJournal(journal);
+  try {
+    for (const entry of [...journal.entries].reverse())
+      restoreTransactionEntry(journal, entry);
+    journal.status = "rolled-back";
+    journal.inFlightPaths = [];
+    journal.rolledBackAt = now();
+    saveApplyJournal(journal);
+  } catch (error) {
+    journal.status = "manual-recovery";
+    journal.recoveryError = error.message;
+    saveApplyJournal(journal);
+    throw error;
+  }
+}
+
+function verifyAppliedProjection(state) {
+  const transactionId = state.workspace?.apply?.transactionId;
+  if (!transactionId) return { valid: false, reason: "missing-apply-transaction" };
+  const path = transactionJournalPath(state.id, transactionId);
+  if (!existsSync(path)) return { valid: false, reason: "missing-apply-journal" };
+  const journal = readJson(path);
+  const mismatch = journal.entries.find((entry) =>
+    pathIdentity(safeRootPath(entry.path)) !== entry.after);
+  if (mismatch) return { valid: false, reason: `projection-mismatch:${mismatch.path}` };
+  if (journal.projectionHash !== state.workspace.apply.projectionHash)
+    return { valid: false, reason: "projection-identity-mismatch" };
+  return { valid: true, journal };
+}
+
+function recoverPendingApply(id, state) {
+  const root = join(TRANSACTIONS, id);
+  if (!existsSync(root)) return;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const path = transactionJournalPath(id, entry.name);
+    if (!existsSync(path)) continue;
+    const journal = readJson(path);
+    if (!["prepared", "applying"].includes(journal.status)) continue;
+    if (state.workspace?.applied &&
+        state.workspace.apply?.transactionId === journal.transactionId) {
+      const verification = verifyAppliedProjection(state);
+      if (!verification.valid)
+        die(`interrupted apply cannot resume: ${verification.reason}`);
+      journal.status = "verified";
+      journal.verifiedAt = now();
+      saveApplyJournal(journal);
+    } else {
+      try {
+        rollbackApplyTransaction(journal, "interrupted apply recovered before retry");
+      } catch (error) {
+        die(error.message);
+      }
+    }
+  }
 }
 
 function applySandbox(id) {
   const readiness = landCheck(id);
   if (readiness.archived) return;
-  const state = loadRuntime(id);
-  if (state.workspace?.mode === "copy") {
-    if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
-      die("active change was edited after the last sandbox sync");
-    const baseline = state.workspace.baseline || {};
-    const sandbox = workspaceManifest(state.workspace.path, id, true);
-    const target = workspaceManifest(ROOT, id, true);
-    const paths = [...new Set([...Object.keys(baseline), ...Object.keys(sandbox)])].sort();
-    const changed = paths.filter((path) => baseline[path] !== sandbox[path]);
-    for (const path of changed)
-      if (target[path] !== baseline[path])
-        die(`isolated-copy conflict at '${path}'`);
-    for (const path of changed) {
-      const source = join(state.workspace.path, path);
-      const destination = join(ROOT, path);
-      if (sandbox[path]) {
-        mkdirSync(dirname(destination), { recursive: true });
-        cpSync(source, destination);
-      } else if (existsSync(destination)) rmSync(destination);
-    }
-    const sandboxHash = relevantHash(id, state.workspace.path);
-    applyChangeArtifacts(id, state.workspace.path);
+  let state = loadRuntime(id);
+  recoverPendingApply(id, state);
+  state = loadRuntime(id);
+  if (state.workspace?.applied) {
+    const verification = verifyAppliedProjection(state);
+    if (!verification.valid) die(`applied projection is invalid: ${verification.reason}`);
+    console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
+    return;
+  }
+  const journal = prepareApplyTransaction(id, state);
+  journal.status = "applying";
+  saveApplyJournal(journal);
+  try {
+    journal.entries.forEach((entry, index) =>
+      applyTransactionEntry(journal, entry, index));
+    const mismatch = journal.entries.find((entry) =>
+      pathIdentity(safeRootPath(entry.path)) !== entry.after);
+    if (mismatch) throw new Error(`post-apply projection mismatch at '${mismatch.path}'`);
+    state = loadRuntime(id);
     state.workspace = {
-      ...state.workspace, path: ROOT, applied: true,
-      sandboxPath: state.workspace.path, baseline: undefined
+      ...state.workspace,
+      applied: true,
+      sandboxPath: state.workspace.path,
+      targetPath: ROOT,
+      apply: {
+        transactionId: journal.transactionId,
+        status: "verified",
+        projectionHash: journal.projectionHash,
+        touchedPaths: journal.entries.map((entry) => entry.path)
+      }
     };
     state.status = "applied";
     saveRuntime(state);
-    const targetHash = relevantHash(id, ROOT);
-    if (targetHash !== sandboxHash) die("post-apply isolated-copy identity mismatch");
-    console.log(`APPLIED ${id}\n  mode: isolated-copy\n  workspace: ${targetHash}`);
-    return;
+    journal.status = "verified";
+    journal.verifiedAt = now();
+    saveApplyJournal(journal);
+    console.log(`APPLIED ${id}\n  mode: ${state.workspace.mode}\n  projection: ${journal.projectionHash}`);
+  } catch (error) {
+    try {
+      rollbackApplyTransaction(journal, error);
+    } catch (rollbackError) {
+      die(`${error.message}; ${rollbackError.message}`);
+    }
+    die(`${error.message}; transaction rolled back`);
   }
-  if (state.workspace?.mode !== "worktree") die("change has no isolated sandbox");
-  if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
-    die("active change was edited after the last sandbox sync");
-  if (gitHead(ROOT) !== state.workspace.baseHead) die("target HEAD moved since sandbox creation");
-  git(["add", "-N", "."], state.workspace.path);
-  const diff = git([
-    "diff", "--binary", "HEAD", "--", ".",
-    `:(exclude)openspec/changes/${id}/**`,
-    ":(exclude)coverage/**", ":(exclude)test-results/**",
-    ":(exclude)playwright-report/**", ":(exclude).foundation/**"
-  ], state.workspace.path);
-  if (diff.status !== 0 || !diff.stdout) die("sandbox has no applicable diff");
-  const check = spawnSync("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
-    cwd: ROOT, input: diff.stdout, encoding: "utf8"
-  });
-  if (check.status !== 0) die(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
-  const apply = spawnSync("git", ["apply", "--whitespace=nowarn", "-"], {
-    cwd: ROOT, input: diff.stdout, encoding: "utf8"
-  });
-  if (apply.status !== 0) die(`sandbox apply failed: ${apply.stderr.trim()}`);
-  const sandboxHash = relevantHash(id, state.workspace.path);
-  applyChangeArtifacts(id, state.workspace.path);
-  state.workspace = { ...state.workspace, path: ROOT, applied: true, sandboxPath: state.workspace.path };
-  state.status = "applied";
-  saveRuntime(state);
-  const targetHash = relevantHash(id, ROOT);
-  if (targetHash !== sandboxHash) die("post-apply workspace identity mismatch");
-  console.log(`APPLIED ${id}\n  workspace: ${targetHash}`);
 }
 
 function cleanupAppliedSandbox(id, state) {
@@ -1880,11 +2107,35 @@ function cleanupAppliedSandbox(id, state) {
   return { status: "not-needed", path };
 }
 
+function cleanupApplyTransaction(state) {
+  const transactionId = state.workspace?.apply?.transactionId;
+  if (!transactionId) return { status: "not-needed" };
+  const root = applyTransactionRoot(state.id, transactionId);
+  try {
+    for (const name of ["backup", "stage"]) {
+      const path = join(root, name);
+      if (existsSync(path)) rmSync(path, { recursive: true });
+    }
+    const journalPath = transactionJournalPath(state.id, transactionId);
+    if (existsSync(journalPath)) {
+      const journal = readJson(journalPath);
+      journal.status = "committed";
+      journal.committedAt = now();
+      delete journal.inFlightPaths;
+      saveApplyJournal(journal);
+    }
+    return { status: "committed", transactionId };
+  } catch (error) {
+    return { status: "failed", transactionId, reason: error.message };
+  }
+}
+
 function archive(id) {
   const initial = loadRuntime(id);
   if (initial.status === "archived") {
     const audit = proofAudit(id, true);
     if (!audit.valid) die(`archived proof audit failed: ${audit.reason}`);
+    let resumed = false;
     if (initial.workspace &&
         !["removed", "not-needed"].includes(initial.workspace.cleanup?.status)) {
       initial.workspace.cleanup = cleanupAppliedSandbox(id, initial);
@@ -1894,8 +2145,14 @@ function archive(id) {
           ? "sandbox-cleaned" : "archive-audited",
         resumedAt: now()
       };
-      saveRuntime(initial);
+      resumed = true;
     }
+    if (initial.workspace?.apply &&
+        initial.workspace.apply.cleanup?.status !== "committed") {
+      initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
+      resumed = true;
+    }
+    if (resumed) saveRuntime(initial);
     console.log(`ALREADY ARCHIVED ${id}\n  archived: ${initial.archivedAt || "unknown"}`);
     return;
   }
@@ -1911,6 +2168,9 @@ function archive(id) {
       recoveredAt: now()
     };
     initial.workspace.cleanup = cleanupAppliedSandbox(id, initial);
+    if (initial.workspace.apply)
+      initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
+    delete initial.workspace.baseline;
     saveRuntime(initial);
     const audit = proofAudit(id, true);
     if (!audit.valid) die(`recovered archive has invalid proof: ${audit.reason}`);
@@ -1957,6 +2217,9 @@ function archive(id) {
   if (!audit.valid) die(`post-archive proof audit failed: ${audit.reason}`);
   state.land = { ...(state.land || {}), status: "archive-audited", updatedAt: now() };
   state.workspace.cleanup = cleanupAppliedSandbox(id, state);
+  if (state.workspace.apply)
+    state.workspace.apply.cleanup = cleanupApplyTransaction(state);
+  delete state.workspace.baseline;
   state.land.status = "sandbox-cleaned";
   saveRuntime(state);
   if (!state.archivedChangePath)

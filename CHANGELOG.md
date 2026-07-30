@@ -52,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Recoverable Land projection transaction** — copy sandboxes and Git
+  worktrees now prepare touched-path backups and an apply journal before
+  mutation, preserve unrelated target edits, verify only the proven projection,
+  roll back partial writes, keep the sandbox as the proof subject through
+  archive, and resume safely after an interrupted or failed OpenSpec archive.
+- **Packaged CLI contract drift** — Formula, bottle, release, and deterministic
+  workflow checks now require the public `proof plan`, `land check`, and
+  `runtime new` surface so an installer-only binary cannot pass packaging tests.
+- **Strict discovery report semantics** — regression coverage distinguishes
+  numeric zero (measured failure) from `null`, arrays, booleans, empty strings,
+  and numeric strings (inconclusive rather than JavaScript-coerced zero).
 - **Content-bound proof over the complete change packet** — edits to the active
   proposal, design, tasks, delta specs, or evidence now invalidate receipts and
   proof; sandbox validation consistently reads its active packet.
