@@ -389,6 +389,44 @@ Both the grouping and the replace-in-full rule are OpenSpec's (capability sectio
 Pinned by `docs/run-doc-consistency.sh` check 12 — writer plus all four readers — so a
 later pass cannot silently drop one end and leave the other paying for nothing.
 
+## Queued for one batch verdict — shipped unmeasured, rules pre-registered
+
+**Deliberate sequencing, not an oversight.** The harness cannot currently produce a
+valid verdict on the things being changed (no cross-run mode; oracles on 3 of 15 tasks;
+`blocked_at_*` excluded from every median), so the workflow work went first and the
+measurement is batched. The cost of that choice is that a regression would sit
+undetected until the batch runs. The mitigation is this table: each change is a named
+**revert unit**, claims one mechanism, and carries the rule that decides it **written
+before any number exists**. (#3 and #4 share a commit — the prune is what keeps #4
+trustworthy, and shipping the behaviour group without its staleness guard would be the
+one combination worth refusing; #5 is its own commit.) Reading the numbers first and picking a rule afterwards is how the
+earlier verdicts in this file became arguable.
+
+Run the free suites (`sh .claude/tests/run-all.sh`, 546 assertions, no tokens) before
+any of this — they gate mechanism, not effect.
+
+| # | change | mechanism claimed | metric | pre-registered rule |
+|---|---|---|---|---|
+| 1 | read-before-walk at every size | run N+1 stops re-deriving what run N recorded | **run B** cost + wall in a two-run sandbox | needs the two-run mode. Adopt at **≥17% cost drop on run B** with oracle held; below that "no gain demonstrated" — keep as cleanliness or revert |
+| 2 | fold retention (area grouping · supersede-in-full · prune by load-bearingness) | same write, better retention, so #1 still pays at run N+20 | none — cost-neutral by construction | **no verdict owed.** It is a precondition for #1, not an independent claim |
+| 3 | `ledger-prune.sh` | a ledger every run trusts must be checkable; drift becomes a grep instead of diligence | its own suite (15 assertions) | **deterministic — already verified.** Only risk is over-pruning; pinned by the byte-identical and keep-what-you-cannot-check assertions |
+| 4 | `## Capabilities` + type-aware fold + `qa` read | behaviour truth, so a later run derives ACs knowing what is promised and gets the regression map free | **two-sided.** Write cost is visible on a single-run A/B **today**; the benefit is not | Cost side, measurable now: **write-side cost must stay under 5%** at n=9 single-run, else the cross-run payoff has to exceed it before this is worth keeping. Benefit side: same two-run rule as #1 |
+| 5 | input-domain rule extended to `spec.md` (S/M) | the defect it catches is a property of `fix` at any size, not of XS | **oracle** pass rate on a `fix`-shaped task at S/M | Adopt if oracle pass rate rises or holds with cost inside the MDE. `13-money-drift` has an oracle and is fix-shaped; `10-rounding-fix` needs one built first |
+
+**Two honest caveats carried forward.** #5 is still unvalidated on a holdout — the rule
+was derived *and* measured on `11-recent-window`, the benchmark-overfitting trap named in
+its own adoption note above; extending it to another template does not fix that, it
+widens the blast radius of being wrong. And #4 is the one change here that **adds** work
+to every run: retro writes more, and only later runs collect. On a bench of one-shot runs
+that is a pure cost, which is exactly why its cost side gets a rule that can fire before
+its benefit side is even measurable.
+
+Order of the batch when it runs: **#3 (free, already done) → #5 (oracle exists today) →
+#1 and #4 together once the two-run mode lands.** #1 and #4 share an instrument, and
+running them as one verdict is acceptable only because #4's write cost is separately
+bounded by its own rule — otherwise this would violate the one-change-per-verdict rule
+below.
+
 ## Fixed in passing: a pointer to a reference that does not exist
 
 `orchestrator.md > State discipline` cited `references/fast-path-rationale.md >

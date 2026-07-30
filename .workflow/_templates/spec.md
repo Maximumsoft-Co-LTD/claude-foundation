@@ -54,6 +54,15 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 
 - [ ] **AC1** — **Given** the repro state, **When** <the action>, **Then** <expected behaviour holds> (regression test passes).
 
+> **fix — cover the input domain, not just the reported value.** A ticket names ONE
+> input; the defect almost never lives at exactly that input. Before writing AC2,
+> walk the parameter's neighbours and pin the ones that would resurrect the same
+> symptom: for a number — zero, negative, fractional, out-of-range; for a
+> collection — empty, single, larger than the window; for a string — empty, blank,
+> wrong case, `null`. Name the ones that break; write `none — <default>` for the
+> rest. (The classic miss: a ticket reporting a window of `0` gets fixed while
+> `0.4` still returns the whole list — the same bug, one input over.)
+
 ### Equivalence contract *(refactor)*
 
 <one line: behaviour unchanged — the baseline that proves it>

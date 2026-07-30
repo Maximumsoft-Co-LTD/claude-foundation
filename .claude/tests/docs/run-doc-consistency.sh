@@ -176,11 +176,18 @@ fi
 # notes are stripped on fill — it costs nothing per turn and is read exactly when
 # the ACs are being written. That also makes it easy to delete by accident, hence
 # this assertion. If it fails, acceptance coverage silently reverts to 5/6.
+#
+# Extended to spec.md (S/M) 2026-07-30: run.md only covers XS, and the defect the
+# rule catches is a property of `fix` at any size. Measurement is owed — the rule
+# was derived AND measured on the same task, so this extension is unvalidated on a
+# holdout. See rationale.md > "Extended without measurement".
 RUNTPL="$ROOT/.workflow/_templates/run.md"
-if [ -f "$RUNTPL" ]; then
-  assert_file_contains "run.md template carries the fix input-domain rule" "$RUNTPL" "cover the input domain"
-  assert_file_contains "the rule names the neighbours to walk" "$RUNTPL" "fractional"
-fi
+SPECTPL="$ROOT/.workflow/_templates/spec.md"
+for t in "$RUNTPL" "$SPECTPL"; do
+  [ -f "$t" ] || continue
+  assert_file_contains "$(basename "$t") template carries the fix input-domain rule" "$t" "cover the input domain"
+  assert_file_contains "$(basename "$t") rule names the neighbours to walk" "$t" "fractional"
+done
 
 # --- 10. never end a turn with a spawn outstanding ------------------------------
 # The liveness rule. Backgrounding a phase worker and then ending the message to
