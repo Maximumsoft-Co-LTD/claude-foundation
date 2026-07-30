@@ -7,11 +7,8 @@ carries a background completion can only arrive in a *later* turn, and headless
 `claude -p` — every `/dev` bench run, every CI/cron invocation — has no later turn.
 So "spawn in background, end the message, wait for the notification" terminates the
 pipeline silently: the envelope is healthy, the exit code is 0, `state.json` has no
-`done_at`, and the runner records `incomplete_at_<step>`. Measured at M on
-`13-money-drift` (n=3, 3600s ceiling, nothing timed out): **two runs of three** ended
-on precisely that sentence, one of them *after* its `lead` had already written
-`spec.md`, `plan.md` and `tasks.md` — 36 KB of correct design work, abandoned. Zero
-code, $2.22 and $2.37.
+`done_at`, and the runner records `incomplete_at_<step>` — a worker's finished
+artifacts are abandoned with the turn that was waiting for them.
 
 Rule: **the phase worker is always foreground.** Background is for the fanout shapes
 that name it (`implement-fanout.md > Dispatch parallel, background, one message`), and

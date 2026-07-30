@@ -11,6 +11,11 @@ uses, and how **good** the delivered code is. Answers three questions:
 3. **A/B vs no-workflow** — is the machinery worth it? Same task via `/dev` vs a
    plain "just build it" prompt, compared on cost and delivered-code quality.
 
+**`rationale.md`** (this directory) holds the verdicts these runs produced — what was
+adopted, what was measured and rejected, and the numbers behind each. Playbook files
+carry the *rule* and point here; the evidence never rides along in a file that is
+resident during a run.
+
 ## What's measured (5 dimensions)
 
 | Dimension | Signal | Source | Note |

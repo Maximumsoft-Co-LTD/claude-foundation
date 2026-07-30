@@ -96,7 +96,7 @@ Calibration examples — apply hard overrides after scoring.
 
 File count is a proxy; each signal pushes size up or down regardless, with its worked example inline:
 
-- **One hermetic unit, simple logic** (a new pure function/helper nothing imports yet — format, parse, validate, transform; ≲3 ACs, no state, no I/O beyond its arguments) → **XS micro-lane**, not S. Measured: routing this class through the four-artifact S path spent **more wall-clock designing than implementing** (6m22s design vs 3m37s implement on a CSV serializer). One `run.md` carries the same contract core; Test and Review are untouched. It re-enters S the moment it gains state, a caller it must stay compatible with, or a contract.
+- **One hermetic unit, simple logic** (a new pure function/helper nothing imports yet — format, parse, validate, transform; ≲3 ACs, no state, no I/O beyond its arguments) → **XS micro-lane**, not S. Routing this class through the four-artifact S path spends **more wall-clock designing than implementing**. One `run.md` carries the same contract core; Test and Review are untouched. It re-enters S the moment it gains state, a caller it must stay compatible with, or a contract.
 - **One file, real logic** (branching/state/retry, a 200-line state machine) → at least S, often M. Logic density beats file count; a state machine also earns a diagram, per-transition AC tags, and observability.
 - **One file, public API signature or DB migration** → L. Contract changes are always L. Blast radius decides, not line count — a one-line guard inside a function is S (fix → regression test first); a one-line change to a public API is L.
 - **Many files, pure rename/formatter/mechanical sweep** → still XS/S. No design risk.

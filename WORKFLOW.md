@@ -153,8 +153,7 @@ Ship · Retro** — is **optional**: the matrix below is its *default*, and the 
 
 Two things stay on no matter what you skip, because both are near-free and cover a
 failure you cannot see afterwards: **the `state.json` writes** (they are what
-`--resume` keys off, and cutting them was measured to make runs drift — see
-`orchestrator/references/fast-path-rationale.md`) and **the security-trigger scan**
+`--resume` keys off, and cutting them makes runs drift) and **the security-trigger scan**
 (a name-only path check, not the review; it costs one pass over the changed-file
 list and is the only thing standing between a trust-boundary diff and silence). If
 you want the trigger scan off too, say so — it is one line — but it is off by
@@ -179,7 +178,7 @@ one of the three that can be cut on a proof rather than a hope. M/L keep the ful
 
 **Review at XS for `chore`/`docs` — default skip.** A size×type default, not a per-line deviation. Mechanics: `.claude/orchestrator/references/size-execution.md` (Review row).
 
-**Defaulting Review/Docs/Retro to `skip` at XS was measured and rejected** (n=6, fixed sandbox): cost $2.81 → $2.22 (−21%, *under* this suite's ~23% resolution floor) while judge median fell 9 → 8. Turning phases off does not make the run cheap, because the cost is not in the phases — boot is 44% of an XS run's wall clock and Design another 39%. They stay **optional** (you can skip any of them at the gate); they are just not off by default.
+**Defaulting Review/Docs/Retro to `skip` at XS was measured and rejected.** Turning phases off does not make the run cheap — the cost is not in the phases but in boot and Design — and quality fell with them. They stay **optional** (you can skip any of them at the gate); they are just not off by default.
 
 **Test plan.** Design-time coverage/edge-case/regression contract, signed off at the gate, run at Test. Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
 

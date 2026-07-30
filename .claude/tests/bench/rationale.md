@@ -1,10 +1,12 @@
 # Optimization rationale — what was measured, and what was rejected
 
-> **Never loaded during a run.** The playbook files it explains stay resident for
-> every turn, so their rationale lives here instead. Read this before *changing*
-> a cost/turn rule — most of the obvious cuts have already been tried, and
-> re-adopting a rejected one costs a benchmark cycle to re-learn. Numbers come
-> from `.claude/tests/bench` (method, spread and reliability caveats in its README).
+> **Never loaded during a run** — it lives with the benchmark that produced it, not
+> in `.claude/orchestrator/references/`, because the playbook files it explains stay
+> resident for every turn and their evidence would be re-sent with them. The playbook
+> carries the *rule*; the numbers behind it are here. Read this before *changing* a
+> cost/turn rule — most of the obvious cuts have already been tried, and re-adopting a
+> rejected one costs a benchmark cycle to re-learn. Method, spread and reliability
+> caveats: `README.md` in this directory.
 
 ## The cost model, established the hard way
 
@@ -291,6 +293,38 @@ but it has not been validated on a holdout, which is exactly the benchmark-overf
 trap. And the primary metric here was a **deterministic** pass rate, which is why n=6
 sufficed — a judge-based verdict on the same change would still need n≈9+ and would
 have missed the defect entirely.
+
+## The background-spawn dead run — why the phase worker is always foreground
+
+Not an optimisation, a failure mode the bench surfaced. A background completion can
+only arrive in a *later* turn, and headless `claude -p` — every bench run, every
+CI/cron invocation — has no later turn. Measured at M on `13-money-drift` (n=3,
+3600s ceiling, nothing timed out): **two runs of three** ended on the orchestrator
+signing off to wait for a backgrounded `lead`. One of them had already written
+`spec.md`, `plan.md` and `tasks.md` — 36 KB of correct design work, abandoned. Both
+rows: `incomplete_at_design`, **zero lines of code**, $2.22 and $2.37. The envelope
+was healthy and the exit code 0 in both, which is what makes it worth pinning.
+
+Rule lives in `orchestrator.md > State discipline` (resident) and
+`orchestrator/references/state-edge-cases.md` (the mechanism);
+`run-doc-consistency.sh` fails if either drops it.
+
+## Rejected: defaulting Review/Docs/Retro to `skip` at XS
+
+n=6, fixed sandbox: cost $2.81 → $2.22 (−21%, *under* this suite's ~23% resolution
+floor) while the judge median fell **9 → 8**. Turning phases off does not make the run
+cheap, because the cost is not in the phases — boot is 44% of an XS run's wall clock
+and Design another 39%. They stay **optional** (skippable at the gate), just not off by
+default. Rule: `WORKFLOW.md > Required vs optional`.
+
+## The XS micro-lane — design outweighed implement
+
+Routing one hermetic unit (a new pure function nothing imports yet, ≲3 ACs, no state
+or I/O) through the four-artifact S path spent **more wall-clock designing than
+implementing**: 6m22s design vs 3m37s implement on a CSV serializer. Hence the
+single-`run.md` micro-lane, which carries the same contract core with Test and Review
+untouched. Rule: `plan-writing > references/size-tiering.md > Signals that override
+file count`.
 
 ## Standing caveat: how much `n` a verdict needs
 

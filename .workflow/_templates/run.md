@@ -24,10 +24,8 @@
 > symptom: for a number — zero, negative, fractional, out-of-range; for a
 > collection — empty, single, larger than the window; for a string — empty, blank,
 > wrong case, `null`. Name the ones that break; write `none — <default>` for the
-> rest. (Measured 2026-07-30 on `tests/bench/11-recent-window`: 6/6 `/dev` runs
-> **and** 6/6 plain-prompt runs fixed a window of `0` and shipped `0.4` still
-> returning the whole list — the same bug, one input over, graded 8–10/pass by the
-> model judge and caught only by the deterministic oracle.)
+> rest. (The classic miss: a ticket reporting a window of `0` gets fixed while
+> `0.4` still returns the whole list — the same bug, one input over.)
 
 ## Approach *(required — 1–3 lines: what changes where; fix: repro + expected; brownfield: the invariant not to break, `path#anchor`)*
 
