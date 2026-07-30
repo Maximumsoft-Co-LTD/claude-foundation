@@ -633,4 +633,323 @@ if [ -f "$ORACLE12" ] && [ -d "$FIX12" ] && command -v node >/dev/null 2>&1; the
     || fail "oracle-12 invented a search function in the no-search fixture"
 fi
 
+# ═══════════════════════════════════════════════════════════════════════════
+# THE FOURTH AXIS — context
+# ═══════════════════════════════════════════════════════════════════════════
+# The scorecard measured quality, speed and cost and reasoned about context it
+# never recorded. These pin the axis that closes that gap, and they cost nothing:
+# context comes off a transcript the CLI writes anyway, so the whole axis is
+# testable against a canned session with no live run and no tokens.
+# $FIX is re-pointed at fixtures/oracle-11 further up; this block needs the
+# top-level fixtures dir, so it carries its own name rather than restoring a
+# variable another section owns.
+FIXB="$BENCH/fixtures"
+CTXM="$BENCH/context-metrics.sh"
+TDIR="$FIXB/transcript-dedup"
+
+# --- the dedup trap: one API request, many transcript entries ----------------
+# The transcript writes ONE entry per content block — thinking, text and each
+# tool_use — and every one of them carries the SAME usage object. The fixture is
+# 3 real requests written as 5 main-session entries plus a 2-request sub-agent
+# written as 3. Summing entries instead of requests reports 13,936 input tokens
+# where the truth is 7,319: a 1.9x overstatement, on the axis whose whole purpose
+# is to explain the cost column. `profile-turns.sh` documents the same trap for
+# turn counting ("the count reads ~65% high"); this is the same bug with a bigger
+# blast radius, so it gets an exact-value test rather than a range.
+if [ -f "$TDIR/session.jsonl" ]; then
+  ctx="$(sh "$CTXM" --transcript "$TDIR/session.jsonl" 2>/dev/null)"
+  assert_eq "context: requests are deduped by requestId" "5" "$(printf '%s' "$ctx" | jq -r '.ctx_reqs')"
+  # 3 main requests: (10+1000+0) + (5+2000+100) + (2+3000+0) = 1010+2105+3002 = 6117
+  assert_eq "context: main in_total counts each request once" "6117" "$(printf '%s' "$ctx" | jq -r '.ctx_main_in_total')"
+  # 2 sub-agent requests: (1+500) + (1+700) = 501 + 701 = 1202
+  assert_eq "context: sub-agent sessions are included" "1202" "$(printf '%s' "$ctx" | jq -r '.ctx_agent_in_total')"
+  assert_eq "context: in_total is main + agents" "7319" "$(printf '%s' "$ctx" | jq -r '.ctx_in_total')"
+
+  # boot is the FIRST main request — the resident floor a change to the playbook
+  # moves. It must not average in the sub-agents, whose prompts are smaller and
+  # would hide the number.
+  assert_eq "context: boot is the first MAIN request only" "1010" "$(printf '%s' "$ctx" | jq -r '.ctx_boot')"
+  # peak spans every session (here the main session holds it).
+  assert_eq "context: peak is the max across all sessions" "3002" "$(printf '%s' "$ctx" | jq -r '.ctx_peak')"
+  assert_eq "context: mean is per-request, not per-entry" "2039" "$(printf '%s' "$ctx" | jq -r '.ctx_mean')"
+  assert_eq "context: out_total sums output per request" "70" "$(printf '%s' "$ctx" | jq -r '.ctx_out_total')"
+  # (1000+2000+3000) + (500+700) = 7200 of 7319
+  assert_eq "context: cache_hit is the cached share of input" "0.984" "$(printf '%s' "$ctx" | jq -r '.ctx_cache_hit')"
+  assert_eq "context: sub-agent sessions are counted" "1" "$(printf '%s' "$ctx" | jq -r '.ctx_agents')"
+  assert_eq "context: sub-agent is labelled from its meta file" "lead-design-0001" \
+    "$(printf '%s' "$ctx" | jq -r '.agents[0].label')"
+
+  # A missing transcript is a normal outcome — a sandbox dropped without --keep,
+  # a CLI that wrote nowhere. It must yield found=false with NULL metrics, never
+  # zeros: a zero would enter the medians and report a run that carried no
+  # context, which is not a thing that can happen.
+  miss="$(sh "$CTXM" /nonexistent-sandbox-xyz 2>/dev/null || true)"
+  assert_eq "context: missing transcript reports found=false" "false" "$(printf '%s' "$miss" | jq -r '.found')"
+  assert_eq "context: missing transcript nulls the metrics (never 0)" "null" "$(printf '%s' "$miss" | jq -r '.ctx_in_total')"
+  if printf '%s' "$miss" | jq -e . >/dev/null 2>&1; then
+    pass "context: missing transcript still emits parseable JSON"
+  else fail "context: missing transcript emitted non-JSON — a caller cannot record the miss"; fi
+else
+  fail "context: fixture $TDIR/session.jsonl is missing"
+fi
+
+# --- aggregate carries the context axis --------------------------------------
+cagg="$(sh "$AGG" "$FIXB/ctx-before.jsonl")"
+assert_eq "aggregate: ctx_boot median"     "48000"    "$(printf '%s' "$cagg" | jq -r '.[0].ctx_boot')"
+assert_eq "aggregate: ctx_in_total median" "15000000" "$(printf '%s' "$cagg" | jq -r '.[0].ctx_in_total')"
+assert_eq "aggregate: n_ctx counts rows with a measurement" "3" "$(printf '%s' "$cagg" | jq -r '.[0].n_ctx')"
+# An unmeasured axis must read as absent, not as zero — the same rule the row
+# level enforces, re-checked after the median folds three rows into one.
+nagg="$(sh "$AGG" "$FIXB/ctx-before-noctx.jsonl")"
+assert_eq "aggregate: no ctx rows => null, not 0" "null" "$(printf '%s' "$nagg" | jq -r '.[0].ctx_in_total')"
+assert_eq "aggregate: no ctx rows => n_ctx 0"     "0"    "$(printf '%s' "$nagg" | jq -r '.[0].n_ctx')"
+
+# --- the envelope fields that lie are no longer summarised -------------------
+# `duration_ms` timed an 841s run at 72s (it cannot see sub-agent time) and
+# `in_tokens` read 186 on a run that carried 14.4M. Both used to be medianned
+# beside the honest wall_s with nothing marking which to trust. Speed is wall_s;
+# tokens are ctx_*. If either name comes back into the aggregate output, some
+# reader will quote it.
+if printf '%s' "$cagg" | jq -e 'has("duration_ms") or .[0] | has("duration_ms")' >/dev/null 2>&1; then
+  fail "aggregate: duration_ms is summarised again — it timed an 841s run at 72s"
+else pass "aggregate: the envelope clock is not summarised as speed"; fi
+if printf '%s' "$cagg" | jq -e '.[0] | has("out_tokens")' >/dev/null 2>&1; then
+  fail "aggregate: out_tokens is summarised again — the envelope sees the top session only"
+else pass "aggregate: envelope token fields are not summarised as tokens"; fi
+
+# --- the ratchet guards context ---------------------------------------------
+# ctx_boot is near-deterministic for a fixed tree, so it gets the tight band: a
+# resident floor that grew is a playbook that grew, whether or not this
+# particular run came in cheap.
+if sh "$CMP" --ratchet "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-boot-grew.jsonl" >/dev/null 2>&1; then
+  fail "ratchet: a 10% larger resident floor passed"
+else pass "ratchet: FAILS when ctx_boot grows past the tolerance"; fi
+out="$(sh "$CMP" --ratchet "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-boot-grew.jsonl" 2>&1 || true)"
+assert_contains "ratchet: names ctx_boot as the regression" "$out" "ctx_boot"
+
+# A guard that could not run must SAY so. Silence about an unevaluated guard is
+# indistinguishable from a guard that passed, which is how a context regression
+# ships against a baseline that predates the axis.
+out="$(sh "$CMP" --ratchet "$FIXB/ctx-before-noctx.jsonl" "$FIXB/ctx-before.jsonl" 2>&1 || true)"
+assert_contains "ratchet: names the guards it could not evaluate" "$out" "NOT GUARDED"
+
+# --- quality is oracle-first -------------------------------------------------
+# THE test for the quality axis. On 11-recent-window the judge scored twelve
+# diffs 8-10 and passed all twelve while a deterministic oracle showed every one
+# failing AC4 — and it ranked the plain baseline HIGHER than /dev on a task where
+# both were objectively identical. So when both sides carry an oracle, the oracle
+# gates: this fixture drops oracle 5->4 while RAISING judge 9->10, and a
+# judge-driven ratchet would call that an improvement.
+if sh "$CMP" --ratchet "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-oracle-drop.jsonl" >/dev/null 2>&1; then
+  fail "ratchet: an oracle drop passed because the judge went up — the exact blindness this axis exists to fix"
+else pass "ratchet: FAILS on an oracle drop even when the judge score rises"; fi
+out="$(sh "$CMP" --ratchet "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-oracle-drop.jsonl" 2>&1 || true)"
+assert_contains "ratchet: labels which grader decided" "$out" "quality[oracle]"
+
+# With no oracle on either side the judge still gates — but the report must name
+# it as an opinion, so a verdict cannot be quoted as "the criteria are met".
+out="$(sh "$AGG" "$FIXB/before.jsonl" --table 2>&1 || true)"
+assert_contains "aggregate: flags judge-only quality" "$out" "JUDGE ONLY"
+
+# --- the oracle names WHICH criterion fails ---------------------------------
+# "AC4 failed 6/6" is a finding; "quality 5/6" is a number. Surfacing the
+# criterion is what turned the judge blindness from an anecdote into a fact.
+oagg="$(sh "$AGG" "$FIXB/oracle-blind.jsonl")"
+assert_eq "aggregate: oracle median over 6 runs" "5" "$(printf '%s' "$oagg" | jq -r '.[0].oracle_score')"
+assert_eq "aggregate: oracle max ships with the score" "6" "$(printf '%s' "$oagg" | jq -r '.[0].oracle_max')"
+assert_eq "aggregate: oracle pass rate is 0 despite judge 9" "0" "$(printf '%s' "$oagg" | jq -r '.[0].oracle_pass_rate')"
+assert_eq "aggregate: judge still recorded beside it" "9" "$(printf '%s' "$oagg" | jq -r '.[0].judge_score')"
+assert_eq "aggregate: the failing criterion is named and counted" "6" \
+  "$(printf '%s' "$oagg" | jq -r '.[0].oracle_fail_acs.AC4_no_fractional')"
+out="$(sh "$AGG" "$FIXB/oracle-blind.jsonl" --table 2>&1 || true)"
+assert_contains "aggregate: prints the failing criteria line" "$out" "failing criteria"
+# A task with no oracle must not be reported as one that failed its oracle.
+assert_eq "aggregate: absent oracle is null, not a failure" "null" \
+  "$(sh "$AGG" "$FIXB/before.jsonl" | jq -r '.[0].oracle_score')"
+assert_eq "aggregate: absent oracle contributes no pass rate" "null" \
+  "$(sh "$AGG" "$FIXB/before.jsonl" | jq -r '.[0].oracle_pass_rate')"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# `blocked` IS THE PIPELINE SUCCEEDING
+# ═══════════════════════════════════════════════════════════════════════════
+# A /dev run that halts to ask a human about a real contradiction does the one
+# thing a plain prompt cannot — and it used to score exactly like a crash, which
+# is why README says "the harness cannot currently observe /dev succeeding at its
+# actual job". It still stays out of the medians (no delivered code to grade) but
+# it now has its own count, and it is NOT in the failure tally.
+bagg="$(sh "$AGG" "$FIXB/outcome-blocked.jsonl")"
+assert_eq "blocked: counted in its own column" "1" "$(printf '%s' "$bagg" | jq -r '.[0].n_blocked')"
+assert_eq "blocked: still excluded from the medians" "1" "$(printf '%s' "$bagg" | jq -r '.[0].n_ok')"
+assert_eq "blocked: NOT listed as a failure reason" "null" \
+  "$(printf '%s' "$bagg" | jq -r '.[0].fail_reasons.blocked_at_implement // "null"')"
+assert_eq "blocked: a real failure IS still listed" "1" \
+  "$(printf '%s' "$bagg" | jq -r '.[0].fail_reasons.timeout')"
+out="$(sh "$AGG" "$FIXB/outcome-blocked.jsonl" --table 2>&1 || true)"
+assert_contains "blocked: the table says it is not a failure" "$out" "not a failure"
+
+# Rows recorded before `outcome` existed must classify the same way, or the whole
+# recorded history of this suite keeps reading its own design-phase wins as crashes.
+lagg="$(sh "$AGG" "$FIXB/outcome-legacy-blocked.jsonl")"
+assert_eq "blocked: derived from fail_reason on legacy rows" "1" "$(printf '%s' "$lagg" | jq -r '.[0].n_blocked')"
+assert_eq "blocked: legacy blocked row is not a failure either" "null" "$(printf '%s' "$lagg" | jq -r '.[0].fail_reasons')"
+
+# --- run-bench classifies the outcome in one place --------------------------
+# The mapping lives in classify_outcome(); check the source states it rather than
+# spawning a live run. A `blocked_*` reason that stopped mapping to `blocked`
+# would silently restore the old conflation.
+RB="$BENCH/run-bench.sh"
+assert_file_contains "run-bench: has one outcome classifier" "$RB" "classify_outcome()"
+assert_file_contains "run-bench: blocked_at_* maps to blocked" "$RB" "blocked_at_*)         printf 'blocked'"
+assert_file_contains "run-bench: calls the oracle, not just the judge" "$RB" "grade-oracle.sh"
+assert_file_contains "run-bench: measures context every run" "$RB" "context-metrics.sh"
+assert_file_contains "run-bench: warns when the two graders disagree" "$RB" "graders DISAGREE"
+# The envelope's token/clock fields must stay under names nobody can misread.
+assert_file_contains "run-bench: envelope clock is renamed, not trusted" "$RB" "envelope_ms:"
+assert_file_contains "run-bench: envelope tokens are renamed, not trusted" "$RB" "envelope_in_tokens:"
+# Provenance: a row that cannot name its own sandbox cannot be re-measured, which
+# is why every pre-existing baseline needs a guess to recover its context.
+assert_file_contains "run-bench: records the sandbox for later re-measurement" "$RB" "sandbox:(if \$sandbox"
+
+# --- gain reports context beside cost ---------------------------------------
+# A cost saving whose context did not move has no mechanism behind it, and on a
+# suite whose resolution floor is ~23% that is usually noise. The report says so.
+out="$(sh "$CMP" --gain "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-cost-only.jsonl" 2>&1 || true)"
+assert_contains "gain: reports the context delta" "$out" "in_total"
+assert_contains "gain: flags a cost drop that context does not explain" "$out" "suspect noise"
+out="$(sh "$CMP" --gain "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-real-saving.jsonl" 2>&1 || true)"
+assert_contains "gain: a context-backed saving is not flagged" "$out" "gain: PASS"
+
+# --- --context separates "read less" from "did less" ------------------------
+# Three numbers, one story. rationale.md records a change that cut ~26 KB of
+# resident instructions and raised cost 16.4%: boot fell, in_total rose because
+# the run took more turns. A guard watching only boot would have called it a win,
+# so the mode must name that shape explicitly.
+out="$(sh "$CMP" --context "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-relocated.jsonl" 2>&1 || true)"
+assert_contains "context mode: names a relocated saving" "$out" "relocated, not made"
+out="$(sh "$CMP" --context "$FIXB/ctx-before.jsonl" "$FIXB/ctx-after-real-saving.jsonl" 2>&1 || true)"
+assert_contains "context mode: names a real saving" "$out" "real context saving"
+out="$(sh "$CMP" --context "$FIXB/ctx-before-noctx.jsonl" "$FIXB/ctx-before.jsonl" 2>&1 || true)"
+assert_contains "context mode: refuses to compare against an unmeasured side" "$out" "NOT MEASURED"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THE ROW ITSELF — run the runner behind a `claude` stub
+# ═══════════════════════════════════════════════════════════════════════════
+# Everything above tests the math over hand-written rows. Nothing tested that
+# run-bench.sh still PRODUCES those rows, and `emit()` now merges four blocks
+# (base fields + context + oracle + outcome) with five values arriving as globals.
+# A broken emit yields an empty scorecard, which looks exactly like a run that
+# failed — after 30 minutes and real money. This drives the whole path with a stub
+# on PATH: no tokens, no network, one row out.
+if command -v jq >/dev/null 2>&1; then
+  STUB2="$TMPROOT/stub2"; mkdir -p "$STUB2"
+  # Two callers, two behaviours. `--output-format json` is the run itself: write a
+  # file so there is a diff to grade, then print a well-formed envelope. Anything
+  # else is judge-outcome.sh asking for a grade on stdin.
+  cat > "$STUB2/claude" <<'STUB'
+#!/bin/sh
+case " $* " in
+  *" --output-format json "*)
+    echo "module.exports = function(){ return []; };" > solution.js
+    printf '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":1.23,"num_turns":7,"duration_ms":4567,"usage":{"input_tokens":11,"output_tokens":222}}\n'
+    ;;
+  *)
+    cat > /dev/null
+    printf '{"score":8,"subscores":{"fit":8},"verdict":"pass","notes":"stub"}\n'
+    ;;
+esac
+STUB
+  chmod +x "$STUB2/claude"
+  ROW="$TMPROOT/row.jsonl"
+  # baseline arm: a bare sandbox, so no .claude copy and no state.json to read —
+  # the smallest path that still exercises envelope parse, judge, context and emit.
+  ( PATH="$STUB2:$PATH"; export PATH
+    sh "$BENCH/run-bench.sh" --run --tasks 01-task-list --arm baseline --repeats 1 \
+      --out "$ROW" ) >"$TMPROOT/row.log" 2>&1 || true
+
+  if [ -s "$ROW" ]; then
+    pass "run-bench: emits a scorecard row end to end"
+    n_rows="$(grep -c '' "$ROW" 2>/dev/null || echo 0)"
+    assert_eq "run-bench: exactly one row for one run" "1" "$n_rows"
+    if jq -e . "$ROW" >/dev/null 2>&1; then pass "run-bench: the row is valid JSON"
+    else fail "run-bench: emitted malformed JSON — $(cat "$ROW")"; fi
+
+    # Cost and speed come from the two different clocks on purpose.
+    assert_eq "row: cost from the envelope"      "1.23" "$(jq -r '.cost_usd' "$ROW")"
+    assert_eq "row: turns from the envelope"     "7"    "$(jq -r '.turns' "$ROW")"
+    assert_eq "row: outcome word present"        "ok"   "$(jq -r '.outcome' "$ROW")"
+    assert_eq "row: judge score parsed"          "8"    "$(jq -r '.judge_score' "$ROW")"
+    # 01-task-list has no oracle — that must read as absent, never as failed.
+    assert_eq "row: no oracle => null, not a failure" "null" "$(jq -r '.oracle_score' "$ROW")"
+    # No transcript exists for a stubbed sandbox, so context is honestly absent.
+    # This is the null path in a REAL row rather than a hand-written fixture.
+    assert_eq "row: unmeasured context is null"  "null" "$(jq -r '.ctx_in_total' "$ROW")"
+    # Provenance: without this the row cannot be re-measured later, which is the
+    # defect every pre-existing baseline in this repo has.
+    if [ "$(jq -r '.sandbox // "null"' "$ROW")" = "null" ]; then
+      fail "row: no sandbox recorded — the context axis cannot be recovered for this row"
+    else pass "row: records its own sandbox path"; fi
+    if [ "$(jq -r '.started_at // "null"' "$ROW")" = "null" ]; then
+      fail "row: no started_at recorded"
+    else pass "row: records when it started"; fi
+
+    # The envelope's misleading fields must be present under their honest names
+    # and ABSENT under the names that invite misreading.
+    assert_eq "row: envelope clock kept as envelope_ms" "4567" "$(jq -r '.envelope_ms' "$ROW")"
+    if jq -e 'has("duration_ms")' "$ROW" >/dev/null 2>&1; then
+      fail "row: duration_ms is back — it timed an 841s run at 72s"
+    else pass "row: no duration_ms field to mistake for the run duration"; fi
+    if jq -e 'has("in_tokens")' "$ROW" >/dev/null 2>&1; then
+      fail "row: in_tokens is back — the envelope reported 186 on a 14.4M-token run"
+    else pass "row: no in_tokens field to mistake for the token truth"; fi
+    assert_eq "row: envelope tokens kept for forensics" "11" "$(jq -r '.envelope_in_tokens' "$ROW")"
+  else
+    fail "run-bench: produced NO row behind the stub — see $TMPROOT/row.log"
+  fi
+fi
+
+# --- the diagnostics stopped needing a paid run -----------------------------
+# profile-turns.sh used to spend a FULL live run purely to see a tool inventory
+# the transcript of an earlier run already contained. It reads that file now.
+# The jq here is worth pinning for a reason that bit once: in jq,
+# `EXPR | length as $v | BODY` runs BODY with `.` set to EXPR's OUTPUT, so an
+# unparenthesised binding rebinds `.` to the array of requestIds and every later
+# filter indexes strings. The fixture transcript exercises the whole path.
+PT="$BENCH/profile-turns.sh"
+assert_file_contains "profile-turns: has a free transcript mode" "$PT" "--transcript)"
+assert_file_contains "profile-turns: has a free sandbox mode" "$PT" "--sandbox)"
+assert_file_contains "profile-turns: warns that live mode costs a run" "$PT" "LIVE mode"
+pt="$(sh "$PT" --transcript "$TDIR/session.jsonl" 2>&1 || true)"
+assert_contains "profile-turns: free mode runs without a live call" "$pt" "from transcript"
+# 3 unique requestIds in the fixture — NOT the 5 assistant entries.
+assert_contains "profile-turns: round-trips are deduped API requests" "$pt" "re-sends): 3"
+if printf '%s' "$pt" | grep -q "jq: error"; then
+  fail "profile-turns: free mode emitted a jq error — the \`as\` binding rebound '.'"
+else pass "profile-turns: free mode parses the transcript cleanly"; fi
+
+# --- run-parallel rows are distinguishable ----------------------------------
+# Every child ran with `--repeats 1`, so all merged rows carried `repeat: 1` and
+# named their sandbox `<task>-<arm>-1`. Three rows from three different sandboxes
+# were identical in the scorecard, which is also why backfill has to guess.
+assert_file_contains "run-bench: accepts a repeat base" "$BENCH/run-bench.sh" "--repeat-base)"
+assert_file_contains "run-parallel: stamps a distinct repeat per child" "$BENCH/run-parallel.sh" '--repeat-base "$i"'
+
+# --- backfill recovers the axis without spending a run ---------------------
+# Every baseline in this repo predates ctx_*, and those runs left transcripts on
+# disk. Backfill reads them. The rule that matters is that it REFUSES to guess:
+# a dozen directories match `…-11-recent-window-workflow-1` because that
+# task/arm/repeat was run over and over, and filling one row from another
+# session's transcript is the same class of error as README > "Re-baseline before
+# crediting yourself with someone else's numbers".
+BFL="$BENCH/backfill-context.sh"
+assert_file_exists "backfill: script ships" "$BFL"
+assert_file_contains "backfill: tags how each row was matched" "$BFL" "ctx_source"
+assert_file_contains "backfill: the guess is opt-in and labelled" "$BFL" "mtime-heuristic"
+assert_file_contains "backfill: keeps the original scorecard" "$BFL" ".pre-context.bak"
+# Report-only by default: a measurement record must not change because someone
+# ran a diagnostic over it.
+bf_tmp="$TMPROOT/bf.jsonl"; cp "$FIXB/ctx-before-noctx.jsonl" "$bf_tmp"
+before_sum="$(cksum < "$bf_tmp")"
+sh "$BFL" "$bf_tmp" >/dev/null 2>&1 || true
+assert_eq "backfill: default run does not modify the file" "$before_sum" "$(cksum < "$bf_tmp")"
+
 finish "benchmark tests"

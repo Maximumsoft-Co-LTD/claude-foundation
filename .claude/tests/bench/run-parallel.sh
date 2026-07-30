@@ -44,9 +44,13 @@ i=1
 while [ "$i" -le "$REPEATS" ]; do
   # `--repeats 1` per child: the concurrency is here, not inside run-bench.sh,
   # so its tested serial loop is untouched.
+  # `--repeat-base $i` is what makes the merged rows distinguishable. Without it
+  # every child wrote `repeat: 1` and named its sandbox `<task>-<arm>-1`, so three
+  # rows from three sandboxes were identical in the scorecard and no later pass
+  # could match a row back to the run that produced it.
   # shellcheck disable=SC2086
   nohup perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- \
-    sh "$HERE/run-bench.sh" --run --repeats 1 $PASS --out "$base-r$i.jsonl" \
+    sh "$HERE/run-bench.sh" --run --repeats 1 --repeat-base "$i" $PASS --out "$base-r$i.jsonl" \
     > "$base-r$i.log" 2>&1 < /dev/null &
   i=$((i + 1))
 done
@@ -77,4 +81,4 @@ done
 n="$(grep -c '' "$OUT" 2>/dev/null || echo 0)"
 echo "run-parallel: merged $n row(s) → $OUT"
 [ "$n" -gt 0 ] || exit 1
-sh "$HERE/aggregate.sh" "$OUT" --table
+sh "$HERE/aggregate.sh" "$OUT" --table --context

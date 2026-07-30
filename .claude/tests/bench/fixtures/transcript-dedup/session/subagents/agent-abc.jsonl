@@ -1,0 +1,3 @@
+{"type":"assistant","requestId":"s_1","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":500,"cache_creation_input_tokens":0,"output_tokens":5}}}
+{"type":"assistant","requestId":"s_1","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":500,"cache_creation_input_tokens":0,"output_tokens":5}}}
+{"type":"assistant","requestId":"s_2","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":700,"cache_creation_input_tokens":0,"output_tokens":5}}}

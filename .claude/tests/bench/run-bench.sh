@@ -44,6 +44,39 @@
 #   api_error    — the envelope itself reports is_error
 #   exit_<n>     — exited nonzero on its own, envelope still parsed
 # aggregate.sh keeps these rows out of every median and reports the tally.
+#
+# ---- FOUR AXES, AND WHAT EACH ROW NOW CARRIES ------------------------------
+# The scorecard measures quality, speed, cost and CONTEXT. Three of those were
+# already here; the fourth was the gap that made the other three hard to reason
+# about, and two of the three were carrying fields that are known-wrong.
+#
+#   quality — `oracle_*` FIRST, `judge_*` second. The judge is a model and it is
+#             unreliable in a way you cannot predict from its own output: at n=12
+#             on 11-recent-window it scored 8–10 and called all twelve `pass`
+#             while a deterministic oracle showed every one of them failing AC4.
+#             `grade-oracle.sh` has existed the whole time and the runner never
+#             called it, so the scorecard's only quality column was the one the
+#             README proves wrong. Both now ship: the oracle for "does AC4 hold",
+#             the judge for simplicity/fit, which no assertion can express.
+#   speed   — `wall_s` ONLY. `duration_ms` from the envelope counts the top
+#             session and not sub-agent time (72s recorded against a true 841s),
+#             so it is kept for forensics under its honest name `envelope_ms`
+#             and never aggregated as a speed number.
+#   cost    — `cost_usd` (trustworthy: the envelope's own total).
+#   context — `ctx_*`, from context-metrics.sh, which reads the run's transcript
+#             tree off disk. Costs no tokens. The envelope's `usage.input_tokens`
+#             sees only the top session and reported 186 for a run that carried
+#             14,465,096 input tokens, so the old `in_tokens`/`out_tokens` fields
+#             are replaced rather than kept beside the truth.
+#
+# `outcome` classifies the row in one word, because `ok=false` conflates a
+# workflow defect with the workflow WORKING. A `/dev` run that halts to ask a
+# human about a real contradiction is the one thing a plain prompt cannot do —
+# and it scored exactly like a crash. `outcome=blocked` makes it countable;
+# aggregate.sh reports it in its own column instead of burying it in a failure
+# tally. It still stays out of the medians (there is no delivered code to grade),
+# but "excluded because it succeeded differently" is now distinguishable from
+# "excluded because it fell over".
 
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -56,12 +89,19 @@ MODEL="${BENCH_MODEL:-sonnet}"
 TIMEOUT_S="${BENCH_TIMEOUT:-1800}"   # watchdog ceiling per run; a full /dev arm can need most of this
 
 MODE="dry"; REPEATS=1; ARMSEL="both"; KEEP=0; TASKSEL=""
+# Where the repeat counter STARTS. run-parallel.sh launches one child per repeat
+# with `--repeats 1`, so without this every merged row carried `repeat: 1` — three
+# rows from three different sandboxes, indistinguishable in the scorecard. That is
+# not cosmetic: it is why backfill-context.sh cannot tell those rows apart, and it
+# made the sandbox directory names collide too (`<task>-<arm>-1` three times).
+RBASE=1
 [ "${BENCH_RUN:-0}" = "1" ] && MODE="run"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --run) MODE="run" ;;
     --dry-run) MODE="dry" ;;
     --repeats) REPEATS="$2"; shift ;;
+    --repeat-base) RBASE="$2"; shift ;;
     --arm) ARMSEL="$2"; shift ;;
     --tasks) TASKSEL="$2"; shift ;;
     --out) OUT="$2"; PROG="$(dirname "$2")/progress-$(basename "$2" .jsonl).txt"; shift ;;
@@ -90,17 +130,29 @@ task_dirs() {
 # ---- dry-run ---------------------------------------------------------------
 if [ "$MODE" = "dry" ]; then
   echo "bench plan — model=$MODEL repeats=$REPEATS arms=[$ARMS]"
+  echo "axes per row: quality (oracle+judge) · speed (wall_s) · cost (cost_usd) · context (ctx_*)"
   total=0
   for n in $(task_dirs); do
-    echo "• task $n  (acceptance: $(head -c 60 "$TASKS/$n/acceptance.txt" 2>/dev/null)…)"
+    # Say up front whether this task can be graded objectively. A task without an
+    # oracle can still be run, but its quality column is a model's opinion — and
+    # that opinion has been wrong at n=12 on this suite. Knowing which tasks are
+    # in which state BEFORE spending the run is the point of printing it here.
+    if [ -f "$TASKS/$n/oracle/run.sh" ]; then _q="oracle + judge"; else _q="judge ONLY (opinion — no oracle yet)"; fi
+    echo "• task $n  [quality: $_q]"
+    echo "    (acceptance: $(head -c 60 "$TASKS/$n/acceptance.txt" 2>/dev/null)…)"
     for a in $ARMS; do
-      echo "    arm=$a × $REPEATS  → sandbox + claude -p --output-format json + judge-outcome"
+      case "$a" in
+        design) echo "    arm=$a × $REPEATS  → sandbox + claude -p + grade-design (deterministic) + context-metrics" ;;
+        *)      echo "    arm=$a × $REPEATS  → sandbox + claude -p + grade-oracle + judge-outcome + context-metrics" ;;
+      esac
       total=$((total + REPEATS))
     done
   done
   echo
   echo "bench (dry-run): $total live run(s) planned. Re-run with --run (needs the claude CLI)."
   echo "Comparison math is already proven: sh tests/run-bench-tests.sh"
+  echo "Context costs nothing extra — it is read off the transcript the CLI writes anyway."
+  echo "Backfill context onto an existing scorecard without re-running: sh backfill-context.sh <scorecards.jsonl>"
   exit 0
 fi
 
@@ -194,6 +246,24 @@ trap on_signal INT TERM
 
 git_base() { ( cd "$1" && git init -q && git add -A && git -c user.email=b@bench -c user.name=bench commit -qm base >/dev/null 2>&1 ); }
 
+# One word for what happened, derived from fail_reason so the classification
+# lives in exactly one place. The distinction that matters is `blocked`: a run
+# that halted to ask a human about a real contradiction did the job a plain
+# prompt cannot, and reporting it as a failure is how the harness ends up unable
+# to observe its own product succeeding (README > "blocked_at_* is the pipeline
+# succeeding, and the scorecard calls it a failure").
+classify_outcome() {  # $1 ok, $2 fail_reason
+  case "$2" in
+    "")                   [ "$1" = "true" ] && printf 'ok' || printf 'fail' ;;
+    blocked_at_*)         printf 'blocked' ;;
+    incomplete_at_*)      printf 'incomplete' ;;
+    design_incomplete_at_*) printf 'design_incomplete' ;;
+    exit_*)               printf 'crash' ;;
+    timeout|no_envelope|api_error) printf '%s' "$2" ;;
+    *)                    printf 'fail' ;;
+  esac
+}
+
 setup_workflow() {  # $1 sandbox, $2 task
   s="$1"; t="$2"; mkdir -p "$s/.workflow"
   cp -R "$ROOT/.claude" "$s/.claude"
@@ -222,19 +292,70 @@ setup_baseline() {  # $1 sandbox, $2 task — bare repo, no workflow
   git_base "$s"
 }
 
+# emit — write one scorecard row.
+#
+# The positional list stops at the fields that were already here; the three
+# blocks added for the four-axis scorecard (context, oracle, outcome) arrive as
+# globals instead. Nineteen positionals was already at the edge of readable, and
+# `${27}` in a shell call site is where a metric silently lands in the wrong
+# column. Callers set CTXJSON / ORACLEJSON / OUTCOME before calling.
+CTXJSON="null"; ORACLEJSON="null"; OUTCOME=""; SANDBOX=""; STARTED=""
 emit() {  # all values already JSON-literal-safe strings ("null" when absent)
   jq -cn \
+    --arg sandbox "${SANDBOX:-}" --arg started "${STARTED:-}" \
     --arg task "$1" --arg arm "$2" --argjson repeat "$3" --argjson ok "$4" \
     --argjson cost "$5" --argjson intok "$6" --argjson outtok "$7" --argjson turns "$8" --argjson dur "$9" \
     --argjson spawn "${10}" --argjson cyt "${11}" --argjson cyr "${12}" --argjson skip "${13}" \
     --argjson jscore "${14}" --arg jverd "${15}" --argjson wall "${16}" --arg freason "${17}" \
     --arg wfsha "${18}" --argjson spawnobs "${19}" \
+    --argjson ctx "${CTXJSON:-null}" --argjson oracle "${ORACLEJSON:-null}" --arg outcome "${OUTCOME:-}" \
     '{task:$task, arm:$arm, repeat:$repeat, ok:$ok,
+      # One word for what happened. `ok` alone cannot say whether a row is
+      # missing because the run crashed or because it stopped for a human.
+      outcome:(if $outcome != "" then $outcome elif $ok then "ok" else "fail" end),
       fail_reason:(if $freason == "" then null else $freason end),
       workflow_sha:(if $wfsha == "" then null else $wfsha end),
-      cost_usd:$cost, in_tokens:$intok, out_tokens:$outtok, turns:$turns, duration_ms:$dur, wall_s:$wall,
+      # Where the run happened and when. Recorded because the CONTEXT axis is
+      # read from a transcript keyed by the sandbox path, and a row that cannot
+      # name its own sandbox cannot be re-measured later: every pre-existing
+      # baseline in this repo has that problem, and backfill-context.sh has to
+      # guess from directory names because of it. One string ends that.
+      sandbox:(if $sandbox == "" then null else $sandbox end),
+      started_at:(if $started == "" then null else $started end),
+      cost_usd:$cost, turns:$turns, wall_s:$wall,
+      # SPEED IS wall_s. The envelope clock is kept for forensics under a name
+      # that cannot be mistaken for the run duration: it timed one /dev run at
+      # 72s that really took 841s, because it does not see sub-agent time.
+      envelope_ms:$dur,
+      # The envelope token fields see the top session only — 186 input tokens on
+      # a run that carried 14.4M. They are recorded under `envelope_*` names so a
+      # reader cannot mistake them for the token truth in ctx_*, and nothing
+      # downstream medians them.
+      envelope_in_tokens:$intok, envelope_out_tokens:$outtok,
       spawn_count:$spawn, spawn_observed:$spawnobs, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip,
-      judge_score:$jscore, judge_verdict:$jverd}' >> "$OUT"
+      judge_score:$jscore, judge_verdict:$jverd}
+     # CONTEXT — the fourth axis. Null-filled when no transcript was found, so a
+     # missing measurement reads as absent and never as zero context.
+     + (if $ctx == null or ($ctx.found | not) then
+          {ctx_boot:null, ctx_peak:null, ctx_mean:null, ctx_in_total:null,
+           ctx_out_total:null, ctx_cache_hit:null, ctx_reqs:null,
+           ctx_agents:null, ctx_agent_in_total:null}
+        else
+          {ctx_boot:$ctx.ctx_boot, ctx_peak:$ctx.ctx_peak, ctx_mean:$ctx.ctx_mean,
+           ctx_in_total:$ctx.ctx_in_total, ctx_out_total:$ctx.ctx_out_total,
+           ctx_cache_hit:$ctx.ctx_cache_hit, ctx_reqs:$ctx.ctx_reqs,
+           ctx_agents:$ctx.ctx_agents, ctx_agent_in_total:$ctx.ctx_agent_in_total}
+        end)
+     # QUALITY, objective half. Null when the task has no oracle — most do not
+     # yet, and an absent oracle must not read as a failing one.
+     + (if $oracle == null then
+          {oracle_score:null, oracle_max:null, oracle_verdict:null, oracle_fails:null}
+        else
+          {oracle_score:$oracle.score, oracle_max:$oracle.max,
+           oracle_verdict:($oracle.verdict // null),
+           oracle_fails:(($oracle.results // {}) | to_entries
+                         | map(select(.value != "pass") | .key))}
+        end)' >> "$OUT"
 }
 
 runs=0
@@ -243,9 +364,12 @@ for n in $(task_dirs); do
   for a in $ARMS; do
     prompt_file="$TASKS/$n/$a.txt"
     [ -f "$prompt_file" ] || { echo "   (no $a.txt for $n — skip)"; continue; }
-    r=1
-    while [ "$r" -le "$REPEATS" ]; do
-      progress "$n · arm=$a · run $r/$REPEATS — launching claude (≤${TIMEOUT_S}s)"
+    # Repeat indices run [RBASE, RBASE+REPEATS). Serially RBASE is 1 and this is
+    # the old behaviour; run-parallel.sh passes a distinct base per child so the
+    # merged rows carry distinct repeat numbers and distinct sandbox names.
+    r="$RBASE"; rlast=$((RBASE + REPEATS - 1))
+    while [ "$r" -le "$rlast" ]; do
+      progress "$n · arm=$a · run $r/$rlast — launching claude (≤${TIMEOUT_S}s)"
       sb="$SANDROOT/$n-$a-$r"
       case "$a" in workflow|design) setup_workflow "$sb" "$n" ;; *) setup_baseline "$sb" "$n" ;; esac
       base_sha="$(git -C "$sb" rev-parse HEAD 2>/dev/null || echo HEAD)"   # judge diffs against this (survives a /dev commit)
@@ -258,6 +382,11 @@ for n in $(task_dirs); do
       # to read. --keep preserves $SANDROOT, so these stay inspectable either way.
       envf="$SANDROOT/$n-$a-$r.envelope.json"
       tmof="$SANDROOT/$n-$a-$r.timeout"
+      # Record the RESOLVED path: on macOS mktemp hands back /var/... while the
+      # CLI records /private/var/... in the transcript slug, so the unresolved
+      # form does not round-trip.
+      SANDBOX="$(cd "$sb" 2>/dev/null && pwd -P || printf '%s' "$sb")"
+      STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '')"
       t0="$(date +%s 2>/dev/null || echo 0)"
       rc=0
       run_capture "$TIMEOUT_S" "$envf" "$sb" "$prompt_file" "$tmof" || rc=$?
@@ -291,6 +420,21 @@ for n in $(task_dirs); do
         echo "   ! watchdog fired at ${TIMEOUT_S}s — row excluded from medians (raise BENCH_TIMEOUT)"
       elif [ "$ok" = "true" ] && [ "$rc" != "0" ]; then
         ok=false; freason="exit_$rc"
+      fi
+
+      # ---- CONTEXT (free) ----------------------------------------------------
+      # Read off the transcript the CLI already wrote; no extra run, no tokens.
+      # Done here rather than after grading because it describes the run itself
+      # and must be recorded even for a row that failed — a timeout that got to
+      # 190k of context is a different problem from one that stalled at boot.
+      # A failure to find the transcript is recorded as found=false and the
+      # ctx_* fields go null; it must never abort a run or read as zero context.
+      CTXJSON="$(sh "$HERE/context-metrics.sh" "$sb" 2>/dev/null || true)"
+      printf '%s' "$CTXJSON" | jq -e . >/dev/null 2>&1 || CTXJSON="null"
+      if [ "$CTXJSON" != "null" ] && printf '%s' "$CTXJSON" | jq -e '.found' >/dev/null 2>&1; then
+        echo "   context: boot=$(printf '%s' "$CTXJSON" | jq -r '(.ctx_boot/1000*10|round)/10')k peak=$(printf '%s' "$CTXJSON" | jq -r '(.ctx_peak/1000*10|round)/10')k in_total=$(printf '%s' "$CTXJSON" | jq -r '(.ctx_in_total/1000000*100|round)/100')M reqs=$(printf '%s' "$CTXJSON" | jq -r '.ctx_reqs') agents=$(printf '%s' "$CTXJSON" | jq -r '.ctx_agents')"
+      else
+        echo "   context: not measured (no transcript for this sandbox)"
       fi
 
       spawn=null; spawnobs=null; cyt=null; cyr=null; skip=null
@@ -361,11 +505,33 @@ for n in $(task_dirs); do
         else
           echo "   grade-design: unjudgeable (no run dir)"
         fi
+        # The design arm delivers no code, so there is nothing for an oracle to
+        # assert against — grade-design.sh is already the deterministic grader
+        # for this arm. Leaving oracle_* null is the honest record.
+        ORACLEJSON="null"; OUTCOME="$(classify_outcome "$ok" "$freason")"
         emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}" "$freason" "$WFSHA" "$spawnobs"
         runs=$((runs + 1)); DONE=$((DONE + 1)); r=$((r + 1))
         progress "$n · arm=$a done — ok=$ok${freason:+ ($freason)} cost=\$$cost design=$jscore/$jverd"
         continue
       fi
+      # ---- QUALITY, objective half (free, deterministic) ---------------------
+      # Runs FIRST because it is the one that can be checked. The judge is a
+      # model asked for an opinion; the oracle asserts each criterion directly.
+      # On 11-recent-window the judge scored twelve diffs 8-10 and called all
+      # twelve `pass` while every one of them objectively failed AC4 — so a
+      # quality claim built on judge_score alone has been wrong, at n=12, on
+      # this very suite. grade-oracle.sh has existed since then and no runner
+      # ever called it; that is the single largest hole in the quality axis.
+      # exit 3 = this task has no oracle yet (most do not) — not a failure.
+      ORACLEJSON="null"
+      oout="$(sh "$HERE/grade-oracle.sh" "$sb" "$n" 2>/dev/null || true)"
+      if [ -n "$oout" ] && printf '%s' "$oout" | jq -e '.score' >/dev/null 2>&1; then
+        ORACLEJSON="$oout"
+        echo "   grade-oracle: $(printf '%s' "$oout" | jq -r '"\(.score)/\(.max) \(.verdict // "")"')$(printf '%s' "$oout" | jq -r '((.results // {}) | to_entries | map(select(.value != "pass") | .key)) | if length == 0 then "" else "  failing: " + join(",") end')"
+      else
+        echo "   grade-oracle: no oracle for $n (quality rests on the judge alone — read it as an opinion)"
+      fi
+
       jout="$(sh "$HERE/judge-outcome.sh" "$sb" "$acc" --base "$base_sha" --model "$MODEL" 2>/dev/null || true)"
       if [ -n "$jout" ] && printf '%s' "$jout" | jq -e . >/dev/null 2>&1; then
         jscore="$(printf '%s' "$jout" | jq -r '.score // "null"')"
@@ -374,7 +540,17 @@ for n in $(task_dirs); do
       else
         echo "   judge-outcome: skipped"
       fi
+      # When both graded and they disagree, say so at the point of measurement.
+      # The disagreement is the finding — it is how the AC4 blindness was caught
+      # — and it is invisible once the two numbers are separate columns in a table.
+      if [ "$ORACLEJSON" != "null" ] && [ "$jverd" != "skip" ]; then
+        overd="$(printf '%s' "$ORACLEJSON" | jq -r '.verdict // ""')"
+        if [ -n "$overd" ] && [ "$overd" != "$jverd" ]; then
+          echo "   ⚠ graders DISAGREE — oracle=$overd judge=$jverd. The oracle is the one that can be checked."
+        fi
+      fi
 
+      OUTCOME="$(classify_outcome "$ok" "$freason")"
       emit "$n" "$a" "$r" "$ok" "$cost" "$intok" "$outtok" "$turns" "$dur" "$spawn" "$cyt" "$cyr" "$skip" "$jscore" "$jverd" "${wall_s:-null}" "$freason" "$WFSHA" "$spawnobs"
       runs=$((runs + 1)); DONE=$((DONE + 1)); r=$((r + 1))
       progress "$n · arm=$a done — ok=$ok${freason:+ ($freason)} cost=\$$cost judge=$jscore/$jverd"

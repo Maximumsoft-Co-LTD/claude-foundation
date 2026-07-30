@@ -16,16 +16,139 @@ adopted, what was measured and rejected, and the numbers behind each. Playbook f
 carry the *rule* and point here; the evidence never rides along in a file that is
 resident during a run.
 
-## What's measured (5 dimensions)
+## The four axes
 
-| Dimension | Signal | Source | Note |
+Every scorecard row measures **quality, speed, cost and context**, plus the
+mechanism/reliability/provenance telemetry that says whether the row can be read
+at all.
+
+| Axis | Trust this | Not this | Source |
+|------|-----------|----------|--------|
+| **Quality** | `oracle_score` / `oracle_max` / `oracle_fails` — per-criterion, deterministic, $0 | `judge_score` alone. It is an *opinion*: at n=12 it passed twelve diffs that objectively failed AC4 | `grade-oracle.sh` (tasks with an oracle) + `judge-outcome.sh` (all tasks) |
+| **Speed** | `wall_s` — measured by the runner | `envelope_ms`. The envelope clock does not see sub-agent time: it timed an 841 s run at **72 s** | runner stopwatch |
+| **Cost** | `cost_usd` | `envelope_in_tokens` / `envelope_out_tokens` — top session only | `claude -p` envelope `total_cost_usd` |
+| **Context** | `ctx_boot`, `ctx_peak`, `ctx_in_total`, `ctx_cache_hit`, `ctx_reqs` | — | `context-metrics.sh`, off the run's own transcript. **No tokens.** |
+
+| Telemetry | Signal | Source | Note |
 |-----------|--------|--------|------|
 | **Mechanism** | `spawn_count`, `cycles.{test,review}`, `skipped` | `state.json` (+ `dev-metrics.sh`) | deterministic — the primary proof a change worked |
-| **Speed** | `duration_ms`, `phase_times` | envelope / `state.json` | noisy → median ≥3 repeats |
-| **Cost** | `total_cost_usd`, in/out tokens, `num_turns` | `claude -p --output-format json` | the signal `state.json` doesn't carry |
-| **Quality** | outcome-judge score + `judge_sd`, `judge_p10` | `judge-outcome.sh` | arm-agnostic, so A/B is fair |
-| **Reliability** | `ok`, `fail_reason`, `n_ok`, `ok_rate` | runner (watchdog + envelope + `done_at`) | separates a broken run from bad code |
-| **Provenance** | `workflow_sha`, `spawn_observed` | `git rev-parse` + guard-hook ledger | says which `/dev` ran, and counts spawns independently |
+| **Reliability** | `outcome`, `ok`, `fail_reason`, `n_ok`, `n_blocked` | runner (watchdog + envelope + `done_at`) | separates a broken run from bad code — and both from a run that stopped for a human |
+| **Provenance** | `workflow_sha`, `spawn_observed`, `sandbox`, `started_at` | `git rev-parse` + guard-hook ledger + runner | says which `/dev` ran, counts spawns independently, and lets the row be re-measured later |
+
+### Context — the axis that explains the cost column
+
+`README > Interpreting it honestly` concluded that "cost tracks **turns × average
+context**, not instruction bytes". That names context as the *cause* of the cost
+column — and for the whole life of this suite it was the one quantity nobody
+recorded. Every "we cut 26 KB and cost went up 16%" verdict in `rationale.md` was
+reasoned about a number that existed only as inference.
+
+It was also the axis the envelope actively lies about. `--output-format json`
+reports `usage.input_tokens` for the **top session only**: a real `/dev` run on
+`09-api-compat` recorded `in_tokens: 186` while its transcript shows **14,465,096**
+input tokens over 84 requests, plus four sub-agents carrying 2.34 M more.
+
+Every `claude` session — including a headless `claude -p` in a bench sandbox —
+writes a transcript to `~/.claude/projects/<slug>/<session>.jsonl` (`<slug>` is the
+session cwd with every non-alphanumeric character replaced by `-`), with sub-agent
+sessions in `<session>/subagents/agent-*.jsonl`. So the data was on disk all along.
+
+```sh
+sh context-metrics.sh <sandbox-dir> --table    # or --transcript <file.jsonl>
+```
+
+**Three numbers, and all three ship, because a change can move them in opposite
+directions:**
+
+| Number | Question it answers |
+|---|---|
+| `ctx_boot` | What does the playbook cost *before any work*? Context on the first main request — system prompt + `CLAUDE.md` + rules + tool schemas. The only direct measurement of "did trimming the resident instructions do anything". |
+| `ctx_peak` | How close to the window did this get — how much headroom would a bigger task have had? |
+| `ctx_in_total` | Σ per-request context across every session = *turns × average context*. Cost is a linear function of it. When cost moves, **this is what says why**: either more requests, or more context per request. |
+
+That distinction is not theoretical. The rejected "lean design refs" change cut
+≈26 KB of resident instructions and cost rose 16.4%: **`ctx_boot` fell while
+`ctx_in_total` rose**, because the run took more turns. A guard watching only the
+resident floor would have adopted it. `compare.sh --context` names that shape
+outright — *"read LESS per turn but did MORE turns: the saving was relocated, not
+made"* — versus *"smaller floor AND smaller integral: a real context saving"*.
+
+`ctx_cache_hit` ships because a cached input token is billed at a fraction of a
+fresh one. It is why the arms differ **61×** on `ctx_in_total` while cost differs
+only ~7–10×: at a 97% hit rate most of that context is re-read from a stable
+prefix. Quote cost alone and you understate what the workflow *spends*; quote
+context alone and you overstate what it is *charged*.
+
+**The one trap, and it is a 1.9× error.** The transcript writes one entry per
+content *block* — thinking, text and each `tool_use` become separate `assistant`
+lines that all carry the **same** `usage` object. A real run is 163 entries for 84
+requests. Summing entries instead of grouping by `requestId` reports 26.6 M input
+tokens where the truth is 14.5 M. (`profile-turns.sh` documents the identical trap
+for turn counting: "the count reads ~65% high".) The dedup is pinned by
+exact-value tests against a canned transcript in `fixtures/transcript-dedup/`.
+
+### Recovering context for runs that already happened
+
+Every baseline in `baselines/` predates the axis, and those runs left transcripts
+on disk:
+
+```sh
+sh backfill-context.sh baselines/<ref>.jsonl              # report only
+sh backfill-context.sh baselines/<ref>.jsonl --write      # fill unambiguous rows
+sh backfill-context.sh baselines/<ref>.jsonl --write --nearest   # + mtime guess, tagged
+```
+
+Each filled row records **how** it was matched in `ctx_source`: `sandbox` (exact,
+from the row's own path — new rows carry one), `unique-dirname-match` (exactly one
+transcript directory ends in `-<task>-<arm>-<repeat>`), or `mtime-heuristic` (a
+**guess**, opt-in via `--nearest`).
+
+Ambiguity is the normal case for old rows, not an edge case: a dozen directories
+match `…-11-recent-window-workflow-1` because that task/arm/repeat ran over and
+over, and `run-parallel.sh` writes `repeat: 1` on every child's row — so three
+merged rows are genuinely indistinguishable. Filling those by guessing puts one
+session's context beside another session's cost, the same class of error as
+*"Re-baseline before crediting yourself with someone else's numbers"* below. The
+default reports and refuses.
+
+### Quality: the oracle now runs on every graded row
+
+`grade-oracle.sh` — deterministic, per-criterion, no model, no tokens, no variance
+— existed for a while and **no runner ever called it**, so the only quality column
+in the scorecard was the one this README proves unreliable. It runs now, next to
+the judge, on every workflow/baseline row of a task that has an oracle:
+
+- `oracle_score` / `oracle_max` — criteria met, with the denominator
+- `oracle_fail_acs` — **which** criteria failed, and in how many runs. "AC4 failed
+  6/6" is a finding; "quality 5/6" is a number
+- `oracle_pass_rate` — over oracle-graded rows only, so a task without an oracle
+  is never punished for not having one
+
+`compare.sh --ratchet`, `--gain` and `--ab` gate on the **oracle when both sides
+carry it**, and label which grader decided (`quality[oracle]` / `quality[judge]`).
+This is load-bearing: the fixture that pins it drops the oracle 5→4 while *raising*
+the judge 9→10, which a judge-driven ratchet reads as an improvement. Tasks with no
+oracle still gate on the judge, and the table flags them — `quality is the JUDGE
+ONLY … read it as simplicity/fit, not as "the criteria are met"`.
+
+Only `11-recent-window`, `12-contact-search` and `13-money-drift` have oracles.
+The other twelve tasks report an opinion.
+
+### `blocked` is the pipeline succeeding, and it is now counted
+
+The hole described below — *"the harness cannot currently observe `/dev`
+succeeding at its actual job"* — is closed at the bookkeeping level. Every row
+carries an `outcome` word (`ok`, `blocked`, `incomplete`, `timeout`, `no_envelope`,
+`api_error`, `crash`, `design_incomplete`), derived in one place
+(`run-bench.sh > classify_outcome`), and `aggregate.sh` reports `n_blocked` as its
+own column with a line saying what it means. A blocked run still stays out of the
+medians — there is no delivered code to grade — but it is now visibly excluded
+**for succeeding differently**, not invisibly excluded for crashing, and it no
+longer appears in the failure tally. Legacy rows written before `outcome` existed
+are classified from `fail_reason`, so the recorded history reclassifies too.
+
+Reading `state.json > notes` by hand is still required to tell a substantive
+`BLOCKED:` from a procedural one. What changed is that you can now *find* them.
 
 ### Reliability: why a failed run needs a reason
 
@@ -45,9 +168,9 @@ So a failed row carries `fail_reason`:
 | `incomplete_at_<step>` | `state.json` has no `done_at` — the run stopped early **and exited cleanly** |
 | `blocked_at_<step>` | the orchestrator recorded a `BLOCKED:` note and halted for a human — **not a workflow failure** (see below) |
 
-### `blocked_at_*` is the pipeline succeeding, and the scorecard calls it a failure
+### What `blocked_at_*` looks like when it happens — measured at M
 
-This is an **outcome-validity** hole, not a bookkeeping nit. Measured at M on
+The evidence behind the `outcome` field above. Measured at M on
 `13-money-drift`: one run wrote spec/plan/tasks/test-plan, then its `lead` caught a
 real contradiction — the round-half-up default chosen at interview conflicts with AC6,
 because `A-1004` (8.01 × 0.5 = 4.005) and `A-1005` (4.01 × 0.5 = 2.005) are *both*
@@ -56,16 +179,24 @@ all five fixture totals byte-identical, and **refused to auto-resolve under `--y
 because the choice belongs to a human. The same ambiguity is what **4 of 6 plain-prompt
 runs silently guessed wrong**, failing AC1/AC3/AC7 on the oracle.
 
-That is the pipeline doing the one thing a plain prompt cannot. It scores `ok=false`,
-folds into no median, and contributes nothing to any A/B — so **the harness cannot
-currently observe `/dev` succeeding at its actual job.** Any M-tier verdict built on
-`ok=true` rows alone is measuring only the runs where nothing needed a human.
+That is the pipeline doing the one thing a plain prompt cannot. It still folds into
+no median — there is no delivered code to grade — but it is now `outcome: blocked`
+and counted in its own `blk` column instead of vanishing into the failure tally.
+Any M-tier verdict built on `ok=true` rows alone is still measuring only the runs
+where nothing needed a human; the difference is that the scorecard now tells you
+how many of those there were.
 
-Until the runner reports it separately, read `blocked_at_*` by hand before concluding
-anything about M: `jq -r 'select(.fail_reason|startswith("blocked_at"))' results/*.jsonl`
-and then read the run's `state.json > notes`. A substantive `BLOCKED:` clause naming a
-real contradiction is a **design-phase success with no code**; an empty or procedural
-one is a stall. The two look identical in the `ok` column.
+Then read them, because the count is not the whole story:
+
+```sh
+jq -r 'select(.outcome == "blocked")' results/*.jsonl     # or fail_reason on legacy rows
+```
+
+and read each run's `state.json > notes`. A substantive `BLOCKED:` clause naming a
+real contradiction is a **design-phase success with no code**; an empty or
+procedural one is a stall. **Those two are still indistinguishable to the harness**
+— it can separate "stopped for a human" from "fell over", not "stopped for a good
+reason" from "stopped for a bad one".
 
 `incomplete_at_*` is the quiet one. A `/dev` run that halts at the gate returns a
 healthy envelope, so the row looked like a success: `ok=true`, no error, the judge
@@ -81,10 +212,17 @@ notes said "combined lead spawn". **Trust `spawn_observed`**; a gap between them
 a finding about the orchestrator's bookkeeping, not about the run.
 
 **`aggregate.sh` folds only `ok==true` rows into every median** and prints the
-excluded tally beneath the table. `n` counts all rows, `n_ok` the usable ones.
-When `n_ok == 0` every median is `null` — no measurement exists, and saying so
-beats printing a number derived from wreckage. Rows written before `fail_reason`
-existed classify as `unknown` rather than disappearing.
+excluded tally beneath the table. `n` counts all rows, `n_ok` the usable ones,
+`n_blocked` the ones that stopped for a human. When `n_ok == 0` every median is
+`null` — no measurement exists, and saying so beats printing a number derived from
+wreckage. Rows written before `fail_reason` existed classify as `unknown` rather
+than disappearing.
+
+The same rule governs the context and oracle columns: `n_ctx` and `n_oracle` count
+the rows that actually carried a measurement, and a task with none reports `null`
+with a line naming why. **An unmeasured axis is never a zero** — a `-` in the
+context table means "not measured", and a run that carried no context is not a
+thing that can happen.
 
 ### Quality: the median hides the thing you're buying
 
@@ -153,8 +291,15 @@ the shipped suite must pass on the delivered tree *and fail* once the pristine
 `window.js` is restored, because a suite that stays green does not pin the bug.
 The oracle itself is pinned by four fixtures in `fixtures/oracle-11/` with verdicts
 known by construction (`good` 6/6, `trap-feed` 3/6, `no-test` 5/6, `collateral`
-5/6) — an unvalidated oracle is worse than no oracle. Only `11-recent-window` has
-one so far.
+5/6) — an unvalidated oracle is worse than no oracle.
+
+**Three of fifteen tasks have an oracle** (`11-recent-window`, `12-contact-search`,
+`13-money-drift`), each validated the same way. `run-bench.sh` now calls the oracle
+on every graded row and the dry-run plan prints which tasks have one, so you know
+before spending a run whether its quality column will be an assertion or an
+opinion. **The remaining twelve are the largest open gap in the quality axis** —
+writing an oracle costs no tokens and removes a task's dependence on `n≥6` to be
+believed.
 
 **Watch for this when writing the next oracle:** `node --test <dir>` prints
 "Could not find" and still **exits 0** on Node 26, which scores a sandbox with zero
@@ -217,17 +362,28 @@ mid-cycle (a killed run yields no cost envelope and an artificially low judge sc
 Then:
 
 ```sh
-sh aggregate.sh results/scorecards.jsonl --table   # median per task/arm
-sh compare.sh   --ab results/scorecards.jsonl      # is the machinery worth it?
+sh aggregate.sh results/scorecards.jsonl --table             # quality/speed/cost per task/arm
+sh aggregate.sh results/scorecards.jsonl --table --context   # + the context table
+sh compare.sh   --ab results/scorecards.jsonl                # worth it? cost AND context premium
 
-# before/after ratchet:
+# before/after ratchet — mechanism, cost, CONTEXT and quality (oracle-first):
 cp results/scorecards.jsonl baselines/v2.12.jsonl   # set a reference (commit it)
 # … change the workflow, re-run …
 sh compare.sh --ratchet baselines/v2.12.jsonl results/scorecards.jsonl
 
 # did an optimisation pass actually pay? (the ratchet's mirror image)
 sh compare.sh --gain baselines/v2.12.jsonl results/after.jsonl --target 0.5
+
+# WHERE did it go? boot vs reqs vs in_total — separates "read less" from "did less"
+sh compare.sh --context baselines/v2.12.jsonl results/after.jsonl
 ```
+
+**Read `--context` before believing a `--gain`.** A cost saving whose
+`ctx_in_total` did not move has no mechanism behind it, and on a suite whose
+resolution floor is ~23% that is usually a coin landing — `--gain` prints
+`← cost fell but context did not: suspect noise, not a saving` when it sees that
+shape. Two verdicts in one session were reported at −6.5% and −13%, adopted, and
+failed to reproduce; the context column is what would have caught them at the time.
 
 ### Where the wall clock goes — `profile-phases.sh`
 
@@ -250,19 +406,48 @@ invents a number the stamps do not contain. Always pass `--task` and `--newer`:
 mixing configurations in one profile averages away the thing you are looking for,
 since a change's before and after land in the same column.
 
+### Where the turns go — `profile-turns.sh`, now free
+
+The turn inventory used to cost a **full extra live run**, purely to see tool calls
+that the transcript of a run you already did contains verbatim. It reads that file
+now:
+
+```sh
+sh profile-turns.sh --sandbox <dir>         # FREE — any --keep sandbox, or a row's `sandbox` field
+sh profile-turns.sh --transcript <f.jsonl>  # FREE — explicit
+sh profile-turns.sh --task 11-recent-window # live: still spends a run (warns you)
+```
+
+The free mode also reports **per-sub-agent** tool inventories, which the live mode
+never saw — a main-session-only tally reads as if the workflow made far fewer calls
+than it did. Its `calls per round-trip` divides by API **requests** where the live
+mode divides by tool **results**; the denominators differ whenever one response
+batches two calls, so compare that ratio only within one mode.
+
 `--ratchet` and `--gain` ask opposite questions and you need both. The ratchet is a
 **guard**: it passes a run that costs 19% *more*, because its job is to catch
 regressions, not to reward savings. `--gain` is the **goal**: it prints the per-task
-and suite-total cost/wall deltas and, with `--target 0.5`, fails unless BOTH dropped
-by half. Its quality rule is not opt-in — a judge-score drop fails at any saving,
-with or without a target, the same ordering `--ratchet` and `--ab` enforce. A task
-whose rows are all `ok=false` on either side fails a targeted run rather than
-reporting a delta against a null: an unmeasured task cannot be claimed as a win.
+and suite-total cost/wall/**context** deltas and, with `--target 0.5`, fails unless
+BOTH cost and wall dropped by half. Its quality rule is not opt-in — a quality drop
+fails at any saving, with or without a target, the same ordering `--ratchet` and
+`--ab` enforce, and it reads the **oracle** when both sides have one. A task whose
+rows are all `ok=false` on either side fails a targeted run rather than reporting a
+delta against a null: an unmeasured task cannot be claimed as a win.
 
-`compare.sh --ratchet` fails (exit 1) if the workflow arm regresses: spawn_count
-or cycles increase, cost exceeds baseline by more than `BENCH_COST_TOL` (default
-20%), or the quality score drops. Mechanism regressions are deterministic;
-cost/speed use the median and a tolerance because live runs vary.
+`compare.sh --ratchet` fails (exit 1) if the workflow arm regresses on any of:
+
+| Guard | Tolerance | Why that tolerance |
+|---|---|---|
+| `spawn_count`, `cycles_test`, `cycles_review` | any increase | deterministic — no repeats needed |
+| `ctx_boot` | `BENCH_CTX_TOL`, default **+2%** | near-deterministic for a fixed tree; a bigger floor is a bigger playbook |
+| `cost_usd` | `BENCH_COST_TOL`, default **+20%** | live runs vary |
+| `ctx_in_total` | same as cost | cost is a linear function of it, so it is exactly as noisy |
+| quality (`oracle_score`, else `judge_score`) | any drop | oracle-first when both sides have one |
+
+**A guard it could not evaluate is named, not skipped silently** (`~ <task>: NOT
+GUARDED — …`). Silence about an unevaluated guard is indistinguishable from a guard
+that passed, which is how a context regression ships against a baseline recorded
+before the axis existed. `backfill-context.sh` is the fix for that case.
 
 ## Tasks & arms
 
