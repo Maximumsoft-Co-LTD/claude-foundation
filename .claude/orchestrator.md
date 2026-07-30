@@ -22,6 +22,10 @@ deterministic state, evidence validity, budgets, and land guards.
 Do not create `.workflow/` state for new work. Existing `.workflow/` runs are
 read-only legacy records and may be migrated with `foundation migrate`.
 
+Use the `claude-foundation` CLI as the stable control surface. If it is not on
+`PATH` in a project installed directly from source, invoke the matching internal
+command with `node .claude/harness/foundation.mjs`; do not change its semantics.
+
 ## Resolve
 
 Resolve five independent values before building:
@@ -32,10 +36,18 @@ Resolve five independent values before building:
 - evidence capabilities required by observable claims;
 - size: budget and slicing only, never phases.
 
-Use `foundation resolve <change> ...` to persist the decision. Choose
+Use `claude-foundation runtime resolve <change> ...` to persist the decision. Choose
 `foundation-rapid` only when impact is low, coupling is isolated, unit/static
 evidence is sufficient, and there is no public contract, persistent migration,
 security boundary, irreversible effect, or sensitive data.
+
+Provider selection is claim- and risk-driven, not a checklist. Use
+`claude-foundation providers` to inspect the canonical catalog. Add `static-analysis`
+for compile/type/lint gates; `data-migration` for persisted evolution;
+`accessibility` for user-facing rendered interaction; `resilience` for failure
+and recovery behavior; `observability` for operational signals; `deployment`
+for rollout/rollback; and `dependency-supply-chain` when dependency or release
+integrity changes. Do not select providers unrelated to an observable claim.
 
 Security is semantic. Trigger it for identity/access, secrets, permissions,
 cross-user access, network trust, irreversible mutation, sensitive storage,
@@ -59,6 +71,11 @@ Implementation order and tool choice belong to the harness.
 For medium/large coupled work, slice by coherent behavior. Each slice follows
 Build → Prove; finish with one integration proof.
 
+If intent changes during Build, pause implementation, investigate if needed,
+revise the same OpenSpec change, then run `claude-foundation sandbox sync <id>`.
+Sync preserves completion only for unchanged task lines and makes prior proof
+stale. Never continue with different change artifacts in target and sandbox.
+
 ## Prove
 
 `/prove` is evidence-driven:
@@ -72,7 +89,7 @@ Build → Prove; finish with one integration proof.
 7. run the required full suite once after convergence;
 8. perform independent review only when risk triggers it;
 9. re-run evidence invalidated by a proof-time edit;
-10. run `foundation prove <change>`.
+10. run `claude-foundation proof finalize <change>`.
 
 Provider results are `pass|fail|inconclusive|error`. Required `inconclusive`
 evidence blocks landing. A mutation crash is not a behavioral kill. Required
@@ -95,7 +112,7 @@ speculative expansion; at 100% stop and split or re-scope. Required proof remain
 
 Landing is explicit and transactional:
 
-1. `foundation land-check <change>` rejects stale or incomplete proof;
+1. `claude-foundation land check <change>` rejects stale or incomplete proof;
 2. apply only the proven sandbox diff;
 3. verify the applied workspace hash;
 4. use OpenSpec archive/spec sync;

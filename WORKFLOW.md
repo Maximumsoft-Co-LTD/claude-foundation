@@ -52,8 +52,17 @@ packages, not lifecycle personas.
 For a Git project, create an isolated worktree with:
 
 ```bash
-node .claude/harness/foundation.mjs sandbox create <change>
+claude-foundation sandbox create <change>
 ```
+
+If requirements or design change during Build, pause, revise the same OpenSpec
+change, then synchronize it without losing unchanged completed tasks:
+
+```bash
+claude-foundation sandbox sync <change>
+```
+
+Sync increments the revision and invalidates previous proof.
 
 ### `/prove <change>`
 
@@ -62,10 +71,10 @@ reuses valid receipts, executes missing/stale evidence, and writes a proof bound
 to the workspace hash.
 
 ```bash
-node .claude/harness/foundation.mjs proof-plan <change>
-node .claude/harness/foundation.mjs run-provider <change> test -- npm test
-node .claude/harness/foundation.mjs receipt <change> discovery pass --discovered 42 --minimum 1
-node .claude/harness/foundation.mjs prove <change>
+claude-foundation proof plan <change>
+claude-foundation evidence run <change> test -- npm test
+claude-foundation evidence record <change> discovery pass --discovered 42 --minimum 1
+claude-foundation proof finalize <change>
 ```
 
 Required evidence that is failed, missing, stale, erroneous, or inconclusive
@@ -78,9 +87,9 @@ verifies state identity, then delegates semantic spec sync and archive to the
 pinned OpenSpec CLI.
 
 ```bash
-node .claude/harness/foundation.mjs land-check <change>
-node .claude/harness/foundation.mjs sandbox apply <change>  # worktree changes
-node .claude/harness/foundation.mjs archive <change>
+claude-foundation land check <change>
+claude-foundation sandbox apply <change>  # worktree changes
+claude-foundation land archive <change>
 ```
 
 Commit, push, and pull-request effects require explicit authorization.
@@ -141,17 +150,32 @@ second parser dependency.
 
 Supported capabilities:
 
-- `test`
-- `discovery`
-- `browser`
-- `mutation`
-- `state-identity`
-- `integration`
-- `compatibility`
-- `performance`
-- `security-static`
-- `cross-repo-contract`
-- `review`
+| Provider ID | Select it when the claim requires |
+|---|---|
+| `test` | Executable behavioral checks |
+| `discovery` | Proof that the expected tests were actually found |
+| `browser` | Rendered behavior or real input in a browser |
+| `mutation` | Proof that tests detect a deliberate behavioral fault |
+| `state-identity` | Actor, revision, or before/after state identity |
+| `integration` | Multiple components or external boundaries working together |
+| `compatibility` | Public or persisted contract compatibility |
+| `performance` | A measured latency, throughput, resource, or size budget |
+| `security-static` | Static security analysis of a changed trust boundary or sink |
+| `cross-repo-contract` | Agreement between producer and consumer repositories |
+| `review` | Independent risk review |
+| `static-analysis` | Compile, type, lint, or static quality gates |
+| `data-migration` | Forward migration, mixed-version safety, and rollback |
+| `accessibility` | Semantics, keyboard, focus, contrast, or assistive access |
+| `resilience` | Timeout, retry, partial failure, recovery, or degraded dependency |
+| `observability` | Required logs, metrics, traces, or alerts |
+| `deployment` | Package, configuration, rollout health, or rollback behavior |
+| `dependency-supply-chain` | Vulnerability, license, lockfile, or provenance policy |
+
+Run `claude-foundation providers` to inspect the canonical
+catalog installed in a project. Providers are evidence contracts, not bundled
+vendor tools: `/prove` may execute the repository's existing command with
+`run-provider`, or record a receipt from an external system. Select only
+providers justified by observable claims.
 
 Test evidence automatically requires discovery evidence. Risk-triggered changes
 automatically require review evidence.
@@ -216,12 +240,24 @@ Required evidence is never removed to meet budget.
 `.workflow/` is no longer runtime state. Existing records remain read-only.
 
 ```bash
-node .claude/harness/foundation.mjs migrate
-node .claude/harness/foundation.mjs migrate <legacy-id> --apply
+claude-foundation migrate
+claude-foundation migrate <legacy-id> --apply
 ```
 
 Apply creates migration candidates, not authoritative specs. Only statements
 corroborated by code, tests, or accepted contracts may be promoted.
+
+## Native CLI
+
+`claude-foundation` is the stable public control surface. It searches upward
+from the working directory, or from `--project <path>`, and forwards to the
+runtime installed in that project so schemas and runtime behavior stay aligned.
+Use `proof plan|finalize`, `evidence run|record`, `sandbox create|sync|apply`,
+and `land check|archive` rather than calling the runtime file directly.
+
+Projects installed directly from source can use
+`node .claude/harness/foundation.mjs` as a compatibility fallback when the
+packaged CLI is not on `PATH`.
 
 ## Runtime layout
 

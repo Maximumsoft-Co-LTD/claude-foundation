@@ -39,8 +39,8 @@ class ClaudeFoundation < Formula
       (libexec/"VERSION").write("#{version}\n")
     end
 
-    # cli.sh routes subcommands (installer + dashboard-*) and finds its siblings
-    # relative to itself, so it needs no --source.
+    # cli.sh routes install/dashboard commands and forwards native workflow
+    # commands to the runtime installed in the current project.
     (bin/"claude-foundation").write <<~EOS
       #!/usr/bin/env bash
       exec "#{libexec}/cli.sh" "$@"

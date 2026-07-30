@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native `claude-foundation` control surface** — project-aware provider,
+  change, proof, evidence, sandbox, land, and migration namespaces now forward
+  to the runtime installed in the current repository, including subdirectory
+  discovery, explicit `--project`, runtime API guards, and typo-safe routing.
+- **Production evidence provider catalog** — adds static analysis, data
+  migration, accessibility, resilience, observability, deployment, and
+  dependency/supply-chain contracts, plus a deterministic `providers` command
+  for discovery without forcing every provider onto every change.
 - **OpenSpec-native change loop** — replaces the fixed phase orchestrator with
   `/investigate → /change → /build → /prove → /land`; `/dev` remains a
   compatibility composition through proof.

@@ -3,7 +3,7 @@ description: Migrate legacy .workflow records into OpenSpec without treating nar
 argument-hint: [legacy-run-id] [--apply]
 ---
 
-Run `node .claude/harness/foundation.mjs migrate $ARGUMENTS`.
+Run `claude-foundation migrate $ARGUMENTS`.
 
 Default to dry-run. Move only behavior corroborated by code, tests, or an
 accepted contract. Stable facts may become OpenSpec context; unresolved valid

@@ -7,7 +7,7 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-TARGET="$TMP/project"
+TARGET="$TMP/project with space"
 mkdir -p "$TARGET/.workflow/0001-legacy" "$TARGET/.claude/agents"
 printf 'legacy\n' > "$TARGET/.workflow/0001-legacy/state.json"
 printf 'old\n' > "$TARGET/.claude/agents/pm.md"
@@ -33,6 +33,56 @@ assert_file_contains "user CLAUDE content preserved" "$TARGET/CLAUDE.md" "# User
 assert_file_contains "managed change-loop pointer added" "$TARGET/CLAUDE.md" "claude-foundation:change-loop:start"
 assert_cmd_zero "installed harness starts" \
   node "$TARGET/.claude/harness/foundation.mjs" version
+
+CLI="bash $ROOT/cli.sh"
+providers="$(bash "$ROOT/cli.sh" --project "$TARGET" providers)"
+assert_contains "native CLI exposes installed providers" "$providers" "dependency-supply-chain"
+mkdir -p "$TARGET/nested/path"
+assert_cmd_zero "native CLI discovers project from a subdirectory" \
+  sh -c 'cd "$1" && bash "$2" changes' _ "$TARGET/nested/path" "$ROOT/cli.sh"
+
+bash "$ROOT/cli.sh" --project "$TARGET" runtime new "CLI proof route" --rapid >/dev/null
+assert_cmd_zero "native validate routes to project runtime" \
+  bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route
+sed -i.bak 's/- \[ \]/- [x]/g' "$TARGET/openspec/changes/cli-proof-route/tasks.md"
+rm "$TARGET/openspec/changes/cli-proof-route/tasks.md.bak"
+assert_cmd_zero "native evidence run preserves command arguments" \
+  bash "$ROOT/cli.sh" --project "$TARGET" evidence run cli-proof-route test -- \
+  sh -c 'test "$1" = "two words"' _ "two words"
+assert_cmd_zero "native evidence record routes receipt flags" \
+  bash "$ROOT/cli.sh" --project "$TARGET" evidence record cli-proof-route \
+  discovery pass --discovered 1 --minimum 1
+assert_cmd_zero "native proof plan routes to project runtime" \
+  bash "$ROOT/cli.sh" --project "$TARGET" proof plan cli-proof-route
+assert_cmd_zero "native proof finalize creates proof" \
+  bash "$ROOT/cli.sh" --project "$TARGET" proof finalize cli-proof-route
+assert_cmd_zero "native land check accepts fresh proof" \
+  bash "$ROOT/cli.sh" --project "$TARGET" land check cli-proof-route
+
+if bash "$ROOT/cli.sh" definitely-not-a-command >/dev/null 2>&1; then
+  fail "unknown native command fails without entering installer"
+else
+  pass "unknown native command fails without entering installer"
+fi
+mkdir -p "$TMP/outside"
+if (cd "$TMP/outside" && bash "$ROOT/cli.sh" providers >/dev/null 2>&1); then
+  fail "native command outside a Foundation project fails clearly"
+else
+  pass "native command outside a Foundation project fails clearly"
+fi
+assert_cmd_zero "legacy explicit-path installation remains compatible" \
+  bash "$ROOT/cli.sh" "$TARGET" --dry-run
+
+sed -i.bak 's/const RUNTIME_API_VERSION = "1"/const RUNTIME_API_VERSION = "999"/' \
+  "$TARGET/.claude/harness/foundation.mjs"
+rm "$TARGET/.claude/harness/foundation.mjs.bak"
+if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then
+  fail "runtime API mismatch blocks write commands"
+else
+  pass "runtime API mismatch blocks write commands"
+fi
+assert_cmd_zero "runtime API mismatch permits read-only inspection" \
+  bash "$ROOT/cli.sh" --project "$TARGET" changes
 
 CURSOR_TARGET="$TMP/cursor-project"
 mkdir -p "$CURSOR_TARGET"

@@ -10,10 +10,28 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
 const VERSION = "1.0.0";
-const PROVIDERS = new Set([
-  "test", "discovery", "browser", "mutation", "state-identity", "integration",
-  "compatibility", "performance", "security-static", "cross-repo-contract", "review"
-]);
+const RUNTIME_API_VERSION = "1";
+const PROVIDER_CONTRACTS = {
+  "test": "Executable behavioral checks for the declared claim.",
+  "discovery": "Expected tests were found and the discovered count meets the floor.",
+  "browser": "Rendered behavior in a real browser with the required input capability.",
+  "mutation": "A deliberate behavioral fault is detected by the evidence suite.",
+  "state-identity": "State before, during, or after the change belongs to the intended actor and revision.",
+  "integration": "Multiple components or external boundaries work together.",
+  "compatibility": "Public or persisted contracts remain compatible across supported versions.",
+  "performance": "Measured latency, throughput, resource, or size budgets are met.",
+  "security-static": "Static security checks cover the changed trust boundary and unsafe sinks.",
+  "cross-repo-contract": "Producer and consumer repositories agree on the same versioned contract.",
+  "review": "Independent risk review covers the declared claims and unresolved findings.",
+  "static-analysis": "Compilation, type checking, linting, and applicable static quality gates pass.",
+  "data-migration": "Schema or data evolution is forward-safe, backward-compatible, and rollback-aware.",
+  "accessibility": "Rendered semantics, keyboard use, focus, contrast, and assistive access meet policy.",
+  "resilience": "Timeout, retry, partial-failure, recovery, and degraded-dependency behavior is proven.",
+  "observability": "Required logs, metrics, traces, and alerts expose success and failure safely.",
+  "deployment": "Packaging, configuration, rollout health checks, and rollback behavior are proven.",
+  "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes."
+};
+const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
 const SECURITY_TERMS = [
   "auth", "identity", "access", "permission", "secret", "credential", "session",
   "token", "cross-user", "cross user", "trust boundary", "irreversible",
@@ -112,6 +130,18 @@ function walk(dir, callback) {
   }
 }
 
+function directoryHash(dir) {
+  const hash = createHash("sha256");
+  const files = [];
+  walk(dir, (path) => files.push(path));
+  files.sort((a, b) => relative(dir, a).localeCompare(relative(dir, b)));
+  for (const path of files) {
+    hash.update(relative(dir, path).replaceAll("\\", "/"));
+    hash.update("\0"); hash.update(readFileSync(path)); hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
 function relevantHash(id, workspaceOverride = null) {
   const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
   const workspace = resolve(workspaceOverride || state.workspace?.path || ROOT);
@@ -135,6 +165,7 @@ function relevantHash(id, workspaceOverride = null) {
   for (const [rel, path] of files) {
     hash.update(rel); hash.update("\0"); hash.update(readFileSync(path)); hash.update("\0");
   }
+  hash.update(`foundation-change-revision:${Number(state.revision || 0)}`);
   return hash.digest("hex");
 }
 
@@ -246,7 +277,9 @@ function evidence(id) {
 }
 
 function pendingTasks(id) {
-  const content = readFileSync(join(changePath(id), "tasks.md"), "utf8");
+  const state = loadRuntime(id);
+  const workspace = state.workspace?.path || ROOT;
+  const content = readFileSync(join(workspace, "openspec", "changes", id, "tasks.md"), "utf8");
   return content.split("\n").filter((line) =>
     /^\s*-\s*\[\s\]/.test(line) && !line.includes("/prove"));
 }
@@ -346,6 +379,7 @@ function recordReceipt(id, provider, status, flags = {}) {
 }
 
 function runProvider(id, provider, values) {
+  if (!PROVIDERS.has(provider)) die(`unknown provider '${provider}'`);
   const split = values.indexOf("--");
   if (split < 0 || split === values.length - 1) die("run-provider requires '-- <command> [args...]'");
   const command = values[split + 1];
@@ -411,7 +445,8 @@ function createCopySandbox(id, state, reason) {
   });
   state.workspace = {
     mode: "copy", path, applied: false, reason,
-    baseline: workspaceManifest(ROOT, id, true)
+    baseline: workspaceManifest(ROOT, id, true),
+    changeSourceHash: directoryHash(changePath(id))
   };
   saveRuntime(state);
   console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  path: ${path}`);
@@ -441,15 +476,67 @@ function createSandbox(id) {
   const result = git(["worktree", "add", "--detach", path, "HEAD"]);
   if (result.status !== 0) die(`cannot create sandbox: ${result.stderr.trim()}`);
   cpSync(changePath(id), join(path, "openspec", "changes", id), { recursive: true });
-  state.workspace = { mode: "worktree", path, baseHead: gitHead(ROOT), applied: false };
+  state.workspace = {
+    mode: "worktree", path, baseHead: gitHead(ROOT), applied: false,
+    changeSourceHash: directoryHash(changePath(id))
+  };
   saveRuntime(state);
   console.log(`SANDBOX ${id}\n  path: ${path}`);
+}
+
+function mergeTaskProgress(source, sandbox) {
+  const completed = new Set(
+    sandbox.split("\n")
+      .filter((line) => /^\s*-\s*\[[xX]\]/.test(line))
+      .map((line) => line.replace(/^(\s*-\s*)\[[xX]\]/, "$1[]").replace(/\s+/g, " ").trim())
+  );
+  return source.split("\n").map((line) => {
+    if (!/^\s*-\s*\[\s\]/.test(line)) return line;
+    const key = line.replace(/^(\s*-\s*)\[\s\]/, "$1[]").replace(/\s+/g, " ").trim();
+    return completed.has(key) ? line.replace("[ ]", "[x]") : line;
+  }).join("\n");
+}
+
+function syncSandbox(id) {
+  validate(id);
+  const state = loadRuntime(id);
+  const workspace = state.workspace;
+  if (!workspace || !["worktree", "copy"].includes(workspace.mode) ||
+      !workspace.path || !existsSync(workspace.path))
+    die(`change '${id}' has no active sandbox`);
+  const source = changePath(id);
+  const destination = join(workspace.path, "openspec", "changes", id);
+  const sourceTasks = readFileSync(join(source, "tasks.md"), "utf8");
+  const sandboxTasks = existsSync(join(destination, "tasks.md"))
+    ? readFileSync(join(destination, "tasks.md"), "utf8") : "";
+  const mergedTasks = mergeTaskProgress(sourceTasks, sandboxTasks);
+  if (existsSync(destination)) rmSync(destination, { recursive: true });
+  mkdirSync(dirname(destination), { recursive: true });
+  cpSync(source, destination, { recursive: true });
+  writeFileSync(join(destination, "tasks.md"), mergedTasks);
+  state.workspace.changeSourceHash = directoryHash(source);
+  state.status = "building";
+  state.revision = Number(state.revision || 0) + 1;
+  delete state.provenHash;
+  if (existsSync(proofPath(id))) rmSync(proofPath(id));
+  saveRuntime(state);
+  console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}`);
+}
+
+function applyChangeArtifacts(id, sandboxPath) {
+  const target = changePath(id);
+  const source = join(sandboxPath, "openspec", "changes", id);
+  if (existsSync(target)) rmSync(target, { recursive: true });
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(source, target, { recursive: true });
 }
 
 function applySandbox(id) {
   landCheck(id);
   const state = loadRuntime(id);
   if (state.workspace?.mode === "copy") {
+    if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
+      die("active change was edited after the last sandbox sync");
     const baseline = state.workspace.baseline || {};
     const sandbox = workspaceManifest(state.workspace.path, id, true);
     const target = workspaceManifest(ROOT, id, true);
@@ -467,6 +554,7 @@ function applySandbox(id) {
       } else if (existsSync(destination)) rmSync(destination);
     }
     const sandboxHash = relevantHash(id, state.workspace.path);
+    applyChangeArtifacts(id, state.workspace.path);
     state.workspace = {
       ...state.workspace, path: ROOT, applied: true,
       sandboxPath: state.workspace.path, baseline: undefined
@@ -478,6 +566,8 @@ function applySandbox(id) {
     return;
   }
   if (state.workspace?.mode !== "worktree") die("change has no isolated sandbox");
+  if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
+    die("active change was edited after the last sandbox sync");
   if (gitHead(ROOT) !== state.workspace.baseHead) die("target HEAD moved since sandbox creation");
   git(["add", "-N", "."], state.workspace.path);
   const diff = git([
@@ -494,6 +584,7 @@ function applySandbox(id) {
   });
   if (apply.status !== 0) die(`sandbox apply failed: ${apply.stderr.trim()}`);
   const sandboxHash = relevantHash(id, state.workspace.path);
+  applyChangeArtifacts(id, state.workspace.path);
   state.workspace = { ...state.workspace, path: ROOT, applied: true, sandboxPath: state.workspace.path };
   saveRuntime(state);
   const targetHash = relevantHash(id, ROOT);
@@ -530,6 +621,11 @@ function showChanges() {
       state.status === "proven" ? "stale-proof" : state.status;
     console.log(`${id}\t${readiness}\t${state.schema || "unknown"}`);
   }
+}
+
+function showProviders() {
+  for (const [provider, contract] of Object.entries(PROVIDER_CONTRACTS))
+    console.log(`${provider}\t${contract}`);
 }
 
 function recordEvent(id, flags) {
@@ -585,6 +681,7 @@ Commands:
   new <intent> [--id <id>] [--rapid]
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
   changes
+  providers
   validate <change>
   hash <change>
   proof-plan <change>
@@ -592,7 +689,7 @@ Commands:
   run-provider <change> <provider> -- <command> [args...]
   prove <change>
   land-check <change>
-  sandbox create|apply <change>
+  sandbox create|sync|apply <change>
   archive <change>
   event <change> --request <id> [metrics...]
   migrate [legacy-id] [--apply]`);
@@ -611,6 +708,7 @@ switch (command) {
     resolveChange(rest[0], flags); break;
   }
   case "changes": showChanges(); break;
+  case "providers": showProviders(); break;
   case "validate": validate(values[0]); break;
   case "hash": console.log(relevantHash(values[0])); break;
   case "proof-plan": proofPlan(values[0]); break;
@@ -623,8 +721,9 @@ switch (command) {
   case "land-check": landCheck(values[0]); break;
   case "sandbox":
     if (values[0] === "create") createSandbox(values[1]);
+    else if (values[0] === "sync") syncSandbox(values[1]);
     else if (values[0] === "apply") applySandbox(values[1]);
-    else die("sandbox requires create|apply <change>");
+    else die("sandbox requires create|sync|apply <change>");
     break;
   case "archive": archive(values[0]); break;
   case "event": {
@@ -632,6 +731,7 @@ switch (command) {
     recordEvent(rest[0], flags); break;
   }
   case "migrate": migrate(values); break;
+  case "api-version": console.log(RUNTIME_API_VERSION); break;
   case "version": console.log(VERSION); break;
   default: usage(); if (command) process.exit(1);
 }
