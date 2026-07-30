@@ -19,6 +19,7 @@ assert_cmd_zero "installer applies non-interactively" \
   sh "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
 assert_file_exists "evidence adapter guide installed" "$TARGET/.claude/harness/EVIDENCE.md"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
