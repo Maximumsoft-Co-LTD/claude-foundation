@@ -421,6 +421,7 @@ any of this — they gate mechanism, not effect.
 | 2 | fold retention (area grouping · supersede-in-full · prune by load-bearingness) | same write, better retention, so #1 still pays at run N+20 | none — cost-neutral by construction | **no verdict owed.** It is a precondition for #1, not an independent claim |
 | 3 | `ledger-prune.sh` | a ledger every run trusts must be checkable; drift becomes a grep instead of diligence | its own suite (15 assertions) | **deterministic — already verified.** Only risk is over-pruning; pinned by the byte-identical and keep-what-you-cannot-check assertions |
 | 4 | `## Capabilities` + type-aware fold + `qa` read | behaviour truth, so a later run derives ACs knowing what is promised and gets the regression map free | **two-sided.** Write cost is visible on a single-run A/B **today**; the benefit is not | Cost side, measurable now: **write-side cost must stay under 5%** at n=9 single-run, else the cross-run payoff has to exceed it before this is worth keeping. Benefit side: same two-run rule as #1 |
+| 6 | batch independent boot reads into one message | identical calls in fewer round-trips; wall clock is made of round-trips, and boot is the largest block in the XS lane | **wall clock on an interactive host** — there is no cost claim to make, the token count is unchanged | **No instrument here can see it.** This bench runs headless `claude -p`, which does not run calls concurrently, so it will report exactly zero — and the playbook previously told the orchestrator not to batch *because of that measurement*, which is a rule tuned to the bench rather than to the hosts users actually run. Verify by hand: count round-trips from run start to first `state.json` write in an interactive run, before vs after. Adopt if boot round-trips drop with no check skipped or read made speculatively |
 | 5 | input-domain rule extended to `spec.md` (S/M) | the defect it catches is a property of `fix` at any size, not of XS | **oracle** pass rate on a `fix`-shaped task at S/M | Adopt if oracle pass rate rises or holds with cost inside the MDE. `13-money-drift` has an oracle and is fix-shaped; `10-rounding-fix` needs one built first |
 
 **Two honest caveats carried forward.** #5 is still unvalidated on a holdout — the rule
@@ -430,6 +431,11 @@ widens the blast radius of being wrong. And #4 is the one change here that **add
 to every run: retro writes more, and only later runs collect. On a bench of one-shot runs
 that is a pure cost, which is exactly why its cost side gets a rule that can fire before
 its benefit side is even measurable.
+
+**#6 sits outside this queue entirely** — it is a wall-clock change on an interactive
+host, and every arm of this bench is headless. It cannot be adopted or rejected here at
+any `n`; treat that as a statement about the instrument's scope, not as evidence either
+way, and resist the pull to design only what this harness happens to be able to see.
 
 Order of the batch when it runs: **#3 (free, already done) → #5 (oracle exists today) →
 #1 and #4 together once the two-run mode lands.** #1 and #4 share an instrument, and
