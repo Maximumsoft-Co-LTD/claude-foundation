@@ -266,4 +266,22 @@ for f in "$ROOT/.claude/orchestrator.md" \
   assert_file_contains "$(basename "$f") reads the repo context ledger" "$f" "$LEDGER"
 done
 
+# --- 13. the ledger's behaviour half: written, read, kept true ----------------
+# `## Capabilities` records what the system GUARANTEES (5b records where the code
+# is). Three ends have to hold together or it becomes a write nobody spends: retro
+# writes it type-aware (a refactor changes no guarantee by definition), qa reads it
+# for the regression contract, and the prune keeps the anchors honest — a ledger
+# every run trusts before walking must be checkable, and prune is the only step
+# that checks.
+PRUNE="$ROOT/.claude/orchestrator/references/ledger-prune.sh"
+if [ -f "$AGENTS/retro.md" ]; then
+  assert_file_contains "retro writes the Capabilities group" "$AGENTS/retro.md" "## Capabilities"
+  assert_file_contains "retro supersedes a guarantee in full" "$AGENTS/retro.md" "Supersede in full"
+  assert_file_contains "refactor/chore may not rewrite a guarantee" "$AGENTS/retro.md" "may not touch this group"
+  assert_file_contains "retro runs the prune" "$AGENTS/retro.md" "ledger-prune.sh"
+fi
+[ -f "$AGENTS/qa.md" ] && \
+  assert_file_contains "qa reads Capabilities for the regression contract" "$AGENTS/qa.md" "## Capabilities"
+assert_file_exists "ledger-prune.sh ships with the playbook" "$PRUNE"
+
 finish "doc-consistency tests"

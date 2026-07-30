@@ -35,6 +35,7 @@ run "artifact-lint"    "$ROOT/.claude/hooks/tests/run-artifact-lint-tests.sh"
 run "scenarios"        "$HERE/scenarios/run-scenario-tests.sh"
 run "doc-consistency"  "$HERE/docs/run-doc-consistency.sh"
 run "bench-logic"      "$HERE/bench/tests/run-bench-tests.sh"
+run "ledger"           "$HERE/ledger/run-ledger-tests.sh"
 
 if [ "${CLAUDE_E2E:-0}" = "1" ]; then
   run "e2e (live)"     "$HERE/e2e/run-e2e.sh" --run
