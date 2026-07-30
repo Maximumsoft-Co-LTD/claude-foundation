@@ -19,6 +19,7 @@ assert_cmd_zero "installer applies non-interactively" \
   sh "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "evidence adapter guide installed" "$TARGET/.claude/harness/EVIDENCE.md"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
 assert_file_absent "obsolete packaged hook tests removed" "$TARGET/.claude/hooks/tests"
@@ -52,6 +53,11 @@ assert_file_exists "native CLI records operation telemetry" \
   "$TARGET/.foundation/logs/cli-proof-route/operations.jsonl"
 assert_file_contains "unknown host usage remains null" \
   "$TARGET/.foundation/logs/cli-proof-route/operations.jsonl" '"inputTokens":null'
+metrics="$(bash "$ROOT/cli.sh" --project "$TARGET" metrics cli-proof-route)"
+assert_contains "native metrics reports operation-only measurement" \
+  "$metrics" '"measurement": "operations-only"'
+assert_contains "native metrics preserves unknown input tokens" \
+  "$metrics" '"inputTokens": null'
 assert_cmd_zero "native validate routes to project runtime" \
   bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route
 sed -i.bak 's/- \[ \]/- [x]/g' "$TARGET/openspec/changes/cli-proof-route/tasks.md"
@@ -67,6 +73,8 @@ assert_cmd_zero "native proof plan routes to project runtime" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof plan cli-proof-route
 assert_cmd_zero "native proof finalize creates proof" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof finalize cli-proof-route
+assert_cmd_zero "native proof execute reuses complete external receipts" \
+  bash "$ROOT/cli.sh" --project "$TARGET" proof execute cli-proof-route
 assert_cmd_zero "native land check accepts fresh proof" \
   bash "$ROOT/cli.sh" --project "$TARGET" land check cli-proof-route
 
@@ -84,7 +92,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "2"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "3"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then

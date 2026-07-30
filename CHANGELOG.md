@@ -13,9 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks runtime, hooks, pinned OpenSpec archive support, legacy packaged tests,
   and opt-in branch policy; native operations record duration/status while
   unknown request, token, cache, and cost values remain `null`.
+- **Measured change summary** — `claude-foundation metrics <change>` aggregates
+  phase timing, unique provider executions, external request/token/cache/cost
+  data, and orchestrator share without manufacturing missing values.
 - **Compact execution handoff** — `claude-foundation packet <change>` gives
   Build and Prove the active paths, revision, claims, providers, tasks, hash,
   and budget without replaying the orchestrator transcript.
+- **Executable evidence v2** — change contracts can configure project-owned
+  command, combined test/discovery, Playwright, and external adapters while
+  evidence v1 remains readable and has an explicit upgrade command.
+- **Resource-aware proof execution** — `proof execute` reuses content-bound
+  receipts, deduplicates identical commands, runs non-conflicting providers
+  concurrently, writes structured artifacts, and finalizes proof in one
+  operator action.
+- **Project-owned Playwright integration** — structured JSON reports and claim
+  annotations produce browser receipts using the honest
+  `browser-automation` input mode without Foundation installing dependencies.
 - **Native `claude-foundation` control surface** — project-aware provider,
   change, proof, evidence, sandbox, land, and migration namespaces now forward
   to the runtime installed in the current repository, including subdirectory
@@ -50,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently ignored because they mention `/prove`; lifecycle commands are no
   longer generated as tasks, isolated work must be applied before archive, and
   repeated archive/land checks return the archived state without resyncing.
+- **Transactional landing** — `land archive` now applies a proven isolated
+  workspace when needed before identity verification and OpenSpec archive, so
+  the normal land path is one deterministic transaction.
 - **Shipped self-tests** — obsolete phase-hook suites are removed from installs
   and replaced by tests for the hooks that are actually shipped.
 

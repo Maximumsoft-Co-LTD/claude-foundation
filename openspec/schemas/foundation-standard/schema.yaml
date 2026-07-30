@@ -31,7 +31,7 @@ artifacts:
     generates: evidence.yaml
     description: Claims and required evidence capabilities
     template: evidence.yaml
-    instruction: Map every observable scenario to stable claims and provider capabilities.
+    instruction: Map every observable scenario to stable claims and configure project-owned executable provider adapters when available.
     requires: [proposal, specs]
 
 apply:

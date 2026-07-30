@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=2
+EXPECTED_RUNTIME_API=3
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -52,7 +52,14 @@ run_runtime() {
     printf "claude-foundation: warning: project runtime API '%s' differs from CLI API '%s'\n" \
       "${actual_api:-unknown}" "$EXPECTED_RUNTIME_API" >&2
   fi
-  FOUNDATION_TELEMETRY=1 exec node "$runtime" "$@"
+  local phase=""
+  case "${1:-}" in
+    new|resolve|validate|evidence-upgrade) phase="change" ;;
+    sandbox) phase="build" ;;
+    proof-plan|proof-execute|prove|receipt|run-provider) phase="prove" ;;
+    land-check|archive) phase="land" ;;
+  esac
+  FOUNDATION_TELEMETRY=1 FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
 }
 
 need_arg() {
@@ -86,16 +93,20 @@ claude-foundation — OpenSpec-native software-change harness
 Usage:
   claude-foundation init [target-path] [options]   Install the change loop (default target: current dir)
   claude-foundation providers                     List evidence provider contracts
-  claude-foundation doctor [--require-archive]    Check runtime, hooks, and archive readiness
+  claude-foundation doctor [--require-archive] [--change <id>]
+                                                  Check runtime, providers, and archive readiness
   claude-foundation changes                       List active changes
   claude-foundation packet <change>               Print a compact phase handoff
+  claude-foundation metrics <change>              Summarize measured phase/provider cost
   claude-foundation validate <change>              Validate a change packet
   claude-foundation proof plan <change>            Show missing or stale evidence
+  claude-foundation proof execute <change>         Run configured evidence and finalize proof
   claude-foundation proof finalize <change>        Create a proof from valid receipts
   claude-foundation evidence run <change> <provider> --claims <scope> -- <command>
                                                   Run a provider and record its receipt
   claude-foundation evidence record <change> <provider> <status> [options]
                                                   Record external provider evidence
+  claude-foundation evidence upgrade <change>      Upgrade evidence v1 to executable-ready v2
   claude-foundation sandbox create|sync|apply <change>
                                                   Manage the isolated workspace
   claude-foundation land check|archive <change>    Check or complete landing
@@ -150,17 +161,21 @@ case "${1:-}" in
   packet)
     shift; need_arg "packet" "${1:-}"
     run_runtime read packet "$@" ;;
+  metrics)
+    shift; need_arg "metrics" "${1:-}"
+    run_runtime read metrics "$@" ;;
   validate)
     shift; need_arg "validate" "${1:-}"
     run_runtime write validate "$@" ;;
   proof)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|finalize>}" "${1:-}"
+    need_arg "proof ${sub:-<plan|execute|finalize>}" "${1:-}"
     case "$sub" in
       plan) run_runtime write proof-plan "$@" ;;
+      execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
-      *) fail "proof requires 'plan' or 'finalize'" ;;
+      *) fail "proof requires 'plan', 'execute', or 'finalize'" ;;
     esac ;;
   evidence)
     shift
@@ -172,7 +187,10 @@ case "${1:-}" in
       record)
         [ "$#" -ge 3 ] || fail "evidence record requires <change> <provider> <status>"
         run_runtime write receipt "$@" ;;
-      *) fail "evidence requires 'run' or 'record'" ;;
+      upgrade)
+        need_arg "evidence upgrade" "${1:-}"
+        run_runtime write evidence-upgrade "$@" ;;
+      *) fail "evidence requires 'run', 'record', or 'upgrade'" ;;
     esac ;;
   sandbox)
     shift
@@ -197,7 +215,7 @@ case "${1:-}" in
   runtime)
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
-    case "$1" in version|api-version|hash|doctor|packet) access=read ;; *) access=write ;; esac
+    case "$1" in version|api-version|hash|doctor|packet|metrics) access=read ;; *) access=write ;; esac
     run_runtime "$access" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)
     sub="$1"; shift

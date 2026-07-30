@@ -101,9 +101,12 @@ claude-foundation providers
 claude-foundation doctor
 claude-foundation changes
 claude-foundation packet <change>
+claude-foundation metrics <change>
 claude-foundation validate <change>
 claude-foundation proof plan <change>
+claude-foundation proof execute <change>
 claude-foundation proof finalize <change>
+claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
 claude-foundation sandbox create <change>
 claude-foundation land check <change>
@@ -118,6 +121,10 @@ file โดยตรงเป็น compatibility fallback ได้
 เฉพาะ path, revision, claims, required providers, task count, hash และ budget
 ไม่แบก conversation ที่สะสมมาทั้งหมด จึงเริ่ม execution context ใหม่และทำงาน
 ต่อได้โดย orchestrator ไม่ต้อง replay ทั้ง run
+
+`metrics <change>` สรุป wall time, phase operations, unique provider executions,
+requests, tokens, cache, cost และ orchestrator token share จากข้อมูลที่วัดได้
+field ที่ยังไม่มี source จะคงเป็น `null`
 
 ## `/investigate` — สำรวจโดยยังไม่ผูกมัด
 
@@ -318,11 +325,11 @@ Prove จะ:
 2. คำนวณ workspace hash
 3. อ่าน claims จาก `evidence.yaml`
 4. reuse receipts ที่ยังตรงกับ hash
-5. รัน provider ที่หายหรือ stale
+5. schedule provider ที่หายหรือ stale พร้อมกันเมื่อ resource ไม่ชนกัน
 6. ตรวจ test discovery
 7. รัน required full suite หลัง code converge
 8. เรียก independent review เฉพาะเมื่อ risk trigger
-9. สร้าง `proof.json`
+9. deduplicate command ที่เหมือนกันและสร้าง `proof.json`
 
 `tasks.md` เก็บเฉพาะ implementation work เท่านั้น `/prove` และ `/land`
 เป็น lifecycle commands ไม่ใช่ checkbox เพราะถ้าใส่ไว้ใน ledger จะเกิด gate
@@ -362,6 +369,19 @@ harness ทั้งหมด Prove สามารถเรียก tool เ�
 หรือบันทึก receipt จาก external system ได้ แต่ละ change เลือกเฉพาะ provider
 ที่ observable claim ต้องใช้ ไม่ได้รันทั้งหมดโดยอัตโนมัติ
 
+Evidence v2 กำหนด project-owned adapters ใน `evidence.yaml` การใช้งานปกติคือ:
+
+```bash
+claude-foundation doctor --change add-profile
+claude-foundation proof execute add-profile
+```
+
+`test-discovery` สร้าง test และ discovery receipts จาก command เดียว
+ส่วน `playwright` ใช้ Playwright version ที่ project lock ไว้, บังคับ structured
+claim annotations และบันทึกเป็น `browser-automation` ไม่อ้างว่าเป็น physical
+OS input Foundation จะไม่ติดตั้ง test framework หรือ browser ให้อัตโนมัติ
+Evidence v1 ยังใช้ manual receipts ได้และ upgrade ด้วย `evidence upgrade`
+
 เวลารัน executable provider ต้องระบุ claim scope ก่อน command:
 
 ```bash
@@ -381,6 +401,9 @@ claude-foundation evidence record add-profile browser pass \
   --claims declared --input-mode os-input \
   --foreground-required yes --foreground-available yes
 ```
+
+ดูรายละเอียด evidence v2, Playwright claim mapping, resource locks, structured
+reports และ cache ที่ [Executable evidence adapters](.claude/harness/EVIDENCE.md)
 
 Receipts อยู่ที่:
 
@@ -435,6 +458,9 @@ next: /land add-profile
 → sync delta specs
 → archive change
 ```
+
+`land archive` ทำ apply และ archive ใน transaction เดียว `sandbox apply`
+ยังเรียกแยกเพื่อตรวจสอบได้ แต่ไม่จำเป็นต้องเรียกก่อนแล้ว
 
 Land จะไม่:
 

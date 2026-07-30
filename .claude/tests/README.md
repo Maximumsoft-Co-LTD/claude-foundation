@@ -13,8 +13,8 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
 | Suite | Contract |
 |---|---|
-| `harness/run-harness-tests.sh` | Change packets, hashing, claim-scoped receipts, browser/mutation boundaries, telemetry identity, proof invalidation, copy/worktree apply, and idempotent archive |
-| `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI routing/API compatibility, doctor, packet handoff, and Cursor adapter |
+| `harness/run-harness-tests.sh` | Change packets, hashing, evidence v1/v2, executable adapters, command dedup, parallel/resource-locked scheduling, Playwright claim mapping, proof invalidation, transactional apply, and idempotent archive |
+| `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 
 Historical phase-orchestrator fixtures remain under `bench/`, `docs/`,

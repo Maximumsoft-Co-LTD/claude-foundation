@@ -93,7 +93,8 @@ stale. Never continue with different change artifacts in target and sandbox.
 7. run the required full suite once after convergence;
 8. perform independent review only when risk triggers it;
 9. re-run evidence invalidated by a proof-time edit;
-10. run `claude-foundation proof finalize <change>`.
+10. run `claude-foundation proof execute <change>` to schedule configured
+    adapters and finalize, or record explicitly external receipts first.
 
 Provider results are `pass|fail|inconclusive|error`. Required `inconclusive`
 evidence blocks landing. A mutation crash is not a behavioral kill. Required
@@ -118,9 +119,10 @@ speculative expansion; at 100% stop and split or re-scope. Required proof remain
 Landing is explicit and transactional:
 
 1. `claude-foundation land check <change>` rejects stale or incomplete proof;
-2. apply only the proven sandbox diff;
-3. verify the applied workspace hash;
-4. use OpenSpec archive/spec sync;
+2. `claude-foundation land archive <change>` applies only the proven sandbox
+   diff when needed;
+3. the same transaction verifies the applied workspace hash;
+4. the same transaction uses OpenSpec archive/spec sync;
 5. record commit/PR only when explicitly authorized;
 6. finalize metrics and clean the sandbox.
 

@@ -17,10 +17,13 @@ Read [the change loop](../orchestrator.md), then:
    catalog by default.
 4. Use the selected OpenSpec schema to complete proposal, delta specs, design
    when needed, and `tasks.md`.
-5. Write claims to `evidence.yaml`; every observable acceptance scenario has a
-   stable claim ID and one or more provider capabilities.
+5. Write evidence v2 claims and provider adapters to `evidence.yaml`; every
+   observable acceptance scenario has a stable claim ID and one or more
+   provider capabilities. Never guess or auto-install a project command.
 6. Run `claude-foundation validate <change>`.
-7. If `.foundation/runtime/<change>.json` names an active `worktree` or `copy`
+7. Run `claude-foundation doctor --change <change>` so missing executable
+   providers or project-owned Playwright are visible before Build.
+8. If `.foundation/runtime/<change>.json` names an active `worktree` or `copy`
    workspace, run `claude-foundation sandbox sync <change>`.
    This preserves only unchanged completed task lines, updates the sandbox
    change packet, and invalidates prior proof.

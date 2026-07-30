@@ -102,9 +102,12 @@ claude-foundation providers
 claude-foundation doctor
 claude-foundation changes
 claude-foundation packet <change>
+claude-foundation metrics <change>
 claude-foundation validate <change>
 claude-foundation proof plan <change>
+claude-foundation proof execute <change>
 claude-foundation proof finalize <change>
+claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
 claude-foundation sandbox create <change>
 claude-foundation land check <change>
@@ -119,6 +122,10 @@ fallback when the packaged CLI is unavailable.
 contains paths, revision, claims, required providers, task count, hash, and
 budget—not the accumulated conversation—so a new execution context can resume
 without making the orchestrator replay the whole run.
+
+`metrics <change>` summarizes measured wall time, phase operations, unique
+provider executions, requests, tokens, cache, cost, and orchestrator token
+share. Fields remain `null` until their source is connected.
 
 ## `/investigate` — explore without committing
 
@@ -320,11 +327,12 @@ Prove:
 2. computes the relevant workspace hash;
 3. resolves claims from `evidence.yaml`;
 4. reuses receipts whose hash and provider version still match;
-5. executes missing or stale providers;
+5. schedules configured missing or stale providers concurrently when resources
+   do not conflict;
 6. verifies test discovery;
 7. runs the required full suite after convergence;
 8. invokes independent review only when risk triggers it;
-9. creates `proof.json`.
+9. deduplicates identical commands and emits `proof.json`.
 
 `tasks.md` contains implementation work only. `/prove` and `/land` are
 lifecycle commands, not checkboxes; putting them in the ledger creates a
@@ -364,6 +372,21 @@ the repository's existing tool with `run-provider`, or record a receipt from an
 external system. A change selects only the providers justified by its observable
 claims; it does not run all providers by default.
 
+Evidence v2 configures project-owned adapters in `evidence.yaml`. The normal
+operator path is:
+
+```bash
+claude-foundation doctor --change add-profile
+claude-foundation proof execute add-profile
+```
+
+`test-discovery` emits test and discovery receipts from one command.
+The `playwright` adapter runs the project's locked Playwright installation,
+requires structured claim annotations, and records `browser-automation` rather
+than pretending automation is physical OS input. Foundation never installs a
+test framework or browser automatically. Evidence v1 remains valid for manual
+receipts and can be upgraded with `evidence upgrade`.
+
 For an executable provider, declare the claim scope before the command:
 
 ```bash
@@ -382,6 +405,9 @@ claude-foundation evidence record add-profile browser pass \
   --claims declared --input-mode os-input \
   --foreground-required yes --foreground-available yes
 ```
+
+See [Executable evidence adapters](.claude/harness/EVIDENCE.md) for evidence v2,
+Playwright claim mapping, resource locks, structured reports, and cache rules.
 
 Receipts are stored under:
 
@@ -436,6 +462,10 @@ Verify proof freshness
 → Synchronize delta specs
 → Archive the change
 ```
+
+`land archive` performs the apply and archive transaction itself; calling
+`sandbox apply` first remains available for inspection but is no longer
+required.
 
 Land never:
 

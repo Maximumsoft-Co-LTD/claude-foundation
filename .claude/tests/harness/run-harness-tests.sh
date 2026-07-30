@@ -28,6 +28,21 @@ assert_contains "provider catalog includes observability" "$providers" "observab
 assert_contains "provider catalog includes deployment" "$providers" "deployment"
 assert_contains "provider catalog includes supply chain" "$providers" "dependency-supply-chain"
 
+# Existing evidence v1 remains readable and has an explicit, non-destructive
+# upgrade into the executable-ready v2 envelope.
+node .claude/harness/foundation.mjs new 'Legacy evidence' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve legacy-evidence \
+  --impact low --coupling isolated >/dev/null
+jq 'del(.providers) | .version = 1' \
+  openspec/changes/legacy-evidence/evidence.yaml > "$TMP/legacy-evidence.json"
+cp "$TMP/legacy-evidence.json" openspec/changes/legacy-evidence/evidence.yaml
+assert_cmd_zero "evidence v1 remains valid" \
+  node .claude/harness/foundation.mjs validate legacy-evidence
+assert_cmd_zero "evidence v1 upgrades explicitly" \
+  node .claude/harness/foundation.mjs evidence-upgrade legacy-evidence
+assert_eq "evidence upgrade writes v2" "2" \
+  "$(jq -r '.version' openspec/changes/legacy-evidence/evidence.yaml)"
+
 output="$(node .claude/harness/foundation.mjs new 'Profile owner update')"
 assert_contains "creates standard change" "$output" "CREATED profile-owner-update"
 assert_file_exists "runtime state created" ".foundation/runtime/profile-owner-update.json"
@@ -112,6 +127,159 @@ done
 assert_cmd_zero "new provider receipts produce a complete proof" \
   node .claude/harness/foundation.mjs prove production-provider-coverage
 
+# Evidence v2 executes a DAG, emits test+discovery from one process, and
+# deduplicates an identical command used by another read-only provider.
+node .claude/harness/foundation.mjs new 'Executable evidence' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve executable-evidence \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' \
+  'count=0' \
+  '[ ! -f .foundation/provider-count.txt ] || count="$(cat .foundation/provider-count.txt)"' \
+  'count=$((count + 1))' \
+  'printf "%s\\n" "$count" > .foundation/provider-count.txt' \
+  'printf "%s\\n" "{\"numTotalTests\":4}"' > provider-fixture.sh
+chmod +x provider-fixture.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "test": {"adapter":"test-discovery","command":["sh","provider-fixture.sh"],"minimum":4},' \
+  '    "static-analysis": {"adapter":"command","command":["sh","provider-fixture.sh"]}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"executable-outcome","scenario":"Configured evidence passes","impact":"low","capabilities":["test","static-analysis"]}' \
+  '  ]' \
+  '}' > openspec/changes/executable-evidence/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/executable-evidence/tasks.md
+rm openspec/changes/executable-evidence/tasks.md.bak
+assert_cmd_zero "proof execute runs configured evidence DAG" \
+  node .claude/harness/foundation.mjs proof-execute executable-evidence
+assert_eq "identical provider command executes once" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
+assert_file_exists "combined adapter emits test receipt" \
+  .foundation/receipts/executable-evidence/test.json
+assert_file_exists "combined adapter emits discovery receipt" \
+  .foundation/receipts/executable-evidence/discovery.json
+assert_file_exists "DAG emits static receipt" \
+  .foundation/receipts/executable-evidence/static-analysis.json
+assert_cmd_zero "proof execute reuses valid receipts" \
+  node .claude/harness/foundation.mjs proof-execute executable-evidence
+assert_eq "receipt cache avoids a second command" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
+sed -i.bak 's/"minimum":4/"minimum":5/' \
+  openspec/changes/executable-evidence/evidence.yaml
+rm openspec/changes/executable-evidence/evidence.yaml.bak
+plan="$(node .claude/harness/foundation.mjs proof-plan executable-evidence)"
+assert_contains "adapter policy change invalidates receipt fingerprint" \
+  "$plan" "provider-fingerprint-stale"
+sed -i.bak 's/"minimum":5/"minimum":4/' \
+  openspec/changes/executable-evidence/evidence.yaml
+rm openspec/changes/executable-evidence/evidence.yaml.bak
+
+node .claude/harness/foundation.mjs new 'Parallel evidence' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve parallel-evidence \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' \
+  'touch ".foundation/parallel-$1"' \
+  'tries=0' \
+  'while [ ! -f ".foundation/parallel-$2" ] && [ "$tries" -lt 50 ]; do' \
+  '  sleep 0.02' \
+  '  tries=$((tries + 1))' \
+  'done' \
+  '[ -f ".foundation/parallel-$2" ]' > parallel-provider.sh
+chmod +x parallel-provider.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "static-analysis": {"adapter":"command","command":["sh","parallel-provider.sh","static","security"]},' \
+  '    "security-static": {"adapter":"command","command":["sh","parallel-provider.sh","security","static"]}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"parallel-outcome","scenario":"Independent checks converge","impact":"low","capabilities":["static-analysis","security-static"]}' \
+  '  ]' \
+  '}' > openspec/changes/parallel-evidence/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/parallel-evidence/tasks.md
+rm openspec/changes/parallel-evidence/tasks.md.bak
+assert_cmd_zero "independent providers execute concurrently" \
+  node .claude/harness/foundation.mjs proof-execute parallel-evidence
+
+node .claude/harness/foundation.mjs new 'Locked evidence' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve locked-evidence \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' \
+  'if [ "$1" = "mutation" ]; then' \
+  '  touch .foundation/mutation-active' \
+  '  sleep 0.1' \
+  '  rm .foundation/mutation-active' \
+  '  touch .foundation/mutation-done' \
+  '  exit 0' \
+  'fi' \
+  '[ ! -f .foundation/mutation-active ] && [ -f .foundation/mutation-done ]' \
+  > lock-provider.sh
+chmod +x lock-provider.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "mutation": {"adapter":"command","command":["sh","lock-provider.sh","mutation"],"classification":"behavioral-kill"},' \
+  '    "static-analysis": {"adapter":"command","command":["sh","lock-provider.sh","static"]}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"locked-outcome","scenario":"Mutation never overlaps workspace readers","impact":"low","capabilities":["mutation","static-analysis"]}' \
+  '  ]' \
+  '}' > openspec/changes/locked-evidence/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/locked-evidence/tasks.md
+rm openspec/changes/locked-evidence/tasks.md.bak
+assert_cmd_zero "workspace-write resource serializes mutation" \
+  node .claude/harness/foundation.mjs proof-execute locked-evidence
+
+# The Playwright adapter requires structured claim annotations. A deterministic
+# fake reporter pins parsing without downloading browser binaries in unit CI.
+node .claude/harness/foundation.mjs new 'Browser adapter' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve browser-adapter \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' \
+  'printf "%s\\n" "{\"suites\":[{\"specs\":[{\"tests\":[{\"annotations\":[{\"type\":\"claim\",\"description\":\"browser-outcome\"}],\"results\":[{\"status\":\"passed\"}]}]}]}]}"' \
+  > fake-playwright.sh
+chmod +x fake-playwright.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "browser": {"adapter":"playwright","command":["sh","fake-playwright.sh"],"project":"chromium","inputMode":"browser-automation"}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"browser-outcome","scenario":"Rendered behavior passes","impact":"low","capabilities":["browser"]}' \
+  '  ]' \
+  '}' > openspec/changes/browser-adapter/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/browser-adapter/tasks.md
+rm openspec/changes/browser-adapter/tasks.md.bak
+if node .claude/harness/foundation.mjs doctor \
+  --change browser-adapter > "$TMP/browser-doctor.txt" 2>&1; then
+  fail "doctor catches missing project-owned Playwright dependency"
+else
+  pass "doctor catches missing project-owned Playwright dependency"
+fi
+assert_file_contains "doctor gives Playwright dependency action" \
+  "$TMP/browser-doctor.txt" "install and lock @playwright/test"
+printf '%s\n' '{"devDependencies":{"@playwright/test":"1.0.0"}}' > package.json
+mkdir -p node_modules/.bin
+cp fake-playwright.sh node_modules/.bin/playwright
+chmod +x node_modules/.bin/playwright
+assert_cmd_zero "Playwright adapter maps annotated claims" \
+  node .claude/harness/foundation.mjs proof-execute browser-adapter
+assert_file_contains "browser receipt records automation input mode" \
+  .foundation/receipts/browser-adapter/browser.json '"inputMode": "browser-automation"'
+sed -i.bak 's/browser-outcome/browser-missing-annotation/g' \
+  openspec/changes/browser-adapter/evidence.yaml
+rm openspec/changes/browser-adapter/evidence.yaml.bak
+if node .claude/harness/foundation.mjs proof-execute browser-adapter >/dev/null 2>&1; then
+  fail "Playwright adapter rejects missing claim annotations"
+else
+  pass "Playwright adapter rejects missing claim annotations"
+fi
+assert_file_contains "missing browser claim is inconclusive, not guessed pass" \
+  .foundation/receipts/browser-adapter/browser.json '"status": "inconclusive"'
+
 output="$(node .claude/harness/foundation.mjs new 'Tiny copy edit' --rapid)"
 assert_contains "creates rapid change" "$output" "foundation-rapid"
 node .claude/harness/foundation.mjs resolve tiny-copy-edit --impact low --coupling isolated --security auth >/dev/null
@@ -158,10 +326,6 @@ rm "$copy_path/openspec/changes/copy-sandbox/tasks.md.bak"
 node .claude/harness/foundation.mjs receipt copy-sandbox test pass >/dev/null
 node .claude/harness/foundation.mjs receipt copy-sandbox discovery pass --discovered 1 --minimum 1 >/dev/null
 node .claude/harness/foundation.mjs prove copy-sandbox >/dev/null
-assert_cmd_zero "isolated copy applies transactionally" \
-  node .claude/harness/foundation.mjs sandbox apply copy-sandbox
-copy_applied="$(tr -d '\n' < app.txt)"
-assert_eq "non-git target matches isolated copy" "copy-applied" "$copy_applied"
 
 mkdir -p "$TMP/bin"
 cp /dev/null "$TMP/bin/openspec"
@@ -177,6 +341,10 @@ printf '%s\n' '#!/usr/bin/env sh' \
 chmod +x "$TMP/bin/openspec"
 archive_output="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs archive copy-sandbox)"
 assert_contains "archive delegates once to pinned OpenSpec" "$archive_output" "ARCHIVED copy-sandbox"
+assert_contains "archive applies isolated workspace transactionally" "$archive_output" "APPLIED copy-sandbox"
+copy_applied="$(tr -d '\n' < app.txt)"
+assert_eq "non-git target matches isolated copy" "copy-applied" "$copy_applied"
+assert_file_absent "archive cleans the applied temporary copy" "$copy_path"
 archive_again="$(node .claude/harness/foundation.mjs archive copy-sandbox)"
 assert_contains "archive is idempotent after spec sync" "$archive_again" "ALREADY ARCHIVED copy-sandbox"
 

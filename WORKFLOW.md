@@ -72,13 +72,18 @@ to the workspace hash.
 
 ```bash
 claude-foundation proof plan <change>
-claude-foundation evidence run <change> test --claims declared -- npm test
-claude-foundation evidence record <change> discovery pass --discovered 42 --minimum 1
-claude-foundation proof finalize <change>
+claude-foundation proof execute <change>
 ```
 
 Required evidence that is failed, missing, stale, erroneous, or inconclusive
 blocks landing.
+
+Evidence v2 adapters execute project-owned commands. `test-discovery` produces
+two receipts from one process; `playwright` consumes a structured JSON report
+and requires claim annotations. The scheduler reuses valid receipts,
+deduplicates identical commands, and runs providers concurrently only when
+their declared resources do not conflict. Evidence v1 remains manual-compatible
+and upgrades explicitly with `claude-foundation evidence upgrade <change>`.
 
 ### `/land <change>`
 
@@ -88,7 +93,6 @@ pinned OpenSpec CLI.
 
 ```bash
 claude-foundation land check <change>
-claude-foundation sandbox apply <change>  # worktree changes
 claude-foundation land archive <change>
 ```
 
@@ -188,6 +192,9 @@ The provider protocol is deny-by-default: a provider may cover only claims that
 declare it, executable providers require an explicit `--claims` scope, and a
 provider protocol/version/fingerprint change invalidates old receipts. Browser
 receipts record `foreground-required` and `foreground-available` independently.
+Playwright uses the distinct `browser-automation` input mode. Foundation does
+not install Playwright or browser binaries; `doctor --change <id>` checks the
+project-owned command, dependency, configuration, and readiness declaration.
 
 ## Review
 
@@ -222,6 +229,10 @@ Native CLI operations append duration and exit state to
 `.foundation/logs/<change>/operations.jsonl`. Request, token, cache, and cost
 fields stay `null` until an external runtime submits uniquely identified
 `event` records; unknown usage is never reported as zero.
+
+Use `claude-foundation metrics <change>` to aggregate phase timing, unique
+provider execution time, request/token/cache/cost totals, and orchestrator token
+share without double-counting receipts emitted by one combined execution.
 
 `claude-foundation packet <change>` emits the bounded handoff for a fresh
 execution context: active paths, revision, claims, providers, task count, hash,
@@ -273,7 +284,7 @@ corroborated by code, tests, or accepted contracts may be promoted.
 `claude-foundation` is the stable public control surface. It searches upward
 from the working directory, or from `--project <path>`, and forwards to the
 runtime installed in that project so schemas and runtime behavior stay aligned.
-Use `proof plan|finalize`, `evidence run|record`, `sandbox create|sync|apply`,
+Use `proof plan|execute|finalize`, `evidence run|record|upgrade`, `sandbox create|sync|apply`,
 and `land check|archive` rather than calling the runtime file directly.
 
 Projects installed directly from source can use

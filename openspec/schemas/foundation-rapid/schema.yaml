@@ -19,7 +19,7 @@ artifacts:
     generates: evidence.yaml
     description: Unit or static evidence claims
     template: evidence.yaml
-    instruction: Map the intended outcome to unit or static evidence.
+    instruction: Map the intended outcome to evidence and configure project-owned executable provider adapters when available.
     requires: [proposal]
 
 apply:
