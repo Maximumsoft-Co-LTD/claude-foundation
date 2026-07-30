@@ -1,0 +1,61 @@
+{
+  "source": "hand-authored",
+  "note": "Bank for prompts/01-vague-feature.txt. HAND-AUTHORED, not captured: it encodes the decisions a real interview on this prompt has to reach, in the exact schema capture-interview.sh emits. Prefer a real capture when you have one — `sh capture-interview.sh --list` finds sessions that hold one, and a captured bank carries the wording a human actually chose rather than the wording a test author guessed. Answers are worded to start with distinctive tokens, because run-replay.sh checks the spec for the first two words of each chosen option.",
+  "calls": 3,
+  "questions": 4,
+  "answered": 4,
+  "exchanges": [
+    {
+      "call_seq": 1,
+      "seq": 1,
+      "header": "Scope",
+      "question": "What should the history actually record?",
+      "multiSelect": false,
+      "options": [
+        "Completed and deleted items only",
+        "Every edit including text changes",
+        "Completed, deleted, and reordered"
+      ],
+      "answer": "Completed and deleted items only"
+    },
+    {
+      "call_seq": 1,
+      "seq": 2,
+      "header": "Retention",
+      "question": "How much history should be kept?",
+      "multiSelect": false,
+      "options": [
+        "Last 50 entries, oldest dropped",
+        "Everything, never pruned",
+        "Last 7 days"
+      ],
+      "answer": "Last 50 entries, oldest dropped"
+    },
+    {
+      "call_seq": 2,
+      "seq": 3,
+      "header": "Storage",
+      "question": "Where should the history live?",
+      "multiSelect": false,
+      "options": [
+        "localStorage alongside the task list",
+        "IndexedDB",
+        "In memory only, lost on reload"
+      ],
+      "answer": "localStorage alongside the task list"
+    },
+    {
+      "call_seq": 3,
+      "seq": 4,
+      "header": "Surface",
+      "question": "How does the user get to it?",
+      "multiSelect": false,
+      "options": [
+        "Collapsible panel below the list",
+        "Separate page",
+        "Modal dialog"
+      ],
+      "answer": "Collapsible panel below the list"
+    }
+  ]
+}

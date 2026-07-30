@@ -36,12 +36,26 @@ run "scenarios"        "$HERE/scenarios/run-scenario-tests.sh"
 run "doc-consistency"  "$HERE/docs/run-doc-consistency.sh"
 run "bench-logic"      "$HERE/bench/tests/run-bench-tests.sh"
 run "ledger"           "$HERE/ledger/run-ledger-tests.sh"
+run "interview"        "$HERE/interview/run-interview-tests.sh"
 
 if [ "${CLAUDE_E2E:-0}" = "1" ]; then
   run "e2e (live)"     "$HERE/e2e/run-e2e.sh" --run
 else
   echo "▶ e2e (live) — SKIPPED. Set CLAUDE_E2E=1 to run live /dev scenarios (costs tokens)."
   echo "    Preview the plan with: sh $HERE/e2e/run-e2e.sh"
+  echo
+fi
+
+# The interview replay is a SEPARATE live opt-in from e2e, deliberately. e2e runs
+# fully-specified prompts that suppress the interview; the replay runs vague ones
+# that force it and answers from a recorded bank, so the two exercise opposite
+# halves of Phase 1 and one is not a substitute for the other.
+if [ "${CLAUDE_REPLAY:-0}" = "1" ]; then
+  run "interview replay (live)" "$HERE/interview/run-replay.sh" --run
+else
+  echo "▶ interview replay (live) — SKIPPED. Set CLAUDE_REPLAY=1 to drive a real interview + gate (costs tokens)."
+  echo "    Preview the plan with: sh $HERE/interview/run-replay.sh"
+  echo "    Test the gate's reject path with: sh $HERE/interview/run-replay.sh --run --gate reject"
   echo
 fi
 

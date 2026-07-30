@@ -18,12 +18,24 @@ Dependency: `jq` (and `python3` for a couple of nested-JSON hook checks). POSIX
 | **1 — deterministic** | hooks behave; every artifact is structurally valid; a run conforms to the type-aware phase matrix | free, sub-second | `hooks/tests/` (existing) + `scenarios/` |
 | **1 — doc consistency** | the docs that *drive* the prose workflow don't rot: version single-sourced, agent model pins valid, `phase-matrix.tsv` ↔ `WORKFLOW.md` in sync, no shipped file cites a path or reference that isn't there | free | `docs/` |
 | **1 — ledger** | the repo context ledger can be pruned without data loss: a dead `path#anchor` goes, every survivor stays byte-identical, and anything unverifiable is kept | free | `ledger/` |
+| **1 — bench logic** | the scorecard math is right before any live run pays for it: medians, the ratchet, the A/B, the oracle-over-judge ordering, `blocked` ≠ failure, and the context axis (including the `requestId` dedup that would otherwise overstate context 1.9×) | free | `bench/tests/` |
+| **1 — interview replay** | the answer matcher that lets a headless run be driven through a real interview: the match ladder, one-answer-one-use, gate forcing (incl. **reject**), and the inert-without-a-bank safety paths | free | `interview/` |
 | **2 — e2e (live)** | a real `/dev` run on a fresh sandbox produces valid, on-axis artifacts | tokens + `claude` CLI | `e2e/` |
+| **2 — interview replay (live)** | `/dev` driven through its **real interview and real gate** from a recorded bank, on a deliberately vague prompt and **without `--yes`** | tokens | `interview/run-replay.sh` |
 | **3 — judge** | the artifacts are *good*, not just well-shaped (AC quality, plan↔spec fit, task executability) | tokens | `e2e/judge/` |
+| **3 — bench (live)** | what a run *costs and delivers* across four axes — quality, speed, cost, context | tokens | `bench/` |
 
 Why the split: most of the workflow is prose the model interprets live, so it
 can't be unit-tested directly. Layer 1 pins everything *around* that prose (the
 deterministic surface). Layers 2–3 exercise the prose itself by running it.
+
+**The efficiency benchmark measures four axes — quality, speed, cost, context** —
+and `bench/README.md` is the contract for what to trust in each. Two rules worth
+knowing before reading any scorecard: quality leads with the deterministic
+`oracle_*` because the model judge has passed twelve diffs that objectively failed
+an acceptance criterion, and the **context axis costs no tokens** — it is read off
+the transcript the CLI writes anyway, which also means it can be recovered for runs
+that already happened (`bench/backfill-context.sh`).
 
 ## The executable matrix
 
@@ -76,4 +88,19 @@ as a best-effort smoke, not a merge gate. Preview without spending tokens:
 ```sh
 sh .claude/tests/e2e/run-e2e.sh          # dry-run: prints the plan
 sh .claude/tests/e2e/run-e2e.sh --run    # live
+```
+
+**e2e suppresses the interview on purpose; `interview/` is the suite that tests
+it.** The two are opposites and neither substitutes for the other: e2e checks that
+a fully-specified run produces a conformant artifact set, while `interview/`
+answers a *vague* prompt's questions from a bank recorded off a real session — and
+runs the gate for real, `--yes` omitted, so `--gate reject` reaches a branch e2e
+and the benchmark structurally cannot. See `interview/README.md`, including the
+seam it does not close (the hook denies the tool and returns the answers as the
+denial reason rather than answering it).
+
+```sh
+sh .claude/tests/interview/run-replay.sh                    # dry-run
+CLAUDE_REPLAY=1 sh .claude/tests/run-all.sh                 # + live replay
+sh .claude/tests/interview/run-replay.sh --run --gate reject # the rejection path
 ```
