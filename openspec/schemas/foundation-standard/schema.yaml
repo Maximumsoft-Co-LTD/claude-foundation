@@ -29,11 +29,17 @@ artifacts:
     requires: [proposal, specs, design]
   - id: evidence
     generates: evidence.yaml
-    description: Claims and required evidence capabilities
+    description: Stable behavioral claims and required evidence capabilities
     template: evidence.yaml
-    instruction: Map every observable scenario to stable claims and configure project-owned executable provider adapters when available.
+    instruction: Map every observable scenario to stable claims. Discovery is implicit for test claims.
     requires: [proposal, specs]
+  - id: execution
+    generates: execution.yaml
+    description: Executable provider, report, service, and readiness wiring
+    template: execution.yaml
+    instruction: Configure project-owned adapters separately from the behavioral contract.
+    requires: [evidence]
 
 apply:
-  requires: [tasks, evidence]
+  requires: [tasks, evidence, execution]
   tracks: tasks.md

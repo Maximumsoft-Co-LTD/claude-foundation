@@ -42,6 +42,15 @@ assert_file_contains() {
   if grep -qF -- "$3" "$2" 2>/dev/null; then pass "$1"; else fail "$1 — '$3' not in $(basename "$2")"; fi
 }
 
+# assert_file_not_contains <label> <path> <fixed-substring>
+assert_file_not_contains() {
+  if grep -qF -- "$3" "$2" 2>/dev/null; then
+    fail "$1 — unexpected '$3' in $(basename "$2")"
+  else
+    pass "$1"
+  fi
+}
+
 # assert_contains <label> <haystack-string> <fixed-substring>
 assert_contains() {
   if printf '%s' "$2" | grep -qF -- "$3"; then pass "$1"; else fail "$1 — '$3' not found in output"; fi

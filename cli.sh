@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=3
+EXPECTED_RUNTIME_API=5
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -56,7 +56,7 @@ run_runtime() {
   case "${1:-}" in
     new|resolve|validate|evidence-upgrade) phase="change" ;;
     sandbox) phase="build" ;;
-    proof-plan|proof-execute|prove|receipt|run-provider) phase="prove" ;;
+    proof-plan|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
     land-check|archive) phase="land" ;;
   esac
   FOUNDATION_TELEMETRY=1 FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
@@ -93,20 +93,26 @@ claude-foundation — OpenSpec-native software-change harness
 Usage:
   claude-foundation init [target-path] [options]   Install the change loop (default target: current dir)
   claude-foundation providers                     List evidence provider contracts
-  claude-foundation doctor [--require-archive] [--change <id>]
+  claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>]
                                                   Check runtime, providers, and archive readiness
   claude-foundation changes                       List active changes
   claude-foundation packet <change>               Print a compact phase handoff
   claude-foundation metrics <change>              Summarize measured phase/provider cost
+  claude-foundation telemetry sync <change> [transcript.jsonl]
+                                                  Incrementally ingest native Claude request usage
+  claude-foundation telemetry import <change> <file> [--format generic|codex|claude]
+                                                  Import authoritative host usage without prompts
   claude-foundation validate <change>              Validate a change packet
   claude-foundation proof plan <change>            Show missing or stale evidence
+  claude-foundation proof preflight <change>       Validate execution topology without running it
+  claude-foundation proof audit <change>           Verify durable proof and artifact digests
   claude-foundation proof execute <change>         Run configured evidence and finalize proof
   claude-foundation proof finalize <change>        Create a proof from valid receipts
   claude-foundation evidence run <change> <provider> --claims <scope> -- <command>
                                                   Run a provider and record its receipt
   claude-foundation evidence record <change> <provider> <status> [options]
                                                   Record external provider evidence
-  claude-foundation evidence upgrade <change>      Upgrade evidence v1 to executable-ready v2
+  claude-foundation evidence upgrade <change>      Separate legacy claims and execution wiring
   claude-foundation sandbox create|sync|apply <change>
                                                   Manage the isolated workspace
   claude-foundation land check|archive <change>    Check or complete landing
@@ -164,18 +170,32 @@ case "${1:-}" in
   metrics)
     shift; need_arg "metrics" "${1:-}"
     run_runtime read metrics "$@" ;;
+  telemetry)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    case "$sub" in
+      sync)
+        [ "$#" -ge 1 ] || fail "telemetry sync requires <change> [transcript.jsonl]"
+        run_runtime write telemetry-sync "$@" ;;
+      import)
+        [ "$#" -ge 2 ] || fail "telemetry import requires <change> <file>"
+        run_runtime write telemetry-import "$@" ;;
+      *) fail "telemetry requires 'sync' or 'import'" ;;
+    esac ;;
   validate)
     shift; need_arg "validate" "${1:-}"
     run_runtime write validate "$@" ;;
   proof)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|execute|finalize>}" "${1:-}"
+    need_arg "proof ${sub:-<plan|preflight|execute|finalize|audit>}" "${1:-}"
     case "$sub" in
       plan) run_runtime write proof-plan "$@" ;;
+      preflight) run_runtime write proof-preflight "$@" ;;
       execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
-      *) fail "proof requires 'plan', 'execute', or 'finalize'" ;;
+      audit) run_runtime read proof-audit "$@" ;;
+      *) fail "proof requires 'plan', 'preflight', 'execute', 'finalize', or 'audit'" ;;
     esac ;;
   evidence)
     shift

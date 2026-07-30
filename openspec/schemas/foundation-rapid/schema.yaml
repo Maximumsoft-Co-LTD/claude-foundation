@@ -17,11 +17,17 @@ artifacts:
     requires: [proposal]
   - id: evidence
     generates: evidence.yaml
-    description: Unit or static evidence claims
+    description: Stable unit or static evidence claims
     template: evidence.yaml
-    instruction: Map the intended outcome to evidence and configure project-owned executable provider adapters when available.
+    instruction: Map the intended outcome to evidence. Discovery is implicit for test claims.
     requires: [proposal]
+  - id: execution
+    generates: execution.yaml
+    description: Executable provider, report, service, and readiness wiring
+    template: execution.yaml
+    instruction: Configure project-owned adapters separately from the behavioral contract.
+    requires: [evidence]
 
 apply:
-  requires: [tasks, evidence]
+  requires: [tasks, evidence, execution]
   tracks: tasks.md

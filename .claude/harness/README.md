@@ -18,7 +18,8 @@ Playwright, linters, or security scanners produce evidence.
 | File | Role |
 |---|---|
 | `foundation.mjs` | Runtime used by the public `claude-foundation` CLI |
-| `EVIDENCE.md` | Evidence v2 provider and adapter reference |
+| `AGENT.md` | Small portable contract loaded by Claude, Codex, and other agents |
+| `EVIDENCE.md` | Evidence contract, execution adapter, and proof reference |
 | `README.md` | Runtime overview and operator guide |
 
 Use the public CLI instead of invoking `foundation.mjs` directly. The CLI finds
@@ -39,13 +40,13 @@ maintain its own versions.
 Check a project before starting:
 
 ```bash
-claude-foundation doctor
+claude-foundation doctor --stage change
 ```
 
 Check both the project and one change's executable evidence:
 
 ```bash
-claude-foundation doctor --change <change>
+claude-foundation doctor --stage prove --change <change>
 ```
 
 ## Operator commands
@@ -55,11 +56,15 @@ claude-foundation doctor --change <change>
 | `providers` | Lists supported evidence contracts | Choosing evidence for a change |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
-| `packet <change>` | Prints a compact phase handoff | Resuming Build or Prove without replaying history |
+| `packet <change> --phase <phase>` | Prints a compact handoff and closes prior-phase telemetry | Starting Build or Prove without replaying history |
 | `metrics <change>` | Reports measured phase and provider cost | Finding latency or orchestration overhead |
+| `telemetry sync <change> [transcript]` | Incrementally imports native Claude request usage | Manual sync or host-integration fallback |
+| `telemetry import <change> <file>` | Imports deduplicated generic, Codex, or Claude host usage | Attributing request/token/cost to orchestration |
 | `validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `proof plan <change>` | Shows missing, stale, or reusable evidence | Before executing providers |
+| `proof preflight <change>` | Validates provider DAG, reports, services, and readiness without running tests | Immediately before proof |
 | `proof execute <change>` | Runs required configured providers and finalizes proof | When implementation is ready to prove |
+| `proof audit <change>` | Verifies receipt and artifact digests in the durable proof bundle | Before Land or during an audit |
 | `proof finalize <change>` | Finalizes from existing valid receipts only | When evidence was recorded separately |
 | `evidence run ...` | Runs one provider command and records its receipt | Manual or diagnostic provider execution |
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
@@ -88,7 +93,7 @@ Validate the result:
 
 ```bash
 claude-foundation validate <change>
-claude-foundation doctor --change <change>
+claude-foundation doctor --stage build --change <change>
 ```
 
 ### 2. Build in isolation
@@ -111,7 +116,9 @@ Inspect the execution plan, then run configured evidence:
 
 ```bash
 claude-foundation proof plan <change>
+claude-foundation proof preflight <change>
 claude-foundation proof execute <change>
+claude-foundation proof audit <change>
 ```
 
 The scheduler:
@@ -150,8 +157,10 @@ Foundation does not commit, push, or open a pull request implicitly.
 
 ## Evidence model
 
-Evidence v2 stores provider execution contracts beside the claims in
-`evidence.yaml`. Four adapters are available:
+`evidence.yaml` stores stable behavioral claims. `execution.yaml` stores
+commands, reports, services, readiness identity, and resource wiring. Legacy
+changes that keep `providers` in `evidence.yaml` remain readable; `evidence
+upgrade` separates them. Four adapters are available:
 
 | Adapter | Use |
 |---|---|
@@ -178,12 +187,15 @@ source:
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state |
 | `.foundation/receipts/` | Content-bound provider receipts |
+| `.foundation/evidence/` | Immutable proof bundles, receipt copies, reports, logs, and attachments |
+| `.foundation/snapshots/` | One content snapshot descriptor per proof |
 | `.foundation/logs/` | Provider logs and telemetry events |
 | `.foundation/sandboxes/` | Isolated Git worktrees |
 
-Receipts are reusable only while their bound inputs remain unchanged. Relevant
-bindings include the workspace hash, change revision, claim scope, adapter
-configuration, environment descriptor, platform, and required artifacts.
+Receipts are reusable only while their bound inputs remain unchanged. Every
+required artifact is copied into the evidence vault and bound by SHA-256 and
+byte size. Proofs bind receipt digests, contract and execution fingerprints,
+the workspace snapshot, environment descriptor, and protocol versions.
 
 Use metrics to inspect the actual cost of a run:
 
@@ -191,8 +203,30 @@ Use metrics to inspect the actual cost of a run:
 claude-foundation metrics <change>
 ```
 
-Unknown requests, token usage, cache usage, or monetary cost remain `null`;
-Foundation does not manufacture estimates when telemetry is unavailable.
+Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
+hook exposes only `session_id` and `transcript_path` to later Foundation
+commands. It does not parse the transcript and there is no per-tool telemetry
+hook. `packet --phase`, Prove, Land, and `metrics` then read only complete JSONL
+records added since the previous cursor. Main-agent and nested subagent
+transcripts are deduplicated by request/message identity.
+
+Only usage metadata is persisted: model, request/session identity, timestamp,
+phase, agent, input/output tokens, separate cache-creation/cache-read tokens,
+and cost when the host supplies it. Prompt text, tool input, and tool output are
+never copied to `.foundation/logs/`. `PostToolUse` remains reserved for
+behavioral hooks such as linting edited files.
+
+Use an explicit sync when the lifecycle hook was not active:
+
+```bash
+claude-foundation telemetry sync <change> ~/.claude/projects/.../session.jsonl
+```
+
+Use `telemetry import` for other hosts or historical files. Unknown requests,
+token usage, cache usage, or monetary cost remain `null`; Foundation does not
+manufacture estimates when telemetry is unavailable. Claude transcript parsing
+is schema-validated and isolated behind the host adapter so a future host
+format change cannot silently become fabricated usage.
 
 ## Playwright ownership
 
@@ -204,8 +238,10 @@ npx playwright install chromium
 ```
 
 The Playwright adapter requires a local, project-owned executable. It will not
-use `npx` to download an unpinned package during proof. Keep server startup in
-the project's Playwright `webServer` configuration, emit a structured JSON
+use `npx` to download an unpinned package during proof. Server startup may live
+in project Playwright configuration or a named `execution.yaml` service. Named
+services require an identity-bearing readiness body/header so an unrelated
+process on the same port cannot produce a false green. Emit a structured JSON
 report, annotate tests with the claims they prove, and configure traces,
 screenshots, videos, console-error handling, and page-error handling in the
 project.
@@ -224,8 +260,10 @@ For a packaged installation:
 claude-foundation init /path/to/project --yes
 ```
 
-Re-run `doctor` after updating. Runtime and CLI API versions must be compatible,
-so update them together rather than copying `foundation.mjs` alone.
+The installer records `.foundation/install-manifest.txt`, removes only stale
+Foundation-owned files, preserves project files and managed blocks in
+`CLAUDE.md`/`AGENTS.md`, then refreshes the runtime as one bundle. Re-run
+`doctor` after updating. Runtime and CLI API versions must be compatible.
 
 ## Troubleshooting
 
@@ -238,6 +276,10 @@ so update them together rather than copying `foundation.mjs` alone.
   annotations, or absent required artifacts.
 - **A receipt became stale** — run `proof plan`; a bound input, agreement
   revision, environment, or artifact changed.
+- **Readiness is rejected** — add `expectBody` or `expectHeader` that identifies
+  the intended application, not merely an HTTP status.
+- **An archived proof fails audit** — restore the immutable evidence bundle or
+  rerun proof; Land never treats a missing/tampered report as passing.
 - **Build is in a worktree** — inspect
   `.foundation/sandboxes/<change>` or use `/build <change>`; Land applies the
   proven diff to the main worktree.

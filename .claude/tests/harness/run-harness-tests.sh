@@ -164,6 +164,26 @@ assert_file_exists "DAG emits static receipt" \
 assert_cmd_zero "proof execute reuses valid receipts" \
   node .claude/harness/foundation.mjs proof-execute executable-evidence
 assert_eq "receipt cache avoids a second command" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
+test_command_id="$(jq -r '.commandExecutionId' \
+  .foundation/receipts/executable-evidence/test.json)"
+static_command_id="$(jq -r '.commandExecutionId' \
+  .foundation/receipts/executable-evidence/static-analysis.json)"
+assert_eq "deduplicated receipts share command execution identity" \
+  "$test_command_id" "$static_command_id"
+durable_log="$(jq -r '.artifacts[] | select(.type == "command-log") | .path' \
+  .foundation/receipts/executable-evidence/test.json)"
+assert_contains "provider artifacts are copied into durable evidence vault" \
+  "$durable_log" ".foundation/evidence/executable-evidence/"
+cp "$durable_log" "$TMP/durable-log"
+printf 'tampered\n' > "$durable_log"
+if node .claude/harness/foundation.mjs proof-audit executable-evidence >/dev/null 2>&1; then
+  fail "artifact digest tampering invalidates durable proof"
+else
+  pass "artifact digest tampering invalidates durable proof"
+fi
+cp "$TMP/durable-log" "$durable_log"
+assert_cmd_zero "restored durable evidence audits successfully" \
+  node .claude/harness/foundation.mjs proof-audit executable-evidence
 sed -i.bak 's/"minimum":4/"minimum":5/' \
   openspec/changes/executable-evidence/evidence.yaml
 rm openspec/changes/executable-evidence/evidence.yaml.bak
@@ -173,6 +193,12 @@ assert_contains "adapter policy change invalidates receipt fingerprint" \
 sed -i.bak 's/"minimum":5/"minimum":4/' \
   openspec/changes/executable-evidence/evidence.yaml
 rm openspec/changes/executable-evidence/evidence.yaml.bak
+assert_cmd_zero "execution upgrade separates adapter wiring from claims" \
+  node .claude/harness/foundation.mjs evidence-upgrade executable-evidence
+assert_eq "behavioral contract no longer carries provider commands" "false" \
+  "$(jq 'has("providers")' openspec/changes/executable-evidence/evidence.yaml)"
+assert_eq "execution file receives migrated provider commands" "test-discovery" \
+  "$(jq -r '.providers.test.adapter' openspec/changes/executable-evidence/execution.yaml)"
 
 node .claude/harness/foundation.mjs new 'Parallel evidence' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve parallel-evidence \
@@ -231,6 +257,55 @@ sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/locked-evidence/tasks.md
 rm openspec/changes/locked-evidence/tasks.md.bak
 assert_cmd_zero "workspace-write resource serializes mutation" \
   node .claude/harness/foundation.mjs proof-execute locked-evidence
+mutation_command_id="$(jq -r '.commandExecutionId' \
+  .foundation/receipts/locked-evidence/mutation.json)"
+static_command_id="$(jq -r '.commandExecutionId' \
+  .foundation/receipts/locked-evidence/static-analysis.json)"
+if [ "$mutation_command_id" = "$static_command_id" ]; then
+  fail "separate provider commands receive distinct execution identities"
+else
+  pass "separate provider commands receive distinct execution identities"
+fi
+
+# A harness-owned service requires application identity and is shared with the
+# provider without leaving a process behind.
+node .claude/harness/foundation.mjs new 'Service evidence' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve service-evidence \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' \
+  '{' \
+  '  "version": 1,' \
+  '  "providers": {' \
+  '    "static-analysis": {"adapter":"command","command":["sh","-c","exit 0"],"service":"web"}' \
+  '  },' \
+  '  "services": {' \
+  '    "web": {' \
+  '      "command":["node","-e","setInterval(() => {}, 1000)"],' \
+  '      "readiness": {' \
+  '        "url":"data:text/plain,service-ready",' \
+  '        "expectBody":"service-ready"' \
+  '      }' \
+  '    }' \
+  '  }' \
+  '}' > openspec/changes/service-evidence/execution.yaml
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "claims": [' \
+  '    {"id":"service-outcome","scenario":"The intended service is ready","impact":"low","capabilities":["static-analysis"]}' \
+  '  ]' \
+  '}' > openspec/changes/service-evidence/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/service-evidence/tasks.md
+rm openspec/changes/service-evidence/tasks.md.bak
+if node .claude/harness/foundation.mjs proof-execute service-evidence \
+  > "$TMP/service-output.txt" 2>&1; then
+  pass "harness-owned identity service supports provider proof"
+else
+  fail "harness-owned identity service supports provider proof"
+  sed -n '1,120p' "$TMP/service-output.txt" >&2
+fi
+assert_file_contains "service log is bound into proof manifest" \
+  .foundation/receipts/service-evidence/proof.json '"type": "service-log"'
 
 # The Playwright adapter requires structured claim annotations. A deterministic
 # fake reporter pins parsing without downloading browser binaries in unit CI.
@@ -253,6 +328,10 @@ printf '%s\n' \
   '}' > openspec/changes/browser-adapter/evidence.yaml
 sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/browser-adapter/tasks.md
 rm openspec/changes/browser-adapter/tasks.md.bak
+node .claude/harness/foundation.mjs doctor --stage change \
+  --change browser-adapter > "$TMP/change-doctor.txt" 2>&1 || true
+assert_file_contains "change-stage doctor treats future project dependencies as planned" \
+  "$TMP/change-doctor.txt" "playwright:package: install and lock @playwright/test"
 if node .claude/harness/foundation.mjs doctor \
   --change browser-adapter > "$TMP/browser-doctor.txt" 2>&1; then
   fail "doctor catches missing project-owned Playwright dependency"
@@ -313,6 +392,67 @@ if node .claude/harness/foundation.mjs event tiny-copy-edit \
 else
   pass "watchdog rejects duplicate request identity"
 fi
+printf '%s\n' \
+  '{"request_id":"host-1","model":"codex","usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":20}}' \
+  > "$TMP/codex-events.jsonl"
+telemetry="$(node .claude/harness/foundation.mjs telemetry-import tiny-copy-edit \
+  "$TMP/codex-events.jsonl" --format codex)"
+assert_contains "host telemetry adapter imports authoritative usage" \
+  "$telemetry" "imported 1"
+metrics="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
+assert_contains "metrics distinguish host telemetry from operations-only data" \
+  "$metrics" '"measurement": "host-events-only"'
+assert_contains "host telemetry contributes input tokens" \
+  "$metrics" '"inputTokens": 120'
+
+# Claude usage belongs to assistant requests in the session transcript, not to
+# PostToolUse. Native import reads the nested schema, imports subagents once,
+# keeps cache classes separate, and never copies prompt text.
+CLAUDE_TRANSCRIPT="$TMP/claude-native.jsonl"
+mkdir -p "$TMP/claude-native/subagents"
+printf '%s\n' \
+  '{"type":"user","message":{"role":"user","content":"DO-NOT-COPY-PRIVATE-PROMPT"}}' \
+  '{"type":"assistant","requestId":"claude-main-1","sessionId":"claude-native","timestamp":"2026-07-30T00:00:00.000Z","message":{"id":"msg-main-1","role":"assistant","model":"claude-test","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":40,"cache_read_input_tokens":60}}}' \
+  > "$CLAUDE_TRANSCRIPT"
+printf '%s\n' \
+  '{"type":"assistant","agentId":"worker-1","sessionId":"claude-native","timestamp":"2026-07-30T00:00:01.000Z","message":{"id":"msg-worker-1","role":"assistant","model":"claude-test","usage":{"input_tokens":20,"output_tokens":5,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}}' \
+  > "$TMP/claude-native/subagents/agent-worker-1.jsonl"
+claude_sync="$(node .claude/harness/foundation.mjs telemetry-sync tiny-copy-edit \
+  "$CLAUDE_TRANSCRIPT")"
+assert_contains "native Claude transcript sync imports main and subagent requests" \
+  "$claude_sync" "imported 2"
+assert_file_not_contains "telemetry never copies prompt content" \
+  ".foundation/logs/tiny-copy-edit/events.jsonl" "DO-NOT-COPY-PRIVATE-PROMPT"
+assert_file_contains "Claude cache creation tokens remain distinct" \
+  ".foundation/logs/tiny-copy-edit/events.jsonl" '"cacheCreationTokens":40'
+assert_file_contains "Claude cache read tokens remain distinct" \
+  ".foundation/logs/tiny-copy-edit/events.jsonl" '"cacheReadTokens":60'
+claude_sync="$(node .claude/harness/foundation.mjs telemetry-sync tiny-copy-edit \
+  "$CLAUDE_TRANSCRIPT")"
+assert_contains "incremental Claude sync does not recount requests" \
+  "$claude_sync" "imported 0"
+
+# An automatically bound session begins at the current byte offset, so earlier
+# unrelated conversation is not attributed to the change. Later checkpoints
+# consume only new request records under the phase established by packet.
+BOUND_TRANSCRIPT="$TMP/bound-session.jsonl"
+printf '%s\n' \
+  '{"type":"assistant","requestId":"before-change","message":{"id":"before","role":"assistant","model":"claude-test","usage":{"input_tokens":999,"output_tokens":999}}}' \
+  > "$BOUND_TRANSCRIPT"
+FOUNDATION_CLAUDE_SESSION_ID=bound-session \
+FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \
+  node .claude/harness/foundation.mjs packet tiny-copy-edit --phase build >/dev/null
+printf '%s\n' \
+  '{"type":"assistant","requestId":"during-build","message":{"id":"during","role":"assistant","model":"claude-test","usage":{"input_tokens":11,"output_tokens":7}}}' \
+  >> "$BOUND_TRANSCRIPT"
+FOUNDATION_CLAUDE_SESSION_ID=bound-session \
+FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \
+  node .claude/harness/foundation.mjs metrics tiny-copy-edit >/dev/null
+assert_file_not_contains "session binding excludes pre-change transcript history" \
+  ".foundation/logs/tiny-copy-edit/events.jsonl" '"requestId":"before-change"'
+assert_file_contains "checkpoint sync attributes new requests to the active phase" \
+  ".foundation/logs/tiny-copy-edit/events.jsonl" \
+  '"operationId":"build","agentId":"orchestrator","modelId":"claude-test","requestId":"during-build"'
 
 # Non-Git repositories use a manifest-guarded isolated copy.
 node .claude/harness/foundation.mjs new 'Copy sandbox' --rapid >/dev/null
@@ -321,10 +461,15 @@ copy_output="$(node .claude/harness/foundation.mjs sandbox create copy-sandbox)"
 assert_contains "non-git sandbox uses isolated copy" "$copy_output" "mode: isolated-copy"
 copy_path="$(jq -r '.workspace.path' .foundation/runtime/copy-sandbox.json)"
 printf 'copy-applied\n' > "$copy_path/app.txt"
+printf '%s\n' '{"lockfileVersion":3}' > "$copy_path/package-lock.json"
 sed -i.bak 's/- \[ \]/- [x]/g' "$copy_path/openspec/changes/copy-sandbox/tasks.md"
 rm "$copy_path/openspec/changes/copy-sandbox/tasks.md.bak"
+copy_plan="$(node .claude/harness/foundation.mjs proof-plan copy-sandbox)"
+assert_contains "changed lockfile escalates supply-chain evidence by policy" \
+  "$copy_plan" "dependency-supply-chain: missing"
 node .claude/harness/foundation.mjs receipt copy-sandbox test pass >/dev/null
 node .claude/harness/foundation.mjs receipt copy-sandbox discovery pass --discovered 1 --minimum 1 >/dev/null
+node .claude/harness/foundation.mjs receipt copy-sandbox dependency-supply-chain pass >/dev/null
 node .claude/harness/foundation.mjs prove copy-sandbox >/dev/null
 
 mkdir -p "$TMP/bin"

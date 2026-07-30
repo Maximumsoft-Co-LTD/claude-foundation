@@ -1,4 +1,6 @@
 runtime/
 receipts/
 logs/
+evidence/
+snapshots/
 sandboxes/

@@ -5,9 +5,10 @@ argument-hint: <intent> | <existing-change>
 
 Create or update the change for **$ARGUMENTS**.
 
-Read [the change loop](../orchestrator.md), then:
+The managed Foundation block already supplies the loop invariants; do not reload
+the full orchestrator. Then:
 
-1. Run `claude-foundation doctor`. Surface warnings now; if this delivery is
+1. Run `claude-foundation doctor --stage change`. Surface warnings now; if this delivery is
    expected to land in the same run, use `--require-archive`.
 2. Reuse the named active change or run
    `claude-foundation runtime new "<intent>"`.
@@ -17,12 +18,13 @@ Read [the change loop](../orchestrator.md), then:
    catalog by default.
 4. Use the selected OpenSpec schema to complete proposal, delta specs, design
    when needed, and `tasks.md`.
-5. Write evidence v2 claims and provider adapters to `evidence.yaml`; every
-   observable acceptance scenario has a stable claim ID and one or more
-   provider capabilities. Never guess or auto-install a project command.
+5. Write stable claims to `evidence.yaml` and executable provider wiring to
+   `execution.yaml`. Every observable acceptance scenario has a stable claim ID
+   and one or more provider capabilities. Test discovery is implicit for `test`.
+   Never guess or auto-install a project command.
 6. Run `claude-foundation validate <change>`.
-7. Run `claude-foundation doctor --change <change>` so missing executable
-   providers or project-owned Playwright are visible before Build.
+7. Run `claude-foundation doctor --stage build --change <change>`. Commands that
+   Build will create may remain planned; topology and policy warnings may not.
 8. If `.foundation/runtime/<change>.json` names an active `worktree` or `copy`
    workspace, run `claude-foundation sandbox sync <change>`.
    This preserves only unchanged completed task lines, updates the sandbox

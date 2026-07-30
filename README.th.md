@@ -98,13 +98,17 @@ Slash commands ใช้ควบคุม AI workflow ส่วน deterministi
 
 ```bash
 claude-foundation providers
-claude-foundation doctor
+claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation packet <change>
 claude-foundation metrics <change>
+claude-foundation telemetry sync <change> [transcript.jsonl]
+claude-foundation telemetry import <change> events.jsonl --format codex
 claude-foundation validate <change>
 claude-foundation proof plan <change>
+claude-foundation proof preflight <change>
 claude-foundation proof execute <change>
+claude-foundation proof audit <change>
 claude-foundation proof finalize <change>
 claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
@@ -117,14 +121,20 @@ CLI จะค้น project จาก directory ปัจจุบันหร�
 ถ้าติดตั้งตรงจาก source และยังไม่มี packaged CLI บน `PATH` สามารถเรียก runtime
 file โดยตรงเป็น compatibility fallback ได้
 
-`packet <change>` คือ compact handoff ระหว่าง Change, Build และ Prove โดยมี
+`packet <change> --phase build|prove` คือ compact handoff ระหว่าง Change, Build
+และ Prove โดยมี
 เฉพาะ path, revision, claims, required providers, task count, hash และ budget
 ไม่แบก conversation ที่สะสมมาทั้งหมด จึงเริ่ม execution context ใหม่และทำงาน
-ต่อได้โดย orchestrator ไม่ต้อง replay ทั้ง run
+ต่อได้โดย orchestrator ไม่ต้อง replay ทั้ง run ส่วน phase flag จะปิด telemetry
+ของ phase ก่อนหน้าแบบ incremental ด้วย
 
 `metrics <change>` สรุป wall time, phase operations, unique provider executions,
-requests, tokens, cache, cost และ orchestrator token share จากข้อมูลที่วัดได้
-field ที่ยังไม่มี source จะคงเป็น `null`
+requests, input/output tokens, cache creation/read tokens, cost และ orchestrator
+share จากข้อมูลที่วัดได้ สำหรับ Claude Code ระบบจะ bind session transcript
+หนึ่งครั้งที่ `SessionStart` แล้วอ่านเฉพาะ assistant usage ที่เพิ่มใหม่ตอน
+เปลี่ยน phase โดยไม่วัด token ที่ `PostToolUse`, ไม่คัดลอก prompt หรือ tool
+payload และรวม transcript ของ subagent ด้วย ถ้า session hook ยังไม่ทำงานให้ใช้
+`telemetry sync` เอง field ที่ยังไม่มี authoritative source จะคงเป็น `null`
 
 ## `/investigate` — สำรวจโดยยังไม่ผูกมัด
 
@@ -197,7 +207,8 @@ openspec/changes/add-profile/
 │   └── change/spec.md
 ├── design.md
 ├── tasks.md
-└── evidence.yaml
+├── evidence.yaml
+└── execution.yaml
 ```
 
 พร้อม machine state:
@@ -218,7 +229,8 @@ openspec/changes/add-profile/
 - `specs/**/*.md` — behavior และ scenarios
 - `design.md` — technical decisions, compatibility และ rollback
 - `tasks.md` — implementation ledger
-- `evidence.yaml` — สิ่งที่ต้องพิสูจน์
+- `evidence.yaml` — claims และ capability ที่ต้องพิสูจน์
+- `execution.yaml` — command, report, service และ readiness wiring ที่เปลี่ยนได้
 
 ถ้า change กำลัง Build อยู่ `/change` จะเรียก:
 
@@ -229,7 +241,7 @@ claude-foundation sandbox sync add-profile
 Sync จะ:
 
 - ส่ง artifacts เวอร์ชันใหม่เข้า sandbox
-- รักษา completed task เฉพาะบรรทัดที่ยังเหมือนเดิม
+- รักษา completed task ด้วย stable task ID เช่น `T001`
 - reset task ที่เปลี่ยนความหมาย
 - เพิ่ม revision
 - ทำให้ proof และ receipts เดิม stale
@@ -322,14 +334,15 @@ change ใหม่
 Prove จะ:
 
 1. validate OpenSpec artifacts
-2. คำนวณ workspace hash
+2. สร้าง workspace snapshot หนึ่งครั้ง
 3. อ่าน claims จาก `evidence.yaml`
 4. reuse receipts ที่ยังตรงกับ hash
 5. schedule provider ที่หายหรือ stale พร้อมกันเมื่อ resource ไม่ชนกัน
 6. ตรวจ test discovery
 7. รัน required full suite หลัง code converge
 8. เรียก independent review เฉพาะเมื่อ risk trigger
-9. deduplicate command ที่เหมือนกันและสร้าง `proof.json`
+9. ย้าย report, log และ attachment เข้า immutable evidence vault
+10. deduplicate command, สร้าง `proof.json` และ audit digest
 
 `tasks.md` เก็บเฉพาะ implementation work เท่านั้น `/prove` และ `/land`
 เป็น lifecycle commands ไม่ใช่ checkbox เพราะถ้าใส่ไว้ใน ledger จะเกิด gate
@@ -369,11 +382,14 @@ harness ทั้งหมด Prove สามารถเรียก tool เ�
 หรือบันทึก receipt จาก external system ได้ แต่ละ change เลือกเฉพาะ provider
 ที่ observable claim ต้องใช้ ไม่ได้รันทั้งหมดโดยอัตโนมัติ
 
-Evidence v2 กำหนด project-owned adapters ใน `evidence.yaml` การใช้งานปกติคือ:
+`evidence.yaml` เก็บ behavioral contract ส่วน `execution.yaml` กำหนด
+project-owned adapters การใช้งานปกติคือ:
 
 ```bash
-claude-foundation doctor --change add-profile
+claude-foundation doctor --stage prove --change add-profile
+claude-foundation proof preflight add-profile
 claude-foundation proof execute add-profile
+claude-foundation proof audit add-profile
 ```
 
 `test-discovery` สร้าง test และ discovery receipts จาก command เดียว
@@ -402,7 +418,7 @@ claude-foundation evidence record add-profile browser pass \
   --foreground-required yes --foreground-available yes
 ```
 
-ดูรายละเอียด evidence v2, Playwright claim mapping, resource locks, structured
+ดูรายละเอียด contract/wiring, Playwright claim mapping, resource locks, structured
 reports และ cache ที่ [Executable evidence adapters](.claude/harness/EVIDENCE.md)
 
 Receipts อยู่ที่:
@@ -590,7 +606,7 @@ Proof
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "claims": [
     {
       "id": "other-user-cannot-update-profile",

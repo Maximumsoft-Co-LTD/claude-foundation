@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "providers": {},
   "claims": [
     {
       "id": "replace-with-stable-claim-id",

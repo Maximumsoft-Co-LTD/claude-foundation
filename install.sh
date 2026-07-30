@@ -104,6 +104,7 @@ for rel in "${MANAGED[@]}"; do printf '  ~ %s\n' "$rel"; done
 [ -e "$TARGET_PATH/openspec/config.yaml" ] || printf '  + openspec/config.yaml\n'
 printf '  ~ .claude/settings.json (merge hooks, preserve user settings)\n'
 printf '  ~ CLAUDE.md (managed pointer only)\n'
+printf '  ~ AGENTS.md (portable managed pointer only)\n'
 for rel in "${LEGACY[@]}"; do
   [ -e "$TARGET_PATH/$rel" ] && printf '  - %s (legacy phase control plane)\n' "$rel"
 done
@@ -113,6 +114,84 @@ if [ "$ASSUME_YES" != yes ]; then
   printf 'Proceed? [y/N] '
   read -r answer
   case "$answer" in y|Y|yes|YES) : ;; *) fail "aborted" ;; esac
+fi
+
+MANIFEST_PATH="$TARGET_PATH/.foundation/install-manifest.txt"
+NEW_MANIFEST="$(mktemp)"
+BACKUP_DIR="$(mktemp -d)"
+INSTALL_COMMITTED=no
+PROJECT_MUTABLE=(
+  ".claude/settings.json"
+  ".claude/settings.foundation.json"
+  "CLAUDE.md"
+  "AGENTS.md"
+  "openspec/config.yaml"
+)
+for rel in "${MANAGED[@]}"; do
+  if [ -e "$TARGET_PATH/$rel" ]; then
+    mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
+    cp -R "$TARGET_PATH/$rel" "$BACKUP_DIR/$rel"
+  fi
+done
+for rel in "${PROJECT_MUTABLE[@]}"; do
+  if [ -e "$TARGET_PATH/$rel" ]; then
+    mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
+    cp -R "$TARGET_PATH/$rel" "$BACKUP_DIR/$rel"
+  fi
+done
+[ ! -f "$MANIFEST_PATH" ] || cp "$MANIFEST_PATH" "$BACKUP_DIR/install-manifest.txt"
+rollback_install() {
+  [ "$INSTALL_COMMITTED" != yes ] || return 0
+  for rel in "${MANAGED[@]}"; do
+    [ ! -e "$TARGET_PATH/$rel" ] || rm -rf "$TARGET_PATH/$rel"
+    if [ -e "$BACKUP_DIR/$rel" ]; then
+      mkdir -p "$TARGET_PATH/$(dirname "$rel")"
+      cp -R "$BACKUP_DIR/$rel" "$TARGET_PATH/$rel"
+    fi
+  done
+  for rel in "${PROJECT_MUTABLE[@]}"; do
+    [ ! -e "$TARGET_PATH/$rel" ] || rm -rf "$TARGET_PATH/$rel"
+    if [ -e "$BACKUP_DIR/$rel" ]; then
+      mkdir -p "$TARGET_PATH/$(dirname "$rel")"
+      cp -R "$BACKUP_DIR/$rel" "$TARGET_PATH/$rel"
+    fi
+  done
+  if [ -f "$BACKUP_DIR/install-manifest.txt" ]; then
+    cp "$BACKUP_DIR/install-manifest.txt" "$MANIFEST_PATH"
+  fi
+}
+cleanup_install() {
+  status=$?
+  [ "$status" -eq 0 ] || rollback_install
+  rm -f "$NEW_MANIFEST"
+  rm -rf "$BACKUP_DIR"
+  exit "$status"
+}
+trap cleanup_install EXIT
+for rel in "${MANAGED[@]}"; do
+  src="$SOURCE_PATH/$rel"
+  if [ -d "$src" ]; then
+    find "$src" -type f -print | while IFS= read -r file; do
+      printf '%s\n' "${file#"$SOURCE_PATH/"}"
+    done
+  else
+    printf '%s\n' "$rel"
+  fi
+done | LC_ALL=C sort -u > "$NEW_MANIFEST"
+
+# Remove only files previously recorded as Foundation-owned and no longer
+# shipped. Never infer ownership from a directory name.
+if [ -f "$MANIFEST_PATH" ]; then
+  while IFS= read -r old_rel; do
+    [ -n "$old_rel" ] || continue
+    case "$old_rel" in
+      .claude/*|openspec/schemas/*|.foundation/.gitignore|.foundation/README.md|WORKFLOW.md) ;;
+      *) fail "refusing unsafe managed manifest path: $old_rel" ;;
+    esac
+    if ! grep -qxF "$old_rel" "$NEW_MANIFEST"; then
+      [ ! -e "$TARGET_PATH/$old_rel" ] || rm -f "$TARGET_PATH/$old_rel"
+    fi
+  done < "$MANIFEST_PATH"
 fi
 
 for rel in "${MANAGED[@]}"; do
@@ -125,6 +204,8 @@ for rel in "${MANAGED[@]}"; do
     cp "$src" "$dst"
   fi
 done
+mkdir -p "$(dirname "$MANIFEST_PATH")"
+cp "$NEW_MANIFEST" "$MANIFEST_PATH"
 
 if [ ! -e "$TARGET_PATH/openspec/config.yaml" ]; then
   mkdir -p "$TARGET_PATH/openspec"
@@ -184,8 +265,7 @@ Use `/investigate` when the problem is unclear, otherwise use `/change`.
 The delivery loop is `/change → /build → /prove → /land`; `/dev` is a
 compatibility composition that stops after proof.
 
-@.claude/orchestrator.md
-@.claude/rules/fundamentals.md
+@.claude/harness/AGENT.md
 <!-- claude-foundation:change-loop:end -->
 EOF
 )"
@@ -207,11 +287,49 @@ else
   printf '\n%s\n' "$BLOCK" >> "$CLAUDE_DST"
 fi
 
+AGENTS_DST="$TARGET_PATH/AGENTS.md"
+AGENTS_START="<!-- claude-foundation:portable-agent:start -->"
+AGENTS_END="<!-- claude-foundation:portable-agent:end -->"
+AGENTS_BLOCK="$(cat <<'EOF'
+<!-- claude-foundation:portable-agent:start -->
+## Foundation change loop
+
+Read `.claude/harness/AGENT.md` before Foundation workflow work. Use
+`investigate → change → build → prove → land`; start each phase from
+`claude-foundation packet <change>`.
+<!-- claude-foundation:portable-agent:end -->
+EOF
+)"
+if [ ! -e "$AGENTS_DST" ]; then
+  printf '# AGENTS.md\n\n%s\n' "$AGENTS_BLOCK" > "$AGENTS_DST"
+elif grep -qF "$AGENTS_START" "$AGENTS_DST"; then
+  tmp="$(mktemp)"
+  block_tmp="$(mktemp)"
+  printf '%s\n' "$AGENTS_BLOCK" > "$block_tmp"
+  awk -v start="$AGENTS_START" -v end="$AGENTS_END" '
+    FNR==NR { replacement=replacement $0 ORS; next }
+    index($0,start) { printf "%s", replacement; skip=1; next }
+    index($0,end) { skip=0; next }
+    !skip { print }
+  ' "$block_tmp" "$AGENTS_DST" > "$tmp"
+  rm -f "$block_tmp"
+  mv "$tmp" "$AGENTS_DST"
+else
+  printf '\n%s\n' "$AGENTS_BLOCK" >> "$AGENTS_DST"
+fi
+
 if ! command -v node >/dev/null 2>&1; then
   printf '⚠ Node.js >=20.19 is required by OpenSpec and the Foundation harness\n' >&2
 elif ! command -v openspec >/dev/null 2>&1; then
   printf '⚠ Install pinned OpenSpec: npm install -g @fission-ai/openspec@1.7.0\n' >&2
 fi
 
+if command -v node >/dev/null 2>&1; then
+  (cd "$TARGET_PATH" &&
+    node .claude/harness/foundation.mjs doctor --stage change >/dev/null) ||
+    fail "post-install doctor failed; managed files were rolled back"
+fi
+
+INSTALL_COMMITTED=yes
 ok "OpenSpec-native Foundation installed at $TARGET_PATH"
 printf 'Next: /change <intent>\n'

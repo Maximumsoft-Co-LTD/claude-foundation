@@ -99,13 +99,17 @@ native CLI:
 
 ```bash
 claude-foundation providers
-claude-foundation doctor
+claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation packet <change>
 claude-foundation metrics <change>
+claude-foundation telemetry sync <change> [transcript.jsonl]
+claude-foundation telemetry import <change> events.jsonl --format codex
 claude-foundation validate <change>
 claude-foundation proof plan <change>
+claude-foundation proof preflight <change>
 claude-foundation proof execute <change>
+claude-foundation proof audit <change>
 claude-foundation proof finalize <change>
 claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
@@ -118,14 +122,21 @@ uses that project's installed runtime. Run `claude-foundation help` for the full
 surface. Direct source installations may call the runtime file as a compatibility
 fallback when the packaged CLI is unavailable.
 
-`packet <change>` is the compact handoff between Change, Build, and Prove. It
+`packet <change> --phase build|prove` is the compact handoff between Change,
+Build, and Prove. It
 contains paths, revision, claims, required providers, task count, hash, and
 budget—not the accumulated conversation—so a new execution context can resume
-without making the orchestrator replay the whole run.
+without making the orchestrator replay the whole run. The phase flag also
+incrementally closes the previous phase's request telemetry.
 
 `metrics <change>` summarizes measured wall time, phase operations, unique
-provider executions, requests, tokens, cache, cost, and orchestrator token
-share. Fields remain `null` until their source is connected.
+provider executions, requests, input/output tokens, cache creation/read tokens,
+cost, and orchestrator share. For Claude Code, Foundation binds the documented
+session transcript once at `SessionStart` and reads only new assistant usage at
+phase checkpoints. It never measures tokens in `PostToolUse`, never copies
+prompts or tool payloads, and includes nested subagent transcripts. Use
+`telemetry sync` manually when the session hook was not active. Fields remain
+`null` until their authoritative source is connected.
 
 ## `/investigate` — explore without committing
 
@@ -198,7 +209,8 @@ openspec/changes/add-profile/
 │   └── change/spec.md
 ├── design.md
 ├── tasks.md
-└── evidence.yaml
+├── evidence.yaml
+└── execution.yaml
 ```
 
 Machine-owned state is stored separately:
@@ -219,7 +231,8 @@ Only affected artifacts should change:
 - `specs/**/*.md` — behavior and observable scenarios;
 - `design.md` — technical decisions, compatibility, and rollback;
 - `tasks.md` — the sole implementation ledger;
-- `evidence.yaml` — claims and required provider capabilities.
+- `evidence.yaml` — stable claims and required provider capabilities;
+- `execution.yaml` — replaceable commands, reports, services, and readiness wiring.
 
 If Build is already active, `/change` synchronizes the revision with:
 
@@ -230,7 +243,7 @@ claude-foundation sandbox sync add-profile
 Synchronization:
 
 - sends the revised change packet into the sandbox;
-- preserves completed tasks only when the task line is unchanged;
+- preserves completed tasks by stable task ID;
 - resets tasks whose meaning changed;
 - increments the change revision;
 - makes previous proof and receipts stale.
@@ -324,7 +337,7 @@ is not required merely because the agreement evolved before landing.
 Prove:
 
 1. validates the OpenSpec artifacts;
-2. computes the relevant workspace hash;
+2. creates one relevant workspace snapshot;
 3. resolves claims from `evidence.yaml`;
 4. reuses receipts whose hash and provider version still match;
 5. schedules configured missing or stale providers concurrently when resources
@@ -332,7 +345,8 @@ Prove:
 6. verifies test discovery;
 7. runs the required full suite after convergence;
 8. invokes independent review only when risk triggers it;
-9. deduplicates identical commands and emits `proof.json`.
+9. copies reports, logs, and attachments into the immutable evidence vault;
+10. deduplicates identical commands, emits `proof.json`, and audits digests.
 
 `tasks.md` contains implementation work only. `/prove` and `/land` are
 lifecycle commands, not checkboxes; putting them in the ledger creates a
@@ -372,12 +386,14 @@ the repository's existing tool with `run-provider`, or record a receipt from an
 external system. A change selects only the providers justified by its observable
 claims; it does not run all providers by default.
 
-Evidence v2 configures project-owned adapters in `evidence.yaml`. The normal
-operator path is:
+`evidence.yaml` stores the behavioral contract; `execution.yaml` configures
+project-owned adapters. The normal operator path is:
 
 ```bash
-claude-foundation doctor --change add-profile
+claude-foundation doctor --stage prove --change add-profile
+claude-foundation proof preflight add-profile
 claude-foundation proof execute add-profile
+claude-foundation proof audit add-profile
 ```
 
 `test-discovery` emits test and discovery receipts from one command.
@@ -406,7 +422,7 @@ claude-foundation evidence record add-profile browser pass \
   --foreground-required yes --foreground-available yes
 ```
 
-See [Executable evidence adapters](.claude/harness/EVIDENCE.md) for evidence v2,
+See [Executable evidence adapters](.claude/harness/EVIDENCE.md) for contract/wiring separation,
 Playwright claim mapping, resource locks, structured reports, and cache rules.
 
 Receipts are stored under:
@@ -599,7 +615,7 @@ Example:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "claims": [
     {
       "id": "other-user-cannot-update-profile",

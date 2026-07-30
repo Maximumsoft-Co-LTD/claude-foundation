@@ -14,6 +14,7 @@ deterministic state, evidence validity, budgets, and land guards.
 ## Sources of truth
 
 - `openspec/changes/<id>/`: proposal, delta specs, design, tasks, evidence claims.
+- `execution.yaml`: replaceable provider, service, report, and readiness wiring.
 - Code and tests: implementation truth.
 - `.foundation/runtime/<id>.json`: machine lifecycle and resolver output.
 - `.foundation/receipts/<id>/`: content-bound evidence.
@@ -76,15 +77,16 @@ Build → Prove; finish with one integration proof.
 
 If intent changes during Build, pause implementation, investigate if needed,
 revise the same OpenSpec change, then run `claude-foundation sandbox sync <id>`.
-Sync preserves completion only for unchanged task lines and makes prior proof
-stale. Never continue with different change artifacts in target and sandbox.
+Stable task IDs preserve completion. Contract and execution revisions are
+tracked separately; wiring changes invalidate affected provider fingerprints
+without pretending behavior changed.
 
 ## Prove
 
 `/prove` is evidence-driven:
 
 1. validate the OpenSpec change;
-2. compute the relevant workspace hash;
+2. create one relevant workspace snapshot;
 3. resolve claims to providers;
 4. reuse receipts only when their hash, provider protocol/version/fingerprint,
    and claim scope match;
@@ -93,8 +95,8 @@ stale. Never continue with different change artifacts in target and sandbox.
 7. run the required full suite once after convergence;
 8. perform independent review only when risk triggers it;
 9. re-run evidence invalidated by a proof-time edit;
-10. run `claude-foundation proof execute <change>` to schedule configured
-    adapters and finalize, or record explicitly external receipts first.
+10. run `proof preflight`, `proof execute`, and `proof audit`; reports, logs,
+    and attachments are copied into the immutable evidence vault.
 
 Provider results are `pass|fail|inconclusive|error`. Required `inconclusive`
 evidence blocks landing. A mutation crash is not a behavioral kill. Required
@@ -118,13 +120,15 @@ speculative expansion; at 100% stop and split or re-scope. Required proof remain
 
 Landing is explicit and transactional:
 
-1. `claude-foundation land check <change>` rejects stale or incomplete proof;
+1. `claude-foundation land check <change>` rejects stale, incomplete, or
+   digest-invalid proof;
 2. `claude-foundation land archive <change>` applies only the proven sandbox
    diff when needed;
 3. the same transaction verifies the applied workspace hash;
 4. the same transaction uses OpenSpec archive/spec sync;
-5. record commit/PR only when explicitly authorized;
-6. finalize metrics and clean the sandbox.
+5. audit archived receipts and artifact digests;
+6. record commit/PR only when explicitly authorized;
+7. finalize metrics and clean the sandbox through the resumable Land journal.
 
 Never archive before code application, never apply a diff whose proof hash
 changed, and never overwrite unrelated user changes.

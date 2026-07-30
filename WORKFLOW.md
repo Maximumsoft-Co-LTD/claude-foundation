@@ -38,9 +38,9 @@ Creates or completes `openspec/changes/<id>/`. The resolver records:
 - size for budget and slicing only;
 - semantic security and review triggers.
 
-Standard changes contain proposal, delta specs, design, tasks, and evidence.
-Rapid changes contain proposal, tasks, and evidence and upgrade in place if risk
-emerges.
+Standard changes contain proposal, delta specs, design, tasks, evidence, and
+execution wiring. Rapid changes contain proposal, tasks, evidence, and execution
+wiring and upgrade in place if risk emerges.
 
 ### `/build <change>`
 
@@ -72,13 +72,15 @@ to the workspace hash.
 
 ```bash
 claude-foundation proof plan <change>
+claude-foundation proof preflight <change>
 claude-foundation proof execute <change>
+claude-foundation proof audit <change>
 ```
 
 Required evidence that is failed, missing, stale, erroneous, or inconclusive
 blocks landing.
 
-Evidence v2 adapters execute project-owned commands. `test-discovery` produces
+Execution adapters run project-owned commands. `test-discovery` produces
 two receipts from one process; `playwright` consumes a structured JSON report
 and requires claim annotations. The scheduler reuses valid receipts,
 deduplicates identical commands, and runs providers concurrently only when
@@ -135,22 +137,25 @@ that constrain implementation, compatibility, rollout, rollback, or proof.
 
 ## Evidence
 
-`evidence.yaml` is JSON-compatible YAML so the runtime can validate it without a
-second parser dependency.
+`evidence.yaml` is the stable JSON-compatible behavioral contract.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "claims": [
     {
       "id": "owner-updates-profile",
       "scenario": "An authenticated owner updates their profile",
       "impact": "medium",
-      "capabilities": ["test", "discovery"]
+      "capabilities": ["test"]
     }
   ]
 }
 ```
+
+`execution.yaml` separately holds commands, structured reports, named services,
+readiness identity, resources, and environment variable names. Legacy embedded
+providers remain readable and migrate with `evidence upgrade`.
 
 Supported capabilities:
 
@@ -181,8 +186,11 @@ vendor tools: `/prove` may execute the repository's existing command with
 `run-provider`, or record a receipt from an external system. Select only
 providers justified by observable claims.
 
-Test evidence automatically requires discovery evidence. Risk-triggered changes
-automatically require review evidence.
+Test evidence automatically requires suite-level discovery evidence.
+Risk-triggered changes automatically require review evidence. After Build, a
+changed-surface policy adds supply-chain, migration, accessibility,
+compatibility, security/review, or deployment obligations when relevant files
+changed.
 
 Each receipt records provider/version, change, claims, workspace hash, result,
 observations, capability metadata, command/log, and timestamps. Status is one of
@@ -193,8 +201,9 @@ declare it, executable providers require an explicit `--claims` scope, and a
 provider protocol/version/fingerprint change invalidates old receipts. Browser
 receipts record `foreground-required` and `foreground-available` independently.
 Playwright uses the distinct `browser-automation` input mode. Foundation does
-not install Playwright or browser binaries; `doctor --change <id>` checks the
-project-owned command, dependency, configuration, and readiness declaration.
+not install Playwright or browser binaries; `doctor --stage prove --change
+<id>` checks the project-owned command, dependency, configuration, readiness
+identity, execution DAG, and report topology.
 
 ## Review
 
@@ -214,30 +223,38 @@ security contracts, and security-relevant migrations. Syntax alone is not risk.
 
 ## Invalidation
 
-Foundation hashes relevant project content plus the selected change artifacts.
+Foundation creates one relevant workspace snapshot per proof and shares its
+identity across receipts.
 It excludes runtime receipts, sandboxes, dependencies, legacy workflow records,
 other active changes, and archived changes. Any relevant edit makes prior
 receipts and proof stale.
 
 ## Preflight and telemetry
 
-Run `claude-foundation doctor --require-archive` when the intended flow includes
-landing. It checks Node, the pinned OpenSpec CLI, current hooks, stale packaged
-tests, and the opt-in direct-main policy.
+Run `doctor --stage change|build|prove`. Change and Build allow commands that
+are explicitly planned but not created yet. Prove requires executable providers
+and rejects dependency cycles, report collisions, secret-like literal
+environment values, and status-only readiness probes. Add `--require-archive`
+when the intended flow includes landing.
 
-Native CLI operations append duration and exit state to
+Native CLI operations append duration and exit state on a best-effort basis to
 `.foundation/logs/<change>/operations.jsonl`. Request, token, cache, and cost
-fields stay `null` until an external runtime submits uniquely identified
-`event` records; unknown usage is never reported as zero.
+come from uniquely identified host request records; unknown usage is never
+reported as zero. Claude Code binds its session transcript at `SessionStart`
+and incrementally reads only `assistant.message.usage` at phase checkpoints.
+There is no per-tool telemetry hook, and prompt/tool payloads are never copied.
+Other hosts use `telemetry import`.
 
 Use `claude-foundation metrics <change>` to aggregate phase timing, unique
 provider execution time, request/token/cache/cost totals, and orchestrator token
 share without double-counting receipts emitted by one combined execution.
 
-`claude-foundation packet <change>` emits the bounded handoff for a fresh
-execution context: active paths, revision, claims, providers, task count, hash,
-and budget. Build and Prove consume this packet instead of replaying the full
-orchestrator transcript.
+`claude-foundation packet <change> --phase build|prove` emits the bounded
+handoff for a fresh execution context: active paths, revision, claims,
+providers, task count, hash, and budget. The phase marker first closes usage
+from the prior phase using the incremental transcript cursor. Large changed-file
+sets collapse into prefix counts plus a digest. Build and Prove consume this
+packet instead of replaying the full orchestrator transcript.
 
 ## Sandbox safety
 

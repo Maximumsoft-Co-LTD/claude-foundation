@@ -20,6 +20,9 @@ assert_cmd_zero "installer applies non-interactively" \
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
 assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
+assert_file_exists "Claude session context hook installed" \
+  "$TARGET/.claude/hooks/session-context.sh"
+assert_file_exists "portable agent contract installed" "$TARGET/.claude/harness/AGENT.md"
 assert_file_exists "evidence adapter guide installed" "$TARGET/.claude/harness/EVIDENCE.md"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
@@ -32,8 +35,22 @@ else
   pass "legacy hook wiring removed"
 fi
 assert_file_contains "user hook wiring preserved" "$TARGET/.claude/settings.json" "user-hook.sh"
+assert_file_contains "request telemetry binds once at session lifecycle" \
+  "$TARGET/.claude/settings.json" "session-context.sh"
 assert_file_contains "user CLAUDE content preserved" "$TARGET/CLAUDE.md" "# User project"
 assert_file_contains "managed change-loop pointer added" "$TARGET/CLAUDE.md" "claude-foundation:change-loop:start"
+assert_file_contains "portable AGENTS pointer added" "$TARGET/AGENTS.md" "claude-foundation:portable-agent:start"
+assert_file_exists "managed install manifest written" "$TARGET/.foundation/install-manifest.txt"
+printf 'stale\n' > "$TARGET/.claude/harness/stale-owned.md"
+printf '%s\n' ".claude/harness/stale-owned.md" >> \
+  "$TARGET/.foundation/install-manifest.txt"
+printf '\nUser agent instruction.\n' >> "$TARGET/AGENTS.md"
+assert_cmd_zero "installer update removes only stale managed files" \
+  sh "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+assert_file_absent "stale managed file removed from prior manifest" \
+  "$TARGET/.claude/harness/stale-owned.md"
+assert_file_contains "user AGENTS content survives managed block update" \
+  "$TARGET/AGENTS.md" "User agent instruction."
 assert_cmd_zero "installed harness starts" \
   node "$TARGET/.claude/harness/foundation.mjs" version
 doctor="$(bash "$ROOT/cli.sh" --project "$TARGET" doctor)"
@@ -59,6 +76,13 @@ assert_contains "native metrics reports operation-only measurement" \
   "$metrics" '"measurement": "operations-only"'
 assert_contains "native metrics preserves unknown input tokens" \
   "$metrics" '"inputTokens": null'
+printf '%s\n' \
+  '{"type":"assistant","requestId":"installed-claude-1","message":{"id":"installed-message-1","role":"assistant","model":"claude-test","usage":{"input_tokens":9,"output_tokens":4,"cache_read_input_tokens":3}}}' \
+  > "$TMP/installed-transcript.jsonl"
+telemetry="$(bash "$ROOT/cli.sh" --project "$TARGET" telemetry sync \
+  cli-proof-route "$TMP/installed-transcript.jsonl")"
+assert_contains "native CLI routes incremental Claude transcript sync" \
+  "$telemetry" "imported 1"
 assert_cmd_zero "native validate routes to project runtime" \
   bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route
 sed -i.bak 's/- \[ \]/- [x]/g' "$TARGET/openspec/changes/cli-proof-route/tasks.md"
@@ -93,7 +117,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "3"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "5"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then
