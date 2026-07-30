@@ -197,4 +197,34 @@ if [ -f "$ORCH" ] && [ -f "$SEC" ]; then
   assert_file_contains "state-edge-cases.md keeps the phase worker foreground" "$SEC" "phase worker is always foreground"
 fi
 
+# --- 10. shipped files never point at files that don't ship ------------------
+# install.sh copies a fixed manifest into a user's repo. `.claude/tests/` and
+# `docs/` are NOT in it, so a shipped file citing one is a dangling link in every
+# installed repo — and it costs resident bytes on every turn of every user's run
+# to say nothing they can open. Pointers go one way: evidence names the rule it
+# justifies, never the reverse. Rule: `CLAUDE.md > What ships vs what doesn't`.
+SHIPPED="
+$ROOT/.claude/orchestrator.md
+$ROOT/.claude/orchestrator/references
+$ROOT/.claude/agents
+$ROOT/.claude/commands
+$ROOT/.claude/skills
+$ROOT/.claude/rules
+$ROOT/.workflow/_templates
+$ROOT/WORKFLOW.md
+"
+leaks=""
+for p in $SHIPPED; do
+  [ -e "$p" ] || continue
+  hit="$(grep -rlE '\.claude/tests|tests/bench|docs/research' "$p" 2>/dev/null || true)"
+  [ -n "$hit" ] && leaks="$leaks$hit
+"
+done
+leaks="$(printf '%s' "$leaks" | grep -v '^$' || true)"
+if [ -z "$leaks" ]; then
+  pass "no shipped file points at a non-shipped path"
+else
+  fail "shipped file(s) point at non-shipped paths (dangling in every installed repo): $(printf '%s' "$leaks" | tr '\n' ' ')"
+fi
+
 finish "doc-consistency tests"

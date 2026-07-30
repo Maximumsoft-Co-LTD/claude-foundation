@@ -13,7 +13,39 @@ Key surface area:
 - `.claude/rules/` — `fundamentals.md`, the single **always-on router** that maps every "by default" trigger to its skill. Load-bearing: the fundamentals are applied via this thin always-on layer (project skills don't auto-trigger), then the full skill body loads on demand. It is the canonical source for triggers and cross-skill run order.
 - `.claude/skills/` — the fundamentals skill bodies (full detail, loaded on demand — construction chain, process/verification, delivery channel; the router lists them) plus product skills (`brainstorming`, `plan-writing`, `qa-handoff-note`, `fanout-team-agents`, frontend/UX, `skill-creator`).
 - `.claude/hooks/` — `dev-agent-guard.sh` (PreToolUse spawn guard), `dev-state-mark.sh` (PostToolUse state marker), `lint.sh` (PostToolUse linter), `protect-secrets.sh` (PreToolUse `.env`/credential read guard). `no-direct-main-commit.sh` is shipped but **opt-in** (wire it under `PreToolUse`/`Bash` in `settings.json` to block commits on `main`/`master`).
+- `.claude/tests/` — the harness that keeps the above honest, **not shipped**: `run-all.sh` (hooks · artifact-lint · scenarios · doc-consistency · bench-logic; live e2e behind `CLAUDE_E2E=1`), `docs/run-doc-consistency.sh` (pins cross-file claims that must agree), and `bench/` (efficiency benchmark + `rationale.md`, the record of what was measured and rejected). Run `sh .claude/tests/run-all.sh` after any change to a shipped file.
 - `WORKFLOW.md` + `.workflow/` — the type-aware phase matrix, run templates, and per-run `state.json`/artifacts that drive `/dev --resume`. Gated by three axes: `Type` (which phases), `size` (how much machinery), `field` (**greenfield | brownfield**). Brownfield gates the **understand → lock → change** discipline (current-state map, characterization baseline); greenfield skips both. Canonical `field` def: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
+
+## What ships vs what doesn't — read this before editing anything
+
+**This repo is a product other people install into their repos.** `install.sh` copies a
+fixed manifest; everything outside it is our own dev infrastructure and never reaches a
+user. Get this wrong and you either break an installed repo or make every user's run
+pay for our internals.
+
+| | Paths | Consequence |
+|---|---|---|
+| **Ships** (`install.sh > PLAN`) | `.claude/orchestrator.md` · `.claude/orchestrator/references/**` · `.claude/agents/**` · `.claude/commands/**` · `.claude/skills/**` · `.claude/rules/**` · `.claude/hooks/**` · `.claude/settings.json` · `.workflow/_templates/**` · `.workflow/INDEX.md` · `.workflow/FOLLOWUPS.md` · `WORKFLOW.md` | lands in a stranger's repo and is **loaded during their runs** — every byte is re-sent on every turn of every run |
+| **Doesn't ship** | `.claude/tests/**` · `docs/**` · `CLAUDE.md` · `README.md` · `dashboard/` · `examples/` · `install*.sh` | ours alone; a user's repo has no such path |
+
+Rules that follow from it:
+
+- **A shipped file carries the rule, never the evidence.** No benchmark numbers, cost
+  figures, judge scores, run IDs, dates, or session narrative. The user installing this
+  wants a workflow that works — our measurements are how *we* decided, not something
+  they run on.
+- **Never point from a shipped file into a non-shipped one.** `.claude/tests/…`,
+  `docs/…` and `CLAUDE.md` do not exist in a target repo, so the pointer is a dangling
+  link that also costs resident bytes. Pointers run one way only: evidence → rule.
+- **Evidence lives in `.claude/tests/bench/`** — `README.md` (method, how to run,
+  how to read a result) and `rationale.md` (the verdicts: what was adopted, what was
+  measured and rejected, with the numbers). Both are for whoever is *changing* the
+  workflow. Session-level research notes go to `docs/research/`.
+- **When a measurement changes a rule:** edit the rule in the shipped file, record the
+  numbers in `rationale.md`, and let `rationale.md` name the rule it justifies.
+- **Cost lands on the user, not on us.** The shipped playbook is resident context for
+  every turn a user's run takes. Prose that only helps a maintainer is a tax on someone
+  else's tokens.
 
 ## Skills outside the router
 
