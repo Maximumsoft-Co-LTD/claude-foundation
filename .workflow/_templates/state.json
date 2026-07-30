@@ -4,6 +4,12 @@
   "size": null,
   "speed_profile": "fast",
   "field": null,
+  "work_profile": null,
+  "risk": null,
+  "ambiguity": null,
+  "evidence": [],
+  "volume": null,
+  "coupling": null,
   "owner": null,
   "owner_email": null,
   "context_built": false,
@@ -26,8 +32,30 @@
   "team_registry": null,
   "impl_phases_done": [],
   "spawn_count": 0,
+  "spawn_count_observed": null,
   "exec_mode": {},
   "exec_reason": {},
+  "orchestrator_budget": {
+    "target_turns": null,
+    "hard_ceiling": null,
+    "turns_observed": 0,
+    "exceeded": false
+  },
+  "worker_lifecycle": {
+    "status": "idle",
+    "worker": null,
+    "phase": null,
+    "started_at": null,
+    "terminal_at": null
+  },
+  "timing": {
+    "elapsed_ms": null,
+    "agent_active_ms": null,
+    "human_wait_ms": null,
+    "worker_runtime_ms": null,
+    "worker_wait_ms": null,
+    "reconcile_ms": 0
+  },
   "commit_on_ship": null,
   "open_pr_on_ship": null,
   "e2e_visual": null,

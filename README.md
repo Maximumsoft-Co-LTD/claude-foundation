@@ -117,6 +117,13 @@ The main agent **is** the orchestrator (following [`.claude/orchestrator.md`](.c
 
 **The machinery scales with evidence, not size alone.** Size sets a spawn ceiling: XS/S `fast` (0/≤2), M `standard` (≤3), L `deep` (≤5). Phases may spawn for independent judgment, a material context gap, tooling isolation, proven parallel payoff, or Implement execution volume. This lets main Opus keep decisions while one bounded Sonnet worker handles substantial code generation. L alone means neither a spawn nor an Opus worker.
 
+The route is multi-axis rather than “Size S always does X”: workload profile,
+risk, ambiguity, required evidence, implementation volume, and coupling decide the
+phase depth. This prevents a Todo UI, a compatibility fix, and authentication/profile
+work from buying the same Interview/Test/Review machinery. Opus main carries a
+profile-specific turn target/ceiling; phase workers are foreground with structured
+terminal returns.
+
 Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 
 ## What's in the box
@@ -126,7 +133,9 @@ Full definition: [`WORKFLOW.md`](WORKFLOW.md).
 - **Five workflow sub-agents + a UX designer + fanout workers** — `pm`, `lead`, `engineer`, `qa`, `retro`, `uxui`, plus proof-authorized `team-*` workers. Multi-repo fanout still requires independent substantial surfaces and coordination payoff; repo count alone is not proof.
 - **Artifact templates** — `spec.md`, `context.md`, `plan.md`, `tasks.md`, `test-plan.md`, `uxui-plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform. (`context.md` is the shared run map and cache, read before code/test discovery at every size.)
 - **Type-aware phase matrix + per-task phase plan** — the orchestrator specializes by Type. `lead` may vary optional Review/Docs only; code-type Test/Ship Gate and fired Review/Security remain required.
-- **Evidence-routed execution matrix** — size caps machinery; `exec_mode` + `exec_reason` explain each phase. Warm M/L work stays inline unless a spawn proof exists (see `.claude/orchestrator/references/size-execution.md`).
+- **Evidence-routed execution matrix** — size caps machinery; workload profile routes ambiguity/evidence/volume/risk/coupling; `exec_mode` + `exec_reason` explain each phase.
+- **Evidence-bearing ACs** — every new-run AC declares structural/behavioral/rendered/integration/measured/security/manual evidence; Contract Gate checks the declaration and Test records actual evidence. Rendered UI evidence gets cheap real-browser smoke even when full E2E is off.
+- **Worker lifecycle + Opus budget** — phase workers cannot background accidentally; state records lifecycle, main-turn targets/ceilings, observed spawns, and separated elapsed/active/wait/reconcile timing.
 - **Always-on fundamentals router** — a single lean file `.claude/rules/fundamentals.md` that maps every "by default" trigger to its skill: the conduct layer `coding-discipline` (which wraps the rest), the construction chain `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`, the verification skills `debug-fundamentals` / `refactoring-fundamentals` / `testing-fundamentals`, and the delivery channel `git-workflow` / `delivery-engineering`. Full skill bodies load on demand; this router is the single source of truth for triggers and the cross-skill run order.
 - **Hooks** — a PreToolUse spawn/model/state guard, a compact PostToolUse state marker, cheap edit checks, and a secrets guard. Language lint/type/static commands run once at Ship Gate by default; `CLAUDE_EDIT_LINT=1` restores per-edit file lint.
 - **Skill-creator handoff** — `retro` lists skill candidates, you approve, the orchestrator spawns `skill-creator` for each. Nothing auto-creates.

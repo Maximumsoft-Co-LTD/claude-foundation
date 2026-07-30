@@ -162,6 +162,26 @@ if [[ "$subagent_type" == "general-purpose" ]]; then
   done
 fi
 
+# Case 2b: a phase worker may not be backgrounded. A background launch ack has
+# no terminal return in headless/CI runs and is the source of partial-tree reads
+# and Reconcile phases. The only exception is an explicitly-authorized fanout
+# whose prompt names the coordination proof.
+case "$subagent_type" in
+  pm|lead|engineer|qa|retro|uxui)
+    run_bg="$(printf '%s' "$input" | jq -r '.tool_input.run_in_background // false' 2>/dev/null || printf false)"
+    if [[ "$run_bg" == "true" ]]; then
+      prompt="$(printf '%s' "$input" | jq -r '.tool_input.prompt // ""' 2>/dev/null || true)"
+      if ! printf '%s' "$prompt" | grep -qF 'fanout_authorized: true'; then
+        jq -n --arg w "$subagent_type" '{
+          decision: "block",
+          reason: ("BLOCKED by /dev guard: phase worker `" + $w + "` was requested with run_in_background=true. Phase workers must return foreground with a structured terminal result before main reads/tests/transitions the tree. Background is allowed only for a prompt carrying `fanout_authorized: true` and disjoint fanout ownership.")
+        }'
+        exit 0
+      fi
+    fi
+    ;;
+esac
+
 # Case 3: state.json must be updated between /dev worker spawns
 case "$subagent_type" in
   pm|lead|engineer|qa|retro)

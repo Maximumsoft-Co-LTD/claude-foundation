@@ -356,8 +356,40 @@ printf '# Plan\n\n**Type**: chore\n\n## Summary\nbump\n\n## Phases for this task
 mk_clean_tasks "$d"
 assert_contract_zero "AC13 non-code contract needs no test-plan" "$d"
 
+# AC14 — profile-aware contracts require evidence classes that agree with the
+# test plan plus a runnable execution boundary. Legacy states remain compatible.
+d="$TMPROOT/ac14-todolist"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: feat\n\n## Goal\nCreate a todolist app.\n\n## User Stories\n- [ ] AC1 app works\n' > "$d/spec.md"
+assert_exit_zero "AC14 product word todolist is not a TODO marker" "$d"
+
+mk_profile_contract() {
+  _d="$1"; _spec_evidence="$2"; _test_evidence="$3"
+  printf '{"id":"0014-feat-profile","type":"feat","size":"S","field":"greenfield","work_profile":"greenfield-product"}\n' > "$_d/state.json"
+  printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## User Stories\n- [ ] AC1 `[evidence:%s]` outcome\n' "$_spec_evidence" > "$_d/spec.md"
+  mk_clean_plan "$_d"
+  mk_clean_tasks "$_d"
+  printf '# Test plan\n\n## Coverage plan\n| AC | Evidence | Level | Assert |\n|----|----------|-------|--------|\n| AC1 | %s | unit | outcome |\n\n## Execution contract\n- **Impacted**: `test` · cwd: `.` · expected groups/min tests: unit/1\n- **Full-suite**: `test` · cwd: `.` · expected groups/min tests: unit/1\n' "$_test_evidence" > "$_d/test-plan.md"
+}
+
+d="$TMPROOT/ac14-clean"; mkdir -p "$d"; mk_profile_contract "$d" behavioral behavioral
+assert_contract_zero "AC14 matching evidence and execution contract" "$d"
+
+d="$TMPROOT/ac14-missing"; mkdir -p "$d"; mk_profile_contract "$d" behavioral behavioral
+printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## User Stories\n- [ ] AC1 outcome\n' > "$d/spec.md"
+assert_contract_nonzero "AC14 missing spec evidence blocks contract" "$d"
+assert_contract_report_contains "AC14 names missing evidence" "$d" "has no valid [evidence:<class>]"
+
+d="$TMPROOT/ac14-drift"; mkdir -p "$d"; mk_profile_contract "$d" rendered structural
+assert_contract_nonzero "AC14 evidence-level drift blocks contract" "$d"
+assert_contract_report_contains "AC14 names evidence drift" "$d" "evidence=rendered missing/mismatched"
+
+d="$TMPROOT/ac14-command"; mkdir -p "$d"; mk_profile_contract "$d" behavioral behavioral
+sed '/## Execution contract/,$d' "$d/test-plan.md" > "$d/test.tmp"; mv "$d/test.tmp" "$d/test-plan.md"
+assert_contract_nonzero "AC14 missing execution contract blocks" "$d"
+assert_contract_report_contains "AC14 names missing execution contract" "$d" "MISSING required section: Execution contract"
+
 echo
-total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13" | wc -w) ))
+total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC14 AC14 AC14 AC14 AC14 AC14 AC14 AC14" | wc -w) ))
 # AC9 runs only when jq is present (see the skip above).
 command -v jq >/dev/null 2>&1 && total_pass=$((total_pass + 4))
 if [ "$failures" -eq 0 ]; then

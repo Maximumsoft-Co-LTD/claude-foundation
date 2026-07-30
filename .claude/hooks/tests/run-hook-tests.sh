@@ -132,6 +132,17 @@ assert_allowed "guard C4 pm override matching pin"
 run_hook "$GUARD" "$PROJ_A" "$(agent_json pm "")"
 assert_allowed "guard C4 pm no override"
 
+# Phase workers must be foreground unless the prompt explicitly identifies an
+# authorized fanout. A background phase worker can never return in headless mode.
+bg_agent_json() {
+  jq -cn --arg st "$1" --arg p "$2" \
+    '{tool_name:"Agent", tool_input:{subagent_type:$st, description:"worker", prompt:$p, run_in_background:true}}'
+}
+run_hook "$GUARD" "$PROJ_A" "$(bg_agent_json engineer "implement T001")"
+assert_blocked "guard C2b background phase worker" "must return foreground"
+run_hook "$GUARD" "$PROJ_A" "$(bg_agent_json engineer "fanout_authorized: true; disjoint files")"
+assert_allowed "guard C2b authorized fanout may background"
+
 # Override on a worker whose agent file does not exist → fail CLOSED.
 run_hook "$GUARD" "$PROJ_A" "$(agent_json team-ghost sonnet)"
 assert_blocked "guard C4 missing agent file fails closed" "could not be read"
@@ -320,6 +331,24 @@ fi
 printf '{\n  "phase": "one",\n  "notes": "a"\n}\n' > "$VRUN/state.json"
 run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
 assert_allowed "validate clean state.json"
+
+# Profile-aware state validates enums, resolved Gate routing, budgets, and
+# foreground worker lifecycle while leaving legacy states compatible.
+printf '%s\n' '{"phase":"phase-1-requirements","step":"interview","work_profile":"greenfield-product","risk":"low","ambiguity":"low","evidence":["behavioral","rendered"],"volume":"medium","coupling":"isolated","orchestrator_budget":{"target_turns":60,"hard_ceiling":80,"turns_observed":0,"exceeded":false},"worker_lifecycle":{"status":"idle","worker":null,"phase":null,"started_at":null,"terminal_at":null},"timing":{"reconcile_ms":0}}' > "$VRUN/state.json"
+run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
+assert_allowed "validate profile-aware state"
+
+printf '%s\n' '{"phase":"phase-1-requirements","step":"interview","work_profile":"todo-special","risk":"low","ambiguity":"low","evidence":[],"volume":"small","coupling":"isolated","orchestrator_budget":{"target_turns":60,"hard_ceiling":80},"worker_lifecycle":{"status":"idle"},"timing":{"reconcile_ms":0}}' > "$VRUN/state.json"
+run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
+assert_blocked "validate rejects unknown work profile" "invalid workload route"
+
+printf '%s\n' '{"phase":"phase-1-requirements","step":"gate","work_profile":"greenfield-product","risk":null,"ambiguity":"low","evidence":["behavioral"],"volume":"medium","coupling":"isolated","orchestrator_budget":{"target_turns":60,"hard_ceiling":80},"worker_lifecycle":{"status":"idle"},"timing":{"reconcile_ms":0}}' > "$VRUN/state.json"
+run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
+assert_blocked "validate requires resolved route at Gate" "must all be resolved"
+
+printf '%s\n' '{"phase":"phase-2","step":"implement","work_profile":"greenfield-product","risk":"low","ambiguity":"low","evidence":["behavioral"],"volume":"medium","coupling":"isolated","orchestrator_budget":{"target_turns":60,"hard_ceiling":80},"worker_lifecycle":{"status":"started","worker":null,"phase":"implement","started_at":null},"timing":{"reconcile_ms":0}}' > "$VRUN/state.json"
+run_hook "$VALIDATE" "$VPROJ" "$(write_json "$VRUN/state.json")"
+assert_blocked "validate started worker requires identity/time" "requires worker, phase, and started_at"
 
 # --- "__now__" sentinel substitution ------------------------------------------
 # The orchestrator has no clock, so it writes the literal "__now__" and this hook

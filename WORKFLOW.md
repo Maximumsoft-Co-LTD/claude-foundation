@@ -114,7 +114,7 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 | `recommendations.md` | `engineer` (spike) | Spike deliverable — what we learned, recommended next step. Replaces test/ship phases. |
 | `retro.md` | main; `retro` only for substantial synthesis | What worked, what to change, memory + skill candidates, commit/PR refs |
 | `epic.md` | `lead` (rare) | Decomposition into slices when `Ship as: staged` + ≥2 capabilities |
-| `state.json` | `orchestrator` | Resume cursor: speed profile, phase, step, cycle counters, run timestamps (`created_at`, `last_updated`, `done_at` before Retro), per-step completion times (`phase_times.<step>`) |
+| `state.json` | `orchestrator` | Resume cursor plus workload route, orchestrator turn budget, foreground worker lifecycle, reported/observed spawns, and separated elapsed/active/human/worker/reconcile timing |
 
 ## Contract Gate
 
@@ -162,9 +162,11 @@ list and is the only thing standing between a trust-boundary diff and silence). 
 you want the trigger scan off too, say so — it is one line — but it is off by
 choice, never by default.
 
-**Three authoritative quality gates.** Contract Gate owns artifact structure and
-cross-artifact AC equality. Change Gate owns executable AC evidence (`tests.md`)
-plus independent semantic/risk review when triggered. Ship Gate owns one final
+**Three authoritative quality gates.** Contract Gate owns artifact structure,
+cross-artifact AC equality, declared evidence classes, and command execution
+contracts. Change Gate owns actual executable/observable AC evidence (`tests.md`),
+validates evidence level plus expected test groups/minimum discovery, and adds
+independent semantic/risk review when triggered. Ship Gate owns one final
 Full-suite + lint/type/static run per converged diff. Engineer task verifies are
 local implementation feedback, not a second AC ledger; Review consumes Test
 evidence and does not rerun or copy every AC row.
@@ -193,9 +195,23 @@ one of the three that can be cut on a proof rather than a hope. M/L keep the ful
 
 Security review runs when the diff touches any of: auth/session/token, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell, deserialisation of untrusted input, secret-bearing files (env/config), or new external network endpoints. **Not a trigger on its own — first-party browser-storage round-trip:** the app reading back its own single-user `localStorage`/`sessionStorage`/`IndexedDB` via `JSON.parse` is *not* untrusted deserialisation and does not fire Security review — **provided** the diff has no dangerous sink (`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`Function`/`dangerouslySetInnerHTML`/jQuery `.html()`/any HTML-injection sink — **open list**; any such sink is itself a "raw HTML rendering" trigger and fires regardless). It also fires when the stored data crosses a real trust boundary (multi-user/shared-device threat model, or data written by a server or another principal). `orchestrator` decides; `lead` executes in security mode via the inline checklist. **One spawn:** the trigger check runs before Review, and a fired trigger extends the same `lead` review spawn with security mode (`review.md` + `security.md` from one spawn, opus) — the phase, its blocking semantics, and the matrix row are unchanged.
 
-### E2E + visual (opt-in)
+### Rendered smoke + E2E/visual
 
-Browser **e2e** + **visual/a11y verification** are **off by default** (`state.json > e2e_visual`) — opt-in asked in the interview for a feat/fix UI surface, surfaced at the gate (`e2e on|off`); unset → `off`. **Why:** browser-binary install + slow journeys dominate wall-clock, and jsdom/happy-dom unit/integration already cover UI logic. `off` → unit+integration only (a journey maps to integration); `on` → full browser path, one reused session. `chore`/`docs`/`spike` skip regardless. Mechanics: `qa.md > e2e_visual`.
+Cheap real-browser **rendered smoke** is required whenever an AC declares
+`rendered` evidence: visibility, contrast, focus indication, critical viewport and
+interaction. jsdom/happy-dom can prove structure/logic but cannot satisfy that row.
+Full browser **e2e + visual/a11y** remains opt-in through
+`state.json > e2e_visual`; `off` removes slow journeys/snapshots, not rendered
+evidence. Mechanics: `qa.md` and `phase-2-guards.md > Test`.
+
+### Workload route and foreground workers
+
+Every run records `work_profile`, `risk`, `ambiguity`, `evidence`, `volume`, and
+`coupling`. Ambiguity controls Interview depth; evidence controls Test; volume
+controls Implement; risk controls Review/Security; coupling controls context/fanout;
+field controls understand/lock. Size remains the ceiling. Phase workers are
+foreground with a structured terminal result; ordinary background phase spawns are
+guard-blocked, preventing partial-tree decisions and Reconcile work.
 
 ### Per-task phase plan (deviation from the matrix)
 

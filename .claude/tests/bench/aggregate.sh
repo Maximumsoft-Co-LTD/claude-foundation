@@ -159,6 +159,16 @@ agg="$(read_input | jq -s '
           spawn_count:  med($g | map(.spawn_count) | nn),
           cycles_test:  med($g | map(.cycles_test) | nn),
           cycles_review:med($g | map(.cycles_review) | nn),
+          work_profile:  ($g | map(.work_profile // empty) | if length == 0 then null else .[0] end),
+          main_turn_observed: med($g | map(.main_turn_observed) | nn),
+          main_turn_target:   med($g | map(.main_turn_target) | nn),
+          main_turn_ceiling:  med($g | map(.main_turn_ceiling) | nn),
+          budget_exceeded_rate: (($g | map(select(.budget_exceeded == true)) | length) / (if ($g|length)==0 then 1 else ($g|length) end)),
+          agent_active_ms: med($g | map(.agent_active_ms) | nn),
+          human_wait_ms: med($g | map(.human_wait_ms) | nn),
+          worker_runtime_ms: med($g | map(.worker_runtime_ms) | nn),
+          worker_wait_ms: med($g | map(.worker_wait_ms) | nn),
+          reconcile_ms: med($g | map(.reconcile_ms) | nn),
 
           # ---- QUALITY: objective half first ------------------------------
           n_oracle:     ($og | length),

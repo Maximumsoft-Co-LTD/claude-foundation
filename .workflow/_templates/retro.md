@@ -4,7 +4,7 @@
 **Type**: feat | fix | refactor | chore | docs | spike
 **Completed**: YYYY-MM-DD
 **Total cycles**: review=N, test=N
-**Run metrics**: wall-clock=<created_at → done_at (duration)> · size=<XS|S|M|L> · skipped=<n steps> · security=<fired|not-fired> · fanout=<phases fired vs single-pass, from state.json fanout_log>
+**Run metrics**: elapsed=<ms> · agent-active=<ms> · human-wait=<ms> · worker-runtime/wait=<ms>/<ms> · reconcile=<ms> · size/profile=<XS|S|M|L>/<profile> · main-turns=<observed>/<target>/<ceiling> · spawn=<reported>/<observed> · skipped=<n> · security=<fired|not-fired>
 **Ship**: commit=<sha> | PR=<url> | skipped (reason)
 
 ## What worked *(required)*
@@ -62,6 +62,8 @@ A multi-step procedure — ≥ 3 steps OR conditional logic, AND a clear trigger
 
 **Optional sections** — add when this run produced it, delete the rest:
 
+- **Budget/profile event** — orchestrator budget exceeded or profile/risk/size/field upgraded; cause + resulting route
+- **Defect escape** — gate that should have caught it, evidence class that was missing/wrong, and the deterministic change made
 - **Deviations from plan** — actual ≠ plan (Task X became Y — reason)
 - **Follow-ups** — append each verbatim to FOLLOWUPS.md > Open, then mirror here:
   - **item**: <one line> · **type hint**: feat | fix | … · **priority**: low | med | high

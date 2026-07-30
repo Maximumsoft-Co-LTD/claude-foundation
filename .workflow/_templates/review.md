@@ -18,7 +18,8 @@ One row per task (`tasks.md`) — no skipping rows. A deviation needs a one-line
 Consume the authoritative AC rows from `tests.md`; do not copy or rerun them.
 
 - Status: impacted-passing | passing | failing | skipped
-- AC rows: <mapped>/<total> · unmapped: <ids or none> · blocking gaps: <none or summary>
+- AC rows: <mapped>/<total> · unmapped: <ids or none> · evidence drift: <ids or none> · blocking gaps: <none or summary>
+- Discovery: <groups/count actual> vs <expected> · rendered smoke: <pass/fail/n-a> · security evidence: <pass/fail/n-a>
 
 ## Contract-risk checks *(required when risk exists)*
 

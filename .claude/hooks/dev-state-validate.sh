@@ -122,4 +122,32 @@ if [[ -n "$key" ]]; then
   emit_block "BLOCKED by /dev state validator: $fp has a duplicate key \"$key\" — a targeted Edit must REPLACE an existing key's value, never insert a second copy (this is the corruption that breaks /dev --resume). Re-Write the COMPLETE object with exactly one of each key."
 fi
 
+# 3. New profile-aware states carry typed routing/lifecycle fields. Legacy
+# states omit `work_profile` entirely and remain resumable.
+if jq -e 'has("work_profile")' "$fp" >/dev/null 2>&1; then
+  if ! jq -e '
+    (.work_profile == null or (.work_profile | IN("hermetic-logic","greenfield-product","visual-surface","brownfield-fix","compatibility","security-product","coupled-system")))
+    and (.risk == null or (.risk | IN("low","operational","contract","security")))
+    and (.ambiguity == null or (.ambiguity | IN("low","medium","high")))
+    and (.volume == null or (.volume | IN("small","medium","large")))
+    and (.coupling == null or (.coupling | IN("isolated","single-system","cross-system")))
+    and ((.evidence // []) | type == "array")
+    and ([(.evidence // [])[] | IN("structural","behavioral","rendered","integration","measured","security","manual")] | all)
+    and ((.worker_lifecycle.status // "idle") | IN("idle","started","done","blocker","failed","size-upgrade"))
+    and ((.timing.reconcile_ms // 0) >= 0)
+    and ((.orchestrator_budget.turns_observed // 0) >= 0)
+    and (((.orchestrator_budget.target_turns // 0) == 0) or ((.orchestrator_budget.hard_ceiling // 0) >= .orchestrator_budget.target_turns))
+  ' "$fp" >/dev/null 2>&1; then
+    emit_block "BLOCKED by /dev state validator: $fp has an invalid workload route, evidence class, orchestrator budget, worker lifecycle, or timing value. Restore the enums/schema from .workflow/_templates/state.json."
+  fi
+
+  if jq -e '(.step == "gate" or .phase != "phase-1-requirements") and ([.work_profile,.risk,.ambiguity,.volume,.coupling] | any(. == null))' "$fp" >/dev/null 2>&1; then
+    emit_block "BLOCKED by /dev state validator: workload routing axes must all be resolved before Contract Gate/Phase 2; work_profile, risk, ambiguity, volume, and coupling cannot be null."
+  fi
+
+  if jq -e '.worker_lifecycle.status == "started" and ((.worker_lifecycle.worker == null) or (.worker_lifecycle.phase == null) or (.worker_lifecycle.started_at == null))' "$fp" >/dev/null 2>&1; then
+    emit_block "BLOCKED by /dev state validator: worker_lifecycle.status=started requires worker, phase, and started_at so foreground completion can be enforced."
+  fi
+fi
+
 exit 0

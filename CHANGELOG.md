@@ -9,12 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-axis workload profiles** — `/dev` records workload profile, risk,
+  ambiguity, evidence classes, implementation volume, and coupling separately from
+  Size; profile-specific Opus-main turn budgets stop invisible runaway orchestration.
+- **Evidence-bearing contracts** — new-run ACs declare structural, behavioral,
+  rendered, integration, measured, security, or manual evidence. Contract lint
+  checks evidence agreement and Full/Impacted command boundaries including cwd,
+  environment/dependencies, and expected test groups/minimum discovery.
+- **Foreground worker lifecycle** — ordinary phase workers with
+  `run_in_background=true` are blocked unless the prompt explicitly authorizes a
+  disjoint fanout. Structured returns include task/AC completion, files, commands,
+  discovery counts, gaps, and context.
+- **Rendered smoke independent of E2E** — rendered ACs run a cheap real-browser
+  visibility/contrast/focus/viewport check while full journeys remain opt-in.
+- **Profile-aware telemetry and pricing metadata** — state/dev-metrics/bench rows
+  carry main-turn budgets and separated active/human/worker/reconcile timing;
+  benchmark pricing metadata is versioned in `bench/config/pricing.json`.
+
 - **`## Capabilities` — the ledger's behaviour half** — retro appends only Ship-Gate-passing AC evidence from `tests.md` as `<guarantee> — [<test path>] — [run-id]`, superseded in full. `feat`/`fix` may add or rewrite a guarantee; `refactor`/`chore`/`docs` may not touch the group. Its separate ~25-line budget cannot evict invariants.
 - **`orchestrator/references/ledger-prune.sh`** — deterministic staleness prune: re-resolves every `path#anchor` in the ledger and drops only the facts it can **prove** dead (file gone, symbol renamed away), keeping headings, prose, directories, globs and anything unverifiable byte-identical. Spec drift is the standard failure of a spec library and the usual mitigation is human diligence; ours is a grep, at no model cost. Called from retro's fold. New `ledger` test suite, 15 assertions.
 - **`fix` input-domain rule at S/M** — the teaching note that took acceptance from 5/6 to 6/6 at XS now also sits in `_templates/spec.md`'s `fix` block; the defect it catches (a ticket names one input, the bug lives one input over) is a property of `fix` at any size. Template notes are stripped on fill, so it stays free at runtime. **Unvalidated on a holdout** — see the caveat in `rationale.md`.
 - **Doc-consistency check 13** — pins the behaviour half at all three ends: retro writes it type-aware and supersedes in full, `qa` reads it, and the prune ships.
 
 ### Changed
+
+- Placeholder lint now treats TODO/TBD/FIXME/lorem as marker words, so product terms
+  such as `todolist` no longer fail the Contract Gate.
+- Test and Ship gates treat exit 0 with zero tests, missing declared groups, or
+  discovery below the declared minimum as failure; actual evidence-level drift is
+  blocking.
+- Auth/profile/identity work routes to security-product review with ownership,
+  revocation, negative-path, and PII/logging checks.
 
 - **Three authoritative quality gates** — Contract Gate owns deterministic artifact/AC-set consistency plus human intent approval; Change Gate owns Impacted AC evidence and triggered semantic/security review; Ship Gate owns one Full + lint/type/static run per converged diff. Engineer no longer mutates spec acceptance checkboxes, Review consumes `tests.md` instead of rebuilding every AC row, and Retro reports from Ship-Gate-passing evidence.
 - **Model-economic Implement routing** — main Opus retains interview, risk/size, gate, and acceptance judgment; repeated code generation routes once to the Sonnet-pinned `engineer` when execution volume fires (≥3 code tasks/files, a planned test-fix loop, or >~2K expected generation), even with a warm main context. XS/micro work and deterministic Test/Docs/Ship remain inline. Size=L alone no longer upgrades engineer to Opus; high-stakes overrides require `model_reason:<trigger>` and the spawn guard enforces it. S's fast ceiling is now ≤2 to accommodate one volume-routed Implement plus the previously measured Docs+Ship exception.

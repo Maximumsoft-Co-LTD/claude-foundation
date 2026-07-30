@@ -15,8 +15,8 @@
 
 ## Acceptance *(required — the contract; per-line confirmed at the gate)*
 
-- [ ] **AC1** — **Given** <state>, **When** <action>, **Then** <outcome>.
-- [ ] **AC2** — <boundary / on-error> — or `none — <default>`.
+- [ ] **AC1** `[evidence:behavioral]` — **Given** <state>, **When** <action>, **Then** <outcome>.
+- [ ] **AC2** `[evidence:structural]` — <boundary / on-error> — or `none — <default>`.
 
 > **fix — cover the input domain, not just the reported value.** A ticket names ONE
 > input; the defect almost never lives at exactly that input. Before writing AC2,
@@ -37,7 +37,13 @@
 
 ## Coverage *(feat/fix/refactor — one line per AC; chore/docs: `n/a — type=<x>`)*
 
-- AC1 → <test / observable check> · Impacted cmd: `<command>`
+- AC1 `[evidence:behavioral]` → <test / observable check> · Impacted cmd: `<command>`
+
+## Execution contract *(feat/fix/refactor)*
+
+- **Impacted**: `<command>` · cwd: `<path>` · env/dependencies: `<none or names>` · expected groups/min tests: `<groups/count>`
+- **Full-suite**: `<command>` · cwd: `<path>` · env/dependencies: `<none or names>` · expected groups/min tests: `<groups/count>`
+- **Rendered smoke**: `<command or n/a — no rendered evidence>` · viewport/browser: `<value>`
 
 ---
 *Assumptions (inferred) · deviations · notes — append below when real, delete otherwise.*

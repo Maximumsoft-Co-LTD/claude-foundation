@@ -27,12 +27,16 @@ fi
 
 jq -r --arg obs "$obs" --arg tiers "$tiers" '
   "run:         \(.id)",
-  "type/size:   \(.type)/\(.size // "?")   field=\(.field // "?")",
+  "type/size:   \(.type)/\(.size // "?")   field=\(.field // "?")   profile=\(.work_profile // "?")",
+  "route:       risk=\(.risk // "?") ambiguity=\(.ambiguity // "?") volume=\(.volume // "?") coupling=\(.coupling // "?") evidence=\((.evidence // []) | join(","))",
   "spawn_count: \(.spawn_count // "n/a")   (fork/cold sub-agents — inline not counted)",
   "spawn_seen:  \($obs)   (counted by dev-agent-guard.sh; disagreement => a missed state write)",
   "spawn_tiers: \($tiers)   (req: = explicit model override, pin: = agent frontmatter decided)",
   "exec_mode:   \(.exec_mode // {} | to_entries | map("\(.key)=\(.value)") | join("  "))",
   "cycles:      test=\(.cycles.test)  review=\(.cycles.review)",
+  "main_budget: \(.orchestrator_budget.turns_observed // "n/a") / target=\(.orchestrator_budget.target_turns // "n/a") / ceiling=\(.orchestrator_budget.hard_ceiling // "n/a") exceeded=\(.orchestrator_budget.exceeded // false)",
+  "worker:      \(.worker_lifecycle.status // "legacy") phase=\(.worker_lifecycle.phase // "-") worker=\(.worker_lifecycle.worker // "-")",
+  "timing_ms:   elapsed=\(.timing.elapsed_ms // "n/a") active=\(.timing.agent_active_ms // "n/a") human_wait=\(.timing.human_wait_ms // "n/a") worker=\(.timing.worker_runtime_ms // "n/a") worker_wait=\(.timing.worker_wait_ms // "n/a") reconcile=\(.timing.reconcile_ms // "n/a")",
   "skipped:     \(.skipped_steps | join(", "))",
   "phase_times: \(.phase_times // {} | to_entries | map("\(.key)=\(.value)") | join("  "))",
   "wall-clock:  \(.created_at)  ->  \(.done_at // "in-progress")"

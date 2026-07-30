@@ -299,7 +299,7 @@ setup_baseline() {  # $1 sandbox, $2 task — bare repo, no workflow
 # globals instead. Nineteen positionals was already at the edge of readable, and
 # `${27}` in a shell call site is where a metric silently lands in the wrong
 # column. Callers set CTXJSON / ORACLEJSON / OUTCOME before calling.
-CTXJSON="null"; ORACLEJSON="null"; OUTCOME=""; SANDBOX=""; STARTED=""
+CTXJSON="null"; ORACLEJSON="null"; STATEJSON="null"; OUTCOME=""; SANDBOX=""; STARTED=""
 emit() {  # all values already JSON-literal-safe strings ("null" when absent)
   jq -cn \
     --arg sandbox "${SANDBOX:-}" --arg started "${STARTED:-}" \
@@ -308,7 +308,7 @@ emit() {  # all values already JSON-literal-safe strings ("null" when absent)
     --argjson spawn "${10}" --argjson cyt "${11}" --argjson cyr "${12}" --argjson skip "${13}" \
     --argjson jscore "${14}" --arg jverd "${15}" --argjson wall "${16}" --arg freason "${17}" \
     --arg wfsha "${18}" --argjson spawnobs "${19}" \
-    --argjson ctx "${CTXJSON:-null}" --argjson oracle "${ORACLEJSON:-null}" --arg outcome "${OUTCOME:-}" \
+    --argjson ctx "${CTXJSON:-null}" --argjson oracle "${ORACLEJSON:-null}" --argjson state "${STATEJSON:-null}" --arg outcome "${OUTCOME:-}" \
     '{task:$task, arm:$arm, repeat:$repeat, ok:$ok,
       # One word for what happened. `ok` alone cannot say whether a row is
       # missing because the run crashed or because it stopped for a human.
@@ -334,6 +334,24 @@ emit() {  # all values already JSON-literal-safe strings ("null" when absent)
       envelope_in_tokens:$intok, envelope_out_tokens:$outtok,
       spawn_count:$spawn, spawn_observed:$spawnobs, cycles_test:$cyt, cycles_review:$cyr, skipped:$skip,
       judge_score:$jscore, judge_verdict:$jverd}
+     + (if $state == null then
+          {work_profile:null,risk:null,ambiguity:null,volume:null,coupling:null,evidence:null,
+           main_turn_target:null,main_turn_ceiling:null,main_turn_observed:null,budget_exceeded:null,
+           agent_active_ms:null,human_wait_ms:null,worker_runtime_ms:null,worker_wait_ms:null,reconcile_ms:null}
+        else
+          {work_profile:($state.work_profile // null),risk:($state.risk // null),
+           ambiguity:($state.ambiguity // null),volume:($state.volume // null),
+           coupling:($state.coupling // null),evidence:($state.evidence // null),
+           main_turn_target:($state.orchestrator_budget.target_turns // null),
+           main_turn_ceiling:($state.orchestrator_budget.hard_ceiling // null),
+           main_turn_observed:($state.orchestrator_budget.turns_observed // null),
+           budget_exceeded:($state.orchestrator_budget.exceeded // null),
+           agent_active_ms:($state.timing.agent_active_ms // null),
+           human_wait_ms:($state.timing.human_wait_ms // null),
+           worker_runtime_ms:($state.timing.worker_runtime_ms // null),
+           worker_wait_ms:($state.timing.worker_wait_ms // null),
+           reconcile_ms:($state.timing.reconcile_ms // null)}
+        end)
      # CONTEXT — the fourth axis. Null-filled when no transcript was found, so a
      # missing measurement reads as absent and never as zero context.
      + (if $ctx == null or ($ctx.found | not) then
@@ -437,10 +455,11 @@ for n in $(task_dirs); do
         echo "   context: not measured (no transcript for this sandbox)"
       fi
 
-      spawn=null; spawnobs=null; cyt=null; cyr=null; skip=null
+      spawn=null; spawnobs=null; cyt=null; cyr=null; skip=null; STATEJSON="null"
       if [ "$a" = "workflow" ] || [ "$a" = "design" ]; then
         rd="$(find "$sb/.workflow" -mindepth 1 -maxdepth 1 -type d ! -name _templates 2>/dev/null | head -n1)"
         if [ -n "$rd" ] && [ -f "$rd/state.json" ]; then
+          STATEJSON="$(jq -c . "$rd/state.json" 2>/dev/null || printf 'null')"
           # A /dev run that stops early exits CLEANLY — the CLI returns a healthy
           # envelope, so ok stays true and the judge just finds no code. Observed:
           # a run halted at the gate on a benign "Docs: light" deviation, burned

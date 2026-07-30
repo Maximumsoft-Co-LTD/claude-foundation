@@ -25,8 +25,8 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 
 **Acceptance scenarios**
 
-- [ ] **AC1** — **Given** <initial state>, **When** <action>, **Then** <expected outcome>.
-- [ ] **AC2** — **Given** <state>, **When** <boundary / bad input>, **Then** <on-error outcome> — or `none — <default>`.
+- [ ] **AC1** `[evidence:behavioral]` — **Given** <initial state>, **When** <action>, **Then** <expected outcome>.
+- [ ] **AC2** `[evidence:structural]` — **Given** <state>, **When** <boundary / bad input>, **Then** <on-error outcome> — or `none — <default>`.
 
 ---
 
@@ -39,7 +39,7 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 
 **Acceptance scenarios**
 
-- [ ] **AC3** — **Given** <state>, **When** <action>, **Then** <outcome>.
+- [ ] **AC3** `[evidence:rendered]` — **Given** <state>, **When** <action>, **Then** <outcome>.
 
 ### Edge Cases
 
@@ -52,7 +52,7 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 
 **Repro**: <exact steps / failing input> · **Expected**: <correct behaviour> · **Actual**: <observed>
 
-- [ ] **AC1** — **Given** the repro state, **When** <the action>, **Then** <expected behaviour holds> (regression test passes).
+- [ ] **AC1** `[evidence:behavioral]` — **Given** the repro state, **When** <the action>, **Then** <expected behaviour holds> (regression test passes).
 
 > **fix — cover the input domain, not just the reported value.** A ticket names ONE
 > input; the defect almost never lives at exactly that input. Before writing AC2,
@@ -67,21 +67,21 @@ Priority-ordered, each independently testable — build P1 alone and you still h
 
 <one line: behaviour unchanged — the baseline that proves it>
 
-- [ ] **AC1** — **Given** the captured baseline, **When** the restructure lands, **Then** the baseline suite passes unchanged.
+- [ ] **AC1** `[evidence:behavioral]` — **Given** the captured baseline, **When** the restructure lands, **Then** the baseline suite passes unchanged.
 
 ### Checklist *(chore)*
 
-- [ ] **AC1** — <checkable outcome, e.g. "dependency X at version Y, build green">.
+- [ ] **AC1** `[evidence:structural]` — <checkable outcome, e.g. "dependency X at version Y, build green">.
 
 ### Docs scope *(docs)*
 
-- [ ] **AC1** — <doc file> reflects <change>, verified against the code it describes.
+- [ ] **AC1** `[evidence:manual]` — <doc file> reflects <change>, verified against the code it describes.
 
 ### Questions & Timebox *(spike)*
 
 **Timebox**: <hard limit> · **Deliverable**: `recommendations.md`
 
-- [ ] **AC1** — <question> → answered with evidence in `recommendations.md`.
+- [ ] **AC1** `[evidence:manual]` — <question> → answered with evidence in `recommendations.md`.
 
 ## Requirements *(feat — required; other types: add only when real FRs exist, else DELETE)*
 

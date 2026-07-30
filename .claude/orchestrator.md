@@ -4,6 +4,21 @@ Orchestration runs in the **main agent** because workers cannot ask the user. Ma
 
 Scale main-session effort by size per `references/size-execution.md > Effort by size`: medium for XS/S, high for M or main-as-verifier, xhigh for L/security. Set it before Phase 2; gate, AC confirmation, and security checks never depend on effort. Ops 1–9 are local counters; cross-file references use phase names.
 
+## Workload profile and orchestrator economics
+Size is a ceiling, not the router. After the requirements digest classify and record
+`work_profile`, `risk`, `ambiguity`, `evidence[]`, `volume`, and `coupling` using
+`references/size-execution.md > Workload profile resolver`. Each axis owns one
+decision: ambiguity→interview depth · evidence→verification · volume→Implement
+executor · risk→Review/Security · coupling→context/fanout · field→understand/lock.
+
+Opus main owns judgment, not phase-local production: classification, user decisions,
+contract semantics, arbitration, independent risk review, and final synthesis.
+Implementation-local test writing/fix loops, noisy tool output, browser tooling, and
+mechanical work stay with the selected phase executor or deterministic scripts.
+Record the profile's main-turn target/hard ceiling in `orchestrator_budget`; at the
+ceiling stop with `ORCHESTRATOR_BUDGET_EXCEEDED:` (phase, cause, remaining
+uncertainty, continue/split/re-scope). Never keep spending invisibly.
+
 ## Single-pass-first
 Default to **one sequential spawn per phase**; fan out only when **all three** hold: (a) work decomposes into independent sub-investigations (no finding changes another), (b) helpers write **disjoint** files/symbols, (c) coordination + N× cold-start < wall-clock saved — else single-pass. Governs both push fanouts and the `FANOUT_REQUESTED: implement:` signal (a request to *evaluate*, not an order — honour when (a)–(c) hold, else refuse with a one-line reason). **Type forbids implement fanout** for `fix`/`refactor`/`spike`. **Never changes:** single-writer state, the synthesis pass when fanout fires (fanout output is evidence, never the artifact), pre-implement disjointness re-verification, and the gate.
 
@@ -18,7 +33,7 @@ a. **Not-actually-fresh guard.** Scan `.workflow/*/state.json` for non-`done` ru
 b. Read `.workflow/INDEX.md` + `.workflow/FOLLOWUPS.md`; consult `WORKFLOW.md` only for the section needed.
 c. **Repo detection.** `find . -maxdepth 2 -name .git \( -type d -o -type f \)` (match `.git` dir OR file — submodules). `./.git` only → single-repo `repo_root=$(pwd)`; any subdir `.git` → control-plane, ask once which repo is primary, record `state.repos`; no `.git` → no-git, `repo_root=null`, skip every VCS gate thereafter (append `ship:no-vcs` to `skipped_steps` at ship).
 d. Pick run ID `NNNN-<type>-<kebab-slug>` (`feat|fix|refactor|chore|docs|spike`). Estimate size first (op 2 sub-step 0). XS/S → fold setup (type, branch) into the merged interview batch; M/L → ask ≤2 (type if unclear, branch). As soon as the branch returns: warn + offer default if not on main, then `git -C <repo_root> checkout -b <branch>` (exists → `checkout` + note `branch_existed=true`), confirm before proceeding. Skip only when `repo_root` null.
-e. Create `.workflow/<id>/`; copy `_templates/state.json` → `.workflow/<id>/state.json`; fill `id type size speed_profile field repo_root repos branch phase=phase-1-requirements step=interview`, `owner`/`owner_email` = `git -C <repo_root> config user.name` / `user.email` output (null when `repo_root` null — the dashboard attributes the run to these, never guess them) + timestamps `created_at`=`last_updated` (timestamp rule: `## State discipline` — run the command, never type one), `done_at=null`.
+e. Create `.workflow/<id>/`; copy `_templates/state.json` → `.workflow/<id>/state.json`; fill `id type size speed_profile field repo_root repos branch phase=phase-1-requirements step=interview`, `owner`/`owner_email` = `git -C <repo_root> config user.name` / `user.email` output (null when `repo_root` null — the dashboard attributes the run to these, never guess them) + timestamps `created_at`=`last_updated` (timestamp rule: `## State discipline` — run the command, never type one), `done_at=null`. Also fill the six workload axes and the profile's `orchestrator_budget`; unresolved axes are explicit `null` only until Interview completes, never through Contract Gate.
 f. Append `INDEX.md` row, status `spec`.
 
 **Resume (`/dev --resume <id>`)** — mechanics (branch re-checkout, hard-stop on git failure, shard reconciliation, mid-fanout `step=implement` guard, legacy missing-`size`/`field`) → **`references/resume.md`** (read only when resuming).
@@ -29,12 +44,13 @@ Update `state.json` after every worker return, phase boundary, and eligible/fire
 - Record completed `phase`/`step`, matrix-derived `next_step`, `last_agent`, real cycle increments, and terse tag-only `notes`.
 - Write `"__now__"` for `last_updated`, Setup `created_at`, Close `done_at`, and `phase_times.<step>`; the hook substitutes UTC. Never call `date` or type an ISO timestamp.
 - Record `exec_mode.<phase>` + shortest true `exec_reason.<phase>`; increment `spawn_count` for every fork/cold spawn.
+- Before a phase worker starts set `worker_lifecycle={status:"started",worker,phase,started_at:"__now__",terminal_at:null}`. A phase transition is illegal until its structured return sets terminal `done|blocker|failed|size-upgrade`, after which fold the result and return lifecycle to `idle`.
 - Append `fanout_log` only when eligible/fired. Fold returned `CONTEXT:` facts with the same write; mechanics are in `references/state-edge-cases.md`.
 - Re-read `state.json` between phases; it is the resume/control anchor. `dev-state-validate.sh` enforces shape and `dev-agent-guard.sh` enforces a fresh M/L write before the next spawn.
 
-**NEVER end a turn with a spawn outstanding.** Phase workers run foreground. Background is limited to named fanout paths, and main continues until every completion lands; headless `claude -p` has no next turn. Background/worktree details → `references/state-edge-cases.md`; team shards → `references/team-mode-sharding.md`.
+**NEVER end a turn with a spawn outstanding.** Phase workers run foreground. While a phase worker is `started`, main does not read, test, review, or mutate that worker's owned tree; doing so observes a partial result and creates Reconcile work. Background is limited to named fanout paths, and main continues until every completion lands; headless `claude -p` has no next turn. Background/worktree details → `references/state-edge-cases.md`; team shards → `references/team-mode-sharding.md`.
 
-Use state + worker summaries as the working set; do not re-read artifacts already held. Batch independent boot reads in one message, but never speculative reads or a state write with the spawn it gates. Spawn prompts start with Goal + owned AC ids, then authoritative pointers + delta + `repo_root`/branch/context pointer; never drip-feed context.
+Use state + compact structured worker summaries as the working set; raw logs stay in files and passing command output is counts only. Do not re-read artifacts already held. Batch independent boot reads in one message, but never speculative reads or a state write with the spawn it gates. Spawn prompts start with Goal + owned AC ids, then authoritative pointers + delta + `repo_root`/branch/context pointer; never drip-feed context.
 
 ## Size-aware execution
 Size definitions, picker, field rules, patch lane, and the matrix live in `references/size-execution.md` plus `plan-writing > references/size-tiering.md`; read the needed section after the requirements digest. Size sets depth and a spawn ceiling, never the executor. `state.json > size` only ratchets upward. Required phases are type/trigger-aware: Interview+Spec, Plan, Contract Gate, and Implement always; Test + Ship Gate for feat/fix/refactor; independent Review and Security review when their triggers fire. State writes and the security-trigger scan also remain on. Other phases follow the type matrix and gate-approved deviations. Every size reads `.workflow/CONTEXT.md` before a code/test walk and verifies only missing load-bearing anchors. XS alone loads `references/xs-s-fast-path.md`; S/M/L use the normal phase references. `SIZE_UPGRADE:` raises the tier and preserves valid artifacts; `FIELD_UPGRADE:` enables brownfield understand/lock work.

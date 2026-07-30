@@ -1,0 +1,21 @@
+{
+  "currency": "USD",
+  "effective_date": "2026-07-30",
+  "source": "public-list-price",
+  "notes": "Rates are per million tokens. Provider-reported total_cost_usd remains authoritative when present; derived cost must record this config revision.",
+  "models": {
+    "opus-5": {
+      "input": 5,
+      "output": 25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5
+    },
+    "sonnet-5": {
+      "input": 2,
+      "output": 10,
+      "cache_write_1h": 4,
+      "cache_read": 0.2,
+      "intro_price_expires": "2026-08-31"
+    }
+  }
+}

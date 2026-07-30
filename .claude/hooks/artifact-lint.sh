@@ -147,15 +147,25 @@ check_tasks() {
   check_guardrails "$file"
 }
 
-# run_field <file> — the run's `field` from the sibling state.json, jq-free (CLI
-# mode is deliberately jq-free). Empty when there is no state.json or no field.
-run_field() {
+# run_state_value <file> <key> — a top-level scalar from the sibling state.json,
+# jq-free (CLI mode is deliberately jq-free). Empty for legacy/missing state.
+run_state_value() {
   _st="$(dirname "$1")/state.json"
+  _key="$2"
   [ -f "$_st" ] || { printf ''; return 0; }
   # Strip braces as well as quotes/spaces: a one-line state.json leaves the last
   # key glued to `}`, so `field:brownfield}` never matched and the check silently
   # never fired — the exact failure mode this whole section exists to end.
-  tr -d ' "{}' < "$_st" | tr ',' '\n' | sed -n 's/^field:\(.*\)$/\1/p' | head -1
+  tr -d ' "{}' < "$_st" | tr ',' '\n' \
+    | sed -n "s/^${_key}:\\([^]}]*\\)$/\\1/p" | head -1
+}
+
+run_field() {
+  run_state_value "$1" field
+}
+
+run_profile() {
+  run_state_value "$1" work_profile
 }
 
 # Guardrails — the brownfield contract, and the one artifact section unique to
@@ -224,10 +234,12 @@ scan_placeholders() {
           line = substr(line, 1, RSTART - 1) substr(line, RSTART + RLENGTH)
         }
         low = tolower(line)
-        if (index(low, "todo"))  print fname ":" NR ": placeholder marker: TODO"
-        if (index(low, "tbd"))   print fname ":" NR ": placeholder marker: TBD"
-        if (index(low, "fixme")) print fname ":" NR ": placeholder marker: FIXME"
-        if (index(low, "lorem")) print fname ":" NR ": placeholder marker: lorem"
+        # Marker-aware word boundaries: `todolist` is product language, not an
+        # unfinished TODO. POSIX awk has no portable \b, so spell the boundary.
+        if (low ~ /(^|[^[:alnum:]_])todo([^[:alnum:]_]|$)/)  print fname ":" NR ": placeholder marker: TODO"
+        if (low ~ /(^|[^[:alnum:]_])tbd([^[:alnum:]_]|$)/)   print fname ":" NR ": placeholder marker: TBD"
+        if (low ~ /(^|[^[:alnum:]_])fixme([^[:alnum:]_]|$)/) print fname ":" NR ": placeholder marker: FIXME"
+        if (low ~ /(^|[^[:alnum:]_])lorem([^[:alnum:]_]|$)/) print fname ":" NR ": placeholder marker: lorem"
         # Angle-bracket placeholder: < then a letter then up to a > with no
         # intervening > or whitespace-only emptiness. Catches <title>, <id>,
         # <what users do today>.
@@ -373,6 +385,84 @@ display_ac_set() {
   fi
 }
 
+evidence_class_for_ac() {
+  file="$1"; ac="$2"
+  grep -E "${ac}([^0-9]|$).*\[evidence:(structural|behavioral|rendered|integration|measured|security|manual)\]" "$file" 2>/dev/null \
+    | head -1 \
+    | sed -n 's/.*\[evidence:\([^]]*\)\].*/\1/p'
+}
+
+check_evidence_contract() {
+  source_file="$1"
+  test_plan="$2"
+  expected="$(ac_set_all "$source_file")"
+  [ -n "$expected" ] || return 0
+
+  printf '%s\n' "$expected" | while IFS= read -r ac; do
+    [ -n "$ac" ] || continue
+    cls="$(evidence_class_for_ac "$source_file" "$ac")"
+    if [ -z "$cls" ]; then
+      report FAIL "contract: $ac has no valid [evidence:<class>] in $(basename "$source_file")"
+      # This loop is a subshell in POSIX sh, so emit a sentinel consumed below.
+      printf '%s\n' "$ac"
+      continue
+    fi
+    if [ -n "$test_plan" ] && [ -f "$test_plan" ]; then
+      if grep -Ei "^[|][[:space:]]*${ac}([^0-9]|[[:space:]])[^|]*[|][[:space:]]*${cls}[[:space:]]*[|]" "$test_plan" >/dev/null 2>&1; then
+        report OK "contract: $ac evidence=$cls matches test-plan"
+      else
+        report FAIL "contract: $ac evidence=$cls missing/mismatched in test-plan.md"
+        printf '%s\n' "$ac"
+      fi
+    else
+      report OK "contract: $ac evidence=$cls declared"
+    fi
+  done >"${TMPDIR:-/tmp}/artifact-lint-evidence.$$"
+
+  # Replay reports captured inside the subshell and count only sentinel AC lines.
+  while IFS= read -r line; do
+    case "$line" in
+      "[OK]"*|"[FAIL]"*) echo "$line" ;;
+      AC[0-9]*) note_fail ;;
+    esac
+  done <"${TMPDIR:-/tmp}/artifact-lint-evidence.$$"
+  rm -f "${TMPDIR:-/tmp}/artifact-lint-evidence.$$"
+
+  if grep -q '\[evidence:rendered\]' "$source_file" 2>/dev/null && [ -n "$test_plan" ] && [ -f "$test_plan" ]; then
+    require_section "$test_plan" "Rendered smoke command" F '**Rendered smoke**'
+  fi
+  if grep -q '\[evidence:measured\]' "$source_file" 2>/dev/null && [ -n "$test_plan" ] && [ -f "$test_plan" ]; then
+    require_section "$test_plan" "measured region" F 'measured region:'
+    require_section "$test_plan" "excluded harness cost" F 'excludes:'
+  fi
+}
+
+check_ac_density() {
+  source_file="$1"
+  size="$(run_state_value "$source_file" size)"
+  count="$(ac_set_all "$source_file" | grep -c . || true)"
+  threshold=0
+  case "$size" in XS) threshold=3 ;; S) threshold=8 ;; M) threshold=15 ;; esac
+  [ "$threshold" -gt 0 ] || return 0
+  if [ "$count" -gt "$threshold" ]; then
+    if grep -qF 'AC_DENSITY_JUSTIFICATION:' "$source_file" 2>/dev/null; then
+      report OK "contract: AC density $count>$threshold justified for size=$size"
+    else
+      report FAIL "contract: AC density $count exceeds size=$size threshold $threshold; split capability or add AC_DENSITY_JUSTIFICATION:"
+      note_fail
+    fi
+  fi
+}
+
+check_execution_contract() {
+  file="$1"
+  require_section "$file" "Execution contract" E '^#+[[:space:]]+Execution contract'
+  require_section "$file" "Impacted command contract" F '**Impacted**'
+  require_section "$file" "Full-suite command contract" F '**Full-suite**'
+  require_section "$file" "command cwd" F 'cwd:'
+  require_section "$file" "test discovery expectation" E 'expected (groups|min tests|groups/min tests)'
+}
+
 check_exact_ac_set() {
   file_name="$1"; expected="$2"; actual="$3"
   if [ "$expected" = "$actual" ]; then
@@ -392,6 +482,13 @@ check_contract() {
     expected="$(ac_set_all "$dir/run.md")"
     actual="$(ac_set_tasks "$dir/run.md")"
     check_exact_ac_set "run.md task tags" "$expected" "$actual"
+    profile="$(run_profile "$dir/run.md")"
+    if [ -n "$profile" ] && [ "$profile" != "null" ]; then
+      check_evidence_contract "$dir/run.md" ""
+      check_ac_density "$dir/run.md"
+      t="$(spec_type "$dir/run.md")"
+      case "$t" in feat|fix|refactor) check_execution_contract "$dir/run.md" ;; esac
+    fi
   else
     for required in spec.md plan.md tasks.md; do
       if [ ! -f "$dir/$required" ]; then
@@ -418,6 +515,16 @@ check_contract() {
           fi
           ;;
       esac
+
+      profile="$(run_profile "$dir/spec.md")"
+      if [ -n "$profile" ] && [ "$profile" != "null" ]; then
+        check_evidence_contract "$dir/spec.md" "$dir/test-plan.md"
+        check_ac_density "$dir/spec.md"
+        case "$t" in feat|fix|refactor)
+          [ -f "$dir/test-plan.md" ] && check_execution_contract "$dir/test-plan.md"
+          ;;
+        esac
+      fi
 
       if [ -f "$dir/uxui-plan.md" ]; then
         check_exact_ac_set "uxui-plan.md" "$expected" \

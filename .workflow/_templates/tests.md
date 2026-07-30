@@ -7,6 +7,8 @@
 
 The authoritative acceptance record: Test maps every AC to executable evidence and runs Impacted; the Ship Gate later changes `impacted-passing` to `passing` after one final Full-suite + lint/type/static run. (chore / docs / spike have no test plan — fill only Skipped.)
 
+Every result row records `AC# · declared evidence · actual evidence · test/observable · result`. A declared `rendered` AC cannot pass from jsdom/DOM structure alone; a declared `integration`, `measured`, or `security` AC must cite evidence at that boundary.
+
 ## Type-aware mode *(required)*
 
 - [ ] **Full** (feat / refactor)
@@ -17,6 +19,6 @@ The authoritative acceptance record: Test maps every AC to executable evidence a
 
 **Sections by mode** — fill only the active mode's, delete the rest:
 
-Acceptance-criteria coverage · Regression test (fix) · Baseline (refactor / brownfield feat) · Edge-case gaps · Results · Coverage (diff vs floor) · Failing · Commands (Impacted + Full-suite + existing lint/type/static checks) · Visual verification (e2e_visual=on) · Per-repo results (surface fanout) · Skipped
+Acceptance-criteria coverage · Regression test (fix) · Baseline (refactor / brownfield feat) · Edge-case gaps · Results · Coverage (diff vs floor) · Failing · Commands (Impacted + Full-suite + rendered smoke + cwd/env/dependencies + expected groups/min tests + existing lint/type/static checks) · Rendered verification (whenever an AC declares `rendered`; full E2E remains opt-in) · Per-repo results (surface fanout) · Skipped
 
 When each applies → **qa.md > Mode: Execute** (per-repo → orchestrator/references/fanout-dispatch.md > QA — Execute (Test)).
