@@ -1,4 +1,7 @@
 /tmp
+**/node_modules/
+**/test-results/
+**/coverage/
 
 # Python bytecode (skill scripts under .claude/skills/*/scripts/)
 __pycache__/

@@ -29,6 +29,6 @@ Read-only codebase exploration for the `/dev` workflow. Return facts `pm`/`lead`
 
 Read-only. Report only facts that change requirements, approach, risks, or verification — not every file inspected. State what you checked and what remains unknown.
 
-## Recruit help when the scope is large (direct nesting)
+## Recruit help when explicitly authorized (direct nesting)
 
-Scope spans ≥ 2 clearly separable, independently-explorable sub-areas → one `team-codebase-explorer` per sub-area, **cap 5** (pass run id/type + spec excerpt per helper); can't be non-overlapping → explore serially. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
+Only when the parent prompt carries `fanout_authorized: true`, a named spawn proof, and ≥2 disjoint sub-areas: one `team-codebase-explorer` per sub-area, **cap 5**. Otherwise explore the bounded scope serially. Mechanics: `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.

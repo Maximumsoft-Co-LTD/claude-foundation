@@ -19,15 +19,15 @@ These are foundation-native because the existing review-agent forks are diff-ori
 
 ## Direct-nesting (`Agent`) grants
 
-Since Claude Code v2.1.172 a worker with `Agent` in its `tools` can spawn nested helpers (direct nesting). Three workers hold `Agent`, so they can split genuinely large work into disjoint sub-scopes and spawn helpers of their own type:
+Since Claude Code v2.1.172 a worker with `Agent` in its `tools` can spawn nested helpers. The tool grant is capability, not permission: a worker may use it only when its parent prompt includes `fanout_authorized: true`, a named spawn proof, and disjoint child scopes. Size or the word “large” never authorizes nesting. Three workers hold `Agent` for those explicitly authorized cases:
 
 - `team-codebase-explorer` — splits a large area into sub-areas → sub-explorers.
 - `team-best-practice-researcher` — splits a multi-part question into sub-questions → sub-researchers.
 - `team-code-reviewer` — splits a large diff into per-area slices → sub-reviewers.
 
-The other review workers (`team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) stay read-only with **no `Agent`** — their work doesn't split. Each `Agent`-holder's "Recruit help when the work is large" section caps the fan-out and stamps every helper prompt with a no-further-spawn line, so nesting is one level deep only.
+The other review workers (`team-pr-test-analyzer`, `team-silent-failure-hunter`, `team-type-design-analyzer`) stay read-only with **no `Agent`**. Each `Agent`-holder caps authorized fanout and stamps every helper prompt with a no-further-spawn line, so nesting is one level deep only.
 
-The team-mode command worker **`uxui`** (spawned by `/uxui-plan`, not by the `/dev` orchestrator — see [`INDEX.md`](./INDEX.md)) also holds `Agent` and follows the same one-level-deep rule: it self-dispatches `team-best-practice-researcher` (UX-pattern probes) and `team-codebase-explorer` (existing-UI mapping) when the surface is large, caps at 4, and stamps every helper prompt with the no-further-spawn line.
+The team-mode command worker **`uxui`** also holds `Agent` and follows the same authorization and one-level-deep rules. Explicit `/uxui-plan` authorizes the UX worker itself, not nested research.
 
 ## Fork sources
 
@@ -48,6 +48,7 @@ Fork date: 2026-05-21
 - **2026-07-09** — added `LSP` to `team-code-reviewer`, `team-silent-failure-hunter`, `team-type-design-analyzer` (read-only: go-to-def / find-references for cross-diff verification). Does **not** touch the `Agent`/`Write`/`Bash` boundaries — these workers stay report-only and, except `team-code-reviewer`, still hold no `Agent`.
 - **2026-07-15 (b)** — `team-code-simplifier` + `team-comment-analyzer` RETIRED: their checklists folded into `team-code-reviewer` as the Simplification and Comment Accuracy lenses. Rationale: heavy scope overlap with the reviewer, lowest marginal signal of the six, and two fewer spawns/synthesis inputs per L review. Review tiers are now core-3 / full-4.
 - **2026-07-15** — `team-code-reviewer` scoring contract changed: report ALL findings with confidence + severity (was: pre-filter to ≥ 80). The ≥ 80 precision gate moved to `lead`'s synthesis (`references/lead.md > Review fanout`), where cross-worker context lives. Rationale: pre-filtering in the worker suppresses recall irrecoverably; current-generation models over-obey "don't be nitpicky" and drop true positives.
+- **2026-07-30** — direct nesting now requires parent-supplied `fanout_authorized: true`, a named spawn proof, and disjoint child scopes. Size alone no longer authorizes worker-created processes.
 
 ## Drift awareness
 

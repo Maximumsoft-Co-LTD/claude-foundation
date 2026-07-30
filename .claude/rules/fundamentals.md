@@ -51,11 +51,8 @@ Model & boundaries → code → in-process concurrency → storage → service l
 
 ## Seams that blur
 
-- **concurrency vs queue vs database** — in-process is `concurrency-fundamentals`; cross-process/broker async is `queue-fundamentals`; transaction isolation is `database-fundamentals`.
-- **api-design vs architecture** — `api-design-fundamentals` owns one service's published surface (after `hexagonal-backend` defines the port, before `architecture-fundamentals` draws runtime relationships).
-- **ddd-strategic vs architecture** — `ddd-strategic` decides semantic/model boundaries; `architecture-fundamentals` decides runtime/component boundaries afterward.
-- **security & observability are cross-cutting** — applied last, to whichever layer carries a trust boundary or op surface.
+- In-process concurrency → `concurrency-fundamentals`; broker/cross-process async → `queue-fundamentals`; transaction isolation → `database-fundamentals`.
+- `ddd-strategic` owns semantic boundaries; `hexagonal-backend` owns ports; `api-design-fundamentals` owns a service's published surface; `architecture-fundamentals` owns runtime relationships.
+- Security and observability apply last to the affected layer.
 
-**Outside this router:** the non-lifecycle skills (`brainstorming`, `plan-writing`, `fanout-team-agents`, `claude-md`, `qa-handoff-note`, `init-project-docs`, `frontend-design`, `tailwind-design-system`, `ui-ux-pro-max`, `skill-creator`) trigger by their own frontmatter descriptions or explicit `/dev`-pipeline wiring — intentional, not an omission; the table lives in `CLAUDE.md > Skills outside the router`.
-
-This file is the single source of truth for triggers and cross-skill run order. `README.md` mirrors the chain; `CLAUDE.md` and `WORKFLOW.md` name this file canonical without restating it. When you add/remove/reorder a skill, update the chain here + `README.md` (grep chain head `ddd-strategic`) and re-check the two canonical-pointer mentions.
+Non-lifecycle skills trigger from their own descriptions or explicit command wiring; do not preload them. This file is canonical for routed triggers and construction order; keep the mirrored chain in `README.md` aligned.

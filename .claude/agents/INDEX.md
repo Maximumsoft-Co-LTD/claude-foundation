@@ -4,17 +4,17 @@ Which model each agent in `.claude/agents/` runs on and what it does (model from
 
 **When an agent gets a `references/<agent>.md`:** the base file carries the always-loaded core (role, modes, rules); mode *variants* and rarely-hit procedures overflow to a references file once the base would exceed roughly a page (~1,200 words) — never split below that, and never let the same rule live in both (`pm`, `lead`, `qa`, `engineer` have one; `retro`/`uxui` don't need one yet).
 
-## `/dev` workers
+## `/dev` capability workers
 
-The five sub-agents the orchestrator (main agent) spawns for the `/dev` file work. The orchestrator is **not** listed — there is no `orchestrator` sub-agent; the main agent plays that role (see [`../orchestrator.md`](../orchestrator.md)).
+The five optional capabilities the orchestrator (main agent) may execute inline, fork from warm context, or cold-spawn for `/dev`. A size label never selects a worker by itself: every cold spawn needs an `exec_reason` accepted by the execution resolver in [`../orchestrator.md`](../orchestrator.md). The orchestrator is **not** listed — there is no `orchestrator` sub-agent; the main agent plays that role.
 
 | Agent | Model | One-line role |
 |-------|-------|---------------|
-| [`pm`](./pm.md) | sonnet | Writes `spec.md` from the orchestrator's interview answers (Phase 1 spec; cannot interview the user itself). Cold `pm` runs sonnet — main (opus) does the semantic requirement verify. Cold-spawned only at L / thin pre-work / `/spec`; substantial pre-work → Phase 1 drafts warm (fork/inline). |
-| [`lead`](./lead.md) | opus frontmatter; plan/review default sonnet override | Tech lead — three modes: plan (`plan.md`/`epic.md`), review (`review.md`), and trigger-based security (`security.md`; rides the review spawn when the trigger fires — one spawn, two artifacts). Opus is kept for security and high-stakes review/plan cases. |
-| [`engineer`](./engineer.md) | sonnet | Implements from `plan.md`, ticks acceptance criteria, does the docs touch-up, and ships (gate-decided commit — default no → ready-to-run commit command + optional PR). |
-| [`qa`](./qa.md) | sonnet | Test-plan mode (Phase 1) writes `test-plan.md` before code; execute mode (Phase 2) runs unit/integration/e2e against it; type-aware; blocks ship until tests pass or are skipped. |
-| [`retro`](./retro.md) | sonnet | Closes the run — writes `retro.md`, appends follow-ups, surfaces memory + skill candidates for user confirmation. |
+| [`pm`](./pm.md) | sonnet | Writes `spec.md`. Eligible for explicit `/spec`, independent requirements work, or a material context gap; otherwise the warm executor writes it. |
+| [`lead`](./lead.md) | sonnet default; opus for Security/high-stakes review | Plans or performs independent review/security. Planning stays inline/forked when context is warm; runtime M/L review normally supplies the independence proof. |
+| [`engineer`](./engineer.md) | sonnet default; explicit high-stakes opus escalation | Implements a bounded task delta. Execution volume can justify one worker even with warm main context; size alone cannot. |
+| [`qa`](./qa.md) | sonnet | Designs or executes tests when an independent contract, browser/new-harness tooling, or multi-repo isolation proves a separate context. Known commands stay inline. |
+| [`retro`](./retro.md) | sonnet | Performs substantial multi-repo or explicitly deep synthesis. Routine closeout and ledger updates stay inline. |
 
 ## Team-mode command workers
 

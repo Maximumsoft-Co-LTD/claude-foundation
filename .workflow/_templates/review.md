@@ -1,7 +1,7 @@
 # Review: <title>
 
 **Plan**: [./plan.md](./plan.md) · **Tasks**: [./tasks.md](./tasks.md)
-**Spec**: [./spec.md](./spec.md)
+**Test evidence**: [./tests.md](./tests.md)
 **Reviewed**: YYYY-MM-DD
 **Verdict**: pass | fix-required
 **Cycle**: 1 of max 2
@@ -13,12 +13,18 @@ One row per task (`tasks.md`) — no skipping rows. A deviation needs a one-line
 - [x] T001 — implemented as planned
 - [ ] T002 — deviation: <what + why>
 
-## Acceptance-criteria check *(required)*
+## Test evidence consumed *(required)*
 
-One row per spec.md acceptance scenario (`AC#`), including each boundary/error scenario and any `measured:` target. Re-verify against the diff + running code (don't trust the checkbox). Any scenario that can't be ticked = **blocking**.
+Consume the authoritative AC rows from `tests.md`; do not copy or rerun them.
 
-- [ ] AC1 — evidence: `path:line` / behaviour observed
-- [ ] AC1 (boundary / error scenario) — evidence: `path:line` / behaviour observed
+- Status: impacted-passing | passing | failing | skipped
+- AC rows: <mapped>/<total> · unmapped: <ids or none> · blocking gaps: <none or summary>
+
+## Contract-risk checks *(required when risk exists)*
+
+Only checks tests cannot prove well: public API/schema, shared invariants, error handling, data loss, concurrency, measured targets, or an AC marked untestable. No risk → `none`.
+
+- [ ] <risk / AC id> — evidence: `path:line` → pass | blocking
 
 ## Non-AC slot check *(required when spec has a Definition of Done or Constraints)*
 
@@ -44,6 +50,6 @@ pass | fix-required → see Test
 **Fanout-only sections** — add when that fanout ran:
 
 - **Per-agent findings** — ≥ 2 review workers on one repo's diff; each `### team-<role>` with `**Dispatched-as**:` as its first line
-- **Per-repo review** — one `### Repo: <path>` per changed repo; AC check / Verdict / Cycle stay global
+- **Per-repo review** — one `### Repo: <path>` per changed repo; Test evidence / Verdict / Cycle stay global
 
 Shape → **lead.md > Mode B (Review)** · per-repo → **orchestrator/references/fanout-dispatch.md > Lead — Mode B**.

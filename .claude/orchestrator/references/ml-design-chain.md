@@ -2,21 +2,16 @@
 
 > Loaded on demand by the main agent (`.claude/orchestrator.md`, op 3 Design). Holds the
 > two Design sub-steps an **XS/S run never executes**: the brownfield-M/L shared
-> understand map, and the L full spawn chain. **Read only when `size` ∈ {M, L}** — at M
-> for Context (when brownfield), at L for both. XS/S go straight to op 3b (the combined
-> `lead` spawn) and skip this file entirely.
+> understand map and the proof-gated L split chain. Read only for M/L.
 
 ## a. Context (brownfield M/L — shared understand map)
 
-`field=brownfield` AND `size∈{M,L}` → build `.workflow/<id>/context.md` **once**: spawn
-`team-codebase-explorer` (one, or one per disjoint integration point — from
-`spec.md > Constraints > Integration points` at L; **at M the spec doesn't exist yet
-(combined fast path): take the points from the requirements digest and build `context.md`
-BEFORE the combined spawn** — in one message — **seed from `.workflow/CONTEXT.md`
-(repo-level ledger, when it exists) + spec-prep findings (op 2) — dispatch only for points
-neither covers**) mapping current state (entry→flow→callers/blast-radius→invariants, each
-`path#anchor`) + UI surface (when it renders) + test infra; synthesise into
-`_templates/context.md` (fanout = evidence — you write it). Set `context_built=true`.
+`field=brownfield` AND `size∈{M,L}` → build `.workflow/<id>/context.md` once. Seed from
+`.workflow/CONTEXT.md`, then let main do a bounded walk over named integration points.
+If that resolves entry→flow→callers/blast-radius→invariants, UI surface and test infra,
+write the map inline. Spawn `team-codebase-explorer` only for unknown entrypoints across
+multiple surfaces or another material context gap; dispatch only the uncovered points.
+Set `context_built=true` and record `exec_mode.context` + `exec_reason.context`.
 
 **Replaces** the per-slice plan-prep / UI-surface / baseline re-walks — sub-steps b/c pass
 `context.md` to `lead`/`qa`. **Shared evidence, not authority**: a wrong fact hits all three
@@ -28,7 +23,11 @@ every size **reads `.workflow/CONTEXT.md` (repo ledger) before walking** and cov
 the remainder (`orchestrator.md > Size-aware execution`). Both maps are pure optimisation,
 never a hard dependency.
 
-## c. L — full chain
+## c. L — split chain (proof-gated)
+
+Default to one combined Design executor. Split only when requirement definition,
+architecture and test contract are independent substantial investigations. Record the
+proof for every worker; `size=L` is not one.
 
 *Spec:* spawn `pm` with run id, type, the resolved artifact shape (required blocks for this
 Type — `size-tiering.md > Artifact shape by Type`), intent, digest+catch-all, full Q&A,
@@ -52,6 +51,5 @@ journeys to integration, omit visual/e2e), writes `test-plan.md` (design only).
 ## Field upgrade backfill (M/L specifics)
 
 `FIELD_UPGRADE: brownfield — <reason>` mid-run → run remaining brownfield and **backfill**
-understand/lock: re-spawn `lead` plan-revise for `plan.md > Current state` (**no
-`context.md` on a mid-run upgrade** — the revise walk stands in); for
-`test-plan.md > Baseline` the `qa` spawn writes it at M/L (XS/S add the row inline).
+understand/lock inline when the changed scope is already known. Spawn `lead` or `qa` only
+when the upgrade itself exposes a material context gap or independent test-contract issue.

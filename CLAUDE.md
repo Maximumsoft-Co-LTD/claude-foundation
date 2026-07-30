@@ -1,69 +1,83 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Purpose
 
-## Project overview
+This repository packages an installable Claude Code workflow for AI engineers.
+The workflow files are the product; this is not an application.
 
-This repo packages an opinionated **command workflow for Claude Code, aimed at AI engineers** — reusable slash commands, sub-agents, hooks, skills, and the `/dev` pipeline — so other repos can adopt them. The audience is engineers using Claude Code as their primary development surface; the artifacts here are the product, not an application.
+## Map
 
-Key surface area:
-- `.claude/orchestrator.md` — the main-agent playbook for `/dev`. There is **no** `orchestrator` sub-agent; the main agent IS the orchestrator (it owns the interview, the gate, and the single-writer `state.json`). Never call `Agent(subagent_type="orchestrator")`.
-- `.claude/agents/` — `/dev` workers (`pm`, `lead`, `engineer`, `qa`, `retro`), the team-mode `uxui` designer (spawned only by `/uxui-plan`), and the parallel `team-*` fanout workers — each with an explicit `model:` for cost/speed tuning.
-- `.claude/commands/` — slash commands: `dev.md` (full pipeline) plus the **team-mode** slice commands that drive one phase into a shared `.workflow/<id>/` run (`spec`, `dev-plan`, `test-plan`, `uxui-plan`, `implement`). All three Phase-1 plan slices can run fully in parallel — each writes its own `state.<slice>.json` shard (with an `ac_covered` index so the gate fold is a deterministic **set-compare**, not a full re-read); the gate folds them into `state.json` single-writer (canonical: `orchestrator.md > State discipline > Team-mode Phase-1 sharding`). `dev-plan`/`uxui-plan` need only `spec.md`; `test-plan` also reads `plan.md`, so run first it goes **spec-only** and the gate **backfills** the plan-derived rows once `plan.md` exists (inline for XS/S, a `qa` re-spawn only for M/L). Installers ship the whole dir, so new commands need no manifest edit.
-- `.claude/rules/` — `fundamentals.md`, the single **always-on router** that maps every "by default" trigger to its skill. Load-bearing: the fundamentals are applied via this thin always-on layer (project skills don't auto-trigger), then the full skill body loads on demand. It is the canonical source for triggers and cross-skill run order.
-- `.claude/skills/` — the fundamentals skill bodies (full detail, loaded on demand — construction chain, process/verification, delivery channel; the router lists them) plus product skills (`brainstorming`, `plan-writing`, `qa-handoff-note`, `fanout-team-agents`, frontend/UX, `skill-creator`).
-- `.claude/hooks/` — `dev-agent-guard.sh` (PreToolUse spawn guard), `dev-state-mark.sh` (PostToolUse state marker), `lint.sh` (PostToolUse linter), `protect-secrets.sh` (PreToolUse `.env`/credential read guard). `no-direct-main-commit.sh` is shipped but **opt-in** (wire it under `PreToolUse`/`Bash` in `settings.json` to block commits on `main`/`master`).
-- `.claude/tests/` — the harness that keeps the above honest, **not shipped**: `run-all.sh` (hooks · artifact-lint · scenarios · doc-consistency · bench-logic · ledger; live e2e behind `CLAUDE_E2E=1`), `docs/run-doc-consistency.sh` (pins cross-file claims that must agree), and `bench/` (efficiency benchmark + `rationale.md`, the record of what was measured and rejected). Run `sh .claude/tests/run-all.sh` after any change to a shipped file.
-- `.workflow/CONTEXT.md` — the **repo-level context ledger**, the one artifact that outlives a run. Retro accrues it (`agents/retro.md` 5b: `path#anchor — fact` per area, plus `## Capabilities` = what the system now guarantees + the test that pins each), `ledger-prune.sh` drops facts whose anchor stopped resolving, and **every run at every size reads it before walking any code**. Never back-filled — it grows only from shipped work, so it costs no upfront documentation project. Canonical rule: `orchestrator.md > Size-aware execution`.
-- `WORKFLOW.md` + `.workflow/` — the type-aware phase matrix, run templates, and per-run `state.json`/artifacts that drive `/dev --resume`. Gated by three axes: `Type` (which phases), `size` (how much machinery), `field` (**greenfield | brownfield**). Brownfield gates the **understand → lock → change** discipline (current-state map, characterization baseline); greenfield skips both. Canonical `field` def: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
+- `.claude/orchestrator.md` - `/dev` main-agent procedure. There is no
+  orchestrator sub-agent; main owns questions, spawns, and `state.json`.
+- `.claude/agents/` - scoped workers and `team-*` fanout helpers.
+- `.claude/commands/` - `/dev` plus explicit phase commands.
+- `.claude/rules/fundamentals.md` - always-on skill router and canonical
+  construction order.
+- `.claude/skills/` - procedures loaded only when their trigger fires.
+- `.claude/hooks/` and `.claude/settings.json` - runtime guards.
+- `.workflow/` - run templates, index, follow-ups, and resumable artifacts.
+- `WORKFLOW.md` - type-aware phase matrix and public workflow contract.
+- `.claude/tests/run-all.sh` - deterministic workflow test entrypoint.
 
-## What ships vs what doesn't — read this before editing anything
+The `/dev` axes are `Type`, `size`, and `field` (`greenfield|brownfield`).
+Brownfield uses understand → lock → change. Every run reads
+`.workflow/CONTEXT.md` before walking code and treats it as evidence, not
+authority.
 
-**This repo is a product other people install into their repos.** `install.sh` copies a
-fixed manifest; everything outside it is our own dev infrastructure and never reaches a
-user. Get this wrong and you either break an installed repo or make every user's run
-pay for our internals.
+## Shipping Boundary
 
-| | Paths | Consequence |
-|---|---|---|
-| **Ships** (`install.sh > PLAN`) | `.claude/orchestrator.md` · `.claude/orchestrator/references/**` · `.claude/agents/**` · `.claude/commands/**` · `.claude/skills/**` · `.claude/rules/**` · `.claude/hooks/**` · `.claude/settings.json` · `.workflow/_templates/**` · `.workflow/INDEX.md` · `.workflow/FOLLOWUPS.md` · `WORKFLOW.md` | lands in a stranger's repo and is **loaded during their runs** — every byte is re-sent on every turn of every run |
-| **Doesn't ship** | `.claude/tests/**` · `docs/**` · `CLAUDE.md` · `README.md` · `dashboard/` · `examples/` · `install*.sh` | ours alone; a user's repo has no such path |
+`install.sh > PLAN` is authoritative.
 
-Rules that follow from it:
+Ships:
 
-- **A shipped file carries the rule, never the evidence.** No benchmark numbers, cost
-  figures, judge scores, run IDs, dates, or session narrative. The user installing this
-  wants a workflow that works — our measurements are how *we* decided, not something
-  they run on.
-- **Never point from a shipped file into a non-shipped one.** `.claude/tests/…`,
-  `docs/…` and `CLAUDE.md` do not exist in a target repo, so the pointer is a dangling
-  link that also costs resident bytes. Pointers run one way only: evidence → rule.
-- **Evidence lives in `.claude/tests/bench/`** — `README.md` (method, how to run,
-  how to read a result) and `rationale.md` (the verdicts: what was adopted, what was
-  measured and rejected, with the numbers). Both are for whoever is *changing* the
-  workflow. Session-level research notes go to `docs/research/`.
-- **When a measurement changes a rule:** edit the rule in the shipped file, record the
-  numbers in `rationale.md`, and let `rationale.md` name the rule it justifies.
-- **Cost lands on the user, not on us.** The shipped playbook is resident context for
-  every turn a user's run takes. Prose that only helps a maintainer is a tax on someone
-  else's tokens.
+```text
+.claude/orchestrator.md
+.claude/orchestrator/references/**
+.claude/agents/**
+.claude/commands/**
+.claude/skills/**
+.claude/rules/**
+.claude/hooks/**
+.claude/settings.json
+.workflow/_templates/**
+.workflow/INDEX.md
+.workflow/FOLLOWUPS.md
+WORKFLOW.md
+```
 
-## Skills outside the router
+Does not ship:
 
-Ten skills deliberately sit outside `.claude/rules/fundamentals.md` (which scopes itself to the code/construction/delivery lifecycle). They trigger two other ways — this split is intentional:
+```text
+.claude/tests/**
+docs/**
+CLAUDE.md
+README.md
+dashboard/**
+examples/**
+install*.sh
+```
 
-| Trigger path | Skills |
-|---|---|
-| `/dev`-pipeline wiring (orchestrator/agents invoke them) | `brainstorming` (interview), `plan-writing` (lead), `fanout-team-agents` (fanout dispatch), `skill-creator` (post-retro, user-approved only) |
-| Frontmatter-description match on explicit ask | `claude-md`, `qa-handoff-note`, `init-project-docs`, `frontend-design`, `tailwind-design-system`, `ui-ux-pro-max` |
+Runtime files contain rules, not benchmark history, cost figures, incidents, or
+maintainer narrative. Never point a shipped file at a non-shipped path.
+Evidence belongs in `.claude/tests/bench/rationale.md`; research notes belong
+in `docs/research/`.
 
-## Related references in this workspace
+## Working Rules
 
-- `../claude-foundation-template/` — earlier template with `.claude/`, `brain/`, `docs/`, `install.sh`. Reference for house style only — do **not** copy it wholesale.
+- Apply `.claude/rules/fundamentals.md`; do not preload full skill bodies.
+- On the `/dev` critical path, use summaries first and at most one targeted
+  reference section when a concrete friction requires it.
+- Use LSP for definitions/references/diagnostics before grep or broad reads.
+- Read only the needed section of large files such as `WORKFLOW.md`,
+  `CHANGELOG.md`, and agent references.
+- Keep changes surgical. A shipped-rule change also updates its deterministic
+  tests and, when evidence-driven, the benchmark rationale.
+- Run `sh .claude/tests/run-all.sh` after changing shipped workflow files.
+- New command files are included automatically because installers copy the
+  command directory.
+- `no-direct-main-commit.sh` ships but remains opt-in.
 
-## Working agreements (carried from user-level config)
-
-The fundamentals are applied via the always-on router `.claude/rules/fundamentals.md` (project skills don't auto-trigger). **The router maps every "by default" trigger to its skill and is the single source of truth for triggers and the cross-skill run order.** On the `/dev` plan / implement / review critical path, the always-on router + agent summaries are the default pre-flight: load no full skill body unless a specific friction requires it, and prefer at most one targeted `references/<file>` section. Off the critical path, or when a task explicitly asks for a skill's full procedure, load the relevant `SKILL.md`.
-
-- **LSP first** — when an LSP tool is available, use it for diagnostics, go-to-definition, and references before grep/read. (From `~/.claude/CLAUDE.md`.)
-- **`coding-discipline` wraps every code task** via the always-on **Conduct digest** in `rules/fundamentals.md` (assumptions stated → minimum non-speculative code → surgical diff → verifiable definition of done); the full body loads only on friction. It routes to the construction/debug/refactor skills per their rules and must not re-teach them.
+Non-lifecycle skills (`brainstorming`, `plan-writing`,
+`fanout-team-agents`, frontend/UX skills, `skill-creator`) trigger through
+explicit workflow wiring or their own descriptions; do not add them to the
+always-on router merely to make them discoverable.

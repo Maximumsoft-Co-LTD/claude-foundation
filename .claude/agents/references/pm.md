@@ -11,9 +11,9 @@ Load a section only when its trigger fires; the core `pm.md` carries everything 
 - A note that opens a new unfillable slot → embed `[NEEDS CLARIFICATION]` rather than guessing; the orchestrator decides whether to ask one narrow question.
 - **Return:** the spec path, a 1–2 line summary of **only what changed** (which sections/AC), and any remaining markers.
 
-## Recruit help (direct nesting)
+## Recruit help (authorized direct nesting)
 
-**Load when:** the draft `spec.md` needs facts you lack and leaves ≥ 2 independent probes. You hold `Agent` — spawn research helpers yourself (v2.1.172+) and refine the spec from their returns. No signal fallback — if you genuinely can't direct-nest, return `BLOCKER:` naming why. **Draft-first always:** write the spec, *then* escalate.
+**Load when:** the parent prompt carries `fanout_authorized: true`, names the spawn proof, and supplies ≥2 independent probe scopes the draft lacks. Probe count and size alone are not authorization. **Draft-first always:** write the spec, then use the authorized probes.
 
 - **When** — ≥ 2 independent probes the digest + repo don't answer. One probe → resolve inline.
 - **Split + spawn** — one `team-codebase-explorer` per `codebase-*` fact, one `team-best-practice-researcher` per `best-practice-*` question, in **one message** (parallel), **cap 4**. Give each: run id/type, the spec excerpt, its question, the sections to return.

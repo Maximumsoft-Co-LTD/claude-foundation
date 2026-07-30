@@ -1,10 +1,11 @@
 #!/usr/bin/env sh
-# run-hook-tests.sh — self-contained test suite for the four wired hooks:
+# run-hook-tests.sh — self-contained test suite for the five wired hooks:
 #
 #   dev-agent-guard.sh    (PreToolUse / Agent)   — Cases 1, 3, 4, 5, 6
 #   dev-state-validate.sh (PostToolUse / Write…) — state.json integrity net
 #   dev-state-mark.sh     (PostToolUse / Agent)  — .last_worker_return marker
 #   protect-secrets.sh    (PreToolUse / Read|Grep|Bash) — secret-file guard
+#   lint.sh               (PostToolUse / Write…) — fast default vs opt-in full checks
 #
 # Contract under test: a hook BLOCKS by printing {"decision":"block",...} on
 # stdout and exiting 0; it ALLOWS by printing nothing (dev-state-mark instead
@@ -24,8 +25,9 @@ GUARD="$HOOKS/dev-agent-guard.sh"
 VALIDATE="$HOOKS/dev-state-validate.sh"
 MARK="$HOOKS/dev-state-mark.sh"
 SECRETS="$HOOKS/protect-secrets.sh"
+LINT="$HOOKS/lint.sh"
 
-for h in "$GUARD" "$VALIDATE" "$MARK" "$SECRETS"; do
+for h in "$GUARD" "$VALIDATE" "$MARK" "$SECRETS" "$LINT"; do
   if [ ! -f "$h" ]; then
     echo "FAIL: hook not found at $h" >&2
     exit 1
@@ -111,9 +113,9 @@ PROJ_A="$TMPROOT/proj-agents"
 mkdir -p "$PROJ_A/.claude/agents"
 printf -- '---\nname: pm\ndescription: fake pm for tests\nmodel: sonnet\n---\nbody\n' > "$PROJ_A/.claude/agents/pm.md"
 
-agent_json() { # $1=subagent_type $2=model ("" = omit)
-  jq -cn --arg st "$1" --arg m "$2" \
-    '{tool_name:"Agent", tool_input:({subagent_type:$st, description:"do a thing", prompt:"work"} + (if $m == "" then {} else {model:$m} end))}'
+agent_json() { # $1=subagent_type $2=model ("" = omit) $3=prompt
+  jq -cn --arg st "$1" --arg m "$2" --arg p "${3:-work}" \
+    '{tool_name:"Agent", tool_input:({subagent_type:$st, description:"do a thing", prompt:$p} + (if $m == "" then {} else {model:$m} end))}'
 }
 
 # --- Case 1: orchestrator is not a sub-agent -------------------------------
@@ -195,11 +197,12 @@ printf -- '---\nname: qa\nmodel: sonnet\n---\n'       > "$PROJ_XS/.claude/agents
 printf -- '---\nname: engineer\nmodel: sonnet\n---\n' > "$PROJ_XS/.claude/agents/engineer.md"
 run_hook "$GUARD" "$PROJ_XS" "$(agent_json qa opus)"
 assert_blocked "guard C4 tier guard applies on an XS run too" "pins model: sonnet"
-# The one sanctioned override: `phase-2.md` op 5 escalates implement to opus at
-# L or on a security-trigger path. Blocking it cost a wasted spawn and then ran
-# the security-sensitive implement on sonnet anyway.
+# The one sanctioned override needs a named high-stakes reason; L alone cannot
+# silently buy Opus.
 run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer opus)"
-assert_allowed "guard C4 engineer may escalate to opus"
+assert_blocked "guard C4 engineer opus needs model_reason" "requires a prompt field"
+run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer opus "model_reason:auth-boundary")"
+assert_allowed "guard C4 engineer may escalate to opus with reason"
 # Escalation only — a downward override is still the leak this case stops.
 run_hook "$GUARD" "$PROJ_XS" "$(agent_json engineer haiku)"
 assert_blocked "guard C4 engineer may not be downgraded" "pins model: sonnet"
@@ -437,6 +440,51 @@ assert_allowed "secrets Bash source .env (loads, never prints)"
 
 run_hook "$SECRETS" "$TMPROOT" "$(read_json "$TMPROOT/app/README.md")"
 assert_allowed "secrets Read README.md"
+
+# =============================================================================
+# lint.sh — project-wide checks stay out of the default edit hot loop
+# =============================================================================
+
+LPROJ="$TMPROOT/proj-lint"
+mkdir -p "$LPROJ/src" "$LPROJ/node_modules/.bin"
+printf 'const value: number = 1;\n' > "$LPROJ/src/app.ts"
+printf '{}\n' > "$LPROJ/tsconfig.json"
+printf '#!/bin/sh\ntouch "$CLAUDE_PROJECT_DIR/.eslint-ran"\nexit 0\n' > "$LPROJ/node_modules/.bin/eslint"
+printf '#!/bin/sh\ntouch "$CLAUDE_PROJECT_DIR/.tsc-ran"\nexit 0\n' > "$LPROJ/node_modules/.bin/tsc"
+chmod +x "$LPROJ/node_modules/.bin/eslint" "$LPROJ/node_modules/.bin/tsc"
+
+lint_json() { jq -cn --arg fp "$1" '{tool_name:"Write", tool_input:{file_path:$fp}}'; }
+
+rm -f "$LPROJ/.eslint-ran" "$LPROJ/.tsc-ran"
+run_hook "$LINT" "$LPROJ" "$(lint_json "$LPROJ/src/app.ts")"
+assert_allowed "lint default edit check"
+if [ -e "$LPROJ/.eslint-ran" ]; then
+  fail "lint default started eslint in the edit hot loop"
+else
+pass "lint default defers eslint to the Ship Gate"
+fi
+if [ -e "$LPROJ/.tsc-ran" ]; then
+  fail "lint default ran project-wide tsc in the edit hot loop"
+else
+  pass "lint default skips project-wide tsc"
+fi
+
+run_hook "$LINT" "$LPROJ" "$(lint_json "$LPROJ/src/app.ts")" CLAUDE_EDIT_LINT=1
+assert_allowed "lint opt-in file edit check"
+if [ -e "$LPROJ/.eslint-ran" ]; then
+  pass "lint opt-in runs eslint"
+else
+  fail "lint opt-in did not run eslint"
+fi
+
+rm -f "$LPROJ/.tsc-ran"
+run_hook "$LINT" "$LPROJ" "$(lint_json "$LPROJ/src/app.ts")" CLAUDE_EDIT_FULL_CHECKS=1
+assert_allowed "lint opt-in full edit check"
+if [ -e "$LPROJ/.tsc-ran" ]; then
+  pass "lint opt-in runs project-wide tsc"
+else
+  fail "lint opt-in did not run project-wide tsc"
+fi
 
 # =============================================================================
 

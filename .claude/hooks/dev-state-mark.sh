@@ -99,18 +99,7 @@ cur_phase="$(jq -r '.phase // ""' "$latest_state" 2>/dev/null || printf '')"
 cur_step="$(jq -r '.step // ""' "$latest_state" 2>/dev/null || printf '')"
 
 reminder=$(cat <<EOF
-[/dev state discipline] Worker \`${subagent_type}\` just returned for run \`${run_id}\` (phase=${cur_phase:-?}, step=${cur_step:-?}).
-
-BEFORE your next \`Agent\` spawn, update \`.workflow/${run_id}/state.json\` via Write/Edit with:
-  - \`phase\`: current phase
-  - \`step\`: the step you just completed
-  - \`next_step\`: per the type matrix in WORKFLOW.md (use \`"skipped:<reason>"\` for matrix-skipped steps)
-  - \`cycles.review\` / \`cycles.test\`: bump only on actual cycle increments
-  - \`last_updated\`: fresh ISO timestamp
-  - \`phase_times.<step>\`: same timestamp — completed-at per step (cycle re-entry overwrites; add the key if the run predates it)
-  - \`last_agent\`: \`${subagent_type}\`
-
-The PreToolUse guard (\`.claude/hooks/dev-agent-guard.sh\` Case 3) blocks the next worker spawn until the mtime of \`state.json\` is newer than \`.last_worker_return\`. Skipping this is the single most common reason a /dev run gets BLOCKED and needs \`/dev --resume\`.
+[/dev] \`${subagent_type}\` returned for \`${run_id}\` (${cur_phase:-?}/${cur_step:-?}). Before another Agent spawn, update state.json: completed phase/step, matrix next_step, real cycle increments, last_agent, and \`"__now__"\` for last_updated + phase_times.<step>. The spawn guard requires this write to be newer than .last_worker_return.
 EOF
 )
 

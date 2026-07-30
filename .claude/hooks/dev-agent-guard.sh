@@ -257,19 +257,17 @@ case "$subagent_type" in
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi
-      # `engineer` gets ONE sanctioned override: an escalation to opus. The
-      # playbook asks for it in two places — `phase-2.md` op 5 and
-      # `orchestrator.md` op 5, "model opus when Size=L or the plan touches a
-      # security-trigger path — implement is where defects are born" — and this
-      # case used to block it, so a security-triggered run burned a blocked spawn
-      # and then quietly implemented on sonnet anyway. Observed live as
-      # `engineer req:opus` on a migration task. Escalation only: a DOWNWARD
-      # override (haiku on an implement) is still the tier leak this case exists
-      # to stop, and every other worker still matches its pin exactly.
+      # `engineer` may escalate to opus only with an explicit high-stakes
+      # model_reason in its prompt. Size alone is not a model decision.
       if [[ "$subagent_type" == "engineer" && "$req_model" == "opus" ]]; then
-        :
+        worker_prompt="$(printf '%s' "$input" | jq -r '.tool_input.prompt // ""')"
+        if [[ "$worker_prompt" != *"model_reason:"* ]]; then
+          reason="BLOCKED by /dev guard: engineer model=\"opus\" requires a prompt field \`model_reason:<high-stakes trigger>\`. Size=L alone is not an escalation; omit model to use the sonnet pin."
+          jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+          exit 0
+        fi
       elif [[ "$req_model" != "$pinned" ]]; then
-        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. A model override here silently runs the wrong tier (e.g. a higher-tier main session leaking onto a sonnet-pinned worker). Drop the model param so the frontmatter governs — lead may vary sonnet/opus per phase, and engineer may escalate to opus (L / security-trigger path); nothing else varies. (To let $subagent_type vary too, adjust the Case 4 list in dev-agent-guard.sh.)"
+        reason="BLOCKED by /dev guard: spawning \`$subagent_type\` with model=\"$req_model\" but its agent definition pins model: $pinned. Drop the model param so frontmatter governs — lead may vary by review risk, and engineer may use opus only with a named high-stakes model_reason; nothing else varies."
         jq -n --arg r "$reason" '{decision:"block", reason:$r}'
         exit 0
       fi

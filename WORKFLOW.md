@@ -1,6 +1,6 @@
 # Workflow
 
-A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal. **Fast first** — when two compliant paths exist, take the faster one; speed comes from cutting overhead (round-trips, re-reads, ceremony), never from cutting verification. **Floor (never cut, at any size):** the gate, the security-trigger *check*, state writes / `--resume`, the `fix` regression contract, and per-line AC confirmation.
+A spec-driven, two-phase pipeline (interview → plan → Contract Gate → autonomous build) that scales machinery to evidence. **Fast first:** cut round-trips, re-reads, duplicate ledgers, and unjustified spawns, never required verification. **Floor:** Contract Gate and state/resume for every run; code-type Test + Ship Gate; triggered independent Review/Security; the security scan and fix/refactor contracts.
 
 **Version 2.12.0** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -20,10 +20,10 @@ flowchart TD
 
     subgraph P1["Phase 1 — Requirements (interactive)"]
         direction TB
-        S1["1. Interview + spec<br/>orchestrator asks · pm (L) / combined lead (XS–M) writes spec.md"]
-        S2["2. Plan<br/>lead → plan.md (or epic.md)"]
-        S2T["Test plan<br/>qa → test-plan.md (feat/fix/refactor)"]
-        S3{"3. Gate"}
+        S1["1. Interview + spec<br/>main/fork when warm · combined lead only by proof"]
+        S2["2. Plan<br/>same Design executor"]
+        S2T["Test plan<br/>same executor · separate qa only by proof"]
+        S3{"3. Contract Gate"}
         S1 --> S2 --> S2T --> S3
     end
 
@@ -34,16 +34,17 @@ flowchart TD
     subgraph P2["Phase 2 — Implementation (autonomous)"]
         direction TB
         S4["4. Implement<br/>engineer · fix → failing test first"]
-        S5{"5. Test<br/>qa · regression for fix"}
-        S6{"6. Review<br/>lead vs plan + acceptance"}
+        S5{"5. Change Gate · Test<br/>Impacted · AC evidence"}
+        S6{"6. Change Gate · Review<br/>semantic + contract risk"}
         S7{"7. Security<br/>trigger-based · lead"}
+        SG{"Ship Gate<br/>Full + lint/type/static"}
         S8["8. Docs touch-up<br/>engineer"]
         S9["9. Ship<br/>engineer · opt-in commit/PR (default no)"]
         S10["10. Retro<br/>retro.md · memory + skill candidates"]
         S4 --> S5
         S5 -- "pass" --> S6
         S6 -- "pass" --> S7
-        S7 -- "pass / not triggered" --> S8 --> S9 --> S10
+        S7 -- "pass / not triggered" --> SG --> S8 --> S9 --> S10
     end
 
     S5 -- "fail · ≤3 cycles" --> S4
@@ -100,30 +101,30 @@ Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/
 
 | File | Owner | Purpose |
 |---------|---------------|----------|
-| `spec.md` | `pm` (L · `/spec`) · `lead` combined (XS–M) | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
-| `run.md` | `lead` combined (XS micro-lane) | **Single XS artifact** replacing spec/plan/tasks/test-plan — same contract core (Goal, `**Type**:`, `AC#`, `T###`+`verify:`, Coverage); `SIZE_UPGRADE: S` re-emits the four files (`xs-s-fast-path.md`) |
-| `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built once (M: digest-seeded, before the combined spawn; L: after the spec) so `lead`/`qa`/`uxui`/`engineer` skip re-walking (`engineer` reads its `## Current state`). Optional — greenfield/XS-S skip it |
-| `plan.md` | `lead` (plan mode) | **Summary** + **Technical Context** + **Gate check** (vs `rules/fundamentals.md`), **phases for this task**, architecture diagram, current-state + research notes, **scaffold skeleton** (M/L), files to touch (`path#anchor`), risks, **rollback** |
-| `tasks.md` | `lead` (plan mode) | **Executable task breakdown** — phased (Setup → Foundational → one per User Story by priority → Polish) `T### [P] [AC#] … verify:` tasks, dependency-ordered, each tied to an acceptance scenario; the engineer builds from this |
-| `test-plan.md` | `lead` combined (XS–M) or `qa` (L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan per AC, edge cases, out-of-scope, fixtures/env, regression (fix) / baseline (refactor) contract, coverage targets. Written after `plan.md`, signed off at the gate; `qa` executes it at Test |
+| `spec.md` | current Design executor (main/fork/combined `lead`); `pm` only in proof-gated split chain or `/spec` | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
+| `run.md` | orchestrator (XS micro-lane) | **Single XS artifact** replacing spec/plan/tasks/test-plan — same contract core (Goal, `**Type**:`, `AC#`, `T###`+`verify:`, Coverage); `SIZE_UPGRADE: S` re-emits the four files (`xs-s-fast-path.md`) |
+| `context.md` | main; explorer only for a material context gap | **Shared brownfield-M/L understand map** — seeded from the repo ledger and a bounded walk, built once so later phases do not re-walk |
+| `plan.md` | current Design executor | **Summary** + **Technical Context** + **Gate check**, phases, architecture, current state, files, risks, rollback |
+| `tasks.md` | current Design executor | Dependency-ordered `T### [AC#] … verify:` tasks tied to acceptance scenarios |
+| `test-plan.md` | current Design executor; separate `qa` only by proof | Coverage per AC, edge cases, fixtures/env, regression/baseline contract and targets |
 | `uxui-plan.md` | `uxui` (team mode) | **Design-time UX plan** for UI work — Scenes, ASCII wireframes, Scenarios, UX direction & components, AC↔scene mapping. Written by `/uxui-plan` (not a linear state-machine step); `frontend-design` builds from it, `qa`'s Visual verification checks against it |
-| `review.md` | `lead` (review mode) | Tasks-adherence + **acceptance verification** against `spec.md` |
+| `review.md` | main for mechanical work · independent `lead` for runtime M/L/security | Tasks-adherence + **acceptance verification** against `spec.md` |
 | `security.md` | `lead` (security mode) | Security findings; only when the diff trips the sensitive-paths trigger |
-| `tests.md` | `qa` (execute) · orchestrator inline at XS/S (`e2e_visual=off`) | **Test execution record** — AC↔test mapping, run results, regression check (fix), measured diff coverage, edge-case gaps. Executes `test-plan.md` |
+| `tests.md` | main for known harness · `qa` only by tooling/context proof | **Test execution record** — AC↔test mapping, results, regression check, coverage, edge gaps |
 | `recommendations.md` | `engineer` (spike) | Spike deliverable — what we learned, recommended next step. Replaces test/ship phases. |
-| `retro.md` | `retro` | What worked, what to change, memory + skill candidates, commit/PR refs |
+| `retro.md` | main; `retro` only for substantial synthesis | What worked, what to change, memory + skill candidates, commit/PR refs |
 | `epic.md` | `lead` (rare) | Decomposition into slices when `Ship as: staged` + ≥2 capabilities |
-| `state.json` | `orchestrator` | Resume cursor: phase, step, cycle counters, run timestamps (`created_at`, `last_updated`, `done_at` just before the retro spawn), per-step completion times (`phase_times.<step>` — retro turns the deltas into per-phase durations) |
+| `state.json` | `orchestrator` | Resume cursor: speed profile, phase, step, cycle counters, run timestamps (`created_at`, `last_updated`, `done_at` before Retro), per-step completion times (`phase_times.<step>`) |
 
-## Optional artifact gate
+## Contract Gate
 
-Off-by-default structural check, not wired into the state machine — run by hand / pre-commit / CI:
+The workflow runs this deterministic check before human approval; it is also available by hand / pre-commit / CI:
 
 ```sh
-sh .claude/hooks/artifact-lint.sh .workflow/<id>/
+sh .claude/hooks/artifact-lint.sh --contract .workflow/<id>/
 ```
 
-Per directory: **required sections, type-aware** (the `**Type**:` value picks the shape — `spec.md` a `**Type**:` + `## Goal` + the type's contract block (`feat` → `## User Stories`; `fix` → `Reproduction & Expected`; `refactor` → `Equivalence contract`; `chore` → `Checklist`; `docs` → `Docs scope`; `spike` → `Questions & Timebox`, non-feat blocks carrying ≥1 `AC#`); `tasks.md` ≥1 `T###` task with an `[AC<n>]`/`[DoD]` tag + `verify:`; `plan.md` a fenced `mermaid` block — `chore`/`docs` exempt; canonical lookup: `plan-writing > references/size-tiering.md > Artifact shape by Type`) and **no leftover placeholders** (`TODO`/`TBD`/`FIXME`/`lorem`, `<...>`, bare prose only — code spans/fences are ignored). Prints `[OK]`/`[FAIL] <file>:<line>: …`, exits non-zero on failure. POSIX `sh`+`grep`/`awk`, no `_templates/` at runtime. Fixtures: [`run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
+Per directory it runs the type-aware artifact checks plus required-artifact validation, unresolved-marker detection, and exact AC-set equality across spec/run, tasks, test plan, and UX map. Human approval then validates intent and hard-to-reverse decisions instead of recounting structure. Prints `[OK]`/`[FAIL]`, exits non-zero on failure, and remains POSIX `sh` + standard `grep`/`awk`. Fixtures: [`run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
 
 ## Type-aware phase matrix
 
@@ -143,13 +144,15 @@ Type decides *which* phases run: `orchestrator` **skips or specializes** some by
 | 9. Ship (stage + opt-in commit/PR) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 10. Retro | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ · **no `retro.md` @XS** | ✓ |
 
-**Required vs optional — the phase contract.** Only four phases are **required** and
-cannot be turned off: **Interview + spec · Plan · Gate · Implement**. They are the
-run's spine — what you asked for, how it will be built, your approval, and the
-code. Everything else — **Test plan · Test · Review · Security review · Docs ·
-Ship · Retro** — is **optional**: the matrix below is its *default*, and the plan's
-`## Phases for this task` or a gate `skip <n>` can set any of them to
-`light`/`skip`, recorded in `state.json > phase_plan` + `skipped_steps`.
+**Required vs optional — the phase contract.** Required for every run:
+**Interview + spec · Plan · Contract Gate · Implement**. For code-bearing
+`feat`/`fix`/`refactor`, **Test plan · Change Gate Test · Ship Gate** are also
+required. Independent **Review** becomes required when runtime behaviour is M/L
+or Implement was volume-routed to Sonnet; a fired **Security review** is required.
+These checks cannot be gate-skipped. `chore`/`docs`/`spike` keep their matrix
+specializations. Optional work is **Docs touch-up · commit/PR Ship effects ·
+Retro · non-triggered lightweight Review** and may be set to `light`/`skip`,
+recorded in `state.json > phase_plan` + `skipped_steps`.
 
 Two things stay on no matter what you skip, because both are near-free and cover a
 failure you cannot see afterwards: **the `state.json` writes** (they are what
@@ -159,10 +162,12 @@ list and is the only thing standing between a trust-boundary diff and silence). 
 you want the trigger scan off too, say so — it is one line — but it is off by
 choice, never by default.
 
-**Skipping Test on `fix`/`refactor` waives a contract you asked for.** `fix`'s
-regression test is what stops the bug coming back; `refactor`'s baseline is what
-makes "behaviour unchanged" checkable. Skipping them is allowed and recorded — just
-know that is the thing being traded.
+**Three authoritative quality gates.** Contract Gate owns artifact structure and
+cross-artifact AC equality. Change Gate owns executable AC evidence (`tests.md`)
+plus independent semantic/risk review when triggered. Ship Gate owns one final
+Full-suite + lint/type/static run per converged diff. Engineer task verifies are
+local implementation feedback, not a second AC ledger; Review consumes Test
+evidence and does not rerun or copy every AC row.
 
 **Retro at XS writes no `retro.md` — and this one is safe to cut on argument, not just measurement.**
 Close still runs: `done_at` is stamped, `INDEX` moves to done, follow-ups are appended, and the
@@ -194,11 +199,11 @@ Browser **e2e** + **visual/a11y verification** are **off by default** (`state.js
 
 ### Per-task phase plan (deviation from the matrix)
 
-The matrix is the **default, not the final word**. `lead` (plan mode) writes a reasoned **`## Phases for this task`** block in `plan.md` that starts from the matrix and may **deviate** when a discretionary phase isn't needed. Three phases are **discretionary**: **Test**, **Review**, **Docs**. A disposition turning a matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification. No deviation → one line (`Matrix defaults for type=<T> — no deviations.`).
+The matrix is the **default, not the final word**. `lead` writes a reasoned **`## Phases for this task`** block. **Review** and **Docs** are discretionary unless a Review trigger fires; Test is discretionary only for non-code types the matrix already skips. A disposition turning an optional matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification.
 
-**Protected — never deviatable, at any size:** **Interview + Spec**, **Plan**, **Gate**, the **security-trigger *check*** (the scan always runs; the plan may *predict* whether it fires, never suppress it), and **Retro** — plus state-discipline writes and the per-line AC confirmation. Implement and Ship aren't discretionary either.
+**Plan-authored deviations:** `lead` may proactively vary only optional **Review and Docs**. It may not pre-skip Interview + Spec, Plan, Contract Gate, Implement, code-type Test/Ship Gate, a fired Review/Security check, or the security-trigger scan. Commit/PR effects and Retro remain gate options.
 
-**The gate owns the deviation, not the plan** — every deviation needs explicit per-line confirmation, never a plain `approve`; `lead` proposes, the user disposes. Lever syntax + `state.json > phase_plan` mechanics: `.claude/orchestrator/references/gate.md`. **Skipping `Test` on `fix`/`refactor` also waives that type's regression/baseline contract** — highest justification bar.
+**The gate owns the deviation, not the plan** — every optional deviation needs explicit per-line confirmation, never a plain `approve`; required quality gates refuse a skip. Lever syntax + state mechanics: `.claude/orchestrator/references/gate.md`.
 
 This subsection is the **canonical definition**; `plan.md`, `lead.md`, and `orchestrator.md` point here.
 
@@ -220,11 +225,11 @@ Phase names below match the matrix; row numbers stay display-only in the table a
 
 ## Phase 1 — Requirements (interactive)
 
-Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract. **Interview + Spec** (`pm` writes `spec.md` at L; XS–M: `lead` combined) → **Plan** (`lead` writes `plan.md`+`tasks.md`) → **Test-plan** (`qa` writes `test-plan.md` at L; XS–M folded) → **Gate** (per-line AC confirmation; loops until `approve` — see [Stop conditions](#stop-conditions)). Script: `.claude/orchestrator.md` (Phase 1 ops).
+Turn a rough intent into a signed-off spec + plan + test plan before code. The resolver keeps Design inline/fork when interview and code map are warm at any size, otherwise uses one combined `lead`. The L `pm → lead → qa` split requires independent substantial slices; size alone never triggers it. Gate confirms every AC.
 
 ## Phase 2 — Implementation (autonomous after approval)
 
-Build the approved contract and prove it — implement, then close the test/review/security loops and ship, without further prompts (a blocking finding bounces back to implement). **Implement** → **Test** (`qa`, before review; diff-coverage floors are advisory ratchets, not ship-blocks) → **Review** (`lead`) → **Security** (trigger-based) → **Docs** → **Ship** (opt-in commit/PR) → **Retro**. Cycle budgets: [Stop conditions](#stop-conditions). `state.json` updates after every step; `/dev --resume <id>` continues a dead run. Script: `.claude/orchestrator.md` (Phase 2 ops).
+Build and prove the contract. Micro implementation stays inline; substantial planned generation (≥3 code tasks/files, a test-fix loop, or >~2K expected output) routes once to a bounded Sonnet engineer even when main Opus is warm. Known tests, docs, ordinary git commands, and Retro stay inline. Runtime-behaviour M/L gets one independent Review, and Security gets isolation when triggered. Each worker records its spawn proof; size alone proves neither a spawn nor an Opus escalation.
 
 ## Scope: when to split (rare path)
 
@@ -263,7 +268,7 @@ Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (
 
 ### Anti-bias rule
 
-Because `lead` reviews the plan they wrote, review mode is checklist-driven (one row per task, one per acceptance scenario incl. its boundary/error scenario, one per DoD item and Constraint, one verification per file). "Looks good overall" is banned.
+Review is checklist-driven regardless of executor. Runtime-behaviour M/L changes use a cold `lead` for independence; mechanical/docs/config changes may stay inline. Size alone does not buy a reviewer or fanout.
 
 ## Team mode — run one role on its own
 
@@ -281,15 +286,15 @@ Same main-agent-as-orchestrator + spawn-guard mechanics as `/dev`. Typical flow:
 
 ## Example: `/dev create todolist app`
 
-S-size greenfield: one interview batch → the orchestrator writes `spec.md`+`plan.md`+`tasks.md`+`test-plan.md` inline (no design spawn at S) (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement **inline** (Phase 1 drafted warm, so the plan is retained rather than re-read; the planned tests are written alongside the code) → orchestrator runs the suite inline, green → review (cold `lead` spawn — the plan's author must not be its only reader) → merged docs+ship → inline retro → done. **Two spawns for the whole run.**
+S-size greenfield: one interview batch → inline artifacts → Contract Gate → optional volume-routed Sonnet Implement → Change Gate → Ship Gate → merged Docs+Ship worker → inline Retro. **One baseline Docs+Ship spawn, up to two when Implement volume fires; Security may add isolation.**
 
 ## Example: `/dev fix login redirect loop`
 
-`spec.md` (fix, repro: admin login loops to `/login`) → `lead` writes `plan.md`+`tasks.md` (T001 = failing regression test, T002 = fix) → `qa` writes the regression contract → gate (security on — touches auth) → `approve` → engineer writes the failing test, fixes the redirect → qa confirms it fails pre-fix, passes now → review → security passes → commit (no PR) → retro → done.
+`spec.md` (fix, repro: admin login loops to `/login`) → regression-first plan → Contract Gate → Implement → Change Gate confirms fails-before/passes-now + semantic/security review → Ship Gate → optional commit → Retro.
 
 ## Example: `/dev refactor extract pricing engine from OrderService`
 
-M-size brownfield: `spec.md` (refactor, equivalence contract — pricing output stays identical) → `lead` maps `## Current state` (entry `OrderService.total()` → 4-hop flow → blast radius `applyDiscount`/`roundTax`, invariants each `path#anchor`), coverage thin → `tasks.md` T001 = capture characterization baseline over those blast-radius symbols, T002+ = extract → `qa` writes the Baseline contract (golden-master on 8 order fixtures · how compared: exact) → gate (a `skip 5` here would waive the baseline — kept) → `approve` → engineer writes the golden-master first, green on unchanged code, commits it alone; a fixture exposes a rounding bug → pins the wrong output with a `pinned-bug:` marker + notes it, does NOT fix inline → extracts the engine in small green steps, golden-master stays green → qa verifies the baseline held before/after → review → commit → retro logs the pinned bug as a `fix` follow-up → done.
+M-size brownfield with warm context: main writes the equivalence plan + golden-master contract inline → Contract Gate → bounded Sonnet Implement → Change Gate runs Impacted + independent semantic review → Ship Gate runs Full/lint/static → deterministic ship + Retro inline.
 
 ## Example: `/dev spike compare bullmq vs sidekiq`
 
@@ -300,7 +305,7 @@ M-size brownfield: `spec.md` (refactor, equivalence contract — pricing output 
 Where the run pauses, loops, or escalates instead of charging ahead.
 
 - `revise` at the gate (or free-form chat) → targeted in-run edit of the affected sections only, re-verify, re-present. Never a fresh Phase 1.
-- `skip <n>`/`run <n>` at the gate → flips any **optional** phase (Test plan / Test / Review / Security review / Docs / Ship / Retro), recorded in `state.json > phase_plan`, loop continues until `approve`. The four required phases (Interview+spec / Plan / Gate / Implement) refuse.
+- `skip <n>`/`run <n>` at Contract Gate changes optional work only. Code-type Test plan/Test/Ship Gate, triggered independent Review/Security, and the always-required phases refuse. Optional Docs, commit/PR effects, Retro, and non-triggered lightweight Review are recorded in `phase_plan`.
 - Test failures → fix → re-run, ≤3 cycles, then escalate.
 - Reviewer blocking issues → fix → re-test → re-review, ≤2 cycles, then escalate.
 - Security `high` finding → fix → re-test → re-review → re-security, counts against the review budget.

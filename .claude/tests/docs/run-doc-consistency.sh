@@ -120,7 +120,8 @@ fi
 FAST="$ROOT/.claude/orchestrator/references/xs-s-fast-path.md"
 SIZEX="$ROOT/.claude/orchestrator/references/size-execution.md"
 if [ -f "$FAST" ] && [ -f "$SIZEX" ]; then
-  assert_file_contains "fast path states the S spawn budget" "$FAST" "S spawn budget: 2"
+assert_file_contains "fast path states the S spawn budget" "$FAST" "S spawn budget: 2"
+assert_file_contains "fast path keeps S review inline" "$FAST" "Review inline on the fast profile (XS/S)"
   assert_file_contains "fast path routes S Design inline"     "$FAST" "S designs inline"
   if grep -qE '^\| Spec \+ plan \|.*inline — main writes the four artifacts' "$SIZEX"; then
     pass "size matrix agrees: S spec+plan is inline"
@@ -135,15 +136,94 @@ if [ -f "$FAST" ] && [ -f "$SIZEX" ]; then
   else
     fail "size matrix inlines S docs+ship — measured and rejected twice"
   fi
-  assert_file_contains "fast path records the docs+ship rejection" "$FAST" "measured and REJECTED, twice"
+  assert_file_contains "fast path keeps the S docs+ship exception" "$FAST" "S docs+ship stays one spawn"
+fi
+
+# --- 7b. M/L execution is evidence-routed, never size-routed ----------------
+STATE_TEMPLATE="$ROOT/.workflow/_templates/state.json"
+if [ -f "$ORCH" ] && [ -f "$SIZEX" ] && [ -f "$STATE_TEMPLATE" ]; then
+  assert_file_contains "orchestrator defaults phase execution inline" "$ORCH" "Default **inline**"
+  assert_file_contains "orchestrator requires a spawn proof" "$ORCH" "If no proof can be named, spawning is forbidden"
+  assert_file_contains "orchestrator recognizes implementation model economy" "$ORCH" "execution volume"
+  assert_file_contains "size matrix routes volume to Sonnet engineer" "$SIZEX" "one bounded Sonnet"
+  assert_file_contains "size matrix says size never proves a spawn" "$SIZEX" "size never proves a spawn"
+  assert_file_contains "state records per-phase execution reasons" "$STATE_TEMPLATE" '"exec_reason": {}'
+fi
+
+# --- 7b-i. model routing keeps Opus on judgment, not routine generation -----
+MODEL_TIERS="$ROOT/.claude/orchestrator/references/model-tiers.md"
+if [ -f "$MODEL_TIERS" ] && [ -f "$AGENTS/INDEX.md" ]; then
+  assert_file_contains "engineer defaults to sonnet" "$MODEL_TIERS" "sonnet default, explicit opus escalation"
+  assert_file_contains "L alone cannot upgrade engineer" "$MODEL_TIERS" "L alone is not an escalation"
+  assert_file_contains "opus engineer prompt carries a reason" "$MODEL_TIERS" 'model_reason:<trigger>'
+  assert_file_contains "agent index mirrors lead sonnet pin" "$AGENTS/INDEX.md" "sonnet default; opus for Security/high-stakes review"
+  assert_file_contains "dev-plan requests opus explicitly" "$ROOT/.claude/commands/dev-plan.md" 'pass `model="opus"` explicitly'
+  if grep -qF "opus frontmatter" "$AGENTS/INDEX.md"; then
+    fail "agent index still claims lead has opus frontmatter"
+  else
+    pass "agent index does not claim a stale lead opus pin"
+  fi
+  if grep -qF "keep opus (omit the override)" "$ROOT/.claude/commands/dev-plan.md"; then
+    fail "dev-plan still assumes omitted model means opus"
+  else
+    pass "dev-plan does not rely on a stale implicit opus pin"
+  fi
+fi
+
+# --- 7c. worker capabilities cannot override the resolver -----------------
+# A correct orchestrator is insufficient if a spawned worker can re-walk the repo
+# or recursively fan out from a size heuristic. Every process-owning /dev role
+# carries the same scoped-input contract; every Agent-holder requires explicit
+# parent authorization before creating another process.
+for role in pm lead engineer qa retro; do
+  f="$AGENTS/$role.md"
+  [ -f "$f" ] || continue
+  assert_file_contains "$role declares an execution contract" "$f" "## Execution contract"
+  assert_file_contains "$role says size alone is not spawn proof" "$f" "Size alone"
+done
+for role in pm lead engineer qa; do
+  f="$AGENTS/$role.md"
+  [ -f "$f" ] || continue
+  assert_file_contains "$role requires parent fanout authorization" "$f" 'fanout_authorized: true'
+done
+FANOUT_REF="$ROOT/.claude/orchestrator/references/fanout-dispatch.md"
+if [ -f "$FANOUT_REF" ]; then
+  assert_file_contains "fanout dispatcher passes explicit authorization" "$FANOUT_REF" 'fanout_authorized: true'
+  assert_file_contains "review fanout defaults off at every size" "$FANOUT_REF" 'Review defaults to `no` at every size'
+  if grep -qF 'Review defaults to `yes` at M/L' "$FANOUT_REF"; then
+    fail "fanout dispatcher still size-routes review fanout"
+  else
+    pass "fanout dispatcher has no M/L review-fanout default"
+  fi
+fi
+
+# --- 7d. interaction and command-discovery hot paths stay collapsed --------
+GATE_REF="$ROOT/.claude/orchestrator/references/gate.md"
+CONTEXT_TEMPLATE="$ROOT/.workflow/_templates/context.md"
+if [ -f "$GATE_REF" ]; then
+  assert_file_contains "gate uses one interaction batch at every size" "$GATE_REF" "One-batch gate (every size)"
+  if grep -qF "M/L keep the sequential rounds" "$GATE_REF"; then
+    fail "gate still adds size-routed approval round-trips"
+  else
+    pass "gate has no M/L sequential-round fallback"
+  fi
+fi
+if [ -f "$CONTEXT_TEMPLATE" ] && [ -f "$AGENTS/qa.md" ] && [ -f "$AGENTS/retro.md" ]; then
+  assert_file_contains "context template stores validated test commands" "$CONTEXT_TEMPLATE" "Validated commands"
+  assert_file_contains "context template defines command invalidation" "$CONTEXT_TEMPLATE" "Command invalidation"
+  assert_file_contains "qa consumes validated test commands" "$AGENTS/qa.md" "Validated commands"
+  assert_file_contains "qa defers lint/static to the Ship Gate" "$AGENTS/qa.md" "Ship Gate executes them once with Full-suite"
+  assert_file_contains "retro folds green commands into Test infra" "$AGENTS/retro.md" "Validated commands"
+fi
+LINT_HOOK="$ROOT/.claude/hooks/lint.sh"
+if [ -f "$LINT_HOOK" ]; then
+  assert_file_contains "edit hook exposes immediate-lint compatibility flag" "$LINT_HOOK" "CLAUDE_EDIT_LINT=1"
+  assert_file_contains "edit hook defaults immediate lint off" "$LINT_HOOK" 'EDIT_LINT="${CLAUDE_EDIT_LINT:-0}"'
 fi
 
 # --- 8. the required/optional phase contract -----------------------------------
-# Only four phases are required: Interview+spec, Plan, Gate, Implement. Everything
-# else is optional and a gate `skip <n>` may turn it off. Three files state this
-# and they must agree — a stale "protected set" in gate.md silently refuses a skip
-# the contract allows, which reads to the user as a broken option rather than a
-# doc drift.
+# Required checks are type/trigger aware: all runs keep Contract Gate + Implement;
+# code runs also keep Test + Ship Gate, and fired independent/security reviews.
 WF="$ROOT/WORKFLOW.md"
 GATE="$ROOT/.claude/orchestrator/references/gate.md"
 SIZEX2="$ROOT/.claude/orchestrator/references/size-execution.md"
@@ -158,11 +238,25 @@ if [ -f "$WF" ] && [ -f "$GATE" ] && [ -f "$ORCH" ] && [ -f "$SIZEX2" ]; then
       pass "$(basename "$f") does not refuse an optional-phase skip"
     fi
   done
-  # The two things that stay on regardless must stay named, in the same files —
-  # they are the floor the "everything else is optional" rule is safe on top of.
-  assert_file_contains "gate.md keeps the security-trigger scan on a skipped review" "$GATE" "security-trigger scan still runs"
+  assert_file_contains "gate.md keeps the security-trigger scan on" "$GATE" "security-trigger scan always runs"
   assert_file_contains "WORKFLOW.md names the always-on floor" "$WF" "security-trigger scan"
-  assert_file_contains "orchestrator.md never-shrink names the required four" "$ORCH" "required** phases"
+  assert_file_contains "orchestrator.md names code-type Test and Ship Gate" "$ORCH" "Test + Ship Gate for feat/fix/refactor"
+  assert_file_contains "WORKFLOW.md requires the three quality gates" "$WF" "Three authoritative quality gates"
+  assert_file_contains "gate refuses code-type Test skips" "$GATE" "refuse Test plan, Test, and Ship Gate"
+fi
+
+# --- 8b. quality-gate ownership ------------------------------------------------
+ENGINEER="$AGENTS/engineer.md"
+LEAD="$AGENTS/lead.md"
+PHASE1="$ROOT/.claude/orchestrator/references/phase-1.md"
+PHASE2="$ROOT/.claude/orchestrator/references/phase-2.md"
+if [ -f "$ENGINEER" ] && [ -f "$LEAD" ] && [ -f "$PHASE1" ] && [ -f "$PHASE2" ]; then
+  assert_file_contains "Phase 1 uses one deterministic Contract Gate" "$PHASE1" "artifact-lint.sh --contract"
+  assert_file_contains "Engineer returns task verify results" "$ENGINEER" 'completed `T###` ids and verify results'
+  assert_file_contains "Engineer leaves AC evidence to Test" "$ENGINEER" "Test owns executable AC evidence"
+  assert_file_contains "Review consumes tests.md" "$LEAD" "consume Test's AC evidence instead of rebuilding it"
+  assert_file_contains "Phase 2 names Change Gate" "$PHASE2" "Change Gate — Test"
+  assert_file_contains "Phase 2 names Ship Gate" "$PHASE2" "Ship Gate"
 fi
 
 # --- 9. the fix input-domain rule ----------------------------------------------
@@ -290,5 +384,77 @@ fi
 [ -f "$AGENTS/qa.md" ] && \
   assert_file_contains "qa reads Capabilities for the regression contract" "$AGENTS/qa.md" "## Capabilities"
 assert_file_exists "ledger-prune.sh ships with the playbook" "$PRUNE"
+
+# --- 14. resident and inline context stay bounded ---------------------------
+# These files are paid on every /dev run, or every inline phase. Keep evidence,
+# incident history, and worker-only procedures out of them. The ceilings leave
+# modest editing room while catching a return to the pre-diet sizes.
+assert_max_bytes() { # <label> <file> <max>
+  label="$1"; file="$2"; max="$3"
+  [ -f "$file" ] || return 0
+  bytes="$(wc -c < "$file" | tr -d ' ')"
+  if [ "$bytes" -le "$max" ]; then
+    pass "$label ($bytes <= $max bytes)"
+  else
+    fail "$label is $bytes bytes (budget $max)"
+  fi
+}
+
+PHASE1="$ROOT/.claude/orchestrator/references/phase-1.md"
+PHASE2="$ROOT/.claude/orchestrator/references/phase-2.md"
+assert_max_bytes "dev launcher context budget" "$DEVCMD" 2500
+assert_max_bytes "resident orchestrator context budget" "$ORCH" 19000
+assert_max_bytes "XS fast-path context budget" "$FAST" 4500
+assert_max_bytes "always-on fundamentals context budget" "$FUND" 8000
+assert_max_bytes "foundation CLAUDE.md resident budget" "$ROOT/CLAUDE.md" 4500
+
+assert_file_contains "inline Design uses a compact local contract" "$PHASE1" "Inline author contract"
+assert_file_contains "inline Design does not load role prompts" "$PHASE1" 'not `pm`/`lead`/`qa` agent prompts'
+assert_file_contains "inline Implement does not load engineer prompt" "$PHASE2" 'does not load `engineer.md`'
+assert_file_contains "inline Retro does not load retro prompt" "$PHASE2" 'without loading `retro.md`'
+assert_file_contains "Phase 2 guard mechanics load by section" "$PHASE2" "do not load the entire guard file up front"
+assert_file_contains "resident orchestrator loads Phase 2 guards by section" "$ORCH" "never preload the whole guard file"
+if grep -qF "Read BOTH once on entering op 5" "$ORCH"; then
+  fail "orchestrator still preloads all Phase 2 guard mechanics"
+else
+  pass "orchestrator does not preload all Phase 2 guards"
+fi
+
+STATE_MARK="$ROOT/.claude/hooks/dev-state-mark.sh"
+assert_file_contains "state reminder uses the timestamp sentinel" "$STATE_MARK" '"__now__"'
+if grep -qF "fresh ISO timestamp" "$STATE_MARK"; then
+  fail "state reminder contradicts the __now__ timestamp contract"
+else
+  pass "state reminder does not request a typed ISO timestamp"
+fi
+reminder_bytes="$(awk '
+  /^reminder=\$\(cat <<EOF$/ { in_reminder=1; next }
+  in_reminder && /^EOF$/ { print n; exit }
+  in_reminder { n += length($0) + 1 }
+' "$STATE_MARK")"
+if [ "${reminder_bytes:-9999}" -le 500 ]; then
+  pass "state reminder payload budget ($reminder_bytes <= 500 bytes)"
+else
+  fail "state reminder payload is ${reminder_bytes:-unknown} bytes (budget 500)"
+fi
+
+assert_file_contains "repo ledger has a byte budget" "$AGENTS/retro.md" "12 KB"
+if grep -qF "(Measured:" "$AGENTS/lead.md"; then
+  fail "lead runtime prompt still carries benchmark incident narrative"
+else
+  pass "lead runtime prompt carries policy without incident narrative"
+fi
+
+for t in "$ROOT/.workflow/_templates/spec.md" \
+         "$ROOT/.workflow/_templates/plan.md" \
+         "$ROOT/.workflow/_templates/tasks.md" \
+         "$ROOT/.workflow/_templates/test-plan.md"; do
+  [ -f "$t" ] || continue
+  if grep -qE '\.claude/agents/(pm|lead|qa)\.md' "$t"; then
+    fail "$(basename "$t") sends inline author into a cold-worker prompt"
+  else
+    pass "$(basename "$t") carries no cold-worker prompt pointer"
+  fi
+done
 
 finish "doc-consistency tests"

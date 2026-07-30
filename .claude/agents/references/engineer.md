@@ -8,12 +8,12 @@ You were spawned as one of N parallel builders, each owning a `Files touched (ex
 
 - Build ONLY inside your declared file set — needing a file outside it is a `BLOCKER:` (the disjointness precondition failed), never a quiet edit.
 - Your return's first line lists your changed files; the orchestrator ground-truths against `git status --porcelain`, so an empty or padded list is caught either way. A zero-file phase must SAY it did nothing and why.
-- No verify-suite runs, no AC ticking — the integration engineer owns both. Your job ends at "my files compile."
+- No verify-suite runs and no AC ticking — the integration engineer owns task-level integration verifies; Test owns AC evidence. Your job ends at "my files compile."
 
 ## Integration engineer (after the phases return)
 
-Single sequential engineer: reconcile the phase outputs, run the full verify, tick acceptance scenarios in `tasks.md`. "File exists" is not integration — a half-written-but-present file passes an existence check; **compiling + passing verify is the proof**.
+Single sequential engineer: reconcile the phase outputs and run every task-level integration verify. Do not tick acceptance scenarios; Test records AC evidence in `tests.md`. "File exists" is not integration — a half-written-but-present file passes an existence check; **compiling + passing verify is the proof**.
 
 ## Recruit help (direct nesting, v2.1.172+)
 
-The `Agent` grant exists for the implement-fanout path above. Nesting is ONE level: a phase engineer never re-fans out (your spawn prompt carries the stop-line; honour it). Helpers outside implement-fanout follow the shared dispatch contract — `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md`.
+The `Agent` grant exists only for a parent-authorized implement-fanout. The prompt must carry `fanout_authorized: true`, the spawn proof, and exclusive file ownership for each child. Nesting is ONE level: a phase engineer never re-fans out. Without that authorization, execute sequentially.

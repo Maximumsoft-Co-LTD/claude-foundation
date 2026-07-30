@@ -43,4 +43,4 @@ Task format: `T### [P?] [AC#] [ref: path#anchor]? <action> — path#anchor (new 
 - [ ] **T007** [P] [SC-001] <measurable-outcome check> — observe — verify: <observable>
 
 ---
-*Dependencies: Phase 2 blocks the story phases; within a story model→component→wiring. `[P]` tasks touch different files. Every AC has ≥ 1 delivering+verifying task; list the AC→task coverage at the bottom. Format + parallel-phase contract → **lead.md > Mode A** · **plan-writing**.*
+*Dependencies: Phase 2 blocks story phases; within a story model→component→wiring. `[P]` tasks touch different files. Every AC has ≥1 delivering+verifying task; list AC→task coverage at the bottom.*

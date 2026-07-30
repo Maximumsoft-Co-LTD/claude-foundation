@@ -4,7 +4,7 @@
 
 ## 1. Dispatch mechanics
 
-Main agent + `pm`/`lead`/`qa`/`engineer` can request parallel team-agent fanout. Full pattern: `.claude/skills/fanout-team-agents/SKILL.md`; this is the consumer-side contract. **Direct nesting is primary (v2.1.172+)** — those workers + self-splitting `team-*` hold `Agent` and self-dispatch helpers (each has a "Recruit help…" section), so a worker may already have fanned out. **Prefer it for all read/research fanouts (plan/review/security/test)** — one spawn vs the signal's *double* spawn (worker → signal → dispatch → re-spawn to synthesise); a too-expensive fanout still fires via direct nesting, never single-pass. The `FANOUT_REQUESTED:` signal is the **fallback** (worker prefers you dispatch) and earns its keep for **background implement-fanout** (phase-granular `impl_phases_done` resume) + as the **registry-fallback**. You still lead **plan-prep push (Plan)** — `lead` dedups against it.
+Main agent decides whether parallel team-agent fanout is authorized. Full pattern: `.claude/skills/fanout-team-agents/SKILL.md`; this is the consumer-side contract. A worker holding `Agent` may direct-nest only when its prompt carries `fanout_authorized: true`, a named spawn proof, and disjoint child scopes. Size and tool availability are not permission. Authorized read/research fanouts direct-nest so synthesis stays in one worker session. `FANOUT_REQUESTED:` remains only for orchestrator-owned background implement-fanout.
 
 **One level of split.** A nested helper never re-fans-out — every helper contract is single-pass (§4 common shape; implement phase-helpers: `implement-fanout.md > Guardrails`' literal "You are a nested helper…" line).
 
@@ -20,19 +20,19 @@ After every sub-agent return, scan the **first line**: case-insensitive `FANOUT_
 
 ### Fanout points (Interview → Security)
 
-**Every fanout point:** (a) honours gated `state.json > fanout_plan.<phase>` — levers, override limits, and the absent-entry default are §3 > The gate owns it; (b) prefers direct nesting for read/research; (c) appends one `state.json > fanout_log` entry **only when eligible or fired** (ineligible points log nothing) — format + write discipline in §3 > Telemetry.
+**Every fanout point:** (a) run the execution resolver and name proven parallel payoff/independence; (b) honour gated `state.json > fanout_plan.<phase>`; (c) pass `fanout_authorized: true` plus disjoint scopes only when both clear; (d) append one `fanout_log` entry only when eligible or fired.
 
 Each point dispatches **its own** worker set (this table is authoritative); each prompt is **self-contained** (no inherited context) — scope (paths/diff), goal (1 sentence), constraints (what NOT to do), output shape (from `.claude/agents/team-<role>.md`). **Dispatch all workers in one message** — the orchestrator's for Interview and Implement (the only two the orchestrator still dispatches); the worker's own for Spec/Plan/Test/Review/Security, which now direct-nest (concurrent only within one turn; sequential turns aren't parallel). A worker that can't direct-nest returns `BLOCKER:` naming why — no signal escape for these five.
 
 | Phase / shape | Eligible when | Dispatch |
 |---|---|---|
-| **Interview — spec-prep** (main-agent-led, opt-in, no signal) | 2+ of {existing code named, integration points in disjoint surfaces, APIs, security paths, unfamiliar domain terms, 2+ independent research Qs} **and** research substantial; always single-pass XS/S + pure-greenfield | One `team-codebase-explorer` per codebase Q + one `team-best-practice-researcher` per best-practice Q; else main agent interviews off its own read |
-| **Spec — research** (`pm` direct-nests, no signal) | pm needs research after drafting | One `team-codebase-explorer` per `codebase-*` Q + one `team-best-practice-researcher` per `best-practice-*` Q. pm self-dispatches **after a draft `spec.md`** (draft-first), then reads its own draft + the findings and refines in place — no orchestrator round-trip |
-| **Plan** (push-prep + `lead` direct-nest pull, no signal) | S/M/L existing-code, independently-researchable points clearing the cost bar; single-pass XS / pure-greenfield / one change / **`context_built` (context.md already maps current state — pass its path to `lead`, don't re-spawn explorers)** | **(a) Push-prep (preferred):** before `lead`, one `team-codebase-explorer` (haiku) per integration point for M/L with ≥2 points **in disjoint surfaces**, then spawn `lead` once with findings. **(b) Pull (direct nest):** `lead` self-dispatches the residual `team-best-practice-researcher` for what prep missed (usually best-practice; skips explorer for points push-prep mapped) — no signal, no orchestrator round-trip |
-| **Implement — `implement:<parallel-phase-list>`** (`engineer` Mode A, **feat-only**, orchestrator-dispatched signal — the only remaining shape) | plan declares ≥2 `Parallelizable: yes` phases | Gate `Type==feat`, verify pairwise-disjoint, write-only phase-engineers (background) → foreground integration engineer. **Full 5-substep consumer contract → `implement-fanout.md > Orchestrator consumer contract`** |
-| **Test** (`qa` direct-nests, no signal) | ≥2 of {unit, integration, e2e} **and** any category has enough tests to repay coordination | `qa` self-dispatches one `team-pr-test-analyzer` per category — no orchestrator round-trip |
-| **Review** (`lead` Mode B direct-nests, no signal) | non-trivial diff (large, cross-module, critical, type/contract/test-sensitive, or uncertain) clearing the cost bar; single-pass small/low-risk | Tiered review workers, self-dispatched by `lead`: **core 3** at M/moderate (`team-code-reviewer`, `team-pr-test-analyzer`, `team-silent-failure-hunter`), **full 4** at L/high-stakes (+ `team-type-design-analyzer`; comment-accuracy + simplification are lenses inside `team-code-reviewer`) |
-| **Security** (`lead` Mode C direct-nests, no signal) | ≥2 buckets trip **and** per-bucket work substantial; single-pass one bucket / quick checks | `lead` self-dispatches one `team-code-reviewer` per bucket, focused threat-model prompt scoped to that bucket's paths — no orchestrator round-trip |
+| **Interview — spec-prep** (main-agent-led, opt-in, no signal) | ≥2 substantial disjoint context/research gaps and proven parallel payoff | One scoped explorer/researcher per gap; otherwise main interviews from the ledger + bounded reads |
+| **Spec — research** (`pm` direct-nests, no signal) | Draft leaves ≥2 independent material probes and parent authorizes them | Scoped explorer/researcher after draft-first |
+| **Plan** (`lead` direct-nests, no signal) | Supplied context still has ≥2 substantial gaps in disjoint surfaces and parent authorizes them | Scoped helpers only for residual gaps; never re-map `context.md` |
+| **Implement — `implement:<parallel-phase-list>`** (`engineer` Mode A, **feat-only**) | Plan has ≥2 feasible disjoint phases and resolver proves parallel payoff | Orchestrator-authorized background phase engineers → foreground integration engineer |
+| **Test** (`qa` direct-nests, no signal) | ≥2 disjoint test/tool surfaces and proven parallel payoff | Scoped analyzer per category/surface |
+| **Review** (`lead` Mode B direct-nests, no signal) | Multiple substantial independent lenses/surfaces and proven parallel payoff | Only authorized lenses; coherent diff stays one independent lead pass at any size |
+| **Security** (`lead` Mode C direct-nests, no signal) | ≥2 substantial independent buckets and proven parallel payoff | One scoped reviewer per bucket |
 
 **Surface axis (multi-repo, `state.repos` size > 1):** test/review/security also split **per repo** — orchestrator-led, no signal (you know the repo list at dispatch) → §4.
 
@@ -67,7 +67,7 @@ Canonical definition — `plan.md` (the section), `lead.md` (authoring), `orches
 
 At XS / pure-greenfield / a single straightforward change the whole block is one line — `No fanout — single-pass (XS).`
 
-**Review defaults to `yes` at M/L** (core-3 at M, full-4 at L — `references/lead.md > Review fanout`): a Review row of `no` on an M/L run needs a real Reason, not a cost reflex. The other three rows stay single-pass-first.
+**Review defaults to `no` at every size.** M/L runtime behavior usually proves one independent cold review, not nested review fanout. Set the Review row to `yes` only when multiple substantial independent lenses/surfaces also prove parallel payoff.
 
 **Same worker, N instances — horizontal scaling is first-class.** A fanout is **not** one-of-each-worker. The plan-prep, security, and test axes spawn **N copies of the *same* `team-*` worker** — one per independent unit (the §1 table's per-integration-point / per-bucket / per-category rows), which is what the `×N` column records. Only Review spawns six *different* lenses ×1. Cap the total at **6 concurrent** and group beyond it; never spawn N for N's sake. **For the plan-prep (codebase-explorer) axis, "independent unit" means a *disjoint surface* — a separate module/folder/repo, not raw integration-point count:** two points inside one cohesive module is a single serial `lead` walk; the parallel cold-start only repays when surfaces are genuinely separate (the multi-repo control-plane run is the canonical strong case). Canonical trigger: `orchestrator.md > Plan`.
 
@@ -122,13 +122,13 @@ Runs only when the **security-review** set size > 1; coordinator `lead` (Lead �
 
 #### Lead — Mode B (Review)
 
-**Per-repo:** diff = `git -C <r> diff` + any new commits this run made on `<r>`'s branch — that repo only. Walk the tasks whose `path#anchor` is in `<r>` and ACs satisfiable here (every in-slice task → one row; no "looks good"). **Lens-fanout exception:** lens-fanout (tiered review workers — core 3 at M, full 6 at L/high-stakes) only if *this repo's own* diff is genuinely non-trivial AND the orchestrator's concurrency cap allows; else one direct pass. **Return:** `### Repo: <r>` — Tasks adherence (this repo's tasks), Acceptance-criteria evidence (with `not-in-this-repo` where applicable), Blocking / Non-blocking findings (`path:line`), one-line verdict (`pass` | `fix-required`).
+**Per-repo:** diff = `git -C <r> diff` + any new commits this run made on `<r>`'s branch — that repo only. Walk the tasks whose `path#anchor` is in `<r>` and semantic/contract risks local to this repo; consume the run's `tests.md` evidence instead of rebuilding it (every in-slice task → one row; no "looks good"). **Lens-fanout exception:** lens-fanout (tiered review workers — core 3 at M, full 6 at L/high-stakes) only if *this repo's own* diff is genuinely non-trivial AND the orchestrator's concurrency cap allows; else one direct pass. **Return:** `### Repo: <r>` — Tasks adherence, contract-risk checks, Blocking / Non-blocking findings (`path:line`), one-line verdict (`pass` | `fix-required`).
 
 **Coordinator** — write `review.md`, subsections under `## Per-repo review` (mirrors the `## Per-agent findings` shape):
-- **Global anti-bias walk:** walk every `spec.md` AC **once across all repos** in the top-level `Acceptance-criteria check` — tick each against whichever repo's block provides the evidence; an AC **no** repo implements is a blocking finding. Same for tasks and `Files touched`.
+- **Global test-evidence check:** record `tests.md` mapped/unmapped AC counts once. Do not copy each AC into Review. Walk every task and touched file once across repos; inspect only untestable ACs and cross-repo/public-contract risks.
 - **Cross-repo coherence (coupled changes only).** If the changed repos **share a contract** this change touches — a proto/schema/IDL bump, a shared client/server signature (the *coupled* case; an independent sweep has none) — verify it's **consistent across every repo** (same contract version, compatible regenerated signatures/wire shape, no repo left on the old version). A skew is a **blocking** finding — the one defect per-repo isolation structurally can't see. Read the shared artifact across the repos **yourself**; don't infer it from the per-repo blocks alone.
 - **Aggregate `Verdict` = `pass` iff every repo passed**; lift all repos' blocking findings into the top-level `### Blocking`.
-- **Return:** review.md path + aggregate verdict + cycle + total blocking count + unticked-AC count + repo count.
+- **Return:** review.md path + aggregate verdict + cycle + total blocking count + contract-risk count + repo count.
 
 #### Lead — Mode C (Security review)
 

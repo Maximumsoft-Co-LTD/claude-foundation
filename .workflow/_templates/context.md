@@ -39,6 +39,8 @@ N. `<path#anchor>` — terminal write / return / external call
 <Delete for `docs`/`chore`. For `qa`: what the Baseline / Regression contract builds on.>
 
 **Runner / framework**: <name + config `path#anchor`>
+**Validated commands**: Full `<command>` · Impacted `<command>` · Lint/static `<command(s)|none>` — owner `<package/config path#anchor>`
+**Command invalidation**: re-discover only when the owner path is missing, touched by this run, or the command fails as unknown/invalid; a test failure is not cache invalidation
 **Fixtures / test data**: `<path#anchor>` — <seed, real-vs-doubled boundaries>
 **Coverage of touched behaviour**: <covered by `path#anchor` | uncovered → characterization baseline needed before change>
 

@@ -8,6 +8,8 @@ color: green
 
 Review code against project guidelines (CLAUDE.md) with high precision — minimize false positives.
 
+<!-- local-edit: 2026-07-30 — nested review now requires explicit parent authorization. -->
+
 ## Review Scope
 
 In the `/dev` fanout, the orchestrator passes the diff slice to review in your prompt — you have `Read`/`Grep` to open any file it references. Standalone, the caller supplies files or diff. You do not run `git` yourself.
@@ -38,6 +40,6 @@ Rate each issue 0-100 and **report ALL findings with their score** — the ≥ 8
 
 State what you're reviewing. Per issue: description + confidence score + severity · file:line · CLAUDE.md rule or bug explanation · concrete fix. Group by confidence band (Critical 91-100, Important 76-90, then the rest, descending). If none, confirm standards met with brief summary. Precision comes from honest scoring, not from withholding findings.
 
-## Recruit help when the diff is large (direct nesting)
+## Recruit help when explicitly authorized (direct nesting)
 
-Diff spans ≥ 2 clearly separable path areas, or one pass would be lossy → one `team-code-reviewer` per slice, **cap 5** (pass each helper its diff slice + CLAUDE.md rules; merge = dedup, keep highest confidence); slices overlap or findings bear on each other → one whole-diff pass. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
+Only when the parent prompt carries `fanout_authorized: true`, a named spawn proof, and ≥2 separable path slices: one `team-code-reviewer` per slice, **cap 5**. Otherwise review the bounded diff in one pass. Overlapping findings stay together. Mechanics: `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.

@@ -46,6 +46,23 @@ run_lint_out() {
   set -e
 }
 
+# Contract Gate mode: structural lint plus required-artifact and exact AC-set
+# checks across the approved contract.
+run_contract() {
+  set +e
+  sh "$LINTER" --contract "$1" >/dev/null 2>&1
+  rc=$?
+  set -e
+  return "$rc"
+}
+
+run_contract_out() {
+  set +e
+  out="$(sh "$LINTER" --contract "$1" 2>&1)"
+  rc=$?
+  set -e
+}
+
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1" >&2; failures=$((failures + 1)); }
 
@@ -66,10 +83,24 @@ assert_report_contains() {
     fail "$1 — report missing '$3'. Got: $out"
   fi
 }
+assert_contract_zero() {
+  if run_contract "$2"; then pass "$1 (exit 0)"; else fail "$1 — expected exit 0, got $?"; fi
+}
+assert_contract_nonzero() {
+  if run_contract "$2"; then fail "$1 — expected non-zero, got 0"; else pass "$1 (exit non-zero)"; fi
+}
+assert_contract_report_contains() {
+  run_contract_out "$2"
+  if printf '%s' "$out" | grep -qF -- "$3"; then
+    pass "$1 (report names: $3)"
+  else
+    fail "$1 — report missing '$3'. Got: $out"
+  fi
+}
 
 # --- helpers to build temp run dirs ---
 mk_clean_spec() { printf '# Spec\n\n**Type**: feat\n\n## Goal\nShip X for Y.\n\n## User Stories\n- [x] AC1: ok\n' > "$1/spec.md"; }
-mk_clean_plan() { printf '# Plan\n\n## Architecture diagram\n```mermaid\nflowchart LR\nA-->B\n```\n' > "$1/plan.md"; }
+mk_clean_plan() { printf '# Plan\n\n## Architecture diagram\n```mermaid\nflowchart LR\nA-->B\n```\n\n## Phases for this task\nMatrix defaults.\n' > "$1/plan.md"; }
 mk_clean_tasks() { printf '# Tasks\n\n## Phase 1\n- [x] T001 [AC1] do — verify: x\n' > "$1/tasks.md"; }
 
 echo "Running artifact-lint test suite..."
@@ -282,8 +313,51 @@ d="$TMPROOT/ac12-spike"; mkdir -p "$d"; mk_state "$d" 0012-spike-x spike brownfi
 printf '# Plan\n\n**Type**: spike\n\n## Summary\ns\n\n```mermaid\nflowchart LR\n  A --> B\n```\n' > "$d/plan.md"
 assert_exit_zero "AC12 spike plan exempt from Current state" "$d"
 
+# AC13 — Contract Gate is the single deterministic pre-approval check. It
+# requires the artifacts for the run shape and exact AC sets across consumers.
+d="$TMPROOT/ac13-clean"; mkdir -p "$d"
+mk_clean_spec "$d"; mk_clean_plan "$d"; mk_clean_tasks "$d"; mk_clean_test_plan "$d"
+assert_contract_zero "AC13 clean code contract" "$d"
+
+d="$TMPROOT/ac13-task-miss"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## User Stories\n- [ ] AC1 one\n- [ ] AC2 two\n' > "$d/spec.md"
+mk_clean_plan "$d"; mk_clean_tasks "$d"; mk_clean_test_plan "$d"
+assert_contract_nonzero "AC13 tasks missing a spec AC" "$d"
+assert_contract_report_contains "AC13 task mismatch names missing AC" "$d" "tasks.md AC set mismatch"
+assert_contract_report_contains "AC13 task mismatch includes AC2" "$d" "AC2"
+
+d="$TMPROOT/ac13-test-miss"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## User Stories\n- [ ] AC1 one\n- [ ] AC2 two\n' > "$d/spec.md"
+mk_clean_plan "$d"
+printf '# Tasks\n\n- [ ] T001 [AC1] one — verify: x\n- [ ] T002 [AC2] two — verify: y\n' > "$d/tasks.md"
+mk_clean_test_plan "$d"
+assert_contract_report_contains "AC13 test-plan mismatch" "$d" "test-plan.md AC set mismatch"
+
+d="$TMPROOT/ac13-ux-miss"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: feat\n\n## Goal\ng\n\n## User Stories\n- [ ] AC1 one\n- [ ] AC2 two\n' > "$d/spec.md"
+mk_clean_plan "$d"
+printf '# Tasks\n\n- [ ] T001 [AC1] one — verify: x\n- [ ] T002 [AC2] two — verify: y\n' > "$d/tasks.md"
+printf '# Test plan\n\n## Coverage plan\n| AC | Level |\n|----|-------|\n| AC1 | unit |\n| AC2 | unit |\n' > "$d/test-plan.md"
+printf '# UX\n\n## AC ↔ scene mapping\n| AC | Scene |\n|----|-------|\n| AC1 | S1 |\n' > "$d/uxui-plan.md"
+assert_contract_report_contains "AC13 UX map mismatch" "$d" "uxui-plan.md AC set mismatch"
+
+d="$TMPROOT/ac13-open"; mkdir -p "$d"
+mk_clean_spec "$d"; mk_clean_plan "$d"; mk_clean_tasks "$d"; mk_clean_test_plan "$d"
+printf '\n[NEEDS CLARIFICATION] unresolved contract\n' >> "$d/spec.md"
+assert_contract_report_contains "AC13 unresolved clarification blocks approval" "$d" "unresolved contract marker"
+
+d="$TMPROOT/ac13-xs"; mkdir -p "$d"
+printf '# Run\n\n**Type**: chore\n\n## Goal\ng\n\n## Acceptance\n- [ ] AC1 ok\n\n## Tasks\n- [ ] T001 [AC1] do — verify: ok\n' > "$d/run.md"
+assert_contract_zero "AC13 XS single-artifact contract" "$d"
+
+d="$TMPROOT/ac13-chore"; mkdir -p "$d"
+printf '# Spec\n\n**Type**: chore\n\n## Goal\ng\n\n## Checklist\n- [ ] AC1 bump\n' > "$d/spec.md"
+printf '# Plan\n\n**Type**: chore\n\n## Summary\nbump\n\n## Phases for this task\nMatrix defaults.\n' > "$d/plan.md"
+mk_clean_tasks "$d"
+assert_contract_zero "AC13 non-code contract needs no test-plan" "$d"
+
 echo
-total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12" | wc -w) ))
+total_pass=$(( $(echo "AC6 AC6 AC6 AC6 AC1 AC1 AC1 AC2 AC2 AC2 AC2 AC2 AC3 AC3 AC3 AC3 AC4 AC4 AC4 AC4 AC4 AC4 AC5 AC5 AC5 AC5 AC7 AC7 AC7 AC7 AC7 AC8 AC8 AC8 AC8 AC8 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC10 AC11 AC11 AC11 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC12 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13 AC13" | wc -w) ))
 # AC9 runs only when jq is present (see the skip above).
 command -v jq >/dev/null 2>&1 && total_pass=$((total_pass + 4))
 if [ "$failures" -eq 0 ]; then

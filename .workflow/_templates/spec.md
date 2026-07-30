@@ -106,4 +106,4 @@ Measurable, technology-agnostic outcomes.
 - <reasonable default chosen where the request was silent>.
 
 ---
-*Optional — add when triggered, delete the rest: Problem · Users · User journey · Scope—Out · Glossary · NFR · Definition of Done · Constraints · References · Discovery notes · Carried-over follow-ups. (Reproduction and Timebox now live in the Type block above.) Structure + hard rules (priority, Given/When/Then with AC ids, FR/SC, no invented values, [NEEDS CLARIFICATION]) → **pm.md > Spec sections**.*
+*Optional — add when triggered, delete the rest: Problem · Users · User journey · Scope—Out · Glossary · NFR · Definition of Done · Constraints · References · Discovery notes · Carried-over follow-ups. Reproduction and Timebox live in the Type block above.*

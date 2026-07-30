@@ -27,7 +27,7 @@ Tools report the whole diff, not the logic-vs-boundary split — so split unit v
 
 ## Tiered run & targeted re-validation (Execute — wall-clock control)
 
-**Load:** every Execute. Rule: **full suite runs ONCE per run (final gate), not per cycle.**
+**Load:** every Execute. Rule: **full suite runs only at the Ship Gate, once per converged final diff, never in inner cycles.**
 
 **Two commands** (`test-plan.md > Execution mechanism`):
 - **Full-suite** — `npm test`/`pytest`/`go test ./...`/`cargo test`/monorepo aggregator. Only run that sets ship-blocking `passing`.
@@ -37,15 +37,15 @@ Tools report the whole diff, not the logic-vs-boundary split — so split unit v
 
 **Targeted re-entry** (orchestrator note `re-validate targeted: <files>`, guards Review/Security): run Impacted for those files + their AC-mapped tests; no full suite, no plan re-walk. Scope = files changed since last green — accumulated-edit correctness rests on the final gate.
 
-**Final gate:** at convergence (review ∧ security clean, pre-docs) the Full-suite cmd runs once on the final diff = authoritative `passing`. Orchestrator runs it via Bash from `tests.md > Commands`. Red → `cycles.test++` → engineer → re-enter. Safety net for cross-module regressions Impacted misses.
+**Ship Gate:** after the Change Gate converges (pre-docs), the Full-suite + recorded lint/type/static commands run once on that final diff = authoritative `passing`. Orchestrator runs them via Bash from `tests.md > Commands`. Red → `cycles.test++` → engineer → targeted Test/Review; the changed diff must pass a new Ship Gate.
 
 ## Revise variant (gate-revise — incremental, NOT a fresh plan)
 
 **Load when:** the orchestrator re-spawns you with gate-revise notes (a wrong level, a missing edge case, a changed coverage target). **Edit only the affected rows/sections** of the existing `test-plan.md` — do not regenerate it, do not re-walk the whole codebase. Re-check that every `spec.md` AC still has a Coverage-plan row after the edit. Return the path + a 1–2 line summary of only what changed.
 
-## Recruit help when the test surface is large (direct nesting)
+## Recruit help when test fanout is authorized (direct nesting)
 
-**Load when:** the plan spans ≥ 2 of {unit, integration, e2e} AND a level has ≥ 3 tests worth a focused pass. You hold `Agent` — spawn analysis helpers yourself (v2.1.172+); no signal fallback — a genuine block returns `BLOCKER:` naming why. You still write every test and `tests.md`.
+**Load when:** the parent prompt carries `fanout_authorized: true`, names proven parallel payoff, and supplies ≥2 disjoint level/surface scopes. Test count and size alone are not authorization. You still write every test and `tests.md`.
 
 - **Split + spawn** — one `team-pr-test-analyzer` per category, **one message** (parallel), **cap 3**, each scoped to that category's diff slice (pass the slice + `test-plan.md` coverage rows + what to return).
 - **Registry path** (`.claude/skills/fanout-team-agents/SKILL.md`) — read `team_registry`: `live` → by name; `inline-fallback` → `general-purpose` + `model="sonnet"` with `.claude/agents/team-pr-test-analyzer.md` inlined (Case 6 blocks an unpinned general-purpose spawn); `unknown` → try named, fall to inline on `not found`, report the path used. Inline fallback for the haiku-pinned analyzer runs a tier UP (sonnet floor) — say so in the path report so cost drift stays auditable.

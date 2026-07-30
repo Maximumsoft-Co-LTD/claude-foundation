@@ -36,14 +36,17 @@
 # when clean. Dependency-light: POSIX sh + the standard `awk`/`grep` toolchain;
 # no new packages, no JSON, does not read `.workflow/_templates/` at runtime.
 #
-# Two modes, neither ever blocks a tool call:
+# Three modes; hook mode never blocks a tool call:
 #   CLI  — invoke by hand or in CI against a run dir (jq-free, POSIX sh).
+#   CONTRACT — CLI lint plus required-artifact and exact cross-artifact AC-set
+#              checks. This is the single deterministic pre-approval gate.
 #   HOOK — `artifact-lint.sh --hook` as PostToolUse on Write|Edit (wired in
 #          settings.json): lints just the artifact that was written and surfaces
 #          findings as a warn-only additionalContext note. Requires jq (fails
 #          open without it); skips .workflow/_templates/.
 #
 # Usage:  sh artifact-lint.sh <path-to-.workflow/<id>/-dir>
+#         sh artifact-lint.sh --contract <path-to-.workflow/<id>/-dir>
 #         sh artifact-lint.sh --hook   (PostToolUse JSON on stdin)
 # Exit:   0 = clean (>=1 artifact found, every check passed)
 #         1 = any failed check, no recognised artifact, or a usage/argument error
@@ -52,12 +55,13 @@ set -eu
 
 # Recognised artifacts. spec.md / plan.md / test-plan.md also get required-section
 # checks; every file here gets the placeholder scan.
-ARTIFACTS='spec.md plan.md tasks.md test-plan.md run.md review.md security.md tests.md retro.md recommendations.md epic.md'
+ARTIFACTS='spec.md plan.md tasks.md test-plan.md uxui-plan.md run.md review.md security.md tests.md retro.md recommendations.md epic.md'
 
 PROG="$(basename "$0")"
 
 usage() {
   echo "usage: $PROG <.workflow/<id>/-directory>" >&2
+  echo "       $PROG --contract <.workflow/<id>/-directory>" >&2
   echo "  validates the run's artifacts: required sections + no placeholder markers" >&2
 }
 
@@ -343,6 +347,106 @@ lint_file() {
   scan_scaffold_leftover "$file"
 }
 
+# Unique AC IDs from a whole file, task tags, or one markdown section.
+ac_set_all() {
+  grep -oE 'AC[0-9]+' "$1" 2>/dev/null | sort -u || true
+}
+
+ac_set_tasks() {
+  grep -oE '\[AC[0-9]+\]' "$1" 2>/dev/null | tr -d '[]' | sort -u || true
+}
+
+ac_set_section() {
+  file="$1"; heading="$2"
+  awk -v heading="$heading" '
+    $0 ~ heading { in_section = 1; next }
+    in_section && /^##[[:space:]]+/ { exit }
+    in_section { print }
+  ' "$file" | grep -oE 'AC[0-9]+' | sort -u || true
+}
+
+display_ac_set() {
+  if [ -z "$1" ]; then
+    printf '(none)'
+  else
+    printf '%s\n' "$1" | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+  fi
+}
+
+check_exact_ac_set() {
+  file_name="$1"; expected="$2"; actual="$3"
+  if [ "$expected" = "$actual" ]; then
+    report OK "contract: $file_name AC set matches source ($(display_ac_set "$expected"))"
+  else
+    report FAIL "contract: $file_name AC set mismatch; expected {$(display_ac_set "$expected")}, actual {$(display_ac_set "$actual")}"
+    note_fail
+  fi
+}
+
+# The Contract Gate adds only checks that must agree across artifacts. Semantic
+# judgment remains with Design and the human approval gate.
+check_contract() {
+  dir="$1"
+
+  if [ -f "$dir/run.md" ]; then
+    expected="$(ac_set_all "$dir/run.md")"
+    actual="$(ac_set_tasks "$dir/run.md")"
+    check_exact_ac_set "run.md task tags" "$expected" "$actual"
+  else
+    for required in spec.md plan.md tasks.md; do
+      if [ ! -f "$dir/$required" ]; then
+        report FAIL "contract: MISSING required artifact: $required"
+        note_fail
+      fi
+    done
+
+    if [ -f "$dir/spec.md" ]; then
+      expected="$(ac_set_all "$dir/spec.md")"
+      if [ -f "$dir/tasks.md" ]; then
+        check_exact_ac_set "tasks.md" "$expected" "$(ac_set_tasks "$dir/tasks.md")"
+      fi
+
+      t="$(spec_type "$dir/spec.md")"
+      case "$t" in
+        feat|fix|refactor)
+          if [ ! -f "$dir/test-plan.md" ]; then
+            report FAIL "contract: MISSING required artifact for type=$t: test-plan.md"
+            note_fail
+          else
+            check_exact_ac_set "test-plan.md" "$expected" \
+              "$(ac_set_section "$dir/test-plan.md" '^##[[:space:]]+Coverage plan')"
+          fi
+          ;;
+      esac
+
+      if [ -f "$dir/uxui-plan.md" ]; then
+        check_exact_ac_set "uxui-plan.md" "$expected" \
+          "$(ac_set_section "$dir/uxui-plan.md" '^##[[:space:]]+AC .* scene mapping')"
+      fi
+    fi
+    if [ -f "$dir/plan.md" ]; then
+      if grep -qE '^##[[:space:]]+Phases for this task' "$dir/plan.md" 2>/dev/null; then
+        report OK "contract: plan.md has phase disposition"
+      else
+        report FAIL "contract: plan.md MISSING required section: ## Phases for this task"
+        note_fail
+      fi
+    fi
+  fi
+
+  unresolved=0
+  for name in $ARTIFACTS; do
+    file="$dir/$name"
+    [ -f "$file" ] || continue
+    if grep -qE '\[NEEDS CLARIFICATION\]|\[pending plan\]' "$file" 2>/dev/null; then
+      report FAIL "contract: $name has unresolved contract marker"
+      note_fail
+      unresolved=$((unresolved + 1))
+    fi
+  done
+  [ "$unresolved" -gt 0 ] || report OK "contract: no unresolved contract markers"
+}
+
 # PostToolUse adapter (`artifact-lint.sh --hook`): lint ONLY the artifact the
 # tool call just wrote, and WARN via additionalContext — never block, always
 # exit 0. Wired in settings.json under PostToolUse/Write|Edit so the model gets
@@ -435,6 +539,26 @@ main() {
 
 if [ "${1:-}" = "--hook" ]; then
   hook_main
+elif [ "${1:-}" = "--contract" ]; then
+  if [ "$#" -ne 2 ]; then
+    usage
+    exit 1
+  fi
+  # Keep ordinary lint and contract checks in one invocation. `main` may fail,
+  # but the contract report still runs so the author gets all findings at once.
+  main_failed=0
+  main "$2" || main_failed=1
+  [ -d "$2" ] || exit 1
+  echo
+  echo "Checking Contract Gate..."
+  check_contract "$2"
+  echo
+  if [ "$main_failed" -eq 0 ] && [ "$fail_count" -eq 0 ]; then
+    echo "contract-gate: PASS"
+    exit 0
+  fi
+  echo "contract-gate: FAIL — $fail_count finding(s)" >&2
+  exit 1
 else
   main "$@"
 fi

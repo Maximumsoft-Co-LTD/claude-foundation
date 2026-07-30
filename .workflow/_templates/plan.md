@@ -44,4 +44,4 @@ flowchart LR
 ```
 
 ---
-*Tasks (the executable steps, `T001…`) live in [./tasks.md](./tasks.md). Optional — add when triggered, delete the rest: Current state (brownfield) · Scaffold / Project structure (M/L) · Risks · Rollback · Alternatives. Rules → **lead.md > Mode A** · **plan-writing**.*
+*Tasks live in [./tasks.md](./tasks.md). Optional — add when triggered, delete the rest: Current state (brownfield) · Scaffold / Project structure (M/L) · Risks · Rollback · Alternatives.*

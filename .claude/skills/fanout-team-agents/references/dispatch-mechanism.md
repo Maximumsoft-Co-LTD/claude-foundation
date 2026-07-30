@@ -2,9 +2,9 @@
 
 Deeper companion to the body's "How it works" digest. Covers the two ways a fanout gets dispatched, what stays centralized regardless of path, the one `FANOUT_REQUESTED: implement:` signal shape with its payload semantics, and the orchestrator-side validator that keeps a malformed signal loud.
 
-## Two dispatch paths: direct nesting (primary) and the orchestrator signal (fallback)
+## Two dispatch paths: authorized direct nesting and implement orchestration
 
-Since Claude Code **v2.1.172** a sub-agent holding `Agent` can spawn nested sub-agents. The splittable `/dev` agents (`pm`, `lead`, `qa`, `engineer`, plus `team-codebase-explorer`, `team-best-practice-researcher`, `team-code-reviewer`) **self-dispatch helpers directly** — no round-trip through the orchestrator. This is the **primary** path. (Other `team-*` review workers stay read-only with no `Agent`.)
+Since Claude Code **v2.1.172** a sub-agent holding `Agent` can spawn nested sub-agents. It may do so only when the parent prompt passes `fanout_authorized: true`, a named spawn proof, and disjoint child scopes. Tool availability, size, and worker heuristics do not grant permission. Other `team-*` review workers stay read-only with no `Agent`.
 
 The **orchestrator-mediated signal** (`FANOUT_REQUESTED:`, below) is retained **only** as the path for **implement-fanout**, where the orchestrator's *background* phase-engineers + phase-granular `state.json > impl_phases_done` resume are wanted (a self-spawning engineer uses foreground instead — see `engineer.md`). Every other read/research fanout (spec-research, plan, test, review, security) direct-nests only — there is no signal escape for those; a worker that genuinely can't nest returns `BLOCKER:` naming why instead of falling back to a signal.
 
@@ -17,6 +17,7 @@ A sub-agent still **cannot call `AskUserQuestion`** (only the orchestrator asks 
 Every splittable worker's "Recruit help" section points HERE — this is the single copy of the mechanics. The agent file keeps only its role's split criterion and cap; a change to this contract lands once, in this section.
 
 - **Split test:** the scope separates into non-overlapping sub-areas where no finding changes another — otherwise stay serial.
+- **Authorization test:** parent prompt contains `fanout_authorized: true`, the proof, and the proposed child scopes. Missing any field → stay serial; do not infer permission.
 - **Dispatch:** spawn ALL helpers in ONE message (they run in parallel); each prompt is self-contained — the sub-scope, the worker's own output template to return, `repo_root` + `branch`, and the stop-line.
 - **Stop-line (last line of every helper prompt, verb adapted to the role):** `You are a nested helper: <do> this one sub-scope directly and do NOT spawn further agents.` One level of split, never deeper.
 - **Caps are role-owned:** each agent file states its own N (helpers alive at once, not total).

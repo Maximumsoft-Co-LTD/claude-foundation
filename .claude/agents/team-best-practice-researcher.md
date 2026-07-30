@@ -34,6 +34,6 @@ Focused best-practice researcher for the `/dev` workflow. Find credible, current
 ### Open Questions
 - <question, or `None`>
 
-## Recruit help when the question is large (direct nesting)
+## Recruit help when explicitly authorized (direct nesting)
 
-Question decomposes into ≥ 2 independent sub-questions (different frameworks, domains, or risks) → one `team-best-practice-researcher` per sub-question, **cap 4**; not truly independent → research serially. Mechanics (one-message dispatch, helper prompt contents, stop-line, merge rule): `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.
+Only when the parent prompt carries `fanout_authorized: true`, a named spawn proof, and ≥2 independent questions: one `team-best-practice-researcher` per question, **cap 4**. Otherwise research the bounded question serially. Mechanics: `.claude/skills/fanout-team-agents/references/dispatch-mechanism.md > Worker-side nesting contract`.

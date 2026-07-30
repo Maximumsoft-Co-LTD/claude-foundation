@@ -7,7 +7,7 @@ description: Use when a /dev phase has 2+ independent sub-investigations that ca
 
 ## Overview
 
-Pattern for the `/dev` workflow: when a phase has 2+ independent sub-investigations, investigate in parallel — one focused worker per domain, each with its own self-contained context, dispatched concurrently, results integrated by the caller.
+Pattern for the `/dev` workflow: when the orchestrator proves parallel payoff for 2+ independent sub-investigations, it authorizes one focused worker per domain; results are integrated by the caller.
 
 The workers are the `team-<role>` agents under `.claude/agents/` (manifest at `.claude/agents/TEAM.md`):
 
@@ -22,16 +22,16 @@ This body is the **decision digest** — *when* to fan out and the invariants th
 
 ## When to use
 
-`/dev` is **single-pass-first** (the canonical stance lives in `.claude/orchestrator.md > Single-pass-first`): each phase **defaults to a single sequential pass**, and fans out only when its sub-investigations are independent, write disjoint scope, AND the parallel work is substantial enough to clear the cost guardrail (coordination + N× worker cold-start + synthesis must cost less than the wall-clock saved). The **Trigger** column below is the bar that must be cleared to make a fanout *eligible* — clearing it does not fire the fanout automatically; the `Don't use when` list and the cost test still decide. The bias is single-pass; fanout is the justified exception when the work is genuinely large and splittable:
+`/dev` is **single-pass-first**: every phase defaults to one sequential pass. Fanout needs all of: independent work, disjoint scope, proven parallel payoff, and parent-supplied `fanout_authorized: true`. The trigger table establishes eligibility only; size never grants authorization.
 
 | Phase / mode | Owner sub-agent | Default | Fan out only when (the eligibility bar) |
 |--------------|-----------------|-----------|---------|
 | Review | `lead` (Mode B) | **single-pass** | the diff is genuinely large, cross-module, or type/contract/test-infra-changing — big enough that six independent specialist passes repay their cost (the most expensive fanout in the system; small/moderate low-risk diffs stay single-pass) |
 | Security | `lead` (Mode C) | **single-pass** | the diff trips ≥ 2 distinct sensitive-paths buckets AND each is substantial (a single bucket, or a quick multi-bucket check, stays single-pass) |
-| Interview + Spec — spec prep / research | main agent; `pm` direct-nests | **single-pass** | 2+ of {existing code, APIs, security-sensitive paths, unfamiliar domain, 2+ independent research questions} hold AND the research is substantial (always single-pass for XS/S and pure-greenfield) |
-| Plan | `lead` (Mode A) | **single-pass** | ≥ 2 independently-researchable integration points **in disjoint surfaces** (separate modules/folders/repos — not raw point count) whose research is genuinely substantial; dispatch both codebase and best-practice workers per point (single-pass for XS/S, pure-greenfield, one point, several points in one cohesive module, or a handful of quick reads) |
+| Interview + Spec — spec prep / research | main agent; `pm` direct-nests | **single-pass** | ≥2 substantial independent gaps remain after ledger/bounded reads and parent authorizes them |
+| Plan | `lead` (Mode A) | **single-pass** | supplied context leaves ≥2 substantial gaps in disjoint surfaces and parent authorizes them |
 | Test | `qa` | **single-pass** | the plan spans ≥ 2 of {unit, integration, e2e} AND any category has ≥ 3 tests (single-pass below that bar) |
-| Implement | `engineer` (Mode A) | **single-pass** | **feat-only, L-tier** (Phases exist only on L plans >12 steps): `plan.md` declares ≥ 2 `Parallelizable: yes` phases with disjoint `Files touched (exclusive)` + `Depends on: none`, plus a sequential integration phase (orchestrator re-verifies disjointness before dispatch). When the plan ships those markers, the decomposition is already done — fan out. |
+| Implement | `engineer` (Mode A) | **single-pass** | feat-only; ≥2 disjoint phases plus sequential integration, and resolver proves wall-clock payoff |
 
 **Don't use when** (these guardrails, plus the cost test, decide whether a phase clears its eligibility bar — stay single-pass unless ALL clear):
 - Sub-investigations are related (one finding might invalidate another).
@@ -41,7 +41,7 @@ This body is the **decision digest** — *when* to fan out and the invariants th
 
 ## How it works (the shape, in one screen)
 
-- **Two dispatch paths.** The splittable agents (`pm`, `lead`, `qa`, `engineer`, plus `team-codebase-explorer`/`team-best-practice-researcher`/`team-code-reviewer`) **self-dispatch helpers directly** — the primary path since Claude Code v2.1.172. The `FANOUT_REQUESTED: implement:` orchestrator signal is the **fallback**, restricted to implement-fanout — the only signal shape. → `references/dispatch-mechanism.md`
+- **Two dispatch paths.** Authorized read/research workers direct-nest; orchestrator-owned implement fanout uses `FANOUT_REQUESTED: implement:`. No authorization means no nested process. → `references/dispatch-mechanism.md`
 - **Multi-repo runs add a per-repo "surface" axis** — split the read-and-judge phases (test/review/security) per repo, orchestrator-owned. → `references/surface-fanout.md`
 - **The run procedure** — identify independent domains (independence + disjoint scope) → construct self-contained, scoped prompts → parallel dispatch (all `Agent(...)` calls in **one** message, else not parallel) → the caller **synthesises** the findings into one artifact. → `references/running-a-fanout.md`
 

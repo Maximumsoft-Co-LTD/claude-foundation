@@ -423,6 +423,10 @@ any of this — they gate mechanism, not effect.
 | 4 | `## Capabilities` + type-aware fold + `qa` read | behaviour truth, so a later run derives ACs knowing what is promised and gets the regression map free | **two-sided.** Write cost is visible on a single-run A/B **today**; the benefit is not | Cost side, measurable now: **write-side cost must stay under 5%** at n=9 single-run, else the cross-run payoff has to exceed it before this is worth keeping. Benefit side: same two-run rule as #1 |
 | 6 | batch independent boot reads into one message | identical calls in fewer round-trips; wall clock is made of round-trips, and boot is the largest block in the XS lane | **wall clock on an interactive host** — there is no cost claim to make, the token count is unchanged | **No instrument here can see it.** This bench runs headless `claude -p`, which does not run calls concurrently, so it will report exactly zero — and the playbook previously told the orchestrator not to batch *because of that measurement*, which is a rule tuned to the bench rather than to the hosts users actually run. Verify by hand: count round-trips from run start to first `state.json` write in an interactive run, before vs after. Adopt if boot round-trips drop with no check skipped or read made speculatively |
 | 5 | input-domain rule extended to `spec.md` (S/M) | the defect it catches is a property of `fix` at any size, not of XS | **oracle** pass rate on a `fix`-shaped task at S/M | Adopt if oracle pass rate rises or holds with cost inside the MDE. `13-money-drift` has an oracle and is fix-shaped; `10-rounding-fix` needs one built first |
+| 7 | one-batch Gate at every size | M/L no longer pays separate approval/commit/deviation interaction rounds after the complete summary is already visible | **interactive gate round-trips + revise rate**; `--yes` bench cannot see it | Keep if first-pass gate interactions become one and the revise/clarification rate does not rise; revert if users need a second prompt to understand decisions the summary failed to surface |
+| 8 | validated test-command cache in `CONTEXT.md > Test infra` | run N+1 skips package/config discovery when run N already proved the same Full/Impacted/lint-static commands | **run-B discovery calls + wall** in the same two-run sandbox as #1 | Mechanism must remove discovery reads while executing byte-identical commands; invalidate on missing/touched owner or unknown command. A test failure is not invalidation. Quality/full-gate result must hold |
+| 9 | defer process-starting file lint from every edit to Ship Gate | N edits no longer pay N ESLint/Biome/Ruff/etc. startups; verification still runs once on the converged diff | **Implement wall + lint invocations**, stratified by edit count | Adopt when lint invocations collapse to one and median Implement wall falls ≥10% on a multi-file task with final lint/test quality held. `gofmt` remains immediate; `CLAUDE_EDIT_LINT=1` is the compatibility control |
+| 10 | delta-scoped re-review after a fix | review cycle 2 reads prior blockers + changed hunks + affected ACs instead of the full artifact/diff set | **cycle-2 input + wall**, only runs that actually route a review fix | Keep when every prior blocker is rechecked, scope escapes force full review, and cycle-2 wall/input fall. No verdict is possible on suites where review never routes a fix |
 
 **Two honest caveats carried forward.** #5 is still unvalidated on a holdout — the rule
 was derived *and* measured on `11-recent-window`, the benchmark-overfitting trap named in
@@ -453,6 +457,51 @@ and returns nothing. The rule it annotated stands; only the pointer is gone.
 `run-doc-consistency.sh` check 11 now fails on any `references/*.md` a shipped file
 cites that exists nowhere under `.claude/**/references/` — check 10 caught pointers into
 paths that never ship, not ones into files that were renamed or moved out.
+
+## Context hot-path diet
+
+Static size inspection found three different costs mixed together: always-resident
+instructions, phase references, and cold-worker prompts. Before this pass,
+`fundamentals.md` + `commands/dev.md` + `orchestrator.md` were about 39 KB; a full
+inline run could then add roughly 42 KB of phase references before artifacts and tool
+output. The 14 KB file named `xs-s-fast-path.md` was also loaded for S/M despite being
+an XS procedure, and inline Design could follow template pointers into the 22 KB
+`lead` reference even though no worker was spawned.
+
+The cleanup makes `/dev` a launcher, limits the fast-path reference to XS, removes
+benchmark narratives from runtime policy, and gives inline Design/Implement/Retro
+compact contracts that do not load worker prompts. The resident trio is now about
+26 KB and the XS reference about 3.2 KB. Byte reduction is a deterministic capacity
+result, not proof of equal wall-clock improvement: model latency and tool round-trips
+still dominate many runs. Doc-consistency check 14 pins conservative byte ceilings
+and the no-role-prompt inline boundary so future prose growth is visible in CI.
+
+A second pass covered non-instruction amplification. The foundation repo's own
+always-loaded `CLAUDE.md` fell from 8.7 KB to about 2.9 KB; this improves maintainer
+sessions but does not affect installed projects because that file is not shipped.
+The `PostToolUse/Agent` state reminder now injects under 500 bytes per foreground
+worker return and uses `__now__` instead of contradicting the timestamp hook. Phase 2
+loads guard mechanics by named section rather than preloading the 8 KB file, and the
+cross-run ledger is bounded by both lines and bytes. Existing failure-aware test
+capture, delta review, compact worker returns, and warn-only/silent-on-success hooks
+already cover the other project-controlled amplification paths.
+
+## Model-economic implementation routing — unmeasured
+
+The inline-first resolver treated a warm Opus working set as sufficient proof that
+Opus should also perform every coding turn. That optimizes away cold start while
+ignoring generation tier: a multi-turn Implement repeatedly sends the accumulated
+main context and produces code at the main model's rate. The new proof is based on
+execution volume, not size: ≥3 code tasks/files, a planned test-fix loop, or >~2K
+expected generated tokens routes once to a bounded Sonnet engineer. Micro work stays
+inline; deterministic phases cannot use this proof; L alone cannot select Opus.
+
+This is shipped **unmeasured**. Pre-registered verdict: compare S/M tasks with enough
+implementation volume, holding artifact quality and task completion constant. Keep
+when median Implement wall or cost improves by ≥10% without another review/test cycle;
+revert or retune the threshold when cold-start input erases the gain. Measure XS
+separately: it is intentionally excluded because one extra process can dominate a
+micro-change.
 
 ## Standing caveat: how much `n` a verdict needs
 
