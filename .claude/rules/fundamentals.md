@@ -1,58 +1,75 @@
-# Rule: Fundamentals router (always-on)
+# Rule: Fundamentals router
 
-The always-on **detection layer**: match a trigger below, then load that one skill (`.claude/skills/<name>/SKILL.md`) — why/how, checklist, skip list — **before** the work it governs. Thin by design; the prose lives in each skill body.
+This always-on file detects which one skill to load. Skill bodies hold the
+procedure; do not preload them.
 
-## Conduct digest (always-on)
+## Conduct
 
-The 4-principle core of `coding-discipline`, applied to **every** code task without loading the body (load it only on friction — see the Process table): **(1) Think before coding** — state assumptions; >1 reasonable reading → name them, never pick silently; a genuinely open design → `brainstorming`. **(2) Simplicity first** — the Ponytail section below. **(3) Surgical changes** — every changed line traces to the request; no reformat/rename/refactor riding along; mention nearby bugs, don't fix them inline; remove only what *your* change orphaned. **(4) Goal-driven** — restate the task as a checkable definition of done before starting; loop until met. **Fast first (tie-breaker)** — two compliant paths → take the faster; never cut a required evidence claim, security trigger, regression contract, or land guard. **Truth hierarchy** — code and tests > current specs > investigation notes; a conflict is a finding to resolve, never a fact to follow blindly.
+- Think before coding. State consequential assumptions; investigate genuinely
+  ambiguous direction.
+- Prefer no code, then stdlib/platform, installed dependencies, and finally the
+  smallest new implementation.
+- Keep every changed line traceable to the request. Do not bundle cleanup.
+- Define a checkable outcome and continue until it is met.
+- Code/tests outrank specs; specs outrank investigation notes. Resolve conflicts.
+- Choose the faster of equally safe paths. Never cut security, error/data-loss
+  handling, accessibility, evidence, regression contracts, or Land guards.
+- Be terse but complete. Durable intent belongs in OpenSpec; machine status
+  belongs in `.foundation/`.
 
-## Ponytail (always-on minimalism)
+Load `coding-discipline` only when scope, assumptions, or diff shape remain
+unclear after this digest.
 
-**The best code is the code you never wrote.** Before writing code, stop at the first rung that holds: (1) does it need to exist? → no: skip it (YAGNI); (2) stdlib / built-in does it? → use it; (3) native platform/framework feature? → use it; (4) already-installed dependency? → use it (a *new* dependency is **not** free — `security-fundamentals` owns that call); (5) one line? → one line; (6) only then: the minimum that works. **Lazy, not negligent** — never cut trust-boundary validation, error/data-loss handling, security, or accessibility. Mark deliberate shortcuts inline with a `ponytail: <upgrade path>` comment. Always-on digest of `coding-discipline` principle 2.
+## Process skills
 
-## Output discipline (always-on)
-
-Terse-first — every response and artifact. Cut preamble, repeated context, and lifecycle narration. **Terse ≠ lossy**: never drop a result, caveat, decision, evidence obligation, or needed step. Durable OpenSpec artifacts keep only information later work consumes; runtime status belongs in `.foundation/`, not Markdown. Strip template guidance when filling an artifact.
-
-## Process layer (wraps the work)
-
-| When the task is… | Load skill | Order |
-|---|---|---|
-| Producing or editing **code** (implement, fix, refactor, "clean up") | `coding-discipline` | **on friction only** — the always-on Conduct digest above is the default pre-flight; load the body when a checklist answer is genuinely unclear (ambiguous ask, oversized scope, contested diff shape) |
-| An **unknown-cause failure** (bug, crash, regression, flaky test, perf cliff, prod surprise) | `debug-fundamentals` | first — find the cause, *then* the construction skill for the fix layer |
-| **Restructuring** working code without changing behaviour (extract, rename, untangle, de-dupe, simplify, pay down debt) | `refactoring-fundamentals` | first — pick safe path + baseline, *then* construction skill |
-| Writing tests / deciding what to test / choosing a test level / reviewing coverage | `testing-fundamentals` | design-time companion to the construction skills |
-
-## Construction layer (run in this order when several apply)
-
-Model & boundaries → code → in-process concurrency → storage → service layering → API surface → cross-service → async channel → harden → observe:
-
-`ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`
-
-| When the task is… | Load skill |
+| Trigger | Load |
 |---|---|
-| Deciding **where a model lives / what language it speaks** — bounded contexts, subdomain build-vs-buy, aggregate sizing, context mapping | `ddd-strategic` |
-| Any code with **real logic** — function, module, data model, non-trivial bug, review | `programming-fundamentals` |
-| **In-process** "things run at once" — threads, async/await, shared mutable state, locks, parallel tasks, event loops, racing callbacks | `concurrency-fundamentals` |
-| Touching a **database** — schema, non-trivial query, index, migration, slow-query, persistent data modeling | `database-fundamentals` |
-| **Backend with real domain logic** — services, APIs, repositories, use cases, persistence, message handling (define ports before controllers/DB) | `hexagonal-backend` |
-| Designing/changing an **API surface** a client codes against — endpoint, resource/URL model, request/response body, status codes, error shape, pagination, idempotency, version bump | `api-design-fundamentals` |
-| A **system-level** decision — new system, split/merge services, new cross-component call, event schema, failure modes, scaling, how components relate at runtime | `architecture-fundamentals` |
-| A **queue-based** path — broker, event stream, background job, async worker, pub/sub | `queue-fundamentals` |
-| A **trust boundary** — auth/session/token, password/crypto, input handling, SQL/query building, raw HTML/template, file/path, exec/shell, deserialisation of untrusted input, secrets, new external endpoint, pulling in a dependency | `security-fundamentals` |
-| Shipping runtime code that adds a **failure mode or op surface** — logging/metrics/tracing, an SLO/alert, a prod blind spot | `observability-fundamentals` |
+| Unknown-cause bug, crash, regression, flake, or performance cliff | `debug-fundamentals` first |
+| Behavior-preserving restructure | `refactoring-fundamentals` first |
+| Test design, level, coverage, or review | `testing-fundamentals` |
 
-## Delivery layer
+## Construction skills
 
-| When the task is… | Load skill |
+When several apply, use:
+
+```text
+ddd-strategic
+→ programming-fundamentals
+→ concurrency-fundamentals
+→ database-fundamentals
+→ hexagonal-backend
+→ api-design-fundamentals
+→ architecture-fundamentals
+→ queue-fundamentals
+→ security-fundamentals
+→ observability-fundamentals
+```
+
+| Trigger | Load |
 |---|---|
-| Any write to `.git` — branch, commit, message, rebase, merge, force-push, PR, destructive cleanup (`reset --hard`, `push --force`, `checkout --`) | `git-workflow` |
-| How code **reaches production** — CI/CD pipeline, build, deploy strategy, release, containerization, env config, rollout/rollback | `delivery-engineering` |
+| Bounded contexts, subdomains, aggregates, semantic ownership | `ddd-strategic` |
+| Non-trivial logic, model, module, implementation, or code review | `programming-fundamentals` |
+| Threads, async, shared mutable state, locks, races | `concurrency-fundamentals` |
+| Schema, query, index, migration, persistence model | `database-fundamentals` |
+| Backend domain logic, use cases, ports, repositories | `hexagonal-backend` |
+| Published endpoint/resource/request/response/error/version contract | `api-design-fundamentals` |
+| System split, component relationship, cross-service call, scaling/failure model | `architecture-fundamentals` |
+| Broker, stream, job, worker, pub/sub, cross-process async | `queue-fundamentals` |
+| Auth/session/token, secrets, untrusted input, SQL/HTML/file/exec sink, crypto, dependency, external endpoint | `security-fundamentals` |
+| Runtime failure mode, logs, metrics, traces, SLO, alert, blind spot | `observability-fundamentals` |
 
-## Seams that blur
+Semantic boundaries belong to DDD; ports to hexagonal; published service
+surfaces to API design; runtime relationships to architecture. Transaction
+isolation is database work, in-process races are concurrency work, and
+cross-process async is queue work. Apply security and observability to the
+affected layer.
 
-- In-process concurrency → `concurrency-fundamentals`; broker/cross-process async → `queue-fundamentals`; transaction isolation → `database-fundamentals`.
-- `ddd-strategic` owns semantic boundaries; `hexagonal-backend` owns ports; `api-design-fundamentals` owns a service's published surface; `architecture-fundamentals` owns runtime relationships.
-- Security and observability apply last to the affected layer.
+## Delivery skills
 
-Non-lifecycle skills trigger from their own descriptions or explicit command wiring; do not preload them. This file is canonical for routed triggers and construction order; keep the mirrored chain in `README.md` aligned.
+| Trigger | Load |
+|---|---|
+| Branch, commit, merge, rebase, force operation, PR, destructive Git cleanup | `git-workflow` |
+| CI/CD, build, container, deploy, environment, rollout/rollback, release | `delivery-engineering` |
+
+Non-lifecycle skills trigger from their descriptions or explicit commands.
+Keep the construction chain mirrored in `README.md`.

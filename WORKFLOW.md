@@ -60,12 +60,14 @@ For a selected multi-repository topology:
 ```bash
 claude-foundation repos <change>
 claude-foundation sandbox create <change> --all
-claude-foundation agents plan <change>
-claude-foundation packet <change> --repo <id> --task <task-id>
+claude-foundation agents plan <change> [--group <n>]
+claude-foundation agents task <change> <task-id>
 ```
 
 The plan permits parallel workers only across independent repositories and
-resources. It routes mechanical inventory to the configured Haiku/fast tier,
+resources. The full plan is persisted while stdout stays below 4 KiB; workers
+receive only an 8 KiB task packet. A one-repository change with at most two
+ordinary tasks stays with one agent. It routes mechanical inventory to the configured Haiku/fast tier,
 normal implementation to Sonnet/standard, and architecture, security,
 migration, or independent review to Opus/deep. Exact model versions remain host
 configuration.
@@ -261,12 +263,14 @@ There is no per-tool telemetry hook, and prompt/tool payloads are never copied.
 Other hosts use `telemetry import`.
 
 Use `claude-foundation metrics <change>` to aggregate phase timing, unique
-provider execution time, request/token/cache/cost totals, and orchestrator token
-share without double-counting receipts emitted by one combined execution.
+provider execution time, request/token/cache/cost totals, orchestrator token
+share, and emitted context bytes without double-counting receipts emitted by
+one combined execution.
 
 `claude-foundation packet <change> --phase build|prove` emits the bounded
-handoff for a fresh execution context: active paths, revision, claims,
-providers, task count, hash, and budget. The phase marker first closes usage
+handoff for a fresh execution context. Global, repository, and task packets are
+capped at 16, 12, and 8 KiB respectively and reference larger artifacts by
+path and digest. The phase marker first closes usage
 from the prior phase using the incremental transcript cursor. Large changed-file
 sets collapse into prefix counts plus a digest. Build and Prove consume this
 packet instead of replaying the full orchestrator transcript.

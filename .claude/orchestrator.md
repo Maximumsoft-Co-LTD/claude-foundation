@@ -1,156 +1,88 @@
 # Foundation change loop
 
-Foundation is an OpenSpec-native software-change harness. The main agent owns one
-short loop:
-
 ```text
 Investigate? → Change → Build → Prove → Land
 ```
 
-There are no lifecycle subagents or fixed phases. OpenSpec owns durable intent,
-the native agent owns implementation, and `.claude/harness/foundation.mjs` owns
-deterministic state, evidence validity, budgets, and land guards.
+OpenSpec owns intent, code/tests own implementation truth, and
+`.claude/harness/foundation.mjs` owns deterministic state, evidence, budgets,
+isolation, and Land guards. `tasks.md` is the only ledger. `.workflow/` is
+read-only legacy state.
 
-## Sources of truth
-
-- `openspec/changes/<id>/`: proposal, delta specs, design, tasks, evidence claims.
-- `execution.yaml`: replaceable provider, service, report, and readiness wiring.
-- Code and tests: implementation truth.
-- `.foundation/runtime/<id>.json`: machine lifecycle and resolver output.
-- `.foundation/receipts/<id>/`: content-bound evidence.
-- `tasks.md`: the only task ledger. Never mirror each checkbox into native tasks.
-
-Do not create `.workflow/` state for new work. Existing `.workflow/` runs are
-read-only legacy records and may be migrated with `foundation migrate`.
-
-Use the `claude-foundation` CLI as the stable control surface. If it is not on
-`PATH` in a project installed directly from source, invoke the matching internal
-command with `node .claude/harness/foundation.mjs`; do not change its semantics.
+Use the public `claude-foundation` CLI. Do not reproduce its runtime logic in
+prompts or Markdown.
 
 ## Resolve
 
-Resolve five independent values before building:
+Persist ambiguity, impact, coupling, evidence capabilities, and size. Size
+controls budget/slicing, never assurance. Use `/investigate` when ambiguity is
+unclear.
 
-- ambiguity: `clear|unclear` — unclear work uses `/investigate`;
-- impact: `low|medium|high`;
-- coupling: `isolated|coupled`;
-- evidence capabilities required by observable claims;
-- size: budget and slicing only, never phases.
+Rapid schema requires low impact, isolated coupling, unit/static evidence, and
+no public contract, migration, trust boundary, irreversible effect, or
+sensitive data. Upgrade when risk appears.
 
-Use `claude-foundation runtime resolve <change> ...` to persist the decision. Choose
-`foundation-rapid` only when impact is low, coupling is isolated, unit/static
-evidence is sufficient, and there is no public contract, persistent migration,
-security boundary, irreversible effect, or sensitive data.
-
-Provider selection is claim- and risk-driven, not a checklist. Use
-`claude-foundation providers` to inspect the canonical catalog. Add `static-analysis`
-for compile/type/lint gates; `data-migration` for persisted evolution;
-`accessibility` for user-facing rendered interaction; `resilience` for failure
-and recovery behavior; `observability` for operational signals; `deployment`
-for rollout/rollback; and `dependency-supply-chain` when dependency or release
-integrity changes. Do not select providers unrelated to an observable claim.
-
-Security is semantic. Trigger it for identity/access, secrets, permissions,
-cross-user access, network trust, irreversible mutation, sensitive storage,
-unsafe sinks, public security contracts, or security-relevant migrations.
-Generic syntax such as JSON parsing, DOM use, or HTTP use is not a trigger alone.
+Select providers from observable claims. Security is semantic: identity/access,
+secrets, permissions, cross-user data, network trust, unsafe sinks, sensitive
+storage, irreversible mutation, and security-relevant migrations trigger it;
+syntax alone does not.
 
 ## Build
 
-Give the native harness only the goal, change path, delta specs, design
-constraints, tasks, evidence obligations, sandbox descriptor, and budget.
-Implementation order and tool choice belong to the harness.
+Start from a compact packet, not conversation history. Read only referenced
+files needed by the task, edit only its sandbox and allowed paths, and check
+`tasks.md` after focused verification.
 
-- Read only relevant repository context.
-- Update `tasks.md` checkboxes as work completes.
-- Use native tasks/subagents only for independently verifiable work packages,
-  genuine parallelism, resumption, or cross-repository work.
-- For multi-repository work, treat `openspec/repositories.yaml` as topology and
-  the change's `repositories.yaml` as scope. Use `agents plan` for dependency,
-  resource, and model routing; do not spawn one agent per repository by default.
-- Route mechanical inventory/log work to the configured fast tier, normal
-  implementation to the standard tier, and architecture/security/migration or
-  independent risk review to the deep tier. Risk and ambiguity—not file count—
-  control escalation.
-- Prefer focused checks while editing. Do not repeat the full suite at phase
-  boundaries; there are no phase boundaries.
-- Keep the orchestrator on control-plane decisions. Batch independent reads and
-  provider claims, and pass a compact change packet to implementation or review
-  work instead of replaying the full conversation.
-- Never weaken an evidence obligation to fit a budget.
+Use subagents only for independent, verifiable, resumable work. Multi-repository
+work uses committed topology, per-change scope, `agents plan`, scoped packets,
+and task leases. A small isolated change stays with one agent.
 
-For medium/large coupled work, slice by coherent behavior. Each slice follows
-Build → Prove; finish with one integration proof.
+Model tiers are policy:
 
-If intent changes during Build, pause implementation, investigate if needed,
-revise the same OpenSpec change, then run `claude-foundation sandbox sync <id>`.
-Stable task IDs preserve completion. Contract and execution revisions are
-tracked separately; wiring changes invalidate affected provider fingerprints
-without pretending behavior changed.
+- fast/Haiku: bounded inventory, logs, mechanical docs;
+- standard/Sonnet: implementation, tests, focused investigation;
+- deep/Opus: architecture, security, migration, contract decisions, independent
+  review.
+
+Risk and ambiguity—not file count—escalate. Deterministic providers use no
+model. Never weaken evidence to meet a budget.
+
+If intent changes, pause, revise the same change, and `sandbox sync`. Stable task
+IDs preserve unaffected progress. Repository-scope changes require an explicit
+topology revision rather than silently exposing an unsandboxed repository.
 
 ## Prove
 
-`/prove` is evidence-driven:
+Validate the active change, snapshot relevant workspaces once, resolve claims to
+providers, reuse only fingerprint/hash-valid receipts, and execute missing
+evidence by a resource-safe DAG. Test evidence requires discovery. Required
+failed, missing, stale, error, or inconclusive evidence blocks Land.
 
-1. validate the OpenSpec change;
-2. create one relevant workspace snapshot;
-3. resolve claims to providers;
-4. reuse receipts only when their hash, provider protocol/version/fingerprint,
-   and claim scope match;
-5. batch missing or stale claims by provider and run each suite once;
-6. verify test discovery;
-7. run the required full suite once after convergence;
-8. perform independent review only when risk triggers it;
-9. re-run evidence invalidated by a proof-time edit;
-10. run `proof preflight`, `proof execute`, and `proof audit`; reports, logs,
-    and attachments are copied into the immutable evidence vault.
-
-Provider results are `pass|fail|inconclusive|error`. Required `inconclusive`
-evidence blocks landing. A mutation crash is not a behavioral kill. Required
-rendered behavior cannot pass through a provider lacking the declared input and
-foreground capabilities.
-
-Review triggers: high impact, auth/access, public compatibility, migration,
-irreversible mutation, concurrency, monetary logic, multi-repo contracts,
-evidence anomaly, or explicit policy. Findings are
+Run independent review for high impact, auth/access, public compatibility,
+migration, irreversible mutation, concurrency, money, multi-repo contracts,
+evidence anomalies, or explicit policy. Findings are
 `verified|hypothesis|disproved|accepted-risk`; only deterministic verified
-blockers and missing evidence block land.
+blockers and missing evidence block.
+
+Proof artifacts and receipts are immutable and content-bound. Proof-time edits
+invalidate affected evidence. A mutation crash is not a behavioral kill, and a
+rendered claim cannot pass through an incapable provider.
 
 ## Budget
 
-The native runtime records command duration and result. External runtimes submit
-request identity, tool/provider calls, tokens, cache, and cost as events; absent
-external measurements remain unknown, never zero. At 70% batch and reuse; at 85% stop
-speculative expansion; at 100% stop and split or re-scope. Required proof remains.
+Usage comes from host request records; unknown is never zero. At 70%, batch and
+reuse. At 85%, stop speculative expansion. At 100%, split or re-scope. Required
+proof remains.
 
 ## Land
 
-Landing is explicit and transactional:
+Land is explicit. Reject stale proof, apply only the proven touched-path
+projection, preserve unrelated edits, journal backups/mutations, roll back
+partial failure, run OpenSpec spec sync/archive, audit digests, and clean up
+resumably. Never commit, push, or open a PR without separate authority.
 
-1. `claude-foundation land check <change>` rejects stale, incomplete, or
-   digest-invalid proof;
-2. `claude-foundation land archive <change>` applies only the proven sandbox
-   diff when needed;
-3. the same transaction verifies the touched-path projection against the
-   immutable apply plan; unrelated target edits are outside that identity;
-4. the same transaction uses OpenSpec archive/spec sync;
-5. audit archived receipts and artifact digests;
-6. record commit/PR only when explicitly authorized;
-7. finalize metrics and clean the sandbox through the resumable Land journal.
+Multiple remotes are not atomic. Use the ordered saga: bind authorized child
+commits/CI, verify dependencies, stage checked gitlinks, re-Prove the composite
+identity, resume, then archive the control change last.
 
-The proof subject remains the sandbox until archive completes. A prepared
-transaction backs up touched paths, journals each mutation, rolls back on
-failure, and resumes after interruption. Never archive before code application,
-never apply a diff whose proof hash changed, and never overwrite unrelated user
-changes.
-
-Several Git remotes cannot be atomic. Multi-repository Land is an ordered,
-resumable saga: bind explicitly created child commits, require applicable CI,
-verify mixed-version contracts and root gitlinks, then archive the control-plane
-change last. Foundation never commits or pushes by implication.
-
-## Compatibility
-
-`/dev <intent>` composes `/change → /build → /prove`. It does not land, commit,
-or open a PR. `--plan-only` maps to `/change`; `--resume <id>` resumes the named
-OpenSpec change. Legacy active runs are routed through `/migrate-workflow`.
+`/dev` composes Change → Build → Prove only. It never Lands.

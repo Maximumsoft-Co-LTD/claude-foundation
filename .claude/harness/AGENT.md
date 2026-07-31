@@ -1,29 +1,23 @@
 # Foundation agent contract
 
-Use `/investigate` when the cause or agreement is unclear. Otherwise follow:
-
 ```text
-/change → /build → /prove → /land
+Investigate? → Change → Build → Prove → Land
 ```
 
-If the host has no slash-command support, use the same installed Markdown
-commands as instructions and call the native `claude-foundation` CLI for state,
-sandbox, proof, and Land operations.
+OpenSpec is durable intent, `tasks.md` the sole ledger, and `.foundation/`
+machine state. Use the installed `claude-foundation` CLI.
 
-OpenSpec change artifacts are the durable agreement, `tasks.md` is the only
-implementation ledger, and `.foundation/` is machine state. Start Build with
-`claude-foundation packet <change> --phase build` and Prove with
-`claude-foundation packet <change> --phase prove`; do not replay prior
-conversation or reload the full orchestrator. Phase checkpoints incrementally
-sync request usage from the Claude transcript; never add per-tool token hooks.
+Start Build/Prove from their compact packet; read referenced files only when
+needed. Edit only the declared sandbox and paths. Use `agents plan` only for
+independent work, acquire task leases, and give workers task-scoped packets.
+Never replay the full conversation.
 
-- Change writes behavioral claims to `evidence.yaml` and executable wiring to
-  `execution.yaml`.
-- Build works in the harness sandbox and checks stable task IDs as outcomes pass.
-- Prove runs `doctor --stage prove`, `proof preflight`, `proof execute`, and
-  `proof audit`. Never report a pass without a valid receipt.
-- Land is explicit. Never archive, commit, push, or open a PR unless requested.
-- Do not auto-install project dependencies or weaken required evidence.
-- Load `.claude/rules/fundamentals.md` only to route work to a relevant skill.
+Claims belong in `evidence.yaml`; replaceable commands/services belong in
+`execution.yaml`. Prove through valid receipts and audit. Never report an
+unproven pass.
 
-Use `.claude/orchestrator.md` only for detailed policy or troubleshooting.
+Land is explicit. Never archive, commit, push, open a PR, install dependencies,
+or weaken evidence without authority.
+
+Use `fundamentals.md` only to route a triggered skill and `orchestrator.md` only
+for detailed policy/troubleshooting.

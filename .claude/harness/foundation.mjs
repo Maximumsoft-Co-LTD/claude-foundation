@@ -493,7 +493,12 @@ function foundationPolicy() {
   const configured = existsSync(path) ? readJson(path) : {};
   const defaults = {
     version: 1,
-    execution: { maxParallelAgents: 3, packetBytes: 65536, leaseMinutes: 45 },
+    execution: {
+      maxParallelAgents: 3,
+      packetBytes: { task: 8192, repository: 12288, global: 16384 },
+      planSummaryBytes: 4096,
+      leaseMinutes: 45
+    },
     models: {
       fast: { family: "haiku", fallbackTier: "standard", purposes: ["inventory", "logs", "mechanical-docs"] },
       standard: { family: "sonnet", fallbackTier: "deep", purposes: ["implementation", "tests", "focused-investigation"] },
@@ -512,6 +517,20 @@ function foundationPolicy() {
     execution: { ...defaults.execution, ...(configured.execution || {}) },
     models: { ...defaults.models, ...(configured.models || {}) }
   };
+  if (typeof policy.execution.packetBytes === "number")
+    policy.execution.packetBytes = {
+      task: policy.execution.packetBytes,
+      repository: policy.execution.packetBytes,
+      global: policy.execution.packetBytes
+    };
+  for (const type of ["task", "repository", "global"]) {
+    const bytes = Number(policy.execution.packetBytes?.[type]);
+    if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
+      die(`foundation.json execution.packetBytes.${type} must be 2048..65536`);
+  }
+  const summaryBytes = Number(policy.execution.planSummaryBytes);
+  if (!Number.isInteger(summaryBytes) || summaryBytes < 1024 || summaryBytes > 16384)
+    die("foundation.json execution.planSummaryBytes must be 1024..16384");
   const parallel = Number(policy.execution.maxParallelAgents);
   if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
     die("foundation.json execution.maxParallelAgents must be an integer from 1 to 16");
@@ -1063,6 +1082,7 @@ function taskMetadata(task) {
     dependsOn: list("depends").map((item) => item.toUpperCase()),
     paths: list("paths"),
     resources: list("resources"),
+    claims: list("claims"),
     text: value.replace(/\s+/g, " ").trim().slice(0, 1000)
   };
 }
@@ -1164,6 +1184,10 @@ function agentPlanValue(id) {
     }
   }
   const claims = evidence(id).claims;
+  const singleAgent = repositories.length === 1 && tasks.length <= 2 &&
+    !claims.some((claim) => (claim.repositories || []).length > 1) &&
+    !tasks.some((task) => task.resources.some((resource) =>
+      !resource.startsWith("workspace:")));
   const conflicts = activeRepositoryConflicts(id, repositories);
   const blockingReasons = [
     ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
@@ -1184,6 +1208,7 @@ function agentPlanValue(id) {
     })),
     tasks,
     groups,
+    recommendedExecution: singleAgent ? "single-agent" : "planned-agents",
     conflicts,
     blockingReasons,
     dispatchable: blockingReasons.length === 0,
@@ -1202,7 +1227,7 @@ function agentPlanValue(id) {
   return { ...basePlan, planDigest: stableHash(basePlan), createdAt: now() };
 }
 
-function showAgentPlan(id) {
+function showAgentPlan(id, flags = {}) {
   const plan = agentPlanValue(id);
   const path = join(PLANS, `${id}.json`);
   const prior = existsSync(path) ? readJson(path, {}) : null;
@@ -1248,7 +1273,83 @@ function showAgentPlan(id) {
       : []
   };
   writeJson(path, output);
-  console.log(JSON.stringify(output, null, 2));
+  let visible;
+  let view = "summary";
+  if (flags.full) {
+    visible = output;
+    view = "full";
+  } else if (flags.group !== undefined) {
+    const groupNumber = Number(flags.group);
+    if (!Number.isInteger(groupNumber) || groupNumber < 1 ||
+        groupNumber > output.groups.length)
+      die(`agents plan --group must be 1..${output.groups.length}`);
+    const ids = output.groups[groupNumber - 1];
+    visible = {
+      version: 1, changeId: id, planDigest: output.planDigest,
+      group: groupNumber,
+      tasks: output.tasks.filter((task) => ids.includes(task.id)).map((task) => ({
+        id: task.id, repository: task.repository, kind: task.kind,
+        model: task.model, dependsOn: task.dependsOn,
+        resources: task.resources, packetCommand: task.packetCommand
+      }))
+    };
+    view = "group";
+  } else {
+    const modelCounts = output.tasks.reduce((counts, task) => {
+      counts[task.model.family] = (counts[task.model.family] || 0) + 1;
+      return counts;
+    }, {});
+    const groupSummaries = output.groups.map((ids, index) => ({
+      group: index + 1,
+      taskCount: ids.length,
+      taskIds: ids.length <= 12 ? ids : null,
+      taskDigest: ids.length > 12 ? stableHash(ids) : null
+    }));
+    visible = {
+      version: 1,
+      changeId: id,
+      planDigest: output.planDigest,
+      planPath: relative(ROOT, path).replaceAll("\\", "/"),
+      dispatchable: output.dispatchable,
+      blockingReasons: output.blockingReasons,
+      recommendedExecution: output.recommendedExecution,
+      repositoryCount: output.repositories.length,
+      repositories: output.repositories.map((repository) => repository.id),
+      taskCount: output.tasks.length,
+      modelCounts,
+      groupCount: groupSummaries.length,
+      groups: groupSummaries.length <= 20 ? groupSummaries : {
+        preview: groupSummaries.slice(0, 10),
+        count: groupSummaries.length,
+        digest: stableHash(groupSummaries)
+      },
+      invalidatedTasks: output.invalidatedTasks.length <= 20
+        ? output.invalidatedTasks : {
+          count: output.invalidatedTasks.length,
+          digest: stableHash(output.invalidatedTasks)
+        },
+      next: output.recommendedExecution === "single-agent"
+        ? `claude-foundation packet ${id} --task ${output.tasks[0]?.id || "T001"}`
+        : `claude-foundation agents plan ${id} --group 1`
+    };
+  }
+  const encoded = JSON.stringify(visible);
+  const limit = view === "summary"
+    ? Number(foundationPolicy().execution.planSummaryBytes)
+    : Number(foundationPolicy().execution.packetBytes.repository);
+  if (Buffer.byteLength(encoded) > limit)
+    die(`agent ${view} exceeds ${limit} bytes; inspect the persisted plan by digest`);
+  recordContextMetric(id, `agent-plan-${view}`, Buffer.byteLength(encoded), {
+    tasks: output.tasks.length, repositories: output.repositories.length
+  });
+  console.log(JSON.stringify(visible, null, 2));
+}
+
+function showAgentTask(id, taskId) {
+  const plan = agentPlanValue(id);
+  const task = plan.tasks.find((candidate) => candidate.id === String(taskId || "").toUpperCase());
+  if (!task) die(`unknown pending task '${taskId || ""}'`);
+  showPacket(id, { repo: task.repository, task: task.id });
 }
 
 function leasePath(resource) {
@@ -3439,9 +3540,25 @@ function packetValue(id, repositoryId = null, taskId = null) {
   const state = loadRuntime(id);
   const activePath = activeChangePath(id, state);
   const contract = evidence(id, activePath);
-  const repository = repositoryId ? repositoryById(id, repositoryId, state) : null;
-  const claims = contract.claims.filter((claim) =>
-    !repository || !claim.repositories || claim.repositories.includes(repository.id));
+  const allTasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8"))
+    .map(taskMetadata);
+  const selectedTask = taskId
+    ? allTasks.find((task) => task.id === String(taskId).toUpperCase())
+    : null;
+  if (taskId && !selectedTask) die(`unknown task '${taskId}'`);
+  const effectiveRepositoryId = repositoryId || selectedTask?.repository || null;
+  const repository = effectiveRepositoryId
+    ? repositoryById(id, effectiveRepositoryId, state) : null;
+  if (selectedTask && repository && selectedTask.repository !== repository.id)
+    die(`task '${selectedTask.id}' is not assigned to repository '${repository.id}'`);
+  const packetType = selectedTask ? "task" : repository ? "repository" : "global";
+  const claims = contract.claims.filter((claim) => {
+    if (selectedTask?.claims.length)
+      return selectedTask.claims.includes(claim.id);
+    return !repository || !claim.repositories ||
+      claim.repositories.includes(repository.id);
+  });
+  const claimIds = new Set(claims.map((claim) => claim.id));
   const compositeSnapshot = relevantSnapshot(id);
   const hash = repository
     ? compositeSnapshot.repositories?.[repository.id]?.workspaceHash ||
@@ -3457,11 +3574,21 @@ function packetValue(id, repositoryId = null, taskId = null) {
       validity: check.validity, status: check.status || check.receipt?.status || null
     };
   }).filter((provider) => !repository ||
-    !provider.repository || provider.repository === repository.id);
-  const fileChanges = repository
+    !provider.repository || provider.repository === repository.id)
+    .filter((provider) => {
+      const covered = claimsForProvider(id, provider.provider).map((claim) => claim.id);
+      return covered.length === 0 || covered.some((claim) => claimIds.has(claim));
+    });
+  let fileChanges = repository
     ? changedFilesInWorkspace(id, repository.workspacePath)
     : changedFiles(id, state);
-  const changedFileSummary = fileChanges.length <= 200 ? fileChanges : {
+  if (selectedTask?.paths.length)
+    fileChanges = fileChanges.filter((path) => selectedTask.paths.some((scope) => {
+      const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
+      return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
+    }));
+  const changedFileLimit = packetType === "task" ? 50 : 100;
+  const changedFileSummary = fileChanges.length <= changedFileLimit ? fileChanges : {
     count: fileChanges.length,
     digest: stableHash(fileChanges),
     groups: Object.entries(fileChanges.reduce((groups, path) => {
@@ -3471,15 +3598,51 @@ function packetValue(id, repositoryId = null, taskId = null) {
     }, {})).sort(([left], [right]) => left.localeCompare(right))
       .map(([prefix, count]) => ({ prefix, count }))
   };
-  const allTasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8"))
-    .map(taskMetadata);
   const scopedTasks = allTasks.filter((task) =>
     (!repository || task.repository === repository.id) &&
-    (!taskId || task.id === taskId));
-  if (taskId && scopedTasks.length === 0)
-    die(`task '${taskId}' is not assigned to repository '${repositoryId || "root"}'`);
+    (!selectedTask || task.id === selectedTask.id));
+  const taskPayload = packetType === "global" ? {
+    count: scopedTasks.length,
+    pending: scopedTasks.filter((task) => !task.done).length,
+    byRepository: Object.entries(scopedTasks.reduce((counts, task) => {
+      counts[task.repository] = (counts[task.repository] || 0) + 1;
+      return counts;
+    }, {})).sort(([left], [right]) => left.localeCompare(right))
+      .map(([repositoryIdValue, count]) => ({ repository: repositoryIdValue, count })),
+    digest: stableHash(scopedTasks.map((task) => ({
+      id: task.id, done: task.done, repository: task.repository,
+      dependsOn: task.dependsOn
+    })))
+  } : scopedTasks.map((task) => ({
+    id: task.id, done: task.done, kind: task.kind,
+    dependsOn: task.dependsOn, paths: task.paths,
+    resources: task.resources,
+    ...(packetType === "task" ? {
+      text: task.text, claims: task.claims, model: modelForTask(id, task)
+    } : {})
+  }));
+  const artifactReferences = {};
+  for (const name of [
+    "proposal.md", "design.md", "tasks.md", "evidence.yaml",
+    "execution.yaml", "repositories.yaml"
+  ]) {
+    const path = join(activePath, name);
+    if (existsSync(path))
+      artifactReferences[name] = {
+        path: relative(ROOT, path).replaceAll("\\", "/"),
+        sha256: fileDigest(path)
+      };
+  }
+  const specsPath = join(activePath, "specs");
+  if (existsSync(specsPath))
+    artifactReferences.specs = {
+      path: relative(ROOT, specsPath).replaceAll("\\", "/"),
+      sha256: directoryHash(specsPath)
+    };
+  const invariantValues = Array.isArray(contract.invariants)
+    ? contract.invariants.map((value) => String(value)) : [];
   const packet = {
-    version: 2, changeId: id, intent: state.intent, schema: state.schema,
+    version: 3, packetType, changeId: id, intent: state.intent, schema: state.schema,
     status: state.status, revision: Number(state.revision || 0),
     contractRevision: Number(state.contractRevision || 0),
     executionRevision: Number(state.executionRevision || 0),
@@ -3495,31 +3658,56 @@ function packetValue(id, repositoryId = null, taskId = null) {
     workspaceHash: hash,
     compositeWorkspaceHash: compositeSnapshot.workspaceHash,
     pendingTaskCount: scopedTasks.filter((task) => !task.done).length,
-    tasks: scopedTasks.map((task) => ({
-      id: task.id, done: task.done, kind: task.kind,
-      dependsOn: task.dependsOn, paths: task.paths,
-      resources: task.resources, text: task.text,
-      model: modelForTask(id, task)
-    })),
+    tasks: taskPayload,
     claims: claims.map((claim) => ({
       id: claim.id,
-      scenario: String(claim.scenario).slice(0, 500),
-      capabilities: claim.capabilities
+      ...(packetType === "global"
+        ? { scenarioDigest: stableHash(String(claim.scenario)) }
+        : { scenario: String(claim.scenario)
+          .slice(0, packetType === "task" ? 500 : 240) }),
+      capabilities: claim.capabilities,
+      repositories: claim.repositories || null
     })),
     providers, changedFiles: changedFileSummary,
-    invariants: Array.isArray(contract.invariants)
-      ? contract.invariants.map((value) => String(value).slice(0, 500)).slice(0, 20) : [],
+    invariants: packetType === "global" ? {
+      count: invariantValues.length,
+      digest: stableHash(invariantValues),
+      reference: "evidence.yaml#invariants"
+    } : invariantValues.map((value) => value.slice(0, 300)).slice(0, 10),
+    references: artifactReferences,
     budget: state.budget
   };
-  const encoded = JSON.stringify(packet);
-  const limit = Number(foundationPolicy().execution.packetBytes || 65536);
-  if (Buffer.byteLength(encoded) > limit)
-    die(`compact packet exceeds ${limit} bytes; split the change or shorten scenarios/invariants`);
-  return { ...packet, packetDigest: stableHash(packet) };
+  const result = { ...packet, packetDigest: stableHash(packet) };
+  const encoded = JSON.stringify(result);
+  const bytes = Buffer.byteLength(encoded);
+  const limit = Number(foundationPolicy().execution.packetBytes[packetType]);
+  if (bytes > limit) {
+    const fields = Object.entries(result).map(([field, value]) => ({
+      field, bytes: Buffer.byteLength(JSON.stringify(value))
+    })).sort((left, right) => right.bytes - left.bytes).slice(0, 5);
+    die(`${packetType} packet exceeds ${limit} bytes (${bytes}); largest fields: ${
+      fields.map((field) => `${field}=${field.bytes}`).join(", ")
+    }; split claims/tasks or use referenced artifacts`);
+  }
+  recordContextMetric(id, `packet-${packetType}`, bytes, {
+    repositoryId: repository?.id || null,
+    taskId: selectedTask?.id || null,
+    claims: claims.length,
+    providers: providers.length
+  });
+  return result;
 }
 
 function showPacket(id, flags = {}) {
   console.log(JSON.stringify(packetValue(id, flags.repo || null, flags.task || null), null, 2));
+}
+
+function recordContextMetric(id, kind, bytes, details = {}) {
+  const path = join(LOGS, id, "context.jsonl");
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify({
+    version: 1, changeId: id, kind, bytes, ...details, timestamp: now()
+  })}\n`);
 }
 
 function recordEvent(id, flags) {
@@ -3849,6 +4037,7 @@ function showMetrics(id) {
   loadRuntime(id);
   const operations = readJsonLines(join(LOGS, id, "operations.jsonl"));
   const events = readJsonLines(join(LOGS, id, "events.jsonl"));
+  const contextRows = readJsonLines(join(LOGS, id, "context.jsonl"));
   const phases = {};
   for (const operation of operations) {
     const name = operation.phase || operation.operation || "unknown";
@@ -3905,6 +4094,27 @@ function showMetrics(id) {
     }
     return result;
   };
+  const contextByKind = {};
+  for (const row of contextRows) {
+    contextByKind[row.kind] ||= [];
+    contextByKind[row.kind].push(Number(row.bytes || 0));
+  }
+  const context = Object.fromEntries(Object.entries(contextByKind)
+    .map(([kind, values]) => {
+      const sorted = [...values].sort((left, right) => left - right);
+      const percentile = (ratio) => sorted[Math.min(
+        sorted.length - 1, Math.floor((sorted.length - 1) * ratio)
+      )] || 0;
+      return [kind, {
+        count: values.length,
+        totalBytes: values.reduce((sum, value) => sum + value, 0),
+        medianBytes: percentile(0.5),
+        p95Bytes: percentile(0.95),
+        maxBytes: sorted.at(-1) || 0
+      }];
+    }));
+  const contextBytes = contextRows.length
+    ? contextRows.reduce((sum, row) => sum + Number(row.bytes || 0), 0) : null;
   console.log(JSON.stringify({
     version: 2, changeId: id,
     wallTimeMs: operations.length
@@ -3923,6 +4133,11 @@ function showMetrics(id) {
     byModel: groupUsage("modelId"),
     byRepository: groupUsage("repositoryId"),
     byTask: groupUsage("taskId"),
+    context: {
+      totalBytes: contextBytes,
+      estimatedTokens: contextBytes === null ? null : Math.ceil(contextBytes / 4),
+      byKind: context
+    },
     orchestratorTokenShare: tokenTotal > 0 ? orchestratorTokens / tokenTotal : null,
     orchestratorCostShare: totalCost > 0 && orchestratorCost !== null
       ? orchestratorCost / totalCost : null,
@@ -4120,7 +4335,8 @@ Commands:
   doctor [--stage change|build|prove] [--require-archive] [--change <id>]
   repos [change]
   models
-  agent-plan <change>
+  agent-plan <change> [--group <n>] [--full]
+  agent-task <change> <task>
   agent-acquire <change> <task> --owner <agent-id>
   agent-release <change> <task> --owner <agent-id>
   new <intent> [--id <id>] [--rapid]
@@ -4155,7 +4371,7 @@ Commands:
 const [command, ...values] = process.argv.slice(2);
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
-  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
     "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
 
 const telemetryPhase = {
@@ -4196,7 +4412,11 @@ switch (command) {
   case "providers": showProviders(); break;
   case "repos": showRepositories(values[0] || null); break;
   case "models": console.log(JSON.stringify(foundationPolicy().models, null, 2)); break;
-  case "agent-plan": showAgentPlan(values[0]); break;
+  case "agent-plan": {
+    const { flags, rest } = parseFlags(values);
+    showAgentPlan(rest[0], flags); break;
+  }
+  case "agent-task": showAgentTask(values[0], values[1]); break;
   case "agent-acquire": {
     const { flags, rest } = parseFlags(values);
     acquireAgentLease(rest[0], rest[1], flags); break;

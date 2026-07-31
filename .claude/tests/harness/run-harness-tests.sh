@@ -720,9 +720,34 @@ else
   pass "repo packet excludes app task"
 fi
 agent_plan="$(node .claude/harness/foundation.mjs agent-plan cross-repository-profile)"
-assert_contains "inventory routes to Haiku tier" "$agent_plan" '"family": "haiku"'
-assert_contains "implementation routes to Sonnet tier" "$agent_plan" '"family": "sonnet"'
-assert_contains "contract routes to Opus tier" "$agent_plan" '"family": "opus"'
+assert_contains "agent plan is summary-first" "$agent_plan" '"modelCounts":'
+if printf '%s' "$agent_plan" | grep -qF '"text":'; then
+  fail "agent plan summary excludes full task text"
+else
+  pass "agent plan summary excludes full task text"
+fi
+if [ "$(printf '%s' "$agent_plan" | wc -c | tr -d ' ')" -le 4096 ]; then
+  pass "agent plan summary stays within 4 KiB"
+else
+  fail "agent plan summary stays within 4 KiB"
+fi
+agent_task="$(node .claude/harness/foundation.mjs agent-task \
+  cross-repository-profile T001)"
+assert_contains "inventory task packet routes to Haiku tier" \
+  "$agent_task" '"family": "haiku"'
+if printf '%s' "$agent_task" | grep -qF '"id": "T003"'; then
+  fail "task packet excludes unrelated tasks"
+else
+  pass "task packet excludes unrelated tasks"
+fi
+agent_task="$(node .claude/harness/foundation.mjs agent-task \
+  cross-repository-profile T002)"
+assert_contains "implementation task packet routes to Sonnet tier" \
+  "$agent_task" '"family": "sonnet"'
+agent_task="$(node .claude/harness/foundation.mjs agent-task \
+  cross-repository-profile T004)"
+assert_contains "contract task packet routes to Opus tier" \
+  "$agent_task" '"family": "opus"'
 assert_cmd_zero "task resource lease is acquired atomically" \
   node .claude/harness/foundation.mjs agent-acquire \
   cross-repository-profile T001 --owner agent-a
@@ -800,5 +825,42 @@ assert_contains "Land resume observes landed children" \
   "$resume_plan" '"status": "child-landed"'
 assert_contains "root target gitlink matches recorded commit" \
   "$resume_plan" '"readyToArchive": true'
+
+# Large brownfield plans remain navigable without injecting every task into the
+# orchestrator context. Full detail stays in the persisted plan and task packet.
+large_workspace="$(jq -r '.workspace.path' \
+  .foundation/runtime/cross-repository-profile.json)"
+large_tasks="$large_workspace/openspec/changes/cross-repository-profile/tasks.md"
+printf '%s\n' '# Tasks' '' > "$large_tasks"
+task_number=1
+while [ "$task_number" -le 100 ]; do
+  task_id="$(printf 'T%03d' "$task_number")"
+  printf '%s\n' \
+    "- [ ] **$task_id** Brownfield task $task_number [repo:api] [kind:implementation] [paths:api.txt]" \
+    >> "$large_tasks"
+  task_number=$((task_number + 1))
+done
+large_plan="$(node .claude/harness/foundation.mjs agent-plan \
+  cross-repository-profile)"
+assert_contains "large plan reports all tasks" "$large_plan" '"taskCount": 100'
+assert_contains "large plan compacts group details" "$large_plan" '"preview":'
+if [ "$(printf '%s' "$large_plan" | wc -c | tr -d ' ')" -le 4096 ]; then
+  pass "100-task plan summary stays within 4 KiB"
+else
+  fail "100-task plan summary stays within 4 KiB"
+fi
+large_packet="$(node .claude/harness/foundation.mjs packet \
+  cross-repository-profile)"
+if [ "$(printf '%s' "$large_packet" | wc -c | tr -d ' ')" -le 16384 ]; then
+  pass "100-task global packet stays within 16 KiB"
+else
+  fail "100-task global packet stays within 16 KiB"
+fi
+context_metrics="$(node .claude/harness/foundation.mjs metrics \
+  cross-repository-profile)"
+assert_contains "metrics expose context byte totals" \
+  "$context_metrics" '"estimatedTokens":'
+assert_contains "metrics separate plan and packet context" \
+  "$context_metrics" '"agent-plan-summary":'
 
 finish "harness contracts"

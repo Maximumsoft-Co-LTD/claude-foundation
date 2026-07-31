@@ -2,7 +2,12 @@
   "version": 1,
   "execution": {
     "maxParallelAgents": 3,
-    "packetBytes": 65536,
+    "packetBytes": {
+      "task": 8192,
+      "repository": 12288,
+      "global": 16384
+    },
+    "planSummaryBytes": 4096,
     "leaseMinutes": 45
   },
   "models": {

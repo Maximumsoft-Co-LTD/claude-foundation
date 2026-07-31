@@ -7,6 +7,9 @@ are intentionally ignored.
 Repository worktrees, model/agent execution plans, and resource leases are also
 machine-owned. Repository topology and model policy remain reviewable in
 `openspec/repositories.yaml` and `foundation.json`.
+Emitted plan and packet byte counts live in
+`logs/<change>/context.jsonl`; they contain sizes and scope metadata, not prompt
+or artifact content.
 `install-manifest.txt` is the exception: it records only files owned by the
 Foundation installer so upgrades can remove stale managed files safely.
 Durable intent belongs in `openspec/`; implementation truth belongs in code and

@@ -95,7 +95,9 @@ Usage:
   claude-foundation providers                     List evidence provider contracts
   claude-foundation repos [change]                Inspect repository topology and selection
   claude-foundation models                        Show model-tier routing policy
-  claude-foundation agents plan <change>          Build dependency, parallelism, and model plan
+  claude-foundation agents plan <change> [--group <n>]
+                                                  Summarize or inspect one execution group
+  claude-foundation agents task <change> <task>   Print one task-scoped packet
   claude-foundation agents acquire|release <change> <task> --owner <agent-id>
                                                   Hold or release task resource leases
   claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>]
@@ -186,13 +188,16 @@ case "${1:-}" in
       plan)
         need_arg "agents plan" "${1:-}"
         run_runtime write agent-plan "$@" ;;
+      task)
+        [ "$#" -ge 2 ] || fail "agents task requires <change> <task>"
+        run_runtime read agent-task "$@" ;;
       acquire)
         [ "$#" -ge 3 ] || fail "agents acquire requires <change> <task> --owner <agent-id>"
         run_runtime write agent-acquire "$@" ;;
       release)
         [ "$#" -ge 3 ] || fail "agents release requires <change> <task> --owner <agent-id>"
         run_runtime write agent-release "$@" ;;
-      *) fail "agents requires 'plan', 'acquire', or 'release'" ;;
+      *) fail "agents requires 'plan', 'task', 'acquire', or 'release'" ;;
     esac ;;
   doctor)
     shift

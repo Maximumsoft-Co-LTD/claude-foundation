@@ -101,7 +101,8 @@ native CLI:
 claude-foundation providers
 claude-foundation repos [change]
 claude-foundation models
-claude-foundation agents plan <change>
+claude-foundation agents plan <change> [--group <n>]
+claude-foundation agents task <change> <task>
 claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation packet <change> [--repo <id>] [--task <id>]
@@ -130,15 +131,15 @@ surface. Direct source installations may call the runtime file as a compatibilit
 fallback when the packaged CLI is unavailable.
 
 `packet <change> --phase build|prove` is the compact handoff between Change,
-Build, and Prove. It
-contains paths, revision, claims, required providers, task count, hash, and
-budget—not the accumulated conversation—so a new execution context can resume
-without making the orchestrator replay the whole run. The phase flag also
-incrementally closes the previous phase's request telemetry.
+Build, and Prove. It contains references, revisions, claim digests, provider
+state, task counts, hashes, and budget—not the accumulated conversation.
+Packets are capped by scope: task 8 KiB, repository 12 KiB, and global 16 KiB.
+Large artifacts remain in files addressed by path and SHA-256. The phase flag
+also incrementally closes the previous phase's request telemetry.
 
 `metrics <change>` summarizes measured wall time, phase operations, unique
 provider executions, requests, input/output tokens, cache creation/read tokens,
-cost, and orchestrator share. For Claude Code, Foundation binds the documented
+cost, orchestrator share, and emitted plan/packet context bytes. For Claude Code, Foundation binds the documented
 session transcript once at `SessionStart` and reads only new assistant usage at
 phase checkpoints. It never measures tokens in `PostToolUse`, never copies
 prompts or tool payloads, and includes nested subagent transcripts. Use
@@ -165,8 +166,12 @@ Multi-repository tasks remain in `tasks.md` and use compact annotations:
 - [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
 ```
 
-`agents plan` converts tasks and repository dependencies into bounded parallel
-groups. `foundation.json` maps portable `fast`, `standard`, and `deep` tiers to
+`agents plan` writes the complete plan to `.foundation/plans/` but prints only
+a summary capped at 4 KiB. Use `agents plan <change> --group <n>` to inspect one
+dispatch group and `agents task <change> <task>` to obtain one worker's scoped
+packet. Changes with one repository and at most two ordinary tasks recommend a
+single agent, avoiding planning/spawn overhead. `foundation.json` maps portable
+`fast`, `standard`, and `deep` tiers to
 Haiku, Sonnet, and Opus by default. Mechanical inventory/log work uses fast,
 normal implementation uses standard, and architecture, security, migration, or
 independent review uses deep. High-risk work cannot be downgraded to fast. The

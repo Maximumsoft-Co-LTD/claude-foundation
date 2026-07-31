@@ -100,7 +100,8 @@ Slash commands ใช้ควบคุม AI workflow ส่วน deterministi
 claude-foundation providers
 claude-foundation repos [change]
 claude-foundation models
-claude-foundation agents plan <change>
+claude-foundation agents plan <change> [--group <n>]
+claude-foundation agents task <change> <task>
 claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation packet <change> [--repo <id>] [--task <id>]
@@ -129,15 +130,15 @@ CLI จะค้น project จาก directory ปัจจุบันหร�
 file โดยตรงเป็น compatibility fallback ได้
 
 `packet <change> --phase build|prove` คือ compact handoff ระหว่าง Change, Build
-และ Prove โดยมี
-เฉพาะ path, revision, claims, required providers, task count, hash และ budget
-ไม่แบก conversation ที่สะสมมาทั้งหมด จึงเริ่ม execution context ใหม่และทำงาน
-ต่อได้โดย orchestrator ไม่ต้อง replay ทั้ง run ส่วน phase flag จะปิด telemetry
-ของ phase ก่อนหน้าแบบ incremental ด้วย
+และ Prove โดยส่ง reference, revision, claim digest, provider state, task count,
+hash และ budget แทน conversation ที่สะสมมา Packet มีเพดานตาม scope: task 8 KiB,
+repository 12 KiB และ global 16 KiB ส่วน artifact ใหญ่คงอยู่ในไฟล์และอ้างด้วย
+path กับ SHA-256 ส่วน phase flag จะปิด telemetry ของ phase ก่อนหน้าแบบ
+incremental ด้วย
 
 `metrics <change>` สรุป wall time, phase operations, unique provider executions,
-requests, input/output tokens, cache creation/read tokens, cost และ orchestrator
-share จากข้อมูลที่วัดได้ สำหรับ Claude Code ระบบจะ bind session transcript
+requests, input/output tokens, cache creation/read tokens, cost, orchestrator
+share และจำนวน context bytes ของ plan/packet จากข้อมูลที่วัดได้ สำหรับ Claude Code ระบบจะ bind session transcript
 หนึ่งครั้งที่ `SessionStart` แล้วอ่านเฉพาะ assistant usage ที่เพิ่มใหม่ตอน
 เปลี่ยน phase โดยไม่วัด token ที่ `PostToolUse`, ไม่คัดลอก prompt หรือ tool
 payload และรวม transcript ของ subagent ด้วย ถ้า session hook ยังไม่ทำงานให้ใช้
@@ -162,8 +163,11 @@ Tasks ยังมี ledger เดียวใน `tasks.md` และเพิ
 - [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
 ```
 
-`agents plan` แปลง task และ repository dependencies เป็นกลุ่มที่ทำขนานกันได้
-โดยมีเพดาน `foundation.json` ใช้ tier แบบ portable คือ `fast`, `standard`,
+`agents plan` เก็บแผนเต็มไว้ใน `.foundation/plans/` แต่แสดง summary ไม่เกิน
+4 KiB ใช้ `agents plan <change> --group <n>` เพื่อดู dispatch group เดียว และ
+`agents task <change> <task>` เพื่อรับ packet เฉพาะ worker ถ้ามี repo เดียวและ
+ไม่เกินสอง task ปกติ ระบบจะแนะนำ single agent เพื่อตัด planning/spawn overhead
+`foundation.json` ใช้ tier แบบ portable คือ `fast`, `standard`,
 `deep` ซึ่ง default เป็น Haiku, Sonnet และ Opus ตามลำดับ งาน inventory/log
 เชิงกลใช้ fast, implementation ปกติใช้ standard และ architecture, security,
 migration หรือ independent review ใช้ deep งานเสี่ยงสูงห้ามลดลง fast ตัว

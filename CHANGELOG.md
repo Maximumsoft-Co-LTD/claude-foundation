@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Enforced context budgets** — static orchestrator/rule/command word limits,
+  ≤4 KiB summary-first agent plans, 8/12/16 KiB task/repository/global packets,
+  artifact references, small-change single-agent routing, and context-byte
+  telemetry keep brownfield plans bounded without hiding the persisted detail.
 - **Multi-repository control plane** — committed topology and per-change
   repository scope drive composite snapshots, child worktrees, repository/task
   packets, scoped providers, changed-path authority, and cross-repository
