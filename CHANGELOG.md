@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Faster, integrity-bound proof path** — typed `proof readiness` blockers and
+  atomic `proof run` remove repeated orchestration; declared provider inputs
+  permit safe scoped reuse, while external passes require inspectable
+  observation, provenance, and durable evidence.
+- **Native static proof service and structured change drafts** —
+  `execution.yaml` can serve a workspace-relative static root with readiness
+  identity, and `new --draft` materializes one validated agreement without a
+  second task ledger.
+- **Phase and rework accounting** — metrics separate active time from
+  unattributed wait, record phase context/model recommendations, and expose
+  receipt reuse and failed-operation counts without inventing human wait.
 - **Enforced context budgets** — static orchestrator/rule/command word limits,
   ≤4 KiB summary-first agent plans, 8/12/16 KiB task/repository/global packets,
   artifact references, small-change single-agent routing, and context-byte

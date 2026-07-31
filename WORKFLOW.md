@@ -88,10 +88,8 @@ reuses valid receipts, executes missing/stale evidence, and writes a proof bound
 to the workspace hash.
 
 ```bash
-claude-foundation proof plan <change>
-claude-foundation proof preflight <change>
-claude-foundation proof execute <change>
-claude-foundation proof audit <change>
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
 ```
 
 Required evidence that is failed, missing, stale, erroneous, or inconclusive

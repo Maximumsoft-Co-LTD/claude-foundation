@@ -85,16 +85,22 @@ The upgrade moves known wiring into `execution.yaml`; it never guesses commands.
 | `playwright` | Run project-owned Playwright tests and map structured claim annotations |
 | `external` | Require a receipt from a system Foundation does not execute |
 
-Configured commands run from the active workspace. Missing or stale receipts
-are executed by:
+Configured commands run from the active workspace. The normal path is:
 
 ```bash
-claude-foundation proof execute <change>
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
 ```
 
 Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
-execution. Providers with non-conflicting resources run concurrently.
+execution. Providers with non-conflicting resources run concurrently. A
+provider may declare workspace-relative `inputs`; its receipt can be rebound
+when those inputs are unchanged even if unrelated workspace files changed.
+
+An external passing receipt must include `--observed`, `--source` or
+`--reviewer`, and at least one `--artifact` or `--reference`. Empty reviewer or
+supply-chain assertions cannot become passing evidence.
 
 ## Test and discovery
 

@@ -110,6 +110,8 @@ claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
 claude-foundation validate <change>
 claude-foundation proof plan <change>
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
 claude-foundation proof preflight <change>
 claude-foundation proof execute <change>
 claude-foundation proof audit <change>
@@ -437,9 +439,8 @@ project-owned adapters การใช้งานปกติคือ:
 
 ```bash
 claude-foundation doctor --stage prove --change add-profile
-claude-foundation proof preflight add-profile
-claude-foundation proof execute add-profile
-claude-foundation proof audit add-profile
+claude-foundation proof readiness add-profile
+claude-foundation proof run add-profile
 ```
 
 `test-discovery` สร้าง test และ discovery receipts จาก command เดียว
@@ -465,7 +466,9 @@ Browser evidence แยก “scenario ต้องใช้ foreground” อ�
 ```bash
 claude-foundation evidence record add-profile browser pass \
   --claims declared --input-mode os-input \
-  --foreground-required yes --foreground-available yes
+  --foreground-required yes --foreground-available yes \
+  --observed "manual interaction completed" --reviewer reviewer-id \
+  --artifact test-results/browser-report.json
 ```
 
 ดูรายละเอียด contract/wiring, Playwright claim mapping, resource locks, structured

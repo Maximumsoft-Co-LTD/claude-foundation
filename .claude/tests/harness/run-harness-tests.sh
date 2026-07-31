@@ -28,6 +28,29 @@ assert_contains "provider catalog includes observability" "$providers" "observab
 assert_contains "provider catalog includes deployment" "$providers" "deployment"
 assert_contains "provider catalog includes supply chain" "$providers" "dependency-supply-chain"
 
+# A structured draft materializes the agreement once without creating a
+# second implementation ledger.
+printf '%s\n' \
+  '{"title":"Drafted change","why":"Reduce manual scaffolding.",' \
+  '"currentState":"The operator fills every template separately.",' \
+  '"compatibility":"No public compatibility impact.",' \
+  '"changes":["Materialize one validated draft."],"nonGoals":["No task mirror."],' \
+  '"decisions":[{"choice":"Use one JSON draft","why":"One source","rejected":"Repeated prompts"}],' \
+  '"risks":[{"risk":"Bad draft","mitigation":"Validate required fields","owner":"test"}],' \
+  '"tasks":[{"id":"T001","outcome":"Implement drafting","kind":"implementation","paths":["app.txt"],"verify":"test -f app.txt"}],' \
+  '"claims":[{"id":"draft-outcome","scenario":"Draft materializes","impact":"low","capabilities":["test"]}],' \
+  '"specs":[{"name":"drafting","requirement":"Materialize a draft","description":"The runtime SHALL materialize one draft.",' \
+  '"scenario":"Valid draft","when":"a valid draft is supplied","then":"all agreement artifacts are populated"}]}' \
+  > foundation-draft.json
+assert_cmd_zero "structured draft scaffolds a complete agreement" \
+  node .claude/harness/foundation.mjs new "Drafted change" --draft foundation-draft.json
+node .claude/harness/foundation.mjs resolve drafted-change \
+  --impact low --coupling isolated >/dev/null
+assert_cmd_zero "drafted agreement validates without a second ledger" \
+  node .claude/harness/foundation.mjs validate drafted-change
+assert_file_contains "draft task remains in tasks.md" \
+  openspec/changes/drafted-change/tasks.md "**T001**"
+
 # Existing evidence v1 remains readable and has an explicit, non-destructive
 # upgrade into the executable-ready v2 envelope.
 node .claude/harness/foundation.mjs new 'Legacy evidence' --rapid >/dev/null
@@ -73,8 +96,16 @@ assert_file_absent "missing claim scope prevents command execution" "missing-cla
 
 sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/profile-owner-update/tasks.md
 rm openspec/changes/profile-owner-update/tasks.md.bak
-assert_cmd_zero "test provider receipt" node .claude/harness/foundation.mjs receipt profile-owner-update test pass
-assert_cmd_zero "discovery provider receipt" node .claude/harness/foundation.mjs receipt profile-owner-update discovery pass --discovered 3 --minimum 1
+if node .claude/harness/foundation.mjs receipt profile-owner-update test pass \
+  >/dev/null 2>&1; then
+  fail "empty external receipt cannot pass"
+else
+  pass "empty external receipt cannot pass"
+fi
+assert_cmd_zero "test provider receipt" node .claude/harness/foundation.mjs receipt profile-owner-update test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt
+assert_cmd_zero "discovery provider receipt" node .claude/harness/foundation.mjs receipt profile-owner-update discovery pass \
+  --discovered 3 --minimum 1 --observed "3 tests discovered" --source harness-test --artifact app.txt
 assert_cmd_zero "complete evidence proves" node .claude/harness/foundation.mjs prove profile-owner-update
 assert_cmd_zero "fresh proof is land-ready" node .claude/harness/foundation.mjs land-check profile-owner-update
 
@@ -95,9 +126,11 @@ if node .claude/harness/foundation.mjs land-check profile-owner-update >/dev/nul
 else
   pass "change packet edit invalidates proof"
 fi
-node .claude/harness/foundation.mjs receipt profile-owner-update test pass >/dev/null
+node .claude/harness/foundation.mjs receipt profile-owner-update test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs receipt profile-owner-update discovery pass \
-  --discovered 3 --minimum 1 >/dev/null
+  --discovered 3 --minimum 1 --observed "3 tests discovered" \
+  --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs prove profile-owner-update >/dev/null
 
 printf 'changed\n' > app.txt
@@ -122,7 +155,8 @@ assert_contains "proof plan selects migration evidence" "$plan" "data-migration:
 sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/production-provider-coverage/tasks.md
 rm openspec/changes/production-provider-coverage/tasks.md.bak
 for provider in static-analysis data-migration accessibility resilience observability deployment dependency-supply-chain; do
-  node .claude/harness/foundation.mjs receipt production-provider-coverage "$provider" pass >/dev/null
+  node .claude/harness/foundation.mjs receipt production-provider-coverage "$provider" pass \
+    --observed "fixture evidence for $provider" --source harness-test --artifact app.txt >/dev/null
 done
 assert_cmd_zero "new provider receipts produce a complete proof" \
   node .claude/harness/foundation.mjs prove production-provider-coverage
@@ -143,8 +177,8 @@ printf '%s\n' \
   '{' \
   '  "version": 2,' \
   '  "providers": {' \
-  '    "test": {"adapter":"test-discovery","command":["sh","provider-fixture.sh"],"minimum":4},' \
-  '    "static-analysis": {"adapter":"command","command":["sh","provider-fixture.sh"]}' \
+  '    "test": {"adapter":"test-discovery","command":["sh","provider-fixture.sh"],"minimum":4,"inputs":["provider-fixture.sh"]},' \
+  '    "static-analysis": {"adapter":"command","command":["sh","provider-fixture.sh"],"inputs":["provider-fixture.sh"]}' \
   '  },' \
   '  "claims": [' \
   '    {"id":"executable-outcome","scenario":"Configured evidence passes","impact":"low","capabilities":["test","static-analysis"]}' \
@@ -161,9 +195,18 @@ assert_file_exists "combined adapter emits discovery receipt" \
   .foundation/receipts/executable-evidence/discovery.json
 assert_file_exists "DAG emits static receipt" \
   .foundation/receipts/executable-evidence/static-analysis.json
-assert_cmd_zero "proof execute reuses valid receipts" \
-  node .claude/harness/foundation.mjs proof-execute executable-evidence
+readiness="$(node .claude/harness/foundation.mjs proof-readiness executable-evidence)"
+assert_contains "proof readiness returns a typed ready state" "$readiness" '"status": "READY"'
+assert_cmd_zero "atomic proof run reuses valid receipts and audits" \
+  node .claude/harness/foundation.mjs proof-run executable-evidence
 assert_eq "receipt cache avoids a second command" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
+printf 'unrelated-to-provider\n' > app.txt
+scoped_plan="$(node .claude/harness/foundation.mjs proof-plan executable-evidence)"
+assert_contains "declared provider inputs survive unrelated workspace edits" \
+  "$scoped_plan" "reusable-inputs"
+assert_cmd_zero "scoped receipts rebind without rerunning providers" \
+  node .claude/harness/foundation.mjs proof-run executable-evidence
+assert_eq "scoped reuse avoids another command" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
 test_command_id="$(jq -r '.commandExecutionId' \
   .foundation/receipts/executable-evidence/test.json)"
 static_command_id="$(jq -r '.commandExecutionId' \
@@ -422,14 +465,16 @@ sed -i.bak \
 rm openspec/changes/tiny-copy-edit/evidence.yaml.bak
 
 if node .claude/harness/foundation.mjs receipt tiny-copy-edit browser pass \
-  --foreground-required yes --foreground-available no --input-mode os-input >/dev/null 2>&1; then
+  --foreground-required yes --foreground-available no --input-mode os-input \
+  --observed "fixture browser evidence" --source harness-test --artifact app.txt >/dev/null 2>&1; then
   fail "browser foreground mismatch cannot pass"
 else
   pass "browser foreground mismatch cannot pass"
 fi
 
 if node .claude/harness/foundation.mjs receipt tiny-copy-edit mutation pass \
-  --classification crash >/dev/null 2>&1; then
+  --classification crash --observed "fixture mutation evidence" \
+  --source harness-test --artifact app.txt >/dev/null 2>&1; then
   fail "mutation crash cannot pass"
 else
   pass "mutation crash cannot pass"
@@ -526,9 +571,13 @@ rm "$copy_path/openspec/changes/copy-sandbox/tasks.md.bak"
 copy_plan="$(node .claude/harness/foundation.mjs proof-plan copy-sandbox)"
 assert_contains "changed lockfile escalates supply-chain evidence by policy" \
   "$copy_plan" "dependency-supply-chain: missing"
-node .claude/harness/foundation.mjs receipt copy-sandbox test pass >/dev/null
-node .claude/harness/foundation.mjs receipt copy-sandbox discovery pass --discovered 1 --minimum 1 >/dev/null
-node .claude/harness/foundation.mjs receipt copy-sandbox dependency-supply-chain pass >/dev/null
+node .claude/harness/foundation.mjs receipt copy-sandbox test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt copy-sandbox discovery pass \
+  --discovered 1 --minimum 1 --observed "1 test discovered" \
+  --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt copy-sandbox dependency-supply-chain pass \
+  --observed "lockfile inspected" --source harness-test --artifact package-lock.json >/dev/null
 node .claude/harness/foundation.mjs prove copy-sandbox >/dev/null
 
 mkdir -p "$TMP/bin"
@@ -593,8 +642,11 @@ assert_file_contains "sync carries revised proposal into sandbox" \
 assert_file_contains "sync preserves unchanged completed task" \
   .foundation/sandboxes/sandbox-copy/openspec/changes/sandbox-copy/tasks.md \
   "- [x]"
-node .claude/harness/foundation.mjs receipt sandbox-copy test pass >/dev/null
-node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass --discovered 2 --minimum 1 >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
+  --discovered 2 --minimum 1 --observed "2 tests discovered" \
+  --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
 printf '\nSecond revision after proof.\n' >> openspec/changes/sandbox-copy/proposal.md
 node .claude/harness/foundation.mjs sandbox sync sandbox-copy >/dev/null
@@ -603,8 +655,11 @@ if node .claude/harness/foundation.mjs land-check sandbox-copy >/dev/null 2>&1; 
 else
   pass "sandbox revision invalidates prior proof"
 fi
-node .claude/harness/foundation.mjs receipt sandbox-copy test pass >/dev/null
-node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass --discovered 2 --minimum 1 >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
+  --discovered 2 --minimum 1 --observed "2 tests discovered" \
+  --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
 printf 'user-conflict\n' > app.txt
 if node .claude/harness/foundation.mjs sandbox apply sandbox-copy >/dev/null 2>&1; then
@@ -761,7 +816,8 @@ assert_cmd_zero "task resource lease releases by owner" \
   node .claude/harness/foundation.mjs agent-release \
   cross-repository-profile T001 --owner agent-a
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  api-static pass >/dev/null
+  api-static pass --observed "API static fixture passed" \
+  --source harness-test --artifact api.txt >/dev/null
 printf 'app-after\n' > \
   .foundation/repository-sandboxes/cross-repository-profile/app/app.txt
 scoped_plan="$(node .claude/harness/foundation.mjs proof-plan cross-repository-profile)"
@@ -791,11 +847,14 @@ sed -i.bak 's/- \[ \]/- [x]/g' \
   .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md
 rm .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md.bak
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  api-static pass >/dev/null
+  api-static pass --observed "API static fixture passed" \
+  --source harness-test --artifact api.txt >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  cross-repo-contract pass >/dev/null
+  cross-repo-contract pass --observed "API/App contract fixture passed" \
+  --source harness-test --reference "fixture://cross-repo-contract" >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  review pass >/dev/null
+  review pass --observed "fixture review found no blockers" \
+  --reviewer harness-test --reference "fixture://review" >/dev/null
 assert_cmd_zero "committed multi-repo work proves" \
   node .claude/harness/foundation.mjs prove cross-repository-profile
 git -C api merge -q --ff-only "$api_commit"
@@ -815,9 +874,11 @@ else
   pass "root pointer staging invalidates composite proof"
 fi
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  cross-repo-contract pass >/dev/null
+  cross-repo-contract pass --observed "API/App contract fixture passed" \
+  --source harness-test --reference "fixture://cross-repo-contract" >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  review pass >/dev/null
+  review pass --observed "fixture review found no blockers" \
+  --reviewer harness-test --reference "fixture://review" >/dev/null
 assert_cmd_zero "pointer-aware composite proof refreshes" \
   node .claude/harness/foundation.mjs prove cross-repository-profile
 resume_plan="$(node .claude/harness/foundation.mjs land-resume cross-repository-profile)"

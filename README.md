@@ -111,6 +111,8 @@ claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
 claude-foundation validate <change>
 claude-foundation proof plan <change>
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
 claude-foundation proof preflight <change>
 claude-foundation proof execute <change>
 claude-foundation proof audit <change>
@@ -445,9 +447,8 @@ project-owned adapters. The normal operator path is:
 
 ```bash
 claude-foundation doctor --stage prove --change add-profile
-claude-foundation proof preflight add-profile
-claude-foundation proof execute add-profile
-claude-foundation proof audit add-profile
+claude-foundation proof readiness add-profile
+claude-foundation proof run add-profile
 ```
 
 `test-discovery` emits test and discovery receipts from one command.
@@ -473,7 +474,9 @@ For browser evidence, record requirement and availability separately:
 ```bash
 claude-foundation evidence record add-profile browser pass \
   --claims declared --input-mode os-input \
-  --foreground-required yes --foreground-available yes
+  --foreground-required yes --foreground-available yes \
+  --observed "manual interaction completed" --reviewer reviewer-id \
+  --artifact test-results/browser-report.json
 ```
 
 See [Executable evidence adapters](.claude/harness/EVIDENCE.md) for contract/wiring separation,

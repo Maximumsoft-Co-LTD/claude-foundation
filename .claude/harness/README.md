@@ -68,6 +68,8 @@ claude-foundation doctor --stage prove --change <change>
 | `telemetry import <change> <file>` | Imports deduplicated generic, Codex, or Claude host usage | Attributing request/token/cost to orchestration |
 | `validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `proof plan <change>` | Shows missing, stale, or reusable evidence | Before executing providers |
+| `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
+| `proof run <change>` | Executes, finalizes, and audits proof as one operation | Normal Prove path |
 | `proof preflight <change>` | Validates provider DAG, reports, services, and readiness without running tests | Immediately before proof |
 | `proof execute <change>` | Runs required configured providers and finalizes proof | When implementation is ready to prove |
 | `proof audit <change>` | Verifies receipt and artifact digests in the durable proof bundle | Before Land or during an audit |
@@ -148,14 +150,15 @@ proofs that no longer describe the current agreement.
 
 ### 3. Prove the claims
 
-Inspect the execution plan, then run configured evidence:
+Use the atomic proof path:
 
 ```bash
-claude-foundation proof plan <change>
-claude-foundation proof preflight <change>
-claude-foundation proof execute <change>
-claude-foundation proof audit <change>
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
 ```
+
+`proof plan`, `preflight`, `execute`, `finalize`, and `audit` remain available
+for diagnosis and recovery.
 
 The scheduler:
 

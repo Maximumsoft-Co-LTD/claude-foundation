@@ -10,12 +10,13 @@ import { createHash } from "node:crypto";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
 
 const VERSION = "2.2.0";
-const RUNTIME_API_VERSION = "6";
-const PROVIDER_PROTOCOL_VERSION = "5";
-const ADAPTER_PROTOCOL_VERSION = "3";
-const PROOF_PROTOCOL_VERSION = "3";
+const RUNTIME_API_VERSION = "7";
+const PROVIDER_PROTOCOL_VERSION = "6";
+const ADAPTER_PROTOCOL_VERSION = "4";
+const PROOF_PROTOCOL_VERSION = "4";
 const ADAPTERS = new Set(["command", "test-discovery", "playwright", "external"]);
 const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
 const EXCLUDED_WORKSPACE_DIRS = new Set([
@@ -68,7 +69,12 @@ function findRoot(start = process.cwd()) {
   }
 }
 
-const ROOT = findRoot();
+function canonicalPath(path) {
+  const absolute = resolve(path);
+  return existsSync(absolute) ? realpathSync(absolute) : absolute;
+}
+
+const ROOT = canonicalPath(findRoot());
 const RUNTIME = join(ROOT, ".foundation", "runtime");
 const RECEIPTS = join(ROOT, ".foundation", "receipts");
 const LOGS = join(ROOT, ".foundation", "logs");
@@ -211,16 +217,25 @@ function slugify(value) {
 function parseFlags(values) {
   const flags = {};
   const rest = [];
+  const setFlag = (key, value) => {
+    if (["artifact", "artifacts", "reference"].includes(key)) {
+      const prior = flags[key];
+      flags[key] = prior === undefined ? [value] :
+        Array.isArray(prior) ? [...prior, value] : [prior, value];
+      return;
+    }
+    flags[key] = value;
+  };
   for (let i = 0; i < values.length; i += 1) {
     const value = values[i];
     if (!value.startsWith("--")) { rest.push(value); continue; }
     const body = value.slice(2);
     if (body.includes("=")) {
       const [key, ...tail] = body.split("=");
-      flags[key] = tail.join("=");
+      setFlag(key, tail.join("="));
     } else if (values[i + 1] && !values[i + 1].startsWith("--")) {
-      flags[body] = values[i + 1]; i += 1;
-    } else flags[body] = true;
+      setFlag(body, values[i + 1]); i += 1;
+    } else setFlag(body, true);
   }
   return { flags, rest };
 }
@@ -275,7 +290,7 @@ const policyCache = new Map();
 
 function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
   const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
-  const workspace = resolve(workspaceOverride || state.workspace?.path || ROOT);
+  const workspace = canonicalPath(workspaceOverride || state.workspace?.path || ROOT);
   const cacheKey = `${id}\0${workspace}\0${Number(state.contractRevision || state.revision || 0)}`;
   if (!force && snapshotCache.has(cacheKey)) return snapshotCache.get(cacheKey);
   const hash = createHash("sha256");
@@ -444,10 +459,76 @@ function instantiate(path, title) {
   return content;
 }
 
+function loadDraft(draftPath) {
+  const source = resolve(ROOT, draftPath);
+  if (!pathInside(ROOT, source) || !existsSync(source))
+    die("new --draft requires a JSON file inside the project");
+  const draft = readJson(source);
+  const requiredStrings = ["why", "currentState", "compatibility"];
+  for (const field of requiredStrings)
+    if (!String(draft[field] || "").trim())
+      die(`draft requires non-empty '${field}'`);
+  for (const field of ["changes", "nonGoals", "decisions", "risks", "tasks", "claims", "specs"])
+    if (!Array.isArray(draft[field]) || draft[field].length === 0)
+      die(`draft requires a non-empty '${field}' array`);
+  return draft;
+}
+
+function materializeDraft(id, draft) {
+  const state = loadRuntime(id);
+  const title = draft.title || state.intent;
+  const bullets = (items) => items.map((item) => `- ${item}`).join("\n");
+  writeFileSync(join(changePath(id), "proposal.md"),
+    `# Change: ${title}\n\n## Why\n\n${draft.why}\n\n` +
+    `## What changes\n\n${bullets(draft.changes)}\n\n## Impact\n\n` +
+    `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
+    `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
+    `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
+    `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
+    `## Non-goals\n\n${bullets(draft.nonGoals)}\n`);
+  if (state.schema === "foundation-standard")
+    writeFileSync(join(changePath(id), "design.md"),
+      `# Design\n\n## Current state\n\n${draft.currentState}\n\n## Decisions\n\n` +
+      draft.decisions.map((decision) =>
+        `- **Decision:** ${decision.choice}\n  - **Why:** ${decision.why}\n` +
+        `  - **Rejected:** ${decision.rejected || "none"}`).join("\n") +
+      `\n\n## Compatibility and migration\n\n${draft.compatibility}\n\n## Risks\n\n` +
+      `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n` +
+      draft.risks.map((risk) =>
+        `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n") + "\n");
+  writeFileSync(join(changePath(id), "tasks.md"),
+    `# Tasks\n\n> This is the sole implementation ledger.\n\n` +
+    draft.tasks.map((task, index) => {
+      const taskId = task.id || `T${String(index + 1).padStart(3, "0")}`;
+      const metadata = [
+        task.kind ? `[kind:${task.kind}]` : "",
+        task.paths?.length ? `[paths:${task.paths.join(",")}]` : "",
+        task.dependsOn?.length ? `[depends:${task.dependsOn.join(",")}]` : ""
+      ].filter(Boolean).join(" ");
+      return `- [ ] **${taskId}** ${task.outcome} ${metadata} — verify: \`${task.verify}\``;
+    }).join("\n") + "\n");
+  const contract = readJson(join(changePath(id), "evidence.yaml"));
+  contract.claims = draft.claims;
+  writeJson(join(changePath(id), "evidence.yaml"), contract);
+  if (state.schema === "foundation-standard") {
+    rmSync(join(changePath(id), "specs"), { recursive: true, force: true });
+    for (const spec of draft.specs) {
+      const specDir = join(changePath(id), "specs", slugify(spec.name));
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.md"),
+        `# ${spec.name}\n\n## ADDED Requirements\n\n` +
+        `### Requirement: ${spec.requirement}\n\n${spec.description}\n\n` +
+        `#### Scenario: ${spec.scenario}\n\n- **WHEN** ${spec.when}\n` +
+        `- **THEN** ${spec.then}\n`);
+    }
+  }
+}
+
 function createChange(intent, flags) {
   const id = slugify(flags.id || intent);
   operationChangeId = id;
   if (existsSync(changePath(id))) die(`change already exists: ${id}`);
+  const draft = flags.draft ? loadDraft(flags.draft) : null;
   const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
   const source = templateDir(schema);
   const target = changePath(id);
@@ -475,6 +556,7 @@ function createChange(intent, flags) {
     createdAt: now(), updatedAt: now()
   };
   saveRuntime(state);
+  if (draft) materializeDraft(id, draft);
   bindClaudeSession(id, "change");
   console.log(`CREATED ${id}\n  schema: ${schema}\n  next: complete artifacts, then /build ${id}`);
 }
@@ -624,7 +706,7 @@ function repositoryCatalog() {
     if (!Array.isArray(repository.dependsOn) ||
         repository.dependsOn.some((item) => typeof item !== "string"))
       die(`repository '${repository.id}' dependsOn must be an array`);
-    const absolute = resolve(ROOT, repository.path || "");
+    const absolute = canonicalPath(resolve(ROOT, repository.path || ""));
     if (!pathInside(ROOT, absolute) && repository.allowOutsideRoot !== true)
       die(`repository '${repository.id}' path escapes the control root; set allowOutsideRoot only for an explicitly trusted sibling repository`);
     const normalized = relative(ROOT, absolute) || ".";
@@ -681,8 +763,8 @@ function selectedRepositories(id, state = loadRuntime(id)) {
       mode: normalized.mode || repository.mode,
       dependsOn: normalized.dependsOn || repository.dependsOn || [],
       baseHead: runtime.baseHead || gitHead(repository.path),
-      workspacePath: runtime.path || (repository.id === "root"
-        ? state.workspace?.path || ROOT : repository.path)
+      workspacePath: canonicalPath(runtime.path || (repository.id === "root"
+        ? state.workspace?.path || ROOT : repository.path))
     });
   }
   const selectedIds = new Set(selected.map((repository) => repository.id));
@@ -751,11 +833,24 @@ function rawExecution(id, dir = activeChangePath(id)) {
       (!value.services || typeof value.services !== "object" || Array.isArray(value.services)))
     die(`${id}/execution.yaml services must be an object`);
   for (const [name, service] of Object.entries(value.services || {})) {
-    if (!service || !Array.isArray(service.command) || !service.command.length ||
-        service.command.some((part) => typeof part !== "string" || !part))
-      die(`service '${name}' requires a non-empty command array`);
+    const commandValid = Array.isArray(service?.command) &&
+      service.command.length &&
+      service.command.every((part) => typeof part === "string" && part);
+    const staticRootValid = typeof service?.staticRoot === "string" &&
+      service.staticRoot.trim() &&
+      !isAbsolute(service.staticRoot) &&
+      !service.staticRoot.split(/[\\/]+/).includes("..");
+    if (!service || (!commandValid && !staticRootValid) ||
+        (commandValid && staticRootValid))
+      die(`service '${name}' requires exactly one of command or workspace-relative staticRoot`);
     if (!service.readiness?.url)
       die(`service '${name}' requires readiness.url`);
+    if (staticRootValid) {
+      let protocol;
+      try { protocol = new URL(service.readiness.url).protocol; } catch {}
+      if (protocol !== "http:")
+        die(`service '${name}' staticRoot readiness.url must use http`);
+    }
     if (!service.readiness.expectBody && !service.readiness.expectHeader)
       die(`service '${name}' readiness requires expectBody or expectHeader identity`);
     if (service.resources !== undefined &&
@@ -845,6 +940,17 @@ function evidence(id, dir = activeChangePath(id)) {
         (!Array.isArray(config.resources) ||
          config.resources.some((item) => typeof item !== "string" || !item)))
       die(`provider '${provider}' resources must be an array of strings`);
+    if (config.inputs !== undefined &&
+        (!Array.isArray(config.inputs) || config.inputs.length === 0 ||
+         config.inputs.some((item) => typeof item !== "string" || !item ||
+           isAbsolute(item) || item.split(/[\\/]/).includes(".."))))
+      die(`provider '${provider}' inputs must be non-empty workspace-relative paths`);
+    if (config.reportFormat !== undefined &&
+        !["json", "tap", "auto"].includes(config.reportFormat))
+      die(`provider '${provider}' reportFormat must be json|tap|auto`);
+    if (config.resultProtocol !== undefined &&
+        config.resultProtocol !== "foundation-mutation-v1")
+      die(`provider '${provider}' resultProtocol must be foundation-mutation-v1`);
     if (config.dependsOn !== undefined &&
         (!Array.isArray(config.dependsOn) ||
          config.dependsOn.some((item) =>
@@ -954,8 +1060,8 @@ function providerRepository(id, provider, config = providerConfig(id, provider))
 }
 
 function providerWorkspace(id, provider, config = providerConfig(id, provider)) {
-  return providerRepository(id, provider, config)?.workspacePath ||
-    loadRuntime(id).workspace?.path || ROOT;
+  return canonicalPath(providerRepository(id, provider, config)?.workspacePath ||
+    loadRuntime(id).workspace?.path || ROOT);
 }
 
 function providerWorkspaceHash(id, provider, fallback = null) {
@@ -964,6 +1070,54 @@ function providerWorkspaceHash(id, provider, fallback = null) {
   const snapshot = relevantSnapshot(id);
   return snapshot.repositories?.[repository.id]?.workspaceHash ||
     singleRelevantSnapshot(id, repository.workspacePath, true).workspaceHash;
+}
+
+function providerInputIdentity(id, provider, config = providerConfig(id, provider),
+    globalHash = null) {
+  const workspace = canonicalPath(providerWorkspace(id, provider, config));
+  if (!Array.isArray(config?.inputs) || config.inputs.length === 0) {
+    const workspaceHash = globalHash || providerWorkspaceHash(id, provider);
+    return {
+      mode: "global",
+      patterns: [],
+      files: [],
+      fingerprint: stableHash({ mode: "global", workspaceHash })
+    };
+  }
+  const patterns = [...new Set(config.inputs.map((item) =>
+    item.replaceAll("\\", "/").replace(/^\.\/+/, "")))].sort();
+  const matches = (rel, pattern) => {
+    if (pattern.endsWith("/**"))
+      return rel === pattern.slice(0, -3) || rel.startsWith(pattern.slice(0, -2));
+    if (pattern.endsWith("/*")) {
+      const prefix = pattern.slice(0, -1);
+      return rel.startsWith(prefix) && !rel.slice(prefix.length).includes("/");
+    }
+    return rel === pattern || rel.startsWith(`${pattern.replace(/\/$/, "")}/`);
+  };
+  const files = [];
+  const collect = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (EXCLUDED_WORKSPACE_DIRS.has(entry.name)) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        collect(path);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const rel = relative(workspace, path).replaceAll("\\", "/");
+      if (patterns.some((pattern) => matches(rel, pattern)))
+        files.push({ path: rel, sha256: fileDigest(path) });
+    }
+  };
+  collect(workspace);
+  files.sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    mode: "declared",
+    patterns,
+    files,
+    fingerprint: stableHash({ mode: "declared", patterns, files })
+  };
 }
 
 function environmentDescriptor(config = null, id = null) {
@@ -1589,12 +1743,19 @@ function pathInside(parent, candidate) {
 function durableArtifact(id, provider, proofRunId, artifact) {
   if (!artifact?.path || typeof artifact.path !== "string")
     die(`provider '${provider}' artifact requires a path`);
-  const source = resolve(ROOT, artifact.path);
+  const workspace = canonicalPath(providerWorkspace(id, provider));
+  const projectCandidate = resolve(ROOT, artifact.path);
+  const workspaceCandidate = resolve(workspace, artifact.path);
+  const controlPlaneArtifact = ["command-log", "service-log"].includes(artifact.type) ||
+    String(artifact.path).replaceAll("\\", "/").startsWith(".foundation/");
+  const candidates = controlPlaneArtifact
+    ? [projectCandidate, workspaceCandidate]
+    : [workspaceCandidate, projectCandidate];
+  const source = candidates.find((candidate) => existsSync(candidate)) || candidates[0];
   if (!existsSync(source)) {
     if (artifact.required === false) return { ...artifact, missing: true };
     die(`required artifact is missing: ${artifact.path}`);
   }
-  const workspace = loadRuntime(id).workspace?.path || ROOT;
   const realSource = realpathSync(source);
   if (!pathInside(ROOT, realSource) && !pathInside(workspace, realSource))
     die(`artifact escapes the project workspace: ${artifact.path}`);
@@ -1653,8 +1814,19 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
   if (value.providerFingerprint !== expectedFingerprint)
     return { provider, validity: "provider-fingerprint-stale", status: value.status };
   const expectedWorkspaceHash = providerWorkspaceHash(id, provider, hash);
-  if (value.workspaceHash !== expectedWorkspaceHash)
-    return { provider, validity: "stale", status: value.status };
+  const expectedInputs = providerInputIdentity(
+    id, provider, config, expectedWorkspaceHash
+  );
+  let reusableInputs = false;
+  if (value.workspaceHash !== expectedWorkspaceHash) {
+    if (expectedInputs.mode === "declared" &&
+        value.inputIdentity?.mode === "declared" &&
+        value.inputIdentity.fingerprint === expectedInputs.fingerprint)
+      reusableInputs = true;
+    else return { provider, validity: "stale", status: value.status };
+  }
+  if (value.inputIdentity?.fingerprint !== expectedInputs.fingerprint)
+    return { provider, validity: "provider-inputs-stale", status: value.status };
   if (value.status !== "pass") return { provider, validity: value.status };
   const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
   const covered = new Set(value.claims || []);
@@ -1664,7 +1836,21 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
     artifact.required !== false && !validateArtifact(artifact));
   if (invalidArtifacts.length)
     return { provider, validity: "invalid-artifacts", status: value.status };
-  return { provider, validity: "valid", receipt: value };
+  if ((value.adapter || "external") === "external" && value.status === "pass") {
+    if (!String(value.observed || "").trim())
+      return { provider, validity: "external-observation-missing", status: value.status };
+    if (!String(value.provenance?.source || "").trim())
+      return { provider, validity: "external-provenance-missing", status: value.status };
+    if ((value.artifacts || []).length === 0 &&
+        (value.references || []).length === 0)
+      return { provider, validity: "external-evidence-missing", status: value.status };
+  }
+  return reusableInputs
+    ? {
+      provider, validity: "reusable-inputs", status: value.status,
+      receipt: value, expectedWorkspaceHash, expectedInputs
+    }
+    : { provider, validity: "valid", receipt: value };
 }
 
 function proofPlan(id) {
@@ -1673,6 +1859,38 @@ function proofPlan(id) {
   const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
   console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
   for (const row of rows) console.log(`  ${row.provider}: ${row.validity}`);
+}
+
+function rebindReusableReceipt(id, row, snapshot, proofRunId) {
+  const prior = row.receipt;
+  const rebound = {
+    ...prior,
+    workspaceHash: row.expectedWorkspaceHash,
+    workspaceSnapshotId: snapshot.id,
+    inputIdentity: row.expectedInputs,
+    proofRunId,
+    reusedFrom: {
+      proofRunId: prior.proofRunId || null,
+      workspaceHash: prior.workspaceHash,
+      workspaceSnapshotId: prior.workspaceSnapshotId || null,
+      receiptFinishedAt: prior.finishedAt || null
+    },
+    startedAt: now(),
+    finishedAt: now()
+  };
+  writeJson(receiptPath(id, row.provider), rebound);
+  const logPath = join(LOGS, id, "reuse.jsonl");
+  mkdirSync(dirname(logPath), { recursive: true });
+  appendFileSync(logPath, `${JSON.stringify({
+    version: 1,
+    changeId: id,
+    provider: row.provider,
+    reason: "declared-inputs-unchanged",
+    fromWorkspaceHash: prior.workspaceHash,
+    toWorkspaceHash: row.expectedWorkspaceHash,
+    inputFingerprint: row.expectedInputs.fingerprint,
+    timestamp: now()
+  })}\n`);
 }
 
 function topologyIssues(id) {
@@ -1746,23 +1964,62 @@ function changedSurfaceIssues(id) {
   return issues;
 }
 
-function proofPreflight(id, stage = "prove", quiet = false) {
+function proofReadinessValue(id, stage = "prove") {
   validate(id, "active");
   const issues = topologyIssues(id);
   if (stage === "prove") issues.push(...changedSurfaceIssues(id));
   const hash = relevantHash(id);
   const { unconfigured, unavailable } = executionNodes(id, hash);
+  const pending = pendingTasks(id);
   if (stage === "prove") {
     const leases = activeChangeLeases(id);
     if (leases.length)
       issues.push(`active agent leases: ${leases.map((lease) => lease.taskId).join(", ")}`);
-    issues.push(...unconfigured.map((provider) =>
-      `provider '${provider}' has no executable adapter or valid external receipt`));
-    issues.push(...unavailable.map((value) => `provider unavailable: ${value}`));
   }
-  if (issues.length) die(`proof preflight failed: ${issues.join("; ")}`);
+  const status = pending.length ? "NEEDS_CODE_CHANGE" :
+    issues.length ? "CONFIGURATION_ERROR" :
+    unavailable.length ? "INFRASTRUCTURE_ERROR" :
+    unconfigured.length ? "NEEDS_EXTERNAL_EVIDENCE" : "READY";
+  return {
+    version: 1,
+    changeId: id,
+    stage,
+    status,
+    workspaceHash: hash,
+    pendingTasks: pending.map((task) => task.id || task.text),
+    externalProviders: unconfigured,
+    unavailableProviders: unavailable,
+    issues,
+    next: status === "NEEDS_EXTERNAL_EVIDENCE"
+      ? unconfigured.map((provider) => ({
+        provider,
+        command: `claude-foundation evidence record ${id} ${provider} pass --observed <summary> --source <identity> --artifact <path>`
+      }))
+      : []
+  };
+}
+
+function proofReadiness(id, stage = "prove") {
+  const value = proofReadinessValue(id, stage);
+  console.log(JSON.stringify(value, null, 2));
+  if (value.status !== "READY") process.exitCode = 2;
+  return value;
+}
+
+function proofPreflight(id, stage = "prove", quiet = false) {
+  const value = proofReadinessValue(id, stage);
+  const blockers = [
+    ...value.issues,
+    ...value.externalProviders.map((provider) =>
+      `provider '${provider}' has no executable adapter or valid external receipt`),
+    ...value.unavailableProviders.map((provider) =>
+      `provider unavailable: ${provider}`)
+  ];
+  if (value.pendingTasks.length)
+    blockers.push(`${value.pendingTasks.length} implementation task(s) remain unchecked`);
+  if (blockers.length) die(`proof preflight failed: ${blockers.join("; ")}`);
   if (!quiet)
-    console.log(`PROOF PREFLIGHT ${id}: ready\n  stage: ${stage}\n  workspace: ${hash}`);
+    console.log(`PROOF PREFLIGHT ${id}: ready\n  stage: ${stage}\n  workspace: ${value.workspaceHash}`);
   return true;
 }
 
@@ -1828,10 +2085,47 @@ function recordReceipt(id, provider, status, flags = {}) {
   const workspaceHash = flags.workspaceHash || state.activeProofRun?.workspaceHash ||
     providerWorkspaceHash(id, provider);
   const repository = providerRepository(id, provider, config);
-  const artifacts = (Array.isArray(flags.artifacts) ? flags.artifacts : [])
+  const artifactFlags = [
+    ...(Array.isArray(flags.artifact) ? flags.artifact : []),
+    ...(Array.isArray(flags.artifacts) ? flags.artifacts : []),
+    ...(flags.log ? [{
+      path: flags.log, type: "command-log", required: true
+    }] : [])
+  ].flatMap((artifact) => typeof artifact === "string"
+    ? artifact.split(",").filter(Boolean).map((path) => ({
+      path, type: "external-evidence", required: true
+    }))
+    : [artifact]);
+  const uniqueArtifactFlags = [...new Map(artifactFlags.map((artifact) => [
+    `${artifact.type || "artifact"}:${artifact.path}`, artifact
+  ])).values()];
+  const artifacts = uniqueArtifactFlags
     .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
+  const references = (Array.isArray(flags.reference) ? flags.reference : [])
+    .flatMap((value) => String(value).split(","))
+    .map((value) => value.trim()).filter(Boolean);
+  const observed = String(flags.observed || "").trim();
+  const provenanceSource = String(
+    flags.source || flags.reviewer || flags.provenance ||
+    (flags.command ? `command:${Array.isArray(flags.command)
+      ? flags.command.join(" ") : flags.command}` : "")
+  ).trim();
+  if (adapter === "external" && status === "pass") {
+    if (!observed)
+      die(`passing external receipt '${provider}' requires --observed`);
+    if (!provenanceSource)
+      die(`passing external receipt '${provider}' requires --source or --reviewer`);
+    if (artifacts.length === 0 && references.length === 0)
+      die(`passing external receipt '${provider}' requires --artifact or --reference`);
+  }
+  const inputIdentity = providerInputIdentity(
+    id, provider, config, workspaceHash
+  );
+  if (status === "pass" && inputIdentity.mode === "declared" &&
+      inputIdentity.files.length === 0)
+    die(`passing receipt '${provider}' declared inputs but matched no files`);
   const receipt = {
-    version: 5, changeId: id, provider, providerVersion, adapter,
+    version: 6, changeId: id, provider, providerVersion, adapter,
     repositoryId: repository?.id || null,
     adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
     providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
@@ -1848,8 +2142,12 @@ function recordReceipt(id, provider, status, flags = {}) {
         project: flags.project || null
       }),
     workspaceHash, workspaceSnapshotId: state.activeProofRun?.snapshotId || null,
+    inputIdentity,
     claims: requestedClaims,
-    status, observed: flags.observed || "", capability: {
+    status, observed, provenance: {
+      source: provenanceSource || null,
+      recordedBy: String(flags["recorded-by"] || "").trim() || null
+    }, references, capability: {
       inputMode,
       foregroundRequired, foregroundAvailable
     },
@@ -1923,6 +2221,37 @@ function parseJsonOutput(value) {
   if (!text) return null;
   try { return JSON.parse(text); }
   catch { return null; }
+}
+
+function parseTapOutput(value) {
+  const text = String(value || "");
+  if (!/^(TAP version|\s*(?:ok|not ok)\b)/m.test(text)) return null;
+  const testsFooter = [...text.matchAll(/^# tests\s+(\d+)\s*$/gm)].at(-1);
+  const passFooter = [...text.matchAll(/^# pass\s+(\d+)\s*$/gm)].at(-1);
+  const failFooter = [...text.matchAll(/^# fail\s+(\d+)\s*$/gm)].at(-1);
+  const plan = [...text.matchAll(/^\s*1\.\.(\d+)\s*$/gm)].at(-1);
+  const totalTests = Number(testsFooter?.[1] ?? plan?.[1]);
+  if (!Number.isInteger(totalTests) || totalTests < 0) return null;
+  return {
+    totalTests,
+    passed: passFooter ? Number(passFooter[1]) : null,
+    failed: failFooter ? Number(failFooter[1]) : null,
+    format: "tap"
+  };
+}
+
+function mutationProtocolResult(value) {
+  const text = String(value || "");
+  const line = text.match(
+    /(?:^|\n)FOUNDATION_MUTATION_RESULT=(behavioral-kill|test-failure|survived|crash|timeout|not-applied)(?:\n|$)/
+  );
+  if (line) return line[1];
+  const parsed = parseJsonOutput(text);
+  const result = parsed?.foundationMutationResult || parsed?.mutationResult;
+  return [
+    "behavioral-kill", "test-failure", "survived", "crash", "timeout",
+    "not-applied"
+  ].includes(result) ? result : null;
 }
 
 function numericReportValue(report, keys) {
@@ -2045,6 +2374,74 @@ async function startServiceSession(id, name, config, proofRunId) {
   const cwd = config.repository
     ? repositoryById(id, config.repository, state).workspacePath
     : state.workspace?.path || ROOT;
+  if (config.staticRoot) {
+    const root = resolve(cwd, config.staticRoot);
+    if (!pathInside(cwd, root) || !existsSync(root) || !statSync(root).isDirectory())
+      throw new Error(`service '${name}' staticRoot is not a workspace directory`);
+    const readinessUrl = new URL(config.readiness.url);
+    const port = Number(readinessUrl.port ||
+      (readinessUrl.protocol === "https:" ? 443 : 80));
+    const host = readinessUrl.hostname;
+    const identityHeaders = config.identityHeader || {
+      "x-foundation-service": name
+    };
+    const mime = {
+      ".css": "text/css; charset=utf-8",
+      ".html": "text/html; charset=utf-8",
+      ".js": "text/javascript; charset=utf-8",
+      ".json": "application/json; charset=utf-8",
+      ".svg": "image/svg+xml"
+    };
+    let requests = 0;
+    const server = createServer((request, response) => {
+      requests += 1;
+      let pathname;
+      try { pathname = decodeURIComponent(new URL(request.url, config.readiness.url).pathname); }
+      catch {
+        response.writeHead(400, identityHeaders);
+        response.end("bad request");
+        return;
+      }
+      const requested = resolve(root, `.${pathname === "/" ? "/index.html" : pathname}`);
+      if (!pathInside(root, requested) || !existsSync(requested) ||
+          !statSync(requested).isFile()) {
+        response.writeHead(404, identityHeaders);
+        response.end("not found");
+        return;
+      }
+      const extension = requested.slice(requested.lastIndexOf("."));
+      response.writeHead(200, {
+        ...identityHeaders,
+        "content-type": mime[extension] || "application/octet-stream"
+      });
+      response.end(readFileSync(requested));
+    });
+    await new Promise((complete, reject) => {
+      server.once("error", reject);
+      server.listen(port, host, complete);
+    });
+    if (!await readinessMatches(config.readiness)) {
+      await new Promise((complete) => server.close(complete));
+      throw new Error(`service '${name}' native static readiness failed`);
+    }
+    return {
+      name,
+      child: null,
+      startedAt: now(),
+      stop() {
+        server.close();
+        const logPath = join(LOGS, id, `${proofRunId}-service-${name}.log`);
+        mkdirSync(dirname(logPath), { recursive: true });
+        writeFileSync(logPath,
+          `native-static root=${relative(cwd, root)} requests=${requests}\n`);
+        return {
+          name,
+          path: relative(ROOT, logPath).replaceAll("\\", "/"),
+          status: "terminated"
+        };
+      }
+    };
+  }
   const [command, ...args] = config.command;
   const inherited = Object.fromEntries((config.envFrom || [])
     .filter((name) => process.env[name] !== undefined)
@@ -2203,9 +2600,16 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
     artifacts.push({
       path: relative(ROOT, configuredReport), type: "structured-report", required: true
     });
-  const report = configuredReport && existsSync(configuredReport)
+  const jsonReport = configuredReport && existsSync(configuredReport)
     ? parseJsonOutput(readFileSync(configuredReport, "utf8"))
     : parseJsonOutput(result.stdout);
+  const tapReport = ["tap", "auto"].includes(config.reportFormat || "auto")
+    ? parseTapOutput(
+      configuredReport && existsSync(configuredReport)
+        ? readFileSync(configuredReport, "utf8") : result.stdout
+    )
+    : null;
+  const report = jsonReport || tapReport;
   const baseFlags = {
     config, adapter: config.adapter, proofRunId, commandExecutionId,
     workspaceHash: providerWorkspaceHash(
@@ -2278,7 +2682,7 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
         "foreground-required": config.foregroundRequired ? "yes" : "no",
         "foreground-available": config.foregroundAvailable ? "yes" : "no",
         observed: summary
-          ? `${summary.tests} tests; ${summary.failed} failed; claims ${summary.claims.length}/${requiredClaims.length}` +
+          ? `${summary.tests} tests; ${summary.failed} failed; covered claims ${requiredClaims.length - missingClaims.length}/${requiredClaims.length}; observed annotations ${summary.claims.length}` +
             (missingClaims.length ? `; missing ${missingClaims.join(",")}` : "")
           : "Playwright JSON report unavailable"
       });
@@ -2286,14 +2690,26 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
     return { provider, status: aggregateStatus };
   }
 
+  const capability = providerCapability(provider, config);
+  const mutationResult = capability === "mutation" &&
+      config.resultProtocol === "foundation-mutation-v1"
+    ? mutationProtocolResult(result.stdout) : null;
   const status = result.timedOut || result.error ? "error" :
-    result.status === 0 ? "pass" : "fail";
+    capability === "mutation" && config.resultProtocol === "foundation-mutation-v1"
+      ? ["behavioral-kill", "test-failure"].includes(mutationResult)
+        ? "pass"
+        : ["crash", "timeout", "not-applied"].includes(mutationResult)
+          ? "error" : "fail"
+      : result.status === 0 ? "pass" : "fail";
   recordReceipt(id, provider, status, {
     ...baseFlags,
     "input-mode": config.inputMode || null,
     "foreground-required": config.foregroundRequired ? "yes" : "no",
     "foreground-available": config.foregroundAvailable ? "yes" : "no",
-    classification: config.classification
+    classification: mutationResult || config.classification,
+    observed: mutationResult
+      ? `mutation result ${mutationResult}; ${baseFlags.observed}`
+      : baseFlags.observed
   });
   return { provider, status };
 }
@@ -2386,6 +2802,11 @@ async function proofExecute(id) {
     startedAt: now()
   };
   saveRuntime(state);
+  for (const provider of requiredProviders(id)) {
+    const row = receiptValidity(id, provider, snapshot.workspaceHash);
+    if (row.validity === "reusable-inputs")
+      rebindReusableReceipt(id, row, snapshot, proofRunId);
+  }
   let sessions = [];
   try {
     const hash = snapshot.workspaceHash;
@@ -2420,6 +2841,36 @@ async function proofExecute(id) {
     delete current.activeProofRun;
     saveRuntime(current);
   }
+}
+
+async function proofRun(id) {
+  const readiness = proofReadinessValue(id, "prove");
+  if (readiness.status !== "READY") {
+    console.log(JSON.stringify({
+      ...readiness,
+      command: "proof run",
+      completed: false
+    }, null, 2));
+    process.exitCode = 2;
+    return readiness;
+  }
+  await proofExecute(id);
+  const audit = proofAudit(id, true);
+  if (!audit.valid)
+    die(`proof run audit failed: ${audit.reason}`);
+  const proof = readJson(proofPath(id));
+  const outcome = {
+    version: 1,
+    changeId: id,
+    command: "proof run",
+    status: "PASS",
+    completed: true,
+    proofRunId: proof.proofRunId || null,
+    workspaceHash: proof.workspaceHash,
+    providers: proof.providers || []
+  };
+  console.log(JSON.stringify(outcome, null, 2));
+  return outcome;
 }
 
 function prove(id, requestedProofRunId = null) {
@@ -2777,7 +3228,7 @@ function assertMultiRepositoryArchiveReady(id, state) {
 }
 
 function createCopySandbox(id, state, reason) {
-  const path = mkdtempSync(join(tmpdir(), `foundation-${id}-`));
+  const path = canonicalPath(mkdtempSync(join(tmpdir(), `foundation-${id}-`)));
   cpSync(ROOT, path, {
     recursive: true,
     mode: fsConstants.COPYFILE_FICLONE,
@@ -2816,10 +3267,11 @@ function createSingleSandbox(id) {
     createCopySandbox(id, state, `dirty-target:${unrelated[0]}`);
     return;
   }
-  const path = join(ROOT, ".foundation", "sandboxes", id);
-  mkdirSync(dirname(path), { recursive: true });
-  const result = git(["worktree", "add", "--detach", path, "HEAD"]);
+  const requestedPath = join(ROOT, ".foundation", "sandboxes", id);
+  mkdirSync(dirname(requestedPath), { recursive: true });
+  const result = git(["worktree", "add", "--detach", requestedPath, "HEAD"]);
   if (result.status !== 0) die(`cannot create sandbox: ${result.stderr.trim()}`);
+  const path = canonicalPath(requestedPath);
   cpSync(changePath(id), join(path, "openspec", "changes", id), { recursive: true });
   state.workspace = {
     mode: "worktree", path, baseHead: gitHead(ROOT), applied: false,
@@ -2861,13 +3313,19 @@ function createSandbox(id, flags = {}) {
         };
         continue;
       }
-      const path = join(ROOT, ".foundation", "repository-sandboxes", id, repository.id);
-      if (existsSync(path))
-        throw new Error(`repository sandbox already exists: ${path}`);
-      mkdirSync(dirname(path), { recursive: true });
-      const result = git(["worktree", "add", "--detach", path, baseHead], repository.path);
+      const requestedPath = join(
+        ROOT, ".foundation", "repository-sandboxes", id, repository.id
+      );
+      if (existsSync(requestedPath))
+        throw new Error(`repository sandbox already exists: ${requestedPath}`);
+      mkdirSync(dirname(requestedPath), { recursive: true });
+      const result = git(
+        ["worktree", "add", "--detach", requestedPath, baseHead],
+        repository.path
+      );
       if (result.status !== 0)
         throw new Error(`cannot create sandbox for '${repository.id}': ${result.stderr.trim()}`);
+      const path = canonicalPath(requestedPath);
       state.repositories[repository.id] = {
         mode: "worktree", path, targetPath: repository.path,
         baseHead, access: "write", applied: false
@@ -3195,11 +3653,39 @@ function recoverPendingApply(id, state) {
   }
 }
 
+function refreshAppliedProjection(state) {
+  const transactionId = state.workspace?.apply?.transactionId;
+  const journalPath = transactionJournalPath(state.id, transactionId);
+  if (!transactionId || !existsSync(journalPath))
+    die("cannot refresh an applied projection without its transaction journal");
+  const journal = readJson(journalPath);
+  for (const entry of journal.entries) {
+    const source = resolve(state.workspace.path, entry.path);
+    const expected = pathIdentity(source);
+    const current = pathIdentity(safeRootPath(entry.path));
+    if (current !== expected)
+      die(`cannot refresh diverged applied path '${entry.path}'`);
+    entry.after = expected;
+  }
+  journal.projectionHash = stableHash(
+    journal.entries.map(({ path, after }) => ({ path, after }))
+  );
+  journal.proofRunId = readJson(proofPath(state.id)).proofRunId;
+  journal.status = "verified";
+  journal.refreshedAt = now();
+  saveApplyJournal(journal);
+  state.workspace.apply.projectionHash = journal.projectionHash;
+  state.workspace.apply.status = "verified";
+  saveRuntime(state);
+}
+
 function applySandbox(id, options = {}) {
   const initialState = loadRuntime(id);
   if (initialState.repositories && Object.keys(initialState.repositories).length > 1 &&
       !options.controlPlane)
     die("multi-repository sandboxes do not apply as one local transaction; use land plan/record/resume");
+  if (initialState.workspace?.applied && options.refresh)
+    refreshAppliedProjection(initialState);
   const readiness = landCheck(id);
   if (readiness.archived) return;
   let state = loadRuntime(id);
@@ -3254,8 +3740,8 @@ function cleanupAppliedSandbox(id, state) {
   if (!path || resolve(path) === resolve(ROOT) || !existsSync(path))
     return { status: "not-needed", path: path || null };
   if (state.workspace.mode === "copy") {
-    const expectedPrefix = `${resolve(tmpdir())}/foundation-${id}-`;
-    if (!resolve(path).startsWith(expectedPrefix))
+    const expectedPrefix = `${canonicalPath(tmpdir())}/foundation-${id}-`;
+    if (!canonicalPath(path).startsWith(expectedPrefix))
       return { status: "refused", path, reason: "copy path is outside the Foundation temp prefix" };
     try {
       rmSync(path, { recursive: true });
@@ -3710,6 +4196,36 @@ function recordContextMetric(id, kind, bytes, details = {}) {
   })}\n`);
 }
 
+function recordPhaseContext(id, phase) {
+  const path = join(LOGS, id, "phase-context.jsonl");
+  const prior = readJsonLines(path).at(-1) || null;
+  const host = claudeHostContext();
+  const sessionId = host?.sessionId || process.env.FOUNDATION_SESSION_ID || null;
+  const recommendedTier = {
+    change: "deep",
+    build: "standard",
+    prove: "fast",
+    land: "fast"
+  }[phase] || "standard";
+  const contextMode = !sessionId ? "unavailable" :
+    !prior?.sessionId ? "initial" :
+    prior.sessionId === sessionId ? "retained" : "fresh";
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify({
+    version: 1,
+    changeId: id,
+    phase,
+    sessionId,
+    contextMode,
+    recommendedModelTier: recommendedTier,
+    actualModel: process.env.FOUNDATION_MODEL_ID || null,
+    trigger: process.env.FOUNDATION_PHASE_TRIGGER || null,
+    priorPhase: prior?.phase || null,
+    priorSessionId: prior?.sessionId || null,
+    timestamp: now()
+  })}\n`);
+}
+
 function recordEvent(id, flags) {
   const state = loadRuntime(id);
   if (flags.repo) repositoryById(id, flags.repo, state);
@@ -4038,6 +4554,8 @@ function showMetrics(id) {
   const operations = readJsonLines(join(LOGS, id, "operations.jsonl"));
   const events = readJsonLines(join(LOGS, id, "events.jsonl"));
   const contextRows = readJsonLines(join(LOGS, id, "context.jsonl"));
+  const phaseContextRows = readJsonLines(join(LOGS, id, "phase-context.jsonl"));
+  const reuseRows = readJsonLines(join(LOGS, id, "reuse.jsonl"));
   const phases = {};
   for (const operation of operations) {
     const name = operation.phase || operation.operation || "unknown";
@@ -4115,14 +4633,32 @@ function showMetrics(id) {
     }));
   const contextBytes = contextRows.length
     ? contextRows.reduce((sum, row) => sum + Number(row.bytes || 0), 0) : null;
+  const operationActiveTimeMs = operations.length
+    ? operations.reduce((sum, row) => sum + Number(row.durationMs || 0), 0) : null;
+  const evidenceExecutionTimeMs = executions.size
+    ? [...executions.values()].reduce((sum, value) => sum + value, 0) : null;
+  const activeTimeMs = operationActiveTimeMs === null
+    ? evidenceExecutionTimeMs
+    : evidenceExecutionTimeMs === null
+      ? operationActiveTimeMs
+      : Math.max(operationActiveTimeMs, evidenceExecutionTimeMs);
+  const wallTimeMs = operations.length
+    ? Math.max(...operations.map((row) => Date.parse(row.finishedAt))) -
+      Math.min(...operations.map((row) => Date.parse(row.startedAt))) : null;
+  const contextModes = {};
+  for (const row of phaseContextRows)
+    contextModes[row.contextMode || "unknown"] =
+      Number(contextModes[row.contextMode || "unknown"] || 0) + 1;
   console.log(JSON.stringify({
-    version: 2, changeId: id,
-    wallTimeMs: operations.length
-      ? Math.max(...operations.map((row) => Date.parse(row.finishedAt))) -
-        Math.min(...operations.map((row) => Date.parse(row.startedAt))) : null,
+    version: 3, changeId: id,
+    wallTimeMs,
+    activeTimeMs,
+    unattributedWaitMs: wallTimeMs === null || activeTimeMs === null
+      ? null : Math.max(0, wallTimeMs - activeTimeMs),
+    humanWaitMs: null,
+    humanWaitReason: "not inferred without an explicit host/user transition signal",
     phases, providers,
-    evidenceExecutionTimeMs: executions.size
-      ? [...executions.values()].reduce((sum, value) => sum + value, 0) : null,
+    evidenceExecutionTimeMs,
     requests: events.length || null,
     inputTokens: sumKnown(events, "inputTokens"),
     outputTokens: sumKnown(events, "outputTokens"),
@@ -4136,7 +4672,21 @@ function showMetrics(id) {
     context: {
       totalBytes: contextBytes,
       estimatedTokens: contextBytes === null ? null : Math.ceil(contextBytes / 4),
-      byKind: context
+      byKind: context,
+      phaseTransitions: phaseContextRows,
+      modes: contextModes
+    },
+    evidenceReuse: {
+      count: reuseRows.length,
+      byReason: reuseRows.reduce((result, row) => {
+        const reason = row.reason || "unknown";
+        result[reason] = Number(result[reason] || 0) + 1;
+        return result;
+      }, {})
+    },
+    rework: {
+      failedOperations: operations.filter((row) => row.status !== "completed").length,
+      providerRebindings: reuseRows.length
     },
     orchestratorTokenShare: tokenTotal > 0 ? orchestratorTokens / tokenTotal : null,
     orchestratorCostShare: totalCost > 0 && orchestratorCost !== null
@@ -4339,7 +4889,7 @@ Commands:
   agent-task <change> <task>
   agent-acquire <change> <task> --owner <agent-id>
   agent-release <change> <task> --owner <agent-id>
-  new <intent> [--id <id>] [--rapid]
+  new <intent> [--id <id>] [--rapid] [--draft <project-file.json>]
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
   changes
   providers
@@ -4348,6 +4898,8 @@ Commands:
   validate <change>
   hash <change>
   proof-plan <change>
+  proof-readiness <change>
+  proof-run <change>
   proof-preflight <change>
   proof-execute <change>
   proof-audit <change>
@@ -4371,7 +4923,7 @@ Commands:
 const [command, ...values] = process.argv.slice(2);
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
-  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-readiness", "proof-run", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
     "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
 
 const telemetryPhase = {
@@ -4379,6 +4931,8 @@ const telemetryPhase = {
   "evidence-upgrade": "change",
   sandbox: "build",
   "proof-plan": "prove",
+  "proof-readiness": "prove",
+  "proof-run": "prove",
   "proof-preflight": "prove",
   "proof-execute": "prove",
   "proof-audit": "prove",
@@ -4429,7 +4983,10 @@ switch (command) {
     const { flags, rest } = parseFlags(values);
     if (flags.phase && !["change", "build", "prove", "land"].includes(flags.phase))
       die("packet --phase must be change|build|prove|land");
-    if (flags.phase) prepareClaudeTelemetry(rest[0], flags.phase);
+    if (flags.phase) {
+      prepareClaudeTelemetry(rest[0], flags.phase);
+      recordPhaseContext(rest[0], flags.phase);
+    }
     showPacket(rest[0], flags); break;
   }
   case "metrics": showMetrics(values[0]); break;
@@ -4441,6 +4998,8 @@ switch (command) {
   case "validate": validate(values[0]); break;
   case "hash": console.log(relevantHash(values[0])); break;
   case "proof-plan": proofPlan(values[0]); break;
+  case "proof-readiness": proofReadiness(values[0]); break;
+  case "proof-run": await proofRun(values[0]); break;
   case "proof-preflight": proofPreflight(values[0]); break;
   case "proof-execute": await proofExecute(values[0]); break;
   case "proof-audit": {
@@ -4469,7 +5028,10 @@ switch (command) {
       createSandbox(rest[0], flags);
     }
     else if (values[0] === "sync") syncSandbox(values[1]);
-    else if (values[0] === "apply") applySandbox(values[1]);
+    else if (values[0] === "apply") {
+      const { flags, rest } = parseFlags(values.slice(1));
+      applySandbox(rest[0], flags);
+    }
     else die("sandbox requires create|sync|apply <change>");
     break;
   case "archive": archive(values[0]); break;

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=6
+EXPECTED_RUNTIME_API=7
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -56,7 +56,7 @@ run_runtime() {
   case "${1:-}" in
     new|resolve|validate|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
+    proof-plan|proof-readiness|proof-run|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
     land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   FOUNDATION_TELEMETRY=1 FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
@@ -229,14 +229,16 @@ case "${1:-}" in
   proof)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|preflight|execute|finalize|audit>}" "${1:-}"
+    need_arg "proof ${sub:-<plan|readiness|run|preflight|execute|finalize|audit>}" "${1:-}"
     case "$sub" in
       plan) run_runtime write proof-plan "$@" ;;
+      readiness) run_runtime read proof-readiness "$@" ;;
+      run) run_runtime write proof-run "$@" ;;
       preflight) run_runtime write proof-preflight "$@" ;;
       execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
       audit) run_runtime read proof-audit "$@" ;;
-      *) fail "proof requires 'plan', 'preflight', 'execute', 'finalize', or 'audit'" ;;
+      *) fail "proof requires 'plan', 'readiness', 'run', 'preflight', 'execute', 'finalize', or 'audit'" ;;
     esac ;;
   evidence)
     shift
