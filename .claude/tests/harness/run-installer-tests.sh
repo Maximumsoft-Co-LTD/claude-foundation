@@ -143,7 +143,7 @@ assert_cmd_zero "runtime API mismatch permits read-only inspection" \
 CURSOR_TARGET="$TMP/cursor-project"
 mkdir -p "$CURSOR_TARGET"
 assert_cmd_zero "cursor adapter installs" \
-  sh "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes
+  bash "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes
 assert_file_exists "cursor change command installed" "$CURSOR_TARGET/.cursor/commands/change.md"
 assert_file_exists "cursor orchestrator installed" "$CURSOR_TARGET/.cursor/orchestrator.md"
 assert_file_exists "shared runtime installed for cursor" "$CURSOR_TARGET/.claude/harness/foundation.mjs"
