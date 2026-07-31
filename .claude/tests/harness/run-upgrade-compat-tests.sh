@@ -53,4 +53,43 @@ assert_contains "partial policy retains custom task budget" "$doctor" "task=4096
 assert_contains "partial policy receives repository default" "$doctor" \
   "repository=12288"
 
+# The CLI resolves the project runtime's API from its source constant instead of
+# spawning the runtime to print it. Both the fast read and its spawn fallback
+# must keep reporting the runtime's real API, or the compatibility guard turns
+# into a silent no-op on an out-of-date project.
+declared="$(sed -n \
+  's/^const RUNTIME_API_VERSION *= *"\{0,1\}\([0-9][0-9]*\)"\{0,1\} *;.*/\1/p' \
+  "$ROOT/.claude/harness/foundation.mjs" | head -1)"
+assert_eq "shipped runtime declares a CLI-readable API constant" \
+  "$(node "$ROOT/.claude/harness/foundation.mjs" api-version)" "$declared"
+
+mismatch="$TMP/mismatch"
+mkdir -p "$mismatch/.claude/harness" "$mismatch/openspec"
+cp "$ROOT/.claude/harness/protocol.json" "$mismatch/.claude/harness/"
+cp -R "$ROOT/openspec/schemas" "$mismatch/openspec/"
+cp "$ROOT/openspec/config.yaml" "$mismatch/openspec/"
+cp "$ROOT/foundation.json" "$mismatch/"
+sed 's/^const RUNTIME_API_VERSION = "7";/const RUNTIME_API_VERSION = "999";/' \
+  "$ROOT/.claude/harness/foundation.mjs" \
+  > "$mismatch/.claude/harness/foundation.mjs"
+assert_file_contains "fixture declares a mismatched runtime API" \
+  "$mismatch/.claude/harness/foundation.mjs" 'const RUNTIME_API_VERSION = "999";'
+
+warned="$(bash "$ROOT/cli.sh" --project "$mismatch" changes 2>&1 >/dev/null || true)"
+assert_contains "read access warns on a mismatched runtime API" "$warned" \
+  "project runtime API '999' differs from CLI API"
+
+rejected="$(bash "$ROOT/cli.sh" --project "$mismatch" validate missing-change 2>&1 || true)"
+assert_contains "write access rejects a mismatched runtime API" "$rejected" \
+  "project runtime API '999' is incompatible with CLI API"
+
+# A runtime whose constant is not in the expected literal form must fall back to
+# asking the runtime itself rather than skipping the check.
+sed -i.bak 's/^const RUNTIME_API_VERSION = "999";/const RUNTIME_API_VERSION = String(900 + 99);/' \
+  "$mismatch/.claude/harness/foundation.mjs"
+rm -f "$mismatch/.claude/harness/foundation.mjs.bak"
+rejected="$(bash "$ROOT/cli.sh" --project "$mismatch" validate missing-change 2>&1 || true)"
+assert_contains "unparsable API constant falls back to the runtime" "$rejected" \
+  "project runtime API '999' is incompatible with CLI API"
+
 finish "upgrade compatibility"

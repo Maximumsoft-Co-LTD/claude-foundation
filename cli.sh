@@ -37,6 +37,21 @@ find_project_root() {
   fail "not inside a Foundation project; run 'claude-foundation init <path>' first"
 }
 
+# The runtime declares its API as a source constant, so reading it costs one
+# file read. Spawning the runtime only to print it doubled the process cost of
+# every CLI call. The spawn remains as a fallback for a runtime whose constant
+# is not in the expected form.
+runtime_api_version() {
+  local file="$1" value
+  # `|| value=""` keeps a truncated pipe under `pipefail` from aborting the CLI:
+  # an unreadable constant must degrade to the fallback, never to a hard exit.
+  value="$(sed -n \
+    's/^const RUNTIME_API_VERSION *= *"\{0,1\}\([0-9][0-9]*\)"\{0,1\} *;.*/\1/p' \
+    "$file" 2>/dev/null | head -1)" || value=""
+  [ -n "$value" ] || value="$(node "$file" api-version 2>/dev/null || true)"
+  printf '%s\n' "$value"
+}
+
 run_runtime() {
   local access="$1"; shift
   local root runtime actual_api
@@ -44,7 +59,7 @@ run_runtime() {
   runtime="$root/.claude/harness/foundation.mjs"
   command -v node >/dev/null 2>&1 || fail "Node.js is required to run the project harness"
   cd "$root"
-  actual_api="$(node "$runtime" api-version 2>/dev/null || true)"
+  actual_api="$(runtime_api_version "$runtime")"
   if [ "$actual_api" != "$EXPECTED_RUNTIME_API" ]; then
     if [ "$access" = "write" ]; then
       fail "project runtime API '${actual_api:-unknown}' is incompatible with CLI API '$EXPECTED_RUNTIME_API'; run 'claude-foundation init \"$root\"' to update it"

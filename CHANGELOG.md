@@ -100,6 +100,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Single-process CLI dispatch** — `claude-foundation` reads the project
+  runtime's declared API constant instead of spawning the runtime once just to
+  print it, halving the wrapper cost of every workflow command while keeping
+  the read-warns/write-rejects compatibility guard and falling back to the
+  runtime when the constant is not in literal form.
+- **Uid-independent telemetry retention check** — the context-event failure
+  injection no longer relies on permission bits, which root ignores; the
+  assertion was passing without injecting anything and the extra event it left
+  behind pushed retention past a hardcoded bound, so the suite failed for any
+  root-run checkout. Retention is now bounded by what the run produced.
 - **Recoverable Land projection transaction** — copy sandboxes and Git
   worktrees now prepare touched-path backups and an apply journal before
   mutation, preserve unrelated target edits, verify only the proven projection,

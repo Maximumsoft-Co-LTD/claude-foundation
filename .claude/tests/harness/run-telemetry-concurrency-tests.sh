@@ -41,14 +41,21 @@ printf 'not-json\n' > \
 assert_cmd_zero "metrics tolerates a malformed legacy context row" \
   node "$RUNTIME" metrics concurrent-context-telemetry
 
-chmod 500 "$events"
+# Inject the failure by putting a regular file where the event directory must
+# be. Permission bits are not a usable injection here: root ignores them, so the
+# write succeeds, this assertion passes vacuously, and the extra event it leaves
+# behind shifts every later count.
+mv "$events" "$events.stashed"
+: > "$events"
 if node "$RUNTIME" packet concurrent-context-telemetry >/dev/null 2>&1; then
   pass "context telemetry failure cannot block packet output"
 else
   fail "context telemetry failure cannot block packet output"
 fi
-chmod 700 "$events"
+rm -f "$events"
+mv "$events.stashed" "$events"
 
+before="$(find "$events" -type f -name '*.json' | wc -l | tr -d ' ')"
 node - "$events" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -59,10 +66,14 @@ for (let index = 0; index < 1001; index += 1)
 NODE
 node "$RUNTIME" packet concurrent-context-telemetry >/dev/null
 retained="$(find "$events" -type f -name '*.json' | wc -l | tr -d ' ')"
-if [ "$retained" -le 522 ]; then
+# Retention is bounded by what the run actually produced: the events already
+# present, the 1001 seeds, the one event this packet call records, less the 500
+# the runtime compacts into the rollup once the set passes 1000.
+limit=$((before + 1001 + 1 - 500))
+if [ "$retained" -le "$limit" ]; then
   pass "context events roll into a bounded retained set"
 else
-  fail "context events roll into a bounded retained set — retained $retained"
+  fail "context events roll into a bounded retained set — retained $retained > $limit"
 fi
 assert_eq "rollup accounts for compacted events" "500" \
   "$(jq -r '.count' .foundation/logs/concurrent-context-telemetry/context-rollup.json)"
