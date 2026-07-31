@@ -836,11 +836,15 @@ assert_contains "uncommitted child blocks Land" \
 git -C .foundation/repository-sandboxes/cross-repository-profile/api \
   add api.txt
 git -C .foundation/repository-sandboxes/cross-repository-profile/api \
+  -c user.name="Foundation Test" \
+  -c user.email="foundation@example.invalid" \
   commit -qm "api profile"
 api_commit="$(git -C .foundation/repository-sandboxes/cross-repository-profile/api rev-parse HEAD)"
 git -C .foundation/repository-sandboxes/cross-repository-profile/app \
   add app.txt
 git -C .foundation/repository-sandboxes/cross-repository-profile/app \
+  -c user.name="Foundation Test" \
+  -c user.email="foundation@example.invalid" \
   commit -qm "app profile"
 app_commit="$(git -C .foundation/repository-sandboxes/cross-repository-profile/app rev-parse HEAD)"
 sed -i.bak 's/- \[ \]/- [x]/g' \

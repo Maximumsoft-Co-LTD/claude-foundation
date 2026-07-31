@@ -36,6 +36,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+      - name: Install pinned workflow dependencies
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Ensure jq (harness dependency)
         run: command -v jq >/dev/null || { sudo apt-get update && sudo apt-get install -y jq; }
       - name: Run workflow test harness
