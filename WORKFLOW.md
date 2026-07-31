@@ -60,8 +60,8 @@ For a selected multi-repository topology:
 ```bash
 claude-foundation repos <change>
 claude-foundation sandbox create <change> --all
-claude-foundation agents plan <change> [--group <n>]
-claude-foundation agents task <change> <task-id>
+claude-foundation agents plan <change> [--group <n>] [--pretty]
+claude-foundation agents task <change> <task-id> [--pretty]
 ```
 
 The plan permits parallel workers only across independent repositories and
@@ -71,6 +71,12 @@ ordinary tasks stays with one agent. It routes mechanical inventory to the confi
 normal implementation to Sonnet/standard, and architecture, security,
 migration, or independent review to Opus/deep. Exact model versions remain host
 configuration.
+
+Resume planning considers completed tasks as satisfied dependencies and returns
+`proof-ready` when no implementation remains. Dispatch is denied when a task
+claims behavior outside its repository authority or has no evidence provider.
+Load one primary construction skill per task; add only the security and
+observability cross-cutting skills whose triggers apply.
 
 If requirements or design change during Build, pause, revise the same OpenSpec
 change, then synchronize it without losing unchanged completed tasks:
@@ -268,7 +274,11 @@ one combined execution.
 `claude-foundation packet <change> --phase build|prove` emits the bounded
 handoff for a fresh execution context. Global, repository, and task packets are
 capped at 16, 12, and 8 KiB respectively and reference larger artifacts by
-path and digest. The phase marker first closes usage
+path and digest. Compact JSON is the default and is the exact measured budget;
+`--pretty` is available for people. Collection previews include counts and
+digests, with task packets providing authoritative expansion. Atomic context
+events are best-effort, concurrency-safe, tolerant of legacy rows, and rolled
+up when their retained set grows. The phase marker first closes usage
 from the prior phase using the incremental transcript cursor. Large changed-file
 sets collapse into prefix counts plus a digest. Build and Prove consume this
 packet instead of replaying the full orchestrator transcript.

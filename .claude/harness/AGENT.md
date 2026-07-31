@@ -12,6 +12,10 @@ needed. Edit only the declared sandbox and paths. Use `agents plan` only for
 independent work, acquire task leases, and give workers task-scoped packets.
 Never replay the full conversation.
 
+Load one primary construction skill for the hardest decision, plus security or
+observability only when their boundary triggers. Open only the relevant
+reference section.
+
 Claims belong in `evidence.yaml`; replaceable commands/services belong in
 `execution.yaml`. Prove through valid receipts and audit. Never report an
 unproven pass.

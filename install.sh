@@ -127,6 +127,7 @@ PROJECT_MUTABLE=(
   "CLAUDE.md"
   "AGENTS.md"
   "openspec/config.yaml"
+  "foundation.json"
 )
 for rel in "${MANAGED[@]}"; do
   if [ -e "$TARGET_PATH/$rel" ]; then
@@ -218,6 +219,23 @@ if [ ! -e "$TARGET_PATH/openspec/repositories.yaml" ]; then
 fi
 if [ ! -e "$TARGET_PATH/foundation.json" ]; then
   cp "$SOURCE_PATH/foundation.json" "$TARGET_PATH/foundation.json"
+elif command -v jq >/dev/null 2>&1; then
+  if jq -e '.version == 1 and .execution.packetBytes == 65536' \
+      "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    jq '.execution.packetBytes = {
+          task: 8192, repository: 12288, global: 16384
+        } |
+        .execution.planSummaryBytes //= 4096' \
+      "$TARGET_PATH/foundation.json" > "$tmp"
+    mv "$tmp" "$TARGET_PATH/foundation.json"
+    printf '✓ migrated former default packet budget to scoped 8/12/16 KiB limits\n'
+  elif jq -e '.execution.packetBytes | type == "number"' \
+      "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
+    printf '⚠ preserving custom numeric execution.packetBytes; use scoped task/repository/global limits when ready\n' >&2
+  fi
+else
+  printf '⚠ jq unavailable; inspect legacy numeric execution.packetBytes manually\n' >&2
 fi
 
 for rel in "${LEGACY[@]}"; do

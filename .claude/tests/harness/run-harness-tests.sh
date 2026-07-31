@@ -75,7 +75,7 @@ output="$(node .claude/harness/foundation.mjs resolve profile-owner-update --imp
 assert_contains "resolver records impact" "$output" "impact: medium"
 assert_cmd_zero "standard change validates" node .claude/harness/foundation.mjs validate profile-owner-update
 packet="$(node .claude/harness/foundation.mjs packet profile-owner-update)"
-assert_contains "compact packet carries required providers" "$packet" '"provider": "test"'
+assert_contains "compact packet carries required providers" "$packet" '"provider":"test"'
 assert_contains "compact packet carries task count" "$packet" '"pendingTaskCount":'
 
 if node .claude/harness/foundation.mjs run-provider profile-owner-update unknown-provider -- \
@@ -767,9 +767,9 @@ assert_contains "changed-surface authority rejects undeclared paths" \
   "$surface_output" "changed outside task paths: rogue.txt"
 rm .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
 api_packet="$(node .claude/harness/foundation.mjs packet cross-repository-profile --repo api)"
-assert_contains "repo packet selects API" "$api_packet" '"id": "api"'
-assert_contains "repo packet includes API task" "$api_packet" '"id": "T001"'
-if printf '%s' "$api_packet" | grep -qF '"id": "T003"'; then
+assert_contains "repo packet selects API" "$api_packet" '"id":"api"'
+assert_contains "repo packet includes API task" "$api_packet" '"id":"T001"'
+if printf '%s' "$api_packet" | grep -qF '"id":"T003"'; then
   fail "repo packet excludes app task"
 else
   pass "repo packet excludes app task"
@@ -789,8 +789,8 @@ fi
 agent_task="$(node .claude/harness/foundation.mjs agent-task \
   cross-repository-profile T001)"
 assert_contains "inventory task packet routes to Haiku tier" \
-  "$agent_task" '"family": "haiku"'
-if printf '%s' "$agent_task" | grep -qF '"id": "T003"'; then
+  "$agent_task" '"family":"haiku"'
+if printf '%s' "$agent_task" | grep -qF '"id":"T003"'; then
   fail "task packet excludes unrelated tasks"
 else
   pass "task packet excludes unrelated tasks"
@@ -798,11 +798,11 @@ fi
 agent_task="$(node .claude/harness/foundation.mjs agent-task \
   cross-repository-profile T002)"
 assert_contains "implementation task packet routes to Sonnet tier" \
-  "$agent_task" '"family": "sonnet"'
+  "$agent_task" '"family":"sonnet"'
 agent_task="$(node .claude/harness/foundation.mjs agent-task \
   cross-repository-profile T004)"
 assert_contains "contract task packet routes to Opus tier" \
-  "$agent_task" '"family": "opus"'
+  "$agent_task" '"family":"opus"'
 assert_cmd_zero "task resource lease is acquired atomically" \
   node .claude/harness/foundation.mjs agent-acquire \
   cross-repository-profile T001 --owner agent-a
@@ -903,7 +903,7 @@ while [ "$task_number" -le 100 ]; do
 done
 large_plan="$(node .claude/harness/foundation.mjs agent-plan \
   cross-repository-profile)"
-assert_contains "large plan reports all tasks" "$large_plan" '"taskCount": 100'
+assert_contains "large plan reports all tasks" "$large_plan" '"taskCount":100'
 assert_contains "large plan compacts group details" "$large_plan" '"preview":'
 if [ "$(printf '%s' "$large_plan" | wc -c | tr -d ' ')" -le 4096 ]; then
   pass "100-task plan summary stays within 4 KiB"

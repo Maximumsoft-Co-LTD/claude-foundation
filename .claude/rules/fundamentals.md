@@ -30,20 +30,11 @@ unclear after this digest.
 
 ## Construction skills
 
-When several apply, use:
-
-```text
-ddd-strategic
-→ programming-fundamentals
-→ concurrency-fundamentals
-→ database-fundamentals
-→ hexagonal-backend
-→ api-design-fundamentals
-→ architecture-fundamentals
-→ queue-fundamentals
-→ security-fundamentals
-→ observability-fundamentals
-```
+Load one primary construction skill for the task's hardest decision. Add
+`security-fundamentals` only for a trust boundary and
+`observability-fundamentals` only for a changed runtime failure surface. Do not
+load adjacent layers merely because the code imports them. Read a skill
+reference only when its named decision is active.
 
 | Trigger | Load |
 |---|---|
@@ -58,11 +49,12 @@ ddd-strategic
 | Auth/session/token, secrets, untrusted input, SQL/HTML/file/exec sink, crypto, dependency, external endpoint | `security-fundamentals` |
 | Runtime failure mode, logs, metrics, traces, SLO, alert, blind spot | `observability-fundamentals` |
 
-Semantic boundaries belong to DDD; ports to hexagonal; published service
-surfaces to API design; runtime relationships to architecture. Transaction
-isolation is database work, in-process races are concurrency work, and
-cross-process async is queue work. Apply security and observability to the
-affected layer.
+Semantic boundaries belong to DDD; local logic to programming; storage
+correctness to database; ports to hexagonal; published contracts to API design;
+runtime relationships to architecture. Transaction isolation is database work,
+in-process races are concurrency work, and cross-process async is queue work.
+Choose the deepest decision actually being made, then add only required
+cross-cutting skills.
 
 ## Delivery skills
 
@@ -72,4 +64,3 @@ affected layer.
 | CI/CD, build, container, deploy, environment, rollout/rollback, release | `delivery-engineering` |
 
 Non-lifecycle skills trigger from their descriptions or explicit commands.
-Keep the construction chain mirrored in `README.md`.

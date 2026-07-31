@@ -100,11 +100,11 @@ Slash commands ใช้ควบคุม AI workflow ส่วน deterministi
 claude-foundation providers
 claude-foundation repos [change]
 claude-foundation models
-claude-foundation agents plan <change> [--group <n>]
-claude-foundation agents task <change> <task>
+claude-foundation agents plan <change> [--group <n>] [--pretty]
+claude-foundation agents task <change> <task> [--pretty]
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation packet <change> [--repo <id>] [--task <id>]
+claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
 claude-foundation metrics <change>
 claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
@@ -137,6 +137,11 @@ hash และ budget แทน conversation ที่สะสมมา Packet 
 repository 12 KiB และ global 16 KiB ส่วน artifact ใหญ่คงอยู่ในไฟล์และอ้างด้วย
 path กับ SHA-256 ส่วน phase flag จะปิด telemetry ของ phase ก่อนหน้าแบบ
 incremental ด้วย
+JSON สำหรับเครื่องเป็น compact โดย default ทำให้ budget เท่ากับ bytes ที่ส่ง
+ให้ agent จริง ใช้ `--pretty` เฉพาะตอนคนต้องการอ่าน Packet schema 4 และ
+agent-plan schema 2 ทำให้ consumer แยก compatibility ได้ชัดเจน เมื่อ collection
+ใหญ่ ระบบจะลดเป็น preview, count และ digest แล้วเปิดรายละเอียดผ่าน task packet
+แทนการเพิ่ม context limit
 
 `metrics <change>` สรุป wall time, phase operations, unique provider executions,
 requests, input/output tokens, cache creation/read tokens, cost, orchestrator
@@ -169,12 +174,20 @@ Tasks ยังมี ledger เดียวใน `tasks.md` และเพิ
 4 KiB ใช้ `agents plan <change> --group <n>` เพื่อดู dispatch group เดียว และ
 `agents task <change> <task>` เพื่อรับ packet เฉพาะ worker ถ้ามี repo เดียวและ
 ไม่เกินสอง task ปกติ ระบบจะแนะนำ single agent เพื่อตัด planning/spawn overhead
+ตอน resume ระบบถือ completed dependency ว่าสำเร็จแล้ว และถ้าครบทุก task จะคืน
+`proof-ready` Task packet จะถูกปฏิเสธถ้า claim ไม่รู้จัก, อยู่นอก authority
+ของ repository หรือไม่มี evidence provider
 `foundation.json` ใช้ tier แบบ portable คือ `fast`, `standard`,
 `deep` ซึ่ง default เป็น Haiku, Sonnet และ Opus ตามลำดับ งาน inventory/log
 เชิงกลใช้ fast, implementation ปกติใช้ standard และ architecture, security,
 migration หรือ independent review ใช้ deep งานเสี่ยงสูงห้ามลดลง fast ตัว
 native host เป็นผู้ spawn agent ส่วน Foundation ให้ packet เฉพาะ repo/task
 และไม่มอบสิทธิ์ commit, push หรือ Land
+
+แต่ละ task โหลด construction skill หลักเพียงหนึ่งตัวตาม layer ที่แก้ แล้วเพิ่ม
+security หรือ observability เฉพาะเมื่อ trigger ของงานต้องใช้ พร้อมอ่านเฉพาะ
+reference ที่ตรงกับปัญหา วิธีนี้ยังคงคุณภาพข้าม layer โดยไม่โหลด backend skill
+ทั้งชุดทุกครั้ง
 
 Provider ใน `execution.yaml` ระบุ `repository` ได้ คำสั่งจะรันใน sandbox ของ
 repo นั้นและ receipt ผูกกับ snapshot ของ repo นั้น การแก้ repo ที่ไม่เกี่ยว

@@ -17,6 +17,9 @@ const RUNTIME_API_VERSION = "7";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
+const PACKET_SCHEMA_VERSION = "4";
+const AGENT_PLAN_SCHEMA_VERSION = "2";
+const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const ADAPTERS = new Set(["command", "test-discovery", "playwright", "external"]);
 const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
 const EXCLUDED_WORKSPACE_DIRS = new Set([
@@ -144,7 +147,10 @@ function protocolDescriptor() {
     runtimeApi: RUNTIME_API_VERSION,
     providerProtocol: PROVIDER_PROTOCOL_VERSION,
     adapterProtocol: ADAPTER_PROTOCOL_VERSION,
-    proofProtocol: PROOF_PROTOCOL_VERSION
+    proofProtocol: PROOF_PROTOCOL_VERSION,
+    packetSchema: PACKET_SCHEMA_VERSION,
+    agentPlanSchema: AGENT_PLAN_SCHEMA_VERSION,
+    contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION
   });
 }
 function isPinnedOpenSpecVersion(value) {
@@ -279,6 +285,24 @@ function directoryHash(dir) {
 
 function stableHash(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function serializedJson(value, pretty = false) {
+  return `${JSON.stringify(value, null, pretty ? 2 : 0)}\n`;
+}
+
+function compactList(values, limit = 20, project = (value) => value) {
+  const projected = values.map(project);
+  if (projected.length <= limit) return projected;
+  return {
+    count: projected.length,
+    preview: projected.slice(0, limit),
+    digest: stableHash(projected)
+  };
+}
+
+function compactStrings(values, limit = 20) {
+  return compactList(values, limit, (value) => String(value));
 }
 
 function fileDigest(path) {
@@ -597,14 +621,23 @@ function foundationPolicy() {
   const policy = {
     ...defaults, ...configured,
     execution: { ...defaults.execution, ...(configured.execution || {}) },
-    models: { ...defaults.models, ...(configured.models || {}) }
+    models: Object.fromEntries(["fast", "standard", "deep"].map((tier) => [
+      tier, { ...defaults.models[tier], ...(configured.models?.[tier] || {}) }
+    ]))
   };
-  if (typeof policy.execution.packetBytes === "number")
+  if (typeof policy.execution.packetBytes === "number") {
+    policy.execution.legacyNumericPacketBytes = policy.execution.packetBytes;
     policy.execution.packetBytes = {
       task: policy.execution.packetBytes,
       repository: policy.execution.packetBytes,
       global: policy.execution.packetBytes
     };
+  } else {
+    policy.execution.packetBytes = {
+      ...defaults.execution.packetBytes,
+      ...(policy.execution.packetBytes || {})
+    };
+  }
   for (const type of ["task", "repository", "global"]) {
     const bytes = Number(policy.execution.packetBytes?.[type]);
     if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
@@ -1288,21 +1321,24 @@ function activeRepositoryConflicts(id, repositories) {
 }
 
 function agentPlanValue(id) {
-  validate(id, "active");
+  validate(id, "active", { quiet: true });
   const state = loadRuntime(id);
   const policy = foundationPolicy();
   const repositories = selectedRepositories(id, state);
   const repositoryMap = new Map(repositories.map((repository) =>
     [repository.id, repository]));
-  const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
-    .map(taskMetadata).filter((task) => !task.done);
-  const ids = new Set(tasks.map((task) => task.id));
+  const allTasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
+    .map(taskMetadata);
+  const tasks = allTasks.filter((task) => !task.done);
+  const ids = new Set(allTasks.map((task) => task.id));
+  const completed = new Set(allTasks.filter((task) => task.done)
+    .map((task) => task.id));
   for (const task of tasks) {
     if (!repositoryMap.has(task.repository))
       die(`task '${task.id}' references unselected repository '${task.repository}'`);
     const unknown = task.dependsOn.filter((dependency) => !ids.has(dependency));
     if (unknown.length)
-      die(`task '${task.id}' depends on unknown pending task(s): ${unknown.join(", ")}`);
+      die(`task '${task.id}' depends on unknown task(s): ${unknown.join(", ")}`);
     const repository = repositoryMap.get(task.repository);
     for (const dependencyRepository of repository.dependsOn || [])
       for (const dependencyTask of tasks.filter((candidate) =>
@@ -1313,10 +1349,9 @@ function agentPlanValue(id) {
       `workspace:${task.repository}`, ...task.resources
     ])].sort();
     task.model = modelForTask(id, task, policy);
-    task.packetCommand = `claude-foundation packet ${id} --repo ${task.repository} --task ${task.id}`;
+    task.packetCommand = `claude-foundation agents task ${id} ${task.id}`;
   }
   const pending = new Map(tasks.map((task) => [task.id, task]));
-  const completed = new Set();
   const groups = [];
   while (pending.size) {
     const ready = [...pending.values()].filter((task) =>
@@ -1338,10 +1373,15 @@ function agentPlanValue(id) {
     }
   }
   const claims = evidence(id).claims;
-  const singleAgent = repositories.length === 1 && tasks.length <= 2 &&
+  const singleAgent = tasks.length > 0 &&
+    repositories.length === 1 && tasks.length <= 2 &&
     !claims.some((claim) => (claim.repositories || []).length > 1) &&
     !tasks.some((task) => task.resources.some((resource) =>
       !resource.startsWith("workspace:")));
+  const tierRank = { fast: 0, standard: 1, deep: 2 };
+  const sessionTask = tasks.reduce((highest, task) =>
+    !highest || tierRank[task.model.tier] > tierRank[highest.model.tier]
+      ? task : highest, null);
   const conflicts = activeRepositoryConflicts(id, repositories);
   const blockingReasons = [
     ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
@@ -1349,7 +1389,7 @@ function agentPlanValue(id) {
       `repository ${conflict.repository} is active in ${conflict.changeId}`)
   ];
   const basePlan = {
-    version: 1,
+    version: Number(AGENT_PLAN_SCHEMA_VERSION),
     changeId: id,
     revision: Number(state.revision || 0),
     contractRevision: Number(state.contractRevision || 0),
@@ -1362,7 +1402,14 @@ function agentPlanValue(id) {
     })),
     tasks,
     groups,
-    recommendedExecution: singleAgent ? "single-agent" : "planned-agents",
+    recommendedExecution: tasks.length === 0
+      ? "proof-ready" : singleAgent ? "single-agent" : "planned-agents",
+    sessionModel: singleAgent ? sessionTask.model : null,
+    executionReason: tasks.length === 0
+      ? "all implementation tasks are complete"
+      : singleAgent
+        ? `one repository; highest required tier is ${sessionTask.model.tier}`
+        : "independent dependency/resource groups require planned dispatch",
     conflicts,
     blockingReasons,
     dispatchable: blockingReasons.length === 0,
@@ -1460,15 +1507,18 @@ function showAgentPlan(id, flags = {}) {
       taskDigest: ids.length > 12 ? stableHash(ids) : null
     }));
     visible = {
-      version: 1,
+      version: Number(AGENT_PLAN_SCHEMA_VERSION),
       changeId: id,
       planDigest: output.planDigest,
       planPath: relative(ROOT, path).replaceAll("\\", "/"),
       dispatchable: output.dispatchable,
-      blockingReasons: output.blockingReasons,
+      blockingReasons: compactStrings(output.blockingReasons, 10),
       recommendedExecution: output.recommendedExecution,
+      sessionModel: output.sessionModel,
+      executionReason: output.executionReason,
       repositoryCount: output.repositories.length,
-      repositories: output.repositories.map((repository) => repository.id),
+      repositories: compactStrings(
+        output.repositories.map((repository) => repository.id), 20),
       taskCount: output.tasks.length,
       modelCounts,
       groupCount: groupSummaries.length,
@@ -1482,12 +1532,17 @@ function showAgentPlan(id, flags = {}) {
           count: output.invalidatedTasks.length,
           digest: stableHash(output.invalidatedTasks)
         },
-      next: output.recommendedExecution === "single-agent"
-        ? `claude-foundation packet ${id} --task ${output.tasks[0]?.id || "T001"}`
-        : `claude-foundation agents plan ${id} --group 1`
+      next: !output.dispatchable
+        ? "resolve blockingReasons before dispatch"
+        : output.recommendedExecution === "proof-ready"
+          ? `claude-foundation proof readiness ${id}`
+          : output.recommendedExecution === "single-agent"
+            ? `claude-foundation agents task ${id} ${output.tasks[0].id}`
+            : `claude-foundation agents plan ${id} --group 1`
     };
   }
-  const encoded = JSON.stringify(visible);
+  visible.version = Number(AGENT_PLAN_SCHEMA_VERSION);
+  const encoded = serializedJson(visible, Boolean(flags.pretty));
   const limit = view === "summary"
     ? Number(foundationPolicy().execution.planSummaryBytes)
     : Number(foundationPolicy().execution.packetBytes.repository);
@@ -1496,14 +1551,19 @@ function showAgentPlan(id, flags = {}) {
   recordContextMetric(id, `agent-plan-${view}`, Buffer.byteLength(encoded), {
     tasks: output.tasks.length, repositories: output.repositories.length
   });
-  console.log(JSON.stringify(visible, null, 2));
+  process.stdout.write(encoded);
 }
 
-function showAgentTask(id, taskId) {
+function showAgentTask(id, taskId, flags = {}) {
   const plan = agentPlanValue(id);
+  if (!plan.dispatchable)
+    die(`change '${id}' is not dispatchable: ${plan.blockingReasons.join("; ")}`);
   const task = plan.tasks.find((candidate) => candidate.id === String(taskId || "").toUpperCase());
   if (!task) die(`unknown pending task '${taskId || ""}'`);
-  showPacket(id, { repo: task.repository, task: task.id });
+  showPacket(id, {
+    repo: task.repository, task: task.id,
+    pretty: flags.pretty, planDigest: plan.planDigest
+  });
 }
 
 function leasePath(resource) {
@@ -1613,7 +1673,7 @@ function cleanupChangeLeases(id) {
   if (existsSync(tasks)) rmSync(tasks, { recursive: true });
 }
 
-function validate(id, source = "root") {
+function validate(id, source = "root", options = {}) {
   const state = loadRuntime(id);
   if (state.status === "archived") die(`change '${id}' is already archived`);
   const dir = source === "active" ? activeChangePath(id, state) : changePath(id);
@@ -1644,6 +1704,7 @@ function validate(id, source = "root") {
   if (lifecycleTasks.length)
     die("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
   const claims = evidence(id, dir).claims;
+  const claimById = new Map(claims.map((claim) => [claim.id, claim]));
   const selectedRepositoryIds = new Set(selectedRepositories(id, state)
     .map((repository) => repository.id));
   for (const claim of claims) {
@@ -1656,6 +1717,20 @@ function validate(id, source = "root") {
     if ((claim.repositories || []).length > 1 &&
         !claim.capabilities.includes("cross-repo-contract"))
       die(`claim '${claim.id}' spans repositories and requires cross-repo-contract`);
+  }
+  for (const task of parsedTasks) {
+    const metadata = taskMetadata(task);
+    if (metadata.claims.length > 50)
+      die(`task '${task.id}' references more than 50 claims`);
+    const unknownClaims = metadata.claims.filter((claim) => !claimById.has(claim));
+    if (unknownClaims.length)
+      die(`task '${task.id}' references unknown claim(s): ${unknownClaims.join(", ")}`);
+    const outOfScopeClaims = metadata.claims.filter((claimId) => {
+      const repositories = claimById.get(claimId)?.repositories || [];
+      return repositories.length > 0 && !repositories.includes(metadata.repository);
+    });
+    if (outOfScopeClaims.length)
+      die(`task '${task.id}' references claim(s) outside repository '${metadata.repository}': ${outOfScopeClaims.join(", ")}`);
   }
   const selected = selectedRepositories(id, state);
   if (selected.length > 1) {
@@ -1691,7 +1766,8 @@ function validate(id, source = "root") {
       console.error(`WARNING: ${name} is ${words} words (soft budget ${limit}); retain only load-bearing content`);
   }
   saveRuntime(state);
-  console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)`);
+  if (!options.quiet)
+    console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)`);
 }
 
 function requiredProviders(id) {
@@ -1854,7 +1930,7 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
 }
 
 function proofPlan(id) {
-  validate(id, "active");
+  validate(id, "active", { quiet: true });
   const hash = relevantHash(id);
   const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
   console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
@@ -1965,7 +2041,7 @@ function changedSurfaceIssues(id) {
 }
 
 function proofReadinessValue(id, stage = "prove") {
-  validate(id, "active");
+  validate(id, "active", { quiet: true });
   const issues = topologyIssues(id);
   if (stage === "prove") issues.push(...changedSurfaceIssues(id));
   const hash = relevantHash(id);
@@ -2876,7 +2952,7 @@ async function proofRun(id) {
 function prove(id, requestedProofRunId = null) {
   const stateBefore = loadRuntime(id);
   if (stateBefore.status === "archived") die(`change '${id}' is already archived`);
-  validate(id, "active");
+  validate(id, "active", { quiet: true });
   const surfaceIssues = changedSurfaceIssues(id);
   if (surfaceIssues.length)
     die(`changed-surface authority failed: ${surfaceIssues.join("; ")}`);
@@ -3364,7 +3440,7 @@ function mergeTaskProgress(source, sandbox) {
 }
 
 function syncSandbox(id) {
-  validate(id);
+  validate(id, "root", { quiet: true });
   const state = loadRuntime(id);
   const workspace = state.workspace;
   if (!workspace || !["worktree", "copy"].includes(workspace.mode) ||
@@ -4038,19 +4114,28 @@ function packetValue(id, repositoryId = null, taskId = null) {
   if (selectedTask && repository && selectedTask.repository !== repository.id)
     die(`task '${selectedTask.id}' is not assigned to repository '${repository.id}'`);
   const packetType = selectedTask ? "task" : repository ? "repository" : "global";
+  const declaredClaimIds = new Set(contract.claims.map((claim) => claim.id));
+  const unknownTaskClaims = (selectedTask?.claims || [])
+    .filter((claim) => !declaredClaimIds.has(claim));
+  if (unknownTaskClaims.length)
+    die(`task '${selectedTask.id}' references unknown claim(s): ${unknownTaskClaims.join(", ")}`);
   const claims = contract.claims.filter((claim) => {
     if (selectedTask?.claims.length)
       return selectedTask.claims.includes(claim.id);
     return !repository || !claim.repositories ||
       claim.repositories.includes(repository.id);
   });
+  if (selectedTask && claims.length === 0 &&
+      !["inventory", "logs", "mechanical-docs"].includes(selectedTask.kind))
+    die(`task '${selectedTask.id}' has no claims in repository '${selectedTask.repository}'`);
   const claimIds = new Set(claims.map((claim) => claim.id));
-  const compositeSnapshot = relevantSnapshot(id);
+  const compositeSnapshot = repository
+    ? readJson(snapshotPath(id), {})
+    : relevantSnapshot(id);
   const hash = repository
-    ? compositeSnapshot.repositories?.[repository.id]?.workspaceHash ||
-      singleRelevantSnapshot(id, repository.workspacePath).workspaceHash
+    ? singleRelevantSnapshot(id, repository.workspacePath).workspaceHash
     : compositeSnapshot.workspaceHash;
-  const providers = requiredProviders(id).map((provider) => {
+  const providerRows = requiredProviders(id).map((provider) => {
     const check = receiptValidity(id, provider, hash);
     const config = providerConfig(id, provider);
     return {
@@ -4065,6 +4150,8 @@ function packetValue(id, repositoryId = null, taskId = null) {
       const covered = claimsForProvider(id, provider.provider).map((claim) => claim.id);
       return covered.length === 0 || covered.some((claim) => claimIds.has(claim));
     });
+  if (selectedTask && claims.length > 0 && providerRows.length === 0)
+    die(`task '${selectedTask.id}' has no provider coverage`);
   let fileChanges = repository
     ? changedFilesInWorkspace(id, repository.workspacePath)
     : changedFiles(id, state);
@@ -4087,9 +4174,19 @@ function packetValue(id, repositoryId = null, taskId = null) {
   const scopedTasks = allTasks.filter((task) =>
     (!repository || task.repository === repository.id) &&
     (!selectedTask || task.id === selectedTask.id));
+  const taskRows = scopedTasks.map((task) => ({
+    id: task.id, done: task.done, kind: task.kind,
+    dependsOn: task.dependsOn,
+    paths: compactStrings(task.paths, 20),
+    resources: compactStrings(task.resources, 20),
+    ...(packetType === "task" ? {
+      text: task.text, claims: task.claims, model: modelForTask(id, task)
+    } : {})
+  }));
   const taskPayload = packetType === "global" ? {
     count: scopedTasks.length,
     pending: scopedTasks.filter((task) => !task.done).length,
+    completed: scopedTasks.filter((task) => task.done).length,
     byRepository: Object.entries(scopedTasks.reduce((counts, task) => {
       counts[task.repository] = (counts[task.repository] || 0) + 1;
       return counts;
@@ -4099,14 +4196,7 @@ function packetValue(id, repositoryId = null, taskId = null) {
       id: task.id, done: task.done, repository: task.repository,
       dependsOn: task.dependsOn
     })))
-  } : scopedTasks.map((task) => ({
-    id: task.id, done: task.done, kind: task.kind,
-    dependsOn: task.dependsOn, paths: task.paths,
-    resources: task.resources,
-    ...(packetType === "task" ? {
-      text: task.text, claims: task.claims, model: modelForTask(id, task)
-    } : {})
-  }));
+  } : compactList(taskRows, packetType === "task" ? 1 : 40);
   const artifactReferences = {};
   for (const name of [
     "proposal.md", "design.md", "tasks.md", "evidence.yaml",
@@ -4127,8 +4217,22 @@ function packetValue(id, repositoryId = null, taskId = null) {
     };
   const invariantValues = Array.isArray(contract.invariants)
     ? contract.invariants.map((value) => String(value)) : [];
+  const claimRows = claims.map((claim) => ({
+    id: claim.id,
+    ...(packetType === "global"
+      ? { scenarioDigest: stableHash(String(claim.scenario)) }
+      : { scenario: String(claim.scenario)
+        .slice(0, packetType === "task" ? 500 : 240) }),
+    capabilities: compactStrings(claim.capabilities, 12),
+    repositories: claim.repositories
+      ? compactStrings(claim.repositories, 12) : null
+  }));
+  const providers = compactList(providerRows, 30);
+  const claimPayload = compactList(
+    claimRows, packetType === "task" ? 20 : packetType === "repository" ? 25 : 40);
   const packet = {
-    version: 3, packetType, changeId: id, intent: state.intent, schema: state.schema,
+    version: Number(PACKET_SCHEMA_VERSION),
+    packetType, changeId: id, intent: state.intent, schema: state.schema,
     status: state.status, revision: Number(state.revision || 0),
     contractRevision: Number(state.contractRevision || 0),
     executionRevision: Number(state.executionRevision || 0),
@@ -4142,18 +4246,10 @@ function packetValue(id, repositoryId = null, taskId = null) {
     } : null,
     workspacePath: repository?.workspacePath || state.workspace?.path || ROOT,
     workspaceHash: hash,
-    compositeWorkspaceHash: compositeSnapshot.workspaceHash,
+    compositeWorkspaceHash: compositeSnapshot.workspaceHash || null,
     pendingTaskCount: scopedTasks.filter((task) => !task.done).length,
     tasks: taskPayload,
-    claims: claims.map((claim) => ({
-      id: claim.id,
-      ...(packetType === "global"
-        ? { scenarioDigest: stableHash(String(claim.scenario)) }
-        : { scenario: String(claim.scenario)
-          .slice(0, packetType === "task" ? 500 : 240) }),
-      capabilities: claim.capabilities,
-      repositories: claim.repositories || null
-    })),
+    claims: claimPayload,
     providers, changedFiles: changedFileSummary,
     invariants: packetType === "global" ? {
       count: invariantValues.length,
@@ -4163,67 +4259,125 @@ function packetValue(id, repositoryId = null, taskId = null) {
     references: artifactReferences,
     budget: state.budget
   };
-  const result = { ...packet, packetDigest: stableHash(packet) };
-  const encoded = JSON.stringify(result);
-  const bytes = Buffer.byteLength(encoded);
-  const limit = Number(foundationPolicy().execution.packetBytes[packetType]);
-  if (bytes > limit) {
-    const fields = Object.entries(result).map(([field, value]) => ({
-      field, bytes: Buffer.byteLength(JSON.stringify(value))
-    })).sort((left, right) => right.bytes - left.bytes).slice(0, 5);
-    die(`${packetType} packet exceeds ${limit} bytes (${bytes}); largest fields: ${
-      fields.map((field) => `${field}=${field.bytes}`).join(", ")
-    }; split claims/tasks or use referenced artifacts`);
-  }
-  recordContextMetric(id, `packet-${packetType}`, bytes, {
-    repositoryId: repository?.id || null,
-    taskId: selectedTask?.id || null,
-    claims: claims.length,
-    providers: providers.length
-  });
-  return result;
+  return { ...packet, packetDigest: stableHash(packet) };
 }
 
 function showPacket(id, flags = {}) {
-  console.log(JSON.stringify(packetValue(id, flags.repo || null, flags.task || null), null, 2));
+  const value = packetValue(id, flags.repo || null, flags.task || null);
+  if (flags.planDigest) value.planDigest = flags.planDigest;
+  const encoded = serializedJson(value, Boolean(flags.pretty));
+  const bytes = Buffer.byteLength(encoded);
+  const limit = Number(foundationPolicy().execution.packetBytes[value.packetType]);
+  if (bytes > limit) {
+    const fields = Object.entries(value).map(([field, fieldValue]) => ({
+      field, bytes: Buffer.byteLength(JSON.stringify(fieldValue))
+    })).sort((left, right) => right.bytes - left.bytes).slice(0, 5);
+    die(`${value.packetType} packet exceeds ${limit} bytes (${bytes}); largest fields: ${
+      fields.map((entry) => `${entry.field}=${entry.bytes}`).join(", ")
+    }; narrow the task or inspect referenced artifacts`);
+  }
+  recordContextMetric(id, `packet-${value.packetType}`, bytes, {
+    repositoryId: value.repository?.id || null,
+    taskId: flags.task || null,
+    claims: Array.isArray(value.claims) ? value.claims.length : value.claims.count,
+    providers: Array.isArray(value.providers) ? value.providers.length : value.providers.count
+  });
+  process.stdout.write(encoded);
 }
 
 function recordContextMetric(id, kind, bytes, details = {}) {
-  const path = join(LOGS, id, "context.jsonl");
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify({
-    version: 1, changeId: id, kind, bytes, ...details, timestamp: now()
-  })}\n`);
+  try {
+    const dir = join(LOGS, id, "context-events");
+    mkdirSync(dir, { recursive: true });
+    const event = {
+      version: Number(CONTEXT_EVENT_SCHEMA_VERSION),
+      changeId: id, kind, bytes, ...details, timestamp: now()
+    };
+    const name = `${Date.now()}-${process.pid}-${stableHash(event).slice(0, 12)}.json`;
+    writeJson(join(dir, name), event);
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => entry.name).sort();
+    if (entries.length > 1000) {
+      const lockPath = join(LOGS, id, "context-rollup.lock");
+      let lock = null;
+      try {
+        try {
+          lock = openSync(lockPath, "wx");
+        } catch {
+          if (existsSync(lockPath) &&
+              Date.now() - statSync(lockPath).mtimeMs > 300000) {
+            rmSync(lockPath, { force: true });
+            lock = openSync(lockPath, "wx");
+          }
+        }
+        if (lock !== null) {
+          const rollupPath = join(LOGS, id, "context-rollup.json");
+          const rollup = readJson(rollupPath, {
+            version: 1, changeId: id, count: 0, totalBytes: 0, byKind: {}
+          });
+          for (const entry of entries.slice(0, 500)) {
+            const path = join(dir, entry);
+            const row = readJson(path, {});
+            if (row.kind && Number.isFinite(Number(row.bytes))) {
+              rollup.count += 1;
+              rollup.totalBytes += Number(row.bytes);
+              const summary = rollup.byKind[row.kind] ||= {
+                count: 0, totalBytes: 0, maxBytes: 0
+              };
+              summary.count += 1;
+              summary.totalBytes += Number(row.bytes);
+              summary.maxBytes = Math.max(summary.maxBytes, Number(row.bytes));
+            }
+            rmSync(path, { force: true });
+          }
+          rollup.updatedAt = now();
+          writeJson(rollupPath, rollup);
+        }
+      } finally {
+        if (lock !== null) closeSync(lock);
+        if (lock !== null) rmSync(lockPath, { force: true });
+      }
+    }
+  } catch (error) {
+    if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
+      console.error(`WARNING: context telemetry unavailable: ${error.message}`);
+  }
 }
 
 function recordPhaseContext(id, phase) {
-  const path = join(LOGS, id, "phase-context.jsonl");
-  const prior = readJsonLines(path).at(-1) || null;
-  const host = claudeHostContext();
-  const sessionId = host?.sessionId || process.env.FOUNDATION_SESSION_ID || null;
-  const recommendedTier = {
-    change: "deep",
-    build: "standard",
-    prove: "fast",
-    land: "fast"
-  }[phase] || "standard";
-  const contextMode = !sessionId ? "unavailable" :
-    !prior?.sessionId ? "initial" :
-    prior.sessionId === sessionId ? "retained" : "fresh";
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify({
-    version: 1,
-    changeId: id,
-    phase,
-    sessionId,
-    contextMode,
-    recommendedModelTier: recommendedTier,
-    actualModel: process.env.FOUNDATION_MODEL_ID || null,
-    trigger: process.env.FOUNDATION_PHASE_TRIGGER || null,
-    priorPhase: prior?.phase || null,
-    priorSessionId: prior?.sessionId || null,
-    timestamp: now()
-  })}\n`);
+  try {
+    const path = join(LOGS, id, "phase-context.jsonl");
+    const prior = readJsonLinesTolerant(path).at(-1) || null;
+    const host = claudeHostContext();
+    const sessionId = host?.sessionId || process.env.FOUNDATION_SESSION_ID || null;
+    const recommendedTier = {
+      change: "deep",
+      build: "standard",
+      prove: "fast",
+      land: "fast"
+    }[phase] || "standard";
+    const contextMode = !sessionId ? "unavailable" :
+      !prior?.sessionId ? "initial" :
+      prior.sessionId === sessionId ? "retained" : "fresh";
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, `${JSON.stringify({
+      version: 1,
+      changeId: id,
+      phase,
+      sessionId,
+      contextMode,
+      recommendedModelTier: recommendedTier,
+      actualModel: process.env.FOUNDATION_MODEL_ID || null,
+      trigger: process.env.FOUNDATION_PHASE_TRIGGER || null,
+      priorPhase: prior?.phase || null,
+      priorSessionId: prior?.sessionId || null,
+      timestamp: now()
+    })}\n`);
+  } catch (error) {
+    if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
+      console.error(`WARNING: phase telemetry unavailable: ${error.message}`);
+  }
 }
 
 function recordEvent(id, flags) {
@@ -4543,6 +4697,34 @@ function readJsonLines(path) {
   });
 }
 
+function readJsonLinesTolerant(path) {
+  if (!existsSync(path)) return [];
+  const rows = [];
+  for (const line of readFileSync(path, "utf8").split("\n").filter(Boolean)) {
+    try { rows.push(JSON.parse(line)); }
+    catch {
+      if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
+        console.error(`WARNING: skipped invalid telemetry row in ${relative(ROOT, path)}`);
+    }
+  }
+  return rows;
+}
+
+function contextMetricState(id) {
+  const rows = readJsonLinesTolerant(join(LOGS, id, "context.jsonl"));
+  const dir = join(LOGS, id, "context-events");
+  if (existsSync(dir))
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const row = readJson(join(dir, entry.name), {});
+      if (row.kind && Number.isFinite(Number(row.bytes))) rows.push(row);
+    }
+  const rollup = readJson(join(LOGS, id, "context-rollup.json"), {
+    count: 0, totalBytes: 0, byKind: {}
+  });
+  return { rows, rollup };
+}
+
 function sumKnown(rows, field) {
   const values = rows.map((row) => row[field]).filter((value) =>
     value !== null && value !== undefined && Number.isFinite(Number(value)));
@@ -4553,7 +4735,9 @@ function showMetrics(id) {
   loadRuntime(id);
   const operations = readJsonLines(join(LOGS, id, "operations.jsonl"));
   const events = readJsonLines(join(LOGS, id, "events.jsonl"));
-  const contextRows = readJsonLines(join(LOGS, id, "context.jsonl"));
+  const contextState = contextMetricState(id);
+  const contextRows = contextState.rows;
+  const contextRollup = contextState.rollup;
   const phaseContextRows = readJsonLines(join(LOGS, id, "phase-context.jsonl"));
   const reuseRows = readJsonLines(join(LOGS, id, "reuse.jsonl"));
   const phases = {};
@@ -4631,8 +4815,19 @@ function showMetrics(id) {
         maxBytes: sorted.at(-1) || 0
       }];
     }));
-  const contextBytes = contextRows.length
-    ? contextRows.reduce((sum, row) => sum + Number(row.bytes || 0), 0) : null;
+  for (const [kind, archived] of Object.entries(contextRollup.byKind || {})) {
+    const summary = context[kind] ||= {
+      count: 0, totalBytes: 0, medianBytes: null, p95Bytes: null, maxBytes: 0
+    };
+    summary.count += Number(archived.count || 0);
+    summary.totalBytes += Number(archived.totalBytes || 0);
+    summary.maxBytes = Math.max(summary.maxBytes || 0, Number(archived.maxBytes || 0));
+    summary.archivedCount = Number(archived.count || 0);
+  }
+  const currentContextBytes = contextRows.reduce(
+    (sum, row) => sum + Number(row.bytes || 0), 0);
+  const contextBytes = contextRows.length || Number(contextRollup.count || 0)
+    ? currentContextBytes + Number(contextRollup.totalBytes || 0) : null;
   const operationActiveTimeMs = operations.length
     ? operations.reduce((sum, row) => sum + Number(row.durationMs || 0), 0) : null;
   const evidenceExecutionTimeMs = executions.size
@@ -4673,6 +4868,8 @@ function showMetrics(id) {
       totalBytes: contextBytes,
       estimatedTokens: contextBytes === null ? null : Math.ceil(contextBytes / 4),
       byKind: context,
+      retainedEvents: contextRows.length,
+      archivedEvents: Number(contextRollup.count || 0),
       phaseTransitions: phaseContextRows,
       modes: contextModes
     },
@@ -4709,11 +4906,16 @@ function doctor(flags = {}) {
   const protocolOk = String(protocols.runtimeApi) === RUNTIME_API_VERSION &&
     String(protocols.providerProtocol) === PROVIDER_PROTOCOL_VERSION &&
     String(protocols.adapterProtocol) === ADAPTER_PROTOCOL_VERSION &&
-    String(protocols.proofProtocol) === PROOF_PROTOCOL_VERSION;
+    String(protocols.proofProtocol) === PROOF_PROTOCOL_VERSION &&
+    String(protocols.packetSchema) === PACKET_SCHEMA_VERSION &&
+    String(protocols.agentPlanSchema) === AGENT_PLAN_SCHEMA_VERSION &&
+    String(protocols.contextEventSchema) === CONTEXT_EVENT_SCHEMA_VERSION;
   checks.push({
     level: protocolOk ? "ok" : "error",
     name: "protocol-bundle",
-    detail: protocolOk ? `runtime API ${RUNTIME_API_VERSION}; provider ${PROVIDER_PROTOCOL_VERSION}; proof ${PROOF_PROTOCOL_VERSION}` :
+    detail: protocolOk
+      ? `runtime API ${RUNTIME_API_VERSION}; provider ${PROVIDER_PROTOCOL_VERSION}; proof ${PROOF_PROTOCOL_VERSION}; packet ${PACKET_SCHEMA_VERSION}; plan ${AGENT_PLAN_SCHEMA_VERSION}; context ${CONTEXT_EVENT_SCHEMA_VERSION}`
+      :
       "protocol.json is incompatible with foundation.mjs; reinstall Foundation"
   });
   const catalog = repositoryCatalog();
@@ -4729,6 +4931,14 @@ function doctor(flags = {}) {
     level: "ok",
     name: "model-policy",
     detail: `fast=${modelPolicy.models.fast.family}; standard=${modelPolicy.models.standard.family}; deep=${modelPolicy.models.deep.family}; max-parallel=${modelPolicy.execution.maxParallelAgents}`
+  });
+  checks.push({
+    level: modelPolicy.execution.legacyNumericPacketBytes === undefined
+      ? "ok" : "warn",
+    name: "packet-policy",
+    detail: modelPolicy.execution.legacyNumericPacketBytes === undefined
+      ? `task=${modelPolicy.execution.packetBytes.task}; repository=${modelPolicy.execution.packetBytes.repository}; global=${modelPolicy.execution.packetBytes.global}`
+      : `legacy numeric limit ${modelPolicy.execution.legacyNumericPacketBytes}; migrate to scoped task/repository/global limits`
   });
 
   const openspec = spawnSync("openspec", ["--version"], { cwd: ROOT, encoding: "utf8" });
@@ -4885,15 +5095,15 @@ Commands:
   doctor [--stage change|build|prove] [--require-archive] [--change <id>]
   repos [change]
   models
-  agent-plan <change> [--group <n>] [--full]
-  agent-task <change> <task>
+  agent-plan <change> [--group <n>] [--full] [--pretty]
+  agent-task <change> <task> [--pretty]
   agent-acquire <change> <task> --owner <agent-id>
   agent-release <change> <task> --owner <agent-id>
   new <intent> [--id <id>] [--rapid] [--draft <project-file.json>]
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
   changes
   providers
-  packet <change> [--phase change|build|prove|land] [--repo <id>] [--task <id>]
+  packet <change> [--phase change|build|prove|land] [--repo <id>] [--task <id>] [--pretty]
   metrics <change>
   validate <change>
   hash <change>
@@ -4970,7 +5180,10 @@ switch (command) {
     const { flags, rest } = parseFlags(values);
     showAgentPlan(rest[0], flags); break;
   }
-  case "agent-task": showAgentTask(values[0], values[1]); break;
+  case "agent-task": {
+    const { flags, rest } = parseFlags(values);
+    showAgentTask(rest[0], rest[1], flags); break;
+  }
   case "agent-acquire": {
     const { flags, rest } = parseFlags(values);
     acquireAgentLease(rest[0], rest[1], flags); break;

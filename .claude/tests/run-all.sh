@@ -16,6 +16,10 @@ run() {
 
 run "runtime syntax" node --check "$ROOT/.claude/harness/foundation.mjs"
 run "context budgets" sh "$HERE/harness/run-context-budget-tests.sh"
+run "agent contracts" sh "$HERE/harness/run-agent-contract-tests.sh"
+run "packet scaling" sh "$HERE/harness/run-packet-scaling-tests.sh"
+run "telemetry concurrency" sh "$HERE/harness/run-telemetry-concurrency-tests.sh"
+run "upgrade compatibility" sh "$HERE/harness/run-upgrade-compat-tests.sh"
 run "harness contracts" sh "$HERE/harness/run-harness-tests.sh"
 run "installer smoke" sh "$HERE/harness/run-installer-tests.sh"
 run "current hook contracts" sh "$HERE/hooks/run-hook-tests.sh"

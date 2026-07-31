@@ -95,15 +95,16 @@ Usage:
   claude-foundation providers                     List evidence provider contracts
   claude-foundation repos [change]                Inspect repository topology and selection
   claude-foundation models                        Show model-tier routing policy
-  claude-foundation agents plan <change> [--group <n>]
+  claude-foundation agents plan <change> [--group <n>] [--pretty]
                                                   Summarize or inspect one execution group
-  claude-foundation agents task <change> <task>   Print one task-scoped packet
+  claude-foundation agents task <change> <task> [--pretty]
+                                                  Print one task-scoped packet
   claude-foundation agents acquire|release <change> <task> --owner <agent-id>
                                                   Hold or release task resource leases
   claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>]
                                                   Check runtime, providers, and archive readiness
   claude-foundation changes                       List active changes
-  claude-foundation packet <change> [--repo <id>] [--task <id>]
+  claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
                                                   Print a compact scoped handoff
   claude-foundation metrics <change>              Summarize measured phase/provider cost
   claude-foundation telemetry sync <change> [transcript.jsonl]

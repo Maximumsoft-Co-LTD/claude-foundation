@@ -68,14 +68,14 @@ assert_cmd_zero "native CLI discovers project from a subdirectory" \
 
 bash "$ROOT/cli.sh" --project "$TARGET" runtime new "CLI proof route" --rapid >/dev/null
 packet="$(bash "$ROOT/cli.sh" --project "$TARGET" packet cli-proof-route)"
-assert_contains "native CLI exposes compact handoff packet" "$packet" '"changeId": "cli-proof-route"'
+assert_contains "native CLI exposes compact handoff packet" "$packet" '"changeId":"cli-proof-route"'
 plan="$(bash "$ROOT/cli.sh" --project "$TARGET" agents plan cli-proof-route)"
 assert_contains "native CLI exposes summary-first agent plan" \
-  "$plan" '"recommendedExecution": "single-agent"'
+  "$plan" '"recommendedExecution":"single-agent"'
 task_packet="$(bash "$ROOT/cli.sh" --project "$TARGET" agents task \
   cli-proof-route T001)"
 assert_contains "native CLI exposes task-scoped packet" \
-  "$task_packet" '"packetType": "task"'
+  "$task_packet" '"packetType":"task"'
 assert_file_exists "native CLI records operation telemetry" \
   "$TARGET/.foundation/logs/cli-proof-route/operations.jsonl"
 assert_file_contains "unknown host usage remains null" \

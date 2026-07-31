@@ -101,11 +101,11 @@ native CLI:
 claude-foundation providers
 claude-foundation repos [change]
 claude-foundation models
-claude-foundation agents plan <change> [--group <n>]
-claude-foundation agents task <change> <task>
+claude-foundation agents plan <change> [--group <n>] [--pretty]
+claude-foundation agents task <change> <task> [--pretty]
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation packet <change> [--repo <id>] [--task <id>]
+claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
 claude-foundation metrics <change>
 claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
@@ -138,6 +138,12 @@ state, task counts, hashes, and budget—not the accumulated conversation.
 Packets are capped by scope: task 8 KiB, repository 12 KiB, and global 16 KiB.
 Large artifacts remain in files addressed by path and SHA-256. The phase flag
 also incrementally closes the previous phase's request telemetry.
+Machine JSON is compact by default so the configured limit equals the bytes
+actually handed to an agent; add `--pretty` only for interactive inspection.
+Packet schema 4 and agent-plan schema 2 let consumers branch explicitly.
+Large task, claim, provider, and repository collections degrade to bounded
+previews with counts, digests, and task-scoped expansion rather than raising
+the context limit.
 
 `metrics <change>` summarizes measured wall time, phase operations, unique
 provider executions, requests, input/output tokens, cache creation/read tokens,
@@ -171,7 +177,10 @@ Multi-repository tasks remain in `tasks.md` and use compact annotations:
 `agents plan` writes the complete plan to `.foundation/plans/` but prints only
 a summary capped at 4 KiB. Use `agents plan <change> --group <n>` to inspect one
 dispatch group and `agents task <change> <task>` to obtain one worker's scoped
-packet. Changes with one repository and at most two ordinary tasks recommend a
+packet. Completed dependencies remain valid on resume; an all-complete plan
+returns `proof-ready`. Task packets are denied when task claims are unknown,
+outside the selected repository, or lack an executable evidence provider.
+Changes with one repository and at most two ordinary tasks recommend a
 single agent, avoiding planning/spawn overhead. `foundation.json` maps portable
 `fast`, `standard`, and `deep` tiers to
 Haiku, Sonnet, and Opus by default. Mechanical inventory/log work uses fast,
@@ -179,6 +188,12 @@ normal implementation uses standard, and architecture, security, migration, or
 independent review uses deep. High-risk work cannot be downgraded to fast. The
 native host spawns agents; Foundation supplies scoped packets and never grants
 commit, push, or Land authority.
+
+Load one primary construction skill for the layer being changed. Add security
+or observability only when the trust boundary or operational behavior requires
+it, and read only the matching focused reference. This composition keeps
+cross-cutting quality without loading the full backend skill chain on every
+request.
 
 Providers may declare `repository` in `execution.yaml`. Their commands run in
 that repository sandbox and receipts bind to that repository snapshot, so an

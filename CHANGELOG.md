@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bounded agent contracts** — compact JSON now measures the exact emitted
+  bytes, packet schema 4 and plan schema 2 expose compatibility explicitly,
+  large collections degrade to previews/digests, and task dispatch rejects
+  claims outside repository or provider authority.
+- **Resume-safe model routing** — completed dependencies remain satisfied,
+  complete plans route to proof, and mixed work reports the deepest model tier
+  required by the session.
+- **Concurrent-safe context accounting** — plan and packet metrics use
+  best-effort atomic events, tolerate legacy or malformed rows, and roll older
+  events into a bounded summary without blocking agent handoff.
+- **Upgrade-safe packet policy** — install migrates only the exact former
+  64 KiB default to scoped 8/12/16 KiB limits, preserves custom numeric values
+  with a doctor warning, and deep-merges partial scoped configuration.
+- **Composable skill context** — hot backend skills are concise and the rules
+  select one primary construction skill plus triggered security or
+  observability guidance instead of loading every layer.
 - **Faster, integrity-bound proof path** — typed `proof readiness` blockers and
   atomic `proof run` remove repeated orchestration; declared provider inputs
   permit safe scoped reuse, while external passes require inspectable

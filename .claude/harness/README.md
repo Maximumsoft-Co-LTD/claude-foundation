@@ -56,13 +56,13 @@ claude-foundation doctor --stage prove --change <change>
 | `providers` | Lists supported evidence contracts | Choosing evidence for a change |
 | `repos [change]` | Shows discovered topology, drift, and change selection | Setting up or diagnosing multi-repo work |
 | `models` | Shows portable model-tier mappings | Reviewing cost/quality routing |
-| `agents plan <change> [--group <n>]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
-| `agents task <change> <task>` | Prints a ≤8 KiB task packet with its model and authority | Starting one worker |
+| `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
+| `agents task <change> <task> [--pretty]` | Prints a ≤8 KiB task packet with its model and authority | Starting one worker |
 | `agents acquire/release ...` | Holds atomic task resource leases with bounded expiry | Around each spawned worker |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact handoff and closes prior-phase telemetry | Starting Build or Prove without replaying history |
-| `packet <change> --repo <id> [--task <id>]` | Prints a bounded repository or task packet | Starting a native subagent |
+| `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
 | `telemetry sync <change> [transcript]` | Incrementally imports native Claude request usage | Manual sync or host-integration fallback |
 | `telemetry import <change> <file>` | Imports deduplicated generic, Codex, or Claude host usage | Attributing request/token/cost to orchestration |
@@ -112,6 +112,13 @@ summary, or one group selected with `--group`. `agents task` emits only the
 chosen task's claims, files, providers, and model. A small one-repository change
 recommends one agent. The plan is advice and bounded authority for the native
 host; the harness does not invoke a model itself.
+
+JSON output is compact by default and `--pretty` is inspection-only. Plan
+schema 2 resumes dependencies satisfied by completed tasks, reports
+`proof-ready` after all tasks complete, and declares the deepest model required
+by a mixed session. Packet schema 4 rejects unknown, cross-repository, or
+providerless task claims. Large collections are previews plus counts and
+digests; use the task packet as the authoritative expansion.
 
 Multiple remotes use ordered saga states rather than an atomicity claim.
 Foundation verifies explicit child commits, optional CI state, dependency
@@ -248,9 +255,13 @@ claude-foundation metrics <change>
 
 Context is budgeted at the control surface: plan summaries are at most 4 KiB,
 task packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.
-Oversized artifacts are referenced by path and digest. Every emitted plan and
-packet records its byte count in `.foundation/logs/<change>/context.jsonl`;
-`metrics` reports totals, estimated tokens, median, p95, and maximum by kind.
+Oversized artifacts are referenced by path and digest. The budget covers the
+exact compact bytes written to stdout. Every emitted plan and packet records
+its byte count as an atomic event below
+`.foundation/logs/<change>/context-events/`; old events roll into a bounded
+summary. Telemetry is best-effort and cannot block packet delivery. `metrics`
+tolerates legacy/malformed rows and reports totals, estimated tokens, retained
+and archived event counts, median, p95, and maximum by kind.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
 hook exposes only `session_id` and `transcript_path` to later Foundation

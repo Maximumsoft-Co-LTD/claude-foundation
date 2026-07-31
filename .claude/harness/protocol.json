@@ -5,5 +5,8 @@
   "executionSchema": "1",
   "providerProtocol": "6",
   "adapterProtocol": "4",
-  "proofProtocol": "4"
+  "proofProtocol": "4",
+  "packetSchema": "4",
+  "agentPlanSchema": "2",
+  "contextEventSchema": "2"
 }
