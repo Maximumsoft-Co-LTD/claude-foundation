@@ -98,9 +98,12 @@ Slash commands ใช้ควบคุม AI workflow ส่วน deterministi
 
 ```bash
 claude-foundation providers
+claude-foundation repos [change]
+claude-foundation models
+claude-foundation agents plan <change>
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation packet <change>
+claude-foundation packet <change> [--repo <id>] [--task <id>]
 claude-foundation metrics <change>
 claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
@@ -112,8 +115,12 @@ claude-foundation proof audit <change>
 claude-foundation proof finalize <change>
 claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
-claude-foundation sandbox create <change>
+claude-foundation sandbox create <change> [--all]
 claude-foundation land check <change>
+claude-foundation land plan <change>
+claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
+claude-foundation land pointers <change>
+claude-foundation land resume <change>
 ```
 
 CLI จะค้น project จาก directory ปัจจุบันหรือ `--project <path>` แล้วใช้ runtime
@@ -135,6 +142,45 @@ share จากข้อมูลที่วัดได้ สำหรับ 
 เปลี่ยน phase โดยไม่วัด token ที่ `PostToolUse`, ไม่คัดลอก prompt หรือ tool
 payload และรวม transcript ของ subagent ด้วย ถ้า session hook ยังไม่ทำงานให้ใช้
 `telemetry sync` เอง field ที่ยังไม่มี authoritative source จะคงเป็น `null`
+
+## Control plane สำหรับหลาย repository
+
+`openspec/repositories.yaml` คือ topology ที่เก็บถาวร ระบบค้น Git submodule
+ให้อัตโนมัติและแจ้ง drift จนกว่าจะ review role, dependency และ access mode
+ของมัน ส่วน `repositories.yaml` ภายในแต่ละ Change เลือกเฉพาะ repository ที่
+Change นั้นอ่านหรือเขียนได้ ถ้าไม่มี manifest จะทำงานแบบ single `root`
+เหมือนเดิม
+Path นอก control root จะถูกปฏิเสธ เว้นแต่ repository entry ที่ commit ไว้ระบุ
+`allowOutsideRoot: true` อย่างชัดเจนสำหรับ sibling Git repository ที่ไว้ใจ
+
+Tasks ยังมี ledger เดียวใน `tasks.md` และเพิ่ม annotation แบบสั้น:
+
+```markdown
+- [ ] **T001** Inspect API [repo:api] [kind:inventory] [paths:internal/profile]
+- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001]
+- [ ] **T003** Implement App [repo:app] [kind:implementation] [depends:T002]
+- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
+```
+
+`agents plan` แปลง task และ repository dependencies เป็นกลุ่มที่ทำขนานกันได้
+โดยมีเพดาน `foundation.json` ใช้ tier แบบ portable คือ `fast`, `standard`,
+`deep` ซึ่ง default เป็น Haiku, Sonnet และ Opus ตามลำดับ งาน inventory/log
+เชิงกลใช้ fast, implementation ปกติใช้ standard และ architecture, security,
+migration หรือ independent review ใช้ deep งานเสี่ยงสูงห้ามลดลง fast ตัว
+native host เป็นผู้ spawn agent ส่วน Foundation ให้ packet เฉพาะ repo/task
+และไม่มอบสิทธิ์ commit, push หรือ Land
+
+Provider ใน `execution.yaml` ระบุ `repository` ได้ คำสั่งจะรันใน sandbox ของ
+repo นั้นและ receipt ผูกกับ snapshot ของ repo นั้น การแก้ repo ที่ไม่เกี่ยว
+จึงไม่ทำให้ evidence stale ส่วน claim ที่ครอบคลุมหลาย repo ต้องระบุ
+repositories และ `cross-repo-contract`
+ถ้าหลาย repo ใช้ capability เดียวกัน ให้ตั้ง instance ID เช่น `api-test`,
+`app-test` และระบุ `capability`
+
+Land หลาย remote เป็น resumable saga ไม่อ้างว่า atomic: `land plan` แสดงลำดับ,
+`land record` ผูก child commit และ CI ที่ผู้ใช้อนุญาตไว้แล้ว และ `land resume`
+ตรวจว่า commit เข้า target จริงหรือยัง ใช้ `land pointers` stage gitlink ที่
+ตรวจแล้วแบบ transaction และสร้าง composite proof ใหม่ก่อน archive
 
 ## `/investigate` — สำรวจโดยยังไม่ผูกมัด
 

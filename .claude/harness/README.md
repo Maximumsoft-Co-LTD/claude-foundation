@@ -54,9 +54,14 @@ claude-foundation doctor --stage prove --change <change>
 | Command | What it does | When to use it |
 |---|---|---|
 | `providers` | Lists supported evidence contracts | Choosing evidence for a change |
+| `repos [change]` | Shows discovered topology, drift, and change selection | Setting up or diagnosing multi-repo work |
+| `models` | Shows portable model-tier mappings | Reviewing cost/quality routing |
+| `agents plan <change>` | Builds task dependencies, resource groups, and model routing | Before spawning independent workers |
+| `agents acquire/release ...` | Holds atomic task resource leases with bounded expiry | Around each spawned worker |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact handoff and closes prior-phase telemetry | Starting Build or Prove without replaying history |
+| `packet <change> --repo <id> --task <id>` | Prints a repository/task-scoped worker packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase and provider cost | Finding latency or orchestration overhead |
 | `telemetry sync <change> [transcript]` | Incrementally imports native Claude request usage | Manual sync or host-integration fallback |
 | `telemetry import <change> <file>` | Imports deduplicated generic, Codex, or Claude host usage | Attributing request/token/cost to orchestration |
@@ -70,15 +75,42 @@ claude-foundation doctor --stage prove --change <change>
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
 | `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
 | `sandbox create <change>` | Creates an isolated Git worktree | Before Build |
+| `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
 | `sandbox sync <change>` | Synchronizes a revised agreement | When requirements change during Build |
 | `sandbox apply <change>` | Applies a proven sandbox diff to the main worktree | Usually delegated to Land |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
+| `land plan <change>` | Shows ordered child commit, CI, and pointer states | Coordinating multiple repositories |
+| `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |
+| `land pointers <change>` | Transactionally stages verified child gitlinks | After child commits land, before final Prove |
+| `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
 | `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
 | `migrate` | Inspects or migrates legacy workflow evidence | Moving from the legacy workflow |
 
 Run `claude-foundation help` for command syntax and installer options.
 Low-level `runtime` commands are reserved for installed slash commands and
 diagnostics.
+
+## Repository and model execution
+
+The committed `openspec/repositories.yaml` describes root, submodule, Git, and
+external nodes. A monorepo remains one Git repository and uses task path scopes
+rather than pretending packages are independently landable remotes.
+Per-change `repositories.yaml` selects access
+and dependency scope. The runtime creates child worktrees under
+`.foundation/repository-sandboxes/`, hashes them into one composite snapshot,
+and scopes provider commands and receipts with `repository`.
+
+`tasks.md` stays the only ledger. `[repo:<id>]`, `[depends:<task-ids>]`,
+`[kind:<kind>]`, `[paths:<paths>]`, and `[resources:<locks>]` are compact
+execution annotations. `agents plan` uses them to prevent same-workspace or
+shared-resource concurrency and applies the model tiers in `foundation.json`.
+The plan is advice and bounded authority for the native host; the harness does
+not invoke a model itself.
+
+Multiple remotes use ordered saga states rather than an atomicity claim.
+Foundation verifies explicit child commits, optional CI state, dependency
+order, root gitlinks, and fresh composite proof. It never commits or pushes
+without separate authority.
 
 ## Normal flow
 

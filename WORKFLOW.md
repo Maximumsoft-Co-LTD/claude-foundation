@@ -55,6 +55,21 @@ For a Git project, create an isolated worktree with:
 claude-foundation sandbox create <change>
 ```
 
+For a selected multi-repository topology:
+
+```bash
+claude-foundation repos <change>
+claude-foundation sandbox create <change> --all
+claude-foundation agents plan <change>
+claude-foundation packet <change> --repo <id> --task <task-id>
+```
+
+The plan permits parallel workers only across independent repositories and
+resources. It routes mechanical inventory to the configured Haiku/fast tier,
+normal implementation to Sonnet/standard, and architecture, security,
+migration, or independent review to Opus/deep. Exact model versions remain host
+configuration.
+
 If requirements or design change during Build, pause, revise the same OpenSpec
 change, then synchronize it without losing unchanged completed tasks:
 
@@ -274,6 +289,12 @@ manifest. Apply rejects any touched target path changed since the baseline,
 then verifies the expected touched-path projection. Multi-repository changes use one
 OpenSpec change plus a repository manifest and require cross-repository contract
 evidence before each repository is landed in its declared order.
+Their workspace identity is composite, while providers configured with
+`repository` bind receipts to one repository snapshot. Unrelated repository
+edits therefore preserve scoped evidence; contract and producer/consumer edits
+still invalidate integration evidence. Multiple remotes Land through an
+ordered, resumable saga with explicit commit/CI records and root pointer
+verification, never by claiming atomic remote mutation.
 
 ## Watchdog
 
@@ -320,8 +341,10 @@ hyphenated low-level runtime API rather than the public nested command grammar.
 ## Runtime layout
 
 ```text
+foundation.json
 openspec/
   config.yaml
+  repositories.yaml
   schemas/
   specs/
   changes/
@@ -331,6 +354,9 @@ openspec/
   receipts/
   logs/
   sandboxes/
+  repository-sandboxes/
+  plans/
+  leases/
 ```
 
 The contents under `.foundation/` are machine-owned and ignored by Git.

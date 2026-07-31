@@ -54,7 +54,8 @@ SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 for required in \
   .claude/orchestrator.md .claude/commands .claude/harness/foundation.mjs \
   .claude/skills .claude/rules .claude/hooks .claude/settings.json \
-  openspec/config.yaml openspec/schemas .foundation/.gitignore WORKFLOW.md; do
+  openspec/config.yaml openspec/repositories.yaml openspec/schemas \
+  foundation.json .foundation/.gitignore WORKFLOW.md; do
   [ -e "$SOURCE_PATH/$required" ] || fail "source is missing $required"
 done
 
@@ -210,6 +211,13 @@ cp "$NEW_MANIFEST" "$MANIFEST_PATH"
 if [ ! -e "$TARGET_PATH/openspec/config.yaml" ]; then
   mkdir -p "$TARGET_PATH/openspec"
   cp "$SOURCE_PATH/openspec/config.yaml" "$TARGET_PATH/openspec/config.yaml"
+fi
+if [ ! -e "$TARGET_PATH/openspec/repositories.yaml" ]; then
+  mkdir -p "$TARGET_PATH/openspec"
+  cp "$SOURCE_PATH/openspec/repositories.yaml" "$TARGET_PATH/openspec/repositories.yaml"
+fi
+if [ ! -e "$TARGET_PATH/foundation.json" ]; then
+  cp "$SOURCE_PATH/foundation.json" "$TARGET_PATH/foundation.json"
 fi
 
 for rel in "${LEGACY[@]}"; do

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=5
+EXPECTED_RUNTIME_API=6
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -55,9 +55,9 @@ run_runtime() {
   local phase=""
   case "${1:-}" in
     new|resolve|validate|evidence-upgrade) phase="change" ;;
-    sandbox) phase="build" ;;
+    sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
-    land-check|archive) phase="land" ;;
+    land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   FOUNDATION_TELEMETRY=1 FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
 }
@@ -93,10 +93,16 @@ claude-foundation — OpenSpec-native software-change harness
 Usage:
   claude-foundation init [target-path] [options]   Install the change loop (default target: current dir)
   claude-foundation providers                     List evidence provider contracts
+  claude-foundation repos [change]                Inspect repository topology and selection
+  claude-foundation models                        Show model-tier routing policy
+  claude-foundation agents plan <change>          Build dependency, parallelism, and model plan
+  claude-foundation agents acquire|release <change> <task> --owner <agent-id>
+                                                  Hold or release task resource leases
   claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>]
                                                   Check runtime, providers, and archive readiness
   claude-foundation changes                       List active changes
-  claude-foundation packet <change>               Print a compact phase handoff
+  claude-foundation packet <change> [--repo <id>] [--task <id>]
+                                                  Print a compact scoped handoff
   claude-foundation metrics <change>              Summarize measured phase/provider cost
   claude-foundation telemetry sync <change> [transcript.jsonl]
                                                   Incrementally ingest native Claude request usage
@@ -117,9 +123,13 @@ Usage:
   claude-foundation evidence record <change> <provider> <status> [options]
                                                   Record external provider evidence
   claude-foundation evidence upgrade <change>      Separate legacy claims and execution wiring
-  claude-foundation sandbox create|sync|apply <change>
+  claude-foundation sandbox create <change> [--all]
+  claude-foundation sandbox sync|apply <change>
                                                   Manage the isolated workspace
-  claude-foundation land check|archive <change>    Check or complete landing
+  claude-foundation land check|plan|pointers|resume|archive <change>
+                                                  Check or advance resumable landing
+  claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
+                                                  Bind an explicitly created child commit
   claude-foundation migrate [legacy-id] [--apply]  Migrate legacy workflow evidence
   claude-foundation version                        Print the installed version
   claude-foundation help                           Show this help
@@ -162,6 +172,28 @@ case "${1:-}" in
   providers)
     shift; [ "$#" -eq 0 ] || fail "providers takes no arguments"
     run_runtime read providers ;;
+  repos)
+    shift
+    [ "$#" -le 1 ] || fail "repos accepts at most one change"
+    run_runtime read repos "$@" ;;
+  models)
+    shift; [ "$#" -eq 0 ] || fail "models takes no arguments"
+    run_runtime read models ;;
+  agents)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    case "$sub" in
+      plan)
+        need_arg "agents plan" "${1:-}"
+        run_runtime write agent-plan "$@" ;;
+      acquire)
+        [ "$#" -ge 3 ] || fail "agents acquire requires <change> <task> --owner <agent-id>"
+        run_runtime write agent-acquire "$@" ;;
+      release)
+        [ "$#" -ge 3 ] || fail "agents release requires <change> <task> --owner <agent-id>"
+        run_runtime write agent-release "$@" ;;
+      *) fail "agents requires 'plan', 'acquire', or 'release'" ;;
+    esac ;;
   doctor)
     shift
     run_runtime read doctor "$@" ;;
@@ -225,11 +257,15 @@ case "${1:-}" in
   land)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "land ${sub:-<check|archive>}" "${1:-}"
+    need_arg "land ${sub:-<check|plan|record|pointers|resume|archive>}" "${1:-}"
     case "$sub" in
       check) run_runtime read land-check "$@" ;;
+      plan) run_runtime write land-plan "$@" ;;
+      record) run_runtime write land-record "$@" ;;
+      pointers) run_runtime write land-pointers "$@" ;;
+      resume) run_runtime write land-resume "$@" ;;
       archive) run_runtime write archive "$@" ;;
-      *) fail "land requires 'check' or 'archive'" ;;
+      *) fail "land requires 'check', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
     esac ;;
   migrate)
     shift

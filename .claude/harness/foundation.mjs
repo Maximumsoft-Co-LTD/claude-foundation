@@ -11,11 +11,11 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } fro
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
-const VERSION = "2.1.0";
-const RUNTIME_API_VERSION = "5";
-const PROVIDER_PROTOCOL_VERSION = "4";
-const ADAPTER_PROTOCOL_VERSION = "2";
-const PROOF_PROTOCOL_VERSION = "2";
+const VERSION = "2.2.0";
+const RUNTIME_API_VERSION = "6";
+const PROVIDER_PROTOCOL_VERSION = "5";
+const ADAPTER_PROTOCOL_VERSION = "3";
+const PROOF_PROTOCOL_VERSION = "3";
 const ADAPTERS = new Set(["command", "test-discovery", "playwright", "external"]);
 const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
 const EXCLUDED_WORKSPACE_DIRS = new Set([
@@ -43,6 +43,9 @@ const PROVIDER_CONTRACTS = {
   "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes."
 };
 const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
+function providerCapability(provider, config = null) {
+  return config?.capability || (PROVIDERS.has(provider) ? provider : null);
+}
 const SECURITY_TERMS = [
   "auth", "identity", "access", "permission", "secret", "credential", "session",
   "token", "cross-user", "cross user", "trust boundary", "irreversible",
@@ -72,6 +75,8 @@ const LOGS = join(ROOT, ".foundation", "logs");
 const EVIDENCE_VAULT = join(ROOT, ".foundation", "evidence");
 const SNAPSHOTS = join(ROOT, ".foundation", "snapshots");
 const TRANSACTIONS = join(ROOT, ".foundation", "transactions");
+const PLANS = join(ROOT, ".foundation", "plans");
+const LEASES = join(ROOT, ".foundation", "leases");
 const CHANGES = join(ROOT, "openspec", "changes");
 mkdirSync(RUNTIME, { recursive: true });
 mkdirSync(RECEIPTS, { recursive: true });
@@ -79,6 +84,8 @@ mkdirSync(LOGS, { recursive: true });
 mkdirSync(EVIDENCE_VAULT, { recursive: true });
 mkdirSync(SNAPSHOTS, { recursive: true });
 mkdirSync(TRANSACTIONS, { recursive: true });
+mkdirSync(PLANS, { recursive: true });
+mkdirSync(LEASES, { recursive: true });
 mkdirSync(CHANGES, { recursive: true });
 
 const operationStartedAt = Date.now();
@@ -266,7 +273,7 @@ function fileDigest(path) {
 const snapshotCache = new Map();
 const policyCache = new Map();
 
-function relevantSnapshot(id, workspaceOverride = null, force = false) {
+function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
   const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
   const workspace = resolve(workspaceOverride || state.workspace?.path || ROOT);
   const cacheKey = `${id}\0${workspace}\0${Number(state.contractRevision || state.revision || 0)}`;
@@ -298,8 +305,8 @@ function relevantSnapshot(id, workspaceOverride = null, force = false) {
   if (gitIndex.status === 0 && gitStatus.status === 0) {
     const indexed = new Map();
     for (const line of gitIndex.stdout.split("\0").filter(Boolean)) {
-      const match = line.match(/^\d+\s+([0-9a-f]+)\s+\d+\t(.+)$/);
-      if (match) indexed.set(match[2], match[1]);
+      const match = line.match(/^(\d+)\s+([0-9a-f]+)\s+\d+\t(.+)$/);
+      if (match) indexed.set(match[3], { mode: match[1], oid: match[2] });
     }
     const dirty = new Set();
     const statusEntries = gitStatus.stdout.split("\0").filter(Boolean);
@@ -314,8 +321,10 @@ function relevantSnapshot(id, workspaceOverride = null, force = false) {
     for (const rel of paths) {
       const path = join(workspace, rel);
       const contentIdentity = dirty.has(rel)
-        ? (existsSync(path) && statSync(path).isFile() ? fileDigest(path) : "deleted")
-        : indexed.get(rel);
+        ? (indexed.get(rel)?.mode === "160000"
+          ? `gitlink:${indexed.get(rel).oid}`
+          : (existsSync(path) && statSync(path).isFile() ? fileDigest(path) : "deleted"))
+        : indexed.get(rel)?.oid;
       files.push([rel, path]);
       hash.update(rel); hash.update("\0");
       hash.update(contentIdentity || "missing"); hash.update("\0");
@@ -341,6 +350,56 @@ function relevantSnapshot(id, workspaceOverride = null, force = false) {
   };
   snapshotCache.set(cacheKey, value);
   if (workspace === resolve(state.workspace?.path || ROOT)) writeJson(snapshotPath(id), value);
+  return value;
+}
+
+function relevantSnapshot(id, workspaceOverride = null, force = false) {
+  const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
+  if (workspaceOverride || !state.repositories ||
+      Object.keys(state.repositories).length === 0)
+    return singleRelevantSnapshot(id, workspaceOverride, force);
+  const control = singleRelevantSnapshot(
+    id, state.workspace?.path || ROOT, force
+  );
+  const repositories = {};
+  for (const repository of selectedRepositories(id, state)) {
+    if (repository.id === "root") {
+      repositories.root = {
+        id: control.id, workspaceHash: control.workspaceHash,
+        workspace: control.workspace, baseHead: repository.baseHead || gitHead(ROOT)
+      };
+      continue;
+    }
+    const workspace = repository.workspacePath || repository.path;
+    const snapshot = singleRelevantSnapshot(id, workspace, force);
+    repositories[repository.id] = {
+      id: snapshot.id, workspaceHash: snapshot.workspaceHash,
+      workspace: snapshot.workspace,
+      baseHead: repository.baseHead || gitHead(repository.path)
+    };
+  }
+  const workspaceHash = stableHash({
+    version: 1,
+    contractRevision: Number(state.contractRevision || state.revision || 0),
+    control: control.workspaceHash,
+    repositories: Object.entries(repositories).sort(([left], [right]) =>
+      left.localeCompare(right)).map(([repository, value]) => ({
+        repository, workspaceHash: value.workspaceHash, baseHead: value.baseHead
+      }))
+  });
+  const value = {
+    version: 2,
+    id: `snapshot-${workspaceHash.slice(0, 20)}`,
+    changeId: id,
+    workspace: control.workspace,
+    workspaceHash,
+    revision: Number(state.contractRevision || state.revision || 0),
+    fileCount: control.fileCount,
+    control,
+    repositories,
+    createdAt: now()
+  };
+  writeJson(snapshotPath(id), value);
   return value;
 }
 
@@ -394,7 +453,7 @@ function createChange(intent, flags) {
   const target = changePath(id);
   mkdirSync(target, { recursive: true });
   writeFileSync(join(target, ".openspec.yaml"), `schema: ${schema}\n`);
-  for (const name of ["proposal.md", "tasks.md", "evidence.yaml", "execution.yaml"]) {
+  for (const name of ["proposal.md", "tasks.md", "evidence.yaml", "execution.yaml", "repositories.yaml"]) {
     writeFileSync(join(target, name), instantiate(join(source, name), intent));
   }
   if (schema === "foundation-standard") {
@@ -427,6 +486,218 @@ function git(args, cwd = ROOT) {
 function gitHead(cwd) {
   const result = git(["rev-parse", "HEAD"], cwd);
   return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function foundationPolicy() {
+  const path = join(ROOT, "foundation.json");
+  const configured = existsSync(path) ? readJson(path) : {};
+  const defaults = {
+    version: 1,
+    execution: { maxParallelAgents: 3, packetBytes: 65536, leaseMinutes: 45 },
+    models: {
+      fast: { family: "haiku", fallbackTier: "standard", purposes: ["inventory", "logs", "mechanical-docs"] },
+      standard: { family: "sonnet", fallbackTier: "deep", purposes: ["implementation", "tests", "focused-investigation"] },
+      deep: { family: "opus", fallbackTier: null, purposes: ["architecture", "security", "migration", "independent-review"] }
+    },
+    escalation: [
+      "ambiguous-contract", "auth-or-sensitive-data", "migration",
+      "concurrency", "public-compatibility", "cross-repository-conflict",
+      "evidence-anomaly", "two-failed-attempts"
+    ]
+  };
+  if (configured.version !== undefined && configured.version !== 1)
+    die("foundation.json requires version 1");
+  const policy = {
+    ...defaults, ...configured,
+    execution: { ...defaults.execution, ...(configured.execution || {}) },
+    models: { ...defaults.models, ...(configured.models || {}) }
+  };
+  const parallel = Number(policy.execution.maxParallelAgents);
+  if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
+    die("foundation.json execution.maxParallelAgents must be an integer from 1 to 16");
+  const leaseMinutes = Number(policy.execution.leaseMinutes);
+  if (!Number.isFinite(leaseMinutes) || leaseMinutes < 1 || leaseMinutes > 1440)
+    die("foundation.json execution.leaseMinutes must be from 1 to 1440");
+  for (const tier of ["fast", "standard", "deep"])
+    if (!policy.models[tier] || typeof policy.models[tier].family !== "string")
+      die(`foundation.json models.${tier}.family is required`);
+  for (const tier of ["fast", "standard", "deep"]) {
+    const fallback = policy.models[tier].fallbackTier;
+    if (fallback !== null && fallback !== undefined &&
+        !["fast", "standard", "deep"].includes(fallback))
+      die(`foundation.json models.${tier}.fallbackTier is invalid`);
+    if (tier === "deep" && fallback && fallback !== "deep")
+      die("deep model tier cannot downgrade when unavailable");
+  }
+  return policy;
+}
+
+function discoveredSubmodules() {
+  const path = join(ROOT, ".gitmodules");
+  if (!existsSync(path)) return [];
+  const rows = [];
+  let current = null;
+  for (const raw of readFileSync(path, "utf8").split("\n")) {
+    const section = raw.match(/^\s*\[submodule\s+"([^"]+)"\]\s*$/);
+    if (section) {
+      if (current?.path) rows.push(current);
+      current = { id: slugify(section[1]), name: section[1], type: "submodule" };
+      continue;
+    }
+    if (!current) continue;
+    const field = raw.match(/^\s*(path|url|branch)\s*=\s*(.+?)\s*$/);
+    if (field) current[field[1]] = field[2];
+  }
+  if (current?.path) rows.push(current);
+  return rows;
+}
+
+function repositoryCatalog() {
+  const path = join(ROOT, "openspec", "repositories.yaml");
+  const configured = existsSync(path)
+    ? readJson(path)
+    : { version: 1, repositories: [] };
+  if (configured.version !== 1 || !Array.isArray(configured.repositories))
+    die("openspec/repositories.yaml requires version 1 and a repositories array");
+  const discovered = discoveredSubmodules();
+  const configuredByPath = new Map(configured.repositories.map((repository) =>
+    [repository.path, repository]));
+  const configuredIds = new Set(configured.repositories.map((repository) => repository.id));
+  const merged = [
+    ...discovered.map((repository) => ({
+      ...repository, ...(configuredByPath.get(repository.path) || {})
+    })),
+    ...configured.repositories.filter((repository) =>
+      !discovered.some((item) => item.path === repository.path) &&
+      !discovered.some((item) => item.id === repository.id))
+  ];
+  const rows = [
+    {
+      id: "root", type: "root", path: ".", role: "control-plane",
+      mode: "write", dependsOn: []
+    },
+    ...merged
+  ].map((repository) => {
+    if (!repository || typeof repository !== "object")
+      die("repository entries must be objects");
+    const discoveredValue = discovered.find((item) =>
+      item.path === repository.path || item.id === repository.id) || {};
+    return {
+      ...discoveredValue, ...repository,
+      id: repository.id || discoveredValue.id,
+      type: repository.type || discoveredValue.type || "git",
+      mode: repository.mode || "write",
+      dependsOn: repository.dependsOn || []
+    };
+  });
+  const ids = new Set();
+  const paths = new Set();
+  for (const repository of rows) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(repository.id || ""))
+      die(`invalid repository id '${repository.id || ""}'`);
+    if (ids.has(repository.id)) die(`duplicate repository id '${repository.id}'`);
+    ids.add(repository.id);
+    if (!["root", "submodule", "git", "external"]
+      .includes(repository.type))
+      die(`repository '${repository.id}' has invalid type '${repository.type}'`);
+    if (!["read", "write"].includes(repository.mode))
+      die(`repository '${repository.id}' mode must be read|write`);
+    if (!Array.isArray(repository.dependsOn) ||
+        repository.dependsOn.some((item) => typeof item !== "string"))
+      die(`repository '${repository.id}' dependsOn must be an array`);
+    const absolute = resolve(ROOT, repository.path || "");
+    if (!pathInside(ROOT, absolute) && repository.allowOutsideRoot !== true)
+      die(`repository '${repository.id}' path escapes the control root; set allowOutsideRoot only for an explicitly trusted sibling repository`);
+    const normalized = relative(ROOT, absolute) || ".";
+    if (paths.has(normalized))
+      die(`duplicate repository path '${normalized}'`);
+    paths.add(normalized);
+    repository.path = absolute;
+    repository.relativePath = normalized.replaceAll("\\", "/");
+  }
+  for (const repository of rows)
+    for (const dependency of repository.dependsOn)
+      if (!ids.has(dependency))
+        die(`repository '${repository.id}' depends on unknown repository '${dependency}'`);
+  const drift = discovered.filter((repository) =>
+    !configuredByPath.has(repository.path) && !configuredIds.has(repository.id));
+  return { version: 1, repositories: rows, discovered, drift };
+}
+
+function changeRepositorySelection(id) {
+  const path = join(activeChangePath(id), "repositories.yaml");
+  if (!existsSync(path)) return null;
+  const value = readJson(path);
+  if (value.version !== 1 || !Array.isArray(value.repositories) ||
+      value.repositories.length === 0)
+    die(`${id}/repositories.yaml requires version 1 and a non-empty repositories array`);
+  return value;
+}
+
+function repositorySelectionIdsAt(dir) {
+  const path = join(dir, "repositories.yaml");
+  if (!existsSync(path)) return ["root"];
+  const value = readJson(path);
+  if (value.version !== 1 || !Array.isArray(value.repositories))
+    die(`${relative(ROOT, path)} requires version 1 and a repositories array`);
+  return value.repositories.map((entry) =>
+    typeof entry === "string" ? entry : entry.id).sort();
+}
+
+function selectedRepositories(id, state = loadRuntime(id)) {
+  const catalog = repositoryCatalog();
+  const selection = changeRepositorySelection(id);
+  const requested = selection?.repositories || [{ id: "root", mode: "write" }];
+  const selected = [];
+  const seen = new Set();
+  for (const entry of requested) {
+    const normalized = typeof entry === "string" ? { id: entry } : entry;
+    const repository = catalog.repositories.find((item) => item.id === normalized.id);
+    if (!repository) die(`${id}/repositories.yaml references unknown repository '${normalized.id}'`);
+    if (seen.has(repository.id)) die(`${id}/repositories.yaml repeats '${repository.id}'`);
+    seen.add(repository.id);
+    const runtime = state.repositories?.[repository.id] || {};
+    selected.push({
+      ...repository,
+      mode: normalized.mode || repository.mode,
+      dependsOn: normalized.dependsOn || repository.dependsOn || [],
+      baseHead: runtime.baseHead || gitHead(repository.path),
+      workspacePath: runtime.path || (repository.id === "root"
+        ? state.workspace?.path || ROOT : repository.path)
+    });
+  }
+  const selectedIds = new Set(selected.map((repository) => repository.id));
+  for (const repository of selected)
+    for (const dependency of repository.dependsOn)
+      if (!selectedIds.has(dependency))
+        die(`change '${id}' must select dependency '${dependency}' for repository '${repository.id}'`);
+  return selected;
+}
+
+function repositoryById(id, repositoryId, state = loadRuntime(id)) {
+  const repository = selectedRepositories(id, state)
+    .find((item) => item.id === repositoryId);
+  if (!repository) die(`change '${id}' does not select repository '${repositoryId}'`);
+  return repository;
+}
+
+function showRepositories(id = null) {
+  const catalog = repositoryCatalog();
+  const selected = id
+    ? new Set(selectedRepositories(id).map((repository) => repository.id))
+    : null;
+  for (const repository of catalog.repositories) {
+    const head = gitHead(repository.path);
+    const status = head ? git(["status", "--porcelain"], repository.path) : null;
+    const state = !existsSync(repository.path) ? "missing" :
+      !head ? "not-git" : status?.stdout.trim() ? "dirty" : "clean";
+    console.log([
+      repository.id, repository.type, repository.relativePath, state,
+      head?.slice(0, 12) || "-", selected ? (selected.has(repository.id) ? "selected" : "excluded") : ""
+    ].filter(Boolean).join("\t"));
+  }
+  for (const repository of catalog.drift)
+    console.error(`WARNING: unregistered submodule '${repository.path}'`);
 }
 
 function resolveChange(id, flags) {
@@ -468,6 +739,12 @@ function rawExecution(id, dir = activeChangePath(id)) {
       die(`service '${name}' requires readiness.url`);
     if (!service.readiness.expectBody && !service.readiness.expectHeader)
       die(`service '${name}' readiness requires expectBody or expectHeader identity`);
+    if (service.resources !== undefined &&
+        (!Array.isArray(service.resources) ||
+         service.resources.some((item) => typeof item !== "string" || !item)))
+      die(`service '${name}' resources must be an array of strings`);
+    if (service.repository !== undefined)
+      repositoryById(id, service.repository);
     if (service.env !== undefined &&
         (!service.env || typeof service.env !== "object" || Array.isArray(service.env)))
       die(`service '${name}' env must be an object`);
@@ -517,17 +794,31 @@ function evidence(id, dir = activeChangePath(id)) {
     ...(executionValue.providers || {})
   };
   for (const [provider, config] of Object.entries(configuredProviders)) {
-    if (!PROVIDERS.has(provider)) die(`unknown configured provider '${provider}'`);
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(provider))
+      die(`invalid provider instance id '${provider}'`);
     if (!config || typeof config !== "object" || Array.isArray(config))
       die(`provider '${provider}' configuration must be an object`);
+    const capability = providerCapability(provider, config);
+    if (!capability || !PROVIDERS.has(capability))
+      die(`provider '${provider}' requires a known capability`);
     if (!ADAPTERS.has(config.adapter))
       die(`provider '${provider}' uses unknown adapter '${config.adapter || ""}'`);
+    if (config.repository !== undefined)
+      repositoryById(id, config.repository);
     if (config.adapter !== "external" &&
         (!Array.isArray(config.command) || config.command.length === 0 ||
          config.command.some((part) => typeof part !== "string" || !part)))
       die(`provider '${provider}' adapter '${config.adapter}' requires a non-empty command array`);
-    if (config.adapter === "test-discovery" && provider !== "test")
-      die("test-discovery adapter must be configured under provider 'test'");
+    if (config.adapter === "test-discovery" && capability !== "test")
+      die("test-discovery adapter requires capability 'test'");
+    if (config.adapter === "test-discovery" && provider !== "test") {
+      if (!config.discoveryProvider ||
+          !configuredProviders[config.discoveryProvider] ||
+          providerCapability(
+            config.discoveryProvider, configuredProviders[config.discoveryProvider]
+          ) !== "discovery")
+        die(`provider '${provider}' test-discovery requires a configured discoveryProvider`);
+    }
     if (config.timeoutMs !== undefined &&
         (!Number.isFinite(Number(config.timeoutMs)) || Number(config.timeoutMs) <= 0))
       die(`provider '${provider}' timeoutMs must be a positive number`);
@@ -537,13 +828,15 @@ function evidence(id, dir = activeChangePath(id)) {
       die(`provider '${provider}' resources must be an array of strings`);
     if (config.dependsOn !== undefined &&
         (!Array.isArray(config.dependsOn) ||
-         config.dependsOn.some((item) => !PROVIDERS.has(item))))
+         config.dependsOn.some((item) =>
+           !configuredProviders[item] && !PROVIDERS.has(item))))
       die(`provider '${provider}' dependsOn contains an unknown provider`);
     if (config.dependsOn?.includes(provider))
       die(`provider '${provider}' cannot depend on itself`);
     if (config.outputs !== undefined &&
         (!Array.isArray(config.outputs) ||
-         config.outputs.some((item) => !PROVIDERS.has(item))))
+         config.outputs.some((item) =>
+           !configuredProviders[item] && !PROVIDERS.has(item))))
       die(`provider '${provider}' outputs contains an unknown provider`);
     if (config.service !== undefined &&
         (!executionValue.services || !executionValue.services[config.service]))
@@ -588,17 +881,17 @@ function evidence(id, dir = activeChangePath(id)) {
     if (config.adapter === "playwright" && config.inputMode &&
         !INPUT_MODES.has(config.inputMode))
       die(`provider '${provider}' has invalid inputMode '${config.inputMode}'`);
-    if (provider === "browser" && config.adapter !== "external" &&
+    if (capability === "browser" && config.adapter !== "external" &&
         !INPUT_MODES.has(config.inputMode || (config.adapter === "playwright" ? "browser-automation" : "")))
       die("configured browser provider requires a valid inputMode");
-    if (provider === "mutation" && config.adapter !== "external" &&
+    if (capability === "mutation" && config.adapter !== "external" &&
         !["behavioral-kill", "test-failure"].includes(config.classification))
       die("configured mutation provider requires classification behavioral-kill|test-failure");
-    const declaredForProvider = (provider === "review"
+    const declaredForProvider = (capability === "review"
       ? scopedReviewClaims(value.claims)
       : value.claims.filter((claim) =>
-      claim.capabilities.includes(provider) ||
-      (provider === "discovery" && claim.capabilities.includes("test"))))
+      claim.capabilities.includes(capability) ||
+      (capability === "discovery" && claim.capabilities.includes("test"))))
       .map((claim) => claim.id);
     if (config.claims !== undefined && config.claims !== "declared") {
       if (!Array.isArray(config.claims))
@@ -635,8 +928,29 @@ function providerClaims(id, provider, config = providerConfig(id, provider)) {
   return config.claims;
 }
 
+function providerRepository(id, provider, config = providerConfig(id, provider)) {
+  const repositoryId = config?.repository || null;
+  if (!repositoryId) return null;
+  return repositoryById(id, repositoryId);
+}
+
+function providerWorkspace(id, provider, config = providerConfig(id, provider)) {
+  return providerRepository(id, provider, config)?.workspacePath ||
+    loadRuntime(id).workspace?.path || ROOT;
+}
+
+function providerWorkspaceHash(id, provider, fallback = null) {
+  const repository = providerRepository(id, provider);
+  if (!repository) return fallback || relevantHash(id);
+  const snapshot = relevantSnapshot(id);
+  return snapshot.repositories?.[repository.id]?.workspaceHash ||
+    singleRelevantSnapshot(id, repository.workspacePath, true).workspaceHash;
+}
+
 function environmentDescriptor(config = null, id = null) {
-  const workspace = id ? loadRuntime(id).workspace?.path || ROOT : ROOT;
+  const workspace = id && config?.repository
+    ? repositoryById(id, config.repository).workspacePath
+    : (id ? loadRuntime(id).workspace?.path || ROOT : ROOT);
   const lockfiles = [
     "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
     "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock"
@@ -660,6 +974,8 @@ function adapterFingerprint(id, provider, config, command = null) {
     adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
     providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
     provider,
+    capability: providerCapability(provider, config),
+    repository: config?.repository || null,
     adapter: config?.adapter || "external",
     adapterVersion: String(config?.version || "1"),
     command: command || config?.command || null,
@@ -732,6 +1048,316 @@ function pendingTasks(id) {
   return taskBlocks(content).filter((task) => !task.done);
 }
 
+function taskMetadata(task) {
+  const value = task.text;
+  const list = (name) => {
+    const match = value.match(new RegExp(`\\[${name}:([^\\]]+)\\]`, "i"));
+    return match ? match[1].split(",").map((item) => item.trim()).filter(Boolean) : [];
+  };
+  return {
+    id: task.id,
+    done: task.done,
+    repository: list("repo")[0] || "root",
+    kind: list("kind")[0] || "implementation",
+    requestedModel: list("model")[0] || null,
+    dependsOn: list("depends").map((item) => item.toUpperCase()),
+    paths: list("paths"),
+    resources: list("resources"),
+    text: value.replace(/\s+/g, " ").trim().slice(0, 1000)
+  };
+}
+
+function modelForTask(id, task, policy = foundationPolicy()) {
+  const state = loadRuntime(id);
+  const highRisk = state.impact === "high" ||
+    (state.securityTriggers || []).length > 0 ||
+    ["contract", "architecture", "security", "migration", "review"]
+      .includes(task.kind);
+  let tier = task.requestedModel;
+  if (tier && !["fast", "standard", "deep"].includes(tier))
+    die(`task '${task.id}' model must be fast|standard|deep`);
+  if (!tier) {
+    if (highRisk && ["contract", "architecture", "security", "migration", "review"]
+      .includes(task.kind)) tier = "deep";
+    else if (!highRisk && ["inventory", "logs", "mechanical-docs"].includes(task.kind))
+      tier = "fast";
+    else tier = "standard";
+  }
+  if (tier === "fast" && highRisk) tier = "standard";
+  const fallbackTier = policy.models[tier].fallbackTier ?? null;
+  return {
+    tier, family: policy.models[tier].family,
+    fallbackTier,
+    fallbackFamily: fallbackTier ? policy.models[fallbackTier].family : null,
+    reason: highRisk ? "risk-sensitive task" : `${task.kind} task`
+  };
+}
+
+function activeRepositoryConflicts(id, repositories) {
+  const wanted = new Set(repositories
+    .filter((repository) => repository.mode === "write")
+    .map((repository) => repository.id));
+  const conflicts = [];
+  if (!existsSync(RUNTIME)) return conflicts;
+  for (const entry of readdirSync(RUNTIME, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const other = readJson(join(RUNTIME, entry.name), {});
+    if (!other.id || other.id === id || other.status === "archived") continue;
+    let selected;
+    try { selected = selectedRepositories(other.id, other); }
+    catch { continue; }
+    for (const repository of selected)
+      if (repository.mode === "write" && wanted.has(repository.id))
+        conflicts.push({ changeId: other.id, repository: repository.id, status: other.status });
+  }
+  return conflicts;
+}
+
+function agentPlanValue(id) {
+  validate(id, "active");
+  const state = loadRuntime(id);
+  const policy = foundationPolicy();
+  const repositories = selectedRepositories(id, state);
+  const repositoryMap = new Map(repositories.map((repository) =>
+    [repository.id, repository]));
+  const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
+    .map(taskMetadata).filter((task) => !task.done);
+  const ids = new Set(tasks.map((task) => task.id));
+  for (const task of tasks) {
+    if (!repositoryMap.has(task.repository))
+      die(`task '${task.id}' references unselected repository '${task.repository}'`);
+    const unknown = task.dependsOn.filter((dependency) => !ids.has(dependency));
+    if (unknown.length)
+      die(`task '${task.id}' depends on unknown pending task(s): ${unknown.join(", ")}`);
+    const repository = repositoryMap.get(task.repository);
+    for (const dependencyRepository of repository.dependsOn || [])
+      for (const dependencyTask of tasks.filter((candidate) =>
+        candidate.repository === dependencyRepository))
+        if (!task.dependsOn.includes(dependencyTask.id))
+          task.dependsOn.push(dependencyTask.id);
+    task.resources = [...new Set([
+      `workspace:${task.repository}`, ...task.resources
+    ])].sort();
+    task.model = modelForTask(id, task, policy);
+    task.packetCommand = `claude-foundation packet ${id} --repo ${task.repository} --task ${task.id}`;
+  }
+  const pending = new Map(tasks.map((task) => [task.id, task]));
+  const completed = new Set();
+  const groups = [];
+  while (pending.size) {
+    const ready = [...pending.values()].filter((task) =>
+      task.dependsOn.every((dependency) => completed.has(dependency)));
+    if (!ready.length)
+      die(`task dependency cycle: ${[...pending.keys()].join(", ")}`);
+    const group = [];
+    for (const task of ready) {
+      const conflicts = group.some((selected) =>
+        resourcesConflict(selected.resources, task.resources));
+      if (!conflicts && group.length < policy.execution.maxParallelAgents)
+        group.push(task);
+    }
+    if (!group.length) group.push(ready[0]);
+    groups.push(group.map((task) => task.id));
+    for (const task of group) {
+      pending.delete(task.id);
+      completed.add(task.id);
+    }
+  }
+  const claims = evidence(id).claims;
+  const conflicts = activeRepositoryConflicts(id, repositories);
+  const blockingReasons = [
+    ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
+    ...conflicts.map((conflict) =>
+      `repository ${conflict.repository} is active in ${conflict.changeId}`)
+  ];
+  const basePlan = {
+    version: 1,
+    changeId: id,
+    revision: Number(state.revision || 0),
+    contractRevision: Number(state.contractRevision || 0),
+    workspaceHash: relevantHash(id),
+    maxParallelAgents: policy.execution.maxParallelAgents,
+    repositories: repositories.map((repository) => ({
+      id: repository.id, mode: repository.mode,
+      workspacePath: repository.workspacePath,
+      dependsOn: repository.dependsOn || []
+    })),
+    tasks,
+    groups,
+    conflicts,
+    blockingReasons,
+    dispatchable: blockingReasons.length === 0,
+    contractFingerprint: contractFingerprint(id),
+    repositoryContractHashes: Object.fromEntries(repositories.map((repository) => [
+      repository.id,
+      stableHash(claims.filter((claim) =>
+        !claim.repositories || claim.repositories.includes(repository.id)))
+    ])),
+    modelPolicy: {
+      fast: policy.models.fast.family,
+      standard: policy.models.standard.family,
+      deep: policy.models.deep.family
+    }
+  };
+  return { ...basePlan, planDigest: stableHash(basePlan), createdAt: now() };
+}
+
+function showAgentPlan(id) {
+  const plan = agentPlanValue(id);
+  const path = join(PLANS, `${id}.json`);
+  const prior = existsSync(path) ? readJson(path, {}) : null;
+  const changedRepositories = prior
+    ? Object.keys(plan.repositoryContractHashes).filter((repository) =>
+      prior.repositoryContractHashes?.[repository] !==
+        plan.repositoryContractHashes[repository])
+    : [];
+  const globalContractChanged = Boolean(prior &&
+    prior.contractFingerprint !== plan.contractFingerprint &&
+    changedRepositories.length === 0);
+  const directlyInvalidated = new Set(prior
+    ? plan.tasks.filter((task) => {
+      const old = prior.tasks?.find((candidate) => candidate.id === task.id);
+      return !old || globalContractChanged ||
+        changedRepositories.includes(task.repository) ||
+        stableHash({
+          repository: old.repository, kind: old.kind, dependsOn: old.dependsOn,
+          paths: old.paths, resources: old.resources, text: old.text
+        }) !== stableHash({
+          repository: task.repository, kind: task.kind, dependsOn: task.dependsOn,
+          paths: task.paths, resources: task.resources, text: task.text
+        });
+    }).map((task) => task.id)
+    : []);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const task of plan.tasks)
+      if (!directlyInvalidated.has(task.id) &&
+          task.dependsOn.some((dependency) => directlyInvalidated.has(dependency))) {
+        directlyInvalidated.add(task.id);
+        expanded = true;
+      }
+  }
+  const output = {
+    ...plan,
+    supersedesPlanDigest: prior?.planDigest || null,
+    invalidatedTasks: [...directlyInvalidated],
+    preservedTasks: prior
+      ? plan.tasks.filter((task) => !directlyInvalidated.has(task.id))
+        .map((task) => task.id)
+      : []
+  };
+  writeJson(path, output);
+  console.log(JSON.stringify(output, null, 2));
+}
+
+function leasePath(resource) {
+  return join(LEASES, "resources", `${stableHash(resource)}.json`);
+}
+
+function acquireAgentLease(id, taskId, flags) {
+  const owner = flags.owner;
+  if (!taskId || !owner || !/^[a-zA-Z0-9._-]+$/.test(owner))
+    die("agents acquire requires <change> <task> --owner <agent-id>");
+  const plan = agentPlanValue(id);
+  if (!plan.dispatchable)
+    die(`change '${id}' conflicts with active repository work`);
+  const task = plan.tasks.find((candidate) => candidate.id === taskId.toUpperCase());
+  if (!task) die(`unknown pending task '${taskId}'`);
+  const pendingIds = new Set(plan.tasks.map((candidate) => candidate.id));
+  const blockedBy = task.dependsOn.filter((dependency) => pendingIds.has(dependency));
+  if (blockedBy.length)
+    die(`task '${task.id}' is blocked by pending task(s): ${blockedBy.join(", ")}`);
+  const durationMs = Number(foundationPolicy().execution.leaseMinutes) * 60 * 1000;
+  const expiresAt = new Date(Date.now() + durationMs).toISOString();
+  const acquired = [];
+  const created = [];
+  try {
+    for (const resource of task.resources) {
+      const path = leasePath(resource);
+      mkdirSync(dirname(path), { recursive: true });
+      if (existsSync(path)) {
+        const current = readJson(path, {});
+        if (Date.parse(current.expiresAt || "") <= Date.now()) rmSync(path);
+        else if (current.changeId === id && current.taskId === task.id &&
+                 current.owner === owner) {
+          writeJson(path, { ...current, expiresAt, renewedAt: now() });
+          acquired.push(path);
+          continue;
+        } else {
+          throw new Error(`resource '${resource}' is leased by ${current.changeId || "unknown"}/${current.taskId || "unknown"}`);
+        }
+      }
+      const descriptor = {
+        version: 1, resource, changeId: id, taskId: task.id, owner,
+        planDigest: plan.planDigest, acquiredAt: now(), expiresAt
+      };
+      const handle = openSync(path, "wx");
+      try { writeFileSync(handle, `${JSON.stringify(descriptor, null, 2)}\n`); }
+      finally { closeSync(handle); }
+      acquired.push(path);
+      created.push(path);
+    }
+  } catch (error) {
+    for (const path of created) {
+      if (!existsSync(path)) continue;
+      const current = readJson(path, {});
+      if (current.changeId === id && current.taskId === task.id &&
+          current.owner === owner) rmSync(path);
+    }
+    die(error.message);
+  }
+  writeJson(join(LEASES, "tasks", id, `${task.id}.json`), {
+    version: 1, changeId: id, taskId: task.id, owner,
+    resources: task.resources, planDigest: plan.planDigest, expiresAt
+  });
+  console.log(`LEASE ACQUIRED ${id}/${task.id}\n  owner: ${owner}\n  expires: ${expiresAt}`);
+}
+
+function releaseAgentLease(id, taskId, flags) {
+  const owner = flags.owner;
+  if (!taskId || !owner)
+    die("agents release requires <change> <task> --owner <agent-id>");
+  const index = join(LEASES, "tasks", id, `${taskId.toUpperCase()}.json`);
+  if (!existsSync(index)) {
+    console.log(`LEASE ABSENT ${id}/${taskId.toUpperCase()}`);
+    return;
+  }
+  const taskLease = readJson(index);
+  if (taskLease.owner !== owner)
+    die(`lease owner mismatch for '${id}/${taskId.toUpperCase()}'`);
+  for (const resource of taskLease.resources || []) {
+    const path = leasePath(resource);
+    if (!existsSync(path)) continue;
+    const current = readJson(path, {});
+    if (current.changeId === id && current.taskId === taskLease.taskId &&
+        current.owner === owner) rmSync(path);
+  }
+  rmSync(index);
+  console.log(`LEASE RELEASED ${id}/${taskLease.taskId}`);
+}
+
+function activeChangeLeases(id) {
+  const root = join(LEASES, "tasks", id);
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => readJson(join(root, entry.name), {}))
+    .filter((lease) => Date.parse(lease.expiresAt || "") > Date.now());
+}
+
+function cleanupChangeLeases(id) {
+  const resources = join(LEASES, "resources");
+  if (existsSync(resources))
+    for (const entry of readdirSync(resources, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const path = join(resources, entry.name);
+      if (readJson(path, {}).changeId === id) rmSync(path);
+    }
+  const tasks = join(LEASES, "tasks", id);
+  if (existsSync(tasks)) rmSync(tasks, { recursive: true });
+}
+
 function validate(id, source = "root") {
   const state = loadRuntime(id);
   if (state.status === "archived") die(`change '${id}' is already archived`);
@@ -763,9 +1389,39 @@ function validate(id, source = "root") {
   if (lifecycleTasks.length)
     die("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
   const claims = evidence(id, dir).claims;
-  for (const claim of claims)
+  const selectedRepositoryIds = new Set(selectedRepositories(id, state)
+    .map((repository) => repository.id));
+  for (const claim of claims) {
     if (!["low", "medium", "high"].includes(claim.impact || ""))
       die(`claim '${claim.id}' requires impact low|medium|high`);
+    if (claim.repositories !== undefined &&
+        (!Array.isArray(claim.repositories) || claim.repositories.length === 0 ||
+         claim.repositories.some((repository) => !selectedRepositoryIds.has(repository))))
+      die(`claim '${claim.id}' repositories must reference selected repositories`);
+    if ((claim.repositories || []).length > 1 &&
+        !claim.capabilities.includes("cross-repo-contract"))
+      die(`claim '${claim.id}' spans repositories and requires cross-repo-contract`);
+  }
+  const selected = selectedRepositories(id, state);
+  if (selected.length > 1) {
+    const unscopedTasks = parsedTasks.filter((task) =>
+      !/\[repo:[a-z0-9-]+\]/i.test(task.text));
+    if (unscopedTasks.length)
+      die(`multi-repository tasks require [repo:<id>] scope (${unscopedTasks.map((task) => task.id).join(", ")})`);
+    for (const task of parsedTasks) {
+      const metadata = taskMetadata(task);
+      const repository = metadata.repository;
+      if (repository && !selectedRepositoryIds.has(repository))
+        die(`task '${task.id}' references unselected repository '${repository}'`);
+      if (metadata.paths.some((path) =>
+        isAbsolute(path) || path === ".." || path.startsWith("../") ||
+        path.includes("/../")))
+        die(`task '${task.id}' contains an unsafe path scope`);
+      if (["implementation", "migration"].includes(metadata.kind) &&
+          metadata.paths.length === 0)
+        die(`multi-repository task '${task.id}' requires [paths:<repo-relative-paths>]`);
+    }
+  }
   if (claims.some((claim) => claim.impact === "high"))
     state.reviewRequired = true;
   state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
@@ -785,20 +1441,43 @@ function validate(id, source = "root") {
 
 function requiredProviders(id) {
   const state = loadRuntime(id);
-  const required = new Set(evidence(id).claims.flatMap((claim) => claim.capabilities));
-  if (required.has("test")) required.add("discovery");
-  if (state.reviewRequired) required.add("review");
-  for (const provider of policyCapabilities(id)) required.add(provider);
+  const contract = evidence(id);
+  const providers = contract.providers || {};
+  const required = new Set();
+  const addCapability = (capability, repositories = []) => {
+    const instances = Object.entries(providers).filter(([provider, config]) => {
+      if (providerCapability(provider, config) !== capability) return false;
+      if (!config.repository || repositories.length === 0) return true;
+      return repositories.includes(config.repository);
+    }).map(([provider]) => provider);
+    if (instances.length) instances.forEach((provider) => required.add(provider));
+    else required.add(capability);
+  };
+  for (const claim of contract.claims) {
+    for (const capability of claim.capabilities) {
+      addCapability(capability, claim.repositories || []);
+      if (capability === "test")
+        addCapability("discovery", claim.repositories || []);
+    }
+  }
+  if (state.reviewRequired) addCapability("review");
+  for (const capability of policyCapabilities(id)) addCapability(capability);
   return [...required].sort();
 }
 
 function claimsForProvider(id, provider) {
   const claims = evidence(id).claims;
-  if (provider === "review") return scopedReviewClaims(claims);
-  if (policyCapabilities(id).includes(provider)) return claims;
-  return claims.filter((claim) =>
-    claim.capabilities.includes(provider) ||
-    (provider === "discovery" && claim.capabilities.includes("test")));
+  const config = providerConfig(id, provider);
+  const capability = providerCapability(provider, config);
+  let scoped = capability === "review" ? scopedReviewClaims(claims) :
+    policyCapabilities(id).includes(capability) ? claims :
+      claims.filter((claim) =>
+        claim.capabilities.includes(capability) ||
+        (capability === "discovery" && claim.capabilities.includes("test")));
+  if (config?.repository)
+    scoped = scoped.filter((claim) =>
+      !claim.repositories || claim.repositories.includes(config.repository));
+  return scoped;
 }
 
 function pathInside(parent, candidate) {
@@ -872,7 +1551,9 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
     });
   if (value.providerFingerprint !== expectedFingerprint)
     return { provider, validity: "provider-fingerprint-stale", status: value.status };
-  if (value.workspaceHash !== hash) return { provider, validity: "stale", status: value.status };
+  const expectedWorkspaceHash = providerWorkspaceHash(id, provider, hash);
+  if (value.workspaceHash !== expectedWorkspaceHash)
+    return { provider, validity: "stale", status: value.status };
   if (value.status !== "pass") return { provider, validity: value.status };
   const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
   const covered = new Set(value.claims || []);
@@ -894,7 +1575,8 @@ function proofPlan(id) {
 }
 
 function topologyIssues(id) {
-  const providers = evidence(id).providers || {};
+  const contract = evidence(id);
+  const providers = contract.providers || {};
   const issues = [];
   const visiting = new Set();
   const visited = new Set();
@@ -925,15 +1607,54 @@ function topologyIssues(id) {
         !config.readiness.expectHeader)
       issues.push(`provider '${provider}' readiness lacks an identity body/header`);
   }
+  const serviceResources = new Map();
+  for (const [service, config] of Object.entries(contract.execution?.services || {})) {
+    let port = null;
+    try { port = new URL(config.readiness.url).port || null; } catch {}
+    const resources = [...(config.resources || []), ...(port ? [`port:${port}`] : [])];
+    for (const resource of resources) {
+      const owner = serviceResources.get(resource);
+      if (owner && owner !== service)
+        issues.push(`service resource collision: ${resource} (${owner}, ${service})`);
+      else serviceResources.set(resource, service);
+    }
+  }
+  return issues;
+}
+
+function changedSurfaceIssues(id) {
+  const state = loadRuntime(id);
+  if (!state.repositories || Object.keys(state.repositories).length <= 1) return [];
+  const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
+    .map(taskMetadata);
+  const issues = [];
+  for (const repository of selectedRepositories(id, state)) {
+    if (repository.mode !== "write") continue;
+    const allowed = tasks.filter((task) => task.repository === repository.id)
+      .flatMap((task) => task.paths);
+    const changed = changedFilesInWorkspace(id, repository.workspacePath)
+      .filter((path) => repository.id !== "root" ||
+        !isCurrentChangePath(path, id));
+    const outside = changed.filter((path) => !allowed.some((scope) => {
+      const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
+      return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
+    }));
+    if (outside.length)
+      issues.push(`repository '${repository.id}' changed outside task paths: ${outside.join(", ")}`);
+  }
   return issues;
 }
 
 function proofPreflight(id, stage = "prove", quiet = false) {
   validate(id, "active");
   const issues = topologyIssues(id);
+  if (stage === "prove") issues.push(...changedSurfaceIssues(id));
   const hash = relevantHash(id);
   const { unconfigured, unavailable } = executionNodes(id, hash);
   if (stage === "prove") {
+    const leases = activeChangeLeases(id);
+    if (leases.length)
+      issues.push(`active agent leases: ${leases.map((lease) => lease.taskId).join(", ")}`);
     issues.push(...unconfigured.map((provider) =>
       `provider '${provider}' has no executable adapter or valid external receipt`));
     issues.push(...unavailable.map((value) => `provider unavailable: ${value}`));
@@ -972,7 +1693,9 @@ function upgradeEvidence(id) {
 }
 
 function recordReceipt(id, provider, status, flags = {}) {
-  if (!PROVIDERS.has(provider)) die(`unknown provider '${provider}'`);
+  const configured = providerConfig(id, provider);
+  const capability = providerCapability(provider, configured);
+  if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
   if (!["pass", "fail", "inconclusive", "error"].includes(status)) die(`invalid receipt status '${status}'`);
   const allClaims = evidence(id).claims.map((claim) => claim.id);
   const allowedClaims = claimsForProvider(id, provider).map((claim) => claim.id);
@@ -985,7 +1708,7 @@ function recordReceipt(id, provider, status, flags = {}) {
   const forbiddenClaims = requestedClaims.filter((claim) => !allowedClaims.includes(claim));
   if (forbiddenClaims.length)
     die(`provider '${provider}' is not declared for claim(s): ${forbiddenClaims.join(", ")}`);
-  const config = flags.config || providerConfig(id, provider);
+  const config = flags.config || configured;
   const legacyForeground = flags.foreground || null;
   const foregroundRequired = flags["foreground-required"] !== undefined
     ? flags["foreground-required"] === "yes"
@@ -1002,11 +1725,13 @@ function recordReceipt(id, provider, status, flags = {}) {
   const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
     `manual-${Date.now()}-${process.pid}`;
   const workspaceHash = flags.workspaceHash || state.activeProofRun?.workspaceHash ||
-    relevantHash(id);
+    providerWorkspaceHash(id, provider);
+  const repository = providerRepository(id, provider, config);
   const artifacts = (Array.isArray(flags.artifacts) ? flags.artifacts : [])
     .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
   const receipt = {
-    version: 4, changeId: id, provider, providerVersion, adapter,
+    version: 5, changeId: id, provider, providerVersion, adapter,
+    repositoryId: repository?.id || null,
     adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
     providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
     contractFingerprint: contractFingerprint(id),
@@ -1039,32 +1764,33 @@ function recordReceipt(id, provider, status, flags = {}) {
     durationMs: flags.durationMs === undefined ? null : Number(flags.durationMs),
     startedAt: flags.started || now(), finishedAt: now()
   };
-  if (provider === "browser" && status === "pass" && receipt.capability.foregroundRequired &&
+  if (capability === "browser" && status === "pass" && receipt.capability.foregroundRequired &&
       !receipt.capability.foregroundAvailable) die("browser cannot pass when required foreground input is unavailable");
-  if (provider === "browser" && status === "pass" &&
+  if (capability === "browser" && status === "pass" &&
       !INPUT_MODES.has(receipt.capability.inputMode))
     die("passing browser receipt requires --input-mode browser-automation|dom-event|os-input|both");
-  if (provider === "browser" && status === "pass" &&
+  if (capability === "browser" && status === "pass" &&
       ["os-input", "both"].includes(receipt.capability.inputMode) &&
       (!receipt.capability.foregroundRequired || !receipt.capability.foregroundAvailable))
     die("passing OS-input browser receipt requires foreground-required=yes and foreground-available=yes");
-  if (provider === "discovery" && status === "pass") {
+  if (capability === "discovery" && status === "pass") {
     const discovered = Number(flags.discovered);
     const minimum = Number(flags.minimum);
     if (!Number.isFinite(discovered) || !Number.isFinite(minimum) || minimum <= 0 || discovered < minimum)
       die("passing discovery receipt requires --discovered N --minimum N with discovered >= minimum > 0");
     receipt.discovery = { discovered, minimum };
   }
-  if (provider === "mutation" && status === "pass" &&
+  if (capability === "mutation" && status === "pass" &&
       !["behavioral-kill", "test-failure"].includes(flags.classification))
     die("passing mutation receipt requires --classification behavioral-kill|test-failure; crash is not a kill");
-  if (provider === "mutation") receipt.classification = flags.classification || null;
+  if (capability === "mutation") receipt.classification = flags.classification || null;
   writeJson(receiptPath(id, provider), receipt);
   console.log(`RECEIPT ${id}/${provider}: ${status}`);
 }
 
 function runProvider(id, provider, values) {
-  if (!PROVIDERS.has(provider)) die(`unknown provider '${provider}'`);
+  const capability = providerCapability(provider, providerConfig(id, provider));
+  if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
   const split = values.indexOf("--");
   if (split < 0 || split === values.length - 1) die("run-provider requires '-- <command> [args...]'");
   const { flags, rest } = parseFlags(values.slice(0, split));
@@ -1075,7 +1801,7 @@ function runProvider(id, provider, values) {
   const started = now();
   const startedMs = Date.now();
   const result = spawnSync(command, commandArgs, {
-    cwd: loadRuntime(id).workspace?.path || ROOT, encoding: "utf8",
+    cwd: providerWorkspace(id, provider), encoding: "utf8",
     env: { ...process.env, FOUNDATION_CHANGE_ID: id }
   });
   const logDir = join(LOGS, id);
@@ -1215,7 +1941,9 @@ function runCommand(command, args, options) {
 
 async function startServiceSession(id, name, config, proofRunId) {
   const state = loadRuntime(id);
-  const cwd = state.workspace?.path || ROOT;
+  const cwd = config.repository
+    ? repositoryById(id, config.repository, state).workspacePath
+    : state.workspace?.path || ROOT;
   const [command, ...args] = config.command;
   const inherited = Object.fromEntries((config.envFrom || [])
     .filter((name) => process.env[name] !== undefined)
@@ -1232,6 +1960,7 @@ async function startServiceSession(id, name, config, proofRunId) {
       ...(config.env || {}),
       FOUNDATION_CHANGE_ID: id,
       FOUNDATION_CONTROL_ROOT: ROOT,
+      FOUNDATION_REPOSITORY_ID: config.repository || "root",
       FOUNDATION_PROOF_RUN_ID: proofRunId,
       FOUNDATION_SERVICE_NAME: name
     },
@@ -1317,7 +2046,7 @@ function configuredCommand(provider, config) {
 function adapterResources(provider, config) {
   if (Array.isArray(config.resources)) return [...new Set(config.resources)].sort();
   if (config.adapter === "playwright") return ["browser", "dev-server", "workspace-read"];
-  if (provider === "mutation") return ["workspace-write"];
+  if (providerCapability(provider, config) === "mutation") return ["workspace-write"];
   return ["workspace-read"];
 }
 
@@ -1331,7 +2060,8 @@ function resourcesConflict(left, right) {
 
 async function executeAdapter(id, provider, config, proofRunId, commandCache) {
   const state = loadRuntime(id);
-  const cwd = state.workspace?.path || ROOT;
+  const repository = providerRepository(id, provider, config);
+  const cwd = repository?.workspacePath || state.workspace?.path || ROOT;
   const built = configuredCommand(provider, config);
   const envFrom = Object.fromEntries((config.envFrom || [])
     .filter((name) => process.env[name] !== undefined)
@@ -1349,6 +2079,7 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
       ...(config.env || {}),
       FOUNDATION_CHANGE_ID: id,
       FOUNDATION_CONTROL_ROOT: ROOT,
+      FOUNDATION_REPOSITORY_ID: repository?.id || "root",
       FOUNDATION_PROOF_RUN_ID: proofRunId,
       FOUNDATION_COMMAND_EXECUTION_ID: commandExecutionId,
       FOUNDATION_EXECUTION_ID: commandExecutionId
@@ -1376,7 +2107,9 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
     : parseJsonOutput(result.stdout);
   const baseFlags = {
     config, adapter: config.adapter, proofRunId, commandExecutionId,
-    workspaceHash: state.activeProofRun?.workspaceHash,
+    workspaceHash: providerWorkspaceHash(
+      id, provider, state.activeProofRun?.workspaceHash
+    ),
     claims: providerClaims(id, provider, config).join(","),
     command: built.display, started: result.startedAt,
     observed: result.timedOut ? `timeout after ${result.durationMs}ms` :
@@ -1388,10 +2121,13 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
   };
 
   if (config.adapter === "test-discovery") {
+    const testProvider = provider;
+    const discoveryProvider = config.discoveryProvider || "discovery";
+    const discoveryConfig = providerConfig(id, discoveryProvider) || config;
     const testStatus = result.timedOut || result.error ? "error" :
       result.status === 0 ? "pass" : "fail";
-    recordReceipt(id, "test", testStatus, {
-      ...baseFlags, claims: providerClaims(id, "test", config).join(",")
+    recordReceipt(id, testProvider, testStatus, {
+      ...baseFlags, claims: providerClaims(id, testProvider, config).join(",")
     });
     const discovered = numericReportValue(report, [
       "numTotalTests", "totalTests", "tests", "testCount", "expected"
@@ -1400,9 +2136,9 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
     const discoveryStatus = result.timedOut || result.error ? "error" :
       discovered === null ? "inconclusive" :
       discovered >= minimum ? "pass" : "fail";
-    recordReceipt(id, "discovery", discoveryStatus, {
-      ...baseFlags,
-      claims: providerClaims(id, "discovery", config).join(","),
+    recordReceipt(id, discoveryProvider, discoveryStatus, {
+      ...baseFlags, config: discoveryConfig,
+      claims: providerClaims(id, discoveryProvider, discoveryConfig).join(","),
       discovered: discovered ?? 0, minimum,
       observed: discovered === null ? "structured test count unavailable" :
         `${discovered} discovered; minimum ${minimum}`
@@ -1436,7 +2172,7 @@ async function executeAdapter(id, provider, config, proofRunId, commandCache) {
       recordReceipt(id, output, status, {
         ...baseFlags,
         claims: requiredClaims.join(","),
-        "input-mode": output === "browser"
+        "input-mode": providerCapability(output, providerConfig(id, output)) === "browser"
           ? config.inputMode || "browser-automation" : config.inputMode || null,
         "foreground-required": config.foregroundRequired ? "yes" : "no",
         "foreground-available": config.foregroundAvailable ? "yes" : "no",
@@ -1475,24 +2211,31 @@ function executionNodes(id, hash) {
       unconfigured.push(provider);
       continue;
     }
-    if (!commandExists(config.command?.[0], loadRuntime(id).workspace?.path || ROOT)) {
+    if (!commandExists(config.command?.[0], providerWorkspace(id, provider, config))) {
       unavailable.push(`${provider}:command`);
       continue;
     }
     if (config.adapter === "playwright") {
-      const availability = playwrightAvailability(loadRuntime(id).workspace?.path || ROOT);
+      const availability = playwrightAvailability(providerWorkspace(id, provider, config));
       if (!availability.packageOwned || !availability.binaryAvailable) {
         unavailable.push(`${provider}:project-owned-playwright`);
         continue;
       }
     }
-    const covers = config.adapter === "test-discovery" && ["test", "discovery"].includes(provider)
-      ? ["test", "discovery"]
+    const configuredProducer = config.adapter === "test-discovery"
+      ? Object.entries(evidence(id).providers || {}).find(([candidate, value]) =>
+        stableHash(value) === stableHash(config) &&
+        providerCapability(candidate, value) === "test")?.[0]
+      : null;
+    const nodeProvider = configuredProducer || provider;
+    const covers = config.adapter === "test-discovery"
+      ? [nodeProvider, config.discoveryProvider || "discovery"]
+        .filter((output) => needed.includes(output))
       : [...new Set([provider, ...(config.outputs || [])])]
         .filter((output) => needed.includes(output));
     covers.forEach((item) => claimed.add(item));
     nodes.push({
-      provider: config.adapter === "test-discovery" ? "test" : provider,
+      provider: nodeProvider,
       covers, config, resources: adapterResources(provider, config),
       dependsOn: config.dependsOn || []
     });
@@ -1582,6 +2325,12 @@ function prove(id, requestedProofRunId = null) {
   const stateBefore = loadRuntime(id);
   if (stateBefore.status === "archived") die(`change '${id}' is already archived`);
   validate(id, "active");
+  const surfaceIssues = changedSurfaceIssues(id);
+  if (surfaceIssues.length)
+    die(`changed-surface authority failed: ${surfaceIssues.join("; ")}`);
+  const leases = activeChangeLeases(id);
+  if (leases.length)
+    die(`active agent leases block proof: ${leases.map((lease) => lease.taskId).join(", ")}`);
   const pending = pendingTasks(id);
   if (pending.length) die(`${pending.length} implementation task(s) remain unchecked`);
   clearSnapshotCache(id);
@@ -1600,6 +2349,7 @@ function prove(id, requestedProofRunId = null) {
     cpSync(source, destination);
     return {
       provider: row.provider,
+      repositoryId: row.receipt?.repositoryId || null,
       path: relative(ROOT, destination).replaceAll("\\", "/"),
       sha256: fileDigest(destination),
       size: statSync(destination).size
@@ -1614,6 +2364,7 @@ function prove(id, requestedProofRunId = null) {
     status: "pass",
     workspaceHash: hash,
     workspaceSnapshotId: snapshot.id,
+    repositories: snapshot.repositories || null,
     contractFingerprint: contractFingerprint(id),
     executionFingerprint: executionFingerprint(id),
     providers: checks.map((row) => row.provider),
@@ -1683,6 +2434,247 @@ function landCheck(id) {
   return { archived: false, state, hash };
 }
 
+function orderedRepositories(id, state = loadRuntime(id)) {
+  const repositories = selectedRepositories(id, state);
+  const byId = new Map(repositories.map((repository) => [repository.id, repository]));
+  const visiting = new Set();
+  const visited = new Set();
+  const ordered = [];
+  function visit(repository) {
+    if (visiting.has(repository.id))
+      die(`repository dependency cycle at '${repository.id}'`);
+    if (visited.has(repository.id)) return;
+    visiting.add(repository.id);
+    for (const dependency of repository.dependsOn || []) {
+      const target = byId.get(dependency);
+      if (target) visit(target);
+    }
+    visiting.delete(repository.id);
+    visited.add(repository.id);
+    ordered.push(repository);
+  }
+  repositories.forEach(visit);
+  ordered.sort((left, right) => {
+    if (left.id === "root") return 1;
+    if (right.id === "root") return -1;
+    return 0;
+  });
+  return ordered;
+}
+
+function repositoryCommitLanded(repository, commit) {
+  if (!commit || !gitHead(repository.path)) return false;
+  const result = git(["merge-base", "--is-ancestor", commit, "HEAD"], repository.path);
+  return result.status === 0;
+}
+
+function rootGitlink(workspace, repository) {
+  if (repository.type !== "submodule") return null;
+  const result = git(["ls-files", "-s", "--", repository.relativePath], workspace);
+  if (result.status !== 0) return null;
+  return result.stdout.trim().match(/^160000\s+([0-9a-f]+)/)?.[1] || null;
+}
+
+function landPlanValue(id) {
+  const state = loadRuntime(id);
+  const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
+  const repositories = orderedRepositories(id, state).map((repository) => {
+    const runtime = state.repositories?.[repository.id] || {};
+    const commit = runtime.land?.commit || null;
+    const landed = repository.id === "root" ? false :
+      repositoryCommitLanded(repository, commit);
+    const sandboxGitlink = rootGitlink(state.workspace?.path || ROOT, repository);
+    const targetGitlink = rootGitlink(ROOT, repository);
+    let status = repository.mode === "read" ? "read-only" :
+      repository.id === "root" ? "control-plane-last" :
+      !runtime.path ? "sandbox-missing" :
+      !commit ? "awaiting-explicit-commit" :
+      !landed ? "awaiting-explicit-branch-land" :
+      repository.type === "submodule" &&
+        (sandboxGitlink !== commit || targetGitlink !== commit)
+        ? "awaiting-root-pointer" : "child-landed";
+    if (runtime.land?.ci === "fail") status = "ci-failed";
+    if (runtime.land?.ciRequired && runtime.land?.ci !== "pass")
+      status = "awaiting-ci";
+    return {
+      id: repository.id,
+      type: repository.type,
+      mode: repository.mode,
+      dependsOn: repository.dependsOn || [],
+      targetPath: repository.path,
+      sandboxPath: runtime.path || repository.workspacePath,
+      baseHead: runtime.baseHead || repository.baseHead,
+      targetHead: gitHead(repository.path),
+      sandboxHead: gitHead(runtime.path || repository.workspacePath),
+      commit,
+      ci: runtime.land?.ci || null,
+      rootGitlink: sandboxGitlink,
+      targetRootGitlink: targetGitlink,
+      status
+    };
+  });
+  const value = {
+    version: 1,
+    changeId: id,
+    proofRunId: proof?.proofRunId || null,
+    proofStatus: proof?.status || "missing",
+    workspaceHash: relevantHash(id),
+    strategy: "ordered-resumable-saga",
+    repositories,
+    readyToArchive: repositories.every((repository) =>
+      ["read-only", "child-landed", "control-plane-last"].includes(repository.status)),
+    updatedAt: now()
+  };
+  return value;
+}
+
+function showLandPlan(id) {
+  const plan = landPlanValue(id);
+  writeJson(join(TRANSACTIONS, id, "multi-repo-land.json"), plan);
+  console.log(JSON.stringify(plan, null, 2));
+}
+
+function recordRepositoryLand(id, flags) {
+  const repositoryId = flags.repo;
+  const commit = flags.commit;
+  if (!repositoryId || !commit)
+    die("land record requires --repo <id> --commit <sha>");
+  landCheck(id);
+  const state = loadRuntime(id);
+  const repository = repositoryById(id, repositoryId, state);
+  if (repository.id === "root" || repository.mode !== "write")
+    die(`repository '${repositoryId}' is not a writable child repository`);
+  const runtime = state.repositories?.[repositoryId];
+  if (!runtime?.path) die(`repository '${repositoryId}' has no sandbox`);
+  const resolved = git(["rev-parse", `${commit}^{commit}`], runtime.path);
+  if (resolved.status !== 0)
+    die(`commit '${commit}' is not available in repository '${repositoryId}'`);
+  const normalizedCommit = resolved.stdout.trim();
+  const sandboxHead = gitHead(runtime.path);
+  if (sandboxHead !== normalizedCommit)
+    die(`repository '${repositoryId}' sandbox HEAD must equal the recorded commit`);
+  const dirty = git(["status", "--porcelain"], runtime.path);
+  if (dirty.status !== 0 || dirty.stdout.trim())
+    die(`repository '${repositoryId}' sandbox must be clean before recording Land`);
+  const ci = flags.ci || null;
+  if (ci && !["pass", "fail", "pending"].includes(ci))
+    die("land record --ci must be pass|fail|pending");
+  state.repositories[repositoryId].land = {
+    commit: normalizedCommit,
+    ci,
+    ciRequired: Boolean(flags["ci-required"]),
+    recordedAt: now(),
+    authority: "explicit-user-record"
+  };
+  saveRuntime(state);
+  console.log(`LAND RECORDED ${id}/${repositoryId}\n  commit: ${normalizedCommit}\n  ci: ${ci || "unknown"}`);
+}
+
+function stageRootPointers(id) {
+  landCheck(id);
+  const state = loadRuntime(id);
+  if (!state.repositories || Object.keys(state.repositories).length <= 1)
+    die(`change '${id}' is not multi-repository`);
+  if (gitHead(ROOT) !== state.workspace?.baseHead)
+    die("control repository HEAD moved since sandbox creation");
+  const entries = orderedRepositories(id, state)
+    .filter((repository) => repository.type === "submodule" &&
+      repository.mode === "write")
+    .map((repository) => {
+      const runtime = state.repositories[repository.id];
+      const commit = runtime?.land?.commit;
+      if (!commit || !repositoryCommitLanded(repository, commit))
+        die(`repository '${repository.id}' commit has not landed`);
+      if (runtime.land.ciRequired && runtime.land.ci !== "pass")
+        die(`repository '${repository.id}' required CI has not passed`);
+      const sandboxBefore = rootGitlink(state.workspace.path, repository);
+      const targetBefore = rootGitlink(ROOT, repository);
+      if (![runtime.baseHead, commit].includes(sandboxBefore) ||
+          ![runtime.baseHead, commit].includes(targetBefore))
+        die(`repository '${repository.id}' root pointer changed outside the Land plan`);
+      return { repository, commit, sandboxBefore, targetBefore };
+    });
+  if (!entries.length) {
+    console.log(`ROOT POINTERS ${id}: no submodule pointers required`);
+    return;
+  }
+  const applied = [];
+  try {
+    for (const entry of entries) {
+      const sandboxResult = git([
+        "update-index", "--cacheinfo",
+        `160000,${entry.commit},${entry.repository.relativePath}`
+      ], state.workspace.path);
+      if (sandboxResult.status !== 0)
+        throw new Error(`cannot update ${entry.repository.id} sandbox pointer: ${sandboxResult.stderr.trim()}`);
+      const targetResult = git([
+        "update-index", "--cacheinfo",
+        `160000,${entry.commit},${entry.repository.relativePath}`
+      ], ROOT);
+      if (targetResult.status !== 0) {
+        git(["update-index", "--cacheinfo",
+          `160000,${entry.sandboxBefore},${entry.repository.relativePath}`],
+        state.workspace.path);
+        throw new Error(`cannot update ${entry.repository.id} target pointer: ${targetResult.stderr.trim()}`);
+      }
+      applied.push(entry);
+    }
+  } catch (error) {
+    for (const entry of applied.reverse()) {
+      git(["update-index", "--cacheinfo",
+        `160000,${entry.sandboxBefore},${entry.repository.relativePath}`],
+      state.workspace.path);
+      git(["update-index", "--cacheinfo",
+        `160000,${entry.targetBefore},${entry.repository.relativePath}`], ROOT);
+    }
+    die(`${error.message}; root pointers rolled back`);
+  }
+  state.land = {
+    ...(state.land || {}),
+    strategy: "ordered-resumable-saga",
+    status: "root-pointers-staged",
+    pointers: Object.fromEntries(entries.map((entry) =>
+      [entry.repository.id, entry.commit])),
+    pointersStagedAt: now()
+  };
+  state.status = "building";
+  delete state.provenHash;
+  clearSnapshotCache(id);
+  saveRuntime(state);
+  console.log(`ROOT POINTERS STAGED ${id}\n  proof is stale; run /prove ${id}`);
+}
+
+function resumeLand(id) {
+  landCheck(id);
+  const state = loadRuntime(id);
+  for (const repository of orderedRepositories(id, state)) {
+    if (repository.id === "root" || repository.mode !== "write") continue;
+    const runtime = state.repositories?.[repository.id];
+    if (!runtime?.land?.commit) continue;
+    runtime.land.status = repositoryCommitLanded(repository, runtime.land.commit)
+      ? "child-landed" : "awaiting-explicit-branch-land";
+    runtime.land.checkedAt = now();
+  }
+  state.land = {
+    ...(state.land || {}),
+    strategy: "ordered-resumable-saga",
+    status: "children-inspected",
+    resumedAt: now()
+  };
+  saveRuntime(state);
+  showLandPlan(id);
+}
+
+function assertMultiRepositoryArchiveReady(id, state) {
+  if (!state.repositories || Object.keys(state.repositories).length <= 1) return;
+  const plan = landPlanValue(id);
+  const blocked = plan.repositories.filter((repository) =>
+    !["read-only", "child-landed", "control-plane-last"].includes(repository.status));
+  if (blocked.length)
+    die(`multi-repository Land is incomplete: ${blocked.map((repository) =>
+      `${repository.id}:${repository.status}`).join(", ")}`);
+}
+
 function createCopySandbox(id, state, reason) {
   const path = mkdtempSync(join(tmpdir(), `foundation-${id}-`));
   cpSync(ROOT, path, {
@@ -1703,7 +2695,7 @@ function createCopySandbox(id, state, reason) {
   console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  path: ${path}`);
 }
 
-function createSandbox(id) {
+function createSingleSandbox(id) {
   const state = loadRuntime(id);
   if (state.status === "archived") die(`change '${id}' is already archived`);
   if (["worktree", "copy"].includes(state.workspace?.mode) && existsSync(state.workspace.path))
@@ -1736,6 +2728,67 @@ function createSandbox(id) {
   console.log(`SANDBOX ${id}\n  path: ${path}`);
 }
 
+function createSandbox(id, flags = {}) {
+  const initial = loadRuntime(id);
+  const repositories = selectedRepositories(id, initial);
+  if (repositories.length === 1 && repositories[0].id === "root" && !flags.all) {
+    createSingleSandbox(id);
+    return;
+  }
+  createSingleSandbox(id);
+  const state = loadRuntime(id);
+  state.repositories = {};
+  try {
+    for (const repository of repositories) {
+      if (repository.id === "root") {
+        state.repositories.root = {
+          mode: state.workspace.mode,
+          path: state.workspace.path,
+          targetPath: ROOT,
+          baseHead: state.workspace.baseHead || gitHead(ROOT),
+          access: repository.mode
+        };
+        continue;
+      }
+      const baseHead = gitHead(repository.path);
+      if (!baseHead && repository.mode === "write")
+        throw new Error(`repository '${repository.id}' is not an initialized Git repository`);
+      if (repository.mode === "read" || repository.type === "external") {
+        state.repositories[repository.id] = {
+          mode: "reference", path: repository.path, targetPath: repository.path,
+          baseHead, access: "read"
+        };
+        continue;
+      }
+      const path = join(ROOT, ".foundation", "repository-sandboxes", id, repository.id);
+      if (existsSync(path))
+        throw new Error(`repository sandbox already exists: ${path}`);
+      mkdirSync(dirname(path), { recursive: true });
+      const result = git(["worktree", "add", "--detach", path, baseHead], repository.path);
+      if (result.status !== 0)
+        throw new Error(`cannot create sandbox for '${repository.id}': ${result.stderr.trim()}`);
+      state.repositories[repository.id] = {
+        mode: "worktree", path, targetPath: repository.path,
+        baseHead, access: "write", applied: false
+      };
+    }
+  } catch (error) {
+    cleanupRepositorySandboxes(id, state);
+    cleanupAppliedSandbox(id, state);
+    state.workspace = { mode: "current", path: ROOT, baseHead: gitHead(ROOT) };
+    delete state.repositories;
+    state.status = "change";
+    saveRuntime(state);
+    die(`${error.message}; created sandboxes rolled back`);
+  }
+  state.status = "building";
+  saveRuntime(state);
+  clearSnapshotCache(id);
+  console.log(`MULTI-REPOSITORY SANDBOX ${id}`);
+  for (const repository of selectedRepositories(id, state))
+    console.log(`  ${repository.id}: ${repository.workspacePath}`);
+}
+
 function mergeTaskProgress(source, sandbox) {
   const completedIds = new Set(taskBlocks(sandbox)
     .filter((task) => task.done && task.id).map((task) => task.id));
@@ -1760,6 +2813,10 @@ function syncSandbox(id) {
     die(`change '${id}' has no active sandbox`);
   const source = changePath(id);
   const destination = join(workspace.path, "openspec", "changes", id);
+  const priorRepositories = repositorySelectionIdsAt(destination);
+  const nextRepositories = repositorySelectionIdsAt(source);
+  if (JSON.stringify(priorRepositories) !== JSON.stringify(nextRepositories))
+    die("repository scope changed during Build; finish or split the current repository work before creating a topology revision");
   const sourceTasks = readFileSync(join(source, "tasks.md"), "utf8");
   const sandboxTasks = existsSync(join(destination, "tasks.md"))
     ? readFileSync(join(destination, "tasks.md"), "utf8") : "";
@@ -1840,8 +2897,16 @@ function gitApplyInputs(id, sandboxPath) {
     ":(exclude)coverage/**", ":(exclude)test-results/**",
     ":(exclude)playwright-report/**", ":(exclude).foundation/**"
   ];
+  const state = loadRuntime(id);
+  for (const repository of selectedRepositories(id, state))
+    if (repository.type === "submodule")
+      pathspec.push(`:(exclude)${repository.relativePath}`);
   const diff = git(["diff", "--binary", "HEAD", "--", ...pathspec], sandboxPath);
-  if (diff.status !== 0 || !diff.stdout) die("sandbox has no applicable diff");
+  if (diff.status !== 0) die("cannot inspect sandbox diff");
+  if (!diff.stdout) {
+    if (state.repositories && Object.keys(state.repositories).length > 1) return [];
+    die("sandbox has no applicable diff");
+  }
   const check = spawnSync("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
     cwd: ROOT, input: diff.stdout, encoding: "utf8"
   });
@@ -2029,7 +3094,11 @@ function recoverPendingApply(id, state) {
   }
 }
 
-function applySandbox(id) {
+function applySandbox(id, options = {}) {
+  const initialState = loadRuntime(id);
+  if (initialState.repositories && Object.keys(initialState.repositories).length > 1 &&
+      !options.controlPlane)
+    die("multi-repository sandboxes do not apply as one local transaction; use land plan/record/resume");
   const readiness = landCheck(id);
   if (readiness.archived) return;
   let state = loadRuntime(id);
@@ -2107,6 +3176,33 @@ function cleanupAppliedSandbox(id, state) {
   return { status: "not-needed", path };
 }
 
+function cleanupRepositorySandboxes(id, state) {
+  const results = {};
+  for (const [repositoryId, runtime] of Object.entries(state.repositories || {})) {
+    if (repositoryId === "root" || runtime.mode !== "worktree" ||
+        !runtime.path || !existsSync(runtime.path)) {
+      results[repositoryId] = { status: "not-needed" };
+      continue;
+    }
+    const expected = resolve(ROOT, ".foundation", "repository-sandboxes", id, repositoryId);
+    if (resolve(runtime.path) !== expected) {
+      results[repositoryId] = {
+        status: "refused", reason: "repository sandbox path is outside the expected location"
+      };
+      continue;
+    }
+    const target = runtime.targetPath;
+    const removed = git(["worktree", "remove", "--force", runtime.path], target);
+    if (removed.status !== 0) {
+      results[repositoryId] = { status: "failed", reason: removed.stderr.trim() };
+      continue;
+    }
+    git(["worktree", "prune"], target);
+    results[repositoryId] = { status: "removed" };
+  }
+  return results;
+}
+
 function cleanupApplyTransaction(state) {
   const transactionId = state.workspace?.apply?.transactionId;
   if (!transactionId) return { status: "not-needed" };
@@ -2152,6 +3248,10 @@ function archive(id) {
       initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
       resumed = true;
     }
+    if (initial.repositories && !initial.repositoryCleanup) {
+      initial.repositoryCleanup = cleanupRepositorySandboxes(id, initial);
+      resumed = true;
+    }
     if (resumed) saveRuntime(initial);
     console.log(`ALREADY ARCHIVED ${id}\n  archived: ${initial.archivedAt || "unknown"}`);
     return;
@@ -2168,6 +3268,8 @@ function archive(id) {
       recoveredAt: now()
     };
     initial.workspace.cleanup = cleanupAppliedSandbox(id, initial);
+    if (initial.repositories)
+      initial.repositoryCleanup = cleanupRepositorySandboxes(id, initial);
     if (initial.workspace.apply)
       initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
     delete initial.workspace.baseline;
@@ -2179,6 +3281,7 @@ function archive(id) {
   }
   let readiness = landCheck(id);
   if (readiness.archived) return;
+  assertMultiRepositoryArchiveReady(id, readiness.state);
   let journal = loadRuntime(id);
   journal.land = {
     ...(journal.land || {}),
@@ -2189,7 +3292,7 @@ function archive(id) {
   saveRuntime(journal);
   if (["worktree", "copy"].includes(readiness.state.workspace?.mode) &&
       !readiness.state.workspace.applied) {
-    applySandbox(id);
+    applySandbox(id, { controlPlane: true });
     journal = loadRuntime(id);
     journal.land = { ...(journal.land || {}), status: "code-applied", updatedAt: now() };
     saveRuntime(journal);
@@ -2217,6 +3320,9 @@ function archive(id) {
   if (!audit.valid) die(`post-archive proof audit failed: ${audit.reason}`);
   state.land = { ...(state.land || {}), status: "archive-audited", updatedAt: now() };
   state.workspace.cleanup = cleanupAppliedSandbox(id, state);
+  if (state.repositories)
+    state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
+  cleanupChangeLeases(id);
   if (state.workspace.apply)
     state.workspace.apply.cleanup = cleanupApplyTransaction(state);
   delete state.workspace.baseline;
@@ -2248,14 +3354,20 @@ function showProviders() {
     console.log(`${provider}\t${contract}`);
 }
 
-function changedFiles(id, state) {
-  const workspace = state.workspace?.path || ROOT;
+function changedFilesInWorkspace(id, workspace) {
   if (gitHead(workspace)) {
     const result = git(["status", "--porcelain", "--untracked-files=all"], workspace);
     if (result.status === 0)
       return result.stdout.split("\n").filter(Boolean)
         .map((line) => line.slice(3).split(" -> ").at(-1)).sort();
   }
+  return [];
+}
+
+function changedFiles(id, state) {
+  const workspace = state.workspace?.path || ROOT;
+  const gitFiles = changedFilesInWorkspace(id, workspace);
+  if (gitHead(workspace)) return gitFiles;
   if (state.workspace?.mode === "copy" && state.workspace.baseline) {
     const current = workspaceManifest(workspace, id, true);
     return [...new Set([
@@ -2268,7 +3380,12 @@ function changedFiles(id, state) {
 function policyCapabilities(id) {
   if (policyCache.has(id)) return policyCache.get(id);
   const state = loadRuntime(id);
-  const files = changedFiles(id, state)
+  const files = state.repositories
+    ? selectedRepositories(id, state).flatMap((repository) =>
+      changedFilesInWorkspace(id, repository.workspacePath)
+        .map((path) => `${repository.id}/${path}`))
+    : changedFiles(id, state);
+  const relevantFiles = files
     .filter((path) => !path.startsWith("openspec/changes/"));
   const defaults = [
     {
@@ -2300,12 +3417,12 @@ function policyCapabilities(id) {
   ];
   const required = new Set();
   for (const policy of defaults)
-    if (files.some((path) => policy.patterns.some((pattern) => pattern.test(path))))
+    if (relevantFiles.some((path) => policy.patterns.some((pattern) => pattern.test(path))))
       policy.capabilities.forEach((capability) => required.add(capability));
   const configured = readJson(join(ROOT, ".foundation", "policy.json"), { rules: [] });
   for (const rule of configured.rules || []) {
     if (!Array.isArray(rule.paths) || !Array.isArray(rule.capabilities)) continue;
-    const matches = files.some((path) => rule.paths.some((prefix) =>
+    const matches = relevantFiles.some((path) => rule.paths.some((prefix) =>
       typeof prefix === "string" &&
       (path === prefix.replace(/\*\*?$/, "") ||
        path.startsWith(prefix.replace(/\*\*?$/, "")))));
@@ -2318,22 +3435,32 @@ function policyCapabilities(id) {
   return result;
 }
 
-function packetValue(id) {
+function packetValue(id, repositoryId = null, taskId = null) {
   const state = loadRuntime(id);
   const activePath = activeChangePath(id, state);
   const contract = evidence(id, activePath);
-  const claims = contract.claims;
-  const hash = relevantHash(id);
+  const repository = repositoryId ? repositoryById(id, repositoryId, state) : null;
+  const claims = contract.claims.filter((claim) =>
+    !repository || !claim.repositories || claim.repositories.includes(repository.id));
+  const compositeSnapshot = relevantSnapshot(id);
+  const hash = repository
+    ? compositeSnapshot.repositories?.[repository.id]?.workspaceHash ||
+      singleRelevantSnapshot(id, repository.workspacePath).workspaceHash
+    : compositeSnapshot.workspaceHash;
   const providers = requiredProviders(id).map((provider) => {
     const check = receiptValidity(id, provider, hash);
     const config = providerConfig(id, provider);
     return {
       provider, adapter: config?.adapter || "external",
+      repository: config?.repository || null,
       resources: config ? adapterResources(provider, config) : [],
       validity: check.validity, status: check.status || check.receipt?.status || null
     };
-  });
-  const fileChanges = changedFiles(id, state);
+  }).filter((provider) => !repository ||
+    !provider.repository || provider.repository === repository.id);
+  const fileChanges = repository
+    ? changedFilesInWorkspace(id, repository.workspacePath)
+    : changedFiles(id, state);
   const changedFileSummary = fileChanges.length <= 200 ? fileChanges : {
     count: fileChanges.length,
     digest: stableHash(fileChanges),
@@ -2344,6 +3471,13 @@ function packetValue(id) {
     }, {})).sort(([left], [right]) => left.localeCompare(right))
       .map(([prefix, count]) => ({ prefix, count }))
   };
+  const allTasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8"))
+    .map(taskMetadata);
+  const scopedTasks = allTasks.filter((task) =>
+    (!repository || task.repository === repository.id) &&
+    (!taskId || task.id === taskId));
+  if (taskId && scopedTasks.length === 0)
+    die(`task '${taskId}' is not assigned to repository '${repositoryId || "root"}'`);
   const packet = {
     version: 2, changeId: id, intent: state.intent, schema: state.schema,
     status: state.status, revision: Number(state.revision || 0),
@@ -2352,9 +3486,21 @@ function packetValue(id) {
     impact: state.impact, coupling: state.coupling,
     reviewRequired: Boolean(state.reviewRequired),
     changePath: relative(ROOT, activePath) || ".",
-    workspacePath: state.workspace?.path || ROOT,
+    repository: repository ? {
+      id: repository.id, type: repository.type, mode: repository.mode,
+      relativePath: repository.relativePath,
+      dependsOn: repository.dependsOn || []
+    } : null,
+    workspacePath: repository?.workspacePath || state.workspace?.path || ROOT,
     workspaceHash: hash,
-    pendingTaskCount: pendingTasks(id).length,
+    compositeWorkspaceHash: compositeSnapshot.workspaceHash,
+    pendingTaskCount: scopedTasks.filter((task) => !task.done).length,
+    tasks: scopedTasks.map((task) => ({
+      id: task.id, done: task.done, kind: task.kind,
+      dependsOn: task.dependsOn, paths: task.paths,
+      resources: task.resources, text: task.text,
+      model: modelForTask(id, task)
+    })),
     claims: claims.map((claim) => ({
       id: claim.id,
       scenario: String(claim.scenario).slice(0, 500),
@@ -2366,17 +3512,26 @@ function packetValue(id) {
     budget: state.budget
   };
   const encoded = JSON.stringify(packet);
-  if (Buffer.byteLength(encoded) > 65536)
-    die("compact packet exceeds 64 KiB; split the change or shorten scenarios/invariants");
+  const limit = Number(foundationPolicy().execution.packetBytes || 65536);
+  if (Buffer.byteLength(encoded) > limit)
+    die(`compact packet exceeds ${limit} bytes; split the change or shorten scenarios/invariants`);
   return { ...packet, packetDigest: stableHash(packet) };
 }
 
-function showPacket(id) {
-  console.log(JSON.stringify(packetValue(id), null, 2));
+function showPacket(id, flags = {}) {
+  console.log(JSON.stringify(packetValue(id, flags.repo || null, flags.task || null), null, 2));
 }
 
 function recordEvent(id, flags) {
   const state = loadRuntime(id);
+  if (flags.repo) repositoryById(id, flags.repo, state);
+  if (flags.task) {
+    const taskId = String(flags.task).toUpperCase();
+    const known = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
+      .some((task) => task.id === taskId);
+    if (!known) die(`event references unknown task '${flags.task}'`);
+    flags.task = taskId;
+  }
   for (const field of ["input", "output", "cache", "cost", "duration"])
     if (flags[field] !== undefined && !Number.isFinite(Number(flags[field])))
       die(`event --${field} must be numeric`);
@@ -2396,6 +3551,8 @@ function recordEvent(id, flags) {
     cost: flags.cost === undefined ? null : Number(flags.cost),
     durationMs: flags.duration === undefined ? null : Number(flags.duration),
     tool: flags.tool || null,
+    repositoryId: flags.repo || null,
+    taskId: flags.task || null,
     workspaceHash: snapshot.workspaceHash || null,
     workspaceSnapshotId: snapshot.snapshotId || snapshot.id || null,
     changeId: id
@@ -2566,6 +3723,8 @@ function normalizeTelemetryRow(id, row, format, context = {}) {
     cost: row.cost ?? row.cost_usd ?? usage.cost_usd ?? null,
     durationMs: row.durationMs ?? row.duration_ms ?? null,
     tool: row.tool || null,
+    repositoryId: row.repositoryId || row.repository_id || row.repository || null,
+    taskId: row.taskId || row.task_id || row.task || null,
     workspaceHash: row.workspaceHash || snapshot.workspaceHash || null,
     workspaceSnapshotId: row.workspaceSnapshotId || snapshot.id || null,
     changeId: id,
@@ -2729,8 +3888,25 @@ function showMetrics(id) {
     .reduce((sum, value) => sum + value, 0);
   const totalCost = sumKnown(events, "cost");
   const orchestratorCost = sumKnown(orchestratorEvents, "cost");
+  const groupUsage = (field) => {
+    const result = {};
+    for (const event of events) {
+      const key = event[field] || "unknown";
+      result[key] ||= {
+        requests: 0, inputTokens: null, outputTokens: null,
+        cacheTokens: null, cost: null
+      };
+      const row = result[key];
+      row.requests += 1;
+      for (const metric of ["inputTokens", "outputTokens", "cacheTokens", "cost"])
+        if (event[metric] !== null && event[metric] !== undefined &&
+            Number.isFinite(Number(event[metric])))
+          row[metric] = Number(row[metric] || 0) + Number(event[metric]);
+    }
+    return result;
+  };
   console.log(JSON.stringify({
-    version: 1, changeId: id,
+    version: 2, changeId: id,
     wallTimeMs: operations.length
       ? Math.max(...operations.map((row) => Date.parse(row.finishedAt))) -
         Math.min(...operations.map((row) => Date.parse(row.startedAt))) : null,
@@ -2744,6 +3920,9 @@ function showMetrics(id) {
     cacheReadTokens: sumKnown(events, "cacheReadTokens"),
     cacheTokens: sumKnown(events, "cacheTokens"),
     cost: totalCost,
+    byModel: groupUsage("modelId"),
+    byRepository: groupUsage("repositoryId"),
+    byTask: groupUsage("taskId"),
     orchestratorTokenShare: tokenTotal > 0 ? orchestratorTokens / tokenTotal : null,
     orchestratorCostShare: totalCost > 0 && orchestratorCost !== null
       ? orchestratorCost / totalCost : null,
@@ -2772,6 +3951,20 @@ function doctor(flags = {}) {
     detail: protocolOk ? `runtime API ${RUNTIME_API_VERSION}; provider ${PROVIDER_PROTOCOL_VERSION}; proof ${PROOF_PROTOCOL_VERSION}` :
       "protocol.json is incompatible with foundation.mjs; reinstall Foundation"
   });
+  const catalog = repositoryCatalog();
+  checks.push({
+    level: catalog.drift.length ? "warn" : "ok",
+    name: "repository-topology",
+    detail: catalog.drift.length
+      ? `unregistered submodules: ${catalog.drift.map((item) => item.path).join(", ")}`
+      : `${catalog.repositories.length} repository node(s)`
+  });
+  const modelPolicy = foundationPolicy();
+  checks.push({
+    level: "ok",
+    name: "model-policy",
+    detail: `fast=${modelPolicy.models.fast.family}; standard=${modelPolicy.models.standard.family}; deep=${modelPolicy.models.deep.family}; max-parallel=${modelPolicy.execution.maxParallelAgents}`
+  });
 
   const openspec = spawnSync("openspec", ["--version"], { cwd: ROOT, encoding: "utf8" });
   const openspecText = `${openspec.stdout || ""}${openspec.stderr || ""}`.trim();
@@ -2787,6 +3980,21 @@ function doctor(flags = {}) {
     const state = loadRuntime(requestedChange);
     const workspace = state.workspace?.path || ROOT;
     const contract = evidence(requestedChange);
+    const selected = selectedRepositories(requestedChange, state);
+    for (const repository of selected) {
+      const available = existsSync(repository.path);
+      const initialized = available && (
+        repository.type === "external" ||
+        Boolean(gitHead(repository.path))
+      );
+      checks.push({
+        level: initialized ? "ok" : (repository.mode === "write" ? "error" : "warn"),
+        name: `repository:${repository.id}`,
+        detail: !available ? "missing" :
+          initialized ? `${repository.type}; ${repository.mode}; ${repository.relativePath}` :
+            "not initialized as Git"
+      });
+    }
     const playwright = playwrightAvailability(workspace);
     for (const provider of requiredProviders(requestedChange)) {
       const config = providerConfig(requestedChange, provider);
@@ -2808,7 +4016,8 @@ function doctor(flags = {}) {
         continue;
       }
       const executable = config.command?.[0];
-      const commandAvailable = commandExists(executable, workspace);
+      const providerCwd = providerWorkspace(requestedChange, provider, config);
+      const commandAvailable = commandExists(executable, providerCwd);
       checks.push({
         level: commandAvailable ? "ok" : (stage === "prove" ? "error" : "info"),
         name: `provider:${provider}:command`,
@@ -2816,17 +4025,18 @@ function doctor(flags = {}) {
           `${executable || "missing"} ${stage === "prove" ? "unavailable" : "planned"}`
       });
       if (config.adapter === "playwright") {
+        const providerPlaywright = playwrightAvailability(providerCwd);
         checks.push({
-          level: playwright.packageOwned && playwright.binaryAvailable ? "ok" :
+          level: providerPlaywright.packageOwned && providerPlaywright.binaryAvailable ? "ok" :
             (stage === "prove" ? "error" : "info"),
           name: "playwright:package",
-          detail: playwright.packageOwned && playwright.binaryAvailable ? "project-owned dependency available" :
+          detail: providerPlaywright.packageOwned && providerPlaywright.binaryAvailable ? "project-owned dependency available" :
             "install and lock @playwright/test in the project"
         });
         checks.push({
-          level: playwright.config ? "ok" : "warn",
+          level: providerPlaywright.config ? "ok" : "warn",
           name: "playwright:config",
-          detail: playwright.config || "no config found; command must provide complete setup"
+          detail: providerPlaywright.config || "no config found; command must provide complete setup"
         });
         checks.push({
           level: config.readiness?.url ? "ok" : "info",
@@ -2908,11 +4118,16 @@ function usage() {
 
 Commands:
   doctor [--stage change|build|prove] [--require-archive] [--change <id>]
+  repos [change]
+  models
+  agent-plan <change>
+  agent-acquire <change> <task> --owner <agent-id>
+  agent-release <change> <task> --owner <agent-id>
   new <intent> [--id <id>] [--rapid]
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
   changes
   providers
-  packet <change> [--phase change|build|prove|land]
+  packet <change> [--phase change|build|prove|land] [--repo <id>] [--task <id>]
   metrics <change>
   validate <change>
   hash <change>
@@ -2925,6 +4140,10 @@ Commands:
   run-provider <change> <provider> -- <command> [args...]
   prove <change>
   land-check <change>
+  land-plan <change>
+  land-record <change> --repo <id> --commit <sha> [--ci pass|fail|pending]
+  land-pointers <change>
+  land-resume <change>
   sandbox create|sync|apply <change>
   archive <change>
   event <change> --request <id> [metrics...]
@@ -2936,8 +4155,8 @@ Commands:
 const [command, ...values] = process.argv.slice(2);
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
-  ["resolve", "validate", "hash", "packet", "metrics", "proof-plan", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
-    "land-check", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
+  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
+    "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
 
 const telemetryPhase = {
   resolve: "change",
@@ -2951,6 +4170,10 @@ const telemetryPhase = {
   "run-provider": "prove",
   prove: "prove",
   "land-check": "land",
+  "land-plan": "land",
+  "land-record": "land",
+  "land-pointers": "land",
+  "land-resume": "land",
   archive: "land"
 }[command];
 if (operationChangeId && telemetryPhase && existsSync(runtimePath(operationChangeId)))
@@ -2971,12 +4194,23 @@ switch (command) {
   }
   case "changes": showChanges(); break;
   case "providers": showProviders(); break;
+  case "repos": showRepositories(values[0] || null); break;
+  case "models": console.log(JSON.stringify(foundationPolicy().models, null, 2)); break;
+  case "agent-plan": showAgentPlan(values[0]); break;
+  case "agent-acquire": {
+    const { flags, rest } = parseFlags(values);
+    acquireAgentLease(rest[0], rest[1], flags); break;
+  }
+  case "agent-release": {
+    const { flags, rest } = parseFlags(values);
+    releaseAgentLease(rest[0], rest[1], flags); break;
+  }
   case "packet": {
     const { flags, rest } = parseFlags(values);
     if (flags.phase && !["change", "build", "prove", "land"].includes(flags.phase))
       die("packet --phase must be change|build|prove|land");
     if (flags.phase) prepareClaudeTelemetry(rest[0], flags.phase);
-    showPacket(rest[0]); break;
+    showPacket(rest[0], flags); break;
   }
   case "metrics": showMetrics(values[0]); break;
   case "doctor": {
@@ -3002,8 +4236,18 @@ switch (command) {
   case "run-provider": runProvider(values[0], values[1], values.slice(2)); break;
   case "prove": prove(values[0]); break;
   case "land-check": landCheck(values[0]); break;
+  case "land-plan": showLandPlan(values[0]); break;
+  case "land-record": {
+    const { flags, rest } = parseFlags(values);
+    recordRepositoryLand(rest[0], flags); break;
+  }
+  case "land-pointers": stageRootPointers(values[0]); break;
+  case "land-resume": resumeLand(values[0]); break;
   case "sandbox":
-    if (values[0] === "create") createSandbox(values[1]);
+    if (values[0] === "create") {
+      const { flags, rest } = parseFlags(values.slice(1));
+      createSandbox(rest[0], flags);
+    }
     else if (values[0] === "sync") syncSandbox(values[1]);
     else if (values[0] === "apply") applySandbox(values[1]);
     else die("sandbox requires create|sync|apply <change>");

@@ -438,6 +438,9 @@ fi
 event="$(node .claude/harness/foundation.mjs event tiny-copy-edit --request req-1 --operation build)"
 assert_contains "watchdog records request" "$event" "BUDGET tiny-copy-edit"
 assert_file_exists "event ledger created" ".foundation/logs/tiny-copy-edit/events.jsonl"
+node .claude/harness/foundation.mjs event tiny-copy-edit --request req-2 \
+  --operation build --model sonnet --repo root --task T001 \
+  --input 10 --output 2 >/dev/null
 if node .claude/harness/foundation.mjs event tiny-copy-edit \
   --request req-1 --operation build >/dev/null 2>&1; then
   fail "watchdog rejects duplicate request identity"
@@ -455,7 +458,11 @@ metrics="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
 assert_contains "metrics distinguish host telemetry from operations-only data" \
   "$metrics" '"measurement": "host-events-only"'
 assert_contains "host telemetry contributes input tokens" \
-  "$metrics" '"inputTokens": 120'
+  "$metrics" '"inputTokens": 130'
+assert_contains "metrics attribute usage by model" \
+  "$metrics" '"sonnet":'
+assert_contains "metrics attribute usage by repository" \
+  "$metrics" '"root":'
 
 # Claude usage belongs to assistant requests in the session transcript, not to
 # PostToolUse. Native import reads the nested schema, imports subagents once,
@@ -629,5 +636,169 @@ assert_file_contains "land returns completed task ledger" \
   openspec/changes/sandbox-copy/tasks.md "- [x]"
 assert_file_contains "successful apply preserves unrelated target edits" NOTES.md \
   "unrelated during build"
+
+# A superproject fixture proves that topology discovery, worktree fan-out,
+# repository packets, model routing, and receipt invalidation share one
+# composite control-plane identity without invalidating unrelated repo proof.
+for child in api app; do
+  mkdir -p "$TMP/$child"
+  cd "$TMP/$child"
+  git init -q
+  git config user.name "Foundation Test"
+  git config user.email "foundation@example.invalid"
+  printf '%s\n' "$child-before" > "$child.txt"
+  git add .
+  git commit -qm "$child fixture"
+done
+mkdir -p "$TMP/multi-project/.claude/harness" "$TMP/multi-project/openspec" \
+  "$TMP/multi-project/.foundation"
+cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/multi-project/.claude/harness/"
+cp -R "$ROOT/openspec/schemas" "$TMP/multi-project/openspec/"
+cp "$ROOT/openspec/config.yaml" "$TMP/multi-project/openspec/"
+cp "$ROOT/openspec/repositories.yaml" "$TMP/multi-project/openspec/"
+cp "$ROOT/foundation.json" "$TMP/multi-project/"
+cp "$ROOT/.foundation/.gitignore" "$TMP/multi-project/.foundation/"
+cd "$TMP/multi-project"
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+git -c protocol.file.allow=always submodule add -q "$TMP/api" api
+git -c protocol.file.allow=always submodule add -q "$TMP/app" app
+git add .
+git commit -qm "multi fixture"
+repos="$(node .claude/harness/foundation.mjs repos)"
+assert_contains "repository topology discovers API submodule" "$repos" "api	submodule	api"
+assert_contains "repository topology discovers app submodule" "$repos" "app	submodule	app"
+node .claude/harness/foundation.mjs new 'Cross repository profile' >/dev/null
+node .claude/harness/foundation.mjs resolve cross-repository-profile \
+  --impact medium --coupling coupled >/dev/null
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"api","mode":"write","dependsOn":[]},' \
+  '  {"id":"app","mode":"write","dependsOn":["api"]}' \
+  ']}' > openspec/changes/cross-repository-profile/repositories.yaml
+printf '%s\n' \
+  '# Tasks' \
+  '' \
+  '- [ ] **T001** Inventory API [repo:api] [kind:inventory] [paths:api.txt]' \
+  '- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001] [paths:api.txt]' \
+  '- [ ] **T003** Implement App [repo:app] [kind:implementation] [paths:app.txt]' \
+  '- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]' \
+  > openspec/changes/cross-repository-profile/tasks.md
+printf '%s\n' \
+  '{"version":2,"claims":[' \
+  ' {"id":"api-static","scenario":"API remains statically valid","impact":"medium","capabilities":["static-analysis"],"repositories":["api"]},' \
+  ' {"id":"profile-contract","scenario":"API and App agree","impact":"medium","capabilities":["cross-repo-contract"],"repositories":["api","app"]}' \
+  ']}' > openspec/changes/cross-repository-profile/evidence.yaml
+printf '%s\n' \
+  '{"version":1,"providers":{' \
+  ' "api-static":{"capability":"static-analysis","adapter":"external","repository":"api"},' \
+  ' "cross-repo-contract":{"adapter":"external"},' \
+  ' "review":{"adapter":"external"}' \
+  '},"services":{}}' > openspec/changes/cross-repository-profile/execution.yaml
+assert_cmd_zero "multi-repository change validates" \
+  node .claude/harness/foundation.mjs validate cross-repository-profile
+assert_cmd_zero "multi-repository sandboxes fan out" \
+  node .claude/harness/foundation.mjs sandbox create cross-repository-profile --all
+assert_file_exists "API worktree created" \
+  .foundation/repository-sandboxes/cross-repository-profile/api/api.txt
+assert_file_exists "app worktree created" \
+  .foundation/repository-sandboxes/cross-repository-profile/app/app.txt
+printf 'unauthorized\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
+surface_output="$(node .claude/harness/foundation.mjs proof-preflight \
+  cross-repository-profile 2>&1 || true)"
+assert_contains "changed-surface authority rejects undeclared paths" \
+  "$surface_output" "changed outside task paths: rogue.txt"
+rm .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
+api_packet="$(node .claude/harness/foundation.mjs packet cross-repository-profile --repo api)"
+assert_contains "repo packet selects API" "$api_packet" '"id": "api"'
+assert_contains "repo packet includes API task" "$api_packet" '"id": "T001"'
+if printf '%s' "$api_packet" | grep -qF '"id": "T003"'; then
+  fail "repo packet excludes app task"
+else
+  pass "repo packet excludes app task"
+fi
+agent_plan="$(node .claude/harness/foundation.mjs agent-plan cross-repository-profile)"
+assert_contains "inventory routes to Haiku tier" "$agent_plan" '"family": "haiku"'
+assert_contains "implementation routes to Sonnet tier" "$agent_plan" '"family": "sonnet"'
+assert_contains "contract routes to Opus tier" "$agent_plan" '"family": "opus"'
+assert_cmd_zero "task resource lease is acquired atomically" \
+  node .claude/harness/foundation.mjs agent-acquire \
+  cross-repository-profile T001 --owner agent-a
+if node .claude/harness/foundation.mjs agent-acquire \
+  cross-repository-profile T001 --owner agent-b >/dev/null 2>&1; then
+  fail "task resource lease blocks a competing agent"
+else
+  pass "task resource lease blocks a competing agent"
+fi
+assert_cmd_zero "task resource lease releases by owner" \
+  node .claude/harness/foundation.mjs agent-release \
+  cross-repository-profile T001 --owner agent-a
+node .claude/harness/foundation.mjs receipt cross-repository-profile \
+  api-static pass >/dev/null
+printf 'app-after\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/app/app.txt
+scoped_plan="$(node .claude/harness/foundation.mjs proof-plan cross-repository-profile)"
+assert_contains "unrelated repo edit preserves API receipt" \
+  "$scoped_plan" "api-static: valid"
+printf 'api-after\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/api/api.txt
+scoped_plan="$(node .claude/harness/foundation.mjs proof-plan cross-repository-profile)"
+assert_contains "owning repo edit invalidates API receipt" \
+  "$scoped_plan" "api-static: stale"
+land_plan="$(node .claude/harness/foundation.mjs land-plan cross-repository-profile)"
+assert_contains "multi-repo Land is an honest saga" \
+  "$land_plan" '"strategy": "ordered-resumable-saga"'
+assert_contains "uncommitted child blocks Land" \
+  "$land_plan" '"status": "awaiting-explicit-commit"'
+git -C .foundation/repository-sandboxes/cross-repository-profile/api \
+  add api.txt
+git -C .foundation/repository-sandboxes/cross-repository-profile/api \
+  commit -qm "api profile"
+api_commit="$(git -C .foundation/repository-sandboxes/cross-repository-profile/api rev-parse HEAD)"
+git -C .foundation/repository-sandboxes/cross-repository-profile/app \
+  add app.txt
+git -C .foundation/repository-sandboxes/cross-repository-profile/app \
+  commit -qm "app profile"
+app_commit="$(git -C .foundation/repository-sandboxes/cross-repository-profile/app rev-parse HEAD)"
+sed -i.bak 's/- \[ \]/- [x]/g' \
+  .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md
+rm .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md.bak
+node .claude/harness/foundation.mjs receipt cross-repository-profile \
+  api-static pass >/dev/null
+node .claude/harness/foundation.mjs receipt cross-repository-profile \
+  cross-repo-contract pass >/dev/null
+node .claude/harness/foundation.mjs receipt cross-repository-profile \
+  review pass >/dev/null
+assert_cmd_zero "committed multi-repo work proves" \
+  node .claude/harness/foundation.mjs prove cross-repository-profile
+git -C api merge -q --ff-only "$api_commit"
+git -C app merge -q --ff-only "$app_commit"
+assert_cmd_zero "explicit API commit is bound to Land" \
+  node .claude/harness/foundation.mjs land-record cross-repository-profile \
+  --repo api --commit "$api_commit" --ci pass
+assert_cmd_zero "explicit app commit is bound to Land" \
+  node .claude/harness/foundation.mjs land-record cross-repository-profile \
+  --repo app --commit "$app_commit" --ci pass
+assert_cmd_zero "verified root gitlinks stage transactionally" \
+  node .claude/harness/foundation.mjs land-pointers cross-repository-profile
+if node .claude/harness/foundation.mjs land-check \
+  cross-repository-profile >/dev/null 2>&1; then
+  fail "root pointer staging invalidates composite proof"
+else
+  pass "root pointer staging invalidates composite proof"
+fi
+node .claude/harness/foundation.mjs receipt cross-repository-profile \
+  cross-repo-contract pass >/dev/null
+node .claude/harness/foundation.mjs receipt cross-repository-profile \
+  review pass >/dev/null
+assert_cmd_zero "pointer-aware composite proof refreshes" \
+  node .claude/harness/foundation.mjs prove cross-repository-profile
+resume_plan="$(node .claude/harness/foundation.mjs land-resume cross-repository-profile)"
+assert_contains "Land resume observes landed children" \
+  "$resume_plan" '"status": "child-landed"'
+assert_contains "root target gitlink matches recorded commit" \
+  "$resume_plan" '"readyToArchive": true'
 
 finish "harness contracts"

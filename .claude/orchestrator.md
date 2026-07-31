@@ -65,6 +65,13 @@ Implementation order and tool choice belong to the harness.
 - Update `tasks.md` checkboxes as work completes.
 - Use native tasks/subagents only for independently verifiable work packages,
   genuine parallelism, resumption, or cross-repository work.
+- For multi-repository work, treat `openspec/repositories.yaml` as topology and
+  the change's `repositories.yaml` as scope. Use `agents plan` for dependency,
+  resource, and model routing; do not spawn one agent per repository by default.
+- Route mechanical inventory/log work to the configured fast tier, normal
+  implementation to the standard tier, and architecture/security/migration or
+  independent risk review to the deep tier. Risk and ambiguity—not file count—
+  control escalation.
 - Prefer focused checks while editing. Do not repeat the full suite at phase
   boundaries; there are no phase boundaries.
 - Keep the orchestrator on control-plane decisions. Batch independent reads and
@@ -136,6 +143,11 @@ transaction backs up touched paths, journals each mutation, rolls back on
 failure, and resumes after interruption. Never archive before code application,
 never apply a diff whose proof hash changed, and never overwrite unrelated user
 changes.
+
+Several Git remotes cannot be atomic. Multi-repository Land is an ordered,
+resumable saga: bind explicitly created child commits, require applicable CI,
+verify mixed-version contracts and root gitlinks, then archive the control-plane
+change last. Foundation never commits or pushes by implication.
 
 ## Compatibility
 

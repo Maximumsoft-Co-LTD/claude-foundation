@@ -25,6 +25,8 @@ assert_file_exists "Claude session context hook installed" \
 assert_file_exists "portable agent contract installed" "$TARGET/.claude/harness/AGENT.md"
 assert_file_exists "evidence adapter guide installed" "$TARGET/.claude/harness/EVIDENCE.md"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
+assert_file_exists "repository topology default installed" "$TARGET/openspec/repositories.yaml"
+assert_file_exists "model policy default installed" "$TARGET/foundation.json"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
 assert_file_absent "obsolete packaged hook tests removed" "$TARGET/.claude/hooks/tests"
 assert_file_exists "legacy run preserved" "$TARGET/.workflow/0001-legacy/state.json"
@@ -117,7 +119,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "5"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "6"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then

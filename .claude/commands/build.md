@@ -17,3 +17,14 @@ implement with native tools. `tasks.md` is the sole ledger. Use focused checks
 during convergence, update its checkboxes, and stop when implementation is ready
 for deterministic proof. Do not run lifecycle personas, mirror tasks, archive,
 commit, or land.
+
+For a change whose `repositories.yaml` selects multiple repositories, run
+`claude-foundation sandbox create <change> --all` followed by
+`claude-foundation agents plan <change>`. Spawn native subagents only for
+independent groups in that plan. Give each worker
+`claude-foundation packet <change> --repo <id> --task <task-id>` and the model
+family selected by the plan. Agents may edit only their repository sandbox and
+declared paths; they may not commit, push, update root pointers, or Land.
+Acquire the task lease before spawning with
+`claude-foundation agents acquire <change> <task> --owner <agent-id>` and
+release it after the worker stops. A blocked lease means the task must wait.

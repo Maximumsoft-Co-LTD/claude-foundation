@@ -13,7 +13,7 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
 | Suite | Contract |
 |---|---|
-| `harness/run-harness-tests.sh` | Change packets, hashing, evidence v1/v2, executable adapters, command dedup, parallel/resource-locked scheduling, Playwright claim mapping, proof invalidation, transactional apply, and idempotent archive |
+| `harness/run-harness-tests.sh` | Change packets, single/composite hashing, multi-repo worktrees and packets, model routing, atomic task leases, repository-scoped provider instances, executable adapters, Playwright claim mapping, proof invalidation, transactional apply, resumable Land saga, and idempotent archive |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 

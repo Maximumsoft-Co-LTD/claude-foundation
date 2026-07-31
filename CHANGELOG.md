@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-repository control plane** — committed topology and per-change
+  repository scope drive composite snapshots, child worktrees, repository/task
+  packets, scoped providers, changed-path authority, and cross-repository
+  contract enforcement while single-repository changes remain compatible.
+- **Risk-aware model and agent planning** — `agents plan` builds dependency and
+  resource groups, routes portable fast/standard/deep tiers to
+  Haiku/Sonnet/Opus defaults, reports active-change conflicts, preserves
+  unaffected tasks across replans, and uses expiring atomic task leases.
+- **Honest multi-remote Land saga** — `land plan`, `land record`,
+  `land pointers`, and `land resume` bind explicit child commits and CI,
+  transactionally stage verified gitlinks, require refreshed composite proof,
+  and archive the control repository last without implying remote atomicity.
+- **Repository-scoped provider instances** — repeated capabilities can use
+  instance IDs such as `api-test` and `app-test`; commands, services, receipts,
+  environment fingerprints, and invalidation are bound to their repository.
+- **Model/repository/task cost attribution** — telemetry and metrics can report
+  usage by model, repository, and task while unknown values remain unknown.
 - **Preflight and honest operation telemetry** — `claude-foundation doctor`
   checks runtime, hooks, pinned OpenSpec archive support, legacy packaged tests,
   and opt-in branch policy; native operations record duration/status while

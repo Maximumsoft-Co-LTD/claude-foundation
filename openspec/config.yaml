@@ -20,6 +20,9 @@ rules:
   tasks:
     - Keep one implementation ledger with independently verifiable work items.
     - Do not reproduce lifecycle phases or agent-role handoffs.
+    - For multi-repository changes, annotate each task with repo, kind, paths,
+      dependencies, and exceptional shared resources so packets and authority
+      stay bounded.
 
 operations:
   apply:

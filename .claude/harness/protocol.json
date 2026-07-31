@@ -1,9 +1,9 @@
 {
-  "runtime": "2.1.0",
-  "runtimeApi": "5",
+  "runtime": "2.2.0",
+  "runtimeApi": "6",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
-  "providerProtocol": "4",
-  "adapterProtocol": "2",
-  "proofProtocol": "2"
+  "providerProtocol": "5",
+  "adapterProtocol": "3",
+  "proofProtocol": "3"
 }

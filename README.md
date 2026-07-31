@@ -99,9 +99,12 @@ native CLI:
 
 ```bash
 claude-foundation providers
+claude-foundation repos [change]
+claude-foundation models
+claude-foundation agents plan <change>
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation packet <change>
+claude-foundation packet <change> [--repo <id>] [--task <id>]
 claude-foundation metrics <change>
 claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
@@ -113,8 +116,12 @@ claude-foundation proof audit <change>
 claude-foundation proof finalize <change>
 claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
-claude-foundation sandbox create <change>
+claude-foundation sandbox create <change> [--all]
 claude-foundation land check <change>
+claude-foundation land plan <change>
+claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
+claude-foundation land pointers <change>
+claude-foundation land resume <change>
 ```
 
 The CLI finds the project from the current directory or `--project <path>` and
@@ -137,6 +144,48 @@ phase checkpoints. It never measures tokens in `PostToolUse`, never copies
 prompts or tool payloads, and includes nested subagent transcripts. Use
 `telemetry sync` manually when the session hook was not active. Fields remain
 `null` until their authoritative source is connected.
+
+## Multi-repository control plane
+
+`openspec/repositories.yaml` is the durable topology. Git submodules are
+discovered automatically and reported as drift until their roles, dependencies,
+and access modes are reviewed. Each change's `repositories.yaml` selects only
+the repositories it may read or write. A missing manifest remains compatible
+with the original single `root` repository.
+Paths outside the control root are rejected unless a committed repository entry
+explicitly sets `allowOutsideRoot: true`; use that only for trusted sibling Git
+repositories.
+
+Multi-repository tasks remain in `tasks.md` and use compact annotations:
+
+```markdown
+- [ ] **T001** Inspect API [repo:api] [kind:inventory] [paths:internal/profile]
+- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001]
+- [ ] **T003** Implement App [repo:app] [kind:implementation] [depends:T002]
+- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
+```
+
+`agents plan` converts tasks and repository dependencies into bounded parallel
+groups. `foundation.json` maps portable `fast`, `standard`, and `deep` tiers to
+Haiku, Sonnet, and Opus by default. Mechanical inventory/log work uses fast,
+normal implementation uses standard, and architecture, security, migration, or
+independent review uses deep. High-risk work cannot be downgraded to fast. The
+native host spawns agents; Foundation supplies scoped packets and never grants
+commit, push, or Land authority.
+
+Providers may declare `repository` in `execution.yaml`. Their commands run in
+that repository sandbox and receipts bind to that repository snapshot, so an
+unrelated repository edit does not invalidate them. Claims spanning more than
+one repository must name those repositories and declare
+`cross-repo-contract`.
+Use instance IDs with `capability` when the same capability runs in several
+repositories, for example `api-test` and `app-test`.
+
+Multi-remote landing is deliberately a saga, not fake atomicity. `land plan`
+shows dependency order, `land record` binds an explicitly authorized child
+commit and CI status, `land pointers` stages verified gitlinks transactionally,
+and `land resume` verifies which commits reached their targets. Pointer staging
+invalidates proof, so fresh composite proof is required before archive.
 
 ## `/investigate` — explore without committing
 
