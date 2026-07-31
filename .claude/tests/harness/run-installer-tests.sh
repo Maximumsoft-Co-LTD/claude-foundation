@@ -16,7 +16,7 @@ mkdir -p "$TARGET/.claude"
 printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Agent","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh"},{"type":"command","command":"user-hook.sh"}]}]}}' > "$TARGET/.claude/settings.json"
 
 assert_cmd_zero "installer applies non-interactively" \
-  sh "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+  bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
 assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
@@ -48,7 +48,7 @@ printf '%s\n' ".claude/harness/stale-owned.md" >> \
   "$TARGET/.foundation/install-manifest.txt"
 printf '\nUser agent instruction.\n' >> "$TARGET/AGENTS.md"
 assert_cmd_zero "installer update removes only stale managed files" \
-  sh "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+  bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_absent "stale managed file removed from prior manifest" \
   "$TARGET/.claude/harness/stale-owned.md"
 assert_file_contains "user AGENTS content survives managed block update" \

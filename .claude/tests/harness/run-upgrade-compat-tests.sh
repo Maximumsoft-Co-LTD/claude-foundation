@@ -14,7 +14,7 @@ printf '%s\n' \
   '{"version":1,"execution":{"maxParallelAgents":3,"packetBytes":65536,"leaseMinutes":45}}' \
   > "$legacy/foundation.json"
 assert_cmd_zero "installer upgrades the former default policy" \
-  sh "$ROOT/install.sh" "$legacy" --source "$ROOT" --yes
+  bash "$ROOT/install.sh" "$legacy" --source "$ROOT" --yes
 assert_eq "legacy task budget migrates" "8192" \
   "$(jq -r '.execution.packetBytes.task' "$legacy/foundation.json")"
 assert_eq "legacy repository budget migrates" "12288" \
@@ -28,7 +28,7 @@ printf '%s\n' \
   '{"version":1,"execution":{"packetBytes":32768}}' \
   > "$custom/foundation.json"
 assert_cmd_zero "installer preserves custom numeric policy" \
-  sh "$ROOT/install.sh" "$custom" --source "$ROOT" --yes
+  bash "$ROOT/install.sh" "$custom" --source "$ROOT" --yes
 assert_eq "custom numeric budget survives install" "32768" \
   "$(jq -r '.execution.packetBytes' "$custom/foundation.json")"
 doctor="$(bash "$ROOT/cli.sh" --project "$custom" doctor)"
