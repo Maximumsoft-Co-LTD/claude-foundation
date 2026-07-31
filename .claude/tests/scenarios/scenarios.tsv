@@ -1,0 +1,13 @@
+# Scenario registry — Core 6, one golden .workflow/<id>/ fixture each.
+# Whitespace-separated (default IFS); `require` is a comma-joined artifact list
+# (no spaces). The runner adds matrix-derived forbid rules (test-plan/test/
+# security skips) and field invariants (greenfield => size in {XS,S}, no
+# context.md) on top of these.
+#
+# dir                       type      size field       require
+01-feat-s-greenfield        feat      S    greenfield  spec.md,plan.md,tasks.md,test-plan.md
+02-feat-m-brownfield        feat      M    brownfield  spec.md,plan.md,tasks.md,test-plan.md,context.md
+03-fix-s-brownfield         fix       S    brownfield  spec.md,plan.md,tasks.md,test-plan.md
+04-refactor-m-brownfield    refactor  M    brownfield  spec.md,plan.md,tasks.md,test-plan.md,context.md
+05-chore-xs                 chore     XS   brownfield  run.md
+06-spike                    spike     S    brownfield  spec.md,plan.md,recommendations.md

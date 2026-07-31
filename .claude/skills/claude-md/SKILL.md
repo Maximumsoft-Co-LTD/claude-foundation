@@ -28,7 +28,7 @@ description: Revise, optimise, or generate the root CLAUDE.md — the per-sessio
 - **Ground every line** — trace to a file you read; can't find it → one honest line, not filler.
 - **Revise, don't replace** — existing `CLAUDE.md`: preserve every hand-authored rule verbatim, reorganise into the nine sections, fill gaps. Absent → create.
 - **No secrets** — name env vars, never copy values.
-- Large repo → fan the read-out across `Explore` / `team-codebase-explorer`, then synthesise ([[fanout-team-agents]]).
+- Large repo → split only genuinely independent subsystem read-outs using native parallel work packages, then synthesize once.
 
 ## Skeleton
 
@@ -62,4 +62,4 @@ Bloating it (loads every session) · `###` depth · inventing stack/schema/agent
 
 ## Related
 
-[[init-project-docs]] (deep `docs/` suite — run first, link back) · [[refactoring-fundamentals]] (current-state mindset → Current State) · [[fanout-team-agents]] (large-repo read-out).
+[[init-project-docs]] (deep `docs/` suite — run first, link back) · [[refactoring-fundamentals]] (current-state mindset → Current State).

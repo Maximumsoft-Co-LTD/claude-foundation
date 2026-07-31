@@ -1,0 +1,23 @@
+{
+  "id": "0001-feat-task-list",
+  "type": "feat",
+  "size": "S",
+  "field": "greenfield",
+  "phase": "phase-2-implementation",
+  "step": "retro",
+  "next_step": "done",
+  "cycles": {
+    "review": 1,
+    "test": 1
+  },
+  "skipped_steps": [],
+  "security_triggered": false,
+  "e2e_visual": "off",
+  "commit_on_ship": false,
+  "open_pr_on_ship": false,
+  "last_agent": "retro",
+  "created_at": "2026-01-01T00:00:00Z",
+  "last_updated": "2026-01-01T01:00:00Z",
+  "done_at": "2026-01-01T01:00:00Z",
+  "notes": "harness golden fixture — feat S greenfield"
+}

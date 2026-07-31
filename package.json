@@ -1,0 +1,14 @@
+{
+  "name": "claude-foundation",
+  "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "1.7.0"
+  },
+  "scripts": {
+    "foundation": "node .claude/harness/foundation.mjs",
+    "test:harness": "sh .claude/tests/harness/run-harness-tests.sh"
+  }
+}

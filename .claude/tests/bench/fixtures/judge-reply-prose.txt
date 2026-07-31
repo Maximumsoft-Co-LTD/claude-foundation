@@ -1,0 +1,5 @@
+Here is my assessment of the diff:
+
+{"score": 9, "subscores": {"ac_met": 2, "tested": 2, "correctness": 2, "simplicity": 2, "fit": 1}, "verdict": "pass", "notes": "Solid."}
+
+Let me know if you want more detail.

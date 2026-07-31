@@ -1,0 +1,1 @@
+/dev --yes --plan-only our user store keeps a single `name` field and we now need first and last names separately. Write the migration (size S, brownfield). Do not ask clarifying questions — assume Ship as one-drop, no commit, no PR, e2e off. Move straight through the interview and gate. Stop after the gate — do not implement.

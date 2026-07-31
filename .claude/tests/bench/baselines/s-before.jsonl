@@ -1,0 +1,1 @@
+{"task":"06-landing-site","arm":"workflow","repeat":1,"ok":true,"fail_reason":null,"workflow_sha":"a12581c-dirty","cost_usd":8.172738599999997,"in_tokens":38,"out_tokens":10690,"turns":26,"duration_ms":150992,"wall_s":1581,"spawn_count":4,"spawn_observed":null,"cycles_test":0,"cycles_review":0,"skipped":1,"judge_score":9,"judge_verdict":"pass"}

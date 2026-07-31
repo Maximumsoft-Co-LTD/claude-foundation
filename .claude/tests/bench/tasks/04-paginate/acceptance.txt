@@ -1,0 +1,6 @@
+AC1: paginate(items, page, size) returns the correct slice for a normal in-range page (1-indexed).
+AC2: a page beyond the last returns an empty items array, not an error.
+AC3: a size larger than the total returns all items on page 1.
+AC4: an empty items array returns empty items with totalPages 0.
+AC5: the result includes metadata: page, size, total, totalPages.
+Trap: a happy-path implementation typically off-by-ones the slice or throws/breaks on out-of-range, empty, or oversized pages.

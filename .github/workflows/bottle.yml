@@ -73,6 +73,7 @@ jobs:
           # `url`); brew bottle emits a per-platform bottle + a DSL block on stdout.
           # --root-url bakes the release-download URL into that block.
           brew install --build-bottle "$TAP/claude-foundation"
+          brew test "$TAP/claude-foundation"
           brew bottle --json --no-rebuild \
             --root-url "$ROOT_URL" \
             "$TAP/claude-foundation" | tee bottle.out

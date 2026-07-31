@@ -12,6 +12,12 @@
 #
 # Auto-fix is intentionally OFF. We want Claude to see the diagnostics
 # and fix them in-conversation, not have files mutate behind its back.
+#
+# The edit hook is the hot loop. By default it runs only near-zero-startup
+# deterministic checks (currently gofmt); language-server linters, project lint,
+# type checks, and static analysis run once in the workflow Ship Gate.
+# Set CLAUDE_EDIT_LINT=1 for file lint after every edit, or
+# CLAUDE_EDIT_FULL_CHECKS=1 for the complete legacy behavior.
 
 set -uo pipefail
 
@@ -25,6 +31,9 @@ FILE_PATH="$(printf '%s' "$EVENT_JSON" | jq -r '.tool_input.file_path // empty')
 [ -f "$FILE_PATH" ] || exit 0
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+FULL_CHECKS="${CLAUDE_EDIT_FULL_CHECKS:-0}"
+EDIT_LINT="${CLAUDE_EDIT_LINT:-0}"
+[ "$FULL_CHECKS" = "1" ] && EDIT_LINT=1
 
 # Only lint files inside the project tree.
 case "$FILE_PATH" in
@@ -78,7 +87,7 @@ case "$FILE_PATH" in
       dir="$(dirname "$dir")"
     done
 
-    if [ "$has_go_mod" -eq 1 ] && have golangci-lint; then
+    if [ "$FULL_CHECKS" = "1" ] && [ "$has_go_mod" -eq 1 ] && have golangci-lint; then
       # Go can't type-check a single file in isolation — sibling-file symbols in
       # the same package read as "undefined", producing a false cascade. So lint
       # the file's PACKAGE from the module root ($dir, found above) where imports
@@ -109,41 +118,42 @@ case "$FILE_PATH" in
     ;;
 
   *.py)
-    if have ruff; then
-      run_linter "ruff" ruff check "$FILE_PATH"
-    elif have flake8; then
-      run_linter "flake8" flake8 "$FILE_PATH"
-    elif have pylint; then
-      run_linter "pylint" pylint --score=n "$FILE_PATH"
+    if [ "$EDIT_LINT" = "1" ]; then
+      if have ruff; then
+        run_linter "ruff" ruff check "$FILE_PATH"
+      elif have flake8; then
+        run_linter "flake8" flake8 "$FILE_PATH"
+      elif have pylint; then
+        run_linter "pylint" pylint --score=n "$FILE_PATH"
+      fi
     fi
-    # Typecheck in addition to style lint — immediate type feedback after an
-    # edit is the loop that lets the model self-correct. Optional like all
-    # linters here.
-    if have pyright; then
+    # Optional compatibility mode: project-wide type feedback after each edit.
+    # The default workflow runs this once at Ship Gate.
+    if [ "$FULL_CHECKS" = "1" ] && have pyright; then
       run_linter "pyright" pyright "$FILE_PATH"
     fi
     ;;
 
   *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs)
-    bin="$(node_bin eslint)"
-    if [ -n "$bin" ]; then
-      run_linter "eslint" "$bin" "$FILE_PATH"
-    else
-      bin="$(node_bin biome)"
+    if [ "$EDIT_LINT" = "1" ]; then
+      bin="$(node_bin eslint)"
       if [ -n "$bin" ]; then
-        run_linter "biome" "$bin" lint "$FILE_PATH"
+        run_linter "eslint" "$bin" "$FILE_PATH"
+      else
+        bin="$(node_bin biome)"
+        if [ -n "$bin" ]; then
+          run_linter "biome" "$bin" lint "$FILE_PATH"
+        fi
       fi
     fi
 
-    # Typecheck (.ts/.tsx only): style lint alone misses type errors, and
-    # immediate type feedback after an edit is the self-correction loop that
-    # matters. Same per-file filter discipline as the Go arm: tsc must check
-    # the PROJECT (single-file tsc ignores tsconfig and false-positives), so
-    # run against the nearest tsconfig and surface ONLY diagnostics for the
-    # edited file — sibling type debt never blocks this edit. Best-effort:
+    # Optional compatibility mode for .ts/.tsx. tsc must check the PROJECT
+    # (single-file tsc ignores tsconfig and false-positives), so run against
+    # the nearest tsconfig and surface ONLY diagnostics for the edited file.
+    # Best-effort:
     # 20s cap via timeout/gtimeout when available (timeout -> skip silently);
     # without a timeout binary the hook harness's own cap applies.
-    case "$FILE_PATH" in
+    if [ "$FULL_CHECKS" = "1" ]; then case "$FILE_PATH" in
       *.ts|*.tsx)
         tsc_bin="$(node_bin tsc)"
         if [ -n "$tsc_bin" ]; then
@@ -171,29 +181,33 @@ case "$FILE_PATH" in
           fi
         fi
         ;;
-    esac
+    esac; fi
     ;;
 
   *.html|*.htm)
-    bin="$(node_bin htmlhint)"
-    if [ -n "$bin" ]; then
-      run_linter "htmlhint" "$bin" "$FILE_PATH"
-    else
-      bin="$(node_bin prettier)"
+    if [ "$EDIT_LINT" = "1" ]; then
+      bin="$(node_bin htmlhint)"
       if [ -n "$bin" ]; then
-        run_linter "prettier" "$bin" --check "$FILE_PATH"
+        run_linter "htmlhint" "$bin" "$FILE_PATH"
+      else
+        bin="$(node_bin prettier)"
+        if [ -n "$bin" ]; then
+          run_linter "prettier" "$bin" --check "$FILE_PATH"
+        fi
       fi
     fi
     ;;
 
   *.css|*.scss|*.sass|*.less)
-    bin="$(node_bin stylelint)"
-    if [ -n "$bin" ]; then
-      run_linter "stylelint" "$bin" "$FILE_PATH"
-    else
-      bin="$(node_bin prettier)"
+    if [ "$EDIT_LINT" = "1" ]; then
+      bin="$(node_bin stylelint)"
       if [ -n "$bin" ]; then
-        run_linter "prettier" "$bin" --check "$FILE_PATH"
+        run_linter "stylelint" "$bin" "$FILE_PATH"
+      else
+        bin="$(node_bin prettier)"
+        if [ -n "$bin" ]; then
+          run_linter "prettier" "$bin" --check "$FILE_PATH"
+        fi
       fi
     fi
     ;;

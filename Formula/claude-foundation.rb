@@ -1,5 +1,5 @@
 class ClaudeFoundation < Formula
-  desc "Drop the /dev workflow (spec → plan → ship) + team-mode role commands"
+  desc "OpenSpec-native change harness for AI coding agents"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
   url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v2.12.0.tar.gz"
   sha256 "0a7ea51b74094832339addcaabc8ecd265e76bc41a3ba1c5587871964b98b9dc"
@@ -24,7 +24,8 @@ class ClaudeFoundation < Formula
   end
 
   def install
-    libexec.install ".claude", ".workflow", "WORKFLOW.md", "CLAUDE.md",
+    libexec.install ".claude", ".foundation", ".workflow", "openspec",
+                    "WORKFLOW.md", "CLAUDE.md", "package.json", "package-lock.json",
                     "install.sh", "install-cursor.sh", "cli.sh", "dashboard"
 
     # VERSION is cli.sh's source of truth for `claude-foundation version`.
@@ -38,8 +39,8 @@ class ClaudeFoundation < Formula
       (libexec/"VERSION").write("#{version}\n")
     end
 
-    # cli.sh routes subcommands (installer + dashboard-*) and finds its siblings
-    # relative to itself, so it needs no --source.
+    # cli.sh routes install/dashboard commands and forwards native workflow
+    # commands to the runtime installed in the current project.
     (bin/"claude-foundation").write <<~EOS
       #!/usr/bin/env bash
       exec "#{libexec}/cli.sh" "$@"
@@ -48,7 +49,10 @@ class ClaudeFoundation < Formula
   end
 
   test do
-    system "#{bin}/claude-foundation", "--help"
+    help = shell_output("#{bin}/claude-foundation --help")
+    assert_match "proof plan", help
+    assert_match "land check", help
+    assert_match "runtime new", help
     assert_match version.to_s, shell_output("#{bin}/claude-foundation version")
   end
 end

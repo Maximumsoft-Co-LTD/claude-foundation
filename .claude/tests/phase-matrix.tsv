@@ -1,0 +1,28 @@
+# Machine-readable copy of WORKFLOW.md's type-aware phase matrix.
+# Whitespace-separated (parse with the default awk FS). Cell values:
+#   yes      phase runs
+#   skip     phase is skipped for this type  (drives the scenario forbid rules)
+#   light    thinner pass
+#   opt      optional / discretionary
+#   trigger  runs only when the security trigger fires
+#
+# run-doc-consistency.sh keeps the load-bearing skip cells (test-plan / test /
+# security) in sync with WORKFLOW.md; run-scenario-tests.sh reads the columns to
+# derive which artifacts a given type's run must NOT contain. Change a skip->yes
+# here (and in WORKFLOW.md) and the matching fixture fails until its artifact set
+# is updated — the matrix is executable, not just prose.
+#
+# The first non-comment row is the header (column names); the awk parsers key off
+# it, so it must stay uncommented.
+phase         feat     fix      refactor chore    docs     spike
+interview     yes      yes      yes      yes      yes      yes
+plan          yes      yes      yes      yes      yes      yes
+test-plan     yes      yes      yes      skip     skip     skip
+gate          yes      yes      yes      yes      yes      yes
+implement     yes      yes      yes      yes      yes      yes
+test          yes      yes      yes      skip     skip     skip
+review        yes      yes      yes      yes      yes      light
+security      trigger  trigger  trigger  trigger  trigger  skip
+docs          yes      opt      opt      opt      yes      skip
+ship          yes      yes      yes      yes      yes      yes
+retro         yes      yes      yes      yes      yes      yes

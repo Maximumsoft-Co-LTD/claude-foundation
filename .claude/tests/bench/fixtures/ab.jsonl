@@ -1,0 +1,4 @@
+{"task":"t1","arm":"workflow","repeat":1,"ok":true,"cost_usd":0.10,"out_tokens":8000,"turns":12,"duration_ms":60000,"spawn_count":5,"cycles_test":1,"cycles_review":1,"skipped":2,"judge_score":8,"judge_verdict":"pass"}
+{"task":"t1","arm":"workflow","repeat":2,"ok":true,"cost_usd":0.11,"out_tokens":8200,"turns":13,"duration_ms":63000,"spawn_count":5,"cycles_test":1,"cycles_review":1,"skipped":2,"judge_score":8,"judge_verdict":"pass"}
+{"task":"t1","arm":"baseline","repeat":1,"ok":true,"cost_usd":0.06,"out_tokens":5000,"turns":6,"duration_ms":30000,"spawn_count":null,"cycles_test":null,"cycles_review":null,"skipped":null,"judge_score":6,"judge_verdict":"fail"}
+{"task":"t1","arm":"baseline","repeat":2,"ok":true,"cost_usd":0.06,"out_tokens":5100,"turns":6,"duration_ms":31000,"spawn_count":null,"cycles_test":null,"cycles_review":null,"skipped":null,"judge_score":6,"judge_verdict":"fail"}

@@ -42,7 +42,7 @@ First, check the target dir for an existing suite — any canonical file (`OVERV
 
 - **Fresh** — none exists. Generate the whole suite.
 - **Update** — a suite exists. Treat it as **input, not a blank slate**: re-ground against the code, revise in place with surgical diffs, and report the delta as a changelog.
-- **Diff-scoped** — a suite exists AND the caller passes a diff (the `/dev` docs touch-up path — `engineer.md > Mode B`). Update ONLY the sections that diff touches (API/endpoint → `API.md`, schema → `DATAMODEL.md`, flow/feature → `COREFEATURE.md`, rules → `BUSINESSRULE.md`); leave every other file unopened. Cheapest lane — never walks the whole codebase.
+- **Diff-scoped** — a suite exists and `/build` supplies the active change diff. Update only the sections that diff touches (API/endpoint → `API.md`, schema → `DATAMODEL.md`, flow/feature → `COREFEATURE.md`, rules → `BUSINESSRULE.md`); leave every other file unopened.
 
 Default to update when found (diff-scoped when a diff is passed); regenerate only if asked or unsalvageable (say so first). The grounding rule holds in every mode: **every surviving claim must still trace to code.**
 
@@ -52,7 +52,7 @@ Default to update when found (diff-scoped when a diff is passed); regenerate onl
 
 Run in order — steps 1–2 are most of the value, never skip them. Full step detail: `references/workflow-and-quality.md`.
 
-1. **Scope the repo** — manifests, entry points, top-level layout, config; fan out `Explore` / `team-codebase-explorer` agents for a large repo ([[fanout-team-agents]]). An existing `docs/` suite here means update mode.
+1. **Scope the repo** — manifests, entry points, top-level layout, config. For a large repo, use native parallel work packages only for independent subsystems and synthesize once. An existing `docs/` suite here means update mode.
 2. **Understand before writing (the grounding rule)** — **every claim must trace to something you actually read**: TECHSTACK from manifests, DATAMODEL from migrations/schema, API from route definitions, COREFEATURE from traced call chains, BUSINESSRULE from validators/constants, DESIGN from frontend theme/component/router code. Say so when the code doesn't tell you; cite real anchors. Update mode: sort each claim keep / fix / add / remove — that four-bucket diff is the edit plan.
 3. **Write (or update) the docs** — fresh: follow `references/doc-templates.md` skeletons, structure over prose, 3–6 core flows, one row per business rule, DESIGN only when a UI exists. Update: surgical edits from the four-bucket diff; preserve accurate human prose.
 4. **Build the viewer** — `python3 .claude/skills/init-project-docs/scripts/build_doc_viewer.py --docs-dir docs --title "<Project Name>"`; never hand-write `document.html`; re-run after any `.md` edit (it's a snapshot).
@@ -63,12 +63,11 @@ Run in order — steps 1–2 are most of the value, never skip them. Full step d
 ## Relation to other skills
 
 - [[claude-md]] — the lean **agent-facing** companion: revises root `CLAUDE.md` into a fixed nine-section, depth-2 shape linking back to this `docs/` suite. Run after these docs (or alone); this skill no longer writes `CLAUDE.md`.
-- [[fanout-team-agents]] — for a large repo, fan out the step-1/2 exploration across parallel workers, then synthesise.
 - [[refactoring-fundamentals]] — same "understand before you touch it" stance; update mode applies it to the docs themselves.
 - [[architecture-fundamentals]] — vocabulary for component boundaries and runtime relationships in ARCHITECTURE.md.
 - [[database-fundamentals]] / [[api-design-fundamentals]] — vocabulary for the schema in DATAMODEL.md and the surface in API.md.
 - [[ui-ux-pro-max]] / [[frontend-design]] / [[tailwind-design-system]] — vocabulary for the UX patterns, visual language, and design tokens in DESIGN.md.
-- `plan-writing` / `brainstorming` own *forward-looking* docs for code that doesn't exist yet; this skill documents code that does — same split for UX: `uxui` / `/uxui-plan` design UI not yet built, DESIGN.md documents what the frontend already implements.
+- `plan-writing` / `brainstorming` own forward-looking OpenSpec artifacts; this skill documents code that already exists.
 
 ## Reference files
 

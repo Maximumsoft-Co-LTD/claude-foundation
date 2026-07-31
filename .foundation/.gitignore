@@ -1,0 +1,10 @@
+runtime/
+receipts/
+logs/
+evidence/
+snapshots/
+sandboxes/
+repository-sandboxes/
+transactions/
+plans/
+leases/

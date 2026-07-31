@@ -1,0 +1,56 @@
+name: workflow-tests
+
+# Runs the deterministic workflow test harness (.claude/tests/run-all.sh) on any
+# change to the workflow product. Live e2e / benchmark suites are token-costed and
+# stay off in CI (run-all.sh skips them unless CLAUDE_E2E=1).
+on:
+  pull_request:
+    paths:
+      - '.claude/**'
+      - '.foundation/**'
+      - 'openspec/**'
+      - 'Formula/**'
+      - 'cli.sh'
+      - 'install.sh'
+      - 'README.md'
+      - 'README.th.md'
+      - 'WORKFLOW.md'
+      - '.workflow/_templates/**'
+  push:
+    branches: [main]
+    paths:
+      - '.claude/**'
+      - '.foundation/**'
+      - 'openspec/**'
+      - 'Formula/**'
+      - 'cli.sh'
+      - 'install.sh'
+      - 'README.md'
+      - 'README.th.md'
+      - 'WORKFLOW.md'
+      - '.workflow/_templates/**'
+  workflow_dispatch: {}
+
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+      - name: Install pinned workflow dependencies
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Ensure jq (harness dependency)
+        run: command -v jq >/dev/null || { sudo apt-get update && sudo apt-get install -y jq; }
+      - name: Run workflow test harness
+        run: sh .claude/tests/run-all.sh
+      - name: Check packaged CLI contract
+        run: |
+          bash cli.sh help | grep -F "proof plan"
+          bash cli.sh help | grep -F "land check"
+          bash cli.sh help | grep -F "runtime new"
+          ruby -c Formula/claude-foundation.rb

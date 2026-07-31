@@ -1,275 +1,392 @@
-# Workflow
+# Foundation workflow
 
-A spec-driven, two-phase pipeline (interview → plan → human gate → autonomous build) that scales its machinery to the work: think before coding, simplify first, change surgically, drive toward the spec's goal. **Fast first** — when two compliant paths exist, take the faster one; speed comes from cutting overhead (round-trips, re-reads, ceremony), never from cutting verification. **Floor (never cut, at any size):** the gate, the security-trigger *check*, state writes / `--resume`, the `fix` regression contract, and per-line AC confirmation.
+Foundation is an OpenSpec-native harness for safe, economical software changes
+in brownfield repositories.
 
-**Version 2.12.0** — tracks the release in [`VERSION`](VERSION) (source of truth) and [`CHANGELOG.md`](CHANGELOG.md).
-
-Primary entry point: `/dev <intent>` (or `/dev --resume <id>`). The command detects context (new vs. existing codebase) and runs the same two-phase flow, branching on **run type** so a `chore` isn't dragged through e2e and a `fix` reproduces before it changes anything. Same artifacts either way, in `.workflow/<id>/`.
-
-**Team mode** ([below](#team-mode--run-one-role-on-its-own)) splits that flow into role-scoped commands — `/spec` (pm), `/dev-plan` (lead), `/test-plan` (qa), `/uxui-plan` (uxui), `/implement` (Phase 2) — each writing into the **same** `.workflow/<id>/` run so the artifacts compose exactly as a one-shot `/dev` run; `/dev --resume <id>` (or `/implement`) carries it the rest of the way.
-
-> **Orchestration runs in the main agent, not a sub-agent** — a sub-agent **cannot call `AskUserQuestion`**, so `/dev` loads [`.claude/orchestrator.md`](.claude/orchestrator.md) and the main agent runs the interview + drives the flow; sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) do the file work, mostly fanning out their own helpers directly (mechanics: [`fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md)). `state.json` stays single-writer regardless — helpers never write it.
-
-## Flow at a glance
-
-The happy path with its three feedback loops (test, review, security): diamonds are decision points, the dotted edge is the `--resume` re-entry, and phase numbers match the [type-aware matrix](#type-aware-phase-matrix) below. **Test runs before review** so reviewers judge a green suite; every blocking finding loops back through implement → test before ship.
-
-```mermaid
-flowchart TD
-    Start(["/dev &lt;intent&gt;"]) --> Setup["Setup (orchestrator)<br/>read INDEX · pick NNNN-type-slug · create folder · copy state.json"]
-
-    subgraph P1["Phase 1 — Requirements (interactive)"]
-        direction TB
-        S1["1. Interview + spec<br/>orchestrator asks · pm (L) / combined lead (XS–M) writes spec.md"]
-        S2["2. Plan<br/>lead → plan.md (or epic.md)"]
-        S2T["Test plan<br/>qa → test-plan.md (feat/fix/refactor)"]
-        S3{"3. Gate"}
-        S1 --> S2 --> S2T --> S3
-    end
-
-    Setup --> S1
-    S3 -- "revise (incremental, in-run) / swap" --> S1
-    S3 -- "approve" --> S4
-
-    subgraph P2["Phase 2 — Implementation (autonomous)"]
-        direction TB
-        S4["4. Implement<br/>engineer · fix → failing test first"]
-        S5{"5. Test<br/>qa · regression for fix"}
-        S6{"6. Review<br/>lead vs plan + acceptance"}
-        S7{"7. Security<br/>trigger-based · lead"}
-        S8["8. Docs touch-up<br/>engineer"]
-        S9["9. Ship<br/>engineer · opt-in commit/PR (default no)"]
-        S10["10. Retro<br/>retro.md · memory + skill candidates"]
-        S4 --> S5
-        S5 -- "pass" --> S6
-        S6 -- "pass" --> S7
-        S7 -- "pass / not triggered" --> S8 --> S9 --> S10
-    end
-
-    S5 -- "fail · ≤3 cycles" --> S4
-    S6 -- "blocking · ≤2 cycles" --> S4
-    S7 -- "high finding" --> S4
-
-    S10 --> Skill["skill-creator<br/>per user-approved candidate"]
-    Skill --> Done(["Summary · done"])
-
-    Resume(["/dev --resume &lt;id&gt;"]) -. "continue from state.json cursor" .-> P2
+```text
+Investigate? → Change → Build → Prove → Land
 ```
 
-## Naming convention
+## Why this shape
 
-A stable, sortable run ID so every artifact, index row, and resume cursor points at the same run: **`NNNN-<type>-<kebab-slug>`**
+The previous workflow encoded quality as a long sequence of agent roles and
+phases. That preserved quality but made the control plane dominate cost and
+latency. The new workflow separates three concerns:
 
-- `NNNN` — 4-digit sequential counter; `orchestrator` reads `.workflow/INDEX.md` to pick the next.
-- `<type>` — conventional-commits: `feat` | `fix` | `refactor` | `chore` | `docs` | `spike`
-- `<kebab-slug>` — ≤5 words, lowercase, hyphenated. No dates (the index tracks them).
+- OpenSpec stores the agreement.
+- The native coding agent implements the agreement.
+- Deterministic providers prove the agreement.
 
-Examples: `0001-feat-todolist-app`, `0003-fix-login-redirect`, `0004-refactor-auth-middleware`.
+Rigor scales with risk and evidence needs, not with a task-size phase matrix.
 
-## Folder layout
+## Commands
 
-One self-contained folder per run, plus the shared registry and templates.
+### `/investigate <problem>`
 
-```
-.workflow/
-├── INDEX.md                       # registry: id, type, title, status, dates
-├── FOLLOWUPS.md                   # carry-over items surfaced by past retros
-├── _templates/                    # blueprints — copy, don't edit in place
-│   ├── spec.md  plan.md  test-plan.md  uxui-plan.md
-│   ├── review.md  tests.md  security.md  recommendations.md
-│   ├── retro.md  epic.md
-│   └── state.json                 # per-run resume cursor
-├── 0001-feat-todolist-app/
-│   ├── state.json  spec.md  plan.md  test-plan.md
-│   ├── review.md  security.md     # security.md only if the review fired
-│   ├── tests.md  retro.md
-└── 0003-fix-login-redirect/ ...
-```
+Use only when the problem or direction is unclear. Exploration is bounded,
+read-only with respect to product code, and may produce an investigation note.
+Its output is facts, hypotheses, options, tradeoffs, and a next decision.
 
-Rules:
-- One folder per run — never mix work.
-- `_templates/` is the source of truth for shape — copy on start, never edit in place.
-- `INDEX.md` append-only on start, status-updated as phases progress; `retro` writes `Finished`.
-- `FOLLOWUPS.md` shared — `retro` appends, `pm` reads each interview for in-scope carry-overs.
-- `state.json` is the per-run resume cursor, written after each step.
-- Parallel runs are independent (folder IDs); overlapping files → `lead` flags it in `risks`.
+### `/change <intent>`
 
-## Artifacts
+Creates or completes `openspec/changes/<id>/`. The resolver records:
 
-Every artifact has a template in [`.workflow/_templates/`](.workflow/_templates/) (filename = template name). Agents copy the template into the run folder and fill it in — never write freeform.
+- ambiguity: clear or unclear;
+- impact: low, medium, or high;
+- coupling: isolated or coupled;
+- evidence capabilities;
+- size for budget and slicing only;
+- semantic security and review triggers.
 
-| File | Owner | Purpose |
-|---------|---------------|----------|
-| `spec.md` | `pm` (L · `/spec`) · `lead` combined (XS–M) | **Goal**, **User Stories** (P1/P2/P3, Given/When/Then **acceptance scenarios** with `AC#` ids), **Functional Requirements** (FR-###), **Success Criteria** (SC-###), key entities/edge cases/users/scope, **Type**, bug-repro (fix), timebox (spike), assumptions |
-| `run.md` | `lead` combined (XS micro-lane) | **Single XS artifact** replacing spec/plan/tasks/test-plan — same contract core (Goal, `**Type**:`, `AC#`, `T###`+`verify:`, Coverage); `SIZE_UPGRADE: S` re-emits the four files (`xs-s-fast-path.md`) |
-| `context.md` | `/spec` or `/dev` main agent (via `team-codebase-explorer`) | **Shared brownfield-M/L understand map** — current state + UI surface + test infra, built once (M: digest-seeded, before the combined spawn; L: after the spec) so `lead`/`qa`/`uxui`/`engineer` skip re-walking (`engineer` reads its `## Current state`). Optional — greenfield/XS-S skip it |
-| `plan.md` | `lead` (plan mode) | **Summary** + **Technical Context** + **Gate check** (vs `rules/fundamentals.md`), **phases for this task**, architecture diagram, current-state + research notes, **scaffold skeleton** (M/L), files to touch (`path#anchor`), risks, **rollback** |
-| `tasks.md` | `lead` (plan mode) | **Executable task breakdown** — phased (Setup → Foundational → one per User Story by priority → Polish) `T### [P] [AC#] … verify:` tasks, dependency-ordered, each tied to an acceptance scenario; the engineer builds from this |
-| `test-plan.md` | `lead` combined (XS–M) or `qa` (L) | **Design-time test strategy** (feat/fix/refactor) — coverage plan per AC, edge cases, out-of-scope, fixtures/env, regression (fix) / baseline (refactor) contract, coverage targets. Written after `plan.md`, signed off at the gate; `qa` executes it at Test |
-| `uxui-plan.md` | `uxui` (team mode) | **Design-time UX plan** for UI work — Scenes, ASCII wireframes, Scenarios, UX direction & components, AC↔scene mapping. Written by `/uxui-plan` (not a linear state-machine step); `frontend-design` builds from it, `qa`'s Visual verification checks against it |
-| `review.md` | `lead` (review mode) | Tasks-adherence + **acceptance verification** against `spec.md` |
-| `security.md` | `lead` (security mode) | Security findings; only when the diff trips the sensitive-paths trigger |
-| `tests.md` | `qa` (execute) · orchestrator inline at XS/S (`e2e_visual=off`) | **Test execution record** — AC↔test mapping, run results, regression check (fix), measured diff coverage, edge-case gaps. Executes `test-plan.md` |
-| `recommendations.md` | `engineer` (spike) | Spike deliverable — what we learned, recommended next step. Replaces test/ship phases. |
-| `retro.md` | `retro` | What worked, what to change, memory + skill candidates, commit/PR refs |
-| `epic.md` | `lead` (rare) | Decomposition into slices when `Ship as: staged` + ≥2 capabilities |
-| `state.json` | `orchestrator` | Resume cursor: phase, step, cycle counters, run timestamps (`created_at`, `last_updated`, `done_at` just before the retro spawn), per-step completion times (`phase_times.<step>` — retro turns the deltas into per-phase durations) |
+Standard changes contain proposal, delta specs, design, tasks, evidence, and
+execution wiring. Rapid changes contain proposal, tasks, evidence, and execution
+wiring and upgrade in place if risk emerges.
 
-## Optional artifact gate
+### `/build <change>`
 
-Off-by-default structural check, not wired into the state machine — run by hand / pre-commit / CI:
+The native harness reads the compact change packet and implements it. `tasks.md`
+is the only ledger. Focused checks run during convergence. Native task primitives
+or subagents are used only for independently verifiable parallel/resumable work
+packages, not lifecycle personas.
 
-```sh
-sh .claude/hooks/artifact-lint.sh .workflow/<id>/
+For a Git project, create an isolated worktree with:
+
+```bash
+claude-foundation sandbox create <change>
 ```
 
-Per directory: **required sections, type-aware** (the `**Type**:` value picks the shape — `spec.md` a `**Type**:` + `## Goal` + the type's contract block (`feat` → `## User Stories`; `fix` → `Reproduction & Expected`; `refactor` → `Equivalence contract`; `chore` → `Checklist`; `docs` → `Docs scope`; `spike` → `Questions & Timebox`, non-feat blocks carrying ≥1 `AC#`); `tasks.md` ≥1 `T###` task with an `[AC<n>]`/`[DoD]` tag + `verify:`; `plan.md` a fenced `mermaid` block — `chore`/`docs` exempt; canonical lookup: `plan-writing > references/size-tiering.md > Artifact shape by Type`) and **no leftover placeholders** (`TODO`/`TBD`/`FIXME`/`lorem`, `<...>`, bare prose only — code spans/fences are ignored). Prints `[OK]`/`[FAIL] <file>:<line>: …`, exits non-zero on failure. POSIX `sh`+`grep`/`awk`, no `_templates/` at runtime. Fixtures: [`run-artifact-lint-tests.sh`](.claude/hooks/tests/run-artifact-lint-tests.sh).
+For a selected multi-repository topology:
 
-## Type-aware phase matrix
+```bash
+claude-foundation repos <change>
+claude-foundation sandbox create <change> --all
+claude-foundation agents plan <change> [--group <n>] [--pretty]
+claude-foundation agents task <change> <task-id> [--pretty]
+```
 
-Type decides *which* phases run: `orchestrator` **skips or specializes** some by `Type` — ✓ runs, `skip` records "skipped — type=<x>" and moves on, `light` is a thinner pass. (How *much* machinery each phase gets is orthogonal — `.claude/orchestrator/references/size-execution.md`.)
+The plan permits parallel workers only across independent repositories and
+resources. The full plan is persisted while stdout stays below 4 KiB; workers
+receive only an 8 KiB task packet. A one-repository change with at most two
+ordinary tasks stays with one agent. It routes mechanical inventory to the configured Haiku/fast tier,
+normal implementation to Sonnet/standard, and architecture, security,
+migration, or independent review to Opus/deep. Exact model versions remain host
+configuration.
 
-| Phase | feat | fix | refactor | chore | docs | spike |
-|-------|------|-----|----------|-------|------|-------|
-| 1. Interview + spec | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (timeboxed) |
-| 2. Plan | ✓ | ✓ (task 1 = regression test) | ✓ (equivalence note; baseline-capture task 1 if coverage thin) | ✓ | ✓ | ✓ (exploration plan) |
-| 2½. Test plan | ✓ | ✓ (regression contract) | ✓ (baseline contract) | skip | skip | skip |
-| 3. Gate | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 4. Implement | ✓ | ✓ (regression test FIRST, then fix) | ✓ | ✓ | ✓ | ✓ (exploration) |
-| 5. Test | ✓ | ✓ (regression must pass) | ✓ (verify vs captured baseline) | skip | skip | skip |
-| 6. Review | ✓ | ✓ | ✓ | ✓ · skip @XS | ✓ · skip @XS | light |
-| 7. Security review | trigger-based | trigger-based | trigger-based | trigger-based | trigger-based | skip |
-| 8. Docs touch-up | ✓ | optional | optional | optional | ✓ | skip |
-| 9. Ship (stage + opt-in commit/PR) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 10. Retro | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+Resume planning considers completed tasks as satisfied dependencies and returns
+`proof-ready` when no implementation remains. Dispatch is denied when a task
+claims behavior outside its repository authority or has no evidence provider.
+Load one primary construction skill per task; add only the security and
+observability cross-cutting skills whose triggers apply.
 
-**Ship commit — opt-in, default `no`.** Ship always runs (isolates the diff, scans secrets); whether it commits/pushes/PRs is the gate's call — lever + `commit_on_ship` mechanics: `.claude/orchestrator/references/gate.md`. Independent of `fix`/`refactor`'s in-`implement` commits for the regression/baseline contract — those land at Implement, not here.
+If requirements or design change during Build, pause, revise the same OpenSpec
+change, then synchronize it without losing unchanged completed tasks:
 
-**Review at XS for `chore`/`docs` — default skip.** A size×type default, not a per-line deviation. Mechanics: `.claude/orchestrator/references/size-execution.md` (Review row).
+```bash
+claude-foundation sandbox sync <change>
+```
 
-**Test plan.** Design-time coverage/edge-case/regression contract, signed off at the gate, run at Test. Authorship by size: `.claude/orchestrator/references/size-execution.md` (Test-plan row).
+Sync increments the revision and invalidates previous proof.
 
-**Greenfield vs brownfield (the `field`).** Gates the brownfield **understand → lock → change** discipline (greenfield skips both). Canonical def + picker: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
+### `/prove <change>`
 
-### Security trigger
+Proof validates artifacts, hashes relevant inputs, resolves claims to providers,
+reuses valid receipts, executes missing/stale evidence, and writes a proof bound
+to the workspace hash.
 
-Security review runs when the diff touches any of: auth/session/token, password handling, crypto primitives, SQL/query building, raw HTML rendering, file/path handling, exec/shell, deserialisation of untrusted input, secret-bearing files (env/config), or new external network endpoints. **Not a trigger on its own — first-party browser-storage round-trip:** the app reading back its own single-user `localStorage`/`sessionStorage`/`IndexedDB` via `JSON.parse` is *not* untrusted deserialisation and does not fire Security review — **provided** the diff has no dangerous sink (`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`Function`/`dangerouslySetInnerHTML`/jQuery `.html()`/any HTML-injection sink — **open list**; any such sink is itself a "raw HTML rendering" trigger and fires regardless). It also fires when the stored data crosses a real trust boundary (multi-user/shared-device threat model, or data written by a server or another principal). `orchestrator` decides; `lead` executes in security mode via the inline checklist. **One spawn:** the trigger check runs before Review, and a fired trigger extends the same `lead` review spawn with security mode (`review.md` + `security.md` from one spawn, opus) — the phase, its blocking semantics, and the matrix row are unchanged.
+```bash
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
+```
 
-### E2E + visual (opt-in)
+Required evidence that is failed, missing, stale, erroneous, or inconclusive
+blocks landing.
 
-Browser **e2e** + **visual/a11y verification** are **off by default** (`state.json > e2e_visual`) — opt-in asked in the interview for a feat/fix UI surface, surfaced at the gate (`e2e on|off`); unset → `off`. **Why:** browser-binary install + slow journeys dominate wall-clock, and jsdom/happy-dom unit/integration already cover UI logic. `off` → unit+integration only (a journey maps to integration); `on` → full browser path, one reused session. `chore`/`docs`/`spike` skip regardless. Mechanics: `qa.md > e2e_visual`.
+Execution adapters run project-owned commands. `test-discovery` produces
+two receipts from one process; `playwright` consumes a structured JSON report
+and requires claim annotations. The scheduler reuses valid receipts,
+deduplicates identical commands, and runs providers concurrently only when
+their declared resources do not conflict. Evidence v1 remains manual-compatible
+and upgrades explicitly with `claude-foundation evidence upgrade <change>`.
 
-### Per-task phase plan (deviation from the matrix)
+### `/land <change>`
 
-The matrix is the **default, not the final word**. `lead` (plan mode) writes a reasoned **`## Phases for this task`** block in `plan.md` that starts from the matrix and may **deviate** when a discretionary phase isn't needed. Three phases are **discretionary**: **Test**, **Review**, **Docs**. A disposition turning a matrix-`✓` into `light`/`skip` is a **deviation**: tag it `(deviates from matrix)` with a one-line justification. No deviation → one line (`Matrix defaults for type=<T> — no deviations.`).
+Landing checks proof freshness, applies a proven sandbox diff when applicable,
+verifies state identity, then delegates semantic spec sync and archive to the
+pinned OpenSpec CLI.
 
-**Protected — never deviatable, at any size:** **Interview + Spec**, **Plan**, **Gate**, the **security-trigger *check*** (the scan always runs; the plan may *predict* whether it fires, never suppress it), and **Retro** — plus state-discipline writes and the per-line AC confirmation. Implement and Ship aren't discretionary either.
+```bash
+claude-foundation land check <change>
+claude-foundation land archive <change>
+```
 
-**The gate owns the deviation, not the plan** — every deviation needs explicit per-line confirmation, never a plain `approve`; `lead` proposes, the user disposes. Lever syntax + `state.json > phase_plan` mechanics: `.claude/orchestrator/references/gate.md`. **Skipping `Test` on `fix`/`refactor` also waives that type's regression/baseline contract** — highest justification bar.
+Commit, push, and pull-request effects require explicit authorization.
 
-This subsection is the **canonical definition**; `plan.md`, `lead.md`, and `orchestrator.md` point here.
+### `/changes`
 
-### Fanout plan & size-aware execution (split out)
+Lists active changes and distinguishes in-progress, proven, stale-proof, and
+ready-to-land states.
 
-Two canonical blocks live in their own reference files (gate-owned, unchanged in force):
-- **Fanout plan** (the gated `## Fanout plan` block `lead` declares, the gate lever, telemetry) → [`.claude/orchestrator/references/fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md).
-- **Size-aware execution matrix** (how much machinery each phase gets per XS/S/M/L, the patch lane, fanout availability, the multi-repo boundary) → [`.claude/orchestrator/references/size-execution.md`](.claude/orchestrator/references/size-execution.md).
+### `/dev`
 
-## Skill routing
+Compatibility composition:
 
-Skill-per-decision routing, triggers, and full run order: `.claude/rules/fundamentals.md` (always-on router). Load the narrowest skill for the current decision.
+```text
+/change → /build → /prove
+```
 
-### Skill-load budget (critical path)
+It never lands by implication. `--plan-only` stops after `/change`;
+`--resume <id>` resumes an active OpenSpec change.
 
-Default: load no full skill body on the hot path — at most one targeted `references/<file>` section. Canonical: `.claude/rules/fundamentals.md` + `CLAUDE.md > Working agreements`.
+## Schemas
 
-Phase names below match the matrix; row numbers stay display-only in the table and diagram. The orchestrator runs setup actions (read INDEX, pick ID, create folder, copy state.json, append INDEX row) before phase 1 — its op 1 (Setup); the orchestrator script now counts **9 ops** (Setup · Interview · Design · Gate · Implement · Test · Review+Security · Ship · Close), local to that file.
+### `foundation-rapid`
 
-## Phase 1 — Requirements (interactive)
+Allowed only when all are true:
 
-Turn a rough intent into a signed-off spec + plan + test plan before any code — ask only what's unspecified, let the human gate the contract. **Interview + Spec** (`pm` writes `spec.md` at L; XS–M: `lead` combined) → **Plan** (`lead` writes `plan.md`+`tasks.md`) → **Test-plan** (`qa` writes `test-plan.md` at L; XS–M folded) → **Gate** (per-line AC confirmation; loops until `approve` — see [Stop conditions](#stop-conditions)). Script: `.claude/orchestrator.md` (Phase 1 ops).
+- low impact;
+- isolated;
+- no public contract change;
+- no persistent migration;
+- no semantic security trigger;
+- no irreversible effect;
+- unit/static evidence is sufficient.
 
-## Phase 2 — Implementation (autonomous after approval)
+### `foundation-standard`
 
-Build the approved contract and prove it — implement, then close the test/review/security loops and ship, without further prompts (a blocking finding bounces back to implement). **Implement** → **Test** (`qa`, before review; diff-coverage floors are advisory ratchets, not ship-blocks) → **Review** (`lead`) → **Security** (trigger-based) → **Docs** → **Ship** (opt-in commit/PR) → **Retro**. Cycle budgets: [Stop conditions](#stop-conditions). `state.json` updates after every step; `/dev --resume <id>` continues a dead run. Script: `.claude/orchestrator.md` (Phase 2 ops).
+Used for all other changes. Design remains concise and records only decisions
+that constrain implementation, compatibility, rollout, rollback, or proof.
 
-## Scope: when to split (rare path)
+## Evidence
 
-**Default:** one `/dev` run, regardless of file/step count or layers touched. Crossing DB + API + UI is normal full-stack work, NOT a reason to split.
+`evidence.yaml` is the stable JSON-compatible behavioral contract.
 
-`lead` enters epic mode **only when both are true**:
-1. The spec lists ≥ 2 capabilities that can ship to users independently, **and**
-2. `Ship as: staged` is set in `spec.md`.
+```json
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "owner-updates-profile",
+      "scenario": "An authenticated owner updates their profile",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}
+```
 
-If only one is true → one `plan.md`. A heavy plan (say >15 steps) gets a note in `plan.md > Risks` ("scope is on the larger side") — **do not split**. The `Ship as` answer is captured in the Phase 1 interview and recorded in `spec.md` frontmatter — the user's call, not the planner's.
+`execution.yaml` separately holds commands, structured reports, named services,
+readiness identity, resources, and environment variable names. Legacy embedded
+providers remain readable and migrate with `evidence upgrade`.
 
-### Epic mode flow
+Supported capabilities:
 
-1. `lead` writes [`epic.md`](.workflow/_templates/epic.md) (2–5 vertical slices, each independently shippable) instead of `plan.md`.
-2. `INDEX.md` status for this ID = `epic`. No implementation runs against this folder.
-3. `lead` recommends a starting slice and opens a child `/dev` run (e.g. `0006-feat-audit-viewer`) with `Parent: 0005-feat-audit-system` in its `spec.md`.
-4. Remaining slices are separate `/dev` runs later, each referencing the same parent.
-5. User can `swap <n>` at the gate to pick a different first slice.
+| Provider ID | Select it when the claim requires |
+|---|---|
+| `test` | Executable behavioral checks |
+| `discovery` | Proof that the expected tests were actually found |
+| `browser` | Rendered behavior or real input in a browser |
+| `mutation` | Proof that tests detect a deliberate behavioral fault |
+| `state-identity` | Actor, revision, or before/after state identity |
+| `integration` | Multiple components or external boundaries working together |
+| `compatibility` | Public or persisted contract compatibility |
+| `performance` | A measured latency, throughput, resource, or size budget |
+| `security-static` | Static security analysis of a changed trust boundary or sink |
+| `cross-repo-contract` | Agreement between producer and consumer repositories |
+| `review` | Independent risk review |
+| `static-analysis` | Compile, type, lint, or static quality gates |
+| `data-migration` | Forward migration, mixed-version safety, and rollback |
+| `accessibility` | Semantics, keyboard, focus, contrast, or assistive access |
+| `resilience` | Timeout, retry, partial failure, recovery, or degraded dependency |
+| `observability` | Required logs, metrics, traces, or alerts |
+| `deployment` | Package, configuration, rollout health, or rollback behavior |
+| `dependency-supply-chain` | Vulnerability, license, lockfile, or provenance policy |
 
-## Agent map
+Run `claude-foundation providers` to inspect the canonical
+catalog installed in a project. Providers are evidence contracts, not bundled
+vendor tools: `/prove` may execute the repository's existing command with
+`run-provider`, or record a receipt from an external system. Select only
+providers justified by observable claims.
 
-Five sub-agents drive the `/dev` file work, plus the team-mode `uxui` designer (spawned only by `/uxui-plan`). The **orchestrator is not a sub-agent** — the main agent plays that role, per [`.claude/orchestrator.md`](.claude/orchestrator.md). Models + tools per agent: [`.claude/agents/INDEX.md`](.claude/agents/INDEX.md) (canonical).
+Test evidence automatically requires suite-level discovery evidence.
+Risk-triggered changes automatically require review evidence. After Build, a
+changed-surface policy adds supply-chain, migration, accessibility,
+compatibility, security/review, or deployment obligations when relevant files
+changed.
 
-| Role | Where it runs | Phase steps | Reads | Writes |
-|------|---------------|-------------|-------|--------|
-| `orchestrator` | main agent | drives all + interview | user input, INDEX, FOLLOWUPS, `state.json` | INDEX, `state.json`, follow-up cursor |
-| `pm` | sub-agent | 1 (spec) | intent, interview Q&A, FOLLOWUPS | `spec.md` |
-| `lead` | sub-agent | 2, 6, 7 | `spec.md`, codebase, diff | `plan.md`/`tasks.md`/`epic.md`, `review.md`, `security.md` |
-| `engineer` | sub-agent | 4, 8, 9 | `tasks.md`, `plan.md`, `spec.md`, diff | source, commit, PR |
-| `qa` | sub-agent | 2½, 5 | `spec.md`, `plan.md`, `tasks.md`, `test-plan.md`, diff | `test-plan.md`, `tests.md` |
-| `retro` | sub-agent | 10 | all artifacts, diff, memory/skills, FOLLOWUPS | `retro.md`, INDEX, FOLLOWUPS |
-| `uxui` | sub-agent (team) | `/uxui-plan` only | `spec.md`, design system | `uxui-plan.md` |
-| `team-*` | workers | fanout phases (1,2,4,5,6,7) | scoped question/area/slice | findings only, no artifact write |
+Each receipt records provider/version, change, claims, workspace hash, result,
+observations, capability metadata, command/log, and timestamps. Status is one of
+`pass`, `fail`, `inconclusive`, or `error`.
 
-**Sub-agent constraints** (full mechanics: [`fanout-dispatch.md`](.claude/orchestrator/references/fanout-dispatch.md)): splittable agents (`pm`/`lead`/`qa`/`engineer`/self-splitting `team-*`) hold `Agent` and direct-nest helpers one level deep, never writing `state.json`; a multi-repo run additionally splits test/review/security one helper per changed repo (Implement/gate/ship stay pinned to `repo_root`). Sub-agents can't call `AskUserQuestion` — ambiguity returns `BLOCKER:` and the orchestrator surfaces it. **Skill handoff:** when `retro` surfaces candidates and the user approves, the orchestrator invokes `skill-creator` for each — never silently.
+The provider protocol is deny-by-default: a provider may cover only claims that
+declare it, executable providers require an explicit `--claims` scope, and a
+provider protocol/version/fingerprint change invalidates old receipts. Browser
+receipts record `foreground-required` and `foreground-available` independently.
+Playwright uses the distinct `browser-automation` input mode. Foundation does
+not install Playwright or browser binaries; `doctor --stage prove --change
+<id>` checks the project-owned command, dependency, configuration, readiness
+identity, execution DAG, and report topology.
 
-### Anti-bias rule
+## Review
 
-Because `lead` reviews the plan they wrote, review mode is checklist-driven (one row per task, one per acceptance scenario incl. its boundary/error scenario, one per DoD item and Constraint, one verification per file). "Looks good overall" is banned.
+Review is required for high impact, authentication/authorization, public
+compatibility, migration, irreversible mutation, concurrency, monetary logic,
+multi-repository contracts, anomalous evidence, or explicit policy.
 
-## Team mode — run one role on its own
+Findings are `verified`, `hypothesis`, `disproved`, or `accepted-risk`.
+Hypotheses require deterministic reproduction before becoming confirmed major
+findings.
 
-Build the same artifacts role-by-role instead of one monolithic run, each writing into the **same `.workflow/<id>/` folder** so they compose; carry it the rest of the way with `/dev --resume <id>`. **Cost note:** team mode skips the XS–M combined fast path (`/spec` always spawns `pm`), so anything below L prefers one-shot `/dev` when a single flow will do.
+## Security resolver
 
-| Command | Role | Writes | Notes |
-|---------|------|--------|-------|
-| [`/spec`](.claude/commands/spec.md) | `pm` | `spec.md` | Runs the interview, `pm` writes the spec; stops at `step=spec`. Pass a run id (not an intent) to refine an existing spec. |
-| [`/dev-plan`](.claude/commands/dev-plan.md) | `lead` (plan) | `plan.md`/`epic.md` | Needs a ready spec; stops at `step=plan`. No gate, no implement. |
-| [`/test-plan`](.claude/commands/test-plan.md) | `qa` (test-plan) | `test-plan.md` | Needs a spec; spec-only if no plan yet. None for `chore`/`docs`/`spike`. |
-| [`/uxui-plan`](.claude/commands/uxui-plan.md) | `uxui` | `uxui-plan.md` | UI only — Scenes, wireframes, Scenarios, AC↔scene mapping; not a linear step. |
-| [`/implement`](.claude/commands/implement.md) | `engineer`+`lead`+`qa`+`retro` | source, `review.md`, `tests.md`, `retro.md`, commit/PR | **Phase 2 entry point** — confirms spec+plan+test-plan ready, gates if unapproved, then runs the full autonomous build. Interchangeable with `/dev --resume <id>` mid-build. |
+Triggers are semantic: identity/access, secrets, permissions, cross-user data,
+network trust, irreversible mutation, sensitive storage, unsafe sinks, public
+security contracts, and security-relevant migrations. Syntax alone is not risk.
 
-Same main-agent-as-orchestrator + spawn-guard mechanics as `/dev`. Typical flow: `/spec` → `/dev-plan`+`/test-plan`+`/uxui-plan` (if UI) fired together **in parallel**, each writing its own `state.<slice>.json` shard → `/implement` (gate folds the shards → build → ship). Full sharding + backfill mechanics: [`team-mode-sharding.md`](.claude/orchestrator/references/team-mode-sharding.md).
+## Invalidation
 
-## Example: `/dev create todolist app`
+Foundation creates one relevant workspace snapshot per proof and shares its
+identity across receipts.
+It excludes runtime receipts, sandboxes, dependencies, legacy workflow records,
+other active changes, and archived changes. Any relevant edit makes prior
+receipts and proof stale.
 
-S-size greenfield: one interview batch → `lead` combined mode writes `spec.md`+`plan.md`+`test-plan.md` in one spawn (feat, CRUD tasks, localStorage; `e2e_visual=off`) → gate (fast path; skip 7 — a localStorage round-trip via `textContent` trips no sink) → `approve` → implement (engineer writes the planned tests too) → orchestrator runs the suite inline, green → review → merged docs+ship → inline retro → done.
+## Preflight and telemetry
 
-## Example: `/dev fix login redirect loop`
+Run `doctor --stage change|build|prove`. Change and Build allow commands that
+are explicitly planned but not created yet. Prove requires executable providers
+and rejects dependency cycles, report collisions, secret-like literal
+environment values, and status-only readiness probes. Add `--require-archive`
+when the intended flow includes landing.
 
-`spec.md` (fix, repro: admin login loops to `/login`) → `lead` writes `plan.md`+`tasks.md` (T001 = failing regression test, T002 = fix) → `qa` writes the regression contract → gate (security on — touches auth) → `approve` → engineer writes the failing test, fixes the redirect → qa confirms it fails pre-fix, passes now → review → security passes → commit (no PR) → retro → done.
+Native CLI operations append duration and exit state on a best-effort basis to
+`.foundation/logs/<change>/operations.jsonl`. Request, token, cache, and cost
+come from uniquely identified host request records; unknown usage is never
+reported as zero. Claude Code binds its session transcript at `SessionStart`
+and incrementally reads only `assistant.message.usage` at phase checkpoints.
+There is no per-tool telemetry hook, and prompt/tool payloads are never copied.
+Other hosts use `telemetry import`.
 
-## Example: `/dev refactor extract pricing engine from OrderService`
+Use `claude-foundation metrics <change>` to aggregate phase timing, unique
+provider execution time, request/token/cache/cost totals, orchestrator token
+share, and emitted context bytes without double-counting receipts emitted by
+one combined execution.
 
-M-size brownfield: `spec.md` (refactor, equivalence contract — pricing output stays identical) → `lead` maps `## Current state` (entry `OrderService.total()` → 4-hop flow → blast radius `applyDiscount`/`roundTax`, invariants each `path#anchor`), coverage thin → `tasks.md` T001 = capture characterization baseline over those blast-radius symbols, T002+ = extract → `qa` writes the Baseline contract (golden-master on 8 order fixtures · how compared: exact) → gate (a `skip 5` here would waive the baseline — kept) → `approve` → engineer writes the golden-master first, green on unchanged code, commits it alone; a fixture exposes a rounding bug → pins the wrong output with a `pinned-bug:` marker + notes it, does NOT fix inline → extracts the engine in small green steps, golden-master stays green → qa verifies the baseline held before/after → review → commit → retro logs the pinned bug as a `fix` follow-up → done.
+`claude-foundation packet <change> --phase build|prove` emits the bounded
+handoff for a fresh execution context. Global, repository, and task packets are
+capped at 16, 12, and 8 KiB respectively and reference larger artifacts by
+path and digest. Compact JSON is the default and is the exact measured budget;
+`--pretty` is available for people. Collection previews include counts and
+digests, with task packets providing authoritative expansion. Atomic context
+events are best-effort, concurrency-safe, tolerant of legacy rows, and rolled
+up when their retained set grows. The phase marker first closes usage
+from the prior phase using the incremental transcript cursor. Large changed-file
+sets collapse into prefix counts plus a digest. Build and Prove consume this
+packet instead of replaying the full orchestrator transcript.
 
-## Example: `/dev spike compare bullmq vs sidekiq`
+## Sandbox safety
 
-`spec.md` (spike, 1-day timebox, deliverable=recommendation) → `lead` writes an exploration plan → gate (runs interview→plan→gate→implement→review→retro only) → `approve` → engineer explores both, writes `recommendations.md` → light review → retro → user decides on follow-up `feat` runs.
+- Git projects use detached temporary worktrees.
+- The target HEAD must remain at the recorded base before apply.
+- `git apply --check` runs before target mutation.
+- Apply identity covers only paths changed by the proven sandbox. Unrelated
+  target edits are preserved and excluded from the projection comparison.
+- Touched paths and change artifacts are backed up and journaled before writes;
+  failures roll back and interrupted transactions recover on retry.
+- The sandbox remains the proof subject until archive and proof audit finish.
+- Conflicts stop without overwriting unrelated user edits.
+- Mutation testing happens only in isolation.
 
-## Stop conditions
+Non-Git projects use an isolated temporary copy with a before/after content
+manifest. Apply rejects any touched target path changed since the baseline,
+then verifies the expected touched-path projection. Multi-repository changes use one
+OpenSpec change plus a repository manifest and require cross-repository contract
+evidence before each repository is landed in its declared order.
+Their workspace identity is composite, while providers configured with
+`repository` bind receipts to one repository snapshot. Unrelated repository
+edits therefore preserve scoped evidence; contract and producer/consumer edits
+still invalidate integration evidence. Multiple remotes Land through an
+ordered, resumable saga with explicit commit/CI records and root pointer
+verification, never by claiming atomic remote mutation.
 
-Where the run pauses, loops, or escalates instead of charging ahead.
+## Watchdog
 
-- `revise` at the gate (or free-form chat) → targeted in-run edit of the affected sections only, re-verify, re-present. Never a fresh Phase 1.
-- `skip <n>`/`run <n>` at the gate → flips that discretionary phase (Test/Review/Docs only; protected phases refuse), recorded in `state.json > phase_plan`, loop continues until `approve`.
-- Test failures → fix → re-run, ≤3 cycles, then escalate.
-- Reviewer blocking issues → fix → re-test → re-review, ≤2 cycles, then escalate.
-- Security `high` finding → fix → re-test → re-review → re-security, counts against the review budget.
-- Any agent unsure → stop and ask, never invent requirements.
-- Context exhaustion / cancel → `/dev --resume <id>` continues from `state.json`'s recorded step.
+The external event ledger requires unique request identity and records operation,
+agent/model, parent request, tokens, cache, cost, tool, hash, and change.
+
+Budget actions:
+
+- 70%: batch remaining work and reuse evidence;
+- 85%: stop speculative exploration;
+- 100%: stop and split or re-scope.
+
+Required evidence is never removed to meet budget.
+
+## Legacy migration
+
+`.workflow/` is no longer runtime state. Existing records remain read-only.
+
+```bash
+claude-foundation migrate
+claude-foundation migrate <legacy-id> --apply
+```
+
+Apply creates migration candidates, not authoritative specs. Only statements
+corroborated by code, tests, or accepted contracts may be promoted.
+
+## Native CLI
+
+`claude-foundation` is the stable public control surface. It searches upward
+from the working directory, or from `--project <path>`, and forwards to the
+runtime installed in that project so schemas and runtime behavior stay aligned.
+Use `proof plan|execute|finalize`, `evidence run|record|upgrade`, `sandbox create|sync|apply`,
+and `land check|archive` rather than calling the runtime file directly.
+
+When the packaged CLI is not on `PATH`, use the source checkout's public router:
+
+```bash
+bash /path/to/claude-foundation/cli.sh --project "$PWD" proof plan <change>
+```
+
+Do not bypass it with `foundation.mjs`; that file intentionally exposes the
+hyphenated low-level runtime API rather than the public nested command grammar.
+
+## Runtime layout
+
+```text
+foundation.json
+openspec/
+  config.yaml
+  repositories.yaml
+  schemas/
+  specs/
+  changes/
+
+.foundation/
+  runtime/
+  receipts/
+  logs/
+  sandboxes/
+  repository-sandboxes/
+  plans/
+  leases/
+```
+
+The contents under `.foundation/` are machine-owned and ignored by Git.
+
+## Requirements
+
+- Node.js 20.19 or later
+- OpenSpec pinned to `@fission-ai/openspec@1.7.0`
+- Git for worktree isolation
+- `jq` for automatic settings merge during installation
+
+## Quality invariants
+
+- Zero discovered tests cannot silently pass.
+- Missing expected evidence cannot silently pass.
+- Browser capability mismatch is inconclusive.
+- Mutation crash is not a behavioral kill.
+- Stale proof cannot land or archive.
+- A sandbox diff cannot overwrite a conflicting target.
+- OpenSpec performs semantic spec sync before archive.
+- Required assurance is never dropped because of size or budget.

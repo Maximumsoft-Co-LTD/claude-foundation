@@ -7,6 +7,189 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Bounded agent contracts** — compact JSON now measures the exact emitted
+  bytes, packet schema 4 and plan schema 2 expose compatibility explicitly,
+  large collections degrade to previews/digests, and task dispatch rejects
+  claims outside repository or provider authority.
+- **Resume-safe model routing** — completed dependencies remain satisfied,
+  complete plans route to proof, and mixed work reports the deepest model tier
+  required by the session.
+- **Concurrent-safe context accounting** — plan and packet metrics use
+  best-effort atomic events, tolerate legacy or malformed rows, and roll older
+  events into a bounded summary without blocking agent handoff.
+- **Upgrade-safe packet policy** — install migrates only the exact former
+  64 KiB default to scoped 8/12/16 KiB limits, preserves custom numeric values
+  with a doctor warning, and deep-merges partial scoped configuration.
+- **Composable skill context** — hot backend skills are concise and the rules
+  select one primary construction skill plus triggered security or
+  observability guidance instead of loading every layer.
+- **Faster, integrity-bound proof path** — typed `proof readiness` blockers and
+  atomic `proof run` remove repeated orchestration; declared provider inputs
+  permit safe scoped reuse, while external passes require inspectable
+  observation, provenance, and durable evidence.
+- **Native static proof service and structured change drafts** —
+  `execution.yaml` can serve a workspace-relative static root with readiness
+  identity, and `new --draft` materializes one validated agreement without a
+  second task ledger.
+- **Phase and rework accounting** — metrics separate active time from
+  unattributed wait, record phase context/model recommendations, and expose
+  receipt reuse and failed-operation counts without inventing human wait.
+- **Enforced context budgets** — static orchestrator/rule/command word limits,
+  ≤4 KiB summary-first agent plans, 8/12/16 KiB task/repository/global packets,
+  artifact references, small-change single-agent routing, and context-byte
+  telemetry keep brownfield plans bounded without hiding the persisted detail.
+- **Multi-repository control plane** — committed topology and per-change
+  repository scope drive composite snapshots, child worktrees, repository/task
+  packets, scoped providers, changed-path authority, and cross-repository
+  contract enforcement while single-repository changes remain compatible.
+- **Risk-aware model and agent planning** — `agents plan` builds dependency and
+  resource groups, routes portable fast/standard/deep tiers to
+  Haiku/Sonnet/Opus defaults, reports active-change conflicts, preserves
+  unaffected tasks across replans, and uses expiring atomic task leases.
+- **Honest multi-remote Land saga** — `land plan`, `land record`,
+  `land pointers`, and `land resume` bind explicit child commits and CI,
+  transactionally stage verified gitlinks, require refreshed composite proof,
+  and archive the control repository last without implying remote atomicity.
+- **Repository-scoped provider instances** — repeated capabilities can use
+  instance IDs such as `api-test` and `app-test`; commands, services, receipts,
+  environment fingerprints, and invalidation are bound to their repository.
+- **Model/repository/task cost attribution** — telemetry and metrics can report
+  usage by model, repository, and task while unknown values remain unknown.
+- **Preflight and honest operation telemetry** — `claude-foundation doctor`
+  checks runtime, hooks, pinned OpenSpec archive support, legacy packaged tests,
+  and opt-in branch policy; native operations record duration/status while
+  unknown request, token, cache, and cost values remain `null`.
+- **Measured change summary** — `claude-foundation metrics <change>` aggregates
+  phase timing, unique provider executions, external request/token/cache/cost
+  data, and orchestrator share without manufacturing missing values.
+- **Compact execution handoff** — `claude-foundation packet <change>` gives
+  Build and Prove the active paths, revision, claims, providers, tasks, hash,
+  and budget without replaying the orchestrator transcript.
+- **Executable evidence v2** — change contracts can configure project-owned
+  command, combined test/discovery, Playwright, and external adapters while
+  evidence v1 remains readable and has an explicit upgrade command.
+- **Resource-aware proof execution** — `proof execute` reuses content-bound
+  receipts, deduplicates identical commands, runs non-conflicting providers
+  concurrently, writes structured artifacts, and finalizes proof in one
+  operator action.
+- **Project-owned Playwright integration** — structured JSON reports and claim
+  annotations produce browser receipts using the honest
+  `browser-automation` input mode without Foundation installing dependencies.
+- **Native `claude-foundation` control surface** — project-aware provider,
+  change, proof, evidence, sandbox, land, and migration namespaces now forward
+  to the runtime installed in the current repository, including subdirectory
+  discovery, explicit `--project`, runtime API guards, and typo-safe routing.
+- **Production evidence provider catalog** — adds static analysis, data
+  migration, accessibility, resilience, observability, deployment, and
+  dependency/supply-chain contracts, plus a deterministic `providers` command
+  for discovery without forcing every provider onto every change.
+- **OpenSpec-native change loop** — replaces the fixed phase orchestrator with
+  `/investigate → /change → /build → /prove → /land`; `/dev` remains a
+  compatibility composition through proof.
+- **Foundation standard and rapid OpenSpec schemas** — proposal, delta specs,
+  load-bearing design, one task ledger, and claim-oriented `evidence.yaml`.
+- **Deterministic harness runtime** — content hashing, provider receipts,
+  discovery enforcement, stale-proof invalidation, semantic risk resolution,
+  review triggers, watchdog events, migration candidates, Git worktree isolation,
+  transactional apply checks, and OpenSpec-owned safe archive/spec sync.
+- **Upgrade-safe installer migration** — preserves legacy `.workflow/` history
+  and project-owned OpenSpec content while removing old lifecycle agents,
+  phase commands, templates, hooks, hook wiring, and orchestration references.
+
+### Fixed
+
+- **Recoverable Land projection transaction** — copy sandboxes and Git
+  worktrees now prepare touched-path backups and an apply journal before
+  mutation, preserve unrelated target edits, verify only the proven projection,
+  roll back partial writes, keep the sandbox as the proof subject through
+  archive, and resume safely after an interrupted or failed OpenSpec archive.
+- **Packaged CLI contract drift** — Formula, bottle, release, and deterministic
+  workflow checks now require the public `proof plan`, `land check`, and
+  `runtime new` surface so an installer-only binary cannot pass packaging tests.
+- **Strict discovery report semantics** — regression coverage distinguishes
+  numeric zero (measured failure) from `null`, arrays, booleans, empty strings,
+  and numeric strings (inconclusive rather than JavaScript-coerced zero).
+- **Content-bound proof over the complete change packet** — edits to the active
+  proposal, design, tasks, delta specs, or evidence now invalidate receipts and
+  proof; sandbox validation consistently reads its active packet.
+- **Deny-by-default provider receipts** — executable providers require explicit
+  claim scope, receipts cannot claim undeclared outcomes, protocol/fingerprint
+  drift invalidates reuse, and browser foreground requirement is distinct from
+  foreground availability.
+- **Task and archive lifecycle semantics** — implementation tasks are never
+  silently ignored because they mention `/prove`; lifecycle commands are no
+  longer generated as tasks, isolated work must be applied before archive, and
+  repeated archive/land checks return the archived state without resyncing.
+- **Transactional landing** — `land archive` now applies a proven isolated
+  workspace when needed before identity verification and OpenSpec archive, so
+  the normal land path is one deterministic transaction.
+- **Shipped self-tests** — obsolete phase-hook suites are removed from installs
+  and replaced by tests for the hooks that are actually shipped.
+
+### Removed
+
+- **Phase control plane** — PM/lead/engineer/QA/retro lifecycle agents, fanout
+  roles, duplicated task/state ledgers, phase references, artifact reconciliation,
+  and phase-specific workflow templates are no longer shipped.
+
+- **Multi-axis workload profiles** — `/dev` records workload profile, risk,
+  ambiguity, evidence classes, implementation volume, and coupling separately from
+  Size; profile-specific Opus-main turn budgets stop invisible runaway orchestration.
+- **Evidence-bearing contracts** — new-run ACs declare structural, behavioral,
+  rendered, integration, measured, security, or manual evidence. Contract lint
+  checks evidence agreement and Full/Impacted command boundaries including cwd,
+  environment/dependencies, and expected test groups/minimum discovery.
+- **Foreground worker lifecycle** — ordinary phase workers with
+  `run_in_background=true` are blocked unless the prompt explicitly authorizes a
+  disjoint fanout. Structured returns include task/AC completion, files, commands,
+  discovery counts, gaps, and context.
+- **Rendered smoke independent of E2E** — rendered ACs run a cheap real-browser
+  visibility/contrast/focus/viewport check while full journeys remain opt-in.
+- **Profile-aware telemetry and pricing metadata** — state/dev-metrics/bench rows
+  carry main-turn budgets and separated active/human/worker/reconcile timing;
+  benchmark pricing metadata is versioned in `bench/config/pricing.json`.
+
+- **`## Capabilities` — the ledger's behaviour half** — retro appends only Ship-Gate-passing AC evidence from `tests.md` as `<guarantee> — [<test path>] — [run-id]`, superseded in full. `feat`/`fix` may add or rewrite a guarantee; `refactor`/`chore`/`docs` may not touch the group. Its separate ~25-line budget cannot evict invariants.
+- **`orchestrator/references/ledger-prune.sh`** — deterministic staleness prune: re-resolves every `path#anchor` in the ledger and drops only the facts it can **prove** dead (file gone, symbol renamed away), keeping headings, prose, directories, globs and anything unverifiable byte-identical. Spec drift is the standard failure of a spec library and the usual mitigation is human diligence; ours is a grep, at no model cost. Called from retro's fold. New `ledger` test suite, 15 assertions.
+- **`fix` input-domain rule at S/M** — the teaching note that took acceptance from 5/6 to 6/6 at XS now also sits in `_templates/spec.md`'s `fix` block; the defect it catches (a ticket names one input, the bug lives one input over) is a property of `fix` at any size. Template notes are stripped on fill, so it stays free at runtime. **Unvalidated on a holdout** — see the caveat in `rationale.md`.
+- **Doc-consistency check 13** — pins the behaviour half at all three ends: retro writes it type-aware and supersedes in full, `qa` reads it, and the prune ships.
+
+### Changed
+
+- Placeholder lint now treats TODO/TBD/FIXME/lorem as marker words, so product terms
+  such as `todolist` no longer fail the Contract Gate.
+- Test and Ship gates treat exit 0 with zero tests, missing declared groups, or
+  discovery below the declared minimum as failure; actual evidence-level drift is
+  blocking.
+- Auth/profile/identity work routes to security-product review with ownership,
+  revocation, negative-path, and PII/logging checks.
+
+- **Three authoritative quality gates** — Contract Gate owns deterministic artifact/AC-set consistency plus human intent approval; Change Gate owns Impacted AC evidence and triggered semantic/security review; Ship Gate owns one Full + lint/type/static run per converged diff. Engineer no longer mutates spec acceptance checkboxes, Review consumes `tests.md` instead of rebuilding every AC row, and Retro reports from Ship-Gate-passing evidence.
+- **Model-economic Implement routing** — main Opus retains interview, risk/size, gate, and acceptance judgment; repeated code generation routes once to the Sonnet-pinned `engineer` when execution volume fires (≥3 code tasks/files, a planned test-fix loop, or >~2K expected generation), even with a warm main context. XS/micro work and deterministic Test/Docs/Ship remain inline. Size=L alone no longer upgrades engineer to Opus; high-stakes overrides require `model_reason:<trigger>` and the spawn guard enforces it. S's fast ceiling is now ≤2 to accommodate one volume-routed Implement plus the previously measured Docs+Ship exception.
+- **Context hot-path diet** — `/dev` is now a thin launcher, XS alone loads the compact fast-path reference, and S/M/L read their normal phase references directly. Resident orchestration rules no longer carry benchmark history or duplicated procedures; inline Design/Implement/Retro use compact local contracts instead of loading cold-worker prompts. The foundation's own always-loaded `CLAUDE.md` is reduced to a project map and shipping rules, Phase 2 guard detail loads by named section, the per-spawn state reminder is bounded and uses the `__now__` contract, and the cross-run context ledger now has line/byte limits. Deterministic doc tests pin these budgets and reject role-prompt pointers from inline templates.
+- **Fast/standard/deep execution profiles** — XS/S target zero/one spawn, M ≤3, L ≤5. These are ceilings, not required worker counts. Fanout is never implied by size; `/dev --fast` makes the low-spawn intent explicit and security-triggered work still receives isolation.
+- **M/L phase resolver** — size is now a spawn ceiling (M ≤3, L ≤5), not a routing table. Every phase defaults inline and records `exec_mode` + `exec_reason`; cold workers require independent judgment, a material context gap, tooling isolation, or proven parallel payoff. Warm M/L Design/Implement/Test, deterministic Docs/Ship, and Retro can all stay in main. L's former automatic `pm → lead → qa` chain is now proof-gated.
+- **Agent capabilities aligned with the resolver** — `pm`/`lead`/`engineer`/`qa`/`retro` now accept bounded scopes and execution reasons, reuse context maps instead of re-walking the repo, and reject size-only cold spawns. Every `Agent` holder requires parent-supplied `fanout_authorized: true` plus a named proof and disjoint scopes; M/L review fanout now defaults off, while one independent runtime review remains available when justified.
+- **One-batch Gate at every size** — M/L now presents its larger summary once but resolves approval, commit disposition, and deviations in the same interaction; revisions remain targeted and re-present only changed sections.
+- **Cross-run test-command cache** — the repo ledger's `## Test infra` now retains validated Full/Impacted/lint-static commands with their owner anchor. Later runs skip package-script discovery until that owner is missing, changed, or rejects the command.
+- **Edit-loop lint startup removed by default** — PostToolUse keeps only near-zero-startup deterministic checks such as `gofmt`; ESLint/Biome/Ruff/Stylelint/Prettier plus type/static analysis run once at Ship Gate. `CLAUDE_EDIT_LINT=1` restores per-edit file lint and `CLAUDE_EDIT_FULL_CHECKS=1` restores the complete legacy hook.
+- **Delta-scoped re-review** — after a review fix, Lead receives prior blockers, changed-since-review hunks, and affected AC/task rows instead of re-reading the complete spec/plan/diff. Public contracts, shared invariants, security boundaries, and scope escapes force a full re-review.
+- **Project-wide checks moved out of the edit hot loop** — `tsc`, `pyright`, and `golangci-lint` run once at Ship Gate instead of after every edited file; process-starting file linters are deferred too. Set `CLAUDE_EDIT_FULL_CHECKS=1` to restore the previous per-edit behavior.
+- **Generated output cleanup** — coverage, test results, and nested `node_modules` are ignored consistently; the tracked todolist coverage summary was removed.
+- **Boot goes out in one message** — `orchestrator.md > State discipline` told the orchestrator *not* to batch tool calls, on the grounds that headless `claude -p` doesn't run them concurrently. That is a rule tuned to the benchmark rather than to the host users actually run: interactive Claude Code does batch, and boot's reads (`INDEX.md`, `FOLLOWUPS.md`, `CONTEXT.md`, the repo-detection `find`) have no dependency on each other's content. Same calls, same tokens, fewer round-trips — a **wall-clock** lever, never a cost one, which is why no cost measurement to date could have surfaced it. Three hard exclusions: no speculative reads (choosing what to open before seeing anything is how you pay for files you didn't need), never batch a `state.json` write with the spawn it gates (`dev-agent-guard.sh` fires PreToolUse on the spawn and may not see the write), and expect nothing under headless. Economy of calls stays the primary lever.
+- **The repo context ledger is now spent, not just written** — `.workflow/CONTEXT.md` has been written by every run's retro since 2.11.0 but was read by **one** consumer (brownfield M/L Context); `phase-1.md` sent greenfield / XS / S off to cold-walk instead. Now every run, every size, either field, reads it **once before the first grep or LSP call** of the current-state walk and walks only what it doesn't cover — the cross-run form of the lever that made inline-Design pay: don't re-derive what is already settled. Wired in `orchestrator.md > Size-aware execution` (rule), `orchestrator/references/xs-s-fast-path.md`, and `plan-writing > references/current-state.md > The LSP-walk technique` (step 0, the procedure). **Evidence, not authority** — spot-check load-bearing claims; code beats the ledger; absent ledger → walk as before. Extracted from OpenSpec (`docs/research/openspec.md`), whose spec library is read before every proposal and accrues per shipped change; its delta-spec artifact, archive-merge command and no-gate flow are deliberately not adopted. **Unmeasured** — the bench runs each task once in a fresh sandbox, so no run has a predecessor's ledger to read; rationale, downside bound and the two-run measurement plan are in `.claude/tests/bench/rationale.md`.
+- **Ledger fold keeps what survives** — retro step 5b now groups lines under `## <area>` headings with a durable `## Test infra` group, replaces a superseded line **in full** rather than appending beside it, and prunes by **load-bearingness, not age** (oldest-first eviction dropped the stable invariants and kept the latest one-off gotcha). Cost-neutral: same write, better retention.
+
+### Fixed
+
+- **Dangling reference in a shipped file** — `orchestrator.md > State discipline` cited `references/fast-path-rationale.md`, which does not exist (that rationale moved to the bench when evidence was split from the rules). A resident pointer to a missing file costs a wasted read at runtime; the rule stands, the pointer is gone.
+
+### Added
+
+- **Two doc-consistency guards** — check 11 fails on any `references/*.md` a shipped file cites that exists nowhere under `.claude/**/references/` (check 10 only caught pointers into paths that never ship); check 12 pins the context ledger's writer **and** all four readers, so a later pass can't drop one end and leave the other paying for nothing.
+
 ## [2.12.0] - 2026-07-24
 
 Warm-drafting, effort-by-size, and run telemetry for the `/dev` pipeline — cheaper cold path, right-sized thinking, measurable mechanism.

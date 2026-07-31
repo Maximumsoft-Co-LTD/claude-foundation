@@ -1,0 +1,2 @@
+{"task":"t1","arm":"workflow","repeat":1,"ok":true,"cost_usd":0.50,"wall_s":400,"spawn_count":4,"cycles_test":0,"cycles_review":1,"judge_score":9,"judge_verdict":"pass"}
+{"task":"t2","arm":"workflow","repeat":1,"ok":true,"cost_usd":1.00,"wall_s":400,"spawn_count":2,"cycles_test":0,"cycles_review":0,"judge_score":8,"judge_verdict":"pass"}

@@ -1,0 +1,20 @@
+[
+  { "id": "A-1001", "month": "2026-06",
+    "items": [ { "sku": "WIRE",  "price": 9.95, "qty": 0.5 },
+               { "sku": "SLEEVE","price": 3.05, "qty": 0.5 },
+               { "sku": "TUBE",  "price": 7.45, "qty": 1.5 } ],
+    "discounts": [] },
+  { "id": "A-1002", "month": "2026-06",
+    "items": [ { "sku": "PANEL", "price": 19.99, "qty": 3 } ],
+    "discounts": [ { "kind": "percent", "value": 15 } ] },
+  { "id": "A-1003", "month": "2026-06",
+    "items": [ { "sku": "CLAMP", "price": 0.35, "qty": 7 },
+               { "sku": "BOLT",  "price": 1.15, "qty": 3 } ],
+    "discounts": [ { "kind": "fixed", "value": 1 } ] },
+  { "id": "A-1004", "month": "2026-06",
+    "items": [ { "sku": "GASKET", "price": 8.01, "qty": 0.5 } ],
+    "discounts": [] },
+  { "id": "A-1005", "month": "2026-06",
+    "items": [ { "sku": "SHIM",   "price": 4.01, "qty": 0.5 } ],
+    "discounts": [] }
+]

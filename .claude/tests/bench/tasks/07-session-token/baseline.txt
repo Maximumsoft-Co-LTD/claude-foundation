@@ -1,0 +1,1 @@
+Build a session-token module for our web app in this repository. issue(userId) gives me a token I can hand to a browser, and verify(token) tells me whether it is still good and which user it belongs to. Sessions should last 15 minutes. Write the code and unit tests directly. Do not use any workflow, do not create planning or spec files — just implement it.

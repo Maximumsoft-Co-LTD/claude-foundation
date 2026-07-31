@@ -1,0 +1,1 @@
+{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"header":"Gate","question":"Approve the plan and proceed with the implementation?","multiSelect":false,"options":[{"label":"Approve — build it"},{"label":"Reject — revise the plan"}]}]}}

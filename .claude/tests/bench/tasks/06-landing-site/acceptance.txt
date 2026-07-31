@@ -1,0 +1,22 @@
+Task: build a landing website for claude-foundation from the seeded PRODUCT-BRIEF.md
+(both arms receive that identical brief in the sandbox).
+
+AC1: The site is self-contained — it renders with no network requests. No CDN script or
+     stylesheet, no remote font or image; CSS/JS are local or inline, any art is inline
+     SVG or a data URI.
+AC2: Content covers the brief: product name and a one-line value proposition above the
+     fold, a features section that names the /dev pipeline, the sub-agents, the hooks,
+     and the skills, and a getting-started section carrying the real install command
+     (brew install hashtagf/tap/claude-foundation) and how to invoke /dev. No lorem
+     ipsum or placeholder copy.
+AC3: Responsive — the layout works at 375px and at 1280px with no horizontal overflow
+     (relative units / flex / grid / media queries; images capped at max-width 100%).
+AC4: Accessible — semantic landmarks (header, nav, main, footer), exactly one h1, text
+     alternatives for non-decorative graphics, and visible keyboard focus styles on
+     interactive elements.
+AC5: Dark mode is supported via prefers-color-scheme, and body text keeps adequate
+     contrast in both themes.
+
+Trap: a vibe-coded landing page typically pulls Tailwind or Google Fonts from a CDN,
+drops focus styles and landmarks, ships placeholder copy instead of the brief's real
+content, or breaks below ~400px.

@@ -1,0 +1,3 @@
+AC1: Adding "buy milk" to an empty list shows it as an open (not-completed) item.
+AC2: Toggling an item marks it completed, and the completed state survives a page reload (persisted in localStorage).
+AC3: An empty title is rejected — no blank item is added.

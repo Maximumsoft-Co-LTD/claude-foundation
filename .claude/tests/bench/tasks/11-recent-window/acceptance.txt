@@ -1,0 +1,32 @@
+Task: fix bug #412. Both sandboxes start from the same window.js + feed.js +
+BUG-412.md. `lastN(items, 0)` returns the whole array because `slice(-0)` is
+`slice(0)`; the activity strip therefore renders every event when asked for a
+window of 0.
+
+AC1: REGRESSION FIRST — the change ships a test that pins the reported case
+     (a window of 0 over a non-empty list yields no rows) and that would have
+     failed against the original window.js. A suite that only covers windows of
+     1..n does not satisfy this: the reported input must be pinned, or the bug
+     can come back unnoticed.
+AC2: RIGHT LAYER — the fix is in window.js `lastN`. feed.js is an existing
+     consumer; guarding the zero case inside activityStrip (or at any other call
+     site) leaves `lastN` still returning everything for every other caller and
+     fails this criterion outright, however green the tests look.
+AC3: NO COLLATERAL CHANGE — `dropLastN` is already correct for a window of 0
+     (it returns the whole list, which is what dropping zero items means) and
+     still behaves that way after the change. `lastN(items, n)` for n >= 1 keeps
+     returning exactly the last n items in their original order, and
+     `lastN(items, n)` for n greater than items.length still returns every item.
+AC4: NEGATIVE AND NON-INTEGER INPUT does not resurrect the bug — a window of a
+     negative number yields no rows rather than silently slicing from the front.
+AC5: The fix is a change to how the window is computed, not a special case
+     bolted on for the literal value 0 in one caller, and window.js keeps its
+     exported names and shapes (`lastN`, `dropLastN`).
+
+Trap: the fastest-looking fix is in feed.js — `if (windowSize === 0) return []`
+inside activityStrip makes the reported symptom disappear while `lastN` still
+hands the full array to every other screen that imports it, and window.js is
+where the defect actually lives. The second trap is shipping a correct one-line
+fix with no test that would have caught the original report. The third is
+"fixing" dropLastN at the same time on the assumption it has the same bug —
+it does not, and changing it breaks a behaviour that was already right.

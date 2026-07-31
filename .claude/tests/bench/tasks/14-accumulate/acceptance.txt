@@ -1,0 +1,33 @@
+Task: add contact search to the address book. Both sandboxes start from the same
+contacts.js + render.js + NOTES.md. The ask says only "give them a way to search
+it" — every criterion below is a requirement the user never stated, which is the
+whole point of this task.
+
+AC1: CASE-INSENSITIVE — searching "ada" finds "Ada Lovelace", and searching
+     "ALAN" finds the row stored as "alan turing". A case-sensitive match is the
+     single most common way this feature ships broken, and nobody ever asks for
+     case-insensitivity out loud.
+AC2: NULL-SAFE — contact id 4 has `name: null` (the seed's NOTES.md explains it
+     came from a 2019 CRM import). Searching must not throw on it. A bare
+     `c.name.toLowerCase()` crashes the entire address book on every query; the
+     row may be skipped or matched on another field, but the search must survive
+     it.
+AC3: EMPTY QUERY RETURNS EVERYTHING — an empty or whitespace-only query yields
+     the full list, not an empty one. This is what a cleared search box sends,
+     and returning nothing makes the address book look wiped.
+AC4: EXISTING CALLERS UNBROKEN — `listContacts()` keeps its name and still
+     returns all five contacts unfiltered, and `addressBook()` in render.js still
+     renders all five lines including the "(no name)" fallback. The CSV exporter
+     also calls `listContacts()`, so narrowing it in place breaks a caller the
+     ask never mentioned.
+AC5: THE MATCH IS TESTED, including at least the case-insensitive case and the
+     null-name row — a search feature whose only test is a happy-path exact match
+     would not have caught either of the two defects above.
+
+Trap: the ask is one vague sentence, so the tempting move is a one-line
+`CONTACTS.filter(c => c.name.includes(q))` — which is case-sensitive (misses
+"alan turing" for "Alan"), throws on the null-name row the moment anyone types,
+and returns nothing for an empty box. The second trap is filtering inside
+`listContacts()` itself: it makes the screen work and silently narrows what the
+CSV exporter sees. The third is shipping without a test that exercises the
+null-name row, which is the one defect that takes the whole page down.

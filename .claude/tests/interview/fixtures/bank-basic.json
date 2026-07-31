@@ -1,0 +1,12 @@
+{
+  "source": "fixture",
+  "calls": 2,
+  "questions": 2,
+  "answered": 2,
+  "exchanges": [
+    {"call_seq":1,"seq":1,"header":"Scope","question":"How much should this cover?","multiSelect":false,
+     "options":["Just the reader","Reader and writer","Whole module"],"answer":"Reader and writer"},
+    {"call_seq":2,"seq":2,"header":"Storage","question":"Where does state live?","multiSelect":false,
+     "options":["localStorage","IndexedDB","In memory"],"answer":"IndexedDB"}
+  ]
+}

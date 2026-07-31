@@ -164,7 +164,7 @@ Adds nullable user_id column populated from the request session.
 Falls back to "system" for callback-driven writes (cron, webhooks).
 
 Run: 0007-feat-audit-actor
-Spec: .workflow/0007-feat-audit-actor/spec.md
+Change: openspec/changes/add-audit-actor/
 ```
 
 That gives `git log` a one-way link back into the workflow folder where the spec, plan, review, and retro live forever.

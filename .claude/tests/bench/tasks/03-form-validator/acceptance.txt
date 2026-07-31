@@ -1,0 +1,6 @@
+AC1: validate(form) returns { valid: true, errors: {} } only when every field passes.
+AC2: email must match a basic name@domain.tld shape; an invalid email sets errors.email.
+AC3: password must be at least 8 characters; a shorter one sets errors.password.
+AC4: password and confirmPassword must match; a mismatch sets errors.confirm.
+AC5: any empty required field (name, email, password) sets an error naming that field.
+Trap: a happy-path implementation typically skips the ≥8 boundary, the confirm-match, or the empty-field cases.

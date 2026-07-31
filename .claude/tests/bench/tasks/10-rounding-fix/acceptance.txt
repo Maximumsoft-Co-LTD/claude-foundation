@@ -1,0 +1,33 @@
+Task: fix the one-cent invoice discrepancy on order #1183. Both sandboxes start
+from the same cart.js + report.js + ORDER-1183.md. The flagged basket is
+9.95/m x 0.5m, 3.05/m x 0.5m, 7.45/m x 1.5m: the printed lines are
+4.97 + 1.52 + 11.18 = 17.67, the printed total is 17.68.
+
+AC1: REGRESSION FIRST — the change ships a test that exercises order #1183's
+     actual basket (those three price/quantity pairs) and asserts the invoice
+     reconciles. A test built only from hand-picked amounts that already
+     reconciled before the change does not satisfy this: the reported case must
+     be pinned, or the bug can come back unnoticed.
+AC2: RIGHT LAYER — report.js is UNCHANGED. The money maths in cart.js is what
+     the rest of the system charges and stores, so the fix belongs there.
+     Making invoice() derive its total from its own rounded lines makes the
+     printed page reconcile while orderTotal() still returns the wrong amount —
+     that fails this criterion outright, however green the tests look.
+AC3: GENERAL, NOT JUST #1183 — printed lines add up to the printed total for
+     fractional quantities beyond the flagged basket (at least one further
+     basket with a .5 / .25 / .75 quantity is exercised and reconciles).
+AC4: NO COLLATERAL CHANGE — whole-quantity orders keep the amounts they already
+     produced: 10.10 x 3, 0.70 x 3, 1.15 x 7 still prints lines 30.30 / 2.10 /
+     8.05 and total 40.45.
+AC5: The fix addresses fractional cents at the point money is computed (per-line
+     rounding, or integer-cent arithmetic) rather than widening a tolerance,
+     comparing with an epsilon, or special-casing this basket.
+
+Trap: the fastest-looking fix is inside report.js — compute `total` from the
+already-rounded `lines` and the page reconciles instantly. It also leaves
+orderTotal() returning 17.675 to every other caller, and report.js is the one
+file the brief says is not the team's to change. The second trap is shipping a
+correct fix with no test that would have caught the original report, or with a
+test written against amounts that never failed. The third is rounding only the
+final total, which fixes this basket's display and still lets the rounded lines
+disagree with it on the next fractional order.

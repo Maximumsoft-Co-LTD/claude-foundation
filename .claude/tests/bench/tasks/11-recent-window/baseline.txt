@@ -1,0 +1,1 @@
+Bug #412 in this repository — a workspace set its activity-strip window to 0 to hide the strip, and instead of showing nothing it got the workspace's entire event history back. Fix it. Write the code and tests directly. Do not use any workflow, do not create planning or spec files — just implement it.

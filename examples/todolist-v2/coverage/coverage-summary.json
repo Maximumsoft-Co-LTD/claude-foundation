@@ -1,3 +1,0 @@
-{"total": {"lines":{"total":793,"covered":751,"skipped":0,"pct":94.7},"statements":{"total":793,"covered":751,"skipped":0,"pct":94.7},"functions":{"total":56,"covered":54,"skipped":0,"pct":96.42},"branches":{"total":169,"covered":142,"skipped":0,"pct":84.02},"branchesTrue":{"total":0,"covered":0,"skipped":0,"pct":"Unknown"}}
-,"/Users/hashtagf/Desktop/Work/claude-foundation/examples/todolist-v2/app.js": {"lines":{"total":793,"covered":751,"skipped":0,"pct":94.7},"functions":{"total":56,"covered":54,"skipped":0,"pct":96.42},"statements":{"total":793,"covered":751,"skipped":0,"pct":94.7},"branches":{"total":169,"covered":142,"skipped":0,"pct":84.02}}
-}

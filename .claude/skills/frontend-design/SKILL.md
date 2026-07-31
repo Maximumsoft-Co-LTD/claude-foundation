@@ -13,7 +13,7 @@ The user provides frontend requirements: a component, page, application, or inte
 - Use [[ui-ux-pro-max]] before this skill when the problem is deciding the UX, auditing usability, choosing color/typography/navigation, or reviewing accessibility.
 - Use this skill when the task has moved from design reasoning to building or polishing the actual UI code.
 - Use [[tailwind-design-system]] alongside this skill only when the project is using Tailwind v4 and the work affects shared tokens, variants, reusable components, dark mode, or migration patterns.
-- In `/dev`, this skill most often belongs in engineer implementation or UI review notes, not in the initial product interview unless the visual direction itself is ambiguous.
+- In the change loop, use this during `/build`; use `/investigate` first only when visual direction itself is ambiguous.
 
 ## Design Thinking
 

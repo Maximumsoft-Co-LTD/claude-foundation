@@ -1,0 +1,12 @@
+{
+  "runtime": "2.2.0",
+  "runtimeApi": "7",
+  "evidenceSchema": ["1", "2"],
+  "executionSchema": "1",
+  "providerProtocol": "6",
+  "adapterProtocol": "4",
+  "proofProtocol": "4",
+  "packetSchema": "4",
+  "agentPlanSchema": "2",
+  "contextEventSchema": "2"
+}

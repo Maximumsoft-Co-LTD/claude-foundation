@@ -8,7 +8,7 @@ Companion to `SKILL.md`. Full per-file guidance, the five workflow steps in deta
 
 `BUSINESSRULE.md` captures the **rules the code enforces** — the behavioural counterpart to DATAMODEL's schema constraints and the *why* behind COREFEATURE's flows — pulled from validators, domain services, conditional logic, and named constants, not how the domain "should" work.
 
-`DESIGN.md` is the UX/UI companion — produced **only for a project with a user-facing UI** (web/mobile/desktop GUI), and grounded in the frontend code just like the rest: the real palette, type scale, components, and routes, not a framework's defaults. For a headless service, a pure-API backend, or a library, drop it (see skip rule). It documents the UX the code *already implements*; the forward-looking counterpart is the `uxui`/`/uxui-plan` design plan for UI that doesn't exist yet.
+`DESIGN.md` is the UX/UI companion—produced only for a project with a user-facing UI and grounded in frontend code. For a headless service, pure API, or library, drop it. Forward-looking UI decisions belong in the active OpenSpec change.
 
 ## Workflow
 
@@ -23,7 +23,7 @@ Locate the project root and confirm where docs go (`docs/` by default). Get a hi
 - Top-level layout (`src/`, `internal/`, `apps/`, `services/`, `migrations/`, `infra/`), the README, and any existing `docs/`. **If that `docs/` already holds the suite, you're in update mode — read it now as your starting point.**
 - Config: `Dockerfile`, `docker-compose.yml`, CI workflows, `.env.example`, IaC.
 
-Use `LSP`, `Grep`, and the search tools. For a large repo, delegate this breadth-first mapping to parallel `Explore` / `team-codebase-explorer` agents (one per subsystem) and synthesise — see [[fanout-team-agents]].
+Use `LSP`, `Grep`, and search tools. For a large repo, delegate only independent subsystem maps as native work packages, then synthesize once.
 
 ### 2. Understand before writing (the grounding rule)
 
@@ -99,4 +99,3 @@ A broken diagram renders as an error box — worse than none. Guard the common b
 - **Padding "Not applicable" sections** with filler; **a wall of prose** where a table/diagram is clearer; **forgetting to rebuild the viewer**.
 - **Regenerating over an existing suite** — blowing away human edits when a surgical update would do. Update in place by default; rebuild wholesale only when asked or unsalvageable.
 - **Leaving stale claims in place** when updating — a doc that *looks* maintained but describes code that's gone is a worse trap than an obvious gap.
-

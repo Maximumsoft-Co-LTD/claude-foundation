@@ -1,229 +1,766 @@
-# claude-foundation
+# Claude Foundation
 
-> One command. A full engineering team. Every artifact on disk.
+**English** | [ภาษาไทย](README.th.md)
 
-**claude-foundation** turns [Claude Code](https://claude.com/claude-code) from a very smart pair-programmer into a disciplined engineering pipeline. Drop it into any repo and you get a single entry point — `/dev <intent>` — that drives a small team of specialist agents through:
+Foundation is an OpenSpec-native software-change harness for AI coding agents.
+OpenSpec stores the agreement, the native agent implements it, and deterministic
+evidence decides whether the change is safe to bring into the main project.
 
-```
-spec → plan → gate → implement → test → review → (security) → docs → ship → retro
-```
-
-No vibes-based "looks good overall" reviews. No regression-test-shaped holes. No "wait, what did we decide last week?" — every run leaves a folder of artifacts behind, and every run is resumable.
-
-```
-/dev fix the login redirect loop
+```text
+Investigate? → Change → Build → Prove → Land
 ```
 
-…and the pipeline writes the failing regression test **before** the fix, because a `fix` that can't prove the bug existed can't ship.
+The goal is to preserve the quality mechanisms that matter while removing the
+latency and cost of a fixed phase orchestrator, lifecycle agents, task mirroring,
+repeated full-suite runs, and unnecessary browser calls.
 
-## Why this exists
+## Installation
 
-AI coding fails in predictable ways: silent assumptions, skipped tests, reviews that rubber-stamp, context that evaporates between sessions. The fix isn't a smarter model — it's **process**. claude-foundation encodes that process so you don't have to remember it:
+Requirements:
 
-- **The planner is not the implementer.** Roles are split across sub-agents (`pm`, `lead`, `engineer`, `qa`, `retro`) so review is adversarial, not self-congratulatory.
-- **The flow is type-aware.** A `chore` skips QA. A `fix` reproduces the bug first. A `spike` is timeboxed and produces a recommendation instead of code. Same pipeline, different teeth.
-- **Everything is auditable.** `spec.md`, `plan.md`, `tasks.md`, `test-plan.md`, `review.md`, `tests.md`, `retro.md`, `state.json` — written to `.workflow/<run-id>/`, replayable, hand-off-able, resumable with `/dev --resume <id>`.
-
-## Install via Homebrew
-
-On macOS (and Linux with Homebrew), add the tap, trust it, then install:
+- Node.js 20.19 or later
+- Git for worktree isolation
+- OpenSpec CLI 1.7.0 for semantic spec sync and archive
+- `jq` to merge Claude settings during installation
 
 ```bash
-brew tap maximumsoft-co-ltd/claude-foundation https://github.com/Maximumsoft-Co-LTD/claude-foundation
-brew trust maximumsoft-co-ltd/claude-foundation   # required — Homebrew refuses untrusted third-party taps
-brew install claude-foundation
+npm install -g @fission-ai/openspec@1.7.0
+
+cd /path/to/claude-foundation
+./install.sh /path/to/your-project
 ```
 
-> **Stable vs latest.** `brew install claude-foundation` installs the latest tagged release (recommended) — `brew update && brew upgrade claude-foundation` then picks up new releases the normal way. To track the bleeding edge of `main` instead, use `brew install --HEAD claude-foundation`; a HEAD install only updates via `brew upgrade --fetch-HEAD claude-foundation` or `brew reinstall --HEAD claude-foundation` (plain `brew upgrade` skips HEAD installs).
-
-> **`brew trust` is required.** Recent Homebrew refuses to load formulae from a third-party/private tap until you trust it — without it you'll see `Refusing to load formula … from untrusted tap`. Run `brew trust maximumsoft-co-ltd/claude-foundation` (whole tap) once after tapping.
-
-> **Seeing `No available formula with the name "claude-foundation"` right after `brew tap`?** Your tap clone is stale (it was tapped before the formula reached the default branch). Homebrew does not auto-refresh taps on install — run `brew update` (or `brew untap maximumsoft-co-ltd/claude-foundation` then re-tap) to pull the latest, then install again.
-
-Then run inside any target project to scaffold the foundation there:
+Or use the packaged CLI:
 
 ```bash
-cd /path/to/myproject
-claude-foundation init        # bare `claude-foundation` does the same
+claude-foundation init /path/to/your-project
 ```
 
-The CLI surface:
+Open a new Claude Code session in the target project after installation so the
+new slash commands are registered.
 
-| Command | What it does |
+The installer preserves:
+
+- project-owned current specs and active changes under `openspec/`;
+- machine state under `.foundation/`;
+- project-specific agents and hooks;
+- legacy `.workflow/` history as a read-only migration source.
+
+Foundation-owned commands, schemas, harness code, rules, skills, and hooks are
+refreshed during upgrades.
+
+`protect-secrets.sh` and `lint.sh` are wired by default.
+`no-direct-main-commit.sh` is intentionally opt-in because some repositories
+allow controlled commits on their default branch; `claude-foundation doctor`
+reports whether that policy is enabled.
+
+## The workflow
+
+```mermaid
+flowchart LR
+    I[Intent] --> Q{Is the problem clear?}
+    Q -- No --> X[Investigate]
+    X --> C[Change]
+    Q -- Yes --> C
+    C --> B[Build in sandbox]
+    B --> D{New requirement discovered?}
+    D -- Yes --> X
+    D -- No --> P[Prove]
+    P -- Evidence fails --> B
+    P -- Evidence passes --> L[Land]
+    L --> A[Sync specs + Archive]
+```
+
+This is not a waterfall. Work can move backward while the agreement or
+implementation is still evolving:
+
+```text
+Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
+```
+
+`Land` is the completion boundary. Requirements discovered after landing should
+normally become a new change.
+
+## Command map
+
+| Command | Purpose | Use it when | Changes main project code? |
+|---|---|---|---|
+| `/investigate` | Explore a problem and compare options | The outcome or approach is unclear | No |
+| `/change` | Create or revise the agreement | The desired outcome is known | No |
+| `/build` | Implement inside an isolated sandbox | Change artifacts are ready | Sandbox only |
+| `/prove` | Produce evidence and a content-bound proof | Implementation tasks are complete | No |
+| `/land` | Apply a proven change and archive it | Proof passes and the change is accepted | Yes |
+| `/changes` | List active changes and readiness | You need portfolio or resume context | No |
+| `/dev` | Run Change → Build → Prove | You want the compatibility one-shot flow | Does not land |
+| `/migrate-workflow` | Prepare legacy migration candidates | Moving knowledge from `.workflow/` | No automatic promotion |
+
+Slash commands drive the AI workflow. Deterministic operator commands use the
+native CLI:
+
+```bash
+claude-foundation providers
+claude-foundation repos [change]
+claude-foundation models
+claude-foundation agents plan <change> [--group <n>] [--pretty]
+claude-foundation agents task <change> <task> [--pretty]
+claude-foundation doctor --stage change
+claude-foundation changes
+claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
+claude-foundation metrics <change>
+claude-foundation telemetry sync <change> [transcript.jsonl]
+claude-foundation telemetry import <change> events.jsonl --format codex
+claude-foundation validate <change>
+claude-foundation proof plan <change>
+claude-foundation proof readiness <change>
+claude-foundation proof run <change>
+claude-foundation proof preflight <change>
+claude-foundation proof execute <change>
+claude-foundation proof audit <change>
+claude-foundation proof finalize <change>
+claude-foundation evidence upgrade <change>
+claude-foundation evidence run <change> <provider> --claims declared -- <command>
+claude-foundation sandbox create <change> [--all]
+claude-foundation land check <change>
+claude-foundation land plan <change>
+claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
+claude-foundation land pointers <change>
+claude-foundation land resume <change>
+```
+
+The CLI finds the project from the current directory or `--project <path>` and
+uses that project's installed runtime. Run `claude-foundation help` for the full
+surface. Direct source installations may call the runtime file as a compatibility
+fallback when the packaged CLI is unavailable.
+
+`packet <change> --phase build|prove` is the compact handoff between Change,
+Build, and Prove. It contains references, revisions, claim digests, provider
+state, task counts, hashes, and budget—not the accumulated conversation.
+Packets are capped by scope: task 8 KiB, repository 12 KiB, and global 16 KiB.
+Large artifacts remain in files addressed by path and SHA-256. The phase flag
+also incrementally closes the previous phase's request telemetry.
+Machine JSON is compact by default so the configured limit equals the bytes
+actually handed to an agent; add `--pretty` only for interactive inspection.
+Packet schema 4 and agent-plan schema 2 let consumers branch explicitly.
+Large task, claim, provider, and repository collections degrade to bounded
+previews with counts, digests, and task-scoped expansion rather than raising
+the context limit.
+
+`metrics <change>` summarizes measured wall time, phase operations, unique
+provider executions, requests, input/output tokens, cache creation/read tokens,
+cost, orchestrator share, and emitted plan/packet context bytes. For Claude Code, Foundation binds the documented
+session transcript once at `SessionStart` and reads only new assistant usage at
+phase checkpoints. It never measures tokens in `PostToolUse`, never copies
+prompts or tool payloads, and includes nested subagent transcripts. Use
+`telemetry sync` manually when the session hook was not active. Fields remain
+`null` until their authoritative source is connected.
+
+## Multi-repository control plane
+
+`openspec/repositories.yaml` is the durable topology. Git submodules are
+discovered automatically and reported as drift until their roles, dependencies,
+and access modes are reviewed. Each change's `repositories.yaml` selects only
+the repositories it may read or write. A missing manifest remains compatible
+with the original single `root` repository.
+Paths outside the control root are rejected unless a committed repository entry
+explicitly sets `allowOutsideRoot: true`; use that only for trusted sibling Git
+repositories.
+
+Multi-repository tasks remain in `tasks.md` and use compact annotations:
+
+```markdown
+- [ ] **T001** Inspect API [repo:api] [kind:inventory] [paths:internal/profile]
+- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001]
+- [ ] **T003** Implement App [repo:app] [kind:implementation] [depends:T002]
+- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
+```
+
+`agents plan` writes the complete plan to `.foundation/plans/` but prints only
+a summary capped at 4 KiB. Use `agents plan <change> --group <n>` to inspect one
+dispatch group and `agents task <change> <task>` to obtain one worker's scoped
+packet. Completed dependencies remain valid on resume; an all-complete plan
+returns `proof-ready`. Task packets are denied when task claims are unknown,
+outside the selected repository, or lack an executable evidence provider.
+Changes with one repository and at most two ordinary tasks recommend a
+single agent, avoiding planning/spawn overhead. `foundation.json` maps portable
+`fast`, `standard`, and `deep` tiers to
+Haiku, Sonnet, and Opus by default. Mechanical inventory/log work uses fast,
+normal implementation uses standard, and architecture, security, migration, or
+independent review uses deep. High-risk work cannot be downgraded to fast. The
+native host spawns agents; Foundation supplies scoped packets and never grants
+commit, push, or Land authority.
+
+Load one primary construction skill for the layer being changed. Add security
+or observability only when the trust boundary or operational behavior requires
+it, and read only the matching focused reference. This composition keeps
+cross-cutting quality without loading the full backend skill chain on every
+request.
+
+Providers may declare `repository` in `execution.yaml`. Their commands run in
+that repository sandbox and receipts bind to that repository snapshot, so an
+unrelated repository edit does not invalidate them. Claims spanning more than
+one repository must name those repositories and declare
+`cross-repo-contract`.
+Use instance IDs with `capability` when the same capability runs in several
+repositories, for example `api-test` and `app-test`.
+
+Multi-remote landing is deliberately a saga, not fake atomicity. `land plan`
+shows dependency order, `land record` binds an explicitly authorized child
+commit and CI status, `land pointers` stages verified gitlinks transactionally,
+and `land resume` verifies which commits reached their targets. Pointer staging
+invalidates proof, so fresh composite proof is required before archive.
+
+## `/investigate` — explore without committing
+
+### When to use it
+
+- The root cause is unknown.
+- Several approaches would produce materially different behavior.
+- Scope, compatibility, or migration requirements are unclear.
+- Brownfield code must be understood before choosing a direction.
+- A new assumption appears during Build.
+
+### Examples
+
+```text
+/investigate why profile updates occasionally overwrite newer data
+```
+
+For an active change:
+
+```text
+/investigate add-profile: should we use last-write-wins or optimistic locking?
+```
+
+When the change already has a sandbox, the investigation reads the sandbox
+implementation rather than the older main working tree.
+
+### Output
+
+An investigation separates:
+
+- code-grounded facts;
+- hypotheses;
+- constraints;
+- options and tradeoffs;
+- unknowns that require a decision.
+
+It ends with one of:
+
+```text
+ready for /change
+needs user decision
+not worth changing
+```
+
+Investigation does not edit product code and does not revise the formal change
+automatically. Accepted findings move into the agreement through `/change`.
+
+## `/change` — create or revise the agreement
+
+### When to use it
+
+- The desired outcome is known.
+- A new change needs to be opened.
+- Requirements, design, tasks, or evidence for an existing change must change.
+- Investigation findings are ready to become an agreement.
+
+### Create a change
+
+```text
+/change allow an account owner to edit their profile
+```
+
+Foundation creates:
+
+```text
+openspec/changes/add-profile/
+├── .openspec.yaml
+├── proposal.md
+├── specs/
+│   └── change/spec.md
+├── design.md
+├── tasks.md
+├── evidence.yaml
+└── execution.yaml
+```
+
+Machine-owned state is stored separately:
+
+```text
+.foundation/runtime/add-profile.json
+```
+
+### Revise an existing change
+
+```text
+/change add-profile
+```
+
+Only affected artifacts should change:
+
+- `proposal.md` — motivation, scope, and impact;
+- `specs/**/*.md` — behavior and observable scenarios;
+- `design.md` — technical decisions, compatibility, and rollback;
+- `tasks.md` — the sole implementation ledger;
+- `evidence.yaml` — stable claims and required provider capabilities;
+- `execution.yaml` — replaceable commands, reports, services, and readiness wiring.
+
+If Build is already active, `/change` synchronizes the revision with:
+
+```bash
+claude-foundation sandbox sync add-profile
+```
+
+Synchronization:
+
+- sends the revised change packet into the sandbox;
+- preserves completed tasks by stable task ID;
+- resets tasks whose meaning changed;
+- increments the change revision;
+- makes previous proof and receipts stale.
+
+### Rapid and standard changes
+
+`foundation-rapid` is eligible only when every condition holds:
+
+- low impact;
+- isolated coupling;
+- no public contract change;
+- no persistent migration;
+- no semantic security trigger;
+- no irreversible effect;
+- unit or static evidence is sufficient.
+
+Everything else uses `foundation-standard`. A rapid change upgrades in place if
+authentication, access control, migration, high impact, or coupling is
+discovered.
+
+## `/build` — implement in isolation
+
+### When to use it
+
+- The proposal and scenarios are clear.
+- Load-bearing design decisions have been made.
+- Tasks and evidence obligations are ready.
+
+```text
+/build add-profile
+```
+
+The harness chooses an isolated workspace:
+
+- clean Git repository → detached worktree;
+- Git repository with existing local changes → isolated copy;
+- non-Git repository → isolated copy with before/after manifests.
+
+During Build:
+
+- the main project remains unchanged;
+- the agent edits the sandbox path;
+- `tasks.md` is the only task ledger;
+- focused checks run during convergence;
+- there is no PM/Lead/Engineer/QA/Retro lifecycle chain;
+- subagents are reserved for genuinely independent, verifiable work packages.
+
+### Inspect the code being built
+
+Read the sandbox path:
+
+```bash
+jq -r '.workspace.path' .foundation/runtime/add-profile.json
+```
+
+For a Git worktree:
+
+```bash
+git -C .foundation/sandboxes/add-profile status
+git -C .foundation/sandboxes/add-profile diff
+code .foundation/sandboxes/add-profile
+```
+
+For an isolated copy, open the `/tmp` path recorded in runtime state.
+
+### A requirement changes during Build
+
+Pause Build, investigate if necessary, and revise the same change:
+
+```text
+/investigate add-profile: how does existing email verification work?
+/change add-profile
+/build add-profile
+```
+
+`/change` synchronizes the new revision into the active sandbox. A second change
+is not required merely because the agreement evolved before landing.
+
+## `/prove` — establish that the change is correct
+
+### When to use it
+
+- Implementation tasks are complete.
+- Focused checks pass.
+- The change is ready for its declared evidence providers.
+
+```text
+/prove add-profile
+```
+
+Prove:
+
+1. validates the OpenSpec artifacts;
+2. creates one relevant workspace snapshot;
+3. resolves claims from `evidence.yaml`;
+4. reuses receipts whose hash and provider version still match;
+5. schedules configured missing or stale providers concurrently when resources
+   do not conflict;
+6. verifies test discovery;
+7. runs the required full suite after convergence;
+8. invokes independent review only when risk triggers it;
+9. copies reports, logs, and attachments into the immutable evidence vault;
+10. deduplicates identical commands, emits `proof.json`, and audits digests.
+
+`tasks.md` contains implementation work only. `/prove` and `/land` are
+lifecycle commands, not checkboxes; putting them in the ledger creates a
+self-referential gate and validation rejects it.
+
+Supported evidence capabilities:
+
+| Provider ID | Use it to prove |
 |---|---|
-| `claude-foundation init [target-path] [options]` | Install the `/dev` workflow (default target: current dir) |
-| `claude-foundation version` | Print the installed version |
-| `claude-foundation help` | Top-level command map (also `--help` / `-h`) |
-| `claude-foundation dashboard-up\|-status\|-down` | Team-presence client (see [Team presence dashboard](#team-presence-dashboard)) |
+| `test` | Executable behavior |
+| `discovery` | The expected tests were found |
+| `browser` | Rendered behavior and real browser input |
+| `mutation` | Tests detect a deliberate behavioral fault |
+| `state-identity` | Actor, revision, or before/after state identity |
+| `integration` | Components or external boundaries work together |
+| `compatibility` | Public or persisted contracts remain compatible |
+| `performance` | Measured latency, throughput, resource, or size budgets |
+| `security-static` | Static security checks for changed boundaries and sinks |
+| `cross-repo-contract` | Producer and consumer repositories agree |
+| `review` | Independent risk review |
+| `static-analysis` | Compile, type, lint, and static quality gates |
+| `data-migration` | Forward migration, mixed-version safety, and rollback |
+| `accessibility` | Semantics, keyboard, focus, contrast, and assistive access |
+| `resilience` | Timeout, retry, partial failure, recovery, and degradation |
+| `observability` | Required logs, metrics, traces, and alerts |
+| `deployment` | Packaging, configuration, rollout health, and rollback |
+| `dependency-supply-chain` | Vulnerability, license, lockfile, and provenance policy |
 
-Installer flags (`--dry-run`, `--force`, `--yes`, `--source <path>`, `[target-path]`) are forwarded through `init` (and through the bare form) to `install.sh`; run `claude-foundation init --help` to list them.
-
-**Windows / non-brew:** Homebrew is not available on Windows. Clone the repo and run `install.sh` directly — see [Quick start](#quick-start) below.
-
-**Two ways to host the tap** — pick one before others can install:
-
-- **This repo, via the explicit URL (what the commands above use).** Because `brew tap … https://github.com/Maximumsoft-Co-LTD/claude-foundation` passes the repo URL explicitly, Homebrew taps *this* repository directly and finds `Formula/claude-foundation.rb` here — so **no separate tap repo is required**. You only need to push this repo so the URL is reachable.
-- **The shorthand tap name (optional).** If you'd rather users type the shorthand `brew tap maximumsoft-co-ltd/claude-foundation` (no URL) or `brew install maximumsoft-co-ltd/claude-foundation/claude-foundation`, Homebrew resolves that name to a repo literally named **`homebrew-claude-foundation`** under the `Maximumsoft-Co-LTD` org. Create that repo, move `Formula/claude-foundation.rb` into it, and publish — then the URL argument is no longer needed. See the [Homebrew tap docs](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap).
-
-Releasing: the formula ships a stable tagged release (`url` + `sha256`) alongside the `head` block, so `brew install claude-foundation` and `brew upgrade` work the normal way. The repo [`VERSION`](VERSION) is the source of truth for the next release; the formula is updated during the release runbook after the tag exists and the `sha256` can be recomputed. See [`RELEASING.md`](RELEASING.md).
-
-## Quick start
-
-From this repo's root, install into any target project:
+Inspect the exact catalog installed in a project:
 
 ```bash
-./install.sh /path/to/your/project
+claude-foundation providers
 ```
 
-Then open Claude Code inside that project and go:
+These providers are evidence contracts, not bundled vendor tools. Prove can run
+the repository's existing tool with `run-provider`, or record a receipt from an
+external system. A change selects only the providers justified by its observable
+claims; it does not run all providers by default.
 
+`evidence.yaml` stores the behavioral contract; `execution.yaml` configures
+project-owned adapters. The normal operator path is:
+
+```bash
+claude-foundation doctor --stage prove --change add-profile
+claude-foundation proof readiness add-profile
+claude-foundation proof run add-profile
 ```
-/dev create a todo app with localStorage
-/dev add an audit log to the back-office
-/dev fix the login redirect loop
-/dev spike compare bullmq vs sidekiq
-/dev --resume 0003-fix-login-redirect
+
+`test-discovery` emits test and discovery receipts from one command.
+The `playwright` adapter runs the project's locked Playwright installation,
+requires structured claim annotations, and records `browser-automation` rather
+than pretending automation is physical OS input. Foundation never installs a
+test framework or browser automatically. Evidence v1 remains valid for manual
+receipts and can be upgraded with `evidence upgrade`.
+
+For an executable provider, declare the claim scope before the command:
+
+```bash
+claude-foundation evidence run add-profile test --claims declared -- npm test
 ```
 
-Installer flags:
+`declared` means only claims whose `capabilities` include that provider.
+Receipts cannot claim unrelated outcomes. A receipt is reusable only while its
+workspace hash, provider protocol, provider version/fingerprint, status, and
+claim coverage remain valid.
 
-| Flag | What it does |
+For browser evidence, record requirement and availability separately:
+
+```bash
+claude-foundation evidence record add-profile browser pass \
+  --claims declared --input-mode os-input \
+  --foreground-required yes --foreground-available yes \
+  --observed "manual interaction completed" --reviewer reviewer-id \
+  --artifact test-results/browser-report.json
+```
+
+See [Executable evidence adapters](.claude/harness/EVIDENCE.md) for contract/wiring separation,
+Playwright claim mapping, resource locks, structured reports, and cache rules.
+
+Receipts are stored under:
+
+```text
+.foundation/receipts/add-profile/
+├── test.json
+├── discovery.json
+├── browser.json
+├── review.json
+└── proof.json
+```
+
+A successful result looks like:
+
+```text
+PROVEN add-profile
+next: /land add-profile
+```
+
+Landing is blocked when:
+
+- a required receipt is missing;
+- test discovery is zero or below its declared minimum;
+- a provider reports `fail`, `error`, or `inconclusive`;
+- a browser provider lacks the required input or foreground capability;
+- a mutation crash is presented as a behavioral kill;
+- receipts do not cover every required claim;
+- relevant code, tests, configuration, specs, or the change revision moved after proof.
+
+If Prove fails, fix the implementation in the sandbox and run `/prove` again.
+
+## `/land` — bring proven code into the main project
+
+### When to use it
+
+- `/prove` passes.
+- The code is accepted for the main working tree.
+- No other work has changed the same target paths.
+
+```text
+/land add-profile
+```
+
+The transaction is:
+
+```text
+Verify proof freshness
+→ Verify required receipts
+→ Detect target conflicts
+→ Prepare touched-path backups and apply journal
+→ Apply the proven sandbox diff
+→ Verify the touched-path projection
+→ Synchronize delta specs
+→ Archive the change
+```
+
+`land archive` performs the apply and archive transaction itself; calling
+`sandbox apply` first remains available for inspection but is no longer
+required. Unrelated target edits are preserved and do not participate in the
+projection identity. If apply fails, touched paths roll back from backup. If
+archive fails after apply, retry resumes from the verified journal while proof
+continues to bind the unchanged sandbox.
+
+Land never:
+
+- overwrites a target path changed after sandbox creation;
+- accepts stale proof;
+- archives incomplete evidence;
+- commits, pushes, or opens a pull request without explicit authorization.
+
+OpenSpec CLI 1.7.0 currently owns semantic spec synchronization and archive.
+Foundation owns proof guards, sandbox application, and state-identity checks.
+`land archive` is idempotent: an already archived change reports its archived
+state without trying to synchronize specs again.
+
+Check archive readiness before starting a run:
+
+```bash
+claude-foundation doctor --require-archive
+```
+
+Without `--require-archive`, a missing OpenSpec CLI is a warning because Change,
+Build, and Prove still work; archive remains blocked.
+
+## `/changes` — inspect active work
+
+```text
+/changes
+```
+
+Use it to see:
+
+- active change IDs;
+- each change's schema;
+- whether a change is in progress, proven, stale, or ready to land;
+- the next useful operation.
+
+This is useful when resuming work in a new session or managing several active
+changes.
+
+## `/dev` — compatibility one-shot
+
+```text
+/dev add authenticated profile editing
+```
+
+Equivalent to:
+
+```text
+/change → /build → /prove
+```
+
+`/dev` deliberately stops before `/land`. It does not change the main project,
+commit, push, or open a pull request.
+
+Use it when intent is reasonably clear and a one-shot flow is preferable. Use
+the individual commands when you want explicit control or per-operation cost
+measurement.
+
+## Example flows
+
+### Small, clear change
+
+```text
+/change rename the Save button to Update Profile
+/build update-profile-button-copy
+/prove update-profile-button-copy
+/land update-profile-button-copy
+```
+
+This may use the rapid lane and only the evidence required by the behavior.
+
+### Authentication and profile work
+
+```text
+/investigate current profile ownership and session behavior
+/change add profile editing for the authenticated owner
+/build authenticated-profile-editing
+/prove authenticated-profile-editing
+/land authenticated-profile-editing
+```
+
+Authentication triggers the standard lane, security evidence, and independent
+review.
+
+### Requirement revision during Build
+
+```text
+/build add-profile
+
+# We discover that email changes require verification.
+/investigate add-profile: how does existing email verification work?
+/change add-profile
+/build add-profile
+/prove add-profile
+/land add-profile
+```
+
+The revised change automatically invalidates older proof.
+
+### Multiple active changes
+
+Each change has its own sandbox:
+
+```text
+/build change-a
+/change change-b
+```
+
+If they touch the same files or public contract, declare a landing order. After
+the first change lands, the other may need synchronization, rebasing, and new
+proof.
+
+## What evidence means
+
+`evidence.yaml` answers:
+
+> How do we know this behavior is correct, beyond the agent saying it is done?
+
+```text
+Requirement
+    ↓
+Evidence claim
+    ↓
+Provider
+    ↓
+Receipt
+    ↓
+Proof
+```
+
+Example:
+
+```json
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "other-user-cannot-update-profile",
+      "scenario": "A user cannot update another user's profile",
+      "impact": "high",
+      "capabilities": ["test", "security-static"]
+    }
+  ]
+}
+```
+
+Receipts are bound to the workspace hash. They can be reused while relevant
+inputs remain unchanged and become stale as soon as the implementation or
+agreement changes.
+
+## Sources of truth
+
+| Information | Source of truth |
 |---|---|
-| `--dry-run` | Print the plan, write nothing |
-| `--force` | Also overwrite `.claude/settings.json` (foundation-owned files are already refreshed every run) |
-| `--yes` | Skip the confirmation prompt |
-| `--source <path>` | Install from a foundation checkout other than this one |
+| Intent and behavioral agreement | `openspec/` |
+| Implementation | Code and tests |
+| Task progress | Active change `tasks.md` |
+| Runtime lifecycle | `.foundation/runtime/` |
+| Evidence | `.foundation/receipts/` |
+| Provider logs and metrics | `.foundation/logs/` |
+| Legacy history | Read-only `.workflow/` |
 
-## How a run flows
+Runtime state must not be duplicated in narrative Markdown.
 
-The main agent **is** the orchestrator (following [`.claude/orchestrator.md`](.claude/orchestrator.md)) — Claude Code sub-agents can't talk to you, so the interview, the gate, and single-writer `state.json` all live in the main agent. The splittable workers hold `Agent` and self-dispatch their own helpers directly when their work is large (Claude Code v2.1.172+), with the orchestrator-mediated fanout signal as the fallback. The main agent picks the next run ID (`NNNN-<type>-<slug>`), creates `.workflow/<id>/`, and drives:
+## Migration from the phase workflow
 
-| # | Phase | Who | The point |
-|---|-------|-----|-----------|
-| 1 | **Spec** | orchestrator + `pm` | Reads `FOLLOWUPS.md`, distils your pre-`/dev` conversation into a requirements digest, fans out research probes when guessing is risky, interviews you for *only* what's still open (≤4 questions, one batch), then `pm` writes `spec.md`. A `fix` includes a reproduction; a `spike` gets a timebox. |
-| 2 | **Plan** | `lead` | Synthesises codebase exploration + best-practice research into `plan.md` (design/strategy — approach, `path#anchor` references, risks, verification) **and `tasks.md`** (a dependency-ordered, executable task list: numbered `T###` tasks, each tagged with the acceptance criteria it delivers and a runnable `verify:` line). For `fix`, the first task is always "write the failing regression test". |
-| 2½ | **Test plan** | `lead` combined mode (XS–M) or `qa` (L) | *feat/fix/refactor only* — writes `test-plan.md` before any code: which test level proves each acceptance criterion, the edge cases to probe, what's out of test scope, and the fixtures a run needs. Signed off at the gate; `qa` executes it at phase 5. |
-| 3 | **Gate** | you | The only mandatory stop. Reply `approve` / `revise <notes>` / `skip <n>` / `run <n>` / `commit on\|off` / `fanout <phase> on\|off` / `swap <n>` (epic only). A `revise` is a targeted in-run edit — never a fresh restart; `skip <n>`/`run <n>` flip a discretionary phase (5 test · 6 review · 8 docs) off or on; **`commit on\|off`** decides whether ship commits (asked every run, default off → you get a ready-to-run commit command); `fanout <phase> on\|off` adds or drops a phase's parallel helpers. The spec's acceptance criteria, the plan, the test plan, the per-task phase plan, **and the fanout plan** (which phases bring in parallel `team-*` helpers, and how many) are all surfaced for sign-off — any deviation from the type matrix needs explicit per-line confirmation. |
-| 4 | **Implement** | `engineer` | Works through `tasks.md` with task-level progress tracking. Ticks each acceptance criterion in `spec.md` or files a blocker — unticked criteria block ship. |
-| 5 | **Test** | `qa` | Runs **before** review so reviewers judge a green suite. Executes the `test-plan.md` strategy — unit + integration by default (plus a contract test when the plan declares an API/event contract), every acceptance criterion mapped to a test, with advisory diff-coverage floors on the changed code (unit ≥80% · integration ≥70%). **Browser-based e2e + the visual/a11y verification pass are opt-in** (`e2e_visual=on`, set at the interview/gate) — on, qa adds the e2e level (≥50% of critical journeys), the visual pass, and the axe-core a11y check reusing one browser session; off (the default) plans no browser, no install, no slow journeys. For `fix`, verifies the regression test fails on pre-fix code and passes now. Skipped (with a stub) for `chore`/`docs`/`spike`. |
-| 6 | **Review** | `lead` | Row-by-row against `plan.md` **and** `spec.md`'s acceptance criteria (error/boundary clauses included), plus Definition-of-Done items and Constraints. Checklist-driven; "looks good overall" is banned. A blocking finding loops back through implement → test, so a review-driven fix is re-validated before ship. |
-| 7 | **Security** | `lead` | *Trigger-based* — fires only when the diff touches auth, SQL, crypto, secrets, exec, deserialisation, or untrusted input; a fired trigger rides the same `lead` spawn as review (one spawn, two artifacts). High findings are blocking. |
-| 8 | **Docs** | `engineer` | Inline comments where the *why* is non-obvious. |
-| 9 | **Ship** | `engineer` | Commit opted in at the gate (asked every run, default **no**): off → hands back a ready-to-run commit command; on → commits (spec-aware message) + optional PR via `gh`. Records commit + PR URL in `state.json`. |
-| 10 | **Retro** | `retro` | Writes `retro.md`, carries follow-ups into `.workflow/FOLLOWUPS.md` (which `pm` reads on every new run — deferred work doesn't get lost), surfaces memory + skill candidates for your approval. |
-
-**Phase 1 is interactive; Phase 2 is autonomous.** Once you `approve` at the gate, the orchestrator only stops for blocking review issues (max 2 cycles), failing tests (max 3 cycles), or genuine ambiguity.
-
-**The machinery scales with the work.** Type decides *which* phases run; **size** (XS/S/M/L, estimated from your request before any question is asked) decides *how much machinery* each phase gets. A one-line text fix takes the XS fast path — one merged question batch, spec+plan+test-plan in a single `lead` spawn, tests run inline, docs+ship merged, retro inline (~3 worker spawns total) — an M run keeps the combined plan spawn (opus) plus the full test/review machinery (~6 spawns), and only an L run gets the full pipeline above. A third axis, **field** (greenfield vs brownfield), decides whether the *understand → lock* safety machinery engages: brownfield work (anything that touches existing code) maps the current state before designing and locks a characterization baseline before changing it; greenfield (new, isolated code) skips both. On M/L brownfield that current-state map is built **once** as a shared `context.md` (right after the spec), so the plan, test, and UX slices reuse it instead of each re-walking the codebase. The contract never shrinks: the interview, the gate with per-line acceptance confirmation, and the security trigger run at every size, and any worker can escalate the size or ratchet greenfield → brownfield mid-run (never the reverse).
-
-Full definition: [`WORKFLOW.md`](WORKFLOW.md).
-
-## What's in the box
-
-- **`/dev` slash command** — the single entry point. Pass `--resume <id>` to pick up an interrupted run from its `state.json` cursor.
-- **Team-mode commands** — run one role at a time, writing into a shared `.workflow/<id>/` run, so you can drive the pipeline like a team instead of only through the monolithic `/dev`. `/spec` interviews and `pm` writes `spec.md`; `/dev-plan` has `lead` write `plan.md`; `/test-plan` has `qa` design `test-plan.md`; `/uxui-plan` has the `uxui` agent write `uxui-plan.md` (scenes, ASCII wireframes, scenarios, UX direction, AC↔scene mapping); and `/implement` starts **Phase 2** directly — it gates the run (human sign-off, if not already approved) then runs the autonomous build (implement → test → review → security → docs → ship → retro). A typical flow: `/spec` → `/dev-plan` → `/test-plan` (+ `/uxui-plan` if UI) → `/implement`. `/implement` and `/dev --resume <id>` are interchangeable — both run the same gate + Phase 2.
-- **Five workflow sub-agents + a UX designer + fanout workers** — `pm`, `lead` (plan / review / security modes), `engineer` (implement / docs / ship modes), `qa` (test-plan / execute modes), `retro`, the team-mode `uxui` designer, plus `team-*` workers for parallel spec research, plan exploration, review, security, and test fanout. Control-plane runs that span multiple repos also fan out review, security, and test **per repo** (one `lead`/`qa` per changed repo) so the read-and-judge phases don't crawl four repos serially; retro reads across all repos in one multi-repo-aware pass. Each has an explicit `model:` for cost/speed tuning.
-- **Artifact templates** — `spec.md`, `context.md`, `plan.md`, `tasks.md`, `test-plan.md`, `uxui-plan.md`, `review.md`, `security.md`, `tests.md`, `recommendations.md`, `retro.md`, `epic.md`, `state.json`. Agents copy from `_templates/` into a per-run folder; nothing freeform. (`context.md` is the shared brownfield-M/L current-state map, built once after the spec and read by the plan/test/UX slices.)
-- **Type-aware phase matrix + per-task phase plan** — the same numbered phases run for every type; the orchestrator skips or specialises them based on `Type`. The matrix is the default: `lead` writes a reasoned `## Phases for this task` block that may **deviate** for a discretionary phase (review / test / docs) this task doesn't need, and the gate confirms each deviation explicitly (protected phases — interview, plan, gate, security-trigger check, retro — never deviate). See `WORKFLOW.md`.
-- **Size-aware execution matrix** — XS–M runs take a fast path (combined spec+plan+test-plan spawn; XS/S add a merged question batch, inline tests, and inline retro; docs+ship merge through M) while L runs get the full machinery; upgrades are one-way via a `SIZE_UPGRADE` signal (see `.claude/orchestrator/references/size-execution.md`).
-- **Always-on fundamentals router** — a single lean file `.claude/rules/fundamentals.md` that maps every "by default" trigger to its skill: the conduct layer `coding-discipline` (which wraps the rest), the construction chain `ddd-strategic` → `programming-fundamentals` → `concurrency-fundamentals` → `database-fundamentals` → `hexagonal-backend` → `api-design-fundamentals` → `architecture-fundamentals` → `queue-fundamentals` → `security-fundamentals` → `observability-fundamentals`, the verification skills `debug-fundamentals` / `refactoring-fundamentals` / `testing-fundamentals`, and the delivery channel `git-workflow` / `delivery-engineering`. Full skill bodies load on demand; this router is the single source of truth for triggers and the cross-skill run order.
-- **Hooks** — a PreToolUse spawn guard for the `/dev` state machine, a PostToolUse state marker and lint dispatch, and a secrets guard that blocks reads of `.env` and credential files.
-- **Skill-creator handoff** — `retro` lists skill candidates, you approve, the orchestrator spawns `skill-creator` for each. Nothing auto-creates.
-- **Installer** — `install.sh` with `--dry-run`, `--force`, and a self-copy guard.
-
-## What lands in your repo
-
-```
-.claude/agents/          pm, lead, engineer, qa, retro, uxui + team-* fan-out workers + TEAM.md  (always refreshed)
-.claude/orchestrator.md  orchestrator script for the main agent                             (always refreshed)
-.claude/orchestrator/    references/ — on-demand orchestrator detail (fanout, resume,
-                         state edge cases) the core loads only when that path fires        (always refreshed)
-.claude/commands/        dev + team-mode commands (spec, dev-plan, test-plan,
-                         uxui-plan, implement)                                              (always refreshed)
-.claude/skills/          fundamentals skills (construction + verification + delivery) +
-                         plan-writing, brainstorming, fanout-team-agents, qa-handoff-note,
-                         frontend/UX skills, skill-creator                                  (always refreshed)
-.claude/rules/           fundamentals.md — one always-on router to the skills              (always refreshed)
-.claude/hooks/*.sh       PreToolUse spawn guard + secrets guard, PostToolUse lint + state marker  (always refreshed)
-.claude/settings.json    hook wiring                                                        (only if missing; existing files get a merge)
-.workflow/_templates/    spec / plan / test-plan / uxui-plan / review / security / tests /
-                         recommendations / retro / epic / state.json                        (always refreshed)
-.workflow/INDEX.md       run registry                                                       (only if missing)
-.workflow/FOLLOWUPS.md   follow-up registry                                                 (only if missing)
-WORKFLOW.md              full flow reference at repo root                                   (always refreshed)
-CLAUDE.md                minimal stub                                                       (only if missing)
-```
-
-**Your state is safe.** `INDEX.md` and `FOLLOWUPS.md` are never overwritten, `.claude/settings.local.json` is never touched, and `CLAUDE.md` is never wholesale overwritten. If `CLAUDE.md` already contains the managed `claude-foundation:rules-imports` block, that block is re-synced in place so rule-router updates land; everything outside the managed block is preserved. Foundation-owned files (agents, orchestrator, commands, skills, rules, hooks, templates, `WORKFLOW.md`) are **always refreshed** on every install so upstream updates land — fork them out of these paths if you don't want a local edit clobbered.
-
-**Already have `.claude/settings.json`?** The installer leaves it alone — your `permissions` / `model` / `env` are not rewritten; only the foundation hook wiring is merged in via jq (`--force` is what makes it overwrite wholesale). If the merge can't apply cleanly, the installer drops a pure-JSON snippet at `.claude/settings.foundation.json` with merge instructions — copy the `hooks` block in (appending to any existing `PostToolUse` array), then delete the snippet. Don't want the lint hook? If the merge failed, delete the snippet instead of merging it; if the merge succeeded, remove the lint entry from `.claude/settings.json`.
-
-## Team presence dashboard
-
-Beyond the `/dev` pipeline, claude-foundation ships a small **team awareness dashboard**. Each machine runs a background client; a zero-dependency Node server (deploys to Railway in minutes) serves one shared web page that shows, in real time:
-
-- **Presence** — who's online right now (git name + host; in-memory, 30s window).
-- **Working in** — which repos each person has uncommitted changes in, with the local folder path and an optional label (`git config dashboard.label "…"`) so nested or same-named sub-repos stay distinct.
-- **/dev activity** — the in-flight run and phase, read straight from `state.json`.
-- **Potential conflicts** — when two people's changed line ranges in the same file overlap, both are warned **before** anyone merges (it catches uncommitted work a git server can't see yet).
-
-Control it from any machine on the flow:
+List migration candidates:
 
 ```bash
-claude-foundation dashboard-up   --key <shared-key>   # start reporting (background, no port)
-claude-foundation dashboard-status                    # is it running?
-claude-foundation dashboard-down                      # stop — drops you off the board immediately
+claude-foundation migrate
 ```
 
-- **No port, no collisions.** The client binds nothing — it's a background process tracked by a PID file (`~/.claude-foundation/dashboard.pid`) that only sends outbound heartbeats. The one port in the system is the server's, and Railway assigns that automatically.
-- **Identity** on the board = a shared key (auth) + a stable per-machine id + your `git config user.name`.
-- **Presence is in-memory.** "Online" means a heartbeat arrived within the last 30s; stop the client (or close the laptop) and you fall off the board within the window.
+Create a reviewable candidate for one legacy run:
 
-**Try it now:** the board has a **demo mode** that renders sample data through the real UI — no key needed. **[View the live demo →](https://claude-foundation-dashboard-production.up.railway.app/?demo)**
-
-Stand up your own server and wire it in a few minutes — full deploy steps, API endpoints, and security notes live in [`dashboard/README.md`](dashboard/README.md).
-
-> **Availability.** The `dashboard-*` subcommands route through `cli.sh` (the top-level router that also dispatches the installer). They ship with source checkouts, `brew install --HEAD`, and stable Homebrew releases that include the dashboard assets.
-
-## Design principles
-
-- **Single entry point.** One command, one flow. No separate `/plan`, `/review`, `/test` to forget — the orchestrator runs them in order so nothing gets skipped.
-- **Reproduce before fix.** A `fix` run can't ship without a regression test that fails on pre-fix code and passes now. Enforced at plan time (step 1), implement time (engineer writes it first), and test time (qa verifies the failure mode).
-- **Acceptance criteria are first-class.** Engineer ticks them, lead re-checks them, qa maps each to a test, retro reports their final state. Unticked criteria block ship.
-- **Coverage as a ratchet, not a gate.** qa measures diff coverage on the *changed* code against per-level floors (unit ≥80% · integration ≥70% · e2e ≥50% of critical journeys, the e2e floor only when `e2e_visual=on`) — advisory, so a below-floor level is a finding you accept or send back, never a number to pad with trivial tests. Floors apply only where the level is in scope for the change.
-- **Anti-bias review.** Because `lead` reviews their own plan, review mode is row-by-row against `plan.md` AND `spec.md` — one verification per file, one row per acceptance criterion, DoD item, and Constraint. No vibes.
-- **Security as a trigger, not a tax.** Most runs don't touch auth or SQL; those skip the security pass entirely. Runs that do get an inline checklist — nothing outsourced to an external tool.
-- **Scope splits are rare.** Default is one run, even when DB + API + UI all change. Epic mode only kicks in when the spec lists ≥2 independently-shippable capabilities *and* `Ship as: staged`.
-- **Lean always-on context.** Rules are 3-line pointers; full skill bodies load on demand. Every sub-agent spawn reloads `CLAUDE.md` + rules, so always-on weight is paid *per agent* — keeping it lean compounds across a `/dev` run.
-- **Artifacts on disk + resumable.** Every run leaves a folder behind, including `state.json`. Replay it, audit it, hand it off — or if the session dies, `/dev --resume <id>` and keep going.
-
-## Repository layout
-
+```bash
+claude-foundation migrate 0003-fix-example --apply
 ```
-.claude/
-├── agents/         pm, lead, engineer, qa, retro, uxui + team-* fanout workers
-├── orchestrator.md script the main agent follows when /dev runs
-├── orchestrator/   references/ — fanout, resume, state edge-case detail the core loads on demand
-├── commands/       dev.md (loads orchestrator.md) + team-mode spec / dev-plan / test-plan / uxui-plan / implement
-├── hooks/          spawn guard, state marker, lint dispatch, secrets guard
-├── rules/          fundamentals.md — one always-on router (conduct + run order + fundamentals)
-└── skills/         full skill bodies referenced by the router
-.workflow/
-├── _templates/     blueprints — copy, don't edit in place
-├── INDEX.md        run registry
-└── FOLLOWUPS.md    carry-over registry
-dashboard/          team presence dashboard — Node server + web UI + heartbeat client
-├── server.js       zero-dep API + static dashboard
-├── public/         the web board (vanilla HTML/CSS/JS)
-└── client.sh       dashboard-up / -down / -status
-cli.sh              top-level CLI router (init / version / help / dashboard-*)
-install.sh          installs the foundation into a target project
-VERSION             source of truth for `claude-foundation version`
-docs/
-WORKFLOW.md         full flow definition
-CLAUDE.md           per-project guidance
+
+Legacy narrative is never promoted into current specifications automatically.
+A statement must be corroborated by code, tests, or an accepted contract.
+
+## Verify Foundation
+
+```bash
+claude-foundation version
+claude-foundation runtime version
+sh .claude/tests/run-all.sh
+
+npx --yes @fission-ai/openspec@1.7.0 \
+  schema validate foundation-standard
+
+npx --yes @fission-ai/openspec@1.7.0 \
+  schema validate foundation-rapid
 ```
+
+Preview installation without writing:
+
+```bash
+./install.sh /tmp/foundation-demo --dry-run
+```
+
+See [WORKFLOW.md](WORKFLOW.md) for provider contracts, sandbox safety,
+watchdog behavior, and lower-level operator commands.
 
 ## License
 
-[MIT](LICENSE) © Maximumsoft Co., Ltd.
+MIT

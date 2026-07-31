@@ -1,36 +1,81 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Purpose
 
-## Project overview
+This repository packages an installable OpenSpec-native change harness.
+The workflow files and deterministic runtime are the product.
 
-This repo packages an opinionated **command workflow for Claude Code, aimed at AI engineers** — reusable slash commands, sub-agents, hooks, skills, and the `/dev` pipeline — so other repos can adopt them. The audience is engineers using Claude Code as their primary development surface; the artifacts here are the product, not an application.
+## Map
 
-Key surface area:
-- `.claude/orchestrator.md` — the main-agent playbook for `/dev`. There is **no** `orchestrator` sub-agent; the main agent IS the orchestrator (it owns the interview, the gate, and the single-writer `state.json`). Never call `Agent(subagent_type="orchestrator")`.
-- `.claude/agents/` — `/dev` workers (`pm`, `lead`, `engineer`, `qa`, `retro`), the team-mode `uxui` designer (spawned only by `/uxui-plan`), and the parallel `team-*` fanout workers — each with an explicit `model:` for cost/speed tuning.
-- `.claude/commands/` — slash commands: `dev.md` (full pipeline) plus the **team-mode** slice commands that drive one phase into a shared `.workflow/<id>/` run (`spec`, `dev-plan`, `test-plan`, `uxui-plan`, `implement`). All three Phase-1 plan slices can run fully in parallel — each writes its own `state.<slice>.json` shard (with an `ac_covered` index so the gate fold is a deterministic **set-compare**, not a full re-read); the gate folds them into `state.json` single-writer (canonical: `orchestrator.md > State discipline > Team-mode Phase-1 sharding`). `dev-plan`/`uxui-plan` need only `spec.md`; `test-plan` also reads `plan.md`, so run first it goes **spec-only** and the gate **backfills** the plan-derived rows once `plan.md` exists (inline for XS/S, a `qa` re-spawn only for M/L). Installers ship the whole dir, so new commands need no manifest edit.
-- `.claude/rules/` — `fundamentals.md`, the single **always-on router** that maps every "by default" trigger to its skill. Load-bearing: the fundamentals are applied via this thin always-on layer (project skills don't auto-trigger), then the full skill body loads on demand. It is the canonical source for triggers and cross-skill run order.
-- `.claude/skills/` — the fundamentals skill bodies (full detail, loaded on demand — construction chain, process/verification, delivery channel; the router lists them) plus product skills (`brainstorming`, `plan-writing`, `qa-handoff-note`, `fanout-team-agents`, frontend/UX, `skill-creator`).
-- `.claude/hooks/` — `dev-agent-guard.sh` (PreToolUse spawn guard), `dev-state-mark.sh` (PostToolUse state marker), `lint.sh` (PostToolUse linter), `protect-secrets.sh` (PreToolUse `.env`/credential read guard). `no-direct-main-commit.sh` is shipped but **opt-in** (wire it under `PreToolUse`/`Bash` in `settings.json` to block commits on `main`/`master`).
-- `WORKFLOW.md` + `.workflow/` — the type-aware phase matrix, run templates, and per-run `state.json`/artifacts that drive `/dev --resume`. Gated by three axes: `Type` (which phases), `size` (how much machinery), `field` (**greenfield | brownfield**). Brownfield gates the **understand → lock → change** discipline (current-state map, characterization baseline); greenfield skips both. Canonical `field` def: `plan-writing > references/size-tiering.md > Greenfield vs brownfield`.
+- `.claude/orchestrator.md` - concise change-loop contract.
+- `.claude/harness/foundation.mjs` - deterministic resolver, proof, receipts,
+  sandbox, watchdog, migration, and land guards.
+- `.claude/commands/` - `/investigate`, `/change`, `/build`, `/prove`, `/land`,
+  `/changes`, migration, and the `/dev` compatibility composition.
+- `.claude/rules/fundamentals.md` - always-on skill router and canonical
+  construction order.
+- `.claude/skills/` - procedures loaded only when their trigger fires.
+- `.claude/hooks/` and `.claude/settings.json` - generic safety and lint guards.
+- `openspec/` - custom schemas, current specs, and durable changes.
+- `.foundation/` - ignored machine state and evidence.
+- `.workflow/` - read-only legacy migration source.
+- `WORKFLOW.md` - public change-loop contract.
+- `.claude/tests/run-all.sh` - deterministic workflow test entrypoint.
 
-## Skills outside the router
+Risk and evidence—not size—select assurance. Size controls budget and slicing.
 
-Ten skills deliberately sit outside `.claude/rules/fundamentals.md` (which scopes itself to the code/construction/delivery lifecycle). They trigger two other ways — this split is intentional:
+## Shipping Boundary
 
-| Trigger path | Skills |
-|---|---|
-| `/dev`-pipeline wiring (orchestrator/agents invoke them) | `brainstorming` (interview), `plan-writing` (lead), `fanout-team-agents` (fanout dispatch), `skill-creator` (post-retro, user-approved only) |
-| Frontmatter-description match on explicit ask | `claude-md`, `qa-handoff-note`, `init-project-docs`, `frontend-design`, `tailwind-design-system`, `ui-ux-pro-max` |
+`install.sh > PLAN` is authoritative.
 
-## Related references in this workspace
+Ships:
 
-- `../claude-foundation-template/` — earlier template with `.claude/`, `brain/`, `docs/`, `install.sh`. Reference for house style only — do **not** copy it wholesale.
+```text
+.claude/orchestrator.md
+.claude/commands/**
+.claude/harness/**
+.claude/skills/**
+.claude/rules/**
+.claude/hooks/**
+.claude/settings.json
+openspec/config.yaml
+openspec/schemas/**
+.foundation/.gitignore
+.foundation/README.md
+WORKFLOW.md
+```
 
-## Working agreements (carried from user-level config)
+Does not ship:
 
-The fundamentals are applied via the always-on router `.claude/rules/fundamentals.md` (project skills don't auto-trigger). **The router maps every "by default" trigger to its skill and is the single source of truth for triggers and the cross-skill run order.** On the `/dev` plan / implement / review critical path, the always-on router + agent summaries are the default pre-flight: load no full skill body unless a specific friction requires it, and prefer at most one targeted `references/<file>` section. Off the critical path, or when a task explicitly asks for a skill's full procedure, load the relevant `SKILL.md`.
+```text
+.claude/tests/**
+docs/**
+CLAUDE.md
+README.md
+dashboard/**
+examples/**
+install*.sh
+```
 
-- **LSP first** — when an LSP tool is available, use it for diagnostics, go-to-definition, and references before grep/read. (From `~/.claude/CLAUDE.md`.)
-- **`coding-discipline` wraps every code task** via the always-on **Conduct digest** in `rules/fundamentals.md` (assumptions stated → minimum non-speculative code → surgical diff → verifiable definition of done); the full body loads only on friction. It routes to the construction/debug/refactor skills per their rules and must not re-teach them.
+Runtime files contain rules, not benchmark history, cost figures, incidents, or
+maintainer narrative. Never point a shipped file at a non-shipped path.
+Evidence belongs in `.claude/tests/bench/rationale.md`; research notes belong
+in `docs/research/`.
+
+## Working Rules
+
+- Apply `.claude/rules/fundamentals.md`; do not preload full skill bodies.
+- Keep the change packet compact and use `tasks.md` as the sole ledger.
+- Use LSP for definitions/references/diagnostics before grep or broad reads.
+- Read only the needed section of large files such as `WORKFLOW.md`,
+  `CHANGELOG.md`, and agent references.
+- Keep changes surgical. A shipped-rule change also updates its deterministic
+  tests and, when evidence-driven, the benchmark rationale.
+- Run `sh .claude/tests/run-all.sh` after changing shipped files.
+- New commands and schemas are included automatically by the installer.
+- `no-direct-main-commit.sh` ships but remains opt-in.
+
+Non-lifecycle skills (`brainstorming`, `plan-writing`,
+`fanout-team-agents`, frontend/UX skills, `skill-creator`) trigger through
+explicit workflow wiring or their own descriptions; do not add them to the
+always-on router merely to make them discoverable.

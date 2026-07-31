@@ -1,0 +1,1 @@
+The article list in this repository returns everything at once and it is getting long — add pagination to listArticles. Callers need a page of results and the total count. Write the code and tests directly. Do not use any workflow, do not create planning or spec files — just implement it.
