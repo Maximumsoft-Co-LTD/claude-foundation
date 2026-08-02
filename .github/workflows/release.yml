@@ -136,6 +136,17 @@ jobs:
           set -euo pipefail
           ROOT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v$NEW"
 
+          # A dry run has no tag tarball to download. Build an equivalent local
+          # source archive from the rewritten worktree so the formula exercises
+          # the candidate version and files instead of the previous release.
+          if [ "$DRY" = "true" ]; then
+            ARCHIVE="$RUNNER_TEMP/claude-foundation-$NEW.tar.gz"
+            tar --exclude=.git --exclude=node_modules -czf "$ARCHIVE" .
+            SHA=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+            perl -0pi -e "s#^  url \".*\"\$#  url \"file://$ARCHIVE\"#m" Formula/claude-foundation.rb
+            perl -0pi -e "s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"$SHA\"/m" Formula/claude-foundation.rb
+          fi
+
           brew tap-new "$TAP" --no-git
           cp Formula/claude-foundation.rb "$(brew --repository "$TAP")/Formula/"
           brew install --build-bottle "$TAP/claude-foundation"
