@@ -8,6 +8,24 @@
 > rejected one costs a benchmark cycle to re-learn. Method, spread and reliability
 > caveats: `README.md` in this directory.
 
+## Adopted: trigger-only prototype, review provenance, and acceptance
+
+The feedback-loop additions are structurally absent from untriggered work. The
+runtime does not invoke models; rapid fixtures acquire neither review nor
+acceptance, `/prototype` is a separately invoked command, and ordinary packets
+retain schema 4. The only new bounded context is `packet --phase review`, capped
+at 8 KiB and emitted only for review. Deterministic fixtures reject same-session
+and same-family critical AI review, require named-human acceptance only after an
+explicit resolution, cap AI review at two rounds, and fail unattended execution
+closed when no process boundary is detected.
+
+This is an adoption on structural zero-overhead and seeded quality invariants,
+not a claim that prototyping always saves wall time. Do not make prototype,
+acceptance, or diverse review automatic for ordinary work without a clean-sandbox
+A/B showing held `judge_p10`, no added requests on controls, and lower end-to-end
+correction turns. The earlier strict-review rejection below remains controlling:
+more review is not inherently better review.
+
 ## The cost model, established the hard way
 
 Cost on this workflow is input-dominated roughly **6:1** over output, so the

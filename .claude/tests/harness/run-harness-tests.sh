@@ -865,6 +865,12 @@ printf 'api-after\n' > \
 scoped_plan="$(node .claude/harness/foundation.mjs proof-plan cross-repository-profile)"
 assert_contains "owning repo edit invalidates API receipt" \
   "$scoped_plan" "api-static: stale"
+multi_review_packet="$(node .claude/harness/foundation.mjs packet \
+  cross-repository-profile --phase review)"
+assert_contains "review packet includes API repository changes" \
+  "$multi_review_packet" 'api/api.txt'
+assert_contains "review packet includes app repository changes" \
+  "$multi_review_packet" 'app/app.txt'
 land_plan="$(node .claude/harness/foundation.mjs land-plan cross-repository-profile)"
 assert_contains "multi-repo Land is an honest saga" \
   "$land_plan" '"strategy": "ordered-resumable-saga"'
@@ -894,8 +900,9 @@ node .claude/harness/foundation.mjs receipt cross-repository-profile \
   cross-repo-contract pass --observed "API/App contract fixture passed" \
   --source harness-test --reference "fixture://cross-repo-contract" >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  review pass --observed "fixture review found no blockers" \
-  --reviewer harness-test --reference "fixture://review" >/dev/null
+review pass --observed "fixture review found no blockers" \
+  --reviewer harness-test --subject-actor implementation-agent \
+  --reference "fixture://review" >/dev/null
 assert_cmd_zero "committed multi-repo work proves" \
   node .claude/harness/foundation.mjs prove cross-repository-profile
 git -C api merge -q --ff-only "$api_commit"
@@ -918,8 +925,9 @@ node .claude/harness/foundation.mjs receipt cross-repository-profile \
   cross-repo-contract pass --observed "API/App contract fixture passed" \
   --source harness-test --reference "fixture://cross-repo-contract" >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  review pass --observed "fixture review found no blockers" \
-  --reviewer harness-test --reference "fixture://review" >/dev/null
+review pass --observed "fixture review found no blockers" \
+  --reviewer harness-test --subject-actor implementation-agent \
+  --reference "fixture://review" >/dev/null
 assert_cmd_zero "pointer-aware composite proof refreshes" \
   node .claude/harness/foundation.mjs prove cross-repository-profile
 resume_plan="$(node .claude/harness/foundation.mjs land-resume cross-repository-profile)"

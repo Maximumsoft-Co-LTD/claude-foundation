@@ -85,13 +85,20 @@ change ใหม่
 | Command | ทำอะไร | ใช้เมื่อไร | แก้ product code หรือไม่ |
 |---|---|---|---|
 | `/investigate` | สำรวจปัญหาและทางเลือก | โจทย์หรือแนวทางยังไม่ชัด | ไม่ |
+| `/prototype` | เปรียบเทียบทางเลือกชั่วคราว 3–5 แบบ | ยังตัดสินใจเรื่องทิศทางเชิง subjective ไม่ได้ | เฉพาะ `.foundation/` |
 | `/change` | สร้างหรือแก้ข้อตกลงของงาน | รู้ outcome ที่ต้องการแล้ว | ไม่ |
 | `/build` | ลงมือทำงานใน sandbox | Change artifacts พร้อม | แก้เฉพาะ sandbox |
 | `/prove` | ตรวจ evidence และสร้าง proof | Build เสร็จและ tasks พร้อม | ไม่แก้ project หลัก |
+| `/review` | Review จาก bounded context ใหม่ | Risk policy ต้องการมุมมองอิสระ | ไม่ |
 | `/land` | นำ proven diff เข้า project หลัก | Proof ผ่านและพร้อมรับ change | แก้ project หลัก |
 | `/changes` | แสดง active changes และ next action | ต้องการดูสถานะรวม | ไม่ |
 | `/dev` | รัน Change → Build → Prove | ต้องการ one-shot compatibility flow | ไม่ land |
 | `/migrate-workflow` | เตรียม migration จาก `.workflow/` เดิม | ย้ายงานหรือความรู้จากระบบเก่า | ไม่ยกข้อมูลเป็น truth อัตโนมัติ |
+
+เมื่อเลือก prototype แล้ว ให้ทำต่อด้วย
+`/change <intent|existing-change> --prototype-selection <selection-path>`
+โดย Change จะสรุป decision ลง proposal/design ส่วนไฟล์ prototype ที่ถูก ignore
+จะใช้เป็น evidence artifact หรือ local reference ไม่ได้
 
 Slash commands ใช้ควบคุม AI workflow ส่วน deterministic operator commands
 ใช้ native CLI:
@@ -104,7 +111,7 @@ claude-foundation agents plan <change> [--group <n>] [--pretty]
 claude-foundation agents task <change> <task> [--pretty]
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
+claude-foundation packet <change> --phase build|prove|review [--pretty]
 claude-foundation metrics <change>
 claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
@@ -119,6 +126,7 @@ claude-foundation proof finalize <change>
 claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
 claude-foundation sandbox create <change> [--all]
+claude-foundation sandbox inspect <change> [--json] [--unattended]
 claude-foundation land check <change>
 claude-foundation land plan <change>
 claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
@@ -131,13 +139,16 @@ CLI จะค้น project จาก directory ปัจจุบันหร�
 ถ้าติดตั้งตรงจาก source และยังไม่มี packaged CLI บน `PATH` สามารถเรียก runtime
 file โดยตรงเป็น compatibility fallback ได้
 
-`packet <change> --phase build|prove` คือ compact handoff ระหว่าง Change, Build
-และ Prove โดยส่ง reference, revision, claim digest, provider state, task count,
-hash และ budget แทน conversation ที่สะสมมา Packet มีเพดานตาม scope: task 8 KiB,
+`packet <change> --phase build|prove|review` คือ compact handoff ระหว่าง Change,
+Build, Prove และ Review context ใหม่ โดยส่ง reference, revision, claim digest, provider state, task count,
+hash และ budget แทน conversation ที่สะสมมา Packet มีเพดานตาม scope: task/review 8 KiB,
 repository 12 KiB และ global 16 KiB ส่วน artifact ใหญ่คงอยู่ในไฟล์และอ้างด้วย
 path กับ SHA-256 ส่วน phase flag จะปิด telemetry ของ phase ก่อนหน้าแบบ
 incremental ด้วย
 JSON สำหรับเครื่องเป็น compact โดย default ทำให้ budget เท่ากับ bytes ที่ส่ง
+จริง Worktree หรือ directory copy ป้องกัน workspace เท่านั้น ไม่ใช่ process
+security sandbox; การตรวจพบ container/VM เป็นเพียง diagnostic และ unattended
+mode จะ fail closed จนกว่าจะมี trusted attestation จาก host
 ให้ agent จริง ใช้ `--pretty` เฉพาะตอนคนต้องการอ่าน Packet schema 4 และ
 agent-plan schema 2 ทำให้ consumer แยก compatibility ได้ชัดเจน เมื่อ collection
 ใหญ่ ระบบจะลดเป็น preview, count และ digest แล้วเปิดรายละเอียดผ่าน task packet

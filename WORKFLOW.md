@@ -44,6 +44,15 @@ Standard changes contain proposal, delta specs, design, tasks, evidence, and
 execution wiring. Rapid changes contain proposal, tasks, evidence, and execution
 wiring and upgrade in place if risk emerges.
 
+`/prototype <decision>` is an optional, disposable companion for genuinely
+unresolved experience, API, or architecture alternatives. It writes only under
+`.foundation/prototypes/`, never edits product code, and adds no lifecycle state;
+the selected conclusion is always written to `selection.md`. Continue with
+`/change <intent|existing-change> --prototype-selection <selection-path>`; Change
+summarizes the decision into proposal/design without treating the ignored
+selection or its artifacts as evidence. The runtime rejects local prototype
+artifacts and references before they can enter a receipt or proof bundle.
+
 ### `/build <change>`
 
 The native harness reads the compact change packet and implements it. `tasks.md`
@@ -56,6 +65,17 @@ For a Git project, create an isolated worktree with:
 ```bash
 claude-foundation sandbox create <change>
 ```
+
+This is workspace isolation, not an OS security boundary. Inspect the distinction
+with `sandbox inspect <change>`. A host that deliberately runs unattended must
+use `doctor --stage build --change <change> --unattended` and
+`sandbox create <change> --unattended`. Detection is diagnostic, not authorization:
+the current runtime accepts no workspace-controlled override and fails unattended
+execution closed pending a trusted host-owned attestation mechanism.
+`--unattended` is a presence-only security flag: valued or duplicate forms are
+rejected before telemetry, workspace inspection, or sandbox mutation. The guard
+is cooperative because the runtime cannot infer an external Allow All setting;
+the host that enables unattended execution must invoke the guarded form.
 
 For a selected multi-repository topology:
 
@@ -195,6 +215,7 @@ Supported capabilities:
 | `security-static` | Static security analysis of a changed trust boundary or sink |
 | `cross-repo-contract` | Agreement between producer and consumer repositories |
 | `review` | Independent risk review |
+| `acceptance` | Named human acceptance of an explicitly subjective decision |
 | `static-analysis` | Compile, type, lint, or static quality gates |
 | `data-migration` | Forward migration, mixed-version safety, and rollback |
 | `accessibility` | Semantics, keyboard, focus, contrast, or assistive access |
@@ -233,6 +254,17 @@ identity, execution DAG, and report topology.
 Review is required for high impact, authentication/authorization, public
 compatibility, migration, irreversible mutation, concurrency, monetary logic,
 multi-repository contracts, anomalous evidence, or explicit policy.
+
+Required review starts from the ≤8 KiB `packet --phase review`, never Build
+history. Every review receipt identifies the reviewer and implementation subject.
+Critical security, migration, compatibility, monetary, or irreversible changes
+require a different model/provider family or a human; other reviews require a
+fresh context and prefer diversity. AI re-review is limited to two rounds, after
+which unresolved work escalates to a human. Workspace edits stale prior review.
+
+Human acceptance is separate from review and is required only when `/change`
+explicitly declares a subjective product or experience decision. Its receipt is
+bound to the final workspace, named criteria, and a durable artifact or reference.
 
 Findings are `verified`, `hypothesis`, `disproved`, or `accepted-risk`.
 Hypotheses require deterministic reproduction before becoming confirmed major
@@ -273,9 +305,9 @@ provider execution time, request/token/cache/cost totals, orchestrator token
 share, and emitted context bytes without double-counting receipts emitted by
 one combined execution.
 
-`claude-foundation packet <change> --phase build|prove` emits the bounded
-handoff for a fresh execution context. Global, repository, and task packets are
-capped at 16, 12, and 8 KiB respectively and reference larger artifacts by
+`claude-foundation packet <change> --phase build|prove|review` emits the bounded
+handoff for a fresh execution context. Global, repository, task, and review
+packets are capped at 16, 12, 8, and 8 KiB respectively and reference larger artifacts by
 path and digest. Compact JSON is the default and is the exact measured budget;
 `--pretty` is available for people. Collection previews include counts and
 digests, with task packets providing authoritative expansion. Atomic context
@@ -286,6 +318,10 @@ sets collapse into prefix counts plus a digest. Build and Prove consume this
 packet instead of replaying the full orchestrator transcript.
 
 ## Sandbox safety
+
+Foundation sandboxes protect workspace/apply integrity. They do not by themselves
+contain processes, network access, host secrets, or system commands. Never infer
+that a Git worktree or copied directory is safe for Allow All/unattended execution.
 
 - Git projects use detached temporary worktrees.
 - The target HEAD must remain at the recorded base before apply.

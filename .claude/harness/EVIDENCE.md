@@ -92,6 +92,10 @@ claude-foundation proof readiness <change>
 claude-foundation proof run <change>
 ```
 
+Prototype files under `.foundation/prototypes/` are non-authoritative. The
+runtime rejects them, including local-path references and symlinked origins,
+before copying any artifact or writing a receipt.
+
 Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
 execution. Providers with non-conflicting resources run concurrently. A
@@ -101,6 +105,17 @@ when those inputs are unchanged even if unrelated workspace files changed.
 An external passing receipt must include `--observed`, `--source` or
 `--reviewer`, and at least one `--artifact` or `--reference`. Empty reviewer or
 supply-chain assertions cannot become passing evidence.
+
+Review receipts additionally identify reviewer type/identity, request and model
+provenance for AI reviewers, implementation subject provenance, finding counts,
+and changed-path scope after the first round. Critical policy requires a different
+provider/model family or a human. AI review is limited to two rounds; a third
+round requires a human. Legacy review receipts remain readable but cannot satisfy
+the capability-specific review protocol.
+
+Acceptance is external and human-only. A passing receipt requires `--acceptor`,
+`--decision accept`, one or more `--criterion` values, `--observed`, and a durable
+artifact or reference. Acceptance is required only when the Change declares it.
 
 ## Test and discovery
 

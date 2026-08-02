@@ -5,8 +5,10 @@ bundles, workspace snapshots, provider logs, request-usage events, incremental
 transcript cursors, recoverable Land transaction journals/backups, and sandboxes
 are intentionally ignored.
 Repository worktrees, model/agent execution plans, and resource leases are also
-machine-owned. Repository topology and model policy remain reviewable in
-`openspec/repositories.yaml` and `foundation.json`.
+machine-owned. Disposable comparison prototypes live under `prototypes/`; the
+runtime rejects them as evidence artifacts or local references so they never
+enter proof or product artifacts. Repository topology and model policy remain
+reviewable in `openspec/repositories.yaml` and `foundation.json`.
 Emitted plan and packet byte counts live in
 `logs/<change>/context.jsonl`; they contain sizes and scope metadata, not prompt
 or artifact content.

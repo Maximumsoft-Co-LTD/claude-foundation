@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import {
-  appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync,
+  accessSync, appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync,
   readSync, readdirSync, lstatSync, mkdtempSync, readlinkSync, realpathSync,
   renameSync, rmSync, statSync, symlinkSync, writeFileSync
 } from "node:fs";
@@ -11,15 +11,19 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } fro
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
 
 const VERSION = "2.3.0";
-const RUNTIME_API_VERSION = "7";
+const RUNTIME_API_VERSION = "8";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
 const PACKET_SCHEMA_VERSION = "4";
 const AGENT_PLAN_SCHEMA_VERSION = "2";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
+const REVIEW_PROTOCOL_VERSION = "2";
+const ACCEPTANCE_PROTOCOL_VERSION = "2";
+const REVIEW_PACKET_SCHEMA_VERSION = "2";
 const ADAPTERS = new Set(["command", "test-discovery", "playwright", "external"]);
 const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
 const EXCLUDED_WORKSPACE_DIRS = new Set([
@@ -38,6 +42,7 @@ const PROVIDER_CONTRACTS = {
   "security-static": "Static security checks cover the changed trust boundary and unsafe sinks.",
   "cross-repo-contract": "Producer and consumer repositories agree on the same versioned contract.",
   "review": "Independent risk review covers the declared claims and unresolved findings.",
+  "acceptance": "A named human accepts an explicitly subjective product or experience decision.",
   "static-analysis": "Compilation, type checking, linting, and applicable static quality gates pass.",
   "data-migration": "Schema or data evolution is forward-safe, backward-compatible, and rollback-aware.",
   "accessibility": "Rendered semantics, keyboard use, focus, contrast, and assistive access meet policy.",
@@ -86,6 +91,7 @@ const SNAPSHOTS = join(ROOT, ".foundation", "snapshots");
 const TRANSACTIONS = join(ROOT, ".foundation", "transactions");
 const PLANS = join(ROOT, ".foundation", "plans");
 const LEASES = join(ROOT, ".foundation", "leases");
+const PROTOTYPES = join(ROOT, ".foundation", "prototypes");
 const CHANGES = join(ROOT, "openspec", "changes");
 mkdirSync(RUNTIME, { recursive: true });
 mkdirSync(RECEIPTS, { recursive: true });
@@ -150,7 +156,10 @@ function protocolDescriptor() {
     proofProtocol: PROOF_PROTOCOL_VERSION,
     packetSchema: PACKET_SCHEMA_VERSION,
     agentPlanSchema: AGENT_PLAN_SCHEMA_VERSION,
-    contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION
+    contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION,
+    reviewProtocol: REVIEW_PROTOCOL_VERSION,
+    acceptanceProtocol: ACCEPTANCE_PROTOCOL_VERSION,
+    reviewPacketSchema: REVIEW_PACKET_SCHEMA_VERSION
   });
 }
 function isPinnedOpenSpecVersion(value) {
@@ -224,7 +233,11 @@ function parseFlags(values) {
   const flags = {};
   const rest = [];
   const setFlag = (key, value) => {
-    if (["artifact", "artifacts", "reference"].includes(key)) {
+    if ([
+      "artifact", "artifacts", "reference", "criterion", "scope-path",
+      "subject-actor", "subject-session", "subject-provider-family",
+      "subject-model-family", "subject-model", "subject-provenance"
+    ].includes(key)) {
       const prior = flags[key];
       flags[key] = prior === undefined ? [value] :
         Array.isArray(prior) ? [...prior, value] : [prior, value];
@@ -242,6 +255,38 @@ function parseFlags(values) {
     } else if (values[i + 1] && !values[i + 1].startsWith("--")) {
       setFlag(body, values[i + 1]); i += 1;
     } else setFlag(body, true);
+  }
+  return { flags, rest };
+}
+
+function parseStrictCommandFlags(values, context, schema = {}) {
+  const booleanFlags = new Set(schema.boolean || []);
+  const valueFlags = new Set(schema.value || []);
+  const flags = {};
+  const rest = [];
+  for (let i = 0; i < values.length; i += 1) {
+    const token = values[i];
+    if (!token.startsWith("--")) {
+      rest.push(token);
+      continue;
+    }
+    const body = token.slice(2);
+    const separator = body.indexOf("=");
+    const key = separator === -1 ? body : body.slice(0, separator);
+    if (!booleanFlags.has(key) && !valueFlags.has(key))
+      die(`${context} does not support --${key || "<empty>"}`);
+    if (Object.hasOwn(flags, key)) die(`${context} does not allow duplicate --${key}`);
+    if (booleanFlags.has(key)) {
+      if (separator !== -1) die(`${context} flag --${key} does not accept a value`);
+      flags[key] = true;
+      continue;
+    }
+    const inline = separator === -1 ? null : body.slice(separator + 1);
+    const next = inline === null ? values[i + 1] : inline;
+    if (!next || (inline === null && next.startsWith("--")))
+      die(`${context} flag --${key} requires a value`);
+    flags[key] = next;
+    if (inline === null) i += 1;
   }
   return { flags, rest };
 }
@@ -579,6 +624,8 @@ function createChange(intent, flags) {
     impact: schema === "foundation-rapid" ? "low" : null,
     coupling: schema === "foundation-rapid" ? "isolated" : null,
     securityTriggers: [], reviewRequired: false, evidenceCapabilities: [],
+    acceptance: { version: 2, required: false, reason: null, claimIds: [], declaredAt: null },
+    reviewHistory: { version: 1, aiAttempts: 0, totalAttempts: 0, chainHead: null },
     workspace: { mode: "current", path: ROOT, baseHead: gitHead(ROOT) },
     budget: {
       targetRequests: schema === "foundation-rapid" ? 80 : 160,
@@ -612,7 +659,7 @@ function foundationPolicy() {
     version: 1,
     execution: {
       maxParallelAgents: 3,
-      packetBytes: { task: 8192, repository: 12288, global: 16384 },
+      packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
       tokenBudgets: { rapid: 800000, standard: 1600000 },
       planSummaryBytes: 4096,
       leaseMinutes: 45
@@ -641,6 +688,7 @@ function foundationPolicy() {
     policy.execution.legacyNumericPacketBytes = policy.execution.packetBytes;
     policy.execution.packetBytes = {
       task: policy.execution.packetBytes,
+      review: policy.execution.packetBytes,
       repository: policy.execution.packetBytes,
       global: policy.execution.packetBytes
     };
@@ -654,7 +702,7 @@ function foundationPolicy() {
     ...defaults.execution.tokenBudgets,
     ...(policy.execution.tokenBudgets || {})
   };
-  for (const type of ["task", "repository", "global"]) {
+  for (const type of ["task", "review", "repository", "global"]) {
     const bytes = Number(policy.execution.packetBytes?.[type]);
     if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
       die(`foundation.json execution.packetBytes.${type} must be 2048..65536`);
@@ -867,13 +915,34 @@ function resolveChange(id, flags) {
   ])];
   state.reviewRequired = state.impact === "high" || state.coupling === "coupled" ||
     state.securityTriggers.length > 0 || Boolean(flags.review);
+  if (flags["acceptance-required"] && flags["acceptance-not-required"])
+    die("resolve cannot combine --acceptance-required and --acceptance-not-required");
+  if ((flags["acceptance-reason"] || flags["acceptance-claims"]) &&
+      !flags["acceptance-required"])
+    die("--acceptance-reason and --acceptance-claims require --acceptance-required");
+  if (flags["acceptance-required"]) {
+    const reason = String(flags["acceptance-reason"] || "").trim();
+    if (!reason) die("--acceptance-required requires --acceptance-reason");
+      state.acceptance = {
+        version: 2,
+      required: true,
+      reason,
+        claimIds: String(flags["acceptance-claims"] || "").split(",")
+          .map((value) => value.trim()).filter(Boolean),
+        scopeOrigin: "explicit",
+        declaredAt: now()
+    };
+  } else if (flags["acceptance-not-required"]) {
+    state.acceptance = { version: 2, required: false, reason: null, claimIds: [], declaredAt: null };
+  }
   if (state.schema === "foundation-rapid" &&
-      (state.impact !== "low" || state.coupling !== "isolated" || state.reviewRequired)) {
+      (state.impact !== "low" || state.coupling !== "isolated" || state.reviewRequired ||
+       state.acceptance?.required)) {
     state.schema = "foundation-standard";
     state.upgradedFrom = "foundation-rapid";
   }
   saveRuntime(state);
-  console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  security: ${state.securityTriggers.join(", ") || "none"}`);
+  console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.required ? "required" : "not required"}\n  security: ${state.securityTriggers.join(", ") || "none"}`);
 }
 
 function rawExecution(id, dir = activeChangePath(id)) {
@@ -999,6 +1068,8 @@ function evidence(id, dir = activeChangePath(id)) {
          config.inputs.some((item) => typeof item !== "string" || !item ||
            isAbsolute(item) || item.split(/[\\/]/).includes(".."))))
       die(`provider '${provider}' inputs must be non-empty workspace-relative paths`);
+    if (["review", "acceptance"].includes(capability) && config.inputs !== undefined)
+      die(`${capability} capability cannot declare reusable inputs; it is bound to the full workspace`);
     if (config.reportFormat !== undefined &&
         !["json", "tap", "auto"].includes(config.reportFormat))
       die(`provider '${provider}' reportFormat must be json|tap|auto`);
@@ -1066,6 +1137,8 @@ function evidence(id, dir = activeChangePath(id)) {
     if (capability === "mutation" && config.adapter !== "external" &&
         !["behavioral-kill", "test-failure"].includes(config.classification))
       die("configured mutation provider requires classification behavioral-kill|test-failure");
+    if (["review", "acceptance"].includes(capability) && config.adapter !== "external")
+      die(`${capability} capability requires an external provider`);
     const declaredForProvider = (capability === "review"
       ? scopedReviewClaims(value.claims)
       : value.claims.filter((claim) =>
@@ -1237,9 +1310,68 @@ function contractFingerprint(id, dir = activeChangePath(id)) {
     impact: state.impact,
     coupling: state.coupling,
     reviewRequired: Boolean(state.reviewRequired),
+    reviewPolicy: reviewPolicy(id, state, contract),
+    acceptance: resolvedAcceptance(id, state, contract),
     claims: contract.claims,
     invariants: contract.invariants || []
   });
+}
+
+function normalizedAcceptance(state) {
+  const value = state.acceptance || {};
+  return {
+    version: Number(value.version || 1),
+    required: Boolean(value.required),
+    reason: value.required ? String(value.reason || "").trim() || null : null,
+    claimIds: value.required ? [...new Set(value.claimIds || [])].sort() : [],
+    scopeOrigin: value.scopeOrigin || null
+  };
+}
+
+function resolvedAcceptance(id, state = loadRuntime(id), contract = evidence(id)) {
+  const normalized = normalizedAcceptance(state);
+  const declared = contract.claims.filter((claim) =>
+    claim.capabilities.includes("acceptance")).map((claim) => claim.id);
+  const claimIds = [...new Set([...normalized.claimIds, ...declared])].sort();
+  return {
+    ...normalized,
+    required: normalized.required || declared.length > 0,
+    claimIds,
+    scopeOrigin: normalized.scopeOrigin || (declared.length ? "claim-capability" : null)
+  };
+}
+
+function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
+  const capabilities = new Set([
+    ...(state.evidenceCapabilities || []),
+    ...contract.claims.flatMap((claim) => claim.capabilities || []),
+    ...policyCapabilities(id)
+  ]);
+  const semantic = `${state.intent || ""} ${(state.securityTriggers || []).join(" ")}`.toLowerCase();
+  const triggers = [];
+  const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
+  const requiredCapabilities = [
+    "review", "security-static", "data-migration", "compatibility",
+    "cross-repo-contract", "state-identity"
+  ];
+  if (riskClaims.some((claim) =>
+    claim.capabilities.some((capability) => requiredCapabilities.includes(capability))))
+    triggers.push("risk-capability");
+  if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
+    triggers.push("multi-repository-claim");
+  if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
+    triggers.push("risk-semantics");
+  if ((state.securityTriggers || []).length ||
+      ["security-static", "data-migration", "compatibility"].some((value) => capabilities.has(value)))
+    triggers.push("critical-capability");
+  if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
+    triggers.push("critical-semantics");
+  return {
+    required: Boolean(state.reviewRequired || triggers.length || capabilities.has("review")),
+    independence: "required",
+    diversity: triggers.length ? "required" : "preferred",
+    triggers: [...new Set(triggers)].sort()
+  };
 }
 
 function executionFingerprint(id, dir = activeChangePath(id)) {
@@ -1739,6 +1871,28 @@ function validate(id, source = "root", options = {}) {
         !claim.capabilities.includes("cross-repo-contract"))
       die(`claim '${claim.id}' spans repositories and requires cross-repo-contract`);
   }
+  let acceptance = resolvedAcceptance(id, state, { claims });
+  const unknownAcceptanceClaims = acceptance.claimIds.filter((claim) => !claimById.has(claim));
+  if (unknownAcceptanceClaims.length)
+    die(`acceptance references unknown claim(s): ${unknownAcceptanceClaims.join(", ")}`);
+  if (acceptance.required && acceptance.claimIds.length === 0) {
+    if (acceptance.version < 2) {
+      acceptance = { ...acceptance, claimIds: claims.map((claim) => claim.id), scopeOrigin: "legacy-all" };
+      console.error("WARNING: migrated legacy acceptance scope to all current claims");
+    } else {
+      die("required acceptance needs --acceptance-claims or claims declaring capability 'acceptance'");
+    }
+  }
+  if (acceptance.required) {
+    state.acceptance = {
+      version: 2,
+      required: true,
+      reason: acceptance.reason || "declared evidence capability",
+      claimIds: acceptance.claimIds,
+      scopeOrigin: acceptance.scopeOrigin || "explicit",
+      declaredAt: state.acceptance?.declaredAt || now()
+    };
+  }
   for (const task of parsedTasks) {
     const metadata = taskMetadata(task);
     if (metadata.claims.length > 50)
@@ -1812,7 +1966,8 @@ function requiredProviders(id) {
         addCapability("discovery", claim.repositories || []);
     }
   }
-  if (state.reviewRequired) addCapability("review");
+  if (reviewPolicy(id, state, contract).required) addCapability("review");
+  if (resolvedAcceptance(id, state, contract).required) addCapability("acceptance");
   for (const capability of policyCapabilities(id)) addCapability(capability);
   return [...required].sort();
 }
@@ -1822,6 +1977,10 @@ function claimsForProvider(id, provider) {
   const config = providerConfig(id, provider);
   const capability = providerCapability(provider, config);
   let scoped = capability === "review" ? scopedReviewClaims(claims) :
+    capability === "acceptance" ? (() => {
+      const ids = resolvedAcceptance(id, loadRuntime(id), evidence(id)).claimIds;
+      return claims.filter((claim) => ids.includes(claim.id));
+    })() :
     policyCapabilities(id).includes(capability) ? claims :
       claims.filter((claim) =>
         claim.capabilities.includes(capability) ||
@@ -1835,6 +1994,50 @@ function claimsForProvider(id, provider) {
 function pathInside(parent, candidate) {
   const rel = relative(resolve(parent), resolve(candidate));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function decodedEvidencePath(value) {
+  const text = String(value || "").trim();
+  try { return decodeURIComponent(text); }
+  catch { return text; }
+}
+
+function evidenceInputTargetsPrototype(value, workspace) {
+  let decoded = decodedEvidencePath(value);
+  if (!decoded) return false;
+  const slashPath = decoded.replaceAll("\\", "/").toLowerCase();
+  if (/(^|\/)\.foundation\/prototypes(?:\/|$)/.test(slashPath)) return true;
+  if (/^file:/i.test(decoded)) {
+    try { decoded = fileURLToPath(decoded); }
+    catch { return false; }
+  } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(decoded)) {
+    return false;
+  }
+  const roots = [...new Set([
+    PROTOTYPES,
+    join(workspace, ".foundation", "prototypes")
+  ].map((path) => resolve(path)))];
+  const candidates = isAbsolute(decoded)
+    ? [resolve(decoded)]
+    : [resolve(ROOT, decoded), resolve(workspace, decoded)];
+  return candidates.some((candidate) => {
+    if (roots.some((root) => pathInside(root, candidate))) return true;
+    if (!existsSync(candidate)) return false;
+    const realCandidate = realpathSync(candidate);
+    return roots.some((root) => pathInside(root, realCandidate));
+  });
+}
+
+function rejectPrototypeEvidenceInputs(id, provider, artifacts, references) {
+  const workspace = canonicalPath(providerWorkspace(id, provider));
+  const values = [
+    ...artifacts.map((artifact) => artifact?.path),
+    ...references
+  ].filter(Boolean);
+  const rejected = values.find((value) =>
+    evidenceInputTargetsPrototype(value, workspace));
+  if (rejected)
+    die(`prototype artifacts and references are non-authoritative and cannot satisfy evidence: ${rejected}`);
 }
 
 function durableArtifact(id, provider, proofRunId, artifact) {
@@ -1894,6 +2097,39 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
   if (value.contractFingerprint !== contractFingerprint(id))
     return { provider, validity: "contract-stale", status: value.status };
   const config = providerConfig(id, provider);
+  const capability = providerCapability(provider, config);
+  if (capability === "review") {
+    if (String(value.reviewProtocolVersion || "") !== REVIEW_PROTOCOL_VERSION)
+      return { provider, validity: "review-version-stale", status: value.status };
+    const provenance = reviewProvenanceResult(value.review);
+    if (!provenance.complete || !provenance.independent)
+      return { provider, validity: "review-not-independent", status: value.status };
+    const attemptDigest = String(value.review?.attemptDigest || "");
+    const attemptDir = join(EVIDENCE_VAULT, id, "review-attempts");
+    const attemptPath = attemptDigest && existsSync(attemptDir)
+      ? readdirSync(attemptDir).find((name) => name.includes(attemptDigest.slice(0, 12))) : null;
+    if (!attemptPath) return { provider, validity: "review-attempt-history-missing", status: value.status };
+    const attempt = readJson(join(attemptDir, attemptPath), {});
+    if (attempt.digest !== attemptDigest || attempt.workspaceHash !== value.workspaceHash ||
+        attempt.reviewerType !== value.review?.reviewer?.type)
+      return { provider, validity: "review-attempt-history-invalid", status: value.status };
+    if (reviewPolicy(id).diversity === "required" && !provenance.diverse)
+      return { provider, validity: "review-not-diverse", status: value.status };
+    if (Number(value.review?.findings?.unresolvedBlockers || 0) > 0)
+      return { provider, validity: "review-blockers", status: value.status };
+  }
+  if (capability === "acceptance") {
+    if (String(value.acceptanceProtocolVersion || "") !== ACCEPTANCE_PROTOCOL_VERSION)
+      return { provider, validity: "acceptance-version-stale", status: value.status };
+    const currentAcceptance = resolvedAcceptance(id);
+    if (value.acceptance?.actor?.type !== "human" ||
+        !String(value.acceptance?.actor?.identity || "").trim() ||
+        value.acceptance?.decision !== "accept" ||
+        !Array.isArray(value.acceptance?.criteria) || value.acceptance.criteria.length === 0 ||
+        value.acceptance?.subjectWorkspaceHash !== value.workspaceHash ||
+        value.acceptance?.reason !== currentAcceptance.reason)
+      return { provider, validity: "acceptance-invalid", status: value.status };
+  }
   const expectedFingerprint = config
     ? adapterFingerprint(id, provider, config)
     : stableHash({
@@ -2088,10 +2324,23 @@ function proofReadinessValue(id, stage = "prove") {
     unavailableProviders: unavailable,
     issues,
     next: status === "NEEDS_EXTERNAL_EVIDENCE"
-      ? unconfigured.map((provider) => ({
-        provider,
-        command: `claude-foundation evidence record ${id} ${provider} pass --observed <summary> --source <identity> --artifact <path>`
-      }))
+      ? unconfigured.map((provider) => {
+        const capability = providerCapability(provider, providerConfig(id, provider));
+        if (capability === "review") return {
+          provider,
+          command: `claude-foundation packet ${id} --phase review`,
+          recordAI: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type ai --reviewer-identity <reviewer> --reviewer-provider-family <provider> --reviewer-model-family <family> --reviewer-model <model> --reviewer-session <session> --subject-provenance '{"type":"ai","identity":"<implementer>","sessionId":"<session>","providerFamily":"<provider>","modelFamily":"<family>","modelId":"<model>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`,
+          recordHuman: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type human --reviewer-identity <reviewer> --subject-provenance '{"type":"human","identity":"<implementer>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`
+        };
+        if (capability === "acceptance") return {
+          provider,
+          command: `claude-foundation evidence record ${id} ${provider} pass --acceptor <human> --decision accept --criterion <criterion> --observed <summary> --artifact <path>`
+        };
+        return {
+          provider,
+          command: `claude-foundation evidence record ${id} ${provider} pass --observed <summary> --source <identity> --artifact <path>`
+        };
+      })
       : []
   };
 }
@@ -2147,6 +2396,116 @@ function upgradeEvidence(id) {
   console.log(`EVIDENCE ${id}: contract and execution wiring separated\n  configure execution.yaml before proof execute`);
 }
 
+function flagValues(flags, name) {
+  const value = flags[name];
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value])
+    .flatMap((item) => String(item).split(","))
+    .map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizedValues(flags, name) {
+  return [...new Set(flagValues(flags, name).map((value) => value.toLowerCase()))].sort();
+}
+
+function reviewProvenanceResult(review) {
+  const reviewer = review?.reviewer || {};
+  const subjects = Array.isArray(review?.subjects) ? review.subjects : [];
+  const actors = subjects.map((subject) => String(subject.identity || "").toLowerCase());
+  const reviewerIdentity = String(reviewer.identity || "").toLowerCase();
+  const reviewerSession = String(reviewer.sessionId || "").toLowerCase();
+  const subjectsComplete = subjects.length > 0 && subjects.length <= 16 && subjects.every((subject) =>
+    subject?.type === "human" ? Boolean(subject.identity) :
+      subject?.type === "ai" && Boolean(subject.identity && subject.sessionId &&
+        subject.providerFamily && subject.modelFamily && subject.modelId));
+  const reviewerComplete = reviewer.type === "human" ? Boolean(reviewerIdentity) :
+    reviewer.type === "ai" && Boolean(
+    reviewer.providerFamily && reviewer.modelFamily && reviewer.modelId &&
+    reviewerSession
+  );
+  const complete = reviewerComplete && subjectsComplete;
+  const independent = complete && !actors.includes(reviewerIdentity) &&
+    subjects.filter((subject) => subject.type === "ai")
+      .every((subject) => String(subject.sessionId).toLowerCase() !== reviewerSession);
+  const diverse = reviewer.type === "human" || (complete && subjects
+    .filter((subject) => subject.type === "ai")
+    .every((subject) =>
+      String(subject.providerFamily).toLowerCase() !== String(reviewer.providerFamily).toLowerCase() ||
+      String(subject.modelFamily).toLowerCase() !== String(reviewer.modelFamily).toLowerCase()));
+  return { complete, independent, diverse };
+}
+
+function subjectProvenance(flags) {
+  const structured = flagValues(flags, "subject-provenance").map((value) => {
+    let subject;
+    try { subject = JSON.parse(value); }
+    catch (error) { die(`invalid --subject-provenance JSON (${error.message})`); }
+    return subject;
+  });
+  if (structured.length) return structured;
+  const actors = flagValues(flags, "subject-actor");
+  const sessions = flagValues(flags, "subject-session");
+  const providers = flagValues(flags, "subject-provider-family");
+  const families = flagValues(flags, "subject-model-family");
+  const models = flagValues(flags, "subject-model");
+  if ([actors, sessions, providers, families, models].some((values) => values.length > 1))
+    die("multiple implementers require repeated --subject-provenance JSON tuples");
+  if (!actors.length) return [];
+  const ai = sessions.length || providers.length || families.length || models.length;
+  return [{
+    type: ai ? "ai" : "human", identity: actors[0],
+    sessionId: sessions[0] || null,
+    providerFamily: providers[0]?.toLowerCase() || null,
+    modelFamily: families[0]?.toLowerCase() || null,
+    modelId: models[0] || null
+  }];
+}
+
+function reviewHistoryState(id, state = loadRuntime(id)) {
+  if (state.reviewHistory?.version === 1) return state.reviewHistory;
+  const candidates = existsSync(join(RECEIPTS, id))
+    ? readdirSync(join(RECEIPTS, id), { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "proof.json")
+      .map((entry) => readJson(join(RECEIPTS, id, entry.name), {}))
+      .filter((receipt) => receipt.review)
+    : [];
+  const latest = candidates.sort((a, b) => Number(b.review?.round || 0) - Number(a.review?.round || 0))[0];
+  const round = Number(latest?.review?.round || 0);
+  const aiAttempts = latest?.review?.reviewer?.type === "ai" ? Math.min(round, 2) : round >= 3 ? 2 : 0;
+  state.reviewHistory = {
+    version: 1, aiAttempts, totalAttempts: round,
+    chainHead: latest ? stableHash(latest) : null,
+    migratedFromReceiptDigest: latest ? stableHash(latest) : null
+  };
+  saveRuntime(state);
+  return state.reviewHistory;
+}
+
+function reserveReviewAttempt(id, reviewerType, receiptSeed) {
+  const state = loadRuntime(id);
+  const history = reviewHistoryState(id, state);
+  if (reviewerType === "ai" && Number(history.aiAttempts || 0) >= 2)
+    die("AI review is limited to two attempts; further review requires a human");
+  const attempt = {
+    version: 1, changeId: id,
+    attempt: Number(history.totalAttempts || 0) + 1,
+    reviewerType, priorChainHead: history.chainHead || null,
+    workspaceHash: receiptSeed.workspaceHash, status: receiptSeed.status,
+    timestamp: now()
+  };
+  attempt.digest = stableHash(attempt);
+  state.reviewHistory = {
+    version: 1,
+    aiAttempts: Number(history.aiAttempts || 0) + (reviewerType === "ai" ? 1 : 0),
+    totalAttempts: attempt.attempt,
+    chainHead: attempt.digest
+  };
+  const path = join(EVIDENCE_VAULT, id, "review-attempts", `${String(attempt.attempt).padStart(4, "0")}-${attempt.digest.slice(0, 12)}.json`);
+  writeJson(path, attempt);
+  saveRuntime(state);
+  return attempt;
+}
+
 function recordReceipt(id, provider, status, flags = {}) {
   const configured = providerConfig(id, provider);
   const capability = providerCapability(provider, configured);
@@ -2177,6 +2536,8 @@ function recordReceipt(id, provider, status, flags = {}) {
   const adapter = flags.adapter || config?.adapter || "external";
   const inputMode = flags["input-mode"] || config?.inputMode || null;
   const state = loadRuntime(id);
+  if (capability === "acceptance" && !resolvedAcceptance(id, state, evidence(id)).required)
+    die("acceptance evidence is not declared for this change");
   const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
     `manual-${Date.now()}-${process.pid}`;
   const workspaceHash = flags.workspaceHash || state.activeProofRun?.workspaceHash ||
@@ -2196,17 +2557,22 @@ function recordReceipt(id, provider, status, flags = {}) {
   const uniqueArtifactFlags = [...new Map(artifactFlags.map((artifact) => [
     `${artifact.type || "artifact"}:${artifact.path}`, artifact
   ])).values()];
-  const artifacts = uniqueArtifactFlags
-    .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
   const references = (Array.isArray(flags.reference) ? flags.reference : [])
     .flatMap((value) => String(value).split(","))
     .map((value) => value.trim()).filter(Boolean);
+  rejectPrototypeEvidenceInputs(id, provider, uniqueArtifactFlags, references);
+  const artifacts = uniqueArtifactFlags
+    .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
   const observed = String(flags.observed || "").trim();
-  const provenanceSource = String(
+  let provenanceSource = String(
     flags.source || flags.reviewer || flags.provenance ||
     (flags.command ? `command:${Array.isArray(flags.command)
       ? flags.command.join(" ") : flags.command}` : "")
   ).trim();
+  if (!provenanceSource && capability === "review" && flags["reviewer-identity"])
+    provenanceSource = `reviewer:${String(flags["reviewer-identity"]).trim()}`;
+  if (!provenanceSource && capability === "acceptance" && flags.acceptor)
+    provenanceSource = `human:${String(flags.acceptor).trim()}`;
   if (adapter === "external" && status === "pass") {
     if (!observed)
       die(`passing external receipt '${provider}' requires --observed`);
@@ -2260,6 +2626,97 @@ function recordReceipt(id, provider, status, flags = {}) {
     durationMs: flags.durationMs === undefined ? null : Number(flags.durationMs),
     startedAt: flags.started || now(), finishedAt: now()
   };
+  if (capability === "review") {
+    const policy = reviewPolicy(id);
+    const reviewerType = String(flags["reviewer-type"] ||
+      (flags.reviewer ? "human" : "")).toLowerCase();
+    if (!['ai', 'human'].includes(reviewerType))
+      die("review receipt requires --reviewer-type ai|human");
+    const reviewerIdentity = String(
+      flags["reviewer-identity"] || flags.reviewer || ""
+    ).trim();
+    if (!reviewerIdentity) die("review receipt requires --reviewer-identity");
+    const reviewer = {
+      type: reviewerType,
+      identity: reviewerIdentity,
+      providerFamily: String(flags["reviewer-provider-family"] || "").trim().toLowerCase() || null,
+      modelFamily: String(flags["reviewer-model-family"] || "").trim().toLowerCase() || null,
+      modelId: String(flags["reviewer-model"] || "").trim() || null,
+      sessionId: String(flags["reviewer-session"] || "").trim() || null
+    };
+    const subjects = subjectProvenance(flags);
+    if (reviewerType === "ai" && [
+      reviewer.providerFamily, reviewer.modelFamily, reviewer.modelId, reviewer.sessionId
+    ].some((value) => !value))
+      die("AI review requires reviewer provider/model family, model ID, and session");
+    if (!subjects.length)
+      die("review requires at least one --subject-actor for implementation provenance");
+    const provenance = reviewProvenanceResult({ reviewer, subjects });
+    if (!provenance.complete)
+      die("review requires complete structured reviewer and subject provenance");
+    const { independent, diverse } = provenance;
+    if (!independent) die("reviewer must use an identity and session independent of implementation");
+    if (status === "pass" && policy.diversity === "required" && !diverse)
+      die("review policy requires a different provider/model family or a human reviewer");
+    const blockers = Number(flags["unresolved-blockers"] || 0);
+    const verified = Number(flags["verified-findings"] || 0);
+    if (![blockers, verified].every((value) => Number.isInteger(value) && value >= 0))
+      die("review finding counts must be non-negative integers");
+    if (status === "pass" && blockers > 0)
+      die("passing review cannot contain unresolved blockers");
+    const prior = existsSync(receiptPath(id, provider))
+      ? readJson(receiptPath(id, provider), {}) : null;
+    const scopePaths = [...new Set(flagValues(flags, "scope-path"))].sort();
+    const history = reviewHistoryState(id);
+    const nextAttempt = Number(history.totalAttempts || 0) + 1;
+    if (nextAttempt >= 2 && reviewerType === "ai" && scopePaths.length === 0)
+      die("AI review round 2 requires at least one --scope-path");
+    const attempt = reserveReviewAttempt(id, reviewerType, { workspaceHash, status });
+    const round = attempt.attempt;
+    receipt.reviewProtocolVersion = REVIEW_PROTOCOL_VERSION;
+    receipt.review = {
+      round,
+      reviewer,
+      subjects,
+      attemptDigest: attempt.digest,
+      policy: { ...policy, independent, diverse },
+      scope: {
+        mode: round === 1 || scopePaths.length === 0 ? "full" : "changed",
+        paths: scopePaths,
+        digest: stableHash({ priorWorkspaceHash: prior?.workspaceHash || null, workspaceHash, paths: scopePaths })
+      },
+      findings: {
+        verified,
+        unresolvedBlockers: blockers,
+        reference: references[0] || null
+      },
+      supersedes: prior ? {
+        receiptSha256: stableHash(prior),
+        workspaceHash: prior.workspaceHash || null,
+        finishedAt: prior.finishedAt || null,
+        round: Number(prior?.review?.round || 0) || null
+      } : null
+    };
+  }
+  if (capability === "acceptance") {
+    const acceptor = String(flags.acceptor || "").trim();
+    const criteria = flagValues(flags, "criterion");
+    const decision = String(flags.decision || "").trim().toLowerCase();
+    if (status === "pass" && (!acceptor || decision !== "accept" || criteria.length === 0))
+      die("passing acceptance requires --acceptor, --decision accept, and at least one --criterion");
+    if (status === "pass" && !observed)
+      die("passing acceptance requires --observed");
+    provenanceSource ||= acceptor ? `human:${acceptor}` : "";
+    receipt.provenance.source = provenanceSource || null;
+    receipt.acceptanceProtocolVersion = ACCEPTANCE_PROTOCOL_VERSION;
+    receipt.acceptance = {
+      actor: { type: "human", identity: acceptor || null },
+      decision: decision || null,
+      criteria,
+      reason: resolvedAcceptance(id, state, evidence(id)).reason,
+      subjectWorkspaceHash: workspaceHash
+    };
+  }
   if (capability === "browser" && status === "pass" && receipt.capability.foregroundRequired &&
       !receipt.capability.foregroundAvailable) die("browser cannot pass when required foreground input is unavailable");
   if (capability === "browser" && status === "pass" &&
@@ -3344,6 +3801,163 @@ function createCopySandbox(id, state, reason) {
   console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  path: ${path}`);
 }
 
+function writableControlSocket(path) {
+  if (!path || !existsSync(path)) return false;
+  try {
+    const resolved = realpathSync(path);
+    const stat = statSync(resolved);
+    if (!stat.isSocket() && !stat.isFile()) return false;
+    accessSync(resolved, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function securityBoundaryInspection() {
+  const evidence = [];
+  let kind = "unknown";
+  let status = "not-detected";
+  if (existsSync("/.dockerenv")) {
+    kind = "container";
+    status = "detected";
+    evidence.push({ source: "filesystem", value: "/.dockerenv" });
+  } else if (existsSync("/run/.containerenv")) {
+    kind = "container";
+    status = "detected";
+    evidence.push({ source: "filesystem", value: "/run/.containerenv" });
+  } else {
+    try {
+      const cgroup = readFileSync("/proc/1/cgroup", "utf8").toLowerCase();
+      const token = ["docker", "containerd", "kubepods", "lxc", "podman"]
+        .find((candidate) => cgroup.includes(candidate));
+      if (token) {
+        kind = "container";
+        status = "detected";
+        evidence.push({ source: "cgroup", value: token });
+      }
+    } catch {
+      // Platforms without procfs remain unknown unless another strong signal exists.
+    }
+  }
+  if (kind === "unknown" && process.env.CODESPACES === "true" && existsSync("/workspaces")) {
+    kind = "container";
+    status = "detected";
+    evidence.push({ source: "codespaces", value: "/workspaces" });
+  }
+  const candidates = [
+    "/var/run/docker.sock", "/run/docker.sock", "/run/podman/podman.sock",
+    "/run/containerd/containerd.sock", "/var/run/crio/crio.sock"
+  ];
+  const runtimeDir = process.env.XDG_RUNTIME_DIR || "";
+  if (runtimeDir) {
+    candidates.push(join(runtimeDir, "docker.sock"));
+    candidates.push(join(runtimeDir, "podman", "podman.sock"));
+  }
+  const dockerHost = process.env.DOCKER_HOST || "";
+  if (dockerHost.startsWith("unix://")) candidates.push(dockerHost.slice("unix://".length));
+  const containerHost = process.env.CONTAINER_HOST || "";
+  if (containerHost.startsWith("unix://")) candidates.push(containerHost.slice("unix://".length));
+  const hazards = [...new Set(candidates.filter(writableControlSocket))]
+    .sort().map((path) => `writable host-control socket: ${path}`);
+  if (dockerHost && !dockerHost.startsWith("unix://"))
+    hazards.push(`remote Docker control endpoint configured (${dockerHost.split(":", 1)[0] || "unknown"})`);
+  if (containerHost && !containerHost.startsWith("unix://"))
+    hazards.push(`remote container control endpoint configured (${containerHost.split(":", 1)[0] || "unknown"})`);
+  if (existsSync("/var/run/secrets/kubernetes.io/serviceaccount/token"))
+    hazards.push("mounted Kubernetes service-account credential");
+  if (process.env.SSH_AUTH_SOCK && existsSync(process.env.SSH_AUTH_SOCK))
+    hazards.push("mounted SSH agent socket");
+  return { kind, status, evidence, hazards };
+}
+
+function unattendedPreflight() {
+  const securityBoundary = securityBoundaryInspection();
+  const reasons = [];
+  if (securityBoundary.status !== "detected")
+    reasons.push("no supported container or VM security boundary was detected");
+  else reasons.push("detected virtualization alone does not attest host mounts, credentials, network, devices, or process authority");
+  reasons.push(...securityBoundary.hazards);
+  return {
+    securityBoundary,
+    boundaryDetected: securityBoundary.status === "detected",
+    safeForUnattended: false,
+    reasons
+  };
+}
+
+function directoryExists(path) {
+  if (!path || !existsSync(path)) return false;
+  try { return statSync(path).isDirectory(); }
+  catch { return false; }
+}
+
+function gitMetadataPresent(workspacePath) {
+  if (!directoryExists(workspacePath)) return false;
+  const metadataPath = join(workspacePath, ".git");
+  if (!existsSync(metadataPath)) return false;
+  try {
+    const metadata = statSync(metadataPath);
+    if (metadata.isDirectory()) return true;
+    if (!metadata.isFile() || metadata.size > 4096) return false;
+    const match = readFileSync(metadataPath, "utf8").match(/^gitdir:\s*(.+?)\s*$/m);
+    if (!match) return false;
+    return directoryExists(resolve(dirname(metadataPath), match[1]));
+  } catch {
+    return false;
+  }
+}
+
+function workspaceIsolationInspection(id, state = loadRuntime(id)) {
+  const workspace = state.workspace || {};
+  const kind = workspace.mode === "worktree" ? "git-worktree" :
+    workspace.mode === "copy" ? "filesystem-copy" : "none";
+  const identityValid = kind === "git-worktree" ? gitMetadataPresent(workspace.path) :
+    kind === "filesystem-copy" ? directoryExists(workspace.path) : true;
+  const status = kind === "none" ? "current" : identityValid ? "active" : "missing";
+  const repositories = Object.entries(state.repositories || {}).map(([repositoryId, runtime]) => ({
+    id: repositoryId,
+    access: runtime.access || "write",
+    kind: runtime.mode === "worktree" ? "git-worktree" :
+      runtime.mode === "copy" ? "filesystem-copy" :
+        runtime.mode === "reference" ? "reference" : "none",
+    status: runtime.path && existsSync(runtime.path) ? "active" : "missing",
+    path: runtime.path || null
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  return { kind, status, path: workspace.path || ROOT, repositories };
+}
+
+function isolationInspection(id, flags = {}) {
+  const workspaceIsolation = workspaceIsolationInspection(id);
+  const preflight = unattendedPreflight();
+  return {
+    version: 1,
+    changeId: id,
+    workspaceIsolation,
+    securityBoundary: preflight.securityBoundary,
+    execution: {
+      mode: flags.unattended ? "unattended" : "interactive",
+      boundaryDetected: preflight.boundaryDetected,
+      safeForUnattended: preflight.safeForUnattended,
+      decision: !flags.unattended || preflight.safeForUnattended ? "allow" : "block",
+      reasons: preflight.reasons
+    }
+  };
+}
+
+function showSandboxInspection(id, flags = {}) {
+  const result = isolationInspection(id, flags);
+  if (flags.json) console.log(JSON.stringify(result, null, 2));
+  else {
+    console.log(`ISOLATION ${id}`);
+    console.log(`  workspace isolation: ${result.workspaceIsolation.kind} (${result.workspaceIsolation.status})`);
+    console.log(`  security boundary: ${result.securityBoundary.kind} (${result.securityBoundary.status})`);
+    console.log(`  safe for unattended: ${result.execution.safeForUnattended ? "yes" : "no"}`);
+    for (const reason of result.execution.reasons) console.log(`  reason: ${reason}`);
+  }
+  if (flags.unattended && !result.execution.safeForUnattended) process.exitCode = 1;
+}
+
 function createSingleSandbox(id) {
   const state = loadRuntime(id);
   if (state.status === "archived") die(`change '${id}' is already archived`);
@@ -3379,6 +3993,11 @@ function createSingleSandbox(id) {
 }
 
 function createSandbox(id, flags = {}) {
+  if (flags.unattended) {
+    const preflight = unattendedPreflight();
+    if (!preflight.safeForUnattended)
+      die(`unattended sandbox creation requires a trusted host-owned security attestation; detected virtualization alone is insufficient: ${preflight.reasons.join("; ")}`);
+  }
   const initial = loadRuntime(id);
   const repositories = selectedRepositories(id, initial);
   if (repositories.length === 1 && repositories[0].id === "root" && !flags.all) {
@@ -4061,16 +4680,46 @@ function changedFiles(id, state) {
   return [];
 }
 
+function canonicalChangedSurface(id, state = loadRuntime(id)) {
+  const repositories = selectedRepositories(id, state);
+  const rows = [];
+  for (const repository of repositories) {
+    const workspace = repository.workspacePath;
+    const sources = new Map();
+    const add = (path, source) => {
+      if (!path) return;
+      const normalized = path.replaceAll("\\", "/");
+      if (repository.id === "root" && isCurrentChangePath(normalized, id)) return;
+      if (!sources.has(normalized)) sources.set(normalized, new Set());
+      sources.get(normalized).add(source);
+    };
+    if (gitHead(workspace)) {
+      const baseHead = repository.baseHead || state.workspace?.baseHead || null;
+      if (baseHead) {
+        const committed = git(["diff", "--name-only", "-z", `${baseHead}...HEAD`], workspace);
+        if (committed.status !== 0)
+          die(`cannot resolve changed surface for repository '${repository.id}' from base ${baseHead}`);
+        committed.stdout.split("\0").filter(Boolean).forEach((path) => add(path, "committed"));
+      }
+      changedFilesInWorkspace(id, workspace).forEach((path) => add(path, "dirty"));
+    } else if (repository.id === "root") {
+      changedFiles(id, state).forEach((path) => add(path, "dirty"));
+    }
+    for (const [path, rowSources] of sources)
+      rows.push({ repositoryId: repository.id, path, sources: [...rowSources].sort() });
+  }
+  return rows.sort((left, right) =>
+    left.repositoryId.localeCompare(right.repositoryId) || left.path.localeCompare(right.path));
+}
+
 function policyCapabilities(id) {
   if (policyCache.has(id)) return policyCache.get(id);
   const state = loadRuntime(id);
-  const files = state.repositories
-    ? selectedRepositories(id, state).flatMap((repository) =>
-      changedFilesInWorkspace(id, repository.workspacePath)
-        .map((path) => `${repository.id}/${path}`))
-    : changedFiles(id, state);
+  const files = canonicalChangedSurface(id, state)
+    .map((row) => `${row.repositoryId}/${row.path}`);
   const relevantFiles = files
-    .filter((path) => !path.startsWith("openspec/changes/"));
+    .filter((path) => !path.startsWith("openspec/changes/") &&
+      !path.startsWith("root/openspec/changes/"));
   const defaults = [
     {
       patterns: [/(^|\/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|Gemfile\.lock|composer\.lock)$/,
@@ -4283,8 +4932,103 @@ function packetValue(id, repositoryId = null, taskId = null) {
   return { ...packet, packetDigest: stableHash(packet) };
 }
 
+function reviewPacketValue(id) {
+  const state = loadRuntime(id);
+  const activePath = activeChangePath(id, state);
+  const contract = evidence(id, activePath);
+  const workspaceHash = relevantHash(id);
+  const reviewClaims = scopedReviewClaims(contract.claims).map((claim) => ({
+    id: claim.id,
+    scenario: String(claim.scenario).slice(0, 240),
+    impact: claim.impact,
+    capabilities: claim.capabilities,
+    repositories: claim.repositories || null
+  }));
+  const artifact = (name) => {
+    const path = join(activePath, name);
+    return existsSync(path) ? {
+      path: relative(ROOT, path).replaceAll("\\", "/"),
+      sha256: statSync(path).isDirectory() ? directoryHash(path) : fileDigest(path)
+    } : null;
+  };
+  const surfaceRows = canonicalChangedSurface(id, state);
+  const paths = surfaceRows.map((row) => `${row.repositoryId}/${row.path}`);
+  const changedSurface = paths.length <= 60 ? {
+    paths,
+    digest: stableHash(paths),
+    diffCommand: paths.length ? "git diff -- <paths from changedSurface.paths>" : "git diff"
+  } : {
+    count: paths.length,
+    digest: stableHash(paths),
+    groups: compactList(Object.entries(paths.reduce((groups, path) => {
+      const prefix = path.split("/").slice(0, 2).join("/");
+      groups[prefix] = Number(groups[prefix] || 0) + 1;
+      return groups;
+    }, {})).sort(([left], [right]) => left.localeCompare(right))
+      .map(([prefix, count]) => ({ prefix, count })), 30),
+    diffCommand: "git diff -- <scoped-paths-from-groups>"
+  };
+  const evidenceRows = requiredProviders(id)
+    .filter((provider) => !["review", "acceptance"].includes(
+      providerCapability(provider, providerConfig(id, provider))))
+    .map((provider) => {
+      const check = receiptValidity(id, provider, workspaceHash);
+      const path = receiptPath(id, provider);
+      const receipt = check.receipt || (existsSync(path) ? readJson(path, {}) : {});
+      return {
+        provider,
+        capability: providerCapability(provider, providerConfig(id, provider)),
+        validity: check.validity,
+        status: check.status || receipt.status || null,
+        observed: receipt.observed ? String(receipt.observed).slice(0, 240) : null,
+        artifacts: (receipt.artifacts || []).slice(0, 5).map((value) => value.path),
+        references: (receipt.references || []).slice(0, 5)
+      };
+    });
+  const reviewProvider = requiredProviders(id).find((provider) =>
+    providerCapability(provider, providerConfig(id, provider)) === "review") || "review";
+  const prior = existsSync(receiptPath(id, reviewProvider))
+    ? readJson(receiptPath(id, reviewProvider), {}) : null;
+  const packet = {
+    version: Number(REVIEW_PACKET_SCHEMA_VERSION),
+    packetType: "review",
+    changeId: id,
+    intent: state.intent,
+    workspaceHash,
+    contractFingerprint: contractFingerprint(id),
+    reviewPolicy: reviewPolicy(id, state, contract),
+    acceptance: resolvedAcceptance(id, state, contract),
+    claims: compactList(reviewClaims, 12),
+    decisions: {
+      proposal: artifact("proposal.md"),
+      design: artifact("design.md"),
+      specs: artifact("specs")
+    },
+    changedSurface: { ...changedSurface, rows: compactList(surfaceRows, 60) },
+    evidence: compactList(evidenceRows, 15),
+    priorReview: prior ? {
+      round: prior.review?.round || null,
+      status: prior.status || null,
+      workspaceHash: prior.workspaceHash || null,
+      observed: prior.observed ? String(prior.observed).slice(0, 240) : null,
+      findings: prior.review?.findings || null,
+      scope: prior.review?.scope || null
+    } : null,
+    unresolvedFindings: Number(prior?.review?.findings?.unresolvedBlockers || 0),
+    references: {
+      evidence: artifact("evidence.yaml"),
+      tasks: artifact("tasks.md")
+    }
+  };
+  return { ...packet, packetDigest: stableHash(packet) };
+}
+
 function showPacket(id, flags = {}) {
-  const value = packetValue(id, flags.repo || null, flags.task || null);
+  if (flags.phase === "review" && flags.task)
+    die("review packet does not accept --task; use its scoped references");
+  const value = flags.phase === "review"
+    ? reviewPacketValue(id)
+    : packetValue(id, flags.repo || null, flags.task || null);
   if (flags.planDigest) value.planDigest = flags.planDigest;
   const encoded = serializedJson(value, Boolean(flags.pretty));
   const bytes = Buffer.byteLength(encoded);
@@ -4301,7 +5045,8 @@ function showPacket(id, flags = {}) {
     repositoryId: value.repository?.id || null,
     taskId: flags.task || null,
     claims: Array.isArray(value.claims) ? value.claims.length : value.claims.count,
-    providers: Array.isArray(value.providers) ? value.providers.length : value.providers.count
+    providers: Array.isArray(value.providers) ? value.providers.length :
+      Array.isArray(value.evidence) ? value.evidence.length : value.providers?.count || 0
   });
   process.stdout.write(encoded);
 }
@@ -4969,6 +5714,18 @@ function doctor(flags = {}) {
   const stage = flags.stage || "prove";
   if (!["change", "build", "prove"].includes(stage))
     die("doctor --stage must be change|build|prove");
+
+  if (flags.unattended) {
+    if (!flags.change) die("doctor --unattended requires --change <id>");
+    const isolation = isolationInspection(flags.change, flags);
+    checks.push({
+      level: isolation.execution.safeForUnattended ? "ok" : "error",
+      name: "unattended-security-boundary",
+      detail: isolation.execution.safeForUnattended
+        ? `${isolation.securityBoundary.kind} detected without host-control hazards`
+        : isolation.execution.reasons.join("; ")
+    });
+  }
   const nodeParts = process.versions.node.split(".").map(Number);
   const nodeOk = nodeParts[0] > 20 || (nodeParts[0] === 20 && nodeParts[1] >= 19);
   checks.push({ level: nodeOk ? "ok" : "error", name: "node", detail: process.versions.node });
@@ -4979,12 +5736,15 @@ function doctor(flags = {}) {
     String(protocols.proofProtocol) === PROOF_PROTOCOL_VERSION &&
     String(protocols.packetSchema) === PACKET_SCHEMA_VERSION &&
     String(protocols.agentPlanSchema) === AGENT_PLAN_SCHEMA_VERSION &&
-    String(protocols.contextEventSchema) === CONTEXT_EVENT_SCHEMA_VERSION;
+    String(protocols.contextEventSchema) === CONTEXT_EVENT_SCHEMA_VERSION &&
+    String(protocols.reviewProtocol) === REVIEW_PROTOCOL_VERSION &&
+    String(protocols.acceptanceProtocol) === ACCEPTANCE_PROTOCOL_VERSION &&
+    String(protocols.reviewPacketSchema) === REVIEW_PACKET_SCHEMA_VERSION;
   checks.push({
     level: protocolOk ? "ok" : "error",
     name: "protocol-bundle",
     detail: protocolOk
-      ? `runtime API ${RUNTIME_API_VERSION}; provider ${PROVIDER_PROTOCOL_VERSION}; proof ${PROOF_PROTOCOL_VERSION}; packet ${PACKET_SCHEMA_VERSION}; plan ${AGENT_PLAN_SCHEMA_VERSION}; context ${CONTEXT_EVENT_SCHEMA_VERSION}`
+      ? `runtime API ${RUNTIME_API_VERSION}; provider ${PROVIDER_PROTOCOL_VERSION}; proof ${PROOF_PROTOCOL_VERSION}; packet ${PACKET_SCHEMA_VERSION}; review ${REVIEW_PROTOCOL_VERSION}/${REVIEW_PACKET_SCHEMA_VERSION}; acceptance ${ACCEPTANCE_PROTOCOL_VERSION}; plan ${AGENT_PLAN_SCHEMA_VERSION}; context ${CONTEXT_EVENT_SCHEMA_VERSION}`
       :
       "protocol.json is incompatible with foundation.mjs; reinstall Foundation"
   });
@@ -5007,7 +5767,7 @@ function doctor(flags = {}) {
       ? "ok" : "warn",
     name: "packet-policy",
     detail: modelPolicy.execution.legacyNumericPacketBytes === undefined
-      ? `task=${modelPolicy.execution.packetBytes.task}; repository=${modelPolicy.execution.packetBytes.repository}; global=${modelPolicy.execution.packetBytes.global}`
+      ? `task=${modelPolicy.execution.packetBytes.task}; review=${modelPolicy.execution.packetBytes.review}; repository=${modelPolicy.execution.packetBytes.repository}; global=${modelPolicy.execution.packetBytes.global}`
       : `legacy numeric limit ${modelPolicy.execution.legacyNumericPacketBytes}; migrate to scoped task/repository/global limits`
   });
 
@@ -5129,7 +5889,8 @@ function doctor(flags = {}) {
     detail: directMainEnabled ? "enabled" : "disabled (opt-in policy)"
   });
 
-  for (const check of checks)
+  if (flags.json) console.log(JSON.stringify({ version: 1, stage, checks }, null, 2));
+  else for (const check of checks)
     console.log(`${check.level.toUpperCase().padEnd(5)} ${check.name}: ${check.detail}`);
   if (checks.some((check) => check.level === "error")) process.exitCode = 1;
 }
@@ -5162,7 +5923,7 @@ function usage() {
   console.log(`Foundation harness ${VERSION}
 
 Commands:
-  doctor [--stage change|build|prove] [--require-archive] [--change <id>]
+  doctor [--stage change|build|prove] [--require-archive] [--change <id>] [--unattended] [--json]
   repos [change]
   models
   agent-plan <change> [--group <n>] [--full] [--pretty]
@@ -5173,7 +5934,7 @@ Commands:
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
   changes
   providers
-  packet <change> [--phase change|build|prove|land] [--repo <id>] [--task <id>] [--pretty]
+  packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
   metrics <change>
   validate <change>
   hash <change>
@@ -5192,7 +5953,9 @@ Commands:
   land-record <change> --repo <id> --commit <sha> [--ci pass|fail|pending]
   land-pointers <change>
   land-resume <change>
-  sandbox create|sync|apply <change>
+  sandbox inspect <change> [--json] [--unattended]
+  sandbox create <change> [--all] [--unattended]
+  sandbox sync|apply <change>
   archive <change>
   event <change> --request <id> [metrics...]
   telemetry-sync <change> [transcript.jsonl]
@@ -5201,6 +5964,15 @@ Commands:
 }
 
 const [command, ...values] = process.argv.slice(2);
+const unattendedMentioned = command === "sandbox" &&
+  ["create", "inspect"].includes(values[0]) &&
+  values.slice(1).some((value) =>
+    value === "--unattended" || value.startsWith("--unattended="));
+const telemetrySuppressed = command === "sandbox" && (
+  values[0] === "inspect" ||
+  (values[0] === "create" && unattendedMentioned)
+);
+if (telemetrySuppressed) process.env.FOUNDATION_TELEMETRY = "0";
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
   ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-readiness", "proof-run", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
@@ -5226,7 +5998,7 @@ const telemetryPhase = {
   "land-resume": "land",
   archive: "land"
 }[command];
-if (operationChangeId && telemetryPhase && existsSync(runtimePath(operationChangeId)))
+if (!telemetrySuppressed && operationChangeId && telemetryPhase && existsSync(runtimePath(operationChangeId)))
   prepareClaudeTelemetry(operationChangeId, telemetryPhase);
 if (command === "metrics" && operationChangeId && existsSync(runtimePath(operationChangeId)))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
@@ -5264,9 +6036,9 @@ switch (command) {
   }
   case "packet": {
     const { flags, rest } = parseFlags(values);
-    if (flags.phase && !["change", "build", "prove", "land"].includes(flags.phase))
-      die("packet --phase must be change|build|prove|land");
-    if (flags.phase) {
+    if (flags.phase && !["change", "build", "prove", "review", "land"].includes(flags.phase))
+      die("packet --phase must be change|build|prove|review|land");
+    if (flags.phase && flags.phase !== "review") {
       prepareClaudeTelemetry(rest[0], flags.phase);
       recordPhaseContext(rest[0], flags.phase);
     }
@@ -5274,7 +6046,10 @@ switch (command) {
   }
   case "metrics": showMetrics(values[0]); break;
   case "doctor": {
-    const { flags, rest } = parseFlags(values);
+    const { flags, rest } = parseStrictCommandFlags(values, "doctor", {
+      boolean: ["require-archive", "unattended", "json"],
+      value: ["stage", "change"]
+    });
     if (rest.length) die(`unexpected doctor argument(s): ${rest.join(", ")}`);
     doctor(flags); break;
   }
@@ -5306,8 +6081,18 @@ switch (command) {
   case "land-pointers": stageRootPointers(values[0]); break;
   case "land-resume": resumeLand(values[0]); break;
   case "sandbox":
-    if (values[0] === "create") {
-      const { flags, rest } = parseFlags(values.slice(1));
+    if (values[0] === "inspect") {
+      const { flags, rest } = parseStrictCommandFlags(
+        values.slice(1), "sandbox inspect", { boolean: ["json", "unattended"] }
+      );
+      if (rest.length !== 1) die("sandbox inspect requires exactly one change");
+      showSandboxInspection(rest[0], flags);
+    }
+    else if (values[0] === "create") {
+      const { flags, rest } = parseStrictCommandFlags(
+        values.slice(1), "sandbox create", { boolean: ["all", "unattended"] }
+      );
+      if (rest.length !== 1) die("sandbox create requires exactly one change");
       createSandbox(rest[0], flags);
     }
     else if (values[0] === "sync") syncSandbox(values[1]);
@@ -5315,7 +6100,7 @@ switch (command) {
       const { flags, rest } = parseFlags(values.slice(1));
       applySandbox(rest[0], flags);
     }
-    else die("sandbox requires create|sync|apply <change>");
+    else die("sandbox requires inspect|create|sync|apply <change>");
     break;
   case "archive": archive(values[0]); break;
   case "event": {

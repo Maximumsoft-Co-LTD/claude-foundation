@@ -15,6 +15,11 @@ claude-foundation proof run <change>
 ```
 
 If readiness blocks, follow only its structured next commands. External passes
-require an observation, provenance, and durable artifact or reference. Run
-required independent review. Never claim a pass without its valid receipt, and
-do not Land.
+require an observation, provenance, and durable artifact or reference. When
+review is required, run `/review <change>` in a fresh context. When human
+acceptance is required, obtain it against the final workspace and record the
+inspected criteria.
+
+Rerun readiness after recording external evidence. Never substitute self-review
+or automation for a required receipt, claim a pass without valid content-bound
+evidence, or Land.

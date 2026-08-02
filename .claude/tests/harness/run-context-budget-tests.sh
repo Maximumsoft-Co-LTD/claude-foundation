@@ -64,6 +64,8 @@ fi
 
 assert_cmd_zero "task packet budget is 8 KiB" \
   jq -e '.execution.packetBytes.task == 8192' "$ROOT/foundation.json"
+assert_cmd_zero "review packet budget is 8 KiB" \
+  jq -e '.execution.packetBytes.review == 8192' "$ROOT/foundation.json"
 assert_cmd_zero "repository packet budget is 12 KiB" \
   jq -e '.execution.packetBytes.repository == 12288' "$ROOT/foundation.json"
 assert_cmd_zero "global packet budget is 16 KiB" \

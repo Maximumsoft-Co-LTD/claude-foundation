@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "truthful-isolation",
+      "scenario": "Workspace isolation is distinct from a security boundary and unattended execution fails closed",
+      "impact": "high",
+      "capabilities": ["test", "security-static"]
+    },
+    {
+      "id": "optional-prototype",
+      "scenario": "Prototype comparison is disposable and adds no work to untriggered changes",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "attributable-review",
+      "scenario": "Compact review evidence proves fresh-context or diverse independent perspective as required",
+      "impact": "high",
+      "capabilities": ["test", "review", "compatibility"]
+    },
+    {
+      "id": "scoped-acceptance",
+      "scenario": "Human acceptance blocks only explicitly experience-sensitive changes",
+      "impact": "medium",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "bounded-feedback-cost",
+      "scenario": "Untriggered lanes add no model requests or spawns and reviewer packets remain bounded",
+      "impact": "high",
+      "capabilities": ["test", "performance"]
+    },
+    {
+      "id": "protocol-upgrade",
+      "scenario": "Existing installations and legacy receipts remain readable without falsely satisfying new policy",
+      "impact": "high",
+      "capabilities": ["test", "compatibility"]
+    }
+  ]
+}

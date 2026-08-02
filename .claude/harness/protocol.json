@@ -1,6 +1,6 @@
 {
   "runtime": "2.3.0",
-  "runtimeApi": "7",
+  "runtimeApi": "8",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
   "providerProtocol": "6",
@@ -8,5 +8,8 @@
   "proofProtocol": "4",
   "packetSchema": "4",
   "agentPlanSchema": "2",
-  "contextEventSchema": "2"
+  "contextEventSchema": "2",
+  "reviewProtocol": "2",
+  "acceptanceProtocol": "2",
+  "reviewPacketSchema": "2"
 }

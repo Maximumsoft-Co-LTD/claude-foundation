@@ -86,13 +86,20 @@ normally become a new change.
 | Command | Purpose | Use it when | Changes main project code? |
 |---|---|---|---|
 | `/investigate` | Explore a problem and compare options | The outcome or approach is unclear | No |
+| `/prototype` | Compare 3–5 disposable alternatives | A subjective direction is still unresolved | `.foundation/` only |
 | `/change` | Create or revise the agreement | The desired outcome is known | No |
 | `/build` | Implement inside an isolated sandbox | Change artifacts are ready | Sandbox only |
 | `/prove` | Produce evidence and a content-bound proof | Implementation tasks are complete | No |
+| `/review` | Review from fresh bounded context | Risk policy requires an independent perspective | No |
 | `/land` | Apply a proven change and archive it | Proof passes and the change is accepted | Yes |
 | `/changes` | List active changes and readiness | You need portfolio or resume context | No |
 | `/dev` | Run Change → Build → Prove | You want the compatibility one-shot flow | Does not land |
 | `/migrate-workflow` | Prepare legacy migration candidates | Moving knowledge from `.workflow/` | No automatic promotion |
+
+After selecting a prototype, continue with
+`/change <intent|existing-change> --prototype-selection <selection-path>`.
+Change copies the decision into proposal/design; ignored prototype files cannot
+be recorded as evidence artifacts or local references.
 
 Slash commands drive the AI workflow. Deterministic operator commands use the
 native CLI:
@@ -105,7 +112,7 @@ claude-foundation agents plan <change> [--group <n>] [--pretty]
 claude-foundation agents task <change> <task> [--pretty]
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
+claude-foundation packet <change> --phase build|prove|review [--pretty]
 claude-foundation metrics <change>
 claude-foundation telemetry sync <change> [transcript.jsonl]
 claude-foundation telemetry import <change> events.jsonl --format codex
@@ -120,6 +127,7 @@ claude-foundation proof finalize <change>
 claude-foundation evidence upgrade <change>
 claude-foundation evidence run <change> <provider> --claims declared -- <command>
 claude-foundation sandbox create <change> [--all]
+claude-foundation sandbox inspect <change> [--json] [--unattended]
 claude-foundation land check <change>
 claude-foundation land plan <change>
 claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
@@ -132,14 +140,18 @@ uses that project's installed runtime. Run `claude-foundation help` for the full
 surface. Direct source installations may call the runtime file as a compatibility
 fallback when the packaged CLI is unavailable.
 
-`packet <change> --phase build|prove` is the compact handoff between Change,
-Build, and Prove. It contains references, revisions, claim digests, provider
+`packet <change> --phase build|prove|review` is the compact handoff between
+Change, Build, Prove, and fresh Review. It contains references, revisions, claim digests, provider
 state, task counts, hashes, and budget—not the accumulated conversation.
-Packets are capped by scope: task 8 KiB, repository 12 KiB, and global 16 KiB.
+Packets are capped by scope: task/review 8 KiB, repository 12 KiB, and global 16 KiB.
 Large artifacts remain in files addressed by path and SHA-256. The phase flag
 also incrementally closes the previous phase's request telemetry.
 Machine JSON is compact by default so the configured limit equals the bytes
 actually handed to an agent; add `--pretty` only for interactive inspection.
+
+A worktree or copied directory protects workspace integrity; it is not a process
+security sandbox. Boundary detection is diagnostic only; deliberately unattended
+execution fails closed until a trusted host-owned attestation mechanism exists.
 Packet schema 4 and agent-plan schema 2 let consumers branch explicitly.
 Large task, claim, provider, and repository collections degrade to bounded
 previews with counts, digests, and task-scoped expansion rather than raising

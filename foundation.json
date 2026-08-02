@@ -4,6 +4,7 @@
     "maxParallelAgents": 3,
     "packetBytes": {
       "task": 8192,
+      "review": 8192,
       "repository": 12288,
       "global": 16384
     },

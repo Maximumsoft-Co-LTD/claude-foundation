@@ -37,6 +37,10 @@ Use subagents only for independent, verifiable, resumable work. Multi-repository
 work uses committed topology, per-change scope, `agents plan`, scoped packets,
 and task leases. A small isolated change stays with one agent.
 
+Worktrees and copies isolate workspace changes, not processes or host authority.
+Explicitly unattended work must pass the runtime's detected security-boundary
+guard; never enable a host permission bypass by implication.
+
 Model tiers are policy:
 
 - fast/Haiku: bounded inventory, logs, mechanical docs;
@@ -63,6 +67,10 @@ migration, irreversible mutation, concurrency, money, multi-repo contracts,
 evidence anomalies, or explicit policy. Findings are
 `verified|hypothesis|disproved|accepted-risk`; only deterministic verified
 blockers and missing evidence block.
+
+Review starts from the bounded review packet in a fresh context. Critical policy
+requires a different model/provider family or a human. Human acceptance remains
+separate and is required only when the Change explicitly declares subjective taste.
 
 Proof artifacts and receipts are immutable and content-bound. Proof-time edits
 invalidate affected evidence. A mutation crash is not a behavioral kill, and a

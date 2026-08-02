@@ -18,6 +18,14 @@ printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Agent","hooks":[{"type":"comm
 assert_cmd_zero "installer applies non-interactively" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
+assert_file_contains "installed change command accepts explicit prototype handoff" \
+  "$TARGET/.claude/commands/change.md" "--prototype-selection <path>"
+assert_file_exists "prototype command installed" "$TARGET/.claude/commands/prototype.md"
+assert_cmd_zero "prototype command matches source" \
+  cmp "$ROOT/.claude/commands/prototype.md" "$TARGET/.claude/commands/prototype.md"
+assert_file_exists "review command installed" "$TARGET/.claude/commands/review.md"
+assert_cmd_zero "review command matches source" \
+  cmp "$ROOT/.claude/commands/review.md" "$TARGET/.claude/commands/review.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
 assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
 assert_file_exists "Claude session context hook installed" \
@@ -28,6 +36,8 @@ assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundat
 assert_file_exists "repository topology default installed" "$TARGET/openspec/repositories.yaml"
 assert_file_exists "model policy default installed" "$TARGET/foundation.json"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
+assert_file_contains "prototype runtime artifacts stay ignored" \
+  "$TARGET/.foundation/.gitignore" "prototypes/"
 assert_file_absent "obsolete packaged hook tests removed" "$TARGET/.claude/hooks/tests"
 assert_file_exists "legacy run preserved" "$TARGET/.workflow/0001-legacy/state.json"
 assert_file_absent "legacy lifecycle agent removed" "$TARGET/.claude/agents/pm.md"
@@ -129,7 +139,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "7"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "8"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then
@@ -145,6 +155,18 @@ mkdir -p "$CURSOR_TARGET"
 assert_cmd_zero "cursor adapter installs" \
   bash "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes
 assert_file_exists "cursor change command installed" "$CURSOR_TARGET/.cursor/commands/change.md"
+assert_file_contains "cursor change command accepts explicit prototype handoff" \
+  "$CURSOR_TARGET/.cursor/commands/change.md" "--prototype-selection <path>"
+assert_file_exists "cursor prototype command installed" \
+  "$CURSOR_TARGET/.cursor/commands/prototype.md"
+assert_cmd_zero "cursor prototype command matches source" \
+  cmp "$ROOT/.claude/commands/prototype.md" \
+  "$CURSOR_TARGET/.cursor/commands/prototype.md"
+assert_file_exists "cursor review command installed" \
+  "$CURSOR_TARGET/.cursor/commands/review.md"
+assert_cmd_zero "cursor review command matches source" \
+  cmp "$ROOT/.claude/commands/review.md" \
+  "$CURSOR_TARGET/.cursor/commands/review.md"
 assert_file_exists "cursor orchestrator installed" "$CURSOR_TARGET/.cursor/orchestrator.md"
 assert_file_exists "shared runtime installed for cursor" "$CURSOR_TARGET/.claude/harness/foundation.mjs"
 

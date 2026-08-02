@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=7
+EXPECTED_RUNTIME_API=8
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -39,7 +39,7 @@ find_project_root() {
 
 run_runtime() {
   local access="$1"; shift
-  local root runtime actual_api
+  local root runtime actual_api telemetry
   root="$(find_project_root)"
   runtime="$root/.claude/harness/foundation.mjs"
   command -v node >/dev/null 2>&1 || fail "Node.js is required to run the project harness"
@@ -59,7 +59,9 @@ run_runtime() {
     proof-plan|proof-readiness|proof-run|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
     land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
-  FOUNDATION_TELEMETRY=1 FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
+  telemetry=1
+  [ "$access" != "inspect" ] || telemetry=0
+  FOUNDATION_TELEMETRY="$telemetry" FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
 }
 
 need_arg() {
@@ -101,10 +103,10 @@ Usage:
                                                   Print one task-scoped packet
   claude-foundation agents acquire|release <change> <task> --owner <agent-id>
                                                   Hold or release task resource leases
-  claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>]
+  claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>] [--unattended] [--json]
                                                   Check runtime, providers, and archive readiness
   claude-foundation changes                       List active changes
-  claude-foundation packet <change> [--repo <id>] [--task <id>] [--pretty]
+  claude-foundation packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
                                                   Print a compact scoped handoff
   claude-foundation metrics <change>              Summarize measured phase/provider cost
   claude-foundation telemetry sync <change> [transcript.jsonl]
@@ -126,7 +128,10 @@ Usage:
   claude-foundation evidence record <change> <provider> <status> [options]
                                                   Record external provider evidence
   claude-foundation evidence upgrade <change>      Separate legacy claims and execution wiring
-  claude-foundation sandbox create <change> [--all]
+  claude-foundation sandbox inspect <change> [--json] [--unattended]
+                                                  Inspect workspace isolation and boundary evidence
+  claude-foundation sandbox create <change> [--all] [--unattended]
+                                                  One bare flag; fails closed without trusted host attestation
   claude-foundation sandbox sync|apply <change>
                                                   Manage the isolated workspace
   claude-foundation land check|plan|pointers|resume|archive <change>
@@ -259,9 +264,13 @@ case "${1:-}" in
   sandbox)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in create|sync|apply) : ;; *) fail "sandbox requires create, sync, or apply" ;; esac
+    case "$sub" in create|sync|apply|inspect) : ;; *) fail "sandbox requires inspect, create, sync, or apply" ;; esac
     need_arg "sandbox $sub" "${1:-}"
-    run_runtime write sandbox "$sub" "$@" ;;
+    if [ "$sub" = "inspect" ]; then
+      run_runtime inspect sandbox "$sub" "$@"
+    else
+      run_runtime write sandbox "$sub" "$@"
+    fi ;;
   land)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift

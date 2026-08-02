@@ -61,7 +61,7 @@ claude-foundation doctor --stage prove --change <change>
 | `agents acquire/release ...` | Holds atomic task resource leases with bounded expiry | Around each spawned worker |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
-| `packet <change> --phase <phase>` | Prints a compact handoff and closes prior-phase telemetry | Starting Build or Prove without replaying history |
+| `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
 | `telemetry sync <change> [transcript]` | Incrementally imports native Claude request usage | Manual sync or host-integration fallback |
@@ -78,6 +78,8 @@ claude-foundation doctor --stage prove --change <change>
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
 | `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
 | `sandbox create <change>` | Creates an isolated Git worktree | Before Build |
+| `sandbox inspect <change> [--json] [--unattended]` | Separates workspace isolation from detected execution security | Before deliberately unattended work |
+| `sandbox create <change> --unattended` | Fails closed; detected virtualization is not trusted host attestation | Unattended Build only |
 | `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
 | `sandbox sync <change>` | Synchronizes a revised agreement | When requirements change during Build |
 | `sandbox apply <change>` | Applies a proven sandbox diff to the main worktree | Usually delegated to Land |
@@ -88,6 +90,11 @@ claude-foundation doctor --stage prove --change <change>
 | `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
 | `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
 | `migrate` | Inspects or migrates legacy workflow evidence | Moving from the legacy workflow |
+
+`--unattended` is a presence-only security flag. Valued and duplicate forms
+are rejected before telemetry or workspace mutation. This is a cooperative host
+preflight, not automatic detection of an external Allow All setting. The current
+runtime always fails closed until a trusted host-owned attestation exists.
 
 Run `claude-foundation help` for command syntax and installer options.
 Low-level `runtime` commands are reserved for installed slash commands and
@@ -222,7 +229,7 @@ upgrade` separates them. Four adapters are available:
 Provider names describe what is proven, not which tool runs. The built-in
 contracts include behavioral tests, discovery, browser behavior, mutation,
 state identity, integration, compatibility, performance, security, review,
-static analysis, migration, accessibility, resilience, observability,
+static analysis, migration, accessibility, resilience, observability, acceptance,
 deployment, and supply-chain checks.
 
 The project selects only the capabilities required by the risk and claims of
@@ -254,7 +261,7 @@ claude-foundation metrics <change>
 ```
 
 Context is budgeted at the control surface: plan summaries are at most 4 KiB,
-task packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.
+task and review packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.
 Oversized artifacts are referenced by path and digest. The budget covers the
 exact compact bytes written to stdout. Every emitted plan and packet records
 its byte count as an atomic event below

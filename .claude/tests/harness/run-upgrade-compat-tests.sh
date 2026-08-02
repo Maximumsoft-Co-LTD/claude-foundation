@@ -17,6 +17,8 @@ assert_cmd_zero "installer upgrades the former default policy" \
   bash "$ROOT/install.sh" "$legacy" --source "$ROOT" --yes
 assert_eq "legacy task budget migrates" "8192" \
   "$(jq -r '.execution.packetBytes.task' "$legacy/foundation.json")"
+assert_eq "legacy review budget migrates" "8192" \
+  "$(jq -r '.execution.packetBytes.review' "$legacy/foundation.json")"
 assert_eq "legacy repository budget migrates" "12288" \
   "$(jq -r '.execution.packetBytes.repository' "$legacy/foundation.json")"
 assert_eq "legacy global budget migrates" "16384" \
@@ -52,5 +54,6 @@ doctor="$(cd "$partial" && node .claude/harness/foundation.mjs doctor)"
 assert_contains "partial policy retains custom task budget" "$doctor" "task=4096"
 assert_contains "partial policy receives repository default" "$doctor" \
   "repository=12288"
+assert_contains "partial policy receives review default" "$doctor" "review=8192"
 
 finish "upgrade compatibility"

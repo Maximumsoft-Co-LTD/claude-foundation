@@ -224,15 +224,15 @@ elif command -v jq >/dev/null 2>&1; then
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     jq '.execution.packetBytes = {
-          task: 8192, repository: 12288, global: 16384
+          task: 8192, review: 8192, repository: 12288, global: 16384
         } |
         .execution.planSummaryBytes //= 4096' \
       "$TARGET_PATH/foundation.json" > "$tmp"
     mv "$tmp" "$TARGET_PATH/foundation.json"
-    printf '✓ migrated former default packet budget to scoped 8/12/16 KiB limits\n'
+    printf '✓ migrated former default packet budget to scoped task/review/repository/global limits\n'
   elif jq -e '.execution.packetBytes | type == "number"' \
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
-    printf '⚠ preserving custom numeric execution.packetBytes; use scoped task/repository/global limits when ready\n' >&2
+    printf '⚠ preserving custom numeric execution.packetBytes; use scoped task/review/repository/global limits when ready\n' >&2
   fi
 else
   printf '⚠ jq unavailable; inspect legacy numeric execution.packetBytes manually\n' >&2
