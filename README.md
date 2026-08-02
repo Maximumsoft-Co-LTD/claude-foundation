@@ -186,6 +186,8 @@ single agent, avoiding planning/spawn overhead. `foundation.json` maps portable
 Haiku, Sonnet, and Opus by default. Mechanical inventory/log work uses fast,
 normal implementation uses standard, and architecture, security, migration, or
 independent review uses deep. High-risk work cannot be downgraded to fast. The
+same policy file defines rapid/standard token budgets; the watchdog stops on
+whichever limit is reached first, token usage or request count. The
 native host spawns agents; Foundation supplies scoped packets and never grants
 commit, push, or Land authority.
 

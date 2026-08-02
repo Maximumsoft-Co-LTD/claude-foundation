@@ -45,6 +45,10 @@ for skill in programming-fundamentals database-fundamentals hexagonal-backend \
     "$ROOT/.claude/skills/$skill/SKILL.md"
 done
 
+for skill in "$ROOT"/.claude/skills/*/SKILL.md; do
+  assert_words_at_most "lazy skill budget: $(basename "$(dirname "$skill")")" 1200 "$skill"
+done
+
 combined_bytes="$(wc -c \
   "$ROOT/.claude/rules/fundamentals.md" \
   "$ROOT/.claude/commands/build.md" \
@@ -66,5 +70,9 @@ assert_cmd_zero "global packet budget is 16 KiB" \
   jq -e '.execution.packetBytes.global == 16384' "$ROOT/foundation.json"
 assert_cmd_zero "plan summary budget is 4 KiB" \
   jq -e '.execution.planSummaryBytes == 4096' "$ROOT/foundation.json"
+assert_cmd_zero "rapid token budget is explicit" \
+  jq -e '.execution.tokenBudgets.rapid == 800000' "$ROOT/foundation.json"
+assert_cmd_zero "standard token budget is explicit" \
+  jq -e '.execution.tokenBudgets.standard == 1600000' "$ROOT/foundation.json"
 
 finish "context budgets"

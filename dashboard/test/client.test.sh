@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+. "$ROOT/.claude/tests/lib/assert.sh"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+export CF_DASHBOARD_TEST_MODE=1
+export CLAUDE_FOUNDATION_STATE="$TMP/state"
+set -- run
+. "$ROOT/dashboard/client.sh"
+
+escaped="$(json_escape $'line\nquote"tab\tend')"
+assert_cmd_zero "client JSON escaping handles controls" \
+  node -e 'JSON.parse(process.argv[1])' "\"$escaped\""
+
+mkdir -p "$TMP/repo"
+git -C "$TMP/repo" init -q -b main
+git -C "$TMP/repo" config user.name test
+git -C "$TMP/repo" config user.email test@example.invalid
+printf 'base\n' > "$TMP/repo/base.txt"
+git -C "$TMP/repo" add .
+git -C "$TMP/repo" commit -qm base
+git -C "$TMP/repo" remote add origin "$TMP/repo"
+git -C "$TMP/repo" update-ref refs/remotes/origin/main HEAD
+git -C "$TMP/repo" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+git -C "$TMP/repo" checkout -qb feature
+printf 'committed feature work\n' > "$TMP/repo/feature.txt"
+git -C "$TMP/repo" add .
+git -C "$TMP/repo" commit -qm feature
+base="$(diff_base "$TMP/repo")"
+assert_eq "diff baseline retains committed branch work" "feature.txt" \
+  "$(git -C "$TMP/repo" diff --name-only "$base")"
+
+mkdir -p "$CLAUDE_FOUNDATION_STATE"
+sleep 30 & sleeper=$!
+printf '%s\n' "$sleeper" > "$PIDFILE"
+if is_running; then fail "PID without matching start identity is rejected"
+else pass "PID without matching start identity is rejected"; fi
+kill "$sleeper"
+wait "$sleeper" 2>/dev/null || true
+
+AGENT_ID=test-agent GIT_USER=test GIT_EMAIL='' HOST=test RUNS_JSON='[]' PRS_JSON='[]'
+CHANGES_JSON="$(node -e 'process.stdout.write(JSON.stringify([{repoId:"r",files:[{path:"large",ranges:Array.from({length:500},(_,i)=>[i,i])}]}]))')"
+USAGE_JSON='[]'; SESSIONS_JSON='[]'; TOOLS_JSON='[]'; MAX_PAYLOAD_BYTES=500
+bounded="$(bounded_payload online 2>/dev/null)"
+assert_cmd_zero "oversize payload falls back to valid presence JSON" \
+  node -e 'const p=JSON.parse(process.argv[1]);if(p.changes.length!==1||p.changes[0].files.length)process.exit(1)' "$bounded"
+
+mkdir -p "$TMP/claude/projects/demo"
+printf '%s\n' \
+  '{"type":"assistant","timestamp":"2026-08-02T01:00:00Z","cwd":"/work/demo","message":{"id":"fallback-1","role":"assistant","model":"claude-sonnet-test","usage":{"input_tokens":5,"output_tokens":1},"content":[{"type":"tool_use","id":"t1","name":"Read"}]}}' \
+  > "$TMP/claude/projects/demo/session.jsonl"
+CLAUDE_CONFIG_DIR="$TMP/claude"; export CLAUDE_CONFIG_DIR
+SCRIPT_PATH="$TMP/no-helper/client.sh"
+USAGE_CACHE="$TMP/fallback-usage.json"; USAGE_DAYS=30; USAGE_INTERVAL=1
+scan_usage
+assert_cmd_zero "portable usage fallback emits valid dated aggregates" node -e \
+  'const u=JSON.parse(process.argv[1]),t=JSON.parse(process.argv[2]);if(u[0].input!==5||t[0].date!=="2026-08-02")process.exit(1)' \
+  "$USAGE_JSON" "$TOOLS_JSON"
+
+finish "dashboard client"

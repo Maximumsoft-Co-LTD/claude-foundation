@@ -8,7 +8,7 @@
  * agents and reports who has been seen within ONLINE_TTL_MS as "online". It
  * also serves the static web dashboard from ./public.
  *
- * Zero runtime dependencies — Node >= 18 only. Designed to run on Railway,
+ * Zero runtime dependencies — Node >= 24. Designed to run on Railway,
  * which sets PORT for us.
  */
 
@@ -70,6 +70,7 @@ try {
     ]) { try { db.exec(sql); } catch { /* fresh db — CREATE below carries them */ } }
     db.exec('PRAGMA user_version = 3;');
   }
+  const needsV4 = dbVersion < 4;
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
@@ -141,6 +142,10 @@ try {
       hour INTEGER, git_user TEXT, minutes INTEGER,
       PRIMARY KEY (hour, git_user)  -- hour = epoch_ms/3600000; replaces raw-beat presence scans
     );
+    CREATE TABLE IF NOT EXISTS presence_minutes (
+      minute INTEGER, git_user TEXT,
+      PRIMARY KEY (minute, git_user) -- union across all machines owned by one person
+    );
     CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_daily(date);
     CREATE INDEX IF NOT EXISTS idx_work_date  ON work_daily(date);
   `);
@@ -154,6 +159,7 @@ try {
       `);
     } catch (err) { console.warn(`presence backfill failed: ${err.message}`); }
   }
+  if (needsV4) db.exec('PRAGMA user_version = 4;');
   console.log(`sqlite: persisting to ${DB_PATH} (heartbeat log kept ${HEARTBEAT_LOG_DAYS}d)`);
 } catch (err) {
   console.warn(`sqlite unavailable (${err.message}) — running in-memory only; presence and history reset on restart.`);
@@ -194,6 +200,7 @@ const stmts = db && {
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(agent_id, tool) DO UPDATE SET
       git_user=excluded.git_user, count=excluded.count, ts=excluded.ts`),
+  deleteToolsForAgent: db.prepare('DELETE FROM tools WHERE agent_id = ?'),
   upsertCommits: db.prepare(`
     INSERT INTO commits_daily (repo_id, date, n, reported_by, ts)
     VALUES (?, ?, ?, ?, ?)
@@ -222,6 +229,8 @@ const stmts = db && {
   upsertPresence: db.prepare(`
     INSERT INTO presence_hourly (hour, git_user, minutes) VALUES (?, ?, 1)
     ON CONFLICT(hour, git_user) DO UPDATE SET minutes = minutes + 1`),
+  insertPresenceMinute: db.prepare(`
+    INSERT OR IGNORE INTO presence_minutes (minute, git_user) VALUES (?, ?)`),
   upsertProfile: db.prepare(`
     INSERT INTO profiles (user, email, org, teams, color, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -251,6 +260,7 @@ const stmts = db && {
     FROM conflict_log ORDER BY last_ts DESC LIMIT 100`),
   pruneBeats: db.prepare('DELETE FROM heartbeats WHERE ts < ?'),
   prunePresence: db.prepare('DELETE FROM presence_hourly WHERE hour < ?'),
+  prunePresenceMinutes: db.prepare('DELETE FROM presence_minutes WHERE minute < ?'),
   pruneByDate: [
     db.prepare('DELETE FROM usage_daily WHERE date < ?'),
     db.prepare('DELETE FROM work_daily WHERE date < ?'),
@@ -267,8 +277,24 @@ const stmts = db && {
     ORDER BY ts DESC LIMIT ?`),
 };
 
-/** Write one heartbeat through to SQLite: log row + agent state + run/usage history. */
-function persistHeartbeat(a, now) {
+function digest(value) {
+  return crypto.createHash('sha256').update(JSON.stringify(value || [])).digest('hex');
+}
+
+function datasetHashes(a) {
+  return {
+    runs: digest(a.runs), changes: digest(a.changes), usage: digest(a.usage),
+    sessions: digest(a.sessions), tools: digest(a.tools), prs: digest(a.prs),
+  };
+}
+
+function changedDatasets(existing, nextHashes) {
+  const previous = existing?.datasetHashes || {};
+  return Object.fromEntries(Object.keys(nextHashes).map((key) => [key, previous[key] !== nextHashes[key]]));
+}
+
+/** Write one heartbeat through to SQLite, skipping unchanged aggregate datasets. */
+function persistHeartbeat(a, now, changed) {
   if (!db) return;
   try {
     const filesN = (a.changes || []).reduce((s, c) => s + (Array.isArray(c.files) ? c.files.length : 0), 0);
@@ -279,34 +305,40 @@ function persistHeartbeat(a, now) {
     else stmts.upsertAgent.run(a.agentId, a.gitUser, a.gitEmail || '', a.host, a.version, a.status,
       a.firstSeen, a.lastSeen,
       JSON.stringify({ runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
-    // Presence: credit at most one minute-bucket per beat into the hourly aggregate.
+    // Presence is the union of a person's machines: the minute key prevents two
+    // agents with the same git identity from double-crediting the same minute.
     const minuteBucket = Math.floor(now / 60000);
-    if (a.status !== 'offline' && a.lastPresenceMin !== minuteBucket) {
-      a.lastPresenceMin = minuteBucket;
-      stmts.upsertPresence.run(Math.floor(now / 3600000), a.gitUser);
+    if (a.status !== 'offline') {
+      const credit = stmts.insertPresenceMinute.run(minuteBucket, a.gitUser);
+      if (Number(credit.changes || 0) > 0) stmts.upsertPresence.run(Math.floor(now / 3600000), a.gitUser);
     }
-    for (const r of a.runs || []) {
+    for (const r of changed.runs ? (a.runs || []) : []) {
       stmts.upsertRun.run(a.agentId, r.repo, r.id, a.gitUser, r.type, r.phase,
         r.started, r.finished, r.done ? 1 : 0, JSON.stringify(r.art || {}),
         r.owner || '', r.ownerEmail || '', r.size || '', r.repoId || '');
     }
-    for (const u of a.usage || []) {
+    for (const u of changed.usage ? (a.usage || []) : []) {
       stmts.upsertUsage.run(a.agentId, a.gitUser, u.date, u.model, u.project || '',
         u.input, u.output, u.cacheCreate, u.cacheRead, u.count);
     }
-    for (const s of a.sessions || []) {
+    for (const s of changed.sessions ? (a.sessions || []) : []) {
       stmts.upsertSession.run(a.agentId, a.gitUser, s.date, s.count, s.seconds);
     }
-    for (const t of a.tools || []) {
-      stmts.upsertTool.run(a.agentId, a.gitUser, t.tool, t.count, now);
+    if (changed.tools) stmts.deleteToolsForAgent.run(a.agentId);
+    const toolTotals = new Map();
+    for (const t of changed.tools ? (a.tools || []) : []) {
+      toolTotals.set(t.tool, (toolTotals.get(t.tool) || 0) + t.count);
+    }
+    for (const [tool, count] of toolTotals) {
+      stmts.upsertTool.run(a.agentId, a.gitUser, tool, count, now);
     }
     const today = new Date(now).toISOString().slice(0, 10);
-    for (const c of a.changes || []) {
+    for (const c of changed.changes ? (a.changes || []) : []) {
       for (const cm of c.commits || []) stmts.upsertCommits.run(c.repoId, cm.date, cm.n, a.agentId, now);
-      if (c.fuOpen || c.fuClosed) stmts.upsertFollowups.run(c.repoId, c.fuOpen, c.fuClosed, now);
+      stmts.upsertFollowups.run(c.repoId, c.fuOpen, c.fuClosed, now);
       for (const f of c.files || []) stmts.upsertFileEdit.run(today, c.repoId, f.path, a.gitUser);
     }
-    for (const w of workRowsFor(a)) {
+    for (const w of (changed.changes || changed.prs) ? workRowsFor(a) : []) {
       stmts.upsertWork.run(a.agentId, a.gitUser, w.date, w.commits, w.added, w.deleted, w.pushes, w.prs);
     }
     db.exec('COMMIT');
@@ -363,7 +395,7 @@ function restoreAgents(agentsMap) {
     for (const row of stmts.loadAgents.all()) {
       let state = {};
       try { state = JSON.parse(row.state || '{}'); } catch { /* corrupt row — presence only */ }
-      agentsMap.set(row.agent_id, {
+      const restored = {
         agentId: row.agent_id,
         gitUser: row.git_user, gitEmail: row.git_email || '', host: row.host, version: row.version, status: row.status,
         runs: Array.isArray(state.runs) ? state.runs : [],
@@ -373,7 +405,9 @@ function restoreAgents(agentsMap) {
         tools: Array.isArray(state.tools) ? state.tools : [],
         prs: Array.isArray(state.prs) ? state.prs : [],
         firstSeen: row.first_seen, lastSeen: row.last_seen,
-      });
+      };
+      restored.datasetHashes = datasetHashes(restored);
+      agentsMap.set(row.agent_id, restored);
     }
     if (agentsMap.size) console.log(`sqlite: restored ${agentsMap.size} agent(s) from ${DB_PATH}`);
   } catch (err) {
@@ -388,6 +422,7 @@ function pruneHeartbeatLog() {
     const now = Date.now();
     stmts.pruneBeats.run(now - HEARTBEAT_LOG_DAYS * 86400000);
     stmts.prunePresence.run(Math.floor((now - HISTORY_DAYS * 86400000) / 3600000));
+    stmts.prunePresenceMinutes.run(Math.floor((now - 2 * 3600000) / 60000));
     const cutoffDay = new Date(now - HISTORY_DAYS * 86400000).toISOString().slice(0, 10);
     for (const stmt of stmts.pruneByDate) stmt.run(cutoffDay);
   }
@@ -557,9 +592,13 @@ function cleanDateCounts(raw, field) {
 function cleanTools(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
-    .slice(0, 100)
-    .map((t) => ({ tool: clean(t && t.tool, 60), count: Math.max(0, toInt(t && t.count, 0)) }))
-    .filter((t) => t.tool);
+    .slice(0, 3000)
+    .map((t) => ({
+      date: clean(t && t.date, 10),
+      tool: clean(t && t.tool, 60),
+      count: Math.max(0, toInt(t && t.count, 0)),
+    }))
+    .filter((t) => t.tool && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
 }
 
 /** Sanitize a list of [start,end] line ranges. */
@@ -609,7 +648,9 @@ function cleanChanges(raw) {
     }))
     // File-less entries are legit since client 1.10: a clean-but-recently-active
     // repo still reports commits/work/pushes so finished work keeps counting.
-    .filter((r) => r.repoId && (r.files.length || r.work.length || r.commits.length || r.pushes.length));
+    .filter((r) => r.repoId && (
+      r.files.length || r.work.length || r.commits.length || r.pushes.length || r.fuOpen || r.fuClosed
+    ));
 }
 
 /** Constant-time string compare that tolerates length differences. */
@@ -707,8 +748,8 @@ async function handleHeartbeat(req, res, url) {
   const now = Date.now();
   const status = clean(body.value.status) || 'online';
   const existing = agents.get(agentId);
-  const lastPresenceMin = existing ? existing.lastPresenceMin : undefined;
-  agents.set(agentId, {
+  if (!['online', 'offline'].includes(status)) return sendJson(res, 400, { ok: false, error: 'invalid status' });
+  const next = {
     agentId,
     gitUser: clean(body.value.gitUser) || 'unknown',
     gitEmail: clean(body.value.gitEmail, 120).toLowerCase(),
@@ -723,12 +764,16 @@ async function handleHeartbeat(req, res, url) {
     prs: cleanDateCounts(body.value.prs, 'n'),
     firstSeen: existing ? existing.firstSeen : now,
     lastSeen: now,
-    lastPresenceMin,
-  });
+  };
+  next.datasetHashes = datasetHashes(next);
+  const changed = changedDatasets(existing, next.datasetHashes);
+  agents.set(agentId, next);
 
-  persistHeartbeat(agents.get(agentId), now);
-  persistConflicts(now);
+  persistHeartbeat(next, now, changed);
   if (status === 'offline') agents.delete(agentId);
+  else if (!existing || changed.changes) persistConflicts(now);
+  onlineCache.at = 0;
+  if (changed.usage || changed.sessions || changed.tools || changed.changes || changed.prs) usageCache.at = 0;
 
   prune(now);
   const onlineCount = [...agents.values()].filter((a) => now - a.lastSeen <= ONLINE_TTL_MS).length;
@@ -755,7 +800,7 @@ function rangesOverlap(a, b) {
  */
 function computeConflicts(now) {
   const live = [...agents.values()].filter(
-    (a) => now - a.lastSeen <= ONLINE_TTL_MS && Array.isArray(a.changes) && a.changes.length,
+    (a) => a.status !== 'offline' && now - a.lastSeen <= ONLINE_TTL_MS && Array.isArray(a.changes) && a.changes.length,
   );
 
   // repoId -> path -> partyKey -> { gitUser, branch, ranges }
@@ -1023,6 +1068,7 @@ async function handleProfile(req, res, url) {
     updatedAt: Date.now(),
   };
   profiles.set(user, p);
+  onlineCache.at = 0;
   if (db) {
     try { stmts.upsertProfile.run(p.user, p.email, p.org, JSON.stringify(p.teams), p.color, p.updatedAt); }
     catch (err) { console.warn(`sqlite profile write failed: ${err.message}`); }
@@ -1058,7 +1104,29 @@ function handleHistory(req, res, url) {
   }
 }
 
-// Building /api/online walks every agent's full state (conflict math is
+// Usage changes every few minutes, so keep it off the 5-second presence route.
+let usageCache = { at: 0, body: '' };
+function handleUsage(req, res, url) {
+  if (!keyMatches(presentedKey(req, url), VIEW_KEY)) {
+    return sendJson(res, 401, { ok: false, error: 'bad key' });
+  }
+  const now = Date.now();
+  if (!usageCache.body || now - usageCache.at >= 30_000) {
+    usageCache = { at: now, body: JSON.stringify({
+      ok: true, now,
+      usage: collectUsage(), sessions: collectSessions(), tools: collectTools(),
+      work: collectWork(), repoStats: collectRepoStats(),
+    }) };
+  }
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'cache-control': 'no-store',
+  });
+  return res.end(usageCache.body);
+}
+
+// Building /api/online walks every agent's live state (conflict math is
 // O(files × parties²)) — memoize the serialized payload so 100 viewers polling
 // every 5s cost one recompute per ONLINE_CACHE_MS, not one per request.
 let onlineCache = { at: 0, body: '' };
@@ -1096,13 +1164,6 @@ function handleOnline(req, res, url) {
       size: r.size || '', phase: r.phase, started: r.started, finished: r.finished, done: r.done,
       art: r.art || {},
     })),
-    // Per-machine day × model × project token aggregates — the Usage tab renders
-    // totals, models in use, projects, and the daily trend from this.
-    usage: collectUsage(),
-    sessions: collectSessions(),
-    tools: collectTools(),
-    work: collectWork(),
-    repoStats: collectRepoStats(),
   };
   onlineCache = { at: now, body: JSON.stringify(payload) };
   res.writeHead(200, {
@@ -1133,6 +1194,7 @@ const server = http.createServer((req, res) => {
   }
   if (pathname === '/api/heartbeat' && req.method === 'POST') return handleHeartbeat(req, res, url);
   if (pathname === '/api/online' && req.method === 'GET') return handleOnline(req, res, url);
+  if (pathname === '/api/usage' && req.method === 'GET') return handleUsage(req, res, url);
   if (pathname === '/api/profile' && req.method === 'POST') return handleProfile(req, res, url);
   if (pathname === '/api/log/heartbeats' && req.method === 'GET') return handleHeartbeatLog(req, res, url);
   if (pathname === '/api/presence' && req.method === 'GET') return handlePresence(req, res, url);
@@ -1142,15 +1204,26 @@ const server = http.createServer((req, res) => {
   return serveStatic(req, res, pathname);
 });
 
-server.listen(PORT, () => {
-  console.log(`claude-foundation dashboard listening on :${PORT}  (online window ${ONLINE_TTL_MS}ms)`);
-});
-
-// Railway sends SIGTERM on redeploy — shut the socket cleanly.
-for (const sig of ['SIGTERM', 'SIGINT']) {
-  process.on(sig, () => {
-    console.log(`${sig} received — closing.`);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 3000).unref();
+function startServer(port = PORT) {
+  return server.listen(port, () => {
+    const address = server.address();
+    console.log(`claude-foundation dashboard listening on :${address && address.port}  (online window ${ONLINE_TTL_MS}ms)`);
   });
 }
+
+if (require.main === module) {
+  startServer();
+  // Railway sends SIGTERM on redeploy — shut the socket cleanly.
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    process.on(sig, () => {
+      console.log(`${sig} received — closing.`);
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 3000).unref();
+    });
+  }
+}
+
+module.exports = {
+  server, startServer,
+  _internals: { agents, db, datasetHashes, changedDatasets, computeConflicts },
+};

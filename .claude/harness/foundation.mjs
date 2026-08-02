@@ -12,7 +12,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 const RUNTIME_API_VERSION = "7";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
@@ -267,8 +267,15 @@ function walk(dir, callback) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) walk(path, callback);
-    else if (entry.isFile()) callback(path);
+    else if (entry.isFile() || entry.isSymbolicLink()) callback(path);
   }
+}
+
+function filesystemEntryIdentity(path) {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return `symlink:${readlinkSync(path)}`;
+  if (stat.isFile()) return fileDigest(path);
+  return `unsupported:${stat.mode}`;
 }
 
 function directoryHash(dir) {
@@ -278,7 +285,7 @@ function directoryHash(dir) {
   files.sort((a, b) => relative(dir, a).localeCompare(relative(dir, b)));
   for (const path of files) {
     hash.update(relative(dir, path).replaceAll("\\", "/"));
-    hash.update("\0"); hash.update(readFileSync(path)); hash.update("\0");
+    hash.update("\0"); hash.update(filesystemEntryIdentity(path)); hash.update("\0");
   }
   return hash.digest("hex");
 }
@@ -334,7 +341,7 @@ function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
       const rel = relative(workspace, path).replaceAll("\\", "/");
       if (!allowed(rel)) continue;
       if (entry.isDirectory()) collect(path);
-      else if (entry.isFile()) files.push([rel, path]);
+      else if (entry.isFile() || entry.isSymbolicLink()) files.push([rel, path]);
     }
   }
   const gitIndex = git(["ls-files", "-s", "-z"], workspace);
@@ -362,7 +369,7 @@ function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
       const contentIdentity = dirty.has(rel)
         ? (indexed.get(rel)?.mode === "160000"
           ? `gitlink:${indexed.get(rel).oid}`
-          : (existsSync(path) && statSync(path).isFile() ? fileDigest(path) : "deleted"))
+          : (existsSync(path) ? filesystemEntryIdentity(path) : "deleted"))
         : indexed.get(rel)?.oid;
       files.push([rel, path]);
       hash.update(rel); hash.update("\0");
@@ -372,7 +379,7 @@ function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
     collect(workspace);
     files.sort(([a], [b]) => a.localeCompare(b));
     for (const [rel, path] of files) {
-      hash.update(rel); hash.update("\0"); hash.update(readFileSync(path)); hash.update("\0");
+      hash.update(rel); hash.update("\0"); hash.update(filesystemEntryIdentity(path)); hash.update("\0");
     }
   }
   hash.update(`foundation-contract-revision:${Number(state.contractRevision || state.revision || 0)}`);
@@ -464,8 +471,8 @@ function workspaceManifest(workspace, id, excludeChange = false) {
       if (rel.startsWith("openspec/changes/") &&
           (excludeChange || !isCurrentChangePath(rel, id))) continue;
       if (entry.isDirectory()) collect(path);
-      else if (entry.isFile())
-        result[rel] = createHash("sha256").update(readFileSync(path)).digest("hex");
+      else if (entry.isFile() || entry.isSymbolicLink())
+        result[rel] = filesystemEntryIdentity(path);
     }
   }
   collect(workspace);
@@ -575,7 +582,11 @@ function createChange(intent, flags) {
     workspace: { mode: "current", path: ROOT, baseHead: gitHead(ROOT) },
     budget: {
       targetRequests: schema === "foundation-rapid" ? 80 : 160,
-      usedRequests: null, measurement: "unavailable-until-external-events"
+      targetTokens: schema === "foundation-rapid"
+        ? foundationPolicy().execution.tokenBudgets.rapid
+        : foundationPolicy().execution.tokenBudgets.standard,
+      usedRequests: null, usedTokens: null,
+      measurement: "unavailable-until-external-events"
     },
     createdAt: now(), updatedAt: now()
   };
@@ -602,6 +613,7 @@ function foundationPolicy() {
     execution: {
       maxParallelAgents: 3,
       packetBytes: { task: 8192, repository: 12288, global: 16384 },
+      tokenBudgets: { rapid: 800000, standard: 1600000 },
       planSummaryBytes: 4096,
       leaseMinutes: 45
     },
@@ -638,6 +650,10 @@ function foundationPolicy() {
       ...(policy.execution.packetBytes || {})
     };
   }
+  policy.execution.tokenBudgets = {
+    ...defaults.execution.tokenBudgets,
+    ...(policy.execution.tokenBudgets || {})
+  };
   for (const type of ["task", "repository", "global"]) {
     const bytes = Number(policy.execution.packetBytes?.[type]);
     if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
@@ -646,6 +662,11 @@ function foundationPolicy() {
   const summaryBytes = Number(policy.execution.planSummaryBytes);
   if (!Number.isInteger(summaryBytes) || summaryBytes < 1024 || summaryBytes > 16384)
     die("foundation.json execution.planSummaryBytes must be 1024..16384");
+  for (const type of ["rapid", "standard"]) {
+    const tokens = Number(policy.execution.tokenBudgets[type]);
+    if (!Number.isInteger(tokens) || tokens < 10000 || tokens > 100000000)
+      die(`foundation.json execution.tokenBudgets.${type} must be 10000..100000000`);
+  }
   const parallel = Number(policy.execution.maxParallelAgents);
   if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
     die("foundation.json execution.maxParallelAgents must be an integer from 1 to 16");
@@ -4380,6 +4401,44 @@ function recordPhaseContext(id, phase) {
   }
 }
 
+function eventTokenCount(event) {
+  const values = [event.inputTokens, event.outputTokens, event.cacheTokens]
+    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
+  return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
+}
+
+function ensureBudgetTargets(state) {
+  state.budget ||= {};
+  if (!Number.isFinite(Number(state.budget.targetTokens))) {
+    const configured = foundationPolicy().execution.tokenBudgets;
+    state.budget.targetTokens = state.schema === "foundation-rapid"
+      ? configured.rapid : configured.standard;
+  }
+  return state.budget;
+}
+
+function budgetDecision(state) {
+  const budget = ensureBudgetTargets(state);
+  const requestRatio = Number.isFinite(Number(budget.usedRequests))
+    ? Number(budget.usedRequests) / Number(budget.targetRequests || 1) : 0;
+  const tokenRatio = Number.isFinite(Number(budget.usedTokens))
+    ? Number(budget.usedTokens) / Number(budget.targetTokens || 1) : 0;
+  const ratio = Math.max(requestRatio, tokenRatio);
+  const limiter = tokenRatio > requestRatio ? "tokens" : "requests";
+  const action = ratio >= 1 ? "STOP_AND_SPLIT" : ratio >= 0.85 ? "STOP_EXPLORATION" :
+    ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
+  return { ratio, limiter, action };
+}
+
+function reportBudget(id, state, stop = false, quiet = false) {
+  const decision = budgetDecision(state);
+  const message = `BUDGET ${id}: ${(decision.ratio * 100).toFixed(1)}% ${decision.action} (${decision.limiter})`;
+  if (!quiet) console.log(message);
+  else if (decision.ratio >= 0.7) console.error(`WARNING: ${message}`);
+  if (stop && decision.ratio >= 1) process.exit(2);
+  return decision;
+}
+
 function recordEvent(id, flags) {
   const state = loadRuntime(id);
   if (flags.repo) repositoryById(id, flags.repo, state);
@@ -4425,14 +4484,13 @@ function recordEvent(id, flags) {
     if (duplicate) die(`duplicate telemetry request '${event.requestId}'`);
   }
   appendFileSync(path, `${JSON.stringify(event)}\n`);
-  state.budget.usedRequests = Number(state.budget.usedRequests || 0) + 1;
+  const budget = ensureBudgetTargets(state);
+  budget.usedRequests = Number(budget.usedRequests || 0) + 1;
+  const eventTokens = eventTokenCount(event);
+  if (eventTokens !== null) budget.usedTokens = Number(budget.usedTokens || 0) + eventTokens;
   state.budget.measurement = "external-events";
-  const ratio = state.budget.usedRequests / Number(state.budget.targetRequests || 1);
   saveRuntime(state);
-  const action = ratio >= 1 ? "STOP_AND_SPLIT" : ratio >= 0.85 ? "STOP_EXPLORATION" :
-    ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
-  console.log(`BUDGET ${id}: ${(ratio * 100).toFixed(1)}% ${action}`);
-  if (ratio >= 1) process.exit(2);
+  reportBudget(id, state, true);
 }
 
 function telemetryCursorPath(id) {
@@ -4606,11 +4664,17 @@ function appendTelemetryRows(id, rows, format, context = {}) {
     mkdirSync(dirname(target), { recursive: true });
     appendFileSync(target, normalized.map((row) => JSON.stringify(row)).join("\n") + "\n");
     const state = loadRuntime(id);
-    state.budget.usedRequests = readJsonLines(target).length;
+    const allEvents = readJsonLines(target);
+    const budget = ensureBudgetTargets(state);
+    budget.usedRequests = allEvents.length;
+    const knownTokens = allEvents.map(eventTokenCount).filter((value) => value !== null);
+    budget.usedTokens = knownTokens.length
+      ? knownTokens.reduce((sum, value) => sum + value, 0) : null;
     state.budget.measurement = format === "claude"
       ? "claude-transcript"
       : `host-events:${format}`;
     saveRuntime(state);
+    reportBudget(id, state, true, true);
   }
   return normalized.length;
 }
@@ -4867,6 +4931,12 @@ function showMetrics(id) {
     context: {
       totalBytes: contextBytes,
       estimatedTokens: contextBytes === null ? null : Math.ceil(contextBytes / 4),
+      measurement: "emitted-plan-and-packet-bytes-only",
+      estimateBasis: "four-bytes-per-token",
+      excluded: [
+        "always-on-rules", "loaded-skills", "artifact-reads",
+        "tool-results", "conversation-history"
+      ],
       byKind: context,
       retainedEvents: contextRows.length,
       archivedEvents: Number(contextRollup.count || 0),

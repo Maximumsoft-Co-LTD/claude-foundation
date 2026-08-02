@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-CLIENT_VERSION="1.10.0"
+CLIENT_VERSION="1.11.0"
 DEFAULT_SERVER="https://claude-foundation-dashboard-production.up.railway.app"
 
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -80,6 +80,7 @@ SCAN_INTERVAL="${CLAUDE_FOUNDATION_SCAN_INTERVAL:-60}"     # rescan cadence (dec
 USAGE_DAYS="${CLAUDE_FOUNDATION_USAGE_DAYS:-30}"           # how far back to aggregate token usage
 USAGE_INTERVAL="${CLAUDE_FOUNDATION_USAGE_INTERVAL:-300}"  # transcripts are big — reaggregate at most this often
 PR_INTERVAL="${CLAUDE_FOUNDATION_PR_INTERVAL:-900}"        # gh API calls — refresh PR counts at most this often
+MAX_PAYLOAD_BYTES="${CLAUDE_FOUNDATION_MAX_PAYLOAD_BYTES:-500000}"
 
 # Local-time offset in seconds (e.g. +0700 → 25200) — UTC timestamps from
 # transcripts/reflogs are shifted by this so days match the user's calendar.
@@ -123,10 +124,31 @@ fi
 # ── Daemon bookkeeping (PID file, no port) ──────────────────────────────────
 STATE_DIR="${CLAUDE_FOUNDATION_STATE:-$HOME/.claude-foundation}"
 PIDFILE="$STATE_DIR/dashboard.pid"
+PIDSTART="$STATE_DIR/dashboard.pid.start"
 LOGFILE="$STATE_DIR/dashboard.log"
 
 daemon_pid() { [ -f "$PIDFILE" ] && cat "$PIDFILE" 2>/dev/null || true; }
-is_running() { local p; p="$(daemon_pid)"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+process_started() { ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+is_running() {
+  local p expected current command_line
+  p="$(daemon_pid)"
+  case "$p" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$p" 2>/dev/null || return 1
+  if [ ! -s "$PIDSTART" ]; then
+    # One-time safe migration for pre-1.11 PID files: accept only a process
+    # whose command line is recognizably this dashboard client.
+    command_line="$(ps -p "$p" -o command= 2>/dev/null || true)"
+    case "$command_line" in
+      *dashboard/client.sh*run*) process_started "$p" > "$PIDSTART" ;;
+      *) return 1 ;;
+    esac
+  fi
+  expected="$(cat "$PIDSTART" 2>/dev/null || true)"
+  current="$(process_started "$p")"
+  [ -n "$expected" ] && [ "$current" = "$expected" ]
+}
+
+positive_int() { case "$1" in ''|*[!0-9]*|0) return 1 ;; *) return 0 ;; esac; }
 
 validate() {
   command -v curl >/dev/null 2>&1 || fail "curl is required but not found"
@@ -134,6 +156,12 @@ validate() {
   case "$SERVER" in
     *YOUR-APP.up.railway.app*) fail "set --server <url> (or CLAUDE_FOUNDATION_DASHBOARD_URL) to your deployed dashboard" ;;
   esac
+  positive_int "$INTERVAL" || fail "--interval must be a positive integer"
+  positive_int "$SCAN_INTERVAL" || fail "CLAUDE_FOUNDATION_SCAN_INTERVAL must be a positive integer"
+  positive_int "$USAGE_INTERVAL" || fail "CLAUDE_FOUNDATION_USAGE_INTERVAL must be a positive integer"
+  positive_int "$USAGE_DAYS" || fail "CLAUDE_FOUNDATION_USAGE_DAYS must be a positive integer"
+  positive_int "$MAX_PAYLOAD_BYTES" || fail "CLAUDE_FOUNDATION_MAX_PAYLOAD_BYTES must be a positive integer"
+  positive_int "$DISCOVERY_INTERVAL" || fail "CLAUDE_FOUNDATION_DISCOVERY_INTERVAL must be a positive integer"
   SERVER="${SERVER%/}"
 }
 
@@ -162,7 +190,27 @@ derive_identity() {
   HOST="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo unknown)"
 }
 
-json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
+json_escape() {
+  local LC_ALL=C s=$1 out="" c code
+  while [ -n "$s" ]; do
+    c=${s%"${s#?}"}; s=${s#?}
+    case "$c" in
+      '"') out="$out\\\"" ;;
+      '\') out="$out\\\\" ;;
+      $'\b') out="$out\\b" ;;
+      $'\f') out="$out\\f" ;;
+      $'\n') out="$out\\n" ;;
+      $'\r') out="$out\\r" ;;
+      $'\t') out="$out\\t" ;;
+      *)
+        printf -v code '%d' "'$c"
+        if [ "$code" -lt 32 ]; then printf -v c '\\u%04x' "$code"; fi
+        out="$out$c"
+        ;;
+    esac
+  done
+  printf '%s' "$out"
+}
 
 # ── Run + change scans: /dev run history and per-repo edits on this machine ──
 RUNS_JSON="[]"
@@ -174,9 +222,32 @@ LAST_SCAN=0
 RUNS_CACHE="$STATE_DIR/runs.json"      # background scan publishes results here
 CHG_CACHE="$STATE_DIR/changes.json"
 USAGE_CACHE="$STATE_DIR/usage.json"
+USAGE_STATE="$STATE_DIR/usage-state.json"
 PRS_CACHE="$STATE_DIR/prs.json"
 PRS_JSON="[]"
 SCAN_LOCK="$STATE_DIR/scan.lock"
+RUN_PATH_CACHE="$STATE_DIR/run-paths.txt"
+GIT_PATH_CACHE="$STATE_DIR/git-paths.txt"
+DISCOVERY_INTERVAL="${CLAUDE_FOUNDATION_DISCOVERY_INTERVAL:-300}"
+
+refresh_discovery_cache() {
+  local now age
+  now="$(date +%s)"
+  if [ -f "$RUN_PATH_CACHE" ] && [ -f "$GIT_PATH_CACHE" ]; then
+    age=$(( now - $(file_mtime "$GIT_PATH_CACHE") ))
+    [ "$age" -lt "$DISCOVERY_INTERVAL" ] && return
+  fi
+  find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
+    \( -name node_modules -o -name .git -o -name Library -o -name .Trash -o -name .cache \) -prune \
+    -o -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print 2>/dev/null \
+    > "$RUN_PATH_CACHE.tmp" || true
+  find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
+    \( -name node_modules -o -name Library -o -name .Trash -o -name .cache \) -prune \
+    -o -name .git -type d -prune -print \
+    -o -name .git -type f -print 2>/dev/null > "$GIT_PATH_CACHE.tmp" || true
+  mv "$RUN_PATH_CACHE.tmp" "$RUN_PATH_CACHE"
+  mv "$GIT_PATH_CACHE.tmp" "$GIT_PATH_CACHE"
+}
 
 # Join args with commas (bash-3.2 safe — never touches an empty array's [*]).
 join_csv() {
@@ -197,6 +268,24 @@ normalize_remote() {
   printf '%s' "$u"
 }
 
+# Resolve the shared branch point so committed feature-branch work remains
+# visible until it is merged. HEAD is the safe fallback for repositories whose
+# remote does not advertise a default branch.
+diff_base() {
+  local root=$1 default_ref="" base=""
+  default_ref="$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [ -z "$default_ref" ]; then
+    for default_ref in origin/main origin/master; do
+      git -C "$root" rev-parse --verify -q "$default_ref" >/dev/null 2>&1 && break
+      default_ref=""
+    done
+  fi
+  if [ -n "$default_ref" ]; then
+    base="$(git -C "$root" merge-base HEAD "$default_ref" 2>/dev/null || true)"
+  fi
+  printf '%s' "${base:-HEAD}"
+}
+
 file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
 # Pull a string field out of a state.json (null/number fields → empty).
 json_get() { sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1" 2>/dev/null | head -1; }
@@ -215,6 +304,7 @@ dir_started() {
 # state.json; newest-first, capped at RUNS_CAP.
 scan_runs() {
   [ "$ACTIVITY" = "yes" ] || { RUNS_JSON="[]"; return; }
+  refresh_discovery_cache
   local tab; tab="$(printf '\t')"
   local ranked=() sj rundir id rtype repo branch phase step repo_root started finished doneflag
   local owner oemail rsize rr rid last_rr= last_rid=
@@ -264,9 +354,7 @@ scan_runs() {
     done
     art="{${art#,}}"
     ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"repoId\":\"$(json_escape "$rid")\",\"branch\":\"$(json_escape "$branch")\",\"owner\":\"$(json_escape "$owner")\",\"ownerEmail\":\"$(json_escape "$oemail")\",\"size\":\"$(json_escape "$rsize")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag},\"art\":${art}}")
-  done < <(find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
-             \( -name node_modules -o -name .git -o -name Library -o -name .Trash -o -name .cache \) -prune \
-             -o -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print 2>/dev/null)
+  done < "$RUN_PATH_CACHE"
   if [ "${#ranked[@]}" -gt 0 ]; then
     RUNS_JSON="[$(printf '%s\n' "${ranked[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${RUNS_CAP:-200}" 'NR<=n' | cut -f2- | paste -sd, -)]"
   else
@@ -274,11 +362,11 @@ scan_runs() {
   fi
 }
 
-# Report which git repos under SCAN_ROOTS have UNCOMMITTED changes (working-tree
-# edits — exactly what a teammate's git server can't see yet) plus the changed
-# line ranges, so nested sub-repos show too, not just ones that have run /dev.
+# Report which git repos under SCAN_ROOTS differ from their shared default-
+# branch merge base, including committed feature work and working-tree edits,
+# plus changed line ranges so nested sub-repos show too.
 # Two passes keep it affordable on a machine with dozens of dirty repos:
-#   1. cheap — one `git diff --name-only HEAD` per repo to find dirty ones + when
+#   1. cheap — one merge-base `git diff --name-only` per repo to find active ones + when
 #      they were last edited;
 #   2. expensive — only the most-recently-edited CHANGES_REPO_CAP repos get the
 #      full `--unified=0` line-range diff + JSON.
@@ -287,6 +375,7 @@ scan_runs() {
 scan_changes() {
   [ "$CONFLICTS" = "yes" ] || { CHANGES_JSON="[]"; return; }
   command -v git >/dev/null 2>&1 || { CHANGES_JSON="[]"; return; }
+  refresh_discovery_cache
   local tab; tab="$(printf '\t')"
 
   # ── Pass 1: discover repos + recency (one git call each) ──
@@ -294,13 +383,14 @@ scan_changes() {
   # in the last 14d (any local branch) still qualify — otherwise finishing and
   # committing your work makes it vanish from the stats. `.git` matches as a
   # dir (normal clone) OR a file (linked worktree).
-  local cand=() clean_cand=() gitdir root first mt count=0
+  local cand=() clean_cand=() gitdir root first mt count=0 base
   while IFS= read -r gitdir; do
     [ -n "$gitdir" ] || continue
     root=${gitdir%/.git}
     [ -e "$root/.git" ] || continue
     count=$((count + 1)); [ "$count" -le "${CONFLICT_REPO_SCAN_CAP:-600}" ] || break
-    first="$(git -C "$root" diff --name-only HEAD 2>/dev/null | head -1 || true)"
+    base="$(diff_base "$root")"
+    first="$(git -C "$root" diff --name-only "$base" 2>/dev/null | head -1 || true)"
     if [ -n "$first" ]; then
       mt="$(file_mtime "$root/$first")"
       cand+=("${mt}${tab}${root}")
@@ -309,10 +399,7 @@ scan_changes() {
       [ -n "$mt" ] || continue                      # clean AND idle 14d → skip
       clean_cand+=("${mt}${tab}${root}")
     fi
-  done < <(find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
-             \( -name node_modules -o -name Library -o -name .Trash -o -name .cache \) -prune \
-             -o -name .git -type d -prune -print \
-             -o -name .git -type f -print 2>/dev/null)
+  done < "$GIT_PATH_CACHE"
   [ $(( ${#cand[@]} + ${#clean_cand[@]} )) -gt 0 ] || { CHANGES_JSON="[]"; return; }
 
   # ── Pass 2: full line-range diff for the top-N most-recently-edited repos ──
@@ -351,16 +438,17 @@ ${cfeed}"; else feed="$cfeed"; fi
     rel="$root2"; case "$root2" in "$HOME"/*) rel="~${root2#$HOME}" ;; esac
     label="$(git -C "$root2" config --get dashboard.label 2>/dev/null || true)"
     local file_items=() path ranges r_items r s e
+    base="$(diff_base "$root2")"
     while IFS="$tab" read -r path ranges; do
       [ -n "$path" ] && [ "$path" != "/dev/null" ] || continue
       r_items=()
       for r in ${ranges//,/ }; do s=${r%-*}; e=${r#*-}; [ -n "$s" ] && r_items+=("[$s,$e]"); done
       [ "${#r_items[@]}" -gt 0 ] || continue
       file_items+=("{\"path\":\"$(json_escape "$path")\",\"ranges\":[$(join_csv "${r_items[@]}")]}")
-    done < <(git -C "$root2" diff --unified=0 HEAD -- 2>/dev/null | awk '
+    done < <(git -C "$root2" diff --unified=0 "$base" -- 2>/dev/null | awk -v max_ranges="${CONFLICT_RANGE_CAP:-200}" '
         /^\+\+\+ /{ f=$0; sub(/^\+\+\+ [ab]\//,"",f); sub(/^\+\+\+ /,"",f); next }
         /^@@ /{ p=$3; sub(/^\+/,"",p); n=split(p,a,","); s=a[1]+0; L=(n>1?a[2]+0:1); if(L<1)L=1;
-                if(f!="" && f!="/dev/null"){ rng[f]=rng[f] (rng[f]?",":"") s"-" (s+L-1); seen[f]=1 } }
+                if(f!="" && f!="/dev/null" && count[f] < max_ranges){ rng[f]=rng[f] (rng[f]?",":"") s"-" (s+L-1); seen[f]=1; count[f]++ } }
         END{ for(f in seen) print f"\t"rng[f] }' | awk -v n="${CONFLICT_FILE_CAP:-80}" 'NR<=n')
     # A secondary root (same repoId already reported) with no changed files has
     # nothing left to contribute; a primary root stays even file-less (clean
@@ -460,6 +548,19 @@ scan_usage() {
   fi
   local proj="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
   [ -d "$proj" ] || { USAGE_JSON="[]"; SESSIONS_JSON="[]"; TOOLS_JSON="[]"; return; }
+  local helper="$(dirname "$SCRIPT_PATH")/usage-scan.mjs"
+  if command -v node >/dev/null 2>&1 && [ -f "$helper" ]; then
+    local incremental
+    if incremental="$(node "$helper" "$proj" "$USAGE_STATE" "$USAGE_DAYS" "${USAGE_FILE_CAP:-4000}" 2>/dev/null)"; then
+      USAGE_JSON="$(printf '%s\n' "$incremental" | sed -n 1p)"
+      SESSIONS_JSON="$(printf '%s\n' "$incremental" | sed -n 2p)"
+      TOOLS_JSON="$(printf '%s\n' "$incremental" | sed -n 3p)"
+      printf '%s\n%s\n%s' "$USAGE_JSON" "$SESSIONS_JSON" "$TOOLS_JSON" > "$USAGE_CACHE.tmp" 2>/dev/null \
+        && mv "$USAGE_CACHE.tmp" "$USAGE_CACHE" 2>/dev/null
+      return
+    fi
+    warn "incremental usage scan failed; falling back to a full streaming scan"
+  fi
   local cut_epoch cutoff
   cut_epoch=$(( now - USAGE_DAYS * 86400 ))
   cutoff="$(date -r "$cut_epoch" +%Y-%m-%d 2>/dev/null || date -d "@$cut_epoch" +%Y-%m-%d 2>/dev/null || echo 1970-01-01)"
@@ -530,7 +631,7 @@ scan_usage() {
         while (match(rest, /"type":"tool_use","id":"[^"]*","name":"[^"]*"/)) {
           seg = substr(rest, RSTART, RLENGTH)
           rest = substr(rest, RSTART + RLENGTH)
-          if (match(seg, /"name":"[^"]*"$/)) T[substr(seg, RSTART+8, RLENGTH-9)]++
+          if (match(seg, /"name":"[^"]*"$/)) T[date "|" substr(seg, RSTART+8, RLENGTH-9)]++
         }
       }
       END {
@@ -540,6 +641,8 @@ scan_usage() {
           split(k, p, "|")
           if (!first) printf ","
           first = 0
+          gsub(/\\/, "\\\\", p[2]); gsub(/\"/, "\\\"", p[2])
+          gsub(/\\/, "\\\\", p[3]); gsub(/\"/, "\\\"", p[3])
           printf "{\"date\":\"%s\",\"model\":\"%s\",\"project\":\"%s\",\"input\":%.0f,\"output\":%.0f,\"cacheCreate\":%.0f,\"cacheRead\":%.0f,\"count\":%.0f}", p[1], p[2], p[3], I[k], O[k], CC[k], CR[k], N[k]
         }
         printf "]\n["
@@ -553,9 +656,11 @@ scan_usage() {
         printf "]\n["
         first = 1
         for (t in T) {
+          split(t, tp, "|"); tool = tp[2]
+          gsub(/\\/, "\\\\", tool); gsub(/\"/, "\\\"", tool)
           if (!first) printf ","
           first = 0
-          printf "{\"tool\":\"%s\",\"count\":%.0f}", t, T[t]
+          printf "{\"date\":\"%s\",\"tool\":\"%s\",\"count\":%.0f}", tp[1], tool, T[t]
         }
         printf "]"
       }' "${files[@]}" 2>/dev/null)"
@@ -641,18 +746,60 @@ load_cache() {
 }
 
 build_payload() {
+  local changes="${2:-$CHANGES_JSON}" usage_rows="${3:-$USAGE_JSON}"
+  local session_rows="${4:-$SESSIONS_JSON}" tool_rows="${5:-$TOOLS_JSON}"
+  local run_rows="${6:-$RUNS_JSON}" pr_rows="${7:-$PRS_JSON}"
   printf '{"agentId":"%s","gitUser":"%s","gitEmail":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s,"usage":%s,"sessions":%s,"tools":%s,"prs":%s}' \
     "$(json_escape "$AGENT_ID")" "$(json_escape "$GIT_USER")" "$(json_escape "${GIT_EMAIL:-}")" \
-    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$RUNS_JSON" "$CHANGES_JSON" "$USAGE_JSON" "$SESSIONS_JSON" "$TOOLS_JSON" "$PRS_JSON"
+    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$run_rows" "$changes" "$usage_rows" "$session_rows" "$tool_rows" "$pr_rows"
+}
+
+payload_bytes() { LC_ALL=C printf '%s' "$1" | wc -c | tr -d ' '; }
+
+compact_changes() {
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "$CHANGES_JSON" | node -e '
+      let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+        try { process.stdout.write(JSON.stringify(JSON.parse(raw).map(r=>({...r,files:[]})))) }
+        catch { process.stdout.write("[]") }
+      })'
+  else
+    printf '[]'
+  fi
+}
+
+bounded_payload() {
+  local status=$1 payload bytes summarized_changes
+  payload="$(build_payload "$status")"
+  bytes="$(payload_bytes "$payload")"
+  if [ "$bytes" -gt "$MAX_PAYLOAD_BYTES" ]; then
+    warn "heartbeat payload ${bytes}B exceeds ${MAX_PAYLOAD_BYTES}B; omitting detailed change ranges"
+    summarized_changes="$(compact_changes)"
+    payload="$(build_payload "$status" "$summarized_changes")"
+    bytes="$(payload_bytes "$payload")"
+  fi
+  if [ "$bytes" -gt "$MAX_PAYLOAD_BYTES" ]; then
+    warn "heartbeat payload remains ${bytes}B; sending presence without usage aggregates"
+    payload="$(build_payload "$status" "${summarized_changes:-[]}" "[]" "[]" "[]")"
+    bytes="$(payload_bytes "$payload")"
+  fi
+  if [ "$bytes" -gt "$MAX_PAYLOAD_BYTES" ]; then
+    warn "aggregate payload remains ${bytes}B; sending minimal presence"
+    payload="$(build_payload "$status" "[]" "[]" "[]" "[]" "[]" "[]")"
+    bytes="$(payload_bytes "$payload")"
+  fi
+  [ "$bytes" -le "$MAX_PAYLOAD_BYTES" ] || fail "minimal heartbeat exceeds payload limit"
+  printf '%s' "$payload"
 }
 
 beat() {
-  local status="$1" resp code body
-  resp="$(curl -sS -m 10 -w $'\n%{http_code}' \
+  local status="$1" resp code body payload
+  payload="$(bounded_payload "$status")"
+  resp="$(printf '%s' "$payload" | curl -sS -m 10 -w $'\n%{http_code}' \
     -X POST "$SERVER/api/heartbeat" \
     -H 'content-type: application/json' \
     -H "x-cf-key: $KEY" \
-    -d "$(build_payload "$status")" 2>/dev/null)" || { warn "network error — will retry"; return 1; }
+    --data-binary @- 2>/dev/null)" || { warn "network error — will retry"; return 1; }
   code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
   case "$code" in
@@ -700,6 +847,7 @@ run_loop() {
 }
 
 # ── Dispatch ────────────────────────────────────────────────────────────────
+if [ "${CF_DASHBOARD_TEST_MODE:-0}" != "1" ]; then
 case "$MODE" in
   status)
     if is_running; then
@@ -708,6 +856,7 @@ case "$MODE" in
     else
       warn "dashboard client is not running"
       [ -f "$PIDFILE" ] && rm -f "$PIDFILE"
+      rm -f "$PIDSTART"
       exit 1
     fi
     ;;
@@ -720,11 +869,12 @@ case "$MODE" in
       # Give the client time to send its offline beat before forcing the issue.
       n=0; while is_running && [ "$n" -lt 12 ]; do sleep 0.5; n=$((n + 1)); done
       if is_running; then kill -9 "$pid" 2>/dev/null || true; fi
-      rm -f "$PIDFILE"
+      rm -f "$PIDFILE" "$PIDSTART"
       ok "stopped"
     else
       warn "dashboard client is not running"
       [ -f "$PIDFILE" ] && rm -f "$PIDFILE"
+      rm -f "$PIDSTART"
     fi
     ;;
 
@@ -739,6 +889,7 @@ case "$MODE" in
     nohup bash "$SCRIPT_PATH" run ${ARGS[@]+"${ARGS[@]}"} >>"$LOGFILE" 2>&1 &
     child=$!
     printf '%s\n' "$child" > "$PIDFILE"
+    process_started "$child" > "$PIDSTART"
     disown "$child" 2>/dev/null || true
     sleep 1
     if is_running; then
@@ -748,7 +899,7 @@ case "$MODE" in
     else
       warn "client exited immediately — last log lines:"
       tail -n 3 "$LOGFILE" >&2 || true
-      rm -f "$PIDFILE"
+      rm -f "$PIDFILE" "$PIDSTART"
       exit 1
     fi
     ;;
@@ -757,3 +908,4 @@ case "$MODE" in
     run_loop
     ;;
 esac
+fi

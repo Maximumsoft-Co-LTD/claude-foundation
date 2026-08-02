@@ -313,7 +313,9 @@ verification, never by claiming atomic remote mutation.
 ## Watchdog
 
 The external event ledger requires unique request identity and records operation,
-agent/model, parent request, tokens, cache, cost, tool, hash, and change.
+agent/model, parent request, tokens, cache, cost, tool, hash, and change. The
+watchdog evaluates the larger of request usage and configured token usage, so a
+small number of unusually large requests cannot bypass the thresholds.
 
 Budget actions:
 

@@ -35,7 +35,7 @@ profile**) used consistently across chips, charts, and tables.
 │   • git diff merge-base..worktree   │           │   agents / heartbeats / runs /          │
 │     → changed files + line ranges   │           │   usage_daily / sessions_daily / tools /│
 │   • git log 14d + FOLLOWUPS.md      │           │   commits_daily / followups /           │
-│ every 300s  → usage scan            │           │   file_edits / conflict_log             │
+│ every 300s  → incremental usage     │           │   file_edits / conflict_log             │
 │   • ~/.claude/projects/**/*.jsonl   │           │                                         │
 │     → tokens per day×model×project, │           │  GET /api/online    (5s poll)  ← UI     │
 │       sessions, tool calls          │           │  GET /api/presence  (60s poll) ← UI     │
@@ -79,6 +79,8 @@ row to the `heartbeats` log, credits a minute into the compact
 `presence_hourly` aggregate, + snapshots the agent's full state into `agents`.
 On boot the server restores the presence map from `agents`, so restarts don't
 blank the board. `dashboard-down` sends a final `status: offline` beat.
+Presence minutes are deduplicated by `(person, minute)`, so two machines owned
+by the same person count as one online minute rather than two.
 
 Identity = shared key (auth) + a stable per-machine `agentId`
 (`~/.claude-foundation/agent-id`) + git `user.name` (+ `user.email`, reported
@@ -139,9 +141,11 @@ the scan roots (bounded by `SCAN_DEPTH` and repo/file caps; `find` prunes
 
 ### 3. Usage scan — tokens, models, projects, sessions, tools
 
-Every `USAGE_INTERVAL` (300 s — transcripts run to gigabytes) the client streams
-the local Claude Code transcripts (`~/.claude/projects/**/*.jsonl`, honoring
-`CLAUDE_CONFIG_DIR`) through **one `awk` pass** that emits three aggregates:
+Every `USAGE_INTERVAL` (300 s), the client incrementally reads newly appended
+bytes from the local Claude Code transcripts (`~/.claude/projects/**/*.jsonl`,
+honoring `CLAUDE_CONFIG_DIR`). A cursor cache retains deduplicated message
+aggregates; unchanged files cost no transcript reads. If Node is unavailable,
+the portable client falls back to the original single-pass `awk` scanner.
 
 1. **Usage rows** per `date × model × project` — `{ input, output, cacheCreate,
    cacheRead, count }`. `project` = basename of the message's `cwd`. Rows are
@@ -152,9 +156,11 @@ the local Claude Code transcripts (`~/.claude/projects/**/*.jsonl`, honoring
    UTC-yesterday.
 2. **Sessions per day** — distinct transcript files per date, with active
    seconds (last − first message time).
-3. **Tool calls** — every `tool_use` block, counted per tool name.
+3. **Tool calls** — every `tool_use` block, counted per local date and tool name.
 
 Results cache at `~/.claude-foundation/usage.json` and ride every heartbeat.
+Dataset hashes prevent unchanged rows from being rewritten to SQLite on every
+beat, and the browser fetches usage/work analytics every 60 s instead of 5 s.
 Only aggregate counts leave the machine — never prompt or transcript content.
 
 **Cost** is estimated in the browser from list prices per model family
@@ -183,9 +189,10 @@ version lives in `PRAGMA user_version`; v2 migrates in place.
 | `conflict_log` | Every detected line-overlap conflict | Pruned after `HISTORY_DAYS` |
 | `work_daily` | Commits/lines/pushes/PRs per `(agent, date)` | Pruned after `HISTORY_DAYS` |
 
-Schema v3 migrates in place (adds run owner/size/repo_id + `git_email`, creates
+Schema v4 migrates in place (adds run owner/size/repo_id + `git_email`, creates
 `profiles`/`presence_hourly`, and backfills presence from the existing raw
-heartbeat log so the heatmap doesn't reset).
+heartbeat log so the heatmap doesn't reset; v4 adds per-person minute
+deduplication).
 
 **On Railway**: attach a **Volume** (Settings → Volumes, e.g. `/data`) — the
 server finds it via `RAILWAY_VOLUME_MOUNT_PATH`; `DB_PATH` overrides. Without a
@@ -211,7 +218,8 @@ labels are bucketed on the server's clock, UTC on Railway.)
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `POST` | `/api/heartbeat` | `SHARED_KEY` | Upsert agent. Body: `{ agentId, gitUser, gitEmail, host, version, status, runs[], changes[], usage[], sessions[], tools[], prs[] }`. |
-| `GET` | `/api/online` | `VIEW_KEY` | Live board: `{ now, ttlMs, onlineCount, totalCount, agents[], profiles[], conflicts[], runs[], usage[], sessions[], tools[], work[], repoStats[] }`. Payload memoized for `ONLINE_CACHE_MS` (2 s) and shared across viewers — 100 people polling costs one recompute per window. |
+| `GET` | `/api/online` | `VIEW_KEY` | Live board: `{ now, ttlMs, onlineCount, totalCount, agents[], profiles[], conflicts[], runs[] }`. Payload memoized for `ONLINE_CACHE_MS` (2 s) and shared across viewers. |
+| `GET` | `/api/usage` | `VIEW_KEY` | Slower analytics payload: `{ usage[], sessions[], tools[], work[], repoStats[] }`, polled every 60 s and cached server-side for 30 s. |
 | `POST` | `/api/profile` | `VIEW_KEY` | Upsert one person's profile: `{ user, email?, org?, teams[]?, color? }`. Team-membership metadata, editable by any viewer. |
 | `GET` | `/api/presence` | `VIEW_KEY` | Hour-bucketed online minutes per person. `?days=` (≤30, default 7). `503` without a DB. |
 | `GET` | `/api/history` | `VIEW_KEY` | Durable aggregates: long-range usage, top projects, hotspots, conflict history, per-person daily work (for the workload comparison). `?days=` (≤365, default 120). |
@@ -260,8 +268,10 @@ Server env: `SHARED_KEY` (required), `VIEW_KEY` (defaults to `SHARED_KEY`),
 `CLAUDE_FOUNDATION_SCAN_ROOTS` (colon-separated),
 `CLAUDE_FOUNDATION_SCAN_DEPTH` (6), `CLAUDE_FOUNDATION_ACTIVE_WINDOW` (900),
 `CLAUDE_FOUNDATION_DASHBOARD_INTERVAL` (30, the heartbeat cadence),
-`CLAUDE_FOUNDATION_SCAN_INTERVAL` (60), `CLAUDE_FOUNDATION_USAGE_DAYS` (30), `CLAUDE_FOUNDATION_PR_INTERVAL` (900),
-`CLAUDE_FOUNDATION_USAGE_INTERVAL` (300).
+`CLAUDE_FOUNDATION_SCAN_INTERVAL` (60), `CLAUDE_FOUNDATION_DISCOVERY_INTERVAL` (300),
+`CLAUDE_FOUNDATION_USAGE_DAYS` (30), `CLAUDE_FOUNDATION_PR_INTERVAL` (900),
+`CLAUDE_FOUNDATION_USAGE_INTERVAL` (300),
+`CLAUDE_FOUNDATION_MAX_PAYLOAD_BYTES` (500000).
 
 Per-repo label chip: `git config dashboard.label "payments"`.
 

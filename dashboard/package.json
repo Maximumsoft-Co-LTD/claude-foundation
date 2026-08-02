@@ -1,11 +1,12 @@
 {
   "name": "claude-foundation-dashboard",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "private": true,
   "description": "Central presence dashboard — see which installed claude-foundation agents are online.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js test/*.test.mjs && bash test/client.test.sh"
   },
   "engines": {
     "node": ">=24"

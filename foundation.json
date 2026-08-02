@@ -7,6 +7,10 @@
       "repository": 12288,
       "global": 16384
     },
+    "tokenBudgets": {
+      "rapid": 800000,
+      "standard": 1600000
+    },
     "planSummaryBytes": 4096,
     "leaseMinutes": 45
   },

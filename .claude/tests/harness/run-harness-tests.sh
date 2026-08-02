@@ -508,6 +508,19 @@ assert_contains "metrics attribute usage by model" \
   "$metrics" '"sonnet":'
 assert_contains "metrics attribute usage by repository" \
   "$metrics" '"root":'
+assert_eq "watchdog accumulates known request tokens" "182" \
+  "$(jq -r '.budget.usedTokens' .foundation/runtime/tiny-copy-edit.json)"
+tmp_runtime="$TMP/tiny-copy-budget.json"
+jq '.budget.targetTokens = 182' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
+if node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-token-limit --operation build >/dev/null 2>&1; then
+  fail "token budget stops execution independently of request count"
+else
+  pass "token budget stops execution independently of request count"
+fi
+jq '.budget.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 
 # Claude usage belongs to assistant requests in the session transcript, not to
 # PostToolUse. Native import reads the nested schema, imports subagents once,
@@ -565,6 +578,7 @@ copy_output="$(node .claude/harness/foundation.mjs sandbox create copy-sandbox)"
 assert_contains "non-git sandbox uses isolated copy" "$copy_output" "mode: isolated-copy"
 copy_path="$(jq -r '.workspace.path' .foundation/runtime/copy-sandbox.json)"
 printf 'copy-applied\n' > "$copy_path/app.txt"
+ln -s app.txt "$copy_path/current-link"
 printf '%s\n' '{"lockfileVersion":3}' > "$copy_path/package-lock.json"
 sed -i.bak 's/- \[ \]/- [x]/g' "$copy_path/openspec/changes/copy-sandbox/tasks.md"
 rm "$copy_path/openspec/changes/copy-sandbox/tasks.md.bak"
@@ -604,6 +618,7 @@ assert_eq "failed archive retains recoverable applied state" "applied" \
   "$(jq -r '.status' .foundation/runtime/copy-sandbox.json)"
 assert_eq "code remains applied for archive retry" "copy-applied" \
   "$(tr -d '\n' < app.txt)"
+assert_eq "copy apply preserves a new symlink" "app.txt" "$(readlink current-link)"
 assert_file_contains "unrelated target file survives apply" NOTES.md \
   "user-owned and unrelated"
 archive_output="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs archive copy-sandbox)"
@@ -621,6 +636,9 @@ cp -R "$ROOT/openspec/schemas" "$TMP/git-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/git-project/openspec/"
 cp "$ROOT/.foundation/.gitignore" "$TMP/git-project/.foundation/"
 printf 'before\n' > "$TMP/git-project/app.txt"
+printf 'first\n' > "$TMP/git-project/target-a.txt"
+printf 'second\n' > "$TMP/git-project/target-b.txt"
+ln -s target-a.txt "$TMP/git-project/current-link"
 cd "$TMP/git-project"
 git init -q
 git config user.name "Foundation Test"
@@ -631,6 +649,8 @@ node .claude/harness/foundation.mjs new 'Sandbox copy' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve sandbox-copy --impact low --coupling isolated >/dev/null
 node .claude/harness/foundation.mjs sandbox create sandbox-copy >/dev/null
 printf 'after\n' > .foundation/sandboxes/sandbox-copy/app.txt
+rm .foundation/sandboxes/sandbox-copy/current-link
+ln -s target-b.txt .foundation/sandboxes/sandbox-copy/current-link
 sed -i.bak 's/- \[ \]/- [x]/g' .foundation/sandboxes/sandbox-copy/openspec/changes/sandbox-copy/tasks.md
 rm .foundation/sandboxes/sandbox-copy/openspec/changes/sandbox-copy/tasks.md.bak
 printf '\nRevised during build.\n' >> openspec/changes/sandbox-copy/proposal.md
@@ -642,6 +662,21 @@ assert_file_contains "sync carries revised proposal into sandbox" \
 assert_file_contains "sync preserves unchanged completed task" \
   .foundation/sandboxes/sandbox-copy/openspec/changes/sandbox-copy/tasks.md \
   "- [x]"
+node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
+  --discovered 2 --minimum 1 --observed "2 tests discovered" \
+  --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
+rm .foundation/sandboxes/sandbox-copy/current-link
+ln -s target-a.txt .foundation/sandboxes/sandbox-copy/current-link
+if node .claude/harness/foundation.mjs land-check sandbox-copy >/dev/null 2>&1; then
+  fail "dirty symlink target change invalidates proof"
+else
+  pass "dirty symlink target change invalidates proof"
+fi
+rm .foundation/sandboxes/sandbox-copy/current-link
+ln -s target-b.txt .foundation/sandboxes/sandbox-copy/current-link
 node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
   --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
@@ -687,6 +722,8 @@ assert_cmd_zero "proven sandbox applies transactionally" \
   node .claude/harness/foundation.mjs sandbox apply sandbox-copy
 applied="$(tr -d '\n' < app.txt)"
 assert_eq "target matches sandbox content" "after" "$applied"
+assert_eq "Git worktree apply preserves changed symlink" "target-b.txt" \
+  "$(readlink current-link)"
 assert_file_contains "land returns completed task ledger" \
   openspec/changes/sandbox-copy/tasks.md "- [x]"
 assert_file_contains "successful apply preserves unrelated target edits" NOTES.md \
@@ -927,5 +964,7 @@ assert_contains "metrics expose context byte totals" \
   "$context_metrics" '"estimatedTokens":'
 assert_contains "metrics separate plan and packet context" \
   "$context_metrics" '"agent-plan-summary":'
+assert_contains "context estimate declares its measurement scope" \
+  "$context_metrics" '"emitted-plan-and-packet-bytes-only"'
 
 finish "harness contracts"

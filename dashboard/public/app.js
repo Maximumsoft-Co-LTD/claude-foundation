@@ -463,18 +463,28 @@ async function pollExtras() {
   const rangeDays = Math.max(1, Math.ceil((Date.now() - R.fromMs) / DAY));
   const histDays = Math.min(365, Math.max(120, rangeDays * 2));
   try {
-    const [pr, hi] = await Promise.all([
+    const [pr, hi, us] = await Promise.all([
       fetch(`./api/presence?days=${days}`, { headers }),
       fetch(`./api/history?days=${histDays}`, { headers }),
+      fetch('./api/usage', { headers }),
     ]);
     lastPresence = pr.ok ? await pr.json() : null;
     lastHistory = hi.ok ? await hi.json() : null;
+    if (us.ok) {
+      const usageData = await us.json();
+      lastUsage = Array.isArray(usageData.usage) ? usageData.usage : [];
+      lastSessions = Array.isArray(usageData.sessions) ? usageData.sessions : [];
+      lastTools = Array.isArray(usageData.tools) ? usageData.tools : [];
+      lastWork = Array.isArray(usageData.work) ? usageData.work : [];
+      lastRepoStats = Array.isArray(usageData.repoStats) ? usageData.repoStats : [];
+    }
   } catch (err) {
     return; // keep last known extras on transient failures
   }
   renderPresence(lastPresence);
   renderHistoryExtras(lastHistory);
-  renderWorkload(lastNow || Date.now());
+  renderMemberFilter(membersFrom(lastRuns, lastUsage));
+  applyFilter();
 }
 
 // ── Usage (token + model) ───────────────────────────────────────────────────
@@ -723,7 +733,7 @@ function applyFilter() {
   renderFunnel(runs);
   renderRepoStats(lastRepoStats, now);
   renderActivity(feedFrom(runs));
-  renderUsage(byDate(by(lastUsage)), byDate(by(lastSessions)), by(lastTools), now, R);
+  renderUsage(byDate(by(lastUsage)), byDate(by(lastSessions)), byDate(by(lastTools)), now, R);
 }
 
 // ── Workload: selected range vs the previous equal-length window ───────────
@@ -800,11 +810,11 @@ function renderWorkload(now) {
 function render(data) {
   lastData = data;
   lastRuns = Array.isArray(data.runs) ? data.runs : [];
-  lastUsage = Array.isArray(data.usage) ? data.usage : [];
-  lastSessions = Array.isArray(data.sessions) ? data.sessions : [];
-  lastTools = Array.isArray(data.tools) ? data.tools : [];
-  lastWork = Array.isArray(data.work) ? data.work : [];
-  lastRepoStats = Array.isArray(data.repoStats) ? data.repoStats : [];
+  if (Array.isArray(data.usage)) lastUsage = data.usage;
+  if (Array.isArray(data.sessions)) lastSessions = data.sessions;
+  if (Array.isArray(data.tools)) lastTools = data.tools;
+  if (Array.isArray(data.work)) lastWork = data.work;
+  if (Array.isArray(data.repoStats)) lastRepoStats = data.repoStats;
   lastNow = data.now;
   profilesByUser = new Map((Array.isArray(data.profiles) ? data.profiles : []).map((p) => [p.user, p]));
   renderTeam(data);
@@ -974,8 +984,11 @@ function demoData() {
       }
       return out;
     })(),
-    tools: ['Bash', 'Edit', 'Read', 'Write', 'Grep', 'Agent', 'WebSearch'].flatMap((tool, i) =>
-      ['alice', 'bob', 'carol'].map((p) => ({ gitUser: p, tool, count: Math.floor(3000 / (i + 1)) }))),
+    tools: Array.from({ length: 14 }, (_, day) => {
+      const date = new Date(now - day * 86400000).toISOString().slice(0, 10);
+      return ['Bash', 'Edit', 'Read', 'Write', 'Grep', 'Agent', 'WebSearch'].flatMap((tool, i) =>
+        ['alice', 'bob', 'carol'].map((p) => ({ gitUser: p, date, tool, count: Math.floor(220 / (i + 1)) })));
+    }).flat(),
     repoStats: [
       { repoId: 'github.com/acme/checkout-service', fuOpen: 4, fuClosed: 11, commits: Array.from({ length: 14 }, (_, i) => ({ date: new Date(now - i * 86400000).toISOString().slice(0, 10), n: (i * 5) % 7 })) },
       { repoId: 'github.com/acme/web', fuOpen: 1, fuClosed: 6, commits: Array.from({ length: 14 }, (_, i) => ({ date: new Date(now - i * 86400000).toISOString().slice(0, 10), n: (i * 3) % 5 })) },

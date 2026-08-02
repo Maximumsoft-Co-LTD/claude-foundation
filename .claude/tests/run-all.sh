@@ -23,6 +23,7 @@ run "upgrade compatibility" sh "$HERE/harness/run-upgrade-compat-tests.sh"
 run "harness contracts" sh "$HERE/harness/run-harness-tests.sh"
 run "installer smoke" sh "$HERE/harness/run-installer-tests.sh"
 run "current hook contracts" sh "$HERE/hooks/run-hook-tests.sh"
+run "dashboard contracts" npm --prefix "$ROOT/dashboard" test
 
 if [ "$failed" -eq 0 ]; then
   echo "foundation tests: ALL SUITES PASS"
