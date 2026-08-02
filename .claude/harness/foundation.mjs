@@ -1137,8 +1137,10 @@ function evidence(id, dir = activeChangePath(id)) {
     if (capability === "mutation" && config.adapter !== "external" &&
         !["behavioral-kill", "test-failure"].includes(config.classification))
       die("configured mutation provider requires classification behavioral-kill|test-failure");
-    if (["review", "acceptance"].includes(capability) && config.adapter !== "external")
-      die(`${capability} capability requires an external provider`);
+    if (capability === "review" && config.adapter !== "external")
+      die("review capability requires an external provider");
+    if (capability === "acceptance" && config.adapter !== "external")
+      die("acceptance capability requires an external human provider");
     const declaredForProvider = (capability === "review"
       ? scopedReviewClaims(value.claims)
       : value.claims.filter((claim) =>
@@ -1348,7 +1350,8 @@ function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
     ...policyCapabilities(id)
   ]);
   const semantic = `${state.intent || ""} ${(state.securityTriggers || []).join(" ")}`.toLowerCase();
-  const triggers = [];
+  const requiredTriggers = [];
+  const diversityTriggers = [];
   const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
   const requiredCapabilities = [
     "review", "security-static", "data-migration", "compatibility",
@@ -1356,21 +1359,22 @@ function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
   ];
   if (riskClaims.some((claim) =>
     claim.capabilities.some((capability) => requiredCapabilities.includes(capability))))
-    triggers.push("risk-capability");
+    requiredTriggers.push("risk-capability");
   if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
-    triggers.push("multi-repository-claim");
+    requiredTriggers.push("multi-repository-claim");
   if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
-    triggers.push("risk-semantics");
+    requiredTriggers.push("risk-semantics");
   if ((state.securityTriggers || []).length ||
       ["security-static", "data-migration", "compatibility"].some((value) => capabilities.has(value)))
-    triggers.push("critical-capability");
+    diversityTriggers.push("critical-capability");
   if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
-    triggers.push("critical-semantics");
+    diversityTriggers.push("critical-semantics");
+  const triggers = [...new Set([...requiredTriggers, ...diversityTriggers])].sort();
   return {
-    required: Boolean(state.reviewRequired || triggers.length || capabilities.has("review")),
+    required: Boolean(state.reviewRequired || requiredTriggers.length || capabilities.has("review")),
     independence: "required",
-    diversity: triggers.length ? "required" : "preferred",
-    triggers: [...new Set(triggers)].sort()
+    diversity: diversityTriggers.length ? "required" : "preferred",
+    triggers
   };
 }
 
@@ -2040,6 +2044,18 @@ function rejectPrototypeEvidenceInputs(id, provider, artifacts, references) {
     die(`prototype artifacts and references are non-authoritative and cannot satisfy evidence: ${rejected}`);
 }
 
+function receiptPrototypeEvidence(id, provider, receipt) {
+  const workspace = canonicalPath(providerWorkspace(id, provider));
+  const values = [
+    ...(receipt.references || []),
+    ...(receipt.artifacts || []).flatMap((artifact) => [
+      artifact?.path, artifact?.sourcePath
+    ]),
+    receipt.provenance?.source
+  ].filter(Boolean);
+  return values.find((value) => evidenceInputTargetsPrototype(value, workspace)) || null;
+}
+
 function durableArtifact(id, provider, proofRunId, artifact) {
   if (!artifact?.path || typeof artifact.path !== "string")
     die(`provider '${provider}' artifact requires a path`);
@@ -2071,6 +2087,9 @@ function durableArtifact(id, provider, proofRunId, artifact) {
   if (!existsSync(destination)) cpSync(realSource, destination);
   return {
     path: relative(ROOT, destination).replaceAll("\\", "/"),
+    sourcePath: pathInside(ROOT, realSource)
+      ? relative(ROOT, realSource).replaceAll("\\", "/")
+      : relative(workspace, realSource).replaceAll("\\", "/"),
     type: artifact.type || "artifact",
     required: artifact.required !== false,
     sha256,
@@ -2094,6 +2113,8 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
   const value = readJson(path);
   if (String(value.providerProtocolVersion || "") !== PROVIDER_PROTOCOL_VERSION)
     return { provider, validity: "provider-version-stale", status: value.status };
+  if (receiptPrototypeEvidence(id, provider, value))
+    return { provider, validity: "prototype-evidence", status: value.status };
   if (value.contractFingerprint !== contractFingerprint(id))
     return { provider, validity: "contract-stale", status: value.status };
   const config = providerConfig(id, provider);
@@ -2109,9 +2130,22 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
     const attemptPath = attemptDigest && existsSync(attemptDir)
       ? readdirSync(attemptDir).find((name) => name.includes(attemptDigest.slice(0, 12))) : null;
     if (!attemptPath) return { provider, validity: "review-attempt-history-missing", status: value.status };
-    const attempt = readJson(join(attemptDir, attemptPath), {});
-    if (attempt.digest !== attemptDigest || attempt.workspaceHash !== value.workspaceHash ||
-        attempt.reviewerType !== value.review?.reviewer?.type)
+    const attempt = reviewAttemptByDigest(id, attemptDigest);
+    const findings = value.review?.findings || {};
+    const scope = value.review?.scope || {};
+    const scopePaths = Array.isArray(scope.paths) ? scope.paths : [];
+    const expectedScopeDigest = stableHash({
+      priorWorkspaceHash: value.review?.supersedes?.workspaceHash || null,
+      workspaceHash: value.workspaceHash, paths: scopePaths
+    });
+    if (!attempt || attempt.workspaceHash !== value.workspaceHash ||
+        attempt.reviewerType !== value.review?.reviewer?.type ||
+        attempt.reviewBinding !== reviewReceiptBinding(value) ||
+        Number(value.review?.round) !== Number(attempt.attempt) ||
+        ![findings.verified, findings.unresolvedBlockers]
+          .every((count) => Number.isInteger(count) && count >= 0) ||
+        (value.status === "pass" && findings.unresolvedBlockers !== 0) ||
+        scope.digest !== expectedScopeDigest)
       return { provider, validity: "review-attempt-history-invalid", status: value.status };
     if (reviewPolicy(id).diversity === "required" && !provenance.diverse)
       return { provider, validity: "review-not-diverse", status: value.status };
@@ -2122,10 +2156,16 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
     if (String(value.acceptanceProtocolVersion || "") !== ACCEPTANCE_PROTOCOL_VERSION)
       return { provider, validity: "acceptance-version-stale", status: value.status };
     const currentAcceptance = resolvedAcceptance(id);
+    const criteria = value.acceptance?.criteria;
+    const actualClaims = Array.isArray(value.claims) ? [...value.claims].sort() : [];
+    const expectedClaims = claimsForProvider(id, provider).map((claim) => claim.id).sort();
     if (value.acceptance?.actor?.type !== "human" ||
         !String(value.acceptance?.actor?.identity || "").trim() ||
         value.acceptance?.decision !== "accept" ||
-        !Array.isArray(value.acceptance?.criteria) || value.acceptance.criteria.length === 0 ||
+        !Array.isArray(criteria) || criteria.length === 0 ||
+        criteria.some((criterion) => !String(criterion).trim()) ||
+        new Set(criteria.map((criterion) => String(criterion).trim())).size !== criteria.length ||
+        stableHash(actualClaims) !== stableHash(expectedClaims) ||
         value.acceptance?.subjectWorkspaceHash !== value.workspaceHash ||
         value.acceptance?.reason !== currentAcceptance.reason)
       return { provider, validity: "acceptance-invalid", status: value.status };
@@ -2280,13 +2320,13 @@ function changedSurfaceIssues(id) {
   const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
     .map(taskMetadata);
   const issues = [];
+  const surface = canonicalChangedSurface(id, state);
   for (const repository of selectedRepositories(id, state)) {
     if (repository.mode !== "write") continue;
     const allowed = tasks.filter((task) => task.repository === repository.id)
       .flatMap((task) => task.paths);
-    const changed = changedFilesInWorkspace(id, repository.workspacePath)
-      .filter((path) => repository.id !== "root" ||
-        !isCurrentChangePath(path, id));
+    const changed = surface.filter((row) => row.repositoryId === repository.id)
+      .map((row) => row.path);
     const outside = changed.filter((path) => !allowed.some((scope) => {
       const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
       return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
@@ -2435,10 +2475,19 @@ function reviewProvenanceResult(review) {
   return { complete, independent, diverse };
 }
 
+function reviewReceiptBinding(receipt) {
+  const canonical = JSON.parse(JSON.stringify(receipt));
+  if (canonical.review) delete canonical.review.attemptDigest;
+  return stableHash(canonical);
+}
+
 function subjectProvenance(flags) {
-  const structured = flagValues(flags, "subject-provenance").map((value) => {
+  const rawStructured = flags["subject-provenance"] === undefined
+    ? [] : Array.isArray(flags["subject-provenance"])
+      ? flags["subject-provenance"] : [flags["subject-provenance"]];
+  const structured = rawStructured.map((value) => {
     let subject;
-    try { subject = JSON.parse(value); }
+    try { subject = JSON.parse(String(value)); }
     catch (error) { die(`invalid --subject-provenance JSON (${error.message})`); }
     return subject;
   });
@@ -2462,35 +2511,82 @@ function subjectProvenance(flags) {
 }
 
 function reviewHistoryState(id, state = loadRuntime(id)) {
-  if (state.reviewHistory?.version === 1) return state.reviewHistory;
   const candidates = existsSync(join(RECEIPTS, id))
     ? readdirSync(join(RECEIPTS, id), { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "proof.json")
       .map((entry) => readJson(join(RECEIPTS, id, entry.name), {}))
       .filter((receipt) => receipt.review)
     : [];
+  if (state.reviewHistory?.version === 1 &&
+      (Number(state.reviewHistory.totalAttempts || 0) > 0 || candidates.length === 0))
+    return state.reviewHistory;
   const latest = candidates.sort((a, b) => Number(b.review?.round || 0) - Number(a.review?.round || 0))[0];
   const round = Number(latest?.review?.round || 0);
   const aiAttempts = latest?.review?.reviewer?.type === "ai" ? Math.min(round, 2) : round >= 3 ? 2 : 0;
+  let migratedAttempt = null;
+  if (latest) {
+    migratedAttempt = {
+      version: 1, changeId: id, attempt: round || 1,
+      reviewerType: latest.review?.reviewer?.type || "unknown",
+      workspaceHash: latest.workspaceHash || null, status: latest.status || null,
+      reviewBinding: reviewReceiptBinding(latest),
+      priorChainHead: null, migrated: true,
+      migratedFromReceiptDigest: stableHash(latest), timestamp: now()
+    };
+    migratedAttempt.digest = stableHash(migratedAttempt);
+    writeJson(join(EVIDENCE_VAULT, id, "review-attempts",
+      `${String(round || 1).padStart(4, "0")}-${migratedAttempt.digest.slice(0, 12)}.json`), migratedAttempt);
+  }
   state.reviewHistory = {
     version: 1, aiAttempts, totalAttempts: round,
-    chainHead: latest ? stableHash(latest) : null,
+    chainHead: migratedAttempt?.digest || null,
     migratedFromReceiptDigest: latest ? stableHash(latest) : null
   };
   saveRuntime(state);
   return state.reviewHistory;
 }
 
+function reviewAttemptByDigest(id, digest) {
+  const dir = join(EVIDENCE_VAULT, id, "review-attempts");
+  if (!digest || !existsSync(dir)) return null;
+  const name = readdirSync(dir).find((entry) => entry.includes(String(digest).slice(0, 12)));
+  if (!name) return null;
+  const attempt = readJson(join(dir, name), {});
+  const claimed = attempt.digest;
+  const canonical = { ...attempt };
+  delete canonical.digest;
+  return claimed === digest && stableHash(canonical) === claimed ? attempt : null;
+}
+
+function reviewHistoryChainValid(id, history) {
+  let digest = history.chainHead || null;
+  let expectedAttempt = Number(history.totalAttempts || 0);
+  const seen = new Set();
+  while (digest) {
+    if (seen.has(digest) || seen.size > 1000) return false;
+    seen.add(digest);
+    const attempt = reviewAttemptByDigest(id, digest);
+    if (!attempt || Number(attempt.attempt) !== expectedAttempt || attempt.changeId !== id)
+      return false;
+    digest = attempt.priorChainHead || null;
+    expectedAttempt -= 1;
+  }
+  return expectedAttempt === 0 || Boolean(reviewAttemptByDigest(id, history.chainHead)?.migrated);
+}
+
 function reserveReviewAttempt(id, reviewerType, receiptSeed) {
   const state = loadRuntime(id);
   const history = reviewHistoryState(id, state);
+  if (history.chainHead && !reviewHistoryChainValid(id, history))
+    die("review attempt history is missing or corrupt; restore the evidence chain before recording another review");
   if (reviewerType === "ai" && Number(history.aiAttempts || 0) >= 2)
-    die("AI review is limited to two attempts; further review requires a human");
+    die("AI review is limited to two rounds (attempts); further review requires a human");
   const attempt = {
     version: 1, changeId: id,
     attempt: Number(history.totalAttempts || 0) + 1,
     reviewerType, priorChainHead: history.chainHead || null,
     workspaceHash: receiptSeed.workspaceHash, status: receiptSeed.status,
+    reviewBinding: receiptSeed.reviewBinding,
     timestamp: now()
   };
   attempt.digest = stableHash(attempt);
@@ -2511,6 +2607,9 @@ function recordReceipt(id, provider, status, flags = {}) {
   const capability = providerCapability(provider, configured);
   if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
   if (!["pass", "fail", "inconclusive", "error"].includes(status)) die(`invalid receipt status '${status}'`);
+  const state = loadRuntime(id);
+  if (capability === "acceptance" && !resolvedAcceptance(id, state, evidence(id)).required)
+    die("acceptance evidence is not declared for this change");
   const allClaims = evidence(id).claims.map((claim) => claim.id);
   const allowedClaims = claimsForProvider(id, provider).map((claim) => claim.id);
   const requestedClaims = String(
@@ -2535,9 +2634,6 @@ function recordReceipt(id, provider, status, flags = {}) {
   const providerVersion = String(flags.version || config?.version || "1");
   const adapter = flags.adapter || config?.adapter || "external";
   const inputMode = flags["input-mode"] || config?.inputMode || null;
-  const state = loadRuntime(id);
-  if (capability === "acceptance" && !resolvedAcceptance(id, state, evidence(id)).required)
-    die("acceptance evidence is not declared for this change");
   const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
     `manual-${Date.now()}-${process.pid}`;
   const workspaceHash = flags.workspaceHash || state.activeProofRun?.workspaceHash ||
@@ -2671,17 +2767,14 @@ function recordReceipt(id, provider, status, flags = {}) {
     const nextAttempt = Number(history.totalAttempts || 0) + 1;
     if (nextAttempt >= 2 && reviewerType === "ai" && scopePaths.length === 0)
       die("AI review round 2 requires at least one --scope-path");
-    const attempt = reserveReviewAttempt(id, reviewerType, { workspaceHash, status });
-    const round = attempt.attempt;
     receipt.reviewProtocolVersion = REVIEW_PROTOCOL_VERSION;
     receipt.review = {
-      round,
+      round: nextAttempt,
       reviewer,
       subjects,
-      attemptDigest: attempt.digest,
       policy: { ...policy, independent, diverse },
       scope: {
-        mode: round === 1 || scopePaths.length === 0 ? "full" : "changed",
+        mode: nextAttempt === 1 || scopePaths.length === 0 ? "full" : "changed",
         paths: scopePaths,
         digest: stableHash({ priorWorkspaceHash: prior?.workspaceHash || null, workspaceHash, paths: scopePaths })
       },
@@ -2697,12 +2790,17 @@ function recordReceipt(id, provider, status, flags = {}) {
         round: Number(prior?.review?.round || 0) || null
       } : null
     };
+    const attempt = reserveReviewAttempt(id, reviewerType, {
+      workspaceHash, status, reviewBinding: reviewReceiptBinding(receipt)
+    });
+    receipt.review.attemptDigest = attempt.digest;
   }
   if (capability === "acceptance") {
     const acceptor = String(flags.acceptor || "").trim();
-    const criteria = flagValues(flags, "criterion");
+    const criteria = flagValues(flags, "criterion").map((value) => String(value).trim());
     const decision = String(flags.decision || "").trim().toLowerCase();
-    if (status === "pass" && (!acceptor || decision !== "accept" || criteria.length === 0))
+    if (status === "pass" && (!acceptor || decision !== "accept" || criteria.length === 0 ||
+        criteria.some((criterion) => !criterion) || new Set(criteria).size !== criteria.length))
       die("passing acceptance requires --acceptor, --decision accept, and at least one --criterion");
     if (status === "pass" && !observed)
       die("passing acceptance requires --observed");
@@ -3531,6 +3629,9 @@ function landCheck(id) {
   for (const provider of requiredProviders(id)) {
     const check = receiptValidity(id, provider, hash);
     if (check.validity !== "valid") die(`${provider} evidence is ${check.validity}`);
+    const manifestEntry = (proof.receipts || []).find((entry) => entry.provider === provider);
+    if (!manifestEntry || fileDigest(receiptPath(id, provider)) !== manifestEntry.sha256)
+      die(`${provider} live receipt differs from the proven receipt manifest`);
   }
   if (state.workspace?.applied) {
     const applied = verifyAppliedProjection(state);
@@ -4657,12 +4758,21 @@ function showProviders() {
     console.log(`${provider}\t${contract}`);
 }
 
-function changedFilesInWorkspace(id, workspace) {
-  if (gitHead(workspace)) {
-    const result = git(["status", "--porcelain", "--untracked-files=all"], workspace);
-    if (result.status === 0)
-      return result.stdout.split("\n").filter(Boolean)
-        .map((line) => line.slice(3).split(" -> ").at(-1)).sort();
+function changedFilesInWorkspace(id, workspace, knownHead = undefined) {
+  const head = knownHead === undefined ? gitHead(workspace) : knownHead;
+  if (head) {
+    const result = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], workspace);
+    if (result.status === 0) {
+      const records = result.stdout.split("\0").filter(Boolean);
+      const paths = [];
+      for (let index = 0; index < records.length; index += 1) {
+        const record = records[index];
+        const status = record.slice(0, 2);
+        paths.push(record.slice(3));
+        if (/[RC]/.test(status) && records[index + 1]) paths.push(records[++index]);
+      }
+      return [...new Set(paths)].sort();
+    }
   }
   return [];
 }
@@ -4689,19 +4799,26 @@ function canonicalChangedSurface(id, state = loadRuntime(id)) {
     const add = (path, source) => {
       if (!path) return;
       const normalized = path.replaceAll("\\", "/");
-      if (repository.id === "root" && isCurrentChangePath(normalized, id)) return;
+      if (EXCLUDED_WORKSPACE_DIRS.has(normalized.split("/")[0])) return;
+      if (repository.id === "root" &&
+          (isCurrentChangePath(normalized, id) || normalized.startsWith("openspec/changes/"))) return;
       if (!sources.has(normalized)) sources.set(normalized, new Set());
       sources.get(normalized).add(source);
     };
-    if (gitHead(workspace)) {
-      const baseHead = repository.baseHead || state.workspace?.baseHead || null;
-      if (baseHead) {
+    const head = gitHead(workspace);
+    if (head) {
+      const baseHead = repository.id === "root"
+        ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
+        : state.repositories?.[repository.id]?.baseHead || null;
+      if (!baseHead)
+        die(`cannot resolve changed surface for repository '${repository.id}': missing baseHead; sync or recreate the change sandbox`);
+      if (baseHead !== head) {
         const committed = git(["diff", "--name-only", "-z", `${baseHead}...HEAD`], workspace);
         if (committed.status !== 0)
           die(`cannot resolve changed surface for repository '${repository.id}' from base ${baseHead}`);
         committed.stdout.split("\0").filter(Boolean).forEach((path) => add(path, "committed"));
       }
-      changedFilesInWorkspace(id, workspace).forEach((path) => add(path, "dirty"));
+      changedFilesInWorkspace(id, workspace, head).forEach((path) => add(path, "dirty"));
     } else if (repository.id === "root") {
       changedFiles(id, state).forEach((path) => add(path, "dirty"));
     }
@@ -4822,9 +4939,12 @@ function packetValue(id, repositoryId = null, taskId = null) {
     });
   if (selectedTask && claims.length > 0 && providerRows.length === 0)
     die(`task '${selectedTask.id}' has no provider coverage`);
-  let fileChanges = repository
-    ? changedFilesInWorkspace(id, repository.workspacePath)
-    : changedFiles(id, state);
+  const packetSurface = canonicalChangedSurface(id, state);
+  const multiRepositoryPacket = new Set(packetSurface.map((row) => row.repositoryId)).size > 1;
+  let fileChanges = packetSurface
+    .filter((row) => !repository || row.repositoryId === repository.id)
+    .map((row) => repository || !multiRepositoryPacket
+      ? row.path : `${row.repositoryId}/${row.path}`);
   if (selectedTask?.paths.length)
     fileChanges = fileChanges.filter((path) => selectedTask.paths.some((scope) => {
       const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
@@ -4953,10 +5073,21 @@ function reviewPacketValue(id) {
   };
   const surfaceRows = canonicalChangedSurface(id, state);
   const paths = surfaceRows.map((row) => `${row.repositoryId}/${row.path}`);
+  const inspection = [...surfaceRows.reduce((groups, row) => {
+    if (!groups.has(row.repositoryId)) groups.set(row.repositoryId, []);
+    groups.get(row.repositoryId).push(row.path);
+    return groups;
+  }, new Map())].map(([repositoryId, repositoryPaths]) => ({
+    repositoryId,
+    baseHead: repositoryId === "root"
+      ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
+      : state.repositories?.[repositoryId]?.baseHead || null,
+    paths: repositoryPaths
+  }));
   const changedSurface = paths.length <= 60 ? {
     paths,
     digest: stableHash(paths),
-    diffCommand: paths.length ? "git diff -- <paths from changedSurface.paths>" : "git diff"
+    inspection
   } : {
     count: paths.length,
     digest: stableHash(paths),
@@ -4966,7 +5097,12 @@ function reviewPacketValue(id) {
       return groups;
     }, {})).sort(([left], [right]) => left.localeCompare(right))
       .map(([prefix, count]) => ({ prefix, count })), 30),
-    diffCommand: "git diff -- <scoped-paths-from-groups>"
+    inspection: inspection.map((entry) => ({
+      ...entry,
+      pathCount: entry.paths.length,
+      paths: entry.paths.slice(0, 20),
+      truncated: entry.paths.length > 20
+    }))
   };
   const evidenceRows = requiredProviders(id)
     .filter((provider) => !["review", "acceptance"].includes(

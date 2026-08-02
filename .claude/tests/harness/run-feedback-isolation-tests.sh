@@ -140,6 +140,19 @@ if bash "$ROOT/cli.sh" --project "$TARGET" sandbox inspect "$CHANGE" \
 else
   pass "isolation commands reject unknown flags"
 fi
+if bash "$ROOT/cli.sh" --project "$TARGET" doctor --stage build \
+  --change "$CHANGE" --unattended=true > "$TMP/doctor-valued-unattended.txt" 2>&1; then
+  fail "doctor rejects valued unattended flags"
+else
+  pass "doctor rejects valued unattended flags"
+fi
+if bash "$ROOT/cli.sh" --project "$TARGET" doctor --stage build \
+  --change "$CHANGE" --unattended --unattended \
+  > "$TMP/doctor-duplicate-unattended.txt" 2>&1; then
+  fail "doctor rejects duplicate unattended flags"
+else
+  pass "doctor rejects duplicate unattended flags"
+fi
 strict_state_after="$(jq -c . "$TARGET/.foundation/runtime/$CHANGE.json")"
 strict_operations_after="$(test -f "$OPERATIONS" && wc -c < "$OPERATIONS" | tr -d ' ' || printf '0')"
 assert_eq "malformed unattended flags leave all runtime state unchanged" \

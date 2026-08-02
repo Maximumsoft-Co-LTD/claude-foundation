@@ -26,6 +26,27 @@ A/B showing held `judge_p10`, no added requests on controls, and lower end-to-en
 correction turns. The earlier strict-review rejection below remains controlling:
 more review is not inherently better review.
 
+### Audit hardening microbenchmark
+
+After the adversarial follow-up, a clean-install CLI A/B compared commit
+`9cdc908` with the hardened working tree on an untriggered Rapid change. Each arm
+used Node 26 on macOS, five warmups, 30 alternating measured repetitions, and
+disabled telemetry. This measures deterministic CLI overhead only, not model or
+human latency.
+
+| command | median delta | p95 delta |
+|---|---:|---:|
+| validate | -0.69 ms (-0.6%) | -0.94 ms (-0.8%) |
+| hash | +0.19 ms (+0.2%) | +0.97 ms (+0.8%) |
+| build packet | -14.92 ms (-7.1%) | -19.46 ms (-8.7%) |
+| proof plan | -15.85 ms (-8.1%) | -9.36 ms (-4.5%) |
+| doctor | +0.59 ms (+0.2%) | -9.93 ms (-3.6%) |
+
+The first measurement exposed an 11.2% packet regression from redundant Git
+processes. Reusing the already-resolved HEAD and skipping `baseHead...HEAD` when
+the revisions match removed it. Untriggered model requests, agent spawns, review
+history artifacts, and prototype artifacts remain zero.
+
 ## The cost model, established the hard way
 
 Cost on this workflow is input-dominated roughly **6:1** over output, so the

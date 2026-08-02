@@ -256,15 +256,24 @@ compatibility, migration, irreversible mutation, concurrency, monetary logic,
 multi-repository contracts, anomalous evidence, or explicit policy.
 
 Required review starts from the ≤8 KiB `packet --phase review`, never Build
-history. Every review receipt identifies the reviewer and implementation subject.
+history. Its changed surface unions committed base-to-HEAD paths with staged,
+unstaged, untracked, renamed, and deleted paths for each repository; a missing
+recorded base blocks review instead of appearing clean. Every review receipt
+identifies the reviewer and one or more structured implementation subjects.
 Critical security, migration, compatibility, monetary, or irreversible changes
 require a different model/provider family or a human; other reviews require a
 fresh context and prefer diversity. AI re-review is limited to two rounds, after
-which unresolved work escalates to a human. Workspace edits stale prior review.
+which unresolved work escalates to a human. A change-level hash chain binds each
+attempt to its receipt payload, so deleting a receipt or renaming its provider
+cannot reset the limit. Missing or modified history fails closed. Workspace edits
+stale prior review.
 
 Human acceptance is separate from review and is required only when `/change`
 explicitly declares a subjective product or experience decision. Its receipt is
-bound to the final workspace, named criteria, and a durable artifact or reference.
+bound to explicit claim IDs, the final workspace, named nonblank criteria, human
+identity, observation, provenance, and a durable artifact or reference. Review and
+acceptance remain external-only; the deterministic runtime never invokes a model
+or impersonates a human.
 
 Findings are `verified`, `hypothesis`, `disproved`, or `accepted-risk`.
 Hypotheses require deterministic reproduction before becoming confirmed major

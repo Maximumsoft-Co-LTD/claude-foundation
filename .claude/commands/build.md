@@ -5,21 +5,18 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**.
 
-Validate. Create or sync its sandbox, then start from
-`claude-foundation packet <change> --phase build`; read referenced files as needed.
+Validate; create or sync its sandbox. Start from
+`claude-foundation packet <change> --phase build`; read references.
 
 If the host declares unattended execution, use one bare `--unattended` flag on
-doctor/create. Detection never authorizes; stop when blocked. The runtime cannot
-infer an external Allow All setting, so never silently fall back to ordinary
-create after an unattended guard fails.
+doctor/create. Detection never authorizes. The runtime cannot infer external
+Allow All, so stop when blocked; never fall back to create.
 
 For multi-repo work, run `claude-foundation agents plan`. Keep single-agent work
-single. Lease each worker, pass only
-`claude-foundation agents task <change> <task>`, then release.
+single. Lease workers, pass only their `agents task` packet, then release.
 
-Edit only the packet sandbox and allowed paths. Run focused checks and update
-the sole ledger, `tasks.md`. Finish by running
-`claude-foundation proof readiness <change>` and resolve code/configuration
-blockers before handing off to a fresh Prove context.
+Edit only allowed sandbox paths. Run focused checks and update the sole ledger,
+`tasks.md`. Run `claude-foundation proof readiness <change>` and resolve
+code/configuration blockers before fresh Prove.
 
 Do not replay history, mirror tasks, run lifecycle personas, archive, commit, or Land.

@@ -152,6 +152,11 @@ actually handed to an agent; add `--pretty` only for interactive inspection.
 A worktree or copied directory protects workspace integrity; it is not a process
 security sandbox. Boundary detection is diagnostic only; deliberately unattended
 execution fails closed until a trusted host-owned attestation mechanism exists.
+Review packets include both committed and dirty paths from recorded repository
+bases. External review protocol v2 binds structured reviewer/subject provenance
+to a change-level attempt chain, so receipt deletion or provider renaming cannot
+reset the two-AI limit. External human acceptance is scoped to explicit claims
+and fully revalidated before proof.
 Packet schema 4 and agent-plan schema 2 let consumers branch explicitly.
 Large task, claim, provider, and repository collections degrade to bounded
 previews with counts, digests, and task-scoped expansion rather than raising

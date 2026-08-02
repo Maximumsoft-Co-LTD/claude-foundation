@@ -60,7 +60,7 @@ node .claude/harness/foundation.mjs new 'Choose final interaction' >/dev/null
 node .claude/harness/foundation.mjs resolve choose-final-interaction \
   --impact low --coupling isolated --acceptance-required \
   --acceptance-reason 'Product owner chooses the final interaction' \
-  --acceptance-claims replace-with-stable-claim-id >/dev/null
+  --acceptance-claims choose-final-interaction-outcome >/dev/null
 acceptance_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
 assert_contains "explicit acceptance adds a required provider" \
   "$acceptance_plan" "acceptance: missing"
@@ -107,6 +107,63 @@ assert_cmd_zero "named human acceptance records" \
     --observed 'Product owner inspected the final interaction' \
     --artifact .foundation/logs/choose-final-interaction/acceptance.txt \
     --reference https://example.invalid/accepted-interaction
+if grep -R -qF 'selected: option-a' \
+    .foundation/evidence/choose-final-interaction \
+    .foundation/receipts/choose-final-interaction 2>/dev/null; then
+  fail "proof artifacts contain no prototype selection content"
+else
+  pass "proof artifacts contain no prototype selection content"
+fi
+acceptance_receipt=.foundation/receipts/choose-final-interaction/acceptance.json
+cp "$acceptance_receipt" "$TMP/clean-acceptance.json"
+jq '.references += [".foundation/prototypes/tiny-copy-edit/selection.md"]' \
+  "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "tampered prototype reference invalidates a stored receipt" \
+  "$tampered_plan" "acceptance: prototype-evidence"
+cp "$TMP/clean-acceptance.json" "$acceptance_receipt"
+jq '.artifacts[0].sourcePath = ".foundation/prototypes/tiny-copy-edit/selection.md"' \
+  "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "tampered prototype artifact origin invalidates a stored receipt" \
+  "$tampered_plan" "acceptance: prototype-evidence"
+cp "$TMP/clean-acceptance.json" "$acceptance_receipt"
+jq '.provenance.source = ".foundation/prototypes/tiny-copy-edit/selection.md"' \
+  "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "tampered prototype provenance invalidates a stored receipt" \
+  "$tampered_plan" "acceptance: prototype-evidence"
+cp "$TMP/clean-acceptance.json" "$acceptance_receipt"
+jq '.acceptance.actor.identity = null | .acceptance.criteria = []' \
+  "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "acceptance validity rechecks identity and criteria" \
+  "$tampered_plan" "acceptance: acceptance-invalid"
+jq '.acceptance.criteria = [" "]' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "blank acceptance criterion is invalid" "$tampered_plan" "acceptance: acceptance-invalid"
+jq '.claims = []' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "missing acceptance claim is invalid" "$tampered_plan" "acceptance: acceptance-invalid"
+jq '.claims += ["undeclared-extra"]' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "extra acceptance claim is invalid" "$tampered_plan" "acceptance: acceptance-invalid"
+jq '.acceptance.reason = "tampered"' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "acceptance reason is revalidated" "$tampered_plan" "acceptance: acceptance-invalid"
+jq '.acceptance.subjectWorkspaceHash = "tampered"' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "acceptance subject hash is revalidated" "$tampered_plan" "acceptance: acceptance-invalid"
+jq '.observed = ""' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "acceptance observation remains mandatory" "$tampered_plan" "acceptance: external-observation-missing"
+jq '.provenance.source = ""' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "acceptance provenance remains mandatory" "$tampered_plan" "acceptance: external-provenance-missing"
+jq '.artifacts = [] | .references = []' "$TMP/clean-acceptance.json" > "$acceptance_receipt"
+tampered_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
+assert_contains "acceptance durable evidence remains mandatory" "$tampered_plan" "acceptance: external-evidence-missing"
+cp "$TMP/clean-acceptance.json" "$acceptance_receipt"
 acceptance_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
 assert_contains "valid human acceptance satisfies the provider" \
   "$acceptance_plan" "acceptance: valid"
@@ -128,6 +185,26 @@ cp "$TMP/automated-acceptance.json" \
 assert_cmd_fails_with "acceptance cannot use an automated adapter" \
   "acceptance capability requires an external human provider" \
   node .claude/harness/foundation.mjs proof-plan reject-automated-acceptance
+
+node .claude/harness/foundation.mjs new 'Public compatibility contract' >/dev/null
+node .claude/harness/foundation.mjs resolve public-compatibility-contract \
+  --impact medium --coupling isolated >/dev/null
+jq '.claims[0].impact = "medium" | .claims[0].capabilities = ["compatibility"]' \
+  openspec/changes/public-compatibility-contract/evidence.yaml \
+  > "$TMP/public-compatibility.json"
+cp "$TMP/public-compatibility.json" \
+  openspec/changes/public-compatibility-contract/evidence.yaml
+compatibility_plan="$(node .claude/harness/foundation.mjs proof-plan public-compatibility-contract)"
+assert_contains "medium compatibility claims require review" \
+  "$compatibility_plan" "review: missing"
+jq '.providers.review = {"adapter":"command","command":["true"]}' \
+  openspec/changes/public-compatibility-contract/execution.yaml \
+  > "$TMP/automated-review.json"
+cp "$TMP/automated-review.json" \
+  openspec/changes/public-compatibility-contract/execution.yaml
+assert_cmd_fails_with "review cannot use an automated adapter" \
+  "review capability requires an external provider" \
+  node .claude/harness/foundation.mjs proof-plan public-compatibility-contract
 
 # Critical semantics require independent and diverse review provenance.
 node .claude/harness/foundation.mjs new 'Irreversible payment migration' >/dev/null
@@ -216,17 +293,47 @@ assert_cmd_fails_with "human implementer cannot review their own work" \
     --subject-actor implementer-ai --unresolved-blockers 0 \
     --observed 'No blockers' --reference fixture://human-self-review
 
+assert_cmd_fails_with "structured provenance rejects one correlated subject" \
+  "reviewer must use an identity and session independent" \
+  node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
+    --reviewer-type ai --reviewer-identity reviewer-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session review-session \
+    --subject-provenance '{"type":"ai","identity":"implementer-ai","sessionId":"implementation-session","providerFamily":"openai","modelFamily":"gpt-5","modelId":"gpt-5.3"}' \
+    --subject-provenance '{"type":"ai","identity":"reviewer-ai","sessionId":"paired-session","providerFamily":"google","modelFamily":"gemini","modelId":"gemini-pro"}' \
+    --unresolved-blockers 0 --observed 'No blockers' \
+    --reference fixture://structured-correlated
+
 assert_cmd_zero "diverse AI review passes critical policy" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
     --reviewer-provider-family anthropic --reviewer-model-family claude \
     --reviewer-model claude-opus --reviewer-session review-session \
-    --subject-actor implementer-ai --subject-session implementation-session \
-    --subject-provider-family openai --subject-model-family gpt-5 \
-    --subject-model gpt-5.3 --unresolved-blockers 0 \
+    --subject-provenance '{"type":"ai","identity":"implementer-ai","sessionId":"implementation-session","providerFamily":"openai","modelFamily":"gpt-5","modelId":"gpt-5.3"}' \
+    --subject-provenance '{"type":"ai","identity":"pair-agent","sessionId":"pair-session","providerFamily":"google","modelFamily":"gemini","modelId":"gemini-pro"}' \
+    --unresolved-blockers 0 \
     --observed 'No blockers' --reference fixture://diverse-review
 critical_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
 assert_contains "diverse AI receipt is valid" "$critical_plan" "review: valid"
+cp .foundation/receipts/irreversible-payment-migration/review.json \
+  "$TMP/bound-review.json"
+jq '.review.reviewer.modelId = "tampered-model"' "$TMP/bound-review.json" \
+  > .foundation/receipts/irreversible-payment-migration/review.json
+critical_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
+assert_contains "review history binds reviewer and model" \
+  "$critical_plan" "review: review-attempt-history-invalid"
+jq '.review.findings.verified = 99' "$TMP/bound-review.json" \
+  > .foundation/receipts/irreversible-payment-migration/review.json
+critical_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
+assert_contains "review history binds findings" \
+  "$critical_plan" "review: review-attempt-history-invalid"
+jq '.review.scope.digest = "tampered"' "$TMP/bound-review.json" \
+  > .foundation/receipts/irreversible-payment-migration/review.json
+critical_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
+assert_contains "review validity recomputes scope digest" \
+  "$critical_plan" "review: review-attempt-history-invalid"
+cp "$TMP/bound-review.json" \
+  .foundation/receipts/irreversible-payment-migration/review.json
 
 printf 'reviewed fix one\n' >> app.txt
 assert_cmd_zero "scoped second AI review is allowed" \
@@ -241,7 +348,51 @@ assert_cmd_zero "scoped second AI review is allowed" \
 assert_eq "second AI review records round two" "2" \
   "$(jq -r '.review.round' .foundation/receipts/irreversible-payment-migration/review.json)"
 
-assert_cmd_fails_with "third AI review escalates to human" \
+cp openspec/changes/irreversible-payment-migration/execution.yaml \
+  "$TMP/original-review-execution.json"
+jq '.providers["peer-review"] = {"capability":"review","adapter":"external","claims":"declared"}' \
+  openspec/changes/irreversible-payment-migration/execution.yaml \
+  > "$TMP/renamed-review-provider.json"
+cp "$TMP/renamed-review-provider.json" \
+  openspec/changes/irreversible-payment-migration/execution.yaml
+assert_cmd_fails_with "provider rename cannot reset the AI review cap" \
+  "AI review is limited to two rounds" \
+  node .claude/harness/foundation.mjs receipt irreversible-payment-migration peer-review pass \
+    --reviewer-type ai --reviewer-identity reviewer-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session renamed-provider-session \
+    --subject-actor implementer-ai --subject-session implementation-session \
+    --subject-provider-family openai --subject-model-family gpt-5 \
+    --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
+    --observed 'Renamed provider pass' --reference fixture://renamed-review
+cp "$TMP/original-review-execution.json" \
+  openspec/changes/irreversible-payment-migration/execution.yaml
+
+attempt_dir=.foundation/evidence/irreversible-payment-migration/review-attempts
+attempt_file="$(ls "$attempt_dir" | sort | tail -1)"
+mv "$attempt_dir/$attempt_file" "$TMP/$attempt_file"
+assert_cmd_fails_with "missing monotonic history fails closed" \
+  "review attempt history is missing or corrupt" \
+  node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
+    --reviewer-type human --reviewer-identity security-owner \
+    --subject-actor implementer-ai --unresolved-blockers 0 \
+    --observed 'History must be intact' --reference fixture://history-missing
+mv "$TMP/$attempt_file" "$attempt_dir/$attempt_file"
+
+cp "$attempt_dir/$attempt_file" "$TMP/intact-$attempt_file"
+jq '.status = "tampered"' "$TMP/intact-$attempt_file" \
+  > "$attempt_dir/$attempt_file"
+assert_cmd_fails_with "tampered monotonic history fails closed" \
+  "review attempt history is missing or corrupt" \
+  node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
+    --reviewer-type human --reviewer-identity security-owner \
+    --subject-actor implementer-ai --unresolved-blockers 0 \
+    --observed 'History must be authentic' --reference fixture://history-tampered
+cp "$TMP/intact-$attempt_file" "$attempt_dir/$attempt_file"
+
+cp .foundation/receipts/irreversible-payment-migration/review.json "$TMP/round-two-review.json"
+rm .foundation/receipts/irreversible-payment-migration/review.json
+assert_cmd_fails_with "receipt deletion cannot reset the AI review cap" \
   "AI review is limited to two rounds" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
@@ -251,6 +402,8 @@ assert_cmd_fails_with "third AI review escalates to human" \
     --subject-provider-family openai --subject-model-family gpt-5 \
     --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
     --observed 'Third AI pass' --reference fixture://diverse-review-three
+cp "$TMP/round-two-review.json" \
+  .foundation/receipts/irreversible-payment-migration/review.json
 
 assert_cmd_zero "round-three human can record a blocker" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review fail \
@@ -294,5 +447,26 @@ assert_eq "provider protocol remains backward-compatible" "6" \
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
   jq -e '.reviewProtocol == "2" and .acceptanceProtocol == "2" and .reviewPacketSchema == "2"' \
     .claude/harness/protocol.json
+
+node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null
+node .claude/harness/foundation.mjs resolve missing-recorded-base \
+  --impact high --coupling isolated >/dev/null
+printf 'committed after recorded base\n' >> app.txt
+git add app.txt
+git commit -qm 'committed after recorded base'
+recorded_base_packet="$(node .claude/harness/foundation.mjs packet \
+  missing-recorded-base --phase review)"
+printf '%s' "$recorded_base_packet" > "$TMP/recorded-base-packet.json"
+assert_cmd_zero "review surface includes committed root change from recorded base" \
+  jq -e '.changedSurface.rows[] |
+    select(.repositoryId == "root" and .path == "app.txt") |
+    .sources | index("committed") != null' "$TMP/recorded-base-packet.json"
+jq 'del(.workspace.baseHead) | del(.repositories.root.baseHead)' \
+  .foundation/runtime/missing-recorded-base.json > "$TMP/missing-recorded-base.json"
+cp "$TMP/missing-recorded-base.json" \
+  .foundation/runtime/missing-recorded-base.json
+assert_cmd_fails_with "review surface requires the recorded base" \
+  "missing baseHead" \
+  node .claude/harness/foundation.mjs packet missing-recorded-base --phase review
 
 finish "feedback review contracts"

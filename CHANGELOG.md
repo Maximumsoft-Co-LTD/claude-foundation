@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Trigger-only feedback harness** — optional disposable prototypes hand off an
+  explicit selection to Change, independent review uses a ≤8 KiB fresh-context
+  packet, and explicitly scoped human acceptance remains external to the
+  deterministic runtime.
+- **Attributable review protocol v2** — structured reviewer/implementation
+  provenance, risk-scaled diversity, committed-plus-dirty repository surfaces,
+  and a change-level hash-chained attempt history make the two-AI review limit
+  auditable without adding work to ordinary Rapid or Standard changes.
+
+### Fixed
+
+- **Fail-closed unattended preflight** — malformed, valued, or duplicate
+  unattended flags cannot fall back to interactive execution, blocked commands
+  cannot mutate telemetry or workspace state, and isolation inspection launches
+  no PATH-resolved subprocess.
+- **Proof-origin and receipt integrity** — prototype paths, file URIs, traversal,
+  symlink origins, and post-write receipt tampering cannot satisfy evidence;
+  review payloads and human acceptance fields are fully rebound and revalidated.
+- **Committed review blind spots** — review, policy, ordinary packets, and Prove
+  share one NUL-safe repository surface from the recorded base and fail closed
+  when the base or attempt history is missing or corrupt.
+
+### Performance
+
+- **Zero-cost untriggered lane** — redundant Git discovery was removed after a
+  30-run A/B exposed an 11.2% packet regression; the hardened build packet then
+  measured 7.1% faster at median with no added model requests or agent spawns.
+
 ## [3.0.0] - 2026-08-02
 
 ### Added

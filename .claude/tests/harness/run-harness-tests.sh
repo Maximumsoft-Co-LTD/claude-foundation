@@ -803,6 +803,20 @@ surface_output="$(node .claude/harness/foundation.mjs proof-preflight \
 assert_contains "changed-surface authority rejects undeclared paths" \
   "$surface_output" "changed outside task paths: rogue.txt"
 rm .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
+printf 'committed unauthorized\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
+git -C .foundation/repository-sandboxes/cross-repository-profile/app add rogue.txt
+git -C .foundation/repository-sandboxes/cross-repository-profile/app \
+  -c user.name="Foundation Test" -c user.email="foundation@example.invalid" \
+  commit -qm "committed unauthorized path"
+surface_output="$(node .claude/harness/foundation.mjs proof-preflight \
+  cross-repository-profile 2>&1 || true)"
+assert_contains "committed changed-surface authority rejects undeclared paths" \
+  "$surface_output" "changed outside task paths: rogue.txt"
+git -C .foundation/repository-sandboxes/cross-repository-profile/app rm -q rogue.txt
+git -C .foundation/repository-sandboxes/cross-repository-profile/app \
+  -c user.name="Foundation Test" -c user.email="foundation@example.invalid" \
+  commit -qm "remove unauthorized path"
 api_packet="$(node .claude/harness/foundation.mjs packet cross-repository-profile --repo api)"
 assert_contains "repo packet selects API" "$api_packet" '"id":"api"'
 assert_contains "repo packet includes API task" "$api_packet" '"id":"T001"'
@@ -890,6 +904,27 @@ git -C .foundation/repository-sandboxes/cross-repository-profile/app \
   -c user.email="foundation@example.invalid" \
   commit -qm "app profile"
 app_commit="$(git -C .foundation/repository-sandboxes/cross-repository-profile/app rev-parse HEAD)"
+committed_review_packet="$(node .claude/harness/foundation.mjs packet \
+  cross-repository-profile --phase review)"
+assert_contains "review packet retains committed API changes" \
+  "$committed_review_packet" 'api/api.txt'
+assert_contains "review packet retains committed app changes" \
+  "$committed_review_packet" 'app/app.txt'
+printf '%s' "$committed_review_packet" > "$TMP/committed-review-packet.json"
+assert_cmd_zero "review packet exposes executable API inspection metadata" \
+  jq -e --arg base "$(jq -r '.repositories.api.baseHead' \
+    .foundation/runtime/cross-repository-profile.json)" \
+    '.changedSurface.inspection[] |
+      select(.repositoryId == "api" and .baseHead == $base) |
+      .paths | index("api.txt") != null' \
+    "$TMP/committed-review-packet.json"
+assert_cmd_zero "review packet exposes executable app inspection metadata" \
+  jq -e --arg base "$(jq -r '.repositories.app.baseHead' \
+    .foundation/runtime/cross-repository-profile.json)" \
+    '.changedSurface.inspection[] |
+      select(.repositoryId == "app" and .baseHead == $base) |
+      .paths | index("app.txt") != null' \
+    "$TMP/committed-review-packet.json"
 sed -i.bak 's/- \[ \]/- [x]/g' \
   .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md
 rm .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md.bak

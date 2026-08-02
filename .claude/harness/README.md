@@ -96,6 +96,14 @@ are rejected before telemetry or workspace mutation. This is a cooperative host
 preflight, not automatic detection of an external Allow All setting. The current
 runtime always fails closed until a trusted host-owned attestation exists.
 
+Review and acceptance adapters are external-only. Review packets combine
+committed and dirty paths from recorded repository bases. Protocol-v2 receipts
+store reviewer/subject tuples and bind the complete receipt to a change-level
+hash-chained attempt history; deleting a receipt or renaming a provider cannot
+reset the two-AI limit. Acceptance is revalidated against explicit claims, human
+identity, criteria, observation, provenance, durable evidence, contract reason,
+and workspace hash.
+
 Run `claude-foundation help` for command syntax and installer options.
 Low-level `runtime` commands are reserved for installed slash commands and
 diagnostics.

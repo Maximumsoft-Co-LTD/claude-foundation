@@ -107,15 +107,19 @@ An external passing receipt must include `--observed`, `--source` or
 supply-chain assertions cannot become passing evidence.
 
 Review receipts additionally identify reviewer type/identity, request and model
-provenance for AI reviewers, implementation subject provenance, finding counts,
-and changed-path scope after the first round. Critical policy requires a different
-provider/model family or a human. AI review is limited to two rounds; a third
-round requires a human. Legacy review receipts remain readable but cannot satisfy
-the capability-specific review protocol.
+provenance for AI reviewers, one or more structured implementation-subject tuples,
+finding counts, and changed-path scope after the first round. The review packet
+unions committed base-to-HEAD and dirty paths per repository. Critical policy
+requires a different provider/model family or a human. A change-level hash chain
+binds the complete receipt payload and limits AI to two recorded attempts even if
+the current receipt is deleted or its provider is renamed; corrupt history fails
+closed. Legacy review receipts remain readable but cannot satisfy protocol v2.
 
-Acceptance is external and human-only. A passing receipt requires `--acceptor`,
-`--decision accept`, one or more `--criterion` values, `--observed`, and a durable
-artifact or reference. Acceptance is required only when the Change declares it.
+Acceptance is external and human-only. A passing receipt requires explicit claim
+scope, `--acceptor`, `--decision accept`, unique nonblank `--criterion` values,
+`--observed`, provenance, and a durable artifact or reference. Every read
+revalidates those fields, the contract reason, and final workspace identity.
+Acceptance is required only when the Change declares it.
 
 ## Test and discovery
 

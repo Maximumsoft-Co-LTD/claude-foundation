@@ -149,7 +149,12 @@ JSON สำหรับเครื่องเป็น compact โดย defau
 จริง Worktree หรือ directory copy ป้องกัน workspace เท่านั้น ไม่ใช่ process
 security sandbox; การตรวจพบ container/VM เป็นเพียง diagnostic และ unattended
 mode จะ fail closed จนกว่าจะมี trusted attestation จาก host
-ให้ agent จริง ใช้ `--pretty` เฉพาะตอนคนต้องการอ่าน Packet schema 4 และ
+ให้ agent จริง Review packet รวมทั้ง committed และ dirty paths จาก recorded
+repository base ส่วน external review protocol v2 จะ bind structured provenance
+ของ reviewer/subject เข้ากับ attempt chain ระดับ change ทำให้การลบ receipt หรือ
+เปลี่ยนชื่อ provider รีเซ็ตเพดาน AI สองครั้งไม่ได้ Human acceptance เป็น external,
+ผูกกับ claim ที่ระบุชัด และตรวจข้อมูลทั้งหมดซ้ำก่อน proof ใช้ `--pretty`
+เฉพาะตอนคนต้องการอ่าน Packet schema 4 และ
 agent-plan schema 2 ทำให้ consumer แยก compatibility ได้ชัดเจน เมื่อ collection
 ใหญ่ ระบบจะลดเป็น preview, count และ digest แล้วเปิดรายละเอียดผ่าน task packet
 แทนการเพิ่ม context limit
