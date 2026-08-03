@@ -77,13 +77,19 @@ deprecated_install() {
 # time — see RELEASING.md). Fall back to `git describe` for a source checkout
 # whose file was deleted; "unknown" only if both are unavailable.
 print_version() {
-  local v=""
+  local v="" describe=""
   if [ -f "$SCRIPT_DIR/VERSION" ]; then
     v="$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")"
   fi
-  if [ -z "$v" ] && command -v git >/dev/null 2>&1; then
-    v="$(git -C "$SCRIPT_DIR" describe --tags --always 2>/dev/null || true)"
-    v="${v#v}"
+  if command -v git >/dev/null 2>&1 &&
+     git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    describe="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || true)"
+    describe="${describe#v}"
+    if [ -z "$v" ]; then
+      v="$describe"
+    elif [ -n "$describe" ] && [ "$describe" != "$v" ]; then
+      v="$v+source.$describe"
+    fi
   fi
   printf 'claude-foundation %s\n' "${v:-unknown}"
 }
@@ -121,6 +127,7 @@ Usage:
                                                   Persist change risk and coupling decisions
   claude-foundation validate <change>              Validate a change packet
   claude-foundation proof plan <change>            Show missing or stale evidence
+  claude-foundation proof readiness <change>       Show typed blockers and recovery choices
   claude-foundation proof preflight <change>       Validate execution topology without running it
   claude-foundation proof audit <change>           Verify durable proof and artifact digests
   claude-foundation proof execute <change>         Run configured evidence and finalize proof

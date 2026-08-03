@@ -9,6 +9,11 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 assert_file_contains "Homebrew source package includes required model policy" \
   "$ROOT/Formula/claude-foundation.rb" '"foundation.json"'
+cli_help="$(bash "$ROOT/cli.sh" help)"
+assert_contains "CLI help documents proof readiness" \
+  "$cli_help" 'proof readiness <change>'
+assert_contains "CLI help documents atomic proof finish" \
+  "$cli_help" 'proof finish <change>'
 TARGET="$TMP/project with space"
 mkdir -p "$TARGET/.workflow/0001-legacy" "$TARGET/.claude/agents"
 printf 'legacy\n' > "$TARGET/.workflow/0001-legacy/state.json"
@@ -40,6 +45,8 @@ assert_file_exists "model policy default installed" "$TARGET/foundation.json"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
 assert_file_contains "prototype runtime artifacts stay ignored" \
   "$TARGET/.foundation/.gitignore" "prototypes/"
+assert_file_contains "recoverable quarantined runtime stays ignored" \
+  "$TARGET/.foundation/.gitignore" "recovery/"
 assert_file_absent "obsolete packaged hook tests removed" "$TARGET/.claude/hooks/tests"
 assert_file_exists "legacy run preserved" "$TARGET/.workflow/0001-legacy/state.json"
 assert_file_absent "legacy lifecycle agent removed" "$TARGET/.claude/agents/pm.md"
@@ -207,6 +214,8 @@ assert_cmd_zero "native proof finalize creates proof" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof finalize cli-proof-route
 assert_cmd_zero "native proof execute reuses complete external receipts" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof execute cli-proof-route
+assert_cmd_zero "native proof finish routes the resumable proof path" \
+  bash "$ROOT/cli.sh" --project "$TARGET" proof finish cli-proof-route
 assert_cmd_zero "native land check accepts fresh proof" \
   bash "$ROOT/cli.sh" --project "$TARGET" land check cli-proof-route
 

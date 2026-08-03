@@ -307,6 +307,25 @@ function activeChanges() {
     .map((entry) => entry.name).sort();
 }
 
+function orphanRuntimeChanges() {
+  if (!existsSync(RUNTIME)) return [];
+  const active = new Set(activeChanges());
+  return readdirSync(RUNTIME, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => {
+      const id = entry.name.slice(0, -5);
+      try {
+        const state = JSON.parse(readFileSync(join(RUNTIME, entry.name), "utf8"));
+        if (state.status === "archived" || active.has(id)) return null;
+        return { id, schema: state.schema || "unknown", reason: "missing-active-change" };
+      } catch {
+        return { id, schema: "unknown", reason: "invalid-runtime-json" };
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
 function walk(dir, callback) {
   if (!existsSync(dir)) return;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -2456,6 +2475,35 @@ function unavailableProviderRecovery(id, unavailable) {
   };
 }
 
+function codeChangeRecovery(id, pending) {
+  return [{
+    kind: "resume-build",
+    agentCommand: `/build ${id}`,
+    inspect: `claude-foundation agents plan ${id} --pretty`,
+    pendingTasks: pending.map((task) => task.id || task.text)
+  }];
+}
+
+function configurationRecovery(id, issues) {
+  return [
+    {
+      kind: "diagnose",
+      command: `claude-foundation doctor --stage prove --change ${id}`
+    },
+    {
+      kind: "revise-configuration",
+      agentCommand: `/change ${id}`,
+      files: [
+        `openspec/changes/${id}/evidence.yaml`,
+        `openspec/changes/${id}/execution.yaml`,
+        `openspec/changes/${id}/repositories.yaml`
+      ],
+      issues,
+      verify: `claude-foundation validate ${id}`
+    }
+  ];
+}
+
 function proofReadinessValue(id, stage = "prove") {
   validate(id, "active", { quiet: true });
   const issues = topologyIssues(id);
@@ -2482,11 +2530,15 @@ function proofReadinessValue(id, stage = "prove") {
     externalProviders: unconfigured,
     unavailableProviders: unavailable,
     issues,
-    next: status === "NEEDS_EXTERNAL_EVIDENCE"
-      ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
-      : status === "INFRASTRUCTURE_ERROR"
-        ? unavailable.map((provider) => unavailableProviderRecovery(id, provider))
-        : []
+    next: status === "NEEDS_CODE_CHANGE"
+      ? codeChangeRecovery(id, pending)
+      : status === "CONFIGURATION_ERROR"
+        ? configurationRecovery(id, issues)
+        : status === "NEEDS_EXTERNAL_EVIDENCE"
+          ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
+          : status === "INFRASTRUCTURE_ERROR"
+            ? unavailable.map((provider) => unavailableProviderRecovery(id, provider))
+            : []
   };
 }
 
@@ -4849,7 +4901,8 @@ function archive(id) {
 
 function showChanges() {
   const ids = activeChanges();
-  if (!ids.length) { console.log("No active changes."); return; }
+  const orphans = orphanRuntimeChanges();
+  if (!ids.length) console.log("No active changes.");
   for (const id of ids) {
     const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : { status: "untracked" };
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
@@ -4858,6 +4911,8 @@ function showChanges() {
       state.status === "proven" ? "stale-proof" : state.status;
     console.log(`${id}\t${readiness}\t${state.schema || "unknown"}`);
   }
+  for (const orphan of orphans)
+    console.log(`${orphan.id}\torphan-runtime\t${orphan.schema}\t${orphan.reason}`);
 }
 
 function showProviders() {
@@ -6043,7 +6098,24 @@ function doctor(flags = {}) {
   });
 
   const requestedChange = flags.change || null;
-  if (requestedChange) {
+  const orphanRuntimes = orphanRuntimeChanges();
+  checks.push({
+    level: orphanRuntimes.length ? "warn" : "ok",
+    name: "runtime-state",
+    detail: orphanRuntimes.length
+      ? `orphan runtime(s): ${orphanRuntimes.map((item) => `${item.id}:${item.reason}`).join(", ")}; restore the active change or quarantine the runtime file`
+      : "no orphan active runtime state"
+  });
+  const requestedOrphan = requestedChange
+    ? orphanRuntimes.find((item) => item.id === requestedChange)
+    : null;
+  if (requestedOrphan) {
+    checks.push({
+      level: "error",
+      name: `change:${requestedChange}`,
+      detail: `${requestedOrphan.reason}; restore openspec/changes/${requestedChange} or move .foundation/runtime/${requestedChange}.json to .foundation/recovery/orphaned-runtime/`
+    });
+  } else if (requestedChange) {
     const state = loadRuntime(requestedChange);
     const workspace = state.workspace?.path || ROOT;
     const contract = evidence(requestedChange);

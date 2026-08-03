@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Atomic start and proof resume** — a validated `runtime start` draft can
+  create an isolated Rapid build in one operation, while `proof run` performs
+  readiness, provider execution, receipt reuse, finalization, and audit without
+  requiring a phase orchestrator.
+- **Structured blocker recovery** — every typed readiness failure now carries
+  an actionable next step: resume pending Build tasks, diagnose/revise invalid
+  configuration, repair or replace unavailable providers, or record verifiable
+  external evidence without weakening claim coverage.
+
+### Fixed
+
+- **Budget-safe lifecycle recovery** — host telemetry still records and warns
+  on `STOP_AND_SPLIT`, but an exhausted model budget no longer exits before
+  deterministic packet, readiness, evidence, proof-resume, metrics, or archive
+  commands can reuse completed work.
+- **Orphan runtime dead ends** — `changes` exposes non-archived runtime state
+  whose active OpenSpec directory disappeared, and `doctor` reports explicit,
+  recoverable restore-or-quarantine guidance instead of failing later with a
+  missing-file error.
+- **Stable CLI compatibility and release identity** — `proof run` remains the
+  canonical recovery command supported by stable 3.1.1, new CLI help exposes
+  readiness and the `proof finish` alias, and source checkouts display their
+  post-tag build identity instead of masquerading as the tagged binary.
+- **Release and CI reliability** — atomic draft validation fails closed on
+  malformed risk inputs, installer routing covers resumable proof commands, and
+  dashboard tests run only on their supported Node versions.
+
 ## [3.1.1] - 2026-08-03
 
 ### Fixed

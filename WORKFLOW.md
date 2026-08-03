@@ -255,6 +255,13 @@ record verifiable external evidence, or reconfigure an available project-owned
 command for the same declared claims. Recovery never weakens claim coverage or
 manufactures a passing receipt.
 
+Every non-ready state provides an explicit recovery path. Pending tasks return
+`NEEDS_CODE_CHANGE` with `/build` and task-plan pointers; topology or agreement
+issues return `CONFIGURATION_ERROR` with doctor, `/change`, affected files, and
+validation pointers. `changes` also exposes non-archived runtime files whose
+active OpenSpec directories disappeared as `orphan-runtime`, and doctor reports
+how to restore or quarantine them.
+
 ## Review
 
 Review is required for high impact, authentication/authorization, public

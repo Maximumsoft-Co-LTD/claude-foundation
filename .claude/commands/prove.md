@@ -6,7 +6,7 @@ argument-hint: <change>
 Prove **$ARGUMENTS**.
 
 Start from `claude-foundation packet <change> --phase prove`, not Build history.
-Run `claude-foundation proof finish <change>` for atomic readiness, execution,
+Run `claude-foundation proof run <change>` for atomic readiness, execution,
 and audit. A budget stop forbids new exploration, not deterministic proof
 resume; fresh receipts are reused.
 

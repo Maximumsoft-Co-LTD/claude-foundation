@@ -98,6 +98,14 @@ assert_file_exists "delta spec created" "openspec/changes/profile-owner-update/s
 output="$(node .claude/harness/foundation.mjs resolve profile-owner-update --impact medium --coupling isolated)"
 assert_contains "resolver records impact" "$output" "impact: medium"
 assert_cmd_zero "standard change validates" node .claude/harness/foundation.mjs validate profile-owner-update
+pending_readiness="$(node .claude/harness/foundation.mjs proof-readiness \
+  profile-owner-update 2>/dev/null || true)"
+assert_contains "pending code returns a typed code-change status" \
+  "$pending_readiness" '"status": "NEEDS_CODE_CHANGE"'
+assert_contains "pending code offers a Build resume action" \
+  "$pending_readiness" '"kind": "resume-build"'
+assert_contains "Build recovery names the agent command" \
+  "$pending_readiness" '"agentCommand": "/build profile-owner-update"'
 packet="$(node .claude/harness/foundation.mjs packet profile-owner-update)"
 assert_contains "compact packet carries required providers" "$packet" '"provider":"test"'
 assert_contains "compact packet carries task count" "$packet" '"pendingTaskCount":'
@@ -257,6 +265,20 @@ assert_contains "external fallback still requires an artifact" \
   "$unavailable_readiness" '--artifact <path>'
 assert_contains "reconfiguration preserves the declared claim contract" \
   "$unavailable_readiness" 'proves the same declared claims'
+mkdir -p .foundation/leases/tasks/unavailable-provider-recovery
+printf '%s\n' \
+  '{"taskId":"T001","owner":"fixture-agent","expiresAt":"2999-01-01T00:00:00.000Z"}' \
+  > .foundation/leases/tasks/unavailable-provider-recovery/T001.json
+configuration_readiness="$(node .claude/harness/foundation.mjs proof-readiness \
+  unavailable-provider-recovery 2>/dev/null || true)"
+assert_contains "active lease returns configuration status" \
+  "$configuration_readiness" '"status": "CONFIGURATION_ERROR"'
+assert_contains "configuration failure offers diagnosis" \
+  "$configuration_readiness" '"kind": "diagnose"'
+assert_contains "configuration failure offers agreement revision" \
+  "$configuration_readiness" '"kind": "revise-configuration"'
+assert_contains "configuration recovery preserves reported issues" \
+  "$configuration_readiness" 'active agent leases: T001'
 
 assert_cmd_zero "atomic proof run reuses valid receipts and audits" \
   node .claude/harness/foundation.mjs proof-run executable-evidence
@@ -1097,5 +1119,22 @@ assert_contains "metrics separate plan and packet context" \
   "$context_metrics" '"agent-plan-summary":'
 assert_contains "context estimate declares its measurement scope" \
   "$context_metrics" '"emitted-plan-and-packet-bytes-only"'
+
+# Runtime state whose active OpenSpec directory disappeared must remain visible
+# and diagnosable instead of being silently omitted from `changes`.
+printf '%s\n' \
+  '{"id":"orphan-fixture","status":"change","schema":"foundation-rapid"}' \
+  > .foundation/runtime/orphan-fixture.json
+changes_with_orphan="$(node .claude/harness/foundation.mjs changes)"
+assert_contains "changes exposes orphan runtime state" \
+  "$changes_with_orphan" 'orphan-fixture'
+assert_contains "changes classifies orphan runtime state" \
+  "$changes_with_orphan" 'orphan-runtime'
+doctor_with_orphan="$(node .claude/harness/foundation.mjs doctor \
+  --stage prove --change orphan-fixture 2>/dev/null || true)"
+assert_contains "doctor gives an explicit orphan error" \
+  "$doctor_with_orphan" 'ERROR change:orphan-fixture'
+assert_contains "doctor gives a recoverable orphan action" \
+  "$doctor_with_orphan" '.foundation/recovery/orphaned-runtime/'
 
 finish "harness contracts"

@@ -359,6 +359,15 @@ Foundation-owned files, preserves project files and managed blocks in
   environment, retry, record verifiable external evidence, or reconfigure an
   available project-owned command that proves the same claims. It never
   converts an unavailable provider into passing evidence.
+- **Readiness says code or configuration is incomplete** —
+  `NEEDS_CODE_CHANGE` returns the `/build` resume command and pending task IDs;
+  `CONFIGURATION_ERROR` returns doctor, `/change`, affected config files, and a
+  validation command. Operators should not need to infer the next lifecycle
+  action from a status label.
+- **`changes` reports `orphan-runtime`** — the runtime state exists but its
+  active OpenSpec directory does not. Restore that directory, or move the JSON
+  state into `.foundation/recovery/orphaned-runtime/` for recoverable
+  quarantine. `doctor --change <id>` fails explicitly until reconciled.
 - **A receipt became stale** — run `proof plan`; a bound input, agreement
   revision, environment, or artifact changed.
 - **Readiness is rejected** — add `expectBody` or `expectHeader` that identifies

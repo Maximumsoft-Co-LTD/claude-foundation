@@ -390,6 +390,13 @@ environment ด้วย doctor, retry, ใช้ external evidence ที่ม
 ย้อนหลังได้ หรือเปลี่ยนเป็น project-owned command ที่พิสูจน์ claims เดิมได้
 Harness จะไม่ลด claim coverage หรือเปลี่ยน provider ที่ล่มให้เป็น `pass`
 
+สถานะที่ยังไม่พร้อมทุกแบบมี recovery path โดย `NEEDS_CODE_CHANGE` จะคืนคำสั่ง
+`/build` และ pending tasks ส่วน `CONFIGURATION_ERROR` จะคืน doctor, `/change`,
+ไฟล์ config ที่เกี่ยวข้อง และคำสั่ง validate ถ้า `changes` แสดง
+`orphan-runtime` หมายถึง runtime ยังอยู่แต่ active OpenSpec directory หาย ให้กู้
+directory เดิมหรือย้าย runtime JSON ไป `.foundation/recovery/orphaned-runtime/`
+เพื่อ quarantine แบบย้อนกลับได้
+
 หากต้อง wire provider หรือ browser workflow ใหม่ ดู
 [Executable evidence adapters](.claude/harness/EVIDENCE.md)
 
