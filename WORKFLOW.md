@@ -249,6 +249,12 @@ not install Playwright or browser binaries; `doctor --stage prove --change
 <id>` checks the project-owned command, dependency, configuration, readiness
 identity, execution DAG, and report topology.
 
+If a configured provider is unavailable, readiness returns
+`INFRASTRUCTURE_ERROR` with structured recovery choices: diagnose, retry,
+record verifiable external evidence, or reconfigure an available project-owned
+command for the same declared claims. Recovery never weakens claim coverage or
+manufactures a passing receipt.
+
 ## Review
 
 Review is required for high impact, authentication/authorization, public
@@ -368,7 +374,9 @@ Budget actions:
 - 85%: stop speculative exploration;
 - 100%: stop and split or re-scope.
 
-Required evidence is never removed to meet budget.
+The stop applies to further model exploration. Deterministic packet, readiness,
+evidence, proof-resume, metrics, and archive commands remain available, and
+fresh receipts are reused. Required evidence is never removed to meet budget.
 
 ## Legacy migration
 

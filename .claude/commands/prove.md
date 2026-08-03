@@ -7,7 +7,8 @@ Prove **$ARGUMENTS**.
 
 Start from `claude-foundation packet <change> --phase prove`, not Build history.
 Run `claude-foundation proof finish <change>` for atomic readiness, execution,
-and audit.
+and audit. A budget stop forbids new exploration, not deterministic proof
+resume; fresh receipts are reused.
 
 If readiness blocks, follow only its structured next commands. External passes
 require an observation, provenance, and durable artifact or reference. When

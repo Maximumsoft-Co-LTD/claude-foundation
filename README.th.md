@@ -2,17 +2,35 @@
 
 [English](README.md) | **ภาษาไทย**
 
-Foundation คือ software-change harness สำหรับ AI coding agents ที่ใช้ OpenSpec
-เก็บข้อตกลงของงาน ใช้ native agent ลงมือเขียน code และใช้ deterministic
-evidence ตัดสินว่างานพร้อมนำเข้า project หลักหรือยัง
+Claude Foundation คือ software-change harness สำหรับ AI coding agent ช่วยให้
+agent ทำงานเป็นขั้นตอนที่ตรวจสอบและกลับมาทำต่อได้ ตั้งแต่ตกลงว่าจะเปลี่ยนอะไร
+ลงมือในพื้นที่แยก พิสูจน์ผลด้วย evidence จริง และค่อยนำงานเข้า project หลัก
 
 ```text
 Investigate? → Change → Build → Prove → Land
 ```
 
-เป้าหมายคือรักษาคุณภาพของ workflow เดิม แต่ลดเวลาและต้นทุนจาก phase
-orchestrator, lifecycle agents, task mirroring, การรัน test ซ้ำ และ browser calls
-ที่ไม่จำเป็น
+Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก็บ requirement
+ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
+ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
+
+## ทำไมต้องใช้
+
+AI agent อาจเขียน code ที่ดูถูกต้อง แต่เข้าใจ requirement ผิด ทดสอบไม่ตรงจุด
+หรือแก้ working tree หลักก่อนที่คุณจะได้ review Foundation จึงแยกหน้าที่เหล่านี้:
+
+- **OpenSpec เก็บข้อตกลง** ทำให้ intent ไม่หายไปพร้อม chat history
+- **Build ทำในพื้นที่แยก** โดยใช้ Git worktree หรือ directory copy เพื่อไม่ให้
+  งานระหว่างทางปนกับ project หลัก
+- **Evidence เป็นตัวตัดสินความพร้อม** Test, static analysis, browser check หรือ
+  tool ของ project จะสร้าง receipt ที่ผูกกับ workspace จริง
+- **Land ต้องสั่งอย่างชัดเจน** Foundation ไม่ commit, push หรือเปิด pull request
+  เอง ถ้าคุณไม่ได้อนุญาตแยกต่างหาก
+- **กลับมาทำต่อได้** Task, runtime state, receipt และ recovery journal ยังคงอยู่
+  แม้เปลี่ยน agent session
+
+เป้าหมายคือรักษาความน่าเชื่อถือโดยไม่ต้องใช้ phase pipeline หรือ agent หลายบทบาท
+ตลอดเวลา และไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ agent เป็นหลักฐาน
 
 ## ติดตั้ง
 
@@ -20,8 +38,8 @@ orchestrator, lifecycle agents, task mirroring, การรัน test ซ้�
 
 - Node.js 20.19 ขึ้นไป
 - Git สำหรับ worktree isolation
-- OpenSpec CLI 1.7.0 สำหรับ spec sync และ archive
-- `jq` สำหรับ merge Claude settings ระหว่างติดตั้ง
+- OpenSpec CLI 1.7.0 สำหรับ sync spec และ archive
+- `jq` สำหรับ merge Claude settings ตอนติดตั้ง
 
 ```bash
 npm install -g @fission-ai/openspec@1.7.0
@@ -30,31 +48,143 @@ cd /path/to/claude-foundation
 ./install.sh /path/to/your-project
 ```
 
-หรือติดตั้งผ่าน packaged CLI:
+หรือใช้ packaged command:
 
 ```bash
 claude-foundation init /path/to/your-project
 ```
 
-หลังติดตั้งให้เปิด Claude Code session ใหม่ใน project เพื่อโหลด slash commands
-ชุดใหม่
+หลังติดตั้ง ให้เปิด Claude Code session ใหม่ใน project เป้าหมายเพื่อโหลด slash
+commands แล้วตรวจ installation ด้วย:
 
-Installer จะรักษา:
+```bash
+claude-foundation version
+claude-foundation doctor --stage change
+```
 
-- current specs และ active changes ใต้ `openspec/`
-- runtime ใต้ `.foundation/`
-- custom agents และ hooks ของ project
-- `.workflow/` เดิมในฐานะ read-only migration history
+Installer จะรักษา specs, active changes, runtime state, custom agents และ hooks
+ของ project ไว้ การ upgrade จะ refresh เฉพาะ command, schema, harness, rule,
+skill และ hook ที่ Foundation เป็นเจ้าของตาม install manifest
 
-Foundation-owned commands, schemas, harness, rules, skills และ hooks จะถูกอัปเดต
-เป็นเวอร์ชันใหม่
+## ใช้ Investigate ก่อนตกลงว่าจะเปลี่ยนอะไร
 
-`protect-secrets.sh` และ `lint.sh` ถูก wire เป็นค่าเริ่มต้น ส่วน
-`no-direct-main-commit.sh` จงใจเป็น opt-in เพราะบาง repository อนุญาต controlled
-commit บน default branch; `claude-foundation doctor` จะรายงานว่า policy นี้
-เปิดอยู่หรือไม่
+ใช้ `/investigate` เมื่อข้อมูลยังไม่พอสำหรับเขียน change agreement ที่เชื่อถือได้
+เช่น ยังไม่รู้ root cause, มีหลายแนวทางที่ tradeoff ต่างกัน, compatibility หรือ
+migration constraint ยังไม่ชัด หรือยังไม่เข้าใจ brownfield code path เดิม
 
-## Flow ทำงานอย่างไร
+เริ่มจาก decision หรือสิ่งที่ยังไม่รู้ ไม่ใช่สั่งให้ implement solution ไปก่อน:
+
+```text
+/investigate why profile updates occasionally overwrite newer data
+```
+
+ถ้าเป็นคำถามของ active change ให้ใส่ change ID และคำถามใหม่:
+
+```text
+/investigate add-profile: should updates use last-write-wins or optimistic locking?
+```
+
+Agent จะอ่าน code ที่เกี่ยวข้องแล้วแยกผลลัพธ์เป็น:
+
+- Fact ที่ตรวจยืนยันจาก code แล้ว
+- Hypothesis ที่ยังไม่ได้พิสูจน์
+- Constraint และ boundary ที่ได้รับผล
+- ทางเลือกที่ทำได้พร้อม tradeoff
+- เรื่องที่ยังต้องให้ user ตัดสินใจ
+
+ตอนจบควรได้ outcome อย่างใดอย่างหนึ่ง:
+
+```text
+ready for /change
+needs user decision
+not worth changing
+```
+
+ถ้าได้ `ready for /change` ให้นำ finding ที่ยอมรับแล้วเข้า durable agreement:
+
+```text
+/change add-profile
+```
+
+Investigation ไม่แก้ product code และไม่แก้ formal change โดยเงียบ ๆ ถ้า change
+มี Build sandbox แล้ว ระบบจะสำรวจ sandbox นั้นแทน main working tree รุ่นเก่า
+และสามารถ Investigate ซ้ำได้ทุกเวลาก่อน Land เมื่อ implementation ทำให้พบ
+assumption ใหม่
+
+## สอนทำ Change แรก
+
+สมมติว่าต้องการให้เจ้าของ account แก้ display name ของตัวเองได้
+
+### 1. สร้างข้อตกลง
+
+เรียกใน agent session:
+
+```text
+/change allow an account owner to edit their display name
+```
+
+Agent จะสำรวจ project ถามเฉพาะ decision ที่มีผลต่อ outcome และสร้าง
+`openspec/changes/<change-id>/` ก่อนทำต่อ ให้ review proposal, observable
+scenario, task และ evidence claim ว่าตรงกับสิ่งที่ต้องการ
+
+ทำไมต้องมีขั้นนี้: ข้อตกลงที่ชัดช่วยไม่ให้รายละเอียดตอน implement ค่อย ๆ
+เปลี่ยนความหมายของ requirement โดยไม่มีใครสังเกต
+
+### 2. Build ในพื้นที่แยก
+
+```text
+/build <change-id>
+```
+
+ถ้า Git repository สะอาด Foundation จะสร้าง detached worktree ถ้ามี local
+change อยู่แล้วหรือไม่ใช่ Git repository จะใช้ isolated copy แทน Agent แก้ code
+ในพื้นที่นั้นและติ๊ก task ที่ verify ผ่านใน `tasks.md` โดยไม่แก้ project หลัก
+
+หา path ของ workspace ได้ด้วย:
+
+```bash
+jq -r '.workspace.path' .foundation/runtime/<change-id>.json
+```
+
+ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
+ปนกับ checkout ที่กำลังใช้งาน
+
+### 3. Prove ผลลัพธ์
+
+```text
+/prove <change-id>
+```
+
+Foundation จะ validate ข้อตกลง ตรวจว่า implementation task เสร็จ รัน evidence
+provider ตาม claim และเก็บ receipt ที่ผูกกับ content ของ workspace ถ้าผ่านจะได้:
+
+```text
+PROVEN <change-id>
+next: /land <change-id>
+```
+
+ทำไมต้องมีขั้นนี้: Passing proof ยืนยันว่า behavior ที่ประกาศไว้ถูกตรวจบน code
+ชุดเดียวกับที่จะ Land ไม่ใช่บน workspace เก่าหรือคนละชุด
+
+### 4. Land งานที่พิสูจน์แล้ว
+
+```text
+/land <change-id>
+```
+
+Land จะตรวจว่า proof ยัง fresh ตรวจ conflict ใน target apply เฉพาะ diff ที่
+prove แล้ว sync delta spec ที่ยอมรับ และ archive change ถ้า code, test, config,
+agreement หรือ target path ที่เกี่ยวข้องเปลี่ยนหลัง Prove ระบบจะหยุดแทนการเขียนทับ
+
+ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
+เป็น completion boundary เดียวที่มี guard และ resume ได้
+
+### 5. Commit ตาม Git process ของ project
+
+Foundation หยุดหลัง apply และ archive ให้ review ผลลัพธ์ จากนั้น commit, push
+และเปิด pull request ตาม process ปกติของ project
+
+## ภาพรวม Workflow
 
 ```mermaid
 flowchart LR
@@ -63,632 +193,155 @@ flowchart LR
     X --> C[Change]
     Q -- ชัดแล้ว --> C
     C --> B[Build in sandbox]
-    B --> D{พบ requirement ใหม่?}
+    B --> D{Requirement เปลี่ยน?}
     D -- ใช่ --> X
     D -- ไม่ --> P[Prove]
-    P -- evidence ไม่ผ่าน --> B
+    P -- Evidence ไม่ผ่าน --> B
     P -- ผ่าน --> L[Land]
-    L --> A[Sync specs + Archive]
+    L --> A[Sync specs และ archive]
 ```
 
-Flow นี้ไม่ใช่ waterfall สามารถย้อนกลับได้:
+Flow นี้ไม่ใช่ waterfall ก่อน Land สามารถแก้ change เดิมเมื่อพบข้อมูลใหม่:
 
 ```text
 Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 ```
 
-`Land` เป็นขอบเขตจบของ change หลังจาก land แล้ว requirement ใหม่ควรเปิดเป็น
-change ใหม่
+หลัง Land แล้ว requirement ใหม่ควรเปิดเป็น change ใหม่
 
-## Command map
+## ควรใช้ Command ไหน
 
-| Command | ทำอะไร | ใช้เมื่อไร | แก้ product code หรือไม่ |
-|---|---|---|---|
-| `/investigate` | สำรวจปัญหาและทางเลือก | โจทย์หรือแนวทางยังไม่ชัด | ไม่ |
-| `/prototype` | เปรียบเทียบทางเลือกชั่วคราว 3–5 แบบ | ยังตัดสินใจเรื่องทิศทางเชิง subjective ไม่ได้ | เฉพาะ `.foundation/` |
-| `/change` | สร้างหรือแก้ข้อตกลงของงาน | รู้ outcome ที่ต้องการแล้ว | ไม่ |
-| `/build` | ลงมือทำงานใน sandbox | Change artifacts พร้อม | แก้เฉพาะ sandbox |
-| `/prove` | ตรวจ evidence และสร้าง proof | Build เสร็จและ tasks พร้อม | ไม่แก้ project หลัก |
-| `/review` | Review จาก bounded context ใหม่ | Risk policy ต้องการมุมมองอิสระ | ไม่ |
-| `/land` | นำ proven diff เข้า project หลัก | Proof ผ่านและพร้อมรับ change | แก้ project หลัก |
-| `/changes` | แสดง active changes และ next action | ต้องการดูสถานะรวม | ไม่ |
-| `/dev` | รัน Change → Build → Prove | ต้องการ one-shot compatibility flow | ไม่ land |
-| `/migrate-workflow` | เตรียม migration จาก `.workflow/` เดิม | ย้ายงานหรือความรู้จากระบบเก่า | ไม่ยกข้อมูลเป็น truth อัตโนมัติ |
+| Command | ใช้เมื่อ | ผลลัพธ์ |
+|---|---|---|
+| `/investigate` | ยังไม่รู้สาเหตุ scope หรือแนวทาง | Fact ที่ตรวจจาก code, ทางเลือก, tradeoff และ decision ที่ยังขาด โดยไม่แก้ product |
+| `/prototype` | ต้องเปรียบเทียบทิศทางชั่วคราว 3–5 แบบ | ไฟล์ชั่วคราวใต้ `.foundation/` ซึ่งใช้เป็น proof ไม่ได้ |
+| `/change` | รู้ outcome แล้ว หรือต้องแก้ active agreement | สร้างหรือแก้ OpenSpec artifact โดยไม่แก้ product |
+| `/build` | ข้อตกลงพร้อม implement | Code และ focused check ใน isolated workspace |
+| `/prove` | Implementation task และ focused check เสร็จ | Required receipts และ `proof.json` ที่ผูกกับ content |
+| `/review` | Risk policy ต้องการมุมมองอิสระจาก context ใหม่ | Bounded review receipt โดยไม่แก้ product |
+| `/land` | Proof ผ่านและคุณยอมรับ change | Apply proven diff, sync specs และ archive |
+| `/changes` | กลับมาทำงานต่อหรือมีหลาย active changes | State ปัจจุบันและ operation ที่ควรทำต่อ |
+| `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | Proven candidate และจงใจหยุดก่อน Land |
+| `/migrate-workflow` | ย้ายความรู้จาก `.workflow/` รุ่นเก่า | Migration candidate สำหรับ review โดยไม่ยกเป็น truth อัตโนมัติ |
 
-เมื่อเลือก prototype แล้ว ให้ทำต่อด้วย
-`/change <intent|existing-change> --prototype-selection <selection-path>`
-โดย Change จะสรุป decision ลง proposal/design ส่วนไฟล์ prototype ที่ถูก ignore
-จะใช้เป็น evidence artifact หรือ local reference ไม่ได้
-
-Slash commands ใช้ควบคุม AI workflow ส่วน deterministic operator commands
-ใช้ native CLI:
-
-```bash
-claude-foundation providers
-claude-foundation repos [change]
-claude-foundation models
-claude-foundation agents plan <change> [--group <n>] [--pretty]
-claude-foundation agents task <change> <task> [--pretty]
-claude-foundation doctor --stage change
-claude-foundation changes
-claude-foundation packet <change> --phase build|prove|review [--pretty]
-claude-foundation metrics <change>
-claude-foundation telemetry sync <change> [transcript.jsonl]
-claude-foundation telemetry import <change> events.jsonl --format codex
-claude-foundation validate <change>
-claude-foundation proof plan <change>
-claude-foundation proof readiness <change>
-claude-foundation proof run <change>
-claude-foundation proof preflight <change>
-claude-foundation proof execute <change>
-claude-foundation proof audit <change>
-claude-foundation proof finalize <change>
-claude-foundation evidence upgrade <change>
-claude-foundation evidence run <change> <provider> --claims declared -- <command>
-claude-foundation sandbox create <change> [--all]
-claude-foundation sandbox inspect <change> [--json] [--unattended]
-claude-foundation land check <change>
-claude-foundation land plan <change>
-claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
-claude-foundation land pointers <change>
-claude-foundation land resume <change>
-```
-
-CLI จะค้น project จาก directory ปัจจุบันหรือ `--project <path>` แล้วใช้ runtime
-ที่ติดตั้งอยู่ใน project นั้น ดูคำสั่งทั้งหมดด้วย `claude-foundation help`
-ถ้าติดตั้งตรงจาก source และยังไม่มี packaged CLI บน `PATH` สามารถเรียก runtime
-file โดยตรงเป็น compatibility fallback ได้
-
-`packet <change> --phase build|prove|review` คือ compact handoff ระหว่าง Change,
-Build, Prove และ Review context ใหม่ โดยส่ง reference, revision, claim digest, provider state, task count,
-hash และ budget แทน conversation ที่สะสมมา Packet มีเพดานตาม scope: task/review 8 KiB,
-repository 12 KiB และ global 16 KiB ส่วน artifact ใหญ่คงอยู่ในไฟล์และอ้างด้วย
-path กับ SHA-256 ส่วน phase flag จะปิด telemetry ของ phase ก่อนหน้าแบบ
-incremental ด้วย
-JSON สำหรับเครื่องเป็น compact โดย default ทำให้ budget เท่ากับ bytes ที่ส่ง
-จริง Worktree หรือ directory copy ป้องกัน workspace เท่านั้น ไม่ใช่ process
-security sandbox; การตรวจพบ container/VM เป็นเพียง diagnostic และ unattended
-mode จะ fail closed จนกว่าจะมี trusted attestation จาก host
-ให้ agent จริง Review packet รวมทั้ง committed และ dirty paths จาก recorded
-repository base ส่วน external review protocol v2 จะ bind structured provenance
-ของ reviewer/subject เข้ากับ attempt chain ระดับ change ทำให้การลบ receipt หรือ
-เปลี่ยนชื่อ provider รีเซ็ตเพดาน AI สองครั้งไม่ได้ Human acceptance เป็น external,
-ผูกกับ claim ที่ระบุชัด และตรวจข้อมูลทั้งหมดซ้ำก่อน proof ใช้ `--pretty`
-เฉพาะตอนคนต้องการอ่าน Packet schema 4 และ
-agent-plan schema 2 ทำให้ consumer แยก compatibility ได้ชัดเจน เมื่อ collection
-ใหญ่ ระบบจะลดเป็น preview, count และ digest แล้วเปิดรายละเอียดผ่าน task packet
-แทนการเพิ่ม context limit
-
-`metrics <change>` สรุป wall time, phase operations, unique provider executions,
-requests, input/output tokens, cache creation/read tokens, cost, orchestrator
-share และจำนวน context bytes ของ plan/packet จากข้อมูลที่วัดได้ สำหรับ Claude Code ระบบจะ bind session transcript
-หนึ่งครั้งที่ `SessionStart` แล้วอ่านเฉพาะ assistant usage ที่เพิ่มใหม่ตอน
-เปลี่ยน phase โดยไม่วัด token ที่ `PostToolUse`, ไม่คัดลอก prompt หรือ tool
-payload และรวม transcript ของ subagent ด้วย ถ้า session hook ยังไม่ทำงานให้ใช้
-`telemetry sync` เอง field ที่ยังไม่มี authoritative source จะคงเป็น `null`
-
-## Control plane สำหรับหลาย repository
-
-`openspec/repositories.yaml` คือ topology ที่เก็บถาวร ระบบค้น Git submodule
-ให้อัตโนมัติและแจ้ง drift จนกว่าจะ review role, dependency และ access mode
-ของมัน ส่วน `repositories.yaml` ภายในแต่ละ Change เลือกเฉพาะ repository ที่
-Change นั้นอ่านหรือเขียนได้ ถ้าไม่มี manifest จะทำงานแบบ single `root`
-เหมือนเดิม
-Path นอก control root จะถูกปฏิเสธ เว้นแต่ repository entry ที่ commit ไว้ระบุ
-`allowOutsideRoot: true` อย่างชัดเจนสำหรับ sibling Git repository ที่ไว้ใจ
-
-Tasks ยังมี ledger เดียวใน `tasks.md` และเพิ่ม annotation แบบสั้น:
-
-```markdown
-- [ ] **T001** Inspect API [repo:api] [kind:inventory] [paths:internal/profile]
-- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001]
-- [ ] **T003** Implement App [repo:app] [kind:implementation] [depends:T002]
-- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
-```
-
-`agents plan` เก็บแผนเต็มไว้ใน `.foundation/plans/` แต่แสดง summary ไม่เกิน
-4 KiB ใช้ `agents plan <change> --group <n>` เพื่อดู dispatch group เดียว และ
-`agents task <change> <task>` เพื่อรับ packet เฉพาะ worker ถ้ามี repo เดียวและ
-ไม่เกินสอง task ปกติ ระบบจะแนะนำ single agent เพื่อตัด planning/spawn overhead
-ตอน resume ระบบถือ completed dependency ว่าสำเร็จแล้ว และถ้าครบทุก task จะคืน
-`proof-ready` Task packet จะถูกปฏิเสธถ้า claim ไม่รู้จัก, อยู่นอก authority
-ของ repository หรือไม่มี evidence provider
-`foundation.json` ใช้ tier แบบ portable คือ `fast`, `standard`,
-`deep` ซึ่ง default เป็น Haiku, Sonnet และ Opus ตามลำดับ งาน inventory/log
-เชิงกลใช้ fast, implementation ปกติใช้ standard และ architecture, security,
-migration หรือ independent review ใช้ deep งานเสี่ยงสูงห้ามลดลง fast ตัว
-native host เป็นผู้ spawn agent ส่วน Foundation ให้ packet เฉพาะ repo/task
-และไม่มอบสิทธิ์ commit, push หรือ Land
-
-แต่ละ task โหลด construction skill หลักเพียงหนึ่งตัวตาม layer ที่แก้ แล้วเพิ่ม
-security หรือ observability เฉพาะเมื่อ trigger ของงานต้องใช้ พร้อมอ่านเฉพาะ
-reference ที่ตรงกับปัญหา วิธีนี้ยังคงคุณภาพข้าม layer โดยไม่โหลด backend skill
-ทั้งชุดทุกครั้ง
-
-Provider ใน `execution.yaml` ระบุ `repository` ได้ คำสั่งจะรันใน sandbox ของ
-repo นั้นและ receipt ผูกกับ snapshot ของ repo นั้น การแก้ repo ที่ไม่เกี่ยว
-จึงไม่ทำให้ evidence stale ส่วน claim ที่ครอบคลุมหลาย repo ต้องระบุ
-repositories และ `cross-repo-contract`
-ถ้าหลาย repo ใช้ capability เดียวกัน ให้ตั้ง instance ID เช่น `api-test`,
-`app-test` และระบุ `capability`
-
-Land หลาย remote เป็น resumable saga ไม่อ้างว่า atomic: `land plan` แสดงลำดับ,
-`land record` ผูก child commit และ CI ที่ผู้ใช้อนุญาตไว้แล้ว และ `land resume`
-ตรวจว่า commit เข้า target จริงหรือยัง ใช้ `land pointers` stage gitlink ที่
-ตรวจแล้วแบบ transaction และสร้าง composite proof ใหม่ก่อน archive
-
-## `/investigate` — สำรวจโดยยังไม่ผูกมัด
-
-### ใช้เมื่อไร
-
-- ยังไม่รู้ root cause
-- มีหลายแนวทางที่ให้ behavior ต่างกัน
-- scope, compatibility หรือ migration ยังไม่ชัด
-- ต้องอ่าน brownfield code ก่อนตัดสินใจ
-- ระหว่าง Build พบ assumption ใหม่
-
-### ตัวอย่าง
+ใช้ command แยกเมื่อต้องการ review ทุก boundary ใช้ `/dev` กับงานเล็กที่ชัดและ
+ต้องการ one-shot flow:
 
 ```text
-/investigate ทำไม profile update บางครั้งเขียนทับข้อมูลใหม่กว่า
+/dev rename the Save button to Update Profile
 ```
 
-หรือระบุ active change:
+เมื่อเลือก prototype แล้ว ให้นำเฉพาะ decision ที่เลือกเข้า agreement:
 
 ```text
-/investigate add-profile: ควรใช้ last-write-wins หรือ optimistic locking
+/change <intent-or-change-id> --prototype-selection <selection-path>
 ```
 
-ถ้า change มี sandbox แล้ว Investigation จะอ่าน code จาก sandbox ไม่ใช่
-working tree เก่า
+ไฟล์ prototype ยังเป็นของชั่วคราวและอ้างเป็น evidence ไม่ได้
 
-### ผลลัพธ์
+## ทำความเข้าใจ `openspec/`
 
-Investigation แยก:
-
-- facts ที่ยืนยันจาก code
-- hypotheses
-- constraints
-- ทางเลือกและ tradeoffs
-- unknowns ที่ต้องถาม
-
-และจบด้วยหนึ่งใน:
+`openspec/` คือข้อตกลงที่คน review ได้ มี current requirement และ artifact ของ
+active change แต่ไม่มี runtime status หรือ test log ชั่วคราว
 
 ```text
-ready for /change
-needs user decision
-not worth changing
+openspec/
+├── config.yaml
+├── repositories.yaml
+├── specs/
+├── changes/
+│   ├── <change-id>/
+│   └── archive/
+└── schemas/
+    ├── foundation-standard/
+    └── foundation-rapid/
 ```
 
-Investigation ไม่แก้ product code และไม่แก้ OpenSpec change ให้อัตโนมัติ
-ข้อสรุปที่ยอมรับแล้วต้องนำไปปรับด้วย `/change`
+| Path | คืออะไร | มีไว้ทำไม |
+|---|---|---|
+| `config.yaml` | OpenSpec config และ rules ระดับ project | ทำให้ทุก change ใช้ project context และ default schema เดียวกัน |
+| `repositories.yaml` | Topology และ access policy ของ repository ทั้ง project | ทำให้ cross-repository scope ชัดและ review ได้ |
+| `specs/` | Current product requirements ที่ยอมรับแล้ว | บันทึกว่าระบบหลัง Land ควรทำอะไร |
+| `changes/<change-id>/` | ข้อตกลงของ active change หนึ่งรายการ | แยก proposed behavior จาก current behavior จนกว่าจะ Land |
+| `changes/archive/` | ประวัติ change ที่เสร็จแล้ว | เก็บเหตุผลและวิธีที่ accepted behavior เปลี่ยนไป |
+| `schemas/` | Schema และ template ที่ Foundation ดูแล | กำหนด artifact ที่ standard และ rapid lane ต้องมี |
 
-## `/change` — สร้างข้อตกลงของงาน
-
-### ใช้เมื่อไร
-
-- รู้ outcome ที่ต้องการแล้ว
-- ต้องเปิด change ใหม่
-- ต้องแก้ requirement/design/evidence ของ change เดิม
-- ต้องนำผลจาก `/investigate` มาเป็น agreement
-
-### สร้าง Change ใหม่
+### ไฟล์ใน Active Change
 
 ```text
-/change เพิ่มการแก้ไข profile สำหรับเจ้าของ account
-```
-
-ผลลัพธ์:
-
-```text
-openspec/changes/add-profile/
+openspec/changes/<change-id>/
 ├── .openspec.yaml
 ├── proposal.md
-├── specs/
-│   └── change/spec.md
-├── design.md
+├── specs/<area>/spec.md       # standard lane เท่านั้น
+├── design.md                  # standard lane เท่านั้น
 ├── tasks.md
 ├── evidence.yaml
-└── execution.yaml
+├── execution.yaml
+└── repositories.yaml
 ```
 
-พร้อม machine state:
+| File | ตอบคำถามอะไร | Harness ต้องใช้ทำไม |
+|---|---|---|
+| `.openspec.yaml` | ใช้ `foundation-standard` หรือ `foundation-rapid` | เลือก artifact workflow ของ change |
+| `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption |
+| `specs/<area>/spec.md` | Observable behavior ใดถูกเพิ่ม แก้ หรือลบ | ให้ Prove มี requirement และ `WHEN`/`THEN` scenario ที่คงที่ และให้ Land merge delta เข้า current specs |
+| `design.md` | Technical decision ใดบังคับวิธี implement และ rollback | เก็บเฉพาะ current-state fact, compatibility, migration, risk และ rejected alternative ที่สำคัญ |
+| `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
+| `evidence.yaml` | Behavioral claim ใดต้องพิสูจน์ | แยก proof obligation ออกจาก tool ที่นำมารัน |
+| `execution.yaml` | Project จะสร้าง evidence อย่างไร | Wire command, report, service, timeout และ readiness check |
+| `repositories.yaml` | Change อ่านหรือเขียน repository ใดได้ | จำกัดอำนาจของ agent และกำหนด dependency order |
 
-```text
-.foundation/runtime/add-profile.json
-```
+ห้ามใส่ `/prove` หรือ `/land` เป็น checkbox ใน `tasks.md` เพราะสองอย่างนี้เป็น
+lifecycle command ไม่ใช่ implementation task
 
-### แก้ Change เดิม
+### Standard กับ Rapid Lane
 
-```text
-/change add-profile
-```
+`foundation-standard` มี proposal, delta specs, design, tasks, evidence และ
+execution ใช้กับ public contract, authentication, data หรือ migration, behavior
+ที่ coupled, impact สูง, irreversible effect หรืองานที่ต้องใช้ evidence มากกว่า
+unit/static
 
-ระบบจะปรับเฉพาะ artifacts ที่ได้รับผล:
+`foundation-rapid` จงใจไม่มี delta specs และ design ใช้ได้เฉพาะงาน impact ต่ำ
+แยกขาด ไม่มี public contract, persistent migration, security trigger หรือ
+irreversible effect หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
+เป็น standard
 
-- `proposal.md` — เหตุผล scope และ impact
-- `specs/**/*.md` — behavior และ scenarios
-- `design.md` — technical decisions, compatibility และ rollback
-- `tasks.md` — implementation ledger
-- `evidence.yaml` — claims และ capability ที่ต้องพิสูจน์
-- `execution.yaml` — command, report, service และ readiness wiring ที่เปลี่ยนได้
+## ทำความเข้าใจ State
 
-ถ้า change กำลัง Build อยู่ `/change` จะเรียก:
+เรียก `/changes` หรือ:
 
 ```bash
-claude-foundation sandbox sync add-profile
+claude-foundation changes
 ```
 
-Sync จะ:
-
-- ส่ง artifacts เวอร์ชันใหม่เข้า sandbox
-- รักษา completed task ด้วย stable task ID เช่น `T001`
-- reset task ที่เปลี่ยนความหมาย
-- เพิ่ม revision
-- ทำให้ proof และ receipts เดิม stale
-
-### Rapid กับ Standard
-
-`foundation-rapid` ใช้เมื่อครบทุกข้อ:
-
-- low impact
-- isolated
-- ไม่มี public contract change
-- ไม่มี persistent migration
-- ไม่มี security trigger
-- ไม่มี irreversible effect
-- unit/static evidence เพียงพอ
-
-งานอื่นใช้ `foundation-standard` ถ้า rapid change ตรวจพบ auth, access,
-migration, high impact หรือ coupling ระบบจะ upgrade เป็น standard โดยไม่ทิ้งงานเดิม
-
-## `/build` — ลงมือใน isolated workspace
-
-### ใช้เมื่อไร
-
-- proposal และ scenarios ชัด
-- design decisions สำคัญถูกตัดสินแล้ว
-- tasks และ evidence obligations พร้อม
-
-```text
-/build add-profile
-```
-
-Harness จะสร้าง sandbox:
-
-- Git repository สะอาด → detached worktree
-- Git repository มี local changes → isolated copy
-- Non-Git repository → isolated copy พร้อม before/after manifest
-
-ระหว่าง Build:
-
-- project หลักยังไม่ถูกแก้
-- agent ทำงานที่ sandbox path
-- `tasks.md` เป็น task ledger เดียว
-- focused tests ใช้ระหว่าง convergence
-- ไม่มี PM/Lead/Engineer/QA/Retro lifecycle chain
-- subagents ใช้เฉพาะ work packages ที่แยกและตรวจได้จริง
-
-### ดู code ที่กำลัง Build
-
-ดู sandbox path:
-
-```bash
-jq -r '.workspace.path' .foundation/runtime/add-profile.json
-```
-
-ถ้าเป็น Git worktree:
-
-```bash
-git -C .foundation/sandboxes/add-profile status
-git -C .foundation/sandboxes/add-profile diff
-code .foundation/sandboxes/add-profile
-```
-
-ถ้าเป็น isolated copy ให้เปิด path ใน `/tmp` ที่ runtime แสดง
-
-### พบ requirement ใหม่ระหว่าง Build
-
-หยุด Build ก่อน:
-
-```text
-/investigate add-profile: <คำถามใหม่>
-/change add-profile
-/build add-profile
-```
-
-`/change` จะ sync revision เข้า sandbox จากนั้น Build ทำต่อได้ ไม่ต้องสร้าง
-change ใหม่
-
-## `/prove` — พิสูจน์ว่างานถูกต้อง
-
-### ใช้เมื่อไร
-
-- implementation tasks เสร็จ
-- focused checks ผ่าน
-- พร้อมรัน evidence ที่ change กำหนด
-
-```text
-/prove add-profile
-```
-
-Prove จะ:
-
-1. validate OpenSpec artifacts
-2. สร้าง workspace snapshot หนึ่งครั้ง
-3. อ่าน claims จาก `evidence.yaml`
-4. reuse receipts ที่ยังตรงกับ hash
-5. schedule provider ที่หายหรือ stale พร้อมกันเมื่อ resource ไม่ชนกัน
-6. ตรวจ test discovery
-7. รัน required full suite หลัง code converge
-8. เรียก independent review เฉพาะเมื่อ risk trigger
-9. ย้าย report, log และ attachment เข้า immutable evidence vault
-10. deduplicate command, สร้าง `proof.json` และ audit digest
-
-`tasks.md` เก็บเฉพาะ implementation work เท่านั้น `/prove` และ `/land`
-เป็น lifecycle commands ไม่ใช่ checkbox เพราะถ้าใส่ไว้ใน ledger จะเกิด gate
-ที่รอตัวเองและ validation จะไม่ยอมให้ผ่าน
-
-Evidence providers ที่รองรับ:
-
-| Provider ID | ใช้พิสูจน์ |
-|---|---|
-| `test` | behavior ที่รันตรวจได้ |
-| `discovery` | test ที่คาดหวังถูกค้นพบจริง |
-| `browser` | rendered behavior และ input ผ่าน browser จริง |
-| `mutation` | test จับ behavioral fault ที่จงใจใส่ได้ |
-| `state-identity` | actor, revision หรือ state ก่อนและหลังตรงกัน |
-| `integration` | component หรือ external boundary ทำงานร่วมกัน |
-| `compatibility` | public/persisted contract ยัง compatible |
-| `performance` | latency, throughput, resource หรือ size budget ที่วัดได้ |
-| `security-static` | static security check ของ boundary และ unsafe sink |
-| `cross-repo-contract` | producer และ consumer ต่าง repository ใช้ contract ตรงกัน |
-| `review` | independent risk review |
-| `static-analysis` | compile, type, lint และ static quality gate |
-| `data-migration` | forward migration, mixed-version safety และ rollback |
-| `accessibility` | semantics, keyboard, focus, contrast และ assistive access |
-| `resilience` | timeout, retry, partial failure, recovery และ degraded dependency |
-| `observability` | log, metric, trace และ alert ที่จำเป็น |
-| `deployment` | packaging, configuration, rollout health และ rollback |
-| `dependency-supply-chain` | vulnerability, license, lockfile และ provenance policy |
-
-ดู canonical catalog ที่ติดตั้งอยู่ใน project:
-
-```bash
-claude-foundation providers
-```
-
-Provider เหล่านี้คือ evidence contract ไม่ใช่ vendor tool ที่ bundle มากับ
-harness ทั้งหมด Prove สามารถเรียก tool เดิมของ repository ด้วย `run-provider`
-หรือบันทึก receipt จาก external system ได้ แต่ละ change เลือกเฉพาะ provider
-ที่ observable claim ต้องใช้ ไม่ได้รันทั้งหมดโดยอัตโนมัติ
-
-`evidence.yaml` เก็บ behavioral contract ส่วน `execution.yaml` กำหนด
-project-owned adapters การใช้งานปกติคือ:
-
-```bash
-claude-foundation doctor --stage prove --change add-profile
-claude-foundation proof readiness add-profile
-claude-foundation proof run add-profile
-```
-
-`test-discovery` สร้าง test และ discovery receipts จาก command เดียว
-ส่วน `playwright` ใช้ Playwright version ที่ project lock ไว้, บังคับ structured
-claim annotations และบันทึกเป็น `browser-automation` ไม่อ้างว่าเป็น physical
-OS input Foundation จะไม่ติดตั้ง test framework หรือ browser ให้อัตโนมัติ
-Evidence v1 ยังใช้ manual receipts ได้และ upgrade ด้วย `evidence upgrade`
-
-เวลารัน executable provider ต้องระบุ claim scope ก่อน command:
-
-```bash
-claude-foundation evidence run add-profile test --claims declared -- npm test
-```
-
-`declared` หมายถึงเฉพาะ claims ที่ประกาศ provider นี้ไว้ใน `capabilities`
-receipt อ้างผลของ claim อื่นไม่ได้ และ reuse ได้ต่อเมื่อ workspace hash,
-provider protocol, provider version/fingerprint, status และ claim coverage
-ยังตรงทั้งหมด
-
-Browser evidence แยก “scenario ต้องใช้ foreground” ออกจาก
-“environment มี foreground ให้ใช้จริง”:
-
-```bash
-claude-foundation evidence record add-profile browser pass \
-  --claims declared --input-mode os-input \
-  --foreground-required yes --foreground-available yes \
-  --observed "manual interaction completed" --reviewer reviewer-id \
-  --artifact test-results/browser-report.json
-```
-
-ดูรายละเอียด contract/wiring, Playwright claim mapping, resource locks, structured
-reports และ cache ที่ [Executable evidence adapters](.claude/harness/EVIDENCE.md)
-
-Receipts อยู่ที่:
-
-```text
-.foundation/receipts/add-profile/
-├── test.json
-├── discovery.json
-├── browser.json
-├── review.json
-└── proof.json
-```
-
-ผลที่ผ่าน:
-
-```text
-PROVEN add-profile
-next: /land add-profile
-```
-
-สิ่งต่อไปนี้จะ block:
-
-- required receipt หาย
-- test discovery เป็นศูนย์หรือต่ำกว่า minimum
-- provider `fail`, `error` หรือ `inconclusive`
-- browser ไม่มี input/foreground capability ที่ scenario ต้องใช้
-- mutation crash ถูกอ้างเป็น kill
-- receipt cover claims ไม่ครบ
-- code, tests, config, specs หรือ change revision เปลี่ยนหลัง proof
-
-ถ้า Prove ไม่ผ่าน ให้แก้ใน sandbox แล้ว `/prove` อีกครั้ง
-
-## `/land` — นำ proven code เข้า project หลัก
-
-### ใช้เมื่อไร
-
-- `/prove` ผ่าน
-- พร้อมให้ code เปลี่ยนใน working tree หลัก
-- ไม่มีงานอื่นแก้ target files ชนกัน
-
-```text
-/land add-profile
-```
-
-ลำดับ:
-
-```text
-ตรวจ proof freshness
-→ ตรวจ required receipts
-→ ตรวจ target conflicts
-→ เตรียม backup ของ touched paths และ apply journal
-→ apply proven sandbox diff
-→ ตรวจ touched-path projection
-→ sync delta specs
-→ archive change
-```
-
-`land archive` ทำ apply และ archive ใน transaction เดียว `sandbox apply`
-ยังเรียกแยกเพื่อตรวจสอบได้ แต่ไม่จำเป็นต้องเรียกก่อน unrelated target edits
-จะถูกรักษาไว้และไม่ถูกนำมาเทียบ projection ถ้า apply พัง touched paths จะ
-rollback จาก backup และถ้า archive พังหลัง apply สามารถเรียกซ้ำเพื่อทำต่อจาก
-journal ที่ verify แล้วได้ โดย proof ยังผูกกับ sandbox เดิม
-
-Land จะไม่:
-
-- overwrite target ที่เปลี่ยนหลังสร้าง sandbox
-- ใช้ stale proof
-- archive เมื่อ evidence ไม่ครบ
-- commit, push หรือเปิด PR โดยไม่ได้รับอนุญาต
-
-ตอนนี้ OpenSpec CLI 1.7.0 ใช้สำหรับ semantic spec sync และ archive ส่วน
-sandbox apply และ proof guards เป็นของ Foundation
-`land archive` เรียกซ้ำได้อย่างปลอดภัย ถ้า change ถูก archive แล้วจะรายงาน
-สถานะเดิมและไม่ sync spec ซ้ำ
-
-ตรวจความพร้อมก่อนเริ่มงาน:
-
-```bash
-claude-foundation doctor --require-archive
-```
-
-ถ้าไม่ใส่ `--require-archive` การไม่มี OpenSpec CLI จะเป็น warning เพราะ
-Change, Build และ Prove ยังทำได้ แต่ archive จะถูก block
-
-## `/changes` — ดูสถานะงานทั้งหมด
-
-```text
-/changes
-```
-
-ใช้ดู:
-
-- active changes
-- schema ของแต่ละ change
-- กำลัง change/build/prove หรือ proven
-- proof stale หรือพร้อม land
-- next useful action
-
-เหมาะสำหรับกลับมาทำงานข้าม session หรือมีหลาย changes พร้อมกัน
-
-## `/dev` — One-shot compatibility command
-
-```text
-/dev เพิ่ม authenticated profile editing
-```
-
-เท่ากับ:
-
-```text
-/change → /build → /prove
-```
-
-`/dev` จงใจหยุดก่อน `/land` จึงไม่แก้ project หลัก ไม่ commit และไม่เปิด PR
-
-ใช้ `/dev` เมื่อต้องการ flow เดียวจบและ intent ค่อนข้างชัด หากต้องการดูต้นทุน
-หรือควบคุมแต่ละ operation ให้ใช้คำสั่งแยก
-
-## ตัวอย่าง Flow
-
-### งานเล็กและชัด
-
-```text
-/change เปลี่ยนข้อความปุ่ม Save เป็น Update Profile
-/build update-profile-button-copy
-/prove update-profile-button-copy
-/land update-profile-button-copy
-```
-
-ระบบสามารถเลือก rapid lane และใช้เฉพาะ evidence ที่จำเป็น
-
-### งาน Auth/Profile
-
-```text
-/investigate ownership และ session behavior ของ profile ปัจจุบัน
-/change เพิ่ม profile editing สำหรับ authenticated owner
-/build authenticated-profile-editing
-/prove authenticated-profile-editing
-/land authenticated-profile-editing
-```
-
-Auth จะ trigger standard lane, security evidence และ independent review
-
-### Requirement เปลี่ยนกลาง Build
-
-```text
-/build add-profile
-
-# พบว่า email change ต้องยืนยันใหม่
-/investigate add-profile: flow การยืนยัน email เดิมเป็นอย่างไร
-/change add-profile
-/build add-profile
-/prove add-profile
-/land add-profile
-```
-
-Change revision ใหม่จะทำให้ proof เก่าหมดอายุโดยอัตโนมัติ
-
-### หลาย Change พร้อมกัน
-
-แต่ละ change มี sandbox แยก:
-
-```text
-/build change-a
-/change change-b
-```
-
-หากแตะไฟล์หรือ contract เดียวกัน ต้องกำหนดลำดับ land เมื่อ change แรก land
-แล้ว change ที่เหลืออาจต้อง sync/rebase และ prove ใหม่
+| State | หมายถึงอะไร | ทำอะไรต่อ |
+|---|---|---|
+| `untracked` | OpenSpec มี active change แต่ Foundation ไม่มี runtime record | ใช้ `/change <change-id>` เพื่อนำเข้า harness และ validate |
+| `change` | มีข้อตกลงแล้ว แต่ยังไม่มี Build sandbox | ทำ artifact ให้ครบ แล้ว `/build` |
+| `building` | มี isolated workspace และ proof ยังไม่ผ่าน | ทำ `/build` ต่อ หรือ `/prove` เมื่อพร้อม |
+| `ready-to-land` | Passing proof ยังตรงกับ agreement และ workspace ปัจจุบัน | `/land` |
+| `stale-proof` | Proof เคยผ่าน แต่ไม่ตรงกับ input ปัจจุบันแล้ว | ทำ Build ที่จำเป็นให้เสร็จ แล้ว `/prove` ใหม่ |
+| `applied` | Code ถูก apply แล้ว แต่ spec sync/archive ยังไม่เสร็จ | เรียก `/land` ซ้ำ Transaction resume ได้ |
+| `archived` | Code ถูก apply, specs ถูก sync และ change ถูก archive | งานเสร็จและไม่แสดงใน active changes |
+
+`ready-to-land` คือชื่อที่ user เห็นสำหรับ lifecycle state ภายใน `proven` ส่วน
+`pass`, `fail`, `error`, `inconclusive` หรือ `stale` เป็นสถานะของ evidence receipt
+ไม่ใช่สถานะของ change ทั้งก้อน
+
+Runtime state อยู่ใน `.foundation/runtime/<change-id>.json` ห้ามเขียนซ้ำหรือแก้
+ด้วยมือใน OpenSpec Markdown
 
 ## Evidence คืออะไร
 
-`evidence.yaml` ตอบคำถามว่า:
+Evidence ใช้ตอบคำถามว่า:
 
-> เรารู้ได้อย่างไรว่าพฤติกรรมนี้ถูกต้องจริง ไม่ใช่เพียง agent บอกว่าทำเสร็จแล้ว
+> เรารู้ได้อย่างไรว่า behavior นี้ถูกต้อง นอกเหนือจากการที่ agent บอกว่าเสร็จแล้ว
 
 ```text
-Requirement
-    ↓
-Evidence claim
-    ↓
-Provider
-    ↓
-Receipt
-    ↓
-Proof
+Requirement → Claim → Provider → Receipt → Proof
 ```
 
-ตัวอย่าง:
+`evidence.yaml` ประกาศ behavioral claim ที่มี stable ID และ capability ที่ต้องใช้:
 
 ```json
 {
@@ -704,62 +357,180 @@ Proof
 }
 ```
 
-Receipt ผูกกับ workspace hash จึง reuse ได้เมื่อ relevant inputs ไม่เปลี่ยน และ
-stale ทันทีเมื่อ code หรือ agreement เปลี่ยน
+จากนั้น `execution.yaml` เชื่อม capability เหล่านั้นเข้ากับ tool ของ project การ
+แยกสองไฟล์นี้ทำให้เปลี่ยน test command ได้โดยไม่ลด behavior ที่ต้องพิสูจน์
 
-## Sources of truth
+Capability ที่พบบ่อยคือ `test`, `discovery`, `static-analysis`, `browser`,
+`integration`, `compatibility`, `performance`, `security-static`,
+`accessibility`, `data-migration`, `resilience`, `observability`, `deployment`,
+`dependency-supply-chain`, `cross-repo-contract` และ `review` ดู catalog และ
+รูปแบบ config จริงที่ติดตั้งด้วย:
+
+```bash
+claude-foundation providers
+```
+
+Foundation ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
+ประกาศและเก็บ receipt ใต้ `.foundation/receipts/<change-id>/` Receipt reuse ได้
+เฉพาะเมื่อ workspace hash, agreement, provider protocol/version และ claim coverage
+ยังตรงกัน
+
+คำสั่งวิเคราะห์ที่ใช้บ่อย:
+
+```bash
+claude-foundation doctor --stage prove --change <change-id>
+claude-foundation proof readiness <change-id>
+claude-foundation proof plan <change-id>
+claude-foundation proof run <change-id>
+```
+
+ถ้า provider ที่ตั้งค่าไว้รันไม่ได้ `proof readiness` จะคืน
+`INFRASTRUCTURE_ERROR` พร้อม `next` ที่มีทางเลือกแบบ structured ได้แก่ ตรวจ
+environment ด้วย doctor, retry, ใช้ external evidence ที่มี artifact ตรวจสอบ
+ย้อนหลังได้ หรือเปลี่ยนเป็น project-owned command ที่พิสูจน์ claims เดิมได้
+Harness จะไม่ลด claim coverage หรือเปลี่ยน provider ที่ล่มให้เป็น `pass`
+
+หากต้อง wire provider หรือ browser workflow ใหม่ ดู
+[Executable evidence adapters](.claude/harness/EVIDENCE.md)
+
+## ถ้า Requirement เปลี่ยนระหว่าง Build
+
+ไม่ต้องเปิด change ที่สองเพียงเพราะพบข้อมูลใหม่ก่อน Land ให้แก้ agreement เดิม:
+
+```text
+/investigate <change-id>: how does the existing verification flow work?
+/change <change-id>
+/build <change-id>
+/prove <change-id>
+```
+
+`/change` จะ sync revision ใหม่เข้า active sandbox รักษา completed task ที่ stable
+ID และความหมายไม่เปลี่ยน และ invalidate proof ที่ได้รับผลจาก revision
+
+## การใช้หลาย Repository
+
+`openspec/repositories.yaml` ประกาศ topology ถาวรของ project ส่วน
+`repositories.yaml` ภายใน change เลือกเฉพาะ repository ที่ change นั้นอ่านหรือ
+เขียนได้ ถ้าไม่มี selection จะยังทำงานแบบ repository เดียวชื่อ `root`
+
+ใส่ annotation ใน multi-repository task เพื่อให้ authority และ dependency ชัด:
+
+```markdown
+- [ ] **T001** Implement API [repo:api] [kind:implementation] [paths:internal/profile]
+- [ ] **T002** Implement App [repo:app] [kind:implementation] [depends:T001]
+- [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
+```
+
+Foundation มอง multi-remote landing เป็น ordered resumable saga โดยตรวจ child
+commit และ CI state ที่ระบุชัด ไม่อ้างว่า atomic ข้าม remote ใช้
+`claude-foundation land plan <change-id>` เพื่อดูลำดับ และดู protocol เต็มใน
+[WORKFLOW.md](WORKFLOW.md)
+
+## Foundation จำกัด Scope ของ Agent และ Skill อย่างไร
+
+Foundation ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่
+resident orchestrator ที่คัดลอก conversation ทั้งหมดให้ worker ทุกตัว Change
+repository เดียวที่มี task ปกติไม่เกินสองงานมักใช้ agent เดียว Worker หลายตัวมี
+ประโยชน์เฉพาะเมื่องาน, repository access, dependency และ evidence แยกจากกันได้ชัด
+
+Agent จะโหลด construction skill หลักหนึ่งตัวตาม layer ที่แก้ และเพิ่ม security
+หรือ observability guidance เฉพาะเมื่อ change ข้าม boundary เหล่านั้น งานที่ต้อง
+ตัดสิน domain boundary เริ่มจาก `ddd-strategic` ส่วนงาน UI, backend, data หรือ
+documentation ปกติไม่ควร preload skill chain ทั้งหมด
+
+`foundation.json` map tier แบบ portable คือ `fast`, `standard` และ `deep` เข้ากับ
+model family พร้อมกำหนด execution budget งาน inventory หรือ mechanical ใช้ fast,
+implementation ปกติใช้ standard และ architecture, security, migration หรือ
+independent review ใช้ deep โดยงาน risk สูงลดลงเป็น fast ไม่ได้
+
+## อะไรเป็น Source of Truth
 
 | ข้อมูล | Source of truth |
 |---|---|
-| Intent และ behavior agreement | `openspec/` |
-| Implementation | code และ tests |
-| Task progress | active change `tasks.md` |
-| Runtime lifecycle | `.foundation/runtime/` |
-| Evidence | `.foundation/receipts/` |
-| Provider logs และ metrics | `.foundation/logs/` |
-| Legacy history | `.workflow/` แบบ read-only |
+| Intent และ behavioral agreement | `openspec/` |
+| Implementation | Code และ tests |
+| ความคืบหน้า implementation | `tasks.md` ของ active change |
+| Runtime lifecycle และ sandbox | `.foundation/runtime/` และ `.foundation/sandboxes/` |
+| Evidence receipt และ immutable proof bundle | `.foundation/receipts/` และ `.foundation/evidence/` |
+| Provider log, metrics และ telemetry | `.foundation/logs/` |
+| Model tier และ execution limit | `foundation.json` |
+| Workflow history รุ่นเก่า | `.workflow/` แบบ read-only |
 
-Runtime status ไม่ควรถูกเขียนซ้ำใน narrative Markdown
+`.foundation/` เป็นพื้นที่ที่เครื่องดูแล เปิดอ่านเพื่อวิเคราะห์ได้ แต่อย่าใช้เป็น
+product requirement หรือซ่อม state ด้วยมือถ้า operator guide ไม่ได้ระบุ
 
-## Migration จาก Workflow เดิม
+## Safety Boundary
 
-ดู migration candidates:
+- Worktree หรือ directory copy ป้องกัน workspace แต่ไม่ใช่ process-security
+  sandbox
+- Unattended execution จะ fail closed ถ้าไม่มี trusted attestation จาก host
+- Land ปฏิเสธ stale proof และ conflicting edit ใน target path ที่แตะ
+- Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
+- Foundation ไม่ commit, push, เปิด pull request หรือมอบอำนาจเหล่านั้นให้ worker
+  agent โดยไม่ได้รับอนุญาตชัดเจน
+- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
+- `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
+  commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
+
+## Operator Commands และการแก้ปัญหา
+
+ผู้ใช้ทั่วไปใช้ slash commands เป็นหลัก Native CLI เหล่านี้ช่วย inspect และ
+recover:
 
 ```bash
-claude-foundation migrate
+claude-foundation doctor --stage change
+claude-foundation changes
+claude-foundation validate <change-id>
+claude-foundation packet <change-id> --phase build|prove|review
+claude-foundation metrics <change-id>
+claude-foundation sandbox inspect <change-id> --json
+claude-foundation proof readiness <change-id>
+claude-foundation proof run <change-id>
+claude-foundation proof audit <change-id>
+claude-foundation land check <change-id>
+claude-foundation land plan <change-id>
 ```
 
-สร้าง candidate สำหรับ run เดิม:
+CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
+`claude-foundation help` เพื่อดู command ทั้งหมด
 
-```bash
-claude-foundation migrate 0003-fix-example --apply
-```
+ปัญหาที่พบบ่อย:
 
-ระบบไม่ยกข้อความจาก `.workflow/` เป็น current spec อัตโนมัติ ต้องยืนยันกับ
-code, tests หรือ accepted contract ก่อน
+| อาการ | มักหมายถึง | วิธีแก้ |
+|---|---|---|
+| ไม่พบ slash command | Agent session เปิดก่อนติดตั้ง | เปิด session ใหม่ใน target project |
+| Build เริ่มไม่ได้ | OpenSpec artifact หรือ provider wiring ยังไม่ครบ | รัน `doctor --stage build --change <change-id>` แล้วแก้ artifact ที่รายงาน |
+| Proof stale | Code, test, config, claim หรือ provider input ที่เกี่ยวข้องเปลี่ยน | ทำ edit ให้เสร็จแล้ว `/prove` ใหม่ |
+| Test discovery เป็นศูนย์ | Command ไม่พบ test/report ที่คาดไว้ | แก้ `execution.yaml` หรือ test command ห้ามบันทึก manual pass แทน |
+| Land แจ้ง conflict | Target path ใน project หลักเปลี่ยนหลังสร้าง sandbox | Review/rebase หรือ sync change แล้วสร้าง proof ใหม่ |
+| Archive รันไม่ได้ | ไม่มี OpenSpec หรือ version ไม่ใช่ 1.7.0 | ติดตั้ง pinned CLI แล้วลอง `/land` ใหม่ |
+| Land หยุดหลัง apply | Code เข้าแล้ว แต่ sync/archive ถูกขัดจังหวะ | ห้าม apply ซ้ำด้วยมือ ให้เรียก `/land` เพื่อ resume journal |
 
-## ตรวจระบบ Foundation
+เมื่อ request หรือ token budget ถึง limit ระบบจะหยุด model exploration แต่ไม่
+block deterministic packet, readiness, evidence, proof-resume, metrics หรือ
+archive และไม่ลด evidence requirement เพื่อให้ Land ผ่าน
+
+## ตรวจหรือ Upgrade Installation
 
 ```bash
 claude-foundation version
 claude-foundation runtime version
 sh .claude/tests/run-all.sh
 
-npx --yes @fission-ai/openspec@1.7.0 \
-  schema validate foundation-standard
-
-npx --yes @fission-ai/openspec@1.7.0 \
-  schema validate foundation-rapid
+npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
+npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
 ```
 
-ทดสอบ installer โดยไม่เขียนไฟล์:
+Preview source installation โดยไม่เขียนไฟล์:
 
 ```bash
 ./install.sh /tmp/foundation-demo --dry-run
 ```
 
-รายละเอียด provider contracts, sandbox safety, watchdog และ operator commands
-อยู่ใน [WORKFLOW.md](WORKFLOW.md)
+รายละเอียด provider contract, review policy, invalidation rule, sandbox,
+watchdog, telemetry, multi-repository landing และ native CLI ทั้งหมดอยู่ใน
+[WORKFLOW.md](WORKFLOW.md) และ
+[harness operator guide](.claude/harness/README.md)
 
 ## License
 

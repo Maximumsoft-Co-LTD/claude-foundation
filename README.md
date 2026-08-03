@@ -2,26 +2,47 @@
 
 **English** | [ภาษาไทย](README.th.md)
 
-Foundation is an OpenSpec-native software-change harness for AI coding agents.
-OpenSpec stores the agreement, the native agent implements it, and deterministic
-evidence decides whether the change is safe to bring into the main project.
+Claude Foundation is a software-change harness for AI coding agents. It gives
+the agent a repeatable way to agree on a change, implement it away from your
+working tree, prove it with real evidence, and only then bring it into the
+project.
 
 ```text
 Investigate? → Change → Build → Prove → Land
 ```
 
-The goal is to preserve the quality mechanisms that matter while removing the
-latency and cost of a fixed phase orchestrator, lifecycle agents, task mirroring,
-repeated full-suite runs, and unnecessary browser calls.
+Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
+requirements and the repository's own tools for implementation and testing. It
+does not replace your coding agent, test framework, CI system, or Git workflow.
 
-## Installation
+## Why use it?
+
+An AI agent can write plausible code and still misunderstand the requirement,
+test the wrong thing, or modify your main working tree before you have reviewed
+the result. Foundation separates those concerns:
+
+- **OpenSpec records the agreement.** Intent does not disappear with chat
+  history.
+- **Build happens in isolation.** A Git worktree or copied directory protects
+  the main project while the agent works.
+- **Evidence decides readiness.** Tests, static analysis, browser checks, or
+  other project-owned tools produce receipts bound to the exact workspace.
+- **Land is explicit.** Foundation never commits, pushes, or opens a pull
+  request unless you separately authorize it.
+- **Work can be resumed.** Tasks, runtime state, receipts, and recovery journals
+  survive a new agent session.
+
+The intended result is less ceremony than a fixed multi-agent phase pipeline,
+without relying on “the agent says it is done” as proof.
+
+## Install
 
 Requirements:
 
 - Node.js 20.19 or later
-- Git for worktree isolation
-- OpenSpec CLI 1.7.0 for semantic spec sync and archive
-- `jq` to merge Claude settings during installation
+- Git, for worktree isolation
+- OpenSpec CLI 1.7.0, for spec synchronization and archive
+- `jq`, used by the installer to merge Claude settings
 
 ```bash
 npm install -g @fission-ai/openspec@1.7.0
@@ -30,240 +51,53 @@ cd /path/to/claude-foundation
 ./install.sh /path/to/your-project
 ```
 
-Or use the packaged CLI:
+Or, when the packaged command is available:
 
 ```bash
 claude-foundation init /path/to/your-project
 ```
 
 Open a new Claude Code session in the target project after installation so the
-new slash commands are registered.
-
-The installer preserves:
-
-- project-owned current specs and active changes under `openspec/`;
-- machine state under `.foundation/`;
-- project-specific agents and hooks;
-- legacy `.workflow/` history as a read-only migration source.
-
-Foundation-owned commands, schemas, harness code, rules, skills, and hooks are
-refreshed during upgrades.
-
-`protect-secrets.sh` and `lint.sh` are wired by default.
-`no-direct-main-commit.sh` is intentionally opt-in because some repositories
-allow controlled commits on their default branch; `claude-foundation doctor`
-reports whether that policy is enabled.
-
-## The workflow
-
-```mermaid
-flowchart LR
-    I[Intent] --> Q{Is the problem clear?}
-    Q -- No --> X[Investigate]
-    X --> C[Change]
-    Q -- Yes --> C
-    C --> B[Build in sandbox]
-    B --> D{New requirement discovered?}
-    D -- Yes --> X
-    D -- No --> P[Prove]
-    P -- Evidence fails --> B
-    P -- Evidence passes --> L[Land]
-    L --> A[Sync specs + Archive]
-```
-
-This is not a waterfall. Work can move backward while the agreement or
-implementation is still evolving:
-
-```text
-Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
-```
-
-`Land` is the completion boundary. Requirements discovered after landing should
-normally become a new change.
-
-## Command map
-
-| Command | Purpose | Use it when | Changes main project code? |
-|---|---|---|---|
-| `/investigate` | Explore a problem and compare options | The outcome or approach is unclear | No |
-| `/prototype` | Compare 3–5 disposable alternatives | A subjective direction is still unresolved | `.foundation/` only |
-| `/change` | Create or revise the agreement | The desired outcome is known | No |
-| `/build` | Implement inside an isolated sandbox | Change artifacts are ready | Sandbox only |
-| `/prove` | Produce evidence and a content-bound proof | Implementation tasks are complete | No |
-| `/review` | Review from fresh bounded context | Risk policy requires an independent perspective | No |
-| `/land` | Apply a proven change and archive it | Proof passes and the change is accepted | Yes |
-| `/changes` | List active changes and readiness | You need portfolio or resume context | No |
-| `/dev` | Run Change → Build → Prove | You want the compatibility one-shot flow | Does not land |
-| `/migrate-workflow` | Prepare legacy migration candidates | Moving knowledge from `.workflow/` | No automatic promotion |
-
-After selecting a prototype, continue with
-`/change <intent|existing-change> --prototype-selection <selection-path>`.
-Change copies the decision into proposal/design; ignored prototype files cannot
-be recorded as evidence artifacts or local references.
-
-Slash commands drive the AI workflow. Deterministic operator commands use the
-native CLI:
+slash commands are registered. Check the installation with:
 
 ```bash
-claude-foundation providers
-claude-foundation repos [change]
-claude-foundation models
-claude-foundation agents plan <change> [--group <n>] [--pretty]
-claude-foundation agents task <change> <task> [--pretty]
+claude-foundation version
 claude-foundation doctor --stage change
-claude-foundation changes
-claude-foundation packet <change> --phase build|prove|review [--pretty]
-claude-foundation metrics <change>
-claude-foundation telemetry sync <change> [transcript.jsonl]
-claude-foundation telemetry import <change> events.jsonl --format codex
-claude-foundation validate <change>
-claude-foundation proof plan <change>
-claude-foundation proof readiness <change>
-claude-foundation proof run <change>
-claude-foundation proof preflight <change>
-claude-foundation proof execute <change>
-claude-foundation proof audit <change>
-claude-foundation proof finalize <change>
-claude-foundation evidence upgrade <change>
-claude-foundation evidence run <change> <provider> --claims declared -- <command>
-claude-foundation sandbox create <change> [--all]
-claude-foundation sandbox inspect <change> [--json] [--unattended]
-claude-foundation land check <change>
-claude-foundation land plan <change>
-claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
-claude-foundation land pointers <change>
-claude-foundation land resume <change>
 ```
 
-The CLI finds the project from the current directory or `--project <path>` and
-uses that project's installed runtime. Run `claude-foundation help` for the full
-surface. Direct source installations may call the runtime file as a compatibility
-fallback when the packaged CLI is unavailable.
+The installer preserves project-owned specs, active changes, runtime state,
+custom agents, and hooks. Upgrades refresh only Foundation-owned commands,
+schemas, harness code, rules, skills, and hooks recorded in the install
+manifest.
 
-`packet <change> --phase build|prove|review` is the compact handoff between
-Change, Build, Prove, and fresh Review. It contains references, revisions, claim digests, provider
-state, task counts, hashes, and budget—not the accumulated conversation.
-Packets are capped by scope: task/review 8 KiB, repository 12 KiB, and global 16 KiB.
-Large artifacts remain in files addressed by path and SHA-256. The phase flag
-also incrementally closes the previous phase's request telemetry.
-Machine JSON is compact by default so the configured limit equals the bytes
-actually handed to an agent; add `--pretty` only for interactive inspection.
+## Investigate before committing to a change
 
-A worktree or copied directory protects workspace integrity; it is not a process
-security sandbox. Boundary detection is diagnostic only; deliberately unattended
-execution fails closed until a trusted host-owned attestation mechanism exists.
-Review packets include both committed and dirty paths from recorded repository
-bases. External review protocol v2 binds structured reviewer/subject provenance
-to a change-level attempt chain, so receipt deletion or provider renaming cannot
-reset the two-AI limit. External human acceptance is scoped to explicit claims
-and fully revalidated before proof.
-Packet schema 4 and agent-plan schema 2 let consumers branch explicitly.
-Large task, claim, provider, and repository collections degrade to bounded
-previews with counts, digests, and task-scoped expansion rather than raising
-the context limit.
+Use `/investigate` when you do not yet know enough to write a reliable change
+agreement. Typical reasons are an unknown root cause, several approaches with
+different tradeoffs, unclear compatibility or migration constraints, or an
+unfamiliar brownfield code path.
 
-`metrics <change>` summarizes measured wall time, phase operations, unique
-provider executions, requests, input/output tokens, cache creation/read tokens,
-cost, orchestrator share, and emitted plan/packet context bytes. For Claude Code, Foundation binds the documented
-session transcript once at `SessionStart` and reads only new assistant usage at
-phase checkpoints. It never measures tokens in `PostToolUse`, never copies
-prompts or tool payloads, and includes nested subagent transcripts. Use
-`telemetry sync` manually when the session hook was not active. Fields remain
-`null` until their authoritative source is connected.
-
-## Multi-repository control plane
-
-`openspec/repositories.yaml` is the durable topology. Git submodules are
-discovered automatically and reported as drift until their roles, dependencies,
-and access modes are reviewed. Each change's `repositories.yaml` selects only
-the repositories it may read or write. A missing manifest remains compatible
-with the original single `root` repository.
-Paths outside the control root are rejected unless a committed repository entry
-explicitly sets `allowOutsideRoot: true`; use that only for trusted sibling Git
-repositories.
-
-Multi-repository tasks remain in `tasks.md` and use compact annotations:
-
-```markdown
-- [ ] **T001** Inspect API [repo:api] [kind:inventory] [paths:internal/profile]
-- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001]
-- [ ] **T003** Implement App [repo:app] [kind:implementation] [depends:T002]
-- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]
-```
-
-`agents plan` writes the complete plan to `.foundation/plans/` but prints only
-a summary capped at 4 KiB. Use `agents plan <change> --group <n>` to inspect one
-dispatch group and `agents task <change> <task>` to obtain one worker's scoped
-packet. Completed dependencies remain valid on resume; an all-complete plan
-returns `proof-ready`. Task packets are denied when task claims are unknown,
-outside the selected repository, or lack an executable evidence provider.
-Changes with one repository and at most two ordinary tasks recommend a
-single agent, avoiding planning/spawn overhead. `foundation.json` maps portable
-`fast`, `standard`, and `deep` tiers to
-Haiku, Sonnet, and Opus by default. Mechanical inventory/log work uses fast,
-normal implementation uses standard, and architecture, security, migration, or
-independent review uses deep. High-risk work cannot be downgraded to fast. The
-same policy file defines rapid/standard token budgets; the watchdog stops on
-whichever limit is reached first, token usage or request count. The
-native host spawns agents; Foundation supplies scoped packets and never grants
-commit, push, or Land authority.
-
-Load one primary construction skill for the layer being changed. Add security
-or observability only when the trust boundary or operational behavior requires
-it, and read only the matching focused reference. This composition keeps
-cross-cutting quality without loading the full backend skill chain on every
-request.
-
-Providers may declare `repository` in `execution.yaml`. Their commands run in
-that repository sandbox and receipts bind to that repository snapshot, so an
-unrelated repository edit does not invalidate them. Claims spanning more than
-one repository must name those repositories and declare
-`cross-repo-contract`.
-Use instance IDs with `capability` when the same capability runs in several
-repositories, for example `api-test` and `app-test`.
-
-Multi-remote landing is deliberately a saga, not fake atomicity. `land plan`
-shows dependency order, `land record` binds an explicitly authorized child
-commit and CI status, `land pointers` stages verified gitlinks transactionally,
-and `land resume` verifies which commits reached their targets. Pointer staging
-invalidates proof, so fresh composite proof is required before archive.
-
-## `/investigate` — explore without committing
-
-### When to use it
-
-- The root cause is unknown.
-- Several approaches would produce materially different behavior.
-- Scope, compatibility, or migration requirements are unclear.
-- Brownfield code must be understood before choosing a direction.
-- A new assumption appears during Build.
-
-### Examples
+Start with the decision or uncertainty—not a request to implement a solution:
 
 ```text
 /investigate why profile updates occasionally overwrite newer data
 ```
 
-For an active change:
+For an existing change, include its ID and the new question:
 
 ```text
-/investigate add-profile: should we use last-write-wins or optimistic locking?
+/investigate add-profile: should updates use last-write-wins or optimistic locking?
 ```
 
-When the change already has a sandbox, the investigation reads the sandbox
-implementation rather than the older main working tree.
+The agent reads the relevant code and separates its output into:
 
-### Output
+- verified, code-grounded facts;
+- hypotheses that are not yet proven;
+- constraints and affected boundaries;
+- viable options with tradeoffs;
+- unknowns that still require a user decision.
 
-An investigation separates:
-
-- code-grounded facts;
-- hypotheses;
-- constraints;
-- options and tradeoffs;
-- unknowns that require a decision.
-
-It ends with one of:
+It should finish with one of these outcomes:
 
 ```text
 ready for /change
@@ -271,442 +105,254 @@ needs user decision
 not worth changing
 ```
 
-Investigation does not edit product code and does not revise the formal change
-automatically. Accepted findings move into the agreement through `/change`.
-
-## `/change` — create or revise the agreement
-
-### When to use it
-
-- The desired outcome is known.
-- A new change needs to be opened.
-- Requirements, design, tasks, or evidence for an existing change must change.
-- Investigation findings are ready to become an agreement.
-
-### Create a change
+If it is `ready for /change`, turn the accepted findings into the durable
+agreement:
 
 ```text
-/change allow an account owner to edit their profile
+/change add-profile
 ```
 
-Foundation creates:
+Investigation does not edit product code and does not silently rewrite the
+formal change. When the change already has a Build sandbox, it examines that
+sandbox rather than an older main working tree. You may investigate again at
+any point before Land when implementation reveals a new assumption.
+
+## Your first change
+
+Suppose an account owner should be able to edit their display name.
+
+### 1. Create the agreement
+
+In your agent session, run:
 
 ```text
-openspec/changes/add-profile/
+/change allow an account owner to edit their display name
+```
+
+The agent inspects the project, asks only for decisions that materially affect
+the result, and creates `openspec/changes/<change-id>/`. Review the proposal,
+observable scenarios, tasks, and evidence claims before moving on.
+
+Why this step exists: a concrete agreement prevents implementation details from
+silently redefining the requested behavior.
+
+### 2. Build in an isolated workspace
+
+```text
+/build <change-id>
+```
+
+Foundation creates a detached Git worktree when the repository is clean. If the
+repository already has local changes, or is not a Git repository, it uses an
+isolated copy instead. The agent edits that workspace and marks verified items
+in `tasks.md`; the main project is not changed.
+
+To find the workspace:
+
+```bash
+jq -r '.workspace.path' .foundation/runtime/<change-id>.json
+```
+
+Why this step exists: you can inspect or discard implementation work without
+mixing it with your current checkout.
+
+### 3. Prove the result
+
+```text
+/prove <change-id>
+```
+
+Foundation validates the agreement, checks that implementation tasks are
+complete, runs the evidence providers required by the claims, and stores
+content-bound receipts. A successful run ends with:
+
+```text
+PROVEN <change-id>
+next: /land <change-id>
+```
+
+Why this step exists: passing proof means the declared behavior was checked on
+the same code that will be landed, rather than on an earlier or unrelated
+workspace.
+
+### 4. Land the proven change
+
+```text
+/land <change-id>
+```
+
+Land verifies that proof is still fresh, checks for conflicting target edits,
+applies only the proven sandbox diff, synchronizes the accepted delta specs,
+and archives the change. If the code, tests, configuration, agreement, or
+relevant target paths moved after Prove, Land stops instead of overwriting them.
+
+Why this step exists: applying code and updating the durable requirements are
+one guarded, resumable completion boundary.
+
+### 5. Commit using your normal Git process
+
+Foundation stops after applying and archiving. Review the result, then commit,
+push, and open a pull request using your project's normal process.
+
+## The workflow in one picture
+
+```mermaid
+flowchart LR
+    I[Intent] --> Q{Problem clear?}
+    Q -- No --> X[Investigate]
+    X --> C[Change]
+    Q -- Yes --> C
+    C --> B[Build in sandbox]
+    B --> D{Requirement changed?}
+    D -- Yes --> X
+    D -- No --> P[Prove]
+    P -- Evidence fails --> B
+    P -- Evidence passes --> L[Land]
+    L --> A[Sync specs and archive]
+```
+
+This is not a waterfall. Before Land, use the same change when learning changes
+the agreement:
+
+```text
+Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
+```
+
+After Land, a new requirement should normally become a new change.
+
+## Which command should I use?
+
+| Command | Use it when | Result |
+|---|---|---|
+| `/investigate` | The cause, scope, or approach is unclear | Code-grounded facts, options, tradeoffs, and open decisions; no product edits |
+| `/prototype` | A subjective direction needs 3–5 disposable comparisons | Temporary material under `.foundation/`; never accepted as proof |
+| `/change` | The desired outcome is known, or an active agreement must change | Creates or revises OpenSpec artifacts; no product edits |
+| `/build` | The agreement is ready to implement | Edits and focused checks in an isolated workspace |
+| `/prove` | Implementation tasks and focused checks are complete | Required receipts and a content-bound `proof.json` |
+| `/review` | Risk policy requires a fresh independent perspective | A bounded review receipt; no product edits |
+| `/land` | Proof passes and you accept the change | Applies the proven diff, syncs specs, and archives |
+| `/changes` | You are resuming work or managing several changes | Active states and the next useful operation |
+| `/dev` | The intent is clear and you want Change → Build → Prove in one run | A proven candidate; deliberately stops before Land |
+| `/migrate-workflow` | You are moving knowledge from legacy `.workflow/` runs | Reviewable migration candidates; no automatic promotion to truth |
+
+Use the separate commands when you want to review each boundary. Use `/dev`
+for a small, clear request where a one-shot run is easier:
+
+```text
+/dev rename the Save button to Update Profile
+```
+
+After choosing a prototype, turn only the selected decision into the agreement:
+
+```text
+/change <intent-or-change-id> --prototype-selection <selection-path>
+```
+
+Prototype files remain disposable and cannot be cited as evidence.
+
+## Understanding `openspec/`
+
+`openspec/` is the human-reviewable agreement. It contains requirements and
+active change artifacts, never transient runtime status or test logs.
+
+```text
+openspec/
+├── config.yaml
+├── repositories.yaml
+├── specs/
+├── changes/
+│   ├── <change-id>/
+│   └── archive/
+└── schemas/
+    ├── foundation-standard/
+    └── foundation-rapid/
+```
+
+| Path | What it is | Why it exists |
+|---|---|---|
+| `config.yaml` | Project OpenSpec configuration and rules | Gives every change the same project context and default schema |
+| `repositories.yaml` | Project-wide repository topology and access policy | Makes cross-repository scope explicit and reviewable |
+| `specs/` | Current accepted product requirements | Records what the landed system is expected to do |
+| `changes/<change-id>/` | Agreement for one active change | Keeps proposed behavior separate from current behavior until Land |
+| `changes/archive/` | Completed change history | Preserves why and how accepted behavior changed |
+| `schemas/` | Foundation-owned schemas and templates | Defines the required artifacts for standard and rapid work |
+
+### Files in an active change
+
+```text
+openspec/changes/<change-id>/
 ├── .openspec.yaml
 ├── proposal.md
-├── specs/
-│   └── change/spec.md
-├── design.md
+├── specs/<area>/spec.md       # standard lane only
+├── design.md                  # standard lane only
 ├── tasks.md
 ├── evidence.yaml
-└── execution.yaml
+├── execution.yaml
+└── repositories.yaml
 ```
 
-Machine-owned state is stored separately:
+| File | What it answers | Why the harness needs it |
+|---|---|---|
+| `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
+| `proposal.md` | Why change, what changes, and what is excluded? | Prevents scope and impact from being implicit |
+| `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
+| `design.md` | Which technical decisions constrain implementation and rollback? | Records only load-bearing current-state facts, compatibility, migration, risks, and rejected alternatives |
+| `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
+| `evidence.yaml` | Which behavioral claims must be proven? | Separates the proof obligation from whichever tool happens to run it |
+| `execution.yaml` | How does this project produce the evidence? | Wires commands, reports, services, timeouts, and readiness checks |
+| `repositories.yaml` | Which repositories may this change read or write? | Bounds agent authority and establishes dependency order |
 
-```text
-.foundation/runtime/add-profile.json
-```
+Do not add `/prove` or `/land` as checkboxes in `tasks.md`; they are lifecycle
+commands, not implementation tasks.
 
-### Revise an existing change
+### Standard and rapid lanes
 
-```text
-/change add-profile
-```
+`foundation-standard` includes proposal, delta specs, design, tasks, evidence,
+and execution. Use it for public contracts, authentication, data or migrations,
+coupled behavior, high impact, irreversible effects, or any change needing more
+than unit/static evidence.
 
-Only affected artifacts should change:
+`foundation-rapid` intentionally omits delta specs and design. It is eligible
+only for low-impact, isolated work with no public contract, persistent
+migration, security trigger, or irreversible effect. If stronger requirements
+appear, `/change` upgrades the same change to standard.
 
-- `proposal.md` — motivation, scope, and impact;
-- `specs/**/*.md` — behavior and observable scenarios;
-- `design.md` — technical decisions, compatibility, and rollback;
-- `tasks.md` — the sole implementation ledger;
-- `evidence.yaml` — stable claims and required provider capabilities;
-- `execution.yaml` — replaceable commands, reports, services, and readiness wiring.
+## Understanding change states
 
-If Build is already active, `/change` synchronizes the revision with:
+Run `/changes` or:
 
 ```bash
-claude-foundation sandbox sync add-profile
+claude-foundation changes
 ```
 
-Synchronization:
-
-- sends the revised change packet into the sandbox;
-- preserves completed tasks by stable task ID;
-- resets tasks whose meaning changed;
-- increments the change revision;
-- makes previous proof and receipts stale.
-
-### Rapid and standard changes
-
-`foundation-rapid` is eligible only when every condition holds:
-
-- low impact;
-- isolated coupling;
-- no public contract change;
-- no persistent migration;
-- no semantic security trigger;
-- no irreversible effect;
-- unit or static evidence is sufficient.
-
-Everything else uses `foundation-standard`. A rapid change upgrades in place if
-authentication, access control, migration, high impact, or coupling is
-discovered.
-
-## `/build` — implement in isolation
-
-### When to use it
-
-- The proposal and scenarios are clear.
-- Load-bearing design decisions have been made.
-- Tasks and evidence obligations are ready.
-
-```text
-/build add-profile
-```
-
-The harness chooses an isolated workspace:
-
-- clean Git repository → detached worktree;
-- Git repository with existing local changes → isolated copy;
-- non-Git repository → isolated copy with before/after manifests.
-
-During Build:
-
-- the main project remains unchanged;
-- the agent edits the sandbox path;
-- `tasks.md` is the only task ledger;
-- focused checks run during convergence;
-- there is no PM/Lead/Engineer/QA/Retro lifecycle chain;
-- subagents are reserved for genuinely independent, verifiable work packages.
-
-### Inspect the code being built
-
-Read the sandbox path:
-
-```bash
-jq -r '.workspace.path' .foundation/runtime/add-profile.json
-```
-
-For a Git worktree:
-
-```bash
-git -C .foundation/sandboxes/add-profile status
-git -C .foundation/sandboxes/add-profile diff
-code .foundation/sandboxes/add-profile
-```
-
-For an isolated copy, open the `/tmp` path recorded in runtime state.
-
-### A requirement changes during Build
-
-Pause Build, investigate if necessary, and revise the same change:
-
-```text
-/investigate add-profile: how does existing email verification work?
-/change add-profile
-/build add-profile
-```
-
-`/change` synchronizes the new revision into the active sandbox. A second change
-is not required merely because the agreement evolved before landing.
-
-## `/prove` — establish that the change is correct
-
-### When to use it
-
-- Implementation tasks are complete.
-- Focused checks pass.
-- The change is ready for its declared evidence providers.
-
-```text
-/prove add-profile
-```
-
-Prove:
-
-1. validates the OpenSpec artifacts;
-2. creates one relevant workspace snapshot;
-3. resolves claims from `evidence.yaml`;
-4. reuses receipts whose hash and provider version still match;
-5. schedules configured missing or stale providers concurrently when resources
-   do not conflict;
-6. verifies test discovery;
-7. runs the required full suite after convergence;
-8. invokes independent review only when risk triggers it;
-9. copies reports, logs, and attachments into the immutable evidence vault;
-10. deduplicates identical commands, emits `proof.json`, and audits digests.
-
-`tasks.md` contains implementation work only. `/prove` and `/land` are
-lifecycle commands, not checkboxes; putting them in the ledger creates a
-self-referential gate and validation rejects it.
-
-Supported evidence capabilities:
-
-| Provider ID | Use it to prove |
-|---|---|
-| `test` | Executable behavior |
-| `discovery` | The expected tests were found |
-| `browser` | Rendered behavior and real browser input |
-| `mutation` | Tests detect a deliberate behavioral fault |
-| `state-identity` | Actor, revision, or before/after state identity |
-| `integration` | Components or external boundaries work together |
-| `compatibility` | Public or persisted contracts remain compatible |
-| `performance` | Measured latency, throughput, resource, or size budgets |
-| `security-static` | Static security checks for changed boundaries and sinks |
-| `cross-repo-contract` | Producer and consumer repositories agree |
-| `review` | Independent risk review |
-| `static-analysis` | Compile, type, lint, and static quality gates |
-| `data-migration` | Forward migration, mixed-version safety, and rollback |
-| `accessibility` | Semantics, keyboard, focus, contrast, and assistive access |
-| `resilience` | Timeout, retry, partial failure, recovery, and degradation |
-| `observability` | Required logs, metrics, traces, and alerts |
-| `deployment` | Packaging, configuration, rollout health, and rollback |
-| `dependency-supply-chain` | Vulnerability, license, lockfile, and provenance policy |
-
-Inspect the exact catalog installed in a project:
-
-```bash
-claude-foundation providers
-```
-
-These providers are evidence contracts, not bundled vendor tools. Prove can run
-the repository's existing tool with `run-provider`, or record a receipt from an
-external system. A change selects only the providers justified by its observable
-claims; it does not run all providers by default.
-
-`evidence.yaml` stores the behavioral contract; `execution.yaml` configures
-project-owned adapters. The normal operator path is:
-
-```bash
-claude-foundation doctor --stage prove --change add-profile
-claude-foundation proof readiness add-profile
-claude-foundation proof run add-profile
-```
-
-`test-discovery` emits test and discovery receipts from one command.
-The `playwright` adapter runs the project's locked Playwright installation,
-requires structured claim annotations, and records `browser-automation` rather
-than pretending automation is physical OS input. Foundation never installs a
-test framework or browser automatically. Evidence v1 remains valid for manual
-receipts and can be upgraded with `evidence upgrade`.
-
-For an executable provider, declare the claim scope before the command:
-
-```bash
-claude-foundation evidence run add-profile test --claims declared -- npm test
-```
-
-`declared` means only claims whose `capabilities` include that provider.
-Receipts cannot claim unrelated outcomes. A receipt is reusable only while its
-workspace hash, provider protocol, provider version/fingerprint, status, and
-claim coverage remain valid.
-
-For browser evidence, record requirement and availability separately:
-
-```bash
-claude-foundation evidence record add-profile browser pass \
-  --claims declared --input-mode os-input \
-  --foreground-required yes --foreground-available yes \
-  --observed "manual interaction completed" --reviewer reviewer-id \
-  --artifact test-results/browser-report.json
-```
-
-See [Executable evidence adapters](.claude/harness/EVIDENCE.md) for contract/wiring separation,
-Playwright claim mapping, resource locks, structured reports, and cache rules.
-
-Receipts are stored under:
-
-```text
-.foundation/receipts/add-profile/
-├── test.json
-├── discovery.json
-├── browser.json
-├── review.json
-└── proof.json
-```
-
-A successful result looks like:
-
-```text
-PROVEN add-profile
-next: /land add-profile
-```
-
-Landing is blocked when:
-
-- a required receipt is missing;
-- test discovery is zero or below its declared minimum;
-- a provider reports `fail`, `error`, or `inconclusive`;
-- a browser provider lacks the required input or foreground capability;
-- a mutation crash is presented as a behavioral kill;
-- receipts do not cover every required claim;
-- relevant code, tests, configuration, specs, or the change revision moved after proof.
-
-If Prove fails, fix the implementation in the sandbox and run `/prove` again.
-
-## `/land` — bring proven code into the main project
-
-### When to use it
-
-- `/prove` passes.
-- The code is accepted for the main working tree.
-- No other work has changed the same target paths.
-
-```text
-/land add-profile
-```
-
-The transaction is:
-
-```text
-Verify proof freshness
-→ Verify required receipts
-→ Detect target conflicts
-→ Prepare touched-path backups and apply journal
-→ Apply the proven sandbox diff
-→ Verify the touched-path projection
-→ Synchronize delta specs
-→ Archive the change
-```
-
-`land archive` performs the apply and archive transaction itself; calling
-`sandbox apply` first remains available for inspection but is no longer
-required. Unrelated target edits are preserved and do not participate in the
-projection identity. If apply fails, touched paths roll back from backup. If
-archive fails after apply, retry resumes from the verified journal while proof
-continues to bind the unchanged sandbox.
-
-Land never:
-
-- overwrites a target path changed after sandbox creation;
-- accepts stale proof;
-- archives incomplete evidence;
-- commits, pushes, or opens a pull request without explicit authorization.
-
-OpenSpec CLI 1.7.0 currently owns semantic spec synchronization and archive.
-Foundation owns proof guards, sandbox application, and state-identity checks.
-`land archive` is idempotent: an already archived change reports its archived
-state without trying to synchronize specs again.
-
-Check archive readiness before starting a run:
-
-```bash
-claude-foundation doctor --require-archive
-```
-
-Without `--require-archive`, a missing OpenSpec CLI is a warning because Change,
-Build, and Prove still work; archive remains blocked.
-
-## `/changes` — inspect active work
-
-```text
-/changes
-```
-
-Use it to see:
-
-- active change IDs;
-- each change's schema;
-- whether a change is in progress, proven, stale, or ready to land;
-- the next useful operation.
-
-This is useful when resuming work in a new session or managing several active
-changes.
-
-## `/dev` — compatibility one-shot
-
-```text
-/dev add authenticated profile editing
-```
-
-Equivalent to:
-
-```text
-/change → /build → /prove
-```
-
-`/dev` deliberately stops before `/land`. It does not change the main project,
-commit, push, or open a pull request.
-
-Use it when intent is reasonably clear and a one-shot flow is preferable. Use
-the individual commands when you want explicit control or per-operation cost
-measurement.
-
-## Example flows
-
-### Small, clear change
-
-```text
-/change rename the Save button to Update Profile
-/build update-profile-button-copy
-/prove update-profile-button-copy
-/land update-profile-button-copy
-```
-
-This may use the rapid lane and only the evidence required by the behavior.
-
-### Authentication and profile work
-
-```text
-/investigate current profile ownership and session behavior
-/change add profile editing for the authenticated owner
-/build authenticated-profile-editing
-/prove authenticated-profile-editing
-/land authenticated-profile-editing
-```
-
-Authentication triggers the standard lane, security evidence, and independent
-review.
-
-### Requirement revision during Build
-
-```text
-/build add-profile
-
-# We discover that email changes require verification.
-/investigate add-profile: how does existing email verification work?
-/change add-profile
-/build add-profile
-/prove add-profile
-/land add-profile
-```
-
-The revised change automatically invalidates older proof.
-
-### Multiple active changes
-
-Each change has its own sandbox:
-
-```text
-/build change-a
-/change change-b
-```
-
-If they touch the same files or public contract, declare a landing order. After
-the first change lands, the other may need synchronization, rebasing, and new
-proof.
+| State | Meaning | What to do next |
+|---|---|---|
+| `untracked` | OpenSpec has an active change but Foundation has no runtime record | Use `/change <change-id>` to bring it under the harness and validate it |
+| `change` | The agreement exists; no Build sandbox is active | Complete the artifacts, then `/build` |
+| `building` | An isolated workspace is active; proof has not succeeded yet | Continue `/build`, or `/prove` when ready |
+| `ready-to-land` | Passing proof still matches the agreement and workspace | `/land` |
+| `stale-proof` | Proof once passed but no longer matches current inputs | Finish any required Build work and `/prove` again |
+| `applied` | Code was applied but spec sync/archive did not finish | Retry `/land`; the transaction is resumable |
+| `archived` | Code was applied, specs synchronized, and change archived | The change is complete and is no longer listed as active |
+
+`ready-to-land` is the user-facing form of the internal `proven` lifecycle
+state. Evidence values such as `pass`, `fail`, `error`, `inconclusive`, or
+`stale` describe a provider receipt, not the whole change.
+
+Runtime state lives in `.foundation/runtime/<change-id>.json`. Do not duplicate
+or manually edit it in OpenSpec Markdown.
 
 ## What evidence means
 
-`evidence.yaml` answers:
+Evidence answers:
 
 > How do we know this behavior is correct, beyond the agent saying it is done?
 
 ```text
-Requirement
-    ↓
-Evidence claim
-    ↓
-Provider
-    ↓
-Receipt
-    ↓
-Proof
+Requirement → Claim → Provider → Receipt → Proof
 ```
 
-Example:
+`evidence.yaml` declares stable behavioral claims and required capabilities:
 
 ```json
 {
@@ -722,63 +368,183 @@ Example:
 }
 ```
 
-Receipts are bound to the workspace hash. They can be reused while relevant
-inputs remain unchanged and become stale as soon as the implementation or
-agreement changes.
+`execution.yaml` then connects those capabilities to project-owned tools. This
+separation lets you replace a test command without silently weakening the
+behavior that must be proven.
 
-## Sources of truth
+Common capabilities include `test`, `discovery`, `static-analysis`, `browser`,
+`integration`, `compatibility`, `performance`, `security-static`,
+`accessibility`, `data-migration`, `resilience`, `observability`, `deployment`,
+`dependency-supply-chain`, `cross-repo-contract`, and `review`. Inspect the
+installed catalog and exact configuration shape with:
+
+```bash
+claude-foundation providers
+```
+
+Foundation does not install a test framework or browser. It runs the tools your
+repository declares and stores receipts under
+`.foundation/receipts/<change-id>/`. Receipts are reusable only while the
+workspace hash, agreement, provider protocol/version, and claim coverage remain
+valid.
+
+Useful diagnostics:
+
+```bash
+claude-foundation doctor --stage prove --change <change-id>
+claude-foundation proof readiness <change-id>
+claude-foundation proof plan <change-id>
+claude-foundation proof run <change-id>
+```
+
+See [Executable evidence adapters](.claude/harness/EVIDENCE.md) when wiring a
+new provider or browser workflow.
+
+## When the requirement changes during Build
+
+Do not create a second change merely because you learned something before Land.
+Revise the same agreement:
+
+```text
+/investigate <change-id>: how does the existing verification flow work?
+/change <change-id>
+/build <change-id>
+/prove <change-id>
+```
+
+`/change` synchronizes the new revision into the active sandbox, preserves
+completed tasks whose stable IDs and meaning did not change, and invalidates
+proof affected by the revision.
+
+## Multiple repositories
+
+`openspec/repositories.yaml` declares the durable project topology. The
+`repositories.yaml` inside a change selects only the repositories that change
+may read or write. A missing selection remains compatible with a single `root`
+repository.
+
+Annotate multi-repository tasks so authority and dependencies remain explicit:
+
+```markdown
+- [ ] **T001** Implement API [repo:api] [kind:implementation] [paths:internal/profile]
+- [ ] **T002** Implement App [repo:app] [kind:implementation] [depends:T001]
+- [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
+```
+
+Foundation treats multi-remote landing as an ordered, resumable saga. It verifies
+explicit child commits and CI state; it does not claim atomicity across remotes.
+Use `claude-foundation land plan <change-id>` to inspect the order. See
+[WORKFLOW.md](WORKFLOW.md) for the full control-plane protocol.
+
+## How Foundation scopes agents and skills
+
+Foundation supplies a small, task-scoped packet to the native agent host; it is
+not a resident orchestrator that copies the entire conversation into every
+worker. A single-repository change with at most two ordinary tasks normally
+stays with one agent. Independent workers are useful only when their tasks,
+repository access, dependencies, and evidence can be separated cleanly.
+
+The agent loads one primary construction skill for the layer being changed and
+adds security or observability guidance only when the change crosses those
+boundaries. Domain-boundary work begins with `ddd-strategic`; ordinary UI,
+backend, data, or documentation work should not preload that entire skill chain.
+
+`foundation.json` maps portable `fast`, `standard`, and `deep` tiers to model
+families and defines execution budgets. Inventory and mechanical work use fast,
+normal implementation uses standard, and architecture, security, migration, or
+independent review uses deep. High-risk work cannot be downgraded to fast.
+
+## What Foundation owns
 
 | Information | Source of truth |
 |---|---|
 | Intent and behavioral agreement | `openspec/` |
 | Implementation | Code and tests |
-| Task progress | Active change `tasks.md` |
-| Runtime lifecycle | `.foundation/runtime/` |
-| Evidence | `.foundation/receipts/` |
-| Provider logs and metrics | `.foundation/logs/` |
-| Legacy history | Read-only `.workflow/` |
+| Implementation progress | Active change `tasks.md` |
+| Runtime lifecycle and sandboxes | `.foundation/runtime/` and `.foundation/sandboxes/` |
+| Evidence receipts and immutable proof bundles | `.foundation/receipts/` and `.foundation/evidence/` |
+| Provider logs, metrics, and telemetry | `.foundation/logs/` |
+| Model tiers and execution limits | `foundation.json` |
+| Legacy workflow history | Read-only `.workflow/` |
 
-Runtime state must not be duplicated in narrative Markdown.
+`.foundation/` is machine-owned. Inspect it for diagnostics, but do not treat it
+as product requirements or manually repair state unless the operator guide tells
+you to.
 
-## Migration from the phase workflow
+## Safety boundaries
 
-List migration candidates:
+- A worktree or copied directory protects workspace integrity; it is not a
+  process-security sandbox.
+- Unattended execution fails closed without a trusted host-owned attestation.
+- Land refuses stale proof and conflicting edits on touched target paths.
+- Apply uses backups and a journal; an interrupted Land can be retried.
+- Foundation never commits, pushes, opens a pull request, or grants those powers
+  to a worker agent without explicit authorization.
+- `protect-secrets.sh` and `lint.sh` are enabled by default.
+- `no-direct-main-commit.sh` is opt-in because some projects allow controlled
+  commits on their default branch; `doctor` reports whether it is enabled.
+
+## Operator commands and troubleshooting
+
+Most users only need the slash commands. These native CLI commands are useful
+for inspection and recovery:
 
 ```bash
-claude-foundation migrate
+claude-foundation doctor --stage change
+claude-foundation changes
+claude-foundation validate <change-id>
+claude-foundation packet <change-id> --phase build|prove|review
+claude-foundation metrics <change-id>
+claude-foundation sandbox inspect <change-id> --json
+claude-foundation proof readiness <change-id>
+claude-foundation proof run <change-id>
+claude-foundation proof audit <change-id>
+claude-foundation land check <change-id>
+claude-foundation land plan <change-id>
 ```
 
-Create a reviewable candidate for one legacy run:
+The CLI finds the installed project from the current directory or from
+`--project <path>`. Run `claude-foundation help` for the complete command
+surface.
 
-```bash
-claude-foundation migrate 0003-fix-example --apply
-```
+Common problems:
 
-Legacy narrative is never promoted into current specifications automatically.
-A statement must be corroborated by code, tests, or an accepted contract.
+| Symptom | What it usually means | Action |
+|---|---|---|
+| Slash command is missing | The agent session started before installation | Open a new session in the target project |
+| Build cannot start | Required OpenSpec artifacts or provider wiring are incomplete | Run `doctor --stage build --change <change-id>` and fix the reported artifact |
+| Proof is stale | Relevant code, tests, configuration, claims, or provider inputs changed | Finish the edits and run `/prove` again |
+| Test discovery is zero | The configured command did not find the expected tests/report | Fix `execution.yaml` or the project test command; do not record a manual pass |
+| Land reports a conflict | A touched path in the main project changed after sandbox creation | Review/rebase or synchronize the change, then produce fresh proof |
+| Archive cannot run | OpenSpec is missing or not version 1.7.0 | Install the pinned CLI and retry `/land` |
+| Land stopped after apply | Code is present but sync/archive was interrupted | Do not reapply manually; retry `/land` to resume from the journal |
 
-## Verify Foundation
+Execution budgets stop further model exploration when their request or token
+limit is reached. They do not block deterministic packet, readiness, evidence,
+proof-resume, metrics, or archive commands, and they never lower the evidence
+required to Land.
+
+## Verify or upgrade an installation
 
 ```bash
 claude-foundation version
 claude-foundation runtime version
 sh .claude/tests/run-all.sh
 
-npx --yes @fission-ai/openspec@1.7.0 \
-  schema validate foundation-standard
-
-npx --yes @fission-ai/openspec@1.7.0 \
-  schema validate foundation-rapid
+npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
+npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
 ```
 
-Preview installation without writing:
+Preview a source installation without writing:
 
 ```bash
 ./install.sh /tmp/foundation-demo --dry-run
 ```
 
-See [WORKFLOW.md](WORKFLOW.md) for provider contracts, sandbox safety,
-watchdog behavior, and lower-level operator commands.
+For provider contracts, review policy, invalidation rules, sandbox mechanics,
+watchdog behavior, telemetry, multi-repository landing, and the full native CLI,
+see [WORKFLOW.md](WORKFLOW.md) and the
+[harness operator guide](.claude/harness/README.md).
 
 ## License
 

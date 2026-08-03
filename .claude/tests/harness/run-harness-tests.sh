@@ -221,6 +221,43 @@ assert_file_exists "DAG emits static receipt" \
   .foundation/receipts/executable-evidence/static-analysis.json
 readiness="$(node .claude/harness/foundation.mjs proof-readiness executable-evidence)"
 assert_contains "proof readiness returns a typed ready state" "$readiness" '"status": "READY"'
+
+# An executable provider that is configured but unavailable must expose safe,
+# structured recovery choices instead of leaving the operator at a dead end.
+node .claude/harness/foundation.mjs new 'Unavailable provider recovery' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve unavailable-provider-recovery \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "static-analysis": {"adapter":"command","command":["foundation-provider-that-does-not-exist"],"inputs":["app.txt"]}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"static-outcome","scenario":"Static checks pass","impact":"low","capabilities":["static-analysis"]}' \
+  '  ]' \
+  '}' > openspec/changes/unavailable-provider-recovery/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/unavailable-provider-recovery/tasks.md
+rm openspec/changes/unavailable-provider-recovery/tasks.md.bak
+unavailable_readiness="$(node .claude/harness/foundation.mjs proof-readiness \
+  unavailable-provider-recovery 2>/dev/null || true)"
+assert_contains "unavailable provider returns infrastructure status" \
+  "$unavailable_readiness" '"status": "INFRASTRUCTURE_ERROR"'
+assert_contains "unavailable provider identifies missing command" \
+  "$unavailable_readiness" '"reason": "command"'
+assert_contains "unavailable provider offers diagnosis" \
+  "$unavailable_readiness" '"kind": "diagnose"'
+assert_contains "unavailable provider offers retry" \
+  "$unavailable_readiness" '"kind": "retry"'
+assert_contains "unavailable provider offers external evidence" \
+  "$unavailable_readiness" '"kind": "external-evidence"'
+assert_contains "unavailable provider offers safe reconfiguration" \
+  "$unavailable_readiness" '"kind": "reconfigure"'
+assert_contains "external fallback still requires an artifact" \
+  "$unavailable_readiness" '--artifact <path>'
+assert_contains "reconfiguration preserves the declared claim contract" \
+  "$unavailable_readiness" 'proves the same declared claims'
+
 assert_cmd_zero "atomic proof run reuses valid receipts and audits" \
   node .claude/harness/foundation.mjs proof-run executable-evidence
 assert_eq "receipt cache avoids a second command" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
@@ -597,6 +634,26 @@ assert_file_not_contains "session binding excludes pre-change transcript history
 assert_file_contains "checkpoint sync attributes new requests to the active phase" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" \
   '"operationId":"build","agentId":"orchestrator","modelId":"claude-test","requestId":"during-build"'
+
+# Crossing a model budget must stop further exploration, not lock deterministic
+# lifecycle commands. Telemetry is ingested and warns while the requested
+# packet/readiness/proof command remains resumable and can reuse prior evidence.
+tmp_runtime="$TMP/tiny-copy-resume-budget.json"
+jq '.budget.targetTokens = 1' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
+printf '%s\n' \
+  '{"type":"assistant","requestId":"over-budget-before-prove","message":{"id":"over-budget","role":"assistant","model":"claude-test","usage":{"input_tokens":11,"output_tokens":7}}}' \
+  >> "$BOUND_TRANSCRIPT"
+resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
+  FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \
+  node .claude/harness/foundation.mjs packet tiny-copy-edit --phase prove \
+  2>"$TMP/over-budget-resume.err")"
+assert_contains "over-budget telemetry does not block lifecycle resume" \
+  "$resume_packet" '"packetType":"global"'
+assert_file_contains "over-budget lifecycle resume still emits stop warning" \
+  "$TMP/over-budget-resume.err" "STOP_AND_SPLIT"
+jq '.budget.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 
 # Non-Git repositories use a manifest-guarded isolated copy.
 node .claude/harness/foundation.mjs new 'Copy sandbox' --rapid >/dev/null

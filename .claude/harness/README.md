@@ -278,6 +278,11 @@ summary. Telemetry is best-effort and cannot block packet delivery. `metrics`
 tolerates legacy/malformed rows and reports totals, estimated tokens, retained
 and archived event counts, median, p95, and maximum by kind.
 
+Crossing a request or token budget emits `STOP_AND_SPLIT` and blocks additional
+model exploration, not deterministic lifecycle recovery. Packet, readiness,
+evidence, proof-resume, metrics, and archive commands continue and reuse fresh
+receipts instead of replaying completed providers.
+
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
 hook exposes only `session_id` and `transcript_path` to later Foundation
 commands. It does not parse the transcript and there is no per-tool telemetry
@@ -349,6 +354,11 @@ Foundation-owned files, preserves project files and managed blocks in
 - **Evidence is `inconclusive`** — inspect the receipt and provider log; common
   causes are missing discovered-test counts, missing Playwright claim
   annotations, or absent required artifacts.
+- **A configured provider is unavailable** — run `proof readiness <change>`.
+  `INFRASTRUCTURE_ERROR` returns structured `next` choices to diagnose the
+  environment, retry, record verifiable external evidence, or reconfigure an
+  available project-owned command that proves the same claims. It never
+  converts an unavailable provider into passing evidence.
 - **A receipt became stale** — run `proof plan`; a bound input, agreement
   revision, environment, or artifact changed.
 - **Readiness is rejected** — add `expectBody` or `expectHeader` that identifies

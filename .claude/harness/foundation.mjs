@@ -2407,6 +2407,55 @@ function changedSurfaceIssues(id) {
   return issues;
 }
 
+function externalEvidenceRecovery(id, provider) {
+  const capability = providerCapability(provider, providerConfig(id, provider));
+  if (capability === "review") return {
+    provider,
+    command: `claude-foundation packet ${id} --phase review`,
+    recordAI: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type ai --reviewer-identity <reviewer> --reviewer-provider-family <provider> --reviewer-model-family <family> --reviewer-model <model> --reviewer-session <session> --subject-provenance '{"type":"ai","identity":"<implementer>","sessionId":"<session>","providerFamily":"<provider>","modelFamily":"<family>","modelId":"<model>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`,
+    recordHuman: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type human --reviewer-identity <reviewer> --subject-provenance '{"type":"human","identity":"<implementer>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`
+  };
+  if (capability === "acceptance") return {
+    provider,
+    command: `claude-foundation evidence record ${id} ${provider} pass --acceptor <human> --decision accept --criterion <criterion> --observed <summary> --artifact <path>`
+  };
+  return {
+    provider,
+    command: `claude-foundation evidence record ${id} ${provider} pass --observed <summary> --source <identity> --artifact <path>`
+  };
+}
+
+function unavailableProviderRecovery(id, unavailable) {
+  const separator = unavailable.indexOf(":");
+  const provider = separator === -1 ? unavailable : unavailable.slice(0, separator);
+  const reason = separator === -1 ? "environment-unavailable" : unavailable.slice(separator + 1);
+  const external = externalEvidenceRecovery(id, provider);
+  return {
+    provider,
+    reason,
+    choices: [
+      {
+        kind: "diagnose",
+        command: `claude-foundation doctor --stage prove --change ${id}`
+      },
+      {
+        kind: "retry",
+        command: `claude-foundation proof execute ${id}`
+      },
+      {
+        kind: "external-evidence",
+        ...external
+      },
+      {
+        kind: "reconfigure",
+        file: `openspec/changes/${id}/execution.yaml`,
+        instruction: `Configure provider '${provider}' with an available project-owned command that proves the same declared claims.`,
+        verify: `claude-foundation proof readiness ${id}`
+      }
+    ]
+  };
+}
+
 function proofReadinessValue(id, stage = "prove") {
   validate(id, "active", { quiet: true });
   const issues = topologyIssues(id);
@@ -2434,24 +2483,10 @@ function proofReadinessValue(id, stage = "prove") {
     unavailableProviders: unavailable,
     issues,
     next: status === "NEEDS_EXTERNAL_EVIDENCE"
-      ? unconfigured.map((provider) => {
-        const capability = providerCapability(provider, providerConfig(id, provider));
-        if (capability === "review") return {
-          provider,
-          command: `claude-foundation packet ${id} --phase review`,
-          recordAI: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type ai --reviewer-identity <reviewer> --reviewer-provider-family <provider> --reviewer-model-family <family> --reviewer-model <model> --reviewer-session <session> --subject-provenance '{"type":"ai","identity":"<implementer>","sessionId":"<session>","providerFamily":"<provider>","modelFamily":"<family>","modelId":"<model>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`,
-          recordHuman: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type human --reviewer-identity <reviewer> --subject-provenance '{"type":"human","identity":"<implementer>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`
-        };
-        if (capability === "acceptance") return {
-          provider,
-          command: `claude-foundation evidence record ${id} ${provider} pass --acceptor <human> --decision accept --criterion <criterion> --observed <summary> --artifact <path>`
-        };
-        return {
-          provider,
-          command: `claude-foundation evidence record ${id} ${provider} pass --observed <summary> --source <identity> --artifact <path>`
-        };
-      })
-      : []
+      ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
+      : status === "INFRASTRUCTURE_ERROR"
+        ? unavailable.map((provider) => unavailableProviderRecovery(id, provider))
+        : []
   };
 }
 
@@ -5641,7 +5676,12 @@ function appendTelemetryRows(id, rows, format, context = {}) {
       ? "claude-transcript"
       : `host-events:${format}`;
     saveRuntime(state);
-    reportBudget(id, state, true, true);
+    // Host telemetry is accounting, not an execution gate. A hard exit here
+    // runs before lifecycle commands (including proof/readiness) and can lock
+    // an over-budget change out of the very recovery path that reuses existing
+    // evidence. Keep the warning and persisted STOP_AND_SPLIT decision while
+    // allowing the requested deterministic command to continue.
+    reportBudget(id, state, false, true);
   }
   return normalized.length;
 }
