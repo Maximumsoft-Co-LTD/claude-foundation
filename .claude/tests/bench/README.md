@@ -1,5 +1,13 @@
 # Efficiency benchmark
 
+> **Historical runner — do not use for live release evidence.** This directory
+> targets the retired `.workflow/` phase orchestrator and depends on artifacts
+> removed from the Runtime API 8 product. Its stored scorecards and rationale
+> remain useful research history, but new consumer measurements belong in the
+> separate `claude-foundation-lab` repository. The deterministic math fixtures
+> may still be studied independently; a dry-run succeeding does not make this
+> runner compatible with the OpenSpec-native runtime.
+
 Measures how the `/dev` workflow *performs* — not whether its artifacts are valid
 (that's `../scenarios/`), but what a run **costs**, how much **machinery** it
 uses, and how **good** the delivered code is. Answers three questions:

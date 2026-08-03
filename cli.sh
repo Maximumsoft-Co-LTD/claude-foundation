@@ -54,7 +54,7 @@ run_runtime() {
   fi
   local phase=""
   case "${1:-}" in
-    new|resolve|validate|evidence-upgrade) phase="change" ;;
+    new|start|resolve|validate|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-run|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
     land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
@@ -115,6 +115,8 @@ Usage:
                                                   Import authoritative host usage without prompts
   claude-foundation runtime new <intent> [--rapid]
                                                   Create a change through the project runtime
+  claude-foundation runtime start --template | <draft.json>
+                                                  Atomically start an isolated rapid Build
   claude-foundation runtime resolve <change> [options]
                                                   Persist change risk and coupling decisions
   claude-foundation validate <change>              Validate a change packet
@@ -123,6 +125,7 @@ Usage:
   claude-foundation proof audit <change>           Verify durable proof and artifact digests
   claude-foundation proof execute <change>         Run configured evidence and finalize proof
   claude-foundation proof finalize <change>        Create a proof from valid receipts
+  claude-foundation proof finish <change>          Readiness, execute, and audit atomically
   claude-foundation evidence run <change> <provider> --claims <scope> -- <command>
                                                   Run a provider and record its receipt
   claude-foundation evidence record <change> <provider> <status> [options]
@@ -235,16 +238,17 @@ case "${1:-}" in
   proof)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|readiness|run|preflight|execute|finalize|audit>}" "${1:-}"
+    need_arg "proof ${sub:-<plan|readiness|run|finish|preflight|execute|finalize|audit>}" "${1:-}"
     case "$sub" in
       plan) run_runtime write proof-plan "$@" ;;
       readiness) run_runtime read proof-readiness "$@" ;;
       run) run_runtime write proof-run "$@" ;;
+      finish) run_runtime write proof-run "$@" ;;
       preflight) run_runtime write proof-preflight "$@" ;;
       execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
       audit) run_runtime read proof-audit "$@" ;;
-      *) fail "proof requires 'plan', 'readiness', 'run', 'preflight', 'execute', 'finalize', or 'audit'" ;;
+      *) fail "proof requires 'plan', 'readiness', 'run', 'finish', 'preflight', 'execute', 'finalize', or 'audit'" ;;
     esac ;;
   evidence)
     shift

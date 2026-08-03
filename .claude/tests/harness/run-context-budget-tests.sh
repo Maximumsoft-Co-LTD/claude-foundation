@@ -25,6 +25,24 @@ assert_words_at_most "portable agent contract budget" 150 \
 for command in "$ROOT"/.claude/commands/*.md; do
   assert_words_at_most "command budget: $(basename "$command")" 120 "$command"
 done
+assert_file_contains "dev command forbids direct implementation bypass" \
+  "$ROOT/.claude/commands/dev.md" \
+  "Foundation runtime state is a failed"
+assert_file_contains "dev command forbids redundant framework exploration" \
+  "$ROOT/.claude/commands/dev.md" \
+  "Do not reread framework files"
+assert_file_contains "dev command uses atomic rapid start" \
+  "$ROOT/.claude/commands/dev.md" \
+  'runtime start --template'
+assert_file_contains "change command selects rapid before creation" \
+  "$ROOT/.claude/commands/change.md" \
+  "classify before creating it"
+assert_file_contains "change command omits empty security flag" \
+  "$ROOT/.claude/commands/change.md" \
+  'Omit `--security` when there are no triggers'
+assert_file_contains "build command names sandbox transition" \
+  "$ROOT/.claude/commands/build.md" \
+  'sandbox create <change>'
 
 hot_skill_words="$(wc -w \
   "$ROOT/.claude/skills/programming-fundamentals/SKILL.md" \

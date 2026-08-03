@@ -586,6 +586,7 @@ function materializeDraft(id, draft) {
   const contract = readJson(join(changePath(id), "evidence.yaml"));
   contract.claims = draft.claims;
   writeJson(join(changePath(id), "evidence.yaml"), contract);
+  if (draft.execution) writeJson(join(changePath(id), "execution.yaml"), draft.execution);
   if (state.schema === "foundation-standard") {
     rmSync(join(changePath(id), "specs"), { recursive: true, force: true });
     for (const spec of draft.specs) {
@@ -641,6 +642,55 @@ function createChange(intent, flags) {
   if (draft) materializeDraft(id, draft);
   bindClaudeSession(id, "change");
   console.log(`CREATED ${id}\n  schema: ${schema}\n  next: complete artifacts, then /build ${id}`);
+  return id;
+}
+
+function rapidStartTemplate() {
+  return {
+    version: 1,
+    intent: "Describe one low-impact isolated outcome",
+    why: "Explain the user-visible reason",
+    currentState: "Describe the bounded current behavior",
+    compatibility: "No public compatibility or migration impact",
+    changes: ["Describe the intended behavior"],
+    nonGoals: ["Name one explicit non-goal"],
+    decisions: [{ choice: "Use the smallest isolated change", why: "Minimize risk", rejected: "Broader redesign" }],
+    risks: [{ risk: "Behavior regression", mitigation: "Focused deterministic test", owner: "implementation" }],
+    tasks: [{ id: "T001", outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], verify: "replace-with-focused-command" }],
+    claims: [{ id: "replace-with-stable-claim-id", scenario: "Observable outcome passes", impact: "low", capabilities: ["test"] }],
+    specs: [{ name: "unused-by-rapid", requirement: "Bounded outcome", description: "The system SHALL provide the outcome.", scenario: "Focused behavior", when: "the bounded input occurs", then: "the expected result is returned" }],
+    execution: {
+      version: 1,
+      providers: {
+        test: {
+          adapter: "test-discovery",
+          command: ["replace-with-project-test-command"],
+          report: "replace-with-structured-test-report.json",
+          minimum: 1,
+          timeoutMs: 120000
+        }
+      },
+      services: {}
+    }
+  };
+}
+
+function startRapid(draftPath) {
+  const draft = loadDraft(draftPath);
+  if (draft.version !== 1) die("start draft requires version 1");
+  if (!String(draft.intent || "").trim()) die("start draft requires non-empty 'intent'");
+  if (draft.impact && draft.impact !== "low") die("runtime start supports low impact only");
+  if (draft.coupling && draft.coupling !== "isolated") die("runtime start supports isolated coupling only");
+  if (!draft.execution || draft.execution.version !== 1 ||
+      !draft.execution.providers || Object.keys(draft.execution.providers).length === 0)
+    die("start draft requires executable evidence wiring");
+  const id = createChange(draft.intent, {
+    rapid: true, draft: draftPath, id: draft.id
+  });
+  resolveChange(id, { impact: "low", coupling: "isolated", size: "xs" });
+  validate(id, "root", { quiet: true });
+  createSandbox(id);
+  showPacket(id, { phase: "build" });
 }
 
 function git(args, cwd = ROOT) {
@@ -909,9 +959,12 @@ function resolveChange(id, flags) {
   if (flags.size) state.size = flags.size;
   const semanticText = `${state.intent} ${flags.security || ""}`.toLowerCase();
   const inferred = SECURITY_TERMS.filter((term) => semanticText.includes(term));
+  const explicitSecurity = String(flags.security || "").split(",")
+    .map((value) => value.trim()).filter((value) => value && value.toLowerCase() !== "none");
   state.securityTriggers = [...new Set([
-    ...(state.securityTriggers || []), ...inferred,
-    ...String(flags.security || "").split(",").filter(Boolean)
+    ...(state.securityTriggers || []).filter((value) =>
+      String(value).trim().toLowerCase() !== "none"),
+    ...inferred, ...explicitSecurity
   ])];
   state.reviewRequired = state.impact === "high" || state.coupling === "coupled" ||
     state.securityTriggers.length > 0 || Boolean(flags.review);
@@ -3898,6 +3951,7 @@ function createCopySandbox(id, state, reason) {
     baseline: workspaceManifest(ROOT, id, true),
     changeSourceHash: directoryHash(changePath(id))
   };
+  state.status = "building";
   saveRuntime(state);
   console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  path: ${path}`);
 }
@@ -4089,6 +4143,7 @@ function createSingleSandbox(id) {
     mode: "worktree", path, baseHead: gitHead(ROOT), applied: false,
     changeSourceHash: directoryHash(changePath(id))
   };
+  state.status = "building";
   saveRuntime(state);
   console.log(`SANDBOX ${id}\n  path: ${path}`);
 }
@@ -4756,6 +4811,15 @@ function showChanges() {
 function showProviders() {
   for (const [provider, contract] of Object.entries(PROVIDER_CONTRACTS))
     console.log(`${provider}\t${contract}`);
+  console.log("CONFIG test-discovery\t" + JSON.stringify({
+    test: {
+      adapter: "test-discovery",
+      command: ["<project-test-command>"],
+      report: "<workspace-relative-structured-json-report>",
+      minimum: 1,
+      timeoutMs: 120000
+    }
+  }));
 }
 
 function changedFilesInWorkspace(id, workspace, knownHead = undefined) {
@@ -5162,6 +5226,11 @@ function reviewPacketValue(id) {
 function showPacket(id, flags = {}) {
   if (flags.phase === "review" && flags.task)
     die("review packet does not accept --task; use its scoped references");
+  if (flags.phase === "build") {
+    const state = loadRuntime(id);
+    if (!["worktree", "copy"].includes(state.workspace?.mode))
+      die(`build packet requires an isolated workspace; run claude-foundation sandbox create ${id}`);
+  }
   const value = flags.phase === "review"
     ? reviewPacketValue(id)
     : packetValue(id, flags.repo || null, flags.task || null);
@@ -6144,6 +6213,19 @@ switch (command) {
     const { flags, rest } = parseFlags(values);
     if (!rest.length) die("new requires an intent");
     createChange(rest.join(" "), flags); break;
+  }
+  case "start": {
+    const { flags, rest } = parseStrictCommandFlags(values, "start", {
+      boolean: ["template"]
+    });
+    if (flags.template) {
+      if (rest.length) die("start --template takes no draft path");
+      console.log(JSON.stringify(rapidStartTemplate(), null, 2));
+    } else {
+      if (rest.length !== 1) die("start requires exactly one draft JSON path");
+      startRapid(rest[0]);
+    }
+    break;
   }
   case "resolve": {
     const { flags, rest } = parseFlags(values);

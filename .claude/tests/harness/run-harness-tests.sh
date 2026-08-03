@@ -27,6 +27,10 @@ assert_contains "provider catalog includes resilience" "$providers" "resilience"
 assert_contains "provider catalog includes observability" "$providers" "observability"
 assert_contains "provider catalog includes deployment" "$providers" "deployment"
 assert_contains "provider catalog includes supply chain" "$providers" "dependency-supply-chain"
+assert_contains "provider catalog exposes executable test wiring" "$providers" \
+  'CONFIG test-discovery'
+assert_contains "test wiring names the structured report field" "$providers" \
+  'workspace-relative-structured-json-report'
 
 # A structured draft materializes the agreement once without creating a
 # second implementation ledger.
@@ -50,6 +54,26 @@ assert_cmd_zero "drafted agreement validates without a second ledger" \
   node .claude/harness/foundation.mjs validate drafted-change
 assert_file_contains "draft task remains in tasks.md" \
   openspec/changes/drafted-change/tasks.md "**T001**"
+
+# A human-readable empty security value must not become a real trigger and
+# silently upgrade an otherwise rapid change to the standard schema.
+node .claude/harness/foundation.mjs new 'No security trigger' --rapid >/dev/null
+security_output="$(node .claude/harness/foundation.mjs resolve no-security-trigger \
+  --impact low --coupling isolated --security none)"
+assert_contains "security none remains empty" "$security_output" "security: none"
+assert_contains "security none does not require review" "$security_output" "review: not required"
+assert_cmd_zero "security none preserves rapid schema" \
+  jq -e '.schema == "foundation-rapid" and .securityTriggers == []' \
+  .foundation/runtime/no-security-trigger.json
+if node .claude/harness/foundation.mjs packet no-security-trigger \
+  --phase build >/dev/null 2>&1; then
+  fail "Build packet requires isolation"
+else
+  pass "Build packet requires isolation"
+fi
+node .claude/harness/foundation.mjs sandbox create no-security-trigger >/dev/null
+assert_cmd_zero "Build packet opens after sandbox creation" \
+  node .claude/harness/foundation.mjs packet no-security-trigger --phase build
 
 # Existing evidence v1 remains readable and has an explicit, non-destructive
 # upgrade into the executable-ready v2 envelope.
@@ -558,6 +582,9 @@ printf '%s\n' \
   > "$BOUND_TRANSCRIPT"
 FOUNDATION_CLAUDE_SESSION_ID=bound-session \
 FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \
+  node .claude/harness/foundation.mjs sandbox create tiny-copy-edit >/dev/null
+FOUNDATION_CLAUDE_SESSION_ID=bound-session \
+FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \
   node .claude/harness/foundation.mjs packet tiny-copy-edit --phase build >/dev/null
 printf '%s\n' \
   '{"type":"assistant","requestId":"during-build","message":{"id":"during","role":"assistant","model":"claude-test","usage":{"input_tokens":11,"output_tokens":7}}}' \
@@ -576,6 +603,8 @@ node .claude/harness/foundation.mjs new 'Copy sandbox' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve copy-sandbox --impact low --coupling isolated >/dev/null
 copy_output="$(node .claude/harness/foundation.mjs sandbox create copy-sandbox)"
 assert_contains "non-git sandbox uses isolated copy" "$copy_output" "mode: isolated-copy"
+assert_eq "copy sandbox enters Build" "building" \
+  "$(jq -r '.status' .foundation/runtime/copy-sandbox.json)"
 copy_path="$(jq -r '.workspace.path' .foundation/runtime/copy-sandbox.json)"
 printf 'copy-applied\n' > "$copy_path/app.txt"
 ln -s app.txt "$copy_path/current-link"
@@ -648,6 +677,8 @@ git commit -qm "fixture"
 node .claude/harness/foundation.mjs new 'Sandbox copy' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve sandbox-copy --impact low --coupling isolated >/dev/null
 node .claude/harness/foundation.mjs sandbox create sandbox-copy >/dev/null
+assert_eq "Git sandbox enters Build" "building" \
+  "$(jq -r '.status' .foundation/runtime/sandbox-copy.json)"
 printf 'after\n' > .foundation/sandboxes/sandbox-copy/app.txt
 rm .foundation/sandboxes/sandbox-copy/current-link
 ln -s target-b.txt .foundation/sandboxes/sandbox-copy/current-link

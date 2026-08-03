@@ -5,7 +5,8 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**.
 
-Validate; create or sync its sandbox. Start from
+Validate; run `claude-foundation sandbox create <change>` or `sandbox sync`.
+Start from
 `claude-foundation packet <change> --phase build`; read references.
 
 If the host declares unattended execution, use one bare `--unattended` flag on
@@ -19,4 +20,4 @@ Edit only allowed sandbox paths. Run focused checks and update the sole ledger,
 `tasks.md`. Run `claude-foundation proof readiness <change>` and resolve
 code/configuration blockers before fresh Prove.
 
-Do not replay history, mirror tasks, run lifecycle personas, archive, commit, or Land.
+Never replay history, mirror tasks, archive, commit, or Land.

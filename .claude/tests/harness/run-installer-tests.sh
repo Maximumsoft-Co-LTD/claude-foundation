@@ -74,6 +74,56 @@ assert_contains "native doctor exposes opt-in branch policy" "$doctor" "no-direc
 CLI="bash $ROOT/cli.sh"
 providers="$(bash "$ROOT/cli.sh" --project "$TARGET" providers)"
 assert_contains "native CLI exposes installed providers" "$providers" "dependency-supply-chain"
+start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" runtime start --template)"
+assert_contains "atomic start exposes a versioned draft template" \
+  "$start_template" '"version": 1'
+assert_contains "atomic start template includes executable evidence" \
+  "$start_template" '"adapter": "test-discovery"'
+printf '%s\n' '#!/usr/bin/env sh' \
+  'mkdir -p test-results' \
+  'printf "%s\n" "{\"numTotalTests\":1}" > test-results/atomic.json' \
+  > "$TARGET/atomic-test.sh"
+chmod +x "$TARGET/atomic-test.sh"
+printf 'before\n' > "$TARGET/app.txt"
+printf '%s\n' \
+  '{"version":1,"id":"atomic-start","intent":"Atomic start",' \
+  '"why":"Reduce orchestration turns.","currentState":"The flow is manually scaffolded.",' \
+  '"compatibility":"No public compatibility impact.",' \
+  '"changes":["Start one isolated rapid build."],"nonGoals":["No Land."],' \
+  '"decisions":[{"choice":"Use atomic start","why":"Fewer turns","rejected":"Manual scaffolding"}],' \
+  '"risks":[{"risk":"Invalid draft","mitigation":"Validate before Build","owner":"runtime"}],' \
+  '"tasks":[{"id":"T001","outcome":"Verify atomic flow","kind":"implementation","paths":["app.txt"],"verify":"sh atomic-test.sh"}],' \
+  '"claims":[{"id":"atomic-outcome","scenario":"Atomic flow passes","impact":"low","capabilities":["test"]}],' \
+  '"specs":[{"name":"atomic","requirement":"Atomic start","description":"The runtime SHALL start an isolated Build.",' \
+  '"scenario":"Valid draft","when":"a valid rapid draft is supplied","then":"an isolated Build packet is returned"}],' \
+  '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
+  '"report":"test-results/atomic.json","minimum":1,"timeoutMs":120000}},"services":{}}}' \
+  > "$TARGET/.foundation/atomic-draft.json"
+atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" runtime start \
+  .foundation/atomic-draft.json)"
+assert_contains "atomic start returns a Build packet" "$atomic_start" \
+  '"changeId":"atomic-start"'
+assert_eq "atomic start enters Build" "building" \
+  "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
+atomic_workspace="$(jq -r '.workspace.path' \
+  "$TARGET/.foundation/runtime/atomic-start.json")"
+assert_in "atomic start creates isolation" \
+  "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")" \
+  "worktree copy"
+sed -i.bak 's/- \[ \]/- [x]/' \
+  "$atomic_workspace/openspec/changes/atomic-start/tasks.md"
+rm "$atomic_workspace/openspec/changes/atomic-start/tasks.md.bak"
+atomic_proof="$(bash "$ROOT/cli.sh" --project "$TARGET" proof finish atomic-start)"
+assert_contains "atomic proof finish reaches PASS" "$atomic_proof" '"status": "PASS"'
+assert_eq "atomic proof finish persists proven state" "proven" \
+  "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
+rm -rf "$atomic_workspace" \
+  "$TARGET/openspec/changes/atomic-start" \
+  "$TARGET/.foundation/runtime/atomic-start.json" \
+  "$TARGET/.foundation/logs/atomic-start" \
+  "$TARGET/.foundation/receipts/atomic-start" \
+  "$TARGET/.foundation/proofs/atomic-start.json" \
+  "$TARGET/.foundation/proof-runs/atomic-start"
 mkdir -p "$TARGET/nested/path"
 assert_cmd_zero "native CLI discovers project from a subdirectory" \
   sh -c 'cd "$1" && bash "$2" changes' _ "$TARGET/nested/path" "$ROOT/cli.sh"

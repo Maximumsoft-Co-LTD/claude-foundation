@@ -3,12 +3,19 @@ description: Compatibility composition for change → build → prove.
 argument-hint: <intent> | --resume <change> | --plan-only <intent>
 ---
 
-Run Foundation for **$ARGUMENTS**.
+Execute **$ARGUMENTS**.
 
-`--resume` inspects runtime state and continues at the first incomplete
-operation: Change artifacts, Build tasks, or Prove evidence. Never restart a
-completed operation merely to replay the flow. Otherwise run `/change`; with
-`--plan-only`, stop after validation. Then run `/build` and `/prove`.
+With `--resume`, continue the first incomplete operation; never replay work.
+With `--plan-only`, run `/change` and stop after validation.
 
-Never Land, commit, push, open a PR, create `.workflow/` state, lifecycle
-agents, phase mirrors, or a second task ledger.
+For fresh rapid work, run `runtime start --template`, write one
+completed draft under `.foundation/`, then run `runtime start <draft>`. Continue
+from its Build packet once. Otherwise use `/change`, then `/build`; finish `/prove`.
+
+Use contracts. Do not reread framework files unless a command reports a blocker.
+
+Workflow is mandatory. Never edit product files directly. Code/test success
+without Foundation runtime state is a failed `/dev` invocation.
+
+Never Land, commit, push, open a PR, create `.workflow/` state, lifecycle agents,
+phase mirrors, or another ledger.
