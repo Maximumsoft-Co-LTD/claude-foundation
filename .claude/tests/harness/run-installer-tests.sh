@@ -124,6 +124,39 @@ rm -rf "$atomic_workspace" \
   "$TARGET/.foundation/receipts/atomic-start" \
   "$TARGET/.foundation/proofs/atomic-start.json" \
   "$TARGET/.foundation/proof-runs/atomic-start"
+printf '%s\n' \
+  '{"version":1,"id":"atomic-migration","intent":"Payment ledger migration",' \
+  '"impact":"high","coupling":"coupled","size":"S","securityTriggers":["migration"],' \
+  '"why":"Preserve exact payment values.","currentState":"Amounts use decimal strings.",' \
+  '"compatibility":"Preserve the legacy amount field for mixed-version readers.",' \
+  '"changes":["Add exact integer cents."],"nonGoals":["No destructive rewrite."],' \
+  '"decisions":[{"choice":"Add amountCents","why":"Exact arithmetic","rejected":"Floating point"}],' \
+  '"risks":[{"risk":"Incorrect money conversion","mitigation":"Migration tests and review","owner":"implementation"}],' \
+  '"tasks":[{"id":"T001","outcome":"Implement compatible migration","kind":"migration","paths":["app.txt"],"verify":"sh atomic-test.sh"}],' \
+  '"claims":[{"id":"migration-safe","scenario":"Migration preserves values","impact":"high","capabilities":["test","data-migration","compatibility","review"]}],' \
+  '"specs":[{"name":"payment-migration","requirement":"Exact compatible migration","description":"The system SHALL preserve payment values.",' \
+  '"scenario":"Mixed-version migration","when":"a decimal amount is migrated","then":"exact cents and the legacy amount remain"}],' \
+  '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
+  '"report":"test-results/atomic.json","minimum":1,"timeoutMs":120000}},"services":{}}}' \
+  > "$TARGET/.foundation/atomic-migration-draft.json"
+standard_start="$(bash "$ROOT/cli.sh" --project "$TARGET" runtime start \
+  .foundation/atomic-migration-draft.json)"
+assert_contains "atomic standard start returns a Build packet" "$standard_start" \
+  '"changeId":"atomic-migration"'
+assert_eq "atomic standard start selects standard schema" "foundation-standard" \
+  "$(jq -r '.schema' "$TARGET/.foundation/runtime/atomic-migration.json")"
+assert_eq "atomic standard start preserves required review" "true" \
+  "$(jq -r '.reviewRequired' "$TARGET/.foundation/runtime/atomic-migration.json")"
+assert_eq "atomic standard start enters Build" "building" \
+  "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-migration.json")"
+standard_workspace="$(jq -r '.workspace.path' \
+  "$TARGET/.foundation/runtime/atomic-migration.json")"
+assert_in "atomic standard start creates isolation" \
+  "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-migration.json")" \
+  "worktree copy"
+rm -rf "$standard_workspace" \
+  "$TARGET/openspec/changes/atomic-migration" \
+  "$TARGET/.foundation/runtime/atomic-migration.json"
 mkdir -p "$TARGET/nested/path"
 assert_cmd_zero "native CLI discovers project from a subdirectory" \
   sh -c 'cd "$1" && bash "$2" changes' _ "$TARGET/nested/path" "$ROOT/cli.sh"

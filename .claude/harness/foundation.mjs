@@ -675,19 +675,36 @@ function rapidStartTemplate() {
   };
 }
 
-function startRapid(draftPath) {
+function startAtomic(draftPath) {
   const draft = loadDraft(draftPath);
   if (draft.version !== 1) die("start draft requires version 1");
   if (!String(draft.intent || "").trim()) die("start draft requires non-empty 'intent'");
-  if (draft.impact && draft.impact !== "low") die("runtime start supports low impact only");
-  if (draft.coupling && draft.coupling !== "isolated") die("runtime start supports isolated coupling only");
+  const impact = draft.impact || "low";
+  const coupling = draft.coupling || "isolated";
+  const securityTriggers = draft.securityTriggers || [];
+  if (!["low", "medium", "high"].includes(impact))
+    die("start draft impact must be low|medium|high");
+  if (!["isolated", "coupled"].includes(coupling))
+    die("start draft coupling must be isolated|coupled");
+  if (!Array.isArray(securityTriggers) ||
+      securityTriggers.some((trigger) => typeof trigger !== "string" || !trigger.trim()))
+    die("start draft securityTriggers must be an array of non-empty strings");
   if (!draft.execution || draft.execution.version !== 1 ||
       !draft.execution.providers || Object.keys(draft.execution.providers).length === 0)
     die("start draft requires executable evidence wiring");
+  const rapid = impact === "low" && coupling === "isolated" &&
+    securityTriggers.filter((trigger) => trigger.toLowerCase() !== "none").length === 0 &&
+    !draft.reviewRequired;
   const id = createChange(draft.intent, {
-    rapid: true, draft: draftPath, id: draft.id
+    rapid, draft: draftPath, id: draft.id
   });
-  resolveChange(id, { impact: "low", coupling: "isolated", size: "xs" });
+  resolveChange(id, {
+    impact,
+    coupling,
+    size: draft.size || (rapid ? "xs" : "S"),
+    security: securityTriggers.join(","),
+    review: Boolean(draft.reviewRequired)
+  });
   validate(id, "root", { quiet: true });
   createSandbox(id);
   showPacket(id, { phase: "build" });
@@ -6223,7 +6240,7 @@ switch (command) {
       console.log(JSON.stringify(rapidStartTemplate(), null, 2));
     } else {
       if (rest.length !== 1) die("start requires exactly one draft JSON path");
-      startRapid(rest[0]);
+      startAtomic(rest[0]);
     }
     break;
   }

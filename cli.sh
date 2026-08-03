@@ -116,7 +116,7 @@ Usage:
   claude-foundation runtime new <intent> [--rapid]
                                                   Create a change through the project runtime
   claude-foundation runtime start --template | <draft.json>
-                                                  Atomically start an isolated rapid Build
+                                                  Atomically start an isolated Build from a risk-resolved draft
   claude-foundation runtime resolve <change> [options]
                                                   Persist change risk and coupling decisions
   claude-foundation validate <change>              Validate a change packet
