@@ -56,7 +56,7 @@ run_runtime() {
   case "${1:-}" in
     new|start|resolve|validate|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-run|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
+    proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
     land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
@@ -131,6 +131,7 @@ Usage:
   claude-foundation validate <change>              Validate a change packet
   claude-foundation proof plan <change>            Show missing or stale evidence
   claude-foundation proof readiness <change>       Show typed blockers and recovery choices
+  claude-foundation proof collect <change>         Run available project evidence without finalizing proof
   claude-foundation proof preflight <change>       Validate execution topology without running it
   claude-foundation proof audit <change>           Verify durable proof and artifact digests
   claude-foundation proof execute <change>         Run configured evidence and finalize proof
@@ -248,17 +249,18 @@ case "${1:-}" in
   proof)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|readiness|run|finish|preflight|execute|finalize|audit>}" "${1:-}"
+    need_arg "proof ${sub:-<plan|readiness|run|finish|collect|preflight|execute|finalize|audit>}" "${1:-}"
     case "$sub" in
       plan) run_runtime write proof-plan "$@" ;;
       readiness) run_runtime read proof-readiness "$@" ;;
       run) run_runtime write proof-run "$@" ;;
       finish) run_runtime write proof-run "$@" ;;
+      collect) run_runtime write proof-collect "$@" ;;
       preflight) run_runtime write proof-preflight "$@" ;;
       execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
       audit) run_runtime read proof-audit "$@" ;;
-      *) fail "proof requires 'plan', 'readiness', 'run', 'finish', 'preflight', 'execute', 'finalize', or 'audit'" ;;
+      *) fail "proof requires 'plan', 'readiness', 'run', 'finish', 'collect', 'preflight', 'execute', 'finalize', or 'audit'" ;;
     esac ;;
   evidence)
     shift

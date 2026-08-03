@@ -111,10 +111,12 @@ process.on("exit", (code) => {
   try {
     const path = join(LOGS, operationChangeId, "operations.jsonl");
     mkdirSync(dirname(path), { recursive: true });
+    const typedBlock = code === 2 &&
+      ["proof-readiness", "proof-run", "proof-collect"].includes(operationName);
     appendFileSync(path, `${JSON.stringify({
       version: 2, changeId: operationChangeId, operation: operationName,
       phase: process.env.FOUNDATION_PUBLIC_OPERATION || null,
-      status: code === 0 ? "completed" : "failed", exitCode: code,
+      status: code === 0 ? "completed" : typedBlock ? "blocked" : "failed", exitCode: code,
       startedAt: new Date(operationStartedAt).toISOString(), finishedAt: now(),
       durationMs: Date.now() - operationStartedAt,
       requests: null, inputTokens: null, outputTokens: null,
@@ -596,6 +598,7 @@ function materializeDraft(id, draft) {
     draft.tasks.map((task, index) => {
       const taskId = task.id || `T${String(index + 1).padStart(3, "0")}`;
       const metadata = [
+        task.repository ? `[repo:${task.repository}]` : "",
         task.kind ? `[kind:${task.kind}]` : "",
         task.paths?.length ? `[paths:${task.paths.join(",")}]` : "",
         task.dependsOn?.length ? `[depends:${task.dependsOn.join(",")}]` : ""
@@ -606,6 +609,10 @@ function materializeDraft(id, draft) {
   contract.claims = draft.claims;
   writeJson(join(changePath(id), "evidence.yaml"), contract);
   if (draft.execution) writeJson(join(changePath(id), "execution.yaml"), draft.execution);
+  if (draft.repositories) writeJson(join(changePath(id), "repositories.yaml"), {
+    version: 1,
+    repositories: draft.repositories
+  });
   if (state.schema === "foundation-standard") {
     rmSync(join(changePath(id), "specs"), { recursive: true, force: true });
     for (const spec of draft.specs) {
@@ -3573,6 +3580,7 @@ async function runExecutionDag(id, nodes, proofRunId) {
   const pending = new Map(nodes.map((node) => [node.provider, node]));
   const completed = new Set();
   const commandCache = new Map();
+  const outcomes = [];
   while (pending.size) {
     const ready = [...pending.values()].filter((node) =>
       node.dependsOn.every((dependency) =>
@@ -3589,11 +3597,111 @@ async function runExecutionDag(id, nodes, proofRunId) {
       executeAdapter(id, node.provider, node.config, proofRunId, commandCache)));
     for (let index = 0; index < batch.length; index += 1) {
       pending.delete(batch[index].provider);
+      outcomes.push({ provider: batch[index].provider, status: results[index].status });
       if (results[index].status === "pass")
         for (const covered of batch[index].covers) completed.add(covered);
       else
         console.error(`PROVIDER ${batch[index].provider}: ${results[index].status}`);
     }
+  }
+  return outcomes;
+}
+
+function collectableExecutionNodes(id, nodes, workspaceHash) {
+  let selected = [...nodes];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const providers = new Set(selected.flatMap((node) => [node.provider, ...node.covers]));
+    const next = selected.filter((node) => node.dependsOn.every((dependency) =>
+      providers.has(dependency) || receiptValidity(id, dependency, workspaceHash).validity === "valid"));
+    if (next.length !== selected.length) {
+      selected = next;
+      changed = true;
+    }
+  }
+  const selectedProviders = new Set(selected.map((node) => node.provider));
+  return {
+    nodes: selected,
+    blocked: nodes.filter((node) => !selectedProviders.has(node.provider))
+      .map((node) => node.provider)
+  };
+}
+
+async function proofCollect(id) {
+  const readiness = proofReadinessValue(id, "prove");
+  if (!["READY", "NEEDS_EXTERNAL_EVIDENCE"].includes(readiness.status)) {
+    console.log(JSON.stringify({
+      ...readiness,
+      command: "proof collect",
+      completed: false
+    }, null, 2));
+    process.exitCode = 2;
+    return readiness;
+  }
+  const snapshot = relevantSnapshot(id, null, true);
+  const state = loadRuntime(id);
+  const proofRunId = `collect-${Date.now()}`;
+  state.activeProofRun = {
+    id: proofRunId,
+    snapshotId: snapshot.id,
+    workspaceHash: snapshot.workspaceHash,
+    startedAt: now(),
+    mode: "collect"
+  };
+  saveRuntime(state);
+  for (const provider of requiredProviders(id)) {
+    const row = receiptValidity(id, provider, snapshot.workspaceHash);
+    if (row.validity === "reusable-inputs")
+      rebindReusableReceipt(id, row, snapshot, proofRunId);
+  }
+  let sessions = [];
+  try {
+    const { nodes, unavailable } = executionNodes(id, snapshot.workspaceHash);
+    if (unavailable.length)
+      die(`provider environment unavailable: ${unavailable.join(", ")}; run doctor --stage prove --change ${id}`);
+    const collectable = collectableExecutionNodes(id, nodes, snapshot.workspaceHash);
+    sessions = await startRequiredServices(id, collectable.nodes, proofRunId);
+    const outcomes = collectable.nodes.length
+      ? await runExecutionDag(id, collectable.nodes, proofRunId)
+      : [];
+    const failed = outcomes.filter((row) => row.status !== "pass");
+    if (failed.length)
+      die(`evidence collection failed: ${failed.map((row) => `${row.provider}:${row.status}`).join(", ")}`);
+    const serviceArtifacts = sessions.reverse()
+      .map((session) => session.stop())
+      .map((artifact) => durableArtifact(id, "service", proofRunId, {
+        path: artifact.path,
+        type: "service-log",
+        required: true
+      }));
+    const withServices = loadRuntime(id);
+    withServices.activeProofRun.serviceArtifacts = serviceArtifacts;
+    saveRuntime(withServices);
+    sessions = [];
+    const after = proofReadinessValue(id, "prove");
+    const outcome = {
+      version: 1,
+      changeId: id,
+      command: "proof collect",
+      status: after.status,
+      completed: true,
+      proofFinalized: false,
+      proofRunId,
+      workspaceHash: snapshot.workspaceHash,
+      executedProviders: outcomes.map((row) => row.provider),
+      blockedExecutableProviders: collectable.blocked,
+      remainingExternalProviders: after.externalProviders
+    };
+    console.log(JSON.stringify(outcome, null, 2));
+    return outcome;
+  } catch (error) {
+    sessions.reverse().forEach((session) => session.stop());
+    die(error.message);
+  } finally {
+    const current = loadRuntime(id);
+    delete current.activeProofRun;
+    saveRuntime(current);
   }
 }
 
@@ -5239,6 +5347,8 @@ function reviewPacketValue(id) {
     const path = join(activePath, name);
     return existsSync(path) ? {
       path: relative(ROOT, path).replaceAll("\\", "/"),
+      workspacePath: activePath,
+      relativePath: name,
       sha256: statSync(path).isDirectory() ? directoryHash(path) : fileDigest(path)
     } : null;
   };
@@ -5250,6 +5360,10 @@ function reviewPacketValue(id) {
     return groups;
   }, new Map())].map(([repositoryId, repositoryPaths]) => ({
     repositoryId,
+    workspacePath: repositoryId === "root"
+      ? state.workspace?.path || ROOT
+      : state.repositories?.[repositoryId]?.path ||
+        repositoryById(id, repositoryId, state).workspacePath,
     baseHead: repositoryId === "root"
       ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
       : state.repositories?.[repositoryId]?.baseHead || null,
@@ -6014,7 +6128,9 @@ function showMetrics(id) {
       }, {})
     },
     rework: {
-      failedOperations: operations.filter((row) => row.status !== "completed").length,
+      expectedStops: operations.filter((row) => row.status === "blocked").length,
+      unexpectedFailures: operations.filter((row) => row.status === "failed").length,
+      failedOperations: operations.filter((row) => row.status === "failed").length,
       providerRebindings: reuseRows.length
     },
     orchestratorTokenShare: tokenTotal > 0 ? orchestratorTokens / tokenTotal : null,
@@ -6275,6 +6391,7 @@ Commands:
   proof-plan <change>
   proof-readiness <change>
   proof-run <change>
+  proof-collect <change>
   proof-preflight <change>
   proof-execute <change>
   proof-audit <change>
@@ -6309,7 +6426,7 @@ const telemetrySuppressed = command === "sandbox" && (
 if (telemetrySuppressed) process.env.FOUNDATION_TELEMETRY = "0";
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
-  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-readiness", "proof-run", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
     "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
 
 const telemetryPhase = {
@@ -6319,6 +6436,7 @@ const telemetryPhase = {
   "proof-plan": "prove",
   "proof-readiness": "prove",
   "proof-run": "prove",
+  "proof-collect": "prove",
   "proof-preflight": "prove",
   "proof-execute": "prove",
   "proof-audit": "prove",
@@ -6405,6 +6523,7 @@ switch (command) {
   case "proof-plan": proofPlan(values[0]); break;
   case "proof-readiness": proofReadiness(values[0]); break;
   case "proof-run": await proofRun(values[0]); break;
+  case "proof-collect": await proofCollect(values[0]); break;
   case "proof-preflight": proofPreflight(values[0]); break;
   case "proof-execute": await proofExecute(values[0]); break;
   case "proof-audit": {

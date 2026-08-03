@@ -384,6 +384,11 @@ claude-foundation proof plan <change-id>
 claude-foundation proof run <change-id>
 ```
 
+ถ้า change ต้องใช้ external review ให้รัน
+`claude-foundation proof collect <change-id>` ก่อน เพื่อเก็บหลักฐานที่รันได้ใน
+project โดยยังไม่ finalize จากนั้นบันทึก review receipt แล้วใช้ `proof run`
+เพื่อ reuse receipts และปิด proof
+
 ถ้า provider ที่ตั้งค่าไว้รันไม่ได้ `proof readiness` จะคืน
 `INFRASTRUCTURE_ERROR` พร้อม `next` ที่มีทางเลือกแบบ structured ได้แก่ ตรวจ
 environment ด้วย doctor, retry, ใช้ external evidence ที่มี artifact ตรวจสอบ

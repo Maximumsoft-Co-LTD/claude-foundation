@@ -6,9 +6,12 @@ argument-hint: <change>
 Prove **$ARGUMENTS**.
 
 Start from `claude-foundation packet <change> --phase prove`, not Build history.
-Run `claude-foundation proof run <change>` for atomic readiness, execution,
-and audit. A budget stop forbids new exploration, not deterministic proof
-resume; fresh receipts are reused.
+Run `claude-foundation proof collect <change>` first when readiness requires
+external review or acceptance, so project-owned evidence is available at that
+boundary. After external receipts are recorded, run
+`claude-foundation proof run <change>` for atomic finalization and audit. A
+budget stop forbids new exploration, not deterministic proof resume; fresh
+receipts are reused.
 
 If readiness blocks, follow only its structured next commands. External passes
 require an observation, provenance, and durable artifact or reference. When

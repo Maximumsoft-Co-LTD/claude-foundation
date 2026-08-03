@@ -230,6 +230,58 @@ assert_file_exists "DAG emits static receipt" \
 readiness="$(node .claude/harness/foundation.mjs proof-readiness executable-evidence)"
 assert_contains "proof readiness returns a typed ready state" "$readiness" '"status": "READY"'
 
+# Project-owned evidence must be collectible before an external review receipt
+# exists. Final proof remains blocked until review, then reuses the collected
+# receipt instead of executing the provider again.
+node .claude/harness/foundation.mjs new 'Collect before review' >/dev/null
+node .claude/harness/foundation.mjs resolve collect-before-review \
+  --impact medium --coupling coupled >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' \
+  'count=0' \
+  '[ ! -f .foundation/collect-count.txt ] || count="$(cat .foundation/collect-count.txt)"' \
+  'count=$((count + 1))' \
+  'printf "%s\\n" "$count" > .foundation/collect-count.txt' \
+  'printf "%s\\n" "{\"numTotalTests\":2}"' > collect-fixture.sh
+chmod +x collect-fixture.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "test": {"adapter":"test-discovery","command":["sh","collect-fixture.sh"],"minimum":2,"inputs":["collect-fixture.sh"]},' \
+  '    "review": {"adapter":"external"}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"collect-outcome","scenario":"Collected tests pass before review","impact":"low","capabilities":["test"]}' \
+  '  ]' \
+  '}' > openspec/changes/collect-before-review/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/collect-before-review/tasks.md
+rm openspec/changes/collect-before-review/tasks.md.bak
+collect_output="$(node .claude/harness/foundation.mjs proof-collect collect-before-review)"
+assert_contains "proof collect completes without finalizing" \
+  "$collect_output" '"proofFinalized": false'
+assert_contains "proof collect preserves the external review boundary" \
+  "$collect_output" '"status": "NEEDS_EXTERNAL_EVIDENCE"'
+assert_contains "proof collect reports its executed provider" \
+  "$collect_output" '"test"'
+assert_eq "proof collect executes the provider once" "1" \
+  "$(tr -d '\n' < .foundation/collect-count.txt)"
+assert_file_exists "proof collect records test evidence" \
+  .foundation/receipts/collect-before-review/test.json
+assert_file_absent "proof collect does not finalize proof" \
+  .foundation/receipts/collect-before-review/proof.json
+collect_review_packet="$(node .claude/harness/foundation.mjs packet \
+  collect-before-review --phase review)"
+assert_contains "review packet receives valid collected test evidence" \
+  "$collect_review_packet" '"provider":"test","capability":"test","validity":"valid"'
+node .claude/harness/foundation.mjs receipt collect-before-review \
+  review pass --observed "fixture review found no blockers" \
+  --reviewer harness-test --subject-actor implementation-agent \
+  --reference "fixture://collect-review" >/dev/null
+assert_cmd_zero "final proof reuses evidence collected before review" \
+  node .claude/harness/foundation.mjs proof-run collect-before-review
+assert_eq "final proof does not rerun collected provider" "1" \
+  "$(tr -d '\n' < .foundation/collect-count.txt)"
+
 # An executable provider that is configured but unavailable must expose safe,
 # structured recovery choices instead of leaving the operator at a dead end.
 node .claude/harness/foundation.mjs new 'Unavailable provider recovery' --rapid >/dev/null
@@ -265,6 +317,15 @@ assert_contains "external fallback still requires an artifact" \
   "$unavailable_readiness" '--artifact <path>'
 assert_contains "reconfiguration preserves the declared claim contract" \
   "$unavailable_readiness" 'proves the same declared claims'
+# Typed non-ready commands are lifecycle stops, not implementation rework.
+FOUNDATION_TELEMETRY=1 node .claude/harness/foundation.mjs proof-readiness \
+  unavailable-provider-recovery >/dev/null 2>&1 || true
+unavailable_metrics="$(node .claude/harness/foundation.mjs metrics \
+  unavailable-provider-recovery)"
+assert_contains "typed readiness stop is counted separately" \
+  "$unavailable_metrics" '"expectedStops": 1'
+assert_contains "typed readiness stop is not failed rework" \
+  "$unavailable_metrics" '"failedOperations": 0'
 mkdir -p .foundation/leases/tasks/unavailable-provider-recovery
 printf '%s\n' \
   '{"taskId":"T001","owner":"fixture-agent","expiresAt":"2999-01-01T00:00:00.000Z"}' \
@@ -1027,6 +1088,18 @@ assert_cmd_zero "review packet exposes executable API inspection metadata" \
     '.changedSurface.inspection[] |
       select(.repositoryId == "api" and .baseHead == $base) |
       .paths | index("api.txt") != null' \
+    "$TMP/committed-review-packet.json"
+assert_cmd_zero "review packet names the API sandbox workspace" \
+  jq -e --arg workspace "$(jq -r '.repositories.api.path' \
+    .foundation/runtime/cross-repository-profile.json)" \
+    '.changedSurface.inspection[] |
+      select(.repositoryId == "api" and .workspacePath == $workspace)' \
+    "$TMP/committed-review-packet.json"
+assert_cmd_zero "review decision artifacts expose their readable workspace" \
+  jq -e '.decisions.proposal.workspacePath and
+    .decisions.proposal.relativePath == "proposal.md" and
+    .decisions.design.workspacePath and
+    .decisions.specs.workspacePath' \
     "$TMP/committed-review-packet.json"
 assert_cmd_zero "review packet exposes executable app inspection metadata" \
   jq -e --arg base "$(jq -r '.repositories.app.baseHead' \

@@ -12,6 +12,8 @@ assert_file_contains "Homebrew source package includes required model policy" \
 cli_help="$(bash "$ROOT/cli.sh" help)"
 assert_contains "CLI help documents proof readiness" \
   "$cli_help" 'proof readiness <change>'
+assert_contains "CLI help documents pre-review evidence collection" \
+  "$cli_help" 'proof collect <change>'
 assert_contains "CLI help documents atomic proof finish" \
   "$cli_help" 'proof finish <change>'
 mkdir -p "$TMP/unrelated-git/package"
@@ -216,6 +218,8 @@ assert_cmd_zero "native evidence record routes receipt flags" \
   --source installer-test --reference "fixture://installer-discovery"
 assert_cmd_zero "native proof plan routes to project runtime" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof plan cli-proof-route
+assert_cmd_zero "native proof collect routes pre-review evidence collection" \
+  bash "$ROOT/cli.sh" --project "$TARGET" proof collect cli-proof-route
 assert_cmd_zero "native proof finalize creates proof" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof finalize cli-proof-route
 assert_cmd_zero "native proof execute reuses complete external receipts" \

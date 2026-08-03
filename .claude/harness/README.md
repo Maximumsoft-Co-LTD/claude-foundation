@@ -70,6 +70,7 @@ claude-foundation doctor --stage prove --change <change>
 | `proof plan <change>` | Shows missing, stale, or reusable evidence | Before executing providers |
 | `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
 | `proof run <change>` | Executes, finalizes, and audits proof as one operation | Normal Prove path |
+| `proof collect <change>` | Runs available project-owned evidence without finalizing proof | Before external review or acceptance |
 | `proof preflight <change>` | Validates provider DAG, reports, services, and readiness without running tests | Immediately before proof |
 | `proof execute <change>` | Runs required configured providers and finalizes proof | When implementation is ready to prove |
 | `proof audit <change>` | Verifies receipt and artifact digests in the durable proof bundle | Before Land or during an audit |

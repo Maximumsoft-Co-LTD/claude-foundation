@@ -397,6 +397,10 @@ claude-foundation proof plan <change-id>
 claude-foundation proof run <change-id>
 ```
 
+For changes that also require external review, collect project-owned evidence
+first with `claude-foundation proof collect <change-id>`, record the review, then
+run `proof run` to reuse the collected receipts and finalize.
+
 See [Executable evidence adapters](.claude/harness/EVIDENCE.md) when wiring a
 new provider or browser workflow.
 

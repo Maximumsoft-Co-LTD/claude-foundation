@@ -262,6 +262,12 @@ validation pointers. `changes` also exposes non-archived runtime files whose
 active OpenSpec directories disappeared as `orphan-runtime`, and doctor reports
 how to restore or quarantine them.
 
+When executable project evidence and external review are both required, run
+`claude-foundation proof collect <change>` first. It records workspace-bound
+receipts without finalizing proof, allowing the review packet to carry executed
+test evidence. After the external receipt is recorded, `proof run` reuses those
+receipts and finalizes atomically.
+
 ## Review
 
 Review is required for high impact, authentication/authorization, public
