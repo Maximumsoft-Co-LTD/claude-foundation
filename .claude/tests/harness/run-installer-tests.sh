@@ -14,6 +14,12 @@ assert_contains "CLI help documents proof readiness" \
   "$cli_help" 'proof readiness <change>'
 assert_contains "CLI help documents atomic proof finish" \
   "$cli_help" 'proof finish <change>'
+mkdir -p "$TMP/unrelated-git/package"
+git -C "$TMP/unrelated-git" init -q
+cp "$ROOT/cli.sh" "$ROOT/VERSION" "$TMP/unrelated-git/package/"
+packaged_version="$(bash "$TMP/unrelated-git/package/cli.sh" version)"
+assert_eq "packaged CLI ignores unrelated ancestor Git metadata" \
+  "claude-foundation $(tr -d '[:space:]' < "$ROOT/VERSION")" "$packaged_version"
 TARGET="$TMP/project with space"
 mkdir -p "$TARGET/.workflow/0001-legacy" "$TARGET/.claude/agents"
 printf 'legacy\n' > "$TARGET/.workflow/0001-legacy/state.json"

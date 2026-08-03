@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Packaged version identity** — Homebrew installs nested under its own Git
+  worktree no longer inherit Homebrew's tag as a false Foundation source-build
+  suffix; source identity is appended only when `cli.sh` is at that checkout's
+  repository root.
+
 ## [3.1.2] - 2026-08-03
 
 ### Added

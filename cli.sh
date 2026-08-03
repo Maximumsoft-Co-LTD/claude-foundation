@@ -77,12 +77,15 @@ deprecated_install() {
 # time — see RELEASING.md). Fall back to `git describe` for a source checkout
 # whose file was deleted; "unknown" only if both are unavailable.
 print_version() {
-  local v="" describe=""
+  local v="" describe="" git_root="" source_root=""
   if [ -f "$SCRIPT_DIR/VERSION" ]; then
     v="$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")"
   fi
-  if command -v git >/dev/null 2>&1 &&
-     git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if command -v git >/dev/null 2>&1; then
+    git_root="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+    source_root="$(cd "$SCRIPT_DIR" 2>/dev/null && pwd -P || true)"
+  fi
+  if [ -n "$git_root" ] && [ "$(cd "$git_root" && pwd -P)" = "$source_root" ]; then
     describe="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || true)"
     describe="${describe#v}"
     if [ -z "$v" ]; then
