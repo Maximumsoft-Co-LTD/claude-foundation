@@ -7,6 +7,8 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+assert_file_contains "Homebrew source package includes required model policy" \
+  "$ROOT/Formula/claude-foundation.rb" '"foundation.json"'
 TARGET="$TMP/project with space"
 mkdir -p "$TARGET/.workflow/0001-legacy" "$TARGET/.claude/agents"
 printf 'legacy\n' > "$TARGET/.workflow/0001-legacy/state.json"

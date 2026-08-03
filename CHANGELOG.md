@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Homebrew `init` packaging** — ship the required `foundation.json` source
+  manifest in `libexec`, and exercise a real initialized project in the formula
+  test so incomplete bottles fail before release.
+
 ## [3.1.0] - 2026-08-03
 
 ### Added

@@ -26,7 +26,7 @@ class ClaudeFoundation < Formula
   def install
     libexec.install ".claude", ".foundation", ".workflow", "openspec",
                     "WORKFLOW.md", "CLAUDE.md", "package.json", "package-lock.json",
-                    "install.sh", "install-cursor.sh", "cli.sh", "dashboard"
+                    "foundation.json", "install.sh", "install-cursor.sh", "cli.sh", "dashboard"
 
     # VERSION is cli.sh's source of truth for `claude-foundation version`.
     # Ship the repo file when present (HEAD builds, and tags cut after it was
@@ -54,5 +54,10 @@ class ClaudeFoundation < Formula
     assert_match "land check", help
     assert_match "runtime new", help
     assert_match version.to_s, shell_output("#{bin}/claude-foundation version")
+
+    project = testpath/"project"
+    project.mkpath
+    system bin/"claude-foundation", "init", project, "--yes"
+    assert_path_exists project/"foundation.json"
   end
 end
