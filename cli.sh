@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=8
+EXPECTED_RUNTIME_API=9
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -118,6 +118,11 @@ Usage:
   claude-foundation packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
                                                   Print a compact scoped handoff
   claude-foundation metrics <change>              Summarize measured phase/provider cost
+  claude-foundation budget status <change>        Show lifetime usage and active run mode
+  claude-foundation budget continue <change> --reason <reason> [--run <id>]
+                                                  Open an audited run budget window
+  claude-foundation budget split <change> --reason <reason>
+                                                  Stop model exploration pending a scoped change
   claude-foundation telemetry sync <change> [transcript.jsonl]
                                                   Incrementally ingest native Claude request usage
   claude-foundation telemetry import <change> <file> [--format generic|codex|claude]
@@ -231,6 +236,16 @@ case "${1:-}" in
   metrics)
     shift; need_arg "metrics" "${1:-}"
     run_runtime read metrics "$@" ;;
+  budget)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    need_arg "budget ${sub:-<status|continue|split>}" "${1:-}"
+    case "$sub" in
+      status) run_runtime write budget-status "$@" ;;
+      continue) run_runtime write budget-continue "$@" ;;
+      split) run_runtime write budget-split "$@" ;;
+      *) fail "budget requires 'status', 'continue', or 'split'" ;;
+    esac ;;
   telemetry)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Run-scoped budget recovery** — `budget status`, `budget continue`, and
+  `budget split` expose active-window policy and retain an operator audit trail.
+  Packets and metrics now distinguish lifetime usage from the current run and
+  declare completion-only allowed/forbidden work explicitly. The added command
+  surface advances the bundled runtime to 2.4.0 / API 9.
+
+### Changed
+
+- **Budget exhaustion preserves completion paths** — at 85% autonomous work
+  enters completion-only mode; at 100% the harness recommends split/rescope.
+  Focused fixes and required proof remain available, while speculative scope,
+  optional refactors, and new subagents stop.
+
+### Fixed
+
+- **Explicit telemetry no longer hard-locks a change** — recording the request
+  that crosses a budget persists the decision and returns success instead of
+  exiting after the model cost has already occurred. Deterministic lifecycle
+  recovery therefore has the same non-blocking semantics for explicit events,
+  Claude transcripts, and imported host telemetry.
+
 ## [3.1.4] - 2026-08-04
 
 ### Fixed

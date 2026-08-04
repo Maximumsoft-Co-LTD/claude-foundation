@@ -13,8 +13,8 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "2.3.0";
-const RUNTIME_API_VERSION = "8";
+const VERSION = "2.4.0";
+const RUNTIME_API_VERSION = "9";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
@@ -654,14 +654,7 @@ function createChange(intent, flags) {
     acceptance: { version: 2, required: false, reason: null, claimIds: [], declaredAt: null },
     reviewHistory: { version: 1, aiAttempts: 0, totalAttempts: 0, chainHead: null },
     workspace: { mode: "current", path: ROOT, baseHead: gitHead(ROOT) },
-    budget: {
-      targetRequests: schema === "foundation-rapid" ? 80 : 160,
-      targetTokens: schema === "foundation-rapid"
-        ? foundationPolicy().execution.tokenBudgets.rapid
-        : foundationPolicy().execution.tokenBudgets.standard,
-      usedRequests: null, usedTokens: null,
-      measurement: "unavailable-until-external-events"
-    },
+    budget: initialBudget(schema, id),
     createdAt: now(), updatedAt: now()
   };
   saveRuntime(state);
@@ -5331,7 +5324,8 @@ function packetValue(id, repositoryId = null, taskId = null) {
       reference: "evidence.yaml#invariants"
     } : invariantValues.map((value) => value.slice(0, 300)).slice(0, 10),
     references: artifactReferences,
-    budget: state.budget
+    budget: ensureBudgetState(state),
+    budgetDecision: budgetDecision(state)
   };
   return { ...packet, packetDigest: stableHash(packet) };
 }
@@ -5583,36 +5577,258 @@ function eventTokenCount(event) {
   return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
 }
 
-function ensureBudgetTargets(state) {
-  state.budget ||= {};
-  if (!Number.isFinite(Number(state.budget.targetTokens))) {
-    const configured = foundationPolicy().execution.tokenBudgets;
-    state.budget.targetTokens = state.schema === "foundation-rapid"
-      ? configured.rapid : configured.standard;
+function budgetTargets(schema) {
+  const configured = foundationPolicy().execution.tokenBudgets;
+  return {
+    requests: schema === "foundation-rapid" ? 80 : 160,
+    tokens: schema === "foundation-rapid" ? configured.rapid : configured.standard
+  };
+}
+
+function budgetWindow(id, targets, baseline = {}, sequence = 1, reason = "initial-run") {
+  return {
+    id,
+    sequence,
+    targetRequests: targets.requests,
+    targetTokens: targets.tokens,
+    baselineRequests: Number(baseline.requests || 0),
+    baselineTokens: Number(baseline.tokens || 0),
+    usedRequests: 0,
+    usedTokens: 0,
+    mode: "normal",
+    reason,
+    startedAt: now(),
+    exhaustedAt: null,
+    closedAt: null
+  };
+}
+
+function initialBudget(schema, id) {
+  const targets = budgetTargets(schema);
+  const runId = process.env.FOUNDATION_RUN_ID ||
+    process.env.FOUNDATION_CLAUDE_SESSION_ID || id;
+  return {
+    version: 2,
+    targetRequests: targets.requests,
+    targetTokens: targets.tokens,
+    usedRequests: null,
+    usedTokens: null,
+    measurement: "unavailable-until-external-events",
+    lifetime: { usedRequests: null, usedTokens: null },
+    window: budgetWindow(runId, targets)
+  };
+}
+
+function knownNumber(value) {
+  return value !== null && value !== undefined && Number.isFinite(Number(value));
+}
+
+function ensureBudgetState(state) {
+  const existing = state.budget || {};
+  const defaults = budgetTargets(state.schema);
+  const targets = {
+    requests: knownNumber(existing.targetRequests)
+      ? Number(existing.targetRequests) : defaults.requests,
+    tokens: knownNumber(existing.targetTokens)
+      ? Number(existing.targetTokens) : defaults.tokens
+  };
+  if (existing.version !== 2 || !existing.lifetime || !existing.window) {
+    const legacyRequests = knownNumber(existing.usedRequests)
+      ? Number(existing.usedRequests) : null;
+    const legacyTokens = knownNumber(existing.usedTokens)
+      ? Number(existing.usedTokens) : null;
+    state.budget = {
+      version: 2,
+      targetRequests: targets.requests,
+      targetTokens: targets.tokens,
+      usedRequests: legacyRequests,
+      usedTokens: legacyTokens,
+      measurement: existing.measurement || "unavailable-until-external-events",
+      lifetime: { usedRequests: legacyRequests, usedTokens: legacyTokens },
+      // Upgrading must not carry an already-exhausted change-wide counter into
+      // the next autonomous run. Lifetime accounting remains intact.
+      window: budgetWindow(`${state.id}:post-upgrade`, targets, {}, 1,
+        "runtime-upgrade")
+    };
+  } else {
+    state.budget.targetRequests = targets.requests;
+    state.budget.targetTokens = targets.tokens;
+    state.budget.lifetime.usedRequests = knownNumber(state.budget.lifetime.usedRequests)
+      ? Number(state.budget.lifetime.usedRequests) : null;
+    state.budget.lifetime.usedTokens = knownNumber(state.budget.lifetime.usedTokens)
+      ? Number(state.budget.lifetime.usedTokens) : null;
+    state.budget.usedRequests = state.budget.lifetime.usedRequests;
+    state.budget.usedTokens = state.budget.lifetime.usedTokens;
+    if (!knownNumber(state.budget.window.targetRequests))
+      state.budget.window.targetRequests = targets.requests;
+    if (!knownNumber(state.budget.window.targetTokens))
+      state.budget.window.targetTokens = targets.tokens;
   }
   return state.budget;
 }
 
-function budgetDecision(state) {
-  const budget = ensureBudgetTargets(state);
-  const requestRatio = Number.isFinite(Number(budget.usedRequests))
-    ? Number(budget.usedRequests) / Number(budget.targetRequests || 1) : 0;
-  const tokenRatio = Number.isFinite(Number(budget.usedTokens))
-    ? Number(budget.usedTokens) / Number(budget.targetTokens || 1) : 0;
-  const ratio = Math.max(requestRatio, tokenRatio);
-  const limiter = tokenRatio > requestRatio ? "tokens" : "requests";
-  const action = ratio >= 1 ? "STOP_AND_SPLIT" : ratio >= 0.85 ? "STOP_EXPLORATION" :
-    ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
-  return { ratio, limiter, action };
+function eventUsage(events) {
+  const knownTokens = events.map(eventTokenCount).filter((value) => value !== null);
+  return {
+    requests: events.length,
+    tokens: knownTokens.length
+      ? knownTokens.reduce((sum, value) => sum + value, 0)
+      : events.length ? null : 0
+  };
 }
 
-function reportBudget(id, state, stop = false, quiet = false) {
+function activateBudgetWindow(state, runId, reason = "new-run", priorEvents = []) {
+  const budget = ensureBudgetState(state);
+  if (!runId || budget.window.id === runId) return budget.window;
+  const targets = {
+    requests: Number(budget.targetRequests),
+    tokens: Number(budget.targetTokens)
+  };
+  const priorRunUsage = eventUsage(priorEvents.filter((event) => event.runId === runId));
+  budget.window = budgetWindow(runId, targets, priorRunUsage,
+    Number(budget.window.sequence || 0) + 1, reason);
+  return budget.window;
+}
+
+function budgetDecision(state) {
+  const budget = ensureBudgetState(state);
+  const window = budget.window;
+  const requestRatio = knownNumber(window.usedRequests)
+    ? Number(window.usedRequests) / Number(window.targetRequests || 1) : 0;
+  const tokenRatio = knownNumber(window.usedTokens)
+    ? Number(window.usedTokens) / Number(window.targetTokens || 1) : 0;
+  const ratio = Math.max(requestRatio, tokenRatio);
+  const limiter = tokenRatio > requestRatio ? "tokens" : "requests";
+  const operatorRequired = window.mode === "operator-required";
+  const mode = operatorRequired ? "operator-required" :
+    ratio >= 0.85 ? "completion-only" : ratio >= 0.7 ? "conserve" : "normal";
+  const action = operatorRequired ? "OPERATOR_REQUIRED" :
+    ratio >= 1 ? "COMPLETION_ONLY" : ratio >= 0.85 ? "COMPLETION_ONLY" :
+      ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
+  const recommendation = operatorRequired ? "SPLIT_OR_CONTINUE" :
+    ratio >= 1 ? "STOP_AND_SPLIT" : ratio >= 0.85 ? "STOP_EXPLORATION" :
+      ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
+  return {
+    ratio, limiter, mode, action, recommendation,
+    allowed: mode === "completion-only" ? [
+      "focused-fix", "provider-run", "receipt-reuse", "proof-resume",
+      "metrics", "land-recovery", "archive"
+    ] : mode === "operator-required" ? [
+      "packet", "readiness", "receipt-reuse", "metrics", "archive"
+    ] : ["scoped-execution"],
+    forbidden: mode === "completion-only" ? [
+      "scope-expansion", "speculative-investigation", "new-subagent", "optional-refactor"
+    ] : mode === "operator-required" ? [
+      "model-exploration", "new-subagent", "scope-expansion"
+    ] : []
+  };
+}
+
+function applyBudgetDecision(state) {
   const decision = budgetDecision(state);
-  const message = `BUDGET ${id}: ${(decision.ratio * 100).toFixed(1)}% ${decision.action} (${decision.limiter})`;
-  if (!quiet) console.log(message);
-  else if (decision.ratio >= 0.7) console.error(`WARNING: ${message}`);
-  if (stop && decision.ratio >= 1) process.exit(2);
+  const window = state.budget.window;
+  if (window.mode !== "operator-required") window.mode = decision.mode;
+  if (decision.ratio >= 1 && !window.exhaustedAt) window.exhaustedAt = now();
   return decision;
+}
+
+function synchronizeBudgetUsage(state, events, runId, measurement, newEventCount = 0) {
+  const budget = ensureBudgetState(state);
+  const priorEvents = newEventCount > 0
+    ? events.slice(0, Math.max(0, events.length - newEventCount)) : events;
+  activateBudgetWindow(state, runId, "new-run", priorEvents);
+  const lifetimeUsage = eventUsage(events);
+  const activeRunUsage = eventUsage(events.filter((event) => event.runId === budget.window.id));
+  const requestTotal = events.length ? lifetimeUsage.requests : null;
+  const tokenTotal = events.length ? lifetimeUsage.tokens : null;
+  budget.lifetime.usedRequests = requestTotal;
+  budget.lifetime.usedTokens = tokenTotal;
+  budget.usedRequests = requestTotal;
+  budget.usedTokens = tokenTotal;
+  budget.measurement = measurement;
+  budget.window.usedRequests = Math.max(0,
+    activeRunUsage.requests - Number(budget.window.baselineRequests || 0));
+  budget.window.usedTokens = activeRunUsage.tokens === null ? null : Math.max(0,
+    activeRunUsage.tokens - Number(budget.window.baselineTokens || 0));
+  return applyBudgetDecision(state);
+}
+
+function reportBudget(id, state, quiet = false) {
+  const decision = applyBudgetDecision(state);
+  const message = `BUDGET ${id}: ${(decision.ratio * 100).toFixed(1)}% ` +
+    `${decision.action} ${decision.recommendation} (${decision.limiter})`;
+  if (!quiet) console.log(message);
+  else if (decision.ratio >= 0.7 || decision.mode === "operator-required")
+    console.error(`WARNING: ${message}`);
+  return decision;
+}
+
+function budgetAuditPath(id) {
+  return join(LOGS, id, "budget-events.jsonl");
+}
+
+function appendBudgetAudit(id, action, reason, previous, current) {
+  const path = budgetAuditPath(id);
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify({
+    version: 1,
+    changeId: id,
+    action,
+    reason,
+    previous,
+    current,
+    actor: process.env.USER || process.env.LOGNAME || "operator",
+    timestamp: now()
+  })}\n`);
+}
+
+function budgetStatus(id) {
+  const state = loadRuntime(id);
+  const budget = ensureBudgetState(state);
+  const decision = applyBudgetDecision(state);
+  saveRuntime(state);
+  console.log(JSON.stringify({
+    version: 2,
+    changeId: id,
+    lifetime: budget.lifetime,
+    window: budget.window,
+    decision
+  }, null, 2));
+}
+
+function continueBudget(id, flags) {
+  const reason = String(flags.reason || "").trim();
+  if (!reason) die("budget continue requires --reason <reason>");
+  const state = loadRuntime(id);
+  const budget = ensureBudgetState(state);
+  const previous = structuredClone(budget.window);
+  const targets = {
+    requests: Number(budget.targetRequests),
+    tokens: Number(budget.targetTokens)
+  };
+  const runId = String(flags.run || process.env.FOUNDATION_RUN_ID ||
+    process.env.FOUNDATION_CLAUDE_SESSION_ID ||
+    `operator-${Date.now()}`);
+  const events = readJsonLines(join(LOGS, id, "events.jsonl"));
+  const currentRunUsage = eventUsage(events.filter((event) => event.runId === runId));
+  budget.window = budgetWindow(runId, targets, currentRunUsage,
+    Number(previous.sequence || 0) + 1, "operator-continue");
+  appendBudgetAudit(id, "continue", reason, previous, budget.window);
+  saveRuntime(state);
+  console.log(`BUDGET CONTINUED ${id}\n  run: ${runId}\n  reason: ${reason}`);
+}
+
+function splitBudget(id, flags) {
+  const reason = String(flags.reason || "").trim();
+  if (!reason) die("budget split requires --reason <reason>");
+  const state = loadRuntime(id);
+  const budget = ensureBudgetState(state);
+  const previous = structuredClone(budget.window);
+  budget.window.mode = "operator-required";
+  budget.window.closedAt = now();
+  appendBudgetAudit(id, "split-required", reason, previous, budget.window);
+  saveRuntime(state);
+  console.log(`BUDGET SPLIT REQUIRED ${id}\n  reason: ${reason}\n  next: create a scoped change or run budget continue with operator approval`);
 }
 
 function recordEvent(id, flags) {
@@ -5632,7 +5848,9 @@ function recordEvent(id, flags) {
   const cacheTokens = flags.cache === undefined ? null : Number(flags.cache);
   const event = {
     version: 2,
-    runId: flags.run || id, operationId: flags.operation || "unknown",
+    runId: flags.run || process.env.FOUNDATION_RUN_ID ||
+      process.env.FOUNDATION_CLAUDE_SESSION_ID || id,
+    operationId: flags.operation || "unknown",
     agentId: flags.agent || null, modelId: flags.model || null,
     requestId: flags.request || null, parentRequestId: flags.parent || null,
     timestamp: now(),
@@ -5660,13 +5878,12 @@ function recordEvent(id, flags) {
     if (duplicate) die(`duplicate telemetry request '${event.requestId}'`);
   }
   appendFileSync(path, `${JSON.stringify(event)}\n`);
-  const budget = ensureBudgetTargets(state);
-  budget.usedRequests = Number(budget.usedRequests || 0) + 1;
-  const eventTokens = eventTokenCount(event);
-  if (eventTokens !== null) budget.usedTokens = Number(budget.usedTokens || 0) + eventTokens;
-  state.budget.measurement = "external-events";
+  synchronizeBudgetUsage(state, readJsonLines(path), event.runId, "external-events", 1);
   saveRuntime(state);
-  reportBudget(id, state, true);
+  // Accounting happens after a model response already exists. Exiting nonzero
+  // here cannot save that request; it only strands lifecycle recovery. The
+  // persisted completion-only decision governs subsequent model exploration.
+  reportBudget(id, state);
 }
 
 function telemetryCursorPath(id) {
@@ -5841,21 +6058,16 @@ function appendTelemetryRows(id, rows, format, context = {}) {
     appendFileSync(target, normalized.map((row) => JSON.stringify(row)).join("\n") + "\n");
     const state = loadRuntime(id);
     const allEvents = readJsonLines(target);
-    const budget = ensureBudgetTargets(state);
-    budget.usedRequests = allEvents.length;
-    const knownTokens = allEvents.map(eventTokenCount).filter((value) => value !== null);
-    budget.usedTokens = knownTokens.length
-      ? knownTokens.reduce((sum, value) => sum + value, 0) : null;
-    state.budget.measurement = format === "claude"
-      ? "claude-transcript"
-      : `host-events:${format}`;
+    const activeRunId = normalized.at(-1)?.runId || context.sessionId || id;
+    synchronizeBudgetUsage(state, allEvents, activeRunId, format === "claude"
+      ? "claude-transcript" : `host-events:${format}`, normalized.length);
     saveRuntime(state);
     // Host telemetry is accounting, not an execution gate. A hard exit here
     // runs before lifecycle commands (including proof/readiness) and can lock
     // an over-budget change out of the very recovery path that reuses existing
     // evidence. Keep the warning and persisted STOP_AND_SPLIT decision while
     // allowing the requested deterministic command to continue.
-    reportBudget(id, state, false, true);
+    reportBudget(id, state, true);
   }
   return normalized.length;
 }
@@ -5977,7 +6189,8 @@ function sumKnown(rows, field) {
 }
 
 function showMetrics(id) {
-  loadRuntime(id);
+  const state = loadRuntime(id);
+  const budget = ensureBudgetState(state);
   const operations = readJsonLines(join(LOGS, id, "operations.jsonl"));
   const events = readJsonLines(join(LOGS, id, "events.jsonl"));
   const contextState = contextMetricState(id);
@@ -6109,6 +6322,11 @@ function showMetrics(id) {
     byModel: groupUsage("modelId"),
     byRepository: groupUsage("repositoryId"),
     byTask: groupUsage("taskId"),
+    budget: {
+      lifetime: budget.lifetime,
+      window: budget.window,
+      decision: budgetDecision(state)
+    },
     context: {
       totalBytes: contextBytes,
       estimatedTokens: contextBytes === null ? null : Math.ceil(contextBytes / 4),
@@ -6391,6 +6609,9 @@ Commands:
   providers
   packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
   metrics <change>
+  budget-status <change>
+  budget-continue <change> --reason <reason> [--run <id>]
+  budget-split <change> --reason <reason>
   validate <change>
   hash <change>
   proof-plan <change>
@@ -6431,7 +6652,7 @@ const telemetrySuppressed = command === "sandbox" && (
 if (telemetrySuppressed) process.env.FOUNDATION_TELEMETRY = "0";
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
-  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-status", "budget-continue", "budget-split", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
     "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
 
 const telemetryPhase = {
@@ -6458,6 +6679,9 @@ const telemetryPhase = {
 if (!telemetrySuppressed && operationChangeId && telemetryPhase && existsSync(runtimePath(operationChangeId)))
   prepareClaudeTelemetry(operationChangeId, telemetryPhase);
 if (command === "metrics" && operationChangeId && existsSync(runtimePath(operationChangeId)))
+  syncClaudeTelemetry(operationChangeId, { quiet: true });
+if (["budget-status", "budget-continue", "budget-split"].includes(command) &&
+    operationChangeId && existsSync(runtimePath(operationChangeId)))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
 
 switch (command) {
@@ -6515,6 +6739,21 @@ switch (command) {
     showPacket(rest[0], flags); break;
   }
   case "metrics": showMetrics(values[0]); break;
+  case "budget-status": budgetStatus(values[0]); break;
+  case "budget-continue": {
+    const { flags, rest } = parseStrictCommandFlags(values, "budget continue", {
+      value: ["reason", "run"]
+    });
+    if (rest.length !== 1) die("budget continue requires exactly one change");
+    continueBudget(rest[0], flags); break;
+  }
+  case "budget-split": {
+    const { flags, rest } = parseStrictCommandFlags(values, "budget split", {
+      value: ["reason"]
+    });
+    if (rest.length !== 1) die("budget split requires exactly one change");
+    splitBudget(rest[0], flags); break;
+  }
   case "doctor": {
     const { flags, rest } = parseStrictCommandFlags(values, "doctor", {
       boolean: ["require-archive", "unattended", "json"],

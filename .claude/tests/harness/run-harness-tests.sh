@@ -75,6 +75,29 @@ node .claude/harness/foundation.mjs sandbox create no-security-trigger >/dev/nul
 assert_cmd_zero "Build packet opens after sandbox creation" \
   node .claude/harness/foundation.mjs packet no-security-trigger --phase build
 
+jq '.budget = {targetRequests:80,targetTokens:800000,usedRequests:81,usedTokens:900000,measurement:"legacy"}' \
+  .foundation/runtime/no-security-trigger.json > "$TMP/legacy-budget.json"
+cp "$TMP/legacy-budget.json" .foundation/runtime/no-security-trigger.json
+legacy_budget="$(node .claude/harness/foundation.mjs budget-status no-security-trigger)"
+assert_contains "legacy change-wide budget migrates without carrying a lock" \
+  "$legacy_budget" '"reason": "runtime-upgrade"'
+assert_eq "legacy lifetime usage survives budget migration" "900000" \
+  "$(jq -r '.budget.lifetime.usedTokens' .foundation/runtime/no-security-trigger.json)"
+assert_eq "legacy budget migration opens an empty run window" "0" \
+  "$(jq -r '.budget.window.usedRequests' .foundation/runtime/no-security-trigger.json)"
+
+node .claude/harness/foundation.mjs new 'Mixed telemetry runs' --rapid >/dev/null
+printf '%s\n' \
+  '{"requestId":"mixed-a","runId":"run-a","inputTokens":10}' \
+  '{"requestId":"mixed-b","runId":"run-b","inputTokens":20}' \
+  > "$TMP/mixed-runs.jsonl"
+node .claude/harness/foundation.mjs telemetry-import mixed-telemetry-runs \
+  "$TMP/mixed-runs.jsonl" >/dev/null
+assert_eq "batched telemetry scopes the window to the active run" "20" \
+  "$(jq -r '.budget.window.usedTokens' .foundation/runtime/mixed-telemetry-runs.json)"
+assert_eq "batched telemetry preserves lifetime usage across runs" "30" \
+  "$(jq -r '.budget.lifetime.usedTokens' .foundation/runtime/mixed-telemetry-runs.json)"
+
 # Existing evidence v1 remains readable and has an explicit, non-destructive
 # upgrade into the executable-ready v2 envelope.
 node .claude/harness/foundation.mjs new 'Legacy evidence' --rapid >/dev/null
@@ -655,16 +678,26 @@ assert_contains "metrics attribute usage by repository" \
 assert_eq "watchdog accumulates known request tokens" "182" \
   "$(jq -r '.budget.usedTokens' .foundation/runtime/tiny-copy-edit.json)"
 tmp_runtime="$TMP/tiny-copy-budget.json"
-jq '.budget.targetTokens = 182' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+jq '.budget.window.targetTokens = 182' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
 cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
-if node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-token-limit --operation build >/dev/null 2>&1; then
-  fail "token budget stops execution independently of request count"
-else
-  pass "token budget stops execution independently of request count"
-fi
-jq '.budget.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
-cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
+budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-token-limit --operation build)"
+assert_contains "token budget enters completion-only without failing accounting" \
+  "$budget_event" "COMPLETION_ONLY"
+assert_file_contains "over-budget request remains auditable" \
+  ".foundation/logs/tiny-copy-edit/events.jsonl" '"requestId":"req-token-limit"'
+budget_status="$(node .claude/harness/foundation.mjs budget-status tiny-copy-edit)"
+assert_contains "budget status exposes completion-only mode" \
+  "$budget_status" '"mode": "completion-only"'
+assert_cmd_zero "operator can open an audited continuation window" \
+  node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
+    --reason "finish required proof" --run tiny-copy-edit
+assert_file_contains "budget continuation is audited" \
+  ".foundation/logs/tiny-copy-edit/budget-events.jsonl" '"action":"continue"'
+assert_eq "continuation preserves lifetime usage" "4" \
+  "$(jq -r '.budget.lifetime.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
+assert_eq "continuation resets only the active window" "0" \
+  "$(jq -r '.budget.window.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
 
 # Claude usage belongs to assistant requests in the session transcript, not to
 # PostToolUse. Native import reads the nested schema, imports subagents once,
@@ -717,12 +750,16 @@ assert_file_not_contains "session binding excludes pre-change transcript history
 assert_file_contains "checkpoint sync attributes new requests to the active phase" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" \
   '"operationId":"build","agentId":"orchestrator","modelId":"claude-test","requestId":"during-build"'
+assert_eq "new host session opens a fresh budget window" "bound-session" \
+  "$(jq -r '.budget.window.id' .foundation/runtime/tiny-copy-edit.json)"
+assert_eq "session rollover preserves lifetime but resets run usage" "1" \
+  "$(jq -r '.budget.window.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
 
 # Crossing a model budget must stop further exploration, not lock deterministic
 # lifecycle commands. Telemetry is ingested and warns while the requested
 # packet/readiness/proof command remains resumable and can reuse prior evidence.
 tmp_runtime="$TMP/tiny-copy-resume-budget.json"
-jq '.budget.targetTokens = 1' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+jq '.budget.window.targetTokens = 1' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
 cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 printf '%s\n' \
   '{"type":"assistant","requestId":"over-budget-before-prove","message":{"id":"over-budget","role":"assistant","model":"claude-test","usage":{"input_tokens":11,"output_tokens":7}}}' \
@@ -733,9 +770,13 @@ resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
   2>"$TMP/over-budget-resume.err")"
 assert_contains "over-budget telemetry does not block lifecycle resume" \
   "$resume_packet" '"packetType":"global"'
+assert_contains "over-budget packet declares completion-only policy" \
+  "$resume_packet" '"mode":"completion-only"'
+assert_contains "completion-only packet forbids scope expansion" \
+  "$resume_packet" '"scope-expansion"'
 assert_file_contains "over-budget lifecycle resume still emits stop warning" \
   "$TMP/over-budget-resume.err" "STOP_AND_SPLIT"
-jq '.budget.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+jq '.budget.window.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
 cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 
 # Non-Git repositories use a manifest-guarded isolated copy.

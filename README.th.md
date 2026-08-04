@@ -495,6 +495,8 @@ claude-foundation changes
 claude-foundation validate <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
+claude-foundation budget status <change-id>
+claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ"
 claude-foundation sandbox inspect <change-id> --json
 claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
@@ -518,9 +520,14 @@ CLI หา installed project จาก directory ปัจจุบันหร�
 | Archive รันไม่ได้ | ไม่มี OpenSpec หรือ version ไม่ใช่ 1.7.0 | ติดตั้ง pinned CLI แล้วลอง `/land` ใหม่ |
 | Land หยุดหลัง apply | Code เข้าแล้ว แต่ sync/archive ถูกขัดจังหวะ | ห้าม apply ซ้ำด้วยมือ ให้เรียก `/land` เพื่อ resume journal |
 
-เมื่อ request หรือ token budget ถึง limit ระบบจะหยุด model exploration แต่ไม่
-block deterministic packet, readiness, evidence, proof-resume, metrics หรือ
-archive และไม่ลด evidence requirement เพื่อให้ Land ผ่าน
+Execution budget คิดต่อ autonomous run ส่วน usage ตลอดอายุ change ยังอยู่ใน
+metrics เมื่อถึง 85% ระบบเข้า completion-only mode โดยหยุด speculative
+exploration, การขยาย scope, optional refactor และการเปิด subagent ใหม่ แต่ยังทำ
+focused fix และ required proof ต่อได้ เมื่อถึง 100% harness จะแนะนำให้ split หรือ
+rescope โดยไม่ทำให้ telemetry ล้มเหลวและไม่ block deterministic packet,
+readiness, provider, receipt reuse, proof-resume, metrics, Land recovery หรือ
+archive คำสั่ง `budget continue` เปิด window ใหม่โดย operator พร้อม audit record
+โดยไม่ลบ usage เดิมและไม่ลด evidence requirement
 
 ## ตรวจหรือ Upgrade Installation
 

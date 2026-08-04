@@ -1,6 +1,6 @@
 {
-  "runtime": "2.3.0",
-  "runtimeApi": "8",
+  "runtime": "2.4.0",
+  "runtimeApi": "9",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
   "providerProtocol": "6",

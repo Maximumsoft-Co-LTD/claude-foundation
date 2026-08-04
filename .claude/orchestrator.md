@@ -78,9 +78,13 @@ rendered claim cannot pass through an incapable provider.
 
 ## Budget
 
-Usage comes from host request records; unknown is never zero. At 70%, batch and
-reuse. At 85%, stop speculative expansion. At 100%, split or re-scope. Required
-proof remains.
+Usage comes from host request records; unknown is never zero. Lifetime usage is
+accounting; enforcement uses the active run window. At 70%, batch and reuse. At
+85%, obey the packet's completion-only policy: no speculative investigation,
+scope expansion, optional refactor, or new subagent. Focused fixes and required
+proof remain allowed. At 100%, recommend split or re-scope without blocking
+deterministic lifecycle recovery. Only an operator may open another audited
+window with `budget continue`. Required proof remains.
 
 ## Land
 

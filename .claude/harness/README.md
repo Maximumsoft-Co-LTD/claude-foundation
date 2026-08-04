@@ -64,6 +64,9 @@ claude-foundation doctor --stage prove --change <change>
 | `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
+| `budget status <change>` | Shows lifetime usage separately from the active run window | Diagnosing a warning or completion-only run |
+| `budget continue <change> --reason <reason>` | Opens a fresh audited run window without deleting usage | Operator-approved completion work |
+| `budget split <change> --reason <reason>` | Closes model exploration pending a smaller scoped change | When the current scope should not continue |
 | `telemetry sync <change> [transcript]` | Incrementally imports native Claude request usage | Manual sync or host-integration fallback |
 | `telemetry import <change> <file>` | Imports deduplicated generic, Codex, or Claude host usage | Attributing request/token/cost to orchestration |
 | `validate <change>` | Validates change artifacts | After creating or revising an agreement |
@@ -279,10 +282,15 @@ summary. Telemetry is best-effort and cannot block packet delivery. `metrics`
 tolerates legacy/malformed rows and reports totals, estimated tokens, retained
 and archived event counts, median, p95, and maximum by kind.
 
-Crossing a request or token budget emits `STOP_AND_SPLIT` and blocks additional
-model exploration, not deterministic lifecycle recovery. Packet, readiness,
-evidence, proof-resume, metrics, and archive commands continue and reuse fresh
-receipts instead of replaying completed providers.
+Request and token limits apply to an active run window; lifetime usage remains
+available for cost reporting. At 85% the packet enters `completion-only`: it
+forbids speculative investigation, scope expansion, optional refactors, and new
+subagents while allowing focused fixes and required proof work. Crossing 100%
+adds the `STOP_AND_SPLIT` recommendation but never turns accounting into a
+process failure. Packet, readiness, provider execution, receipt reuse,
+proof-resume, metrics, Land recovery, and archive remain available. An operator
+may open a fresh audited window with `budget continue`; counters are never
+deleted or silently reset.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
 hook exposes only `session_id` and `transcript_path` to later Foundation

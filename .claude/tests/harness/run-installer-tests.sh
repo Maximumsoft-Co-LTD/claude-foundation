@@ -16,6 +16,8 @@ assert_contains "CLI help documents pre-review evidence collection" \
   "$cli_help" 'proof collect <change>'
 assert_contains "CLI help documents atomic proof finish" \
   "$cli_help" 'proof finish <change>'
+assert_contains "CLI help documents budget recovery" \
+  "$cli_help" 'budget continue <change>'
 mkdir -p "$TMP/unrelated-git/package"
 git -C "$TMP/unrelated-git" init -q
 cp "$ROOT/cli.sh" "$ROOT/VERSION" "$TMP/unrelated-git/package/"
@@ -204,6 +206,19 @@ telemetry="$(bash "$ROOT/cli.sh" --project "$TARGET" telemetry sync \
   cli-proof-route "$TMP/installed-transcript.jsonl")"
 assert_contains "native CLI routes incremental Claude transcript sync" \
   "$telemetry" "imported 1"
+budget_status="$(bash "$ROOT/cli.sh" --project "$TARGET" budget status cli-proof-route)"
+assert_contains "native CLI exposes the active run budget" \
+  "$budget_status" '"window"'
+assert_cmd_zero "native CLI records a split decision" \
+  bash "$ROOT/cli.sh" --project "$TARGET" budget split cli-proof-route \
+    --reason "fixture rescope"
+assert_eq "split decision requires operator action" "operator-required" \
+  "$(jq -r '.budget.window.mode' "$TARGET/.foundation/runtime/cli-proof-route.json")"
+assert_cmd_zero "native CLI opens an operator-approved continuation" \
+  bash "$ROOT/cli.sh" --project "$TARGET" budget continue cli-proof-route \
+    --reason "fixture completion"
+assert_file_contains "native budget recovery keeps an audit trail" \
+  "$TARGET/.foundation/logs/cli-proof-route/budget-events.jsonl" '"action":"continue"'
 assert_cmd_zero "native validate routes to project runtime" \
   bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route
 sed -i.bak 's/- \[ \]/- [x]/g' "$TARGET/openspec/changes/cli-proof-route/tasks.md"
@@ -243,7 +258,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "8"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "9"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then

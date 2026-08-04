@@ -499,6 +499,8 @@ claude-foundation changes
 claude-foundation validate <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
+claude-foundation budget status <change-id>
+claude-foundation budget continue <change-id> --reason "finish required proof"
 claude-foundation sandbox inspect <change-id> --json
 claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
@@ -523,10 +525,14 @@ Common problems:
 | Archive cannot run | OpenSpec is missing or not version 1.7.0 | Install the pinned CLI and retry `/land` |
 | Land stopped after apply | Code is present but sync/archive was interrupted | Do not reapply manually; retry `/land` to resume from the journal |
 
-Execution budgets stop further model exploration when their request or token
-limit is reached. They do not block deterministic packet, readiness, evidence,
-proof-resume, metrics, or archive commands, and they never lower the evidence
-required to Land.
+Execution budgets are scoped to an autonomous run while lifetime usage remains
+visible in metrics. At 85% the run enters completion-only mode: speculative
+exploration, scope expansion, optional refactors, and new subagents stop, while
+focused fixes and required proof continue. At 100% the harness recommends
+splitting or rescoping but does not fail telemetry or block deterministic
+packet, readiness, provider, receipt-reuse, proof-resume, metrics, Land recovery,
+or archive commands. `budget continue` opens a fresh operator-approved window
+with an audit record; it never deletes prior usage or weakens required evidence.
 
 ## Verify or upgrade an installation
 
