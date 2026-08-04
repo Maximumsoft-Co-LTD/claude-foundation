@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Atomic start after schema escalation** — `runtime start` now re-materializes
+  a draft when intent classification upgrades it from Rapid to Standard, so the
+  required design and spec artifacts exist before validation begins.
+
 ## [3.1.3] - 2026-08-03
 
 ### Fixed

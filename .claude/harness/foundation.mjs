@@ -731,6 +731,11 @@ function startAtomic(draftPath) {
     security: securityTriggers.join(","),
     review: Boolean(draft.reviewRequired)
   });
+  // Resolution may escalate an initially low/isolated draft to the standard
+  // schema (for example, sensitive-data or money behavior inferred from the
+  // intent). Re-materialize after classification so standard-only design and
+  // spec artifacts exist before validation and no model run is wasted.
+  if (loadRuntime(id).schema === "foundation-standard") materializeDraft(id, draft);
   validate(id, "root", { quiet: true });
   createSandbox(id);
   showPacket(id, { phase: "build" });
