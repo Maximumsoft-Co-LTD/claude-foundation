@@ -61,4 +61,33 @@ assert_cmd_zero "portable usage fallback emits valid dated aggregates" node -e \
   'const u=JSON.parse(process.argv[1]),t=JSON.parse(process.argv[2]);if(u[0].input!==5||t[0].date!=="2026-08-02")process.exit(1)' \
   "$USAGE_JSON" "$TOOLS_JSON"
 
+mkdir -p "$TMP/current/openspec" "$TMP/current/.claude/harness" \
+  "$TMP/current/.foundation/runtime" "$TMP/legacy/.workflow/0001-demo"
+printf 'schema: foundation-standard\n' > "$TMP/current/openspec/config.yaml"
+printf 'export {};\n' > "$TMP/current/.claude/harness/foundation.mjs"
+printf '%s\n' \
+  '{"version":2,"id":"current-change","schema":"foundation-standard","status":"building","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-02T00:00:00Z"}' \
+  > "$TMP/current/.foundation/runtime/current-change.json"
+printf '%s\n' '{broken' > "$TMP/current/.foundation/runtime/broken.json"
+printf '%s\n' \
+  '{"id":"0001-demo","type":"feature","phase":"done","step":"done","repo_root":"'"$TMP"'/legacy"}' \
+  > "$TMP/legacy/.workflow/0001-demo/state.json"
+SCAN_ROOTS=("$TMP/current" "$TMP/legacy")
+SCAN_DEPTH=6; DISCOVERY_INTERVAL=0
+RUN_PATH_CACHE="$TMP/run-paths-current.txt"; GIT_PATH_CACHE="$TMP/git-paths-current.txt"
+RUNS_SOURCE_SCHEMA=none; RUNS_FOUNDATION_VERSION=unknown
+scan_runs
+assert_cmd_zero "dashboard scan reads current snapshots and legacy fallback" node -e \
+  'const r=JSON.parse(process.argv[1]);if(!r.some(x=>x.id==="current-change")||!r.some(x=>x.id==="0001-demo"))process.exit(1)' \
+  "$RUNS_JSON"
+assert_eq "current and legacy source schemas are reported" \
+  "foundation-runtime-v2+legacy-workflow" "$RUNS_SOURCE_SCHEMA"
+assert_cmd_zero "malformed current state is isolated" node -e \
+  'const r=JSON.parse(process.argv[1]);if(r.some(x=>x.id==="broken"))process.exit(1)' "$RUNS_JSON"
+
+snapshot_cli="$("$ROOT/cli.sh" --project "$TMP/current" dashboard snapshot --json)"
+assert_cmd_zero "public dashboard snapshot route emits valid JSON" node -e \
+  'const s=JSON.parse(process.argv[1]);if(s.schemaVersion!==1||s.runs[0].id!=="current-change")process.exit(1)' \
+  "$snapshot_cli"
+
 finish "dashboard client"

@@ -37,7 +37,7 @@ printf '%s\n' \
   > "$CHANGE/tasks.md"
 
 plan="$(node "$RUNTIME" agent-plan agent-contract)"
-if printf '%s' "$plan" | jq -e '.version == 2 and .taskCount == 1' >/dev/null; then
+if printf '%s' "$plan" | jq -e '.version == 3 and .taskCount == 1' >/dev/null; then
   pass "agent plan is JSON-only and accepts completed dependencies"
 else
   fail "agent plan is JSON-only and accepts completed dependencies"
@@ -47,7 +47,7 @@ assert_eq "mixed-risk single session selects deep model" "deep" \
 
 task_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
 if printf '%s' "$task_packet" | jq -e \
-  '.version == 4 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
+  '.version == 5 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
   >/dev/null; then
   pass "task packet is JSON with claim and provider authority"
 else

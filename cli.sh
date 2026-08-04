@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=12
+EXPECTED_RUNTIME_API=13
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -207,7 +207,10 @@ case "${1:-}" in
       import)
         [ "$#" -ge 2 ] || fail "telemetry import requires <change> <file>"
         run_runtime write telemetry-import "$@" ;;
-      *) fail "telemetry requires 'sync' or 'import'" ;;
+      host-import)
+        [ "$#" -eq 2 ] || fail "telemetry host-import requires <change> <result.json>"
+        run_runtime write host-execution-import "$@" ;;
+      *) fail "telemetry requires 'sync', 'import', or 'host-import'" ;;
     esac ;;
   change)
     shift
@@ -330,7 +333,15 @@ case "${1:-}" in
     client="$SCRIPT_DIR/dashboard/client.sh"
     [ -f "$client" ] || { printf 'dashboard client not found at %s\n' "$client" >&2; exit 1; }
     case "$sub" in
-      dashboard)        exec bash "$client" run "$@" ;;
+      dashboard)
+        if [ "${1:-}" = "snapshot" ]; then
+          shift
+          [ "$#" -eq 1 ] && [ "$1" = "--json" ] || fail "dashboard snapshot requires --json"
+          root="$(find_project_root)"
+          command -v node >/dev/null 2>&1 || fail "Node.js is required to inspect the dashboard snapshot"
+          exec node "$SCRIPT_DIR/dashboard/snapshot.mjs" --project "$root"
+        fi
+        exec bash "$client" run "$@" ;;
       dashboard-up)     exec bash "$client" up "$@" ;;
       dashboard-down)   exec bash "$client" down "$@" ;;
       dashboard-status) exec bash "$client" status "$@" ;;

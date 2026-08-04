@@ -43,6 +43,7 @@
     { "name": "version", "usage": "version", "audience": "admin", "kind": "read", "idempotent": true, "description": "Print the installed package version." },
     { "name": "help", "usage": "help [--all]", "audience": "admin", "kind": "read", "idempotent": true, "description": "Show canonical commands; --all includes compatibility routes." },
     { "name": "dashboard", "usage": "dashboard[-up|-status|-down]", "audience": "admin", "kind": "authority", "idempotent": false, "description": "Manage the optional team-presence client." },
+    { "name": "dashboard snapshot", "usage": "dashboard snapshot --json", "audience": "admin", "kind": "read", "idempotent": true, "description": "Inspect the versioned, read-only dashboard projection for this project." },
     { "name": "evidence upgrade", "usage": "evidence upgrade <change>", "audience": "admin", "kind": "write", "idempotent": true, "description": "Upgrade legacy evidence wiring explicitly." },
 
     { "name": "runtime", "usage": "runtime <internal-command>", "audience": "internal", "kind": "write", "idempotent": false, "deprecated": true, "description": "Compatibility pass-through for installed workflow internals." },
@@ -52,6 +53,7 @@
     { "name": "agents release", "usage": "agents release <change> <task> --owner <id>", "audience": "host", "kind": "write", "idempotent": true, "description": "Release a host-managed resource lease." },
     { "name": "telemetry sync", "usage": "telemetry sync <change> [transcript.jsonl]", "audience": "host", "kind": "write", "idempotent": true, "description": "Synchronize native host request usage." },
     { "name": "telemetry import", "usage": "telemetry import <change> <file> [--format <format>]", "audience": "host", "kind": "write", "idempotent": true, "description": "Import authoritative host usage." },
+    { "name": "telemetry host-import", "usage": "telemetry host-import <change> <result.json>", "audience": "host", "kind": "write", "idempotent": true, "description": "Import a validated host execution result with attempts, actual model, fallback, and instruction provenance." },
     { "name": "sandbox challenge", "usage": "sandbox challenge <change>", "audience": "host", "kind": "write", "idempotent": false, "description": "Create a short-lived challenge for signed unattended authority." },
     { "name": "evidence run", "usage": "evidence run <change> <provider> --claims <scope> -- <command>", "audience": "internal", "kind": "write", "idempotent": false, "description": "Execute one low-level evidence adapter." },
     { "name": "sandbox inspect", "usage": "sandbox inspect <change> [--json]", "audience": "internal", "kind": "read", "idempotent": true, "description": "Inspect isolation diagnostics." },
@@ -75,6 +77,6 @@
     "authority-record", "receipt",
     "run-provider", "prove", "land-check", "land-plan", "land-record",
     "land-pointers", "land-resume", "sandbox", "archive", "event",
-    "telemetry-sync", "telemetry-import", "migrate", "api-version", "version"
+    "telemetry-sync", "telemetry-import", "host-execution-import", "migrate", "api-version", "version"
   ]
 }

@@ -108,6 +108,7 @@ claude-foundation doctor --stage prove --change <change>
 | `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
+| `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
 | `budget continue <change> --reason <reason>` | Opens one policy-gated audited completion window without deleting usage | Required model work after exhaustion |
 | `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `change audit <change> [--json]` | Audits scenario → claim → task → provider traceability | Before Build or after contract edits |
@@ -172,9 +173,9 @@ recommends one agent. The plan is advice and bounded authority for the native
 host; the harness does not invoke a model itself.
 
 JSON output is compact by default and `--pretty` is inspection-only. Plan
-schema 2 resumes dependencies satisfied by completed tasks, reports
+schema 3 resumes dependencies satisfied by completed tasks, reports
 `proof-ready` after all tasks complete, and declares the deepest model required
-by a mixed session. Packet schema 4 rejects unknown, cross-repository, or
+by a mixed session while carrying instruction provenance. Packet schema 5 rejects unknown, cross-repository, or
 providerless task claims. Large collections are previews plus counts and
 digests; use `packet <change> --task <task>` as the authoritative expansion.
 
@@ -351,6 +352,13 @@ phase, agent, input/output tokens, separate cache-creation/cache-read tokens,
 and cost when the host supplies it. Prompt text, tool input, and tool output are
 never copied to `.foundation/logs/`. `PostToolUse` remains reserved for
 behavioral hooks such as linting edited files.
+
+Every emitted packet also records a content-addressed instruction manifest under
+`.foundation/instruction-manifests/`. Packets and proofs carry its digest, not
+the instruction text. A changed digest records lineage; by itself it does not
+invalidate deterministic evidence for an unchanged contract and workspace.
+Hosts may report actual model attempts and fallback with `telemetry host-import`;
+unknown usage remains `null` rather than being fabricated as zero.
 
 Use an explicit sync when the lifecycle hook was not active:
 

@@ -81,3 +81,13 @@ test('heartbeat rejects an unknown status', async () => {
   const result = await heartbeat('bad-status', { status: 'pretending' });
   assert.equal(result.response.status, 400);
 });
+
+test('heartbeat exposes bounded runtime source metadata', async () => {
+  await heartbeat('runtime-agent', {
+    sourceSchema: 'foundation-runtime-v2', foundationVersion: '3.1.7',
+  });
+  const online = await request('/api/online', { headers: { 'x-cf-key': 'view-key' } });
+  const agent = online.body.agents.find((item) => item.agentId === 'runtime-agent');
+  assert.equal(agent.sourceSchema, 'foundation-runtime-v2');
+  assert.equal(agent.foundationVersion, '3.1.7');
+});

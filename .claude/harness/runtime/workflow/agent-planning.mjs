@@ -6,7 +6,7 @@ export function createAgentPlanner({
   selectedRepositories, taskBlocks, taskMetadata, activeChangePath, evidence,
   resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
-  showPacket, fail
+  recordInstructionManifest, showPacket, fail
 }) {
   function modelForTask(id, task, selectedPolicy = policy()) {
     const state = loadRuntime(id);
@@ -111,6 +111,10 @@ export function createAgentPlanner({
       ...conflicts.map((conflict) =>
         `repository ${conflict.repository} is active in ${conflict.changeId}`)
     ];
+    const instructionManifest = recordInstructionManifest?.(id, "build", {
+      scope: "plan",
+      requestedModel: singleAgent ? sessionTask?.model?.tier || null : null
+    });
     const basePlan = {
       version: Number(schemaVersion),
       changeId: id,
@@ -135,6 +139,11 @@ export function createAgentPlanner({
       conflicts,
       blockingReasons,
       dispatchable: blockingReasons.length === 0,
+      instructionProvenance: instructionManifest ? {
+        schemaVersion: instructionManifest.schemaVersion,
+        manifestDigest: instructionManifest.manifestDigest,
+        requestedModel: instructionManifest.execution?.requestedModel || null
+      } : null,
       contractFingerprint: contractFingerprint(id),
       repositoryContractHashes: Object.fromEntries(repositories.map((repository) => [
         repository.id,

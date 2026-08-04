@@ -1,0 +1,200 @@
+#!/usr/bin/env node
+
+// Stable, read-only projection of Foundation runtime state for dashboard clients.
+// Keep this module dependency-free: it ships with the Homebrew dashboard bundle.
+
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const SCHEMA_VERSION = 1;
+
+function readJson(path, fallback = null) {
+  try { return JSON.parse(readFileSync(path, "utf8")); }
+  catch { return fallback; }
+}
+
+function epoch(value, fallback = 0) {
+  const parsed = Date.parse(value || "");
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : fallback;
+}
+
+function git(root, args) {
+  const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : "";
+}
+
+function normalizeRemote(value) {
+  return String(value || "").replace(/\.git$/, "")
+    .replace(/^(?:git\+ssh|ssh|https?|git):\/\//, "")
+    .replace(/^.*@/, "").replace(":", "/");
+}
+
+function lifecyclePhase(status) {
+  if (status === "change" || status === "untracked") return "change";
+  if (status === "building") return "build";
+  if (status === "proven") return "prove";
+  if (["applied", "archived"].includes(status)) return "land";
+  return "change";
+}
+
+function budgetProjection(value) {
+  if (!value || typeof value !== "object") return null;
+  const lifetime = value.lifetime || {};
+  const window = value.window || {};
+  return {
+    lifetime: {
+      usedRequests: Number.isFinite(lifetime.usedRequests) ? lifetime.usedRequests : null,
+      usedTokens: Number.isFinite(lifetime.usedTokens) ? lifetime.usedTokens : null
+    },
+    window: {
+      id: typeof window.id === "string" ? window.id : null,
+      usedRequests: Number.isFinite(window.usedRequests) ? window.usedRequests : null,
+      usedTokens: Number.isFinite(window.usedTokens) ? window.usedTokens : null,
+      targetRequests: Number.isFinite(window.targetRequests) ? window.targetRequests : null,
+      targetTokens: Number.isFinite(window.targetTokens) ? window.targetTokens : null
+    }
+  };
+}
+
+function receiptProjection(root, id) {
+  const dir = join(root, ".foundation", "receipts", id);
+  if (!existsSync(dir)) return { status: "missing", providers: [] };
+  const providers = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const value = readJson(join(dir, entry.name));
+    if (!value || typeof value !== "object") continue;
+    providers.push({
+      provider: entry.name.slice(0, -5),
+      status: typeof value.status === "string" ? value.status : "unknown"
+    });
+  }
+  providers.sort((a, b) => a.provider.localeCompare(b.provider));
+  const proof = providers.find((item) => item.provider === "proof");
+  return { status: proof?.status || (providers.length ? "partial" : "missing"), providers };
+}
+
+function stateBlockers(state) {
+  const blockers = [];
+  const candidates = [state.blockers, state.pendingBlockers, state.land?.blockers];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    for (const item of candidate) {
+      if (typeof item === "string") blockers.push({ code: "runtime-blocker" });
+      else if (item && typeof item === "object") blockers.push({
+        code: String(item.code || item.id || "runtime-blocker").slice(0, 128)
+      });
+    }
+  }
+  return blockers.slice(0, 50);
+}
+
+function projectState(root, state, project) {
+  const id = String(state.id || "");
+  const phase = lifecyclePhase(state.status);
+  const started = epoch(state.createdAt);
+  const finished = epoch(state.updatedAt, started);
+  const done = state.status === "archived";
+  const evidence = receiptProjection(root, id);
+  const blockers = stateBlockers(state);
+  return {
+    change: {
+      id,
+      schema: typeof state.schema === "string" ? state.schema : "unknown",
+      status: typeof state.status === "string" ? state.status : "unknown",
+      phase,
+      revision: Number(state.contractRevision || state.revision || 0),
+      updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
+      blockerCount: blockers.length,
+      evidenceStatus: evidence.status
+    },
+    run: {
+      id,
+      type: typeof state.schema === "string" ? state.schema : "unknown",
+      repo: project.name,
+      repoId: project.repoId,
+      branch: typeof state.workspace?.branch === "string" ? state.workspace.branch : project.branch,
+      owner: typeof state.owner === "string" ? state.owner : project.owner,
+      ownerEmail: typeof state.ownerEmail === "string" ? state.ownerEmail : project.ownerEmail,
+      size: typeof state.size === "string" ? state.size : "",
+      phase,
+      lifecycleStatus: typeof state.status === "string" ? state.status : "unknown",
+      started,
+      finished,
+      done,
+      art: {}
+    },
+    blockers,
+    budget: budgetProjection(state.budget),
+    evidence
+  };
+}
+
+export function buildDashboardSnapshot(projectRoot, { generatedAt = new Date().toISOString() } = {}) {
+  const root = resolve(projectRoot);
+  const runtimeDir = join(root, ".foundation", "runtime");
+  const versionPath = join(dirname(dirname(fileURLToPath(import.meta.url))), "VERSION");
+  const foundationVersion = existsSync(versionPath) ? readFileSync(versionPath, "utf8").trim() : "unknown";
+  const project = {
+    name: basename(root),
+    repoId: normalizeRemote(git(root, ["config", "--get", "remote.origin.url"])),
+    branch: git(root, ["branch", "--show-current"]),
+    owner: git(root, ["config", "user.name"]),
+    ownerEmail: git(root, ["config", "user.email"])
+  };
+  const changes = [], runs = [], blockers = [], budgets = {}, evidence = {};
+  let malformedStates = 0;
+  if (existsSync(runtimeDir)) {
+    for (const entry of readdirSync(runtimeDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const state = readJson(join(runtimeDir, entry.name));
+      const expectedId = entry.name.slice(0, -5);
+      if (!state || typeof state !== "object" || typeof state.id !== "string" ||
+          state.id !== expectedId || !/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(state.id)) {
+        malformedStates += 1;
+        continue;
+      }
+      const projected = projectState(root, state, project);
+      changes.push(projected.change);
+      runs.push(projected.run);
+      blockers.push(...projected.blockers.map((item) => ({ changeId: state.id, ...item })));
+      if (projected.budget) budgets[state.id] = projected.budget;
+      evidence[state.id] = projected.evidence;
+    }
+  }
+  runs.sort((a, b) => b.finished - a.finished || a.id.localeCompare(b.id));
+  const phases = { change: 0, build: 0, prove: 0, land: 0 };
+  for (const change of changes) phases[change.phase] += 1;
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    sourceSchema: "foundation-runtime-v2",
+    foundationVersion,
+    project,
+    changes,
+    runs,
+    phases,
+    blockers,
+    budgets,
+    evidence,
+    diagnostics: { malformedStates },
+    generatedAt
+  };
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  const rootIndex = args.indexOf("--project");
+  const root = rootIndex >= 0 ? args[rootIndex + 1] : process.cwd();
+  if (!root) throw new Error("--project requires a path");
+  process.stdout.write(`${JSON.stringify(buildDashboardSnapshot(root))}\n`);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+  try { main(); }
+  catch (error) {
+    console.error(`claude-foundation: dashboard snapshot failed: ${error.message}`);
+    process.exitCode = 1;
+  }
+}

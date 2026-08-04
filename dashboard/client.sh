@@ -73,9 +73,9 @@ ONCE="no"
 ACTIVITY="yes"                                             # report active /dev runs (repo+branch); --no-activity to opt out
 CONFLICTS="yes"                                            # report changed files+line-ranges per repo for conflict warning; --no-conflicts to opt out
 USAGE="yes"                                                # report Claude Code token/model usage from ~/.claude transcripts; --no-usage to opt out
-SCAN_ROOTS=()                                              # dirs to scan for .workflow runs + git repos (default: $HOME)
-SCAN_DEPTH="${CLAUDE_FOUNDATION_SCAN_DEPTH:-6}"        # .workflow repos sit ~4 levels under a work root; 6 covers nesting without walking deep trees
-ACTIVE_WINDOW="${CLAUDE_FOUNDATION_ACTIVE_WINDOW:-900}"    # secs since last state.json write to still count as "working"
+SCAN_ROOTS=()                                              # dirs to scan for Foundation projects + git repos (default: $HOME)
+SCAN_DEPTH="${CLAUDE_FOUNDATION_SCAN_DEPTH:-6}"            # project roots may be nested under a shared work root
+ACTIVE_WINDOW="${CLAUDE_FOUNDATION_ACTIVE_WINDOW:-900}"    # secs since the last runtime update to still count as "working"
 SCAN_INTERVAL="${CLAUDE_FOUNDATION_SCAN_INTERVAL:-60}"     # rescan cadence (decoupled from heartbeat)
 USAGE_DAYS="${CLAUDE_FOUNDATION_USAGE_DAYS:-30}"           # how far back to aggregate token usage
 USAGE_INTERVAL="${CLAUDE_FOUNDATION_USAGE_INTERVAL:-300}"  # transcripts are big — reaggregate at most this often
@@ -214,6 +214,8 @@ json_escape() {
 
 # ── Run + change scans: /dev run history and per-repo edits on this machine ──
 RUNS_JSON="[]"
+RUNS_SOURCE_SCHEMA="none"
+RUNS_FOUNDATION_VERSION="unknown"
 CHANGES_JSON="[]"
 USAGE_JSON="[]"
 SESSIONS_JSON="[]"
@@ -229,6 +231,7 @@ SCAN_LOCK="$STATE_DIR/scan.lock"
 RUN_PATH_CACHE="$STATE_DIR/run-paths.txt"
 GIT_PATH_CACHE="$STATE_DIR/git-paths.txt"
 DISCOVERY_INTERVAL="${CLAUDE_FOUNDATION_DISCOVERY_INTERVAL:-300}"
+DASHBOARD_CLI="${CLAUDE_FOUNDATION_CLI:-$(dirname "$SCRIPT_PATH")/../cli.sh}"
 
 refresh_discovery_cache() {
   local now age
@@ -239,7 +242,8 @@ refresh_discovery_cache() {
   fi
   find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
     \( -name node_modules -o -name .git -o -name Library -o -name .Trash -o -name .cache \) -prune \
-    -o -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print 2>/dev/null \
+    -o \( -path '*/.foundation/runtime' -type d -print -prune \) \
+    -o \( -path '*/.workflow/*/state.json' ! -path '*/_templates/*' -print \) 2>/dev/null \
     > "$RUN_PATH_CACHE.tmp" || true
   find "${SCAN_ROOTS[@]}" -maxdepth "$SCAN_DEPTH" \
     \( -name node_modules -o -name Library -o -name .Trash -o -name .cache \) -prune \
@@ -304,12 +308,51 @@ dir_started() {
 # state.json; newest-first, capped at RUNS_CAP.
 scan_runs() {
   [ "$ACTIVITY" = "yes" ] || { RUNS_JSON="[]"; return; }
+  RUNS_SOURCE_SCHEMA="none"
+  RUNS_FOUNDATION_VERSION="unknown"
   refresh_discovery_cache
   local tab; tab="$(printf '\t')"
   local ranked=() sj rundir id rtype repo branch phase step repo_root started finished doneflag
   local owner oemail rsize rr rid last_rr= last_rid=
+  local snapshot current_roots="" snapshot_rows source_meta source_version legacy_count=0
+  # Current projects are projected through the public, read-only snapshot API.
+  # One malformed project is isolated and does not abort discovery of others.
+  while IFS= read -r sj; do
+    case "$sj" in */.foundation/runtime) ;; *) continue ;; esac
+    rr="${sj%/.foundation/runtime}"
+    case "$current_roots" in *$'\n'"$rr"$'\n'*) continue ;; esac
+    current_roots="${current_roots}"$'\n'"$rr"$'\n'
+    [ -x "$DASHBOARD_CLI" ] || continue
+    snapshot="$("$DASHBOARD_CLI" --project "$rr" dashboard snapshot --json 2>/dev/null)" || continue
+    source_meta="$(printf '%s' "$snapshot" | node -e '
+      let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+        try { const v=JSON.parse(s); process.stdout.write(`${v.sourceSchema || "unknown"}\t${v.foundationVersion || "unknown"}`) }
+        catch { process.exitCode=1 }
+      })' 2>/dev/null)" || continue
+    RUNS_SOURCE_SCHEMA="${source_meta%%$'\t'*}"
+    source_version="${source_meta#*$'\t'}"
+    if [ "$RUNS_FOUNDATION_VERSION" = "unknown" ]; then RUNS_FOUNDATION_VERSION="$source_version"
+    elif [ "$RUNS_FOUNDATION_VERSION" != "$source_version" ]; then RUNS_FOUNDATION_VERSION="mixed"
+    fi
+    snapshot_rows="$(printf '%s' "$snapshot" | node -e '
+      let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+        try {
+          const v=JSON.parse(s);
+          for (const run of Array.isArray(v.runs) ? v.runs : []) {
+            const finished=Number.isFinite(run.finished)?run.finished:0;
+            process.stdout.write(`${finished}\t${JSON.stringify(run)}\n`);
+          }
+        } catch { process.exitCode=1 }
+      })' 2>/dev/null)" || continue
+    while IFS= read -r source_row; do
+      [ -n "$source_row" ] && ranked+=("$source_row")
+    done <<< "$snapshot_rows"
+  done < "$RUN_PATH_CACHE"
+
+  # Legacy .workflow records remain readable during the migration window.
   while IFS= read -r sj; do
     [ -n "$sj" ] || continue
+    case "$sj" in */.workflow/*/state.json) ;; *) continue ;; esac
     case "$sj" in */_templates/*) continue ;; esac      # skip the blueprint state.json
     rundir="$(dirname "$sj")"
     id="$(json_get "$sj" id)"
@@ -329,6 +372,7 @@ scan_runs() {
     oemail="$(json_get "$sj" owner_email)"
     rsize="$(json_get "$sj" size)"
     rr="$repo_root"; [ -n "$rr" ] || rr="$(dirname "$(dirname "$rundir")")"
+    case "$current_roots" in *$'\n'"$rr"$'\n'*) continue ;; esac
     if [ -z "$owner" ] && command -v git >/dev/null 2>&1; then
       IFS="$tab" read -r owner oemail \
         < <(git -C "$rr" log --reverse --format="%an${tab}%ae" -- ".workflow/$(basename "$rundir")" 2>/dev/null | head -1) || true
@@ -354,7 +398,13 @@ scan_runs() {
     done
     art="{${art#,}}"
     ranked+=("${finished}${tab}{\"id\":\"$(json_escape "$id")\",\"type\":\"$(json_escape "$rtype")\",\"repo\":\"$(json_escape "$repo")\",\"repoId\":\"$(json_escape "$rid")\",\"branch\":\"$(json_escape "$branch")\",\"owner\":\"$(json_escape "$owner")\",\"ownerEmail\":\"$(json_escape "$oemail")\",\"size\":\"$(json_escape "$rsize")\",\"phase\":\"$(json_escape "$phase")\",\"started\":${started:-0},\"finished\":${finished:-0},\"done\":${doneflag},\"art\":${art}}")
+    legacy_count=$((legacy_count + 1))
   done < "$RUN_PATH_CACHE"
+  if [ "$legacy_count" -gt 0 ]; then
+    if [ "$RUNS_SOURCE_SCHEMA" = "none" ]; then RUNS_SOURCE_SCHEMA="legacy-workflow"
+    else RUNS_SOURCE_SCHEMA="${RUNS_SOURCE_SCHEMA}+legacy-workflow"
+    fi
+  fi
   if [ "${#ranked[@]}" -gt 0 ]; then
     RUNS_JSON="[$(printf '%s\n' "${ranked[@]}" | sort -t"$tab" -k1,1 -rn | awk -v n="${RUNS_CAP:-200}" 'NR<=n' | cut -f2- | paste -sd, -)]"
   else
@@ -749,9 +799,10 @@ build_payload() {
   local changes="${2:-$CHANGES_JSON}" usage_rows="${3:-$USAGE_JSON}"
   local session_rows="${4:-$SESSIONS_JSON}" tool_rows="${5:-$TOOLS_JSON}"
   local run_rows="${6:-$RUNS_JSON}" pr_rows="${7:-$PRS_JSON}"
-  printf '{"agentId":"%s","gitUser":"%s","gitEmail":"%s","host":"%s","version":"%s","status":"%s","runs":%s,"changes":%s,"usage":%s,"sessions":%s,"tools":%s,"prs":%s}' \
+  printf '{"agentId":"%s","gitUser":"%s","gitEmail":"%s","host":"%s","version":"%s","sourceSchema":"%s","foundationVersion":"%s","status":"%s","runs":%s,"changes":%s,"usage":%s,"sessions":%s,"tools":%s,"prs":%s}' \
     "$(json_escape "$AGENT_ID")" "$(json_escape "$GIT_USER")" "$(json_escape "${GIT_EMAIL:-}")" \
-    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$1" "$run_rows" "$changes" "$usage_rows" "$session_rows" "$tool_rows" "$pr_rows"
+    "$(json_escape "$HOST")" "$(json_escape "$CLIENT_VERSION")" "$(json_escape "$RUNS_SOURCE_SCHEMA")" \
+    "$(json_escape "$RUNS_FOUNDATION_VERSION")" "$1" "$run_rows" "$changes" "$usage_rows" "$session_rows" "$tool_rows" "$pr_rows"
 }
 
 payload_bytes() { LC_ALL=C printf '%s' "$1" | wc -c | tr -d ' '; }

@@ -6,7 +6,7 @@ export function createProofRuntime({
   activeChangeLeases, pendingTasks, clearSnapshotCache, relevantSnapshot,
   requiredProviders, receiptValidity, proofRunRoot, receiptPath, fileDigest,
   protocolDescriptor, contractFingerprint, executionFingerprint, proofPath,
-  writeJson, readJson, pathInside, validateArtifact, now, fail
+  writeJson, readJson, pathInside, validateArtifact, instructionProvenance, now, fail
 }) {
   function finalize(id, requestedProofRunId = null) {
     const stateBefore = loadRuntime(id);
@@ -55,6 +55,7 @@ export function createProofRuntime({
       providers: checks.map((row) => row.provider),
       receipts: receiptEntries,
       artifacts: stateBefore.activeProofRun?.serviceArtifacts || [],
+      instructionProvenance: instructionProvenance?.(id) || null,
       createdAt: now()
     };
     writeJson(proofPath(id), proof);

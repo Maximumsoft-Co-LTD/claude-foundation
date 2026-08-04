@@ -304,7 +304,8 @@ function persistHeartbeat(a, now, changed) {
     if (a.status === 'offline') stmts.deleteAgent.run(a.agentId);
     else stmts.upsertAgent.run(a.agentId, a.gitUser, a.gitEmail || '', a.host, a.version, a.status,
       a.firstSeen, a.lastSeen,
-      JSON.stringify({ runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
+      JSON.stringify({ sourceSchema: a.sourceSchema, foundationVersion: a.foundationVersion,
+        runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
     // Presence is the union of a person's machines: the minute key prevents two
     // agents with the same git identity from double-crediting the same minute.
     const minuteBucket = Math.floor(now / 60000);
@@ -398,6 +399,8 @@ function restoreAgents(agentsMap) {
       const restored = {
         agentId: row.agent_id,
         gitUser: row.git_user, gitEmail: row.git_email || '', host: row.host, version: row.version, status: row.status,
+        sourceSchema: clean(state.sourceSchema, 64),
+        foundationVersion: clean(state.foundationVersion, 64),
         runs: Array.isArray(state.runs) ? state.runs : [],
         changes: Array.isArray(state.changes) ? state.changes : [],
         usage: Array.isArray(state.usage) ? state.usage : [],
@@ -481,6 +484,8 @@ function snapshot(a, now) {
     gitUser: a.gitUser,
     host: a.host,
     version: a.version,
+    sourceSchema: a.sourceSchema || 'unknown',
+    foundationVersion: a.foundationVersion || 'unknown',
     status: a.status,
     activity: deriveActivity(a.runs, now),
     // Compact "working in" summary — repo + branch + file count, derived from the
@@ -755,6 +760,8 @@ async function handleHeartbeat(req, res, url) {
     gitEmail: clean(body.value.gitEmail, 120).toLowerCase(),
     host: clean(body.value.host),
     version: clean(body.value.version),
+    sourceSchema: clean(body.value.sourceSchema, 64) || 'unknown',
+    foundationVersion: clean(body.value.foundationVersion, 64) || 'unknown',
     status,
     runs: cleanRuns(body.value.runs),
     changes: cleanChanges(body.value.changes),

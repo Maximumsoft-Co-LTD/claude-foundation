@@ -11,7 +11,8 @@ export function createPacketRuntime({
   modelForTask, compactList, fileDigest, directoryHash, ensureBudgetState,
   budgetDecision, scopedReviewClaims, relevantHash, providerCapability,
   receiptPath, contractFingerprint, reviewPolicy, resolvedAcceptance,
-  serializedJson, foundationPolicy, recordContextMetric, fail
+  serializedJson, foundationPolicy, recordContextMetric, recordInstructionManifest,
+  fail
 }) {
   const die = fail;
   const policyCache = new Map();
@@ -435,7 +436,22 @@ export function createPacketRuntime({
     const value = flags.phase === "review"
       ? reviewPacketValue(id)
       : packetValue(id, flags.repo || null, flags.task || null);
+    const instructionPhase = flags.phase === "review" ? "prove" : flags.phase || "build";
+    const taskModel = Array.isArray(value.tasks) ? value.tasks[0]?.model?.tier || null : null;
+    const manifest = recordInstructionManifest?.(id, instructionPhase, {
+      scope: flags.task || flags.repo || value.packetType,
+      requestedModel: taskModel
+    });
+    if (manifest) value.instructionProvenance = {
+      schemaVersion: manifest.schemaVersion,
+      manifestDigest: manifest.manifestDigest,
+      requestedModel: manifest.execution?.requestedModel || null
+    };
     if (flags.planDigest) value.planDigest = flags.planDigest;
+    const priorDigest = value.packetDigest;
+    delete value.packetDigest;
+    value.packetDigest = stableHash(value);
+    if (!manifest && priorDigest) value.packetDigest = priorDigest;
     const encoded = serializedJson(value, Boolean(flags.pretty));
     const bytes = Buffer.byteLength(encoded);
     const limit = Number(foundationPolicy().execution.packetBytes[value.packetType]);

@@ -12,7 +12,7 @@ export async function routeRuntimeCommand(command, values, api) {
     runProvider, prove, landCheck, showLandPlan, recordRepositoryLand,
     stageRootPointers, resumeLand, createAttestationChallenge,
     showSandboxInspection, createSandbox, syncSandbox, applySandbox, archive,
-    recordEvent, syncClaudeTelemetry, importTelemetry, migrate, usage,
+    recordEvent, syncClaudeTelemetry, importTelemetry, importHostExecution, migrate, usage,
     runtimeApiVersion, version
   } = api;
   const die = fail;
@@ -209,6 +209,11 @@ export async function routeRuntimeCommand(command, values, api) {
     case "telemetry-sync":
       syncClaudeTelemetry(values[0], { source: values[1] || null }); break;
     case "telemetry-import": importTelemetry(values[0], values.slice(1)); break;
+    case "host-execution-import": {
+      if (values.length !== 2)
+        die("telemetry host-import requires <change> <result.json>");
+      importHostExecution(values[0], values[1]); break;
+    }
     case "migrate": migrate(values); break;
     case "api-version": console.log(runtimeApiVersion); break;
     case "version": console.log(version); break;

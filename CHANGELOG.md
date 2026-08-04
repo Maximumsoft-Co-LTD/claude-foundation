@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Versioned instruction provenance** — plans, packets, proofs, and host
+  telemetry now carry content-addressed instruction manifests without storing
+  prompt text. A validated host-execution envelope records requested and actual
+  models, attempts, usage, fallback reasons, and failure classes through
+  `telemetry host-import`.
+- **Current-runtime dashboard projection** — `dashboard snapshot --json`
+  exposes a bounded, read-only `.foundation` view for team telemetry while the
+  client retains an isolated `.workflow` fallback for older installations.
+- **Harness reliability contracts** — deterministic prompt/skill regression
+  gates, an audit-first phase mutation guard, and an opt-in bounded retry
+  primitive cover instruction integrity, unsafe phase writes, and explicitly
+  idempotent infrastructure failures.
+
+### Changed
+
+- **Observable model execution** — metrics distinguish actual host attempts,
+  fallback outcomes, and instruction revisions; missing usage remains unknown
+  instead of being fabricated as zero. Dashboard heartbeats also report their
+  source schema and Foundation version.
+- **Protocol bundle 2.7** — the runtime advances to 2.7.0 / API 13, packet
+  schema 5, agent-plan schema 3, and review-packet schema 3 for additive
+  instruction provenance and host execution metadata.
+
+### Security
+
+- **Phase-aware mutation auditing** — Edit, Write, Notebook, and mutating Bash
+  activity is checked against Change, Build, Prove, and Land boundaries. The
+  rollout defaults to audit mode and can move to blocking only after the host
+  supplies explicit phase/workspace context and false positives are reviewed.
+
 ## [3.1.7] - 2026-08-04
 
 ### Changed

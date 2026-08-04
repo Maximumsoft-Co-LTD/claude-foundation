@@ -27,6 +27,10 @@ run "feedback review" sh "$HERE/harness/run-feedback-review-tests.sh"
 run "harness contracts" sh "$HERE/harness/run-harness-tests.sh"
 run "installer smoke" sh "$HERE/harness/run-installer-tests.sh"
 run "current hook contracts" sh "$HERE/hooks/run-hook-tests.sh"
+run "phase mutation guard" sh "$HERE/hooks/run-phase-mutation-guard-tests.sh"
+run "instruction contracts" sh "$HERE/harness/run-instruction-contract-tests.sh"
+run "instruction provenance and host execution" sh "$HERE/harness/run-provenance-contract-tests.sh"
+run "bounded infrastructure retry" node "$HERE/harness/run-bounded-retry-tests.mjs"
 run "dashboard contracts" npm --prefix "$ROOT/dashboard" test
 
 if [ "$failed" -eq 0 ]; then

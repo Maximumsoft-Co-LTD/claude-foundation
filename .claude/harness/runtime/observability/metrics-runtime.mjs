@@ -152,6 +152,12 @@ export function createMetricsRuntime({
     for (const row of phaseContextRows)
       contextModes[row.contextMode || "unknown"] =
         Number(contextModes[row.contextMode || "unknown"] || 0) + 1;
+    const hostAttemptEvents = events.filter((event) => event.attempt !== null && event.attempt !== undefined);
+    const byAttemptStatus = hostAttemptEvents.reduce((result, event) => {
+      const status = event.attemptStatus || "unknown";
+      result[status] = Number(result[status] || 0) + 1;
+      return result;
+    }, {});
     output(JSON.stringify({
       version: 3, changeId: id,
       wallTimeMs,
@@ -172,6 +178,13 @@ export function createMetricsRuntime({
       byModel: groupUsage(events, "modelId"),
       byRepository: groupUsage(events, "repositoryId"),
       byTask: groupUsage(events, "taskId"),
+      hostExecution: {
+        attempts: hostAttemptEvents.length,
+        fallbacks: hostAttemptEvents.filter((event) => event.fallbackReason).length,
+        byAttemptStatus,
+        instructionManifestDigests: [...new Set(events
+          .map((event) => event.instructionManifestDigest).filter(Boolean))].sort()
+      },
       budget: {
         lifetime: budget.lifetime,
         window: budget.window,

@@ -30,7 +30,7 @@ profile**) used consistently across chips, charts, and tables.
 │                                     │  POST     │                                         │
 │ every 30s   → heartbeat             │ /api/     │  in-memory Map  ── presence (75s TTL)   │
 │ every 60s   → repo scan             │ heartbeat │        │                                 │
-│   • .workflow/*/state.json → runs   │           │        ▼ every heartbeat                │
+│   • dashboard snapshot API → runs  │           │        ▼ every heartbeat                │
 │     + artifact mtimes (funnel)      │           │  SQLite (node:sqlite, Node ≥ 24)        │
 │   • git diff merge-base..worktree   │           │   agents / heartbeats / runs /          │
 │     → changed files + line ranges   │           │   usage_daily / sessions_daily / tools /│
@@ -95,7 +95,7 @@ time** before rendering the weekday × hour heatmap and daily totals.
 
 ### 2. Repo scan — working-in, conflicts, runs, commits, follow-ups
 
-Every `SCAN_INTERVAL` (60 s), scoped to repos that contain `.workflow/` under
+Every `SCAN_INTERVAL` (60 s), scoped to Foundation repos under
 the scan roots (bounded by `SCAN_DEPTH` and repo/file caps; `find` prunes
 `node_modules`, `.git`, `Library`, …):
 
@@ -115,7 +115,12 @@ the scan roots (bounded by `SCAN_DEPTH` and repo/file caps; `find` prunes
   (padded by 3 lines, like git's merge context) become a ⚠ conflict. Each
   detection is also upserted into `conflict_log` (history) and every reported
   file into `file_edits` (hotspots).
-- **`/dev` runs** — `.workflow/*/state.json` gives run id/type/**size**/phase/
+- **Foundation changes** — for projects with `.foundation/runtime/`, the client
+  calls the stable, read-only `claude-foundation dashboard snapshot --json`
+  projection. It emits whitelisted lifecycle, blocker, budget, and evidence
+  metadata only—never prompts, tool payloads, or provider output. A malformed
+  runtime record is isolated so it cannot break the machine scan. Legacy
+  `.workflow/*/state.json` remains a migration fallback and gives run id/type/**size**/phase/
   timestamps **and the run's owner**: the orchestrator writes `owner` /
   `owner_email` (git identity) into state.json at run creation; for older runs
   the client falls back to the author of the first commit that touched the run
@@ -246,6 +251,7 @@ Server env: `SHARED_KEY` (required), `VIEW_KEY` (defaults to `SHARED_KEY`),
 | `claude-foundation dashboard-down` | Stop it (sends an offline beat first). |
 | `claude-foundation dashboard-status` | Is it running? |
 | `claude-foundation dashboard --key <k>` | Foreground loop; `--once` = single beat (debugging). |
+| `claude-foundation dashboard snapshot --json` | Print the current project's versioned, read-only runtime projection. |
 
 ### Options
 

@@ -59,6 +59,11 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
     workspaceSnapshotId: row.workspaceSnapshotId || snapshot.id || null,
     changeId: id,
     source: format === "claude" ? "claude-transcript" : format,
+    instructionManifestDigest: row.instructionManifestDigest || null,
+    attempt: row.attempt ?? null,
+    attemptStatus: row.attemptStatus || null,
+    fallbackReason: row.fallbackReason || null,
+    failureClass: row.failureClass || null,
     sourcePathHash: context.sourcePath
       ? createHash("sha256").update(context.sourcePath).digest("hex") : null
   };

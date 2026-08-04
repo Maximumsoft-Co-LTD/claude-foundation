@@ -7,6 +7,8 @@ implementation is grouped by domain:
 - `evidence/` — evidence contracts, artifacts, proof, review, CI, and provider execution.
 - `workflow/` — change, agent, repository, sandbox, authority, Land, and archive state machines.
 - `observability/` — telemetry ingestion, normalization, and read-only metrics reporting.
+- `contracts/` — portable schemas for instruction provenance and host execution results.
+- `reliability/` — opt-in bounded primitives for explicitly idempotent infrastructure operations.
 
 ## Dependency rules
 

@@ -8,6 +8,9 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:pa
 import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createTelemetryRuntime } from "./runtime/observability/telemetry-runtime.mjs";
+import {
+  createHostExecutionStore, hostExecutionTelemetryRows
+} from "./runtime/observability/host-execution-contract.mjs";
 import { createHostAttestationRuntime } from "./runtime/evidence/attestation.mjs";
 import { validateSignedCiEnvelope } from "./runtime/evidence/signed-ci.mjs";
 import { createAuthorityStore } from "./runtime/workflow/authority.mjs";
@@ -24,6 +27,7 @@ import {
 } from "./runtime/evidence/evidence-results.mjs";
 import { createFlagParser } from "./runtime/core/cli-flags.mjs";
 import { createProcessRuntime } from "./runtime/core/process-runtime.mjs";
+import { createInstructionManifest } from "./runtime/core/instruction-manifest.mjs";
 import { createAgentPlanner } from "./runtime/workflow/agent-planning.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createLandJournal } from "./runtime/workflow/land-journal.mjs";
@@ -49,17 +53,17 @@ import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 
-const VERSION = "2.6.0";
-const RUNTIME_API_VERSION = "12";
+const VERSION = "2.7.0";
+const RUNTIME_API_VERSION = "13";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
-const PACKET_SCHEMA_VERSION = "4";
-const AGENT_PLAN_SCHEMA_VERSION = "2";
+const PACKET_SCHEMA_VERSION = "5";
+const AGENT_PLAN_SCHEMA_VERSION = "3";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const REVIEW_PROTOCOL_VERSION = "2";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
-const REVIEW_PACKET_SCHEMA_VERSION = "2";
+const REVIEW_PACKET_SCHEMA_VERSION = "3";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "1";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
@@ -134,6 +138,7 @@ const LEASES = join(ROOT, ".foundation", "leases");
 const PROTOTYPES = join(ROOT, ".foundation", "prototypes");
 const ATTESTATIONS = join(ROOT, ".foundation", "attestations");
 const AUTHORITY = join(ROOT, ".foundation", "authority");
+const INSTRUCTION_MANIFESTS = join(ROOT, ".foundation", "instruction-manifests");
 const CHANGES = join(ROOT, "openspec", "changes");
 mkdirSync(RUNTIME, { recursive: true });
 mkdirSync(RECEIPTS, { recursive: true });
@@ -145,6 +150,7 @@ mkdirSync(PLANS, { recursive: true });
 mkdirSync(LEASES, { recursive: true });
 mkdirSync(ATTESTATIONS, { recursive: true });
 mkdirSync(AUTHORITY, { recursive: true });
+mkdirSync(INSTRUCTION_MANIFESTS, { recursive: true });
 mkdirSync(CHANGES, { recursive: true });
 
 const operationStartedAt = Date.now();
@@ -231,6 +237,32 @@ function writeJson(path, value) {
 }
 
 function now() { return new Date().toISOString(); }
+function recordInstructionManifest(id, phase, options = {}) {
+  const command = phase === "review" ? "prove" : phase;
+  if (!["change", "build", "prove", "land"].includes(command)) return null;
+  const instructionPaths = [
+    `.claude/commands/${command}.md`,
+    ".claude/orchestrator.md",
+    ".claude/rules/fundamentals.md"
+  ];
+  // Minimal legacy/test installations may contain the runtime without the host
+  // instruction surface. Preserve their lifecycle behavior and report absent
+  // provenance instead of turning observability into a runtime blocker.
+  if (instructionPaths.some((path) => !existsSync(join(ROOT, path)))) return null;
+  const manifest = createInstructionManifest({
+    root: ROOT,
+    foundationVersion: VERSION,
+    command,
+    commandPath: instructionPaths[0],
+    orchestratorPath: ".claude/orchestrator.md",
+    rulePaths: [".claude/rules/fundamentals.md"],
+    skills: [],
+    requestedModel: options.requestedModel || null
+  });
+  const scope = String(options.scope || "global").replace(/[^A-Za-z0-9._-]/g, "-");
+  writeJson(join(INSTRUCTION_MANIFESTS, id, `${command}-${scope}.json`), manifest);
+  return manifest;
+}
 let repositoryTopology;
 const stateRuntime = createStateRuntime({
   root: ROOT,
@@ -418,6 +450,20 @@ const {
   taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
   fail: die
 });
+const hostExecutionStore = createHostExecutionStore({ root: ROOT, now });
+function importHostExecution(id, source) {
+  loadRuntime(id);
+  const path = resolve(process.cwd(), source);
+  if (!existsSync(path)) die(`host execution result not found: ${source}`);
+  const result = hostExecutionStore.importExecution(id, readJson(path));
+  const imported = appendTelemetryRows(
+    id,
+    hostExecutionTelemetryRows(result.execution),
+    "host-execution",
+    { snapshot: readJson(snapshotPath(id), {}) }
+  );
+  console.log(`HOST EXECUTION ${id}: ${result.duplicate ? "duplicate" : "recorded"}; imported ${imported}`);
+}
 packetRuntime = createPacketRuntime({
   ROOT,
   EXCLUDED_WORKSPACE_DIRS,
@@ -462,6 +508,7 @@ packetRuntime = createPacketRuntime({
   serializedJson,
   foundationPolicy,
   recordContextMetric,
+  recordInstructionManifest,
   fail: die
 });
 const {
@@ -728,6 +775,7 @@ const {
   compactStrings,
   serializedJson,
   recordContextMetric,
+  recordInstructionManifest,
   showPacket,
   fail: die
 });
@@ -941,6 +989,13 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
   readJson,
   pathInside,
   validateArtifact,
+  instructionProvenance: (id) => {
+    const manifest = recordInstructionManifest(id, "prove", { scope: "proof" });
+    return manifest ? {
+      schemaVersion: manifest.schemaVersion,
+      manifestDigest: manifest.manifestDigest
+    } : null;
+  },
   now,
   fail: die
 });
@@ -1512,6 +1567,7 @@ await routeRuntimeCommand(command, values, {
   recordEvent,
   syncClaudeTelemetry,
   importTelemetry,
+  importHostExecution,
   migrate,
   usage,
   runtimeApiVersion: RUNTIME_API_VERSION,
