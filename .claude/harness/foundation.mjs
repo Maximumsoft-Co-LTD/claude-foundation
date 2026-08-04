@@ -50,7 +50,7 @@ import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 
 const VERSION = "2.6.0";
-const RUNTIME_API_VERSION = "11";
+const RUNTIME_API_VERSION = "12";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
@@ -1300,7 +1300,7 @@ function budgetAuditPath(id) {
   return join(LOGS, id, "budget-events.jsonl");
 }
 
-function appendBudgetAudit(id, action, reason, previous, current) {
+function appendBudgetAudit(id, action, reason, decisionRef, previous, current) {
   const path = budgetAuditPath(id);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify({
@@ -1308,6 +1308,7 @@ function appendBudgetAudit(id, action, reason, previous, current) {
     changeId: id,
     action,
     reason,
+    decisionRef,
     previous,
     current,
     actor: process.env.USER || process.env.LOGNAME || "operator",
@@ -1318,6 +1319,9 @@ function appendBudgetAudit(id, action, reason, previous, current) {
 function continueBudget(id, flags) {
   const reason = String(flags.reason || "").trim();
   if (!reason) die("budget continue requires --reason <reason>");
+  const decisionRef = String(flags["decision-ref"] || "").trim();
+  if (!decisionRef)
+    die("budget continue requires --decision-ref <host-user-decision>; ask the user whether to continue, rescope, or pause before opening another window");
   const state = loadRuntime(id);
   const budget = ensureBudgetState(state);
   const decision = applyBudgetDecision(state);
@@ -1368,13 +1372,13 @@ function continueBudget(id, flags) {
   };
   try {
     saveRuntime(state);
-    appendBudgetAudit(id, "continue", reason, previous, auditWindow);
+    appendBudgetAudit(id, "continue", reason, decisionRef, previous, auditWindow);
   } catch (error) {
     budget.window = previous;
     try { saveRuntime(state); } catch { /* preserve the original failure */ }
     throw error;
   }
-  console.log(`BUDGET CONTINUED ${id}\n  run: ${runId}\n  reason: ${reason}`);
+  console.log(`BUDGET CONTINUED ${id}\n  run: ${runId}\n  reason: ${reason}\n  decision: ${decisionRef}`);
 }
 
 function readJsonLines(path) {

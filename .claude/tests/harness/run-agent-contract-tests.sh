@@ -5,6 +5,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 
+assert_file_contains "agent contract translates machine output for users" \
+  "$ROOT/.claude/harness/AGENT.md" "Harness output is a machine handoff"
+assert_file_contains "agent contract forbids pass-biased decisions" \
+  "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
+assert_file_contains "prove command uses the authority bridge" \
+  "$ROOT/.claude/commands/prove.md" "authority request"
+assert_file_contains "prove command forbids raw readiness output" \
+  "$ROOT/.claude/commands/prove.md" "Never expose raw readiness JSON"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"

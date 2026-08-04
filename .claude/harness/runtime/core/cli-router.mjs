@@ -76,7 +76,7 @@ export async function routeRuntimeCommand(command, values, api) {
     case "metrics": showMetrics(values[0]); break;
     case "budget-continue": {
       const { flags, rest } = parseStrictCommandFlags(values, "budget continue", {
-        value: ["reason", "run"]
+        value: ["reason", "run", "decision-ref"]
       });
       if (rest.length !== 1) die("budget continue requires exactly one change");
       continueBudget(rest[0], flags); break;

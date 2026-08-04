@@ -107,6 +107,18 @@ export function createLandJournal({
     } catch (error) {
       journal.status = "manual-recovery";
       journal.recoveryError = error.message;
+      journal.decision = {
+        kind: "manual-recovery",
+        summary: "The target changed during rollback, so Foundation stopped without overwriting the divergent content.",
+        options: [
+          { id: "inspect", outcome: "Inspect the target and transaction backup before choosing a recovery." },
+          { id: "keep-current", outcome: "Preserve the current target and abandon automatic rollback." },
+          { id: "restore-backup", outcome: "Restore the recorded backup after explicitly resolving the divergence." },
+          { id: "pause", outcome: "Leave the journal pending and make no further changes." }
+        ],
+        recommended: "inspect",
+        transactionRoot: transactionRoot(journal.changeId, journal.transactionId)
+      };
       save(journal);
       throw error;
     }

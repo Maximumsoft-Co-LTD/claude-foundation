@@ -162,6 +162,8 @@ export function createChangeValidationRuntime({
       fail(`resolve impact for '${id}'`);
     if (!["isolated", "coupled"].includes(state.coupling || ""))
       fail(`resolve coupling for '${id}'`);
+    if (state.acceptance?.decision === "undecided")
+      fail(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
 
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);

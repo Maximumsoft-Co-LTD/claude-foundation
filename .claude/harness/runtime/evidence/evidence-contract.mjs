@@ -392,6 +392,7 @@ export function createEvidenceContract({
     const value = state.acceptance || {};
     return {
       version: Number(value.version || 1),
+      decision: value.decision || (value.required ? "required" : "legacy-not-required"),
       required: Boolean(value.required),
       reason: value.required ? String(value.reason || "").trim() || null : null,
       claimIds: value.required ? [...new Set(value.claimIds || [])].sort() : [],
@@ -475,4 +476,3 @@ export function createEvidenceContract({
     executionFingerprint
   };
 }
-

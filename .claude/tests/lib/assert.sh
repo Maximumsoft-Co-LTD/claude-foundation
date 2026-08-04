@@ -56,6 +56,15 @@ assert_contains() {
   if printf '%s' "$2" | grep -qF -- "$3"; then pass "$1"; else fail "$1 — '$3' not found in output"; fi
 }
 
+# assert_not_contains <label> <haystack-string> <fixed-substring>
+assert_not_contains() {
+  if printf '%s' "$2" | grep -qF -- "$3"; then
+    fail "$1 — unexpected '$3' in output"
+  else
+    pass "$1"
+  fi
+}
+
 # assert_cmd_zero <label> <cmd> [args...] — run cmd quietly, expect exit 0.
 assert_cmd_zero() {
   _label="$1"; shift

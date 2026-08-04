@@ -477,8 +477,14 @@ claude-foundation proof run <change-id>
 ```
 
 For changes that also require external review, collect project-owned evidence
-first with `claude-foundation proof collect <change-id>`, record the review, then
-run `proof run` to reuse the collected receipts and finalize.
+first with `claude-foundation proof collect <change-id>`. The agent then creates
+an authority request, explains the review packet in ordinary language, and asks
+whether to inspect it, send it to an independent reviewer, or pause. After a real
+response is recorded, `proof run` reuses the collected receipts and finalizes.
+
+Users never need to construct receipt commands, provenance JSON, provider
+metadata, or workspace hashes. Those remain machine protocol and are shown only
+when technical detail is requested.
 
 See [Executable evidence adapters](.claude/harness/EVIDENCE.md) when wiring a
 new provider or browser workflow.
@@ -583,7 +589,7 @@ claude-foundation change validate <change-id>
 claude-foundation change audit <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
-claude-foundation budget continue <change-id> --reason "finish required proof"
+claude-foundation budget continue <change-id> --reason "finish required proof" --decision-ref <host-user-decision>
 claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>

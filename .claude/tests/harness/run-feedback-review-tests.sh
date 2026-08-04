@@ -70,8 +70,12 @@ sed 's/- \[ \]/- [x]/g' openspec/changes/choose-final-interaction/tasks.md \
   > "$TMP/accepted-tasks.md"
 cp "$TMP/accepted-tasks.md" openspec/changes/choose-final-interaction/tasks.md
 acceptance_readiness="$(node .claude/harness/foundation.mjs proof-readiness choose-final-interaction || true)"
-assert_contains "readiness emits human acceptance grammar" \
-  "$acceptance_readiness" "--acceptor <human> --decision accept"
+assert_contains "readiness emits a human acceptance decision" \
+  "$acceptance_readiness" '"kind": "human-acceptance"'
+assert_contains "acceptance decision preserves rejection and uncertainty" \
+  "$acceptance_readiness" '"responseStatuses": ['
+assert_not_contains "readiness does not preselect acceptance" \
+  "$acceptance_readiness" "--decision accept"
 prototype_selection="$PWD/.foundation/prototypes/tiny-copy-edit/selection.md"
 ln -s "$prototype_selection" prototype-selection-link
 for rejected in \
@@ -226,7 +230,7 @@ assert_cmd_fails_with "acceptance cannot use an automated adapter" \
 
 node .claude/harness/foundation.mjs new 'Public compatibility contract' >/dev/null
 node .claude/harness/foundation.mjs resolve public-compatibility-contract \
-  --impact medium --coupling isolated >/dev/null
+  --impact medium --coupling isolated --acceptance-not-required >/dev/null
 jq '.claims[0].impact = "medium" | .claims[0].capabilities = ["compatibility"]' \
   openspec/changes/public-compatibility-contract/evidence.yaml \
   > "$TMP/public-compatibility.json"
@@ -247,7 +251,7 @@ assert_cmd_fails_with "review cannot use an automated adapter" \
 # Critical semantics require independent and diverse review provenance.
 node .claude/harness/foundation.mjs new 'Irreversible payment migration' >/dev/null
 node .claude/harness/foundation.mjs resolve irreversible-payment-migration \
-  --impact high --coupling coupled --security migration >/dev/null
+  --impact high --coupling coupled --security migration --acceptance-not-required >/dev/null
 jq '.claims = [range(0; 80) as $n | {
       id: ("review-claim-" + ($n|tostring)),
       scenario: ("Reviewer verifies a long seeded critical behavior, compatibility boundary, rollback constraint, and observable result for claim " + ($n|tostring)),
@@ -488,7 +492,7 @@ assert_cmd_zero "protocol bundle advertises feedback protocols" \
 
 node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null
 node .claude/harness/foundation.mjs resolve missing-recorded-base \
-  --impact high --coupling isolated >/dev/null
+  --impact high --coupling isolated --acceptance-not-required >/dev/null
 printf 'committed after recorded base\n' >> app.txt
 git add app.txt
 git commit -qm 'committed after recorded base'

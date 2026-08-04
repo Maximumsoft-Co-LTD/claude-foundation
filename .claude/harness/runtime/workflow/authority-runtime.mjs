@@ -49,11 +49,30 @@ export function createAuthorityRuntime({
     const state = loadRuntime(id);
     const contract = evidence(id);
     const acceptance = resolvedAcceptance(id, state, contract);
+    const context = reviewPacketValue(id);
+    const claims = contract.claims.filter((claim) => acceptance.claimIds.includes(claim.id))
+      .map((claim) => ({
+        id: claim.id,
+        scenario: claim.scenario,
+        impact: claim.impact,
+        criterion: `Confirm the final result satisfies: ${claim.scenario}`
+      }));
     return {
       version: Number(protocolVersion), packetType: "acceptance", changeId: id,
       workspaceHash: relevantHash(id), reason: acceptance.reason,
-      claims: contract.claims.filter((claim) => acceptance.claimIds.includes(claim.id))
-        .map((claim) => ({ id: claim.id, scenario: claim.scenario, impact: claim.impact })),
+      intent: state.intent,
+      claims,
+      inspection: {
+        workspaces: context.changedSurface?.inspection || [],
+        changedSurface: context.changedSurface || null,
+        decisions: context.decisions || null,
+        automatedEvidence: context.evidence || []
+      },
+      response: {
+        statuses: ["pass", "fail", "inconclusive", "error"],
+        instructions: "Inspect the final workspace against every criterion. Pass only when all criteria are satisfied; otherwise reject, report uncertainty, or pause without a response.",
+        requiredForPass: ["named human", "criterion observations", "durable artifact or reference"]
+      },
       requiredActor: "human"
     };
   }

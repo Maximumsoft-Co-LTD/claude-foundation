@@ -127,7 +127,11 @@ export function createChangeLifecycle({
       impact: schema === "foundation-rapid" ? "low" : null,
       coupling: schema === "foundation-rapid" ? "isolated" : null,
       securityTriggers: [], reviewRequired: false, evidenceCapabilities: [],
-      acceptance: { version: 2, required: false, reason: null, claimIds: [], declaredAt: null },
+      acceptance: {
+        version: 2,
+        decision: schema === "foundation-rapid" ? "not-required" : "undecided",
+        required: false, reason: null, claimIds: [], declaredAt: null
+      },
       reviewHistory: { version: 1, aiAttempts: 0, totalAttempts: 0, chainHead: null },
       workspace: { mode: "current", path: root, baseHead: gitHead(root) },
       budget: initialBudget(schema, id),
@@ -151,6 +155,7 @@ export function createChangeLifecycle({
       nonGoals: ["Name one explicit non-goal"],
       decisions: [{ choice: "Use the smallest isolated change", why: "Minimize risk", rejected: "Broader redesign" }],
       risks: [{ risk: "Behavior regression", mitigation: "Focused deterministic test", owner: "implementation" }],
+      acceptance: { required: false, reason: null, claimIds: [] },
       tasks: [{ id: "T001", outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], verify: "replace-with-focused-command" }],
       claims: [{ id: "replace-with-stable-claim-id", scenario: "Observable outcome passes", impact: "low", capabilities: ["test"] }],
       specs: [{ name: "unused-by-rapid", requirement: "Bounded outcome", description: "The system SHALL provide the outcome.", scenario: "Focused behavior", when: "the bounded input occurs", then: "the expected result is returned" }],
@@ -196,6 +201,7 @@ export function createChangeLifecycle({
       if (!reason) fail("--acceptance-required requires --acceptance-reason");
       state.acceptance = {
         version: 2,
+        decision: "required",
         required: true,
         reason,
         claimIds: String(flags["acceptance-claims"] || "").split(",")
@@ -204,7 +210,10 @@ export function createChangeLifecycle({
         declaredAt: now()
       };
     } else if (flags["acceptance-not-required"])
-      state.acceptance = { version: 2, required: false, reason: null, claimIds: [], declaredAt: null };
+      state.acceptance = {
+        version: 2, decision: "not-required", required: false,
+        reason: null, claimIds: [], declaredAt: now()
+      };
     if (state.schema === "foundation-rapid" &&
         (state.impact !== "low" || state.coupling !== "isolated" || state.reviewRequired ||
          state.acceptance?.required)) {
@@ -212,7 +221,7 @@ export function createChangeLifecycle({
       state.upgradedFrom = "foundation-rapid";
     }
     saveRuntime(state);
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.required ? "required" : "not required"}\n  security: ${state.securityTriggers.join(", ") || "none"}`);
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}`);
   }
 
   function startAtomic(draftPath) {
@@ -222,6 +231,8 @@ export function createChangeLifecycle({
     const impact = draft.impact || "low";
     const coupling = draft.coupling || "isolated";
     const securityTriggers = draft.securityTriggers || [];
+    if (!draft.acceptance || typeof draft.acceptance.required !== "boolean")
+      fail("start draft requires acceptance.required true|false from an explicit user-facing decision");
     if (!["low", "medium", "high"].includes(impact))
       fail("start draft impact must be low|medium|high");
     if (!["isolated", "coupled"].includes(coupling))
@@ -234,14 +245,18 @@ export function createChangeLifecycle({
       fail("start draft requires executable evidence wiring");
     const rapid = impact === "low" && coupling === "isolated" &&
       securityTriggers.filter((trigger) => trigger.toLowerCase() !== "none").length === 0 &&
-      !draft.reviewRequired;
+      !draft.reviewRequired && !draft.acceptance?.required;
     const id = createChange(draft.intent, { rapid, draft: draftPath, id: draft.id });
     resolveChange(id, {
       impact,
       coupling,
       size: draft.size || (rapid ? "xs" : "S"),
       security: securityTriggers.join(","),
-      review: Boolean(draft.reviewRequired)
+      review: Boolean(draft.reviewRequired),
+      "acceptance-required": Boolean(draft.acceptance?.required),
+      "acceptance-not-required": !draft.acceptance?.required,
+      "acceptance-reason": draft.acceptance?.reason || undefined,
+      "acceptance-claims": (draft.acceptance?.claimIds || []).join(",") || undefined
     });
     if (loadRuntime(id).schema === "foundation-standard") materializeDraft(id, draft);
     validate(id, "root", { quiet: true });

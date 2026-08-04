@@ -102,17 +102,55 @@ export function createProofReadinessRuntime({
     const capability = providerCapability(provider, providerConfig(id, provider));
     if (capability === "review") return {
       provider,
-      command: `claude-foundation packet ${id} --phase review`,
-      recordAI: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type ai --reviewer-identity <reviewer> --reviewer-provider-family <provider> --reviewer-model-family <family> --reviewer-model <model> --reviewer-session <session> --subject-provenance '{"type":"ai","identity":"<implementer>","sessionId":"<session>","providerFamily":"<provider>","modelFamily":"<family>","modelId":"<model>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`,
-      recordHuman: `claude-foundation evidence record ${id} ${provider} pass --reviewer-type human --reviewer-identity <reviewer> --subject-provenance '{"type":"human","identity":"<implementer>"}' --unresolved-blockers 0 --observed <summary> --reference <uri>`
+      kind: "user-decision",
+      request: {
+        command: `claude-foundation authority request ${id} --type review`,
+        packet: `claude-foundation packet ${id} --phase review`
+      },
+      decision: {
+        kind: "independent-review",
+        summary: "Automated evidence is ready, but an independent reviewer must inspect the current implementation before proof can finish.",
+        options: [
+          { id: "prepare-for-user", outcome: "Prepare a bounded review packet for the user to inspect." },
+          { id: "prepare-for-reviewer", outcome: "Prepare the packet for a fresh independent reviewer." },
+          { id: "pause", outcome: "Keep the change pending without recording a review result." }
+        ],
+        recommended: "prepare-for-reviewer",
+        responseStatuses: ["pass", "fail", "inconclusive", "error"]
+      }
     };
     if (capability === "acceptance") return {
       provider,
-      command: `claude-foundation evidence record ${id} ${provider} pass --acceptor <human> --decision accept --criterion <criterion> --observed <summary> --artifact <path>`
+      kind: "user-decision",
+      request: {
+        command: `claude-foundation authority request ${id} --type acceptance`
+      },
+      decision: {
+        kind: "human-acceptance",
+        summary: "A named person must inspect the final result and decide whether the declared acceptance criteria are satisfied.",
+        options: [
+          { id: "inspect", outcome: "Inspect the final result and then accept, reject, or report uncertainty." },
+          { id: "request-changes", outcome: "Reject the current result and describe what must change." },
+          { id: "pause", outcome: "Keep the change pending without an acceptance decision." }
+        ],
+        recommended: "inspect",
+        responseStatuses: ["pass", "fail", "inconclusive", "error"]
+      }
     };
     return {
       provider,
-      command: `claude-foundation evidence record ${id} ${provider} pass --observed <summary> --source <identity> --artifact <path>`
+      kind: "user-decision",
+      decision: {
+        kind: "external-evidence",
+        summary: `Provider '${provider}' needs verifiable evidence from outside the local harness.`,
+        options: [
+          { id: "provide-evidence", outcome: "Provide a real external result and durable reference." },
+          { id: "configure-provider", outcome: "Configure an equivalent project-owned executable provider." },
+          { id: "pause", outcome: "Keep the change pending without claiming a result." }
+        ],
+        recommended: "provide-evidence",
+        responseStatuses: ["pass", "fail", "inconclusive", "error"]
+      }
     };
   }
 
@@ -198,7 +236,7 @@ export function createProofReadinessRuntime({
         class: "active-work",
         reason: "host-owned work or leases must finish first"
       };
-    if (status === "NEEDS_EXTERNAL_EVIDENCE")
+    if (status === "NEEDS_USER_DECISION")
       return {
         eligible: false,
         class: "external-authority",
@@ -229,7 +267,7 @@ export function createProofReadinessRuntime({
       : issues.length ? "CONFIGURATION_ERROR"
         : leases.length ? "BLOCKED_BY_ACTIVE_WORK"
           : unavailable.length ? "INFRASTRUCTURE_ERROR"
-            : unconfigured.length ? "NEEDS_EXTERNAL_EVIDENCE" : "READY";
+          : unconfigured.length ? "NEEDS_USER_DECISION" : "READY";
     return {
       version: 1,
       changeId: id,
@@ -248,7 +286,7 @@ export function createProofReadinessRuntime({
           ? configurationRecovery(id, issues)
           : status === "BLOCKED_BY_ACTIVE_WORK"
             ? activeWorkRecovery(id, leases)
-            : status === "NEEDS_EXTERNAL_EVIDENCE"
+            : status === "NEEDS_USER_DECISION"
               ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
               : status === "INFRASTRUCTURE_ERROR"
                 ? unavailable.map((provider) => unavailableProviderRecovery(id, provider))

@@ -1,7 +1,9 @@
-# Interview replay
+# Human-interaction replay
 
-Drives a headless `/dev` run through its **real interview** and its **real gate**,
-answering both from a bank recorded off an actual interactive session.
+Tests the host-facing question and decision seam used by Foundation interactions.
+The deterministic matcher covers ordinary questions and approve/reject/pause-style
+gates; the optional live runner remains a compatibility probe for hosts that
+support `AskUserQuestion`.
 
 ```sh
 sh run-interview-tests.sh                      # deterministic, free (in run-all.sh)
@@ -13,12 +15,11 @@ sh capture-interview.sh --list                 # find a session to capture
 
 ## The gap this closes
 
-`/dev` Phase 1 asks the user questions with `AskUserQuestion`, and a headless
-`claude -p` has no UI to answer it. So every other live prompt in this repo is
-written *"do not ask clarifying questions — assume …"* with the acceptance
-criteria handed over inline. That makes the **interview a no-op by construction**.
-The gate has the mirror problem: the benchmark passes `--yes`, so it
-auto-approves and the **rejection branch has never executed**.
+Foundation agents ask users at material decision and authority boundaries, while
+a headless `claude -p` has no UI to answer. A replay bank lets deterministic and
+live compatibility tests exercise those questions without silently assuming an
+answer. Passing `--yes` or selecting only a success path would make rejection and
+pause behavior untested.
 
 Those two mechanisms — ask before building, stop for a human before building —
 are what distinguish a spec-driven workflow from vibe-coding. Until now the

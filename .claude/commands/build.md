@@ -6,7 +6,7 @@ argument-hint: <change>
 Build **$ARGUMENTS**.
 
 Validate; run `sandbox create <change>` or `sandbox sync`. Start from
-`packet <change> --phase build`; read references.
+`packet <change> --phase build`.
 
 For unattended execution, use one bare `--unattended` on doctor/create.
 Detection never authorizes; stop when blocked.
@@ -19,3 +19,6 @@ Edit only allowed sandbox paths. Run focused checks and update the sole ledger,
 code/configuration blockers before fresh Prove.
 
 Never replay history, mirror tasks, archive, commit, or Land.
+
+Translate readiness for the user. Follow deterministic recovery, but ask before
+structured decisions; never paste raw JSON or commands.

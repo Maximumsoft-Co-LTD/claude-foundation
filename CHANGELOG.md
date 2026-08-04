@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Human-first decision UX** — agent and orchestrator contracts now require
+  user-facing questions in natural language, translate machine envelopes and
+  statuses before presenting them, and offer honest choices to approve, reject,
+  pause, or report an inconclusive result without exposing harness syntax.
+- **Explicit acceptance and release authority** — Standard changes preserve
+  acceptance as undecided until a person responds, acceptance packets include
+  the intent, criteria, changed surface, decisions, and automated evidence a
+  reviewer needs, and budget continuation and Land recording bind the resulting
+  action to an auditable human decision reference. The expanded contract
+  advances the bundled runtime to API 12.
+
+### Fixed
+
+- **External evidence recovery no longer asks users to operate the harness** —
+  proof readiness returns a structured user decision instead of raw commands,
+  generated evidence placeholders, or instructions that could manufacture a
+  passing receipt; review and acceptance requests remain routed through their
+  real authority workflows.
+- **Recovery prompts stay actionable and reversible** — interrupted Land
+  operations describe plain-language inspect, keep-current, restore-backup, and
+  pause choices, while validation blocks unresolved required acceptance instead
+  of silently treating it as approved.
+- **UX contract regression coverage** — human-interaction, interview, installer,
+  agent-contract, and current OpenSpec documentation checks now run in the main
+  suite and reject leaked status tokens, hashes, receipt syntax, placeholders,
+  and decision flags in user-facing guidance.
+
 ## [3.1.6] - 2026-08-04
 
 ### Added

@@ -164,6 +164,9 @@ export function createLandRuntime({
     const commit = flags.commit;
     if (!repositoryId || !commit)
       fail("land record requires --repo <id> --commit <sha>");
+    const decisionRef = String(flags["decision-ref"] || "").trim();
+    if (!decisionRef)
+      fail("land record requires --decision-ref <host-user-decision>; ask the user to authorize binding this child commit before recording it");
     landCheck(id);
     const state = loadRuntime(id);
     const repository = repositoryById(id, repositoryId, state);
@@ -189,7 +192,7 @@ export function createLandRuntime({
       ci,
       ciRequired: Boolean(flags["ci-required"]),
       recordedAt: now(),
-      authority: "explicit-user-record"
+      authority: { kind: "host-user-decision", reference: decisionRef }
     };
     saveRuntime(state);
     console.log(`LAND RECORDED ${id}/${repositoryId}\n  commit: ${normalizedCommit}\n  ci: ${ci || "unknown"}`);

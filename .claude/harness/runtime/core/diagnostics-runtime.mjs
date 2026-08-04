@@ -356,7 +356,7 @@ Commands:
   providers
   packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
   metrics <change>
-  budget-continue <change> --reason <reason> [--run <id>]
+  budget-continue <change> --reason <reason> --decision-ref <ref> [--run <id>]
   validate <change>
   audit-change <change> [--json]
   hash <change>
@@ -380,7 +380,7 @@ Commands:
   prove <change>
   land-check <change>
   land-plan <change>
-  land-record <change> --repo <id> --commit <sha> [--ci pass|fail|pending]
+  land-record <change> --repo <id> --commit <sha> --decision-ref <ref> [--ci pass|fail|pending]
   land-pointers <change>
   land-resume <change>
   sandbox challenge <change>

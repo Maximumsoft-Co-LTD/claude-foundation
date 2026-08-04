@@ -120,6 +120,11 @@ claude-foundation authority record <change> --request <request-id> --response re
 Requests contain bounded packets and expire or become stale with the workspace.
 Responses must match the request identity and workspace, then pass the ordinary
 review or acceptance receipt validator. Completed requests cannot be replayed.
+Readiness exposes this boundary as a structured user decision with pass, fail,
+inconclusive, error, and pause paths. It never emits a pre-filled passing receipt.
+The agent translates the packet and owns the response artifact; users answer in
+ordinary language. Direct `evidence record` remains a low-level integration path,
+not the normal interactive recovery flow.
 
 ## Adapters
 
@@ -164,7 +169,8 @@ Acceptance is external and human-only. A passing receipt requires explicit claim
 scope, `--acceptor`, `--decision accept`, unique nonblank `--criterion` values,
 `--observed`, provenance, and a durable artifact or reference. Every read
 revalidates those fields, the contract reason, and final workspace identity.
-Acceptance is required only when the Change declares it.
+New standard changes must explicitly decide whether acceptance is required;
+silence remains `undecided` and blocks validation rather than becoming approval.
 
 ## Test and discovery
 

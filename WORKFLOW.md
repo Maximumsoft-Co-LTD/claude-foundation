@@ -279,11 +279,21 @@ validation pointers. `changes` also exposes non-archived runtime files whose
 active OpenSpec directories disappeared as `orphan-runtime`, and doctor reports
 how to restore or quarantine them.
 
+External authority returns `NEEDS_USER_DECISION`. Its `decision` envelope is a
+machine handoff for the agent, not text to paste to the user. The agent explains
+the outcome in the user's language, presents honest choices (including reject,
+inconclusive, or pause), and owns all commands and metadata after the user
+answers. Decision recovery never embeds a preselected passing receipt.
+
 When executable project evidence and external review are both required, run
 `claude-foundation proof collect <change>` first. It records workspace-bound
 receipts without finalizing proof, allowing the review packet to carry executed
 test evidence. After the external receipt is recorded, `proof run` reuses those
 receipts and finalizes atomically.
+
+The agent creates an `authority request`, presents its packet in human language,
+and records the real external response through `authority record`; the user does
+not construct receipt commands or provenance metadata.
 
 ## Review
 
@@ -304,8 +314,9 @@ attempt to its receipt payload, so deleting a receipt or renaming its provider
 cannot reset the limit. Missing or modified history fails closed. Workspace edits
 stale prior review.
 
-Human acceptance is separate from review and is required only when `/change`
-explicitly declares a subjective product or experience decision. Its receipt is
+Human acceptance is separate from review. New standard changes keep this choice
+`undecided` until `/change` explicitly records whether subjective product or
+experience acceptance is required. Its receipt is
 bound to explicit claim IDs, the final workspace, named nonblank criteria, human
 identity, observation, provenance, and a durable artifact or reference. Review and
 acceptance remain external-only; the deterministic runtime never invokes a model

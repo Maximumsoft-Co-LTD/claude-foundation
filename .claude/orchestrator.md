@@ -98,3 +98,19 @@ commits/CI, verify dependencies, stage checked gitlinks, re-Prove the composite
 identity, resume, then archive the control change last.
 
 `/dev` composes Change → Build → Prove only. It never Lands.
+
+## Human interaction boundary
+
+Runtime JSON, lifecycle constants, hashes, receipts, provider names, provenance
+flags, and canonical commands are agent/host protocol. Never paste them into a
+user-facing answer by default. Translate machine state into the user's language:
+what completed, what remains, why the system stopped, and which decision is
+needed.
+
+Only deterministic recovery may be followed automatically. A structured
+`decision` requires an explicit user answer. Present its honest alternatives,
+recommend one with a reason, and always preserve reject, inconclusive, or pause
+when those outcomes are valid. Never infer approval from silence or from the
+ability to invoke an authority command. The agent creates requests, response
+artifacts, CLI flags, and provenance records after the human decision; users do
+not assemble harness commands or JSON.

@@ -462,8 +462,14 @@ claude-foundation proof run <change-id>
 
 ถ้า change ต้องใช้ external review ให้รัน
 `claude-foundation proof collect <change-id>` ก่อน เพื่อเก็บหลักฐานที่รันได้ใน
-project โดยยังไม่ finalize จากนั้นบันทึก review receipt แล้วใช้ `proof run`
-เพื่อ reuse receipts และปิด proof
+project โดยยังไม่ finalize จากนั้น Agent จะสร้าง authority request อธิบาย
+review packet เป็นภาษาปกติ และถามว่าจะตรวจเอง ส่งให้ผู้ตรวจอิสระ หรือหยุดไว้ก่อน
+เมื่อมีผลตรวจจริงแล้ว Agent จึงบันทึก response และใช้ `proof run` เพื่อ reuse
+receipts และปิด proof
+
+ผู้ใช้ไม่ต้องประกอบ receipt command, provenance JSON, provider metadata หรือ
+workspace hash เอง รายละเอียดเหล่านี้เป็น protocol ภายในและจะแสดงเมื่อผู้ใช้
+ขอดูข้อมูลเชิงเทคนิคเท่านั้น
 
 ถ้า provider ที่ตั้งค่าไว้รันไม่ได้ `proof readiness` จะคืน
 `INFRASTRUCTURE_ERROR` พร้อม `next` ที่มีทางเลือกแบบ structured ได้แก่ ตรวจ
@@ -576,7 +582,7 @@ claude-foundation change validate <change-id>
 claude-foundation change audit <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
-claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ"
+claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ" --decision-ref <host-user-decision>
 claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>

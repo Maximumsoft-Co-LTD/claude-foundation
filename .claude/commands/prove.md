@@ -5,14 +5,14 @@ argument-hint: <change>
 
 Prove **$ARGUMENTS**.
 
-Start from `packet <change> --phase prove`, not Build history. When readiness
-requires external review or acceptance, run `proof collect`, then record the
-requested receipts. Run `proof run` for atomic execution, finalization, and
-audit. Budget exhaustion forbids exploration, not deterministic proof resume;
-fresh receipts are reused.
+Start from `packet <change> --phase prove`, not Build history. For external
+review or acceptance, run `proof collect` and `authority request`; explain the
+packet and ask whether to inspect, send, or pause. Record real responses through
+`authority record`. Run `proof run`; reuse fresh receipts.
 
-Follow only structured next commands. External passes require observation,
-provenance, and a durable artifact or reference. Give a required review packet
-to a fresh independent reviewer. Human acceptance inspects the final workspace.
+Follow deterministic steps, but stop on decisions. Never expose raw readiness JSON
+or ask users for receipt syntax, provenance, or placeholders. Responses may pass,
+fail, be inconclusive, or pause. Use a fresh independent reviewer when required;
+human acceptance inspects the final workspace.
 
 Never substitute self-review or automation, claim an unproven pass, or Land.

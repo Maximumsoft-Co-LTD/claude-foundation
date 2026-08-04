@@ -152,7 +152,7 @@ printf '%s\n' \
 assert_cmd_zero "structured draft scaffolds a complete agreement" \
   node .claude/harness/foundation.mjs new "Drafted change" --draft foundation-draft.json
 node .claude/harness/foundation.mjs resolve drafted-change \
-  --impact low --coupling isolated >/dev/null
+  --impact low --coupling isolated --acceptance-not-required >/dev/null
 assert_cmd_zero "drafted agreement validates without a second ledger" \
   node .claude/harness/foundation.mjs validate drafted-change
 assert_file_contains "draft task remains in tasks.md" \
@@ -202,8 +202,13 @@ cp "$TMP/operator-required-budget.json" \
   .foundation/runtime/missing-artifact-budget-recovery.json
 legacy_window_id="$(jq -r '.budget.window.id' \
   .foundation/runtime/missing-artifact-budget-recovery.json)"
+assert_cmd_fails_with "budget continuation stops for a user decision" \
+  "requires --decision-ref" \
+  node .claude/harness/foundation.mjs budget-continue \
+  missing-artifact-budget-recovery --reason "complete required artifacts"
 legacy_continue="$(node .claude/harness/foundation.mjs budget-continue \
-  missing-artifact-budget-recovery --reason "complete required artifacts")"
+  missing-artifact-budget-recovery --reason "complete required artifacts" \
+  --decision-ref fixture://user/continue-missing-artifact)"
 assert_contains "legacy operator-required state has a continuation route" \
   "$legacy_continue" "BUDGET CONTINUED"
 assert_eq "continuation without --run retains the active run identity" \
@@ -299,8 +304,14 @@ output="$(node .claude/harness/foundation.mjs new 'Profile owner update')"
 assert_contains "creates standard change" "$output" "CREATED profile-owner-update"
 assert_file_exists "runtime state created" ".foundation/runtime/profile-owner-update.json"
 assert_file_exists "delta spec created" "openspec/changes/profile-owner-update/specs/change/spec.md"
+node .claude/harness/foundation.mjs resolve profile-owner-update \
+  --impact medium --coupling isolated >/dev/null
+assert_cmd_fails_with "standard change stops for an explicit acceptance decision" \
+  "acceptance decision is unresolved" \
+  node .claude/harness/foundation.mjs validate profile-owner-update
 
-output="$(node .claude/harness/foundation.mjs resolve profile-owner-update --impact medium --coupling isolated)"
+output="$(node .claude/harness/foundation.mjs resolve profile-owner-update \
+  --impact medium --coupling isolated --acceptance-not-required)"
 assert_contains "resolver records impact" "$output" "impact: medium"
 assert_cmd_zero "standard change validates" node .claude/harness/foundation.mjs validate profile-owner-update
 pending_readiness="$(node .claude/harness/foundation.mjs proof-readiness \
@@ -350,7 +361,7 @@ jq '.budget.window.targetTokens = 1 | .budget.window.usedTokens = 1 | .budget.wi
   .foundation/runtime/profile-owner-update.json > "$TMP/proven-budget.json"
 cp "$TMP/proven-budget.json" .foundation/runtime/profile-owner-update.json
 if node .claude/harness/foundation.mjs budget-continue profile-owner-update \
-  --reason "run required proof" >/dev/null 2>&1; then
+  --reason "run required proof" --decision-ref fixture://user/continue-proof >/dev/null 2>&1; then
   fail "budget cannot extend work that is already deterministic and ready"
 else
   pass "budget cannot extend work that is already deterministic and ready"
@@ -450,7 +461,7 @@ assert_contains "proof readiness returns a typed ready state" "$readiness" '"sta
 # receipt instead of executing the provider again.
 node .claude/harness/foundation.mjs new 'Collect before review' >/dev/null
 node .claude/harness/foundation.mjs resolve collect-before-review \
-  --impact medium --coupling coupled >/dev/null
+  --impact medium --coupling coupled --acceptance-not-required >/dev/null
 printf '%s\n' '#!/usr/bin/env sh' \
   'count=0' \
   '[ ! -f .foundation/collect-count.txt ] || count="$(cat .foundation/collect-count.txt)"' \
@@ -471,11 +482,19 @@ printf '%s\n' \
   '}' > openspec/changes/collect-before-review/evidence.yaml
 sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/collect-before-review/tasks.md
 rm openspec/changes/collect-before-review/tasks.md.bak
+review_decision="$(node .claude/harness/foundation.mjs proof-readiness \
+  collect-before-review 2>/dev/null || true)"
+assert_contains "external review returns a user decision" \
+  "$review_decision" '"kind": "independent-review"'
+assert_contains "review decision routes through the authority bridge" \
+  "$review_decision" "authority request collect-before-review --type review"
+assert_not_contains "review recovery never manufactures a passing receipt" \
+  "$review_decision" "evidence record collect-before-review review pass"
 collect_output="$(node .claude/harness/foundation.mjs proof-collect collect-before-review)"
 assert_contains "proof collect completes without finalizing" \
   "$collect_output" '"proofFinalized": false'
 assert_contains "proof collect preserves the external review boundary" \
-  "$collect_output" '"status": "NEEDS_EXTERNAL_EVIDENCE"'
+  "$collect_output" '"status": "NEEDS_USER_DECISION"'
 assert_contains "proof collect reports its executed provider" \
   "$collect_output" '"test"'
 assert_eq "proof collect executes the provider once" "1" \
@@ -488,7 +507,8 @@ jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | 
   .foundation/runtime/collect-before-review.json > "$TMP/external-budget.json"
 cp "$TMP/external-budget.json" .foundation/runtime/collect-before-review.json
 if external_budget_error="$(node .claude/harness/foundation.mjs budget-continue \
-  collect-before-review --reason "wait for review" 2>&1)"; then
+  collect-before-review --reason "wait for review" \
+  --decision-ref fixture://user/wait-review 2>&1)"; then
   fail "external evidence cannot open a model budget window"
 else
   assert_contains "external evidence rejects model budget with a typed reason" \
@@ -538,7 +558,9 @@ assert_contains "unavailable provider offers external evidence" \
   "$unavailable_readiness" '"kind": "external-evidence"'
 assert_contains "unavailable provider offers safe reconfiguration" \
   "$unavailable_readiness" '"kind": "reconfigure"'
-assert_contains "external fallback still requires an artifact" \
+assert_contains "external fallback requires a durable real result" \
+  "$unavailable_readiness" 'Provide a real external result and durable reference.'
+assert_not_contains "external fallback does not expose an artifact placeholder" \
   "$unavailable_readiness" '--artifact <path>'
 assert_contains "reconfiguration preserves the declared claim contract" \
   "$unavailable_readiness" 'proves the same declared claims'
@@ -547,7 +569,8 @@ jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | 
 cp "$TMP/infrastructure-budget.json" \
   .foundation/runtime/unavailable-provider-recovery.json
 if infrastructure_budget_error="$(node .claude/harness/foundation.mjs budget-continue \
-  unavailable-provider-recovery --reason "retry provider" 2>&1)"; then
+  unavailable-provider-recovery --reason "retry provider" \
+  --decision-ref fixture://user/retry-provider 2>&1)"; then
   fail "infrastructure failure cannot open a model budget window"
 else
   assert_contains "infrastructure failure rejects model budget with a typed reason" \
@@ -908,7 +931,8 @@ budget_status="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
 assert_contains "metrics exposes completion-only mode" \
   "$budget_status" '"mode": "completion-only"'
 if budget_continue_output="$(node .claude/harness/foundation.mjs budget-continue \
-  tiny-copy-edit --reason "finish required proof" --run tiny-copy-edit 2>&1)"; then
+  tiny-copy-edit --reason "finish required proof" --run tiny-copy-edit \
+  --decision-ref fixture://user/continue-required-work 2>&1)"; then
   pass "operator can open an audited continuation window"
 else
   fail "operator can open an audited continuation window — $budget_continue_output"
@@ -925,7 +949,8 @@ cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 node .claude/harness/foundation.mjs event tiny-copy-edit \
   --request req-second-limit --operation build --input 2 >/dev/null
 if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
-  --reason "second required attempt" --run tiny-copy-edit >/dev/null 2>&1; then
+  --reason "second required attempt" --run tiny-copy-edit \
+  --decision-ref fixture://user/continue-second-attempt >/dev/null 2>&1; then
   fail "active run cannot extend its budget twice"
 else
   pass "active run cannot extend its budget twice"
@@ -1211,7 +1236,7 @@ assert_contains "repository topology discovers API submodule" "$repos" "api	subm
 assert_contains "repository topology discovers app submodule" "$repos" "app	submodule	app"
 node .claude/harness/foundation.mjs new 'Cross repository profile' >/dev/null
 node .claude/harness/foundation.mjs resolve cross-repository-profile \
-  --impact medium --coupling coupled >/dev/null
+  --impact medium --coupling coupled --acceptance-not-required >/dev/null
 printf '%s\n' \
   '{"version":1,"repositories":[' \
   '  {"id":"api","mode":"write","dependsOn":[]},' \
@@ -1402,12 +1427,18 @@ assert_cmd_zero "committed multi-repo work proves" \
   node .claude/harness/foundation.mjs prove cross-repository-profile
 git -C api merge -q --ff-only "$api_commit"
 git -C app merge -q --ff-only "$app_commit"
-assert_cmd_zero "explicit API commit is bound to Land" \
+assert_cmd_fails_with "Land record stops for explicit user authority" \
+  "requires --decision-ref" \
   node .claude/harness/foundation.mjs land-record cross-repository-profile \
   --repo api --commit "$api_commit" --ci pass
+assert_cmd_zero "explicit API commit is bound to Land" \
+  node .claude/harness/foundation.mjs land-record cross-repository-profile \
+  --repo api --commit "$api_commit" --ci pass \
+  --decision-ref fixture://user/land-api
 assert_cmd_zero "explicit app commit is bound to Land" \
   node .claude/harness/foundation.mjs land-record cross-repository-profile \
-  --repo app --commit "$app_commit" --ci pass
+  --repo app --commit "$app_commit" --ci pass \
+  --decision-ref fixture://user/land-app
 resume_stage="$(node .claude/harness/foundation.mjs land-resume \
   cross-repository-profile)"
 assert_contains "Land resume stages eligible root gitlinks transactionally" \

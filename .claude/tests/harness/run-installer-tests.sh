@@ -131,10 +131,16 @@ assert_eq "conditional recovery surface is bounded" "13" \
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
   jq -e '[.commands[] | select(.name == "proof collect" or .name == "proof run") |
     .idempotent] == [false, false]' "$TARGET/.claude/harness/commands.json"
+assert_cmd_zero "operator continuations and child Land records require decision references" \
+  jq -e '[.commands[] | select(.name == "budget continue" or .name == "land record") |
+    (.kind == "authority" and (.usage | contains("--decision-ref")))] | all' \
+    "$TARGET/.claude/harness/commands.json"
 assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
 assert_file_exists "Claude session context hook installed" \
   "$TARGET/.claude/hooks/session-context.sh"
 assert_file_exists "portable agent contract installed" "$TARGET/.claude/harness/AGENT.md"
+assert_file_contains "portable agent contract translates machine output" \
+  "$TARGET/.claude/harness/AGENT.md" "Harness output is a machine handoff"
 assert_file_exists "evidence adapter guide installed" "$TARGET/.claude/harness/EVIDENCE.md"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
 assert_file_exists "repository topology default installed" "$TARGET/openspec/repositories.yaml"
@@ -199,6 +205,8 @@ assert_contains "atomic start exposes a versioned draft template" \
   "$start_template" '"version": 1'
 assert_contains "atomic start template includes executable evidence" \
   "$start_template" '"adapter": "test-discovery"'
+assert_contains "atomic start template requires an acceptance decision" \
+  "$start_template" '"acceptance": {'
 printf '%s\n' '#!/usr/bin/env sh' \
   'mkdir -p test-results' \
   'printf "%s\n" "{\"numTotalTests\":1}" > test-results/atomic.json' \
@@ -209,6 +217,7 @@ printf '%s\n' \
   '{"version":1,"id":"atomic-start","intent":"Atomic start",' \
   '"why":"Reduce orchestration turns.","currentState":"The flow is manually scaffolded.",' \
   '"compatibility":"No public compatibility impact.",' \
+  '"acceptance":{"required":false,"reason":null,"claimIds":[]},' \
   '"changes":["Start one isolated rapid build."],"nonGoals":["No Land."],' \
   '"decisions":[{"choice":"Use atomic start","why":"Fewer turns","rejected":"Manual scaffolding"}],' \
   '"risks":[{"risk":"Invalid draft","mitigation":"Validate before Build","owner":"runtime"}],' \
@@ -252,6 +261,7 @@ printf '%s\n' \
   '"impact":"high","coupling":"coupled","size":"S","securityTriggers":["migration"],' \
   '"why":"Preserve exact payment values.","currentState":"Amounts use decimal strings.",' \
   '"compatibility":"Preserve the legacy amount field for mixed-version readers.",' \
+  '"acceptance":{"required":false,"reason":null,"claimIds":[]},' \
   '"changes":["Add exact integer cents."],"nonGoals":["No destructive rewrite."],' \
   '"decisions":[{"choice":"Add amountCents","why":"Exact arithmetic","rejected":"Floating point"}],' \
   '"risks":[{"risk":"Incorrect money conversion","mitigation":"Migration tests and review","owner":"implementation"}],' \
@@ -353,7 +363,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "11"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "12"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route >/dev/null 2>&1; then

@@ -7,7 +7,7 @@ export function createProofExecutionRuntime({
 }) {
   async function proofCollect(id) {
     const readiness = proofReadinessValue(id, "prove");
-    if (!["READY", "NEEDS_EXTERNAL_EVIDENCE"].includes(readiness.status)) {
+    if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
       console.log(JSON.stringify({
         ...readiness,
         command: "proof collect",
@@ -169,4 +169,3 @@ export function createProofExecutionRuntime({
 
   return { proofCollect, proofExecute, proofRun };
 }
-
