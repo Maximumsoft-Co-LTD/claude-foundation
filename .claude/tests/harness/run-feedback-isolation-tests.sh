@@ -69,12 +69,12 @@ help_all_text="$(bash "$ROOT/cli.sh" help --all)"
 assert_contains "full CLI help retains isolation diagnostics" \
   "$help_all_text" "sandbox inspect <change> [--json]"
 assert_contains "CLI help advertises guarded sandbox creation" \
-  "$help_text" "sandbox create <change> [--all] [--unattended]"
+  "$help_text" "sandbox create <change> [--all] [--unattended --attestation <file>]"
 
 # Exercise the fail-closed branch deterministically even when this suite itself
 # runs in a container. Only the installed fixture runtime is modified: strong
 # host markers are redirected to guaranteed-absent paths.
-RUNTIME="$TARGET/.claude/harness/foundation.mjs"
+RUNTIME="$TARGET/.claude/harness/runtime/evidence/attestation.mjs"
 sed -i.bak \
   -e 's|"/.dockerenv"|"/__foundation_test_absent_dockerenv__"|g' \
   -e 's|"/run/.containerenv"|"/__foundation_test_absent_containerenv__"|g' \
@@ -218,6 +218,42 @@ if printf '%s' "$ordinary_unknown" | grep -qF "unattended-security-boundary"; th
   fail "ordinary doctor remains free of unattended-only checks"
 else
   pass "ordinary doctor remains free of unattended-only checks"
+fi
+
+# A host can authorize unattended creation with a short-lived signed challenge.
+# The testing trust root is gated by FOUNDATION_TESTING and is unavailable in
+# production, where only system trust roots are accepted.
+assert_cmd_zero "signed fixture change is created" \
+  bash "$ROOT/cli.sh" --project "$TARGET" runtime new \
+    "Signed unattended contract" --rapid
+SIGNED_CHANGE="signed-unattended-contract"
+FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
+  bash "$ROOT/cli.sh" --project "$TARGET" sandbox challenge "$SIGNED_CHANGE" \
+  > "$TMP/attestation-challenge.json"
+assert_cmd_zero "fixture host signs the unattended challenge" \
+  node "$ROOT/.claude/tests/harness/sign-attestation.mjs" \
+    "$TMP/attestation-challenge.json" "$TMP/trusted-hosts.json" \
+    "$TMP/attestation.json" fixture-host
+signed_inspect="$(FOUNDATION_TESTING=1 \
+  FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
+  bash "$ROOT/cli.sh" --project "$TARGET" sandbox inspect "$SIGNED_CHANGE" \
+    --unattended --attestation "$TMP/attestation.json" --json)"
+assert_contains "valid signed attestation authorizes unattended inspection" \
+  "$signed_inspect" '"safeForUnattended": true'
+assert_cmd_zero "valid signed attestation authorizes unattended creation" \
+  env FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
+  bash "$ROOT/cli.sh" --project "$TARGET" sandbox create "$SIGNED_CHANGE" \
+    --unattended --attestation "$TMP/attestation.json"
+if FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
+  bash "$ROOT/cli.sh" --project "$TARGET" sandbox inspect "$SIGNED_CHANGE" \
+    --unattended --attestation "$TMP/attestation.json" >/dev/null 2>&1; then
+  fail "consumed unattended attestation cannot be replayed"
+else
+  pass "consumed unattended attestation cannot be replayed"
 fi
 
 # Isolation inspection and the unattended preflight must not execute a PATH

@@ -19,6 +19,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/project/.claude/harness/"
+cp -R "$ROOT/.claude/harness/runtime" "$TMP/project/.claude/harness/"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp "$ROOT/.claude/harness/protocol.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
@@ -173,6 +174,42 @@ assert_eq "acceptance receipt binds a human actor" "human" \
 printf 'post-acceptance edit\n' >> app.txt
 acceptance_plan="$(node .claude/harness/foundation.mjs proof-plan choose-final-interaction)"
 assert_contains "workspace edit makes acceptance stale" "$acceptance_plan" "acceptance: stale"
+
+# The authority bridge exports a bounded, workspace-bound packet and imports a
+# typed response through the existing receipt validator.
+node .claude/harness/foundation.mjs new 'Bridge human acceptance' >/dev/null
+node .claude/harness/foundation.mjs resolve bridge-human-acceptance \
+  --impact low --coupling isolated --acceptance-required \
+  --acceptance-reason 'A product owner must accept the bridged result' \
+  --acceptance-claims bridge-human-acceptance-outcome >/dev/null
+sed 's/- \[ \]/- [x]/g' openspec/changes/bridge-human-acceptance/tasks.md \
+  > "$TMP/bridge-tasks.md"
+cp "$TMP/bridge-tasks.md" openspec/changes/bridge-human-acceptance/tasks.md
+mkdir -p .foundation/logs/bridge-human-acceptance
+printf 'Product owner accepted the bridged result.\n' \
+  > .foundation/logs/bridge-human-acceptance/acceptance.txt
+authority_request="$(node .claude/harness/foundation.mjs authority-request \
+  bridge-human-acceptance --type acceptance)"
+authority_request_id="$(printf '%s' "$authority_request" | jq -r '.requestId')"
+authority_workspace_hash="$(printf '%s' "$authority_request" | jq -r '.workspaceHash')"
+assert_eq "authority request exports an acceptance packet" "acceptance" \
+  "$(printf '%s' "$authority_request" | jq -r '.packet.packetType')"
+jq -n --arg request "$authority_request_id" --arg workspace "$authority_workspace_hash" \
+  '{version:1,requestId:$request,changeId:"bridge-human-acceptance",type:"acceptance",workspaceHash:$workspace,status:"pass",evidence:{acceptor:"product-owner",decision:"accept",criterion:["The bridged result is understandable"],observed:"Product owner inspected and accepted the result",artifact:[".foundation/logs/bridge-human-acceptance/acceptance.txt"],reference:["https://example.invalid/authority/acceptance"]}}' \
+  > "$TMP/authority-response.json"
+assert_cmd_zero "authority response records validated acceptance" \
+  node .claude/harness/foundation.mjs authority-record bridge-human-acceptance \
+    --request "$authority_request_id" --response "$TMP/authority-response.json"
+assert_eq "authority request reaches completed status" "completed" \
+  "$(node .claude/harness/foundation.mjs authority-status bridge-human-acceptance \
+    --request "$authority_request_id" | jq -r '.requests[0].status')"
+assert_contains "authority receipt satisfies the acceptance provider" \
+  "$(node .claude/harness/foundation.mjs proof-plan bridge-human-acceptance)" \
+  "acceptance: valid"
+assert_cmd_fails_with "completed authority response cannot be replayed" \
+  "is completed" node .claude/harness/foundation.mjs authority-record \
+  bridge-human-acceptance --request "$authority_request_id" \
+  --response "$TMP/authority-response.json"
 
 node .claude/harness/foundation.mjs new 'Reject automated acceptance' >/dev/null
 node .claude/harness/foundation.mjs resolve reject-automated-acceptance \
@@ -446,7 +483,7 @@ assert_contains "legacy review receipt is specifically stale" \
 assert_eq "provider protocol remains backward-compatible" "6" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
-  jq -e '.reviewProtocol == "2" and .acceptanceProtocol == "2" and .reviewPacketSchema == "2"' \
+  jq -e '.reviewProtocol == "2" and .acceptanceProtocol == "2" and .reviewPacketSchema == "2" and .authorityProtocol == "1" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
     .claude/harness/protocol.json
 
 node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null

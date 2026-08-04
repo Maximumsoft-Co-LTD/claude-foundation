@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Evidence provider bootstrap** — `evidence detect` inspects project-owned
+  manifests without executing scripts, `evidence init` previews or explicitly
+  writes high-confidence `execution.yaml` wiring, and `evidence doctor` explains
+  configured, detectable, ambiguous, and external-authority gaps. Existing
+  providers are preserved and detection never installs dependencies or creates
+  passing receipts.
+- **Traceability audit** — `change audit` verifies scenario, claim, task, and
+  provider links, including security negative paths and migration safeguards.
+- **Trusted host attestation** — unattended sandbox creation now uses a
+  short-lived Ed25519 challenge, system trust roots, exact permission binding,
+  hazard detection, and single-use nonce consumption.
+- **External authority and signed CI** — resumable review/acceptance requests
+  and signed CI envelopes bind external evidence to the current workspace and
+  pass through the existing receipt validators.
+- **Portable telemetry and trust runtime** — Cursor and OpenTelemetry GenAI/LLM
+  formats normalize into common usage events, while canonical signature logic
+  moves into a reusable runtime module. Traceability, telemetry normalization,
+  host attestation, evidence bootstrap/results, signed CI, external authority,
+  CLI flag parsing, budget policy, and managed process/service execution are
+  also separated into focused runtime modules. Agent planning, repository
+  topology, CLI routing, provider scheduling, review validation, sandbox
+  lifecycle, atomic Land journaling, and proof finalization/audit now have
+  explicit subsystem boundaries while `foundation.mjs` remains the compatible
+  lifecycle orchestration entrypoint. The expanded protocol bundle advances the
+  bundled runtime to 2.6.0 / API 11.
+
+### Changed
+
+- **Domain-organized harness runtime** — runtime modules now live under
+  `core`, `evidence`, `workflow`, and `observability` boundaries. Read-only
+  metrics aggregation is separated from telemetry ingestion; state/snapshot,
+  evidence contract, provider execution, change validation, packet, authority,
+  Land/Apply, and diagnostics each have explicit factories. The compatible
+  `foundation.mjs` composition root is reduced from roughly 7,000 to about
+  1,500 lines without changing the public CLI.
+
 ## [3.1.5] - 2026-08-04
 
 ### Added

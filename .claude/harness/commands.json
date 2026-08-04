@@ -10,8 +10,9 @@
     { "name": "change start", "usage": "change start --template | <draft.json>", "audience": "agent", "kind": "write", "idempotent": false, "description": "Create and start an isolated change from one validated draft." },
     { "name": "change resolve", "usage": "change resolve <change> [options]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Persist impact, coupling, security, and review decisions." },
     { "name": "change validate", "usage": "change validate <change>", "audience": "agent", "kind": "write", "idempotent": true, "description": "Validate the change and executable evidence contract." },
+    { "name": "change audit", "usage": "change audit <change> [--json]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Audit scenario, claim, task, and provider traceability." },
 
-    { "name": "sandbox create", "usage": "sandbox create <change> [--all] [--unattended]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Create the isolated Build workspace." },
+    { "name": "sandbox create", "usage": "sandbox create <change> [--all] [--unattended --attestation <file>]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Create the isolated Build workspace." },
     { "name": "sandbox sync", "usage": "sandbox sync <change>", "audience": "agent", "kind": "write", "idempotent": true, "description": "Synchronize an intentional contract revision into Build." },
 
     { "name": "proof readiness", "usage": "proof readiness <change>", "audience": "agent", "kind": "read", "idempotent": true, "description": "Return typed blockers and canonical next commands." },
@@ -22,6 +23,13 @@
     { "name": "land archive", "usage": "land archive <change>", "audience": "agent", "kind": "authority", "idempotent": true, "description": "Apply, synchronize, audit, archive, and clean up explicitly." },
 
     { "name": "agents plan", "usage": "agents plan <change> [--group <n>] [--pretty]", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Plan dispatch only for independently verifiable parallel work." },
+    { "name": "evidence detect", "usage": "evidence detect <change>", "audience": "conditional", "kind": "read", "idempotent": true, "description": "Detect safe project-owned provider candidates without executing them." },
+    { "name": "evidence init", "usage": "evidence init <change> [--write]", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Preview or explicitly write high-confidence provider wiring." },
+    { "name": "evidence doctor", "usage": "evidence doctor <change>", "audience": "conditional", "kind": "read", "idempotent": true, "description": "Explain configured, detectable, and unresolved evidence wiring." },
+    { "name": "evidence verify-ci", "usage": "evidence verify-ci <change> <provider> <signed.json>", "audience": "conditional", "kind": "authority", "idempotent": true, "description": "Verify signed CI provenance bound to the provider workspace." },
+    { "name": "authority request", "usage": "authority request <change> --type review|acceptance", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Create a resumable external review or acceptance request." },
+    { "name": "authority status", "usage": "authority status <change> [--request <id>]", "audience": "conditional", "kind": "read", "idempotent": true, "description": "Inspect pending, stale, expired, or completed external authority." },
+    { "name": "authority record", "usage": "authority record <change> --request <id> --response <file>", "audience": "conditional", "kind": "authority", "idempotent": false, "description": "Validate a bound host response and record its evidence." },
     { "name": "evidence record", "usage": "evidence record <change> <provider> <status> [options]", "audience": "conditional", "kind": "authority", "idempotent": false, "description": "Record externally observed evidence requested by readiness." },
     { "name": "land record", "usage": "land record <change> --repo <id> --commit <sha> [--ci pass]", "audience": "conditional", "kind": "authority", "idempotent": true, "description": "Bind an explicitly authorized child repository commit." },
     { "name": "land resume", "usage": "land resume <change>", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Resume an interrupted or multi-repository Land saga." },
@@ -44,6 +52,7 @@
     { "name": "agents release", "usage": "agents release <change> <task> --owner <id>", "audience": "host", "kind": "write", "idempotent": true, "description": "Release a host-managed resource lease." },
     { "name": "telemetry sync", "usage": "telemetry sync <change> [transcript.jsonl]", "audience": "host", "kind": "write", "idempotent": true, "description": "Synchronize native host request usage." },
     { "name": "telemetry import", "usage": "telemetry import <change> <file> [--format <format>]", "audience": "host", "kind": "write", "idempotent": true, "description": "Import authoritative host usage." },
+    { "name": "sandbox challenge", "usage": "sandbox challenge <change>", "audience": "host", "kind": "write", "idempotent": false, "description": "Create a short-lived challenge for signed unattended authority." },
     { "name": "evidence run", "usage": "evidence run <change> <provider> --claims <scope> -- <command>", "audience": "internal", "kind": "write", "idempotent": false, "description": "Execute one low-level evidence adapter." },
     { "name": "sandbox inspect", "usage": "sandbox inspect <change> [--json]", "audience": "internal", "kind": "read", "idempotent": true, "description": "Inspect isolation diagnostics." },
     { "name": "sandbox apply", "usage": "sandbox apply <change>", "audience": "internal", "kind": "authority", "idempotent": true, "description": "Apply a proven projection through the Land journal." },
@@ -57,11 +66,13 @@
     { "name": "land pointers", "usage": "land pointers <change>", "audience": "internal", "kind": "authority", "idempotent": true, "description": "Stage proven submodule pointers." }
   ],
   "runtimeCommands": [
-    "new", "start", "resolve", "changes", "providers", "repos", "models",
+    "new", "start", "resolve", "audit-change", "changes", "providers", "repos", "models",
     "agent-plan", "agent-task", "agent-acquire", "agent-release", "packet",
     "metrics", "budget-continue", "doctor", "validate", "hash", "proof-plan",
     "proof-readiness", "proof-run", "proof-collect", "proof-preflight",
-    "proof-execute", "proof-audit", "evidence-upgrade", "receipt",
+    "proof-execute", "proof-audit", "evidence-detect", "evidence-init",
+    "evidence-doctor", "evidence-verify-ci", "evidence-upgrade", "authority-request", "authority-status",
+    "authority-record", "receipt",
     "run-provider", "prove", "land-check", "land-plan", "land-record",
     "land-pointers", "land-resume", "sandbox", "archive", "event",
     "telemetry-sync", "telemetry-import", "migrate", "api-version", "version"

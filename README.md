@@ -432,6 +432,36 @@ installed catalog and exact configuration shape with:
 claude-foundation providers
 ```
 
+When `execution.yaml` is empty or incomplete, inspect project-owned commands
+without running them, preview high-confidence wiring, and write it explicitly:
+
+```bash
+claude-foundation evidence detect <change-id>
+claude-foundation evidence init <change-id>
+claude-foundation evidence init <change-id> --write
+claude-foundation evidence doctor <change-id>
+```
+
+Detection reads repository manifests and configuration only. It does not run
+scripts, install dependencies, overwrite configured providers, create receipts,
+or turn an ambiguous command into passing evidence.
+
+Audit end-to-end traceability before Build or after editing the agreement:
+
+```bash
+claude-foundation change audit <change-id>
+```
+
+Tasks link to claims with `[claims:<claim-id>]`. The audit detects missing or
+unknown links, claims without tasks/providers, scenario mismatches, missing
+security negative paths, and incomplete migration rollback/integrity coverage.
+
+Remote CI can be configured with an issuer and Ed25519 public key, then imported
+with `evidence verify-ci`. Review and acceptance can cross an external boundary
+through `authority request`, `authority status`, and `authority record`. Both
+paths bind evidence to the current workspace and still use the normal receipt
+validator; stale, mismatched, unsigned, or replayed responses fail closed.
+
 Foundation does not install a test framework or browser. It runs the tools your
 repository declares and stores receipts under
 `.foundation/receipts/<change-id>/`. Receipts are reusable only while the
@@ -529,6 +559,10 @@ you to.
 - A worktree or copied directory protects workspace integrity; it is not a
   process-security sandbox.
 - Unattended execution fails closed without a trusted host-owned attestation.
+- The host obtains a short-lived challenge with `sandbox challenge`, signs its
+  project, agreement, nonce, expiry, and exact permissions, then supplies the
+  single-use envelope with `--attestation`. Exposed host-control sockets or
+  credentials still block execution.
 - Land refuses stale proof and conflicting edits on touched target paths.
 - Apply uses backups and a journal; an interrupted Land can be retried.
 - Foundation never commits, pushes, opens a pull request, or grants those powers
@@ -546,6 +580,7 @@ for inspection and recovery:
 claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation change validate <change-id>
+claude-foundation change audit <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
 claude-foundation budget continue <change-id> --reason "finish required proof"
@@ -554,6 +589,10 @@ claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
 ```
+
+Host telemetry can be imported from `generic`, `codex`, `cursor`, `otel`, or
+`claude` JSON/JSONL. OpenTelemetry GenAI/LLM token and model attributes normalize
+into the same append-only usage events used by `metrics` and budget accounting.
 
 The CLI finds the installed project from the current directory or from
 `--project <path>`. Run `claude-foundation help` for the complete command

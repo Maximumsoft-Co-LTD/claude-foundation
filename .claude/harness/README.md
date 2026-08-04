@@ -15,16 +15,62 @@ Playwright, linters, or security scanners produce evidence.
 
 ## Files in this directory
 
-| File | Role |
-|---|---|
-| `foundation.mjs` | Runtime used by the public `claude-foundation` CLI |
-| `AGENT.md` | Small portable contract loaded by Claude, Codex, and other agents |
-| `EVIDENCE.md` | Evidence contract, execution adapter, and proof reference |
-| `README.md` | Runtime overview and operator guide |
+| Domain | File | Role |
+|---|---|---|
+| Entrypoint | `foundation.mjs` | Public CLI compatibility and lifecycle orchestration |
+| Core | `runtime/core/cli-flags.mjs` | Shared permissive and strict command flag parsing |
+| Core | `runtime/core/cli-router.mjs` | Runtime command dispatch over an explicit orchestration API |
+| Core | `runtime/core/diagnostics-runtime.mjs` | Doctor, migration, provider listing, and CLI usage diagnostics |
+| Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
+| Core | `runtime/core/state-runtime.mjs` | Runtime state, paths, hashing, snapshots, workspace manifests, and Git helpers |
+| Core | `runtime/core/trust.mjs` | Canonical JSON and Ed25519 verification shared by trust protocols |
+| Evidence | `runtime/evidence/artifact-store.mjs` | Durable evidence artifacts, containment, digest validation, and prototype rejection |
+| Evidence | `runtime/evidence/attestation.mjs` | Host-boundary inspection and signed unattended authority |
+| Evidence | `runtime/evidence/evidence-bootstrap.mjs` | Safe project-manifest detection and provider candidates |
+| Evidence | `runtime/evidence/evidence-contract.mjs` | Evidence/execution contracts, provider workspaces, policy, and fingerprints |
+| Evidence | `runtime/evidence/evidence-results.mjs` | Structured evidence reports, adapter commands, and resource conflicts |
+| Evidence | `runtime/evidence/proof-readiness.mjs` | Proof topology, readiness classification, recovery advice, and preflight |
+| Evidence | `runtime/evidence/proof-runtime.mjs` | Proof bundle finalization and immutable receipt audit |
+| Evidence | `runtime/evidence/receipt-runtime.mjs` | Receipt recording, review/acceptance binding, and reusable evidence |
+| Evidence | `runtime/evidence/adapter-runtime.mjs` | Manual providers, services, logs, and executable evidence adapters |
+| Evidence | `runtime/evidence/proof-execution-runtime.mjs` | Proof collection, execution, and end-to-end run orchestration |
+| Evidence | `runtime/evidence/provider-scheduler.mjs` | Provider graph construction, dependency scheduling, and resource-safe batching |
+| Evidence | `runtime/evidence/review-attempt-store.mjs` | Durable chained review-attempt history and migration |
+| Evidence | `runtime/evidence/review-protocol.mjs` | Pure review provenance, receipt binding, and attempt validation |
+| Evidence | `runtime/evidence/signed-ci.mjs` | Signed CI envelope verification |
+| Evidence | `runtime/evidence/traceability.mjs` | Pure scenario, claim, task, and provider auditing |
+| Observability | `runtime/observability/telemetry.mjs` | Portable host telemetry normalization |
+| Observability | `runtime/observability/metrics-runtime.mjs` | Read-only aggregation of operations, usage, context, and evidence metrics |
+| Observability | `runtime/observability/telemetry-runtime.mjs` | Context events, host transcript synchronization, and telemetry ledgers |
+| Workflow | `runtime/workflow/agent-planning.mjs` | Task dependency/resource planning and bounded dispatch views |
+| Workflow | `runtime/workflow/apply-runtime.mjs` | Apply transaction preparation, recovery, cleanup, and archive orchestration |
+| Workflow | `runtime/workflow/authority-runtime.mjs` | Authority request/response bridge and signed CI recording |
+| Workflow | `runtime/workflow/authority.mjs` | External authority request persistence and response validation |
+| Workflow | `runtime/workflow/budget.mjs` | Run/lifetime usage windows and budget policy transitions |
+| Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
+| Workflow | `runtime/workflow/change-validation.mjs` | Task/spec parsing, traceability, validation, and provider requirements |
+| Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
+| Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
+| Workflow | `runtime/workflow/lease-runtime.mjs` | Agent resource lease acquisition, renewal, release, and cleanup |
+| Workflow | `runtime/workflow/packet-runtime.mjs` | Changed-surface calculation and bounded task/review packet generation |
+| Workflow | `runtime/workflow/repository-topology.mjs` | Repository discovery, selection, dependency validation, and workspace views |
+| Workflow | `runtime/workflow/sandbox-runtime.mjs` | Isolation inspection, sandbox creation, and contract synchronization |
+| Docs | `runtime/README.md` | Domain boundaries and dependency rules |
+| Docs | `AGENT.md` | Small portable contract loaded by Claude, Codex, and other agents |
+| Docs | `EVIDENCE.md` | Evidence contract, execution adapter, and proof reference |
+| Docs | `README.md` | Runtime overview and operator guide |
 
 Use the public CLI instead of invoking `foundation.mjs` directly. The CLI finds
 the project from the current directory, or from `--project <path>`, and then
 uses the runtime installed in that project.
+
+`foundation.mjs` remains the compatibility entrypoint and lifecycle
+orchestration layer. Runtime modules own bounded protocols, policy state
+machines, parsing, or pure transformations. Filesystem mutation is restricted
+to explicit stores/adapters injected by the entrypoint. This keeps installed
+CLI behavior stable while making routing, repository topology, provider
+scheduling, review validation, security, evidence, budgeting, and normalization
+logic independently testable.
 
 ## Requirements
 
@@ -64,13 +110,20 @@ claude-foundation doctor --stage prove --change <change>
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
 | `budget continue <change> --reason <reason>` | Opens one policy-gated audited completion window without deleting usage | Required model work after exhaustion |
 | `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
+| `change audit <change> [--json]` | Audits scenario → claim → task → provider traceability | Before Build or after contract edits |
 | `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
 | `proof run <change>` | Executes, finalizes, and audits proof as one operation | Normal Prove path |
 | `proof collect <change>` | Runs available project-owned evidence without finalizing proof | Before external review or acceptance |
+| `evidence detect <change>` | Finds safe project-owned provider candidates without executing them | When `execution.yaml` is empty or incomplete |
+| `evidence init <change> [--write]` | Previews or explicitly writes high-confidence provider wiring | Before manually wiring detected test/static/browser tools |
+| `evidence doctor <change>` | Explains configured, detectable, and unresolved capabilities | Diagnosing why Prove lacks a provider |
+| `evidence verify-ci <change> <provider> <signed.json>` | Verifies a signed, workspace-bound CI envelope | Importing trusted remote CI evidence |
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
+| `authority request|status|record ...` | Exports bounded review/acceptance packets and validates responses | Crossing a human or remote authority boundary |
 | `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
 | `sandbox create <change>` | Creates an isolated Git worktree | Before Build |
-| `sandbox create <change> --unattended` | Fails closed; detected virtualization is not trusted host attestation | Unattended Build only |
+| `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |
+| `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
 | `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
 | `sandbox sync <change>` | Synchronizes a revised agreement | When requirements change during Build |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
@@ -78,10 +131,13 @@ claude-foundation doctor --stage prove --change <change>
 | `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
 | `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
 
-`--unattended` is a presence-only security flag. Valued and duplicate forms
-are rejected before telemetry or workspace mutation. This is a cooperative host
-preflight, not automatic detection of an external Allow All setting. The current
-runtime always fails closed until a trusted host-owned attestation exists.
+`--unattended` is a presence-only security flag. Valued and duplicate forms are
+rejected before telemetry or workspace mutation. The host first calls `sandbox
+challenge`, signs the canonical challenge with an Ed25519 key installed in a
+system-owned trust root, and supplies the envelope with `--attestation`.
+Attestations are short-lived, project/agreement/permission-bound, single-use,
+and still fail when a host-control socket, SSH agent, or mounted cluster
+credential is exposed. Container detection alone is never treated as trust.
 
 Review and acceptance adapters are external-only. Review packets combine
 committed and dirty paths from recorded repository bases. Protocol-v2 receipts
@@ -140,8 +196,13 @@ Validate the result:
 
 ```bash
 claude-foundation change validate <change>
+claude-foundation change audit <change>
 claude-foundation doctor --stage build --change <change>
 ```
+
+Task annotations such as `[claims:profile-owner-update]` provide the explicit
+claim link. The audit also checks exact scenario mapping, provider coverage,
+security negative paths, and migration rollback/integrity expectations.
 
 ### 2. Build in isolation
 
@@ -297,7 +358,9 @@ Use an explicit sync when the lifecycle hook was not active:
 claude-foundation telemetry sync <change> ~/.claude/projects/.../session.jsonl
 ```
 
-Use `telemetry import` for other hosts or historical files. Unknown requests,
+Use `telemetry import --format generic|codex|cursor|otel|claude` for other hosts
+or historical files. OpenTelemetry GenAI/LLM attributes map to the same token,
+model, trace/request, and run fields. Unknown requests,
 token usage, cache usage, or monetary cost remain `null`; Foundation does not
 manufacture estimates when telemetry is unavailable. Claude transcript parsing
 is schema-validated and isolated behind the host adapter so a future host

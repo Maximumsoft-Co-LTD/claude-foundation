@@ -76,6 +76,51 @@ claude-foundation evidence upgrade <change>
 
 The upgrade moves known wiring into `execution.yaml`; it never guesses commands.
 
+## Bootstrap project-owned wiring
+
+Use the bootstrap commands when a change declares claims but `execution.yaml`
+has no executable providers yet:
+
+```bash
+claude-foundation evidence detect <change>
+claude-foundation evidence init <change>
+claude-foundation evidence init <change> --write
+claude-foundation evidence doctor <change>
+```
+
+`detect` reads repository-owned manifests and configuration without executing
+scripts. `init` is preview-only unless `--write` is present; even then it adds
+only high-confidence wiring and preserves existing providers. Ambiguous,
+external-authority, missing structured-test-count, and operator-review cases
+remain unresolved with an explicit next action. Bootstrap never installs a
+dependency, creates a receipt, weakens a claim, or treats detection as proof.
+
+## Signed CI and external authority
+
+An external provider may declare `ci.issuer` and an Ed25519 `ci.publicKey` in
+`execution.yaml`. Import only its signed, workspace-bound envelope:
+
+```bash
+claude-foundation evidence verify-ci <change> <provider> signed-result.json
+```
+
+The envelope binds the change, provider, workspace hash, optional Git commit,
+run URL, status, observation, and artifact SHA-256 digests. An invalid signature,
+stale workspace, wrong issuer, or unsigned passing artifact is rejected before
+a receipt is written.
+
+For human review or acceptance, use the resumable authority bridge:
+
+```bash
+claude-foundation authority request <change> --type review|acceptance
+claude-foundation authority status <change> --request <request-id>
+claude-foundation authority record <change> --request <request-id> --response response.json
+```
+
+Requests contain bounded packets and expire or become stale with the workspace.
+Responses must match the request identity and workspace, then pass the ordinary
+review or acceptance receipt validator. Completed requests cannot be replayed.
+
 ## Adapters
 
 | Adapter | Purpose |

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=9
+EXPECTED_RUNTIME_API=11
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -55,9 +55,9 @@ run_runtime() {
   fi
   local phase=""
   case "${1:-}" in
-    new|start|resolve|validate|evidence-upgrade) phase="change" ;;
+    new|start|resolve|validate|audit-change|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider) phase="prove" ;;
+    proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-status|authority-record) phase="prove" ;;
     land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
@@ -225,7 +225,10 @@ case "${1:-}" in
       validate)
         need_arg "change validate" "${1:-}"
         run_runtime write validate "$@" ;;
-      *) fail "change requires 'new', 'start', 'resolve', or 'validate'" ;;
+      audit)
+        need_arg "change audit" "${1:-}"
+        run_runtime read audit-change "$@" ;;
+      *) fail "change requires 'new', 'start', 'resolve', 'validate', or 'audit'" ;;
     esac ;;
   validate)
     warn "'validate' is deprecated; use 'change validate'"
@@ -255,6 +258,18 @@ case "${1:-}" in
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
     case "$sub" in
+      detect)
+        need_arg "evidence detect" "${1:-}"
+        run_runtime read evidence-detect "$@" ;;
+      init)
+        need_arg "evidence init" "${1:-}"
+        run_runtime write evidence-init "$@" ;;
+      doctor)
+        need_arg "evidence doctor" "${1:-}"
+        run_runtime read evidence-doctor "$@" ;;
+      verify-ci)
+        [ "$#" -eq 3 ] || fail "evidence verify-ci requires <change> <provider> <signed.json>"
+        run_runtime write evidence-verify-ci "$@" ;;
       run)
         [ "$#" -ge 4 ] || fail "evidence run requires <change> <provider> -- <command>"
         run_runtime write run-provider "$@" ;;
@@ -264,12 +279,22 @@ case "${1:-}" in
       upgrade)
         need_arg "evidence upgrade" "${1:-}"
         run_runtime write evidence-upgrade "$@" ;;
-      *) fail "evidence requires 'run', 'record', or 'upgrade'" ;;
+      *) fail "evidence requires 'detect', 'init', 'doctor', 'verify-ci', 'run', 'record', or 'upgrade'" ;;
+    esac ;;
+  authority)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    need_arg "authority ${sub:-<request|status|record>}" "${1:-}"
+    case "$sub" in
+      request) run_runtime write authority-request "$@" ;;
+      status) run_runtime read authority-status "$@" ;;
+      record) run_runtime write authority-record "$@" ;;
+      *) fail "authority requires 'request', 'status', or 'record'" ;;
     esac ;;
   sandbox)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in create|sync|apply|inspect) : ;; *) fail "sandbox requires inspect, create, sync, or apply" ;; esac
+    case "$sub" in challenge|create|sync|apply|inspect) : ;; *) fail "sandbox requires challenge, inspect, create, sync, or apply" ;; esac
     need_arg "sandbox $sub" "${1:-}"
     if [ "$sub" = "inspect" ]; then
       run_runtime inspect sandbox "$sub" "$@"

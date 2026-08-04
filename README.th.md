@@ -417,6 +417,36 @@ Capability ที่พบบ่อยคือ `test`, `discovery`, `static-ana
 claude-foundation providers
 ```
 
+ถ้า `execution.yaml` ว่างหรือยังไม่ครบ ให้ตรวจ command ที่ project เป็นเจ้าของ
+โดยไม่รัน จากนั้น preview wiring ที่มีความมั่นใจสูงก่อนเขียนอย่างชัดเจน:
+
+```bash
+claude-foundation evidence detect <change-id>
+claude-foundation evidence init <change-id>
+claude-foundation evidence init <change-id> --write
+claude-foundation evidence doctor <change-id>
+```
+
+Detection อ่านเฉพาะ manifest และ configuration ใน repository โดยไม่รัน script,
+ติดตั้ง dependency, เขียนทับ provider เดิม, สร้าง receipt หรือเปลี่ยน command ที่
+กำกวมให้กลายเป็น passing evidence
+
+ตรวจ traceability ตั้งแต่ต้นจนจบก่อน Build หรือหลังแก้ข้อตกลง:
+
+```bash
+claude-foundation change audit <change-id>
+```
+
+Task เชื่อม claim ด้วย `[claims:<claim-id>]` Audit จะตรวจ link ที่หายหรือไม่รู้จัก,
+claim ที่ไม่มี task/provider, scenario ที่ไม่ตรง, security negative path ที่ขาด
+และ migration ที่ไม่มี rollback/integrity coverage
+
+Remote CI ตั้งค่า issuer กับ Ed25519 public key แล้ว import ด้วย `evidence
+verify-ci` ได้ ส่วน review/acceptance ข้าม external boundary ผ่าน `authority
+request`, `authority status` และ `authority record` ทั้งสองทางผูก evidence กับ
+workspace ปัจจุบันและยังผ่าน receipt validator เดิม จึงปฏิเสธ response ที่ stale,
+ไม่ตรง, ไม่มีลายเซ็น หรือถูก replay
+
 Foundation ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
 ประกาศและเก็บ receipt ใต้ `.foundation/receipts/<change-id>/` Receipt reuse ได้
 เฉพาะเมื่อ workspace hash, agreement, provider protocol/version และ claim coverage
@@ -522,6 +552,10 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 - Worktree หรือ directory copy ป้องกัน workspace แต่ไม่ใช่ process-security
   sandbox
 - Unattended execution จะ fail closed ถ้าไม่มี trusted attestation จาก host
+- Host สร้าง challenge อายุสั้นด้วย `sandbox challenge` แล้วเซ็น project,
+  agreement, nonce, expiry และ permission ที่แน่นอน ก่อนส่ง envelope แบบใช้ครั้ง
+  เดียวผ่าน `--attestation`; ถ้ายังเปิด host-control socket หรือ credential ระบบ
+  จะ block ต่อไป
 - Land ปฏิเสธ stale proof และ conflicting edit ใน target path ที่แตะ
 - Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Foundation ไม่ commit, push, เปิด pull request หรือมอบอำนาจเหล่านั้นให้ worker
@@ -539,6 +573,7 @@ recover:
 claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation change validate <change-id>
+claude-foundation change audit <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
 claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ"
@@ -547,6 +582,10 @@ claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
 ```
+
+Host import telemetry แบบ `generic`, `codex`, `cursor`, `otel` หรือ `claude`
+จาก JSON/JSONL ได้ โดย OpenTelemetry GenAI/LLM token และ model attributes จะถูก
+normalize เป็น usage event แบบ append-only ชุดเดียวกับที่ `metrics` และ budget ใช้
 
 CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
 `claude-foundation help` เพื่อดู command ทั้งหมด

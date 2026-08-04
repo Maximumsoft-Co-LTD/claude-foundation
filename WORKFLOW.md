@@ -130,6 +130,23 @@ deduplicates identical commands, and runs providers concurrently only when
 their declared resources do not conflict. Evidence v1 remains manual-compatible
 and upgrades explicitly with `claude-foundation evidence upgrade <change>`.
 
+When executable wiring is absent, `evidence detect` inspects repository-owned
+manifests without executing scripts, `evidence init` previews high-confidence
+additions and writes them only with `--write`, and `evidence doctor` reports
+remaining ambiguity or external authority. Detection never installs tools,
+creates receipts, overwrites configured providers, or weakens claim coverage.
+
+`change audit` checks scenario → claim → task → provider traceability, including
+negative security paths and migration rollback/integrity. Tasks link explicitly
+with `[claims:<claim-id>]`.
+
+Remote CI can return a signed envelope through `evidence verify-ci`; issuer,
+workspace, optional commit, run URL, and artifact digests are verified before a
+receipt is created. Human review and acceptance use `authority request`,
+`authority status`, and `authority record`, so external work is resumable,
+expires when abandoned, becomes stale with the workspace, and cannot bypass the
+existing receipt validator.
+
 ### `/land <change>`
 
 Landing checks proof freshness, applies a proven sandbox diff when applicable,
@@ -326,7 +343,9 @@ come from uniquely identified host request records; unknown usage is never
 reported as zero. Claude Code binds its session transcript at `SessionStart`
 and incrementally reads only `assistant.message.usage` at phase checkpoints.
 There is no per-tool telemetry hook, and prompt/tool payloads are never copied.
-Other hosts use `telemetry import`.
+Other hosts use `telemetry import --format generic|codex|cursor|otel|claude`;
+OpenTelemetry GenAI/LLM attributes normalize into the same append-only event
+contract.
 
 Use `claude-foundation metrics <change>` to aggregate phase timing, unique
 provider execution time, request/token/cache/cost totals, orchestrator token
@@ -408,9 +427,10 @@ corroborated by code, tests, or accepted contracts may be promoted.
 `claude-foundation` is the stable public control surface. It searches upward
 from the working directory, or from `--project <path>`, and forwards to the
 runtime installed in that project so schemas and runtime behavior stay aligned.
-Use canonical `change`, `packet`, `proof readiness|collect|run`,
-`sandbox create|sync`, and `land check|record|resume|archive` commands rather
-than calling runtime internals directly.
+Use canonical `change`, `packet`, `evidence detect|init|doctor`,
+`proof readiness|collect|run`, `sandbox create|sync`, and
+`land check|record|resume|archive` commands rather than calling runtime
+internals directly.
 
 When the packaged CLI is not on `PATH`, use the source checkout's public router:
 

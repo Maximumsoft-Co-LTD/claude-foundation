@@ -18,6 +18,14 @@ assert_contains "CLI help documents canonical proof run" \
   "$cli_help" 'proof run <change>'
 assert_contains "CLI help documents budget recovery" \
   "$cli_help" 'budget continue <change>'
+assert_contains "CLI help documents traceability audit" \
+  "$cli_help" 'change audit <change> [--json]'
+assert_contains "CLI help documents evidence detection" \
+  "$cli_help" 'evidence detect <change>'
+assert_contains "CLI help documents explicit evidence initialization" \
+  "$cli_help" 'evidence init <change> [--write]'
+assert_contains "CLI help documents evidence diagnosis" \
+  "$cli_help" 'evidence doctor <change>'
 if printf '%s' "$cli_help" | grep -qF 'proof execute'; then
   fail "default CLI help hides internal proof commands"
 else
@@ -57,14 +65,67 @@ assert_file_absent "prototype is no longer a separate command" \
 assert_file_absent "review is proof-internal" \
   "$TARGET/.claude/commands/review.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "shared trust runtime installed" "$TARGET/.claude/harness/runtime/core/trust.mjs"
+assert_file_exists "evidence bootstrap runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/evidence-bootstrap.mjs"
+assert_file_exists "budget runtime installed" "$TARGET/.claude/harness/runtime/workflow/budget.mjs"
+assert_file_exists "authority runtime installed" "$TARGET/.claude/harness/runtime/workflow/authority.mjs"
+assert_file_exists "agent planner runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/agent-planning.mjs"
+assert_file_exists "CLI router runtime installed" "$TARGET/.claude/harness/runtime/core/cli-router.mjs"
+assert_file_exists "state runtime installed" "$TARGET/.claude/harness/runtime/core/state-runtime.mjs"
+assert_file_exists "diagnostics runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/diagnostics-runtime.mjs"
+assert_file_exists "runtime architecture guide installed" "$TARGET/.claude/harness/runtime/README.md"
+assert_file_exists "repository topology runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/repository-topology.mjs"
+assert_file_exists "provider scheduler runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/provider-scheduler.mjs"
+assert_file_exists "review protocol runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/review-protocol.mjs"
+assert_file_exists "artifact store installed" \
+  "$TARGET/.claude/harness/runtime/evidence/artifact-store.mjs"
+assert_file_exists "evidence contract runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/evidence-contract.mjs"
+assert_file_exists "proof readiness runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/proof-readiness.mjs"
+assert_file_exists "receipt runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/receipt-runtime.mjs"
+assert_file_exists "adapter runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/adapter-runtime.mjs"
+assert_file_exists "proof execution runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/proof-execution-runtime.mjs"
+assert_file_exists "review attempt store installed" \
+  "$TARGET/.claude/harness/runtime/evidence/review-attempt-store.mjs"
+assert_file_exists "metrics runtime installed" \
+  "$TARGET/.claude/harness/runtime/observability/metrics-runtime.mjs"
+assert_file_exists "telemetry runtime installed" \
+  "$TARGET/.claude/harness/runtime/observability/telemetry-runtime.mjs"
+assert_file_exists "sandbox runtime installed" "$TARGET/.claude/harness/runtime/workflow/sandbox-runtime.mjs"
+assert_file_exists "Land journal runtime installed" "$TARGET/.claude/harness/runtime/workflow/land-journal.mjs"
+assert_file_exists "proof runtime installed" "$TARGET/.claude/harness/runtime/evidence/proof-runtime.mjs"
+assert_file_exists "change lifecycle runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/change-lifecycle.mjs"
+assert_file_exists "change validation runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/change-validation.mjs"
+assert_file_exists "packet runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/packet-runtime.mjs"
+assert_file_exists "lease runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/lease-runtime.mjs"
+assert_file_exists "authority bridge runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/authority-runtime.mjs"
+assert_file_exists "Land runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/land-runtime.mjs"
+assert_file_exists "apply runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/apply-runtime.mjs"
 assert_file_exists "command registry installed" "$TARGET/.claude/harness/commands.json"
 assert_cmd_zero "command registry has one unique entry per public name" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$TARGET/.claude/harness/commands.json"
-assert_eq "agent command surface is bounded" "15" \
+assert_eq "agent command surface is bounded" "16" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-assert_eq "conditional recovery surface is bounded" "6" \
+assert_eq "conditional recovery surface is bounded" "13" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
@@ -292,7 +353,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "9"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "11"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route >/dev/null 2>&1; then

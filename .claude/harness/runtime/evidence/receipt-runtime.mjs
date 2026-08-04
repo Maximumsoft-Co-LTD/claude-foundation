@@ -1,0 +1,295 @@
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+export function createReceiptRuntime({
+  LOGS, PROVIDERS, INPUT_MODES,
+  ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
+  REVIEW_PROTOCOL_VERSION, ACCEPTANCE_PROTOCOL_VERSION,
+  validate, relevantHash, requiredProviders, receiptValidity, now,
+  writeJson, receiptPath, providerConfig, providerCapability, loadRuntime,
+  resolvedAcceptance, evidence, claimsForProvider, providerWorkspaceHash,
+  providerRepository, rejectPrototypeEvidenceInputs, durableArtifact,
+  providerInputIdentity, contractFingerprint, executionFingerprint, stableHash,
+  adapterFingerprint, environmentDescriptor, reviewPolicy, subjectProvenance,
+  reviewProvenanceResult, readJson, flagValues, reviewHistoryState,
+  reserveReviewAttempt, reviewReceiptBinding, die
+}) {
+  function proofPlan(id) {
+    validate(id, "active", { quiet: true });
+    const hash = relevantHash(id);
+    const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
+    console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
+    for (const row of rows) console.log(`  ${row.provider}: ${row.validity}`);
+  }
+  
+  function rebindReusableReceipt(id, row, snapshot, proofRunId) {
+    const prior = row.receipt;
+    const rebound = {
+      ...prior,
+      workspaceHash: row.expectedWorkspaceHash,
+      workspaceSnapshotId: snapshot.id,
+      inputIdentity: row.expectedInputs,
+      proofRunId,
+      reusedFrom: {
+        proofRunId: prior.proofRunId || null,
+        workspaceHash: prior.workspaceHash,
+        workspaceSnapshotId: prior.workspaceSnapshotId || null,
+        receiptFinishedAt: prior.finishedAt || null
+      },
+      startedAt: now(),
+      finishedAt: now()
+    };
+    writeJson(receiptPath(id, row.provider), rebound);
+    const logPath = join(LOGS, id, "reuse.jsonl");
+    mkdirSync(dirname(logPath), { recursive: true });
+    appendFileSync(logPath, `${JSON.stringify({
+      version: 1,
+      changeId: id,
+      provider: row.provider,
+      reason: "declared-inputs-unchanged",
+      fromWorkspaceHash: prior.workspaceHash,
+      toWorkspaceHash: row.expectedWorkspaceHash,
+      inputFingerprint: row.expectedInputs.fingerprint,
+      timestamp: now()
+    })}\n`);
+  }
+  
+  function recordReceipt(id, provider, status, flags = {}) {
+    const configured = providerConfig(id, provider);
+    const capability = providerCapability(provider, configured);
+    if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
+    if (!["pass", "fail", "inconclusive", "error"].includes(status)) die(`invalid receipt status '${status}'`);
+    const state = loadRuntime(id);
+    if (capability === "acceptance" && !resolvedAcceptance(id, state, evidence(id)).required)
+      die("acceptance evidence is not declared for this change");
+    const allClaims = evidence(id).claims.map((claim) => claim.id);
+    const allowedClaims = claimsForProvider(id, provider).map((claim) => claim.id);
+    const requestedClaims = String(
+      !flags.claims || flags.claims === "declared" ? allowedClaims.join(",") : flags.claims
+    ).split(",").filter(Boolean);
+    if (requestedClaims.length === 0) die(`provider '${provider}' has no declared claims`);
+    const unknownClaims = requestedClaims.filter((claim) => !allClaims.includes(claim));
+    if (unknownClaims.length) die(`receipt references unknown claim(s): ${unknownClaims.join(", ")}`);
+    const forbiddenClaims = requestedClaims.filter((claim) => !allowedClaims.includes(claim));
+    if (forbiddenClaims.length)
+      die(`provider '${provider}' is not declared for claim(s): ${forbiddenClaims.join(", ")}`);
+    const config = flags.config || configured;
+    const legacyForeground = flags.foreground || null;
+    const foregroundRequired = flags["foreground-required"] !== undefined
+      ? flags["foreground-required"] === "yes"
+      : legacyForeground === "required";
+    const foregroundAvailable = flags["foreground-available"] !== undefined
+      ? flags["foreground-available"] === "yes"
+      : legacyForeground === "available" || legacyForeground === "not-required";
+    if (legacyForeground) console.error("WARNING: --foreground is deprecated; use --foreground-required and --foreground-available");
+    const command = flags.command || null;
+    const providerVersion = String(flags.version || config?.version || "1");
+    const adapter = flags.adapter || config?.adapter || "external";
+    const inputMode = flags["input-mode"] || config?.inputMode || null;
+    const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
+      `manual-${Date.now()}-${process.pid}`;
+    const workspaceHash = flags.workspaceHash || state.activeProofRun?.workspaceHash ||
+      providerWorkspaceHash(id, provider);
+    const repository = providerRepository(id, provider, config);
+    const artifactFlags = [
+      ...(Array.isArray(flags.artifact) ? flags.artifact : []),
+      ...(Array.isArray(flags.artifacts) ? flags.artifacts : []),
+      ...(flags.log ? [{
+        path: flags.log, type: "command-log", required: true
+      }] : [])
+    ].flatMap((artifact) => typeof artifact === "string"
+      ? artifact.split(",").filter(Boolean).map((path) => ({
+        path, type: "external-evidence", required: true
+      }))
+      : [artifact]);
+    const uniqueArtifactFlags = [...new Map(artifactFlags.map((artifact) => [
+      `${artifact.type || "artifact"}:${artifact.path}`, artifact
+    ])).values()];
+    const references = (Array.isArray(flags.reference) ? flags.reference : [])
+      .flatMap((value) => String(value).split(","))
+      .map((value) => value.trim()).filter(Boolean);
+    rejectPrototypeEvidenceInputs(id, provider, uniqueArtifactFlags, references);
+    const artifacts = uniqueArtifactFlags
+      .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
+    const observed = String(flags.observed || "").trim();
+    let provenanceSource = String(
+      flags.source || flags.reviewer || flags.provenance ||
+      (flags.command ? `command:${Array.isArray(flags.command)
+        ? flags.command.join(" ") : flags.command}` : "")
+    ).trim();
+    if (!provenanceSource && capability === "review" && flags["reviewer-identity"])
+      provenanceSource = `reviewer:${String(flags["reviewer-identity"]).trim()}`;
+    if (!provenanceSource && capability === "acceptance" && flags.acceptor)
+      provenanceSource = `human:${String(flags.acceptor).trim()}`;
+    if (adapter === "external" && status === "pass") {
+      if (!observed)
+        die(`passing external receipt '${provider}' requires --observed`);
+      if (!provenanceSource)
+        die(`passing external receipt '${provider}' requires --source or --reviewer`);
+      if (artifacts.length === 0 && references.length === 0)
+        die(`passing external receipt '${provider}' requires --artifact or --reference`);
+    }
+    const inputIdentity = providerInputIdentity(
+      id, provider, config, workspaceHash
+    );
+    if (status === "pass" && inputIdentity.mode === "declared" &&
+        inputIdentity.files.length === 0)
+      die(`passing receipt '${provider}' declared inputs but matched no files`);
+    const receipt = {
+      version: 6, changeId: id, provider, providerVersion, adapter,
+      repositoryId: repository?.id || null,
+      adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
+      providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
+      contractFingerprint: contractFingerprint(id),
+      executionFingerprint: executionFingerprint(id),
+      providerFingerprint: config
+        ? adapterFingerprint(id, provider, config)
+        : stableHash({
+          adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
+          providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
+          provider, adapter, adapterVersion: providerVersion,
+          command, claims: requestedClaims,
+          environment: flags.environment || null, inputMode,
+          project: flags.project || null
+        }),
+      workspaceHash, workspaceSnapshotId: state.activeProofRun?.snapshotId || null,
+      inputIdentity,
+      claims: requestedClaims,
+      status, observed, provenance: {
+        source: provenanceSource || null,
+        recordedBy: String(flags["recorded-by"] || "").trim() || null
+      }, references, capability: {
+        inputMode,
+        foregroundRequired, foregroundAvailable
+      },
+      command,
+      log: artifacts.find((artifact) => artifact.type === "command-log")?.path ||
+        flags.log || null,
+      artifacts,
+      environment: config ? environmentDescriptor(config, id) : (flags.environment || null),
+      project: flags.project || config?.project || null,
+      proofRunId,
+      commandExecutionId: flags.commandExecutionId || flags.executionId || null,
+      executionId: flags.commandExecutionId || flags.executionId || null,
+      durationMs: flags.durationMs === undefined ? null : Number(flags.durationMs),
+      startedAt: flags.started || now(), finishedAt: now()
+    };
+    if (capability === "review") {
+      const policy = reviewPolicy(id);
+      const reviewerType = String(flags["reviewer-type"] ||
+        (flags.reviewer ? "human" : "")).toLowerCase();
+      if (!['ai', 'human'].includes(reviewerType))
+        die("review receipt requires --reviewer-type ai|human");
+      const reviewerIdentity = String(
+        flags["reviewer-identity"] || flags.reviewer || ""
+      ).trim();
+      if (!reviewerIdentity) die("review receipt requires --reviewer-identity");
+      const reviewer = {
+        type: reviewerType,
+        identity: reviewerIdentity,
+        providerFamily: String(flags["reviewer-provider-family"] || "").trim().toLowerCase() || null,
+        modelFamily: String(flags["reviewer-model-family"] || "").trim().toLowerCase() || null,
+        modelId: String(flags["reviewer-model"] || "").trim() || null,
+        sessionId: String(flags["reviewer-session"] || "").trim() || null
+      };
+      const subjects = subjectProvenance(flags);
+      if (reviewerType === "ai" && [
+        reviewer.providerFamily, reviewer.modelFamily, reviewer.modelId, reviewer.sessionId
+      ].some((value) => !value))
+        die("AI review requires reviewer provider/model family, model ID, and session");
+      if (!subjects.length)
+        die("review requires at least one --subject-actor for implementation provenance");
+      const provenance = reviewProvenanceResult({ reviewer, subjects });
+      if (!provenance.complete)
+        die("review requires complete structured reviewer and subject provenance");
+      const { independent, diverse } = provenance;
+      if (!independent) die("reviewer must use an identity and session independent of implementation");
+      if (status === "pass" && policy.diversity === "required" && !diverse)
+        die("review policy requires a different provider/model family or a human reviewer");
+      const blockers = Number(flags["unresolved-blockers"] || 0);
+      const verified = Number(flags["verified-findings"] || 0);
+      if (![blockers, verified].every((value) => Number.isInteger(value) && value >= 0))
+        die("review finding counts must be non-negative integers");
+      if (status === "pass" && blockers > 0)
+        die("passing review cannot contain unresolved blockers");
+      const prior = existsSync(receiptPath(id, provider))
+        ? readJson(receiptPath(id, provider), {}) : null;
+      const scopePaths = [...new Set(flagValues(flags, "scope-path"))].sort();
+      const history = reviewHistoryState(id);
+      const nextAttempt = Number(history.totalAttempts || 0) + 1;
+      if (nextAttempt >= 2 && reviewerType === "ai" && scopePaths.length === 0)
+        die("AI review round 2 requires at least one --scope-path");
+      receipt.reviewProtocolVersion = REVIEW_PROTOCOL_VERSION;
+      receipt.review = {
+        round: nextAttempt,
+        reviewer,
+        subjects,
+        policy: { ...policy, independent, diverse },
+        scope: {
+          mode: nextAttempt === 1 || scopePaths.length === 0 ? "full" : "changed",
+          paths: scopePaths,
+          digest: stableHash({ priorWorkspaceHash: prior?.workspaceHash || null, workspaceHash, paths: scopePaths })
+        },
+        findings: {
+          verified,
+          unresolvedBlockers: blockers,
+          reference: references[0] || null
+        },
+        supersedes: prior ? {
+          receiptSha256: stableHash(prior),
+          workspaceHash: prior.workspaceHash || null,
+          finishedAt: prior.finishedAt || null,
+          round: Number(prior?.review?.round || 0) || null
+        } : null
+      };
+      const attempt = reserveReviewAttempt(id, reviewerType, {
+        workspaceHash, status, reviewBinding: reviewReceiptBinding(receipt)
+      });
+      receipt.review.attemptDigest = attempt.digest;
+    }
+    if (capability === "acceptance") {
+      const acceptor = String(flags.acceptor || "").trim();
+      const criteria = flagValues(flags, "criterion").map((value) => String(value).trim());
+      const decision = String(flags.decision || "").trim().toLowerCase();
+      if (status === "pass" && (!acceptor || decision !== "accept" || criteria.length === 0 ||
+          criteria.some((criterion) => !criterion) || new Set(criteria).size !== criteria.length))
+        die("passing acceptance requires --acceptor, --decision accept, and at least one --criterion");
+      if (status === "pass" && !observed)
+        die("passing acceptance requires --observed");
+      provenanceSource ||= acceptor ? `human:${acceptor}` : "";
+      receipt.provenance.source = provenanceSource || null;
+      receipt.acceptanceProtocolVersion = ACCEPTANCE_PROTOCOL_VERSION;
+      receipt.acceptance = {
+        actor: { type: "human", identity: acceptor || null },
+        decision: decision || null,
+        criteria,
+        reason: resolvedAcceptance(id, state, evidence(id)).reason,
+        subjectWorkspaceHash: workspaceHash
+      };
+    }
+    if (capability === "browser" && status === "pass" && receipt.capability.foregroundRequired &&
+        !receipt.capability.foregroundAvailable) die("browser cannot pass when required foreground input is unavailable");
+    if (capability === "browser" && status === "pass" &&
+        !INPUT_MODES.has(receipt.capability.inputMode))
+      die("passing browser receipt requires --input-mode browser-automation|dom-event|os-input|both");
+    if (capability === "browser" && status === "pass" &&
+        ["os-input", "both"].includes(receipt.capability.inputMode) &&
+        (!receipt.capability.foregroundRequired || !receipt.capability.foregroundAvailable))
+      die("passing OS-input browser receipt requires foreground-required=yes and foreground-available=yes");
+    if (capability === "discovery" && status === "pass") {
+      const discovered = Number(flags.discovered);
+      const minimum = Number(flags.minimum);
+      if (!Number.isFinite(discovered) || !Number.isFinite(minimum) || minimum <= 0 || discovered < minimum)
+        die("passing discovery receipt requires --discovered N --minimum N with discovered >= minimum > 0");
+      receipt.discovery = { discovered, minimum };
+    }
+    if (capability === "mutation" && status === "pass" &&
+        !["behavioral-kill", "test-failure"].includes(flags.classification))
+      die("passing mutation receipt requires --classification behavioral-kill|test-failure; crash is not a kill");
+    if (capability === "mutation") receipt.classification = flags.classification || null;
+    writeJson(receiptPath(id, provider), receipt);
+    console.log(`RECEIPT ${id}/${provider}: ${status}`);
+  }
+
+  return { proofPlan, rebindReusableReceipt, recordReceipt };
+}
