@@ -5,15 +5,37 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 
+budget_failures=0
+
+budget_decision_guidance() {
+  printf '%s\n' \
+    'CONTEXT_BUDGET_USER_DECISION_REQUIRED' \
+    'Do not shorten policy/prompt content, move it, or increase this limit automatically.' \
+    'Report every failing file or scope with its actual size and limit. Ask the user to choose: (1) keep the content and raise the budget; (2) move details to selectively loaded documentation; or (3) deliberately shorten the content.' \
+    "Stop and wait for the user's choice before editing."
+}
+
+fail_context_budget() {
+  label="$1"; actual="$2"; limit="$3"; unit="$4"; scope="$5"
+  budget_failures=$((budget_failures + 1))
+  fail "$label — $scope uses $actual $unit; limit is $limit $unit"
+}
+
 assert_words_at_most() {
   label="$1"; limit="$2"; path="$3"
   words="$(wc -w < "$path" | tr -d ' ')"
   if [ "$words" -le "$limit" ]; then
     pass "$label ($words <= $limit words)"
   else
-    fail "$label — $words words exceeds $limit"
+    fail_context_budget "$label" "$words" "$limit" words "$path"
   fi
 }
+
+guidance="$(budget_decision_guidance)"
+assert_contains "budget guidance forbids automatic content compression" \
+  "$guidance" 'Do not shorten policy/prompt content'
+assert_contains "budget guidance requires the user to choose" \
+  "$guidance" "Stop and wait for the user's choice before editing."
 
 assert_words_at_most "always-on fundamentals budget" 700 \
   "$ROOT/.claude/rules/fundamentals.md"
@@ -78,7 +100,8 @@ hot_skill_words="$(wc -w \
 if [ "$hot_skill_words" -le 3000 ]; then
   pass "combined auth/backend skill budget ($hot_skill_words <= 3000 words)"
 else
-  fail "combined auth/backend skill budget — $hot_skill_words words exceeds 3000"
+  fail_context_budget "combined auth/backend skill budget" \
+    "$hot_skill_words" 3000 words "combined auth/backend skills"
 fi
 for skill in programming-fundamentals database-fundamentals hexagonal-backend \
   api-design-fundamentals security-fundamentals observability-fundamentals; do
@@ -100,7 +123,8 @@ combined_bytes="$(wc -c \
 if [ "$combined_bytes" -le 32768 ]; then
   pass "representative auth build context ($combined_bytes <= 32768 bytes)"
 else
-  fail "representative auth build context — $combined_bytes bytes exceeds 32768"
+  fail_context_budget "representative auth build context" \
+    "$combined_bytes" 32768 bytes "representative auth build context"
 fi
 
 assert_cmd_zero "task packet budget is 8 KiB" \
@@ -118,4 +142,7 @@ assert_cmd_zero "rapid token budget is explicit" \
 assert_cmd_zero "standard token budget is explicit" \
   jq -e '.execution.tokenBudgets.standard == 1600000' "$ROOT/foundation.json"
 
+if [ "$budget_failures" -gt 0 ]; then
+  budget_decision_guidance >&2
+fi
 finish "context budgets"
