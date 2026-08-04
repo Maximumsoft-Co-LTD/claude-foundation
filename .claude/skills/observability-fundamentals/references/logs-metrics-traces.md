@@ -111,7 +111,7 @@ db_pool_acquire_timeouts_total                              → errors
 checkout_latency_avg_ms  723   ← means nothing; whose latency? the p99 could be 30s
 ```
 
-## Principle 5 (from SKILL.md): Alert on symptoms users feel, not on causes — and make every alert actionable
+## Principle 6 (from SKILL.md): Alert on symptoms users feel, not on causes — and make every alert actionable
 
 **Rule:** Page on the symptom a user experiences (requests failing, requests slow, SLO budget burning), not on a cause (`CPU > 80%`, `memory high`). Every alert that pages a human must be actionable — if there's nothing to do, it shouldn't page.
 
@@ -138,7 +138,7 @@ ALERT CheckoutErrorBudgetFastBurn
         summary="Checkout burning 30-day budget 14x — see runbook step 1: check inventory svc"
 ```
 
-## Principle 6 (from SKILL.md): Define SLI/SLO/error budgets — measure "healthy" before you alert on it
+## Principle 5 (from SKILL.md): Define SLI/SLO/error budgets — measure "healthy" before you alert on it
 
 **Rule:** Before you can alert meaningfully or make a reliability tradeoff, define what "healthy" *measurably* means: an **SLI** (the metric), an **SLO** (the target on it), and the **error budget** (1 − SLO) that the target implies.
 

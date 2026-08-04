@@ -16,6 +16,9 @@ procedure; do not preload them.
   handling, accessibility, evidence, regression contracts, or Land guards.
 - Be terse but complete. Durable intent belongs in OpenSpec; machine status
   belongs in `.foundation/`.
+- Skills supply judgment and procedures; the harness owns lifecycle, authority,
+  evidence execution, receipts, budgets, and Land. Never create parallel state
+  or treat a skill checklist as proof.
 
 Load `coding-discipline` only when scope, assumptions, or diff shape remain
 unclear after this digest.
@@ -39,12 +42,12 @@ reference only when its named decision is active.
 | Trigger | Load |
 |---|---|
 | Bounded contexts, subdomains, aggregates, semantic ownership | `ddd-strategic` |
-| Non-trivial logic, model, module, implementation, or code review | `programming-fundamentals` |
+| Non-trivial logic, model, module boundary, abstraction depth, implementation, or code review | `programming-fundamentals` |
 | Threads, async, shared mutable state, locks, races | `concurrency-fundamentals` |
 | Schema, query, index, migration, persistence model | `database-fundamentals` |
 | Backend domain logic, use cases, ports, repositories | `hexagonal-backend` |
 | Published endpoint/resource/request/response/error/version contract | `api-design-fundamentals` |
-| System split, component relationship, cross-service call, scaling/failure model | `architecture-fundamentals` |
+| Runtime/deployable split, component relationship, cross-service call, scaling/failure model | `architecture-fundamentals` |
 | Broker, stream, job, worker, pub/sub, cross-process async | `queue-fundamentals` |
 | Auth/session/token, secrets, untrusted input, SQL/HTML/file/exec sink, crypto, dependency, external endpoint | `security-fundamentals` |
 | Runtime failure mode, logs, metrics, traces, SLO, alert, blind spot | `observability-fundamentals` |

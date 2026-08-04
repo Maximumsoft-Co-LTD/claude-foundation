@@ -1,6 +1,6 @@
 ---
 name: security-fundamentals
-description: Apply security fundamentals to auth/session/token code, untrusted input, SQL/shell/HTML/file/network sinks, secrets, crypto, dependencies, and other trust boundaries. Covers canonical validation, contextual output safety, deny-by-default authorization, vetted primitives, least privilege, and supply-chain hygiene. Skip work with no untrusted boundary.
+description: "Apply security review and implementation guidance at trust boundaries: auth/session/token code, untrusted input, SQL/shell/HTML/file/network sinks, secrets, crypto, dependencies, and external services. Covers canonical validation, contextual output safety, deny-by-default authorization, vetted primitives, least privilege, and supply-chain hygiene. Skip work with no untrusted boundary."
 ---
 
 # Security fundamentals
@@ -33,6 +33,10 @@ when a trust boundary is present.
 - Are secrets absent from code, logs, URLs, errors, and artifacts?
 - Are replay, fixation, CSRF, SSRF, traversal, injection, and mass assignment
   relevant, and if so tested?
+
+Record actors, assets, trust boundaries, abuse cases, controls, and required
+security providers in the active OpenSpec change. Never place secret values in
+specs, prompts, logs, fixtures, receipts, or reports.
 
 References: `references/authn-authz.md`, `input-and-output.md`, and
 `trust-and-hardening.md`. Read only the matching threat/sink.

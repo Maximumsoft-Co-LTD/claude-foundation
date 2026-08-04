@@ -1,6 +1,6 @@
 ---
 name: api-design-fundamentals
-description: Apply API-design fundamentals before changing a published HTTP, GraphQL, or RPC contract. Covers resource language, semantics, request/response validation, errors, idempotency, pagination, authorization boundaries, and compatibility. Skip private one-off transport with no contract impact.
+description: Design or change a published HTTP, GraphQL, or RPC contract. Use for resources, protocol semantics, request/response schemas, errors, idempotency, pagination, authorization boundaries, versioning, and compatibility. Skip private one-off transport with no independently consumed contract.
 ---
 
 # API design fundamentals
@@ -33,6 +33,10 @@ surface.
 - Are retries, duplicates, concurrent updates, and partial results defined?
 - Does every identifier expose only authorized objects?
 - Can old and new clients overlap safely?
+
+Record the public contract, compatibility window, failure cases, and consumer
+evidence in the active OpenSpec change. Let project contract/integration
+providers prove it; do not treat examples or prose alone as executable proof.
 
 References: `references/resource-modeling.md`, `contracts-and-errors.md`,
 `auth-and-limits.md`, and `evolution.md`. Read only the matching file.

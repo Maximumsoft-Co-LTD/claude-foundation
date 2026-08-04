@@ -1,6 +1,6 @@
 ---
 name: hexagonal-backend
-description: Apply ports and adapters when backend business logic must remain independent of frameworks, storage, brokers, or external APIs. Covers domain/application/infrastructure boundaries, driving and driven ports, mapping, and tests. Skip trivial CRUD with no domain policy.
+description: Structure one backend service with ports and adapters when business logic must remain independent of frameworks, storage, brokers, or external APIs. Use for dependency direction, use-case ownership, driving/driven ports, boundary mapping, and layer-focused tests. Skip trivial CRUD with no domain policy or replacement/test-isolation pressure.
 ---
 
 # Hexagonal backend
@@ -41,6 +41,11 @@ driving adapter → application port/use case → domain
 
 Use a simpler vertical slice for truly trivial CRUD; introduce ports where
 policy, replacement risk, or test isolation justifies them.
+
+Record only consequential dependency or transaction-boundary decisions in the
+active OpenSpec design. Do not create a parallel architecture document or add
+ports solely to satisfy a diagram; executable tests at domain/use-case/adapter
+seams provide the evidence.
 
 References: `references/typescript.md`, `go.md`, and
 `patterns-and-pitfalls.md`. Read only the language/pattern needed.

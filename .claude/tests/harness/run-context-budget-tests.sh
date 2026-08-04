@@ -39,10 +39,23 @@ assert_contains "budget guidance requires the user to choose" \
 
 assert_words_at_most "always-on fundamentals budget" 700 \
   "$ROOT/.claude/rules/fundamentals.md"
+assert_file_contains "fundamentals separates skill judgment from harness control" \
+  "$ROOT/.claude/rules/fundamentals.md" \
+  'Skills supply judgment and procedures; the harness owns lifecycle'
 assert_words_at_most "orchestrator troubleshooting budget" 750 \
   "$ROOT/.claude/orchestrator.md"
 assert_words_at_most "portable agent contract budget" 150 \
   "$ROOT/.claude/harness/AGENT.md"
+assert_file_contains "fundamentals routes abstraction depth" \
+  "$ROOT/.claude/rules/fundamentals.md" 'module boundary, abstraction depth'
+assert_file_contains "programming fundamentals require deep modules" \
+  "$ROOT/.claude/skills/programming-fundamentals/SKILL.md" \
+  'Design deep, cohesive modules'
+assert_file_contains "programming fundamentals route module design detail" \
+  "$ROOT/.claude/skills/programming-fundamentals/SKILL.md" \
+  'references/module-design.md'
+assert_file_exists "module design reference ships" \
+  "$ROOT/.claude/skills/programming-fundamentals/references/module-design.md"
 
 for command in "$ROOT"/.claude/commands/*.md; do
   assert_words_at_most "command budget: $(basename "$command")" 120 "$command"
@@ -109,8 +122,15 @@ for skill in programming-fundamentals database-fundamentals hexagonal-backend \
     "$ROOT/.claude/skills/$skill/SKILL.md"
 done
 
+all_skill_words="$(wc -w "$ROOT"/.claude/skills/*/SKILL.md | tail -1 | awk '{print $1}')"
+if [ "$all_skill_words" -le 8000 ]; then
+  pass "complete shipped skill budget ($all_skill_words <= 8000 words)"
+else
+  fail_context_budget "complete shipped skill budget" \
+    "$all_skill_words" 8000 words "all shipped SKILL.md bodies"
+fi
 for skill in "$ROOT"/.claude/skills/*/SKILL.md; do
-  assert_words_at_most "lazy skill budget: $(basename "$(dirname "$skill")")" 1200 "$skill"
+  assert_words_at_most "lazy skill budget: $(basename "$(dirname "$skill")")" 700 "$skill"
 done
 
 combined_bytes="$(wc -c \

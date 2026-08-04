@@ -1,6 +1,6 @@
 ---
 name: plan-writing
-description: Write or improve an OpenSpec change's design.md and tasks.md after proposal and delta requirements are clear. Use when implementation has meaningful sequencing, compatibility, migration, rollback, or cross-component decisions. Skip simple rapid changes.
+description: Write or improve an active OpenSpec change's design.md and tasks.md after proposal and delta requirements are clear. Use when implementation needs meaningful sequencing, compatibility, migration, rollback, cross-component decisions, or task dependencies. Skip rapid changes whose agreement and implementation path are already obvious.
 ---
 
 # OpenSpec design and tasks
@@ -29,4 +29,6 @@ Group large changes by behavioral slice; each slice must be provable.
 
 Do not create one native task per checkbox, agent-role handoffs, planning/testing
 phases, or a second status store. Finish by checking that every delta scenario has
-an implementation owner and an evidence claim.
+an implementation owner and an evidence claim. Use harness task annotations only
+for real repository, dependency, path, provider, or resource constraints; do not
+encode speculative concurrency.

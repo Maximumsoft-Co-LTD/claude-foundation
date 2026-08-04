@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Resolve genuine ambiguity before creating or materially revising an OpenSpec change. Use for unclear outcomes, competing approaches with meaningful tradeoffs, unknown scope boundaries, or a user asking to explore options. Skip when intent and constraints are already clear.
+description: Resolve genuine ambiguity before creating or materially revising an OpenSpec change. Use for unclear observable outcomes, competing approaches with consequential tradeoffs, unknown scope boundaries, or an explicit request to explore options. Skip when repository evidence and user intent already determine the change.
 ---
 
 # Change investigation
@@ -20,5 +20,7 @@ Use `/investigate` when the exploration should remain no-stakes. Once the
 agreement is clear, hand it to `/change`; do not create a separate spec, plan,
 interview ledger, or lifecycle state.
 
-No code lands during investigation. Repository facts must be grounded in files
-actually read; label inference explicitly.
+No product code lands during investigation. Repository facts must be grounded
+in files actually read; label inference explicitly. Prototypes stay inside the
+harness-provided investigation scope and are evidence for a decision, not
+implementation to Land.

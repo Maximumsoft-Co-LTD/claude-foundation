@@ -1,49 +1,46 @@
 ---
 name: frontend-design
-description: Build the visual layer of a frontend after the product/UX direction is known. Use when implementing or restyling web pages, React/Vue/Svelte components, HTML/CSS layouts, posters, dashboards, or app screens where the output is production UI code and the risk is visual quality, composition, typography, motion, or avoiding generic AI aesthetics. Use ui-ux-pro-max first for UX review, IA, accessibility, or choosing the design direction; use tailwind-design-system only for Tailwind v4 token/component work.
+description: Implement or restyle production web UI after product and UX direction is known. Use for pages, components, dashboards, posters, and HTML/CSS/React/Vue/Svelte work where visual composition, typography, motion, responsiveness, and polish are the main risk. Use ui-ux-pro-max first for UX direction or accessibility review; use tailwind-design-system for shared Tailwind v4 mechanics.
 license: Complete terms in LICENSE.txt
 ---
 
-This skill guides creation of distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
+# Frontend design
 
-The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
+Build working, distinctive UI that fits the product instead of applying a
+default SaaS aesthetic.
 
-## Workflow routing
+## Workflow
 
-- Use [[ui-ux-pro-max]] before this skill when the problem is deciding the UX, auditing usability, choosing color/typography/navigation, or reviewing accessibility.
-- Use this skill when the task has moved from design reasoning to building or polishing the actual UI code.
-- Use [[tailwind-design-system]] alongside this skill only when the project is using Tailwind v4 and the work affects shared tokens, variants, reusable components, dark mode, or migration patterns.
-- In the change loop, use this during `/build`; use `/investigate` first only when visual direction itself is ambiguous.
+1. Inspect the existing product, rendered UI, framework, components, tokens,
+   content, responsive behavior, and accessibility conventions.
+2. State one visual thesis grounded in purpose and audience. Preserve an
+   established brand unless the user requests a redesign.
+3. Establish hierarchy before decoration: content order, grid, typography,
+   spacing, color roles, and responsive transformations.
+4. Implement real behavior with semantic HTML, keyboard/focus support, loading,
+   empty/error/disabled states, and reduced-motion handling.
+5. Add a small number of intentional visual signatures—composition, type,
+   imagery, texture, or motion—that reinforce the thesis.
+6. Render and inspect representative desktop/mobile widths. Fix clarity,
+   overflow, interaction, accessibility, and visual rhythm before delivery.
 
-## Design Thinking
+## Quality rules
 
-Before coding, understand the context and commit to a BOLD aesthetic direction:
-- **Purpose**: What problem does this interface solve? Who uses it?
-- **Tone**: Pick an extreme: brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined, playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel, industrial/utilitarian, etc. There are so many flavors to choose from. Use these for inspiration but design one that is true to the aesthetic direction.
-- **Constraints**: Technical requirements (framework, performance, accessibility).
-- **Differentiation**: What makes this UNFORGETTABLE? What's the one thing someone will remember?
+- Reuse repository primitives and tokens before adding dependencies or one-off
+  values.
+- Use typography and color with clear roles; avoid arbitrary palettes, mixed
+  visual languages, and decoration unrelated to content.
+- Prefer authentic product data, screenshots, diagrams, or imagery over generic
+  claims and ornamental card grids.
+- Match complexity to the direction: restraint requires precision; expressive
+  design must still protect performance and comprehension.
+- Preserve behavior during visual-only work and keep unrelated refactors out of
+  the diff.
 
-**CRITICAL**: Choose a clear conceptual direction and execute it with precision. Bold maximalism and refined minimalism both work - the key is intentionality, not intensity.
+Record consequential visual/system decisions in the active OpenSpec design and
+let browser/accessibility providers supply evidence. Do not claim quality from
+source inspection alone when rendered verification is available.
 
-Then implement working code (HTML/CSS/JS, React, Vue, etc.) that is:
-- Production-grade and functional
-- Visually striking and memorable
-- Cohesive with a clear aesthetic point-of-view
-- Meticulously refined in every detail
-
-## Frontend Aesthetics Guidelines
-
-Focus on:
-- **Typography**: Choose fonts that are beautiful, unique, and interesting. Avoid generic fonts like Arial and Inter; opt instead for distinctive choices that elevate the frontend's aesthetics; unexpected, characterful font choices. Pair a distinctive display font with a refined body font.
-- **Color & Theme**: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes.
-- **Motion**: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Use Motion library for React when available. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions. Use scroll-triggering and hover states that surprise.
-- **Spatial Composition**: Unexpected layouts. Asymmetry. Overlap. Diagonal flow. Grid-breaking elements. Generous negative space OR controlled density.
-- **Backgrounds & Visual Details**: Create atmosphere and depth rather than defaulting to solid colors. Add contextual effects and textures that match the overall aesthetic. Apply creative forms like gradient meshes, noise textures, geometric patterns, layered transparencies, dramatic shadows, decorative borders, custom cursors, and grain overlays.
-
-NEVER use generic AI-generated aesthetics like overused font families (Inter, Roboto, Arial, system fonts), cliched color schemes (particularly purple gradients on white backgrounds), predictable layouts and component patterns, and cookie-cutter design that lacks context-specific character.
-
-Interpret creatively and make unexpected choices that feel genuinely designed for the context. No design should be the same. Vary between light and dark themes, different fonts, different aesthetics. NEVER converge on common choices (Space Grotesk, for example) across generations.
-
-**IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details. Elegance comes from executing the vision well.
-
-Remember: Claude is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
+Use `ui-ux-pro-max` for unresolved interaction/IA/a11y decisions, `gridgeist`
+when that explicit visual language is requested, and `tailwind-design-system`
+only when shared Tailwind v4 tokens or component APIs change.

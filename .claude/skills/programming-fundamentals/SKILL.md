@@ -1,6 +1,6 @@
 ---
 name: programming-fundamentals
-description: Apply code-level fundamentals before changing non-trivial logic, models, modules, or data structures. Covers constrained data modeling, illegal-state elimination, focused functions, pure core/effectful shell, explicit errors, complexity, naming, and testability. Skip one-line shell, generated output, and pure configuration.
+description: Apply code-level fundamentals before changing non-trivial logic, models, modules, abstractions, or data structures. Covers constrained data modeling, illegal-state elimination, deep modules, information hiding, focused functions, pure core/effectful shell, explicit errors, complexity, naming, and testability. Use for module boundaries or public interfaces within one process; skip one-line shell, generated output, and pure configuration.
 ---
 
 # Programming fundamentals
@@ -14,8 +14,9 @@ Load a reference only for the decision in front of you.
    most constrained useful type.
 2. Make illegal states unrepresentable with enums, variants, wrappers, and
    validated constructors.
-3. Give each function one reason to change. Extract policy, not arbitrary line
-   counts.
+3. Design deep, cohesive modules: expose a small interface that hides meaningful
+   complexity. Give each function one reason to change; extract policy, not
+   arbitrary line counts or pass-through layers.
 4. Keep decisions pure where practical; isolate I/O, clocks, randomness,
    network, and storage at the edge.
 5. Represent expected failure explicitly. Add context at boundaries; never
@@ -28,6 +29,8 @@ Load a reference only for the decision in front of you.
 ## Check before finishing
 
 - Are invariants enforced once at construction or the boundary?
+- Does each module hide more complexity than its interface exposes? Can callers
+  avoid knowing its internal decisions?
 - Can the decision logic run without infrastructure?
 - Are error and cancellation paths observable and tested?
 - Are tests aimed at behavior, boundaries, and failure rather than internals?
@@ -35,5 +38,11 @@ Load a reference only for the decision in front of you.
 
 Skip for trivial/generated work with no decision or invariant.
 
-References: `references/details.md`, `error-handling.md`, `complexity.md`,
-`naming.md`, and `testing.md`. Read only the matching file.
+Record only durable behavior or module-boundary decisions in OpenSpec. Keep
+implementation detail in code/tests and let project providers prove behavior;
+do not create a parallel design or completion ledger.
+
+References: read `references/module-design.md` for module boundaries,
+abstraction depth, cohesion, or information leakage. Other references:
+`details.md`, `error-handling.md`, `complexity.md`, `naming.md`, and `testing.md`.
+Read only the matching file.

@@ -1,90 +1,46 @@
 ---
 name: ui-ux-pro-max
-description: "UI/UX decision and review support for web and mobile. Use when the task is to plan, audit, or improve user experience: information hierarchy, interaction patterns, accessibility, responsive behavior, navigation, forms, charts, visual consistency, color/typography direction, or product-specific design-system choices. In the /dev workflow, use this during brainstorming/spec/plan/review for UI-heavy work and before frontend-design when direction is not yet settled. Do not use it merely because a frontend file is touched; use frontend-design for implementing polished UI code, and tailwind-design-system for Tailwind v4 token/component-library mechanics."
+description: "Decide or review web/mobile UX: information hierarchy, navigation, interaction, forms, accessibility, responsive behavior, charts, visual consistency, and design-system direction. Use before implementation when direction is unsettled or when auditing an existing interface. Do not trigger merely because frontend code is touched; use frontend-design for settled visual implementation and tailwind-design-system for Tailwind v4 mechanics."
 ---
 
-# UI/UX Pro Max - Design Intelligence
+# UI/UX decision and review
 
-## When to Apply
+Use this to resolve experience decisions before visual implementation or to
+produce an evidence-based review.
 
-**Use** for: new pages, UI components, color/typography/spacing/layout decisions, UX or a11y review, navigation patterns, animations, cross-platform design, component libraries, or any "why does this look bad" question.
-**Skip** for: pure backend/API/DB/infra work, non-visual tasks, pure implementation with settled design direction, or Tailwind v4 config/token syntax without broader UX decisions.
+## Workflow
 
-**Trigger**: the task changes how a feature looks, feels, moves, or is interacted with.
+1. Identify product type, audience, primary jobs, platforms, content density,
+   brand constraints, and critical states.
+2. Inspect the existing rendered experience and code/tokens when present. Label
+   facts, assumptions, and unknowns.
+3. Establish direction: hierarchy, navigation, interaction model, responsive
+   behavior, typography/color roles, and accessibility requirements.
+4. For reviews, prioritize findings by user impact and support each with an
+   observable example. Recommend one coherent replacement direction rather than
+   isolated cosmetic tweaks.
+5. Validate critical flows at small/large viewports, keyboard/touch, reduced
+   motion, zoom/dynamic type, loading/empty/error states, and light/dark themes
+   where applicable.
 
-## Neighboring Skills
+## Priority rules
 
-- [[frontend-design]] builds or polishes the actual UI code once the direction is known.
-- [[tailwind-design-system]] owns Tailwind v4 design tokens, reusable component APIs, CSS-first configuration, and migration details.
-- [[brainstorming]] owns open-ended product scoping before a UI direction can be chosen.
+1. Preserve access: semantic structure, visible focus, keyboard operation,
+   labels/names, adequate contrast, zoom, and non-color cues.
+2. Make actions usable: sufficient touch targets, clear feedback, safe loading
+   and destructive states, and no hover-only essential behavior.
+3. Prevent layout/performance harm: responsive reflow, reserved media space,
+   bounded motion, and no hidden or horizontally clipped content.
+4. Keep navigation and forms predictable; place errors next to causes and
+   preserve user input across recoverable failure.
+5. Use consistent tokens and visual roles; charts require readable labels,
+   legends, accessible color, and a nonvisual interpretation.
 
-## Rule Categories by Priority
+Use `references/quick-reference.md` for the full rule catalog. Use
+`references/search-tool.md` and bundled `search.py` scripts only when generating
+or comparing design-system directions. Use `references/app-ui-rules.md` for
+native/mobile sign-off.
 
-| Priority | Category | Impact | Domain | Key Checks (Must Have) | Anti-Patterns (Avoid) |
-|----------|----------|--------|--------|------------------------|------------------------|
-| 1 | Accessibility | CRITICAL | `ux` | Contrast 4.5:1, Alt text, Keyboard nav, Aria-labels | Removing focus rings, Icon-only buttons without labels |
-| 2 | Touch & Interaction | CRITICAL | `ux` | Min size 44×44px, 8px+ spacing, Loading feedback | Reliance on hover only, Instant state changes (0ms) |
-| 3 | Performance | HIGH | `ux` | WebP/AVIF, Lazy loading, Reserve space (CLS &lt; 0.1) | Layout thrashing, Cumulative Layout Shift |
-| 4 | Style Selection | HIGH | `style`, `product` | Match product type, Consistency, SVG icons (no emoji) | Mixing flat & skeuomorphic randomly, Emoji as icons |
-| 5 | Layout & Responsive | HIGH | `ux` | Mobile-first breakpoints, Viewport meta, No horizontal scroll | Horizontal scroll, Fixed px container widths, Disable zoom |
-| 6 | Typography & Color | MEDIUM | `typography`, `color` | Base 16px, Line-height 1.5, Semantic color tokens | Text &lt; 12px body, Gray-on-gray, Raw hex in components |
-| 7 | Animation | MEDIUM | `ux` | Duration 150–300ms, Motion conveys meaning, Spatial continuity | Decorative-only animation, Animating width/height, No reduced-motion |
-| 8 | Forms & Feedback | MEDIUM | `ux` | Visible labels, Error near field, Helper text, Progressive disclosure | Placeholder-only label, Errors only at top, Overwhelm upfront |
-| 9 | Navigation Patterns | HIGH | `ux` | Predictable back, Bottom nav ≤5, Deep linking | Overloaded nav, Broken back behavior, No deep links |
-| 10 | Charts & Data | LOW | `chart` | Legends, Tooltips, Accessible colors | Relying on color alone to convey meaning |
-
-
-## How to Use This Skill
-
-| Scenario | Trigger Examples | Start From |
-|----------|-----------------|------------|
-| **New project / page** | "Build a landing page", "Build a dashboard" | Step 1 → Step 2 (design system) |
-| **New component** | "Create a pricing card", "Add a modal" | Step 3 (domain search: style, ux) |
-| **Choose style / color / font** | "What style fits a fintech app?", "Recommend a color palette" | Step 2 (design system) |
-| **Review existing UI** | "Review this page for UX issues", "Check accessibility" | `references/quick-reference.md` checklist |
-| **Fix a UI bug** | "Button hover is broken", "Layout shifts on load" | `references/quick-reference.md` → relevant section |
-| **Improve / optimize** | "Make this faster", "Improve mobile experience" | Step 3 (domain search: ux, react) |
-| **Implement dark mode** | "Add dark mode support" | Step 3 (domain: style "dark mode") |
-| **Add charts / data viz** | "Add an analytics dashboard chart" | Step 3 (domain: chart) |
-| **Stack best practices** | "React performance tips"、"SwiftUI navigation" | Step 4 (stack search) |
-
-Steps 1–4 (design-system generation, domain searches, stack guidelines), the full domain/stack tables, example workflow, and output formats live in `references/search-tool.md`.
-
-## Tips for Better Results
-
-### Common Sticking Points
-
-| Problem | What to Do |
-|---------|------------|
-| Can't decide on style/color | Re-run `--design-system` with different keywords |
-| Dark mode contrast issues | `references/quick-reference.md` §6: `color-dark-mode` + `color-accessible-pairs` |
-| Animations feel unnatural | `references/quick-reference.md` §7: `spring-physics` + `easing` + `exit-faster-than-enter` |
-| Form UX is poor | `references/quick-reference.md` §8: `inline-validation` + `error-clarity` + `focus-management` |
-| Navigation feels confusing | `references/quick-reference.md` §9: `nav-hierarchy` + `bottom-nav-limit` + `back-behavior` |
-| Layout breaks on small screens | `references/quick-reference.md` §5: `mobile-first` + `breakpoint-consistency` |
-| Performance / jank | `references/quick-reference.md` §3: `virtualize-lists` + `main-thread-budget` + `debounce-throttle` |
-
-### Pre-Delivery Checklist
-
-- Run `--domain ux "animation accessibility z-index loading"` as a UX validation pass before implementation
-- Run through `references/quick-reference.md` **§1–§3** (CRITICAL + HIGH) as a final review
-- Test on 375px (small phone) and landscape orientation
-- Verify behavior with **reduced-motion** enabled and **Dynamic Type** at largest size
-- Check dark mode contrast independently (don't assume light mode values work)
-- Confirm all touch targets ≥44pt and no content hidden behind safe areas
-
----
-
-## App UI Pre-Delivery Checklist
-
-Before delivering **App UI** (iOS/Android/React Native/Flutter), run the full sign-off list — Visual Quality, Interaction, Light/Dark Mode, Layout, Accessibility — in `references/app-ui-rules.md > Pre-Delivery Checklist`.
-
-## Reference Files
-
-Read the one that matches the work in front of you; you don't need to read them all upfront.
-
-| File | Read when |
-|------|-----------|
-| `references/quick-reference.md` | Reviewing or building UI against the 10 rule categories (§1 Accessibility … §10 Charts & Data) — every rule ID with its one-line standard. |
-| `references/search-tool.md` | Running `search.py` — prerequisites, Steps 1–4 (design system, domain, stack searches), domain/stack tables, persist pattern, output formats, query strategy. |
-| `references/app-ui-rules.md` | Delivering native App UI (iOS/Android/React Native/Flutter) — icon/visual, interaction, light/dark contrast, layout/spacing Do/Don't tables, and the pre-delivery sign-off checklist. |
+Record consequential UX decisions and acceptance scenarios in OpenSpec. Hand
+settled visual implementation to `frontend-design`; let browser/accessibility
+providers prove the rendered behavior.

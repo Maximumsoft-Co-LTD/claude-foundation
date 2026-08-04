@@ -1,6 +1,6 @@
 ---
 name: database-fundamentals
-description: Apply database fundamentals before schema, query, index, transaction, migration, ORM, or persistent-state work. Covers invariants, query-shaped indexes, plans, N+1, isolation, and safe rollout. Skip throwaway and read-only ad-hoc queries.
+description: Design or change schemas, queries, indexes, transactions, migrations, ORM mappings, or other durable state. Covers constraints, query-shaped indexes, plans, N+1, isolation, concurrency, and compatible rollout. Skip throwaway storage and read-only ad-hoc queries with no shipped effect.
 ---
 
 # Database fundamentals
@@ -29,6 +29,10 @@ Use this as the primary skill when persistence is the main design constraint.
 - Are timeouts, retries, idempotency, and partial failure defined?
 - Can old and new application versions overlap during rollout?
 - Is migration progress and failure observable?
+
+Record compatibility, backfill, lock/load risk, rollback/forward-fix, and the
+provider that proves each data claim in the active OpenSpec change. Never use a
+schema migration as an implicit application deployment or a manual proof step.
 
 References: `references/schema-design.md`, `indexing.md`,
 `query-performance.md`, `transactions.md`, and `migrations.md`. Read only the

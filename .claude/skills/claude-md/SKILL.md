@@ -1,65 +1,39 @@
 ---
 name: claude-md
-description: Revise, optimise, or generate the root CLAUDE.md — the per-session guide Claude Code reads in this repo — into a fixed nine-section shape (Project Overview, Tech stack, Architecture, Domain Model, Folder Structure, Current State, Team Agent, Roadmap, Common Command) at max heading depth 2, grounded in the actual code and preserving any hand-authored rules. Use on "update / revise / optimize / generate CLAUDE.md", "make a CLAUDE.md for this repo", "tighten my CLAUDE.md", "ปรับ / อัพเดท / สร้าง CLAUDE.md", "ทำ CLAUDE.md ให้ repo นี้" — for an EXISTING codebase (it reads the code, never invents). The deep human-facing docs/ suite is [[init-project-docs]]; this is its lean agent-facing companion.
+description: "Generate, tighten, or update the root CLAUDE.md for an existing repository. Use when the user asks to create or revise the agent-facing project guide. Ground it in actual code and preserve hand-authored rules. Produce a concise nine-section index: Project Overview, Tech stack, Architecture, Domain Model, Folder Structure, Current State, Team Agent, Roadmap, and Common Command. Use init-project-docs for deep human-facing documentation."
 ---
 
-# Revise CLAUDE.md (the agent-facing guide)
+# Revise CLAUDE.md
 
-`CLAUDE.md` loads into context **every session** — keep it tight, current, true. Rewrite it to one fixed shape, read from the repo, never invented. Companion to [[init-project-docs]] (the long-form `docs/` suite): run that for deep docs, this for the session guide.
+`CLAUDE.md` loads every session. Keep it small, current, and traceable to files
+actually read. Preserve repository-owned instructions verbatim unless the user
+explicitly asks to change them.
 
-## Shape (fixed)
+## Fixed shape
 
-**Max heading depth 2** — `#` title + the nine `##` below, nothing deeper (bullets/tables under each). An **index, not a copy**: where a `docs/` file exists, link it in one line.
+Use one `#` title and these nine `##` sections; avoid deeper headings:
 
-| `##` section | Source — grounded, never invent |
-|---|---|
-| Project Overview | README + entry points → what it is · who for · one-command run |
-| Tech stack | manifests + lockfiles — real versions |
-| Architecture | top components/boundaries, 1–2 lines (diagram → `docs/ARCHITECTURE.md`) |
-| Domain Model | migrations / ORM models — real entities + key relationships |
-| Folder Structure | top-level tree, one line per node |
-| Current State | built / in-progress / known gaps — code + README + open TODOs; honest unknowns. Standing snapshot (≠ a `/dev` run's `context.md`) |
-| Team Agent | `.claude/agents/*.md` → name · role · model; none → "none" |
-| Roadmap | **invention-prone** — only README roadmap / milestones / `TODO`; none → "No roadmap found in repo" |
-| Common Command | build/run/test/lint from `package.json` / Makefile / CI — real invocations |
+1. **Project Overview** — purpose, audience, entry point, one-command run.
+2. **Tech stack** — versions from manifests and lockfiles.
+3. **Architecture** — top components and boundaries; link deep docs.
+4. **Domain Model** — real entities and important relationships.
+5. **Folder Structure** — top-level nodes and purpose.
+6. **Current State** — built, active, and known gaps grounded in code/specs.
+7. **Team Agent** — actual `.claude/agents/*.md`, or `none`.
+8. **Roadmap** — only repository roadmap/milestones/TODO; otherwise say none.
+9. **Common Command** — exact run/build/test/lint commands from project files.
 
-## Rules
+## Workflow
 
-- **Ground every line** — trace to a file you read; can't find it → one honest line, not filler.
-- **Revise, don't replace** — existing `CLAUDE.md`: preserve every hand-authored rule verbatim, reorganise into the nine sections, fill gaps. Absent → create.
-- **No secrets** — name env vars, never copy values.
-- Large repo → split only genuinely independent subsystem read-outs using native parallel work packages, then synthesize once.
+1. Read the existing `CLAUDE.md` and identify protected house rules.
+2. Inspect only authoritative project sources for each section.
+3. Reorganize and compress; link existing docs instead of copying them.
+4. Verify every command and path, check heading depth, and review the diff for
+   lost instructions or invented facts.
 
-## Skeleton
+Name environment variables but never values. State an honest unknown instead of
+filler. Do not copy Foundation runtime state, active task progress, receipts, or
+ephemeral context into this always-loaded file.
 
-```markdown
-# <Project> — CLAUDE.md
-<one line: the per-session guide for Claude Code here. Preserve existing house rules verbatim.>
-
-## Project Overview
-<2–3 lines: what · who for · one-command run>
-## Tech stack
-<languages · frameworks · datastores · build/CI — real versions>
-## Architecture
-<top components + boundaries; diagram → docs/ARCHITECTURE.md>
-## Domain Model
-<key entities/tables + relationships that matter>
-## Folder Structure
-- `src/` — <purpose>   <!-- top-level only, real layout -->
-## Current State
-<built · in progress · known gaps — grounded; honest unknowns>
-## Team Agent
-<.claude/agents/*.md → name · role · model; "none" if none>
-## Roadmap
-<README / milestones / TODO only; "No roadmap found in repo" if none>
-## Common Command
-- build/test/run/lint: `<real cmds from package.json / Makefile / CI>`
-```
-
-## Anti-patterns
-
-Bloating it (loads every session) · `###` depth · inventing stack/schema/agents/roadmap · clobbering hand-authored rules · duplicating `docs/` instead of linking.
-
-## Related
-
-[[init-project-docs]] (deep `docs/` suite — run first, link back) · [[refactoring-fundamentals]] (current-state mindset → Current State).
+Use `init-project-docs` when the user needs the detailed `docs/` suite; this
+skill should link that suite rather than duplicate it.

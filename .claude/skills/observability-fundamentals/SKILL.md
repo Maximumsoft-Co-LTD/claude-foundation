@@ -1,6 +1,6 @@
 ---
 name: observability-fundamentals
-description: Apply observability fundamentals when runtime code adds a failure mode, operational surface, log, metric, trace, SLO, alert, or production blind spot. Covers structured events, correlation, RED/USE metrics, percentiles, symptom alerts, and cost/cardinality. Skip offline or throwaway code.
+description: Add or review operability when runtime code changes a failure mode, log, metric, trace, SLI/SLO, alert, queue, dependency, or production blind spot. Covers structured events, correlation, RED/USE metrics, percentiles, symptom alerts, ownership, and telemetry cost/cardinality. Skip offline or throwaway code with no operated runtime.
 ---
 
 # Observability fundamentals
@@ -32,6 +32,10 @@ or materially alters runtime failure behavior.
 - Can one request/job be followed across every hop?
 - Are retry storms, queues, saturation, and partial failure visible?
 - Does each alert map to a user symptom and an action?
+
+Record the changed failure surface, SLI, ownership, and required telemetry
+evidence in OpenSpec. Let project providers verify emitted signals where
+practical; configuration presence alone does not prove an observable path.
 
 Reference: `references/logs-metrics-traces.md`. Read only the section matching
 the current concern.

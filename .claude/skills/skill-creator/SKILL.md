@@ -13,6 +13,10 @@ This skill is an explicit handoff, not a background lifecycle step. A recurring
 procedure may be proposed as a follow-up OpenSpec change, but only user approval
 authorizes creating or modifying skill files.
 
+Use the Foundation change loop for material shipped-skill changes. Keep test
+prompts, measured results, and user feedback as evaluation evidence; do not
+invent a parallel implementation-status ledger.
+
 The high-level loop:
 
 - Decide what the skill should do
@@ -58,4 +62,6 @@ The `references/` directory has additional documentation:
 | `references/environment-specifics.md` | Packaging, or running in Claude.ai / Cowork instead of Claude Code |
 | `references/schemas.md` | JSON structures for evals.json, eval_metadata.json, grading.json, timing.json, benchmark.json, comparison.json, analysis.json, feedback.json, etc. |
 
-Add steps to your TodoList to track progress.
+Track implementation work in the active `tasks.md` when a change exists;
+otherwise use the host's transient plan only. Never create a second durable
+status store.

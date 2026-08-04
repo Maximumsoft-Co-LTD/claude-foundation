@@ -1,6 +1,7 @@
 # Details: data modeling, illegal states, purity, read-first
 
-Rule/why/example for the four `programming-fundamentals` principles without their own topical reference file. Headings match the principle numbers in `SKILL.md`.
+Rule/why/example for `programming-fundamentals` principles without their own
+topical reference file, plus the cross-cutting read-first practice.
 
 ## 1. Model the data first
 
@@ -73,7 +74,7 @@ function discountFor(total: Money): Money {
 // shell calls: load → discountFor → save
 ```
 
-## 7. Read before you write
+## Practice: Read before you write
 
 **Rule:** Read the surrounding code, the error message, and the actual failing function before writing or guessing.
 
