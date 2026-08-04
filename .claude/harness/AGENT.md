@@ -9,7 +9,7 @@ machine state. Use the installed `claude-foundation` CLI.
 
 Start Build/Prove from their compact packet; read referenced files only when
 needed. Edit only the declared sandbox and paths. Use `agents plan` only for
-independent work, acquire task leases, and give workers task-scoped packets.
+independent work; the host owns leases and gives workers `packet --task`.
 Never replay the full conversation.
 
 Load one primary construction skill for the hardest decision, plus security or

@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "commands": [
+    { "name": "changes", "usage": "changes", "audience": "agent", "kind": "read", "idempotent": true, "description": "List active changes, lifecycle status, and their next useful action." },
+    { "name": "doctor", "usage": "doctor [--stage change|build|prove] [--change <id>] [--json]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Diagnose project, provider, and lifecycle readiness." },
+    { "name": "packet", "usage": "packet <change> [--phase <phase>] [--repo <id>] [--task <id>]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Read the bounded machine handoff for the current operation." },
+    { "name": "metrics", "usage": "metrics <change>", "audience": "agent", "kind": "read", "idempotent": true, "description": "Inspect measured usage, active budget, cost, and execution timing." },
+
+    { "name": "change new", "usage": "change new <intent> [--rapid]", "audience": "agent", "kind": "write", "idempotent": false, "description": "Create a change agreement when atomic draft start does not apply." },
+    { "name": "change start", "usage": "change start --template | <draft.json>", "audience": "agent", "kind": "write", "idempotent": false, "description": "Create and start an isolated change from one validated draft." },
+    { "name": "change resolve", "usage": "change resolve <change> [options]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Persist impact, coupling, security, and review decisions." },
+    { "name": "change validate", "usage": "change validate <change>", "audience": "agent", "kind": "write", "idempotent": true, "description": "Validate the change and executable evidence contract." },
+
+    { "name": "sandbox create", "usage": "sandbox create <change> [--all] [--unattended]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Create the isolated Build workspace." },
+    { "name": "sandbox sync", "usage": "sandbox sync <change>", "audience": "agent", "kind": "write", "idempotent": true, "description": "Synchronize an intentional contract revision into Build." },
+
+    { "name": "proof readiness", "usage": "proof readiness <change>", "audience": "agent", "kind": "read", "idempotent": true, "description": "Return typed blockers and canonical next commands." },
+    { "name": "proof collect", "usage": "proof collect <change>", "audience": "agent", "kind": "write", "idempotent": false, "description": "Collect executable evidence before an external boundary." },
+    { "name": "proof run", "usage": "proof run <change>", "audience": "agent", "kind": "write", "idempotent": false, "description": "Run readiness, providers, finalization, and audit atomically." },
+
+    { "name": "land check", "usage": "land check <change>", "audience": "agent", "kind": "read", "idempotent": true, "description": "Validate that the proven projection remains landable." },
+    { "name": "land archive", "usage": "land archive <change>", "audience": "agent", "kind": "authority", "idempotent": true, "description": "Apply, synchronize, audit, archive, and clean up explicitly." },
+
+    { "name": "agents plan", "usage": "agents plan <change> [--group <n>] [--pretty]", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Plan dispatch only for independently verifiable parallel work." },
+    { "name": "evidence record", "usage": "evidence record <change> <provider> <status> [options]", "audience": "conditional", "kind": "authority", "idempotent": false, "description": "Record externally observed evidence requested by readiness." },
+    { "name": "land record", "usage": "land record <change> --repo <id> --commit <sha> [--ci pass]", "audience": "conditional", "kind": "authority", "idempotent": true, "description": "Bind an explicitly authorized child repository commit." },
+    { "name": "land resume", "usage": "land resume <change>", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Resume an interrupted or multi-repository Land saga." },
+    { "name": "budget continue", "usage": "budget continue <change> --reason <reason> [--run <id>]", "audience": "conditional", "kind": "authority", "idempotent": false, "description": "Open one policy-gated completion window without deleting usage." },
+
+    { "name": "init", "usage": "init [target-path] [options]", "audience": "admin", "kind": "authority", "idempotent": true, "description": "Install or upgrade Foundation in a project." },
+    { "name": "providers", "usage": "providers", "audience": "conditional", "kind": "read", "idempotent": true, "description": "Inspect evidence wiring only while defining a change contract." },
+    { "name": "repos", "usage": "repos [change]", "audience": "admin", "kind": "read", "idempotent": true, "description": "Inspect repository topology and selection." },
+    { "name": "models", "usage": "models", "audience": "admin", "kind": "read", "idempotent": true, "description": "Inspect model-tier policy." },
+    { "name": "migrate", "usage": "migrate [legacy-id] [--apply]", "audience": "admin", "kind": "authority", "idempotent": true, "description": "Migrate corroborated legacy workflow records." },
+    { "name": "version", "usage": "version", "audience": "admin", "kind": "read", "idempotent": true, "description": "Print the installed package version." },
+    { "name": "help", "usage": "help [--all]", "audience": "admin", "kind": "read", "idempotent": true, "description": "Show canonical commands; --all includes compatibility routes." },
+    { "name": "dashboard", "usage": "dashboard[-up|-status|-down]", "audience": "admin", "kind": "authority", "idempotent": false, "description": "Manage the optional team-presence client." },
+    { "name": "evidence upgrade", "usage": "evidence upgrade <change>", "audience": "admin", "kind": "write", "idempotent": true, "description": "Upgrade legacy evidence wiring explicitly." },
+
+    { "name": "runtime", "usage": "runtime <internal-command>", "audience": "internal", "kind": "write", "idempotent": false, "deprecated": true, "description": "Compatibility pass-through for installed workflow internals." },
+    { "name": "validate", "usage": "validate <change>", "audience": "internal", "kind": "write", "idempotent": true, "deprecated": true, "description": "Compatibility alias for change validate." },
+    { "name": "agents task", "usage": "agents task <change> <task>", "audience": "internal", "kind": "read", "idempotent": true, "deprecated": true, "description": "Compatibility alias for packet --task." },
+    { "name": "agents acquire", "usage": "agents acquire <change> <task> --owner <id>", "audience": "host", "kind": "write", "idempotent": true, "description": "Acquire a host-managed resource lease." },
+    { "name": "agents release", "usage": "agents release <change> <task> --owner <id>", "audience": "host", "kind": "write", "idempotent": true, "description": "Release a host-managed resource lease." },
+    { "name": "telemetry sync", "usage": "telemetry sync <change> [transcript.jsonl]", "audience": "host", "kind": "write", "idempotent": true, "description": "Synchronize native host request usage." },
+    { "name": "telemetry import", "usage": "telemetry import <change> <file> [--format <format>]", "audience": "host", "kind": "write", "idempotent": true, "description": "Import authoritative host usage." },
+    { "name": "evidence run", "usage": "evidence run <change> <provider> --claims <scope> -- <command>", "audience": "internal", "kind": "write", "idempotent": false, "description": "Execute one low-level evidence adapter." },
+    { "name": "sandbox inspect", "usage": "sandbox inspect <change> [--json]", "audience": "internal", "kind": "read", "idempotent": true, "description": "Inspect isolation diagnostics." },
+    { "name": "sandbox apply", "usage": "sandbox apply <change>", "audience": "internal", "kind": "authority", "idempotent": true, "description": "Apply a proven projection through the Land journal." },
+    { "name": "proof plan", "usage": "proof plan <change>", "audience": "internal", "kind": "read", "idempotent": true, "deprecated": true, "description": "Compatibility alias for proof readiness." },
+    { "name": "proof finish", "usage": "proof finish <change>", "audience": "internal", "kind": "write", "idempotent": true, "deprecated": true, "description": "Compatibility alias for proof run." },
+    { "name": "proof preflight", "usage": "proof preflight <change>", "audience": "internal", "kind": "read", "idempotent": true, "description": "Low-level proof topology check." },
+    { "name": "proof execute", "usage": "proof execute <change>", "audience": "internal", "kind": "write", "idempotent": true, "description": "Low-level provider execution and finalization." },
+    { "name": "proof finalize", "usage": "proof finalize <change>", "audience": "internal", "kind": "write", "idempotent": true, "description": "Low-level finalization from valid receipts." },
+    { "name": "proof audit", "usage": "proof audit <change>", "audience": "internal", "kind": "read", "idempotent": true, "description": "Low-level proof artifact audit." },
+    { "name": "land plan", "usage": "land plan <change>", "audience": "internal", "kind": "write", "idempotent": true, "description": "Persist the multi-repository Land saga plan." },
+    { "name": "land pointers", "usage": "land pointers <change>", "audience": "internal", "kind": "authority", "idempotent": true, "description": "Stage proven submodule pointers." }
+  ],
+  "runtimeCommands": [
+    "new", "start", "resolve", "changes", "providers", "repos", "models",
+    "agent-plan", "agent-task", "agent-acquire", "agent-release", "packet",
+    "metrics", "budget-continue", "doctor", "validate", "hash", "proof-plan",
+    "proof-readiness", "proof-run", "proof-collect", "proof-preflight",
+    "proof-execute", "proof-audit", "evidence-upgrade", "receipt",
+    "run-provider", "prove", "land-check", "land-plan", "land-record",
+    "land-pointers", "land-resume", "sandbox", "archive", "event",
+    "telemetry-sync", "telemetry-import", "migrate", "api-version", "version"
+  ]
+}

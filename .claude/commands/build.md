@@ -5,16 +5,14 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**.
 
-Validate; run `claude-foundation sandbox create <change>` or `sandbox sync`.
-Start from
-`claude-foundation packet <change> --phase build`; read references.
+Validate; run `sandbox create <change>` or `sandbox sync`. Start from
+`packet <change> --phase build`; read references.
 
-If the host declares unattended execution, use one bare `--unattended` flag on
-doctor/create. Detection never authorizes. The runtime cannot infer external
-Allow All, so stop when blocked; never fall back to create.
+For unattended execution, use one bare `--unattended` on doctor/create.
+Detection never authorizes; stop when blocked.
 
-For multi-repo work, run `claude-foundation agents plan`. Keep single-agent work
-single. Lease workers, pass only their `agents task` packet, then release.
+For multi-repo work, run `agents plan`; keep single-agent work single. The host
+owns leases and gives workers only `packet --task <task>`.
 
 Edit only allowed sandbox paths. Run focused checks and update the sole ledger,
 `tasks.md`. Run `claude-foundation proof readiness <change>` and resolve

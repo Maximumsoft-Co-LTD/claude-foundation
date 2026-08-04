@@ -213,16 +213,13 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 
 | Command | ใช้เมื่อ | ผลลัพธ์ |
 |---|---|---|
-| `/investigate` | ยังไม่รู้สาเหตุ scope หรือแนวทาง | Fact ที่ตรวจจาก code, ทางเลือก, tradeoff และ decision ที่ยังขาด โดยไม่แก้ product |
-| `/prototype` | ต้องเปรียบเทียบทิศทางชั่วคราว 3–5 แบบ | ไฟล์ชั่วคราวใต้ `.foundation/` ซึ่งใช้เป็น proof ไม่ได้ |
+| `/investigate` | ยังไม่รู้สาเหตุ scope หรือแนวทาง; เพิ่ม `--compare` เมื่อต้องเปรียบเทียบ 3–5 ทางเลือก | Fact ที่ตรวจจาก code, ทางเลือก, tradeoff และ decision ที่ยังขาด โดยไม่แก้ product |
 | `/change` | รู้ outcome แล้ว หรือต้องแก้ active agreement | สร้างหรือแก้ OpenSpec artifact โดยไม่แก้ product |
 | `/build` | ข้อตกลงพร้อม implement | Code และ focused check ใน isolated workspace |
 | `/prove` | Implementation task และ focused check เสร็จ | Required receipts และ `proof.json` ที่ผูกกับ content |
-| `/review` | Risk policy ต้องการมุมมองอิสระจาก context ใหม่ | Bounded review receipt โดยไม่แก้ product |
 | `/land` | Proof ผ่านและคุณยอมรับ change | Apply proven diff, sync specs และ archive |
 | `/changes` | กลับมาทำงานต่อหรือมีหลาย active changes | State ปัจจุบันและ operation ที่ควรทำต่อ |
 | `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | Proven candidate และจงใจหยุดก่อน Land |
-| `/migrate-workflow` | ย้ายความรู้จาก `.workflow/` รุ่นเก่า | Migration candidate สำหรับ review โดยไม่ยกเป็น truth อัตโนมัติ |
 
 ใช้ command แยกเมื่อต้องการ review ทุก boundary ใช้ `/dev` กับงานเล็กที่ชัดและ
 ต้องการ one-shot flow:
@@ -380,7 +377,6 @@ Foundation ไม่ติดตั้ง test framework หรือ browser �
 ```bash
 claude-foundation doctor --stage prove --change <change-id>
 claude-foundation proof readiness <change-id>
-claude-foundation proof plan <change-id>
 claude-foundation proof run <change-id>
 ```
 
@@ -435,7 +431,7 @@ ID และความหมายไม่เปลี่ยน และ inv
 
 Foundation มอง multi-remote landing เป็น ordered resumable saga โดยตรวจ child
 commit และ CI state ที่ระบุชัด ไม่อ้างว่า atomic ข้าม remote ใช้
-`claude-foundation land plan <change-id>` เพื่อดูลำดับ และดู protocol เต็มใน
+`claude-foundation land resume <change-id>` เพื่อตรวจและเดินลำดับต่อ และดู protocol เต็มใน
 [WORKFLOW.md](WORKFLOW.md)
 
 ## Foundation จำกัด Scope ของ Agent และ Skill อย่างไร
@@ -492,17 +488,14 @@ recover:
 ```bash
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation validate <change-id>
+claude-foundation change validate <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
-claude-foundation budget status <change-id>
 claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ"
-claude-foundation sandbox inspect <change-id> --json
 claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
-claude-foundation proof audit <change-id>
 claude-foundation land check <change-id>
-claude-foundation land plan <change-id>
+claude-foundation land archive <change-id>
 ```
 
 CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
@@ -527,7 +520,10 @@ focused fix และ required proof ต่อได้ เมื่อถึง
 rescope โดยไม่ทำให้ telemetry ล้มเหลวและไม่ block deterministic packet,
 readiness, provider, receipt reuse, proof-resume, metrics, Land recovery หรือ
 archive คำสั่ง `budget continue` เปิด window ใหม่โดย operator พร้อม audit record
-โดยไม่ลบ usage เดิมและไม่ลด evidence requirement
+ได้หนึ่งครั้งต่อ run และเฉพาะ code/configuration ที่ AI ต้องทำให้เสร็จ Active
+lease, external evidence, infrastructure failure และงาน deterministic ที่พร้อม
+อยู่แล้วจะไม่ผ่าน gate โดย reason ใช้บันทึก audit ไม่ได้ใช้ตัดสิน policy ระบบไม่
+ลบ usage เดิมและไม่ลด evidence requirement
 
 ## ตรวจหรือ Upgrade Installation
 

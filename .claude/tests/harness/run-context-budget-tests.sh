@@ -25,6 +25,22 @@ assert_words_at_most "portable agent contract budget" 150 \
 for command in "$ROOT"/.claude/commands/*.md; do
   assert_words_at_most "command budget: $(basename "$command")" 120 "$command"
 done
+assert_eq "normal slash command surface is bounded" "7" \
+  "$(find "$ROOT/.claude/commands" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')"
+if grep -R -Eq 'runtime (new|start|resolve)|proof (plan|finish|preflight|execute|finalize|audit)' \
+  "$ROOT/.claude/commands"; then
+  fail "slash commands use canonical public vocabulary"
+else
+  pass "slash commands use canonical public vocabulary"
+fi
+assert_file_contains "investigate owns bounded comparison" \
+  "$ROOT/.claude/commands/investigate.md" '--compare'
+assert_file_contains "normal investigate limits writes to its note" \
+  "$ROOT/.claude/commands/investigate.md" 'Without comparison'
+assert_file_contains "compare mode scopes writes to prototypes" \
+  "$ROOT/.claude/commands/investigate.md" 'write only inside the prototype directory'
+assert_file_contains "prove owns fresh independent review" \
+  "$ROOT/.claude/commands/prove.md" 'fresh independent'
 assert_file_contains "dev command forbids direct implementation bypass" \
   "$ROOT/.claude/commands/dev.md" \
   "Foundation runtime state is a failed"
@@ -33,7 +49,7 @@ assert_file_contains "dev command forbids redundant framework exploration" \
   "Do not reread framework files"
 assert_file_contains "dev command uses atomic rapid start" \
   "$ROOT/.claude/commands/dev.md" \
-  'runtime start --template'
+  'change start --template'
 assert_file_contains "change command selects rapid before creation" \
   "$ROOT/.claude/commands/change.md" \
   "classify before creating it"
@@ -43,6 +59,13 @@ assert_file_contains "change command omits empty security flag" \
 assert_file_contains "build command names sandbox transition" \
   "$ROOT/.claude/commands/build.md" \
   'sandbox create <change>'
+if grep -qF 'proof execute' "$ROOT/website/index.html"; then
+  fail "public website uses canonical proof command"
+else
+  pass "public website uses canonical proof command"
+fi
+assert_file_contains "public website advertises proof run" \
+  "$ROOT/website/index.html" 'proof run &lt;id&gt;'
 
 hot_skill_words="$(wc -w \
   "$ROOT/.claude/skills/programming-fundamentals/SKILL.md" \

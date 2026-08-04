@@ -224,16 +224,13 @@ After Land, a new requirement should normally become a new change.
 
 | Command | Use it when | Result |
 |---|---|---|
-| `/investigate` | The cause, scope, or approach is unclear | Code-grounded facts, options, tradeoffs, and open decisions; no product edits |
-| `/prototype` | A subjective direction needs 3–5 disposable comparisons | Temporary material under `.foundation/`; never accepted as proof |
+| `/investigate` | The cause, scope, or approach is unclear; add `--compare` for 3–5 disposable alternatives | Code-grounded facts, options, tradeoffs, and open decisions; no product edits |
 | `/change` | The desired outcome is known, or an active agreement must change | Creates or revises OpenSpec artifacts; no product edits |
 | `/build` | The agreement is ready to implement | Edits and focused checks in an isolated workspace |
 | `/prove` | Implementation tasks and focused checks are complete | Required receipts and a content-bound `proof.json` |
-| `/review` | Risk policy requires a fresh independent perspective | A bounded review receipt; no product edits |
 | `/land` | Proof passes and you accept the change | Applies the proven diff, syncs specs, and archives |
 | `/changes` | You are resuming work or managing several changes | Active states and the next useful operation |
 | `/dev` | The intent is clear and you want Change → Build → Prove in one run | A proven candidate; deliberately stops before Land |
-| `/migrate-workflow` | You are moving knowledge from legacy `.workflow/` runs | Reviewable migration candidates; no automatic promotion to truth |
 
 Use the separate commands when you want to review each boundary. Use `/dev`
 for a small, clear request where a one-shot run is easier:
@@ -393,7 +390,6 @@ Useful diagnostics:
 ```bash
 claude-foundation doctor --stage prove --change <change-id>
 claude-foundation proof readiness <change-id>
-claude-foundation proof plan <change-id>
 claude-foundation proof run <change-id>
 ```
 
@@ -437,7 +433,7 @@ Annotate multi-repository tasks so authority and dependencies remain explicit:
 
 Foundation treats multi-remote landing as an ordered, resumable saga. It verifies
 explicit child commits and CI state; it does not claim atomicity across remotes.
-Use `claude-foundation land plan <change-id>` to inspect the order. See
+Use `claude-foundation land resume <change-id>` to inspect and advance the order. See
 [WORKFLOW.md](WORKFLOW.md) for the full control-plane protocol.
 
 ## How Foundation scopes agents and skills
@@ -496,17 +492,14 @@ for inspection and recovery:
 ```bash
 claude-foundation doctor --stage change
 claude-foundation changes
-claude-foundation validate <change-id>
+claude-foundation change validate <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
-claude-foundation budget status <change-id>
 claude-foundation budget continue <change-id> --reason "finish required proof"
-claude-foundation sandbox inspect <change-id> --json
 claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
-claude-foundation proof audit <change-id>
 claude-foundation land check <change-id>
-claude-foundation land plan <change-id>
+claude-foundation land archive <change-id>
 ```
 
 The CLI finds the installed project from the current directory or from
@@ -532,7 +525,11 @@ focused fixes and required proof continue. At 100% the harness recommends
 splitting or rescoping but does not fail telemetry or block deterministic
 packet, readiness, provider, receipt-reuse, proof-resume, metrics, Land recovery,
 or archive commands. `budget continue` opens a fresh operator-approved window
-with an audit record; it never deletes prior usage or weakens required evidence.
+with an audit record only for required model-completable code or configuration
+work, at most once per run. Active leases, external evidence, infrastructure
+failures, and already-ready deterministic work do not qualify. The reason is
+audit context rather than a text-based policy gate; prior usage and evidence
+requirements remain intact.
 
 ## Verify or upgrade an installation
 

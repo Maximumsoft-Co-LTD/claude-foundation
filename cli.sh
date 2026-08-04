@@ -19,6 +19,7 @@ EXPECTED_RUNTIME_API=9
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'claude-foundation: warning: %s\n' "$*" >&2; }
 
 find_project_root() {
   local cursor="$PROJECT_START"
@@ -98,85 +99,33 @@ print_version() {
 }
 
 usage() {
-  cat <<'EOF'
-claude-foundation — OpenSpec-native software-change harness
-
-Usage:
-  claude-foundation init [target-path] [options]   Install the change loop (default target: current dir)
-  claude-foundation providers                     List evidence provider contracts
-  claude-foundation repos [change]                Inspect repository topology and selection
-  claude-foundation models                        Show model-tier routing policy
-  claude-foundation agents plan <change> [--group <n>] [--pretty]
-                                                  Summarize or inspect one execution group
-  claude-foundation agents task <change> <task> [--pretty]
-                                                  Print one task-scoped packet
-  claude-foundation agents acquire|release <change> <task> --owner <agent-id>
-                                                  Hold or release task resource leases
-  claude-foundation doctor [--stage change|build|prove] [--require-archive] [--change <id>] [--unattended] [--json]
-                                                  Check runtime, providers, and archive readiness
-  claude-foundation changes                       List active changes
-  claude-foundation packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
-                                                  Print a compact scoped handoff
-  claude-foundation metrics <change>              Summarize measured phase/provider cost
-  claude-foundation budget status <change>        Show lifetime usage and active run mode
-  claude-foundation budget continue <change> --reason <reason> [--run <id>]
-                                                  Open an audited run budget window
-  claude-foundation budget split <change> --reason <reason>
-                                                  Stop model exploration pending a scoped change
-  claude-foundation telemetry sync <change> [transcript.jsonl]
-                                                  Incrementally ingest native Claude request usage
-  claude-foundation telemetry import <change> <file> [--format generic|codex|claude]
-                                                  Import authoritative host usage without prompts
-  claude-foundation runtime new <intent> [--rapid]
-                                                  Create a change through the project runtime
-  claude-foundation runtime start --template | <draft.json>
-                                                  Atomically start an isolated Build from a risk-resolved draft
-  claude-foundation runtime resolve <change> [options]
-                                                  Persist change risk and coupling decisions
-  claude-foundation validate <change>              Validate a change packet
-  claude-foundation proof plan <change>            Show missing or stale evidence
-  claude-foundation proof readiness <change>       Show typed blockers and recovery choices
-  claude-foundation proof collect <change>         Run available project evidence without finalizing proof
-  claude-foundation proof preflight <change>       Validate execution topology without running it
-  claude-foundation proof audit <change>           Verify durable proof and artifact digests
-  claude-foundation proof execute <change>         Run configured evidence and finalize proof
-  claude-foundation proof finalize <change>        Create a proof from valid receipts
-  claude-foundation proof finish <change>          Readiness, execute, and audit atomically
-  claude-foundation evidence run <change> <provider> --claims <scope> -- <command>
-                                                  Run a provider and record its receipt
-  claude-foundation evidence record <change> <provider> <status> [options]
-                                                  Record external provider evidence
-  claude-foundation evidence upgrade <change>      Separate legacy claims and execution wiring
-  claude-foundation sandbox inspect <change> [--json] [--unattended]
-                                                  Inspect workspace isolation and boundary evidence
-  claude-foundation sandbox create <change> [--all] [--unattended]
-                                                  One bare flag; fails closed without trusted host attestation
-  claude-foundation sandbox sync|apply <change>
-                                                  Manage the isolated workspace
-  claude-foundation land check|plan|pointers|resume|archive <change>
-                                                  Check or advance resumable landing
-  claude-foundation land record <change> --repo <id> --commit <sha> [--ci pass]
-                                                  Bind an explicitly created child commit
-  claude-foundation migrate [legacy-id] [--apply]  Migrate legacy workflow evidence
-  claude-foundation version                        Print the installed version
-  claude-foundation help                           Show this help
-  claude-foundation dashboard-up --key <key>       Start the team-presence client (background)
-  claude-foundation dashboard-status               Is the presence client running?
-  claude-foundation dashboard-down                 Stop the presence client
-
-Global options:
-  --project <path>, -C <path>   Resolve a Foundation project from this path
-
-Run `claude-foundation init --help` for the full installer options
-(--source, --force, --yes, --dry-run).
-
-Installed workflow:
-  /investigate → /change → /build → /prove → /land
-  /dev remains a compatibility alias through proof.
-
-The low-level `runtime` namespace is reserved for installed slash commands and
-diagnostics. Use the public namespaces above for operator work.
-EOF
+  local registry="$SCRIPT_DIR/.claude/harness/commands.json"
+  [ -f "$registry" ] || fail "command registry not found: $registry"
+  node - "$registry" "${1:-}" <<'NODE'
+const fs = require("fs");
+const registry = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const showAll = process.argv[3] === "--all";
+const groups = showAll
+  ? [["Workflow", "agent"], ["Conditional recovery", "conditional"],
+     ["Administration", "admin"], ["Host integration", "host"],
+     ["Internal compatibility", "internal"]]
+  : [["Workflow", "agent"], ["Conditional recovery", "conditional"]];
+console.log("claude-foundation — OpenSpec-native software-change harness\n");
+for (const [title, audience] of groups) {
+  const rows = registry.commands.filter((command) => command.audience === audience);
+  if (!rows.length) continue;
+  console.log(`${title}:`);
+  for (const command of rows) {
+    const deprecated = command.deprecated ? " [deprecated]" : "";
+    console.log(`  claude-foundation ${command.usage}${deprecated}`);
+    console.log(`    ${command.description}`);
+  }
+  console.log("");
+}
+console.log("Global options: --project <path>, -C <path>");
+console.log("Workflow: /investigate → /change → /build → /prove → /land");
+if (!showAll) console.log("Run `claude-foundation help --all` for host and compatibility commands.");
+NODE
 }
 
 case "${1:-}" in
@@ -190,7 +139,9 @@ case "${1:-}" in
   version|--version|-v)
     print_version; exit 0 ;;
   help|--help|-h)
-    usage; exit 0 ;;
+    [ "$#" -le 2 ] || fail "help accepts only --all"
+    [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && fail "help accepts only --all"
+    usage "${2:-}"; exit 0 ;;
   init)
     # Explicit alias for the installer. Strip `init`; the rest of the surface
     # (`[target-path] [options]`) is install.sh's, unchanged.
@@ -215,7 +166,9 @@ case "${1:-}" in
         run_runtime write agent-plan "$@" ;;
       task)
         [ "$#" -ge 2 ] || fail "agents task requires <change> <task>"
-        run_runtime read agent-task "$@" ;;
+        warn "'agents task' is deprecated; use 'packet <change> --task <task>'"
+        task_change="$1"; task_id="$2"; shift 2
+        run_runtime read packet "$task_change" --task "$task_id" "$@" ;;
       acquire)
         [ "$#" -ge 3 ] || fail "agents acquire requires <change> <task> --owner <agent-id>"
         run_runtime write agent-acquire "$@" ;;
@@ -239,12 +192,10 @@ case "${1:-}" in
   budget)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "budget ${sub:-<status|continue|split>}" "${1:-}"
+    need_arg "budget ${sub:-continue}" "${1:-}"
     case "$sub" in
-      status) run_runtime write budget-status "$@" ;;
       continue) run_runtime write budget-continue "$@" ;;
-      split) run_runtime write budget-split "$@" ;;
-      *) fail "budget requires 'status', 'continue', or 'split'" ;;
+      *) fail "budget requires 'continue'" ;;
     esac ;;
   telemetry)
     shift
@@ -258,7 +209,26 @@ case "${1:-}" in
         run_runtime write telemetry-import "$@" ;;
       *) fail "telemetry requires 'sync' or 'import'" ;;
     esac ;;
+  change)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    case "$sub" in
+      new)
+        [ "$#" -ge 1 ] || fail "change new requires an intent"
+        run_runtime write new "$@" ;;
+      start)
+        [ "$#" -ge 1 ] || fail "change start requires --template or <draft.json>"
+        run_runtime write start "$@" ;;
+      resolve)
+        [ "$#" -ge 1 ] || fail "change resolve requires <change>"
+        run_runtime write resolve "$@" ;;
+      validate)
+        need_arg "change validate" "${1:-}"
+        run_runtime write validate "$@" ;;
+      *) fail "change requires 'new', 'start', 'resolve', or 'validate'" ;;
+    esac ;;
   validate)
+    warn "'validate' is deprecated; use 'change validate'"
     shift; need_arg "validate" "${1:-}"
     run_runtime write validate "$@" ;;
   proof)
@@ -266,10 +236,14 @@ case "${1:-}" in
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
     need_arg "proof ${sub:-<plan|readiness|run|finish|collect|preflight|execute|finalize|audit>}" "${1:-}"
     case "$sub" in
-      plan) run_runtime write proof-plan "$@" ;;
+      plan)
+        warn "'proof plan' is deprecated; use 'proof readiness'"
+        run_runtime read proof-readiness "$@" ;;
       readiness) run_runtime read proof-readiness "$@" ;;
       run) run_runtime write proof-run "$@" ;;
-      finish) run_runtime write proof-run "$@" ;;
+      finish)
+        warn "'proof finish' is deprecated; use 'proof run'"
+        run_runtime write proof-run "$@" ;;
       collect) run_runtime write proof-collect "$@" ;;
       preflight) run_runtime write proof-preflight "$@" ;;
       execute) run_runtime write proof-execute "$@" ;;
@@ -323,6 +297,7 @@ case "${1:-}" in
   runtime)
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
+    warn "'runtime' is an internal compatibility namespace; use canonical public commands"
     case "$1" in version|api-version|hash|doctor|packet|metrics) access=read ;; *) access=write ;; esac
     run_runtime "$access" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)

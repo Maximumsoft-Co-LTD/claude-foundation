@@ -137,6 +137,44 @@ function readJson(path, fallback = null) {
   }
 }
 
+let commandRegistryCache = null;
+function commandRegistry() {
+  if (!commandRegistryCache) {
+    const registry = readJson(join(dirname(fileURLToPath(import.meta.url)), "commands.json"));
+    if (!registry || registry.version !== 1 || !Array.isArray(registry.commands) ||
+        !Array.isArray(registry.runtimeCommands))
+      die("invalid command registry: expected version 1 commands and runtimeCommands arrays");
+    const audiences = new Set(["agent", "conditional", "admin", "host", "internal"]);
+    const kinds = new Set(["read", "write", "authority"]);
+    const names = new Set();
+    for (const entry of registry.commands) {
+      if (!entry || typeof entry.name !== "string" || !entry.name.trim() ||
+          typeof entry.usage !== "string" || typeof entry.description !== "string" ||
+          !audiences.has(entry.audience) || !kinds.has(entry.kind) ||
+          typeof entry.idempotent !== "boolean")
+        die("invalid command registry entry");
+      if (names.has(entry.name)) die(`duplicate command registry entry '${entry.name}'`);
+      names.add(entry.name);
+    }
+    const runtimeCommands = new Set();
+    for (const runtimeCommand of registry.runtimeCommands) {
+      if (typeof runtimeCommand !== "string" || !runtimeCommand.trim())
+        die("invalid runtime command registry entry");
+      if (runtimeCommands.has(runtimeCommand))
+        die(`duplicate runtime command registry entry '${runtimeCommand}'`);
+      runtimeCommands.add(runtimeCommand);
+    }
+    commandRegistryCache = registry;
+  }
+  return commandRegistryCache;
+}
+
+function assertRegisteredRuntimeCommand(command) {
+  if (!command) return;
+  if (!commandRegistry().runtimeCommands.includes(command))
+    die(`runtime command '${command}' is not registered`);
+}
+
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${process.pid}`;
@@ -1600,7 +1638,7 @@ function agentPlanValue(id) {
       `workspace:${task.repository}`, ...task.resources
     ])].sort();
     task.model = modelForTask(id, task, policy);
-    task.packetCommand = `claude-foundation agents task ${id} ${task.id}`;
+    task.packetCommand = `claude-foundation packet ${id} --task ${task.id}`;
   }
   const pending = new Map(tasks.map((task) => [task.id, task]));
   const groups = [];
@@ -1788,7 +1826,7 @@ function showAgentPlan(id, flags = {}) {
         : output.recommendedExecution === "proof-ready"
           ? `claude-foundation proof readiness ${id}`
           : output.recommendedExecution === "single-agent"
-            ? `claude-foundation agents task ${id} ${output.tasks[0].id}`
+            ? `claude-foundation packet ${id} --task ${output.tasks[0].id}`
             : `claude-foundation agents plan ${id} --group 1`
     };
   }
@@ -1924,10 +1962,7 @@ function cleanupChangeLeases(id) {
   if (existsSync(tasks)) rmSync(tasks, { recursive: true });
 }
 
-function validate(id, source = "root", options = {}) {
-  const state = loadRuntime(id);
-  if (state.status === "archived") die(`change '${id}' is already archived`);
-  const dir = source === "active" ? activeChangePath(id, state) : changePath(id);
+function changeArtifactGaps(state, dir) {
   const required = state.schema === "foundation-rapid"
     ? ["proposal.md", "tasks.md", "evidence.yaml"]
     : ["proposal.md", "design.md", "tasks.md", "evidence.yaml"];
@@ -1938,6 +1973,14 @@ function validate(id, source = "root", options = {}) {
     walk(join(dir, "specs"), () => { specCount += 1; });
     if (specCount === 0) missing.push("specs/**/*.md");
   }
+  return missing;
+}
+
+function validate(id, source = "root", options = {}) {
+  const state = loadRuntime(id);
+  if (state.status === "archived") die(`change '${id}' is already archived`);
+  const dir = source === "active" ? activeChangePath(id, state) : changePath(id);
+  const missing = changeArtifactGaps(state, dir);
   if (missing.length) die(`missing change artifacts: ${missing.join(", ")}`);
   if (!["low", "medium", "high"].includes(state.impact || ""))
     die(`resolve impact for '${id}'`);
@@ -2464,7 +2507,7 @@ function unavailableProviderRecovery(id, unavailable) {
       },
       {
         kind: "retry",
-        command: `claude-foundation proof execute ${id}`
+        command: `claude-foundation proof run ${id}`
       },
       {
         kind: "external-evidence",
@@ -2504,9 +2547,30 @@ function configurationRecovery(id, issues) {
         `openspec/changes/${id}/repositories.yaml`
       ],
       issues,
-      verify: `claude-foundation validate ${id}`
+      verify: `claude-foundation change validate ${id}`
     }
   ];
+}
+
+function activeWorkRecovery(id, leases) {
+  return [{
+    kind: "wait-for-active-work",
+    instruction: "The host must wait for active workers or release stale leases; do not spend model budget while ownership is unresolved.",
+    leases: leases.map((lease) => ({ taskId: lease.taskId, owner: lease.owner })),
+    verify: `claude-foundation proof readiness ${id}`
+  }];
+}
+
+function readinessBudgetPolicy(status) {
+  if (["NEEDS_CODE_CHANGE", "CONFIGURATION_ERROR"].includes(status))
+    return { eligible: true, class: "model-fix", reason: "required model-completable work remains" };
+  if (status === "BLOCKED_BY_ACTIVE_WORK")
+    return { eligible: false, class: "active-work", reason: "host-owned work or leases must finish first" };
+  if (status === "NEEDS_EXTERNAL_EVIDENCE")
+    return { eligible: false, class: "external-authority", reason: "external evidence cannot be produced with model budget" };
+  if (status === "INFRASTRUCTURE_ERROR")
+    return { eligible: false, class: "infrastructure", reason: "provider infrastructure must recover first" };
+  return { eligible: false, class: "deterministic", reason: "run the ready deterministic operation" };
 }
 
 function proofReadinessValue(id, stage = "prove") {
@@ -2516,13 +2580,10 @@ function proofReadinessValue(id, stage = "prove") {
   const hash = relevantHash(id);
   const { unconfigured, unavailable } = executionNodes(id, hash);
   const pending = pendingTasks(id);
-  if (stage === "prove") {
-    const leases = activeChangeLeases(id);
-    if (leases.length)
-      issues.push(`active agent leases: ${leases.map((lease) => lease.taskId).join(", ")}`);
-  }
+  const leases = stage === "prove" ? activeChangeLeases(id) : [];
   const status = pending.length ? "NEEDS_CODE_CHANGE" :
     issues.length ? "CONFIGURATION_ERROR" :
+    leases.length ? "BLOCKED_BY_ACTIVE_WORK" :
     unavailable.length ? "INFRASTRUCTURE_ERROR" :
     unconfigured.length ? "NEEDS_EXTERNAL_EVIDENCE" : "READY";
   return {
@@ -2534,11 +2595,15 @@ function proofReadinessValue(id, stage = "prove") {
     pendingTasks: pending.map((task) => task.id || task.text),
     externalProviders: unconfigured,
     unavailableProviders: unavailable,
+    activeLeases: leases.map((lease) => ({ taskId: lease.taskId, owner: lease.owner })),
     issues,
+    budget: readinessBudgetPolicy(status),
     next: status === "NEEDS_CODE_CHANGE"
       ? codeChangeRecovery(id, pending)
       : status === "CONFIGURATION_ERROR"
         ? configurationRecovery(id, issues)
+        : status === "BLOCKED_BY_ACTIVE_WORK"
+          ? activeWorkRecovery(id, leases)
         : status === "NEEDS_EXTERNAL_EVIDENCE"
           ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
           : status === "INFRASTRUCTURE_ERROR"
@@ -3900,7 +3965,9 @@ function landCheck(id) {
     const applied = verifyAppliedProjection(state);
     if (!applied.valid) die(`applied projection is invalid: ${applied.reason}`);
   }
-  console.log(`LAND READY ${id}\n  workspace: ${hash}`);
+  const multiRepository = state.repositories && Object.keys(state.repositories).length > 1;
+  console.log(`LAND READY ${id}\n  workspace: ${hash}\n  next: claude-foundation land ${
+    multiRepository ? "resume" : "archive"} ${id}`);
   return { archived: false, state, hash };
 }
 
@@ -4132,6 +4199,11 @@ function resumeLand(id) {
     resumedAt: now()
   };
   saveRuntime(state);
+  const plan = landPlanValue(id);
+  if (plan.repositories.some((repository) => repository.status === "awaiting-root-pointer")) {
+    stageRootPointers(id);
+    return;
+  }
   showLandPlan(id);
 }
 
@@ -5015,7 +5087,16 @@ function showChanges() {
     const current = existsSync(runtimePath(id)) ? relevantHash(id) : null;
     const readiness = proof?.status === "pass" && proof.workspaceHash === current ? "ready-to-land" :
       state.status === "proven" ? "stale-proof" : state.status;
-    console.log(`${id}\t${readiness}\t${state.schema || "unknown"}`);
+    const next = readiness === "ready-to-land"
+      ? `claude-foundation land check ${id}`
+      : readiness === "stale-proof"
+        ? `claude-foundation proof readiness ${id}`
+        : readiness === "change"
+          ? `claude-foundation change validate ${id}`
+          : readiness === "building"
+            ? `claude-foundation proof readiness ${id}`
+            : `claude-foundation doctor --change ${id}`;
+    console.log(`${id}\t${readiness}\t${state.schema || "unknown"}\t${next}`);
   }
   for (const orphan of orphans)
     console.log(`${orphan.id}\torphan-runtime\t${orphan.schema}\t${orphan.reason}`);
@@ -5588,6 +5669,8 @@ function budgetTargets(schema) {
 function budgetWindow(id, targets, baseline = {}, sequence = 1, reason = "initial-run") {
   return {
     id,
+    extensionRootId: id,
+    extensionNumber: 0,
     sequence,
     targetRequests: targets.requests,
     targetTokens: targets.tokens,
@@ -5705,8 +5788,8 @@ function budgetDecision(state) {
   const action = operatorRequired ? "OPERATOR_REQUIRED" :
     ratio >= 1 ? "COMPLETION_ONLY" : ratio >= 0.85 ? "COMPLETION_ONLY" :
       ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
-  const recommendation = operatorRequired ? "SPLIT_OR_CONTINUE" :
-    ratio >= 1 ? "STOP_AND_SPLIT" : ratio >= 0.85 ? "STOP_EXPLORATION" :
+  const recommendation = operatorRequired ? "CONTINUE_OR_RESCOPE" :
+    ratio >= 1 ? "STOP_AND_RESCOPE" : ratio >= 0.85 ? "STOP_EXPLORATION" :
       ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
   return {
     ratio, limiter, mode, action, recommendation,
@@ -5714,7 +5797,7 @@ function budgetDecision(state) {
       "focused-fix", "provider-run", "receipt-reuse", "proof-resume",
       "metrics", "land-recovery", "archive"
     ] : mode === "operator-required" ? [
-      "packet", "readiness", "receipt-reuse", "metrics", "archive"
+      "packet", "readiness", "receipt-reuse", "metrics", "budget-continue", "archive"
     ] : ["scoped-execution"],
     forbidden: mode === "completion-only" ? [
       "scope-expansion", "speculative-investigation", "new-subagent", "optional-refactor"
@@ -5782,25 +5865,36 @@ function appendBudgetAudit(id, action, reason, previous, current) {
   })}\n`);
 }
 
-function budgetStatus(id) {
-  const state = loadRuntime(id);
-  const budget = ensureBudgetState(state);
-  const decision = applyBudgetDecision(state);
-  saveRuntime(state);
-  console.log(JSON.stringify({
-    version: 2,
-    changeId: id,
-    lifetime: budget.lifetime,
-    window: budget.window,
-    decision
-  }, null, 2));
-}
-
 function continueBudget(id, flags) {
   const reason = String(flags.reason || "").trim();
   if (!reason) die("budget continue requires --reason <reason>");
   const state = loadRuntime(id);
   const budget = ensureBudgetState(state);
+  const decision = applyBudgetDecision(state);
+  if (!["completion-only", "operator-required"].includes(decision.mode))
+    die("budget continue is available only after the active run reaches a completion boundary");
+  const extensionNumber = Number(budget.window.extensionNumber || 0);
+  if (extensionNumber >= 1)
+    die("the active run already used its one budget continuation; split or rescope");
+  const artifactGaps = changeArtifactGaps(state, activeChangePath(id, state));
+  const pending = artifactGaps.length ? [] : pendingTasks(id);
+  const readiness = pending.length ? {
+    status: "NEEDS_CODE_CHANGE",
+    pendingTasks: pending.map((task) => task.id || task.text),
+    externalProviders: [],
+    unavailableProviders: [],
+    budget: readinessBudgetPolicy("NEEDS_CODE_CHANGE")
+  } : artifactGaps.length ? {
+    status: "CONFIGURATION_ERROR",
+    pendingTasks: [],
+    externalProviders: [],
+    unavailableProviders: [],
+    issues: artifactGaps.map((artifact) => `missing change artifact: ${artifact}`),
+    budget: readinessBudgetPolicy("CONFIGURATION_ERROR")
+  } : proofReadinessValue(id, "prove");
+  if (!readiness.budget?.eligible)
+    die(`budget continuation rejected (${readiness.budget?.class || readiness.status}): ${
+      readiness.budget?.reason || "no model-completable work remains"}`);
   const previous = structuredClone(budget.window);
   const targets = {
     requests: Number(budget.targetRequests),
@@ -5808,27 +5902,29 @@ function continueBudget(id, flags) {
   };
   const runId = String(flags.run || process.env.FOUNDATION_RUN_ID ||
     process.env.FOUNDATION_CLAUDE_SESSION_ID ||
-    `operator-${Date.now()}`);
+    previous.id);
   const events = readJsonLines(join(LOGS, id, "events.jsonl"));
   const currentRunUsage = eventUsage(events.filter((event) => event.runId === runId));
   budget.window = budgetWindow(runId, targets, currentRunUsage,
     Number(previous.sequence || 0) + 1, "operator-continue");
-  appendBudgetAudit(id, "continue", reason, previous, budget.window);
-  saveRuntime(state);
+  budget.window.extensionRootId = previous.extensionRootId || previous.id;
+  budget.window.extensionNumber = extensionNumber + 1;
+  const auditWindow = {
+    ...budget.window,
+    requiredStatus: readiness.status,
+    pendingTasks: readiness.pendingTasks,
+    missingExternalProviders: readiness.externalProviders,
+    unavailableProviders: readiness.unavailableProviders
+  };
+  try {
+    saveRuntime(state);
+    appendBudgetAudit(id, "continue", reason, previous, auditWindow);
+  } catch (error) {
+    budget.window = previous;
+    try { saveRuntime(state); } catch { /* preserve the original failure */ }
+    throw error;
+  }
   console.log(`BUDGET CONTINUED ${id}\n  run: ${runId}\n  reason: ${reason}`);
-}
-
-function splitBudget(id, flags) {
-  const reason = String(flags.reason || "").trim();
-  if (!reason) die("budget split requires --reason <reason>");
-  const state = loadRuntime(id);
-  const budget = ensureBudgetState(state);
-  const previous = structuredClone(budget.window);
-  budget.window.mode = "operator-required";
-  budget.window.closedAt = now();
-  appendBudgetAudit(id, "split-required", reason, previous, budget.window);
-  saveRuntime(state);
-  console.log(`BUDGET SPLIT REQUIRED ${id}\n  reason: ${reason}\n  next: create a scoped change or run budget continue with operator approval`);
 }
 
 function recordEvent(id, flags) {
@@ -6065,7 +6161,7 @@ function appendTelemetryRows(id, rows, format, context = {}) {
     // Host telemetry is accounting, not an execution gate. A hard exit here
     // runs before lifecycle commands (including proof/readiness) and can lock
     // an over-budget change out of the very recovery path that reuses existing
-    // evidence. Keep the warning and persisted STOP_AND_SPLIT decision while
+  // evidence. Keep the warning and persisted STOP_AND_RESCOPE decision while
     // allowing the requested deterministic command to continue.
     reportBudget(id, state, true);
   }
@@ -6609,9 +6705,7 @@ Commands:
   providers
   packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
   metrics <change>
-  budget-status <change>
   budget-continue <change> --reason <reason> [--run <id>]
-  budget-split <change> --reason <reason>
   validate <change>
   hash <change>
   proof-plan <change>
@@ -6641,6 +6735,7 @@ Commands:
 }
 
 const [command, ...values] = process.argv.slice(2);
+assertRegisteredRuntimeCommand(command);
 const unattendedMentioned = command === "sandbox" &&
   ["create", "inspect"].includes(values[0]) &&
   values.slice(1).some((value) =>
@@ -6652,7 +6747,7 @@ const telemetrySuppressed = command === "sandbox" && (
 if (telemetrySuppressed) process.env.FOUNDATION_TELEMETRY = "0";
 operationName = command || null;
 operationChangeId = command === "sandbox" ? values[1] :
-  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-status", "budget-continue", "budget-split", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "receipt", "run-provider", "prove",
     "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
 
 const telemetryPhase = {
@@ -6680,7 +6775,7 @@ if (!telemetrySuppressed && operationChangeId && telemetryPhase && existsSync(ru
   prepareClaudeTelemetry(operationChangeId, telemetryPhase);
 if (command === "metrics" && operationChangeId && existsSync(runtimePath(operationChangeId)))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
-if (["budget-status", "budget-continue", "budget-split"].includes(command) &&
+if (command === "budget-continue" &&
     operationChangeId && existsSync(runtimePath(operationChangeId)))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
 
@@ -6736,23 +6831,18 @@ switch (command) {
       prepareClaudeTelemetry(rest[0], flags.phase);
       recordPhaseContext(rest[0], flags.phase);
     }
-    showPacket(rest[0], flags); break;
+    if (flags.task && !flags.phase && !flags.repo)
+      showAgentTask(rest[0], flags.task, flags);
+    else showPacket(rest[0], flags);
+    break;
   }
   case "metrics": showMetrics(values[0]); break;
-  case "budget-status": budgetStatus(values[0]); break;
   case "budget-continue": {
     const { flags, rest } = parseStrictCommandFlags(values, "budget continue", {
       value: ["reason", "run"]
     });
     if (rest.length !== 1) die("budget continue requires exactly one change");
     continueBudget(rest[0], flags); break;
-  }
-  case "budget-split": {
-    const { flags, rest } = parseStrictCommandFlags(values, "budget split", {
-      value: ["reason"]
-    });
-    if (rest.length !== 1) die("budget split requires exactly one change");
-    splitBudget(rest[0], flags); break;
   }
   case "doctor": {
     const { flags, rest } = parseStrictCommandFlags(values, "doctor", {

@@ -9,14 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Run-scoped budget recovery** — `budget status`, `budget continue`, and
-  `budget split` expose active-window policy and retain an operator audit trail.
-  Packets and metrics now distinguish lifetime usage from the current run and
-  declare completion-only allowed/forbidden work explicitly. The added command
-  surface advances the bundled runtime to 2.4.0 / API 9.
+- **Bounded AI command surface** — a project-owned command registry classifies
+  canonical workflow, conditional recovery, host, administration, and internal
+  routes. Default help now shows only the 15 normal and 6 conditional AI
+  operations; `help --all` retains diagnostics and compatibility visibility.
+- **Canonical Change namespace** — `change new|start|resolve|validate` replaces
+  raw runtime vocabulary in slash commands and normal agent guidance.
+- **Run-scoped budget recovery** — packets and metrics distinguish lifetime
+  usage from the current run and declare completion-only allowed/forbidden work.
+  A single policy-gated `budget continue` command opens one audited completion
+  window when required model work remains. The added command surface advances
+  the bundled runtime to 2.4.0 / API 9.
 
 ### Changed
 
+- **Proof and task routing are summary-first** — normal Proof exposes only
+  readiness, collect, and run; released aliases remain callable with warnings.
+  Task dispatch now uses `packet --task`, independent review is a Prove-owned
+  activity, and disposable comparison is `/investigate --compare`.
+- **Low-level operations leave the AI catalog** — telemetry, leases, raw
+  provider execution, sandbox apply, proof internals, Land planning/pointers,
+  dashboard, and migration remain available to their host/admin/internal
+  callers without becoming model choices.
 - **Budget exhaustion preserves completion paths** — at 85% autonomous work
   enters completion-only mode; at 100% the harness recommends split/rescope.
   Focused fixes and required proof remain available, while speculative scope,
@@ -29,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exiting after the model cost has already occurred. Deterministic lifecycle
   recovery therefore has the same non-blocking semantics for explicit events,
   Claude transcripts, and imported host telemetry.
+- **Typed budget eligibility** — readiness now separates model-fixable work,
+  active leases, external authority, infrastructure failures, and deterministic
+  execution. Legacy `operator-required` windows remain recoverable, while
+  `metrics` stays read-only and missing artifacts return audited blockers.
 
 ## [3.1.4] - 2026-08-04
 

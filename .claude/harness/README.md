@@ -57,43 +57,26 @@ claude-foundation doctor --stage prove --change <change>
 | `repos [change]` | Shows discovered topology, drift, and change selection | Setting up or diagnosing multi-repo work |
 | `models` | Shows portable model-tier mappings | Reviewing cost/quality routing |
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
-| `agents task <change> <task> [--pretty]` | Prints a ≤8 KiB task packet with its model and authority | Starting one worker |
-| `agents acquire/release ...` | Holds atomic task resource leases with bounded expiry | Around each spawned worker |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
-| `budget status <change>` | Shows lifetime usage separately from the active run window | Diagnosing a warning or completion-only run |
-| `budget continue <change> --reason <reason>` | Opens a fresh audited run window without deleting usage | Operator-approved completion work |
-| `budget split <change> --reason <reason>` | Closes model exploration pending a smaller scoped change | When the current scope should not continue |
-| `telemetry sync <change> [transcript]` | Incrementally imports native Claude request usage | Manual sync or host-integration fallback |
-| `telemetry import <change> <file>` | Imports deduplicated generic, Codex, or Claude host usage | Attributing request/token/cost to orchestration |
-| `validate <change>` | Validates change artifacts | After creating or revising an agreement |
-| `proof plan <change>` | Shows missing, stale, or reusable evidence | Before executing providers |
+| `budget continue <change> --reason <reason>` | Opens one policy-gated audited completion window without deleting usage | Required model work after exhaustion |
+| `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
 | `proof run <change>` | Executes, finalizes, and audits proof as one operation | Normal Prove path |
 | `proof collect <change>` | Runs available project-owned evidence without finalizing proof | Before external review or acceptance |
-| `proof preflight <change>` | Validates provider DAG, reports, services, and readiness without running tests | Immediately before proof |
-| `proof execute <change>` | Runs required configured providers and finalizes proof | When implementation is ready to prove |
-| `proof audit <change>` | Verifies receipt and artifact digests in the durable proof bundle | Before Land or during an audit |
-| `proof finalize <change>` | Finalizes from existing valid receipts only | When evidence was recorded separately |
-| `evidence run ...` | Runs one provider command and records its receipt | Manual or diagnostic provider execution |
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
 | `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
 | `sandbox create <change>` | Creates an isolated Git worktree | Before Build |
-| `sandbox inspect <change> [--json] [--unattended]` | Separates workspace isolation from detected execution security | Before deliberately unattended work |
 | `sandbox create <change> --unattended` | Fails closed; detected virtualization is not trusted host attestation | Unattended Build only |
 | `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
 | `sandbox sync <change>` | Synchronizes a revised agreement | When requirements change during Build |
-| `sandbox apply <change>` | Applies a proven sandbox diff to the main worktree | Usually delegated to Land |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
-| `land plan <change>` | Shows ordered child commit, CI, and pointer states | Coordinating multiple repositories |
 | `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |
-| `land pointers <change>` | Transactionally stages verified child gitlinks | After child commits land, before final Prove |
 | `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
 | `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
-| `migrate` | Inspects or migrates legacy workflow evidence | Moving from the legacy workflow |
 
 `--unattended` is a presence-only security flag. Valued and duplicate forms
 are rejected before telemetry or workspace mutation. This is a cooperative host
@@ -127,7 +110,7 @@ and scopes provider commands and receipts with `repository`.
 execution annotations. `agents plan` uses them to prevent same-workspace or
 shared-resource concurrency and applies the model tiers in `foundation.json`.
 The complete plan is persisted under `.foundation/plans/`; stdout is a compact
-summary, or one group selected with `--group`. `agents task` emits only the
+summary, or one group selected with `--group`. `packet --task` emits only the
 chosen task's claims, files, providers, and model. A small one-repository change
 recommends one agent. The plan is advice and bounded authority for the native
 host; the harness does not invoke a model itself.
@@ -137,7 +120,7 @@ schema 2 resumes dependencies satisfied by completed tasks, reports
 `proof-ready` after all tasks complete, and declares the deepest model required
 by a mixed session. Packet schema 4 rejects unknown, cross-repository, or
 providerless task claims. Large collections are previews plus counts and
-digests; use the task packet as the authoritative expansion.
+digests; use `packet <change> --task <task>` as the authoritative expansion.
 
 Multiple remotes use ordered saga states rather than an atomicity claim.
 Foundation verifies explicit child commits, optional CI state, dependency
@@ -156,7 +139,7 @@ unclear.
 Validate the result:
 
 ```bash
-claude-foundation validate <change>
+claude-foundation change validate <change>
 claude-foundation doctor --stage build --change <change>
 ```
 
@@ -183,8 +166,8 @@ claude-foundation proof readiness <change>
 claude-foundation proof run <change>
 ```
 
-`proof plan`, `preflight`, `execute`, `finalize`, and `audit` remain available
-for diagnosis and recovery.
+Preflight, execution, finalization, and audit remain internal steps used by the
+atomic command, doctor, Land, and runtime tests; they are not agent choices.
 
 The scheduler:
 
@@ -286,10 +269,13 @@ Request and token limits apply to an active run window; lifetime usage remains
 available for cost reporting. At 85% the packet enters `completion-only`: it
 forbids speculative investigation, scope expansion, optional refactors, and new
 subagents while allowing focused fixes and required proof work. Crossing 100%
-adds the `STOP_AND_SPLIT` recommendation but never turns accounting into a
+adds the `STOP_AND_RESCOPE` recommendation but never turns accounting into a
 process failure. Packet, readiness, provider execution, receipt reuse,
 proof-resume, metrics, Land recovery, and archive remain available. An operator
-may open a fresh audited window with `budget continue`; counters are never
+may open one fresh audited window with `budget continue` only when readiness
+identifies required model-completable code or configuration work. Active leases,
+external evidence, infrastructure failures, and ready deterministic work do not
+qualify. The reason is audit context, not the policy gate; counters are never
 deleted or silently reset.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
@@ -377,7 +363,7 @@ Foundation-owned files, preserves project files and managed blocks in
   active OpenSpec directory does not. Restore that directory, or move the JSON
   state into `.foundation/recovery/orphaned-runtime/` for recoverable
   quarantine. `doctor --change <id>` fails explicitly until reconciled.
-- **A receipt became stale** — run `proof plan`; a bound input, agreement
+- **A receipt became stale** — run `proof readiness`; a bound input, agreement
   revision, environment, or artifact changed.
 - **Readiness is rejected** — add `expectBody` or `expectHeader` that identifies
   the intended application, not merely an HTTP status.

@@ -53,6 +53,7 @@ SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 
 for required in \
   .claude/orchestrator.md .claude/commands .claude/harness/foundation.mjs \
+  .claude/harness/commands.json \
   .claude/skills .claude/rules .claude/hooks .claude/settings.json \
   openspec/config.yaml openspec/repositories.yaml openspec/schemas \
   foundation.json .foundation/.gitignore WORKFLOW.md; do

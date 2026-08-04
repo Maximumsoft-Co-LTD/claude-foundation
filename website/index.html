@@ -85,7 +85,7 @@
               <div class="console-body" aria-live="polite">
                 <div class="console-command">
                   <span class="prompt">❯</span>
-                  <span id="typed-command">claude-foundation proof execute profile-auth</span>
+              <span id="typed-command">claude-foundation proof run profile-auth</span>
                   <span class="cursor" aria-hidden="true"></span>
                 </div>
                 <div id="console-output" class="console-output">
@@ -287,7 +287,7 @@
             <p class="eyebrow">Less waiting, less paying</p>
             <h2>The scheduler spends work once.</h2>
             <p>
-              Providers run from one proof plan. Independent readers can execute together;
+              Providers run from one canonical proof decision. Independent readers can execute together;
               conflicting resources serialize; identical commands deduplicate.
             </p>
           </div>
@@ -462,8 +462,8 @@ claude-foundation init /path/to/project --yes</code></pre>
             <div><code>providers</code><span>inspect evidence contracts</span></div>
             <div><code>doctor --change &lt;id&gt;</code><span>check runtime and executable readiness</span></div>
             <div><code>packet &lt;id&gt;</code><span>compact handoff without replaying history</span></div>
-            <div><code>proof plan &lt;id&gt;</code><span>see missing, stale, and reusable evidence</span></div>
-            <div><code>proof execute &lt;id&gt;</code><span>schedule providers and finalize proof</span></div>
+            <div><code>proof readiness &lt;id&gt;</code><span>see typed blockers and canonical next actions</span></div>
+            <div><code>proof run &lt;id&gt;</code><span>check readiness, run providers, and finalize proof</span></div>
             <div><code>metrics &lt;id&gt;</code><span>inspect latency, execution, token, and cost data</span></div>
             <div><code>land check &lt;id&gt;</code><span>verify the completion boundary</span></div>
             <div><code>land archive &lt;id&gt;</code><span>apply, verify, sync, archive, clean up</span></div>

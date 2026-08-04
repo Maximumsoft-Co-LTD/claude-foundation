@@ -44,8 +44,8 @@ Standard changes contain proposal, delta specs, design, tasks, evidence, and
 execution wiring. Rapid changes contain proposal, tasks, evidence, and execution
 wiring and upgrade in place if risk emerges.
 
-`/prototype <decision>` is an optional, disposable companion for genuinely
-unresolved experience, API, or architecture alternatives. It writes only under
+`/investigate <decision> --compare` is the optional disposable mode for
+genuinely unresolved experience, API, or architecture alternatives. It writes only under
 `.foundation/prototypes/`, never edits product code, and adds no lifecycle state;
 the selected conclusion is always written to `selection.md`. Continue with
 `/change <intent|existing-change> --prototype-selection <selection-path>`; Change
@@ -83,7 +83,7 @@ For a selected multi-repository topology:
 claude-foundation repos <change>
 claude-foundation sandbox create <change> --all
 claude-foundation agents plan <change> [--group <n>] [--pretty]
-claude-foundation agents task <change> <task-id> [--pretty]
+claude-foundation packet <change> --task <task-id> [--pretty]
 ```
 
 The plan permits parallel workers only across independent repositories and
@@ -408,13 +408,14 @@ corroborated by code, tests, or accepted contracts may be promoted.
 `claude-foundation` is the stable public control surface. It searches upward
 from the working directory, or from `--project <path>`, and forwards to the
 runtime installed in that project so schemas and runtime behavior stay aligned.
-Use `proof plan|execute|finalize`, `evidence run|record|upgrade`, `sandbox create|sync|apply`,
-and `land check|archive` rather than calling the runtime file directly.
+Use canonical `change`, `packet`, `proof readiness|collect|run`,
+`sandbox create|sync`, and `land check|record|resume|archive` commands rather
+than calling runtime internals directly.
 
 When the packaged CLI is not on `PATH`, use the source checkout's public router:
 
 ```bash
-bash /path/to/claude-foundation/cli.sh --project "$PWD" proof plan <change>
+bash /path/to/claude-foundation/cli.sh --project "$PWD" proof readiness <change>
 ```
 
 Do not bypass it with `foundation.mjs`; that file intentionally exposes the

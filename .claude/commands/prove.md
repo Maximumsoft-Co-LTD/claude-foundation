@@ -5,20 +5,14 @@ argument-hint: <change>
 
 Prove **$ARGUMENTS**.
 
-Start from `claude-foundation packet <change> --phase prove`, not Build history.
-Run `claude-foundation proof collect <change>` first when readiness requires
-external review or acceptance, so project-owned evidence is available at that
-boundary. After external receipts are recorded, run
-`claude-foundation proof run <change>` for atomic finalization and audit. A
-budget stop forbids new exploration, not deterministic proof resume; fresh
-receipts are reused.
+Start from `packet <change> --phase prove`, not Build history. When readiness
+requires external review or acceptance, run `proof collect`, then record the
+requested receipts. Run `proof run` for atomic execution, finalization, and
+audit. Budget exhaustion forbids exploration, not deterministic proof resume;
+fresh receipts are reused.
 
-If readiness blocks, follow only its structured next commands. External passes
-require an observation, provenance, and durable artifact or reference. When
-review is required, run `/review <change>` in a fresh context. When human
-acceptance is required, obtain it against the final workspace and record the
-inspected criteria.
+Follow only structured next commands. External passes require observation,
+provenance, and a durable artifact or reference. Give a required review packet
+to a fresh independent reviewer. Human acceptance inspects the final workspace.
 
-Rerun readiness after recording external evidence. Never substitute self-review
-or automation for a required receipt, claim a pass without valid content-bound
-evidence, or Land.
+Never substitute self-review or automation, claim an unproven pass, or Land.

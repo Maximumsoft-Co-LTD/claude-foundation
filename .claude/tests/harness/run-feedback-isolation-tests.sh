@@ -65,8 +65,9 @@ else
 fi
 
 help_text="$(bash "$ROOT/cli.sh" help)"
-assert_contains "CLI help advertises isolation inspection" \
-  "$help_text" "sandbox inspect <change> [--json] [--unattended]"
+help_all_text="$(bash "$ROOT/cli.sh" help --all)"
+assert_contains "full CLI help retains isolation diagnostics" \
+  "$help_all_text" "sandbox inspect <change> [--json]"
 assert_contains "CLI help advertises guarded sandbox creation" \
   "$help_text" "sandbox create <change> [--all] [--unattended]"
 

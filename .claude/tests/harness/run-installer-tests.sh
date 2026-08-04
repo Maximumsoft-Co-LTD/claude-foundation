@@ -14,10 +14,23 @@ assert_contains "CLI help documents proof readiness" \
   "$cli_help" 'proof readiness <change>'
 assert_contains "CLI help documents pre-review evidence collection" \
   "$cli_help" 'proof collect <change>'
-assert_contains "CLI help documents atomic proof finish" \
-  "$cli_help" 'proof finish <change>'
+assert_contains "CLI help documents canonical proof run" \
+  "$cli_help" 'proof run <change>'
 assert_contains "CLI help documents budget recovery" \
   "$cli_help" 'budget continue <change>'
+if printf '%s' "$cli_help" | grep -qF 'proof execute'; then
+  fail "default CLI help hides internal proof commands"
+else
+  pass "default CLI help hides internal proof commands"
+fi
+if printf '%s' "$cli_help" | grep -Eq 'telemetry (sync|import)|dashboard|runtime <'; then
+  fail "default CLI help hides host and administration commands"
+else
+  pass "default CLI help hides host and administration commands"
+fi
+cli_help_all="$(bash "$ROOT/cli.sh" help --all)"
+assert_contains "full CLI help retains compatibility diagnostics" \
+  "$cli_help_all" 'proof execute <change>'
 mkdir -p "$TMP/unrelated-git/package"
 git -C "$TMP/unrelated-git" init -q
 cp "$ROOT/cli.sh" "$ROOT/VERSION" "$TMP/unrelated-git/package/"
@@ -37,13 +50,26 @@ assert_cmd_zero "installer applies non-interactively" \
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_contains "installed change command accepts explicit prototype handoff" \
   "$TARGET/.claude/commands/change.md" "--prototype-selection <path>"
-assert_file_exists "prototype command installed" "$TARGET/.claude/commands/prototype.md"
-assert_cmd_zero "prototype command matches source" \
-  cmp "$ROOT/.claude/commands/prototype.md" "$TARGET/.claude/commands/prototype.md"
-assert_file_exists "review command installed" "$TARGET/.claude/commands/review.md"
-assert_cmd_zero "review command matches source" \
-  cmp "$ROOT/.claude/commands/review.md" "$TARGET/.claude/commands/review.md"
+assert_file_contains "investigate command owns bounded comparison" \
+  "$TARGET/.claude/commands/investigate.md" "--compare"
+assert_file_absent "prototype is no longer a separate command" \
+  "$TARGET/.claude/commands/prototype.md"
+assert_file_absent "review is proof-internal" \
+  "$TARGET/.claude/commands/review.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "command registry installed" "$TARGET/.claude/harness/commands.json"
+assert_cmd_zero "command registry has one unique entry per public name" \
+  jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
+  "$TARGET/.claude/harness/commands.json"
+assert_eq "agent command surface is bounded" "15" \
+  "$(jq '[.commands[] | select(.audience == "agent")] | length' \
+    "$TARGET/.claude/harness/commands.json")"
+assert_eq "conditional recovery surface is bounded" "6" \
+  "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
+    "$TARGET/.claude/harness/commands.json")"
+assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
+  jq -e '[.commands[] | select(.name == "proof collect" or .name == "proof run") |
+    .idempotent] == [false, false]' "$TARGET/.claude/harness/commands.json"
 assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
 assert_file_exists "Claude session context hook installed" \
   "$TARGET/.claude/hooks/session-context.sh"
@@ -73,17 +99,33 @@ assert_file_contains "managed change-loop pointer added" "$TARGET/CLAUDE.md" "cl
 assert_file_contains "portable AGENTS pointer added" "$TARGET/AGENTS.md" "claude-foundation:portable-agent:start"
 assert_file_exists "managed install manifest written" "$TARGET/.foundation/install-manifest.txt"
 printf 'stale\n' > "$TARGET/.claude/harness/stale-owned.md"
-printf '%s\n' ".claude/harness/stale-owned.md" >> \
+printf 'legacy command\n' > "$TARGET/.claude/commands/prototype.md"
+printf 'legacy command\n' > "$TARGET/.claude/commands/review.md"
+printf '%s\n' ".claude/harness/stale-owned.md" \
+  ".claude/commands/prototype.md" ".claude/commands/review.md" >> \
   "$TARGET/.foundation/install-manifest.txt"
 printf '\nUser agent instruction.\n' >> "$TARGET/AGENTS.md"
 assert_cmd_zero "installer update removes only stale managed files" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_absent "stale managed file removed from prior manifest" \
   "$TARGET/.claude/harness/stale-owned.md"
+assert_file_absent "retired prototype command removed on upgrade" \
+  "$TARGET/.claude/commands/prototype.md"
+assert_file_absent "retired review command removed on upgrade" \
+  "$TARGET/.claude/commands/review.md"
 assert_file_contains "user AGENTS content survives managed block update" \
   "$TARGET/AGENTS.md" "User agent instruction."
 assert_cmd_zero "installed harness starts" \
   node "$TARGET/.claude/harness/foundation.mjs" version
+cp "$TARGET/.claude/harness/commands.json" "$TMP/commands-valid.json"
+jq '.commands += [.commands[0]]' "$TMP/commands-valid.json" \
+  > "$TARGET/.claude/harness/commands.json"
+if node "$TARGET/.claude/harness/foundation.mjs" version >/dev/null 2>&1; then
+  fail "runtime rejects an invalid command registry"
+else
+  pass "runtime rejects an invalid command registry"
+fi
+cp "$TMP/commands-valid.json" "$TARGET/.claude/harness/commands.json"
 doctor="$(bash "$ROOT/cli.sh" --project "$TARGET" doctor)"
 assert_contains "native doctor reports runtime readiness" "$doctor" "node:"
 assert_contains "native doctor exposes opt-in branch policy" "$doctor" "no-direct-main:"
@@ -91,7 +133,7 @@ assert_contains "native doctor exposes opt-in branch policy" "$doctor" "no-direc
 CLI="bash $ROOT/cli.sh"
 providers="$(bash "$ROOT/cli.sh" --project "$TARGET" providers)"
 assert_contains "native CLI exposes installed providers" "$providers" "dependency-supply-chain"
-start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" runtime start --template)"
+start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
   "$start_template" '"version": 1'
 assert_contains "atomic start template includes executable evidence" \
@@ -116,7 +158,7 @@ printf '%s\n' \
   '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
   '"report":"test-results/atomic.json","minimum":1,"timeoutMs":120000}},"services":{}}}' \
   > "$TARGET/.foundation/atomic-draft.json"
-atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" runtime start \
+atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-draft.json)"
 assert_contains "atomic start returns a Build packet" "$atomic_start" \
   '"changeId":"atomic-start"'
@@ -127,10 +169,13 @@ atomic_workspace="$(jq -r '.workspace.path' \
 assert_in "atomic start creates isolation" \
   "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")" \
   "worktree copy"
+active_changes="$(bash "$ROOT/cli.sh" --project "$TARGET" changes)"
+assert_contains "changes returns a canonical next action" "$active_changes" \
+  "claude-foundation proof readiness atomic-start"
 sed -i.bak 's/- \[ \]/- [x]/' \
   "$atomic_workspace/openspec/changes/atomic-start/tasks.md"
 rm "$atomic_workspace/openspec/changes/atomic-start/tasks.md.bak"
-atomic_proof="$(bash "$ROOT/cli.sh" --project "$TARGET" proof finish atomic-start)"
+atomic_proof="$(bash "$ROOT/cli.sh" --project "$TARGET" proof run atomic-start)"
 assert_contains "atomic proof finish reaches PASS" "$atomic_proof" '"status": "PASS"'
 assert_eq "atomic proof finish persists proven state" "proven" \
   "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
@@ -156,7 +201,7 @@ printf '%s\n' \
   '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
   '"report":"test-results/atomic.json","minimum":1,"timeoutMs":120000}},"services":{}}}' \
   > "$TARGET/.foundation/atomic-migration-draft.json"
-standard_start="$(bash "$ROOT/cli.sh" --project "$TARGET" runtime start \
+standard_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-migration-draft.json)"
 assert_contains "atomic standard start returns a Build packet" "$standard_start" \
   '"changeId":"atomic-migration"'
@@ -178,14 +223,14 @@ mkdir -p "$TARGET/nested/path"
 assert_cmd_zero "native CLI discovers project from a subdirectory" \
   sh -c 'cd "$1" && bash "$2" changes' _ "$TARGET/nested/path" "$ROOT/cli.sh"
 
-bash "$ROOT/cli.sh" --project "$TARGET" runtime new "CLI proof route" --rapid >/dev/null
+bash "$ROOT/cli.sh" --project "$TARGET" change new "CLI proof route" --rapid >/dev/null
 packet="$(bash "$ROOT/cli.sh" --project "$TARGET" packet cli-proof-route)"
 assert_contains "native CLI exposes compact handoff packet" "$packet" '"changeId":"cli-proof-route"'
 plan="$(bash "$ROOT/cli.sh" --project "$TARGET" agents plan cli-proof-route)"
 assert_contains "native CLI exposes summary-first agent plan" \
   "$plan" '"recommendedExecution":"single-agent"'
-task_packet="$(bash "$ROOT/cli.sh" --project "$TARGET" agents task \
-  cli-proof-route T001)"
+task_packet="$(bash "$ROOT/cli.sh" --project "$TARGET" packet \
+  cli-proof-route --task T001)"
 assert_contains "native CLI exposes task-scoped packet" \
   "$task_packet" '"packetType":"task"'
 assert_file_exists "native CLI records operation telemetry" \
@@ -199,6 +244,8 @@ assert_contains "native metrics preserves unknown input tokens" \
   "$metrics" '"inputTokens": null'
 assert_contains "native metrics reports emitted context" \
   "$metrics" '"estimatedTokens":'
+assert_contains "native metrics includes the active budget window" \
+  "$metrics" '"window":'
 printf '%s\n' \
   '{"type":"assistant","requestId":"installed-claude-1","message":{"id":"installed-message-1","role":"assistant","model":"claude-test","usage":{"input_tokens":9,"output_tokens":4,"cache_read_input_tokens":3}}}' \
   > "$TMP/installed-transcript.jsonl"
@@ -206,21 +253,8 @@ telemetry="$(bash "$ROOT/cli.sh" --project "$TARGET" telemetry sync \
   cli-proof-route "$TMP/installed-transcript.jsonl")"
 assert_contains "native CLI routes incremental Claude transcript sync" \
   "$telemetry" "imported 1"
-budget_status="$(bash "$ROOT/cli.sh" --project "$TARGET" budget status cli-proof-route)"
-assert_contains "native CLI exposes the active run budget" \
-  "$budget_status" '"window"'
-assert_cmd_zero "native CLI records a split decision" \
-  bash "$ROOT/cli.sh" --project "$TARGET" budget split cli-proof-route \
-    --reason "fixture rescope"
-assert_eq "split decision requires operator action" "operator-required" \
-  "$(jq -r '.budget.window.mode' "$TARGET/.foundation/runtime/cli-proof-route.json")"
-assert_cmd_zero "native CLI opens an operator-approved continuation" \
-  bash "$ROOT/cli.sh" --project "$TARGET" budget continue cli-proof-route \
-    --reason "fixture completion"
-assert_file_contains "native budget recovery keeps an audit trail" \
-  "$TARGET/.foundation/logs/cli-proof-route/budget-events.jsonl" '"action":"continue"'
 assert_cmd_zero "native validate routes to project runtime" \
-  bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route
+  bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route
 sed -i.bak 's/- \[ \]/- [x]/g' "$TARGET/openspec/changes/cli-proof-route/tasks.md"
 rm "$TARGET/openspec/changes/cli-proof-route/tasks.md.bak"
 assert_cmd_zero "native evidence run preserves command arguments" \
@@ -261,7 +295,7 @@ assert_cmd_zero "legacy explicit-path installation remains compatible" \
 sed -i.bak 's/const RUNTIME_API_VERSION = "9"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
-if bash "$ROOT/cli.sh" --project "$TARGET" validate cli-proof-route >/dev/null 2>&1; then
+if bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route >/dev/null 2>&1; then
   fail "runtime API mismatch blocks write commands"
 else
   pass "runtime API mismatch blocks write commands"
@@ -276,15 +310,11 @@ assert_cmd_zero "cursor adapter installs" \
 assert_file_exists "cursor change command installed" "$CURSOR_TARGET/.cursor/commands/change.md"
 assert_file_contains "cursor change command accepts explicit prototype handoff" \
   "$CURSOR_TARGET/.cursor/commands/change.md" "--prototype-selection <path>"
-assert_file_exists "cursor prototype command installed" \
+assert_file_contains "cursor investigate command owns bounded comparison" \
+  "$CURSOR_TARGET/.cursor/commands/investigate.md" "--compare"
+assert_file_absent "cursor prototype command is retired" \
   "$CURSOR_TARGET/.cursor/commands/prototype.md"
-assert_cmd_zero "cursor prototype command matches source" \
-  cmp "$ROOT/.claude/commands/prototype.md" \
-  "$CURSOR_TARGET/.cursor/commands/prototype.md"
-assert_file_exists "cursor review command installed" \
-  "$CURSOR_TARGET/.cursor/commands/review.md"
-assert_cmd_zero "cursor review command matches source" \
-  cmp "$ROOT/.claude/commands/review.md" \
+assert_file_absent "cursor review command is proof-internal" \
   "$CURSOR_TARGET/.cursor/commands/review.md"
 assert_file_exists "cursor orchestrator installed" "$CURSOR_TARGET/.cursor/orchestrator.md"
 assert_file_exists "shared runtime installed for cursor" "$CURSOR_TARGET/.claude/harness/foundation.mjs"

@@ -13,6 +13,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/project/.claude/harness/"
+cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
 printf 'initial\n' > "$TMP/project/app.txt"
@@ -78,13 +79,37 @@ assert_cmd_zero "Build packet opens after sandbox creation" \
 jq '.budget = {targetRequests:80,targetTokens:800000,usedRequests:81,usedTokens:900000,measurement:"legacy"}' \
   .foundation/runtime/no-security-trigger.json > "$TMP/legacy-budget.json"
 cp "$TMP/legacy-budget.json" .foundation/runtime/no-security-trigger.json
-legacy_budget="$(node .claude/harness/foundation.mjs budget-status no-security-trigger)"
+cp .foundation/runtime/no-security-trigger.json "$TMP/legacy-budget-before-metrics.json"
+legacy_budget="$(node .claude/harness/foundation.mjs metrics no-security-trigger)"
 assert_contains "legacy change-wide budget migrates without carrying a lock" \
   "$legacy_budget" '"reason": "runtime-upgrade"'
-assert_eq "legacy lifetime usage survives budget migration" "900000" \
-  "$(jq -r '.budget.lifetime.usedTokens' .foundation/runtime/no-security-trigger.json)"
-assert_eq "legacy budget migration opens an empty run window" "0" \
-  "$(jq -r '.budget.window.usedRequests' .foundation/runtime/no-security-trigger.json)"
+assert_contains "legacy lifetime usage is visible without mutating metrics" \
+  "$legacy_budget" '"usedTokens": 900000'
+assert_contains "legacy metrics exposes an empty migrated window" \
+  "$legacy_budget" '"usedRequests": 0'
+assert_cmd_zero "metrics remains read-only during legacy normalization" \
+  cmp "$TMP/legacy-budget-before-metrics.json" .foundation/runtime/no-security-trigger.json
+
+node .claude/harness/foundation.mjs new 'Missing artifact budget recovery' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve missing-artifact-budget-recovery \
+  --impact low --coupling isolated >/dev/null
+rm openspec/changes/missing-artifact-budget-recovery/tasks.md
+jq '.budget.window.mode = "operator-required" | del(.budget.window.extensionNumber)' \
+  .foundation/runtime/missing-artifact-budget-recovery.json > "$TMP/operator-required-budget.json"
+cp "$TMP/operator-required-budget.json" \
+  .foundation/runtime/missing-artifact-budget-recovery.json
+legacy_window_id="$(jq -r '.budget.window.id' \
+  .foundation/runtime/missing-artifact-budget-recovery.json)"
+legacy_continue="$(node .claude/harness/foundation.mjs budget-continue \
+  missing-artifact-budget-recovery --reason "complete required artifacts")"
+assert_contains "legacy operator-required state has a continuation route" \
+  "$legacy_continue" "BUDGET CONTINUED"
+assert_eq "continuation without --run retains the active run identity" \
+  "$legacy_window_id" "$(jq -r '.budget.window.id' \
+    .foundation/runtime/missing-artifact-budget-recovery.json)"
+assert_file_contains "missing tasks produces an audited configuration blocker" \
+  .foundation/logs/missing-artifact-budget-recovery/budget-events.jsonl \
+  '"requiredStatus":"CONFIGURATION_ERROR"'
 
 node .claude/harness/foundation.mjs new 'Mixed telemetry runs' --rapid >/dev/null
 printf '%s\n' \
@@ -163,6 +188,16 @@ assert_cmd_zero "discovery provider receipt" node .claude/harness/foundation.mjs
   --discovered 3 --minimum 1 --observed "3 tests discovered" --source harness-test --artifact app.txt
 assert_cmd_zero "complete evidence proves" node .claude/harness/foundation.mjs prove profile-owner-update
 assert_cmd_zero "fresh proof is land-ready" node .claude/harness/foundation.mjs land-check profile-owner-update
+
+jq '.budget.window.targetTokens = 1 | .budget.window.usedTokens = 1 | .budget.window.mode = "completion-only"' \
+  .foundation/runtime/profile-owner-update.json > "$TMP/proven-budget.json"
+cp "$TMP/proven-budget.json" .foundation/runtime/profile-owner-update.json
+if node .claude/harness/foundation.mjs budget-continue profile-owner-update \
+  --reason "run required proof" >/dev/null 2>&1; then
+  fail "budget cannot extend work that is already deterministic and ready"
+else
+  pass "budget cannot extend work that is already deterministic and ready"
+fi
 
 cp .foundation/receipts/profile-owner-update/test.json "$TMP/test-receipt.json"
 jq '.providerFingerprint = "tampered"' .foundation/receipts/profile-owner-update/test.json \
@@ -292,6 +327,16 @@ assert_file_exists "proof collect records test evidence" \
   .foundation/receipts/collect-before-review/test.json
 assert_file_absent "proof collect does not finalize proof" \
   .foundation/receipts/collect-before-review/proof.json
+jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | .budget.window.usedTokens = 1' \
+  .foundation/runtime/collect-before-review.json > "$TMP/external-budget.json"
+cp "$TMP/external-budget.json" .foundation/runtime/collect-before-review.json
+if external_budget_error="$(node .claude/harness/foundation.mjs budget-continue \
+  collect-before-review --reason "wait for review" 2>&1)"; then
+  fail "external evidence cannot open a model budget window"
+else
+  assert_contains "external evidence rejects model budget with a typed reason" \
+    "$external_budget_error" "external-authority"
+fi
 collect_review_packet="$(node .claude/harness/foundation.mjs packet \
   collect-before-review --phase review)"
 assert_contains "review packet receives valid collected test evidence" \
@@ -340,6 +385,17 @@ assert_contains "external fallback still requires an artifact" \
   "$unavailable_readiness" '--artifact <path>'
 assert_contains "reconfiguration preserves the declared claim contract" \
   "$unavailable_readiness" 'proves the same declared claims'
+jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | .budget.window.usedTokens = 1' \
+  .foundation/runtime/unavailable-provider-recovery.json > "$TMP/infrastructure-budget.json"
+cp "$TMP/infrastructure-budget.json" \
+  .foundation/runtime/unavailable-provider-recovery.json
+if infrastructure_budget_error="$(node .claude/harness/foundation.mjs budget-continue \
+  unavailable-provider-recovery --reason "retry provider" 2>&1)"; then
+  fail "infrastructure failure cannot open a model budget window"
+else
+  assert_contains "infrastructure failure rejects model budget with a typed reason" \
+    "$infrastructure_budget_error" "infrastructure"
+fi
 # Typed non-ready commands are lifecycle stops, not implementation rework.
 FOUNDATION_TELEMETRY=1 node .claude/harness/foundation.mjs proof-readiness \
   unavailable-provider-recovery >/dev/null 2>&1 || true
@@ -355,14 +411,14 @@ printf '%s\n' \
   > .foundation/leases/tasks/unavailable-provider-recovery/T001.json
 configuration_readiness="$(node .claude/harness/foundation.mjs proof-readiness \
   unavailable-provider-recovery 2>/dev/null || true)"
-assert_contains "active lease returns configuration status" \
-  "$configuration_readiness" '"status": "CONFIGURATION_ERROR"'
-assert_contains "configuration failure offers diagnosis" \
-  "$configuration_readiness" '"kind": "diagnose"'
-assert_contains "configuration failure offers agreement revision" \
-  "$configuration_readiness" '"kind": "revise-configuration"'
-assert_contains "configuration recovery preserves reported issues" \
-  "$configuration_readiness" 'active agent leases: T001'
+assert_contains "active lease returns active-work status" \
+  "$configuration_readiness" '"status": "BLOCKED_BY_ACTIVE_WORK"'
+assert_contains "active work is not model-budget eligible" \
+  "$configuration_readiness" '"class": "active-work"'
+assert_contains "active work recovery tells the host to wait or release" \
+  "$configuration_readiness" '"kind": "wait-for-active-work"'
+assert_contains "active work recovery preserves lease identity" \
+  "$configuration_readiness" '"taskId": "T001"'
 
 assert_cmd_zero "atomic proof run reuses valid receipts and audits" \
   node .claude/harness/foundation.mjs proof-run executable-evidence
@@ -686,18 +742,32 @@ assert_contains "token budget enters completion-only without failing accounting"
   "$budget_event" "COMPLETION_ONLY"
 assert_file_contains "over-budget request remains auditable" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" '"requestId":"req-token-limit"'
-budget_status="$(node .claude/harness/foundation.mjs budget-status tiny-copy-edit)"
-assert_contains "budget status exposes completion-only mode" \
+budget_status="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
+assert_contains "metrics exposes completion-only mode" \
   "$budget_status" '"mode": "completion-only"'
-assert_cmd_zero "operator can open an audited continuation window" \
-  node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
-    --reason "finish required proof" --run tiny-copy-edit
+if budget_continue_output="$(node .claude/harness/foundation.mjs budget-continue \
+  tiny-copy-edit --reason "finish required proof" --run tiny-copy-edit 2>&1)"; then
+  pass "operator can open an audited continuation window"
+else
+  fail "operator can open an audited continuation window — $budget_continue_output"
+fi
 assert_file_contains "budget continuation is audited" \
   ".foundation/logs/tiny-copy-edit/budget-events.jsonl" '"action":"continue"'
 assert_eq "continuation preserves lifetime usage" "4" \
   "$(jq -r '.budget.lifetime.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
 assert_eq "continuation resets only the active window" "0" \
   "$(jq -r '.budget.window.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
+tmp_runtime="$TMP/tiny-copy-budget-second.json"
+jq '.budget.window.targetTokens = 1' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
+node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-second-limit --operation build --input 2 >/dev/null
+if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
+  --reason "second required attempt" --run tiny-copy-edit >/dev/null 2>&1; then
+  fail "active run cannot extend its budget twice"
+else
+  pass "active run cannot extend its budget twice"
+fi
 
 # Claude usage belongs to assistant requests in the session transcript, not to
 # PostToolUse. Native import reads the nested schema, imports subagents once,
@@ -775,7 +845,7 @@ assert_contains "over-budget packet declares completion-only policy" \
 assert_contains "completion-only packet forbids scope expansion" \
   "$resume_packet" '"scope-expansion"'
 assert_file_contains "over-budget lifecycle resume still emits stop warning" \
-  "$TMP/over-budget-resume.err" "STOP_AND_SPLIT"
+  "$TMP/over-budget-resume.err" "STOP_AND_RESCOPE"
 jq '.budget.window.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
 cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 
@@ -842,6 +912,7 @@ assert_contains "archive is idempotent after spec sync" "$archive_again" "ALREAD
 # A separate clean Git fixture exercises the complete worktree proof/apply path.
 mkdir -p "$TMP/git-project/.claude/harness" "$TMP/git-project/openspec" "$TMP/git-project/.foundation"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/git-project/.claude/harness/"
+cp "$ROOT/.claude/harness/commands.json" "$TMP/git-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/git-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/git-project/openspec/"
 cp "$ROOT/.foundation/.gitignore" "$TMP/git-project/.foundation/"
@@ -957,6 +1028,7 @@ done
 mkdir -p "$TMP/multi-project/.claude/harness" "$TMP/multi-project/openspec" \
   "$TMP/multi-project/.foundation"
 cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/multi-project/.claude/harness/"
+cp "$ROOT/.claude/harness/commands.json" "$TMP/multi-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/multi-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/multi-project/openspec/"
 cp "$ROOT/openspec/repositories.yaml" "$TMP/multi-project/openspec/"
@@ -1172,8 +1244,10 @@ assert_cmd_zero "explicit API commit is bound to Land" \
 assert_cmd_zero "explicit app commit is bound to Land" \
   node .claude/harness/foundation.mjs land-record cross-repository-profile \
   --repo app --commit "$app_commit" --ci pass
-assert_cmd_zero "verified root gitlinks stage transactionally" \
-  node .claude/harness/foundation.mjs land-pointers cross-repository-profile
+resume_stage="$(node .claude/harness/foundation.mjs land-resume \
+  cross-repository-profile)"
+assert_contains "Land resume stages eligible root gitlinks transactionally" \
+  "$resume_stage" "ROOT POINTERS STAGED"
 if node .claude/harness/foundation.mjs land-check \
   cross-repository-profile >/dev/null 2>&1; then
   fail "root pointer staging invalidates composite proof"

@@ -50,9 +50,9 @@ class ClaudeFoundation < Formula
 
   test do
     help = shell_output("#{bin}/claude-foundation --help")
-    assert_match "proof plan", help
+    assert_match "proof readiness", help
     assert_match "land check", help
-    assert_match "runtime new", help
+    assert_match "change start", help
     assert_match version.to_s, shell_output("#{bin}/claude-foundation version")
 
     project = testpath/"project"
