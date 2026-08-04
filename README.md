@@ -15,6 +15,39 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
+## How the AI and harness divide responsibility
+
+Foundation is not an AI and does not write code itself. It is a deterministic
+control plane around the native coding agent.
+
+| Part | Responsibility |
+|---|---|
+| User | Defines intent, makes consequential decisions, reviews the result, and explicitly authorizes Land |
+| AI coding agent | Investigates, writes the agreement, implements code and tests, and fixes failures reported by evidence |
+| Foundation harness | Controls lifecycle state, scope, sandboxes, evidence, proof freshness, budgets, and Land guards |
+| OpenSpec | Stores the durable, human-reviewable requirements and change agreement |
+| Project tools | Test runners, linters, Playwright, scanners, and other providers produce executable evidence |
+| Git and CI | Handle version control and automation through the project's existing process |
+
+```text
+User defines intent
+        ↓
+AI investigates and implements
+        ↓
+Harness bounds and checks the lifecycle
+        ↓
+Project tools produce evidence
+        ↓
+Harness verifies proof
+        ↓
+User explicitly authorizes Land
+```
+
+The harness does not accept “the agent says it is done” as evidence. It may
+produce a bounded execution plan and recommend a model tier, but the runtime
+does not invoke a model itself; the native agent host remains responsible for
+running agents and models.
+
 ## Why use it?
 
 An AI agent can write plausible code and still misunderstand the requirement,
@@ -220,6 +253,14 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 
 After Land, a new requirement should normally become a new change.
 
+| Phase | What the AI does | What the harness does |
+|---|---|---|
+| Investigate | Establishes facts, hypotheses, options, and tradeoffs | Selects the correct workspace and keeps investigation non-mutating |
+| Change | Writes the proposal, scenarios, design, tasks, and evidence claims | Validates schema, risk policy, scope, and revision state |
+| Build | Implements code and tests, runs focused checks, and completes tasks | Creates an isolated workspace, bounds authority, and persists progress |
+| Prove | Diagnoses and fixes failures exposed by evidence | Runs providers, validates claim coverage and receipts, and creates content-bound proof |
+| Land | Helps resolve a conflict when human judgment or implementation changes are needed | Checks freshness, applies the proven diff, supports rollback/resume, syncs specs, and archives |
+
 ## Which command should I use?
 
 | Command | Use it when | Result |
@@ -231,6 +272,18 @@ After Land, a new requirement should normally become a new change.
 | `/land` | Proof passes and you accept the change | Applies the proven diff, syncs specs, and archives |
 | `/changes` | You are resuming work or managing several changes | Active states and the next useful operation |
 | `/dev` | The intent is clear and you want Change → Build → Prove in one run | A proven candidate; deliberately stops before Land |
+
+Each slash command has two cooperating layers:
+
+- **Agent layer:** performs work that requires understanding, such as analyzing
+  requirements, writing artifacts, and implementing code.
+- **Harness layer:** performs deterministic control operations, such as
+  validation, sandbox creation, provider execution, hashing, and lifecycle
+  transitions.
+
+For example, `/prove` does not ask the AI to decide whether the implementation
+is correct. The harness runs the declared providers and checks their receipts
+against every required claim.
 
 Use the separate commands when you want to review each boundary. Use `/dev`
 for a small, clear request where a one-shot run is easier:

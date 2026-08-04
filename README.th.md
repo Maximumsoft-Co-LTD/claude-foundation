@@ -14,6 +14,38 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
+## AI กับ Harness แบ่งหน้าที่กันอย่างไร
+
+Foundation ไม่ใช่ AI และไม่ได้เขียน code เอง แต่เป็น deterministic control plane
+ที่ควบคุมการทำงานรอบ native coding agent
+
+| ส่วน | หน้าที่ |
+|---|---|
+| ผู้ใช้ | กำหนด intent ตัดสินใจเรื่องสำคัญ review ผลลัพธ์ และอนุญาต Land อย่างชัดเจน |
+| AI coding agent | Investigate, เขียนข้อตกลง, implement code และ test และแก้ failure ที่ evidence รายงาน |
+| Foundation harness | ควบคุม lifecycle state, scope, sandbox, evidence, proof freshness, budget และ Land guard |
+| OpenSpec | เก็บ requirement และ change agreement แบบถาวรที่คน review ได้ |
+| Tool ของ project | Test runner, linter, Playwright, scanner และ provider อื่นสร้าง executable evidence |
+| Git และ CI | ดูแล version control และ automation ตาม process เดิมของ project |
+
+```text
+ผู้ใช้กำหนด Intent
+        ↓
+AI วิเคราะห์และ Implement
+        ↓
+Harness จำกัดขอบเขตและตรวจ Lifecycle
+        ↓
+Tool ของ project สร้าง Evidence
+        ↓
+Harness ตรวจ Proof
+        ↓
+ผู้ใช้อนุญาต Land อย่างชัดเจน
+```
+
+Harness ไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ AI เป็น evidence ระบบอาจสร้าง execution
+plan แบบจำกัดขอบเขตและแนะนำ model tier แต่ runtime ไม่ได้เรียก model เอง การเรียก
+agent และ model ยังเป็นหน้าที่ของ native agent host
+
 ## ทำไมต้องใช้
 
 AI agent อาจเขียน code ที่ดูถูกต้อง แต่เข้าใจ requirement ผิด ทดสอบไม่ตรงจุด
@@ -209,6 +241,14 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 
 หลัง Land แล้ว requirement ใหม่ควรเปิดเป็น change ใหม่
 
+| Phase | AI ทำอะไร | Harness ทำอะไร |
+|---|---|---|
+| Investigate | หา fact, hypothesis, ทางเลือก และ tradeoff | เลือก workspace ที่ถูกต้องและควบคุมไม่ให้แก้ product |
+| Change | เขียน proposal, scenario, design, task และ evidence claim | Validate schema, risk policy, scope และ revision state |
+| Build | Implement code และ test, รัน focused check และทำ task ให้เสร็จ | สร้าง isolated workspace จำกัดอำนาจ และเก็บความคืบหน้า |
+| Prove | วิเคราะห์และแก้ failure ที่ evidence พบ | รัน provider ตรวจ claim coverage และ receipt แล้วสร้าง content-bound proof |
+| Land | ช่วยแก้ conflict เมื่อจำเป็นต้องใช้ judgment หรือแก้ implementation | ตรวจ freshness, apply proven diff, รองรับ rollback/resume, sync spec และ archive |
+
 ## ควรใช้ Command ไหน
 
 | Command | ใช้เมื่อ | ผลลัพธ์ |
@@ -220,6 +260,16 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | `/land` | Proof ผ่านและคุณยอมรับ change | Apply proven diff, sync specs และ archive |
 | `/changes` | กลับมาทำงานต่อหรือมีหลาย active changes | State ปัจจุบันและ operation ที่ควรทำต่อ |
 | `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | Proven candidate และจงใจหยุดก่อน Land |
+
+Slash command แต่ละคำสั่งมีสองชั้นที่ทำงานร่วมกัน:
+
+- **Agent layer:** ทำงานที่ต้องใช้ความเข้าใจ เช่น วิเคราะห์ requirement,
+  เขียน artifact และ implement code
+- **Harness layer:** ทำงาน deterministic เช่น validate, สร้าง sandbox,
+  รัน provider, ทำ hash และเปลี่ยน lifecycle state
+
+ตัวอย่างเช่น `/prove` ไม่ได้ให้ AI ตัดสินเองว่า implementation ถูกต้อง แต่ให้
+harness รัน provider ที่ประกาศไว้และตรวจ receipt ให้ครอบคลุมทุก required claim
 
 ใช้ command แยกเมื่อต้องการ review ทุก boundary ใช้ `/dev` กับงานเล็กที่ชัดและ
 ต้องการ one-shot flow:
