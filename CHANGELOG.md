@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A renamed scenario is refused before Land** — `validate` and the Land
+  readiness check now reject a change whose `## MODIFIED Requirements` block
+  stops naming a scenario the current spec still declares. OpenSpec reads a
+  MODIFIED block as the complete scenario list, so a rename archives as a
+  deletion. `openspec validate --strict` does not catch it, and `openspec
+  archive` only reports it once the code has already been projected into the
+  target — which is how one renamed scenario turned into a half-landed change.
+  There is deliberately no bypass flag: OpenSpec enforces the same rule at
+  archive time, so skipping the check would only move the same failure past the
+  point of no return. The accepted form is to rename the requirement as well —
+  the old name under `## REMOVED Requirements`, the new name under
+  `## ADDED Requirements` with its full scenario list.
+
+### Changed
+
+- **Operation telemetry is opt-out** — `operations.jsonl` is now recorded unless
+  `FOUNDATION_TELEMETRY=0`. It was opt-in and only `cli.sh` ever set it, so
+  invoking the runtime directly recorded nothing and `metrics` reported
+  `wallTimeMs`, `activeTimeMs`, and the rework counters as null or zero for runs
+  that really took many minutes and retried several times. Self-measurement no
+  longer depends on being launched through the shell wrapper.
+- **A refusal is a lifecycle stop, not a failure** — `die()` exits non-zero for
+  every guard refusal, and those were recorded as `failed`. Recording telemetry
+  by default would therefore have buried real breakage under the guards that are
+  working as designed, so a refusal is now recorded as `blocked` and
+  `rework.unexpectedFailures` keeps its meaning.
+
+### Fixed
+
+- **`sandbox apply` rolls forward instead of resuming a stale transaction** — an
+  applied change whose sandbox had moved on could never be projected again:
+  apply short-circuited on `workspace.applied`, and `--refresh` failed as soon
+  as the target and the sandbox diverged, so a change edited after Land began
+  had no supported way out. Apply now rebuilds the desired projection from the
+  current sandbox and compares it with the recorded one — an unchanged sandbox
+  still resumes, a moved sandbox opens a new transaction. The virgin-target
+  conflict guards cannot run on that path, because after a first apply the
+  target legitimately differs from the baseline; divergence is caught instead by
+  matching each entry's `before` against what the previous transaction actually
+  projected, which is the stricter check.
+
 ## [3.2.2] - 2026-08-05
 
 ### Fixed
