@@ -11,9 +11,15 @@ Use the lightest path that resolves the decision.
 2. Separate verified facts, hypotheses, constraints, and unknowns.
 3. Identify at most three viable approaches and recommend one with concrete
    tradeoffs.
-4. Ask only questions whose answers materially change behavior, compatibility,
-   security, persistence, or scope.
-5. End with a compact agreement: outcome, in/out, observable scenarios, chosen
+4. Never ask what you can find. Any fact the specs, code, LSP, or sandbox can
+   settle is yours to resolve; only questions downstream of that fact wait.
+5. Ask in rounds, not one at a time. A round is every open decision whose
+   prerequisites are already settled; a question depending on another still
+   open belongs to the next round. Carry your recommended answer with each
+   question and mark it `(Recommended)`. Ask only what materially changes
+   behavior, compatibility, security, persistence, or scope; recompute the
+   round from the answers and stop when nothing settled remains open.
+6. End with a compact agreement: outcome, in/out, observable scenarios, chosen
    approach, and remaining risk.
 
 Use `/investigate` when the exploration should remain no-stakes. Once the

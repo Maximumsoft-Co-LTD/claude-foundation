@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`brainstorming` now specifies *how* to ask, not just *what* to ask** — the
+  single "ask only material questions" step splits into two: (4) facts the
+  specs, code, LSP, or sandbox can settle are the agent's to resolve and are
+  never put to the user, and (5) questions are asked in rounds of
+  already-unblocked decisions, each carrying a `(Recommended)` answer, with the
+  round recomputed from the replies. The material-change filter survives inside
+  step 5, so this changes question *shape* without licensing an exhaustive
+  interrogation. Rounds and recommendations are expressed through the existing
+  `AskUserQuestion` seam (multi-question calls, stable headers, recommended
+  first option), so the `interview/` replay bank keeps matching by header.
+  `/investigate` is untouched. Technique adapted from the `grilling` skill in
+  [mattpocock/skills](https://github.com/mattpocock/skills) (MIT) — its
+  frontier-rounds model, per-question recommendation, and facts-are-your-job
+  rule; its literal `❓`/`➡️` transcript format was deliberately not adopted.
+  Three deterministic pins added in the context-budget suite.
+
 ## [3.2.0] - 2026-08-05
 
 ### Added

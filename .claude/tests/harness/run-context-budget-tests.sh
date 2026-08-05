@@ -56,6 +56,13 @@ assert_file_contains "programming fundamentals route module design detail" \
   'references/module-design.md'
 assert_file_exists "module design reference ships" \
   "$ROOT/.claude/skills/programming-fundamentals/references/module-design.md"
+assert_file_contains "brainstorming resolves facts instead of asking them" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" 'Never ask what you can find'
+assert_file_contains "brainstorming batches settled decisions into rounds" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" 'Ask in rounds, not one at a time'
+assert_file_contains "brainstorming keeps the material-change question filter" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'Ask only what materially changes'
 
 for command in "$ROOT"/.claude/commands/*.md; do
   assert_words_at_most "command budget: $(basename "$command")" 120 "$command"
