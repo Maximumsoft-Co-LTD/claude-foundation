@@ -1,4 +1,8 @@
 /tmp
+/target/
+/.changeloop/*.db
+/.changeloop/*.db-shm
+/.changeloop/*.db-wal
 **/node_modules/
 **/test-results/
 **/coverage/
@@ -6,7 +10,22 @@
 # Python bytecode (skill scripts under .claude/skills/*/scripts/)
 __pycache__/
 *.pyc
-/docs/
+/docs/*
+!/docs/roadmap.md
+!/docs/threat-model.md
+!/docs/migration-and-install-paths.md
+!/docs/provider-replay-corpus.md
+!/docs/quality-and-performance-baselines.md
+!/docs/onboarding-and-updates.md
+!/docs/extensions.md
+!/docs/roadmap-traceability.md
+!/docs/stability-and-deprecation.md
+!/docs/database-recovery.md
+!/docs/independent-review.md
+!/docs/reports/
+!/docs/reports/*.md
+!/docs/adr/
+!/docs/adr/*.md
 
 # Serena MCP server (per-project config/cache/memories, auto-generated)
 .serena/
