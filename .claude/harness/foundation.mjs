@@ -104,7 +104,11 @@ const SECURITY_TERMS = [
   "sensitive", "personal data", "command execution", "injection", "migration"
 ];
 
+// A refusal is a lifecycle stop, not a crash. Recording it as a failure would
+// bury real breakage under the guards that are working as designed.
+let operationBlocked = false;
 function die(message, code = 1) {
+  operationBlocked = true;
   console.error(`BLOCKED: ${message}`);
   process.exit(code);
 }
@@ -157,7 +161,7 @@ const operationStartedAt = Date.now();
 let operationChangeId = null;
 let operationName = null;
 process.on("exit", (code) => {
-  if (process.env.FOUNDATION_TELEMETRY !== "1" || !operationChangeId || !operationName) return;
+  if (process.env.FOUNDATION_TELEMETRY === "0" || !operationChangeId || !operationName) return;
   try {
     const path = join(LOGS, operationChangeId, "operations.jsonl");
     mkdirSync(dirname(path), { recursive: true });
@@ -166,7 +170,8 @@ process.on("exit", (code) => {
     appendFileSync(path, `${JSON.stringify({
       version: 2, changeId: operationChangeId, operation: operationName,
       phase: process.env.FOUNDATION_PUBLIC_OPERATION || null,
-      status: code === 0 ? "completed" : typedBlock ? "blocked" : "failed", exitCode: code,
+      status: code === 0 ? "completed"
+        : (typedBlock || operationBlocked) ? "blocked" : "failed", exitCode: code,
       startedAt: new Date(operationStartedAt).toISOString(), finishedAt: now(),
       durationMs: Date.now() - operationStartedAt,
       requests: null, inputTokens: null, outputTokens: null,
@@ -625,6 +630,7 @@ changeValidationRuntime = createChangeValidationRuntime({
   fail: die
 });
 const {
+  assertNoDroppedScenarios,
   changeArtifactGaps,
   changeSpecScenarios,
   claimsForProvider,
@@ -1083,6 +1089,7 @@ const {
   loadRuntime,
   saveRuntime,
   recoverPendingApply: (...args) => applyRuntime.recoverPendingApply(...args),
+  assertNoDroppedScenarios,
   proofAudit,
   proofPath,
   readJson,

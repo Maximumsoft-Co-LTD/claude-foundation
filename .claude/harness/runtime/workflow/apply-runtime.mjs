@@ -41,18 +41,30 @@ export function createApplyRuntime({
   now,
   fail
 }) {
-  function gitApplyInputs(id, sandboxPath) {
-    git(["add", "-N", "."], sandboxPath);
+  function applyPathspec(id, state) {
     const pathspec = [
       ".",
       `:(exclude)openspec/changes/${id}/**`,
       ":(exclude)coverage/**", ":(exclude)test-results/**",
       ":(exclude)playwright-report/**", ":(exclude).foundation/**"
     ];
-    const state = loadRuntime(id);
     for (const repository of selectedRepositories(id, state))
       if (repository.type === "submodule")
         pathspec.push(`:(exclude)${repository.relativePath}`);
+    return pathspec;
+  }
+
+  function sandboxDiffNames(id, sandboxPath, state) {
+    const names = git(["diff", "--name-only", "-z", "HEAD", "--",
+      ...applyPathspec(id, state)], sandboxPath);
+    if (names.status !== 0) fail(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
+    return names.stdout.split("\0").filter(Boolean).sort();
+  }
+
+  function gitApplyInputs(id, sandboxPath) {
+    git(["add", "-N", "."], sandboxPath);
+    const state = loadRuntime(id);
+    const pathspec = applyPathspec(id, state);
     const diff = git(["diff", "--binary", "HEAD", "--", ...pathspec], sandboxPath);
     if (diff.status !== 0) fail("cannot inspect sandbox diff");
     if (!diff.stdout) {
@@ -64,9 +76,7 @@ export function createApplyRuntime({
     });
     if (check.status !== 0)
       fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
-    const names = git(["diff", "--name-only", "-z", "HEAD", "--", ...pathspec], sandboxPath);
-    if (names.status !== 0) fail(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
-    return names.stdout.split("\0").filter(Boolean).sort();
+    return sandboxDiffNames(id, sandboxPath, state);
   }
 
   function buildApplyEntries(id, state) {
@@ -108,10 +118,51 @@ export function createApplyRuntime({
     return entries;
   }
 
-  function prepareApplyTransaction(id, state) {
+  // Paths the sandbox still wants to project once the target already carries a
+  // prior projection. The virgin-target conflict guards in buildApplyEntries
+  // cannot run here: after a first apply the target legitimately differs from
+  // the baseline. Divergence is caught instead by matching each entry's
+  // 'before' against what the previous transaction actually projected.
+  function reapplyCodePaths(id, state) {
+    const sandboxPath = state.workspace.path;
+    if (state.workspace.mode === "copy") {
+      const baseline = state.workspace.baseline || {};
+      const sandbox = workspaceManifest(sandboxPath, id, true);
+      return [...new Set([...Object.keys(baseline), ...Object.keys(sandbox)])]
+        .filter((path) => baseline[path] !== sandbox[path]).sort();
+    }
+    if (state.workspace.mode !== "worktree") fail("change has no isolated sandbox");
+    if (gitHead(root) !== state.workspace.baseHead)
+      fail("target HEAD moved since sandbox creation");
+    git(["add", "-N", "."], sandboxPath);
+    return sandboxDiffNames(id, sandboxPath, state);
+  }
+
+  // The full projection, not just the delta, so verifyAppliedProjection keeps
+  // covering every path the change owns.
+  function buildReapplyEntries(id, state, priorJournal) {
+    const sandboxPath = state.workspace.path;
+    const projected = new Map((priorJournal.entries || [])
+      .map((entry) => [entry.path, entry]));
+    const changeRel = currentChangeRelativePath(id);
+    const paths = [...new Set([
+      ...projected.keys(), ...reapplyCodePaths(id, state), changeRel
+    ])].sort();
+    return paths.map((rel) => {
+      const prior = projected.get(rel);
+      return {
+        path: rel,
+        role: prior?.role || (rel === changeRel ? "change-artifacts" : "code"),
+        before: prior ? prior.after : pathIdentity(safeRootPath(rel)),
+        after: pathIdentity(resolve(sandboxPath, rel))
+      };
+    });
+  }
+
+  function prepareApplyTransaction(id, state, prepared = null) {
     if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
       fail("active change was edited after the last sandbox sync");
-    const entries = buildApplyEntries(id, state);
+    const entries = prepared || buildApplyEntries(id, state);
     const transactionId = `apply-${Date.now()}-${process.pid}`;
     const transactionRoot = applyTransactionRoot(id, transactionId);
     mkdirSync(transactionRoot, { recursive: true });
@@ -205,13 +256,18 @@ export function createApplyRuntime({
     let state = loadRuntime(id);
     recoverPendingApply(id, state);
     state = loadRuntime(id);
+    let prepared = null;
     if (state.workspace?.applied) {
       const verification = verifyAppliedProjection(state);
       if (!verification.valid) fail(`applied projection is invalid: ${verification.reason}`);
-      console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
-      return;
+      prepared = buildReapplyEntries(id, state, verification.journal);
+      const desired = stableHash(prepared.map(({ path, after }) => ({ path, after })));
+      if (desired === state.workspace.apply.projectionHash) {
+        console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
+        return;
+      }
     }
-    const journal = prepareApplyTransaction(id, state);
+    const journal = prepareApplyTransaction(id, state, prepared);
     journal.status = "applying";
     saveApplyJournal(journal);
     try {

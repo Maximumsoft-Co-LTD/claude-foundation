@@ -103,6 +103,71 @@ export function createChangeValidationRuntime({
       `${left.path}:${left.name}`.localeCompare(`${right.path}:${right.name}`));
   }
 
+  function parseSpecRequirements(text) {
+    const requirements = [];
+    let section = null;
+    let current = null;
+    for (const line of text.split("\n")) {
+      const requirement = line.match(/^###\s+Requirement:\s*(.+?)\s*$/);
+      const scenario = line.match(/^####\s+Scenario:\s*(.+?)\s*$/);
+      const heading = line.match(/^##\s+(.+?)\s*$/);
+      if (requirement) {
+        current = { section, name: requirement[1].trim(), scenarios: [] };
+        requirements.push(current);
+      } else if (scenario) {
+        if (current) current.scenarios.push(scenario[1].trim());
+      } else if (heading) {
+        section = heading[1].trim();
+        current = null;
+      }
+    }
+    return requirements;
+  }
+
+  // OpenSpec reconciles a MODIFIED requirement by replacing its scenario list
+  // wholesale, so a scenario the delta stops naming reads as a deletion. That
+  // is exactly what a rename looks like, and archive only discovers it after
+  // the code has already landed. Report it while it is still cheap to fix.
+  function droppedScenarioFindings(id, dir = activeChangePath(id)) {
+    const specsRoot = join(dir, "specs");
+    const findings = [];
+    if (!existsSync(specsRoot)) return findings;
+    walk(specsRoot, (path) => {
+      if (!path.endsWith(".md")) return;
+      const capability = relative(specsRoot, path).replaceAll("\\", "/").split("/")[0];
+      const currentPath = join(root, "openspec", "specs", capability, "spec.md");
+      if (!existsSync(currentPath)) return;
+      const current = new Map(parseSpecRequirements(readFileSync(currentPath, "utf8"))
+        .map((requirement) => [requirement.name, requirement.scenarios]));
+      for (const requirement of parseSpecRequirements(readFileSync(path, "utf8"))) {
+        if (!/^MODIFIED\b/i.test(requirement.section || "")) continue;
+        const declared = new Set(requirement.scenarios);
+        for (const scenario of current.get(requirement.name) || [])
+          if (!declared.has(scenario))
+            findings.push({
+              capability,
+              requirement: requirement.name,
+              scenario,
+              path: relative(root, path).replaceAll("\\", "/")
+            });
+      }
+    });
+    return findings;
+  }
+
+  // No bypass flag: OpenSpec enforces the same rule at archive time, so
+  // skipping this check would only move the same failure past the point where
+  // the code has already been projected into the target.
+  function assertNoDroppedScenarios(id, dir = activeChangePath(id)) {
+    const findings = droppedScenarioFindings(id, dir);
+    if (!findings.length) return;
+    const detail = findings.map((finding) =>
+      `'${finding.scenario}' under requirement '${finding.requirement}' in ${finding.capability}`
+    ).join("; ");
+    fail(`spec delta drops ${findings.length} scenario(s) the current spec still declares: ${
+      detail}. OpenSpec reads a MODIFIED block as the complete scenario list, so a renamed scenario archives as a deletion. Either keep the original scenario name, or rename the whole requirement: declare the old name under '## REMOVED Requirements' and the new name under '## ADDED Requirements' with its full scenario list. Reusing one requirement name in both sections is rejected.`);
+  }
+
   function traceabilityAuditValue(id) {
     const state = loadRuntime(id);
     const dir = activeChangePath(id, state);
@@ -164,6 +229,7 @@ export function createChangeValidationRuntime({
       fail(`resolve coupling for '${id}'`);
     if (state.acceptance?.decision === "undecided")
       fail(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
+    assertNoDroppedScenarios(id, dir);
 
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);
@@ -391,9 +457,11 @@ export function createChangeValidationRuntime({
   }
 
   return {
+    assertNoDroppedScenarios,
     changeArtifactGaps,
     changeSpecScenarios,
     claimsForProvider,
+    droppedScenarioFindings,
     evidenceDetectionValue,
     initializeEvidence,
     pendingTasks,

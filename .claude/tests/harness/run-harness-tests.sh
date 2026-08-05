@@ -604,8 +604,9 @@ FOUNDATION_TELEMETRY=1 node .claude/harness/foundation.mjs proof-readiness \
   unavailable-provider-recovery >/dev/null 2>&1 || true
 unavailable_metrics="$(node .claude/harness/foundation.mjs metrics \
   unavailable-provider-recovery)"
-assert_contains "typed readiness stop is counted separately" \
-  "$unavailable_metrics" '"expectedStops": 1'
+printf '%s' "$unavailable_metrics" > "$TMP/unavailable-metrics.json"
+assert_cmd_zero "typed readiness stop is counted separately" \
+  jq -e '.rework.expectedStops >= 1' "$TMP/unavailable-metrics.json"
 assert_contains "typed readiness stop is not failed rework" \
   "$unavailable_metrics" '"failedOperations": 0'
 mkdir -p .foundation/leases/tasks/unavailable-provider-recovery
@@ -931,8 +932,8 @@ telemetry="$(node .claude/harness/foundation.mjs telemetry-import tiny-copy-edit
 assert_contains "host telemetry adapter imports authoritative usage" \
   "$telemetry" "imported 1"
 metrics="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
-assert_contains "metrics distinguish host telemetry from operations-only data" \
-  "$metrics" '"measurement": "host-events-only"'
+assert_contains "metrics combine host telemetry with observed operations" \
+  "$metrics" '"measurement": "operations-and-host-events"'
 assert_contains "host telemetry contributes input tokens" \
   "$metrics" '"inputTokens": 130'
 assert_contains "metrics attribute usage by model" \
@@ -1226,6 +1227,114 @@ assert_file_contains "land returns completed task ledger" \
   openspec/changes/sandbox-copy/tasks.md "- [x]"
 assert_file_contains "successful apply preserves unrelated target edits" NOTES.md \
   "unrelated during build"
+
+# An applied change whose sandbox has not moved resumes its recorded
+# transaction instead of opening a redundant one.
+prior_transaction="$(jq -r '.workspace.apply.transactionId' \
+  .foundation/runtime/sandbox-copy.json)"
+reapply_noop="$(node .claude/harness/foundation.mjs sandbox apply sandbox-copy)"
+assert_contains "unchanged re-apply resumes the prior transaction" \
+  "$reapply_noop" "resumed:"
+assert_eq "unchanged re-apply keeps the recorded transaction" "$prior_transaction" \
+  "$(jq -r '.workspace.apply.transactionId' .foundation/runtime/sandbox-copy.json)"
+
+# A sandbox that moves forward after apply must be projected again. Resuming
+# the stale transaction here left a half-landed change with no way out.
+printf 'after-second-pass\n' > .foundation/sandboxes/sandbox-copy/app.txt
+node .claude/harness/foundation.mjs sandbox sync sandbox-copy >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
+  --discovered 2 --minimum 1 --observed "2 tests discovered" \
+  --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
+assert_cmd_zero "applied sandbox rolls forward after a later revision" \
+  node .claude/harness/foundation.mjs sandbox apply sandbox-copy
+assert_eq "roll-forward projects the newer sandbox content" "after-second-pass" \
+  "$(tr -d '\n' < app.txt)"
+if [ "$prior_transaction" = "$(jq -r '.workspace.apply.transactionId' \
+  .foundation/runtime/sandbox-copy.json)" ]; then
+  fail "roll-forward opens a new apply transaction"
+else
+  pass "roll-forward opens a new apply transaction"
+fi
+assert_file_contains "roll-forward preserves unrelated target edits" NOTES.md \
+  "unrelated during build"
+
+# OpenSpec reads a MODIFIED block as the complete scenario list, so a renamed
+# scenario archives as a deletion. 'openspec archive' only reports that after
+# the code has landed, so the harness has to catch it while the change is still
+# cheap to fix.
+node .claude/harness/foundation.mjs new 'Scenario rename guard' >/dev/null
+node .claude/harness/foundation.mjs resolve scenario-rename-guard \
+  --impact low --coupling isolated --acceptance-not-required >/dev/null
+mkdir -p openspec/specs/appearance \
+  openspec/changes/scenario-rename-guard/specs/appearance
+printf '%s\n' \
+  '# appearance Specification' '' '## Purpose' '' 'Fixture capability.' '' \
+  '## Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' '' \
+  '#### Scenario: A choice survives a reload' '' \
+  '- **WHEN** the page reloads' '- **THEN** the choice is kept' '' \
+  '#### Scenario: A value that is not one of the three is discarded' '' \
+  '- **WHEN** an unknown value is stored' '- **THEN** it is discarded' \
+  > openspec/specs/appearance/spec.md
+printf '%s\n' \
+  '## MODIFIED Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' '' \
+  '#### Scenario: A choice survives a reload' '' \
+  '- **WHEN** the page reloads' '- **THEN** the choice is kept' '' \
+  '#### Scenario: A value that is not one of the four is discarded' '' \
+  '- **WHEN** an unknown value is stored' '- **THEN** it is discarded' \
+  > openspec/changes/scenario-rename-guard/specs/appearance/spec.md
+assert_cmd_fails_with "renamed scenario is refused before any projection" \
+  'A value that is not one of the three is discarded' \
+  node .claude/harness/foundation.mjs validate scenario-rename-guard
+# Renaming the requirement as well is the form OpenSpec actually accepts;
+# reusing one requirement name in both sections is rejected by OpenSpec itself.
+printf '%s\n' \
+  '## REMOVED Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' '' \
+  '## ADDED Requirements' '' \
+  '### Requirement: The choice is remembered across four values' '' \
+  'The system SHALL remember the choice.' '' \
+  '#### Scenario: A choice survives a reload' '' \
+  '- **WHEN** the page reloads' '- **THEN** the choice is kept' '' \
+  '#### Scenario: A value that is not one of the four is discarded' '' \
+  '- **WHEN** an unknown value is stored' '- **THEN** it is discarded' \
+  > openspec/changes/scenario-rename-guard/specs/appearance/spec.md
+declared_removal="$({ node .claude/harness/foundation.mjs validate \
+  scenario-rename-guard; } 2>&1 || true)"
+assert_not_contains "a declared removal clears the scenario guard" \
+  "$declared_removal" "spec delta drops"
+
+# Self-measurement must not depend on being launched through the shell wrapper.
+# A direct 'node' invocation is measured unless telemetry is explicitly off,
+# and a refusal is recorded as a lifecycle stop rather than a failure so real
+# breakage stays visible under the guards that are working as designed.
+node .claude/harness/foundation.mjs new 'Telemetry default' --rapid >/dev/null
+assert_file_exists "direct runtime invocation records operation telemetry" \
+  .foundation/logs/telemetry-default/operations.jsonl
+node .claude/harness/foundation.mjs land-check telemetry-default >/dev/null 2>&1 || true
+assert_file_contains "a refused command records a lifecycle stop" \
+  .foundation/logs/telemetry-default/operations.jsonl '"status":"blocked"'
+assert_file_not_contains "a refused command is not counted as a failure" \
+  .foundation/logs/telemetry-default/operations.jsonl '"status":"failed"'
+telemetry_rows="$(wc -l < .foundation/logs/telemetry-default/operations.jsonl | tr -d ' ')"
+FOUNDATION_TELEMETRY=0 node .claude/harness/foundation.mjs land-check \
+  telemetry-default >/dev/null 2>&1 || true
+assert_eq "explicit opt-out suppresses operation telemetry" "$telemetry_rows" \
+  "$(wc -l < .foundation/logs/telemetry-default/operations.jsonl | tr -d ' ')"
+node .claude/harness/foundation.mjs metrics telemetry-default \
+  > "$TMP/telemetry-metrics.json"
+assert_cmd_zero "wall-clock time is measured without a shell wrapper" \
+  jq -e '.wallTimeMs != null and .wallTimeMs >= 0' "$TMP/telemetry-metrics.json"
+assert_cmd_zero "a refused command surfaces as an expected stop" \
+  jq -e '.rework.expectedStops >= 1 and .rework.unexpectedFailures == 0' \
+  "$TMP/telemetry-metrics.json"
 
 # A superproject fixture proves that topology discovery, worktree fan-out,
 # repository packets, model routing, and receipt invalidation share one

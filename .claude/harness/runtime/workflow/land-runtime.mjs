@@ -7,6 +7,7 @@ export function createLandRuntime({
   loadRuntime,
   saveRuntime,
   recoverPendingApply,
+  assertNoDroppedScenarios,
   proofAudit,
   proofPath,
   readJson,
@@ -35,6 +36,10 @@ export function createLandRuntime({
       console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
       return { archived: true, state };
     }
+    // Before any projection: a spec delta that silently drops a scenario only
+    // fails inside 'openspec archive', by which point the code has landed and
+    // the change is stuck half-applied.
+    assertNoDroppedScenarios(id);
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
     if (!proof || proof.status !== "pass") fail(`change '${id}' has no passing proof`);
     const audit = proofAudit(id, true);
