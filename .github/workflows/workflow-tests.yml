@@ -51,8 +51,12 @@ jobs:
       - name: Run workflow test harness
         run: sh .claude/tests/run-all.sh
       - name: Check packaged CLI contract
+        # Canonical public vocabulary only. `proof plan` and `runtime new` are
+        # legacy names that still resolve but are deliberately absent from help,
+        # and run-context-budget-tests.sh fails any slash command that uses
+        # them — so asserting them here contradicted the suite it runs beside.
         run: |
-          bash cli.sh help | grep -F "proof plan"
+          bash cli.sh help | grep -F "change new"
+          bash cli.sh help | grep -F "proof run"
           bash cli.sh help | grep -F "land check"
-          bash cli.sh help | grep -F "runtime new"
           ruby -c Formula/claude-foundation.rb

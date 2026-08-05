@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the run with no `FAIL` line and no captured stderr, which is why CI reported
   only `✗ feedback isolation` with nothing to act on. It now reports and prints
   the command output.
+- **The packaged-CLI contract check asserts the vocabulary the CLI actually
+  publishes** — it grepped `cli.sh help` for `proof plan` and `runtime new`,
+  legacy names that still resolve but were deliberately dropped from help, and
+  which `run-context-budget-tests.sh` fails any slash command for using. The
+  step therefore contradicted the suite it runs beside. It broke when help moved
+  to the canonical surface and stayed invisible because the test-harness step
+  ahead of it was already failing the job. Now checks `change new`, `proof run`,
+  and `land check`.
 - **Re-rooting is covered by a positive control** — a mistyped fixture path would
   relocate the hazard scan into nothing and silently turn the unattended
   assertions into a rubber stamp, so a planted writable control socket must
