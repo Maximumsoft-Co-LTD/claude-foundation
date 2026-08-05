@@ -1,0 +1,17 @@
+{
+  "id": "msg_native_1",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "anthropic thought", "signature": "signature_fixture_1" },
+    { "type": "text", "text": "anthropic answer" },
+    { "type": "tool_use", "id": "toolu_native_1", "name": "lookup", "input": { "q": "new" } }
+  ],
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 6,
+    "cache_read_input_tokens": 2,
+    "cache_creation_input_tokens": 1
+  }
+}

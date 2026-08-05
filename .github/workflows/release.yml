@@ -47,10 +47,44 @@ jobs:
       TAP: maximumsoft-co-ltd/claude-foundation
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: main
           fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install pinned workflow dependencies
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+          command -v jq >/dev/null || brew install jq
+
+      # The Homebrew/Node distribution remains the supported fallback during
+      # the staged Rust cutover, so release mutation is gated on both runtimes.
+      - name: Verify legacy fallback and Rust parity
+        run: |
+          sh .claude/tests/run-all.sh
+          npm run test:oracle
+          npm run test:m9-parity
+
+      # This gate is intentionally before every tag, upload, or repository
+      # mutation. Tool versions are pinned and this step never publishes.
+      - name: Verify Rust release candidate
+        run: |
+          npm run test:msrv
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Generate release-candidate SBOM and checksums
+        run: |
+          cargo install --locked cargo-cyclonedx@0.5.9
+          cargo cyclonedx --format json --all
+          find . -name '*.cdx.json' -type f -print0 | sort -z | xargs -0 shasum -a 256 > "$RUNNER_TEMP/sbom-checksums.txt"
 
       - name: Validate inputs + repo state
         run: |

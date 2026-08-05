@@ -1,0 +1,54 @@
+name: Rust supply chain
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "deny.toml"
+      - "crates/**"
+      - "scripts/release/check-msrv.mjs"
+      - ".github/workflows/rust-supply-chain.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "deny.toml"
+      - "crates/**"
+      - "scripts/release/check-msrv.mjs"
+      - ".github/workflows/rust-supply-chain.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install pinned supply-chain tools
+        run: |
+          cargo install --locked cargo-audit@0.22.2
+          cargo install --locked cargo-deny@0.20.2
+          cargo install --locked cargo-cyclonedx@0.5.9
+      - name: Audit vulnerabilities and dependency policy
+        run: |
+          node scripts/release/check-msrv.mjs
+          cargo audit --deny warnings
+          cargo deny check advisories bans licenses sources
+      - name: Generate CycloneDX SBOM
+        run: cargo cyclonedx --format json --all
+      - name: Archive SBOM for inspection
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: changeloop-cyclonedx-sbom
+          path: "**/*.cdx.json"
+          if-no-files-found: error
+          retention-days: 14

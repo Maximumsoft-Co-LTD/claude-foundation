@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runtimeApi": "m9-slice-3",
+  "sourceRevision": "node-foundation-parity-baseline",
+  "entrypoint": "scripts/oracle/m9-slice3-reference.mjs",
+  "cases": [
+    { "name": "authority-denial", "args": ["authority-denial"], "result": { "status": 0, "stdout": "{\"allowed\":false,\"reason\":\"explicit_external_authority_required\"}\n", "stderr": "" } },
+    { "name": "telemetry-unknowns", "args": ["telemetry-unknowns"], "result": { "status": 0, "stdout": "{\"inputTokens\":{\"state\":\"unknown\",\"value\":{\"reason\":\"input omitted\"}},\"outputTokens\":{\"state\":\"known\",\"value\":4},\"requestCount\":1}\n", "stderr": "" } },
+    { "name": "land-conflict", "args": ["land-conflict"], "result": { "status": 0, "stdout": "{\"content\":\"external\",\"overwroteExternal\":false,\"status\":\"rolled_back\"}\n", "stderr": "" } },
+    { "name": "land-rollback", "args": ["land-rollback"], "result": { "status": 0, "stdout": "{\"content\":\"old\",\"status\":\"rolled_back\"}\n", "stderr": "" } },
+    { "name": "land-recovery", "args": ["land-recovery"], "result": { "status": 0, "stdout": "{\"content\":\"old\",\"status\":\"rolled_back\",\"wasInterrupted\":true}\n", "stderr": "" } }
+  ]
+}

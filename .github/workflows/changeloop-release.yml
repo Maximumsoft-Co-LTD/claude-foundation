@@ -1,0 +1,260 @@
+name: Changeloop release artifacts
+
+on:
+  push:
+    tags: ["cloop-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Artifact version (without v)"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Legacy fallback and Rust parity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The compatibility oracle resolves its pinned historical baseline.
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install pinned workflow dependencies
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Ensure jq (legacy harness dependency)
+        run: command -v jq >/dev/null || { sudo apt-get update && sudo apt-get install -y jq; }
+      - name: Verify legacy fallback and API oracle
+        run: |
+          sh .claude/tests/run-all.sh
+          npm run test:oracle
+          npm run test:msrv
+      - name: Verify comprehensive M9 Node/Rust parity
+        run: npm run test:m9-parity
+
+  security:
+    name: Locked dependency security and policy
+    needs: preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned security tools
+        run: |
+          cargo install --locked cargo-audit@0.22.2
+          cargo install --locked cargo-deny@0.20.2
+      - name: Enforce vulnerability and dependency policy
+        run: |
+          cargo audit --deny warnings
+          cargo deny check advisories bans licenses sources
+
+  build:
+    name: ${{ matrix.target }}
+    needs: [preflight, security]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Resolve and validate version
+        shell: bash
+        run: |
+          VERSION=${VERSION#cloop-v}
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          PACKAGE_VERSION=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "changeloop-cli") | .version')
+          [[ "$PACKAGE_VERSION" == "$VERSION" ]] || { echo "requested $VERSION but changeloop-cli is $PACKAGE_VERSION" >&2; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Install Rust target
+        run: rustup target add "${{ matrix.target }}"
+      - name: Test workspace
+        run: cargo test --workspace --locked
+      - name: Build archive
+        run: scripts/release/build-artifact.sh "${{ matrix.target }}" "$VERSION" dist
+      - name: Sign and notarize macOS binary when credentials are configured
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          archive="dist/changeloop-$VERSION-${{ matrix.target }}.tar.gz"
+          if [[ -z "$APPLE_CERTIFICATE_P12_BASE64" || -z "$APPLE_CERTIFICATE_PASSWORD" || -z "$APPLE_SIGNING_IDENTITY" || -z "$APPLE_ID" || -z "$APPLE_TEAM_ID" || -z "$APPLE_APP_PASSWORD" ]]; then
+            if [[ "$GITHUB_REF" == refs/tags/cloop-v* ]]; then
+              echo "tagged releases require all Apple signing and notarization secrets" >&2
+              exit 1
+            fi
+            echo "Apple credentials absent; producing an unsigned workflow-dispatch candidate."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/changeloop-signing.keychain-db"
+          cert="$RUNNER_TEMP/changeloop-signing.p12"
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" | base64 -D > "$cert"
+          security create-keychain -p temporary "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p temporary "$keychain"
+          security import "$cert" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain"
+          unpack="$RUNNER_TEMP/notarize"
+          mkdir "$unpack"
+          tar -xzf "$archive" -C "$unpack"
+          binary="$unpack/changeloop-$VERSION-${{ matrix.target }}/cloop"
+          codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$binary"
+          codesign --verify --strict --verbose=2 "$binary"
+          ditto -c -k --keepParent "$binary" "$RUNNER_TEMP/cloop.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/cloop.zip" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          rm "$archive"
+          python3 scripts/release/reproducible-tar.py "$unpack/changeloop-$VERSION-${{ matrix.target }}" "$archive"
+      - name: Create checksum
+        run: (cd dist && ../scripts/release/checksum.sh changeloop-*.tar.gz > SHA256SUMS)
+      - name: Verify archive and native executable before upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/release/verify-artifacts.sh dist dist/SHA256SUMS
+          verify="$RUNNER_TEMP/verify-${{ matrix.target }}"
+          mkdir "$verify"
+          tar -xzf "dist/changeloop-$VERSION-${{ matrix.target }}.tar.gz" -C "$verify"
+          packaged="$verify/changeloop-$VERSION-${{ matrix.target }}"
+          test -x "$packaged/cloop" && test -x "$packaged/claude-foundation"
+          test "$("$packaged/cloop" --version)" = "$("$packaged/claude-foundation" --version)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: changeloop-${{ matrix.target }}
+          path: |
+            dist/changeloop-*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  attest:
+    if: startsWith(github.ref, 'refs/tags/cloop-v')
+    needs: [build, compatibility, security]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: changeloop-*
+          path: dist
+          merge-multiple: true
+      - name: Generate CycloneDX SBOM
+        run: |
+          cargo install --locked cargo-cyclonedx@0.5.9
+          cargo cyclonedx --format json --all
+          find . -name '*.cdx.json' -type f -print0 | sort -z | xargs -0 tar -czf dist/changeloop-sbom.cdx.tar.gz --null -T -
+      - name: Consolidate and verify checksums
+        run: |
+          rm -f dist/SHA256SUMS
+          (cd dist && ../scripts/release/checksum.sh changeloop-*.tar.gz > SHA256SUMS)
+          scripts/release/verify-artifacts.sh dist dist/SHA256SUMS
+      - name: Build update manifest signer without signing material
+        run: cargo build --locked --release -p changeloop-ops --bin changeloop-update-manifest
+      - name: Generate CLI-compatible signed update manifests
+        env:
+          CHANGELOOP_UPDATE_SIGNING_KEY_BASE64: ${{ secrets.CHANGELOOP_UPDATE_SIGNING_KEY_BASE64 }}
+          CHANGELOOP_UPDATE_PUBLIC_KEY_BASE64: ${{ vars.CHANGELOOP_UPDATE_PUBLIC_KEY_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CHANGELOOP_UPDATE_SIGNING_KEY_BASE64" || { echo "tagged releases require CHANGELOOP_UPDATE_SIGNING_KEY_BASE64" >&2; exit 1; }
+          test -n "$CHANGELOOP_UPDATE_PUBLIC_KEY_BASE64" || { echo "tagged releases require CHANGELOOP_UPDATE_PUBLIC_KEY_BASE64" >&2; exit 1; }
+          version=${GITHUB_REF_NAME#cloop-v}
+          base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          for archive in dist/changeloop-"$version"-*.tar.gz; do
+            archive_name=$(basename "$archive")
+            target=${archive_name#changeloop-$version-}
+            target=${target%.tar.gz}
+            unpack="$RUNNER_TEMP/update-$target"
+            mkdir "$unpack"
+            tar -xzf "$archive" -C "$unpack"
+            packaged_binary=$(find "$unpack" -type f -name cloop -print -quit)
+            test -n "$packaged_binary" && test -x "$packaged_binary"
+            name="cloop-$version-$target"
+            cp "$packaged_binary" "dist/$name"
+            chmod 755 "dist/$name"
+            release_manifest="dist/${name}.update.json"
+            channel_manifest="dist/update-channel-stable-${target}.json"
+            target/release/changeloop-update-manifest \
+              "$version" stable "$target" "dist/$name" "$base_url/${name}.update.json" \
+              "$base_url/$name" \
+              "$release_manifest" "$channel_manifest"
+          done
+          test "$(find dist -name '*.update.json' -type f | wc -l | tr -d ' ')" -eq 4
+          test "$(find dist -name 'update-channel-stable-*.json' -type f | wc -l | tr -d ' ')" -eq 4
+          (cd dist && ../scripts/release/checksum.sh cloop-"$version"-* update-channel-stable-*.json > UPDATE_SHA256SUMS)
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Sign checksums with GitHub OIDC
+        run: |
+          for sums in SHA256SUMS UPDATE_SHA256SUMS; do
+            cosign sign-blob --yes --output-signature "dist/$sums.sig" --output-certificate "dist/$sums.pem" "dist/$sums"
+            cosign verify-blob \
+              --certificate "dist/$sums.pem" \
+              --signature "dist/$sums.sig" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/changeloop-release.yml@${GITHUB_REF}" \
+              "dist/$sums"
+          done
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: "dist/changeloop-*.tar.gz"
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/*
+
+  compatibility:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: changeloop-x86_64-unknown-linux-gnu
+          path: dist
+      - name: Verify and extract candidate
+        run: |
+          scripts/release/verify-artifacts.sh dist dist/SHA256SUMS
+          mkdir extracted
+          tar -xzf dist/changeloop-*.tar.gz -C extracted
+          cloop=$(find extracted -type f -name cloop -print -quit)
+          alias=$(find extracted -type f -name claude-foundation -print -quit)
+          test -x "$cloop" && test -x "$alias"
+          test "$("$alias" --version)" = "$("$cloop" --version)"
+      - name: Repository compatibility matrix
+        run: |
+          cloop=$(find extracted -type f -name cloop -print -quit)
+          if [[ "$GITHUB_REF" == refs/tags/cloop-v* ]]; then
+            tests/compatibility/repository-matrix.sh --release "$cloop"
+          else
+            tests/compatibility/repository-matrix.sh "$cloop"
+          fi
+      - name: Update rollback and artifact tamper tests
+        run: tests/compatibility/release-automation.sh

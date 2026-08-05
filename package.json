@@ -9,6 +9,17 @@
   },
   "scripts": {
     "foundation": "node .claude/harness/foundation.mjs",
-    "test:harness": "sh .claude/tests/harness/run-harness-tests.sh"
+    "test:harness": "sh .claude/tests/harness/run-harness-tests.sh",
+    "test:oracle": "node tests/oracle/run-runtime-api-tests.mjs",
+    "test:m9-slice1": "cargo build --locked -p changeloop-cli && node tests/oracle/run-rust-runtime-api-tests.mjs",
+    "test:m9-slice3": "cargo build --locked -p changeloop-land --bin changeloop-m9-parity && node scripts/oracle/generic-differential-runner.mjs --fixture tests/oracle/m9-parity-slice-3.json --candidate-bin target/debug/changeloop-m9-parity",
+    "test:m9-parity": "node scripts/oracle/validate-m9-coverage.mjs && cargo build --locked -p changeloop-cli && cargo build --locked -p changeloop-land --bin changeloop-m9-parity && node tests/oracle/run-rust-runtime-api-tests.mjs && node scripts/oracle/generic-differential-runner.mjs --fixture tests/oracle/m9-parity.json --candidate-bin target/debug/changeloop-m9-parity",
+    "test:performance": "node --test tests/performance/run-record.test.mjs",
+    "test:msrv": "node scripts/release/check-msrv.mjs",
+    "performance:smoke": "node scripts/performance/run.mjs --mode smoke",
+    "performance:status": "node scripts/performance/process-status.mjs",
+    "test:provider-replay": "node tests/provider-replay/run-provider-replay.mjs && cargo test --locked -p changeloop-provider-adapters provider_replay_corpus",
+    "test:sdk": "npm --prefix clients/typescript test",
+    "test:local-release": "sh scripts/verify-local-release.sh"
   }
 }

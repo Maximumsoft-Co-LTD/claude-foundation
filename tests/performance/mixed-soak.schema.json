@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://changeloop.dev/schemas/mixed-resource-soak-v2.json",
+  "title": "Changeloop mixed-resource soak",
+  "type": "object",
+  "required": ["schema", "recordVersion", "workloadVersion", "mode", "startedAt", "finishedAt", "requestedDurationSeconds", "elapsedSeconds", "cycles", "workloadRuns", "successfulWorkloadRuns", "failures", "resources", "orphanProcessGroups", "interrupted", "integrity", "correctness", "releaseEligible"],
+  "properties": {
+    "schema": { "const": "dev.changeloop.mixed-resource-soak" },
+    "recordVersion": { "const": 2 },
+    "workloadVersion": { "const": "mixed-resource-soak-v2" },
+    "mode": { "enum": ["integration", "soak"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": "string", "format": "date-time" },
+    "requestedDurationSeconds": { "type": "integer", "minimum": 1 },
+    "elapsedSeconds": { "type": "number", "exclusiveMinimum": 0 },
+    "cycles": { "type": "integer", "minimum": 1 },
+    "workloadRuns": {
+      "type": "object",
+      "required": ["queue", "relay", "router", "shutdown", "status", "readOnlyConversations", "disposableWorktreeMutations", "reconnectReplay", "childCancellation", "jobs", "projectCreateDispose"],
+      "properties": {
+        "queue": { "type": "integer", "minimum": 0 },
+        "relay": { "type": "integer", "minimum": 0 },
+        "router": { "type": "integer", "minimum": 0 },
+        "shutdown": { "type": "integer", "minimum": 0 },
+        "status": { "type": "integer", "minimum": 0 },
+        "readOnlyConversations": { "type": "integer", "minimum": 0 },
+        "disposableWorktreeMutations": { "type": "integer", "minimum": 0 },
+        "reconnectReplay": { "type": "integer", "minimum": 0 },
+        "childCancellation": { "type": "integer", "minimum": 0 },
+        "jobs": { "type": "integer", "minimum": 0 },
+        "projectCreateDispose": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "successfulWorkloadRuns": {
+      "type": "object",
+      "required": ["queue", "relay", "router", "shutdown", "status", "readOnlyConversations", "disposableWorktreeMutations", "reconnectReplay", "childCancellation", "jobs", "projectCreateDispose"],
+      "properties": {
+        "queue": { "type": "integer", "minimum": 0 },
+        "relay": { "type": "integer", "minimum": 0 },
+        "router": { "type": "integer", "minimum": 0 },
+        "shutdown": { "type": "integer", "minimum": 0 },
+        "status": { "type": "integer", "minimum": 0 },
+        "readOnlyConversations": { "type": "integer", "minimum": 0 },
+        "disposableWorktreeMutations": { "type": "integer", "minimum": 0 },
+        "reconnectReplay": { "type": "integer", "minimum": 0 },
+        "childCancellation": { "type": "integer", "minimum": 0 },
+        "jobs": { "type": "integer", "minimum": 0 },
+        "projectCreateDispose": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "failures": { "type": "object", "required": ["total", "observations"], "properties": { "total": { "const": 0 }, "observations": { "type": "array", "maxItems": 0 } } },
+    "resources": {
+      "type": "object",
+      "required": ["limits", "maxProcessTreeRssKiB", "maxProcessFileDescriptors", "baselineFixtureDiskKiB", "finalFixtureDiskKiB", "fixtureGrowthKiB", "resourceSamples", "rssSlopeKiBPerCycle", "fileDescriptorSlopePerCycle", "samples"],
+      "properties": {
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["cycle", "elapsedSeconds", "rssKiB", "fileDescriptors", "fixtureDiskKiB", "workloadOutcomes"],
+            "properties": {
+              "workloadOutcomes": {
+                "type": "array", "minItems": 11, "maxItems": 11,
+                "items": {
+                  "type": "object",
+                  "required": ["name", "passed", "exitStatus", "timedOut", "outputOverflow", "durationNs"],
+                  "properties": {
+                    "name": { "enum": ["queue", "relay", "router", "shutdown", "status", "readOnlyConversations", "disposableWorktreeMutations", "reconnectReplay", "childCancellation", "jobs", "projectCreateDispose"] },
+                    "passed": { "const": true }, "exitStatus": { "const": 0 },
+                    "timedOut": { "const": false }, "outputOverflow": { "const": false },
+                    "durationNs": { "type": "integer", "minimum": 1 }
+                  }
+                },
+                "allOf": [
+                  { "contains": { "properties": { "name": { "const": "queue" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "relay" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "router" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "shutdown" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "status" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "readOnlyConversations" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "disposableWorktreeMutations" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "reconnectReplay" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "childCancellation" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "jobs" } }, "required": ["name"] } },
+                  { "contains": { "properties": { "name": { "const": "projectCreateDispose" } }, "required": ["name"] } }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "orphanProcessGroups": { "type": "array", "maxItems": 0 },
+    "interrupted": { "const": false },
+    "integrity": { "type": "object", "required": ["start", "end", "unchanged"], "properties": { "unchanged": { "type": "boolean" } } },
+    "correctness": {
+      "type": "object",
+      "required": ["coverageComplete", "allWorkloadsPassed", "rssWithinLimit", "fileDescriptorsWithinLimit", "boundedFixtureGrowth", "noOrphanProcesses", "resourceSamplingComplete", "resourceTrendEvaluated", "stableResourceTrend", "coverageGaps"]
+    },
+    "releaseEligible": { "type": "boolean" }
+  },
+  "allOf": [{
+    "if": { "properties": { "releaseEligible": { "const": true } }, "required": ["releaseEligible"] },
+    "then": {
+      "properties": {
+        "cycles": { "minimum": 100 },
+        "mode": { "const": "soak" },
+        "integrity": { "properties": { "unchanged": { "const": true } } },
+        "workloadRuns": {
+          "properties": {
+            "queue": { "minimum": 100 }, "relay": { "minimum": 100 },
+            "router": { "minimum": 100 }, "shutdown": { "minimum": 100 },
+            "status": { "minimum": 100 }, "readOnlyConversations": { "minimum": 100 },
+            "disposableWorktreeMutations": { "minimum": 100 },
+            "reconnectReplay": { "minimum": 100 }, "childCancellation": { "minimum": 100 },
+            "jobs": { "minimum": 100 }, "projectCreateDispose": { "minimum": 100 }
+          }
+        },
+        "successfulWorkloadRuns": {
+          "properties": {
+            "queue": { "minimum": 100 }, "relay": { "minimum": 100 },
+            "router": { "minimum": 100 }, "shutdown": { "minimum": 100 },
+            "status": { "minimum": 100 }, "readOnlyConversations": { "minimum": 100 },
+            "disposableWorktreeMutations": { "minimum": 100 },
+            "reconnectReplay": { "minimum": 100 }, "childCancellation": { "minimum": 100 },
+            "jobs": { "minimum": 100 }, "projectCreateDispose": { "minimum": 100 }
+          }
+        },
+        "correctness": {
+          "properties": {
+            "coverageComplete": { "const": true }, "allWorkloadsPassed": { "const": true },
+            "rssWithinLimit": { "const": true }, "fileDescriptorsWithinLimit": { "const": true },
+            "boundedFixtureGrowth": { "const": true }, "noOrphanProcesses": { "const": true },
+            "resourceSamplingComplete": { "const": true },
+            "resourceTrendEvaluated": { "const": true }, "stableResourceTrend": { "const": true },
+            "coverageGaps": { "type": "array", "maxItems": 0 }
+          }
+        }
+      }
+    }
+  }],
+  "additionalProperties": true
+}

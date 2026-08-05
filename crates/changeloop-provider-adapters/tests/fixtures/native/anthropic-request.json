@@ -1,0 +1,29 @@
+{
+  "model": "fixture-model",
+  "max_tokens": 321,
+  "system": [
+    { "type": "text", "text": "system policy" },
+    { "type": "text", "text": "developer policy" }
+  ],
+  "messages": [
+    { "role": "user", "content": [{ "type": "text", "text": "question" }] },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "text", "text": "prior answer" },
+        { "type": "thinking", "thinking": "private thought", "signature": "signature_previous" },
+        { "type": "tool_use", "id": "toolu_previous", "name": "lookup", "input": { "q": "old" } }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        { "type": "tool_result", "tool_use_id": "toolu_previous", "content": "{\"result\":\"old\"}", "is_error": false }
+      ]
+    }
+  ],
+  "tools": [
+    { "name": "lookup", "description": "look up a value", "input_schema": { "type": "object" } }
+  ],
+  "stream": false
+}

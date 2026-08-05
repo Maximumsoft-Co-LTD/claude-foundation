@@ -1229,11 +1229,22 @@ git config user.name "Foundation Test"
 git config user.email "foundation@example.invalid"
 git -c protocol.file.allow=always submodule add -q "$TMP/api" api
 git -c protocol.file.allow=always submodule add -q "$TMP/app" app
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"api","type":"submodule","path":"api","mode":"write","dependsOn":[]},' \
+  '  {"id":"app","type":"submodule","path":"app","mode":"write","dependsOn":["api"]}' \
+  ']}' > openspec/repositories.yaml
 git add .
 git commit -qm "multi fixture"
-repos="$(node .claude/harness/foundation.mjs repos)"
+repos_warning="$TMP/multi-project-repos-warning.txt"
+repos="$(node .claude/harness/foundation.mjs repos 2>"$repos_warning")"
 assert_contains "repository topology discovers API submodule" "$repos" "api	submodule	api"
 assert_contains "repository topology discovers app submodule" "$repos" "app	submodule	app"
+if [ -s "$repos_warning" ]; then
+  fail "registered multi-repository topology has no drift warnings"
+else
+  pass "registered multi-repository topology has no drift warnings"
+fi
 node .claude/harness/foundation.mjs new 'Cross repository profile' >/dev/null
 node .claude/harness/foundation.mjs resolve cross-repository-profile \
   --impact medium --coupling coupled --acceptance-not-required >/dev/null

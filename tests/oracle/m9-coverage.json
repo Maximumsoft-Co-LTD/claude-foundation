@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Language-neutral Foundation-to-Rust M9 differential coverage",
+  "normalizationPolicy": [
+    "JSON object key order is semantic and canonicalized recursively",
+    "exit status and stderr remain byte-exact",
+    "non-JSON stdout remains byte-exact",
+    "runtime API 12/13 normalize only documented checkout paths, timestamps, snapshot IDs, hashes, and file counts"
+  ],
+  "suites": [
+    {
+      "fixture": "tests/oracle/runtime-api-12.json",
+      "candidate": "cloop legacy-runtime --api 12",
+      "cases": ["api-version", "package-version", "model-policy", "provider-contracts", "active-changes", "public-help", "repository-topology", "active-change-state", "workspace-hash"],
+      "invariants": ["version projection", "provider registry", "command rejection", "repository topology", "state projection", "relevant workspace hashing"]
+    },
+    {
+      "fixture": "tests/oracle/runtime-api-13.json",
+      "candidate": "cloop legacy-runtime --api 13",
+      "cases": ["api-version", "package-version", "model-policy", "provider-contracts", "active-changes", "public-help", "repository-topology", "active-change-state", "workspace-hash"],
+      "invariants": ["version projection", "provider registry", "command rejection", "repository topology", "state projection", "relevant workspace hashing"]
+    },
+    {
+      "fixture": "tests/oracle/m9-parity.json",
+      "candidate": "changeloop-m9-parity",
+      "groups": [
+        {
+          "foundationApis": ["stableHash", "parseJsonOutput", "parseTapOutput", "mutationProtocolResult", "numericReportValue"],
+          "rustApis": ["stable_hash", "parse_json_output", "parse_tap_output", "mutation_protocol_result", "numeric_report_value"],
+          "cases": ["evidence-stable-hash", "evidence-json-valid", "evidence-json-invalid", "evidence-tap-summary", "evidence-mutation-line", "evidence-numeric-nested"],
+          "invariants": ["stable evidence identity", "malformed output is unknown", "TAP summary parity", "mutation result precedence", "nested report lookup"]
+        },
+        {
+          "foundationApis": ["authorityRuntime", "sandboxRuntime", "permission gates"],
+          "rustApis": ["policy::evaluate", "policy::may_change_authority"],
+          "cases": ["policy-passive-read", "policy-plan-write", "policy-yolo-hard-boundary", "policy-yolo-tool-ask", "policy-doom-loop", "policy-lifecycle-unconfirmed", "policy-untrusted-authority", "policy-unknown-classifier"],
+          "invariants": ["AUTO determinism", "plan is read-only", "YOLO cannot cross hard boundaries", "doom-loop authority", "untrusted content cannot grant authority", "unknown classifier fails closed"]
+        },
+        {
+          "foundationApis": ["changeLifecycle", "proofRuntime", "proofReadiness", "reviewProtocol", "landRuntime"],
+          "rustApis": ["ConvergenceHarness"],
+          "cases": ["lifecycle-narrative-no-proof", "lifecycle-low-risk-ready", "lifecycle-stale-receipt", "lifecycle-repeat-cause-diagnosis", "lifecycle-review-hypothesis-rejected", "lifecycle-requirement-change"],
+          "invariants": ["narrative is not proof", "fresh proof gates readiness", "stale receipts rejected", "repeat cause triggers diagnosis", "hypotheses cannot block without reproduction", "requirement changes invalidate proof"]
+        },
+        {
+          "foundationApis": ["snapshot persistence", "undo", "redo"],
+          "rustApis": ["SnapshotManager::undo", "SnapshotManager::redo"],
+          "cases": ["snapshot-undo-preserves-unrelated", "snapshot-redo", "snapshot-external-conflict"],
+          "invariants": ["unrelated edits preserved", "proof references invalidated", "redo is auditable", "external overlap pauses without overwrite"]
+        },
+        {
+          "foundationApis": ["authorityStore", "telemetryRuntime", "landJournal", "archive"],
+          "rustApis": ["ExternalLandAuthority::validate", "UsageLedger", "apply_land", "recover_land", "archive_land"],
+          "cases": ["authority-denial", "telemetry-unknowns", "land-conflict", "land-rollback", "land-recovery", "land-archive"],
+          "invariants": ["Land authority is explicit", "unknown usage remains unknown", "conflicts never overwrite", "partial apply rolls back", "interrupted Land recovers", "archive performs no implicit commit or push"]
+        }
+      ]
+    }
+  ],
+  "directlyMappedCases": 47,
+  "knownNonDirectMappings": [
+    { "area": "process services and host diagnostics", "reason": "Node process supervision is platform-specific; Rust resource disposal tests are the replacement oracle" },
+    { "area": "interactive acceptance and external reviewer identity", "reason": "requires human or external authority and cannot be a deterministic language differential" },
+    { "area": "live provider, CI signature, and remote repository state", "reason": "requires external credentials or services; covered by recorded provider corpus and integration gates" },
+    { "area": "legacy textual diagnostics beyond API 12/13", "reason": "new Rust protocol uses typed diagnostics rather than preserving undocumented prose" }
+  ]
+}

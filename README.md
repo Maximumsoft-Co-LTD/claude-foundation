@@ -11,6 +11,66 @@ project.
 Investigate? → Change → Build → Prove → Land
 ```
 
+## Changeloop CLI preview
+
+This repository now also contains the staged Rust successor, **Changeloop
+CLI**, whose executable is `cloop`. Unlike the legacy Node/Foundation workflow
+described below, `cloop` includes its own Anthropic and OpenAI agent runtime,
+headless and TUI surfaces, scoped tools and subagents, evidence convergence,
+and an explicit transactional Land gate. The canonical implementation plan and
+current release limits are in [docs/roadmap.md](docs/roadmap.md).
+The compatibility promise for experimental, beta, and stable interfaces is in
+[docs/stability-and-deprecation.md](docs/stability-and-deprecation.md).
+The current `0.1.x` surface is experimental and is not GA. Local tests do not
+replace live-provider, multi-platform signing/publication, or eight-hour soak
+evidence. Two source-frozen eight-hour records and a named reference-machine
+release run are also still unmet; native non-streaming provider parsing now has
+synthetic fixtures but no live-provider proof. See
+[roadmap traceability](docs/roadmap-traceability.md) and the
+[initial performance evidence matrix](docs/reports/initial-performance-evidence-matrix.md).
+
+```bash
+cargo build --release -p changeloop-cli
+target/release/cloop doctor
+target/release/cloop setup --provider openai --model <model> --sandbox workspace-write \
+  --accept-privacy --accept-provider-data
+target/release/cloop auth login openai
+target/release/cloop ask "How does authentication work?"
+target/release/cloop run "Make a small reversible change"
+```
+
+`run` can stop at a draft or contract gate. Follow the returned session ID
+with `cloop contract approve <session>` and `cloop change confirm <session>`;
+inspect `cloop prove [change]` and `cloop review [change]` before the separate
+`cloop land <change>` decision.
+
+Safe local smoke checks, using a temporary repository and configuration home,
+are documented in
+[the implementation/TUI report](docs/reports/changeloop-roadmap-tui-report-2026-08-05.md#วิธีทดสอบด้วยตนเอง).
+The source-frozen final test totals are intentionally not claimed in this
+README. Run `npm run test:local-release` against the exact source you intend to
+release; this local gate deliberately excludes the external evidence above.
+
+For a local performance diagnostic (not release evidence), run:
+
+```bash
+node scripts/performance/run.mjs --mode smoke
+```
+
+The generated record remains diagnostic unless its release assessor accepts
+all exact case coverage, both independent eight-hour records, unchanged source
+identity, and an explicit reference-machine series.
+
+`cloop` keeps conversations read-only, requires confirmation before a draft
+becomes a change, never treats agent narration as proof, and always requires an
+explicit `cloop land <change>` action. Provider credentials use official
+contracts and the operating-system credential store. See
+[docs/onboarding-and-updates.md](docs/onboarding-and-updates.md) for setup,
+privacy, update, and recovery details.
+
+The remainder of this README documents the currently supported legacy
+Foundation surface during the compatibility window.
+
 Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
@@ -43,10 +103,11 @@ Harness verifies proof
 User explicitly authorizes Land
 ```
 
-The harness does not accept “the agent says it is done” as evidence. It may
-produce a bounded execution plan and recommend a model tier, but the runtime
-does not invoke a model itself; the native agent host remains responsible for
-running agents and models.
+The legacy harness does not accept “the agent says it is done” as evidence. It
+may produce a bounded execution plan and recommend a model tier, but its Node
+runtime does not invoke a model itself; the native agent host remains
+responsible for running agents and models. The Rust `cloop` preview described
+above has a native provider runtime while preserving the same evidence rule.
 
 ## Why use it?
 

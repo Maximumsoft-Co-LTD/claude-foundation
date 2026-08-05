@@ -1,0 +1,23 @@
+[package]
+name = "changeloop-tools"
+description = "Policy-gated scoped filesystem, process, Git, and job tools for Changeloop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
+changeloop-project = { version = "0.1.0", path = "../changeloop-project" }
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile.workspace = true

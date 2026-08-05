@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://changeloop.dev/schema/provider-replay/manifest-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "corpusVersion", "capturedAt", "sourceRevision", "redactionProfile", "pricingCatalogVersion", "liveDriftPolicy", "artifacts", "cases"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "corpusVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "capturedAt": { "type": ["string", "null"], "format": "date-time" },
+    "sourceRevision": { "type": "string", "minLength": 1 },
+    "redactionProfile": { "type": "string", "minLength": 1 },
+    "pricingCatalogVersion": { "type": ["string", "null"] },
+    "liveDriftPolicy": { "const": "scheduled-live-invariants-only" },
+    "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+    "cases": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/case" } }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "byteCount", "mimeType", "path", "quarantined"],
+      "properties": {
+        "sha256": { "$ref": "#/$defs/hash" }, "byteCount": { "type": "integer", "minimum": 0 },
+        "mimeType": { "type": "string" }, "path": { "type": "string" }, "quarantined": { "type": "boolean" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "provider", "apiFamily", "fixtureKind", "requestPath", "requestSha256", "streamPath", "streamSha256", "expectedPath", "expectedSha256", "protocolVersion", "capabilityProfile", "expectedTerminalClassification", "tags", "equivalenceGroup", "providerApiVersion", "adapterVersion", "providerRequestIdShape", "captureProvenance"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(anthropic|openai)\\.[a-z0-9-]+\\.v[0-9]+$" },
+        "provider": { "enum": ["anthropic", "openai"] },
+        "apiFamily": { "enum": ["messages", "responses"] },
+        "fixtureKind": { "enum": ["recorded", "synthetic", "derived"] },
+        "requestPath": { "type": "string" }, "requestSha256": { "$ref": "#/$defs/hash" },
+        "streamPath": { "type": "string" }, "streamSha256": { "$ref": "#/$defs/hash" },
+        "expectedPath": { "type": "string" }, "expectedSha256": { "$ref": "#/$defs/hash" },
+        "protocolVersion": { "type": "integer", "minimum": 1 },
+        "capabilityProfile": { "type": "string" },
+        "expectedTerminalClassification": { "enum": ["completed", "length", "cancelled", "error"] },
+        "tags": { "type": "array", "minItems": 1, "items": { "type": "string" }, "uniqueItems": true },
+        "equivalenceGroup": { "type": "string" }, "providerApiVersion": { "type": "string" },
+        "adapterVersion": { "type": "string" }, "providerRequestIdShape": { "type": "string" },
+        "captureProvenance": { "type": "string" }
+      }
+    },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

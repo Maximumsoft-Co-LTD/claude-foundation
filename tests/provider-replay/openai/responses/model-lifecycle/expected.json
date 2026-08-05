@@ -1,0 +1,1 @@
+{"equivalenceGroup":"model-lifecycle","exactError":"provider","exactEvents":[],"invariants":["errors","model-unavailable","model-deprecated","capability-status"],"parser":"openai","terminal":"error"}

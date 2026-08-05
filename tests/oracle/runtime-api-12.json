@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 2,
+  "runtimeApi": "12",
+  "sourceRevision": "9a54190cafddec6546a63acbc606a86480da8b74",
+  "entrypoint": ".claude/harness/foundation.mjs",
+  "cases": [
+    {
+      "name": "api-version",
+      "args": [
+        "api-version"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "12\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "package-version",
+      "args": [
+        "version"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "2.6.0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "model-policy",
+      "args": [
+        "models"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "{\n  \"fast\": {\n    \"family\": \"haiku\",\n    \"fallbackTier\": \"standard\",\n    \"purposes\": [\n      \"inventory\",\n      \"logs\",\n      \"mechanical-docs\"\n    ]\n  },\n  \"standard\": {\n    \"family\": \"sonnet\",\n    \"fallbackTier\": \"deep\",\n    \"purposes\": [\n      \"implementation\",\n      \"tests\",\n      \"focused-investigation\"\n    ]\n  },\n  \"deep\": {\n    \"family\": \"opus\",\n    \"fallbackTier\": null,\n    \"purposes\": [\n      \"architecture\",\n      \"security\",\n      \"migration\",\n      \"independent-review\"\n    ]\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "provider-contracts",
+      "args": [
+        "providers"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "test\tExecutable behavioral checks for the declared claim.\ndiscovery\tExpected tests were found and the discovered count meets the floor.\nbrowser\tRendered behavior in a real browser with the required input capability.\nmutation\tA deliberate behavioral fault is detected by the evidence suite.\nstate-identity\tState before, during, or after the change belongs to the intended actor and revision.\nintegration\tMultiple components or external boundaries work together.\ncompatibility\tPublic or persisted contracts remain compatible across supported versions.\nperformance\tMeasured latency, throughput, resource, or size budgets are met.\nsecurity-static\tStatic security checks cover the changed trust boundary and unsafe sinks.\ncross-repo-contract\tProducer and consumer repositories agree on the same versioned contract.\nreview\tIndependent risk review covers the declared claims and unresolved findings.\nacceptance\tA named human accepts an explicitly subjective product or experience decision.\nstatic-analysis\tCompilation, type checking, linting, and applicable static quality gates pass.\ndata-migration\tSchema or data evolution is forward-safe, backward-compatible, and rollback-aware.\naccessibility\tRendered semantics, keyboard use, focus, contrast, and assistive access meet policy.\nresilience\tTimeout, retry, partial-failure, recovery, and degraded-dependency behavior is proven.\nobservability\tRequired logs, metrics, traces, and alerts expose success and failure safely.\ndeployment\tPackaging, configuration, rollout health checks, and rollback behavior are proven.\ndependency-supply-chain\tDependency vulnerability, license, lockfile, and provenance policy passes.\nCONFIG test-discovery\t{\"test\":{\"adapter\":\"test-discovery\",\"command\":[\"<project-test-command>\"],\"report\":\"<workspace-relative-structured-json-report>\",\"minimum\":1,\"timeoutMs\":120000}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "active-changes",
+      "args": [
+        "changes"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "No active changes.\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "public-help",
+      "args": [
+        "help"
+      ],
+      "result": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "BLOCKED: runtime command 'help' is not registered\n"
+      }
+    },
+    {
+      "name": "repository-topology",
+      "args": [
+        "repos"
+      ],
+      "setup": {
+        "directories": [
+          "service"
+        ],
+        "files": {
+          "openspec/repositories.yaml": "{\"version\":1,\"repositories\":[{\"id\":\"service\",\"type\":\"git\",\"path\":\"service\",\"dependsOn\":[\"root\"]}]}\n"
+        }
+      },
+      "result": {
+        "status": 0,
+        "stdout": "root\troot\t.\tnot-git\t-\nservice\tgit\tservice\tnot-git\t-\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "active-change-state",
+      "args": [
+        "changes"
+      ],
+      "setup": {
+        "directories": [
+          "openspec/changes/demo"
+        ],
+        "files": {
+          ".foundation/runtime/demo.json": "{\"id\":\"demo\",\"schema\":\"foundation-change/v4\",\"status\":\"building\",\"revision\":3,\"contractRevision\":3,\"workspace\":{\"mode\":\"root\"}}\n",
+          "openspec/changes/demo/tasks.md": "# Tasks\n\n- [ ] deterministic parity\n",
+          "source.txt": "stable fixture content\n"
+        }
+      },
+      "inspectPaths": [
+        ".foundation/snapshots/demo.json"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "demo\tbuilding\tfoundation-change/v4\tclaude-foundation proof readiness demo\n",
+        "stderr": "",
+        "filesystem": {
+          ".foundation/snapshots/demo.json": {
+            "type": "json",
+            "value": {
+              "changeId": "demo",
+              "createdAt": "<timestamp>",
+              "fileCount": "<count>",
+              "id": "<snapshot>",
+              "revision": 3,
+              "version": 1,
+              "workspace": "<cwd>",
+              "workspaceHash": "<sha256>"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "workspace-hash",
+      "args": [
+        "hash",
+        "demo"
+      ],
+      "setup": {
+        "directories": [
+          "openspec/changes/demo"
+        ],
+        "files": {
+          ".foundation/runtime/demo.json": "{\"id\":\"demo\",\"schema\":\"foundation-change/v4\",\"status\":\"building\",\"revision\":3,\"contractRevision\":3,\"workspace\":{\"mode\":\"root\"}}\n",
+          "openspec/changes/demo/tasks.md": "# Tasks\n\n- [ ] deterministic parity\n",
+          "source.txt": "stable fixture content\n"
+        }
+      },
+      "inspectPaths": [
+        ".foundation/snapshots/demo.json"
+      ],
+      "result": {
+        "status": 0,
+        "stdout": "<sha256>\n",
+        "stderr": "",
+        "filesystem": {
+          ".foundation/snapshots/demo.json": {
+            "type": "json",
+            "value": {
+              "changeId": "demo",
+              "createdAt": "<timestamp>",
+              "fileCount": "<count>",
+              "id": "<snapshot>",
+              "revision": 3,
+              "version": 1,
+              "workspace": "<cwd>",
+              "workspaceHash": "<sha256>"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

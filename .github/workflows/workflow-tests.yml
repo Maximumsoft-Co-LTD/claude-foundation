@@ -15,8 +15,25 @@ on:
       - 'README.md'
       - 'README.th.md'
       - 'WORKFLOW.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/**'
+      - 'clients/typescript/**'
+      - 'scripts/oracle/**'
+      - 'scripts/performance/**'
+      - 'scripts/release/**'
+      - 'tests/oracle/**'
+      - 'tests/provider-replay/**'
+      - 'tests/performance/**'
+      - 'tests/compatibility/**'
       - '.workflow/_templates/**'
       - '.github/workflows/workflow-tests.yml'
+      - '.github/workflows/changeloop-release.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/rust-supply-chain.yml'
   push:
     branches: [main]
     paths:
@@ -29,16 +46,37 @@ on:
       - 'README.md'
       - 'README.th.md'
       - 'WORKFLOW.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/**'
+      - 'clients/typescript/**'
+      - 'scripts/oracle/**'
+      - 'scripts/performance/**'
+      - 'scripts/release/**'
+      - 'tests/oracle/**'
+      - 'tests/provider-replay/**'
+      - 'tests/performance/**'
+      - 'tests/compatibility/**'
       - '.workflow/_templates/**'
       - '.github/workflows/workflow-tests.yml'
+      - '.github/workflows/changeloop-release.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/rust-supply-chain.yml'
   workflow_dispatch: {}
 
 jobs:
   deterministic:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The API compatibility oracle is intentionally pinned to a historical
+          # revision and verifies that the committed fixture remains reproducible.
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -50,6 +88,33 @@ jobs:
         run: command -v jq >/dev/null || { sudo apt-get update && sudo apt-get install -y jq; }
       - name: Run workflow test harness
         run: sh .claude/tests/run-all.sh
+      - name: Verify pinned runtime API oracle
+        run: npm run test:oracle
+      - name: Verify Rust protocol workspace
+        run: |
+          npm run test:msrv
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Verify comprehensive M9 Node/Rust parity
+        run: npm run test:m9-parity
+      - name: Verify provider replay corpus
+        run: npm run test:provider-replay
+      - name: Verify performance run-record contract
+        run: npm run test:performance
+      - name: Verify release and repository compatibility automation
+        run: |
+          tests/compatibility/release-automation.sh
+          cargo build --locked -p changeloop-cli
+          sh tests/compatibility/hermetic-lifecycle-e2e.sh target/debug/cloop
+          python3 scripts/performance/tui_background_cancel_probe.py target/debug/cloop
+          tests/compatibility/repository-matrix.sh target/debug/cloop
+      - name: Check generated TypeScript bindings
+        run: git diff --exit-code -- clients/typescript/generated
+      - name: Typecheck and exercise TypeScript SDK
+        run: |
+          npm ci --prefix clients/typescript
+          npm run test:sdk
       - name: Check packaged CLI contract
         run: |
           bash cli.sh help | grep -F "proof plan"

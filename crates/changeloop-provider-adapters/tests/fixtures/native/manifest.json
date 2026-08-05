@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "fixtureKind": "synthetic",
+  "networkAllowed": false,
+  "cases": [
+    {
+      "id": "anthropic-native-success-v1",
+      "provider": "anthropic",
+      "requestPath": "anthropic-request.json",
+      "requestSha256": "d9589146e1ab7f17dd1fa379c96022eae5eda154700dded5f8937a43e767f980",
+      "responsePath": "anthropic-success.json",
+      "responseSha256": "b3cf515357113267379342cf378e9a10c1a6227baced6eb77817be6f3880d846",
+      "status": 200,
+      "headers": {
+        "anthropic-request-id": "req_anthropic_fixture",
+        "x-ratelimit-remaining-tokens": "91",
+        "x-ratelimit-reset-tokens-ms": "1700000000123"
+      },
+      "expected": {
+        "terminal": "success",
+        "responseId": "msg_native_1",
+        "text": "anthropic answer",
+        "reasoning": "anthropic thought",
+        "reasoningReplay": "signature_fixture_1",
+        "toolCallId": "toolu_native_1",
+        "toolName": "lookup",
+        "inputTokens": 10,
+        "outputTokens": 6,
+        "cacheReadTokens": 2,
+        "requestId": "req_anthropic_fixture",
+        "quotaRemaining": 91,
+        "quotaResetAtMs": 1700000000123,
+        "finishReason": "tool_calls"
+      }
+    },
+    {
+      "id": "anthropic-native-error-v1",
+      "provider": "anthropic",
+      "requestPath": "anthropic-request.json",
+      "requestSha256": "d9589146e1ab7f17dd1fa379c96022eae5eda154700dded5f8937a43e767f980",
+      "responsePath": "anthropic-error.json",
+      "responseSha256": "4fc00f785abb626a185be88cd849b5b9cc7f143f5fd694235174eea975391447",
+      "status": 401,
+      "headers": { "request-id": "req_anthropic_error" },
+      "expected": {
+        "terminal": "error",
+        "errorCategory": "authentication",
+        "errorCode": "authentication_error",
+        "requestId": "req_anthropic_error",
+        "retryable": false
+      }
+    },
+    {
+      "id": "openai-native-success-v1",
+      "provider": "openai",
+      "requestPath": "openai-request.json",
+      "requestSha256": "752980722a1a9f07c00e33e9c467f0712aacb1d853d6786a6831a5d3fc555e27",
+      "responsePath": "openai-success.json",
+      "responseSha256": "ca92523d45af949a7daa9c296e7614cecbbd5d9b9c96e7700dbb1de8e41882a4",
+      "status": 200,
+      "headers": {
+        "x-request-id": "req_openai_fixture",
+        "x-ratelimit-remaining-requests": "87",
+        "x-ratelimit-reset-requests-ms": "1700000000456"
+      },
+      "expected": {
+        "terminal": "success",
+        "responseId": "resp_native_1",
+        "text": "openai answer",
+        "reasoning": "openai summary",
+        "reasoningReplay": "rs_native_1",
+        "toolCallId": "call_native_1",
+        "toolName": "lookup",
+        "inputTokens": 11,
+        "outputTokens": 7,
+        "cacheReadTokens": 3,
+        "reasoningTokens": 4,
+        "requestId": "req_openai_fixture",
+        "quotaRemaining": 87,
+        "quotaResetAtMs": 1700000000456,
+        "finishReason": "tool_calls"
+      }
+    },
+    {
+      "id": "openai-native-error-v1",
+      "provider": "openai",
+      "requestPath": "openai-request.json",
+      "requestSha256": "752980722a1a9f07c00e33e9c467f0712aacb1d853d6786a6831a5d3fc555e27",
+      "responsePath": "openai-error.json",
+      "responseSha256": "510ca60b825fb7e3357a1c9a3b8465bfc55908f5d0c65b97a147722443860592",
+      "status": 429,
+      "headers": {
+        "x-request-id": "req_openai_error",
+        "retry-after-ms": "1250"
+      },
+      "expected": {
+        "terminal": "error",
+        "errorCategory": "rate_limit",
+        "errorCode": "rate_limit_exceeded",
+        "requestId": "req_openai_error",
+        "retryable": true,
+        "retryAfterMs": 1250
+      }
+    }
+  ]
+}

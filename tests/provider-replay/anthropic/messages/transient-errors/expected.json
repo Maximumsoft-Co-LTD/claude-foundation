@@ -1,0 +1,1 @@
+{"equivalenceGroup":"transient-errors","exactError":"provider","exactEvents":[],"invariants":["errors","rate-limit","timeout","overload","transport-failure"],"parser":"anthropic","terminal":"error"}

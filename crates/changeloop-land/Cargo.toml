@@ -1,0 +1,26 @@
+[package]
+name = "changeloop-land"
+description = "Authority-bound transactional Land apply, rollback, recovery, and archive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+changeloop-harness = { version = "0.1.0", path = "../changeloop-harness" }
+changeloop-evidence = { version = "0.1.0", path = "../changeloop-evidence" }
+changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
+changeloop-project = { version = "0.1.0", path = "../changeloop-project" }
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-provider = { version = "0.1.0", path = "../changeloop-provider" }
+changeloop-snapshot = { version = "0.1.0", path = "../changeloop-snapshot" }
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true

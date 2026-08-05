@@ -1,0 +1,7 @@
+{"sequence":0,"wire":"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"tool_a\",\"name\":\"read\"}}\n\n"}
+{"sequence":1,"wire":"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"tool_b\",\"name\":\"search\"}}\n\n"}
+{"sequence":2,"wire":"event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"tool_a\",\"delta\":\"{\\\"path\\\":\"}\n\n"}
+{"sequence":3,"wire":"event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"tool_b\",\"delta\":\"{}\"}\n\n"}
+{"sequence":4,"wire":"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"tool_b\",\"arguments\":\"{}\"}\n\n"}
+{"sequence":5,"wire":"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"tool_a\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\"}\n\n"}
+{"sequence":6,"wire":"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_parallel-partial-tools\",\"usage\":{\"input_tokens\":11,\"output_tokens\":7,\"input_tokens_details\":{\"cached_tokens\":3},\"output_tokens_details\":{\"reasoning_tokens\":0}}}}\n\n"}

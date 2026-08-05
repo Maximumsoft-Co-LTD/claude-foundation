@@ -1,0 +1,1 @@
+{"equivalenceGroup":"auth-permission-errors","exactError":"provider","exactEvents":[],"invariants":["errors","authentication","permission","invalid-request","provider-unknown"],"parser":"anthropic","terminal":"error"}

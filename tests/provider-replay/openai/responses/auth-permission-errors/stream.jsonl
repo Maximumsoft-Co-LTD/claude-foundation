@@ -1,0 +1,1 @@
+{"sequence":0,"wire":"event: error\ndata: {\"type\":\"error\",\"code\":\"authentication_error\",\"message\":\"<REDACTED_AUTH-PERMISSION-ERRORS>\"}\n\n"}

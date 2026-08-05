@@ -1,0 +1,1 @@
+{"equivalenceGroup":"truncated-cancellation","exactError":null,"exactEvents":[{"data":{"text":"ok:truncated-cancellation"},"type":"output_delta"}],"invariants":["streaming","truncated-stream","cancel-before-commit","cancel-after-commit","interrupted-tool-terminal"],"parser":"openai","terminal":"cancelled"}

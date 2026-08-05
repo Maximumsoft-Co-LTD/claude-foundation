@@ -1,0 +1,24 @@
+[package]
+name = "changeloop-runtime"
+description = "Streaming agent turn loop for Changeloop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+changeloop-agent = { version = "0.1.0", path = "../changeloop-agent" }
+changeloop-harness = { version = "0.1.0", path = "../changeloop-harness" }
+changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-provider = { version = "0.1.0", path = "../changeloop-provider" }
+changeloop-project = { version = "0.1.0", path = "../changeloop-project" }
+changeloop-session = { version = "0.1.0", path = "../changeloop-session" }
+changeloop-storage = { version = "0.1.0", path = "../changeloop-storage" }
+serde_json.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.20"

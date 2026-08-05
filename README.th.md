@@ -10,6 +10,65 @@ agent ทำงานเป็นขั้นตอนที่ตรวจส�
 Investigate? → Change → Build → Prove → Land
 ```
 
+## Changeloop CLI Preview
+
+Repository นี้มีตัวสืบทอดที่เขียนด้วย Rust แบบ staged ชื่อ **Changeloop CLI**
+และใช้ executable `cloop` แล้ว ต่างจาก Node/Foundation เดิมที่อธิบายต่อจากส่วนนี้
+`cloop` มี Anthropic/OpenAI agent runtime, headless/TUI, scoped tools และ
+subagents, evidence convergence และ explicit transactional Land gate ในตัว
+แผน implementation และข้อจำกัดรุ่นปัจจุบันอยู่ที่
+[docs/roadmap.md](docs/roadmap.md)
+และนโยบาย compatibility/deprecation อยู่ที่
+[docs/stability-and-deprecation.md](docs/stability-and-deprecation.md)
+surface รุ่น `0.1.x` ยังเป็น experimental และยังไม่ใช่ GA ผลทดสอบ local ไม่
+ทดแทน live-provider, การ sign/publish ทุก platform หรือ soak 8 ชั่วโมง นอกจากนี้
+ยังขาด record แบบ source-frozen 8 ชั่วโมงสองชุด และ release run บน reference
+machine ที่ระบุชื่อไว้ ส่วน native non-streaming provider มี synthetic fixture
+แล้วแต่ยังไม่ใช่ live-provider proof ดูสถานะที่
+[roadmap traceability](docs/roadmap-traceability.md) และ
+[initial performance evidence matrix](docs/reports/initial-performance-evidence-matrix.md)
+
+```bash
+cargo build --release -p changeloop-cli
+target/release/cloop doctor
+target/release/cloop setup --provider openai --model <model> --sandbox workspace-write \
+  --accept-privacy --accept-provider-data
+target/release/cloop auth login openai
+target/release/cloop ask "ระบบ authentication ทำงานอย่างไร"
+target/release/cloop run "ทำการเปลี่ยนแปลงเล็ก ๆ ที่ย้อนกลับได้"
+```
+
+`run` อาจหยุดที่ draft หรือ contract gate ให้ใช้ session ID ที่คืนมากับ
+`cloop contract approve <session>` และ `cloop change confirm <session>` จากนั้น
+ตรวจ `cloop prove [change]` และ `cloop review [change]` ก่อนตัดสินใจสั่ง
+`cloop land <change>` แยกต่างหาก
+
+วิธี smoke test อย่างปลอดภัยใน temporary repository/config อยู่ใน
+[รายงาน implementation/TUI](docs/reports/changeloop-roadmap-tui-report-2026-08-05.md#วิธีทดสอบด้วยตนเอง)
+README นี้ตั้งใจไม่ระบุยอด test final จนกว่า source จะ freeze ให้รัน
+`npm run test:local-release` กับ source ชุดเดียวกับที่จะ release โดย local gate
+นี้ตั้งใจไม่รวม external evidence ข้างต้น
+
+รัน performance diagnostic ในเครื่องได้ด้วยคำสั่งต่อไปนี้ แต่ผลไม่ใช่ release
+evidence:
+
+```bash
+node scripts/performance/run.mjs --mode smoke
+```
+
+Record จะเป็น release evidence ได้ต่อเมื่อ assessor ยืนยัน case coverage ครบ,
+record 8 ชั่วโมงอิสระทั้งสองชุด, source identity ไม่เปลี่ยน และมีการระบุ
+reference-machine series อย่างชัดเจน
+
+conversation ของ `cloop` เป็น read-only, draft ต้องได้รับการยืนยันก่อนเป็น
+change, คำบอกเล่าของ agent ไม่ใช่ proof และ Land ต้องสั่งด้วย
+`cloop land <change>` อย่างชัดเจน Credential ใช้ official provider contract
+และ operating-system credential store ดู setup, privacy, update และ recovery ที่
+[docs/onboarding-and-updates.md](docs/onboarding-and-updates.md)
+
+เนื้อหาที่เหลือใน README นี้อธิบาย Foundation surface เดิมซึ่งยังรองรับในช่วง
+compatibility window
+
 Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก็บ requirement
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
@@ -42,9 +101,10 @@ Harness ตรวจ Proof
 ผู้ใช้อนุญาต Land อย่างชัดเจน
 ```
 
-Harness ไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ AI เป็น evidence ระบบอาจสร้าง execution
-plan แบบจำกัดขอบเขตและแนะนำ model tier แต่ runtime ไม่ได้เรียก model เอง การเรียก
-agent และ model ยังเป็นหน้าที่ของ native agent host
+Legacy harness ไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ AI เป็น evidence ระบบอาจสร้าง
+execution plan แบบจำกัดขอบเขตและแนะนำ model tier แต่ Node runtime เดิมไม่ได้เรียก
+model เอง การเรียก agent และ model จึงยังเป็นหน้าที่ของ native agent host ส่วน
+Rust `cloop` preview ด้านบนมี native provider runtime โดยยังคงกฎ evidence เดิม
 
 ## ทำไมต้องใช้
 

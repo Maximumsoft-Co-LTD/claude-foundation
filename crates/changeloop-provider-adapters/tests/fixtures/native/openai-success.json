@@ -1,0 +1,31 @@
+{
+  "id": "resp_native_1",
+  "status": "completed",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_native_1",
+      "summary": [{ "type": "summary_text", "text": "openai summary" }]
+    },
+    {
+      "type": "message",
+      "id": "msg_native_1",
+      "role": "assistant",
+      "content": [{ "type": "output_text", "text": "openai answer" }]
+    },
+    {
+      "type": "function_call",
+      "id": "fc_native_1",
+      "call_id": "call_native_1",
+      "name": "lookup",
+      "arguments": "{\"q\":\"new\"}",
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 11,
+    "output_tokens": 7,
+    "input_tokens_details": { "cached_tokens": 3 },
+    "output_tokens_details": { "reasoning_tokens": 4 }
+  }
+}

@@ -1,0 +1,26 @@
+[package]
+name = "changeloop-performance-probes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+changeloop-agent = { version = "0.1.0", path = "../../crates/changeloop-agent" }
+changeloop-app-server = { version = "0.1.0", path = "../../crates/changeloop-app-server" }
+changeloop-language = { version = "0.1.0", path = "../../crates/changeloop-language" }
+changeloop-policy = { version = "0.1.0", path = "../../crates/changeloop-policy" }
+changeloop-protocol = { version = "0.1.0", path = "../../crates/changeloop-protocol" }
+changeloop-provider = { version = "0.1.0", path = "../../crates/changeloop-provider" }
+changeloop-provider-adapters = { version = "0.1.0", path = "../../crates/changeloop-provider-adapters" }
+changeloop-project = { version = "0.1.0", path = "../../crates/changeloop-project" }
+changeloop-session = { version = "0.1.0", path = "../../crates/changeloop-session" }
+changeloop-snapshot = { version = "0.1.0", path = "../../crates/changeloop-snapshot" }
+changeloop-storage = { version = "0.1.0", path = "../../crates/changeloop-storage" }
+changeloop-tools = { version = "0.1.0", path = "../../crates/changeloop-tools" }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true

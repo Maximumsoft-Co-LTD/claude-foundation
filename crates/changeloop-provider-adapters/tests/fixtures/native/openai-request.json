@@ -1,0 +1,18 @@
+{
+  "model": "fixture-model",
+  "input": [
+    { "role": "system", "content": [{ "type": "input_text", "text": "system policy" }] },
+    { "role": "developer", "content": [{ "type": "input_text", "text": "developer policy" }] },
+    { "role": "user", "content": [{ "type": "input_text", "text": "question" }] },
+    { "role": "assistant", "content": [{ "type": "output_text", "text": "prior answer" }] },
+    { "type": "function_call", "call_id": "call_previous", "name": "lookup", "arguments": "{\"q\":\"old\"}" },
+    { "type": "function_call_output", "call_id": "call_previous", "output": "{\"result\":\"old\"}" }
+  ],
+  "tools": [
+    { "type": "function", "name": "lookup", "description": "look up a value", "parameters": { "type": "object" }, "strict": true }
+  ],
+  "stream": false,
+  "store": false,
+  "max_output_tokens": 321,
+  "previous_response_id": "resp_previous"
+}

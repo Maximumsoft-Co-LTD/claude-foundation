@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://changeloop.dev/schemas/tui-evidence-v1.json",
+  "title": "Changeloop TUI performance and accessibility evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recordVersion", "evidenceClass", "capturedAt", "binary", "revision", "environment", "integrity", "cases", "commands", "overall"],
+  "properties": {
+    "schema": { "const": "dev.changeloop.tui-evidence" },
+    "recordVersion": { "const": 1 },
+    "evidenceClass": { "enum": ["diagnostic-smoke", "release-candidate-local"] },
+    "capturedAt": { "type": "string", "minLength": 1 },
+    "binary": {
+      "type": "object",
+      "required": ["path", "sha256", "profile"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "profile": { "enum": ["debug", "release"] }
+      }
+    },
+    "revision": { "type": "object", "required": ["gitRevision", "dirty"] },
+    "environment": { "type": "object", "required": ["os", "release", "architecture", "python"] },
+    "integrity": {
+      "type": "object",
+      "required": ["start", "end", "unchanged"],
+      "properties": { "start": { "type": "object" }, "end": { "type": "object" }, "unchanged": { "const": true } }
+    },
+    "cases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startupReady", "resizeUnicodeCtrlC", "signalIdleCleanup", "terminalPortability", "eventBurstCompaction", "providerStream10k"],
+      "properties": {
+        "startupReady": { "$ref": "#/$defs/case" },
+        "resizeUnicodeCtrlC": { "$ref": "#/$defs/case" },
+        "signalIdleCleanup": { "$ref": "#/$defs/case" },
+        "terminalPortability": { "$ref": "#/$defs/case" },
+        "eventBurstCompaction": { "$ref": "#/$defs/case" },
+        "providerStream10k": {
+          "type": "object",
+          "required": ["passed", "complete", "supported", "timedOut", "exitCode", "durationMs", "output"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "complete": { "const": true },
+            "supported": { "type": "boolean" },
+            "timedOut": { "const": false },
+            "exitCode": { "type": "integer" },
+            "durationMs": { "type": "number", "minimum": 0 },
+            "output": { "type": "object" }
+          }
+        }
+      }
+    },
+    "commands": { "type": "array", "minItems": 6 },
+    "overall": {
+      "type": "object",
+      "required": ["diagnosticPassed", "releaseEligible", "releaseGap"],
+      "properties": { "diagnosticPassed": { "type": "boolean" }, "releaseEligible": { "type": "boolean" }, "releaseGap": { "type": "string", "minLength": 1 } }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["passed", "complete", "timedOut", "exitCode", "durationMs"],
+      "properties": {
+        "passed": { "const": true },
+        "complete": { "const": true },
+        "timedOut": { "const": false },
+        "exitCode": { "const": 0 },
+        "durationMs": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

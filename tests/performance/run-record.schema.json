@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://changeloop.dev/schemas/performance-run-v2.json",
+  "title": "Changeloop local performance run",
+  "type": "object",
+  "required": ["schema", "recordVersion", "workloadVersion", "evidenceClass", "capturedAt", "reproduceCommand", "revision", "integrity", "environment", "workload", "configuration", "commands", "gates", "releaseAssessment", "overall"],
+  "properties": {
+    "schema": { "const": "dev.changeloop.performance-run" },
+    "recordVersion": { "const": 2 },
+    "workloadVersion": { "type": "string", "minLength": 1 },
+    "evidenceClass": { "enum": ["diagnostic-smoke", "release-candidate-local"] },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "revision": { "type": "object", "required": ["gitRevision", "dirty", "dirtyTreeDigestSha256", "cargoLockSha256", "executableSha256", "executablePath", "buildProfile"] },
+    "integrity": { "type": "object", "required": ["start", "end", "unchanged"], "properties": { "unchanged": { "type": "boolean" } } },
+    "environment": { "type": "object", "required": ["os", "kernel", "architecture", "cpuModel", "logicalCpuCount", "physicalMemoryBytes"] },
+    "configuration": {
+      "type": "object",
+      "required": ["profile", "startupWarmups", "startupRepetitions", "replayRepetitions", "shutdownRepetitions", "soakSeconds"],
+      "properties": { "profile": { "enum": ["smoke", "release"] } }
+    },
+    "commands": { "type": "array", "items": { "type": "string" } },
+    "gates": {
+      "type": "object",
+      "required": ["cliStartup", "tuiReady", "eventReplay10k", "localTransportRelay", "clientQueueRelay", "gracefulShutdownStates", "durableShutdownRecovery", "providerRouterOverhead", "storageSoak", "mixedResourceSoak"],
+      "properties": {
+        "cliStartup": {
+          "type": "object",
+          "required": ["samples"],
+          "properties": { "samples": { "type": "array" } }
+        },
+        "tuiReady": {
+          "type": "object",
+          "required": ["warmups", "observations", "samplesNs", "correctness"],
+          "properties": {
+            "warmups": { "type": "integer", "minimum": 0 },
+            "observations": { "type": "array" },
+            "samplesNs": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+          }
+        },
+        "eventReplay10k": {
+          "type": "object",
+          "required": ["coverageComplete", "coverageGaps", "variants"],
+          "properties": {
+            "coverageComplete": { "type": "boolean" },
+            "coverageGaps": { "type": "array", "items": { "type": "string" } },
+            "variants": { "type": "array" }
+          }
+        },
+        "localTransportRelay": {
+          "type": "object",
+          "required": ["eventCountPerTransport", "coverageComplete", "coverageGaps", "transports", "correctness"],
+          "properties": {
+            "eventCountPerTransport": { "type": "integer", "minimum": 1 },
+            "coverageComplete": { "type": "boolean" },
+            "coverageGaps": { "type": "array", "items": { "type": "string" } },
+            "transports": { "type": "array" }
+          }
+        },
+        "gracefulShutdownStates": {
+          "type": "object",
+          "required": ["coverageComplete", "coverageGaps", "states", "correctness"],
+          "properties": {
+            "coverageComplete": { "type": "boolean" },
+            "coverageGaps": { "type": "array", "items": { "type": "string" } },
+            "states": { "type": "array" }
+          }
+        },
+        "providerRouterOverhead": {
+          "type": "object",
+          "required": ["recordVersion", "workloadVersion", "fixtureScope", "cases", "coverageComplete", "coverageGaps", "releaseEligible"],
+          "properties": {
+            "recordVersion": { "const": 2 },
+            "workloadVersion": { "const": "dual-provider-router-matrix-v2" },
+            "fixtureScope": { "const": "bounded hermetic adapter/router comparison; not upstream provider performance" },
+            "cases": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["caseId", "provider", "scenario", "delivery", "supported", "repetitions", "directSamplesNs", "routedSamplesNs", "correctness"],
+                "properties": {
+                  "caseId": { "type": "string", "minLength": 1 },
+                  "provider": { "enum": ["openai", "anthropic"] },
+                  "delivery": { "enum": ["streaming", "non_streaming"] },
+                  "supported": { "type": "boolean" },
+                  "repetitions": { "type": "integer", "minimum": 0 },
+                  "directSamplesNs": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+                  "routedSamplesNs": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+                }
+              }
+            },
+            "coverageComplete": { "type": "boolean" },
+            "coverageGaps": { "type": "array", "items": { "type": "string" } },
+            "releaseEligible": { "type": "boolean" }
+          },
+          "allOf": [{
+            "if": { "properties": { "releaseEligible": { "const": true } }, "required": ["releaseEligible"] },
+            "then": {
+              "properties": {
+                "coverageComplete": { "const": true },
+                "coverageGaps": { "maxItems": 0 },
+                "cases": {
+                  "minItems": 10,
+                  "maxItems": 10,
+                  "items": {
+                    "properties": {
+                      "supported": { "const": true },
+                      "repetitions": { "const": 30 },
+                      "directSamplesNs": { "minItems": 30, "maxItems": 30 },
+                      "routedSamplesNs": { "minItems": 30, "maxItems": 30 },
+                      "aggregateOverheadRatio": { "type": "number", "exclusiveMaximum": 0.05 }
+                    },
+                    "required": ["aggregateOverheadRatio"]
+                  },
+                  "allOf": [
+                    { "contains": { "properties": { "caseId": { "const": "openai-short-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "openai-long-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "openai-tool-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "openai-large-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "openai-non-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "anthropic-short-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "anthropic-long-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "anthropic-tool-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "anthropic-large-streaming" } }, "required": ["caseId"] } },
+                    { "contains": { "properties": { "caseId": { "const": "anthropic-non-streaming" } }, "required": ["caseId"] } }
+                  ]
+                }
+              }
+            }
+          }]
+        }
+      }
+    },
+    "releaseAssessment": { "type": "object", "required": ["nonSoak", "storage", "mixed", "releaseProfile", "roadmapPerformanceGatesComplete"] },
+    "overall": {
+      "type": "object",
+      "required": ["measuredDiagnosticsPassed", "roadmapPerformanceGatesComplete", "releaseEvidence"],
+      "properties": {
+        "measuredDiagnosticsPassed": { "type": "boolean" },
+        "roadmapPerformanceGatesComplete": { "type": "boolean" },
+        "releaseEvidence": { "type": "boolean" }
+      }
+    }
+  },
+  "allOf": [{
+    "if": { "properties": { "evidenceClass": { "const": "release-candidate-local" } }, "required": ["evidenceClass"] },
+    "then": {
+      "properties": {
+        "revision": {
+          "required": ["gitRevision", "dirty", "dirtyTreeDigestSha256", "cargoLockSha256", "executableSha256", "executablePath", "buildProfile"],
+          "properties": {
+            "gitRevision": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+            "dirty": { "const": false },
+            "dirtyTreeDigestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "cargoLockSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "executableSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "buildProfile": { "const": "release" },
+            "executablePath": { "const": "target/release/cloop" }
+          }
+        },
+        "workload": {
+          "required": ["runnerSha256", "storageProbeSha256", "storageProbeExecutableSha256", "queueProbeSha256", "queueProbeExecutableSha256", "mixedSoakRunnerSha256"],
+          "properties": {
+            "runnerSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "storageProbeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "storageProbeExecutableSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "queueProbeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "queueProbeExecutableSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "mixedSoakRunnerSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "environment": {
+          "required": ["referenceMachineId", "referenceSeries", "referenceMachineFingerprintSha256"],
+          "properties": {
+            "referenceMachineId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+            "referenceSeries": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+            "referenceMachineFingerprintSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "gates": {
+          "properties": {
+            "cliStartup": { "properties": { "samples": { "minItems": 2, "maxItems": 2, "items": { "required": ["warmups", "repetitions", "observations", "samplesNs"], "properties": { "warmups": { "type": "integer", "minimum": 5 }, "repetitions": { "type": "integer", "minimum": 30 }, "observations": { "type": "array", "minItems": 30 }, "samplesNs": { "type": "array", "minItems": 30 } } } } } },
+            "tuiReady": { "properties": { "warmups": { "minimum": 5 }, "observations": { "minItems": 30 }, "samplesNs": { "minItems": 30 } } },
+            "eventReplay10k": { "properties": { "coverageComplete": { "const": true }, "coverageGaps": { "maxItems": 0 }, "variants": { "minItems": 2, "maxItems": 2, "items": { "required": ["cacheVariant", "eventCount", "warmups", "repetitions", "samplesNs", "memorySamplesKiB", "maxRssGrowthKiB", "memoryLimitKiB", "memoryBounded", "correctness"], "properties": { "eventCount": { "const": 10000 }, "repetitions": { "type": "integer", "minimum": 20 }, "memorySamplesKiB": { "type": "array", "minItems": 20, "items": { "type": "integer", "minimum": 0 } }, "maxRssGrowthKiB": { "type": "integer", "minimum": 0 }, "memoryLimitKiB": { "const": 65536 }, "memoryBounded": { "const": true } }, "allOf": [{ "if": { "properties": { "cacheVariant": { "const": "process-reopen-cold" } } }, "then": { "properties": { "warmups": { "const": 0 } } } }, { "if": { "properties": { "cacheVariant": { "const": "process-reopen-warm" } } }, "then": { "properties": { "warmups": { "const": 5 } } } }] }, "allOf": [{ "contains": { "properties": { "cacheVariant": { "const": "process-reopen-cold" } }, "required": ["cacheVariant"] } }, { "contains": { "properties": { "cacheVariant": { "const": "process-reopen-warm" } }, "required": ["cacheVariant"] } }] } } },
+            "localTransportRelay": { "properties": { "eventCountPerTransport": { "const": 10000 }, "coverageComplete": { "const": true }, "coverageGaps": { "maxItems": 0 }, "transports": { "minItems": 3, "maxItems": 3, "items": { "required": ["transport", "variants"], "properties": { "variants": { "minItems": 2, "maxItems": 2, "items": { "required": ["variant", "delivered", "ordered", "silentDrops", "maxQueueDepth", "queueCapacity", "backpressureObserved", "concurrency", "samplesNs"], "properties": { "backpressureObserved": { "const": true }, "concurrency": { "type": "integer", "minimum": 1 } }, "allOf": [{ "if": { "properties": { "variant": { "const": "idle" } } }, "then": { "properties": { "concurrency": { "const": 1 } } } }, { "if": { "properties": { "variant": { "const": "steady_concurrency" } } }, "then": { "properties": { "concurrency": { "minimum": 2 } } } }] }, "allOf": [{ "contains": { "properties": { "variant": { "const": "idle" } }, "required": ["variant"] } }, { "contains": { "properties": { "variant": { "const": "steady_concurrency" } }, "required": ["variant"] } }] } } }, "allOf": [{ "contains": { "properties": { "transport": { "const": "stdio" } }, "required": ["transport"] } }, { "contains": { "properties": { "transport": { "const": "unix" } }, "required": ["transport"] } }, { "contains": { "properties": { "transport": { "const": "http_sse" } }, "required": ["transport"] } }] } } },
+            "gracefulShutdownStates": { "properties": { "coverageComplete": { "const": true }, "coverageGaps": { "maxItems": 0 }, "states": { "minItems": 6, "maxItems": 6, "items": { "required": ["state", "terminal", "samplesNs"], "properties": { "terminal": { "const": true }, "samplesNs": { "type": "array", "minItems": 20 } } }, "allOf": [{ "contains": { "properties": { "state": { "const": "idle" } }, "required": ["state"] } }, { "contains": { "properties": { "state": { "const": "streaming-provider-mock" } }, "required": ["state"] } }, { "contains": { "properties": { "state": { "const": "child-agent-resources" } }, "required": ["state"] } }, { "contains": { "properties": { "state": { "const": "pty-and-background-jobs" } }, "required": ["state"] } }, { "contains": { "properties": { "state": { "const": "project-owned-lsp" } }, "required": ["state"] } }, { "contains": { "properties": { "state": { "const": "backpressured-client" } }, "required": ["state"] } }] } } }
+          }
+        },
+        "releaseAssessment": {
+          "required": ["referenceMachine"],
+          "properties": { "referenceMachine": { "type": "object", "required": ["passed", "machineId", "seriesId", "fingerprintSha256"], "properties": { "passed": { "const": true }, "machineId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }, "seriesId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }, "fingerprintSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } } }
+        }
+      }
+    }
+  }],
+  "additionalProperties": true
+}

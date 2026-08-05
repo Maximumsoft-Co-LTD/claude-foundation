@@ -1,0 +1,41 @@
+[package]
+name = "changeloop-cli"
+description = "Experimental headless Changeloop CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cloop"
+path = "src/main.rs"
+
+[dependencies]
+fs2.workspace = true
+changeloop-app-server = { version = "0.1.0", path = "../changeloop-app-server" }
+changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
+changeloop-harness = { version = "0.1.0", path = "../changeloop-harness" }
+changeloop-language = { version = "0.1.0", path = "../changeloop-language" }
+changeloop-land = { version = "0.1.0", path = "../changeloop-land" }
+changeloop-mcp = { version = "0.1.0", path = "../changeloop-mcp" }
+changeloop-ops = { version = "0.1.0", path = "../changeloop-ops" }
+changeloop-project = { version = "0.1.0", path = "../changeloop-project" }
+changeloop-provider = { version = "0.1.0", path = "../changeloop-provider" }
+changeloop-provider-adapters = { version = "0.1.0", path = "../changeloop-provider-adapters" }
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-snapshot = { version = "0.1.0", path = "../changeloop-snapshot" }
+changeloop-storage = { version = "0.1.0", path = "../changeloop-storage" }
+directories.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rpassword.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+url.workspace = true
+zeroize.workspace = true
+libc = "0.2"
+[dev-dependencies]
+base64.workspace = true
+ed25519-dalek.workspace = true

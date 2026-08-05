@@ -1,0 +1,2 @@
+{"sequence":0,"wire":"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"ok:roles-history\"}\n\n"}
+{"sequence":1,"wire":"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_roles-history\",\"usage\":{\"input_tokens\":11,\"output_tokens\":7,\"input_tokens_details\":{\"cached_tokens\":3},\"output_tokens_details\":{\"reasoning_tokens\":0}}}}\n\n"}

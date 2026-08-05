@@ -1,0 +1,22 @@
+[package]
+name = "changeloop-project"
+description = "Scoped project instances, concurrency, revisions, and invalidation for Changeloop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
+changeloop-language = { version = "0.1.0", path = "../changeloop-language" }
+fs2.workspace = true
+libc.workspace = true
+sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3.20"

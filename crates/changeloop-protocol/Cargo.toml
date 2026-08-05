@@ -1,0 +1,16 @@
+[package]
+name = "changeloop-protocol"
+description = "Transport-neutral Changeloop protocol and structured message contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true

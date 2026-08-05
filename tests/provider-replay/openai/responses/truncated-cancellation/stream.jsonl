@@ -1,0 +1,1 @@
+{"sequence":0,"wire":"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"ok:truncated-cancellation\"}\n\n"}

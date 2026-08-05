@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://changeloop.dev/schemas/storage-replay-soak-v2.json",
+  "title": "Changeloop storage replay soak",
+  "type": "object",
+  "required": ["recordVersion", "probe", "workloadVersion", "startedUnixMs", "finishedUnixMs", "requestedDurationSeconds", "elapsedNs", "cycles", "eventsPerCycle", "initialDatabaseBytes", "finalDatabaseBytes", "databaseGrowthBytes", "correctness", "integrity", "interrupted", "releaseEligible"],
+  "properties": {
+    "recordVersion": { "const": 2 },
+    "probe": { "const": "storage-replay-soak" },
+    "workloadVersion": { "const": "storage-soak-v2" },
+    "startedUnixMs": { "type": "integer", "minimum": 1 },
+    "finishedUnixMs": { "type": "integer", "minimum": 1 },
+    "requestedDurationSeconds": { "type": "integer", "minimum": 28800 },
+    "elapsedNs": { "type": "integer", "minimum": 28800000000000 },
+    "cycles": { "type": "integer", "minimum": 100 },
+    "eventsPerCycle": { "type": "integer", "minimum": 1000 },
+    "initialDatabaseBytes": { "type": "integer", "minimum": 1 },
+    "finalDatabaseBytes": { "type": "integer", "minimum": 1 },
+    "databaseGrowthBytes": { "const": 0 },
+    "correctness": { "type": "object", "required": ["exactCountEveryCycle"], "properties": { "exactCountEveryCycle": { "const": true } } },
+    "integrity": { "type": "object", "required": ["start", "end", "unchanged"], "properties": { "unchanged": { "const": true } } },
+    "interrupted": { "const": false },
+    "releaseEligible": { "const": true }
+  },
+  "additionalProperties": true
+}

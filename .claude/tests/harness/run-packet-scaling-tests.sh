@@ -31,9 +31,12 @@ while [ "$i" -le 1000 ]; do
   i=$((i + 1))
 done
 
-plan="$(node "$RUNTIME" agent-plan large-brownfield-packet)"
-global="$(node "$RUNTIME" packet large-brownfield-packet)"
-repo="$(node "$RUNTIME" packet large-brownfield-packet --repo root)"
+budget_warning="$TMP/task-budget-warning.txt"
+plan="$(node "$RUNTIME" agent-plan large-brownfield-packet 2>"$budget_warning")"
+global="$(node "$RUNTIME" packet large-brownfield-packet 2>>"$budget_warning")"
+repo="$(node "$RUNTIME" packet large-brownfield-packet --repo root 2>>"$budget_warning")"
+assert_file_contains "1000-task fixture retains the 900-word soft budget" \
+  "$budget_warning" "soft budget 900"
 assert_cmd_zero "1000-task plan is valid JSON" sh -c \
   'printf "%s" "$1" | jq -e ".taskCount == 1000"' _ "$plan"
 assert_cmd_zero "1000-task global packet is valid JSON" sh -c \
@@ -62,7 +65,7 @@ while [ "$i" -le 500 ]; do
   i=$((i + 1))
 done
 printf '%s\n' ']}' >> "$CHANGE/evidence.yaml"
-global="$(node "$RUNTIME" packet large-brownfield-packet)"
+global="$(node "$RUNTIME" packet large-brownfield-packet 2>>"$budget_warning")"
 assert_cmd_zero "500-claim global packet compacts claims" sh -c \
   'printf "%s" "$1" | jq -e ".claims.count == 500 and (.claims.preview | length) == 40"' _ "$global"
 if [ "$(printf '%s\n' "$global" | wc -c | tr -d ' ')" -le 16384 ]; then

@@ -1,0 +1,44 @@
+[package]
+name = "changeloop-app-server"
+description = "Deterministic app-server transport, replay, queue, leader, and shutdown contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+async-trait.workspace = true
+changeloop-agent = { version = "0.1.0", path = "../changeloop-agent" }
+changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
+changeloop-mcp = { version = "0.1.0", path = "../changeloop-mcp" }
+changeloop-ops = { version = "0.1.0", path = "../changeloop-ops" }
+changeloop-language = { version = "0.1.0", path = "../changeloop-language" }
+changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
+changeloop-project = { version = "0.1.0", path = "../changeloop-project" }
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-provider = { version = "0.1.0", path = "../changeloop-provider" }
+changeloop-provider-adapters = { version = "0.1.0", path = "../changeloop-provider-adapters" }
+changeloop-session = { version = "0.1.0", path = "../changeloop-session" }
+changeloop-snapshot = { version = "0.1.0", path = "../changeloop-snapshot" }
+changeloop-storage = { version = "0.1.0", path = "../changeloop-storage" }
+changeloop-runtime = { version = "0.1.0", path = "../changeloop-runtime" }
+changeloop-tools = { version = "0.1.0", path = "../changeloop-tools" }
+changeloop-web = { version = "0.1.0", path = "../changeloop-web" }
+crossterm.workspace = true
+directories.workspace = true
+libc.workspace = true
+ratatui.workspace = true
+signal-hook.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]

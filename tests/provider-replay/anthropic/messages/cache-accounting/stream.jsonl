@@ -1,0 +1,4 @@
+{"sequence":0,"wire":"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cache-accounting\",\"usage\":{\"input_tokens\":11,\"output_tokens\":1,\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":2}}}\n\n"}
+{"sequence":1,"wire":"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok:cache-accounting\"}}\n\n"}
+{"sequence":2,"wire":"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":7,\"output_tokens_details\":{\"reasoning_tokens\":0}}}\n\n"}
+{"sequence":3,"wire":"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"}
