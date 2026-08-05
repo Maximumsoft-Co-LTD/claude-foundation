@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-08-05
+
 ### Fixed
 
 - **`workflow-tests` is green on Linux again** — two suites had been red on every
@@ -1203,7 +1205,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.1...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.2...HEAD
+[3.2.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.1.8...v3.2.0
 [3.1.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.1.7...v3.1.8
