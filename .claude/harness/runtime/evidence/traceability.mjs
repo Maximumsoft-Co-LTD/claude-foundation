@@ -52,7 +52,15 @@ export function auditTraceability({
         findings.push({
           level: "warning", code: "scenario-without-claim",
           scenario: scenario.name, path: scenario.path,
-          message: `scenario '${scenario.name}' has no exact claim mapping`
+          normalized: scenario.key,
+          rule: "a scenario matches when its name, lowercased with runs of " +
+            "non-alphanumerics collapsed to single spaces, equals a claim id " +
+            "or that claim's full scenario sentence",
+          // Naming the normalized form and the rule is the difference between
+          // a warning someone can act on and one they learn to scroll past.
+          message: `scenario '${scenario.name}' has no exact claim mapping; ` +
+            `it normalizes to '${scenario.key}', which equals no claim id or ` +
+            "claim scenario"
         });
   }
 

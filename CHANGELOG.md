@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A self-describing command surface** — every command answers `--help` before
+  its arguments are validated, so a command invoked without its required
+  arguments explains itself instead of refusing. `describe [command] [--json]`
+  reads back the command registry, and `describe` also names where the
+  machine-readable file shapes live. Rejected flags now list the flags the
+  command does support.
+- **`authority status --template`** — emits the response file for an open
+  request with the request, change, type, and workspace identity already bound,
+  and the criteria under review prefilled. These are exactly the fields the
+  response validator matches, so a responder no longer discovers the shape one
+  rejection at a time.
+- **Per-phase usage in `metrics`** — `phases` now carries requests, output,
+  cache-write and cache-read tokens, and `context.carryover` reports what each
+  phase inherited across a boundary that did not reset. Metrics output moves to
+  version 4.
+
+### Changed
+
+- **Budget measures new work, not context re-read** — spend is input, output,
+  and cache writes; cache reads are reported separately and never counted.
+  Counting them made measured usage grow with session length rather than with
+  work done, so a long session could read as many multiples over target while
+  nothing was ever blocked. Budget state moves to version 3; version 2 totals
+  are recomputed from retained events rather than carried forward under changed
+  semantics.
+- **A phase boundary is a context boundary** — Prove and Land start from their
+  packet in a fresh context. A packet that is not sufficient on its own is a
+  packet defect, not a reason to retain the prior phase's context.
+- **Requirements and warnings name their cause** — an inferred capability
+  reports the path that triggered it, and an unmatched scenario reports its
+  normalized form and the matching rule instead of only that it did not match.
+- **Missing evidence is reported all at once** — external and acceptance
+  receipts list every missing requirement in one refusal, naming each field
+  both as a flag and by its location in the response file. Authority response
+  validation likewise reports every mismatched field together.
+
+### Fixed
+
+- **Importing host telemetry no longer resets the active budget window** —
+  imported rows without their own run identity fell back to the change id,
+  which did not match the active window and silently opened a new one,
+  discarding its targets. This only occurred when a real session identity was
+  present, so budget enforcement was effectively disabled in exactly the
+  environment it is meant to run in.
+- **`metrics` no longer writes to an archived change** — reading a landed run
+  back appended the current session's telemetry to its finished evidence.
+
 ## [3.1.8] - 2026-08-04
 
 ### Added

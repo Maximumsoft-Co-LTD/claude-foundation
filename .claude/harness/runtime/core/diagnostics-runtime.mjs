@@ -47,6 +47,7 @@ export function createDiagnosticsRuntime({
   commandExists,
   topologyIssues,
   policyCapabilities,
+  policyCapabilityTrigger,
   parseFlags,
   fail
 }) {
@@ -269,7 +270,14 @@ export function createDiagnosticsRuntime({
       checks.push({
         level: "info",
         name: "policy-capabilities",
-        detail: policy.length ? policy.join(", ") : "none inferred from changed surface"
+        // Naming the file that pulled a capability in makes a surprising
+        // requirement diagnosable in one read.
+        detail: policy.length
+          ? policy.map((capability) => {
+            const trigger = policyCapabilityTrigger(requestedChange, capability);
+            return trigger ? `${capability} (from ${trigger})` : capability;
+          }).join(", ")
+          : "none inferred from changed surface"
       });
       if (contract.version === 1)
         checks.push({

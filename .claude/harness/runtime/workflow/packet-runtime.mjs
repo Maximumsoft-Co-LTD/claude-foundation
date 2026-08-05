@@ -87,7 +87,7 @@ export function createPacketRuntime({
       left.repositoryId.localeCompare(right.repositoryId) || left.path.localeCompare(right.path));
   }
   
-  function policyCapabilities(id) {
+  function policyAnalysis(id) {
     if (policyCache.has(id)) return policyCache.get(id);
     const state = loadRuntime(id);
     const files = canonicalChangedSurface(id, state)
@@ -124,23 +124,42 @@ export function createPacketRuntime({
       }
     ];
     const required = new Set();
-    for (const policy of defaults)
-      if (relevantFiles.some((path) => policy.patterns.some((pattern) => pattern.test(path))))
-        policy.capabilities.forEach((capability) => required.add(capability));
+    // Remember which file pulled each capability in. A requirement whose cause
+    // is not stated can only be diagnosed by reading this function.
+    const triggers = {};
+    const require = (capability, path) => {
+      required.add(capability);
+      (triggers[capability] ||= []).push(path);
+    };
+    for (const policy of defaults) {
+      const trigger = relevantFiles.find((path) =>
+        policy.patterns.some((pattern) => pattern.test(path)));
+      if (trigger !== undefined)
+        policy.capabilities.forEach((capability) => require(capability, trigger));
+    }
     const configured = readJson(join(ROOT, ".foundation", "policy.json"), { rules: [] });
     for (const rule of configured.rules || []) {
       if (!Array.isArray(rule.paths) || !Array.isArray(rule.capabilities)) continue;
-      const matches = relevantFiles.some((path) => rule.paths.some((prefix) =>
+      const trigger = relevantFiles.find((path) => rule.paths.some((prefix) =>
         typeof prefix === "string" &&
         (path === prefix.replace(/\*\*?$/, "") ||
          path.startsWith(prefix.replace(/\*\*?$/, "")))));
-      if (matches)
+      if (trigger !== undefined)
         for (const capability of rule.capabilities)
-          if (PROVIDERS.has(capability)) required.add(capability);
+          if (PROVIDERS.has(capability)) require(capability, trigger);
     }
-    const result = [...required].sort();
+    const result = { capabilities: [...required].sort(), triggers };
     policyCache.set(id, result);
     return result;
+  }
+
+  function policyCapabilities(id) { return policyAnalysis(id).capabilities; }
+
+  // "compatibility because openspec/contracts/pay.yaml changed" is one read;
+  // "compatibility" alone sends the reader into the runtime source.
+  function policyCapabilityTrigger(id, capability) {
+    const paths = policyAnalysis(id).triggers[capability];
+    return paths && paths.length ? paths[0] : null;
   }
   
   function packetValue(id, repositoryId = null, taskId = null) {
@@ -479,6 +498,7 @@ export function createPacketRuntime({
     changedFiles,
     canonicalChangedSurface,
     policyCapabilities,
+    policyCapabilityTrigger,
     packetValue,
     reviewPacketValue,
     showPacket

@@ -92,13 +92,52 @@ export function createMetricsRuntime({
     const phaseContextRows = readJsonLines(join(logs, id, "phase-context.jsonl"));
     const reuseRows = readJsonLines(join(logs, id, "reuse.jsonl"));
     const phases = {};
+    const phaseEntry = (name) => (phases[name] ||= {
+      operations: 0, durationMs: 0, failed: 0, requests: 0,
+      outputTokens: null, cacheCreationTokens: null, cacheReadTokens: null,
+      contextMode: null, contextCarryInTokens: null, contextCarryCostTokens: null,
+      loggedContextMode: undefined
+    });
     for (const operation of operations) {
       const name = operation.phase || operation.operation || "unknown";
-      phases[name] ||= { operations: 0, durationMs: 0, failed: 0 };
-      phases[name].operations += 1;
-      phases[name].durationMs += Number(operation.durationMs || 0);
-      if (operation.status !== "completed") phases[name].failed += 1;
+      const phase = phaseEntry(name);
+      phase.operations += 1;
+      phase.durationMs += Number(operation.durationMs || 0);
+      if (operation.status !== "completed") phase.failed += 1;
     }
+    const phaseFirstEvent = new Map();
+    for (const event of events) {
+      const name = event.operationId || "unknown";
+      const phase = phaseEntry(name);
+      phase.requests += 1;
+      for (const field of ["outputTokens", "cacheCreationTokens", "cacheReadTokens"])
+        if (event[field] !== null && event[field] !== undefined &&
+            Number.isFinite(Number(event[field])))
+          phase[field] = Number(phase[field] || 0) + Number(event[field]);
+      if (phase.contextCarryInTokens === null &&
+          Number.isFinite(Number(event.cacheReadTokens)))
+        phase.contextCarryInTokens = Number(event.cacheReadTokens);
+      if (!phaseFirstEvent.has(name))
+        phaseFirstEvent.set(name, { at: Date.parse(event.timestamp), session: event.sessionId });
+    }
+    for (const row of phaseContextRows)
+      if (row.phase && phases[row.phase] && phases[row.phase].loggedContextMode === undefined)
+        phases[row.phase].loggedContextMode = row.contextMode || "unknown";
+    const seenSessions = new Set();
+    for (const [name, entry] of [...phaseFirstEvent.entries()]
+      .sort((left, right) => (left[1].at || 0) - (right[1].at || 0))) {
+      const retained = Boolean(entry.session) && seenSessions.has(entry.session);
+      if (entry.session) seenSessions.add(entry.session);
+      phases[name].contextMode = retained ? "retained" : "initial";
+    }
+    for (const phase of Object.values(phases))
+      phase.contextCarryCostTokens = phase.contextCarryInTokens === null
+        ? null : phase.contextCarryInTokens * phase.requests;
+    const retainedCarryTokens = Object.values(phases)
+      .filter((phase) => phase.contextMode === "retained")
+      .map((phase) => phase.contextCarryCostTokens)
+      .filter((value) => value !== null)
+      .reduce((sum, value) => sum + value, 0);
     const providers = {};
     const executions = new Map();
     const receiptDir = join(receipts, id);
@@ -159,7 +198,7 @@ export function createMetricsRuntime({
       return result;
     }, {});
     output(JSON.stringify({
-      version: 3, changeId: id,
+      version: 4, changeId: id,
       wallTimeMs,
       activeTimeMs,
       unattributedWaitMs: wallTimeMs === null || activeTimeMs === null
@@ -203,7 +242,13 @@ export function createMetricsRuntime({
         retainedEvents: contextRows.length,
         archivedEvents: Number(contextRollup.count || 0),
         phaseTransitions: phaseContextRows,
-        modes: contextModes
+        modes: contextModes,
+        carryover: {
+          retainedPhaseTokens: retainedCarryTokens,
+          measurement: "first-request-cache-read-per-phase",
+          estimateBasis: "carry-in-tokens-times-phase-requests",
+          note: "tokens spent re-reading context inherited across a phase boundary that did not reset"
+        }
       },
       evidenceReuse: {
         count: reuseRows.length,

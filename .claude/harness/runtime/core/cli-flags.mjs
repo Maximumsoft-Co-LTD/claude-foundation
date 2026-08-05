@@ -35,6 +35,13 @@ export function createFlagParser({ fail }) {
   function parseStrictCommandFlags(values, context, schema = {}) {
     const booleanFlags = new Set(schema.boolean || []);
     const valueFlags = new Set(schema.value || []);
+    // A rejection that does not name the alternatives leaves source-reading as
+    // the only way forward. Every refusal here spells out the whole surface.
+    const supported = () => {
+      const all = [...[...booleanFlags].map((flag) => `--${flag}`),
+        ...[...valueFlags].map((flag) => `--${flag} <value>`)].sort();
+      return all.length ? `\n  supported: ${all.join(", ")}` : "\n  supported: (no flags)";
+    };
     const flags = {};
     const rest = [];
     for (let i = 0; i < values.length; i += 1) {
@@ -47,7 +54,7 @@ export function createFlagParser({ fail }) {
       const separator = body.indexOf("=");
       const key = separator === -1 ? body : body.slice(0, separator);
       if (!booleanFlags.has(key) && !valueFlags.has(key))
-        fail(`${context} does not support --${key || "<empty>"}`);
+        fail(`${context} does not support --${key || "<empty>"}${supported()}`);
       if (Object.hasOwn(flags, key)) fail(`${context} does not allow duplicate --${key}`);
       if (booleanFlags.has(key)) {
         if (separator !== -1) fail(`${context} flag --${key} does not accept a value`);

@@ -219,6 +219,45 @@ function commandRegistry() {
   return commandRegistryCache;
 }
 
+// The registry is the contract. Without a way to read it back, an agent that
+// hits a rejection has only one route left — reading this file.
+function describeCommand(name, options = {}) {
+  const registry = commandRegistry();
+  const entries = [...registry.commands].sort((left, right) =>
+    left.name.localeCompare(right.name));
+  if (!name) {
+    if (options.json) { console.log(JSON.stringify(entries, null, 2)); return; }
+    console.log("Commands (describe <command> for one):\n");
+    for (const entry of entries)
+      console.log(`  ${entry.name.padEnd(22)} ${entry.description}`);
+    // File shapes are data, not runtime source. Say where they are so nobody
+    // reconstructs them by reading the implementation.
+    console.log("\nFile shapes:\n");
+    console.log("  evidence.yaml, execution.yaml   openspec/schemas/<schema>/schema.yaml");
+    console.log("  host execution, instruction     .claude/harness/runtime/contracts/");
+    console.log("  authority response              authority status <change> --template");
+    return;
+  }
+  // Callers arrive with either name: the public CLI spells it `change resolve`,
+  // the runtime spells it `resolve`. Both must reach the same entry.
+  const normalize = (value) => value.replace(/[\s-]+/g, "-");
+  const target = normalize(name);
+  const entry = entries.find((candidate) => normalize(candidate.name) === target) ||
+    entries.find((candidate) => normalize(candidate.name).endsWith(`-${target}`)) ||
+    entries.find((candidate) => normalize(candidate.name).split("-").includes(target));
+  if (!entry) {
+    const near = entries.filter((candidate) => target.split("-")
+      .some((token) => normalize(candidate.name).includes(token)));
+    die(`unknown command '${name}'\n  ${near.length ? "did you mean" : "known"}: ` +
+      `${(near.length ? near : entries).map((candidate) => candidate.name).join(", ")}`);
+  }
+  if (options.json) { console.log(JSON.stringify(entry, null, 2)); return; }
+  console.log(`${entry.name} — ${entry.description}\n`);
+  console.log(`  usage:     ${entry.usage}`);
+  console.log(`  audience:  ${entry.audience}`);
+  console.log(`  kind:      ${entry.kind}${entry.idempotent ? " (idempotent)" : ""}`);
+}
+
 function assertRegisteredRuntimeCommand(command) {
   if (!command) return;
   if (!commandRegistry().runtimeCommands.includes(command))
@@ -516,6 +555,7 @@ const {
   changedFiles,
   canonicalChangedSurface,
   policyCapabilities,
+  policyCapabilityTrigger,
   packetValue,
   reviewPacketValue,
   showPacket
@@ -941,6 +981,7 @@ const {
   commandExists,
   topologyIssues,
   policyCapabilities,
+  policyCapabilityTrigger,
   parseFlags,
   fail: die
 });
@@ -1458,7 +1499,18 @@ function readJsonLinesTolerant(path) {
 }
 
 const [command, ...values] = process.argv.slice(2);
+// Help is answered before anything else. It must never be parsed as a change
+// id, and it must never depend on the command's arguments being valid.
+if (command === "--help" || command === "-h" || command === "help") {
+  describeCommand(values.find((value) => !value.startsWith("-")) || null,
+    { json: values.includes("--json") });
+  process.exit(0);
+}
 assertRegisteredRuntimeCommand(command);
+if (values.includes("--help") || values.includes("-h")) {
+  describeCommand(command, { json: values.includes("--json") });
+  process.exit(0);
+}
 const unattendedMentioned = command === "sandbox" &&
   ["create", "inspect"].includes(values[0]) &&
   values.slice(1).some((value) =>
@@ -1502,12 +1554,15 @@ const telemetryPhase = {
   "land-resume": "land",
   archive: "land"
 }[command];
-if (!telemetrySuppressed && operationChangeId && telemetryPhase && existsSync(runtimePath(operationChangeId)))
+// An archived change is finished evidence. Reading it back — `metrics` on a
+// landed run, say — must never append this session's telemetry to its log.
+const telemetryWritable = (id) => Boolean(id) && existsSync(runtimePath(id)) &&
+  readJson(runtimePath(id), {}).status !== "archived";
+if (!telemetrySuppressed && telemetryPhase && telemetryWritable(operationChangeId))
   prepareClaudeTelemetry(operationChangeId, telemetryPhase);
-if (command === "metrics" && operationChangeId && existsSync(runtimePath(operationChangeId)))
+if (command === "metrics" && telemetryWritable(operationChangeId))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
-if (command === "budget-continue" &&
-    operationChangeId && existsSync(runtimePath(operationChangeId)))
+if (command === "budget-continue" && telemetryWritable(operationChangeId))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
 
 await routeRuntimeCommand(command, values, {
@@ -1570,6 +1625,7 @@ await routeRuntimeCommand(command, values, {
   importHostExecution,
   migrate,
   usage,
+  describeCommand,
   runtimeApiVersion: RUNTIME_API_VERSION,
   version: VERSION
 });

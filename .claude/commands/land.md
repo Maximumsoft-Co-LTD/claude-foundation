@@ -5,6 +5,9 @@ argument-hint: <change>
 
 Land **$ARGUMENTS** explicitly.
 
+Start from `packet <change> --phase land` in a fresh context; Land reads
+recorded state.
+
 Run `claude-foundation land check`. For multi-repo work follow its structured
 next action, bind only authorized child commits/CI with `land record`, then use
 `land resume`. It stages eligible root pointers and reports when fresh Prove is

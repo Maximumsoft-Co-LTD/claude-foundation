@@ -44,6 +44,29 @@ assert_contains "provider catalog exposes executable test wiring" "$providers" \
 assert_contains "test wiring names the structured report field" "$providers" \
   'workspace-relative-structured-json-report'
 
+# Self-description. An agent that cannot read the contract from the CLI reads it
+# from the runtime source instead, and that source stays in context for the rest
+# of the session.
+resolve_help="$(node .claude/harness/foundation.mjs resolve --help 2>&1)"
+assert_contains "--help answers before argument validation" "$resolve_help" \
+  'change resolve <change>'
+assert_not_contains "--help is not treated as a missing argument" "$resolve_help" \
+  'requires a change'
+assert_not_contains "--help is not treated as a change id" \
+  "$(ls .foundation/logs 2>/dev/null || true)" '--help'
+describe_one="$(node .claude/harness/foundation.mjs describe packet --json 2>&1)"
+assert_contains "describe emits the registry entry as JSON" "$describe_one" '"name": "packet"'
+describe_all="$(node .claude/harness/foundation.mjs describe 2>&1)"
+assert_contains "describe lists the whole surface" "$describe_all" 'proof readiness'
+assert_contains "describe points at the schema files rather than the source" \
+  "$describe_all" 'openspec/schemas/<schema>/schema.yaml'
+assert_file_exists "the schema path describe names exists" \
+  "$ROOT/openspec/schemas/foundation-standard/schema.yaml"
+unsupported_flag="$(node .claude/harness/foundation.mjs authority-record x \
+  --request y --observed z 2>&1 || true)"
+assert_contains "a rejected flag names the supported surface" "$unsupported_flag" \
+  'supported: --request <value>, --response <value>'
+
 # Evidence bootstrap detects repository-owned commands without executing them,
 # previews changes by default, and writes only explicit high-confidence wiring.
 node .claude/harness/foundation.mjs new 'Bootstrap evidence providers' --rapid >/dev/null
@@ -916,10 +939,14 @@ assert_contains "metrics attribute usage by model" \
   "$metrics" '"sonnet":'
 assert_contains "metrics attribute usage by repository" \
   "$metrics" '"root":'
-assert_eq "watchdog accumulates known request tokens" "182" \
+# 10+2 local, 120+30 host. The host row's 20 cache-read tokens are context
+# re-read, not new work, so they are deliberately absent from this total.
+assert_eq "watchdog accumulates known request tokens" "162" \
   "$(jq -r '.budget.usedTokens' .foundation/runtime/tiny-copy-edit.json)"
+assert_eq "watchdog excludes cache reads from spend" "3" \
+  "$(jq -r '.budget.version' .foundation/runtime/tiny-copy-edit.json)"
 tmp_runtime="$TMP/tiny-copy-budget.json"
-jq '.budget.window.targetTokens = 182' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
+jq '.budget.window.targetTokens = 162' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
 cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
   --request req-token-limit --operation build)"
@@ -1519,5 +1546,28 @@ assert_contains "doctor gives an explicit orphan error" \
   "$doctor_with_orphan" 'ERROR change:orphan-fixture'
 assert_contains "doctor gives a recoverable orphan action" \
   "$doctor_with_orphan" '.foundation/recovery/orphaned-runtime/'
+
+# An inferred capability that does not name the file that pulled it in can only
+# be diagnosed by reading the runtime source, which is what this prevents.
+mkdir -p "$TMP/policy-trigger"
+cd "$TMP/policy-trigger"
+cp -R "$TMP/project/.claude" .
+cp -R "$TMP/project/openspec" .
+rm -rf openspec/changes .foundation
+printf 'x\n' > app.txt
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+git add . >/dev/null
+git commit -qm "policy fixture"
+mkdir -p openspec/contracts
+printf 'openapi: 3.0.0\n' > openspec/contracts/pay.yaml
+node .claude/harness/foundation.mjs new 'Touch a contract' >/dev/null
+node .claude/harness/foundation.mjs resolve touch-a-contract \
+  --impact low --coupling isolated >/dev/null
+policy_doctor="$(node .claude/harness/foundation.mjs doctor \
+  --stage change --change touch-a-contract 2>&1 || true)"
+assert_contains "an inferred capability names the path that triggered it" \
+  "$policy_doctor" 'compatibility (from root/openspec/contracts/pay.yaml)'
 
 finish "harness contracts"

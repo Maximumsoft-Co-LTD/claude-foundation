@@ -51,12 +51,27 @@ export function createAuthorityStore({ root, protocolVersion, readJson, writeJso
   }
 
   function validateResponse(response, request, changeId) {
-    if (String(response?.version) !== protocolVersion ||
-        response.requestId !== request.requestId || response.changeId !== changeId ||
-        response.type !== request.type || response.workspaceHash !== request.workspaceHash)
-      return { valid: false, reason: "authority response does not match the request and workspace" };
-    if (!RESPONSE_STATUSES.has(response.status))
-      return { valid: false, reason: "authority response status must be pass|fail|inconclusive|error" };
+    // Name every field that disagrees, not just the first one found.
+    const problems = [];
+    const expect = (field, actual, expected) => {
+      if (actual !== expected)
+        problems.push(`${field}: expected ${JSON.stringify(expected)}, ` +
+          `got ${JSON.stringify(actual ?? null)}`);
+    };
+    expect("version", String(response?.version ?? ""), protocolVersion);
+    expect("requestId", response?.requestId ?? null, request.requestId);
+    expect("changeId", response?.changeId ?? null, changeId);
+    expect("type", response?.type ?? null, request.type);
+    expect("workspaceHash", response?.workspaceHash ?? null, request.workspaceHash);
+    if (!RESPONSE_STATUSES.has(response?.status))
+      problems.push(`status: expected one of ${[...RESPONSE_STATUSES].join("|")}, ` +
+        `got ${JSON.stringify(response?.status ?? null)}`);
+    if (problems.length)
+      return {
+        valid: false,
+        reason: `authority response does not match the request and workspace\n  ${
+          problems.join("\n  ")}`
+      };
     const evidence = response.evidence && typeof response.evidence === "object"
       ? { ...response.evidence } : {};
     for (const key of MULTI_VALUE_EVIDENCE)

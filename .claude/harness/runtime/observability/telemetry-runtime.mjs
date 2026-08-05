@@ -308,9 +308,20 @@ export function createTelemetryRuntime({
       normalized.push(event);
     }
     if (normalized.length) {
+      // Loading runtime state can normalize it, so it stays inside this branch:
+      // an import that adds nothing must leave the change untouched.
+      const state = loadRuntime(id);
+      // A budget window represents one real run. Rows that carry a genuine run
+      // or session identity may rotate it. Rows that fell back to the change id
+      // carry no identity at all — attribute those to the run already active,
+      // or every external import opens a window and discards the current one
+      // along with its targets.
+      const windowId = state.budget?.window?.id || null;
+      if (windowId)
+        for (const event of normalized)
+          if (event.runId === id) event.runId = windowId;
       mkdirSync(dirname(target), { recursive: true });
       appendFileSync(target, normalized.map((row) => JSON.stringify(row)).join("\n") + "\n");
-      const state = loadRuntime(id);
       const allEvents = readJsonLines(target);
       const activeRunId = normalized.at(-1)?.runId || context.sessionId || id;
       synchronizeBudgetUsage(state, allEvents, activeRunId, format === "claude"

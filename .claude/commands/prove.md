@@ -5,7 +5,8 @@ argument-hint: <change>
 
 Prove **$ARGUMENTS**.
 
-Start from `packet <change> --phase prove`, not Build history. For external
+Start from `packet <change> --phase prove` in a fresh context, not Build
+history. Inherit only the packet. For external
 review or acceptance, run `proof collect` and `authority request`; explain the
 packet and ask whether to inspect, send, or pause. Record real responses through
 `authority record`. Run `proof run`; reuse fresh receipts.

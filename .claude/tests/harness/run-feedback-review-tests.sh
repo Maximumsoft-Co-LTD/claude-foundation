@@ -198,8 +198,22 @@ authority_request_id="$(printf '%s' "$authority_request" | jq -r '.requestId')"
 authority_workspace_hash="$(printf '%s' "$authority_request" | jq -r '.workspaceHash')"
 assert_eq "authority request exports an acceptance packet" "acceptance" \
   "$(printf '%s' "$authority_request" | jq -r '.packet.packetType')"
-jq -n --arg request "$authority_request_id" --arg workspace "$authority_workspace_hash" \
-  '{version:1,requestId:$request,changeId:"bridge-human-acceptance",type:"acceptance",workspaceHash:$workspace,status:"pass",evidence:{acceptor:"product-owner",decision:"accept",criterion:["The bridged result is understandable"],observed:"Product owner inspected and accepted the result",artifact:[".foundation/logs/bridge-human-acceptance/acceptance.txt"],reference:["https://example.invalid/authority/acceptance"]}}' \
+# The response is built from the emitted template, not hand-written. If the
+# template omits a required field, recording below fails and says so.
+authority_template="$(node .claude/harness/foundation.mjs authority-status \
+  bridge-human-acceptance --template)"
+assert_eq "response template binds the open request" "$authority_request_id" \
+  "$(printf '%s' "$authority_template" | jq -r '.requestId')"
+assert_eq "response template binds the inspected workspace" "$authority_workspace_hash" \
+  "$(printf '%s' "$authority_template" | jq -r '.workspaceHash')"
+assert_eq "response template prefills the criteria under review" "true" \
+  "$(printf '%s' "$authority_template" | jq -r '(.evidence.criterion | length) > 0')"
+printf '%s' "$authority_template" | jq \
+  '.status = "pass"
+   | .evidence.observed = "Product owner inspected and accepted the result"
+   | .evidence.acceptor = "product-owner"
+   | .evidence.artifact = [".foundation/logs/bridge-human-acceptance/acceptance.txt"]
+   | .evidence.reference = ["https://example.invalid/authority/acceptance"]' \
   > "$TMP/authority-response.json"
 assert_cmd_zero "authority response records validated acceptance" \
   node .claude/harness/foundation.mjs authority-record bridge-human-acceptance \

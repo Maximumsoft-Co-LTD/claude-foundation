@@ -121,13 +121,19 @@ export function createReceiptRuntime({
       provenanceSource = `reviewer:${String(flags["reviewer-identity"]).trim()}`;
     if (!provenanceSource && capability === "acceptance" && flags.acceptor)
       provenanceSource = `human:${String(flags.acceptor).trim()}`;
+    // Report every missing requirement at once. Revealing them one per failure
+    // costs a round trip each, and the person who gave the verdict is waiting.
     if (adapter === "external" && status === "pass") {
+      const missing = [];
       if (!observed)
-        die(`passing external receipt '${provider}' requires --observed`);
+        missing.push("observed — flag --observed, or evidence.observed in the response file");
       if (!provenanceSource)
-        die(`passing external receipt '${provider}' requires --source or --reviewer`);
+        missing.push("source — flag --source or --reviewer, or evidence.source in the response file");
       if (artifacts.length === 0 && references.length === 0)
-        die(`passing external receipt '${provider}' requires --artifact or --reference`);
+        missing.push("artifact or reference — flag --artifact or --reference, " +
+          "or evidence.artifact[] / evidence.reference[] in the response file");
+      if (missing.length)
+        die(`passing external receipt '${provider}' is missing:\n  ${missing.join("\n  ")}`);
     }
     const inputIdentity = providerInputIdentity(
       id, provider, config, workspaceHash
@@ -251,11 +257,24 @@ export function createReceiptRuntime({
       const acceptor = String(flags.acceptor || "").trim();
       const criteria = flagValues(flags, "criterion").map((value) => String(value).trim());
       const decision = String(flags.decision || "").trim().toLowerCase();
-      if (status === "pass" && (!acceptor || decision !== "accept" || criteria.length === 0 ||
-          criteria.some((criterion) => !criterion) || new Set(criteria).size !== criteria.length))
-        die("passing acceptance requires --acceptor, --decision accept, and at least one --criterion");
-      if (status === "pass" && !observed)
-        die("passing acceptance requires --observed");
+      if (status === "pass") {
+        const missing = [];
+        if (!acceptor)
+          missing.push("acceptor — flag --acceptor, or evidence.acceptor in the response file");
+        if (decision !== "accept")
+          missing.push("decision 'accept' — flag --decision accept, " +
+            "or evidence.decision in the response file");
+        if (criteria.length === 0 || criteria.some((criterion) => !criterion))
+          missing.push("at least one non-empty criterion — flag --criterion (repeatable), " +
+            "or evidence.criterion[] in the response file");
+        else if (new Set(criteria).size !== criteria.length)
+          missing.push("criteria must be unique — flag --criterion (repeatable), " +
+            "or evidence.criterion[] in the response file");
+        if (!observed)
+          missing.push("observed — flag --observed, or evidence.observed in the response file");
+        if (missing.length)
+          die(`passing acceptance is missing:\n  ${missing.join("\n  ")}`);
+      }
       provenanceSource ||= acceptor ? `human:${acceptor}` : "";
       receipt.provenance.source = provenanceSource || null;
       receipt.acceptanceProtocolVersion = ACCEPTANCE_PROTOCOL_VERSION;

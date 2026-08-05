@@ -1,6 +1,14 @@
 export function createBudgetRuntime({ policy, now }) {
+  // Spend is new work: what the model read fresh, wrote, and cached for later.
+  // Cache reads are excluded on purpose. Every turn re-reads the whole
+  // conversation, so counting them makes measured spend grow with session
+  // length rather than with the work done, and the budget stops meaning
+  // anything. Context re-read is reported separately by `metrics`.
   function eventTokenCount(event) {
-    const values = [event.inputTokens, event.outputTokens, event.cacheTokens]
+    const cacheWrite = event.cacheCreationTokens ?? (
+      Number.isFinite(Number(event.cacheTokens)) && Number.isFinite(Number(event.cacheReadTokens))
+        ? Number(event.cacheTokens) - Number(event.cacheReadTokens) : null);
+    const values = [event.inputTokens, event.outputTokens, cacheWrite]
       .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
     return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
   }
@@ -38,7 +46,8 @@ export function createBudgetRuntime({ policy, now }) {
     const runId = process.env.FOUNDATION_RUN_ID ||
       process.env.FOUNDATION_CLAUDE_SESSION_ID || id;
     return {
-      version: 2,
+      version: 3,
+      measures: "input+output+cache-write; cache reads excluded",
       targetRequests: targets.requests,
       targetTokens: targets.tokens,
       usedRequests: null,
@@ -62,13 +71,17 @@ export function createBudgetRuntime({ policy, now }) {
       tokens: knownNumber(existing.targetTokens)
         ? Number(existing.targetTokens) : defaults.tokens
     };
-    if (existing.version !== 2 || !existing.lifetime || !existing.window) {
+    if (existing.version !== 3 || !existing.lifetime || !existing.window) {
       const legacyRequests = knownNumber(existing.usedRequests)
         ? Number(existing.usedRequests) : null;
-      const legacyTokens = knownNumber(existing.usedTokens)
-        ? Number(existing.usedTokens) : null;
+      // Version 2 counted cache reads as spend. Those totals do not mean the
+      // same thing here, so they are dropped rather than carried forward; the
+      // next telemetry sync recomputes them from the retained events.
+      const legacyTokens = existing.version === 2 ? null
+        : knownNumber(existing.usedTokens) ? Number(existing.usedTokens) : null;
       state.budget = {
-        version: 2,
+        version: 3,
+        measures: "input+output+cache-write; cache reads excluded",
         targetRequests: targets.requests,
         targetTokens: targets.tokens,
         usedRequests: legacyRequests,

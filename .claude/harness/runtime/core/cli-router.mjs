@@ -13,7 +13,7 @@ export async function routeRuntimeCommand(command, values, api) {
     stageRootPointers, resumeLand, createAttestationChallenge,
     showSandboxInspection, createSandbox, syncSandbox, applySandbox, archive,
     recordEvent, syncClaudeTelemetry, importTelemetry, importHostExecution, migrate, usage,
-    runtimeApiVersion, version
+    describeCommand, runtimeApiVersion, version
   } = api;
   const die = fail;
   switch (command) {
@@ -40,6 +40,10 @@ export async function routeRuntimeCommand(command, values, api) {
       if (!rest[0]) die("resolve requires a change");
       resolveChange(rest[0], flags); break;
     }
+    case "describe":
+      describeCommand(values.find((value) => !value.startsWith("-")) || null,
+        { json: values.includes("--json") });
+      break;
     case "changes": showChanges(); break;
     case "providers": showProviders(); break;
     case "repos": showRepositories(values[0] || null); break;
@@ -142,7 +146,7 @@ export async function routeRuntimeCommand(command, values, api) {
     }
     case "authority-status": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority status", {
-        value: ["request"]
+        value: ["request"], boolean: ["template"]
       });
       if (rest.length !== 1) die("authority status requires exactly one change");
       showAuthorityStatus(rest[0], flags); break;

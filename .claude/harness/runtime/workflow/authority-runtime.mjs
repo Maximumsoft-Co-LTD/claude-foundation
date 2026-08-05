@@ -121,8 +121,46 @@ export function createAuthorityRuntime({
     return result.value;
   }
 
+  // The response shape is a contract. Without a way to emit it, a responder
+  // discovers it one rejection at a time while the person who gave the verdict
+  // waits. The identity fields are prefilled because those are exactly the
+  // ones `validateResponse` matches against the request.
+  function responseTemplate(request) {
+    const criteria = (request.packet?.claims || [])
+      .map((claim) => claim.criterion).filter(Boolean);
+    const evidence = {
+      observed: "<what the responder actually saw, in their own words>",
+      artifact: [],
+      reference: ["<url or path the responder inspected>"]
+    };
+    if (request.type === "acceptance") {
+      evidence.acceptor = "<name of the person who decided>";
+      evidence.decision = "accept";
+      evidence.criterion = criteria.length ? criteria
+        : ["<criterion the responder confirmed>"];
+    } else evidence.reviewer = "<independent reviewer identity>";
+    return {
+      version: Number(protocolVersion),
+      requestId: request.requestId,
+      changeId: request.changeId,
+      type: request.type,
+      workspaceHash: request.workspaceHash,
+      status: "pass|fail|inconclusive|error",
+      evidence
+    };
+  }
+
   function showAuthorityStatus(id, flags = {}) {
-    console.log(JSON.stringify(authorityStatusValue(id, flags.request || null), null, 2));
+    const value = authorityStatusValue(id, flags.request || null);
+    if (!flags.template) {
+      console.log(JSON.stringify(value, null, 2));
+      return;
+    }
+    const open = value.requests.filter((request) => authorityStore.isOpen(request.status));
+    if (!open.length)
+      fail(`no open authority request for '${id}'; nothing to respond to`);
+    console.log(JSON.stringify(open.length === 1
+      ? responseTemplate(open[0]) : open.map(responseTemplate), null, 2));
   }
 
   function recordAuthority(id, flags = {}) {

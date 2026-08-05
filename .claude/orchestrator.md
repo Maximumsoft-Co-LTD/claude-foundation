@@ -76,9 +76,15 @@ Proof artifacts and receipts are immutable and content-bound. Proof-time edits
 invalidate affected evidence. A mutation crash is not a behavioral kill, and a
 rendered claim cannot pass through an incapable provider.
 
+## Phase boundaries
+
+A phase boundary is a context boundary: each phase inherits only its packet.
+`metrics` reports inheritance under `context.carryover`.
+
 ## Budget
 
-Usage comes from host request records; unknown is never zero. Lifetime usage is
+Spend is input, output, and cache writes from host request records; cache
+reads never count. Unknown is never zero. Lifetime usage is
 accounting; enforcement uses the active run window. At 70%, batch and reuse. At
 85%, obey the packet's completion-only policy: no speculative investigation,
 scope expansion, optional refactor, or new subagent. Focused fixes and required
