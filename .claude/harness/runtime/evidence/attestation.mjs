@@ -48,10 +48,22 @@ export function securityBoundaryInspection() {
     status = "detected";
     evidence.push({ source: "codespaces", value: "/workspaces" });
   }
+  // These probes are absolute host paths, which makes the scan depend on the
+  // machine running it: a CI runner with Docker installed owns a writable
+  // /var/run/docker.sock, so no attestation could ever authorize unattended
+  // work there. Under FOUNDATION_TESTING the probes re-root into a fixture
+  // tree — the same gating the trust root uses below — so a suite exercises the
+  // contract instead of its host. Production never sets it and keeps the real
+  // absolute paths.
+  const hostRoot =
+    process.env.FOUNDATION_TESTING === "1" && process.env.FOUNDATION_TEST_HOST_ROOT
+      ? resolve(process.env.FOUNDATION_TEST_HOST_ROOT)
+      : "";
+  const hostPath = (path) => (hostRoot ? join(hostRoot, path) : path);
   const candidates = [
     "/var/run/docker.sock", "/run/docker.sock", "/run/podman/podman.sock",
     "/run/containerd/containerd.sock", "/var/run/crio/crio.sock"
-  ];
+  ].map(hostPath);
   const runtimeDir = process.env.XDG_RUNTIME_DIR || "";
   if (runtimeDir) {
     candidates.push(join(runtimeDir, "docker.sock"));
@@ -67,7 +79,7 @@ export function securityBoundaryInspection() {
     hazards.push(`remote Docker control endpoint configured (${dockerHost.split(":", 1)[0] || "unknown"})`);
   if (containerHost && !containerHost.startsWith("unix://"))
     hazards.push(`remote container control endpoint configured (${containerHost.split(":", 1)[0] || "unknown"})`);
-  if (existsSync("/var/run/secrets/kubernetes.io/serviceaccount/token"))
+  if (existsSync(hostPath("/var/run/secrets/kubernetes.io/serviceaccount/token")))
     hazards.push("mounted Kubernetes service-account credential");
   if (process.env.SSH_AUTH_SOCK && existsSync(process.env.SSH_AUTH_SOCK))
     hazards.push("mounted SSH agent socket");

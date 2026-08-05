@@ -223,11 +223,21 @@ fi
 # A host can authorize unattended creation with a short-lived signed challenge.
 # The testing trust root is gated by FOUNDATION_TESTING and is unavailable in
 # production, where only system trust roots are accepted.
+#
+# The host-control-socket scan reads absolute paths, so an unprepared runner
+# decides the outcome: any machine with Docker installed owns a writable
+# /var/run/docker.sock, which is a real hazard and correctly denies unattended
+# work no matter how valid the attestation is. Re-root the scan at an empty
+# fixture (same FOUNDATION_TESTING gate as the trust root) so these assertions
+# measure the attestation contract rather than the host.
+HOST_ROOT="$TMP/host-root"
+mkdir -p "$HOST_ROOT"
 assert_cmd_zero "signed fixture change is created" \
   bash "$ROOT/cli.sh" --project "$TARGET" runtime new \
     "Signed unattended contract" --rapid
 SIGNED_CHANGE="signed-unattended-contract"
 FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  FOUNDATION_TEST_HOST_ROOT="$HOST_ROOT" \
   SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
   bash "$ROOT/cli.sh" --project "$TARGET" sandbox challenge "$SIGNED_CHANGE" \
   > "$TMP/attestation-challenge.json"
@@ -235,19 +245,29 @@ assert_cmd_zero "fixture host signs the unattended challenge" \
   node "$ROOT/.claude/tests/harness/sign-attestation.mjs" \
     "$TMP/attestation-challenge.json" "$TMP/trusted-hosts.json" \
     "$TMP/attestation.json" fixture-host
-signed_inspect="$(FOUNDATION_TESTING=1 \
+# A bare command substitution here would abort the whole suite under `set -eu`
+# with no assertion line at all, hiding both the failure and its reason.
+if signed_inspect="$(FOUNDATION_TESTING=1 \
   FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  FOUNDATION_TEST_HOST_ROOT="$HOST_ROOT" \
   SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
   bash "$ROOT/cli.sh" --project "$TARGET" sandbox inspect "$SIGNED_CHANGE" \
-    --unattended --attestation "$TMP/attestation.json" --json)"
+    --unattended --attestation "$TMP/attestation.json" --json 2>&1)"; then
+  pass "unattended inspection with a valid attestation exits zero"
+else
+  fail "unattended inspection with a valid attestation exits zero"
+  printf '%s\n' "$signed_inspect" >&2
+fi
 assert_contains "valid signed attestation authorizes unattended inspection" \
   "$signed_inspect" '"safeForUnattended": true'
 assert_cmd_zero "valid signed attestation authorizes unattended creation" \
   env FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  FOUNDATION_TEST_HOST_ROOT="$HOST_ROOT" \
   SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
   bash "$ROOT/cli.sh" --project "$TARGET" sandbox create "$SIGNED_CHANGE" \
     --unattended --attestation "$TMP/attestation.json"
 if FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  FOUNDATION_TEST_HOST_ROOT="$HOST_ROOT" \
   SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
   bash "$ROOT/cli.sh" --project "$TARGET" sandbox inspect "$SIGNED_CHANGE" \
     --unattended --attestation "$TMP/attestation.json" >/dev/null 2>&1; then
@@ -255,6 +275,39 @@ if FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
 else
   pass "consumed unattended attestation cannot be replayed"
 fi
+
+# Positive control: re-rooting must relocate the scan, not disable it. A typo in
+# the fixture path would silently make every hazard invisible and turn the
+# assertions above into a rubber stamp, so plant a writable control socket in
+# the fixture tree and require that the same signed flow is refused.
+assert_cmd_zero "hazard fixture change is created" \
+  bash "$ROOT/cli.sh" --project "$TARGET" runtime new \
+    "Hazardous unattended contract" --rapid
+HAZARD_CHANGE="hazardous-unattended-contract"
+HAZARD_ROOT="$TMP/hazard-root"
+mkdir -p "$HAZARD_ROOT/var/run"
+touch "$HAZARD_ROOT/var/run/docker.sock"
+FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  FOUNDATION_TEST_HOST_ROOT="$HAZARD_ROOT" \
+  SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
+  bash "$ROOT/cli.sh" --project "$TARGET" sandbox challenge "$HAZARD_CHANGE" \
+  > "$TMP/hazard-challenge.json"
+assert_cmd_zero "fixture host signs the hazardous challenge" \
+  node "$ROOT/.claude/tests/harness/sign-attestation.mjs" \
+    "$TMP/hazard-challenge.json" "$TMP/trusted-hosts.json" \
+    "$TMP/hazard-attestation.json" fixture-host
+if hazard_inspect="$(FOUNDATION_TESTING=1 \
+  FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
+  FOUNDATION_TEST_HOST_ROOT="$HAZARD_ROOT" \
+  SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
+  bash "$ROOT/cli.sh" --project "$TARGET" sandbox inspect "$HAZARD_CHANGE" \
+    --unattended --attestation "$TMP/hazard-attestation.json" --json 2>&1)"; then
+  fail "a writable control socket denies unattended work despite a valid attestation"
+else
+  pass "a writable control socket denies unattended work despite a valid attestation"
+fi
+assert_contains "the refusal names the writable control socket" \
+  "$hazard_inspect" 'writable host-control socket'
 
 # Isolation inspection and the unattended preflight must not execute a PATH
 # program. Model an existing worktree structurally, then shadow Git with a

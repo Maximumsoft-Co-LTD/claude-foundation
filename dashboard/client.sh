@@ -290,15 +290,26 @@ diff_base() {
   printf '%s' "${base:-HEAD}"
 }
 
-file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+# GNU stat's -f is "display filesystem status", not BSD's format flag, so
+# `stat -f %m "$1"` on Linux stats a nonexistent file named %m (non-zero exit)
+# while still printing a filesystem block for "$1". A `-f … || -c …` chain
+# therefore emits that block *concatenated with* the real value. Probe once and
+# commit to one flavor instead of chaining.
+if stat -c%Y . >/dev/null 2>&1; then
+  STAT_MTIME_FMT='-c%Y'; STAT_BTIME_FMT='-c%W'
+else
+  STAT_MTIME_FMT='-f%m'; STAT_BTIME_FMT='-f%B'
+fi
+file_mtime() { stat "$STAT_MTIME_FMT" "$1" 2>/dev/null || echo 0; }
 # Pull a string field out of a state.json (null/number fields → empty).
 json_get() { sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1" 2>/dev/null | head -1; }
 # Best-effort "started" epoch for a run dir (state.json has no created_at): the
 # dir's birth time, falling back to the state.json mtime.
 dir_started() {
   local d=$1 b
-  b="$(stat -f %B "$d" 2>/dev/null || stat -c %W "$d" 2>/dev/null || true)"
-  [ -n "$b" ] && [ "$b" != "0" ] || b="$(file_mtime "$d/state.json")"
+  # GNU reports an unknown birth time as 0 or "-"; both mean "fall back".
+  b="$(stat "$STAT_BTIME_FMT" "$d" 2>/dev/null || true)"
+  case $b in ""|0|-|*[!0-9]*) b="$(file_mtime "$d/state.json")";; esac
   printf '%s' "$b"
 }
 

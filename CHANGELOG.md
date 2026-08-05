@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`workflow-tests` is green on Linux again** — two suites had been red on every
+  `main` run since 2026-08-04 while passing on macOS, so no developer machine
+  ever showed them.
+  - **`dashboard contracts`** — `dashboard/client.sh` probed file times with
+    `stat -f %m … || stat -c %Y …`. GNU's `-f` is *display filesystem status*,
+    not BSD's format flag, so on Linux the first arm stats a nonexistent file
+    named `%m` (non-zero exit) while still printing a filesystem block for the
+    real path; the fallback then appended the true mtime. Every timestamp became
+    `Inodes: Total: … Blocks: … <epoch>`, which is exactly the garbage the CI
+    assertion dump showed. Both call sites now probe the flavor once and commit
+    to it, and the birth-time fallback also treats GNU's `-` as unknown.
+  - **`feedback isolation`** — the host-control-socket scan reads absolute paths,
+    and a GitHub runner has Docker installed, so `/var/run/docker.sock` is a
+    genuinely writable control socket. `safeForUnattended` is
+    `attestation.valid && hazards.length === 0`, so a valid attestation could
+    never authorize unattended work there — correct fail-closed behavior that
+    the suite had no way to isolate itself from. Those probes now re-root under
+    `FOUNDATION_TEST_HOST_ROOT`, gated on `FOUNDATION_TESTING=1` exactly as the
+    trust root already is; production keeps the real absolute paths.
+- **A failing unattended inspection no longer kills the suite silently** — the
+  assertion lived in a bare `$(…)` under `set -eu`, so a non-zero exit aborted
+  the run with no `FAIL` line and no captured stderr, which is why CI reported
+  only `✗ feedback isolation` with nothing to act on. It now reports and prints
+  the command output.
+- **Re-rooting is covered by a positive control** — a mistyped fixture path would
+  relocate the hazard scan into nothing and silently turn the unattended
+  assertions into a rubber stamp, so a planted writable control socket must
+  still deny unattended work and name itself in the refusal.
+
 ## [3.2.1] - 2026-08-05
 
 ### Changed
