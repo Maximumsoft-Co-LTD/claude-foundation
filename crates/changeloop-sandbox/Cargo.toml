@@ -1,0 +1,28 @@
+[package]
+name = "changeloop-sandbox"
+description = "The single process-spawn API for Changeloop: deny-by-default OS sandbox policy, platform backends, and an enumerated exception register"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Applies a Landlock ruleset plus a seccomp syscall filter in the child before
+# exec. The *planner* is always compiled and unit-tested on every platform; only
+# the syscall application is gated, because it cannot be exercised off Linux.
+linux-landlock = []
+# Applies a Windows restricted token. Enabling this fails the build on purpose:
+# the Win32 binding crate is not vendored in this workspace, and a sandbox that
+# silently does nothing is the failure mode this crate exists to prevent.
+windows-restricted-token = []
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile.workspace = true

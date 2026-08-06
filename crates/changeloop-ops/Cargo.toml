@@ -7,6 +7,7 @@ repository.workspace=true
 rust-version.workspace=true
 [dependencies]
 changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-sandbox = { version = "0.1.0", path = "../changeloop-sandbox" }
 libc.workspace = true
 fs2.workspace=true
 base64.workspace=true

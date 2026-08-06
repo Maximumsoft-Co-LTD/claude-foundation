@@ -8,9 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+changeloop-language = { version = "0.1.0", path = "../changeloop-language" }
 changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
 changeloop-project = { version = "0.1.0", path = "../changeloop-project" }
 changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-sandbox = { version = "0.1.0", path = "../changeloop-sandbox" }
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

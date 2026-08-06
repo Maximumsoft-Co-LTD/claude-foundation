@@ -24,6 +24,7 @@ pub const MUTATION_TOOL_SCHEMA_VERSION: u16 = 1;
 pub const MAX_MUTATION_PATH_BYTES: usize = 4 * 1024;
 pub const MAX_MUTATION_INVALIDATED_PATHS: usize = 1_024;
 pub const MAX_MUTATION_FORMATTERS: usize = 64;
+pub const MAX_MUTATION_WRITE_CHECKS: usize = 64;
 pub const MAX_MUTATION_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 pub const MAX_MUTATION_CONTRACT_JSON_BYTES: usize = 256 * 1024;
 pub const MAX_FILE_CONTENT_BYTES: usize = 4 * 1024 * 1024;
@@ -39,6 +40,29 @@ pub const MAX_JOB_STDIN_BYTES: usize = 64 * 1024;
 pub const MAX_PROCESS_INLINE_BYTES: u64 = 1024 * 1024;
 pub const MAX_PROCESS_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_PROCESS_TIMEOUT_MS: u64 = 15 * 60 * 1000;
+
+/// The oldest stored part schema this build can read.
+pub const MIN_PART_SCHEMA_VERSION: u16 = 1;
+/// The newest stored part schema this build can write.
+pub const MAX_PART_SCHEMA_VERSION: u16 = 2;
+/// The schema a part carrying only v1 bodies is written under. Writers keep
+/// emitting v1 for v1-representable content so older readers stay unaffected.
+pub const BASE_PART_SCHEMA_VERSION: u16 = 1;
+/// The schema that introduced [`MessagePartBody::Artifact`].
+pub const ARTIFACT_PART_SCHEMA_VERSION: u16 = 2;
+/// Tool output at or below this size stays inline in the transcript; anything
+/// larger, and any non-text payload, is written to content-addressed storage
+/// and referenced by an artifact part.
+pub const MAX_INLINE_TOOL_OUTPUT_BYTES: usize = 32 * 1024;
+/// How much of a by-reference payload may be retained inline as a preview.
+pub const MAX_ARTIFACT_PREVIEW_BYTES: usize = 4 * 1024;
+/// Rendered in place of a part that a downgrade cannot represent. Failure is
+/// visible by construction; nothing is silently coerced or dropped.
+pub const NOT_REPRESENTABLE_PLACEHOLDER: &str = "not representable at this version";
+/// Tag of the sequence form of [`EventCursor`].
+pub const EVENT_CURSOR_SEQUENCE_TAG: &str = "e";
+/// Width of the zero-padded sequence in the sequence cursor form.
+const EVENT_CURSOR_SEQUENCE_WIDTH: usize = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../clients/typescript/generated/")]
@@ -160,6 +184,111 @@ macro_rules! stable_id {
     };
 }
 
+/// Declare a string-tagged enum that keeps unrecognized values with their
+/// payload, so an addition made by a newer peer survives storage and replay
+/// byte for byte.
+///
+/// `#[serde(other)]` is deliberately not used anywhere in the workspace: it
+/// matches only a unit variant and therefore discards both the tag and the
+/// body, destroying exactly the data an open enum undertakes to round-trip.
+#[macro_export]
+macro_rules! open_enum {
+    (
+        $(#[$meta:meta])*
+        $name:ident { $($(#[$vmeta:meta])* $variant:ident => $tag:literal,)+ }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $name {
+            $($(#[$vmeta])* $variant,)+
+            /// A value this build does not know, preserved verbatim.
+            Unknown { tag: String, body: ::serde_json::Value },
+        }
+
+        impl $name {
+            /// The wire tag, known or not.
+            pub fn tag(&self) -> &str {
+                match self {
+                    $(Self::$variant => $tag,)+
+                    Self::Unknown { tag, .. } => tag.as_str(),
+                }
+            }
+
+            /// False when the value came from a newer schema than this build.
+            pub fn is_known(&self) -> bool {
+                !matches!(self, Self::Unknown { .. })
+            }
+        }
+
+        impl ::serde::Serialize for $name {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                serializer: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                match self {
+                    Self::Unknown { tag, body } => {
+                        if body.is_null() {
+                            ::serde::Serialize::serialize(tag, serializer)
+                        } else {
+                            ::serde::Serialize::serialize(body, serializer)
+                        }
+                    }
+                    known => ::serde::Serialize::serialize(known.tag(), serializer),
+                }
+            }
+        }
+
+        impl<'de> ::serde::Deserialize<'de> for $name {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                deserializer: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                let value = <::serde_json::Value as ::serde::Deserialize>::deserialize(
+                    deserializer,
+                )?;
+                let (tag, body) = $crate::open_enum_parts(value)
+                    .map_err(::serde::de::Error::custom)?;
+                Ok(match (tag.as_str(), body.is_null()) {
+                    $(($tag, true) => Self::$variant,)+
+                    _ => Self::Unknown { tag, body },
+                })
+            }
+        }
+    };
+}
+
+/// Split an open-enum wire value into `(tag, body)`. A bare string carries no
+/// body; an object keeps its whole body so a future structured variant survives
+/// a round trip. Public because [`open_enum!`] expands into other crates.
+pub fn open_enum_parts(value: Value) -> Result<(String, Value), String> {
+    match value {
+        Value::String(tag) => Ok((tag, Value::Null)),
+        Value::Object(body) => {
+            let tag = body
+                .get("type")
+                .and_then(Value::as_str)
+                .ok_or("object form requires a string 'type' field")?
+                .to_owned();
+            Ok((tag, Value::Object(body)))
+        }
+        other => Err(format!(
+            "expected a string tag or an object with a 'type' field, found {}",
+            json_kind(&other)
+        )),
+    }
+}
+
+fn json_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+        Value::Array(_) => "an array",
+        Value::Object(_) => "an object",
+    }
+}
+
 stable_id!(SessionId);
 stable_id!(MessageId);
 stable_id!(PartId);
@@ -199,6 +328,100 @@ pub struct ArtifactRef {
     pub media_type: String,
     #[ts(type = "number")]
     pub byte_length: u64,
+}
+
+impl ArtifactRef {
+    /// Describe `bytes` as a content-addressed artifact. The digest is the
+    /// address, so the same payload always yields the same reference.
+    #[must_use]
+    pub fn for_bytes(media_type: impl Into<String>, bytes: &[u8]) -> Self {
+        let sha256 = hex_digest(bytes);
+        Self {
+            id: ArtifactId::from_stable(format!("sha256:{sha256}")),
+            sha256,
+            media_type: media_type.into(),
+            byte_length: bytes.len() as u64,
+        }
+    }
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher
+        .finalize()
+        .iter()
+        .fold(String::with_capacity(64), |mut out, byte| {
+            use fmt::Write as _;
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+}
+
+/// Whether a tool payload must be stored by reference rather than inlined into
+/// the transcript. The rule is applied at insert time, not at render time: a
+/// payload above [`MAX_INLINE_TOOL_OUTPUT_BYTES`], or any payload that is not
+/// UTF-8 text, becomes a content-addressed artifact.
+#[must_use]
+pub fn should_store_by_reference(bytes: &[u8], media_type: &str) -> bool {
+    bytes.len() > MAX_INLINE_TOOL_OUTPUT_BYTES
+        || !media_type.starts_with("text/")
+        || std::str::from_utf8(bytes).is_err()
+}
+
+open_enum! {
+    /// What an artifact part is attributed to. Open because a newer peer may
+    /// attribute an artifact to something this build has no variant for.
+    ArtifactOriginKind {
+        /// Output of a tool call, identified by `tool_call_id`.
+        ToolOutput => "tool_output",
+        /// A workspace file, identified by `path`.
+        File => "file",
+        /// A payload with no tool call and no workspace path.
+        Attachment => "attachment",
+    }
+}
+
+/// Attribution carried by [`MessagePartBody::Artifact`]. The attribution, not
+/// the artifact, is what decides whether the part can be downgraded.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub struct ArtifactOrigin {
+    #[ts(type = "string")]
+    pub kind: ArtifactOriginKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<ToolCallId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+impl ArtifactOrigin {
+    #[must_use]
+    pub fn tool_output(tool_call_id: ToolCallId) -> Self {
+        Self {
+            kind: ArtifactOriginKind::ToolOutput,
+            tool_call_id: Some(tool_call_id),
+            path: None,
+        }
+    }
+
+    #[must_use]
+    pub fn file(path: impl Into<String>) -> Self {
+        Self {
+            kind: ArtifactOriginKind::File,
+            tool_call_id: None,
+            path: Some(path.into()),
+        }
+    }
+
+    #[must_use]
+    pub fn attachment() -> Self {
+        Self {
+            kind: ArtifactOriginKind::Attachment,
+            tool_call_id: None,
+            path: None,
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -665,6 +888,115 @@ impl FormatterMutationResult {
     }
 }
 
+/// Which half of the format-then-check gate a command served.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub enum WriteCheckStage {
+    Format,
+    Check,
+}
+
+/// How one gate command resolved. Only `Passed` clears the write; every other
+/// outcome leaves the mutation on disk but unverified.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub enum WriteCheckOutcome {
+    Passed,
+    Failed,
+    TimedOut,
+    Cancelled,
+    Unavailable,
+}
+
+/// What one configured formatter or lint/typecheck command did to the written
+/// file: which stage it served, how it exited, and its bounded diagnostics.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub struct WriteCheckRun {
+    pub name: String,
+    pub stage: WriteCheckStage,
+    pub outcome: WriteCheckOutcome,
+    pub exit_code: Option<i32>,
+    pub diagnostics: String,
+}
+
+impl WriteCheckRun {
+    fn validate(&self) -> Result<(), MutationContractError> {
+        validate_bounded_text("checker.name", &self.name, MAX_PROTOCOL_ID_BYTES)?;
+        validate_max_text(
+            "checker.diagnostics",
+            &self.diagnostics,
+            MAX_MUTATION_DIAGNOSTIC_BYTES,
+        )
+    }
+}
+
+/// Whether the written bytes were checked, and by what.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub enum WriteCheckStatus {
+    /// No formatter and no checker is configured for this file's language, so
+    /// the write carries no assurance beyond landing on disk.
+    #[default]
+    NotConfigured,
+    /// At least one configured command ran; `runs` reports every one of them.
+    Checked,
+}
+
+/// The checker verdict attached to a write. A result whose `status` is
+/// `Checked` and whose `runs` all `Passed` is the only clean write; anything
+/// else is a mutation a client must surface rather than silently accept.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub struct WriteCheckVerdict {
+    pub status: WriteCheckStatus,
+    pub runs: Vec<WriteCheckRun>,
+}
+
+impl WriteCheckVerdict {
+    /// The verdict a server attaches when the file's language configures no
+    /// formatter and no checker.
+    #[must_use]
+    pub fn not_configured() -> Self {
+        Self::default()
+    }
+
+    /// True when nothing was configured to check the write, or when every
+    /// command that ran passed.
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        self.runs
+            .iter()
+            .all(|run| run.outcome == WriteCheckOutcome::Passed)
+    }
+
+    fn validate(&self) -> Result<(), MutationContractError> {
+        if self.runs.len() > MAX_MUTATION_WRITE_CHECKS {
+            return Err(MutationContractError::TooManyItems {
+                field: "checker.runs",
+                limit: MAX_MUTATION_WRITE_CHECKS,
+            });
+        }
+        // A verdict must not claim more or less than it can show: `checked`
+        // with no runs would report assurance nothing produced, and
+        // `not_configured` with runs would hide commands that did execute.
+        if self.runs.is_empty() != (self.status == WriteCheckStatus::NotConfigured) {
+            return Err(MutationContractError::InvalidValue {
+                field: "checker.status",
+            });
+        }
+        for run in &self.runs {
+            run.validate()?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export, export_to = "../../../clients/typescript/generated/")]
@@ -910,6 +1242,10 @@ pub struct WriteFileResult {
     pub sha256: String,
     pub checkpoint_id: String,
     pub formatter: Vec<FormatterMutationResult>,
+    /// Additive since the field was introduced: a payload without it decodes
+    /// as `not_configured`, which is what a server that ran no checker means.
+    #[serde(default)]
+    pub checker: WriteCheckVerdict,
     pub proof_impact: MutationProofImpact,
 }
 
@@ -920,6 +1256,7 @@ impl WriteFileResult {
             &self.sha256,
             &self.checkpoint_id,
             &self.formatter,
+            &self.checker,
             &self.proof_impact,
         )
     }
@@ -934,6 +1271,10 @@ pub struct ApplyPatchResult {
     pub sha256: String,
     pub checkpoint_id: String,
     pub formatter: Vec<FormatterMutationResult>,
+    /// Additive since the field was introduced: a payload without it decodes
+    /// as `not_configured`, which is what a server that ran no checker means.
+    #[serde(default)]
+    pub checker: WriteCheckVerdict,
     pub proof_impact: MutationProofImpact,
 }
 
@@ -944,6 +1285,7 @@ impl ApplyPatchResult {
             &self.sha256,
             &self.checkpoint_id,
             &self.formatter,
+            &self.checker,
             &self.proof_impact,
         )
     }
@@ -954,6 +1296,7 @@ fn validate_file_mutation_result(
     sha256: &str,
     checkpoint_id: &str,
     formatter: &[FormatterMutationResult],
+    checker: &WriteCheckVerdict,
     proof_impact: &MutationProofImpact,
 ) -> Result<(), MutationContractError> {
     validate_mutation_version(schema_version)?;
@@ -968,6 +1311,7 @@ fn validate_file_mutation_result(
     for result in formatter {
         result.validate()?;
     }
+    checker.validate()?;
     proof_impact.validate()
 }
 
@@ -1214,6 +1558,7 @@ pub struct MessagePart {
 #[derive(Clone, Debug, PartialEq, TS)]
 #[ts(tag = "type", content = "data", rename_all = "snake_case")]
 #[ts(export, export_to = "../../../clients/typescript/generated/")]
+#[non_exhaustive]
 pub enum MessagePartBody {
     Text {
         text: String,
@@ -1297,6 +1642,18 @@ pub enum MessagePartBody {
         code: String,
         message: String,
         retryable: bool,
+    },
+    /// A payload held by reference. Introduced at part schema version
+    /// [`ARTIFACT_PART_SCHEMA_VERSION`]: large or binary tool output is written
+    /// to content-addressed storage and referenced here instead of being
+    /// inlined into the transcript.
+    Artifact {
+        artifact: ArtifactRef,
+        origin: ArtifactOrigin,
+        /// A truncated rendering of the artifact bytes, kept only so a client
+        /// can show something without fetching. Derived data: the artifact is
+        /// the source of truth.
+        preview: Option<String>,
     },
     /// A part introduced by another compatible minor protocol version. Its
     /// discriminator and JSON payload remain opaque and are emitted unchanged.
@@ -1430,6 +1787,14 @@ impl Serialize for MessagePartBody {
                 "error",
                 serde_json::json!({ "code": code, "message": message, "retryable": retryable }),
             ),
+            Self::Artifact {
+                artifact,
+                origin,
+                preview,
+            } => (
+                "artifact",
+                serde_json::json!({ "artifact": artifact, "origin": origin, "preview": preview }),
+            ),
             Self::Unknown { type_name, data } => {
                 return serde_json::json!({ "type": type_name, "data": data })
                     .serialize(serializer);
@@ -1552,6 +1917,11 @@ impl<'de> Deserialize<'de> for MessagePartBody {
                 message: field!("message", String),
                 retryable: field!("retryable", bool),
             },
+            "artifact" => Self::Artifact {
+                artifact: field!("artifact", ArtifactRef),
+                origin: field!("origin", ArtifactOrigin),
+                preview: optional_field!("preview", String),
+            },
             _ => Self::Unknown {
                 type_name: part_type,
                 data,
@@ -1567,6 +1937,88 @@ pub struct EventCursor(pub String);
 impl fmt::Display for EventCursor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// A cursor is a tagged union, never a bare offset, so a later cursor form does
+/// not force a second pagination method. An unrecognized tag keeps its payload
+/// and re-encodes byte for byte.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CursorForm {
+    /// Keyset position in a monotonically increasing append sequence. It names
+    /// an element rather than a distance from the start, so appends never shift
+    /// what an outstanding cursor points at.
+    Sequence { sequence: u64 },
+    /// A form this build does not know, preserved verbatim.
+    Unknown { tag: String, body: String },
+}
+
+impl CursorForm {
+    #[must_use]
+    pub fn tag(&self) -> &str {
+        match self {
+            Self::Sequence { .. } => EVENT_CURSOR_SEQUENCE_TAG,
+            Self::Unknown { tag, .. } => tag.as_str(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_known(&self) -> bool {
+        !matches!(self, Self::Unknown { .. })
+    }
+
+    #[must_use]
+    pub fn encode(&self) -> EventCursor {
+        match self {
+            Self::Sequence { sequence } => EventCursor(format!(
+                "{EVENT_CURSOR_SEQUENCE_TAG}:{sequence:0width$}",
+                width = EVENT_CURSOR_SEQUENCE_WIDTH
+            )),
+            Self::Unknown { tag, body } => EventCursor(format!("{tag}:{body}")),
+        }
+    }
+}
+
+impl EventCursor {
+    /// The cursor naming position `sequence` in an append-ordered log.
+    #[must_use]
+    pub fn for_sequence(sequence: u64) -> Self {
+        CursorForm::Sequence { sequence }.encode()
+    }
+
+    /// Decode the cursor into its tagged form. An unrecognized tag is retained
+    /// rather than rejected, so a cursor minted by a newer peer survives.
+    pub fn form(&self) -> Result<CursorForm, ProtocolDecodeError> {
+        if self.0.len() > MAX_EVENT_CURSOR_BYTES {
+            return Err(ProtocolDecodeError::FieldTooLong {
+                field: "event.cursor",
+                limit: MAX_EVENT_CURSOR_BYTES,
+            });
+        }
+        let (tag, body) = self
+            .0
+            .split_once(':')
+            .ok_or(ProtocolDecodeError::InvalidField {
+                field: "event.cursor",
+            })?;
+        if tag.is_empty() {
+            return Err(ProtocolDecodeError::InvalidField {
+                field: "event.cursor",
+            });
+        }
+        if tag == EVENT_CURSOR_SEQUENCE_TAG {
+            let sequence = body
+                .parse::<u64>()
+                .map_err(|_| ProtocolDecodeError::InvalidField {
+                    field: "event.cursor",
+                })?;
+            return Ok(CursorForm::Sequence { sequence });
+        }
+        Ok(CursorForm::Unknown {
+            tag: tag.to_owned(),
+            body: body.to_owned(),
+        })
     }
 }
 
@@ -1705,7 +2157,10 @@ fn validate_part_bounds(part: &MessagePart) -> Result<(), ProtocolDecodeError> {
             found: 0,
         });
     }
-    if !matches!(part.body, MessagePartBody::Unknown { .. }) && part.schema_version != 1 {
+    if !matches!(part.body, MessagePartBody::Unknown { .. })
+        && (part.schema_version > MAX_PART_SCHEMA_VERSION
+            || part.schema_version < minimum_part_schema_version(&part.body))
+    {
         return Err(ProtocolDecodeError::UnsupportedSchema {
             field: "message.part",
             found: part.schema_version,
@@ -1883,12 +2338,50 @@ fn validate_part_bounds(part: &MessagePart) -> Result<(), ProtocolDecodeError> {
             validate_text("error.code", code, MAX_PROTOCOL_ID_BYTES)?;
             validate_text("error.message", message, MAX_MESSAGE_TEXT_BYTES)?;
         }
+        MessagePartBody::Artifact {
+            artifact,
+            origin,
+            preview,
+        } => {
+            validate_artifact(artifact)?;
+            validate_artifact_origin(origin)?;
+            if let Some(preview) = preview {
+                validate_text("artifact.preview", preview, MAX_ARTIFACT_PREVIEW_BYTES)?;
+            }
+        }
         MessagePartBody::Unknown { type_name, data } => {
             validate_field("message.part.type", type_name, MAX_PROTOCOL_ID_BYTES)?;
             validate_value_size("message.part.unknown", data, MAX_MESSAGE_METADATA_BYTES)?;
         }
     }
     Ok(())
+}
+
+fn validate_artifact_origin(origin: &ArtifactOrigin) -> Result<(), ProtocolDecodeError> {
+    validate_field(
+        "artifact.origin.kind",
+        origin.kind.tag(),
+        MAX_PROTOCOL_ID_BYTES,
+    )?;
+    if let Some(tool_call_id) = &origin.tool_call_id {
+        validate_field("tool_call.id", &tool_call_id.0, MAX_PROTOCOL_ID_BYTES)?;
+    }
+    if let Some(path) = &origin.path {
+        validate_text("artifact.origin.path", path, MAX_MESSAGE_PATH_BYTES)?;
+    }
+    match &origin.kind {
+        ArtifactOriginKind::ToolOutput if origin.tool_call_id.is_none() => {
+            Err(ProtocolDecodeError::InvalidField {
+                field: "artifact.origin.tool_call_id",
+            })
+        }
+        ArtifactOriginKind::File if origin.path.is_none() => {
+            Err(ProtocolDecodeError::InvalidField {
+                field: "artifact.origin.path",
+            })
+        }
+        _ => Ok(()),
+    }
 }
 
 fn validate_part_state(part: &MessagePart) -> Result<(), ProtocolDecodeError> {
@@ -1905,6 +2398,7 @@ fn validate_part_state(part: &MessagePart) -> Result<(), ProtocolDecodeError> {
         | MessagePartBody::Permission { .. }
         | MessagePartBody::StepFinish { .. }
         | MessagePartBody::Subagent { .. }
+        | MessagePartBody::Artifact { .. }
         | MessagePartBody::ReviewFinding { .. } => Some(("completed_part", PartState::Completed)),
         MessagePartBody::Error { .. } => Some(("error", PartState::Error)),
         _ => None,
@@ -1958,8 +2452,220 @@ fn part_kind(body: &MessagePartBody) -> &'static str {
         MessagePartBody::Subagent { .. } => "subagent",
         MessagePartBody::ReviewFinding { .. } => "review_finding",
         MessagePartBody::Error { .. } => "error",
+        MessagePartBody::Artifact { .. } => "artifact",
         MessagePartBody::Unknown { .. } => "unknown",
     }
+}
+
+/// The part schema version a body requires. A body added after the base schema
+/// cannot be written under an older tag.
+#[must_use]
+pub fn minimum_part_schema_version(body: &MessagePartBody) -> u16 {
+    match body {
+        MessagePartBody::Artifact { .. } => ARTIFACT_PART_SCHEMA_VERSION,
+        _ => BASE_PART_SCHEMA_VERSION,
+    }
+}
+
+/// Why a stored part cannot be rendered at a requested schema version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub enum NotRepresentableReason {
+    /// The requested version is outside the range this build understands.
+    UnsupportedTarget,
+    /// The body is opaque, so no downgrade path can be proven for it.
+    OpaqueBody,
+    /// No enumerated downgrade path covers this body at this target.
+    NoDeclaredDowngrade,
+    /// A declared downgrade path exists but its required attribution is absent.
+    IncompleteAttribution,
+}
+
+impl fmt::Display for NotRepresentableReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::UnsupportedTarget => "the requested schema version is not supported",
+            Self::OpaqueBody => "the part body is opaque and cannot be downgraded",
+            Self::NoDeclaredDowngrade => "no downgrade path is declared for this part",
+            Self::IncompleteAttribution => "the part lacks the attribution a downgrade requires",
+        };
+        f.write_str(text)
+    }
+}
+
+/// The visible stand-in for a part a downgrade refuses to represent. It is
+/// deliberately not a `MessagePart`: a caller cannot mistake it for content.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub struct NotRepresentablePart {
+    pub id: PartId,
+    pub part_type: String,
+    pub written_schema_version: u16,
+    pub target_schema_version: u16,
+    pub reason: NotRepresentableReason,
+}
+
+impl NotRepresentablePart {
+    /// The text a client shows in place of the part.
+    #[must_use]
+    pub fn placeholder(&self) -> String {
+        format!(
+            "{NOT_REPRESENTABLE_PLACEHOLDER}: part {} of type {} was written at schema version {} and {}",
+            self.id, self.part_type, self.written_schema_version, self.reason
+        )
+    }
+}
+
+/// The result of rendering a stored part at a chosen schema version.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RenderedPart {
+    Representable(MessagePart),
+    NotRepresentable(NotRepresentablePart),
+}
+
+impl RenderedPart {
+    #[must_use]
+    pub fn part(&self) -> Option<&MessagePart> {
+        match self {
+            Self::Representable(part) => Some(part),
+            Self::NotRepresentable(_) => None,
+        }
+    }
+}
+
+/// Render a stored part at `target`.
+///
+/// There is deliberately no general cross-version converter. Only the paths
+/// enumerated here are guaranteed, and everything else fails visibly:
+///
+/// - `target >= written` is the identity. No field is invented for a newer
+///   reader.
+/// - v2 `artifact` attributed to a tool call downgrades to v1 `tool_result`
+///   carrying the same reference.
+/// - v2 `artifact` attributed to a workspace path downgrades to v1 `file`.
+///   `preview` is dropped on both paths: it is a truncated rendering of bytes
+///   the artifact reference still addresses, so nothing becomes unrecoverable.
+/// - Every other v2 `artifact` — an attachment, or an attribution kind this
+///   build does not know — has no v1 shape that would not assert something
+///   false, and is refused.
+/// - An opaque body is never downgraded. Representability cannot be proven for
+///   a payload this build cannot read.
+#[must_use]
+pub fn render_part_at_schema_version(part: &MessagePart, target: u16) -> RenderedPart {
+    let refuse = |reason| {
+        RenderedPart::NotRepresentable(NotRepresentablePart {
+            id: part.id.clone(),
+            part_type: part_kind(&part.body).to_owned(),
+            written_schema_version: part.schema_version,
+            target_schema_version: target,
+            reason,
+        })
+    };
+    if !(MIN_PART_SCHEMA_VERSION..=MAX_PART_SCHEMA_VERSION).contains(&target) {
+        return refuse(NotRepresentableReason::UnsupportedTarget);
+    }
+    if target >= part.schema_version {
+        return RenderedPart::Representable(part.clone());
+    }
+    match &part.body {
+        MessagePartBody::Unknown { .. } => refuse(NotRepresentableReason::OpaqueBody),
+        MessagePartBody::Artifact {
+            artifact, origin, ..
+        } if target >= BASE_PART_SCHEMA_VERSION => {
+            match (&origin.kind, &origin.tool_call_id, &origin.path) {
+                (ArtifactOriginKind::ToolOutput, Some(tool_call_id), _) => {
+                    RenderedPart::Representable(MessagePart {
+                        schema_version: target,
+                        id: part.id.clone(),
+                        state: PartState::Completed,
+                        provenance: part.provenance,
+                        body: MessagePartBody::ToolResult {
+                            tool_call_id: tool_call_id.clone(),
+                            output: None,
+                            artifact: Some(artifact.clone()),
+                            is_error: false,
+                        },
+                    })
+                }
+                (ArtifactOriginKind::File, _, Some(path)) => {
+                    RenderedPart::Representable(MessagePart {
+                        schema_version: target,
+                        id: part.id.clone(),
+                        state: PartState::Completed,
+                        provenance: part.provenance,
+                        body: MessagePartBody::File {
+                            path: path.clone(),
+                            artifact: artifact.clone(),
+                        },
+                    })
+                }
+                (ArtifactOriginKind::ToolOutput | ArtifactOriginKind::File, _, _) => {
+                    refuse(NotRepresentableReason::IncompleteAttribution)
+                }
+                _ => refuse(NotRepresentableReason::NoDeclaredDowngrade),
+            }
+        }
+        _ => refuse(NotRepresentableReason::NoDeclaredDowngrade),
+    }
+}
+
+/// How a tool call stopped without producing its own result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../../clients/typescript/generated/")]
+pub enum ToolInterruption {
+    /// The user or a client asked for the operation to stop.
+    Cancelled,
+    /// The process or session went away mid-call.
+    Interrupted,
+    /// A deadline elapsed.
+    TimedOut,
+    /// The context window or another resource was exhausted.
+    ResourceExhausted,
+}
+
+impl ToolInterruption {
+    /// Externally-requested and internally-triggered stops produce the same
+    /// part shape; only this text differs.
+    #[must_use]
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Cancelled => "tool call cancelled before it produced a result",
+            Self::Interrupted => "tool call interrupted before it produced a result",
+            Self::TimedOut => "tool call timed out before it produced a result",
+            Self::ResourceExhausted => "tool call abandoned after resource exhaustion",
+        }
+    }
+}
+
+/// Build the terminal result a tool call is owed when it stops without one.
+///
+/// A tool call has a terminal result by construction rather than by whichever
+/// code path happens to notice the interruption. Returns `None` for a part that
+/// is not a tool call; whether the call is still owed a result is a transcript
+/// question, answered by [`crate::MessagePartBody::ToolResult`] pairing.
+#[must_use]
+pub fn interrupted_tool_result(
+    call: &MessagePart,
+    interruption: ToolInterruption,
+    result_part_id: PartId,
+) -> Option<MessagePart> {
+    let MessagePartBody::ToolCall { tool_call_id, .. } = &call.body else {
+        return None;
+    };
+    Some(MessagePart {
+        schema_version: BASE_PART_SCHEMA_VERSION,
+        id: result_part_id,
+        state: PartState::Error,
+        provenance: Provenance::ToolOutput,
+        body: MessagePartBody::ToolResult {
+            tool_call_id: tool_call_id.clone(),
+            output: Some(interruption.reason().to_owned()),
+            artifact: None,
+            is_error: true,
+        },
+    })
 }
 
 fn validate_artifact(artifact: &ArtifactRef) -> Result<(), ProtocolDecodeError> {
@@ -2230,6 +2936,215 @@ mod tests {
         assert_eq!(serde_json::from_value::<MessagePart>(json).unwrap(), part);
     }
 
+    open_enum! {
+        /// Fixture proving the shared macro keeps an unknown tag and payload.
+        TestOpenEnum {
+            Known => "known",
+        }
+    }
+
+    #[test]
+    fn open_enums_preserve_unknown_tags_and_payloads() {
+        let known: TestOpenEnum = serde_json::from_str("\"known\"").unwrap();
+        assert_eq!(known, TestOpenEnum::Known);
+        assert!(known.is_known());
+        assert_eq!(serde_json::to_string(&known).unwrap(), "\"known\"");
+
+        let bare = "\"future\"";
+        let value: TestOpenEnum = serde_json::from_str(bare).unwrap();
+        assert_eq!(value.tag(), "future");
+        assert!(!value.is_known());
+        assert_eq!(serde_json::to_string(&value).unwrap(), bare);
+
+        let structured = r#"{"detail":{"depth":2},"type":"future"}"#;
+        let carried: TestOpenEnum = serde_json::from_str(structured).unwrap();
+        assert_eq!(carried.tag(), "future");
+        assert_eq!(serde_json::to_string(&carried).unwrap(), structured);
+    }
+
+    #[test]
+    fn artifact_parts_downgrade_only_along_declared_paths() {
+        let artifact = ArtifactRef::for_bytes("text/plain", b"payload");
+        let part = |origin: ArtifactOrigin| MessagePart {
+            schema_version: ARTIFACT_PART_SCHEMA_VERSION,
+            id: PartId::from_stable("part-artifact"),
+            state: PartState::Completed,
+            provenance: Provenance::ToolOutput,
+            body: MessagePartBody::Artifact {
+                artifact: artifact.clone(),
+                origin,
+                preview: Some("payload".into()),
+            },
+        };
+
+        let tool = part(ArtifactOrigin::tool_output(ToolCallId::from_stable("call")));
+        assert!(matches!(
+            render_part_at_schema_version(&tool, 1),
+            RenderedPart::Representable(MessagePart {
+                body: MessagePartBody::ToolResult { .. },
+                ..
+            })
+        ));
+        let file = part(ArtifactOrigin::file("src/lib.rs"));
+        assert!(matches!(
+            render_part_at_schema_version(&file, 1),
+            RenderedPart::Representable(MessagePart {
+                body: MessagePartBody::File { .. },
+                ..
+            })
+        ));
+        // An attribution kind this build does not know has no declared path.
+        let foreign = part(ArtifactOrigin {
+            kind: serde_json::from_str("\"future_origin\"").unwrap(),
+            tool_call_id: None,
+            path: None,
+        });
+        assert!(matches!(
+            render_part_at_schema_version(&foreign, 1),
+            RenderedPart::NotRepresentable(_)
+        ));
+        // Rendering at or above the written version is the identity.
+        assert_eq!(
+            render_part_at_schema_version(&tool, ARTIFACT_PART_SCHEMA_VERSION),
+            RenderedPart::Representable(tool.clone())
+        );
+        // A target outside the supported range fails visibly.
+        match render_part_at_schema_version(&tool, 0) {
+            RenderedPart::NotRepresentable(placeholder) => {
+                assert_eq!(
+                    placeholder.reason,
+                    NotRepresentableReason::UnsupportedTarget
+                );
+                assert!(
+                    placeholder
+                        .placeholder()
+                        .starts_with(NOT_REPRESENTABLE_PLACEHOLDER)
+                );
+            }
+            other => panic!("unsupported target must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn artifact_parts_require_the_schema_that_introduced_them() {
+        let json = serde_json::json!({
+            "schema_version": 1,
+            "id": "part-artifact",
+            "state": "completed",
+            "provenance": "tool-output",
+            "body": {
+                "type": "artifact",
+                "data": {
+                    "artifact": ArtifactRef::for_bytes("text/plain", b"payload"),
+                    "origin": { "kind": "tool_output", "tool_call_id": "call" },
+                    "preview": null,
+                }
+            }
+        });
+        let part: MessagePart = serde_json::from_value(json).unwrap();
+        assert!(matches!(
+            validate_part_bounds(&part),
+            Err(ProtocolDecodeError::UnsupportedSchema {
+                field: "message.part",
+                found: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn cursor_forms_round_trip_and_keep_unknown_tags() {
+        let cursor = EventCursor::for_sequence(42);
+        assert_eq!(cursor.0, "e:00000000000000000042");
+        assert_eq!(
+            cursor.form().unwrap(),
+            CursorForm::Sequence { sequence: 42 }
+        );
+        assert_eq!(cursor.form().unwrap().encode(), cursor);
+
+        let future = EventCursor("k:session/17".into());
+        let form = future.form().unwrap();
+        assert!(!form.is_known());
+        assert_eq!(form.tag(), "k");
+        assert_eq!(form.encode(), future, "unknown cursors re-encode verbatim");
+
+        assert!(EventCursor("nope".into()).form().is_err());
+        assert!(EventCursor("e:not-a-number".into()).form().is_err());
+    }
+
+    #[test]
+    fn by_reference_threshold_covers_size_and_binary_payloads() {
+        assert!(!should_store_by_reference(b"small", "text/plain"));
+        assert!(should_store_by_reference(
+            &vec![b'a'; MAX_INLINE_TOOL_OUTPUT_BYTES + 1],
+            "text/plain"
+        ));
+        assert!(should_store_by_reference(b"small", "image/png"));
+        assert!(should_store_by_reference(
+            &[0u8, 159, 146, 150],
+            "text/plain"
+        ));
+        let reference = ArtifactRef::for_bytes("text/plain", b"payload");
+        assert_eq!(reference.byte_length, 7);
+        assert_eq!(
+            reference.sha256,
+            ArtifactRef::for_bytes("text/plain", b"payload").sha256
+        );
+        assert!(reference.id.0.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn interrupted_tool_calls_get_a_terminal_result_part() {
+        let call = MessagePart {
+            schema_version: BASE_PART_SCHEMA_VERSION,
+            id: PartId::from_stable("part-call"),
+            state: PartState::Running,
+            provenance: Provenance::ModelGenerated,
+            body: MessagePartBody::ToolCall {
+                tool_call_id: ToolCallId::from_stable("call-1"),
+                name: "read_file".into(),
+                arguments: Value::Null,
+            },
+        };
+        for interruption in [
+            ToolInterruption::Cancelled,
+            ToolInterruption::Interrupted,
+            ToolInterruption::TimedOut,
+            ToolInterruption::ResourceExhausted,
+        ] {
+            let result =
+                interrupted_tool_result(&call, interruption, PartId::from_stable("part-result"))
+                    .unwrap();
+            assert_eq!(result.state, PartState::Error);
+            assert!(validate_part_bounds(&result).is_ok());
+            match result.body {
+                MessagePartBody::ToolResult {
+                    tool_call_id,
+                    is_error,
+                    output,
+                    artifact,
+                } => {
+                    assert_eq!(tool_call_id.0, "call-1");
+                    assert!(is_error);
+                    assert!(artifact.is_none());
+                    assert_eq!(output.unwrap(), interruption.reason());
+                }
+                other => panic!("expected a terminal tool result: {other:?}"),
+            }
+        }
+        let text = MessagePart {
+            body: MessagePartBody::Text { text: "hi".into() },
+            ..call
+        };
+        assert!(
+            interrupted_tool_result(
+                &text,
+                ToolInterruption::Interrupted,
+                PartId::from_stable("part-result")
+            )
+            .is_none()
+        );
+    }
+
     #[test]
     fn content_redaction_removes_provider_secrets_but_preserves_code() {
         let input = "OPENAI_API_KEY=sk-secret fn main() { println!(\"ok\"); } Bearer sk-ant-value";
@@ -2496,14 +3411,21 @@ mod tests {
             Err(ProtocolDecodeError::InvalidPartState { part_type: "error" })
         ));
         wire["event"]["data"]["message"]["parts"][0]["state"] = Value::String("error".into());
-        wire["event"]["data"]["message"]["parts"][0]["schema_version"] = Value::from(2);
+        // A known body may be tagged with any schema this build reads, but not
+        // one beyond it.
+        wire["event"]["data"]["message"]["parts"][0]["schema_version"] =
+            Value::from(MAX_PART_SCHEMA_VERSION);
+        assert!(decode_event_envelope_json(&wire.to_string()).is_ok());
+        wire["event"]["data"]["message"]["parts"][0]["schema_version"] =
+            Value::from(MAX_PART_SCHEMA_VERSION + 1);
         assert!(matches!(
             decode_event_envelope_json(&wire.to_string()),
             Err(ProtocolDecodeError::UnsupportedSchema {
                 field: "message.part",
-                found: 2
+                found: 3
             })
         ));
+        wire["event"]["data"]["message"]["parts"][0]["schema_version"] = Value::from(1);
 
         let previous = MessagePart {
             schema_version: 1,
@@ -2800,6 +3722,7 @@ mod tests {
             sha256: "b".repeat(64),
             checkpoint_id: "checkpoint".into(),
             formatter: Vec::new(),
+            checker: WriteCheckVerdict::not_configured(),
             proof_impact: MutationProofImpact {
                 edit_hash: None,
                 invalidated_paths: vec!["src/lib.rs".into()],
@@ -2813,6 +3736,192 @@ mod tests {
                 .get("schemaVersion")
                 .is_some()
         );
+    }
+
+    fn failed_check_verdict() -> WriteCheckVerdict {
+        WriteCheckVerdict {
+            status: WriteCheckStatus::Checked,
+            runs: vec![
+                WriteCheckRun {
+                    name: "rustfmt".into(),
+                    stage: WriteCheckStage::Format,
+                    outcome: WriteCheckOutcome::Passed,
+                    exit_code: Some(0),
+                    diagnostics: String::new(),
+                },
+                WriteCheckRun {
+                    name: "clippy".into(),
+                    stage: WriteCheckStage::Check,
+                    outcome: WriteCheckOutcome::Failed,
+                    exit_code: Some(101),
+                    diagnostics: "error: unused variable `x`".into(),
+                },
+            ],
+        }
+    }
+
+    fn write_result_with(checker: WriteCheckVerdict) -> WriteFileResult {
+        WriteFileResult {
+            schema_version: MUTATION_TOOL_SCHEMA_VERSION,
+            sha256: "b".repeat(64),
+            checkpoint_id: "checkpoint".into(),
+            formatter: Vec::new(),
+            checker,
+            proof_impact: MutationProofImpact {
+                edit_hash: None,
+                invalidated_paths: vec!["src/lib.rs".into()],
+                requires_reprove: true,
+            },
+        }
+    }
+
+    #[test]
+    fn write_checker_verdict_survives_the_write_and_patch_result_round_trip() {
+        let write = write_result_with(failed_check_verdict());
+        write.validate().unwrap();
+        let decoded =
+            decode_write_file_result_json(&serde_json::to_string(&write).unwrap()).unwrap();
+        assert_eq!(decoded, write);
+
+        let patch = ApplyPatchResult {
+            schema_version: write.schema_version,
+            sha256: write.sha256.clone(),
+            checkpoint_id: write.checkpoint_id.clone(),
+            formatter: Vec::new(),
+            checker: failed_check_verdict(),
+            proof_impact: write.proof_impact.clone(),
+        };
+        patch.validate().unwrap();
+        let decoded_patch =
+            decode_apply_patch_result_json(&serde_json::to_string(&patch).unwrap()).unwrap();
+        assert_eq!(decoded_patch, patch);
+
+        // A protocol client can tell a failed write from a clean one without
+        // reading diagnostics prose.
+        for wire in [
+            serde_json::to_value(&write).unwrap(),
+            serde_json::to_value(&patch).unwrap(),
+        ] {
+            assert_eq!(wire["checker"]["status"], "checked");
+            assert_eq!(wire["checker"]["runs"][1]["stage"], "check");
+            assert_eq!(wire["checker"]["runs"][1]["outcome"], "failed");
+            assert_eq!(wire["checker"]["runs"][1]["exitCode"], 101);
+        }
+        assert!(!decoded.checker.is_clean());
+        assert!(!decoded_patch.checker.is_clean());
+    }
+
+    #[test]
+    fn not_configured_write_checker_verdict_serialises_and_defaults_for_older_payloads() {
+        let write = write_result_with(WriteCheckVerdict::not_configured());
+        write.validate().unwrap();
+        assert!(write.checker.is_clean());
+        let wire = serde_json::to_value(&write).unwrap();
+        assert_eq!(wire["checker"]["status"], "not_configured");
+        assert_eq!(wire["checker"]["runs"], serde_json::json!([]));
+
+        // An older peer that predates the field must still decode, and must
+        // decode as "nothing attested" rather than as a passing check.
+        let mut legacy = wire.clone();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("checker")
+            .expect("checker field is serialised");
+        let decoded = decode_write_file_result_json(&legacy.to_string()).unwrap();
+        assert_eq!(decoded.checker.status, WriteCheckStatus::NotConfigured);
+        assert_eq!(decoded, write);
+        let legacy_patch = serde_json::json!({
+            "schemaVersion": 1,
+            "sha256": "b".repeat(64),
+            "checkpointId": "checkpoint",
+            "formatter": [],
+            "proofImpact": {"invalidatedPaths": [], "requiresReprove": false},
+        });
+        assert_eq!(
+            decode_apply_patch_result_json(&legacy_patch.to_string())
+                .unwrap()
+                .checker,
+            WriteCheckVerdict::not_configured()
+        );
+    }
+
+    #[test]
+    fn write_checker_verdict_validation_rejects_malformed_verdicts() {
+        let empty_checked = write_result_with(WriteCheckVerdict {
+            status: WriteCheckStatus::Checked,
+            runs: Vec::new(),
+        });
+        assert!(matches!(
+            empty_checked.validate(),
+            Err(MutationContractError::InvalidValue {
+                field: "checker.status"
+            })
+        ));
+
+        let mut runs = failed_check_verdict().runs;
+        let contradictory = write_result_with(WriteCheckVerdict {
+            status: WriteCheckStatus::NotConfigured,
+            runs: runs.clone(),
+        });
+        assert!(matches!(
+            contradictory.validate(),
+            Err(MutationContractError::InvalidValue {
+                field: "checker.status"
+            })
+        ));
+
+        let unbounded = write_result_with(WriteCheckVerdict {
+            status: WriteCheckStatus::Checked,
+            runs: std::iter::repeat_n(runs[0].clone(), MAX_MUTATION_WRITE_CHECKS + 1).collect(),
+        });
+        assert!(matches!(
+            unbounded.validate(),
+            Err(MutationContractError::TooManyItems {
+                field: "checker.runs",
+                limit: MAX_MUTATION_WRITE_CHECKS
+            })
+        ));
+
+        runs[1].diagnostics = "x".repeat(MAX_MUTATION_DIAGNOSTIC_BYTES + 1);
+        let oversized = write_result_with(WriteCheckVerdict {
+            status: WriteCheckStatus::Checked,
+            runs: runs.clone(),
+        });
+        assert!(matches!(
+            oversized.validate(),
+            Err(MutationContractError::FieldTooLong {
+                field: "checker.diagnostics",
+                ..
+            })
+        ));
+
+        runs[1].diagnostics = String::new();
+        runs[1].name = String::new();
+        let unnamed = write_result_with(WriteCheckVerdict {
+            status: WriteCheckStatus::Checked,
+            runs,
+        });
+        assert!(matches!(
+            unnamed.validate(),
+            Err(MutationContractError::EmptyField {
+                field: "checker.name"
+            })
+        ));
+
+        // deny_unknown_fields still applies inside the additive field.
+        let unknown = serde_json::json!({
+            "schemaVersion": 1,
+            "sha256": "b".repeat(64),
+            "checkpointId": "checkpoint",
+            "formatter": [],
+            "checker": {"status": "not_configured", "runs": [], "unexpected": true},
+            "proofImpact": {"invalidatedPaths": [], "requiresReprove": false},
+        });
+        assert!(matches!(
+            decode_write_file_result_json(&unknown.to_string()),
+            Err(MutationContractDecodeError::Json(_))
+        ));
     }
 
     #[test]

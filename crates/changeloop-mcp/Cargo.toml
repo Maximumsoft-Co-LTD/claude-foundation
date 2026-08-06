@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 base64.workspace = true
 changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
+changeloop-sandbox = { version = "0.1.0", path = "../changeloop-sandbox" }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

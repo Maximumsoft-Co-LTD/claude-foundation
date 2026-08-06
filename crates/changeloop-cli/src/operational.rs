@@ -1,6 +1,6 @@
 use super::{
     CliFailure, EXIT_INVALID_INPUT, EXIT_LIFECYCLE_REJECTION, EXIT_PROOF_FAILURE, io_failure,
-    mcp_registry,
+    mcp_registry, prove_oracle,
 };
 use changeloop_harness::{
     CleanReviewRequest, CleanReviewResult, ConvergenceHarness, FailureClass, Freshness,
@@ -9,7 +9,7 @@ use changeloop_harness::{
 };
 use changeloop_land::{
     ApplyControl, AuthoritySource, ExternalLandAuthority, LandError, apply_land_checked,
-    archive_land, prepare_land,
+    archive_land, prepare_land, read_prove_evidence,
 };
 use changeloop_language::{ProjectToolResolver, ToolAvailability};
 use changeloop_mcp::{KeyringOAuthTokenStore, OAuthClient, OAuthTokenStore};
@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 use url::Url;
 
 const MAX_OPERATIONAL_STATE_BYTES: u64 = 16 * 1024 * 1024;
-const MAX_OPERATIONAL_CONFIG_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_OPERATIONAL_CONFIG_BYTES: u64 = 1024 * 1024;
 const MAX_OPERATIONAL_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_LAND_PROJECTION_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -500,6 +500,11 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
             "authority":{"lifecycle":false,"permissions":false,"land":false}}),
     );
     let providers = proof_providers(root)?;
+    // Oracle configuration is read before the providers run because it decides
+    // which provider's output carries per-test outcomes. A bad configuration is
+    // a diagnostic, never a Prove failure.
+    let (oracle_config, oracle_config_error) = prove_oracle::ProveOracleConfig::load(root);
+    let mut candidate = prove_oracle::CandidateCollector::default();
     let mut state = load_state(root)?;
     let record = change_mut(&mut state, change)?;
     ensure_not_landed(record)?;
@@ -580,6 +585,12 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
                 message: format!("proof provider '{}' failed: {summary}", provider.id),
             });
         }
+        candidate.observe(
+            &oracle_config,
+            &provider.id,
+            &output.stdout,
+            output.truncated,
+        );
         let mut evidence = Sha256::new();
         evidence.update(&output.stdout);
         evidence.update(&output.stderr);
@@ -601,7 +612,7 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
         record.proof = Some(receipt);
         executed.push(provider.id.clone());
     }
-    record.expected_revision = revision;
+    record.expected_revision = revision.clone();
     record.reviewed = false;
     let after_hooks = lifecycle_hook_audit(
         root,
@@ -622,9 +633,29 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
     save_state(root, &state)?;
     changeloop_ops::update_privacy_lifecycle(&privacy_path(root), change, true, 1)
         .map_err(super::ops_failure)?;
+    // Evidence, never a gate. The oracle runs after the lifecycle state is
+    // durable so that nothing it does — including failing outright — can change
+    // whether this Prove passed. What it can change is whether the human at
+    // Land is shown what the suite did and did not exercise.
+    let oracle = prove_oracle::record(
+        root,
+        &oracle_config,
+        prove_oracle::OracleInputs {
+            change,
+            revision: &revision,
+            diff: review_diff(root).map_err(|error| error.message),
+            config_error: oracle_config_error,
+            claims: providers
+                .iter()
+                .flat_map(|provider| provider.claims.iter().cloned())
+                .collect(),
+            candidate,
+        },
+    );
     Ok(
         json!({"change":change,"proof":"passed","executedProviders":executed,
         "reusedProviders":reused,"phase":record_phase(load_state(root)?.changes.get(change)),
+        "oracle":oracle,
         "hooks":{"before":before_hooks,"after":after_hooks}}),
     )
 }
@@ -755,10 +786,11 @@ fn review_at(root: &Path, change: &str) -> Result<(), CliFailure> {
 }
 
 pub(super) fn land(change: &str) -> Result<(), CliFailure> {
-    land_at(&env::current_dir().map_err(io_failure)?, change)
+    print_json(land_at(&env::current_dir().map_err(io_failure)?, change)?);
+    Ok(())
 }
 
-fn land_at(root: &Path, change: &str) -> Result<(), CliFailure> {
+fn land_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
     safe_identifier(change)?;
     let mut state = load_state(root)?;
     let record = change_mut(&mut state, change)?;
@@ -783,6 +815,13 @@ fn land_at(root: &Path, change: &str) -> Result<(), CliFailure> {
             "Land rejected: fresh proof and review are required",
         ));
     }
+    // Present the Prove evidence before the projection is applied, so the
+    // person landing sees what the suite did and did not exercise rather than a
+    // bare success line. This renders; it never gates. The briefing goes to
+    // stderr so stdout stays a single JSON document, and is repeated inside
+    // that document so a non-interactive caller cannot miss it.
+    let prove_evidence = read_prove_evidence(&root.join(".changeloop/receipts"), change);
+    eprintln!("{}", prove_evidence.render());
     let operation = OperationId::new();
     let transaction = harness
         .request_land(
@@ -857,12 +896,11 @@ fn land_at(root: &Path, change: &str) -> Result<(), CliFailure> {
     save_state(root, &state)?;
     changeloop_ops::update_privacy_lifecycle(&privacy_path(root), change, false, 1)
         .map_err(super::ops_failure)?;
-    print_json(
+    Ok(
         json!({"change":change,"landed":true,"revision":locked_revision,
         "transaction":transaction.transaction_id,"archive":archive,"commitPerformed":false,
-        "pushPerformed":false}),
-    );
-    Ok(())
+        "pushPerformed":false,"proveEvidence":prove_evidence.to_json()}),
+    )
 }
 
 pub(super) fn undo_redo(session: Option<&String>, redo: bool) -> Result<(), CliFailure> {
@@ -1522,14 +1560,14 @@ fn apply_configured_repair(
 }
 
 #[derive(Debug)]
-struct BoundedOutput {
-    status: std::process::ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    truncated: bool,
+pub(crate) struct BoundedOutput {
+    pub(crate) status: std::process::ExitStatus,
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
+    pub(crate) truncated: bool,
 }
 
-fn run_bounded_command(
+pub(crate) fn run_bounded_command(
     root: &Path,
     command: &str,
     args: &[String],
@@ -1551,7 +1589,7 @@ fn run_bounded_command(
 /// executable repository hooks or user/system configuration. Diff drivers are
 /// disabled separately because attributes and config can otherwise turn a
 /// read-only diff into arbitrary process execution.
-fn run_hardened_git(
+pub(crate) fn run_hardened_git(
     root: &Path,
     args: &[String],
     timeout_ms: u64,
@@ -1912,7 +1950,7 @@ fn load_state(root: &Path) -> Result<OperationalState, CliFailure> {
     }
 }
 
-fn read_regular_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
+pub(crate) fn read_regular_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
     let path_metadata = fs::symlink_metadata(path)?;
     if path_metadata.file_type().is_symlink() || !path_metadata.file_type().is_file() {
         return Err(std::io::Error::new(
@@ -1966,7 +2004,10 @@ fn read_regular_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn create_private_operational_directory(root: &Path, directory: &Path) -> std::io::Result<()> {
+pub(crate) fn create_private_operational_directory(
+    root: &Path,
+    directory: &Path,
+) -> std::io::Result<()> {
     let root_metadata = fs::symlink_metadata(root)?;
     if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
         return Err(std::io::Error::new(
@@ -2448,7 +2489,7 @@ fn safe_identifier(value: &str) -> Result<(), CliFailure> {
     }
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -3025,7 +3066,22 @@ mod tests {
             EXIT_LIFECYCLE_REJECTION
         );
         review_at(root.path(), "change").unwrap();
-        land_at(root.path(), "change").unwrap();
+        let result = land_at(root.path(), "change").unwrap();
+        // Prove now writes an oracle report, so Land reads one back rather than
+        // reporting no evidence at all. With no coverage tool and no baseline
+        // configured that report is still explicit about what it did not
+        // measure: a green proof run must never arrive as a confident gate.
+        let evidence = &result["proveEvidence"];
+        assert_eq!(evidence["measured"], true);
+        assert_eq!(evidence["provider"], prove_oracle::ORACLE_RECEIPT_PROVIDER);
+        assert_eq!(evidence["proofOfCorrectness"], false);
+        assert_eq!(evidence["evidenceIncomplete"], true);
+        assert_eq!(evidence["evidenceStrength"], "NOT MEASURED");
+        let text = evidence["text"].as_str().unwrap();
+        assert!(text.contains("Tests are weak evidence."), "{text}");
+        // The renderer hard-wraps, so assert on a fragment rather than a line.
+        assert!(text.contains("not the same as clean"), "{text}");
+        assert!(text.contains("coverage unavailable"), "{text}");
         let landed = load_state(root.path()).unwrap();
         assert!(landed.changes["change"].landed);
         let transaction = landed.changes["change"].land_operation.as_ref().unwrap();
@@ -3043,6 +3099,291 @@ mod tests {
             root.path()
                 .join(".changeloop/archive/change.json")
                 .is_file()
+        );
+    }
+
+    /// Register a change that is ready for its first Prove run at the current
+    /// workspace revision.
+    fn ready_change(root: &Path) {
+        let revision = workspace_revision(root).unwrap();
+        let mut state = OperationalState::default();
+        state.changes.insert(
+            "change".into(),
+            ChangeRecord {
+                session_id: "change".into(),
+                expected_revision: revision,
+                proof: None,
+                reviewed: false,
+                landed: false,
+                land_operation: None,
+                convergence: None,
+                risk_tier: "high".into(),
+                risk_triggers: default_risk_triggers(),
+            },
+        );
+        save_state(root, &state).unwrap();
+    }
+
+    const LIBTEST_PASSING: &str = "\
+running 2 tests
+test order::totals ... ok
+test order::rounding ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored
+";
+
+    /// Everything the oracle needs to measure both arms. All of it lives inside
+    /// `.changeloop/`, which the change diff excludes, so the only touched file
+    /// is the one the test actually edits.
+    fn measurable_oracle_project(root: &Path) {
+        fs::write(
+            root.join(".changeloop/baseline-output.txt"),
+            LIBTEST_PASSING,
+        )
+        .unwrap();
+        fs::write(
+            root.join(".changeloop/lcov.info"),
+            "SF:file.txt\nDA:1,4\nend_of_record\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join(".changeloop/proof-providers.json"),
+            serde_json::to_vec(&json!([{
+                "id":"suite","command":"sh",
+                "args":["-c","cat .changeloop/baseline-output.txt"],
+                "claims":["suite-valid"]
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.join(".changeloop/prove-oracle.json"),
+            serde_json::to_vec(&json!({
+                "coverageReport":".changeloop/lcov.info",
+                "testProvider":"suite",
+                "baseline":{"outputPath":".changeloop/baseline-output.txt"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn prove_writes_an_oracle_receipt_that_land_reads_back() {
+        let root = git_root();
+        fs::write(root.path().join("file.txt"), "implemented change").unwrap();
+        measurable_oracle_project(root.path());
+        ready_change(root.path());
+
+        let result = prove_at(root.path(), "change").unwrap();
+
+        assert_eq!(result["oracle"]["recorded"], true);
+        let receipt = root
+            .path()
+            .join(".changeloop/receipts/change")
+            .join(format!("{}.json", prove_oracle::ORACLE_RECEIPT_PROVIDER));
+        let stored: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+        assert!(
+            stored[changeloop_evidence::ORACLE_RECEIPT_EXTENSION].is_object(),
+            "the receipt must carry the oracle extension: {stored}"
+        );
+        // Land reads exactly this root, so the join must hold without changing
+        // `changeloop-land`.
+        let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
+        let report = briefing
+            .report()
+            .expect("Land reads the oracle report back");
+        assert_eq!(report.change_id, "change");
+        assert_eq!(
+            report.summary.coverage_verdict,
+            changeloop_evidence::CoverageVerdict::ChangedPathExercised
+        );
+    }
+
+    #[test]
+    fn land_renders_a_measured_briefing_after_a_prove_run_that_produced_coverage() {
+        let root = git_root();
+        fs::write(root.path().join("file.txt"), "implemented change").unwrap();
+        measurable_oracle_project(root.path());
+        ready_change(root.path());
+
+        prove_at(root.path(), "change").unwrap();
+        review_at(root.path(), "change").unwrap();
+        let evidence = land_at(root.path(), "change").unwrap()["proveEvidence"].clone();
+
+        assert_eq!(evidence["measured"], true);
+        assert_eq!(evidence["evidenceIncomplete"], false);
+        assert_eq!(
+            evidence["evidenceStrength"],
+            "WEAK -- CHANGED PATH EXERCISED (strongest available)"
+        );
+        // Measured is still never proof: the strongest briefing this oracle can
+        // produce is weak evidence that ends by sending the reader to the diff.
+        assert_eq!(evidence["proofOfCorrectness"], false);
+        let text = evidence["text"].as_str().unwrap();
+        assert!(!text.starts_with("Prove evidence: NOT MEASURED"), "{text}");
+        assert!(text.contains("Tests are weak evidence."), "{text}");
+    }
+
+    #[test]
+    fn a_prove_run_without_a_coverage_tool_records_unknown_coverage_not_a_clean_one() {
+        let root = git_root();
+        fs::write(root.path().join("file.txt"), "implemented change").unwrap();
+        ready_change(root.path());
+
+        let result = prove_at(root.path(), "change").unwrap();
+
+        assert_eq!(result["oracle"]["recorded"], true);
+        let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
+        let report = briefing
+            .report()
+            .expect("an unconfigured project still gets a report");
+        assert_eq!(
+            report.summary.coverage_verdict,
+            changeloop_evidence::CoverageVerdict::Unknown(
+                changeloop_evidence::CoverageUnavailable::NoToolConfigured
+            )
+        );
+        assert!(report.summary.evidence_incomplete);
+        let text = briefing.render();
+        assert!(text.contains("coverage unavailable"), "{text}");
+        assert!(text.contains("which is not the same as clean"), "{text}");
+    }
+
+    #[test]
+    fn a_prove_run_without_a_baseline_records_the_differential_as_unavailable() {
+        let root = git_root();
+        fs::write(root.path().join("file.txt"), "implemented change").unwrap();
+        ready_change(root.path());
+
+        prove_at(root.path(), "change").unwrap();
+
+        let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
+        let report = briefing.report().expect("report exists");
+        // The field is present and carries its reason. Omitting it would render
+        // as an empty divergence list, which reads as clean.
+        assert!(!report.differential.is_available());
+        assert!(report.differential.unavailable.is_some());
+        assert!(report.differential.divergences.is_empty());
+        assert!(
+            report
+                .warnings_with(changeloop_evidence::OracleWarningCode::DifferentialUnavailable)
+                .next()
+                .is_some(),
+            "a missing baseline must warn: {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn a_configured_baseline_produces_a_differential_and_seeds_the_suppression_ledger() {
+        let root = git_root();
+        fs::write(root.path().join("file.txt"), "implemented change").unwrap();
+        measurable_oracle_project(root.path());
+        ready_change(root.path());
+
+        prove_at(root.path(), "change").unwrap();
+
+        let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
+        let report = briefing.report().expect("report exists");
+        assert!(report.differential.is_available());
+        assert_eq!(report.differential.baseline_tests, 2);
+        assert_eq!(report.differential.candidate_tests, 2);
+        assert_eq!(report.summary.unexpected_divergences, 0);
+        let ledger = changeloop_evidence::SuppressionLedger::load(
+            root.path().join(".changeloop/suppressions.json"),
+        )
+        .expect("the seeded ledger round-trips");
+        assert!(ledger.rules.is_empty());
+    }
+
+    fn commit_all(root: &Path, message: &str) {
+        Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(root)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.test",
+                "commit",
+                "-qm",
+                message,
+            ])
+            .current_dir(root)
+            .status()
+            .unwrap();
+    }
+
+    #[test]
+    fn a_worktree_baseline_run_surfaces_an_undeclared_divergence() {
+        let root = git_root();
+        // Committed at HEAD, so the detached worktree at the pre-change
+        // revision replays it as the baseline suite result.
+        fs::write(root.path().join("suite-output.txt"), LIBTEST_PASSING).unwrap();
+        commit_all(root.path(), "suite fixture");
+        fs::write(root.path().join("file.txt"), "implemented change").unwrap();
+        fs::write(
+            root.path().join(".changeloop/proof-providers.json"),
+            serde_json::to_vec(&json!([{
+                "id":"suite","command":"sh",
+                "args":["-c","printf 'test order::totals ... ok\\ntest order::rounding ... FAILED\\n'"],
+                "claims":["suite-valid"]
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(".changeloop/prove-oracle.json"),
+            serde_json::to_vec(&json!({
+                "testProvider":"suite",
+                "baseline":{"command":"sh","args":["-c","cat suite-output.txt"]}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        ready_change(root.path());
+
+        prove_at(root.path(), "change").unwrap();
+
+        let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
+        let report = briefing.report().expect("report exists");
+        assert!(report.differential.is_available());
+        assert_eq!(report.summary.unexpected_divergences, 1);
+        assert_eq!(
+            report.summary.confidence,
+            changeloop_evidence::OracleConfidence::UnexpectedDivergence
+        );
+        // The throwaway worktree never outlives the run.
+        assert_eq!(
+            fs::read_dir(root.path().join(".changeloop/baseline"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn a_failing_prove_run_records_no_oracle_report() {
+        let root = git_root();
+        fs::write(root.path().join("file.txt"), "trailing whitespace \n").unwrap();
+        ready_change(root.path());
+
+        assert_eq!(
+            prove_at(root.path(), "change").unwrap_err().code,
+            EXIT_PROOF_FAILURE
+        );
+
+        // Evidence is never fabricated for a run that did not finish.
+        assert!(!root.path().join(".changeloop/receipts").exists());
+        assert_eq!(
+            read_prove_evidence(&root.path().join(".changeloop/receipts"), "change"),
+            changeloop_land::ProveEvidenceBriefing::Unmeasured(
+                changeloop_land::ProveEvidenceGap::NoReceipts
+            )
         );
     }
 

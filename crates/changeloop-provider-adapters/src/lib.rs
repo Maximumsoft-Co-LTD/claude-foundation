@@ -5,13 +5,15 @@ use async_trait::async_trait;
 use changeloop_provider::{
     Capability, CapabilityProfile, CircuitBreaker, CircuitBreakerPolicy, CircuitDecision,
     ErrorCategory, ExecutionProgress, FinishReason, Measurement, MoneyMicros, NormalizedRequest,
-    ProviderError, ProviderKind, ReplayMetadata, RetryDecision, RetryPolicy, RiskTier,
-    RouteCandidate, RouteRequirements, StreamEvent, TokenUsage, UsageAccounting, UsageLedger,
-    authorize_fallback, select_route,
+    OpaqueReasoning, ProviderError, ProviderKind, ReasoningIdentity, ReasoningIdentityOutcome,
+    RetryDecision, RetryPolicy, RiskTier, RouteCandidate, RouteRequirements, StreamEvent,
+    TokenUsage, UsageAccounting, UsageLedger, anthropic_request_body, authorize_fallback,
+    enforce_reasoning_identity, openai_request_body, select_route,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fmt;
 use std::io::{Read, Write};
@@ -35,6 +37,9 @@ const MAX_TOOL_ARGUMENT_BYTES: usize = DEFAULT_MAX_RESPONSE_BYTES;
 const MAX_REASONING_ITEM_IDS: usize = 4_096;
 const MAX_NATIVE_OUTPUT_ITEMS: usize = 65_536;
 const MAX_REPLAY_METADATA_BYTES: usize = 64 * 1024;
+/// Domain separator for the account fingerprint. Changing it invalidates every
+/// previously stored reasoning identity, which strips rather than corrupts.
+const REASONING_ACCOUNT_DOMAIN: &[u8] = b"changeloop/reasoning-account/v1";
 
 fn valid_provider_identifier(value: &str) -> bool {
     !value.is_empty()
@@ -172,6 +177,38 @@ impl AuthProfile {
             source: self.source.clone(),
             key_present: true,
         }
+    }
+
+    /// Stable, non-secret fingerprint of the account or deployment this profile
+    /// authenticates as.
+    ///
+    /// Encrypted and signed reasoning state is bound at account level, so the
+    /// reasoning-identity gate needs to distinguish two accounts of the same
+    /// provider. A domain-separated SHA-256 prefix of the credential does that
+    /// without ever carrying the credential itself: it is one-way, and it is
+    /// the only value derived from the key that leaves this type.
+    #[must_use]
+    pub fn account_fingerprint(&self) -> String {
+        let mut digest = Sha256::new();
+        digest.update(REASONING_ACCOUNT_DOMAIN);
+        digest.update(match self.provider {
+            ProviderKind::Anthropic => b"anthropic".as_slice(),
+            ProviderKind::OpenAi => b"openai".as_slice(),
+        });
+        digest.update([0u8]);
+        digest.update(self.key.expose().as_bytes());
+        let digest = digest.finalize();
+        digest
+            .iter()
+            .take(16)
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    /// The identity that reasoning state issued under this profile is bound to.
+    #[must_use]
+    pub fn reasoning_identity(&self, model: &str) -> ReasoningIdentity {
+        ReasoningIdentity::new(self.provider, self.account_fingerprint(), model)
     }
 }
 
@@ -860,7 +897,8 @@ impl ProviderAdapter for AnthropicAdapter {
     ) -> Result<Vec<StreamEvent>, AdapterError> {
         validate_provider_url(&self.endpoint)?;
         require_auth(auth, self.kind())?;
-        let body = anthropic_body_with_stream(request, false)?;
+        let identity = auth.reasoning_identity(&request.model);
+        let body = anthropic_body_with_stream(request, &identity, false)?;
         let response = transport
             .send(
                 HttpRequest {
@@ -878,7 +916,7 @@ impl ProviderAdapter for AnthropicAdapter {
                 cancel,
             )
             .await?;
-        parse_non_streaming_response(response, self.kind())
+        parse_non_streaming_response(response, &identity)
     }
 
     async fn execute_stream(
@@ -890,7 +928,8 @@ impl ProviderAdapter for AnthropicAdapter {
     ) -> Result<ProviderEventStream, AdapterError> {
         validate_provider_url(&self.endpoint)?;
         require_auth(auth, self.kind())?;
-        let body = anthropic_body(request)?;
+        let identity = auth.reasoning_identity(&request.model);
+        let body = anthropic_body(request, &identity)?;
         let response = transport
             .send_stream(
                 HttpRequest {
@@ -908,7 +947,7 @@ impl ProviderAdapter for AnthropicAdapter {
                 cancel,
             )
             .await?;
-        stream_http_response(response, self.kind()).await
+        stream_http_response(response, identity).await
     }
 }
 
@@ -930,7 +969,8 @@ impl ProviderAdapter for OpenAiAdapter {
     ) -> Result<Vec<StreamEvent>, AdapterError> {
         validate_provider_url(&self.endpoint)?;
         require_auth(auth, self.kind())?;
-        let body = openai_body_with_stream(request, false)?;
+        let identity = auth.reasoning_identity(&request.model);
+        let body = openai_body_with_stream(request, &identity, false)?;
         let response = transport
             .send(
                 HttpRequest {
@@ -950,7 +990,7 @@ impl ProviderAdapter for OpenAiAdapter {
                 cancel,
             )
             .await?;
-        parse_non_streaming_response(response, self.kind())
+        parse_non_streaming_response(response, &identity)
     }
 
     async fn execute_stream(
@@ -962,7 +1002,8 @@ impl ProviderAdapter for OpenAiAdapter {
     ) -> Result<ProviderEventStream, AdapterError> {
         validate_provider_url(&self.endpoint)?;
         require_auth(auth, self.kind())?;
-        let body = openai_body(request)?;
+        let identity = auth.reasoning_identity(&request.model);
+        let body = openai_body(request, &identity)?;
         let response = transport
             .send_stream(
                 HttpRequest {
@@ -982,7 +1023,7 @@ impl ProviderAdapter for OpenAiAdapter {
                 cancel,
             )
             .await?;
-        stream_http_response(response, self.kind()).await
+        stream_http_response(response, identity).await
     }
 }
 
@@ -992,10 +1033,10 @@ enum IncrementalSseDecoder {
 }
 
 impl IncrementalSseDecoder {
-    fn new(provider: ProviderKind) -> Self {
-        match provider {
-            ProviderKind::Anthropic => Self::Anthropic(AnthropicSseState::default()),
-            ProviderKind::OpenAi => Self::OpenAi(OpenAiSseState::default()),
+    fn new(identity: ReasoningIdentity) -> Self {
+        match identity.provider {
+            ProviderKind::Anthropic => Self::Anthropic(AnthropicSseState::new(identity)),
+            ProviderKind::OpenAi => Self::OpenAi(OpenAiSseState::new(identity)),
         }
     }
 
@@ -1016,8 +1057,9 @@ impl IncrementalSseDecoder {
 
 async fn stream_http_response(
     mut response: HttpStreamResponse,
-    provider: ProviderKind,
+    identity: ReasoningIdentity,
 ) -> Result<ProviderEventStream, AdapterError> {
+    let provider = identity.provider;
     if response.status >= 400 {
         let mut body = Vec::new();
         while let Some(chunk) = response.chunks.recv().await {
@@ -1045,7 +1087,7 @@ async fn stream_http_response(
     let headers = response.headers;
     let (sender, receiver) = tokio::sync::mpsc::channel(64);
     tokio::spawn(async move {
-        let mut decoder = IncrementalSseDecoder::new(provider);
+        let mut decoder = IncrementalSseDecoder::new(identity);
         let mut buffered = Vec::new();
         while let Some(chunk) = response.chunks.recv().await {
             match chunk {
@@ -1137,132 +1179,47 @@ fn require_auth(auth: &AuthProfile, provider: ProviderKind) -> Result<(), Adapte
     }
 }
 
-fn anthropic_body(request: &NormalizedRequest) -> Result<Value, AdapterError> {
-    anthropic_body_with_stream(request, true)
+// Request bodies are built exclusively by the canonical per-provider builders
+// in `changeloop-provider`. That crate owns the raw reasoning payload as a
+// private type, so no adapter code path — here or in a future adapter — can
+// reach a reasoning part's presence, order, or bytes.
+fn anthropic_body(
+    request: &NormalizedRequest,
+    target: &ReasoningIdentity,
+) -> Result<Value, AdapterError> {
+    anthropic_body_with_stream(request, target, true)
 }
 
 fn anthropic_body_with_stream(
     request: &NormalizedRequest,
+    target: &ReasoningIdentity,
     stream: bool,
 ) -> Result<Value, AdapterError> {
-    let mut system = Vec::new();
-    let mut messages = Vec::new();
-    for message in &request.messages {
-        let mut content = Vec::new();
-        for part in &message.parts {
-            match part {
-                changeloop_provider::InputPart::Text { text } => content.push(json!({"type":"text","text":text})),
-                changeloop_provider::InputPart::Reasoning { text, replay } => {
-                    if message.role != changeloop_provider::InputRole::Assistant {
-                        return Err(AdapterError::Translation("reasoning replay must belong to assistant history".into()));
-                    }
-                    match replay {
-                        Some(ReplayMetadata::Anthropic { reasoning_signature }) => content.push(json!({
-                            "type":"thinking","thinking":text,"signature":reasoning_signature
-                        })),
-                        Some(ReplayMetadata::OpenAi { .. }) | None => {}
-                    }
-                }
-                changeloop_provider::InputPart::ToolCall { id, name, arguments } =>
-                    content.push(json!({"type":"tool_use","id":id,"name":name,"input":arguments})),
-                changeloop_provider::InputPart::ToolResult { id, output, is_error } =>
-                    content.push(json!({"type":"tool_result","tool_use_id":id,"content":output.to_string(),"is_error":is_error})),
-                changeloop_provider::InputPart::Image { media_type, artifact_id, data_base64 } => {
-                    let data = data_base64.as_ref().ok_or_else(|| AdapterError::Translation(
-                        format!("image artifact {artifact_id} requires an explicit artifact resolver")))?;
-                    content.push(json!({"type":"image","source":{
-                        "type":"base64","media_type":media_type,"data":data
-                    }}));
-                }
-            }
-        }
-        match message.role {
-            changeloop_provider::InputRole::System | changeloop_provider::InputRole::Developer => {
-                system.extend(content)
-            }
-            changeloop_provider::InputRole::User | changeloop_provider::InputRole::Tool => {
-                messages.push(json!({"role":"user","content":content}))
-            }
-            changeloop_provider::InputRole::Assistant => {
-                messages.push(json!({"role":"assistant","content":content}))
-            }
-        }
-    }
-    let tools: Vec<_> = request
-        .tools
-        .iter()
-        .map(|tool| {
-            json!({"name":tool.name,
-        "description":tool.description,"input_schema":tool.input_schema})
-        })
-        .collect();
-    Ok(
-        json!({"model":request.model,"max_tokens":request.max_output_tokens.unwrap_or(4096),
-        "system":system,"messages":messages,"tools":tools,"stream":stream}),
-    )
+    anthropic_request_body(request, target, stream)
+        .map_err(|error| AdapterError::Translation(error.to_string()))
 }
 
-fn openai_body(request: &NormalizedRequest) -> Result<Value, AdapterError> {
-    openai_body_with_stream(request, true)
+fn openai_body(
+    request: &NormalizedRequest,
+    target: &ReasoningIdentity,
+) -> Result<Value, AdapterError> {
+    openai_body_with_stream(request, target, true)
 }
 
 fn openai_body_with_stream(
     request: &NormalizedRequest,
+    target: &ReasoningIdentity,
     stream: bool,
 ) -> Result<Value, AdapterError> {
-    let mut input = Vec::new();
-    for message in &request.messages {
-        let role = match message.role {
-            changeloop_provider::InputRole::System => "system",
-            changeloop_provider::InputRole::Developer => "developer",
-            changeloop_provider::InputRole::User | changeloop_provider::InputRole::Tool => "user",
-            changeloop_provider::InputRole::Assistant => "assistant",
-        };
-        for part in &message.parts {
-            match part {
-                changeloop_provider::InputPart::Text { text } => input.push(json!({"role":role,"content":[{
-                    "type": if role == "assistant" { "output_text" } else { "input_text" },"text":text}]})),
-                // OpenAI reasoning items are resumed using the response/item
-                // identifiers below; never turn hidden reasoning into text.
-                changeloop_provider::InputPart::Reasoning { .. } => {},
-                changeloop_provider::InputPart::ToolCall { id, name, arguments } => input.push(json!({
-                    "type":"function_call","call_id":id,"name":name,"arguments":arguments.to_string()})),
-                changeloop_provider::InputPart::ToolResult { id, output, .. } => input.push(json!({
-                    "type":"function_call_output","call_id":id,"output":output.to_string()})),
-                changeloop_provider::InputPart::Image { media_type, artifact_id, data_base64 } => {
-                    let data = data_base64.as_ref().ok_or_else(|| AdapterError::Translation(
-                        format!("image artifact {artifact_id} requires an explicit artifact resolver")))?;
-                    input.push(json!({"role":role,"content":[{
-                        "type":"input_image",
-                        "image_url":format!("data:{media_type};base64,{data}")
-                    }]}));
-                }
-            }
-        }
-    }
-    let tools: Vec<_> = request
-        .tools
-        .iter()
-        .map(|tool| {
-            json!({"type":"function","name":tool.name,
-        "description":tool.description,"parameters":tool.input_schema,"strict":true})
-        })
-        .collect();
-    let mut body =
-        json!({"model":request.model,"input":input,"tools":tools,"stream":stream,"store":false});
-    if let Some(limit) = request.max_output_tokens {
-        body["max_output_tokens"] = json!(limit);
-    }
-    if let Some(ReplayMetadata::OpenAi { response_id, .. }) = request.replay.last() {
-        body["previous_response_id"] = json!(response_id);
-    }
-    Ok(body)
+    openai_request_body(request, target, stream)
+        .map_err(|error| AdapterError::Translation(error.to_string()))
 }
 
 fn parse_non_streaming_response(
     response: HttpResponse,
-    provider: ProviderKind,
+    identity: &ReasoningIdentity,
 ) -> Result<Vec<StreamEvent>, AdapterError> {
+    let provider = identity.provider;
     if response.status >= 400 {
         return Err(map_http_error(provider, response));
     }
@@ -1274,13 +1231,13 @@ fn parse_non_streaming_response(
         || response.body.starts_with(b"event:");
     let mut events = if legacy_sse {
         match provider {
-            ProviderKind::Anthropic => parse_anthropic_sse(&response.body)?,
-            ProviderKind::OpenAi => parse_openai_sse(&response.body)?,
+            ProviderKind::Anthropic => parse_anthropic_sse(&response.body, identity)?,
+            ProviderKind::OpenAi => parse_openai_sse(&response.body, identity)?,
         }
     } else {
         match provider {
-            ProviderKind::Anthropic => parse_anthropic_response(&response.body)?,
-            ProviderKind::OpenAi => parse_openai_response(&response.body)?,
+            ProviderKind::Anthropic => parse_anthropic_response(&response.body, identity)?,
+            ProviderKind::OpenAi => parse_openai_response(&response.body, identity)?,
         }
     };
     enrich_response_metadata(&mut events, &response.headers);
@@ -1325,7 +1282,10 @@ fn replay_signature(value: Option<&str>) -> Result<Option<String>, AdapterError>
         .transpose()
 }
 
-fn parse_anthropic_response(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterError> {
+fn parse_anthropic_response(
+    body: &[u8],
+    identity: &ReasoningIdentity,
+) -> Result<Vec<StreamEvent>, AdapterError> {
     let value = parse_native_json(body)?;
     if value["type"] == "error" {
         return Err(AdapterError::Provider(stream_error(
@@ -1364,8 +1324,8 @@ fn parse_anthropic_response(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterErro
                             )
                         })?
                         .into(),
-                    replay: signature.map(|reasoning_signature| ReplayMetadata::Anthropic {
-                        reasoning_signature,
+                    replay: signature.map(|reasoning_signature| {
+                        OpaqueReasoning::anthropic(identity.clone(), reasoning_signature)
                     }),
                 });
             }
@@ -1420,7 +1380,10 @@ fn parse_anthropic_response(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterErro
     Ok(events)
 }
 
-fn parse_openai_response(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterError> {
+fn parse_openai_response(
+    body: &[u8],
+    identity: &ReasoningIdentity,
+) -> Result<Vec<StreamEvent>, AdapterError> {
     let value = parse_native_json(body)?;
     if value["status"] == "failed" || value["type"] == "error" {
         return Err(AdapterError::Provider(stream_error(
@@ -1550,10 +1513,11 @@ fn parse_openai_response(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterError> 
     if !reasoning_item_ids.is_empty() {
         events.push(StreamEvent::ReasoningDelta {
             text: String::new(),
-            replay: Some(ReplayMetadata::OpenAi {
-                response_id: response_id.clone(),
+            replay: Some(OpaqueReasoning::openai(
+                identity.clone(),
+                response_id.clone(),
                 reasoning_item_ids,
-            }),
+            )),
         });
     }
     if let Some(usage) = value.get("usage") {
@@ -1620,6 +1584,7 @@ fn provider_identifier(value: Option<&str>, field: &str) -> Result<String, Adapt
 }
 
 struct AnthropicSseState {
+    identity: ReasoningIdentity,
     response_id: String,
     tools: HashMap<u64, (String, String, String)>,
     tool_ids: BTreeSet<String>,
@@ -1627,9 +1592,10 @@ struct AnthropicSseState {
     stop: FinishReason,
 }
 
-impl Default for AnthropicSseState {
-    fn default() -> Self {
+impl AnthropicSseState {
+    fn new(identity: ReasoningIdentity) -> Self {
         Self {
+            identity,
             response_id: String::new(),
             tools: HashMap::new(),
             tool_ids: BTreeSet::new(),
@@ -1637,9 +1603,7 @@ impl Default for AnthropicSseState {
             stop: FinishReason::Unknown,
         }
     }
-}
 
-impl AnthropicSseState {
     fn finish(&self) -> Result<(), AdapterError> {
         if self.tools.is_empty() {
             Ok(())
@@ -1651,8 +1615,11 @@ impl AnthropicSseState {
     }
 }
 
-fn parse_anthropic_sse(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterError> {
-    let mut state = AnthropicSseState::default();
+fn parse_anthropic_sse(
+    body: &[u8],
+    identity: &ReasoningIdentity,
+) -> Result<Vec<StreamEvent>, AdapterError> {
+    let mut state = AnthropicSseState::new(identity.clone());
     let output = parse_anthropic_sse_incremental(body, &mut state)?;
     state.finish()?;
     Ok(output)
@@ -1713,12 +1680,10 @@ fn parse_anthropic_sse_incremental(
                 }),
                 "signature_delta" => output.push(StreamEvent::ReasoningDelta {
                     text: String::new(),
-                    replay: Some(ReplayMetadata::Anthropic {
-                        reasoning_signature: value["delta"]["signature"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .into(),
-                    }),
+                    replay: Some(OpaqueReasoning::anthropic(
+                        state.identity.clone(),
+                        value["delta"]["signature"].as_str().unwrap_or_default(),
+                    )),
                 }),
                 "input_json_delta" => {
                     let index = value["index"].as_u64().unwrap_or(0);
@@ -1782,14 +1747,23 @@ fn parse_anthropic_sse_incremental(
     Ok(output)
 }
 
-#[derive(Default)]
 struct OpenAiSseState {
+    identity: ReasoningIdentity,
     reasoning_item_ids: Vec<String>,
     tools: HashMap<String, String>,
     tool_call_ids: BTreeSet<String>,
 }
 
 impl OpenAiSseState {
+    fn new(identity: ReasoningIdentity) -> Self {
+        Self {
+            identity,
+            reasoning_item_ids: Vec::new(),
+            tools: HashMap::new(),
+            tool_call_ids: BTreeSet::new(),
+        }
+    }
+
     fn finish(&self) -> Result<(), AdapterError> {
         if self.tools.is_empty() {
             Ok(())
@@ -1801,8 +1775,11 @@ impl OpenAiSseState {
     }
 }
 
-fn parse_openai_sse(body: &[u8]) -> Result<Vec<StreamEvent>, AdapterError> {
-    let mut state = OpenAiSseState::default();
+fn parse_openai_sse(
+    body: &[u8],
+    identity: &ReasoningIdentity,
+) -> Result<Vec<StreamEvent>, AdapterError> {
+    let mut state = OpenAiSseState::new(identity.clone());
     let output = parse_openai_sse_incremental(body, &mut state)?;
     state.finish()?;
     Ok(output)
@@ -1898,10 +1875,11 @@ fn parse_openai_sse_incremental(
                 if !state.reasoning_item_ids.is_empty() {
                     output.push(StreamEvent::ReasoningDelta {
                         text: String::new(),
-                        replay: Some(ReplayMetadata::OpenAi {
-                            response_id: response_id.clone(),
-                            reasoning_item_ids: state.reasoning_item_ids.clone(),
-                        }),
+                        replay: Some(OpaqueReasoning::openai(
+                            state.identity.clone(),
+                            response_id.clone(),
+                            state.reasoning_item_ids.clone(),
+                        )),
                     });
                 }
                 if let Some(usage) = response.get("usage") {
@@ -2165,6 +2143,7 @@ pub async fn execute_with_safe_fallback(
         Ok(events) => Ok(events),
         Err(primary_error) => {
             authorize_fallback(
+                primary.kind(),
                 progress,
                 fallback_route,
                 required_risk,
@@ -2219,6 +2198,11 @@ pub struct RouterOutcome {
     pub model: String,
     pub attempts: u32,
     pub events: Vec<StreamEvent>,
+    /// What the reasoning-identity gate discarded before this request was
+    /// built. Reported rather than swallowed: a silent strip is how the field
+    /// lost signatures without noticing.
+    #[serde(default)]
+    pub reasoning_stripped: ReasoningIdentityOutcome,
 }
 
 #[derive(Debug, Error)]
@@ -2387,17 +2371,27 @@ impl ProviderRouter {
             .collect::<Vec<_>>();
         select_route(&candidates, requirements).map_err(|_| RouterError::NoEligibleRoute)?;
 
-        let eligible = self.routes.iter().filter(|route| {
-            route.candidate.risk_tier >= requirements.risk_tier
-                && requirements
-                    .capabilities
-                    .is_subset(&route.candidate.capabilities)
-        });
+        let eligible = self
+            .routes
+            .iter()
+            .filter(|route| {
+                route.candidate.risk_tier >= requirements.risk_tier
+                    && requirements
+                        .capabilities
+                        .is_subset(&route.candidate.capabilities)
+            })
+            .collect::<Vec<_>>();
+        // The session's originating provider. Automatic fallback may never
+        // cross it: encrypted reasoning state is account-bound, and silently
+        // degrading to another provider is the failure three independent
+        // codebases shipped.
+        let origin_provider = eligible.first().map(|route| route.candidate.provider);
         let mut last_error = None;
         let mut saw_closed_route = false;
-        for (route_index, route) in eligible.enumerate() {
+        for (route_index, route) in eligible.into_iter().enumerate() {
             if route_index > 0 {
                 authorize_fallback(
+                    origin_provider.unwrap_or(route.candidate.provider),
                     progress,
                     &route.candidate,
                     requirements.risk_tier,
@@ -2423,6 +2417,17 @@ impl ProviderRouter {
             saw_closed_route = true;
             let mut routed_request = request.clone();
             routed_request.model.clone_from(&route.candidate.model);
+            // Reasoning-identity gate. It runs for every target — including the
+            // first route — and regardless of mutation state, because reasoning
+            // parts appear on essentially every tool-using turn. Incompatible
+            // state is stripped explicitly here rather than forwarded to an
+            // account or model that cannot verify it.
+            let target = route.auth.reasoning_identity(&route.candidate.model);
+            let reasoning_outcome =
+                enforce_reasoning_identity(&mut routed_request.messages, &target);
+            routed_request
+                .replay
+                .retain(|reasoning| reasoning.identity() == &target);
             let mut attempt = 1;
             loop {
                 if cancel.is_cancelled() {
@@ -2554,6 +2559,7 @@ impl ProviderRouter {
                             model: route.candidate.model.clone(),
                             attempts: attempt,
                             events,
+                            reasoning_stripped: reasoning_outcome,
                         });
                     }
                     Err(error) => {
@@ -2905,30 +2911,37 @@ pub async fn discover_models(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use changeloop_provider::{InputMessage, InputPart, InputRole, ToolDefinition};
+    use changeloop_provider::{
+        FallbackDenied, InputMessage, InputPart, InputRole, ReasoningPart, ToolDefinition,
+    };
+    use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    fn identity(provider: ProviderKind) -> ReasoningIdentity {
+        ReasoningIdentity::new(provider, "fixture-account", "test-model")
+    }
+
     fn request() -> NormalizedRequest {
         NormalizedRequest {
             operation_id: "op-1".into(),
             model: "test-model".into(),
             messages: vec![
-                InputMessage {
-                    role: InputRole::Developer,
-                    parts: vec![InputPart::Text {
+                InputMessage::new(
+                    InputRole::Developer,
+                    vec![InputPart::Text {
                         text: "be precise".into(),
                     }],
-                },
-                InputMessage {
-                    role: InputRole::User,
-                    parts: vec![InputPart::Text {
+                ),
+                InputMessage::new(
+                    InputRole::User,
+                    vec![InputPart::Text {
                         text: "hello".into(),
                     }],
-                },
+                ),
             ],
             tools: vec![ToolDefinition {
                 name: "lookup".into(),
@@ -2949,7 +2962,7 @@ mod tests {
         }))
         .unwrap();
         assert!(matches!(
-            parse_anthropic_response(&anthropic),
+            parse_anthropic_response(&anthropic, &identity(ProviderKind::Anthropic)),
             Err(AdapterError::MalformedResponse(message))
                 if message.contains("future_required_part")
         ));
@@ -2960,7 +2973,7 @@ mod tests {
         }))
         .unwrap();
         assert!(matches!(
-            parse_openai_response(&openai),
+            parse_openai_response(&openai, &identity(ProviderKind::OpenAi)),
             Err(AdapterError::MalformedResponse(message))
                 if message.contains("future_required_item")
         ));
@@ -2969,17 +2982,17 @@ mod tests {
     #[test]
     fn native_provider_payloads_encode_resolved_image_artifacts() {
         let mut request = request();
-        request.messages[1].parts.push(InputPart::Image {
+        request.messages[1].push_part(InputPart::Image {
             media_type: "image/png".into(),
             artifact_id: "sha256:image".into(),
             data_base64: Some("aW1hZ2U=".into()),
         });
-        let anthropic = anthropic_body(&request).unwrap();
+        let anthropic = anthropic_body(&request, &identity(ProviderKind::Anthropic)).unwrap();
         assert_eq!(
             anthropic["messages"][0]["content"][1]["source"]["data"],
             "aW1hZ2U="
         );
-        let openai = openai_body(&request).unwrap();
+        let openai = openai_body(&request, &identity(ProviderKind::OpenAi)).unwrap();
         assert_eq!(
             openai["input"][2]["content"][0]["image_url"],
             "data:image/png;base64,aW1hZ2U="
@@ -2989,19 +3002,19 @@ mod tests {
     #[test]
     fn unresolved_image_artifact_is_never_sent_as_a_fake_provider_url() {
         let mut request = request();
-        request.messages[1].parts.push(InputPart::Image {
+        request.messages[1].push_part(InputPart::Image {
             media_type: "image/png".into(),
             artifact_id: "sha256:image".into(),
             data_base64: None,
         });
         assert!(
-            anthropic_body(&request)
+            anthropic_body(&request, &identity(ProviderKind::Anthropic))
                 .unwrap_err()
                 .to_string()
                 .contains("artifact resolver")
         );
         assert!(
-            openai_body(&request)
+            openai_body(&request, &identity(ProviderKind::OpenAi))
                 .unwrap_err()
                 .to_string()
                 .contains("artifact resolver")
@@ -3010,22 +3023,44 @@ mod tests {
 
     #[test]
     fn provider_specific_reasoning_replay_never_degrades_into_visible_text() {
+        let anthropic_identity = identity(ProviderKind::Anthropic);
         let mut request = request();
-        request.messages.push(InputMessage {
-            role: InputRole::Assistant,
-            parts: vec![InputPart::Reasoning {
-                text: "private chain state".into(),
-                replay: Some(ReplayMetadata::Anthropic {
-                    reasoning_signature: "signed-fixture".into(),
-                }),
-            }],
-        });
-        let anthropic = anthropic_body(&request).unwrap();
+        request.messages.push(InputMessage::new(
+            InputRole::Assistant,
+            vec![InputPart::Reasoning(ReasoningPart::new(
+                "private chain state",
+                Some(OpaqueReasoning::anthropic(
+                    anthropic_identity.clone(),
+                    "signed-fixture",
+                )),
+            ))],
+        ));
+        let anthropic = anthropic_body(&request, &anthropic_identity).unwrap();
         let replay = anthropic["messages"].as_array().unwrap().last().unwrap();
         assert_eq!(replay["content"][0]["type"], "thinking");
         assert_eq!(replay["content"][0]["signature"], "signed-fixture");
-        let openai = openai_body(&request).unwrap();
+        let openai = openai_body(&request, &identity(ProviderKind::OpenAi)).unwrap();
         assert!(!openai.to_string().contains("private chain state"));
+    }
+
+    #[test]
+    fn account_fingerprint_separates_accounts_without_carrying_the_credential() {
+        let first = AuthProfile::explicit(ProviderKind::OpenAi, "sk-account-one").unwrap();
+        let second = AuthProfile::explicit(ProviderKind::OpenAi, "sk-account-two").unwrap();
+        let other_provider =
+            AuthProfile::explicit(ProviderKind::Anthropic, "sk-account-one").unwrap();
+        assert_eq!(first.account_fingerprint(), first.account_fingerprint());
+        assert_ne!(first.account_fingerprint(), second.account_fingerprint());
+        assert_ne!(
+            first.account_fingerprint(),
+            other_provider.account_fingerprint()
+        );
+        assert!(!first.account_fingerprint().contains("sk-account-one"));
+        assert_eq!(first.account_fingerprint().len(), 32);
+        assert_eq!(
+            first.reasoning_identity("model-x"),
+            ReasoningIdentity::new(ProviderKind::OpenAi, first.account_fingerprint(), "model-x")
+        );
     }
 
     #[derive(Default)]
@@ -3331,7 +3366,8 @@ mod tests {
             "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":3}}\n\n",
             "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
         );
-        let events = parse_anthropic_sse(body.as_bytes()).unwrap();
+        let events =
+            parse_anthropic_sse(body.as_bytes(), &identity(ProviderKind::Anthropic)).unwrap();
         assert!(
             events
                 .iter()
@@ -3360,7 +3396,7 @@ mod tests {
             "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n",
             "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n\n"
         );
-        let events = parse_openai_sse(body.as_bytes()).unwrap();
+        let events = parse_openai_sse(body.as_bytes(), &identity(ProviderKind::OpenAi)).unwrap();
         assert!(
             events
                 .iter()
@@ -3384,7 +3420,7 @@ mod tests {
             "data: {\"type\":\"response.output_text.delta\",\"delta\":\"committed\"}\n\n",
             "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"failed\"}\n\n"
         );
-        let events = parse_openai_sse(body.as_bytes()).unwrap();
+        let events = parse_openai_sse(body.as_bytes(), &identity(ProviderKind::OpenAi)).unwrap();
         assert!(matches!(
             events.first(),
             Some(StreamEvent::OutputDelta { .. })
@@ -3401,14 +3437,17 @@ mod tests {
                 "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\"}}\n\n"
             )
             .as_bytes(),
+            &identity(ProviderKind::OpenAi),
         )
         .unwrap();
+        let expected = OpaqueReasoning::openai(
+            identity(ProviderKind::OpenAi),
+            "resp_1",
+            vec!["rs_1".into()],
+        );
         assert!(events.iter().any(|event| matches!(
             event,
-            StreamEvent::ReasoningDelta {
-                replay: Some(ReplayMetadata::OpenAi { response_id, reasoning_item_ids }),
-                ..
-            } if response_id == "resp_1" && reasoning_item_ids == &["rs_1"]
+            StreamEvent::ReasoningDelta { replay: Some(replay), .. } if replay == &expected
         )));
     }
 
@@ -3682,7 +3721,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
             &CancellationToken::default(),
             ExecutionProgress {
                 committed_output: true,
-                mutating_side_effect: false,
+                ..ExecutionProgress::default()
             },
             RiskTier::High,
             &BTreeSet::from([Capability::Text]),
@@ -3736,8 +3775,10 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
                 retry_after_ms: None,
             }))],
         ));
+        // Same provider, different model: the only fallback shape that stays
+        // inside the session's reasoning identity family.
         let fallback = Arc::new(ScriptAdapter::new(
-            ProviderKind::Anthropic,
+            ProviderKind::OpenAi,
             vec![Ok(vec![StreamEvent::Completed {
                 response_id: "fallback".into(),
                 finish_reason: FinishReason::Stop,
@@ -3763,8 +3804,151 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
             )
             .await
             .unwrap();
-        assert_eq!(outcome.provider, ProviderKind::Anthropic);
+        assert_eq!(outcome.provider, ProviderKind::OpenAi);
+        assert_eq!(outcome.model, "fallback");
         assert_eq!(fallback.calls.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn router_refuses_automatic_cross_provider_fallback_rather_than_degrading() {
+        let primary = Arc::new(ScriptAdapter::new(
+            ProviderKind::OpenAi,
+            vec![Err(AdapterError::Provider(ProviderError {
+                provider: ProviderKind::OpenAi,
+                category: ErrorCategory::ModelUnavailable,
+                code: None,
+                message: "unavailable".into(),
+                retryable: false,
+                provider_request_id: None,
+                http_status: Some(503),
+                retry_after_ms: None,
+            }))],
+        ));
+        let other_provider = Arc::new(ScriptAdapter::new(
+            ProviderKind::Anthropic,
+            vec![Ok(vec![StreamEvent::Completed {
+                response_id: "must-not-run".into(),
+                finish_reason: FinishReason::Stop,
+            }])],
+        ));
+        let router = ProviderRouter::new(
+            vec![
+                scripted_route(primary, "primary", RiskTier::High),
+                scripted_route(other_provider.clone(), "other", RiskTier::High),
+            ],
+            Arc::new(MockTransport::default()),
+            PricingCatalog::default(),
+        );
+        let result = router
+            .execute(
+                &request(),
+                &RouteRequirements {
+                    risk_tier: RiskTier::High,
+                    capabilities: BTreeSet::from([Capability::Text]),
+                },
+                ExecutionProgress::default(),
+                &CancellationToken::default(),
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(RouterError::Provider(AdapterError::Translation(message)))
+                if message == FallbackDenied::CrossProviderFallback.to_string()
+        ));
+        assert_eq!(other_provider.calls.load(AtomicOrdering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn router_strips_reasoning_bound_to_another_account_before_dispatch() {
+        #[derive(Default)]
+        struct CapturingAdapter {
+            captured: Mutex<Option<NormalizedRequest>>,
+        }
+
+        #[async_trait]
+        impl ProviderAdapter for CapturingAdapter {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::Anthropic
+            }
+            fn capability_profile(&self) -> CapabilityProfile {
+                CapabilityProfile::anthropic_messages()
+            }
+            async fn execute_once(
+                &self,
+                request: &NormalizedRequest,
+                _: &AuthProfile,
+                _: &dyn HttpTransport,
+                _: &CancellationToken,
+            ) -> Result<Vec<StreamEvent>, AdapterError> {
+                *self.captured.lock().unwrap() = Some(request.clone());
+                Ok(vec![StreamEvent::Completed {
+                    response_id: "done".into(),
+                    finish_reason: FinishReason::Stop,
+                }])
+            }
+        }
+
+        let auth = AuthProfile::explicit(ProviderKind::Anthropic, "account-in-use").unwrap();
+        let foreign = AuthProfile::explicit(ProviderKind::Anthropic, "another-account")
+            .unwrap()
+            .reasoning_identity("primary");
+        let adapter = Arc::new(CapturingAdapter::default());
+        let mut request = request();
+        request.messages.push(InputMessage::new(
+            InputRole::Assistant,
+            vec![
+                InputPart::Reasoning(ReasoningPart::new(
+                    "thought",
+                    Some(OpaqueReasoning::anthropic(foreign.clone(), "foreign-sig")),
+                )),
+                InputPart::Text {
+                    text: "prior answer".into(),
+                },
+            ],
+        ));
+        request
+            .replay
+            .push(OpaqueReasoning::anthropic(foreign, "foreign-sig"));
+        let router = ProviderRouter::new(
+            vec![RouterRoute {
+                candidate: RouteCandidate {
+                    provider: ProviderKind::Anthropic,
+                    model: "primary".into(),
+                    risk_tier: RiskTier::High,
+                    capabilities: BTreeSet::from([Capability::Text, Capability::Tools]),
+                },
+                adapter: adapter.clone(),
+                auth,
+            }],
+            Arc::new(MockTransport::default()),
+            PricingCatalog::default(),
+        );
+        let outcome = router
+            .execute(
+                &request,
+                &RouteRequirements {
+                    risk_tier: RiskTier::High,
+                    capabilities: BTreeSet::from([Capability::Text]),
+                },
+                ExecutionProgress::default(),
+                &CancellationToken::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome.reasoning_stripped.stripped_parts, 1);
+        assert_eq!(outcome.reasoning_stripped.stripped_messages, 1);
+        assert!(!outcome.reasoning_stripped.is_compatible());
+        let dispatched = adapter.captured.lock().unwrap().clone().unwrap();
+        assert!(dispatched.replay.is_empty());
+        let assistant = dispatched.messages.last().unwrap();
+        assert!(!assistant.carries_reasoning());
+        // Non-reasoning content of the same message is untouched.
+        assert_eq!(assistant.parts().len(), 1);
+        assert!(
+            !serde_json::to_string(&dispatched)
+                .unwrap()
+                .contains("foreign-sig")
+        );
     }
 
     #[tokio::test]
@@ -4345,7 +4529,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
                     headers: BTreeMap::new(),
                     chunks: receiver,
                 },
-                provider,
+                identity(provider),
             )
             .await
             .unwrap();
@@ -4372,7 +4556,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
                 headers: BTreeMap::new(),
                 chunks: receiver,
             },
-            ProviderKind::OpenAi,
+            identity(ProviderKind::OpenAi),
         )
         .await
         .unwrap();
@@ -4408,7 +4592,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
                 headers: BTreeMap::new(),
                 chunks: receiver,
             },
-            provider,
+            identity(provider),
         )
         .await?
         .collect()
@@ -4428,7 +4612,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
             headers: BTreeMap::new(),
             chunks: receiver,
         };
-        let mut stream = stream_http_response(response, ProviderKind::OpenAi)
+        let mut stream = stream_http_response(response, identity(ProviderKind::OpenAi))
             .await
             .unwrap();
 
@@ -4640,7 +4824,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_local\",\"usa
 
     #[test]
     fn anthropic_incremental_tool_arguments_have_an_aggregate_bound() {
-        let mut state = AnthropicSseState::default();
+        let mut state = AnthropicSseState::new(identity(ProviderKind::Anthropic));
         parse_anthropic_sse_incremental(
             br#"event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"read"}}
@@ -4676,7 +4860,7 @@ data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use"
 data: {"type":"response.output_item.added","item":{"type":"reasoning","id":"rs_duplicate"}}
 
 "#;
-        let mut state = OpenAiSseState::default();
+        let mut state = OpenAiSseState::new(identity(ProviderKind::OpenAi));
         parse_openai_sse_incremental(frame, &mut state).unwrap();
 
         let error = parse_openai_sse_incremental(frame, &mut state)
@@ -4714,8 +4898,10 @@ data: {"type":"response.output_item.added","item":{"type":"reasoning","id":"rs_d
             )
             .unwrap();
             let parsed = match case["provider"].as_str().unwrap() {
-                "anthropic" => parse_anthropic_sse(body.as_bytes()),
-                "openai" => parse_openai_sse(body.as_bytes()),
+                "anthropic" => {
+                    parse_anthropic_sse(body.as_bytes(), &identity(ProviderKind::Anthropic))
+                }
+                "openai" => parse_openai_sse(body.as_bytes(), &identity(ProviderKind::OpenAi)),
                 provider => panic!("unexpected provider {provider}"),
             };
             if expected["exactError"].is_null() {

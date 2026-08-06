@@ -3,6 +3,7 @@
 /.changeloop/*.db
 /.changeloop/*.db-shm
 /.changeloop/*.db-wal
+/.changeloop/*.lock
 **/node_modules/
 **/test-results/
 **/coverage/

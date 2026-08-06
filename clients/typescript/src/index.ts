@@ -45,6 +45,11 @@ export type { SessionId } from "../generated/SessionId.js";
 export type { SessionKind } from "../generated/SessionKind.js";
 export type { SpawnJobRequest } from "../generated/SpawnJobRequest.js";
 export type { SpawnJobResult } from "../generated/SpawnJobResult.js";
+export type { WriteCheckOutcome } from "../generated/WriteCheckOutcome.js";
+export type { WriteCheckRun } from "../generated/WriteCheckRun.js";
+export type { WriteCheckStage } from "../generated/WriteCheckStage.js";
+export type { WriteCheckStatus } from "../generated/WriteCheckStatus.js";
+export type { WriteCheckVerdict } from "../generated/WriteCheckVerdict.js";
 export type { WriteFileRequest } from "../generated/WriteFileRequest.js";
 export type { WriteFileResult } from "../generated/WriteFileResult.js";
 

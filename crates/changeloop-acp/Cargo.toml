@@ -1,0 +1,16 @@
+[package]
+name = "changeloop-acp"
+description = "Agent Client Protocol (ACP) server facade over the Changeloop session surface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-session = { version = "0.1.0", path = "../changeloop-session" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

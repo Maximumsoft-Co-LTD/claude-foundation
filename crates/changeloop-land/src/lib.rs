@@ -16,6 +16,10 @@ use std::{
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
+pub mod prove_evidence;
+
+pub use prove_evidence::{ProveEvidenceBriefing, ProveEvidenceGap, read_prove_evidence};
+
 const MAX_LAND_JSON_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_LAND_ENTRIES: usize = 10_000;
 const MAX_LAND_REVIEW_ATTEMPTS: usize = 10_000;

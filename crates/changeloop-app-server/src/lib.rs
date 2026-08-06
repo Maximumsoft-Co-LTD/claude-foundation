@@ -1,6 +1,7 @@
 //! Pure app-server protocol policy. No listener, socket, or HTTP implementation lives here.
 
 pub mod executable;
+pub mod force_dispose;
 pub mod pause_control;
 
 use changeloop_protocol::{

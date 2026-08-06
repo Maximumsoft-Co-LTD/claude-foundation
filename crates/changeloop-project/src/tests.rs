@@ -952,3 +952,222 @@ fn leader_election_never_connects_to_malformed_owner_metadata() {
         LeaderDisposition::Leader(_)
     ));
 }
+
+/// A temporary root short enough that a derived socket path still fits inside
+/// `sockaddr_un.sun_path`. macOS's default `TMPDIR` alone is ~66 bytes, which
+/// is a property of the test environment, not of the rendezvous.
+fn short_tempdir() -> tempfile::TempDir {
+    #[cfg(unix)]
+    if let Ok(directory) = tempfile::Builder::new().prefix("cl").tempdir_in("/tmp") {
+        return directory;
+    }
+    tempdir().unwrap()
+}
+
+#[test]
+fn rendezvous_paths_are_derived_from_the_canonical_worktree() {
+    let directory = short_tempdir();
+    let worktree = directory.path().join("project");
+    std::fs::create_dir_all(worktree.join("nested")).unwrap();
+    let canonical = std::fs::canonicalize(&worktree).unwrap();
+
+    let direct = Rendezvous::for_worktree(&worktree).unwrap();
+    // Three different spellings of one worktree. If the rendezvous were
+    // caller-supplied, each of these could name a different lock and two
+    // processes would silently both become writers.
+    let traversed = Rendezvous::for_worktree(worktree.join("nested/..")).unwrap();
+    let trailing = Rendezvous::for_worktree(format!("{}/", worktree.display())).unwrap();
+
+    assert_eq!(direct.root(), canonical);
+    assert_eq!(direct.lock_path(), traversed.lock_path());
+    assert_eq!(direct.lock_path(), trailing.lock_path());
+    assert_eq!(
+        direct.socket_path().unwrap(),
+        traversed.socket_path().unwrap()
+    );
+    assert_eq!(
+        direct.lock_path().parent(),
+        Some(canonical.join(".changeloop").as_path())
+    );
+
+    // A second worktree never shares the first one's rendezvous.
+    let other = directory.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    assert_ne!(
+        direct.lock_path(),
+        Rendezvous::for_worktree(&other).unwrap().lock_path()
+    );
+
+    assert!(matches!(
+        Rendezvous::for_worktree(directory.path().join("missing")),
+        Err(LockError::Io { .. })
+    ));
+}
+
+#[test]
+fn rendezvous_socket_path_is_refused_when_it_exceeds_the_address_limit() {
+    let directory = tempdir().unwrap();
+    let mut deep = directory.path().to_path_buf();
+    for _ in 0..12 {
+        deep = deep.join("a-directory-with-a-deliberately-long-name");
+    }
+    std::fs::create_dir_all(&deep).unwrap();
+    let rendezvous = Rendezvous::for_worktree(&deep).unwrap();
+    // The lock is a regular file and stays derivable, so write ownership is
+    // still decidable even where no socket could be bound.
+    assert!(rendezvous.lock_path().starts_with(rendezvous.root()));
+    let error = rendezvous.socket_path().unwrap_err();
+    assert!(
+        error.to_string().contains("socket-address limit"),
+        "unexpected message: {error}"
+    );
+}
+
+#[test]
+fn handshake_refuses_an_older_binary_against_a_newer_schema() {
+    let server = RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 7);
+
+    let older = RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 6);
+    let error = server.accept(older).unwrap_err();
+    assert_eq!(
+        error,
+        HandshakeError::SchemaTooNew {
+            client: 6,
+            server: 7
+        }
+    );
+    let message = error.to_string();
+    assert!(message.contains("store schema 6"), "{message}");
+    assert!(message.contains("schema 7"), "{message}");
+    assert!(message.contains("upgrade cloop"), "{message}");
+
+    // Same schema attaches; a newer client attaches and simply does not migrate,
+    // because the owner holds the writes.
+    server.accept(server).unwrap();
+    server
+        .accept(RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 8))
+        .unwrap();
+
+    // A different rendezvous protocol is refused in both directions, and an
+    // unversioned owner is refused rather than guessed about.
+    assert!(matches!(
+        server.accept(RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION + 1, 7)),
+        Err(HandshakeError::Protocol { .. })
+    ));
+    assert!(matches!(
+        RendezvousVersion::default().accept(server),
+        Err(HandshakeError::Protocol { server: 0, .. })
+    ));
+    assert!(matches!(
+        server.accept(RendezvousVersion::default()),
+        Err(HandshakeError::Protocol { client: 0, .. })
+    ));
+}
+
+#[test]
+fn versioned_election_publishes_versions_a_contender_can_refuse() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("versioned.lock");
+    let owner_version = RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 9);
+    let LeaderDisposition::Leader(leader) =
+        elect_leader_versioned(&path, "unix:///tmp/owner.sock", owner_version).unwrap()
+    else {
+        panic!("first process must become leader")
+    };
+    let LeaderDisposition::Connect { metadata } = elect_leader_versioned(
+        &path,
+        "unix:///tmp/stale.sock",
+        RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 8),
+    )
+    .unwrap() else {
+        panic!("second process must read the owner metadata")
+    };
+    assert_eq!(metadata.version, owner_version);
+    assert!(matches!(
+        metadata
+            .version
+            .accept(RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 8)),
+        Err(HandshakeError::SchemaTooNew { .. })
+    ));
+    drop(leader);
+}
+
+#[test]
+fn unversioned_lock_metadata_is_refused_rather_than_assumed_compatible() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("legacy.lock");
+    // A lock written by a build that predates versioned metadata.
+    let owner = open_exclusive_lock(
+        &path,
+        r#"{"pid":4242,"endpoint":"unix:///tmp/old.sock"}"#.into(),
+    )
+    .unwrap();
+    let LeaderDisposition::Connect { metadata } = elect_leader_versioned(
+        &path,
+        "unix:///tmp/new.sock",
+        RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 4),
+    )
+    .unwrap() else {
+        panic!("contender must read the legacy metadata")
+    };
+    assert_eq!(metadata.version, RendezvousVersion::default());
+    assert!(matches!(
+        metadata
+            .version
+            .accept(RendezvousVersion::new(RENDEZVOUS_PROTOCOL_VERSION, 4)),
+        Err(HandshakeError::Protocol { server: 0, .. })
+    ));
+    drop(owner);
+}
+
+#[test]
+fn mutation_lease_renewal_extends_the_deadline_without_reclaiming() {
+    let directory = tempdir().unwrap();
+    let worktree = directory.path().join("worktree");
+    let locks = directory.path().join("locks");
+    std::fs::create_dir_all(&worktree).unwrap();
+    std::fs::create_dir_all(&locks).unwrap();
+    std::fs::write(worktree.join("file.txt"), b"one").unwrap();
+    let revision =
+        WorkspaceRevision::capture(&worktree, "token", [PathBuf::from("file.txt")]).unwrap();
+    let mut lease = MutationLease::acquire(
+        &locks,
+        &worktree,
+        100,
+        revision.clone(),
+        [PathBuf::from("file.txt")],
+    )
+    .unwrap();
+
+    assert_eq!(lease.expires_at_ms(), 100);
+    assert!(matches!(
+        lease.authorize_write(150, &revision),
+        Err(MutationError::LeaseExpired)
+    ));
+
+    lease.renew(200).unwrap();
+    assert_eq!(lease.expires_at_ms(), 200);
+    lease.authorize_write(150, &revision).unwrap();
+
+    // Renewal only moves forward; it is not a way to rewrite history.
+    assert!(matches!(
+        lease.renew(200),
+        Err(MutationError::LeaseRenewalNotMonotonic {
+            current: 200,
+            requested: 200
+        })
+    ));
+    assert!(matches!(
+        lease.renew(1),
+        Err(MutationError::LeaseRenewalNotMonotonic { .. })
+    ));
+
+    // Renewal never affects who holds the lock: a second acquisition of the
+    // same derived path is still refused while this lease lives.
+    assert!(matches!(
+        MutationLease::acquire(&locks, &worktree, 300, revision.clone(), [PathBuf::new()]),
+        Err(MutationError::Lock(LockError::Held { .. }))
+    ));
+    drop(lease);
+    assert!(MutationLease::acquire(&locks, &worktree, 300, revision, [PathBuf::new()]).is_ok());
+}

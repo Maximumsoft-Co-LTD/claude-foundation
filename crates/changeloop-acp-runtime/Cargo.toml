@@ -1,0 +1,26 @@
+[package]
+name = "changeloop-acp-runtime"
+description = "Agent-runtime TurnDriver behind the Changeloop ACP facade"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+changeloop-acp = { version = "0.1.0", path = "../changeloop-acp" }
+changeloop-agent = { version = "0.1.0", path = "../changeloop-agent" }
+changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
+changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }
+changeloop-provider = { version = "0.1.0", path = "../changeloop-provider" }
+changeloop-provider-adapters = { version = "0.1.0", path = "../changeloop-provider-adapters" }
+changeloop-runtime = { version = "0.1.0", path = "../changeloop-runtime" }
+changeloop-session = { version = "0.1.0", path = "../changeloop-session" }
+changeloop-storage = { version = "0.1.0", path = "../changeloop-storage" }
+changeloop-tools = { version = "0.1.0", path = "../changeloop-tools" }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

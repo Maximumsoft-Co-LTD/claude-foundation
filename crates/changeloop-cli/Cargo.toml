@@ -13,8 +13,11 @@ path = "src/main.rs"
 
 [dependencies]
 fs2.workspace = true
+changeloop-acp = { version = "0.1.0", path = "../changeloop-acp" }
+changeloop-acp-runtime = { version = "0.1.0", path = "../changeloop-acp-runtime" }
 changeloop-app-server = { version = "0.1.0", path = "../changeloop-app-server" }
 changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
+changeloop-evidence = { version = "0.1.0", path = "../changeloop-evidence" }
 changeloop-harness = { version = "0.1.0", path = "../changeloop-harness" }
 changeloop-language = { version = "0.1.0", path = "../changeloop-language" }
 changeloop-land = { version = "0.1.0", path = "../changeloop-land" }

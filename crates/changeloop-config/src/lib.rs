@@ -6,10 +6,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-const PATHS: [&str; 14] = [
+mod profile;
+
+pub use profile::*;
+
+const PATHS: [&str; 15] = [
     "version",
     "mode",
     "repositories",
+    "agent",
     "execution.maxParallelAgents",
     "execution.leaseMinutes",
     "execution.maxRepairCycles",
@@ -26,6 +31,8 @@ const MAX_REPOSITORIES: usize = 32;
 const MAX_RESOURCES_PER_REPOSITORY: usize = 1_024;
 const MAX_REPOSITORY_NAME_BYTES: usize = 256;
 const MAX_REPOSITORY_PATH_BYTES: usize = 4_096;
+const MAX_MODEL_PROFILES: usize = 128;
+const MAX_MODEL_ID_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,6 +50,9 @@ pub struct Config {
     pub mode: Mode,
     /// Empty preserves the single-repository current-directory behavior.
     pub repositories: Vec<RepositoryConfig>,
+    /// Per-model strategy overrides. Empty resolves to built-in defaults.
+    #[serde(default)]
+    pub agent: AgentConfig,
     pub execution: ExecutionConfig,
     pub telemetry: TelemetryConfig,
     pub web: WebConfig,
@@ -55,11 +65,23 @@ impl Default for Config {
             version: 1,
             mode: Mode::Auto,
             repositories: Vec::new(),
+            agent: AgentConfig::default(),
             execution: ExecutionConfig::default(),
             telemetry: TelemetryConfig::default(),
             web: WebConfig::default(),
             server: ServerConfig::default(),
         }
+    }
+}
+
+impl Config {
+    /// Resolve the agent strategy for one model id.
+    ///
+    /// Precedence, highest first: explicit per-model user config, explicit
+    /// global user config, built-in per-model default, built-in global
+    /// default.
+    pub fn agent_profile(&self, model: &str) -> ResolvedAgentProfile {
+        self.agent.profile_for(model)
     }
 }
 
@@ -143,6 +165,9 @@ pub struct ConfigPatch {
     pub version: Option<u32>,
     pub mode: Option<Mode>,
     pub repositories: Option<Vec<RepositoryConfig>>,
+    /// Replaced wholesale, like `repositories`: a per-model strategy table is
+    /// only meaningful as a set.
+    pub agent: Option<AgentConfig>,
     pub execution: Option<ExecutionPatch>,
     pub telemetry: Option<TelemetryPatch>,
     pub web: Option<WebPatch>,
@@ -193,6 +218,12 @@ impl ConfigPatch {
             e.push((
                 "repositories",
                 serde_json::to_value(repositories).expect("repositories serialize"),
+            ));
+        }
+        if let Some(agent) = &self.agent {
+            e.push((
+                "agent",
+                serde_json::to_value(agent).expect("agent serialize"),
             ));
         }
         if let Some(v) = &self.execution {
@@ -805,10 +836,60 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         100,
         30_000,
     );
+    validate_agent(&config.agent, &mut issues);
     if issues.is_empty() {
         Ok(())
     } else {
         Err(ConfigError::Validation(issues))
+    }
+}
+
+/// Validate the strategy each configured model actually resolves to, not the
+/// sparse override text, so a bad value cannot hide behind a lower layer.
+fn validate_agent(agent: &AgentConfig, issues: &mut Vec<ValidationIssue>) {
+    if agent.models.len() > MAX_MODEL_PROFILES {
+        issues.push(ValidationIssue::new(
+            "agent.models",
+            format!("must contain at most {MAX_MODEL_PROFILES} entries"),
+        ));
+    }
+    let mut targets = vec![("agent.default".to_owned(), String::new())];
+    for model in agent.models.keys() {
+        if model.trim().is_empty()
+            || model.len() > MAX_MODEL_ID_BYTES
+            || model.chars().any(char::is_control)
+        {
+            issues.push(ValidationIssue::new(
+                "agent.models",
+                format!("model id must be non-empty and at most {MAX_MODEL_ID_BYTES} bytes"),
+            ));
+            continue;
+        }
+        targets.push((format!("agent.models.{model}"), model.clone()));
+    }
+    for (prefix, model) in targets {
+        let profile = agent.profile_for(&model).profile;
+        range(
+            issues,
+            &format!("{prefix}.context.compaction.triggerPercent"),
+            profile.context.compaction.trigger_percent,
+            1,
+            100,
+        );
+        range(
+            issues,
+            &format!("{prefix}.delegation.maxDepth"),
+            profile.delegation.max_depth,
+            1,
+            8,
+        );
+        range(
+            issues,
+            &format!("{prefix}.delegation.maxConcurrency"),
+            profile.delegation.max_concurrency,
+            1,
+            64,
+        );
     }
 }
 
@@ -913,6 +994,7 @@ fn impact(path: &str) -> ReloadImpact {
             ReloadImpact::RestartServer
         }
         "execution.maxParallelAgents" | "repositories" => ReloadImpact::RestartProject,
+        "agent" => ReloadImpact::NewOperationsOnly,
         "mode" | "execution.leaseMinutes" | "execution.maxRepairCycles" => {
             ReloadImpact::NewOperationsOnly
         }
@@ -1309,6 +1391,231 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn agent_profile_defaults_resolve_without_any_configuration() {
+        let resolved = ConfigResolver::resolve(Vec::new()).unwrap();
+        let profile = resolved.config.agent_profile("some-unlisted-model");
+        assert_eq!(profile.layers, vec![ProfileLayer::GlobalDefault]);
+        assert_eq!(profile.profile.tier, ModelTier::Unspecified);
+        assert_eq!(
+            profile.profile.context.strategy,
+            ContextStrategy::KeepLatestAndSummarise
+        );
+        assert!(!profile.profile.context.isolation_enabled());
+        assert_eq!(
+            profile.profile.exploration.baseline,
+            ExplorationTools::GrepReadGlob
+        );
+        assert!(!profile.profile.exploration.embeddings_index);
+        assert_eq!(profile.profile.delegation.mode, DelegationMode::ReadOnly);
+        assert!(profile.profile.delegation.contracts_are_harness_authored());
+        assert!(profile.profile.edit_format.policy_applies);
+        assert!(profile.profile.edit_format.format_then_check);
+    }
+
+    #[test]
+    fn builtin_model_default_overrides_global_default() {
+        let config = Config::default();
+        let frontier = config.agent_profile("claude-opus-4-6");
+        assert_eq!(
+            frontier.layers,
+            vec![
+                ProfileLayer::GlobalDefault,
+                ProfileLayer::ModelDefault(ModelTier::Frontier)
+            ]
+        );
+        assert!(frontier.profile.context.isolation_enabled());
+        assert!(!frontier.profile.edit_format.policy_applies);
+        assert!(frontier.profile.edit_format.editor_subagent_split);
+
+        let weaker = config.agent_profile("deepseek-v3.2-thinking");
+        assert_eq!(weaker.profile.tier, ModelTier::OpenWeight);
+        assert!(!weaker.profile.context.isolation_enabled());
+        assert!(weaker.profile.edit_format.policy_applies);
+    }
+
+    #[test]
+    fn explicit_user_config_outranks_model_and_global_defaults() {
+        let resolved = ConfigResolver::resolve(vec![layer(
+            ConfigSource::Project,
+            "changeloop.json",
+            json!({"agent":{
+                "default":{"context":{"subagentIsolation":true},"delegation":{"maxConcurrency":4}},
+                "models":{"claude-opus-4-6":{"context":{"subagentIsolation":false}}}
+            }}),
+        )])
+        .unwrap();
+
+        // User global beats the built-in model default.
+        let unlisted = resolved.config.agent_profile("gpt-5-codex");
+        assert_eq!(
+            unlisted.layers,
+            vec![
+                ProfileLayer::GlobalDefault,
+                ProfileLayer::ModelDefault(ModelTier::Frontier),
+                ProfileLayer::UserGlobal
+            ]
+        );
+        assert!(unlisted.profile.context.subagent_isolation);
+        assert_eq!(unlisted.profile.delegation.max_concurrency, 4);
+
+        // User per-model beats user global, which beats both built-ins.
+        let listed = resolved.config.agent_profile("claude-opus-4-6");
+        assert_eq!(
+            listed.layers,
+            vec![
+                ProfileLayer::GlobalDefault,
+                ProfileLayer::ModelDefault(ModelTier::Frontier),
+                ProfileLayer::UserGlobal,
+                ProfileLayer::UserModel("claude-opus-4-6".to_owned())
+            ]
+        );
+        assert!(!listed.profile.context.subagent_isolation);
+        assert!(!listed.profile.context.isolation_enabled());
+        assert_eq!(listed.profile.delegation.max_concurrency, 4);
+        assert_eq!(
+            resolved.explain("agent").unwrap().selected_source,
+            ProvenanceSource::Project
+        );
+    }
+
+    #[test]
+    fn no_delegation_and_disabled_isolation_are_expressible() {
+        let resolved = ConfigResolver::resolve(vec![layer(
+            ConfigSource::Project,
+            "changeloop.json",
+            json!({"agent":{"models":{"claude-opus-4-6":{
+                "context":{"strategy":"keep-latest-and-summarise","subagentIsolation":false},
+                "delegation":{"mode":"disabled","cleanContextReview":false}
+            }}}}),
+        )])
+        .unwrap();
+        let profile = resolved.config.agent_profile("claude-opus-4-6").profile;
+        assert!(!profile.delegation.is_enabled());
+        assert!(!profile.delegation.permits_writes());
+        assert!(!profile.context.subagent_isolation);
+        assert!(!profile.context.isolation_enabled());
+        assert_eq!(
+            profile.context.strategy,
+            ContextStrategy::KeepLatestAndSummarise
+        );
+    }
+
+    #[test]
+    fn exploration_escalates_on_change_locality_not_repository_size() {
+        let exploration = Config::default()
+            .agent_profile("claude-opus-4-6")
+            .profile
+            .exploration;
+        assert_eq!(
+            exploration.tools_for(ChangeLocality::local(2)),
+            ExplorationTools::GrepReadGlob
+        );
+        assert_eq!(
+            exploration.tools_for(ChangeLocality::local(3)),
+            ExplorationTools::SymbolGraph
+        );
+        assert_eq!(
+            exploration.tools_for(ChangeLocality::cross_repository(1)),
+            ExplorationTools::SymbolGraph
+        );
+
+        let never = ExplorationProfile {
+            symbol_graph_file_span: 0,
+            symbol_graph_cross_repository: false,
+            ..ExplorationProfile::default()
+        };
+        assert_eq!(
+            never.tools_for(ChangeLocality::local(50)),
+            ExplorationTools::GrepReadGlob
+        );
+    }
+
+    #[test]
+    fn agent_serde_round_trip_preserves_unknown_fields_and_tags() {
+        let source = json!({"agent":{
+            "default":{
+                "context":{
+                    "strategy":"programmatic-tool-calling",
+                    "compaction":{"trigger":{"type":"token-budget","tokens":50000}},
+                    "futureContextKnob":{"nested":[1,2]}
+                },
+                "futureSectionKnob":true
+            },
+            "models":{"future-model":{"delegation":{"mode":"advisor-inversion"}}},
+            "futureTopLevelKnob":"kept"
+        }});
+        let patch = ConfigPatch::from_json(source.clone()).unwrap();
+        let agent = patch.agent.clone().unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&agent).unwrap(),
+            source.get("agent").unwrap().clone()
+        );
+
+        let context = agent.default.context.as_ref().unwrap();
+        assert_eq!(
+            context.strategy,
+            Some(ContextStrategy::Unknown {
+                tag: "programmatic-tool-calling".to_owned(),
+                body: Value::Null
+            })
+        );
+        assert_eq!(
+            context
+                .compaction
+                .as_ref()
+                .unwrap()
+                .trigger
+                .as_ref()
+                .unwrap()
+                .tag(),
+            "token-budget"
+        );
+        assert!(context.extra.contains_key("futureContextKnob"));
+
+        // The unknown values survive full resolution, too.
+        let resolved = ConfigResolver::resolve(vec![layer(
+            ConfigSource::Project,
+            "changeloop.json",
+            source,
+        )])
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&resolved.config).unwrap()["agent"]["futureTopLevelKnob"],
+            json!("kept")
+        );
+        let profile = resolved.config.agent_profile("future-model").profile;
+        assert!(!profile.context.strategy.is_known());
+        assert_eq!(profile.context.strategy.tag(), "programmatic-tool-calling");
+        assert_eq!(profile.delegation.mode.tag(), "advisor-inversion");
+        assert!(profile.context.extra.contains_key("futureContextKnob"));
+        assert!(profile.extra.contains_key("futureSectionKnob"));
+        assert_eq!(
+            serde_json::to_value(&profile.context.compaction.trigger).unwrap(),
+            json!({"type":"token-budget","tokens":50000})
+        );
+    }
+
+    #[test]
+    fn agent_validation_checks_the_resolved_profile() {
+        let error = ConfigResolver::resolve(vec![layer(
+            ConfigSource::Project,
+            "changeloop.json",
+            json!({"agent":{
+                "default":{"delegation":{"maxDepth":0}},
+                "models":{"claude-opus-4-6":{"context":{"compaction":{"triggerPercent":200}}}}
+            }}),
+        )])
+        .unwrap_err();
+        let ConfigError::Validation(issues) = error else {
+            panic!("unexpected error")
+        };
+        let paths = issues.iter().map(|i| i.path.as_str()).collect::<Vec<_>>();
+        assert!(paths.contains(&"agent.default.delegation.maxDepth"));
+        assert!(paths.contains(&"agent.models.claude-opus-4-6.context.compaction.triggerPercent"));
     }
 
     #[test]

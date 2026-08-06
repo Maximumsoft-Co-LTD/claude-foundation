@@ -1,4 +1,5 @@
 use super::*;
+use changeloop_tools::{WriteCheckCommand, WriteCheckerConfig};
 use std::fs;
 use std::process::Command;
 
@@ -115,6 +116,119 @@ fn patch_shell_test_question_and_proof_impact_are_wired_end_to_end() {
         ))
         .unwrap();
     assert!(matches!(question, ToolDispatch::Question(prompt) if prompt == "approve?"));
+}
+
+/// Replaces the write runtime's format-then-check configuration so a test can
+/// observe a real checker verdict; `RuntimeTools::new` configures none.
+fn with_write_checker(tools: &mut RuntimeTools, root: &Path, checker: WriteCheckCommand) {
+    tools.write_runtime = ToolRuntime::new(
+        root,
+        root.join(".changeloop/artifacts"),
+        ToolPolicy {
+            mode: ExecutionMode::Auto,
+            configured_action: RuleAction::Allow,
+            lifecycle_authority: LifecycleAuthority::ConfirmedChange,
+            hard_boundaries: vec![],
+        },
+    )
+    .unwrap()
+    .with_write_checkers(WriteCheckerConfig::new().with_checker("txt", checker));
+}
+
+#[test]
+fn write_and_patch_results_carry_the_checker_verdict_to_protocol_clients() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("sample.txt"), "hello").unwrap();
+
+    // Nothing configured: every write still carries an explicit verdict.
+    let mut tools = runtime(root.path());
+    let ToolDispatch::Output(unchecked) = tools
+        .dispatch(&tool_call(
+            "write_file",
+            json!({"schema_version":1,"path":"unchecked.txt","content":"created"}),
+            PermissionKind::FilesystemWrite,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("expected typed write output")
+    };
+    assert_eq!(unchecked["checker"]["status"], "not_configured");
+    assert_eq!(unchecked["checker"]["runs"], json!([]));
+
+    // A checker that rejects the file makes the write distinguishable from a
+    // clean one without reading diagnostics prose.
+    with_write_checker(
+        &mut tools,
+        root.path(),
+        WriteCheckCommand {
+            name: "reject".into(),
+            program: "/usr/bin/false".into(),
+            arguments: vec!["{file}".into()],
+            timeout: Duration::from_secs(30),
+        },
+    );
+    let ToolDispatch::Output(write) = tools
+        .dispatch(&tool_call(
+            "write_file",
+            json!({"schema_version":1,"path":"checked.txt","content":"created"}),
+            PermissionKind::FilesystemWrite,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("expected typed write output")
+    };
+    assert_eq!(write["checker"]["status"], "checked");
+    assert_eq!(write["checker"]["runs"][0]["name"], "reject");
+    assert_eq!(write["checker"]["runs"][0]["stage"], "check");
+    assert_eq!(write["checker"]["runs"][0]["outcome"], "failed");
+
+    let hash = format!("{:x}", Sha256::digest(b"hello"));
+    let ToolDispatch::Output(patch) = tools
+        .dispatch(&tool_call(
+            "apply_patch",
+            json!({
+                "schema_version":1,
+                "path":"sample.txt",
+                "expected_sha256":hash,
+                "replacement":"patched"
+            }),
+            PermissionKind::FilesystemWrite,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("expected typed patch output")
+    };
+    assert_eq!(patch["checker"]["status"], "checked");
+    assert_eq!(patch["checker"]["runs"][0]["outcome"], "failed");
+
+    // A checker that accepts the file reports a passing verdict, so the two
+    // outcomes are not merely "some verdict was attached".
+    with_write_checker(
+        &mut tools,
+        root.path(),
+        WriteCheckCommand {
+            name: "accept".into(),
+            program: "/usr/bin/true".into(),
+            arguments: vec!["{file}".into()],
+            timeout: Duration::from_secs(30),
+        },
+    );
+    let ToolDispatch::Output(clean) = tools
+        .dispatch(&tool_call(
+            "write_file",
+            json!({"schema_version":1,"path":"clean.txt","content":"created"}),
+            PermissionKind::FilesystemWrite,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("expected typed write output")
+    };
+    assert_eq!(clean["checker"]["status"], "checked");
+    assert_eq!(clean["checker"]["runs"][0]["outcome"], "passed");
 }
 
 #[test]
@@ -335,6 +449,11 @@ fn configured_project_formatter_runs_inside_the_mutation_snapshot() {
         result["formatter"][0]["proofImpact"]["requiresReprove"],
         true
     );
+    // Backward compatibility: a `language.json` with no `checkers` key keeps
+    // formatting exactly as before and still reports an explicit no-assurance
+    // verdict rather than borrowing the formatter's success.
+    assert_eq!(result["checker"]["status"], "not_configured");
+    assert_eq!(result["checker"]["runs"], json!([]));
     assert_eq!(
         fs::read_to_string(root.path().join("sample.txt")).unwrap(),
         "changed\nformatted\n"
@@ -502,6 +621,161 @@ fn automatic_formatter_is_fail_closed_and_cannot_write_undeclared_paths() {
             "changed"
         );
     }
+}
+
+/// Writes an executable project script and returns its repository-relative
+/// path, so `language.json` can name a formatter or checker that really runs.
+#[cfg(unix)]
+fn project_script(root: &Path, name: &str, body: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let relative = format!("{name}.sh");
+    let path = root.join(&relative);
+    fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).unwrap();
+    relative
+}
+
+/// The deployment path for Wave 0 item 8: a project declares both halves of
+/// the gate in `.changeloop/language.json` and the app-server wires them into
+/// one write transaction. The checker asserts on content only the formatter
+/// produces, so a passing verdict is only reachable in write → format → check
+/// order; the reported digest is the post-format file on disk.
+#[cfg(unix)]
+#[test]
+fn language_json_checkers_run_after_the_formatter_on_the_post_format_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".changeloop")).unwrap();
+    fs::write(root.path().join("sample.txt"), "hello").unwrap();
+    let formatter = project_script(root.path(), "formatter", "printf formatted > \"$1\"");
+    let checker = project_script(
+        root.path(),
+        "checker",
+        "grep -qx formatted \"$1\" || { printf 'checker saw pre-format bytes\\n' >&2; exit 9; }",
+    );
+    fs::write(
+        root.path().join(".changeloop/language.json"),
+        serde_json::to_vec(&json!({
+            "formatters": [{
+                "name": "fixture-fmt", "executable": formatter, "extensions": ["txt"]
+            }],
+            "checkers": [{
+                "name": "fixture-lint", "executable": checker,
+                "arguments": ["{file}"], "extensions": ["txt"], "timeoutMs": 30_000
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut tools = runtime(root.path());
+    let ToolDispatch::Output(result) = tools
+        .dispatch(&tool_call(
+            "apply_patch",
+            json!({
+                "schema_version":1,
+                "path":"sample.txt",
+                "expected_sha256":format!("{:x}", Sha256::digest(b"hello")),
+                "replacement":"changed"
+            }),
+            PermissionKind::FilesystemWrite,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("expected typed patch output")
+    };
+
+    assert_eq!(
+        result["formatter"][0]["status"], "formatted",
+        "formatter results must survive the stage moving into the write transaction: {result}"
+    );
+    assert_eq!(result["formatter"][0]["name"], "fixture-fmt");
+    assert_eq!(
+        result["checker"]["status"], "checked",
+        "language.json checkers must reach a real deployment as a verdict: {result}"
+    );
+    assert_eq!(result["checker"]["runs"][0]["name"], "fixture-lint");
+    assert_eq!(result["checker"]["runs"][0]["stage"], "check");
+    assert_eq!(
+        result["checker"]["runs"][0]["outcome"], "passed",
+        "a passing checker proves it read the formatted file: {}",
+        result["checker"]["runs"][0]
+    );
+
+    let on_disk = fs::read(root.path().join("sample.txt")).unwrap();
+    assert_eq!(on_disk, b"formatted");
+    assert_eq!(
+        result["sha256"],
+        format!("{:x}", Sha256::digest(&on_disk)),
+        "the recorded self-write fingerprint must match the file a watcher sees"
+    );
+    assert_ne!(
+        result["sha256"],
+        json!(format!("{:x}", Sha256::digest(b"changed"))),
+        "fingerprinting the requested bytes would misclassify our own write as external"
+    );
+}
+
+/// A checker that rejects the file must not undo the formatting that already
+/// happened, and must reach the client as a failure rather than a bare digest.
+#[cfg(unix)]
+#[test]
+fn a_language_json_checker_failure_is_visible_while_the_format_still_applied() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".changeloop")).unwrap();
+    let formatter = project_script(root.path(), "formatter", "printf formatted > \"$1\"");
+    let checker = project_script(
+        root.path(),
+        "checker",
+        "printf 'E501 rejected\\n' >&2\nexit 5",
+    );
+    fs::write(
+        root.path().join(".changeloop/language.json"),
+        serde_json::to_vec(&json!({
+            "formatters": [{
+                "name": "fixture-fmt", "executable": formatter, "extensions": ["txt"]
+            }],
+            "checkers": [{
+                "name": "fixture-lint", "executable": checker,
+                "arguments": ["{file}"], "extensions": ["txt"]
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut tools = runtime(root.path());
+    let ToolDispatch::Output(result) = tools
+        .dispatch(&tool_call(
+            "write_file",
+            json!({"schema_version":1,"path":"sample.txt","content":"raw"}),
+            PermissionKind::FilesystemWrite,
+            true,
+        ))
+        .unwrap()
+    else {
+        panic!("expected typed write output")
+    };
+
+    assert_eq!(result["formatter"][0]["status"], "formatted");
+    assert_eq!(result["checker"]["runs"][0]["outcome"], "failed");
+    assert_eq!(result["checker"]["runs"][0]["exitCode"], 5);
+    assert!(
+        result["checker"]["runs"][0]["diagnostics"]
+            .as_str()
+            .unwrap()
+            .contains("E501 rejected"),
+        "{}",
+        result["checker"]["runs"][0]
+    );
+    assert_eq!(
+        fs::read(root.path().join("sample.txt")).unwrap(),
+        b"formatted",
+        "a rejected write stays on disk in its formatted form"
+    );
 }
 
 #[cfg(unix)]
@@ -1078,5 +1352,35 @@ fn request_attachments_are_cas_backed_typed_and_persisted_with_user_provenance()
     );
     assert!(
         matches!(mismatch, Err(SurfaceError::Invalid(message)) if message.contains("does not match"))
+    );
+}
+
+#[test]
+fn default_tool_catalogue_is_measured_within_the_definition_budget() {
+    use changeloop_runtime::catalog::{SchemaExposure, ToolCatalog, ToolCatalogPolicy};
+
+    let root = tempfile::tempdir().unwrap();
+    let tools = runtime(root.path());
+    let definitions = tools.definitions();
+    let policy = ToolCatalogPolicy::default();
+    let plan = ToolCatalog::new(&policy, &definitions).plan();
+
+    assert_eq!(plan.report.schema_exposure, SchemaExposure::Full);
+    assert!(!plan.report.truncated());
+    assert!(
+        plan.report.warnings.is_empty(),
+        "{:?}",
+        plan.report.warnings
+    );
+    // Measured at ~1678 estimated tokens (6710 bytes across 18 built-in
+    // tools), so the default catalogue sits far under the 10K budget. Bounded
+    // here so a new built-in that materially grows it is noticed at build time
+    // rather than on a live request.
+    assert!(
+        plan.report.full.estimated_tokens < 2_500,
+        "default tool definitions cost ~{} tokens ({} bytes across {} tools)",
+        plan.report.full.estimated_tokens,
+        plan.report.full.bytes,
+        plan.report.full.tools,
     );
 }

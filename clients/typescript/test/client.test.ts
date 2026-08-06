@@ -33,6 +33,7 @@ import {
   type ServerFrame,
   type SpawnJobRequest,
   type SpawnJobResult,
+  type WriteCheckVerdict,
   type WriteFileRequest,
   type WriteFileResult,
 } from "../src/index.js";
@@ -94,17 +95,31 @@ test("generated mutation tool contracts expose the pinned v1 shape", () => {
     content: "export {};",
     artifact: null,
   } satisfies ReadFileResult;
+  const failedChecker = {
+    status: "checked",
+    runs: [
+      {
+        name: "tsc",
+        stage: "check",
+        outcome: "failed",
+        exitCode: 2,
+        diagnostics: "src/output.ts(1,1): error TS1005",
+      },
+    ],
+  } satisfies WriteCheckVerdict;
   const writeResult = {
     schemaVersion: MUTATION_TOOL_SCHEMA_VERSION,
     sha256: "e".repeat(64),
     checkpointId: "checkpoint-write",
     formatter: [],
+    checker: { status: "not_configured", runs: [] },
     proofImpact: { invalidatedPaths: ["src/output.ts"], requiresReprove: true },
   } satisfies WriteFileResult;
   const patchResult = {
     ...writeResult,
     sha256: "f".repeat(64),
     checkpointId: "checkpoint-patch",
+    checker: failedChecker,
   } satisfies ApplyPatchResult;
 
   assert.equal(readRequest.schema_version, 1);
@@ -117,6 +132,11 @@ test("generated mutation tool contracts expose the pinned v1 shape", () => {
   assert.equal(readResult.schemaVersion, 1);
   assert.equal(writeResult.schemaVersion, 1);
   assert.equal(patchResult.schemaVersion, 1);
+  // A checker verdict is always attached, and a failed check is readable
+  // without parsing diagnostics prose.
+  assert.equal(writeResult.checker.status, "not_configured");
+  assert.equal(patchResult.checker.status, "checked");
+  assert.equal(patchResult.checker.runs[0]?.outcome, "failed");
 });
 
 test("generated process and job contracts expose explicit bounded v1 shapes", () => {

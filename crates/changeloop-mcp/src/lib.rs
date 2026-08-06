@@ -6,16 +6,18 @@ use changeloop_policy::{
     OperationKind, PermissionKind, PolicyRequest, Reversibility, RuleAction, SandboxCapability,
     evaluate,
 };
+use changeloop_sandbox::{
+    EnforcementLevel, Policy as SandboxPolicy, ReadScope, SandboxError, SandboxedChild, Spawn,
+    StdioPlan, exceptions,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Read, Write};
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{ChildStdin, ChildStdout};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -85,6 +87,15 @@ pub enum TransportError {
     Http(String),
     #[error("MCP transport is disposed")]
     Disposed,
+    /// Nothing on this host can enforce the server's policy, and no register
+    /// entry authorised running it anyway.
+    ///
+    /// This is the loud path. An MCP stdio server is untrusted third-party code
+    /// executing on the user's machine — five of seven surveyed production MCP
+    /// clients run tools with full host privileges — so "no backend" resolves to
+    /// a refusal that says so, never to a silent host-privileged spawn.
+    #[error("MCP stdio server refused: {0}")]
+    SandboxUnavailable(String),
 }
 
 pub trait McpTransport: Send {
@@ -96,8 +107,26 @@ pub trait McpTransport: Send {
     fn close(&mut self);
 }
 
+/// The one coarse profile an MCP stdio server runs under.
+///
+/// Deny by default, then exactly two allowances: the project tree is writable,
+/// because a server that cannot write its own workspace cannot do useful work,
+/// and nothing else is. Reads stay broad because the ecosystem is predominantly
+/// Node and Python and interpreter startup consults dynamic system paths.
+/// Network egress is denied; a server that needs a destination gets a
+/// transport-level rule in the sandbox register, never an ad-hoc hole here.
+fn stdio_server_policy(working_directory: &Path) -> SandboxPolicy {
+    // Seatbelt matches its filters against the *resolved* path of the file being
+    // touched, so an unresolved workspace (`/var/...` where the real path is
+    // `/private/var/...` on macOS) would produce a profile that silently grants
+    // nothing.
+    let workspace = std::fs::canonicalize(working_directory)
+        .unwrap_or_else(|_| working_directory.to_path_buf());
+    SandboxPolicy::deny_by_default(workspace.clone()).writable([workspace])
+}
+
 pub struct StdioTransport {
-    child: Child,
+    child: SandboxedChild,
     stdin: ChildStdin,
     stdout: Option<BufReader<ChildStdout>>,
     limits: TransportLimits,
@@ -105,11 +134,44 @@ pub struct StdioTransport {
 }
 
 impl StdioTransport {
+    /// Starts an MCP stdio server inside the sandbox.
+    ///
+    /// Refuses when no backend on this host can enforce
+    /// [`stdio_server_policy`]. Use [`StdioTransport::spawn_unenforced`] to run
+    /// one anyway under the `mcp-stdio-server` register row.
     pub fn spawn(
         program: &Path,
         arguments: &[String],
         working_directory: &Path,
         limits: TransportLimits,
+    ) -> Result<Self, TransportError> {
+        Self::launch(program, arguments, working_directory, limits, false)
+    }
+
+    /// Starts an MCP stdio server on a host that cannot enforce the policy,
+    /// under the enumerated `mcp-stdio-server` register row.
+    ///
+    /// The row exists because one vendor's Windows sandbox blocks Node from
+    /// spawning any child process, which would break most of the predominantly
+    /// Node MCP ecosystem the wrapping argument insists on protecting. Naming it
+    /// is the only way to get a host-privileged MCP server, and the degradation
+    /// is reported through [`changeloop_sandbox::set_degradation_reporter`]
+    /// rather than being silent.
+    pub fn spawn_unenforced(
+        program: &Path,
+        arguments: &[String],
+        working_directory: &Path,
+        limits: TransportLimits,
+    ) -> Result<Self, TransportError> {
+        Self::launch(program, arguments, working_directory, limits, true)
+    }
+
+    fn launch(
+        program: &Path,
+        arguments: &[String],
+        working_directory: &Path,
+        limits: TransportLimits,
+        allow_unenforced: bool,
     ) -> Result<Self, TransportError> {
         validate_transport_limits(limits)?;
         if arguments.len() > 64
@@ -123,30 +185,27 @@ impl StdioTransport {
                 "MCP stdio arguments exceed safe bounds",
             )));
         }
-        let mut command = Command::new(program);
-        command
-            .args(arguments)
-            .current_dir(working_directory)
-            .env_clear()
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = command.spawn()?;
-        let stdin = match child.stdin.take() {
+        let mut spawn = Spawn::new(program, stdio_server_policy(working_directory))
+            .arguments(arguments.to_vec())
+            .working_directory(working_directory)
+            .stdin(StdioPlan::Piped)
+            .stdout(StdioPlan::Piped)
+            .stderr(StdioPlan::Null);
+        if allow_unenforced {
+            spawn = spawn.allow_unenforced(exceptions::MCP_STDIO_SERVER);
+        }
+        let mut child = spawn.spawn().map_err(transport_sandbox_error)?;
+        let stdin = match child.take_stdin() {
             Some(stdin) => stdin,
             None => {
-                let _ = child.kill();
-                let _ = child.wait();
+                child.terminate();
                 return Err(std::io::Error::other("MCP child stdin is unavailable").into());
             }
         };
-        let stdout = match child.stdout.take() {
+        let stdout = match child.take_stdout() {
             Some(stdout) => Some(BufReader::new(stdout)),
             None => {
-                let _ = child.kill();
-                let _ = child.wait();
+                child.terminate();
                 return Err(std::io::Error::other("MCP child stdout is unavailable").into());
             }
         };
@@ -157,6 +216,25 @@ impl StdioTransport {
             limits,
             disposed: false,
         })
+    }
+
+    /// What enforcement this server actually got, so a caller can record a
+    /// degraded backend rather than assuming the full profile applied.
+    #[must_use]
+    pub fn enforcement(&self) -> &changeloop_sandbox::Enforcement {
+        self.child.enforcement()
+    }
+}
+
+/// Maps a spawn refusal onto the transport vocabulary.
+///
+/// A host that cannot enforce the policy is never flattened into "the process
+/// failed to start": the operator has to be able to tell a missing backend from
+/// a missing binary.
+fn transport_sandbox_error(error: SandboxError) -> TransportError {
+    match error {
+        SandboxError::Spawn(source) => TransportError::Io(source),
+        other => TransportError::SandboxUnavailable(other.to_string()),
     }
 }
 
@@ -201,7 +279,10 @@ impl McpTransport for StdioTransport {
 
     fn close(&mut self) {
         if !self.disposed {
-            terminate_extension_process(&mut self.child);
+            // `terminate` signals the process group the sandbox crate created
+            // for this child and then reaps the leader, so no descendant
+            // outlives the transport and no defunct entry is left behind.
+            self.child.terminate();
             self.disposed = true;
         }
     }
@@ -1911,32 +1992,51 @@ pub struct ExecutableExtensionHandler {
     entry_path: PathBuf,
     max_output_bytes: usize,
     input_provenance: ExtensionInputProvenance,
-    sandbox: ExtensionSandbox,
 }
 
-#[derive(Clone, Copy)]
-enum ExtensionSandbox {
-    #[cfg(target_os = "macos")]
-    MacOs,
-    #[cfg(target_os = "linux")]
-    Bubblewrap,
+/// Trees a project extension must never read: the user's home directories and
+/// mounted volumes, plus the project tree itself. An extension receives its
+/// input on stdin and is not a file reader.
+const EXTENSION_DENIED_READ_ROOTS: &[&str] = &["/Users", "/home", "/root", "/Volumes"];
+
+/// The one coarse profile a project extension runs under.
+///
+/// The entry file is re-allowed after the denials so the interpreter can read
+/// the script it was told to run, and the scratch directory is the only place
+/// the extension may write.
+fn extension_policy(entry: &Path, project_scope: &Path, scratch: &Path) -> SandboxPolicy {
+    let mut denied: Vec<PathBuf> = EXTENSION_DENIED_READ_ROOTS
+        .iter()
+        .filter(|path| Path::new(path).exists())
+        .map(PathBuf::from)
+        .collect();
+    denied.push(project_scope.to_path_buf());
+    SandboxPolicy::deny_by_default(scratch.to_path_buf())
+        .writable([scratch.to_path_buf()])
+        .read_scope(ReadScope::Explicit(vec![entry.to_path_buf()]))
+        .deny_read(denied)
 }
 
-fn extension_sandbox() -> Option<ExtensionSandbox> {
-    #[cfg(target_os = "macos")]
-    if Path::new("/usr/bin/sandbox-exec").is_file() {
-        return Some(ExtensionSandbox::MacOs);
-    }
-    #[cfg(target_os = "linux")]
-    if Path::new("/usr/bin/bwrap").is_file() || Path::new("/bin/bwrap").is_file() {
-        return Some(ExtensionSandbox::Bubblewrap);
-    }
-    None
+/// The scratch directory an extension runs in and may write to.
+///
+/// Resolved because the Seatbelt filter matches the real path, and `/tmp` is a
+/// symlink to `/private/tmp` on macOS.
+fn extension_scratch() -> PathBuf {
+    let scratch = std::env::temp_dir();
+    std::fs::canonicalize(&scratch).unwrap_or(scratch)
 }
 
+/// Whether this host can actually confine an executable extension.
+///
+/// Third-party code that cannot be confined is not run at all, so this is the
+/// gate [`ExecutableExtensionHandler::new`] refuses on. Degraded counts:
+/// partial enforcement is not no enforcement, and the unapplied axis is named
+/// in the enforcement notice.
 #[must_use]
 pub fn executable_extension_sandbox_available() -> bool {
-    extension_sandbox().is_some()
+    let scratch = extension_scratch();
+    let probe = extension_policy(&scratch, &scratch, &scratch);
+    changeloop_sandbox::select(&probe).level != EnforcementLevel::Unenforced
 }
 
 impl ExecutableExtensionHandler {
@@ -1973,15 +2073,17 @@ impl ExecutableExtensionHandler {
         if max_output_bytes == 0 || max_output_bytes > MAX_MCP_TRANSPORT_BYTES {
             return Err("extension output limit must be between 1 byte and 16 MiB".into());
         }
-        let sandbox = extension_sandbox().ok_or_else(|| {
-            "required extension sandbox is unavailable; executable loading is disabled".to_owned()
-        })?;
+        if !executable_extension_sandbox_available() {
+            return Err(
+                "required extension sandbox is unavailable; executable loading is disabled"
+                    .to_owned(),
+            );
+        }
         Ok(Self {
             project_scope,
             entry_path,
             max_output_bytes,
             input_provenance,
-            sandbox,
         })
     }
 
@@ -2032,44 +2134,48 @@ impl ExtensionHandler for ExecutableExtensionHandler {
                 "extension input exceeds {MAX_EXTENSION_INPUT_BYTES} bytes"
             ));
         }
-        let mut command = extension_command(self.sandbox, &self.entry_path, &self.project_scope)?;
-        command
-            .current_dir("/")
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("CHANGELOOP_EXTENSION_PROTOCOL", "stdio-v1")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("extension failed to start: {error}"))?;
-        let mut stdin = match child.stdin.take() {
+        let scratch = extension_scratch();
+        let mut environment = BTreeMap::new();
+        environment.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+        environment.insert(
+            "CHANGELOOP_EXTENSION_PROTOCOL".to_string(),
+            "stdio-v1".to_string(),
+        );
+        let mut child = Spawn::new(
+            &self.entry_path,
+            extension_policy(&self.entry_path, &self.project_scope, &scratch),
+        )
+        .working_directory(&scratch)
+        .environment(environment)
+        .stdin(StdioPlan::Piped)
+        .stdout(StdioPlan::Piped)
+        .stderr(StdioPlan::Piped)
+        .spawn()
+        .map_err(|error| format!("extension failed to start: {error}"))?;
+        let mut stdin = match child.take_stdin() {
             Some(stdin) => stdin,
             None => {
-                terminate_extension_process(&mut child);
+                child.terminate();
                 return Err("extension stdin unavailable".to_owned());
             }
         };
         if let Err(error) = stdin.write_all(&request) {
-            terminate_extension_process(&mut child);
+            child.terminate();
             return Err(error.to_string());
         }
         drop(stdin);
 
-        let stdout = match child.stdout.take() {
+        let stdout = match child.take_stdout() {
             Some(stdout) => stdout,
             None => {
-                terminate_extension_process(&mut child);
+                child.terminate();
                 return Err("extension stdout unavailable".to_owned());
             }
         };
-        let stderr = match child.stderr.take() {
+        let stderr = match child.take_stderr() {
             Some(stderr) => stderr,
             None => {
-                terminate_extension_process(&mut child);
+                child.terminate();
                 return Err("extension stderr unavailable".to_owned());
             }
         };
@@ -2095,15 +2201,19 @@ impl ExtensionHandler for ExecutableExtensionHandler {
         let started = Instant::now();
         let status = loop {
             if cancellation.is_cancelled() {
-                terminate_extension_process(&mut child);
+                child.terminate();
                 let _ = output.join();
                 let _ = errors.join();
                 return Err("extension cancelled".into());
             }
-            let polled = match child.try_wait() {
+            // Observing through the owned group keeps the leader pinned as a
+            // zombie until its descendants are killed, so a fast PID reuse
+            // cannot redirect the group signal at an unrelated process. The
+            // leader is reaped by the same call, so nothing accumulates.
+            let polled = match child.try_wait_owned_group() {
                 Ok(status) => status,
                 Err(error) => {
-                    terminate_extension_process(&mut child);
+                    child.terminate();
                     let _ = output.join();
                     let _ = errors.join();
                     return Err(error.to_string());
@@ -2113,7 +2223,7 @@ impl ExtensionHandler for ExecutableExtensionHandler {
                 break status;
             }
             if started.elapsed() > Duration::from_secs(60) {
-                terminate_extension_process(&mut child);
+                child.terminate();
                 let _ = output.join();
                 let _ = errors.join();
                 return Err("extension exceeded hard process lifetime".into());
@@ -2142,69 +2252,6 @@ impl ExtensionHandler for ExecutableExtensionHandler {
     }
 }
 
-fn extension_command(
-    sandbox: ExtensionSandbox,
-    entry: &Path,
-    project_scope: &Path,
-) -> Result<Command, String> {
-    match sandbox {
-        #[cfg(target_os = "macos")]
-        ExtensionSandbox::MacOs => {
-            let entry = entry
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"");
-            let project_scope = project_scope
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"");
-            let profile = format!(
-                "(version 1) (deny default) (allow process*) (allow sysctl-read) \
-                 (allow file-read*) (deny file-read* (subpath \"/Users\") \
-                 (subpath \"/home\") (subpath \"/root\") (subpath \"/Volumes\") \
-                 (subpath \"{project_scope}\")) \
-                 (allow file-read* (literal \"{entry}\")) \
-                 (allow file-write* (subpath \"/private/tmp\") (subpath \"/tmp\") \
-                 (literal \"/dev/null\")) (deny network*)"
-            );
-            let mut command = Command::new("/usr/bin/sandbox-exec");
-            command.args(["-p", &profile]).arg(entry);
-            Ok(command)
-        }
-        #[cfg(target_os = "linux")]
-        ExtensionSandbox::Bubblewrap => {
-            let executable = if Path::new("/usr/bin/bwrap").is_file() {
-                "/usr/bin/bwrap"
-            } else {
-                "/bin/bwrap"
-            };
-            let mut command = Command::new(executable);
-            command.args([
-                "--die-with-parent",
-                "--new-session",
-                "--unshare-all",
-                "--proc",
-                "/proc",
-                "--dev",
-                "/dev",
-                "--tmpfs",
-                "/tmp",
-            ]);
-            for system in ["/usr", "/bin", "/lib", "/lib64"] {
-                if Path::new(system).exists() {
-                    command.args(["--ro-bind", system, system]);
-                }
-            }
-            command
-                .args(["--ro-bind"])
-                .arg(entry)
-                .arg("/changeloop-extension")
-                .args(["--chdir", "/tmp", "--", "/changeloop-extension"]);
-            Ok(command)
-        }
-    }
-}
-
 fn sanitized_extension_stderr(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes)
         .chars()
@@ -2214,33 +2261,6 @@ fn sanitized_extension_stderr(bytes: &[u8]) -> String {
             character => character,
         })
         .collect()
-}
-
-#[cfg(unix)]
-fn terminate_extension_process(child: &mut Child) {
-    let process_group = -(child.id() as libc::pid_t);
-    // SAFETY: the child was created as leader of this owned process group.
-    unsafe {
-        libc::kill(process_group, libc::SIGTERM);
-    }
-    let deadline = Instant::now() + Duration::from_millis(100);
-    while Instant::now() < deadline {
-        if child.try_wait().ok().flatten().is_some() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    // SAFETY: the process group remains scoped to the owned child tree.
-    unsafe {
-        libc::kill(process_group, libc::SIGKILL);
-    }
-    let _ = child.wait();
-}
-
-#[cfg(not(unix))]
-fn terminate_extension_process(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 struct ExtensionRecord {

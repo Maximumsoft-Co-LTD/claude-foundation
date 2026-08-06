@@ -40,7 +40,16 @@ The SDK also exports generated v1 contracts for `ReadFile`, `WriteFile`,
 `MUTATION_TOOL_SCHEMA_VERSION` (`1`). The canonical Rust decoder rejects
 unknown fields, unsafe or oversized paths, invalid hashes, unsupported
 versions, oversized JSON/content payloads, inconsistent content/artifact
-outcomes, and unbounded formatter/proof-impact lists.
+outcomes, and unbounded formatter/checker/proof-impact lists.
+
+`WriteFileResult` and `ApplyPatchResult` carry a `checker` verdict describing
+the format-then-check gate that ran inside the write. `status` is
+`not_configured` when the file's language configures no formatter and no
+checker, and `checked` otherwise, with one `runs` entry per command. Only a
+verdict whose runs all report `passed` is a clean write; `failed`, `timed_out`,
+`cancelled`, and `unavailable` all mean the mutation landed unverified. The
+field is additive — a payload from a server that predates it decodes as
+`not_configured` rather than as a passing check.
 
 The same pinned version is exported for `ProcessTool`, `SpawnJob`,
 `JobStatus`, `JobStdin`, and `JobCancel` contracts. Process requests accept a

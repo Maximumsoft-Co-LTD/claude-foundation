@@ -3,15 +3,26 @@
 //! This crate deliberately contains no network or credential implementation.
 //! Adapters translate Anthropic Messages and OpenAI Responses into these types.
 
+pub mod reasoning;
+pub mod request;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use thiserror::Error;
 
+pub use reasoning::{
+    LEGAL_REASONING_OPERATIONS, MAX_REASONING_ACCOUNT_BYTES, OpaqueReasoning, ReasoningDisposition,
+    ReasoningIdentity, ReasoningIdentityOutcome, ReasoningPart,
+};
+pub use request::{
+    RequestBuildError, anthropic_request_body, enforce_reasoning_identity, openai_request_body,
+};
+
 const MAX_USAGE_ENTRIES: usize = 10_000;
 const MAX_ACCOUNTING_TEXT_BYTES: usize = 4_096;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     Anthropic,
@@ -114,11 +125,9 @@ pub enum InputPart {
     Text {
         text: String,
     },
-    Reasoning {
-        text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        replay: Option<ReplayMetadata>,
-    },
+    /// Opaque reasoning state. The payload is a private newtype: no caller can
+    /// edit the signed text or the provider bytes, only keep or drop them.
+    Reasoning(ReasoningPart),
     Image {
         media_type: String,
         artifact_id: String,
@@ -140,25 +149,87 @@ pub enum InputPart {
     },
 }
 
+/// Outcome of a generic part filter. A filter is never silently skipped: the
+/// caller is told that the message was protected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PartFilterOutcome {
+    Applied {
+        removed: usize,
+    },
+    /// The message carries reasoning state, so it is atomic in its entirety and
+    /// no part of it may be dropped or reordered.
+    SkippedReasoningAtomic,
+}
+
+/// One message and its content array.
+///
+/// `parts` is private. The content array of an assistant message that carries
+/// reasoning state is **atomic**: the whole array must be forwarded unchanged
+/// or the whole message dropped. Making the field private turns that rule into
+/// a visibility boundary — a generic normalisation pass in another crate cannot
+/// reach in and drop "an empty text part", which is exactly the regression that
+/// has recurred in the field.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InputMessage {
     pub role: InputRole,
-    pub parts: Vec<InputPart>,
+    parts: Vec<InputPart>,
 }
 
-/// Provider data required for official history replay. It must be redacted
-/// independently before logging and must never contain a raw provider response.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "provider", rename_all = "snake_case")]
-pub enum ReplayMetadata {
-    Anthropic {
-        reasoning_signature: String,
-    },
-    #[serde(rename = "openai")]
-    OpenAi {
-        response_id: String,
-        reasoning_item_ids: Vec<String>,
-    },
+impl InputMessage {
+    #[must_use]
+    pub fn new(role: InputRole, parts: Vec<InputPart>) -> Self {
+        Self { role, parts }
+    }
+
+    #[must_use]
+    pub fn parts(&self) -> &[InputPart] {
+        &self.parts
+    }
+
+    /// True when any part in this content array is reasoning state.
+    #[must_use]
+    pub fn carries_reasoning(&self) -> bool {
+        self.parts
+            .iter()
+            .any(|part| matches!(part, InputPart::Reasoning(_)))
+    }
+
+    /// Appending never drops or reorders an existing part, so it stays legal on
+    /// a reasoning-bearing message.
+    pub fn push_part(&mut self, part: InputPart) {
+        self.parts.push(part);
+    }
+
+    /// The single generic-normalisation entry point.
+    ///
+    /// Any pass that would drop parts — empty-text pruning, cache-control
+    /// attachment, a provider SDK's own prompt filter — must come through here,
+    /// and it is disabled wholesale for a message that carries reasoning state.
+    pub fn retain_parts(&mut self, keep: impl FnMut(&InputPart) -> bool) -> PartFilterOutcome {
+        if self.carries_reasoning() {
+            return PartFilterOutcome::SkippedReasoningAtomic;
+        }
+        let before = self.parts.len();
+        self.parts.retain(keep);
+        PartFilterOutcome::Applied {
+            removed: before - self.parts.len(),
+        }
+    }
+
+    /// The one authorized reasoning mutation: drop, wholesale, every reasoning
+    /// part whose identity the target cannot use. Crate-private so that it is
+    /// reachable only through [`request::enforce_reasoning_identity`].
+    pub(crate) fn strip_incompatible_reasoning(&mut self, target: &ReasoningIdentity) -> usize {
+        let before = self.parts.len();
+        self.parts.retain(|part| match part {
+            InputPart::Reasoning(reasoning) => {
+                reasoning.disposition_for(target) == ReasoningDisposition::KeepWhole
+            }
+            _ => true,
+        });
+        before - self.parts.len()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -168,7 +239,9 @@ pub struct NormalizedRequest {
     pub messages: Vec<InputMessage>,
     pub tools: Vec<ToolDefinition>,
     pub max_output_tokens: Option<u64>,
-    pub replay: Vec<ReplayMetadata>,
+    /// Session-level reasoning state, each item tagged with the identity that
+    /// issued it.
+    pub replay: Vec<OpaqueReasoning>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -187,7 +260,7 @@ pub enum StreamEvent {
     },
     ReasoningDelta {
         text: String,
-        replay: Option<ReplayMetadata>,
+        replay: Option<OpaqueReasoning>,
     },
     ToolCallStarted {
         id: String,
@@ -589,6 +662,13 @@ impl CircuitBreaker {
 pub struct ExecutionProgress {
     pub committed_output: bool,
     pub mutating_side_effect: bool,
+    /// A tool call has been dispatched whose completion is not yet certain —
+    /// no result observed, or the stream died after the call was committed.
+    /// Retrying or falling back here risks executing the same side effect
+    /// twice, so the transactional gate refuses regardless of whether a
+    /// mutation has been *observed*.
+    #[serde(default)]
+    pub tool_call_uncertain: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -632,13 +712,33 @@ pub enum FallbackDenied {
     OutputCommitted,
     #[error("fallback forbidden after a mutating side effect")]
     MutationCommitted,
+    #[error("fallback forbidden while a dispatched tool call's completion is uncertain")]
+    ToolCallUncertain,
+    #[error("automatic cross-provider fallback is forbidden mid-session")]
+    CrossProviderFallback,
     #[error("fallback candidate lowers required risk tier")]
     RiskTierTooLow,
     #[error("fallback candidate lacks required capabilities")]
     MissingCapabilities,
 }
 
+/// The **transactional gate**, plus the assurance floor.
+///
+/// Fallback is refused while any tool call's completion is uncertain, not
+/// merely after an *observed* mutation: a stream that dies between dispatch and
+/// result leaves the side effect in an unknown state, and re-running the turn
+/// elsewhere would risk performing it twice.
+///
+/// Automatic cross-provider fallback is refused outright. Three independent
+/// codebases got the reasoning-identity handling wrong here; for a local-first
+/// single-user CLI the correct behaviour is to fail loudly rather than silently
+/// degrade to a provider that cannot use the session's accumulated state.
+///
+/// This gate deliberately does **not** cover reasoning identity — see
+/// [`request::enforce_reasoning_identity`], which must run on every request
+/// build regardless of execution progress.
 pub fn authorize_fallback(
+    origin: ProviderKind,
     progress: ExecutionProgress,
     candidate: &RouteCandidate,
     required_risk: RiskTier,
@@ -649,6 +749,12 @@ pub fn authorize_fallback(
     }
     if progress.committed_output {
         return Err(FallbackDenied::OutputCommitted);
+    }
+    if progress.tool_call_uncertain {
+        return Err(FallbackDenied::ToolCallUncertain);
+    }
+    if candidate.provider != origin {
+        return Err(FallbackDenied::CrossProviderFallback);
     }
     if candidate.risk_tier < required_risk {
         return Err(FallbackDenied::RiskTierTooLow);
@@ -662,6 +768,14 @@ pub fn authorize_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn openai_identity() -> ReasoningIdentity {
+        ReasoningIdentity::new(ProviderKind::OpenAi, "account-a", "model-1")
+    }
+
+    fn anthropic_identity(account: &str, model: &str) -> ReasoningIdentity {
+        ReasoningIdentity::new(ProviderKind::Anthropic, account, model)
+    }
 
     fn transient_error(retry_after_ms: Option<u64>) -> ProviderError {
         ProviderError {
@@ -681,18 +795,19 @@ mod tests {
         let request = NormalizedRequest {
             operation_id: "operation-1".into(),
             model: "model-1".into(),
-            messages: vec![InputMessage {
-                role: InputRole::Developer,
-                parts: vec![InputPart::Text {
+            messages: vec![InputMessage::new(
+                InputRole::Developer,
+                vec![InputPart::Text {
                     text: "policy".into(),
                 }],
-            }],
+            )],
             tools: vec![],
             max_output_tokens: Some(512),
-            replay: vec![ReplayMetadata::OpenAi {
-                response_id: "response-1".into(),
-                reasoning_item_ids: vec!["reasoning-1".into()],
-            }],
+            replay: vec![OpaqueReasoning::openai(
+                openai_identity(),
+                "response-1",
+                vec!["reasoning-1".into()],
+            )],
         };
         let encoded = serde_json::to_string(&request).unwrap();
         assert_eq!(
@@ -808,9 +923,10 @@ mod tests {
         let required = BTreeSet::from([Capability::Text]);
         assert_eq!(
             authorize_fallback(
+                ProviderKind::Anthropic,
                 ExecutionProgress {
                     committed_output: true,
-                    mutating_side_effect: false
+                    ..ExecutionProgress::default()
                 },
                 &candidate,
                 RiskTier::Medium,
@@ -820,15 +936,328 @@ mod tests {
         );
         assert_eq!(
             authorize_fallback(
+                ProviderKind::Anthropic,
                 ExecutionProgress {
-                    committed_output: false,
-                    mutating_side_effect: true
+                    mutating_side_effect: true,
+                    ..ExecutionProgress::default()
                 },
                 &candidate,
                 RiskTier::Medium,
                 &required
             ),
             Err(FallbackDenied::MutationCommitted)
+        );
+    }
+
+    #[test]
+    fn transactional_gate_blocks_fallback_while_a_tool_call_is_uncertain() {
+        let candidate = RouteCandidate {
+            provider: ProviderKind::Anthropic,
+            model: "model-2".into(),
+            risk_tier: RiskTier::High,
+            capabilities: BTreeSet::from([Capability::Text, Capability::Tools]),
+        };
+        let required = BTreeSet::from([Capability::Text]);
+        // No mutation has been *observed*: the tool call simply never reported
+        // a result. Falling back here is what double-executes a side effect.
+        assert_eq!(
+            authorize_fallback(
+                ProviderKind::Anthropic,
+                ExecutionProgress {
+                    tool_call_uncertain: true,
+                    ..ExecutionProgress::default()
+                },
+                &candidate,
+                RiskTier::Medium,
+                &required
+            ),
+            Err(FallbackDenied::ToolCallUncertain)
+        );
+        assert_eq!(
+            authorize_fallback(
+                ProviderKind::Anthropic,
+                ExecutionProgress::default(),
+                &candidate,
+                RiskTier::Medium,
+                &required
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn automatic_cross_provider_fallback_is_refused_loudly() {
+        let candidate = RouteCandidate {
+            provider: ProviderKind::OpenAi,
+            model: "other-provider".into(),
+            risk_tier: RiskTier::Critical,
+            capabilities: BTreeSet::from([Capability::Text, Capability::Tools]),
+        };
+        assert_eq!(
+            authorize_fallback(
+                ProviderKind::Anthropic,
+                ExecutionProgress::default(),
+                &candidate,
+                RiskTier::Low,
+                &BTreeSet::from([Capability::Text])
+            ),
+            Err(FallbackDenied::CrossProviderFallback)
+        );
+    }
+
+    #[test]
+    fn reasoning_state_supports_exactly_two_whole_message_operations() {
+        assert_eq!(LEGAL_REASONING_OPERATIONS.len(), 2);
+        let identity = anthropic_identity("account-a", "model-1");
+        let reasoning = OpaqueReasoning::anthropic(identity.clone(), "signature-1");
+        assert_eq!(
+            reasoning.disposition_for(&identity),
+            ReasoningDisposition::KeepWhole
+        );
+        // Keeping is byte-preserving; stripping destroys. There is no third
+        // outcome and no API that returns an edited copy.
+        assert_eq!(
+            reasoning.clone().apply(ReasoningDisposition::KeepWhole),
+            Some(reasoning.clone())
+        );
+        assert_eq!(reasoning.apply(ReasoningDisposition::StripWholesale), None);
+    }
+
+    #[test]
+    fn reasoning_identity_is_bound_to_account_and_model_not_only_provider() {
+        let issued = anthropic_identity("account-a", "model-1");
+        let reasoning = OpaqueReasoning::anthropic(issued.clone(), "signature-1");
+        for target in [
+            anthropic_identity("account-b", "model-1"),
+            anthropic_identity("account-a", "model-2"),
+            ReasoningIdentity::new(ProviderKind::OpenAi, "account-a", "model-1"),
+        ] {
+            assert_eq!(
+                reasoning.disposition_for(&target),
+                ReasoningDisposition::StripWholesale
+            );
+        }
+        assert_eq!(
+            reasoning.disposition_for(&issued),
+            ReasoningDisposition::KeepWhole
+        );
+    }
+
+    #[test]
+    fn reasoning_state_round_trips_through_storage_byte_identically() {
+        let identity = anthropic_identity("account-a", "model-1");
+        let part = ReasoningPart::new(
+            "chain of thought",
+            Some(OpaqueReasoning::anthropic(identity, "signature-1")),
+        );
+        let message = InputMessage::new(InputRole::Assistant, vec![InputPart::Reasoning(part)]);
+        let stored = serde_json::to_vec(&message).unwrap();
+        let loaded: InputMessage = serde_json::from_slice(&stored).unwrap();
+        assert_eq!(loaded, message);
+        assert_eq!(serde_json::to_vec(&loaded).unwrap(), stored);
+    }
+
+    #[test]
+    fn a_generic_empty_text_filter_cannot_touch_a_reasoning_bearing_message() {
+        let identity = anthropic_identity("account-a", "model-1");
+        let parts = vec![
+            InputPart::Text {
+                text: String::new(),
+            },
+            InputPart::Reasoning(ReasoningPart::new(
+                "chain of thought",
+                Some(OpaqueReasoning::anthropic(identity, "signature-1")),
+            )),
+            InputPart::Text {
+                text: "answer".into(),
+            },
+        ];
+        let mut message = InputMessage::new(InputRole::Assistant, parts.clone());
+        // This is the exact pass that independently reintroduced the
+        // signature-loss bug in the field.
+        let outcome = message
+            .retain_parts(|part| !matches!(part, InputPart::Text { text } if text.is_empty()));
+        assert_eq!(outcome, PartFilterOutcome::SkippedReasoningAtomic);
+        assert_eq!(message.parts(), parts.as_slice());
+
+        // The same filter still works on a message with no reasoning state.
+        let mut plain = InputMessage::new(
+            InputRole::Assistant,
+            vec![
+                InputPart::Text {
+                    text: String::new(),
+                },
+                InputPart::Text {
+                    text: "answer".into(),
+                },
+            ],
+        );
+        assert_eq!(
+            plain.retain_parts(|part| !matches!(part, InputPart::Text { text } if text.is_empty())),
+            PartFilterOutcome::Applied { removed: 1 }
+        );
+        assert_eq!(plain.parts().len(), 1);
+    }
+
+    #[test]
+    fn cross_account_identity_mismatch_strips_reasoning_explicitly() {
+        let issued = anthropic_identity("account-a", "model-1");
+        let reasoning = OpaqueReasoning::anthropic(issued.clone(), "signature-1");
+        let mut messages = vec![
+            InputMessage::new(
+                InputRole::User,
+                vec![InputPart::Text {
+                    text: "question".into(),
+                }],
+            ),
+            InputMessage::new(
+                InputRole::Assistant,
+                vec![
+                    InputPart::Reasoning(ReasoningPart::new("thought", Some(reasoning))),
+                    InputPart::Text {
+                        text: "answer".into(),
+                    },
+                ],
+            ),
+        ];
+        // Same provider and model, different account/deployment.
+        let outcome =
+            enforce_reasoning_identity(&mut messages, &anthropic_identity("account-b", "model-1"));
+        assert_eq!(
+            outcome,
+            ReasoningIdentityOutcome {
+                stripped_parts: 1,
+                stripped_messages: 1
+            }
+        );
+        assert!(!outcome.is_compatible());
+        assert!(!messages[1].carries_reasoning());
+        // Non-reasoning content survives; the strip is targeted and wholesale,
+        // never a partial edit of the reasoning payload.
+        assert_eq!(messages[1].parts().len(), 1);
+
+        // A matching identity keeps the whole array untouched.
+        let mut kept = vec![InputMessage::new(
+            InputRole::Assistant,
+            vec![InputPart::Reasoning(ReasoningPart::new(
+                "thought",
+                Some(OpaqueReasoning::anthropic(issued.clone(), "signature-1")),
+            ))],
+        )];
+        let snapshot = kept.clone();
+        assert!(enforce_reasoning_identity(&mut kept, &issued).is_compatible());
+        assert_eq!(kept, snapshot);
+    }
+
+    #[test]
+    fn cross_model_switch_within_one_account_obeys_both_gates() {
+        let issued = anthropic_identity("account-a", "model-1");
+        let target = anthropic_identity("account-a", "model-2");
+        let mut messages = vec![InputMessage::new(
+            InputRole::Assistant,
+            vec![InputPart::Reasoning(ReasoningPart::new(
+                "thought",
+                Some(OpaqueReasoning::anthropic(issued, "signature-1")),
+            ))],
+        )];
+        // Reasoning-identity gate: fires on a model switch even though nothing
+        // has mutated and no output is committed.
+        assert_eq!(
+            enforce_reasoning_identity(&mut messages, &target).stripped_parts,
+            1
+        );
+        // Transactional gate: independent, and it still permits the switch
+        // because no side effect is in flight.
+        let candidate = RouteCandidate {
+            provider: ProviderKind::Anthropic,
+            model: "model-2".into(),
+            risk_tier: RiskTier::High,
+            capabilities: BTreeSet::from([Capability::Text]),
+        };
+        assert_eq!(
+            authorize_fallback(
+                ProviderKind::Anthropic,
+                ExecutionProgress::default(),
+                &candidate,
+                RiskTier::High,
+                &BTreeSet::from([Capability::Text])
+            ),
+            Ok(())
+        );
+        // …and refuses it the moment a tool call is in doubt.
+        assert_eq!(
+            authorize_fallback(
+                ProviderKind::Anthropic,
+                ExecutionProgress {
+                    tool_call_uncertain: true,
+                    ..ExecutionProgress::default()
+                },
+                &candidate,
+                RiskTier::High,
+                &BTreeSet::from([Capability::Text])
+            ),
+            Err(FallbackDenied::ToolCallUncertain)
+        );
+    }
+
+    #[test]
+    fn canonical_request_builders_are_the_only_reasoning_renderers() {
+        let identity = anthropic_identity("account-a", "model-1");
+        let request = NormalizedRequest {
+            operation_id: "op".into(),
+            model: "model-1".into(),
+            messages: vec![InputMessage::new(
+                InputRole::Assistant,
+                vec![InputPart::Reasoning(ReasoningPart::new(
+                    "thought",
+                    Some(OpaqueReasoning::anthropic(identity.clone(), "signature-1")),
+                ))],
+            )],
+            tools: vec![],
+            max_output_tokens: Some(64),
+            replay: vec![],
+        };
+        let body = anthropic_request_body(&request, &identity, false).unwrap();
+        assert_eq!(body["messages"][0]["content"][0]["type"], "thinking");
+        assert_eq!(
+            body["messages"][0]["content"][0]["signature"],
+            "signature-1"
+        );
+        // Build for a foreign account: the builder itself refuses to forward.
+        let foreign = anthropic_identity("account-b", "model-1");
+        let body = anthropic_request_body(&request, &foreign, false).unwrap();
+        assert!(
+            body["messages"][0]["content"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!body.to_string().contains("signature-1"));
+    }
+
+    #[test]
+    fn openai_previous_response_id_is_never_forwarded_across_identities() {
+        let issued = ReasoningIdentity::new(ProviderKind::OpenAi, "account-a", "model-1");
+        let request = NormalizedRequest {
+            operation_id: "op".into(),
+            model: "model-1".into(),
+            messages: vec![],
+            tools: vec![],
+            max_output_tokens: None,
+            replay: vec![OpaqueReasoning::openai(
+                issued.clone(),
+                "resp_1",
+                vec!["rs_1".into()],
+            )],
+        };
+        assert_eq!(
+            openai_request_body(&request, &issued, false).unwrap()["previous_response_id"],
+            "resp_1"
+        );
+        let foreign = ReasoningIdentity::new(ProviderKind::OpenAi, "account-b", "model-1");
+        assert!(
+            openai_request_body(&request, &foreign, false).unwrap()["previous_response_id"]
+                .is_null()
         );
     }
 
@@ -843,6 +1272,7 @@ mod tests {
         let required = BTreeSet::from([Capability::Text, Capability::Reasoning]);
         assert_eq!(
             authorize_fallback(
+                ProviderKind::OpenAi,
                 ExecutionProgress::default(),
                 &candidate,
                 RiskTier::High,
@@ -853,6 +1283,7 @@ mod tests {
         candidate.risk_tier = RiskTier::High;
         assert_eq!(
             authorize_fallback(
+                ProviderKind::OpenAi,
                 ExecutionProgress::default(),
                 &candidate,
                 RiskTier::High,
@@ -863,6 +1294,7 @@ mod tests {
         candidate.capabilities.insert(Capability::Reasoning);
         assert_eq!(
             authorize_fallback(
+                ProviderKind::OpenAi,
                 ExecutionProgress::default(),
                 &candidate,
                 RiskTier::High,

@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
 changeloop-language = { version = "0.1.0", path = "../changeloop-language" }
+changeloop-sandbox = { version = "0.1.0", path = "../changeloop-sandbox" }
 fs2.workspace = true
 libc.workspace = true
 sha2.workspace = true

@@ -639,6 +639,21 @@ pub struct FormatterConfig {
     pub timeout_ms: u64,
 }
 
+/// The lint/typecheck command declared for one language in
+/// `.changeloop/language.json`. It is the second half of the format-then-check
+/// gate: the formatter above rewrites the file, then this command reads the
+/// bytes that landed. Declaration lives here beside `FormatterConfig` so one
+/// project file describes the whole gate; execution belongs to whichever crate
+/// owns the write transaction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckerConfig {
+    pub name: String,
+    pub executable: PathBuf,
+    pub arguments: Vec<String>,
+    pub extensions: BTreeSet<String>,
+    pub timeout_ms: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FormatterInvocation {
     pub executable: ProjectExecutable,

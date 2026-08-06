@@ -1599,3 +1599,227 @@ fn executable_extension_cannot_read_other_project_files() {
         ))
     );
 }
+
+// ---------------------------------------------------------------------------
+// Sandbox coverage: every MCP child goes through changeloop_sandbox::Spawn
+// ---------------------------------------------------------------------------
+
+/// Whether this host can actually apply the stdio server profile. The
+/// behavioural tests below assert enforcement, which is only observable where
+/// something enforces.
+fn stdio_server_is_enforced(workspace: &Path) -> bool {
+    changeloop_sandbox::select(&stdio_server_policy(workspace)).level
+        != EnforcementLevel::Unenforced
+}
+
+#[test]
+fn the_stdio_server_profile_is_deny_by_default_and_workspace_scoped() {
+    let directory = tempdir().unwrap();
+    let canonical = std::fs::canonicalize(directory.path()).unwrap();
+    let policy = stdio_server_policy(directory.path());
+
+    assert_eq!(policy.workspace(), canonical.as_path());
+    assert_eq!(policy.writable_paths(), [canonical.clone()].as_slice());
+    assert_eq!(
+        policy.network_policy(),
+        &changeloop_sandbox::NetworkPolicy::Denied,
+        "an MCP server gets no egress until a transport-level rule says otherwise"
+    );
+    policy.validate().expect("the profile is expressible");
+
+    let profile = changeloop_sandbox::seatbelt_profile(&policy);
+    assert!(
+        profile.starts_with("(version 1) (deny default)"),
+        "an inverted default cannot be patched out of: {profile}"
+    );
+    assert!(profile.contains("(deny network*)"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_stdio_server_cannot_write_outside_the_workspace() {
+    let workspace = tempdir().unwrap();
+    if !stdio_server_is_enforced(workspace.path()) {
+        return;
+    }
+    let outside = tempdir().unwrap();
+    let escape = outside.path().join("escaped");
+    let inside = workspace.path().join("permitted");
+    let mut transport = StdioTransport::spawn(
+        Path::new("/bin/sh"),
+        &[
+            "-c".into(),
+            format!(
+                "while IFS= read -r line; do \
+                   if printf x > '{}' 2>/dev/null; then out=escaped; else out=denied; fi; \
+                   if printf x > '{}' 2>/dev/null; then out=\"$out-inside-ok\"; \
+                   else out=\"$out-inside-denied\"; fi; \
+                   printf '%s\\n' \"$out\"; \
+                 done",
+                escape.display(),
+                inside.display()
+            ),
+        ],
+        workspace.path(),
+        limits(),
+    )
+    .unwrap();
+
+    let answer = transport.request(b"probe", &Cancellation::new()).unwrap();
+    assert_eq!(
+        String::from_utf8(answer).unwrap(),
+        "denied-inside-ok",
+        "writes are workspace-scoped: the escape must fail and the workspace write must succeed"
+    );
+    assert!(
+        !escape.exists(),
+        "the sandbox let an MCP server write outside the workspace"
+    );
+    transport.close();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_stdio_server_child_is_owned_and_reaped_rather_than_left_defunct() {
+    let workspace = tempdir().unwrap();
+    if !stdio_server_is_enforced(workspace.path()) {
+        return;
+    }
+    let pid_path = workspace.path().join("server.pid");
+    let mut transport = StdioTransport::spawn(
+        Path::new("/bin/sh"),
+        &[
+            "-c".into(),
+            format!(
+                "printf '%s' \"$$\" > '{}'; while IFS= read -r line; do printf 'alive\\n'; done",
+                pid_path.display()
+            ),
+        ],
+        workspace.path(),
+        limits(),
+    )
+    .unwrap();
+    assert_eq!(
+        transport.request(b"ping", &Cancellation::new()).unwrap(),
+        b"alive"
+    );
+    let pid: libc::pid_t = std::fs::read_to_string(&pid_path)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    // SAFETY: signal 0 performs no mutation and only checks existence.
+    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "the server is running");
+
+    transport.close();
+
+    for _ in 0..200 {
+        // A defunct child still answers signal 0, so this only reaches -1 once
+        // the leader has actually been reaped rather than merely killed.
+        if unsafe { libc::kill(pid, 0) } == -1 {
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    panic!("the MCP stdio child survived disposal as a live or defunct process");
+}
+
+#[test]
+fn an_unenforced_host_refuses_the_stdio_server_rather_than_running_it_host_privileged() {
+    // The refusal is a distinct, reportable condition, never flattened into
+    // "the process failed to start".
+    let refusal = transport_sandbox_error(SandboxError::Unenforced {
+        notice: "NO sandbox enforcement is available on this host (backend: none)".into(),
+    });
+    match &refusal {
+        TransportError::SandboxUnavailable(text) => assert!(
+            text.contains("NO sandbox enforcement is available"),
+            "the refusal must carry the notice that says which guarantee is missing: {text}"
+        ),
+        other => panic!("a missing backend must not look like an I/O failure: {other:?}"),
+    }
+
+    // The only way past it is a named register row, not a boolean.
+    let entry = exceptions::lookup(exceptions::MCP_STDIO_SERVER)
+        .expect("the mcp-stdio-server row exists in the register");
+    assert!(entry.grants.unenforced_spawn);
+    assert!(!entry.compensating_control.is_empty());
+}
+
+#[test]
+fn the_stdio_server_reports_the_enforcement_it_actually_got() {
+    let workspace = tempdir().unwrap();
+    let expected = changeloop_sandbox::select(&stdio_server_policy(workspace.path()));
+    let attempt = StdioTransport::spawn(
+        Path::new("/bin/sh"),
+        &["-c".into(), "cat".into()],
+        workspace.path(),
+        limits(),
+    );
+    if expected.level == EnforcementLevel::Unenforced {
+        assert!(
+            matches!(attempt, Err(TransportError::SandboxUnavailable(_))),
+            "a host with no backend must refuse rather than run the server unsandboxed"
+        );
+        // Naming the register row is what makes the host-privileged spawn
+        // available, and it is attributable.
+        let mut allowed = StdioTransport::spawn_unenforced(
+            Path::new("/bin/sh"),
+            &["-c".into(), "cat".into()],
+            workspace.path(),
+            limits(),
+        )
+        .expect("the register row authorises the unenforced spawn");
+        assert_eq!(
+            allowed.enforcement().level,
+            EnforcementLevel::Unenforced,
+            "the record must say the server ran unenforced"
+        );
+        allowed.close();
+        return;
+    }
+    let mut transport = attempt.expect("an enforcing host starts the server");
+    assert_eq!(transport.enforcement().level, expected.level);
+    assert_ne!(
+        transport.enforcement().level,
+        EnforcementLevel::Unenforced,
+        "{}",
+        transport.enforcement().notice()
+    );
+    transport.close();
+}
+
+#[test]
+fn the_extension_profile_keeps_home_and_project_unreadable() {
+    let project = tempdir().unwrap();
+    let scratch = extension_scratch();
+    let entry = project.path().join("entry.sh");
+    let policy = extension_policy(&entry, project.path(), &scratch);
+
+    assert!(
+        policy
+            .read_denied_paths()
+            .contains(&project.path().to_path_buf()),
+        "third-party extension code must not read the project tree"
+    );
+    assert_eq!(
+        policy.readable(),
+        &ReadScope::Explicit(vec![entry.clone()]),
+        "only the entry file is re-allowed inside the denied trees"
+    );
+
+    let profile = changeloop_sandbox::seatbelt_profile(&policy);
+    let deny = profile
+        .find(&format!(
+            "(deny file-read* (subpath \"{}\"))",
+            project.path().display()
+        ))
+        .expect("the project tree is denied");
+    let allow = profile
+        .find("(allow file-read*)")
+        .expect("reads are broad before the denials");
+    assert!(
+        deny > allow,
+        "the denial must follow the broad allow so the last matching form wins:\n{profile}"
+    );
+}

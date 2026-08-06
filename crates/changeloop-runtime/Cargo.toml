@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 changeloop-agent = { version = "0.1.0", path = "../changeloop-agent" }
+changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
 changeloop-harness = { version = "0.1.0", path = "../changeloop-harness" }
 changeloop-policy = { version = "0.1.0", path = "../changeloop-policy" }
 changeloop-protocol = { version = "0.1.0", path = "../changeloop-protocol" }

@@ -179,6 +179,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "changeloop-acp"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "changeloop-protocol",
+ "changeloop-session",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "changeloop-acp-runtime"
+version = "0.1.0"
+dependencies = [
+ "changeloop-acp",
+ "changeloop-agent",
+ "changeloop-policy",
+ "changeloop-protocol",
+ "changeloop-provider",
+ "changeloop-provider-adapters",
+ "changeloop-runtime",
+ "changeloop-session",
+ "changeloop-storage",
+ "changeloop-tools",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+]
+
+[[package]]
 name = "changeloop-agent"
 version = "0.1.0"
 dependencies = [
@@ -232,8 +264,11 @@ name = "changeloop-cli"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "changeloop-acp",
+ "changeloop-acp-runtime",
  "changeloop-app-server",
  "changeloop-config",
+ "changeloop-evidence",
  "changeloop-harness",
  "changeloop-land",
  "changeloop-language",
@@ -263,6 +298,7 @@ dependencies = [
 name = "changeloop-config"
 version = "0.1.0"
 dependencies = [
+ "changeloop-protocol",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
@@ -329,6 +365,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "changeloop-policy",
+ "changeloop-sandbox",
  "keyring",
  "libc",
  "reqwest",
@@ -348,6 +385,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "changeloop-protocol",
+ "changeloop-sandbox",
  "ed25519-dalek",
  "fs2",
  "keyring",
@@ -397,6 +435,7 @@ version = "0.1.0"
 dependencies = [
  "changeloop-config",
  "changeloop-language",
+ "changeloop-sandbox",
  "fs2",
  "libc",
  "serde",
@@ -451,6 +490,7 @@ name = "changeloop-runtime"
 version = "0.1.0"
 dependencies = [
  "changeloop-agent",
+ "changeloop-config",
  "changeloop-harness",
  "changeloop-policy",
  "changeloop-project",
@@ -465,11 +505,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "changeloop-sandbox"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "changeloop-session"
 version = "0.1.0"
 dependencies = [
  "changeloop-protocol",
  "serde",
+ "serde_json",
  "thiserror 2.0.19",
  "ts-rs",
 ]
@@ -478,6 +528,7 @@ dependencies = [
 name = "changeloop-snapshot"
 version = "0.1.0"
 dependencies = [
+ "changeloop-project",
  "fs2",
  "libc",
  "serde",
@@ -493,6 +544,7 @@ name = "changeloop-storage"
 version = "0.1.0"
 dependencies = [
  "changeloop-protocol",
+ "fs2",
  "libc",
  "rusqlite",
  "serde",
@@ -506,9 +558,11 @@ dependencies = [
 name = "changeloop-tools"
 version = "0.1.0"
 dependencies = [
+ "changeloop-language",
  "changeloop-policy",
  "changeloop-project",
  "changeloop-protocol",
+ "changeloop-sandbox",
  "libc",
  "sha2",
  "tempfile",

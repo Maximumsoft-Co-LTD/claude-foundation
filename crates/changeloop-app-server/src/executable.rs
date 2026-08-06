@@ -4,15 +4,16 @@ use crate::{ClientQueue, QueueError};
 use async_trait::async_trait;
 use base64::Engine as _;
 use changeloop_agent::{
-    BudgetUsage, ChildAction, ChildResult, ExpectedResultSchema, Finding, FindingClassification,
-    ModelFloor, PatchResult, ResultKind, SubagentBudget, SubagentRuntime, SubagentSpec,
-    TaskOutcome, TaskResult, TaskScope,
+    BudgetUsage, ChildAction, ChildResult, Finding, FindingClassification, ModelFloor, PatchResult,
+    ResultKind, SubagentBudget, SubagentRuntime, SubagentSpec, TaskOutcome, TaskResult,
 };
-use changeloop_config::{ConfigLayer, ConfigResolver, ConfigSource, ResolvedConfig};
+use changeloop_config::{
+    ConfigLayer, ConfigResolver, ConfigSource, DelegationProfile, ResolvedConfig,
+};
 use changeloop_language::{
-    DefinitionRequest, DocumentUri, FormatterConfig, LanguageServerConfig, Position,
-    ProjectProcessLauncher, ProjectProcessSpec, ProjectToolResolver, ReferencesRequest,
-    RunningLanguageServer, SymbolRequest,
+    CheckerConfig, DefinitionRequest, DocumentUri, FormatterConfig, LanguageServerConfig, Position,
+    ProjectProcessLauncher, ProjectProcessSpec, ReferencesRequest, RunningLanguageServer,
+    SymbolRequest,
 };
 #[cfg(unix)]
 use changeloop_mcp::UnixTransport as McpUnixTransport;
@@ -26,11 +27,15 @@ use changeloop_policy::{
     OperationKind, PermissionKind, PolicyRequest, Reversibility, RuleAction, SandboxCapability,
     evaluate,
 };
+use changeloop_project::disposal::{
+    DisposalTrigger, ForceDispose, ForceDisposeGuard, register_guarded,
+};
 use changeloop_project::{
     ExecutionCoordinator, ExecutionPermit, InvalidationDispatcher, InvalidationTarget,
     LeaderDisposition as ProcessLeaderDisposition, MutationLease, OwnedResourceHandle,
-    PollingWatcher, ProjectConfigState, ProjectInstance, ProjectWatcher, ResourceKind,
-    WorkspaceRevision, elect_leader,
+    PollingWatcher, ProjectConfigState, ProjectInstance, ProjectWatcher,
+    RENDEZVOUS_PROTOCOL_VERSION, Rendezvous, RendezvousVersion, ResourceKind, WorkspaceRevision,
+    elect_leader_versioned,
 };
 use changeloop_protocol::{
     ApplyPatchResult, ArtifactId, ArtifactRef, CURRENT_PROTOCOL_VERSION, DeleteFileResult, Event,
@@ -38,7 +43,8 @@ use changeloop_protocol::{
     JobStatusState, JobStdinResult, MAX_FILE_CONTENT_BYTES, MUTATION_TOOL_SCHEMA_VERSION, Message,
     MessageId, MessagePart, MessagePartBody, MutationProofImpact, OperationId, PartId, PartState,
     ProcessArtifactOutcome, ProcessSandbox, ProcessToolRequest, ProcessToolResult, Provenance,
-    ReadFileResult, RenameFileResult, SessionId, SpawnJobResult, ToolCallId, WriteFileResult,
+    ReadFileResult, RenameFileResult, SessionId, SpawnJobResult, ToolCallId, WriteCheckOutcome,
+    WriteCheckRun, WriteCheckStage, WriteCheckStatus, WriteCheckVerdict, WriteFileResult,
     decode_apply_patch_request_json, decode_delete_file_request_json,
     decode_job_cancel_request_json, decode_job_status_request_json, decode_job_stdin_request_json,
     decode_process_tool_request_json, decode_read_file_request_json,
@@ -53,6 +59,9 @@ use changeloop_provider_adapters::{
     AnthropicAdapter, AuthProfile, CancellationToken, OpenAiAdapter, PricingCatalog,
     ProviderAdapter, ProviderRouter, ReqwestTransport, RouterRoute,
 };
+use changeloop_runtime::delegation::{
+    DelegationError, DelegationGovernor, DelegationGrant, DelegationRequest,
+};
 use changeloop_runtime::{
     AgentRuntime, ChildExecutor, Control, ControlSource, Pause, PermissionGate, ResumeBinding,
     RunOutcome, RuntimeBudget, RuntimeCheckpoint, StreamingProvider, ToolCall, ToolDispatch,
@@ -65,7 +74,8 @@ use changeloop_storage::{
 };
 use changeloop_tools::{
     ExecutionCancellation, FileReadOutput, JobKind, JobManager, OutputLimits, PatchWrite,
-    ProcessRequest, SandboxRequirement, ToolPolicy, ToolRuntime, required_project_sandbox_command,
+    ProcessRequest, SandboxRequirement, ToolPolicy, ToolRuntime, WriteCheckCommand,
+    WriteCheckerConfig, WriteFormatStage, required_project_sandbox_command,
 };
 use changeloop_web::{
     DomainAction, DomainPattern, DomainPolicy, DomainRule, ProductionWebClient, WebGuard, WebLimits,
@@ -357,16 +367,30 @@ impl ProviderExecution {
             .map(|tool| tool.name.as_str())
             .collect::<BTreeSet<_>>();
         let mut mutating_calls = BTreeSet::new();
-        for part in request.messages.iter().flat_map(|message| &message.parts) {
+        // A dispatched tool call with no observed result leaves its completion —
+        // and therefore any side effect — uncertain. The transactional gate
+        // treats that as strictly stronger than "no mutation observed".
+        let mut dispatched_calls = BTreeSet::new();
+        let mut completed_calls = BTreeSet::new();
+        for part in request.messages.iter().flat_map(InputMessage::parts) {
             match part {
-                InputPart::ToolCall { id, name, .. } if mutating_tools.contains(name.as_str()) => {
-                    mutating_calls.insert(id.as_str());
+                InputPart::ToolCall { id, name, .. } => {
+                    dispatched_calls.insert(id.as_str());
+                    if mutating_tools.contains(name.as_str()) {
+                        mutating_calls.insert(id.as_str());
+                    }
                 }
-                InputPart::ToolResult { id, .. } if mutating_calls.contains(id.as_str()) => {
-                    progress.mutating_side_effect = true;
+                InputPart::ToolResult { id, .. } => {
+                    completed_calls.insert(id.as_str());
+                    if mutating_calls.contains(id.as_str()) {
+                        progress.mutating_side_effect = true;
+                    }
                 }
                 _ => {}
             }
+        }
+        if !dispatched_calls.is_subset(&completed_calls) {
+            progress.tool_call_uncertain = true;
         }
         let mut routes = vec![Self::route(ProviderTarget {
             provider: self.provider,
@@ -942,9 +966,19 @@ impl ProviderBackend {
             .map_err(|error| SurfaceError::Runtime(error.to_string()))?;
         let native_attachment_context = !provider_parts.is_empty();
         let artifacts = root.join(".changeloop/artifacts");
-        let tools =
+        let mut tools =
             RuntimeTools::new(root, &artifacts, session, self.runtime_policy.clone(), true)?;
-        let resume_binding = self.resume_binding(root, &tools)?;
+        // The delegation plane is installed before the tool schema is hashed so
+        // the resume binding reflects whether `spawn_subagent` was on offer.
+        let workspace_revision = workspace_resume_revision(root)?;
+        let delegation =
+            DelegationAuthority::resolve(root, session, &self.model, workspace_revision.clone())?;
+        let mut runtime_governor = None;
+        if let Ok(governor) = delegation.governor() {
+            tools.install_delegation_governor(governor);
+            runtime_governor = delegation.governor().ok();
+        }
+        let resume_binding = self.resume_binding(workspace_revision, &tools)?;
         let runtime_policy = self.runtime_policy.clone();
         let provider = RuntimeProvider {
             execution: self.execution(),
@@ -978,6 +1012,9 @@ impl ProviderBackend {
             now_ms(),
         )
         .map_err(|error| SurfaceError::Runtime(error.to_string()))?;
+        if let Some(governor) = runtime_governor {
+            runtime.install_delegation_governor(governor);
+        }
         let runtime_prompt = runtime_prompt_with_repository_context(root, prompt)?;
         match runtime
             .run_with_parts(&runtime_prompt, provider_parts)
@@ -1050,12 +1087,14 @@ impl ProviderBackend {
         }
     }
 
+    /// The revision is passed in rather than recaptured: the same value also
+    /// becomes the delegation grant's `base_workspace_revision`, and a child
+    /// must be pinned to the workspace its parent was bound to.
     fn resume_binding(
         &self,
-        root: &Path,
+        workspace_revision: String,
         tools: &RuntimeTools,
     ) -> Result<ResumeBinding, SurfaceError> {
-        let workspace_revision = workspace_resume_revision(root)?;
         let tool_schema_sha256 =
             policy_bound_tool_schema_sha256(&tools.definitions(), &self.runtime_policy)?;
         let provider = match self.provider {
@@ -1093,14 +1132,22 @@ impl ProviderBackend {
         let session = checkpoint.session.clone();
         let operation = checkpoint.operation_id.clone();
         let artifacts = root.join(".changeloop/artifacts");
-        let tools = RuntimeTools::new(
+        let mut tools = RuntimeTools::new(
             root,
             &artifacts,
             &session,
             self.runtime_policy.clone(),
             true,
         )?;
-        let current_binding = self.resume_binding(root, &tools)?;
+        let workspace_revision = workspace_resume_revision(root)?;
+        let delegation =
+            DelegationAuthority::resolve(root, &session, &self.model, workspace_revision.clone())?;
+        let mut runtime_governor = None;
+        if let Ok(governor) = delegation.governor() {
+            tools.install_delegation_governor(governor);
+            runtime_governor = delegation.governor().ok();
+        }
+        let current_binding = self.resume_binding(workspace_revision, &tools)?;
         if checkpoint.binding != current_binding {
             return Err(SurfaceError::Project(
                 "paused runtime binding changed; workspace, tool schema, provider, or model no longer matches"
@@ -1134,6 +1181,9 @@ impl ProviderBackend {
             child_executor,
         )
         .map_err(|error| SurfaceError::Runtime(error.to_string()))?;
+        if let Some(governor) = runtime_governor {
+            runtime.install_delegation_governor(governor);
+        }
         match pause.kind {
             RuntimePauseKind::Permission => {
                 let allow = response["allow"].as_bool().ok_or_else(|| {
@@ -2270,6 +2320,107 @@ fn typed_child_result(
     }
 }
 
+/// Tools a read-only child may use. Every entry maps to
+/// [`PermissionKind::FilesystemRead`] in [`RuntimeTools::permission`]; a tool
+/// whose permission the governor does not grant would be a dead entry.
+const CHILD_READ_TOOLS: [&str; 1] = ["read_file"];
+/// Tools that exist in the grant only so an explicit harness
+/// `DelegationPurpose::Implementation` contract has something to widen to. The
+/// governor unions them in only under a `ReadAndWrite` profile, and no request
+/// a model can make ever selects that purpose.
+const CHILD_WRITE_TOOLS: [&str; 4] = ["write_file", "apply_patch", "delete_file", "rename_file"];
+/// The grant validator caps entries at 128; stay under it so a wide workspace
+/// degrades to a bounded scope instead of producing no governor at all.
+const MAX_HARNESS_SCOPE_PATHS: usize = 128;
+
+/// The harness-owned inputs a [`DelegationGovernor`] is built from.
+///
+/// Held rather than the governor itself because the same authority has to
+/// produce two governors — one inside [`RuntimeTools`], which authors the spec
+/// a dispatch returns, and one on the runtime, which re-authors that spec and
+/// refuses anything that is not byte-identical. Authoring is deterministic, so
+/// two governors over one authority agree exactly.
+#[derive(Clone, Debug)]
+struct DelegationAuthority {
+    profile: DelegationProfile,
+    grant: DelegationGrant,
+}
+
+impl DelegationAuthority {
+    /// Builds the authority for one parent session. Nothing here reads model
+    /// output: the profile comes from resolved configuration, the scope from
+    /// the project's own layout, and the revision from the workspace.
+    fn resolve(
+        root: &Path,
+        session: &Session,
+        model: &str,
+        base_workspace_revision: String,
+    ) -> Result<Self, SurfaceError> {
+        let config = load_project_config(root)?.config;
+        Ok(Self {
+            profile: config.agent_profile(model).profile.delegation,
+            grant: DelegationGrant {
+                change_id: session.id.to_string(),
+                parent_session_id: session.id.clone(),
+                parent_depth: 0,
+                repositories: vec!["root".into()],
+                paths: harness_delegation_scope(root, &config),
+                read_tools: CHILD_READ_TOOLS.iter().map(|tool| (*tool).into()).collect(),
+                write_tools: CHILD_WRITE_TOOLS
+                    .iter()
+                    .map(|tool| (*tool).into())
+                    .collect(),
+                risk_floor: RiskTier::Medium,
+                model_floor: ModelFloor::Standard,
+                budget: SubagentBudget {
+                    max_depth: 3,
+                    ..SubagentBudget::default()
+                },
+                base_workspace_revision,
+            },
+        })
+    }
+
+    /// Fails closed. A disabled or model-authored delegation profile, or a
+    /// workspace that produced no scope, yields no governor, and a session
+    /// without a governor neither advertises nor accepts `spawn_subagent`.
+    fn governor(&self) -> Result<DelegationGovernor, DelegationError> {
+        DelegationGovernor::new(self.profile.clone(), self.grant.clone())
+    }
+}
+
+/// The child's filesystem scope, authored from project configuration and the
+/// workspace layout. Declared repository paths win when configuration names
+/// them; otherwise the visible top level of the project stands in. A model
+/// contributes nothing to this list.
+fn harness_delegation_scope(root: &Path, config: &changeloop_config::Config) -> Vec<String> {
+    let declared = config
+        .repositories
+        .iter()
+        .filter_map(|repository| normalize_scope_path(&repository.path))
+        .collect::<BTreeSet<_>>();
+    let scope = if declared.is_empty() {
+        top_level_workspace_scope(root)
+    } else {
+        declared
+    };
+    scope.into_iter().take(MAX_HARNESS_SCOPE_PATHS).collect()
+}
+
+/// Hidden entries stay out: `.git` and `.changeloop` are harness state, not
+/// review material, and a child has no business reading either.
+fn top_level_workspace_scope(root: &Path) -> BTreeSet<String> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return BTreeSet::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| !name.starts_with('.'))
+        .filter_map(|name| normalize_scope_path(&name))
+        .collect()
+}
+
 struct RuntimeTools {
     read_runtime: ToolRuntime,
     write_runtime: ToolRuntime,
@@ -2282,6 +2433,10 @@ struct RuntimeTools {
     snapshot_manifest: std::path::PathBuf,
     session: Session,
     allow_children: bool,
+    /// The harness contract plane for this session. `None` means delegation is
+    /// unavailable, not unrestricted: `spawn_subagent` is neither advertised
+    /// nor dispatched without it.
+    delegation: Option<DelegationGovernor>,
     web: Option<ProductionWebClient>,
     web_search_endpoint: Option<String>,
     changed_paths: Arc<Mutex<BTreeSet<String>>>,
@@ -2293,6 +2448,75 @@ struct RuntimeTools {
     /// Bounded, advisory diagnostics from untrusted project hooks. Hook
     /// output is never interpreted as lifecycle authority.
     hook_reports: VecDeque<Value>,
+}
+
+/// Carries the formatter half of the write transaction onto the protocol
+/// result. The formatter stage moved inside `ToolRuntime::write`, but its
+/// per-formatter detail — digests either side of the rewrite and the proof
+/// paths it invalidated — still reaches clients unchanged.
+fn formatter_mutation_results(
+    outcomes: &[changeloop_tools::WriteFormatterOutcome],
+) -> Result<Vec<FormatterMutationResult>, String> {
+    outcomes
+        .iter()
+        .map(|outcome| {
+            let result = &outcome.result;
+            serde_json::from_value(json!({
+                "name": outcome.name,
+                "status": format!("{:?}", result.status).to_ascii_lowercase(),
+                "beforeSha256": result.before_sha256,
+                "afterSha256": result.after_sha256,
+                "diagnostic": result.diagnostic.as_ref().map(|diagnostic| json!({
+                    "code": diagnostic.code, "message": diagnostic.message
+                })),
+                "proofImpact": {
+                    "editHash": result.proof_impact.edit_hash,
+                    "invalidatedPaths": result.proof_impact.invalidated_paths,
+                    "requiresReprove": result.proof_impact.requires_reprove
+                }
+            }))
+            .map_err(|error| format!("invalid formatter mutation result: {error}"))
+        })
+        .collect()
+}
+
+/// Carries the tools crate's format-then-check verdict onto the protocol
+/// result. The app-server never discards it: a write no configured command
+/// cleared must reach a protocol client as such, not as a bare digest that
+/// reads like a clean mutation.
+fn write_check_verdict(verified: &changeloop_tools::VerifiedWrite) -> WriteCheckVerdict {
+    let runs = match &verified.verdict {
+        changeloop_tools::WriteVerdict::NotConfigured => Vec::new(),
+        changeloop_tools::WriteVerdict::Checked(runs) => runs
+            .iter()
+            .map(|run| WriteCheckRun {
+                name: run.name.clone(),
+                stage: match run.stage {
+                    changeloop_tools::WriteCheckStage::Format => WriteCheckStage::Format,
+                    changeloop_tools::WriteCheckStage::Check => WriteCheckStage::Check,
+                },
+                outcome: match run.outcome {
+                    changeloop_tools::WriteCheckOutcome::Passed => WriteCheckOutcome::Passed,
+                    changeloop_tools::WriteCheckOutcome::Failed => WriteCheckOutcome::Failed,
+                    changeloop_tools::WriteCheckOutcome::TimedOut => WriteCheckOutcome::TimedOut,
+                    changeloop_tools::WriteCheckOutcome::Cancelled => WriteCheckOutcome::Cancelled,
+                    changeloop_tools::WriteCheckOutcome::Unavailable => {
+                        WriteCheckOutcome::Unavailable
+                    }
+                },
+                exit_code: run.exit_code,
+                diagnostics: run.diagnostics.clone(),
+            })
+            .collect(),
+    };
+    // Derived rather than mirrored, so the status a client reads can never
+    // disagree with the runs shipped beside it.
+    let status = if runs.is_empty() {
+        WriteCheckStatus::NotConfigured
+    } else {
+        WriteCheckStatus::Checked
+    };
+    WriteCheckVerdict { status, runs }
 }
 
 struct CommittedSnapshotStep {
@@ -2309,6 +2533,53 @@ struct RuntimeMutationCapability {
 struct RuntimeLanguageConfig {
     server: Option<LanguageServerConfig>,
     formatters: Vec<FormatterConfig>,
+    checkers: Vec<CheckerConfig>,
+}
+
+impl RuntimeLanguageConfig {
+    /// Builds the formatter half of the write transaction. The tools runtime
+    /// owns execution, so this is the only place project formatters are
+    /// installed; nothing formats again after a write returns.
+    fn write_format_stage(&self, session: &SessionId) -> WriteFormatStage {
+        WriteFormatStage::new()
+            .with_formatters(self.formatters.iter().cloned())
+            .with_launcher(Arc::new(RuntimeLanguageSandbox {
+                session_id: session.clone(),
+            }))
+    }
+
+    /// Builds the checker half from the same project file. A `language.json`
+    /// with no `checkers` key yields an empty configuration, which is exactly
+    /// the `not_configured` verdict clients saw before checkers existed.
+    ///
+    /// A relative executable is anchored to the repository root, matching how
+    /// formatters name project-local tools. Leaving it relative would hand the
+    /// name to `execvp` and let `PATH` decide which binary gates the write.
+    fn write_checker_config(&self, root: &Path) -> WriteCheckerConfig {
+        self.checkers
+            .iter()
+            .fold(WriteCheckerConfig::new(), |configured, checker| {
+                let program = if checker.executable.is_absolute() {
+                    checker.executable.clone()
+                } else {
+                    root.join(&checker.executable)
+                };
+                checker
+                    .extensions
+                    .iter()
+                    .fold(configured, |configured, extension| {
+                        configured.with_checker(
+                            extension.clone(),
+                            WriteCheckCommand {
+                                name: checker.name.clone(),
+                                program: program.clone(),
+                                arguments: checker.arguments.clone(),
+                                timeout: Duration::from_millis(checker.timeout_ms),
+                            },
+                        )
+                    })
+            })
+    }
 }
 
 #[derive(Clone)]
@@ -2338,6 +2609,10 @@ struct RuntimeLanguageFile {
     language_server: Option<RuntimeLanguageServerFile>,
     #[serde(default)]
     formatters: Vec<RuntimeFormatterFile>,
+    /// Absent in every `language.json` written before the format-then-check
+    /// gate existed, which is why it defaults rather than being required.
+    #[serde(default)]
+    checkers: Vec<RuntimeCheckerFile>,
 }
 
 #[derive(Deserialize)]
@@ -2369,6 +2644,20 @@ struct RuntimeFormatterFile {
     timeout_ms: u64,
 }
 
+/// The lint/typecheck half of one language's gate. It has no `scopePaths`:
+/// a checker reads the file the write produced and must not mutate anything.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeCheckerFile {
+    name: String,
+    executable: PathBuf,
+    #[serde(default)]
+    arguments: Vec<String>,
+    extensions: BTreeSet<String>,
+    #[serde(default = "default_checker_timeout")]
+    timeout_ms: u64,
+}
+
 const fn default_language_timeout() -> u64 {
     5_000
 }
@@ -2380,6 +2669,9 @@ const fn default_diagnostic_freshness() -> u64 {
 }
 const fn default_formatter_timeout() -> u64 {
     10_000
+}
+const fn default_checker_timeout() -> u64 {
+    30_000
 }
 
 impl RuntimeLanguageConfig {
@@ -2411,6 +2703,17 @@ impl RuntimeLanguageConfig {
                     extensions: formatter.extensions,
                     scope_paths: formatter.scope_paths,
                     timeout_ms: formatter.timeout_ms,
+                })
+                .collect(),
+            checkers: file
+                .checkers
+                .into_iter()
+                .map(|checker| CheckerConfig {
+                    name: checker.name,
+                    executable: checker.executable,
+                    arguments: checker.arguments,
+                    extensions: checker.extensions,
+                    timeout_ms: checker.timeout_ms,
                 })
                 .collect(),
         })
@@ -2866,6 +3169,12 @@ impl RuntimeTools {
             },
         )
         .map_err(|error| SurfaceError::Runtime(error.to_string()))?;
+        // The project language configuration is loaded before the write
+        // runtime so both halves of the format-then-check gate can be
+        // installed into the one transaction that performs the write. Running
+        // formatters afterwards would check pre-format bytes and fingerprint a
+        // file that no longer exists on disk.
+        let language = RuntimeLanguageConfig::load(root)?;
         let write_runtime = ToolRuntime::new(
             root,
             artifacts,
@@ -2876,7 +3185,9 @@ impl RuntimeTools {
                 hard_boundaries: vec![],
             },
         )
-        .map_err(|error| SurfaceError::Runtime(error.to_string()))?;
+        .map_err(|error| SurfaceError::Runtime(error.to_string()))?
+        .with_write_formatters(language.write_format_stage(&session.id))
+        .with_write_checkers(language.write_checker_config(root));
         let policy_runtime = || {
             ToolRuntime::new(
                 root,
@@ -2959,6 +3270,7 @@ impl RuntimeTools {
             snapshot_manifest,
             session: session.clone(),
             allow_children,
+            delegation: None,
             web,
             web_search_endpoint: policy.web_search_endpoint.clone(),
             changed_paths: Arc::new(Mutex::new(BTreeSet::new())),
@@ -2973,7 +3285,7 @@ impl RuntimeTools {
                 .then(|| RuntimeMcp::load(root, &policy))
                 .transpose()?,
             jobs: JobManager::new(root.to_path_buf()),
-            language: RuntimeLanguageConfig::load(root)?,
+            language,
             language_server: None,
             mutation,
             hook_reports: VecDeque::new(),
@@ -3087,38 +3399,16 @@ impl RuntimeTools {
         Arc::clone(&self.changed_paths)
     }
 
-    fn formatter_after_edit(&self, path: &Path) -> Result<Vec<FormatterMutationResult>, String> {
-        let resolver = ProjectToolResolver::new(&self.root).map_err(|error| error.to_string())?;
-        let launcher = RuntimeLanguageSandbox {
-            session_id: self.session.id.clone(),
-        };
-        self.language
-            .formatters
-            .iter()
-            .filter(|formatter| {
-                path.extension()
-                    .and_then(|value| value.to_str())
-                    .is_some_and(|extension| formatter.extensions.contains(extension))
-            })
-            .map(|formatter| {
-                let result = formatter.execute_with_launcher(&resolver, path, &launcher);
-                serde_json::from_value(json!({
-                    "name": formatter.name,
-                    "status": format!("{:?}", result.status).to_ascii_lowercase(),
-                    "beforeSha256": result.before_sha256,
-                    "afterSha256": result.after_sha256,
-                    "diagnostic": result.diagnostic.map(|diagnostic| json!({
-                        "code": diagnostic.code, "message": diagnostic.message
-                    })),
-                    "proofImpact": {
-                        "editHash": result.proof_impact.edit_hash,
-                        "invalidatedPaths": result.proof_impact.invalidated_paths,
-                        "requiresReprove": result.proof_impact.requires_reprove
-                    }
-                }))
-                .map_err(|error| format!("invalid formatter mutation result: {error}"))
-            })
-            .collect()
+    /// Formats a file the runtime moved rather than authored. Rename does not
+    /// produce new content, so it has no checker verdict to attach, but the
+    /// destination may now belong to a formatted language. It reuses the same
+    /// single pipeline the write transaction runs.
+    fn format_renamed_file(&self, path: &Path) -> Result<Vec<FormatterMutationResult>, String> {
+        let outcomes = self
+            .write_runtime
+            .format_written_file(path)
+            .map_err(|error| error.to_string())?;
+        formatter_mutation_results(&outcomes)
     }
 
     fn commit_snapshot_step(
@@ -3231,77 +3521,63 @@ impl RuntimeTools {
         )))
     }
 
+    /// Turns a model's spawn call into a *request*, then hands it to the
+    /// harness contract plane to be authored.
+    ///
+    /// The call contributes the task text and the tool-call id and nothing
+    /// else. Scope, tool grant, permissions, budgets, depth, result schema and
+    /// base revision are all derived from the installed governor's grant and
+    /// profile, so a `paths` array or a `result_kind` in the arguments cannot
+    /// widen — or narrow — what the child receives. The runtime re-authors the
+    /// returned spec and refuses it unless it is byte-identical, which it is
+    /// precisely because both governors come from the same authority.
     fn subagent_spec(&self, call: &ToolCall) -> Result<SubagentSpec, String> {
         if !self.allow_children {
             return Err("child sessions cannot spawn subagents".into());
         }
+        let governor = self.delegation.as_ref().ok_or_else(|| {
+            "delegation is unavailable: no harness-authored contract plane is installed".to_owned()
+        })?;
         let description = call
             .arguments
             .get("task")
             .and_then(Value::as_str)
             .filter(|task| !task.trim().is_empty())
             .ok_or_else(|| "task is required".to_owned())?;
-        let raw_paths = call
-            .arguments
-            .get("paths")
-            .and_then(Value::as_array)
-            .ok_or_else(|| "paths are required".to_owned())?
-            .iter()
-            .map(|path| {
-                path.as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| "each path must be a string".to_owned())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if raw_paths.is_empty() || raw_paths.len() > 32 {
-            return Err("subagent paths must be 1-32 safe repository-relative paths".into());
+        // Rejected, not honoured. A model that still names a scope gets a clear
+        // refusal rather than a silently different child.
+        if call.arguments.get("paths").is_some() {
+            return Err(
+                "subagent scope is harness-authored; describe the focus in task instead".into(),
+            );
         }
-        let mut seen = BTreeSet::new();
-        let paths = raw_paths
-            .into_iter()
-            .map(|path| {
-                let normalized = normalize_scope_path(&path).ok_or_else(|| {
-                    "subagent paths must be 1-32 safe repository-relative paths".to_owned()
-                })?;
-                if !seen.insert(normalized.clone()) {
-                    return Err("subagent paths must be unique after normalization".into());
-                }
-                Ok(normalized)
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        let kind = match call
-            .arguments
-            .get("result_kind")
-            .and_then(Value::as_str)
-            .unwrap_or("task_result")
-        {
-            "findings" => ResultKind::Findings,
-            "patch" => ResultKind::Patch,
-            "task_result" => ResultKind::TaskResult,
-            _ => return Err("result_kind must be findings, patch, or task_result".into()),
-        };
-        Ok(SubagentSpec {
-            parent_session_id: self.session.id.clone(),
-            child_session_id: SessionId::new(),
-            change_id: self.session.id.to_string(),
-            depth: 1,
-            task: TaskScope {
-                task_id: call.id.to_string(),
-                description: description.into(),
-                repositories: vec!["root".into()],
-                paths,
-            },
-            allowed_tools: BTreeSet::from(["read_file".into(), "write_file".into()]),
-            allowed_permissions: vec![
-                PermissionKind::FilesystemRead,
-                PermissionKind::FilesystemWrite,
-            ],
-            risk_floor: RiskTier::Medium,
-            model_floor: ModelFloor::Standard,
-            budget: SubagentBudget::default(),
-            expected_result: ExpectedResultSchema { version: 1, kind },
-            base_workspace_revision: format!("dispatch-{}", now_ms()),
-        })
+        if call.arguments.get("result_kind").is_some() {
+            return Err(
+                "subagent result schema is harness-authored and follows the delegation purpose"
+                    .into(),
+            );
+        }
+        governor
+            .author(
+                governor.requested_purpose(),
+                &DelegationRequest {
+                    child_session_id: SessionId::new(),
+                    task_id: call.id.to_string(),
+                    description: description.into(),
+                },
+            )
+            .map(|contract| contract.into_spec())
+            .map_err(|error| error.to_string())
+    }
+
+    /// Installs the harness contract plane for this session. Called once per
+    /// runtime, before the tool schema is hashed into a resume binding.
+    fn install_delegation_governor(&mut self, governor: DelegationGovernor) {
+        self.delegation = Some(governor);
+    }
+
+    fn delegation_available(&self) -> bool {
+        self.allow_children && self.delegation.is_some()
     }
 }
 
@@ -3548,18 +3824,19 @@ impl RuntimeTools {
                 });
             }
         }
-        if self.allow_children {
+        if self.delegation_available() {
             definitions.push(changeloop_provider::ToolDefinition {
                 name: "spawn_subagent".into(),
-                description: "Delegate one bounded task to a scoped child session".into(),
+                description: "Delegate one bounded task to a scoped child session. \
+                    The harness authors the child's contract: its filesystem scope, \
+                    tools, permissions, budgets and result schema are fixed and \
+                    cannot be requested here."
+                    .into(),
                 input_schema: json!({
                     "type":"object",
-                    "properties":{
-                        "task":{"type":"string"},
-                        "paths":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32},
-                        "result_kind":{"type":"string","enum":["findings","patch","task_result"]}
-                    },
-                    "required":["task","paths"]
+                    "properties":{"task":{"type":"string"}},
+                    "required":["task"],
+                    "additionalProperties":false
                 }),
                 mutating: false,
             });
@@ -3593,7 +3870,7 @@ impl RuntimeTools {
             "lsp_symbols" | "lsp_definition" | "lsp_references" | "lsp_diagnostics" => {
                 Some(PermissionKind::FilesystemRead)
             }
-            "spawn_subagent" if self.allow_children => Some(PermissionKind::FilesystemRead),
+            "spawn_subagent" if self.delegation_available() => Some(PermissionKind::FilesystemRead),
             "web_fetch" if self.web.is_some() => Some(PermissionKind::WebFetch),
             "web_search" if self.web.is_some() && self.web_search_endpoint.is_some() => {
                 Some(PermissionKind::WebSearch)
@@ -4029,12 +4306,14 @@ impl RuntimeTools {
                     .snapshots
                     .begin_step(snapshot_paths, started_at)
                     .map_err(|error| error.to_string())?;
-                self.write_runtime
+                let verified = self
+                    .write_runtime
                     .write(&relative, content.as_bytes(), lease, started_at, &revision)
                     .map_err(|error| error.to_string())?;
-                let formatter = self.formatter_after_edit(&relative)?;
-                let sha256 = hash_regular_file_nofollow(&self.root.join(&relative))
-                    .map_err(|error| error.to_string())?;
+                let checker = write_check_verdict(&verified);
+                let formatter = formatter_mutation_results(&verified.formatter)?;
+                // Post-format, read back from disk by the write transaction.
+                let sha256 = verified.sha256.clone();
                 let checkpoint = self.commit_snapshot_step(pending)?;
                 let invalidated_paths = checkpoint.invalidated_paths;
                 self.changed_paths
@@ -4050,6 +4329,7 @@ impl RuntimeTools {
                     sha256,
                     checkpoint_id: checkpoint.id.0,
                     formatter,
+                    checker,
                     proof_impact: MutationProofImpact {
                         edit_hash: None,
                         invalidated_paths: invalidated_paths
@@ -4085,7 +4365,8 @@ impl RuntimeTools {
                     .snapshots
                     .begin_step(snapshot_paths, started_at)
                     .map_err(|error| error.to_string())?;
-                self.write_runtime
+                let verified = self
+                    .write_runtime
                     .apply_patch(
                         &PatchWrite {
                             path: relative.clone(),
@@ -4097,9 +4378,10 @@ impl RuntimeTools {
                         &revision,
                     )
                     .map_err(|error| error.to_string())?;
-                let formatter = self.formatter_after_edit(&relative)?;
-                let sha256 = hash_regular_file_nofollow(&self.root.join(&relative))
-                    .map_err(|error| error.to_string())?;
+                let checker = write_check_verdict(&verified);
+                let formatter = formatter_mutation_results(&verified.formatter)?;
+                // Post-format, read back from disk by the write transaction.
+                let sha256 = verified.sha256.clone();
                 let checkpoint = self.commit_snapshot_step(pending)?;
                 let invalidated_paths = checkpoint.invalidated_paths;
                 self.changed_paths
@@ -4115,6 +4397,7 @@ impl RuntimeTools {
                     sha256,
                     checkpoint_id: checkpoint.id.0,
                     formatter,
+                    checker,
                     proof_impact: MutationProofImpact {
                         edit_hash: None,
                         invalidated_paths: invalidated_paths
@@ -4216,7 +4499,7 @@ impl RuntimeTools {
                         &revision,
                     )
                     .map_err(|error| error.to_string())?;
-                let formatter = self.formatter_after_edit(&destination)?;
+                let formatter = self.format_renamed_file(&destination)?;
                 let checkpoint = self.commit_snapshot_step(pending)?;
                 let invalidated_paths = checkpoint.invalidated_paths;
                 self.changed_paths
@@ -4253,7 +4536,7 @@ impl RuntimeTools {
     }
 
     fn is_subagent_tool(&self, name: &str) -> bool {
-        self.allow_children && name == "spawn_subagent"
+        self.delegation_available() && name == "spawn_subagent"
     }
 }
 
@@ -4710,10 +4993,7 @@ impl SurfaceBackend for ProviderBackend {
         let request = NormalizedRequest {
             operation_id: format!("surface-{}", now_ms()),
             model: self.model.clone(),
-            messages: vec![InputMessage {
-                role: InputRole::User,
-                parts,
-            }],
+            messages: vec![InputMessage::new(InputRole::User, parts)],
             tools: vec![],
             max_output_tokens: None,
             replay: vec![],
@@ -4767,10 +5047,14 @@ struct ManagedProject {
     watcher: PollingWatcher,
     invalidations: InvalidationDispatcher,
     execution: ExecutionCoordinator,
+    /// Withdrawn when this project is removed from the service, so a released
+    /// project stops being reachable from the force-dispose registry. Staying
+    /// reachable from a long-lived registry is the leak shape itself.
+    _force_dispose: ForceDisposeGuard,
 }
 
 impl ManagedProject {
-    fn open(root: &Path) -> Result<Self, SurfaceError> {
+    fn open(root: &Path, force_dispose: &Arc<ForceDispose>) -> Result<Self, SurfaceError> {
         let root = std::fs::canonicalize(root)?;
         let config = load_project_config(&root)?;
         let watcher =
@@ -4789,12 +5073,14 @@ impl ManagedProject {
                 .register_owned(kind, name)
                 .map_err(|error| SurfaceError::Project(error.to_string()))?;
         }
+        let guard = instance.register_force_dispose(force_dispose);
         Ok(Self {
             instance,
             config: ProjectConfigState::new(config),
             watcher,
             invalidations: InvalidationDispatcher::default(),
             execution: ExecutionCoordinator::default(),
+            _force_dispose: guard,
         })
     }
 
@@ -4846,6 +5132,12 @@ pub struct AppService<B> {
     storage: Storage,
     backend: B,
     cancel: CancellationToken,
+    /// This service owns its projects, so it owns their force-dispose
+    /// enrolment too. The bootstrap links this registry to the process-wide one
+    /// ([`crate::force_dispose::ForceDisposeSignalGuard`]); a service created
+    /// without a bootstrap therefore has a complete disposal path of its own and
+    /// no reach into process-global state.
+    force_dispose: Arc<ForceDispose>,
     projects: BTreeMap<PathBuf, ManagedProject>,
     default_project: PathBuf,
     lifecycle: LifecycleControl,
@@ -5542,7 +5834,8 @@ impl<B: SurfaceBackend> AppService<B> {
         root: &Path,
     ) -> Result<Self, SurfaceError> {
         storage.recover_interrupted_pauses(now_ms())?;
-        let project = ManagedProject::open(root)?;
+        let force_dispose = Arc::new(ForceDispose::new());
+        let project = ManagedProject::open(root, &force_dispose)?;
         let root = project.instance.root().to_path_buf();
         let provider_ready = backend.readiness().is_ok();
         let status_snapshot = Arc::new(Mutex::new(json!({
@@ -5563,6 +5856,7 @@ impl<B: SurfaceBackend> AppService<B> {
             storage,
             backend,
             cancel: CancellationToken::default(),
+            force_dispose,
             projects: BTreeMap::from([(root.clone(), project)]),
             default_project: root,
             lifecycle: LifecycleControl::default(),
@@ -5573,8 +5867,16 @@ impl<B: SurfaceBackend> AppService<B> {
         })
     }
 
+    /// The registry every project of this service is enrolled in. The bootstrap
+    /// chains it onto the process-wide backstop so a signal or a panic releases
+    /// projects that `Drop` will never reach.
+    #[must_use]
+    pub fn force_dispose(&self) -> Arc<ForceDispose> {
+        Arc::clone(&self.force_dispose)
+    }
+
     pub fn register_project(&mut self, root: &Path) -> Result<(), SurfaceError> {
-        let project = ManagedProject::open(root)?;
+        let project = ManagedProject::open(root, &self.force_dispose)?;
         let root = project.instance.root().to_path_buf();
         if self.projects.contains_key(&root) {
             return Err(SurfaceError::Project(format!(
@@ -7276,43 +7578,6 @@ fn hash_file_into(digest: &mut Sha256, path: &Path) -> Result<u64, std::io::Erro
     }
 }
 
-fn hash_regular_file_nofollow(path: &Path) -> Result<String, std::io::Error> {
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
-    }
-    let mut file = options.open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.file_type().is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("{} must be a regular non-symlink file", path.display()),
-        ));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if metadata.nlink() != 1 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("{} is hardlinked", path.display()),
-            ));
-        }
-    }
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            return Ok(format!("{:x}", digest.finalize()));
-        }
-        digest.update(&buffer[..read]);
-    }
-}
-
 fn read_bounded_app_json(path: &Path) -> Result<Vec<u8>, std::io::Error> {
     read_regular_bounded_app_json(path)
 }
@@ -7394,6 +7659,18 @@ async fn read_bounded_line<R: AsyncBufRead + Unpin>(
     }
 }
 
+/// Versions this binary publishes on, and demands from, the rendezvous.
+///
+/// The schema half comes straight from the storage crate, so bumping the store
+/// schema without bumping what the handshake advertises is impossible.
+#[must_use]
+pub const fn local_rendezvous_version() -> RendezvousVersion {
+    RendezvousVersion::new(
+        RENDEZVOUS_PROTOCOL_VERSION,
+        changeloop_storage::SUPPORTED_SCHEMA_VERSION,
+    )
+}
+
 #[cfg(unix)]
 pub async fn serve_unix<B: SurfaceBackend>(
     service: &mut AppService<B>,
@@ -7406,12 +7683,30 @@ pub async fn serve_unix<B: SurfaceBackend>(
             "Unix service token must be non-empty and contain no control characters".into(),
         ));
     }
-    let lock_path = path.with_extension("leader.lock");
-    let leader = match elect_leader(&lock_path, format!("unix://{}", path.display()))
-        .map_err(|error| SurfaceError::Project(error.to_string()))?
+    // The rendezvous is derived from the served worktree, never from the
+    // caller-supplied socket path. Two processes told to listen on different
+    // socket paths for one worktree still contend for the same lock, so the
+    // bind race and the write-ownership race are the same race.
+    let rendezvous = Rendezvous::for_worktree(&service.default_project)
+        .map_err(|error| SurfaceError::Project(error.to_string()))?;
+    let lock_path = rendezvous.lock_path();
+    let leader = match elect_leader_versioned(
+        &lock_path,
+        format!("unix://{}", path.display()),
+        local_rendezvous_version(),
+    )
+    .map_err(|error| SurfaceError::Project(error.to_string()))?
     {
         ProcessLeaderDisposition::Leader(lock) => lock,
         ProcessLeaderDisposition::Connect { metadata } => {
+            // Refuse on version before reporting the endpoint: a stale binary
+            // must not be pointed at a store it cannot understand.
+            if let Err(handshake) = metadata.version.accept(local_rendezvous_version()) {
+                return Err(SurfaceError::Project(format!(
+                    "{handshake}; the running server is PID {}",
+                    metadata.pid
+                )));
+            }
             return Err(SurfaceError::Project(format!(
                 "local server leader is already running at {}; connect to it or stop PID {} before retrying",
                 metadata.endpoint.as_deref().unwrap_or("unknown endpoint"),
@@ -8857,6 +9152,24 @@ pub async fn run_tui<B: SurfaceBackend + Send + 'static>(
 ) -> Result<(), SurfaceError> {
     ensure_tui_supported()?;
     let _color_mode = TuiColorModeGuard::install();
+    // The bootstrap owns the backstop: signal- and panic-triggered disposal for
+    // the exits `Drop` does not reach. Chaining the service's own registry onto
+    // the process-wide one keeps ownership one-directional — process backstop
+    // releases the service, the service releases its projects, a project
+    // releases its resources and children.
+    let _force_dispose = crate::force_dispose::ForceDisposeSignalGuard::install_with_panic_hook()?;
+    let service_disposer = service.force_dispose();
+    let _service_enrolment = register_guarded(
+        &changeloop_project::disposal::process_force_dispose(),
+        "app-service",
+        move || {
+            let report = service_disposer.dispose(DisposalTrigger::Signal);
+            match report.failures.first() {
+                Some(failure) => Err(format!("{}: {}", failure.name, failure.message)),
+                None => Ok(()),
+            }
+        },
+    );
     let signals = TuiSignalGuard::install()?;
     let mut mode = TuiTerminalMode::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
@@ -10250,10 +10563,15 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::fs;
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+
+    use changeloop_agent::{ExpectedResultSchema, TaskScope};
+    use changeloop_config::{ContractAuthor, DelegationMode};
+    use changeloop_runtime::delegation::DelegationPurpose;
 
     use super::*;
 
@@ -10512,7 +10830,8 @@ mod tests {
     #[test]
     fn managed_project_hot_reload_is_root_targeted_and_atomic() {
         let root = tempfile::tempdir().unwrap();
-        let mut project = ManagedProject::open(root.path()).unwrap();
+        let mut project =
+            ManagedProject::open(root.path(), &Arc::new(ForceDispose::new())).unwrap();
 
         std::fs::create_dir_all(root.path().join("examples")).unwrap();
         std::fs::write(
@@ -10642,15 +10961,13 @@ mod tests {
             read_regular_bounded_file(&bounded, 6).unwrap_err().kind(),
             std::io::ErrorKind::InvalidData
         );
-        assert_eq!(
-            hash_regular_file_nofollow(&bounded).unwrap(),
-            format!("{:x}", Sha256::digest(b"bounded"))
-        );
     }
 
+    // Post-write digests moved into `ToolRuntime`, which refuses symlinked and
+    // hardlinked paths itself; what remains here is the app-JSON reader.
     #[cfg(unix)]
     #[test]
-    fn bounded_app_reads_and_hashes_reject_symlinks() {
+    fn bounded_app_reads_reject_symlinks_and_hardlinks() {
         use std::os::unix::fs::symlink;
 
         let root = tempfile::tempdir().unwrap();
@@ -10659,12 +10976,10 @@ mod tests {
         std::fs::write(&target, b"{}").unwrap();
         symlink(&target, &link).unwrap();
         assert!(read_regular_bounded_app_json(&link).is_err());
-        assert!(hash_regular_file_nofollow(&link).is_err());
 
         let hardlink = root.path().join("hardlink.json");
         std::fs::hard_link(&target, &hardlink).unwrap();
         assert!(read_regular_bounded_app_json(&hardlink).is_err());
-        assert!(hash_regular_file_nofollow(&hardlink).is_err());
     }
 
     #[cfg(unix)]
@@ -11801,9 +12116,33 @@ mod tests {
         assert_eq!(service.lifecycle.phase, Some("build_required"));
     }
 
+    /// A workspace whose visible top level is `src/` and `docs/`, so the
+    /// harness-authored scope is derivable and distinguishable from anything a
+    /// model might ask for.
+    fn delegation_workspace() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("src/auth")).unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        root
+    }
+
+    fn delegation_authority(root: &Path, session: &Session) -> DelegationAuthority {
+        DelegationAuthority::resolve(root, session, "claude-sonnet-4", "revision-1".into()).unwrap()
+    }
+
+    fn spawn_call(id: &str, arguments: Value) -> ToolCall {
+        ToolCall {
+            id: changeloop_protocol::ToolCallId::from_stable(id),
+            name: "spawn_subagent".into(),
+            arguments,
+            permission: PermissionKind::FilesystemRead,
+            mutating: false,
+        }
+    }
+
     #[test]
     fn production_spawn_contract_is_bounded_and_child_tools_enforce_scope() {
-        let root = tempfile::tempdir().unwrap();
+        let root = delegation_workspace();
         let parent = Session {
             id: SessionId::from_stable("parent"),
             kind: SessionKind::Change,
@@ -11818,26 +12157,27 @@ mod tests {
             true,
         )
         .unwrap();
-        let spawn = ToolCall {
-            id: changeloop_protocol::ToolCallId::from_stable("spawn"),
-            name: "spawn_subagent".into(),
-            arguments: json!({
-                "task":"inspect authentication",
-                "paths":["src//auth"],
-                "result_kind":"findings"
-            }),
-            permission: PermissionKind::FilesystemRead,
-            mutating: false,
-        };
-        let ToolDispatch::Subagent(spec) = parent_tools.dispatch(&spawn).unwrap() else {
+        let authority = delegation_authority(root.path(), &parent);
+        parent_tools.install_delegation_governor(authority.governor().unwrap());
+
+        let ToolDispatch::Subagent(spec) = parent_tools
+            .dispatch(&spawn_call(
+                "spawn",
+                json!({"task":"inspect authentication"}),
+            ))
+            .unwrap()
+        else {
             panic!("spawn did not create a child contract")
         };
         assert_eq!(spec.parent_session_id, parent.id);
         assert_eq!(spec.depth, 1);
-        assert_eq!(spec.budget.max_depth, 1);
+        assert_eq!(spec.budget.max_depth, 3);
         assert_eq!(spec.budget.max_parallel_children, 3);
-        assert_eq!(spec.task.paths, vec!["src/auth"]);
+        // The harness scope, derived from the workspace, not from the call.
+        assert_eq!(spec.task.paths, vec!["docs".to_owned(), "src".to_owned()]);
         assert_eq!(spec.expected_result.kind, ResultKind::Findings);
+        // A real workspace identity, not a dispatch timestamp.
+        assert_eq!(spec.base_workspace_revision, "revision-1");
 
         let child = Session {
             id: spec.child_session_id.clone(),
@@ -11859,30 +12199,238 @@ mod tests {
                 .iter()
                 .all(|definition| definition.name != "spawn_subagent")
         );
-        let error = match scoped.dispatch(&policy_call("src/outside.txt", false)) {
+        let error = match scoped.dispatch(&policy_call("vendor/outside.txt", false)) {
             Err(error) => error,
             Ok(_) => panic!("out-of-scope call was allowed"),
         };
         assert!(error.contains("path is outside child scope"));
+    }
 
-        let duplicate = ToolCall {
-            id: changeloop_protocol::ToolCallId::from_stable("spawn-duplicate"),
-            name: "spawn_subagent".into(),
-            arguments: json!({
-                "task":"inspect duplicate scope",
-                "paths":["src/auth", "src//auth"]
-            }),
-            permission: PermissionKind::FilesystemRead,
-            mutating: false,
+    #[test]
+    fn a_model_cannot_scope_its_own_child_or_reach_write_authority() {
+        let root = delegation_workspace();
+        let parent = Session {
+            id: SessionId::from_stable("parent"),
+            kind: SessionKind::Change,
+            change_state: Some(ChangeState::Confirmed),
         };
-        assert!(parent_tools.dispatch(&duplicate).is_err());
+        let artifacts = root.path().join(".changeloop/artifacts");
+        let mut tools = RuntimeTools::new(
+            root.path(),
+            &artifacts,
+            &parent,
+            RuntimePolicy::default(),
+            true,
+        )
+        .unwrap();
+        let authority = delegation_authority(root.path(), &parent);
+        tools.install_delegation_governor(authority.governor().unwrap());
+
+        // A model that names a scope is refused outright rather than served a
+        // child that quietly ignores what it asked for.
+        let widened = tools.dispatch(&spawn_call(
+            "spawn-scope",
+            json!({"task":"read everything","paths":["docs","src","vendor"]}),
+        ));
+        assert_eq!(
+            widened.err(),
+            Some("subagent scope is harness-authored; describe the focus in task instead".into())
+        );
+        let patching = tools.dispatch(&spawn_call(
+            "spawn-kind",
+            json!({"task":"fix the bug","result_kind":"patch"}),
+        ));
+        assert!(
+            patching
+                .err()
+                .is_some_and(|error| error.contains("result schema is harness-authored"))
+        );
+
+        // The one contract a model request can reach is read-only.
+        let ToolDispatch::Subagent(spec) = tools
+            .dispatch(&spawn_call("spawn-ok", json!({"task":"review auth"})))
+            .unwrap()
+        else {
+            panic!("spawn did not create a child contract")
+        };
+        assert_eq!(
+            spec.allowed_permissions,
+            vec![PermissionKind::FilesystemRead]
+        );
+        assert_eq!(spec.allowed_tools, BTreeSet::from(["read_file".to_owned()]));
+        assert!(!spec.allowed_tools.contains("write_file"));
+
+        // Write authority is unreachable under the default read-only profile
+        // even from harness code, and reachable above it only by an explicit
+        // harness purpose that no request can select.
+        let governor = authority.governor().unwrap();
+        assert_eq!(
+            governor.requested_purpose(),
+            DelegationPurpose::CleanContextReview
+        );
+        let request = DelegationRequest {
+            child_session_id: SessionId::from_stable("child"),
+            task_id: "task-1".into(),
+            description: "apply the fix".into(),
+        };
+        assert_eq!(
+            governor
+                .author(DelegationPurpose::Implementation, &request)
+                .err(),
+            Some(DelegationError::WritesDenied)
+        );
+
+        let mut writable = authority.clone();
+        writable.profile.mode = DelegationMode::ReadAndWrite;
+        let writer = writable
+            .governor()
+            .unwrap()
+            .author(DelegationPurpose::Implementation, &request)
+            .unwrap();
+        assert!(writer.spec().allowed_tools.contains("write_file"));
+        assert!(
+            writer
+                .spec()
+                .allowed_permissions
+                .contains(&PermissionKind::FilesystemWrite)
+        );
+        // Even then, a model request under the same profile stays read-only.
+        let requested = writable
+            .governor()
+            .unwrap()
+            .author(writable.governor().unwrap().requested_purpose(), &request)
+            .unwrap();
+        assert_eq!(
+            requested.spec().allowed_permissions,
+            vec![PermissionKind::FilesystemRead]
+        );
+    }
+
+    /// The tool side authors the spec a dispatch returns and the runtime side
+    /// re-authors it. Both governors come from one authority, so the honest
+    /// spec matches byte for byte and a tampered one cannot.
+    #[test]
+    fn the_dispatch_and_runtime_governors_agree_on_exactly_one_contract() {
+        let root = delegation_workspace();
+        let parent = Session {
+            id: SessionId::from_stable("parent"),
+            kind: SessionKind::Change,
+            change_state: Some(ChangeState::Confirmed),
+        };
+        let mut tools = RuntimeTools::new(
+            root.path(),
+            &root.path().join(".changeloop/artifacts"),
+            &parent,
+            RuntimePolicy::default(),
+            true,
+        )
+        .unwrap();
+        let authority = delegation_authority(root.path(), &parent);
+        tools.install_delegation_governor(authority.governor().unwrap());
+        let ToolDispatch::Subagent(spec) = tools
+            .dispatch(&spawn_call("spawn", json!({"task":"review auth"})))
+            .unwrap()
+        else {
+            panic!("spawn did not create a child contract")
+        };
+
+        let runtime_governor = authority.governor().unwrap();
+        assert_eq!(runtime_governor.accept(&spec).unwrap().spec(), &*spec);
+
+        for tamper in [
+            Box::new(|spec: &mut SubagentSpec| {
+                spec.allowed_tools.insert("write_file".into());
+            }) as Box<dyn Fn(&mut SubagentSpec)>,
+            Box::new(|spec: &mut SubagentSpec| {
+                spec.allowed_permissions
+                    .push(PermissionKind::FilesystemWrite);
+            }),
+            Box::new(|spec: &mut SubagentSpec| spec.task.paths.push("vendor".into())),
+            Box::new(|spec: &mut SubagentSpec| spec.budget.max_tokens += 1),
+            Box::new(|spec: &mut SubagentSpec| {
+                spec.base_workspace_revision = "revision-2".into();
+            }),
+        ] {
+            let mut tampered = (*spec).clone();
+            tamper(&mut tampered);
+            assert_eq!(
+                runtime_governor.accept(&tampered).err(),
+                Some(DelegationError::ModelAuthoredContract)
+            );
+        }
+    }
+
+    #[test]
+    fn delegation_without_a_harness_contract_plane_is_withheld_not_widened() {
+        let root = delegation_workspace();
+        let parent = Session {
+            id: SessionId::from_stable("parent"),
+            kind: SessionKind::Change,
+            change_state: Some(ChangeState::Confirmed),
+        };
+        let artifacts = root.path().join(".changeloop/artifacts");
+        let mut tools = RuntimeTools::new(
+            root.path(),
+            &artifacts,
+            &parent,
+            RuntimePolicy::default(),
+            true,
+        )
+        .unwrap();
+        assert!(
+            tools
+                .definitions()
+                .iter()
+                .all(|definition| definition.name != "spawn_subagent")
+        );
+        assert_eq!(tools.permission("spawn_subagent"), None);
+        assert!(
+            tools
+                .dispatch(&spawn_call("spawn", json!({"task":"review auth"})))
+                .is_err()
+        );
+
+        // A disabled or model-authored profile produces no governor at all.
+        let mut authority = delegation_authority(root.path(), &parent);
+        authority.profile.mode = DelegationMode::Disabled;
+        assert_eq!(authority.governor().err(), Some(DelegationError::Disabled));
+        let mut authority = delegation_authority(root.path(), &parent);
+        authority.profile.contract_author = ContractAuthor::Model;
+        assert_eq!(
+            authority.governor().err(),
+            Some(DelegationError::ContractAuthorNotHarness)
+        );
+    }
+
+    #[test]
+    fn the_harness_scope_comes_from_configuration_then_the_workspace() {
+        let root = delegation_workspace();
+        let parent = Session {
+            id: SessionId::from_stable("parent"),
+            kind: SessionKind::Change,
+            change_state: Some(ChangeState::Confirmed),
+        };
+        assert_eq!(
+            delegation_authority(root.path(), &parent).grant.paths,
+            vec!["docs".to_owned(), "src".to_owned()]
+        );
+
+        fs::write(
+            root.path().join("changeloop.json"),
+            json!({"version":1,"repositories":[{"name":"api","path":"services/api"}]}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            delegation_authority(root.path(), &parent).grant.paths,
+            vec!["services/api".to_owned()]
+        );
     }
 
     #[test]
     fn cancelled_parent_prevents_child_provider_execution() {
         let cancel = CancellationToken::default();
         cancel.cancel();
-        let root = tempfile::tempdir().unwrap();
+        let root = delegation_workspace();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let mut executor = ScopedChildExecutor {
             execution: ProviderExecution {
@@ -11898,26 +12446,26 @@ mod tests {
             runtime: runtime.handle().clone(),
             merge_lock: Arc::new(Mutex::new(())),
         };
+        let parent = Session {
+            id: SessionId::from_stable("parent"),
+            kind: SessionKind::Change,
+            change_state: Some(ChangeState::Confirmed),
+        };
         let mut tools = RuntimeTools::new(
             &executor.root,
             &executor.root.join("artifacts"),
-            &Session {
-                id: SessionId::from_stable("parent"),
-                kind: SessionKind::Change,
-                change_state: Some(ChangeState::Confirmed),
-            },
+            &parent,
             RuntimePolicy::default(),
             true,
         )
         .unwrap();
+        tools.install_delegation_governor(
+            delegation_authority(&executor.root, &parent)
+                .governor()
+                .unwrap(),
+        );
         let ToolDispatch::Subagent(spec) = tools
-            .dispatch(&ToolCall {
-                id: changeloop_protocol::ToolCallId::from_stable("spawn-cancelled"),
-                name: "spawn_subagent".into(),
-                arguments: json!({"task":"read","paths":["src"]}),
-                permission: PermissionKind::FilesystemRead,
-                mutating: false,
-            })
+            .dispatch(&spawn_call("spawn-cancelled", json!({"task":"read"})))
             .unwrap()
         else {
             panic!("expected subagent")
@@ -14138,8 +14686,14 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("server.sock");
         let server_path = path.clone();
-        let mut service =
-            AppService::new(Storage::open_in_memory().unwrap(), MockBackend::default());
+        let project_root = directory.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let mut service = AppService::with_project(
+            Storage::open_in_memory().unwrap(),
+            MockBackend::default(),
+            &project_root,
+        )
+        .unwrap();
         let server = tokio::spawn(async move {
             serve_unix(&mut service, &server_path, "token", Some(1))
                 .await
@@ -14187,8 +14741,14 @@ mod tests {
         drop(StdUnixListener::bind(&path).unwrap());
         assert!(path.exists());
         let server_path = path.clone();
-        let mut service =
-            AppService::new(Storage::open_in_memory().unwrap(), MockBackend::default());
+        let project_root = directory.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let mut service = AppService::with_project(
+            Storage::open_in_memory().unwrap(),
+            MockBackend::default(),
+            &project_root,
+        )
+        .unwrap();
         let server = tokio::spawn(async move {
             serve_unix(&mut service, &server_path, "token", Some(1))
                 .await
@@ -14207,8 +14767,14 @@ mod tests {
 
         let regular = directory.path().join("regular.sock");
         std::fs::write(&regular, b"do not replace").unwrap();
-        let mut service =
-            AppService::new(Storage::open_in_memory().unwrap(), MockBackend::default());
+        let project_root = directory.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let mut service = AppService::with_project(
+            Storage::open_in_memory().unwrap(),
+            MockBackend::default(),
+            &project_root,
+        )
+        .unwrap();
         assert!(
             serve_unix(&mut service, &regular, "token", Some(1))
                 .await
@@ -14229,12 +14795,91 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn unix_rendezvous_is_derived_from_the_worktree_not_the_socket_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let project_root = directory.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let rendezvous = changeloop_project::Rendezvous::for_worktree(&project_root).unwrap();
+
+        // Someone else already owns this worktree, and they published a store
+        // schema this binary does not understand.
+        let owner = changeloop_project::LeaderLock::acquire_with_metadata(
+            rendezvous.lock_path(),
+            changeloop_project::LeaderMetadata {
+                pid: 4242,
+                endpoint: Some("unix:///tmp/newer.sock".into()),
+                version: RendezvousVersion::new(
+                    RENDEZVOUS_PROTOCOL_VERSION,
+                    local_rendezvous_version().schema + 1,
+                ),
+            },
+        )
+        .unwrap();
+
+        // A socket path in a completely different directory must not let this
+        // process miss the owner: the lock, not the socket, decides.
+        let socket = directory.path().join("elsewhere.sock");
+        let mut service = AppService::with_project(
+            Storage::open_in_memory().unwrap(),
+            MockBackend::default(),
+            &project_root,
+        )
+        .unwrap();
+        let error = serve_unix(&mut service, &socket, "token", Some(1))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("older binary must never open a newer schema"),
+            "handshake refusal must name the cause: {error}"
+        );
+        assert!(
+            error.contains("4242"),
+            "refusal must name the owner: {error}"
+        );
+        assert!(!socket.exists(), "a refused server must not bind");
+        assert!(
+            !socket.with_extension("leader.lock").exists(),
+            "the rendezvous must not be derived from the caller-supplied socket path"
+        );
+        assert!(rendezvous.lock_path().is_file());
+
+        drop(owner);
+
+        // Once the incompatible owner is gone the same call succeeds, proving
+        // the refusal was the handshake and not the socket path.
+        let mut service = AppService::with_project(
+            Storage::open_in_memory().unwrap(),
+            MockBackend::default(),
+            &project_root,
+        )
+        .unwrap();
+        let server =
+            tokio::spawn(async move { serve_unix(&mut service, &socket, "token", Some(1)).await });
+        let ready = directory.path().join("elsewhere.sock");
+        for _ in 0..100 {
+            if UnixStream::connect(&ready).await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        server.await.unwrap().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn unix_socket_bounds_jsonl_and_cleans_path_after_client_error() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("bounded.sock");
         let server_path = path.clone();
-        let mut service =
-            AppService::new(Storage::open_in_memory().unwrap(), MockBackend::default());
+        let project_root = directory.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let mut service = AppService::with_project(
+            Storage::open_in_memory().unwrap(),
+            MockBackend::default(),
+            &project_root,
+        )
+        .unwrap();
         let server =
             tokio::spawn(
                 async move { serve_unix(&mut service, &server_path, "token", Some(1)).await },

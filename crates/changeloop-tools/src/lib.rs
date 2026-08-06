@@ -1,5 +1,8 @@
 //! Executable, policy-gated tools confined to one repository/worktree.
 
+use changeloop_language::{
+    FormatterConfig, FormatterResult, FormatterStatus, ProjectProcessLauncher, ProjectToolResolver,
+};
 use changeloop_policy::{
     AUTO_CLASSIFIER_VERSION, DecisionAction, ExecutionMode, HardBoundary, LifecycleAuthority,
     OperationKind, PermissionKind, PolicyDecision, PolicyRequest, Reversibility, RuleAction,
@@ -7,6 +10,10 @@ use changeloop_policy::{
 };
 use changeloop_project::{MutationError, MutationLease, WorkspaceRevision};
 use changeloop_protocol::redact_sensitive_text;
+use changeloop_sandbox::{
+    EnforcementLevel, Policy as SandboxPolicy, ReadScope, SandboxedChild, SessionPlan, Spawn,
+    StdioPlan, exceptions,
+};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(unix)]
@@ -16,7 +23,7 @@ use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Mutex;
 use std::sync::{
     Arc,
@@ -29,6 +36,10 @@ use thiserror::Error;
 use uuid::Uuid;
 
 const SAFE_EXECUTABLE_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin";
+/// Diagnostics a post-write checker may return inline with its verdict.
+const WRITE_CHECK_DIAGNOSTIC_BYTES: usize = 8 * 1024;
+/// Upper bound on the checker output the process path retains at all.
+const WRITE_CHECK_CAPTURE_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct ToolPolicy {
@@ -156,6 +167,8 @@ pub struct ToolRuntime {
     root_handle: File,
     artifact_directory: PathBuf,
     policy: ToolPolicy,
+    write_formatters: WriteFormatStage,
+    write_checkers: WriteCheckerConfig,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,7 +208,28 @@ impl ToolRuntime {
             root_handle,
             artifact_directory,
             policy,
+            write_formatters: WriteFormatStage::default(),
+            write_checkers: WriteCheckerConfig::default(),
         })
+    }
+
+    /// Installs the formatter half of the write transaction. This is the only
+    /// formatter pipeline: callers must not run project formatters again after
+    /// a write returns, or the checker would read pre-format bytes and the
+    /// reported digest would not describe the file on disk.
+    #[must_use]
+    pub fn with_write_formatters(mut self, formatters: WriteFormatStage) -> Self {
+        self.write_formatters = formatters;
+        self
+    }
+
+    /// Installs the per-language lint/typecheck mapping that every subsequent
+    /// write and patch application must clear before it is reported as
+    /// successful. Checkers run after the formatter stage above.
+    #[must_use]
+    pub fn with_write_checkers(mut self, checkers: WriteCheckerConfig) -> Self {
+        self.write_checkers = checkers;
+        self
     }
 
     pub fn read(&self, path: &Path, max_bytes: usize) -> Result<Vec<u8>, ToolError> {
@@ -378,6 +412,10 @@ impl ToolRuntime {
         Ok(matches)
     }
 
+    /// Writes `content` atomically and then, in the same invocation, runs the
+    /// configured formatter followed by the configured lint/typecheck command
+    /// for the file's language. The returned verdict reports what ran; an edit
+    /// no command cleared is never reported as a clean write.
     pub fn write(
         &self,
         path: &Path,
@@ -385,7 +423,7 @@ impl ToolRuntime {
         lease: &MutationLease,
         now_ms: u64,
         actual_revision: &WorkspaceRevision,
-    ) -> Result<String, ToolError> {
+    ) -> Result<VerifiedWrite, ToolError> {
         self.authorize(
             PermissionKind::FilesystemWrite,
             OperationKind::Write,
@@ -400,16 +438,19 @@ impl ToolRuntime {
         secure_atomic_write_beneath(&self.root_handle, &relative, content)?;
         #[cfg(not(unix))]
         atomic_write(&absolute, content)?;
-        Ok(format!("{:x}", Sha256::digest(content)))
+        self.verify_write(&relative, content)
     }
 
+    /// Applies a precondition-checked replacement and then runs the same
+    /// format-then-check gate as [`ToolRuntime::write`]. A patch that applies
+    /// cleanly is still unverified until a checker says otherwise.
     pub fn apply_patch(
         &self,
         patch: &PatchWrite,
         lease: &MutationLease,
         now_ms: u64,
         actual_revision: &WorkspaceRevision,
-    ) -> Result<String, ToolError> {
+    ) -> Result<VerifiedWrite, ToolError> {
         validate_expected_sha256(&patch.expected_sha256)?;
         self.authorize(
             PermissionKind::FilesystemWrite,
@@ -456,7 +497,7 @@ impl ToolRuntime {
         )?;
         #[cfg(not(unix))]
         atomic_write(&absolute, &patch.replacement)?;
-        Ok(format!("{:x}", Sha256::digest(&patch.replacement)))
+        self.verify_write(&relative, &patch.replacement)
     }
 
     pub fn delete_file(
@@ -697,6 +738,172 @@ impl ToolRuntime {
         })
     }
 
+    /// Runs the formatter stage of the write transaction on a file that is
+    /// already on disk, without a checker. Used by mutations such as rename
+    /// that move bytes into a language's scope but do not author them.
+    pub fn format_written_file(
+        &self,
+        path: &Path,
+    ) -> Result<Vec<WriteFormatterOutcome>, ToolError> {
+        let relative = normalize_relative(path)?;
+        self.run_write_formatters(&relative)
+    }
+
+    /// Format-then-check gate for a file that has just landed on disk.
+    ///
+    /// The order is the whole point: the formatter runs first so the checker
+    /// reads the bytes that will stay on disk, and the reported digest is read
+    /// back from disk after formatting so a caller's self-write fingerprint
+    /// still matches a file the formatter rewrote.
+    fn verify_write(&self, relative: &Path, written: &[u8]) -> Result<VerifiedWrite, ToolError> {
+        // 1. Format.
+        let formatter = self.run_write_formatters(relative)?;
+        // 2. Digest the post-format bytes. Once any formatter has run, the
+        //    requested content is no longer authoritative for what is on disk.
+        let sha256 = if formatter.is_empty() {
+            format!("{:x}", Sha256::digest(written))
+        } else {
+            self.digest_on_disk(relative)?
+        };
+        // 3. Check the formatted file. The verdict reports checkers only: a
+        //    project that configures formatters and no checker has configured
+        //    no assurance, and must not read as though it had.
+        let runs = self
+            .write_checkers
+            .for_path(relative)
+            .iter()
+            .map(|checker| self.run_write_check(relative, checker, WriteCheckStage::Check))
+            .collect::<Vec<_>>();
+        let verdict = if runs.is_empty() {
+            WriteVerdict::NotConfigured
+        } else {
+            WriteVerdict::Checked(runs)
+        };
+        Ok(VerifiedWrite {
+            sha256,
+            formatter,
+            verdict,
+        })
+    }
+
+    /// Executes every configured formatter that claims this file's extension,
+    /// in configuration order, through the project sandbox the owning session
+    /// installed. A repository with no formatter for the extension returns an
+    /// empty list and costs nothing.
+    fn run_write_formatters(
+        &self,
+        relative: &Path,
+    ) -> Result<Vec<WriteFormatterOutcome>, ToolError> {
+        let extension = relative
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        let matching = self
+            .write_formatters
+            .formatters
+            .iter()
+            .filter(|formatter| formatter.extensions.contains(extension))
+            .collect::<Vec<_>>();
+        if matching.is_empty() {
+            return Ok(Vec::new());
+        }
+        let resolver = ProjectToolResolver::new(&self.root).map_err(|source| match source {
+            changeloop_language::ResolverError::Io { path, source } => {
+                ToolError::Io { path, source }
+            }
+        })?;
+        Ok(matching
+            .into_iter()
+            .map(|formatter| WriteFormatterOutcome {
+                name: formatter.name.clone(),
+                result: match &self.write_formatters.launcher {
+                    Some(launcher) => {
+                        formatter.execute_with_launcher(&resolver, relative, launcher.as_ref())
+                    }
+                    None => formatter.execute(&resolver, relative),
+                },
+            })
+            .collect())
+    }
+
+    /// Runs one configured command through the crate's bounded, sandboxed,
+    /// timeout-guarded process path. The write has already landed, so a
+    /// process that cannot run or does not finish becomes a visible
+    /// non-passing verdict rather than an error that hides the mutation.
+    fn run_write_check(
+        &self,
+        relative: &Path,
+        command: &WriteCheckCommand,
+        stage: WriteCheckStage,
+    ) -> WriteCheckRun {
+        let request = ProcessRequest {
+            program: command.program.clone(),
+            arguments: expand_write_check_arguments(&command.arguments, relative),
+            environment: BTreeMap::new(),
+            timeout: command.timeout,
+            cancellation: self.write_checkers.cancellation.clone(),
+            sandbox: SandboxRequirement::BestEffort,
+            limits: OutputLimits {
+                inline_bytes: WRITE_CHECK_DIAGNOSTIC_BYTES,
+                artifact_bytes: WRITE_CHECK_CAPTURE_BYTES,
+            },
+        };
+        let (outcome, exit_code, diagnostics) =
+            match run_process(&self.root, &self.artifact_directory, &request) {
+                Ok(output) if output.status.success() => (
+                    WriteCheckOutcome::Passed,
+                    output.status.code(),
+                    write_check_diagnostics(&output),
+                ),
+                Ok(output) => (
+                    WriteCheckOutcome::Failed,
+                    output.status.code(),
+                    write_check_diagnostics(&output),
+                ),
+                Err(ToolError::Timeout) => (
+                    WriteCheckOutcome::TimedOut,
+                    None,
+                    format!("exceeded {} ms", command.timeout.as_millis()),
+                ),
+                Err(ToolError::Cancelled) => (
+                    WriteCheckOutcome::Cancelled,
+                    None,
+                    "cancelled before completion".to_owned(),
+                ),
+                Err(error) => (WriteCheckOutcome::Unavailable, None, error.to_string()),
+            };
+        WriteCheckRun {
+            name: command.name.clone(),
+            stage,
+            outcome,
+            exit_code,
+            diagnostics,
+        }
+    }
+
+    /// Digests the bytes actually on disk, refusing to describe a file that a
+    /// symlink or a second hard link could point somewhere else. A digest a
+    /// caller records as a self-write fingerprint must describe the exact file
+    /// the runtime owns.
+    fn digest_on_disk(&self, relative: &Path) -> Result<String, ToolError> {
+        #[cfg(unix)]
+        let mut file = secure_open_beneath(
+            &self.root_handle,
+            relative,
+            libc::O_RDONLY | libc::O_NONBLOCK,
+        )?;
+        #[cfg(not(unix))]
+        let mut file = {
+            let absolute = self.resolve(relative, true)?;
+            File::open(&absolute).map_err(|source| ToolError::Io {
+                path: absolute,
+                source,
+            })?
+        };
+        reject_hardlinked_file(&file, relative)?;
+        sha256_reader(&mut file, relative)
+    }
+
     fn authorize(
         &self,
         permission: PermissionKind,
@@ -778,6 +985,218 @@ pub struct PatchWrite {
     pub replacement: Vec<u8>,
 }
 
+/// One project-configured command run against a file the tools just wrote.
+/// `{file}` expands to the repository-relative path; without the token the
+/// path is appended, matching the project formatter contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WriteCheckCommand {
+    pub name: String,
+    pub program: PathBuf,
+    pub arguments: Vec<String>,
+    pub timeout: Duration,
+}
+
+/// The formatter half of the write transaction: the project formatters the
+/// runtime runs in place before any checker sees the file, and the sandbox
+/// launcher they must be started through.
+///
+/// This exists so a host application has exactly one formatter pipeline. A
+/// second post-write formatting stage outside the runtime would invert the
+/// gate into check-then-format and invalidate the digest the write reports.
+#[derive(Clone, Default)]
+pub struct WriteFormatStage {
+    formatters: Vec<FormatterConfig>,
+    launcher: Option<Arc<dyn ProjectProcessLauncher>>,
+}
+
+impl WriteFormatStage {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Appends one project formatter. Formatters run in the order registered.
+    #[must_use]
+    pub fn with_formatter(mut self, formatter: FormatterConfig) -> Self {
+        self.formatters.push(formatter);
+        self
+    }
+
+    #[must_use]
+    pub fn with_formatters(
+        mut self,
+        formatters: impl IntoIterator<Item = FormatterConfig>,
+    ) -> Self {
+        self.formatters.extend(formatters);
+        self
+    }
+
+    /// Routes every formatter through a caller-owned mandatory sandbox. Without
+    /// one, formatters are launched directly.
+    #[must_use]
+    pub fn with_launcher(mut self, launcher: Arc<dyn ProjectProcessLauncher>) -> Self {
+        self.launcher = Some(launcher);
+        self
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.formatters.is_empty()
+    }
+}
+
+impl std::fmt::Debug for WriteFormatStage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WriteFormatStage")
+            .field("formatters", &self.formatters)
+            .field("launcher", &self.launcher.is_some())
+            .finish()
+    }
+}
+
+/// One formatter's execution against the file the write just produced, paired
+/// with the configured name so a host can report it without re-deriving it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WriteFormatterOutcome {
+    pub name: String,
+    pub result: FormatterResult,
+}
+
+impl WriteFormatterOutcome {
+    /// Whether this formatter left the file in a state it vouches for. The
+    /// formatter is the first half of format-then-check, so one that failed,
+    /// was cancelled, or could not run leaves the write unverified even when
+    /// no checker is configured behind it.
+    #[must_use]
+    pub fn succeeded(&self) -> bool {
+        matches!(
+            self.result.status,
+            FormatterStatus::Unchanged | FormatterStatus::Formatted
+        )
+    }
+}
+
+/// Data-driven per-language checker mapping consulted after the formatter
+/// stage of every successful write. Callers register commands by file
+/// extension instead of naming a checker at each tool call site.
+#[derive(Clone, Debug, Default)]
+pub struct WriteCheckerConfig {
+    languages: BTreeMap<String, Vec<WriteCheckCommand>>,
+    cancellation: ExecutionCancellation,
+}
+
+impl WriteCheckerConfig {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Appends one lint/typecheck command for one lowercase file extension.
+    /// Several checkers may share an extension; they run in registration order.
+    #[must_use]
+    pub fn with_checker(
+        mut self,
+        extension: impl Into<String>,
+        checker: WriteCheckCommand,
+    ) -> Self {
+        self.languages
+            .entry(extension.into().to_ascii_lowercase())
+            .or_default()
+            .push(checker);
+        self
+    }
+
+    /// Shares one cancellation handle with every check this configuration
+    /// runs, so an owning session can stop in-flight checkers.
+    #[must_use]
+    pub fn with_cancellation(mut self, cancellation: ExecutionCancellation) -> Self {
+        self.cancellation = cancellation;
+        self
+    }
+
+    fn for_path(&self, path: &Path) -> &[WriteCheckCommand] {
+        path.extension()
+            .and_then(|value| value.to_str())
+            .and_then(|extension| self.languages.get(&extension.to_ascii_lowercase()))
+            .map_or(&[], Vec::as_slice)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteCheckStage {
+    Format,
+    Check,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteCheckOutcome {
+    Passed,
+    Failed,
+    TimedOut,
+    Cancelled,
+    Unavailable,
+}
+
+/// What one configured command did: which stage it served, how it exited, and
+/// the bounded, secret-redacted diagnostics it produced.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WriteCheckRun {
+    pub name: String,
+    pub stage: WriteCheckStage,
+    pub outcome: WriteCheckOutcome,
+    pub exit_code: Option<i32>,
+    pub diagnostics: String,
+}
+
+/// Whether the written bytes were checked, and by what.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WriteVerdict {
+    /// No formatter and no checker is configured for this file's language.
+    NotConfigured,
+    Checked(Vec<WriteCheckRun>),
+}
+
+/// A landed write together with what the single write transaction did to it:
+/// what each formatter changed, the digest of the resulting bytes, and the
+/// gate verdict. The digest is read back from disk after formatting, so a
+/// caller's self-write fingerprint still matches the file a formatter rewrote.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifiedWrite {
+    pub sha256: String,
+    /// Every formatter that claimed this file, in configuration order.
+    pub formatter: Vec<WriteFormatterOutcome>,
+    pub verdict: WriteVerdict,
+}
+
+impl VerifiedWrite {
+    /// A write is clean when every command the transaction ran passed: both
+    /// halves of the gate count, so a formatter that could not run leaves the
+    /// write unverified even though the checker verdict stays
+    /// `NotConfigured`. A checker that failed, timed out, was cancelled, or
+    /// could not run does the same.
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        let formatted = self.formatter.iter().all(WriteFormatterOutcome::succeeded);
+        let checked = match &self.verdict {
+            WriteVerdict::NotConfigured => true,
+            WriteVerdict::Checked(runs) => runs
+                .iter()
+                .all(|run| run.outcome == WriteCheckOutcome::Passed),
+        };
+        formatted && checked
+    }
+
+    /// The commands that did not pass, in the order they ran.
+    pub fn failures(&self) -> impl Iterator<Item = &WriteCheckRun> {
+        match &self.verdict {
+            WriteVerdict::NotConfigured => [].iter(),
+            WriteVerdict::Checked(runs) => runs.as_slice().iter(),
+        }
+        .filter(|run| run.outcome != WriteCheckOutcome::Passed)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QuestionRequest {
     pub id: String,
@@ -857,6 +1276,40 @@ pub struct ProcessOutput {
     pub filtered_environment: Vec<String>,
 }
 
+fn expand_write_check_arguments(arguments: &[String], relative: &Path) -> Vec<String> {
+    let file = relative.to_string_lossy().into_owned();
+    let mut saw_file = false;
+    let mut expanded = arguments
+        .iter()
+        .map(|argument| {
+            if argument.contains("{file}") {
+                saw_file = true;
+                argument.replace("{file}", &file)
+            } else {
+                argument.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    if !saw_file {
+        expanded.push(file);
+    }
+    expanded
+}
+
+/// Joins the already bounded and secret-redacted inline capture of a checker
+/// so the verdict carries the diagnostics that explain it.
+fn write_check_diagnostics(output: &ProcessOutput) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout.inline).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr.inline);
+    if !stderr.is_empty() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&stderr);
+    }
+    text
+}
+
 fn run_process(
     working_directory: &Path,
     artifact_directory: &Path,
@@ -870,63 +1323,63 @@ fn run_process(
     }
     validate_executable(working_directory, &request.program)?;
     validate_process_arguments(&request.arguments)?;
-    let adapter = sandbox_adapter();
-    if request.sandbox == SandboxRequirement::Required && adapter.is_none() {
+    if request.sandbox == SandboxRequirement::Required && !enforcing_backend_available() {
         return Err(ToolError::SandboxUnavailable);
     }
-    let (environment, filtered_environment) = filter_environment(&request.environment);
-    let mut command = if request.sandbox == SandboxRequirement::None {
-        Command::new(&request.program)
-    } else if let Some(adapter) = adapter {
-        adapter.command(
-            working_directory,
-            artifact_directory,
-            &request.program,
-            &request.arguments,
-            &[working_directory.to_path_buf()],
-            false,
-        )
-    } else {
-        Command::new(&request.program)
-    };
-    if request.sandbox == SandboxRequirement::None || adapter.is_none() {
-        command.args(&request.arguments);
+    let (mut environment, filtered_environment) = filter_environment(&request.environment);
+    environment.insert("PATH".to_string(), SAFE_EXECUTABLE_PATH.to_string());
+    environment.insert(
+        "TMPDIR".to_string(),
+        artifact_directory.to_string_lossy().into_owned(),
+    );
+
+    // One coarse profile: the working tree plus the private scratch directory
+    // are writable, nothing else is, and there is no egress. `SandboxRequirement`
+    // selects which enumerated register row covers a spawn that cannot get that.
+    let policy = SandboxPolicy::deny_by_default(working_directory)
+        .writable([working_directory.to_path_buf()])
+        .writable_outside_workspace(
+            artifact_directory.to_path_buf(),
+            exceptions::TOOL_ARTIFACT_SCRATCH,
+        );
+    let mut spawn = Spawn::new(&request.program, policy)
+        .arguments(request.arguments.clone())
+        .working_directory(working_directory)
+        .environment(environment)
+        .stdin(StdioPlan::Inherit)
+        .stdout(StdioPlan::Piped)
+        .stderr(StdioPlan::Piped)
+        .session(SessionPlan::OwnedProcessGroup)
+        .allow_unenforced(exceptions::BEST_EFFORT_NO_BACKEND);
+    if request.sandbox == SandboxRequirement::None {
+        // An explicit unsandboxed request, recorded as such rather than
+        // achieved by a backend that happened not to be installed.
+        spawn = spawn.without_enforcement(exceptions::HOST_TOOLCHAIN_UNSANDBOXED);
     }
-    command
-        .current_dir(working_directory)
-        .env_clear()
-        .envs(environment)
-        .env("PATH", SAFE_EXECUTABLE_PATH)
-        .env("TMPDIR", artifact_directory)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    configure_process_group(&mut command);
-    let mut child = command.spawn().map_err(ToolError::Spawn)?;
+    let mut child = spawn.spawn().map_err(sandbox_error)?;
     let stdout = child
-        .stdout
-        .take()
+        .take_stdout()
         .ok_or_else(|| ToolError::Spawn(std::io::Error::other("stdout pipe missing")))?;
     let stderr = child
-        .stderr
-        .take()
+        .take_stderr()
         .ok_or_else(|| ToolError::Spawn(std::io::Error::other("stderr pipe missing")))?;
     let stdout_reader = spawn_bounded_capture(stdout, request.limits.artifact_bytes);
     let stderr_reader = spawn_bounded_capture(stderr, request.limits.artifact_bytes);
     let started = Instant::now();
     let status = loop {
         if request.cancellation.is_cancelled() {
-            terminate(&mut child);
+            child.terminate();
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return Err(ToolError::Cancelled);
         }
         if started.elapsed() >= request.timeout {
-            terminate(&mut child);
+            child.terminate();
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return Err(ToolError::Timeout);
         }
-        if let Some(status) = try_wait_owned_group(&mut child)? {
+        if let Some(status) = child.try_wait_owned_group().map_err(ToolError::Spawn)? {
             break status;
         }
         thread::sleep(Duration::from_millis(5));
@@ -945,122 +1398,33 @@ fn run_process(
     })
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SandboxAdapter {
-    #[cfg(target_os = "macos")]
-    MacOs,
-    #[cfg(target_os = "linux")]
-    Bubblewrap,
-}
-
-impl SandboxAdapter {
-    fn command(
-        self,
-        root: &Path,
-        scratch: &Path,
-        program: &Path,
-        arguments: &[String],
-        writable_paths: &[PathBuf],
-        restrict_reads: bool,
-    ) -> Command {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::MacOs => {
-                let _ = root;
-                let _ = restrict_reads;
-                let scratch = sandbox_profile_path(scratch);
-                // macOS executables and script interpreters consult dynamic
-                // system paths that are not stable across OS releases. Keep
-                // reads broad, while write authority remains exact, ambient
-                // credentials are filtered, and network is denied.
-                let reads = "(allow file-read*)";
-                let writes = writable_paths
-                    .iter()
-                    .map(|path| {
-                        let matcher = if path.is_dir() { "subpath" } else { "literal" };
-                        format!(" ({matcher} \"{}\")", sandbox_profile_path(path))
-                    })
-                    .collect::<String>();
-                let profile = format!(
-                    "(version 1) (deny default) (allow process*) {reads} \
-                     (allow file-write* (subpath \"{scratch}\") \
-                     (literal \"/dev/null\"){writes}) (deny network*) (allow sysctl-read)"
-                );
-                let mut command = Command::new("/usr/bin/sandbox-exec");
-                command.args(["-p", &profile]).arg(program).args(arguments);
-                command
-            }
-            #[cfg(target_os = "linux")]
-            Self::Bubblewrap => {
-                let executable = if Path::new("/usr/bin/bwrap").exists() {
-                    "/usr/bin/bwrap"
-                } else {
-                    "/bin/bwrap"
-                };
-                let mut command = Command::new(executable);
-                command.args(["--die-with-parent", "--new-session", "--unshare-net"]);
-                if restrict_reads {
-                    for path in [
-                        "/usr",
-                        "/bin",
-                        "/sbin",
-                        "/lib",
-                        "/lib64",
-                        "/opt",
-                        "/etc/ld.so.cache",
-                    ] {
-                        if Path::new(path).exists() {
-                            command.arg("--ro-bind").arg(path).arg(path);
-                        }
-                    }
-                    command
-                        .arg("--ro-bind")
-                        .arg(root)
-                        .arg(root)
-                        .args(["--dev", "/dev", "--proc", "/proc"]);
-                } else {
-                    command.args(["--ro-bind", "/", "/"]);
-                }
-                command.arg("--chdir").arg(root);
-                for path in writable_paths {
-                    command.arg("--bind").arg(path).arg(path);
-                }
-                command
-                    .arg("--bind")
-                    .arg(scratch)
-                    .arg(scratch)
-                    .arg("--")
-                    .arg(program)
-                    .args(arguments);
-                command
-            }
+/// Maps a spawn refusal onto the tool error vocabulary.
+///
+/// A refusal is never flattened into "the process failed to start": a host that
+/// cannot enforce the policy is a distinct, reportable condition from a binary
+/// that would not exec.
+fn sandbox_error(error: changeloop_sandbox::SandboxError) -> ToolError {
+    match error {
+        changeloop_sandbox::SandboxError::Spawn(source) => ToolError::Spawn(source),
+        changeloop_sandbox::SandboxError::Unenforced { .. } => ToolError::SandboxUnavailable,
+        changeloop_sandbox::SandboxError::InvalidPolicy(_)
+        | changeloop_sandbox::SandboxError::UnknownException(_)
+        | changeloop_sandbox::SandboxError::UngrantedException { .. } => {
+            ToolError::SandboxUnavailable
         }
     }
 }
 
-#[cfg(target_os = "macos")]
-fn sandbox_profile_path(path: &Path) -> String {
-    path.to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-}
-
-fn sandbox_adapter() -> Option<SandboxAdapter> {
-    #[cfg(target_os = "macos")]
-    if Path::new("/usr/bin/sandbox-exec").is_file() {
-        return Some(SandboxAdapter::MacOs);
-    }
-    #[cfg(target_os = "linux")]
-    if Path::new("/usr/bin/bwrap").is_file() || Path::new("/bin/bwrap").is_file() {
-        return Some(SandboxAdapter::Bubblewrap);
-    }
-    None
+/// Whether this host has a backend that can actually apply a workspace policy.
+fn enforcing_backend_available() -> bool {
+    let probe = SandboxPolicy::deny_by_default(std::env::temp_dir());
+    changeloop_sandbox::select(&probe).level != EnforcementLevel::Unenforced
 }
 
 /// Whether a required local OS sandbox adapter is available on this host.
 #[must_use]
 pub fn required_project_sandbox_available() -> bool {
-    sandbox_adapter().is_some()
+    enforcing_backend_available()
 }
 
 /// Builds a required, network-denied project process sandbox. Only the exact
@@ -1129,8 +1493,25 @@ pub fn required_project_sandbox_command(
         }
         writable.push(canonical);
     }
-    let adapter = sandbox_adapter().ok_or(ToolError::SandboxUnavailable)?;
-    Ok(adapter.command(&root, &scratch, &program, arguments, &writable, true))
+    if !enforcing_backend_available() {
+        return Err(ToolError::SandboxUnavailable);
+    }
+    // Reads are narrowed to the worktree here, unlike the coarse tool profile:
+    // this launcher's read set is genuinely known.
+    writable.push(scratch);
+    let policy = SandboxPolicy::deny_by_default(&root)
+        .writable(writable)
+        .read_scope(ReadScope::Explicit(vec![root.clone()]));
+    let plan = Spawn::new(&program, policy)
+        .arguments(arguments.to_vec())
+        .working_directory(&root)
+        .plan()
+        .map_err(sandbox_error)?;
+    // The one enumerated handoff of a raw command to a caller this crate does
+    // not own. The policy, profile and argv above are still built here; only
+    // the final `Command` crosses the boundary.
+    plan.into_registered_command(exceptions::LEGACY_COMMAND_HANDOFF)
+        .map_err(sandbox_error)
 }
 
 fn create_sandbox_scratch(root: &Path, scratch: &Path) -> Result<(), ToolError> {
@@ -1186,7 +1567,7 @@ fn sandbox_capability(requirement: SandboxRequirement) -> Result<SandboxCapabili
         // record so AUTO can reject it and YOLO remains visibly full-access.
         return Ok(SandboxCapability::DangerFullAccess);
     }
-    if sandbox_adapter().is_some() {
+    if enforcing_backend_available() {
         Ok(SandboxCapability::WorkspaceWrite)
     } else if requirement == SandboxRequirement::Required {
         Err(ToolError::SandboxUnavailable)
@@ -1817,7 +2198,7 @@ pub struct JobRecord {
     pub id: String,
     pub kind: JobKind,
     pub state: JobState,
-    child: Child,
+    child: SandboxedChild,
     pty_writer: Option<File>,
     stdout: Arc<Mutex<BoundedJobOutput>>,
     stderr: Arc<Mutex<BoundedJobOutput>>,
@@ -1965,7 +2346,13 @@ impl JobManager {
             .jobs
             .get_mut(id)
             .ok_or_else(|| ToolError::JobNotFound(id.into()))?;
-        if job.state == JobState::Running && try_wait_owned_group(&mut job.child)?.is_some() {
+        if job.state == JobState::Running
+            && job
+                .child
+                .try_wait_owned_group()
+                .map_err(ToolError::Spawn)?
+                .is_some()
+        {
             job.state = JobState::Exited;
             // A process exit can race its pipe-reader threads. Join them before
             // publishing the terminal state so callers never observe an
@@ -2005,7 +2392,7 @@ impl JobManager {
             .get_mut(id)
             .ok_or_else(|| ToolError::JobNotFound(id.into()))?;
         if job.state == JobState::Running {
-            terminate(&mut job.child);
+            job.child.terminate();
             job.state = JobState::Cancelled;
             job.pty_writer.take();
             for reader in job.readers.drain(..) {
@@ -2018,7 +2405,7 @@ impl JobManager {
     pub fn dispose(&mut self) {
         for job in self.jobs.values_mut() {
             if job.state == JobState::Running {
-                terminate(&mut job.child);
+                job.child.terminate();
                 job.state = JobState::Cancelled;
             }
             job.pty_writer.take();
@@ -2035,7 +2422,26 @@ impl Drop for JobManager {
     }
 }
 
-type SpawnedJob = (Child, Option<File>, Vec<JoinHandle<()>>);
+type SpawnedJob = (SandboxedChild, Option<File>, Vec<JoinHandle<()>>);
+
+/// The policy a background or interactive job would get.
+///
+/// It is built even though the job currently declines enforcement, so the shape
+/// of the eventual profile is stated in one place rather than invented at the
+/// moment someone wires it. The register rows `background-job-host` and
+/// `pty-controlling-terminal` record why it is not applied yet.
+fn background_job_policy(root: &Path) -> SandboxPolicy {
+    SandboxPolicy::deny_by_default(root).writable([root.to_path_buf()])
+}
+
+/// Jobs run with a cleared environment and a fixed executable search path, so a
+/// credential in the operator's shell is not inherited by an agent-driven
+/// process.
+fn job_environment(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut prepared = environment.clone();
+    prepared.insert("PATH".to_string(), SAFE_EXECUTABLE_PATH.to_string());
+    prepared
+}
 
 fn spawn_background(
     root: &Path,
@@ -2047,25 +2453,22 @@ fn spawn_background(
 ) -> Result<SpawnedJob, ToolError> {
     validate_executable(root, program)?;
     validate_process_arguments(arguments)?;
-    let mut command = Command::new(program);
-    command
-        .args(arguments)
-        .current_dir(root)
-        .env_clear()
-        .envs(environment)
-        .env("PATH", SAFE_EXECUTABLE_PATH)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    configure_process_group(&mut command);
-    let mut child = command.spawn().map_err(ToolError::Spawn)?;
+    let mut child = Spawn::new(program, background_job_policy(root))
+        .arguments(arguments.to_vec())
+        .working_directory(root)
+        .environment(job_environment(environment))
+        .stdin(StdioPlan::Null)
+        .stdout(StdioPlan::Piped)
+        .stderr(StdioPlan::Piped)
+        .session(SessionPlan::OwnedProcessGroup)
+        .without_enforcement(exceptions::BACKGROUND_JOB_HOST)
+        .spawn()
+        .map_err(sandbox_error)?;
     let stdout_reader = child
-        .stdout
-        .take()
+        .take_stdout()
         .ok_or_else(|| ToolError::Spawn(std::io::Error::other("stdout pipe missing")))?;
     let stderr_reader = child
-        .stderr
-        .take()
+        .take_stderr()
         .ok_or_else(|| ToolError::Spawn(std::io::Error::other("stderr pipe missing")))?;
     Ok((
         child,
@@ -2189,7 +2592,6 @@ fn spawn_pty(
     stdout: Arc<Mutex<BoundedJobOutput>>,
 ) -> Result<SpawnedJob, ToolError> {
     use std::os::fd::{AsRawFd, FromRawFd};
-    use std::os::unix::process::CommandExt;
 
     validate_executable(root, program)?;
     validate_process_arguments(arguments)?;
@@ -2210,27 +2612,27 @@ fn spawn_pty(
     let master = unsafe { File::from_raw_fd(master) };
     let slave = unsafe { File::from_raw_fd(slave) };
     let slave_fd = slave.as_raw_fd();
-    let mut command = Command::new(program);
-    command
-        .args(arguments)
-        .current_dir(root)
-        .env_clear()
-        .envs(environment)
-        .env("PATH", SAFE_EXECUTABLE_PATH)
-        .stdin(Stdio::from(slave.try_clone().map_err(ToolError::Spawn)?))
-        .stdout(Stdio::from(slave.try_clone().map_err(ToolError::Spawn)?))
-        .stderr(Stdio::from(slave));
-    unsafe {
-        command.pre_exec(move || {
-            if libc::setsid() == -1
-                || libc::ioctl(slave_fd, libc::TIOCSCTTY as libc::c_ulong, 0) == -1
-            {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let child = command.spawn().map_err(ToolError::Spawn)?;
+    // The session setup — setsid plus claiming the controlling terminal — is
+    // owned by the sandbox crate, because it is part of creating the process.
+    // The approval decision is resolved before we get here and never inside the
+    // child: a child holding a controlling terminal cannot raise a prompt, and
+    // the documented PTY failure is exactly a plugin that could not prompt
+    // silently reinterpreting `ask`.
+    let child = Spawn::new(program, background_job_policy(root))
+        .arguments(arguments.to_vec())
+        .working_directory(root)
+        .environment(job_environment(environment))
+        .stdin(StdioPlan::Handle(Stdio::from(
+            slave.try_clone().map_err(ToolError::Spawn)?,
+        )))
+        .stdout(StdioPlan::Handle(Stdio::from(
+            slave.try_clone().map_err(ToolError::Spawn)?,
+        )))
+        .stderr(StdioPlan::Handle(Stdio::from(slave)))
+        .session(SessionPlan::ControllingTerminal { slave: slave_fd })
+        .without_enforcement(exceptions::PTY_CONTROLLING_TERMINAL)
+        .spawn()
+        .map_err(sandbox_error)?;
     let reader = master.try_clone().map_err(ToolError::Spawn)?;
     Ok((
         child,
@@ -2249,63 +2651,6 @@ fn spawn_pty(
 ) -> Result<SpawnedJob, ToolError> {
     Err(ToolError::PtyUnavailable)
 }
-
-fn terminate(child: &mut Child) {
-    terminate_process_group(child);
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(unix)]
-fn try_wait_owned_group(child: &mut Child) -> Result<Option<ExitStatus>, ToolError> {
-    // Observe terminal state without reaping the leader. Keeping the leader as
-    // a zombie pins its PID/PGID while descendants are killed, so a fast PID
-    // reuse cannot redirect the group signal at an unrelated process.
-    let mut information = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
-    let result = unsafe {
-        libc::waitid(
-            libc::P_PID,
-            child.id() as libc::id_t,
-            information.as_mut_ptr(),
-            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-        )
-    };
-    if result != 0 {
-        return Err(ToolError::Spawn(std::io::Error::last_os_error()));
-    }
-    let information = unsafe { information.assume_init() };
-    if unsafe { information.si_pid() } == 0 {
-        return Ok(None);
-    }
-    terminate_process_group(child);
-    child.wait().map(Some).map_err(ToolError::Spawn)
-}
-
-#[cfg(not(unix))]
-fn try_wait_owned_group(child: &mut Child) -> Result<Option<ExitStatus>, ToolError> {
-    child.try_wait().map_err(ToolError::Spawn)
-}
-
-#[cfg(unix)]
-fn configure_process_group(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    command.process_group(0);
-}
-
-#[cfg(not(unix))]
-fn configure_process_group(_command: &mut Command) {}
-
-#[cfg(unix)]
-fn terminate_process_group(child: &Child) {
-    // The child was placed in a fresh process group at spawn, so a negative
-    // PID targets only that owned group and prevents descendant leakage.
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-}
-
-#[cfg(not(unix))]
-fn terminate_process_group(_child: &Child) {}
 
 fn normalize_relative(path: &Path) -> Result<PathBuf, ToolError> {
     let mut result = PathBuf::new();

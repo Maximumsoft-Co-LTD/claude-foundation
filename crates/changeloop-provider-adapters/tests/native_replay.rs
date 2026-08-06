@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use changeloop_provider::{
-    InputMessage, InputPart, InputRole, Measurement, NormalizedRequest, ProviderKind,
-    ReplayMetadata, StreamEvent, ToolDefinition,
+    InputMessage, InputPart, InputRole, Measurement, NormalizedRequest, OpaqueReasoning,
+    ProviderKind, ReasoningIdentity, ReasoningPart, StreamEvent, ToolDefinition,
 };
 use changeloop_provider_adapters::{
     AdapterError, AnthropicAdapter, AuthProfile, CancellationToken, HttpRequest, HttpResponse,
@@ -87,76 +87,80 @@ fn provider(name: &str) -> ProviderKind {
     }
 }
 
+/// The identity the fixture credential and model would issue reasoning under.
+/// Reasoning state only survives a request build when it matches, so the
+/// fixture must construct it the same way the adapter does.
+fn fixture_identity(provider: ProviderKind) -> ReasoningIdentity {
+    AuthProfile::explicit(provider, "fixture-key")
+        .unwrap()
+        .reasoning_identity("fixture-model")
+}
+
 fn request(provider: ProviderKind) -> NormalizedRequest {
+    let identity = fixture_identity(provider);
     let (tool_id, reasoning_replay, request_replay) = match provider {
         ProviderKind::Anthropic => (
             "toolu_previous",
-            ReplayMetadata::Anthropic {
-                reasoning_signature: "signature_previous".into(),
-            },
-            ReplayMetadata::Anthropic {
-                reasoning_signature: "signature_previous".into(),
-            },
+            OpaqueReasoning::anthropic(identity.clone(), "signature_previous"),
+            OpaqueReasoning::anthropic(identity, "signature_previous"),
         ),
         ProviderKind::OpenAi => (
             "call_previous",
-            ReplayMetadata::OpenAi {
-                response_id: "resp_previous".into(),
-                reasoning_item_ids: vec!["rs_previous".into()],
-            },
-            ReplayMetadata::OpenAi {
-                response_id: "resp_previous".into(),
-                reasoning_item_ids: vec!["rs_previous".into()],
-            },
+            OpaqueReasoning::openai(
+                identity.clone(),
+                "resp_previous",
+                vec!["rs_previous".into()],
+            ),
+            OpaqueReasoning::openai(identity, "resp_previous", vec!["rs_previous".into()]),
         ),
     };
     NormalizedRequest {
         operation_id: "native-replay-fixture".into(),
         model: "fixture-model".into(),
         messages: vec![
-            InputMessage {
-                role: InputRole::System,
-                parts: vec![InputPart::Text {
+            InputMessage::new(
+                InputRole::System,
+                vec![InputPart::Text {
                     text: "system policy".into(),
                 }],
-            },
-            InputMessage {
-                role: InputRole::Developer,
-                parts: vec![InputPart::Text {
+            ),
+            InputMessage::new(
+                InputRole::Developer,
+                vec![InputPart::Text {
                     text: "developer policy".into(),
                 }],
-            },
-            InputMessage {
-                role: InputRole::User,
-                parts: vec![InputPart::Text {
+            ),
+            InputMessage::new(
+                InputRole::User,
+                vec![InputPart::Text {
                     text: "question".into(),
                 }],
-            },
-            InputMessage {
-                role: InputRole::Assistant,
-                parts: vec![
+            ),
+            InputMessage::new(
+                InputRole::Assistant,
+                vec![
                     InputPart::Text {
                         text: "prior answer".into(),
                     },
-                    InputPart::Reasoning {
-                        text: "private thought".into(),
-                        replay: Some(reasoning_replay),
-                    },
+                    InputPart::Reasoning(ReasoningPart::new(
+                        "private thought",
+                        Some(reasoning_replay),
+                    )),
                     InputPart::ToolCall {
                         id: tool_id.into(),
                         name: "lookup".into(),
                         arguments: json!({"q":"old"}),
                     },
                 ],
-            },
-            InputMessage {
-                role: InputRole::Tool,
-                parts: vec![InputPart::ToolResult {
+            ),
+            InputMessage::new(
+                InputRole::Tool,
+                vec![InputPart::ToolResult {
                     id: tool_id.into(),
                     output: json!({"result":"old"}),
                     is_error: false,
                 }],
-            },
+            ),
         ],
         tools: vec![ToolDefinition {
             name: "lookup".into(),
@@ -187,25 +191,28 @@ fn assert_success(case: &FixtureCase, events: &[StreamEvent]) {
         StreamEvent::ReasoningDelta { text, .. }
             if Some(text.as_str()) == expected["reasoning"].as_str()
     )));
-    match provider(&case.provider) {
-        ProviderKind::Anthropic => assert!(events.iter().any(|event| matches!(
-            event,
-            StreamEvent::ReasoningDelta {
-                replay: Some(ReplayMetadata::Anthropic { reasoning_signature }),
-                ..
-            } if Some(reasoning_signature.as_str()) == expected["reasoningReplay"].as_str()
-        ))),
-        ProviderKind::OpenAi => assert!(events.iter().any(|event| matches!(
-            event,
-            StreamEvent::ReasoningDelta {
-                replay: Some(ReplayMetadata::OpenAi { response_id, reasoning_item_ids }),
-                ..
-            } if Some(response_id.as_str()) == expected["responseId"].as_str()
-                && reasoning_item_ids.len() == 1
-                && reasoning_item_ids.first().map(String::as_str)
-                    == expected["reasoningReplay"].as_str()
-        ))),
-    }
+    let kind = provider(&case.provider);
+    let identity = fixture_identity(kind);
+    let expected_replay = match kind {
+        ProviderKind::Anthropic => OpaqueReasoning::anthropic(
+            identity,
+            expected["reasoningReplay"].as_str().unwrap_or_default(),
+        ),
+        ProviderKind::OpenAi => OpaqueReasoning::openai(
+            identity,
+            expected["responseId"].as_str().unwrap_or_default(),
+            vec![
+                expected["reasoningReplay"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            ],
+        ),
+    };
+    assert!(events.iter().any(|event| matches!(
+        event,
+        StreamEvent::ReasoningDelta { replay: Some(replay), .. } if replay == &expected_replay
+    )));
     assert!(events.iter().any(|event| matches!(
         event,
         StreamEvent::ToolCallStarted { id, name }

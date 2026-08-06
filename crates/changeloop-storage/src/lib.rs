@@ -5,15 +5,38 @@ use changeloop_protocol::{
     OperationId, PartState, ProtocolDecodeError, SessionId, ToolCallId, decode_event_envelope_json,
     redact_sensitive_text, redact_sensitive_value,
 };
+use fs2::FileExt;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use thiserror::Error;
 
 const SCHEMA_VERSION: u32 = 4;
+
+/// Highest store schema this binary can read and migrate. Published in the
+/// rendezvous handshake so an older binary is refused before it can open a
+/// newer store, and read by `migrate` so the two can never drift apart.
+pub const SUPPORTED_SCHEMA_VERSION: u32 = SCHEMA_VERSION;
+
+/// Suffix of the sole-writer lock, derived from the canonical database path.
+/// SQLite owns `-wal` and `-shm`; this file is ours and is never opened by it.
+const WRITER_LOCK_SUFFIX: &str = "-writer.lock";
+
+/// Bytes of owner metadata read back when reporting a lost writer race.
+const MAX_WRITER_OWNER_BYTES: u64 = 4 * 1024;
+
+/// Busy timeout applied to every connection.
+///
+/// With the app-server holding the sole-writer role this only has to absorb the
+/// WAL checkpoint/reader overlap inside one process. It is deliberately not the
+/// concurrency control: SQLite's busy handler has no FIFO fairness, so leaning
+/// on it across processes is what produces multi-second lock waits under load.
+const BUSY_TIMEOUT_MS: u32 = 5_000;
 const DEFAULT_PAGE_SIZE: usize = 100;
 const MAX_PAGE_SIZE: usize = 1_000;
 const MAX_RETAINED_EVENTS_PER_SESSION: i64 = 50_000;
@@ -276,6 +299,148 @@ impl DatabaseParentIdentity {
     }
 }
 
+/// One entry per store this process has taken the writer role for.
+struct WriterLease {
+    file: File,
+    references: usize,
+}
+
+fn writer_leases() -> &'static Mutex<HashMap<PathBuf, WriterLease>> {
+    static LEASES: OnceLock<Mutex<HashMap<PathBuf, WriterLease>>> = OnceLock::new();
+    LEASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn lock_writer_leases() -> std::sync::MutexGuard<'static, HashMap<PathBuf, WriterLease>> {
+    writer_leases()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Proof that this process holds the sole-writer role for one store.
+///
+/// The grant cannot be constructed outside this module: its only field is
+/// private and its only constructor is [`acquire_writer_grant`], which takes an
+/// exclusive `flock` on a lock path derived from the canonical database path.
+/// Because [`Storage::open`] is the only public way to obtain a writable
+/// file-backed [`Storage`], and it holds a grant for its whole lifetime, a
+/// second process cannot reach the write methods at all — the boundary is the
+/// type system plus the kernel, not a convention.
+///
+/// `flock` is the right primitive here precisely because the kernel drops it
+/// when the owning process dies, including on `SIGKILL`. A killed writer leaves
+/// no stale lock and needs no manual cleanup, which a PID file cannot promise.
+///
+/// Within one process the grant is reference-counted and shared, matching
+/// SQLite's own advice that at most one writer commits at a time and that this
+/// "is usually easier if all writers are part of the same operating system
+/// process".
+pub struct WriterGrant {
+    path: PathBuf,
+}
+
+impl WriterGrant {
+    /// Path of the derived lock file backing this grant.
+    #[must_use]
+    pub fn lock_path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for WriterGrant {
+    fn drop(&mut self) {
+        let mut leases = lock_writer_leases();
+        let release = match leases.get_mut(&self.path) {
+            Some(lease) => {
+                lease.references = lease.references.saturating_sub(1);
+                lease.references == 0
+            }
+            None => false,
+        };
+        if release && let Some(lease) = leases.remove(&self.path) {
+            let _ = FileExt::unlock(&lease.file);
+        }
+    }
+}
+
+/// Derives the sole-writer lock path from the canonical database path. Callers
+/// never supply it, so two processes reaching one store by different path
+/// spellings still contend for the same lock.
+fn writer_lock_path(canonical_database: &Path) -> PathBuf {
+    sqlite_sidecar(canonical_database, WRITER_LOCK_SUFFIX)
+}
+
+fn open_writer_lock_file(database: &Path, lock: &Path) -> Result<File, StorageError> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        options.mode(0o600);
+    }
+    let file = options
+        .open(lock)
+        .map_err(|error| recovery_required("writer_lock_unsafe", database, error))?;
+    validate_regular_single_link(
+        &file
+            .metadata()
+            .map_err(|error| recovery_required("writer_lock_unsafe", database, error))?,
+        database,
+        lock,
+        "writer_lock_unsafe",
+    )?;
+    Ok(file)
+}
+
+fn read_writer_owner(file: &mut File) -> String {
+    let mut bytes = Vec::new();
+    let _ = file.seek(SeekFrom::Start(0));
+    let _ = Read::by_ref(file)
+        .take(MAX_WRITER_OWNER_BYTES)
+        .read_to_end(&mut bytes);
+    String::from_utf8_lossy(&bytes).trim().to_owned()
+}
+
+fn acquire_writer_grant(
+    database: &Path,
+    canonical_database: &Path,
+) -> Result<WriterGrant, StorageError> {
+    let path = writer_lock_path(canonical_database);
+    let mut leases = lock_writer_leases();
+    if let Some(lease) = leases.get_mut(&path) {
+        lease.references = lease.references.saturating_add(1);
+        return Ok(WriterGrant { path });
+    }
+    let mut file = open_writer_lock_file(database, &path)?;
+    if let Err(error) = file.try_lock_exclusive() {
+        if error.kind() == std::io::ErrorKind::WouldBlock {
+            return Err(StorageError::WriterHeld {
+                path,
+                owner: read_writer_owner(&mut file),
+            });
+        }
+        return Err(recovery_required("writer_lock_unsafe", database, error));
+    }
+    let owner = format!("pid={}", std::process::id());
+    let recorded = file
+        .set_len(0)
+        .and_then(|()| file.seek(SeekFrom::Start(0)).map(|_| ()))
+        .and_then(|()| file.write_all(owner.as_bytes()))
+        .and_then(|()| file.sync_data());
+    if let Err(error) = recorded {
+        let _ = FileExt::unlock(&file);
+        return Err(recovery_required("writer_lock_unsafe", database, error));
+    }
+    leases.insert(
+        path.clone(),
+        WriterLease {
+            file,
+            references: 1,
+        },
+    );
+    Ok(WriterGrant { path })
+}
+
 fn validate_sqlite_paths(database: &Path) -> Result<bool, StorageError> {
     let exists = validate_existing_sqlite_file(database, database, "database_path_unsafe")?;
     validate_wal_header(database)?;
@@ -330,6 +495,10 @@ pub enum StorageError {
     PauseKindMismatch(OperationId),
     #[error("database schema version {found} is newer than supported version {supported}")]
     FutureSchema { found: u32, supported: u32 },
+    #[error(
+        "another cloop process already owns writes for this store (writer lock {path}, owner {owner}); attach to the running app-server instead of opening a second writer"
+    )]
+    WriterHeld { path: PathBuf, owner: String },
     #[error("database recovery required ({code}) for {path}: {detail}; {instructions}")]
     RecoveryRequired {
         code: &'static str,
@@ -538,10 +707,21 @@ pub struct StoredRuntimePause {
 
 /// SQLite-backed storage. Its public values are protocol types and do not
 /// expose SQLite row IDs or transport-specific concepts.
+/// A durable store handle.
+///
+/// Every write method on this type is reachable only through a value of this
+/// type, and the only public constructor that yields a *file-backed* one is
+/// [`Storage::open`], which holds a [`WriterGrant`] for the handle's whole
+/// lifetime. The grant is a private field: no code outside this module can
+/// fabricate one, so "the app-server owns all writes" is enforced by
+/// construction rather than by convention. In-memory handles carry no grant
+/// because they are process-local and share nothing.
 pub struct Storage {
     connection: Connection,
     path: Option<PathBuf>,
     quotas: StorageQuotas,
+    /// Sole-writer proof. Dropped with the handle, releasing the `flock`.
+    writer: Option<WriterGrant>,
     #[cfg(test)]
     fail_post_purge_maintenance: bool,
 }
@@ -602,6 +782,9 @@ impl Storage {
         let parent = DatabaseParentIdentity::capture(&path)?;
         validate_sqlite_paths(&path)?;
         let open_path = parent.canonical_database_path(&path)?;
+        // Taken before SQLite sees the file: the writer role is decided by the
+        // kernel-held lock, not by whoever wins the first COMMIT.
+        let writer = acquire_writer_grant(&path, &open_path)?;
         let connection = Connection::open_with_flags(
             &open_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -625,7 +808,7 @@ impl Storage {
             file.set_permissions(permissions)
                 .map_err(|error| recovery_required("database_permissions_failed", &path, error))?;
         }
-        let storage = Self::initialize(connection, true, Some(path.clone()), quotas)?;
+        let storage = Self::initialize(connection, true, Some(path.clone()), quotas, Some(writer))?;
         parent.verify(&path)?;
         validate_sqlite_paths(&path)?;
         Ok(storage)
@@ -636,7 +819,13 @@ impl Storage {
     }
 
     pub fn open_in_memory_with_quotas(quotas: StorageQuotas) -> Result<Self, StorageError> {
-        Self::initialize(Connection::open_in_memory()?, false, None, quotas)
+        Self::initialize(Connection::open_in_memory()?, false, None, quotas, None)
+    }
+
+    /// Lock file backing this handle's writer role, when it has one.
+    #[must_use]
+    pub fn writer_lock_path(&self) -> Option<&Path> {
+        self.writer.as_ref().map(WriterGrant::lock_path)
     }
 
     fn initialize(
@@ -644,13 +833,14 @@ impl Storage {
         enable_wal: bool,
         path: Option<PathBuf>,
         quotas: StorageQuotas,
+        writer: Option<WriterGrant>,
     ) -> Result<Self, StorageError> {
         if let Some(path) = path.as_deref() {
             verify_integrity(&connection, path)?;
         }
         connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.pragma_update(None, "secure_delete", "ON")?;
-        connection.pragma_update(None, "busy_timeout", 5_000_u32)?;
+        connection.pragma_update(None, "busy_timeout", BUSY_TIMEOUT_MS)?;
         if enable_wal {
             connection.pragma_update(None, "journal_mode", "WAL")?;
             connection.pragma_update(None, "synchronous", "NORMAL")?;
@@ -677,6 +867,7 @@ impl Storage {
             connection,
             path,
             quotas,
+            writer,
             #[cfg(test)]
             fail_post_purge_maintenance: false,
         })
@@ -754,6 +945,13 @@ impl Storage {
         } else {
             Ok(())
         }
+    }
+
+    /// Busy timeout actually configured on this connection, in milliseconds.
+    pub fn busy_timeout_ms(&self) -> Result<u32, StorageError> {
+        Ok(self
+            .connection
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))?)
     }
 
     pub fn journal_mode(&self) -> Result<String, StorageError> {
@@ -1600,6 +1798,10 @@ fn stored_pause_from_row_offset(
     })
 }
 
+/// Runs pending migrations, gated on the same version the rendezvous handshake
+/// publishes as [`SUPPORTED_SCHEMA_VERSION`]. The gate comes first and returns
+/// before any DDL runs, so an older binary that reaches a newer store leaves it
+/// untouched instead of migrating it toward a schema it does not understand.
 fn migrate(connection: &Connection) -> Result<(), StorageError> {
     let version: u32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version > SCHEMA_VERSION {
@@ -1878,6 +2080,54 @@ mod tests {
         let storage = Storage::open(directory.path().join("state.db")).unwrap();
         assert_eq!(storage.schema_version(), SCHEMA_VERSION);
         assert_eq!(storage.journal_mode().unwrap(), "wal");
+    }
+
+    #[test]
+    fn wal_and_busy_timeout_are_configured_on_the_connection() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("configured.db")).unwrap();
+        // Read back from SQLite rather than trusting the pragma call: this is
+        // the connection the app-server actually writes through.
+        assert_eq!(storage.journal_mode().unwrap(), "wal");
+        // A zero timeout would disable waiting entirely.
+        assert!(storage.busy_timeout_ms().unwrap() >= 1_000);
+        assert_eq!(storage.busy_timeout_ms().unwrap(), BUSY_TIMEOUT_MS);
+
+        // In-memory stores share nothing, so they get no WAL and no writer role.
+        let memory = Storage::open_in_memory().unwrap();
+        assert_ne!(memory.journal_mode().unwrap(), "wal");
+        assert_eq!(memory.busy_timeout_ms().unwrap(), BUSY_TIMEOUT_MS);
+        assert!(memory.writer_lock_path().is_none());
+    }
+
+    #[test]
+    fn writer_lock_path_is_derived_and_shared_within_one_process() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("nested/../state.db");
+        std::fs::create_dir_all(directory.path().join("nested")).unwrap();
+        let storage = Storage::open(&database).unwrap();
+        let expected = std::fs::canonicalize(directory.path())
+            .unwrap()
+            .join("state.db-writer.lock");
+        assert_eq!(storage.writer_lock_path(), Some(expected.as_path()));
+
+        // A different spelling of the same store resolves to the same lock, and
+        // inside one process the role is shared rather than contended: SQLite's
+        // own guidance is that all writers belong to one OS process.
+        let peer = storage.open_peer().unwrap().expect("file store has a peer");
+        assert_eq!(peer.writer_lock_path(), Some(expected.as_path()));
+        let alias = Storage::open(directory.path().join("state.db")).unwrap();
+        assert_eq!(alias.writer_lock_path(), Some(expected.as_path()));
+
+        // The lock outlives individual handles and is released only by the last.
+        drop(peer);
+        drop(alias);
+        assert!(expected.is_file());
+        drop(storage);
+        assert!(
+            expected.is_file(),
+            "releasing the role must not delete the lock file"
+        );
     }
 
     #[test]

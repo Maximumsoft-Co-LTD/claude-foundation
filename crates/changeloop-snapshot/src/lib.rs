@@ -1,4 +1,12 @@
 //! Content-addressed checkpoints that preserve unrelated workspace edits.
+//!
+//! [`SnapshotManager`] is the shadow store: it records and restores project
+//! content without ever committing to the user's repository. [`step`] builds the
+//! agent-facing contract on top of it — one mutating execution per worktree, a
+//! restorable snapshot per step, and an expected-revision check in front of
+//! every write.
+
+pub mod step;
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -286,7 +294,21 @@ impl SnapshotManager {
         state_directory: impl AsRef<Path>,
         manifest: impl AsRef<Path>,
     ) -> Result<Self, SnapshotError> {
-        let mut manager = Self::new(worktree, state_directory)?;
+        Self::load_with_limits(
+            worktree,
+            state_directory,
+            manifest,
+            SnapshotLimits::default(),
+        )
+    }
+
+    pub fn load_with_limits(
+        worktree: impl AsRef<Path>,
+        state_directory: impl AsRef<Path>,
+        manifest: impl AsRef<Path>,
+        limits: SnapshotLimits,
+    ) -> Result<Self, SnapshotError> {
+        let mut manager = Self::new_with_limits(worktree, state_directory, limits)?;
         let mut bytes = Vec::new();
         File::open(manifest.as_ref())
             .map_err(|source| SnapshotError::Io {

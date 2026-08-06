@@ -258,12 +258,12 @@ async fn measure_case(
     let request = NormalizedRequest {
         operation_id: case.id.into(),
         model: "fixture-model".into(),
-        messages: vec![InputMessage {
-            role: InputRole::User,
-            parts: vec![InputPart::Text {
+        messages: vec![InputMessage::new(
+            InputRole::User,
+            vec![InputPart::Text {
                 text: "hello".into(),
             }],
-        }],
+        )],
         tools: if is_tool {
             vec![ToolDefinition {
                 name: "lookup".into(),

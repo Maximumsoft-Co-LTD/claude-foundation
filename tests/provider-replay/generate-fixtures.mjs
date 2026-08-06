@@ -114,6 +114,9 @@ function request(provider, group) {
   };
 }
 
+// Reasoning state is tagged with the identity that issued it. The Rust corpus
+// test parses with this same fixture identity, so the two must stay in step.
+const REASONING_IDENTITY = { provider: "anthropic", account: "fixture-account", model: "test-model" };
 const known = (value) => ({ state: "known", value });
 const unknown = (reason) => ({ state: "unknown", value: { reason } });
 function accounting(requestId, usage) {
@@ -153,7 +156,7 @@ function normalize(provider, wires) {
       } else if (value.type === "content_block_delta" && value.delta.type === "thinking_delta") {
         events.push({ type: "reasoning_delta", data: { text: value.delta.thinking, replay: null } });
       } else if (value.type === "content_block_delta" && value.delta.type === "signature_delta") {
-        events.push({ type: "reasoning_delta", data: { text: "", replay: { provider: "anthropic", reasoning_signature: value.delta.signature } } });
+        events.push({ type: "reasoning_delta", data: { text: "", replay: { identity: REASONING_IDENTITY, raw: { provider: "anthropic", reasoning_signature: value.delta.signature } } } });
       } else if (value.type === "content_block_delta" && value.delta.type === "input_json_delta") {
         const tool = tools.get(value.index); tool.args += value.delta.partial_json;
         events.push({ type: "tool_arguments_delta", data: { id: tool.id, json_fragment: value.delta.partial_json } });

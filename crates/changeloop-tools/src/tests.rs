@@ -682,7 +682,7 @@ fn required_sandbox_uses_adapter_or_fails_closed_and_timeout_cleans_process() {
         limits: limits(),
     };
     let required = run_process(root.path(), artifacts.path(), &request);
-    if sandbox_adapter().is_some() {
+    if enforcing_backend_available() {
         assert!(matches!(required, Err(ToolError::Timeout)));
     } else {
         assert!(matches!(required, Err(ToolError::SandboxUnavailable)));
@@ -723,7 +723,7 @@ fn auto_policy_does_not_claim_unsandboxed_shell_is_workspace_sandboxed() {
         limits: limits(),
     };
     let result = tools.execute(&request);
-    if sandbox_adapter().is_some() {
+    if enforcing_backend_available() {
         assert!(result.unwrap().status.success());
     } else {
         assert!(matches!(
@@ -1135,7 +1135,7 @@ fn exited_job_kills_pipe_holding_descendants_before_joining_readers() {
 
 #[test]
 fn required_sandbox_cannot_write_outside_workspace_when_available() {
-    let Some(_) = sandbox_adapter() else {
+    let true = enforcing_backend_available() else {
         return;
     };
     let root = tempdir().unwrap();
@@ -1555,6 +1555,398 @@ fn missing_mutation_source_does_not_create_parent_directories() {
         !root.path().join("missing").exists(),
         "validating a missing delete source must not mutate the workspace"
     );
+}
+
+#[cfg(unix)]
+fn write_check_fixture(
+    root: &Path,
+    locks: &Path,
+    path: &str,
+) -> (WorkspaceRevision, MutationLease) {
+    let paths = [PathBuf::from(path)];
+    let revision = WorkspaceRevision::capture(root, "head", paths.clone()).unwrap();
+    let lease = MutationLease::acquire(locks, root, 100, revision.clone(), paths).unwrap();
+    (revision, lease)
+}
+
+#[cfg(unix)]
+fn shell_check(name: &str, script: &str, timeout: Duration) -> WriteCheckCommand {
+    WriteCheckCommand {
+        name: name.into(),
+        program: "/bin/sh".into(),
+        arguments: vec!["-c".into(), script.into()],
+        timeout,
+    }
+}
+
+/// Installs a project-local formatter script and returns the config that runs
+/// it. `ProjectToolResolver` only accepts executables that live inside the
+/// repository, so the script is written into the root under test.
+#[cfg(unix)]
+fn shell_formatter(root: &Path, name: &str, extension: &str, script: &str) -> FormatterConfig {
+    use std::os::unix::fs::PermissionsExt;
+
+    let executable = format!("{name}.sh");
+    let path = root.join(&executable);
+    fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).unwrap();
+    FormatterConfig {
+        name: name.into(),
+        executable: PathBuf::from(executable),
+        arguments: Vec::new(),
+        extensions: BTreeSet::from([extension.to_owned()]),
+        scope_paths: BTreeSet::new(),
+        timeout_ms: 10_000,
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn write_formats_then_checks_and_reports_the_post_format_digest() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let formatters = WriteFormatStage::new().with_formatter(shell_formatter(
+        root.path(),
+        "fmt",
+        "rs",
+        "printf formatted > \"$1\"",
+    ));
+    // The checker only passes if it reads the formatter's output, so a
+    // check-then-format order cannot produce a clean verdict here.
+    let checkers = WriteCheckerConfig::new().with_checker(
+        "rs",
+        shell_check(
+            "lint",
+            "grep -qx formatted {file} || { printf 'checker read pre-format bytes\\n' >&2; exit 9; }",
+            Duration::from_secs(5),
+        ),
+    );
+    let tools = runtime(root.path(), artifacts.path())
+        .with_write_formatters(formatters)
+        .with_write_checkers(checkers);
+
+    let verified = tools
+        .write(Path::new("module.rs"), b"raw", &lease, 50, &revision)
+        .unwrap();
+
+    assert!(verified.is_clean(), "verdict was {:?}", verified.verdict);
+    assert_eq!(verified.failures().count(), 0);
+    let WriteVerdict::Checked(runs) = &verified.verdict else {
+        panic!("expected a checked verdict, found {:?}", verified.verdict);
+    };
+    assert_eq!(
+        runs.iter()
+            .map(|run| (run.name.as_str(), run.stage, run.outcome))
+            .collect::<Vec<_>>(),
+        [("lint", WriteCheckStage::Check, WriteCheckOutcome::Passed)],
+        "the checker passed, which it can only do on post-format bytes"
+    );
+    assert_eq!(
+        verified
+            .formatter
+            .iter()
+            .map(|outcome| (outcome.name.as_str(), outcome.result.status))
+            .collect::<Vec<_>>(),
+        [("fmt", FormatterStatus::Formatted)],
+        "formatter detail must survive the move into the write transaction"
+    );
+    assert_eq!(
+        fs::read(root.path().join("module.rs")).unwrap(),
+        b"formatted"
+    );
+    assert_eq!(
+        verified.sha256,
+        format!("{:x}", Sha256::digest(b"formatted")),
+        "the reported digest must describe the post-format bytes on disk"
+    );
+    assert_ne!(
+        verified.sha256,
+        format!("{:x}", Sha256::digest(b"raw")),
+        "the requested bytes are not what landed and must not be fingerprinted"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_patch_reports_the_post_format_digest_of_the_file_on_disk() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    fs::write(root.path().join("module.rs"), "before").unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let formatters = WriteFormatStage::new().with_formatter(shell_formatter(
+        root.path(),
+        "fmt",
+        "rs",
+        "printf 'formatted\\n' >> \"$1\"",
+    ));
+    let tools = runtime(root.path(), artifacts.path()).with_write_formatters(formatters);
+
+    let verified = tools
+        .apply_patch(
+            &PatchWrite {
+                path: "module.rs".into(),
+                expected_sha256: format!("{:x}", Sha256::digest(b"before")),
+                replacement: b"after".to_vec(),
+            },
+            &lease,
+            50,
+            &revision,
+        )
+        .unwrap();
+
+    let on_disk = fs::read(root.path().join("module.rs")).unwrap();
+    assert_eq!(on_disk, b"afterformatted\n");
+    assert_eq!(
+        verified.sha256,
+        format!("{:x}", Sha256::digest(&on_disk)),
+        "a self-write fingerprint taken from this digest must match the file a \
+         watcher sees, or the agent's own formatted write reads as external"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failing_checker_surfaces_its_exit_status_and_diagnostics_instead_of_success() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    fs::write(root.path().join("module.rs"), "before").unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let checkers = WriteCheckerConfig::new().with_checker(
+        "rs",
+        shell_check(
+            "lint",
+            "printf 'E501 line too long\\n' >&2; exit 3",
+            Duration::from_secs(5),
+        ),
+    );
+    let tools = runtime(root.path(), artifacts.path()).with_write_checkers(checkers);
+
+    let verified = tools
+        .apply_patch(
+            &PatchWrite {
+                path: "module.rs".into(),
+                expected_sha256: format!("{:x}", Sha256::digest(b"before")),
+                replacement: b"after".to_vec(),
+            },
+            &lease,
+            50,
+            &revision,
+        )
+        .unwrap();
+
+    assert!(
+        !verified.is_clean(),
+        "a patch the checker rejected must not read as clean"
+    );
+    let failures = verified.failures().collect::<Vec<_>>();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].name, "lint");
+    assert_eq!(failures[0].outcome, WriteCheckOutcome::Failed);
+    assert_eq!(failures[0].exit_code, Some(3));
+    assert!(
+        failures[0].diagnostics.contains("E501 line too long"),
+        "diagnostics were {:?}",
+        failures[0].diagnostics
+    );
+    assert_eq!(fs::read(root.path().join("module.rs")).unwrap(), b"after");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_language_without_configured_checks_writes_normally_and_reports_none() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "notes.txt");
+    let checkers = WriteCheckerConfig::new()
+        .with_checker("rs", shell_check("lint", "exit 1", Duration::from_secs(5)));
+    let formatters = WriteFormatStage::new().with_formatter(shell_formatter(
+        root.path(),
+        "fmt",
+        "rs",
+        "printf formatted > \"$1\"",
+    ));
+    let tools = runtime(root.path(), artifacts.path())
+        .with_write_formatters(formatters)
+        .with_write_checkers(checkers);
+
+    let verified = tools
+        .write(Path::new("notes.txt"), b"plain", &lease, 50, &revision)
+        .unwrap();
+
+    assert_eq!(verified.verdict, WriteVerdict::NotConfigured);
+    assert!(verified.formatter.is_empty());
+    assert!(verified.is_clean());
+    assert_eq!(verified.sha256, format!("{:x}", Sha256::digest(b"plain")));
+    assert_eq!(fs::read(root.path().join("notes.txt")).unwrap(), b"plain");
+}
+
+/// Backward compatibility: a project that declares formatters and no checkers
+/// — every `language.json` written before checkers existed — still formats,
+/// still reports the formatter, and still carries a `NotConfigured` verdict,
+/// because it has in fact configured nothing to check the result.
+#[cfg(unix)]
+#[test]
+fn formatters_without_checkers_format_and_still_report_not_configured() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let formatters = WriteFormatStage::new().with_formatter(shell_formatter(
+        root.path(),
+        "fmt",
+        "rs",
+        "printf formatted > \"$1\"",
+    ));
+    let tools = runtime(root.path(), artifacts.path()).with_write_formatters(formatters);
+
+    let verified = tools
+        .write(Path::new("module.rs"), b"raw", &lease, 50, &revision)
+        .unwrap();
+
+    assert!(verified.is_clean());
+    assert_eq!(verified.verdict, WriteVerdict::NotConfigured);
+    assert_eq!(
+        verified.formatter[0].result.status,
+        FormatterStatus::Formatted
+    );
+    assert_eq!(
+        fs::read(root.path().join("module.rs")).unwrap(),
+        b"formatted"
+    );
+    assert_eq!(
+        verified.sha256,
+        format!("{:x}", Sha256::digest(b"formatted")),
+        "the digest still describes post-format bytes with no checker configured"
+    );
+}
+
+/// A checker failure must not roll back or hide the formatting that already
+/// happened: the file on disk stays formatted and the verdict stays dirty.
+#[cfg(unix)]
+#[test]
+fn a_checker_failure_is_visible_while_the_format_still_applied() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let formatters = WriteFormatStage::new().with_formatter(shell_formatter(
+        root.path(),
+        "fmt",
+        "rs",
+        "printf formatted > \"$1\"",
+    ));
+    let checkers = WriteCheckerConfig::new().with_checker(
+        "rs",
+        shell_check(
+            "lint",
+            "printf 'E200 rejected\\n' >&2; exit 2",
+            Duration::from_secs(5),
+        ),
+    );
+    let tools = runtime(root.path(), artifacts.path())
+        .with_write_formatters(formatters)
+        .with_write_checkers(checkers);
+
+    let verified = tools
+        .write(Path::new("module.rs"), b"raw", &lease, 50, &revision)
+        .unwrap();
+
+    assert!(!verified.is_clean());
+    let failures = verified.failures().collect::<Vec<_>>();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].name, "lint");
+    assert_eq!(failures[0].stage, WriteCheckStage::Check);
+    assert_eq!(failures[0].exit_code, Some(2));
+    assert_eq!(
+        verified.formatter[0].result.status,
+        FormatterStatus::Formatted,
+        "the format still applied"
+    );
+    assert_eq!(
+        fs::read(root.path().join("module.rs")).unwrap(),
+        b"formatted",
+        "a rejected write stays on disk in its formatted form"
+    );
+    assert_eq!(
+        verified.sha256,
+        format!("{:x}", Sha256::digest(b"formatted"))
+    );
+}
+
+/// A formatter that fails is the first half of the gate failing. The write
+/// must not read as clean merely because no lint command was configured.
+#[cfg(unix)]
+#[test]
+fn a_failing_formatter_leaves_the_write_unverified() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let formatters = WriteFormatStage::new().with_formatter(shell_formatter(
+        root.path(),
+        "fmt",
+        "rs",
+        "printf partial > \"$1\"\nexit 7",
+    ));
+    let tools = runtime(root.path(), artifacts.path()).with_write_formatters(formatters);
+
+    let verified = tools
+        .write(Path::new("module.rs"), b"raw", &lease, 50, &revision)
+        .unwrap();
+
+    assert!(
+        !verified.is_clean(),
+        "a failed formatter must leave the write unverified"
+    );
+    assert_eq!(verified.formatter[0].result.status, FormatterStatus::Failed);
+    assert!(!verified.formatter[0].succeeded());
+    assert_eq!(
+        verified.sha256,
+        format!("{:x}", Sha256::digest(b"partial")),
+        "the digest still describes the bytes the failed formatter left behind"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hung_checker_times_out_without_hanging_the_write() {
+    let root = tempdir().unwrap();
+    let artifacts = tempdir().unwrap();
+    let locks = tempdir().unwrap();
+    let (revision, lease) = write_check_fixture(root.path(), locks.path(), "module.rs");
+    let checkers = WriteCheckerConfig::new().with_checker(
+        "rs",
+        shell_check("lint", "sleep 30", Duration::from_millis(150)),
+    );
+    let tools = runtime(root.path(), artifacts.path()).with_write_checkers(checkers);
+
+    let started = Instant::now();
+    let verified = tools
+        .write(Path::new("module.rs"), b"raw", &lease, 50, &revision)
+        .unwrap();
+
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "a hung checker must not hang the write"
+    );
+    assert!(!verified.is_clean());
+    let failures = verified.failures().collect::<Vec<_>>();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].outcome, WriteCheckOutcome::TimedOut);
+    assert_eq!(failures[0].exit_code, None);
+    assert!(
+        failures[0].diagnostics.contains("150 ms"),
+        "diagnostics were {:?}",
+        failures[0].diagnostics
+    );
+    assert_eq!(fs::read(root.path().join("module.rs")).unwrap(), b"raw");
 }
 
 #[cfg(unix)]

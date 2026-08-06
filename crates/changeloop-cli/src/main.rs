@@ -23,6 +23,7 @@ use url::Url;
 
 mod legacy;
 mod operational;
+mod prove_oracle;
 
 const EXIT_INVALID_INPUT: i32 = 2;
 const EXIT_APPROVAL_REQUIRED: i32 = 3;
@@ -288,6 +289,11 @@ async fn run(args: Vec<String>) -> Result<(), CliFailure> {
         [contract, approve, session] if contract == "contract" && approve == "approve" => {
             validate_public_identifier(session)?;
             headless_control("contract.approve", session).await
+        }
+        [command] if command == "acp" => {
+            changeloop_acp::serve_stdio(changeloop_acp_runtime::stdio_driver(), Default::default())
+                .map(|_| ())
+                .map_err(io_failure)
         }
         [command] if command == "serve" => serve(vec!["--stdio".into()]).await,
         [command, rest @ ..] if command == "serve" => serve(rest.to_vec()).await,
@@ -1013,7 +1019,7 @@ fn ops_failure(error: changeloop_ops::OpsError) -> CliFailure {
 
 fn print_help() {
     println!(
-        "cloop (experimental)\n\nUSAGE:\n  cloop                       # TUI conversation\n  cloop <prompt>              # read-only conversation\n  cloop ask <question>\n  cloop run <intent>\n  cloop change confirm|discard <session>\n  cloop contract approve <session>\n  cloop resume [session]\n  cloop fork <session>\n  cloop sessions\n  cloop status\n  cloop undo|redo [session]\n  cloop jobs\n  cloop prove|review [change]\n  cloop land <change>\n  cloop lsp status\n  cloop formatter status\n  cloop serve [--stdio|--unix <path>|--http <127.0.0.1:port>]\n  cloop doctor\n  cloop setup --provider <anthropic|openai> --model <model> --sandbox <read-only|workspace-write|danger-full-access> --accept-privacy --accept-provider-data\n  cloop setup status\n  cloop models\n  cloop auth login|logout <anthropic|openai>\n  cloop auth list\n  cloop completion <bash|zsh|fish>\n  cloop update --manifest <path> --artifact <path> --public-key <base64> [--target <path>]\n  cloop update check --channel-manifest <path> --public-key <base64> --channel <stable|beta|preview> [--offline]\n  cloop update recover --target <path>\n  cloop config explain <field>\n  cloop migrate --dry-run\n  cloop migrate --apply <plan-digest>\n  cloop privacy inspect|export [session]|delete [session]\n  cloop mcp add <name> <stdio|unix|http> <target>\n  cloop mcp list|extensions|auth <name>|auth refresh <name>|auth logout <name>|remove <name>\n\nEXIT CODES:\n  2 invalid input, 3 approval required, 4 agent failure, 5 proof failure\n  6 cancelled, 7 auth/provider failure, 8 lifecycle rejection, 9 update failure"
+        "cloop (experimental)\n\nUSAGE:\n  cloop                       # TUI conversation\n  cloop <prompt>              # read-only conversation\n  cloop ask <question>\n  cloop run <intent>\n  cloop change confirm|discard <session>\n  cloop contract approve <session>\n  cloop resume [session]\n  cloop fork <session>\n  cloop sessions\n  cloop status\n  cloop undo|redo [session]\n  cloop jobs\n  cloop prove|review [change]\n  cloop land <change>\n  cloop lsp status\n  cloop formatter status\n  cloop serve [--stdio|--unix <path>|--http <127.0.0.1:port>]\n  cloop acp                   # Agent Client Protocol agent on stdio (read-only conversation)\n  cloop doctor\n  cloop setup --provider <anthropic|openai> --model <model> --sandbox <read-only|workspace-write|danger-full-access> --accept-privacy --accept-provider-data\n  cloop setup status\n  cloop models\n  cloop auth login|logout <anthropic|openai>\n  cloop auth list\n  cloop completion <bash|zsh|fish>\n  cloop update --manifest <path> --artifact <path> --public-key <base64> [--target <path>]\n  cloop update check --channel-manifest <path> --public-key <base64> --channel <stable|beta|preview> [--offline]\n  cloop update recover --target <path>\n  cloop config explain <field>\n  cloop migrate --dry-run\n  cloop migrate --apply <plan-digest>\n  cloop privacy inspect|export [session]|delete [session]\n  cloop mcp add <name> <stdio|unix|http> <target>\n  cloop mcp list|extensions|auth <name>|auth refresh <name>|auth logout <name>|remove <name>\n\nEXIT CODES:\n  2 invalid input, 3 approval required, 4 agent failure, 5 proof failure\n  6 cancelled, 7 auth/provider failure, 8 lifecycle rejection, 9 update failure"
     );
     println!(
         "\nEXPERIMENTAL EXTENSIONS:\n  cloop mcp extensions run <id> [json]  # explicit bounded stdio-v1 handler"
@@ -1433,9 +1439,11 @@ fn status() -> Result<(), CliFailure> {
     let variables = service_environment(&root)?;
     let provider_configured =
         variables.contains_key("CHANGELOOP_PROVIDER") && variables.contains_key("CHANGELOOP_MODEL");
-    let provider_ready = environment_backend(variables, &changeloop_ops::OsCredentialStore)?
-        .readiness()
-        .is_ok();
+    // `status` reports the machine's own state and must survive a credential
+    // store it cannot reach — a locked keychain or a headless host with no
+    // secret service is exactly when a user needs this output. An unreadable
+    // store means the provider is not ready, not that the command failed.
+    let provider_ready = provider_readiness(variables);
     let output = json!({
         "maturity": "experimental",
         "repository": root,
@@ -1453,6 +1461,20 @@ fn status() -> Result<(), CliFailure> {
         "extensions": extension_status_value(&root),
     });
     print_pretty_json(&output)
+}
+
+/// Whether a provider-reaching command would be able to authenticate. Never an
+/// error: this is a report, and every caller of it is a local command.
+fn provider_readiness(variables: BTreeMap<String, String>) -> bool {
+    provider_readiness_with(variables, &changeloop_ops::OsCredentialStore)
+}
+
+fn provider_readiness_with(
+    variables: BTreeMap<String, String>,
+    credential_store: &dyn changeloop_ops::CredentialStore,
+) -> bool {
+    environment_backend(variables, credential_store)
+        .is_ok_and(|backend| backend.readiness().is_ok())
 }
 
 fn explain_config(field: &str) -> Result<(), CliFailure> {
@@ -2034,6 +2056,84 @@ mod tests {
         ]);
         let backend = environment_backend(variables, &store).unwrap();
         assert!(backend.readiness().is_ok());
+    }
+
+    /// The auth precondition belongs to the provider-reaching methods, not to
+    /// the CLI. These commands only inspect the local machine and must work
+    /// before a key is ever configured.
+    #[test]
+    fn local_inspection_commands_do_not_require_a_provider() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(mcp_registry(root.path()).is_ok());
+        assert!(operational::language_status(true).is_ok());
+        assert!(operational::language_status(false).is_ok());
+        assert!(resolve_config(root.path()).is_ok());
+        assert!(extension_status(root.path()).is_ok());
+
+        // A provider-reaching invocation still refuses. `invoke` and
+        // `confirm_draft` gate on exactly this readiness verdict.
+        let store = changeloop_ops::MemoryCredentialStore::default();
+        let unconfigured = environment_backend(BTreeMap::new(), &store).unwrap();
+        assert!(matches!(
+            unconfigured.readiness(),
+            Err(changeloop_app_server::executable::SurfaceError::ProviderRequired)
+        ));
+        let keyless = environment_backend(
+            BTreeMap::from([
+                ("CHANGELOOP_PROVIDER".into(), "openai".into()),
+                ("CHANGELOOP_MODEL".into(), "fixture-model".into()),
+            ]),
+            &store,
+        )
+        .unwrap();
+        assert!(matches!(
+            keyless.readiness(),
+            Err(changeloop_app_server::executable::SurfaceError::AuthenticationRequired)
+        ));
+    }
+
+    /// A local report must not die on an unreachable credential store. A locked
+    /// keychain, or a headless host with no secret service, is precisely when a
+    /// user runs `cloop status` — and it means "not ready", not "failed".
+    #[test]
+    fn an_unreachable_credential_store_reports_not_ready_instead_of_failing() {
+        struct UnreachableStore;
+        impl changeloop_ops::CredentialStore for UnreachableStore {
+            fn set(
+                &self,
+                _account: &str,
+                _secret: &str,
+            ) -> Result<(), changeloop_ops::ReleaseError> {
+                Err(changeloop_ops::ReleaseError::Credential("locked".into()))
+            }
+            fn get(&self, _account: &str) -> Result<Option<String>, changeloop_ops::ReleaseError> {
+                Err(changeloop_ops::ReleaseError::Credential("locked".into()))
+            }
+            fn delete(&self, _account: &str) -> Result<(), changeloop_ops::ReleaseError> {
+                Err(changeloop_ops::ReleaseError::Credential("locked".into()))
+            }
+            fn backend_name(&self) -> &'static str {
+                "unreachable"
+            }
+        }
+
+        let variables = BTreeMap::from([
+            ("CHANGELOOP_PROVIDER".into(), "openai".into()),
+            ("CHANGELOOP_MODEL".into(), "fixture-model".into()),
+        ]);
+        assert!(environment_backend(variables.clone(), &UnreachableStore).is_err());
+        assert!(!provider_readiness_with(variables, &UnreachableStore));
+
+        // A store that does hold the credential still reports ready.
+        let store = changeloop_ops::MemoryCredentialStore::default();
+        changeloop_ops::CredentialStore::set(&store, "openai", "stored-secret").unwrap();
+        assert!(provider_readiness_with(
+            BTreeMap::from([
+                ("CHANGELOOP_PROVIDER".into(), "openai".into()),
+                ("CHANGELOOP_MODEL".into(), "fixture-model".into()),
+            ]),
+            &store
+        ));
     }
 
     #[test]

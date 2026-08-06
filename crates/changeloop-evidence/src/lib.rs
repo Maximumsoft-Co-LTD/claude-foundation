@@ -15,6 +15,25 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod coverage;
+pub mod divergence;
+pub mod oracle;
+
+pub use coverage::{
+    CoverageDelta, CoverageFormat, CoverageReport, CoverageUnavailable, CoverageVerdict,
+    TouchedFileCoverage, TouchedFileStatus, TouchedLines, coverage_delta, parse_coverage_report,
+    read_coverage_report,
+};
+pub use divergence::{
+    DeclaredIntent, DifferentialReport, DifferentialUnavailable, Divergence, DivergenceClass,
+    DivergenceKind, DivergenceRank, DivergenceRule, SuppressionLedger, SuppressionRule,
+    TestHarnessFormat, TestOutcome, TestRun, TestStatus, differential_report, parse_test_outcomes,
+};
+pub use oracle::{
+    ORACLE_RECEIPT_EXTENSION, ORACLE_VERSION, OracleConfidence, OracleSummary, OracleWarning,
+    OracleWarningCode, ProveOracleReport, Severity,
+};
+
 pub const EVIDENCE_VERSION: u8 = 2;
 pub const RECEIPT_VERSION: u8 = 6;
 pub const PROOF_VERSION: u8 = 2;
@@ -1124,7 +1143,7 @@ fn digest_reader(file: &mut File) -> Result<String, EvidenceError> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-fn read_limited_json_reader(file: &mut File) -> Result<Vec<u8>, EvidenceError> {
+pub(crate) fn read_limited_json_reader(file: &mut File) -> Result<Vec<u8>, EvidenceError> {
     let mut bytes = Vec::new();
     file.take(MAX_EVIDENCE_JSON_BYTES.saturating_add(1))
         .read_to_end(&mut bytes)?;
@@ -1520,7 +1539,10 @@ fn create_directory_inside(root: &Path, target: &Path) -> Result<(), EvidenceErr
     Ok(())
 }
 
-fn open_regular_nofollow(path: &Path, reject_hardlinks: bool) -> Result<File, EvidenceError> {
+pub(crate) fn open_regular_nofollow(
+    path: &Path,
+    reject_hardlinks: bool,
+) -> Result<File, EvidenceError> {
     let before = fs::symlink_metadata(path)?;
     if before.file_type().is_symlink() || !before.is_file() {
         return Err(EvidenceError::UnsafePath(normalize(path)));

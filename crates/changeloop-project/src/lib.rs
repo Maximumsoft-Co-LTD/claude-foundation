@@ -1,9 +1,15 @@
 //! Project/worktree-scoped lifecycle, concurrency, and invalidation primitives.
 
+pub mod disposal;
+pub mod external_change;
 pub mod legacy;
 
 use changeloop_config::{HotReloadPlan, ReloadImpact, ResolvedConfig};
 use changeloop_language::RunningLanguageServer;
+use changeloop_sandbox::{SandboxedChild, Spawn};
+use disposal::{
+    ChildProcessRegistry, ChildSpawnError, ForceDispose, ForceDisposeGuard, register_guarded,
+};
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,7 +17,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{
-    Arc, Mutex, MutexGuard,
+    Arc, Mutex, MutexGuard, PoisonError,
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use thiserror::Error;
@@ -19,6 +25,21 @@ use uuid::Uuid;
 
 const MAX_LOCK_OWNER_BYTES: u64 = 64 * 1024;
 const MAX_INSTANCE_RESOURCES: usize = 4_096;
+
+/// Wire version of the per-worktree rendezvous itself. Bumped only when the
+/// meaning of the published leader metadata changes; it is deliberately not
+/// the crate version and not the protocol version negotiated on the socket.
+pub const RENDEZVOUS_PROTOCOL_VERSION: u32 = 1;
+
+/// Longest `sockaddr_un.sun_path` that every supported platform accepts. macOS
+/// allows 104 bytes including the terminator; Linux allows 108. A derived path
+/// is rejected before `bind` so the failure names the cause.
+const MAX_SOCKET_PATH_BYTES: usize = 103;
+
+/// Length of the worktree digest embedded in derived rendezvous file names.
+/// Short enough to keep the socket path inside `sun_path`, wide enough that a
+/// collision between two worktrees on one machine is not a practical concern.
+const RENDEZVOUS_DIGEST_CHARS: usize = 12;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProjectInstanceId(pub String);
@@ -65,6 +86,10 @@ pub enum ResourceKind {
     Mcp,
     Cache,
     Database,
+    /// A process this instance spawned and is therefore responsible for
+    /// reaping. Kept distinct from [`ResourceKind::Job`] so a disposal report
+    /// can say whether an OS process is still outstanding.
+    ChildProcess,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -239,11 +264,37 @@ pub enum InstanceError {
     ResourceLimit,
 }
 
+/// One project/worktree's resources, and the only thing entitled to release
+/// them.
+///
+/// Ownership is the invariant: registered resources and spawned child processes
+/// belong to exactly one instance, and nothing outside it can dispose them —
+/// [`OwnedResourceHandle`] observes cancellation and state but carries no
+/// disposal power. [`Drop`] covers the common path;
+/// [`ProjectInstance::register_force_dispose`] covers the exits it does not.
+///
+/// # Teardown order
+///
+/// [`ProjectInstance::dispose`] runs, in this order:
+///
+/// 1. the instance cancellation token, so in-flight consumers stop first;
+/// 2. [`InstanceResource::cancel`] over every resource, reverse registration;
+/// 3. [`InstanceResource::flush`] over every resource, reverse registration;
+/// 4. [`InstanceResource::shutdown`] over every resource, reverse registration
+///    — this is where a [`disposal::BoundedResourceCache`] drains through its
+///    eviction sink, so owners are notified while their peers are still alive;
+/// 5. owned child processes, reverse adoption order, each terminated with its
+///    process group.
+///
+/// Children go last because a plugin or language server being shut down in
+/// step 4 may still need to speak to the process it owns. Every phase runs over
+/// every resource even if an earlier one failed or panicked.
 pub struct ProjectInstance {
     pub id: ProjectInstanceId,
     root: PathBuf,
     cancellation: CancellationToken,
     resources: Vec<Box<dyn InstanceResource>>,
+    children: Arc<Mutex<ChildProcessRegistry>>,
     disposed: bool,
 }
 
@@ -255,6 +306,7 @@ impl ProjectInstance {
             root,
             cancellation: CancellationToken::new(),
             resources: Vec::new(),
+            children: Arc::new(Mutex::new(ChildProcessRegistry::new())),
             disposed: false,
         }
     }
@@ -372,6 +424,69 @@ impl ProjectInstance {
         self.resources.len()
     }
 
+    /// Creates a child process through the sandbox spawn API and owns it from
+    /// birth. Returns the child's PID.
+    pub fn spawn_child(
+        &mut self,
+        name: impl Into<Arc<str>>,
+        spawn: Spawn,
+    ) -> Result<u32, ChildSpawnError> {
+        self.ensure_active()?;
+        lock_children(&self.children).spawn(name, spawn)
+    }
+
+    /// Takes ownership of a child created elsewhere in this process.
+    pub fn adopt_child(
+        &mut self,
+        name: impl Into<Arc<str>>,
+        child: SandboxedChild,
+    ) -> Result<u32, InstanceError> {
+        self.ensure_active()?;
+        lock_children(&self.children).adopt(name, child)
+    }
+
+    /// Reaps children that have already exited, returning how many were
+    /// released. Call this on the same cadence as whatever produces the
+    /// children; a runtime that only reaps at teardown holds a zombie for every
+    /// exited child in between.
+    pub fn reap_children(&self) -> usize {
+        lock_children(&self.children).reap_finished()
+    }
+
+    #[must_use]
+    pub fn live_children(&self) -> usize {
+        lock_children(&self.children).live()
+    }
+
+    /// The child registry this instance owns. Shared so a force-dispose hook
+    /// can reach it after `Drop` has been bypassed; disposal still belongs to
+    /// the instance, and a registry that has been disposed refuses and
+    /// terminates any later adoption.
+    #[must_use]
+    pub fn children(&self) -> Arc<Mutex<ChildProcessRegistry>> {
+        Arc::clone(&self.children)
+    }
+
+    /// Enrols this instance in a force-dispose registry so a signal or a panic
+    /// still cancels its work and reaps its children.
+    ///
+    /// The hook holds only the cancellation token and the child registry, never
+    /// the instance, so normal `Drop` remains the authority on the common path.
+    /// The returned guard withdraws the hook again, which is what keeps a
+    /// released project from staying reachable from a process-wide registry —
+    /// the exact shape of the leak this exists to prevent.
+    #[must_use]
+    pub fn register_force_dispose(&self, owner: &Arc<ForceDispose>) -> ForceDisposeGuard {
+        let cancellation = self.cancellation.clone();
+        let children = Arc::clone(&self.children);
+        let name = format!("project:{}", self.root.display());
+        register_guarded(owner, name, move || {
+            cancellation.cancel();
+            lock_children(&children).dispose();
+            Ok(())
+        })
+    }
+
     pub fn ensure_active(&self) -> Result<(), InstanceError> {
         if self.disposed {
             Err(InstanceError::Disposed)
@@ -388,8 +503,10 @@ impl ProjectInstance {
         }
     }
 
-    /// Cancels, flushes, then shuts down resources in reverse registration order.
-    /// Every phase runs even if an earlier resource fails.
+    /// Cancels, flushes, then shuts down resources in reverse registration
+    /// order, then terminates owned child processes in reverse adoption order.
+    /// Every phase runs even if an earlier resource fails, and the whole call is
+    /// idempotent.
     pub fn dispose(&mut self) -> Vec<DisposalFailure> {
         if self.disposed {
             return Vec::new();
@@ -407,8 +524,15 @@ impl ProjectInstance {
             collect_failure(resource.as_mut(), DisposalPhase::Shutdown, &mut failures);
         }
         self.resources.clear();
+        // Children last: a resource shut down above may still have been talking
+        // to the process it owns.
+        lock_children(&self.children).dispose();
         failures
     }
+}
+
+fn lock_children(children: &Mutex<ChildProcessRegistry>) -> MutexGuard<'_, ChildProcessRegistry> {
+    children.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn collect_failure(
@@ -737,11 +861,24 @@ impl LeaderLock {
         path: impl AsRef<Path>,
         endpoint: impl Into<String>,
     ) -> Result<Self, LockError> {
+        Self::acquire_with_metadata(
+            path,
+            LeaderMetadata {
+                pid: std::process::id(),
+                endpoint: Some(endpoint.into()),
+                version: RendezvousVersion::default(),
+            },
+        )
+    }
+
+    /// Publishes exactly the metadata a contender will read back. The version
+    /// is what makes the handshake possible: a contender refuses to attach
+    /// before it can act on a store it does not understand.
+    pub fn acquire_with_metadata(
+        path: impl AsRef<Path>,
+        metadata: LeaderMetadata,
+    ) -> Result<Self, LockError> {
         let path = path.as_ref().to_path_buf();
-        let metadata = LeaderMetadata {
-            pid: std::process::id(),
-            endpoint: Some(endpoint.into()),
-        };
         let encoded = serde_json::to_string(&metadata).map_err(|error| LockError::Io {
             path: path.clone(),
             source: std::io::Error::other(error),
@@ -764,16 +901,138 @@ impl LeaderLock {
     }
 }
 
+/// Rendezvous compatibility published by the process holding the lock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RendezvousVersion {
+    /// `0` means the owner predates versioned metadata and cannot be trusted.
+    pub protocol: u32,
+    /// Highest store schema the owning binary can read and migrate.
+    pub schema: u32,
+}
+
+impl RendezvousVersion {
+    #[must_use]
+    pub const fn new(protocol: u32, schema: u32) -> Self {
+        Self { protocol, schema }
+    }
+
+    /// Decides whether `client` may attach to the owner described by `self`.
+    ///
+    /// Schema comparison is deliberately one-directional: an older binary is
+    /// refused, because letting it act on a newer store is how a stale build
+    /// silently writes into a schema it does not understand. A newer binary is
+    /// admitted and simply does not migrate, since the owner holds the writes.
+    pub fn accept(self, client: Self) -> Result<(), HandshakeError> {
+        if self.protocol == 0 || client.protocol == 0 || self.protocol != client.protocol {
+            return Err(HandshakeError::Protocol {
+                client: client.protocol,
+                server: self.protocol,
+            });
+        }
+        if client.schema < self.schema {
+            return Err(HandshakeError::SchemaTooNew {
+                client: client.schema,
+                server: self.schema,
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+pub enum HandshakeError {
+    #[error(
+        "rendezvous protocol mismatch: this cloop speaks version {client}, the running server speaks version {server}; both processes must run the same cloop build"
+    )]
+    Protocol { client: u32, server: u32 },
+    #[error(
+        "this cloop understands store schema {client} but the running server owns schema {server}; upgrade cloop, because an older binary must never open a newer schema"
+    )]
+    SchemaTooNew { client: u32, server: u32 },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeaderMetadata {
     pub pid: u32,
     pub endpoint: Option<String>,
+    /// Absent in locks written before versioned metadata; `default` then yields
+    /// protocol `0`, which the handshake refuses rather than guesses about.
+    #[serde(default)]
+    pub version: RendezvousVersion,
 }
 
 pub enum LeaderDisposition {
     Leader(LeaderLock),
     Connect { metadata: LeaderMetadata },
+}
+
+/// Per-worktree rendezvous locations, all derived from the canonical worktree
+/// root. Nothing here is caller-supplied, so two processes that name the same
+/// worktree differently — a symlink, a relative path, a trailing slash — still
+/// contend for one lock instead of quietly becoming two writers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rendezvous {
+    root: PathBuf,
+    directory: PathBuf,
+    digest: String,
+}
+
+impl Rendezvous {
+    pub fn for_worktree(worktree: impl AsRef<Path>) -> Result<Self, LockError> {
+        let worktree = worktree.as_ref();
+        let root = fs::canonicalize(worktree).map_err(|source| LockError::Io {
+            path: worktree.to_path_buf(),
+            source,
+        })?;
+        if !root.is_dir() {
+            return Err(LockError::Io {
+                path: root,
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "rendezvous worktree is not a directory",
+                ),
+            });
+        }
+        let mut digest = path_digest(&root);
+        digest.truncate(RENDEZVOUS_DIGEST_CHARS);
+        let directory = root.join(".changeloop");
+        Ok(Self {
+            root,
+            directory,
+            digest,
+        })
+    }
+
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Authority path. A regular file, so it carries no address-length limit
+    /// and is always derivable even where a socket could not be bound.
+    #[must_use]
+    pub fn lock_path(&self) -> PathBuf {
+        self.directory.join(format!("rv-{}.lock", self.digest))
+    }
+
+    /// Attachment path, validated against the platform's socket-address limit
+    /// so an over-long worktree fails with the cause named rather than with a
+    /// truncated `bind`.
+    pub fn socket_path(&self) -> Result<PathBuf, LockError> {
+        let socket = self.directory.join(format!("rv-{}.sock", self.digest));
+        if socket.as_os_str().as_encoded_bytes().len() > MAX_SOCKET_PATH_BYTES {
+            return Err(LockError::Io {
+                path: socket,
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "derived rendezvous socket path is longer than the platform socket-address limit; move the worktree closer to the filesystem root",
+                ),
+            });
+        }
+        Ok(socket)
+    }
 }
 
 /// Elects a local server leader. A contender only receives `Connect` when the
@@ -783,8 +1042,24 @@ pub fn elect_leader(
     path: impl AsRef<Path>,
     endpoint: impl Into<String>,
 ) -> Result<LeaderDisposition, LockError> {
+    elect_leader_versioned(path, endpoint, RendezvousVersion::default())
+}
+
+/// Elects a local server leader and publishes the versions this binary speaks,
+/// so a contender can refuse the attachment instead of discovering the
+/// mismatch after it has already acted on the store.
+pub fn elect_leader_versioned(
+    path: impl AsRef<Path>,
+    endpoint: impl Into<String>,
+    version: RendezvousVersion,
+) -> Result<LeaderDisposition, LockError> {
     let path = path.as_ref();
-    match LeaderLock::acquire_with_endpoint(path, endpoint) {
+    let metadata = LeaderMetadata {
+        pid: std::process::id(),
+        endpoint: Some(endpoint.into()),
+        version,
+    };
+    match LeaderLock::acquire_with_metadata(path, metadata) {
         Ok(lock) => Ok(LeaderDisposition::Leader(lock)),
         Err(LockError::Held { path, owner }) => {
             match serde_json::from_str::<LeaderMetadata>(&owner) {
@@ -894,6 +1169,8 @@ pub enum MutationError {
     Lock(#[from] LockError),
     #[error("mutation lease expired and requires explicit renewal")]
     LeaseExpired,
+    #[error("lease renewal must move the deadline forward: {current} is not before {requested}")]
+    LeaseRenewalNotMonotonic { current: u64, requested: u64 },
     #[error("workspace changed since the lease was granted: {0:?}")]
     Conflict(ConflictClassification),
     #[error(transparent)]
@@ -1066,6 +1343,29 @@ impl MutationLease {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    #[must_use]
+    pub const fn expires_at_ms(&self) -> u64 {
+        self.expires_at_ms
+    }
+
+    /// Extends this lease so a long execution does not have to be torn down and
+    /// re-begun purely to move its deadline.
+    ///
+    /// This is holder-only renewal, not a reclaim protocol: expiry never grants
+    /// authority to another process, and the `flock` underneath is released
+    /// only by drop or by the kernel when this process dies. Nothing here lets
+    /// a second process take a lease it does not already hold.
+    pub fn renew(&mut self, expires_at_ms: u64) -> Result<(), MutationError> {
+        if expires_at_ms <= self.expires_at_ms {
+            return Err(MutationError::LeaseRenewalNotMonotonic {
+                current: self.expires_at_ms,
+                requested: expires_at_ms,
+            });
+        }
+        self.expires_at_ms = expires_at_ms;
+        Ok(())
     }
 
     pub fn authorize_write(
@@ -1986,7 +2286,7 @@ fn should_descend(root: &Path, absolute: &Path, relative: &Path) -> bool {
     let second = components.next().unwrap_or_default();
     !matches!(
         (first, second),
-        (".git", "objects" | "logs") | (".changeloop", "artifacts")
+        (".git", "objects" | "logs") | (".changeloop", "artifacts" | "conflicts")
     )
 }
 
