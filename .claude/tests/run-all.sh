@@ -31,6 +31,7 @@ run "phase mutation guard" sh "$HERE/hooks/run-phase-mutation-guard-tests.sh"
 run "instruction contracts" sh "$HERE/harness/run-instruction-contract-tests.sh"
 run "instruction provenance and host execution" sh "$HERE/harness/run-provenance-contract-tests.sh"
 run "bounded infrastructure retry" node "$HERE/harness/run-bounded-retry-tests.mjs"
+run "blocked decision contracts" node "$HERE/harness/run-blocked-decision-tests.mjs"
 run "dashboard contracts" npm --prefix "$ROOT/dashboard" test
 
 if [ "$failed" -eq 0 ]; then

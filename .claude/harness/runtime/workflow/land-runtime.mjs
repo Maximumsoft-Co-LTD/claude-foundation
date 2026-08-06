@@ -24,6 +24,7 @@ export function createLandRuntime({
   git,
   gitHead,
   now,
+  blockWithDecision,
   fail
 }) {
   function landCheck(id) {
@@ -209,7 +210,31 @@ export function createLandRuntime({
     if (!state.repositories || Object.keys(state.repositories).length <= 1)
       fail(`change '${id}' is not multi-repository`);
     if (gitHead(root) !== state.workspace?.baseHead)
-      fail("control repository HEAD moved since sandbox creation");
+      // Any commit on the control repository during multi-repository work trips
+      // this, and the bare refusal made it look permanent. Re-basing the sandbox
+      // is the ordinary fix; it just has to be named.
+      blockWithDecision(id, "control-head-moved", {
+        kind: "control-head-moved",
+        summary: "The control repository moved to a different commit after this change's sandbox was created, so staging submodule pointers now could bind them to a base nobody proved.",
+        options: [
+          {
+            id: "inspect",
+            outcome: "Compare the recorded base with the current control repository history before choosing."
+          },
+          {
+            id: "recreate-sandbox",
+            outcome: "Re-create the sandbox on the current control commit and re-prove the change against it."
+          },
+          {
+            id: "abandon",
+            outcome: "Retire this change and reopen it against the current control commit."
+          },
+          { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
+        ],
+        recommended: "inspect",
+        recordedBase: state.workspace?.baseHead || null,
+        currentHead: gitHead(root)
+      });
     const entries = orderedRepositories(id, state)
       .filter((repository) => repository.type === "submodule" &&
         repository.mode === "write")
@@ -231,9 +256,48 @@ export function createLandRuntime({
       console.log(`ROOT POINTERS ${id}: no submodule pointers required`);
       return;
     }
+    // Staging is only a mutation when a pointer actually moves. Re-staging
+    // pointers that already hold the landed commit used to invalidate the proof
+    // anyway, which sent Land back to Prove and straight into Land again.
+    const pending = entries.filter((entry) =>
+      entry.sandboxBefore !== entry.commit || entry.targetBefore !== entry.commit);
+    if (!pending.length) {
+      console.log(`ROOT POINTERS ${id}: already staged\n  proof remains valid`);
+      return;
+    }
+    const signature = pending
+      .map((entry) => `${entry.repository.id}:${entry.commit}`).sort().join(",");
+    const staged = state.land?.pointerStagings?.[signature];
+    // The same pointers needing a second staging means something outside
+    // Foundation is resetting the index; looping through Prove again would
+    // never converge.
+    if (staged)
+      blockWithDecision(id, "root-pointers-restaged", {
+        kind: "root-pointers-restaged",
+        summary: "These submodule pointers were already staged once and have since been reset outside Foundation, so staging them again would restart the same Prove-and-Land cycle.",
+        options: [
+          {
+            id: "inspect",
+            outcome: "Find what reset the staged pointers — a checkout, reset, or stash in the control repository — before staging again."
+          },
+          {
+            id: "restage",
+            outcome: "Clear the recorded staging attempt and stage the pointers once more after resolving the cause."
+          },
+          {
+            id: "abandon",
+            outcome: "Retire this change instead of landing its pointers."
+          },
+          { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
+        ],
+        recommended: "inspect",
+        stagedAt: staged,
+        pointers: Object.fromEntries(pending.map((entry) =>
+          [entry.repository.id, entry.commit]))
+      });
     const applied = [];
     try {
-      for (const entry of entries) {
+      for (const entry of pending) {
         const sandboxResult = git([
           "update-index", "--cacheinfo",
           `160000,${entry.commit},${entry.repository.relativePath}`
@@ -268,6 +332,10 @@ export function createLandRuntime({
       status: "root-pointers-staged",
       pointers: Object.fromEntries(entries.map((entry) =>
         [entry.repository.id, entry.commit])),
+      pointerStagings: {
+        ...(state.land?.pointerStagings || {}),
+        [signature]: now()
+      },
       pointersStagedAt: now()
     };
     state.status = "building";

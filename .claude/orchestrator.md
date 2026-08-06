@@ -114,9 +114,10 @@ what completed, what remains, why the system stopped, and which decision is
 needed.
 
 Only deterministic recovery may be followed automatically. A structured
-`decision` requires an explicit user answer. Present its honest alternatives,
+`decision` requires an explicit user answer, including one a blocked operation
+emits. Present its honest alternatives,
 recommend one with a reason, and always preserve reject, inconclusive, or pause
 when those outcomes are valid. Never infer approval from silence or from the
-ability to invoke an authority command. The agent creates requests, response
-artifacts, CLI flags, and provenance records after the human decision; users do
-not assemble harness commands or JSON.
+ability to invoke an authority command. The agent creates requests, responses,
+flags, and provenance after the human decision; users never assemble harness
+commands or JSON.

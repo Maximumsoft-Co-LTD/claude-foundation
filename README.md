@@ -594,7 +594,15 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
+claude-foundation change abandon <change-id> --reason "evidence contract cannot be satisfied" --decision-ref <host-user-decision>
 ```
+
+A change that cannot be proven is retired with `change abandon`, which releases
+its leases, cleans up its sandbox, and moves its record into
+`.foundation/recovery/abandoned/<id>/` with an audit line. It quarantines rather
+than deletes and never touches Git. Guards that end a run — exhausted AI review
+rounds, a spent budget continuation, an apply that could not finish rolling
+back — report their options rather than a bare refusal.
 
 Host telemetry can be imported from `generic`, `codex`, `cursor`, `otel`, or
 `claude` JSON/JSONL. OpenTelemetry GenAI/LLM token and model attributes normalize

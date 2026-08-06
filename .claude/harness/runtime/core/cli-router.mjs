@@ -1,7 +1,7 @@
 export async function routeRuntimeCommand(command, values, api) {
   const {
     parseFlags, parseStrictCommandFlags, fail, createChange, rapidStartTemplate,
-    startAtomic, resolveChange, showChanges, showProviders, showRepositories,
+    startAtomic, resolveChange, abandonChange, showChanges, showProviders, showRepositories,
     foundationPolicy, showAgentPlan, showAgentTask, acquireAgentLease,
     releaseAgentLease, prepareClaudeTelemetry, recordPhaseContext, showPacket,
     showMetrics, continueBudget, doctor, validate, showTraceabilityAudit,
@@ -39,6 +39,13 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseFlags(values);
       if (!rest[0]) die("resolve requires a change");
       resolveChange(rest[0], flags); break;
+    }
+    case "abandon": {
+      const { flags, rest } = parseStrictCommandFlags(values, "change abandon", {
+        value: ["reason", "decision-ref", "applied"]
+      });
+      if (rest.length !== 1) die("change abandon requires exactly one change");
+      abandonChange(rest[0], flags); break;
     }
     case "describe":
       describeCommand(values.find((value) => !value.startsWith("-")) || null,

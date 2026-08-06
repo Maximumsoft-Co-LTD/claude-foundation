@@ -52,9 +52,11 @@ import { createProofReadinessRuntime } from "./runtime/evidence/proof-readiness.
 import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
+import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
+import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 
 const VERSION = "2.7.0";
-const RUNTIME_API_VERSION = "13";
+const RUNTIME_API_VERSION = "14";
 const PROVIDER_PROTOCOL_VERSION = "6";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
@@ -113,6 +115,7 @@ function die(message, code = 1) {
   process.exit(code);
 }
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail: die });
+const { blockedDecisionValue, blockWithDecision } = createBlockedDecision({ fail: die });
 
 function findRoot(start = process.cwd()) {
   let cursor = resolve(start);
@@ -143,6 +146,7 @@ const PROTOTYPES = join(ROOT, ".foundation", "prototypes");
 const ATTESTATIONS = join(ROOT, ".foundation", "attestations");
 const AUTHORITY = join(ROOT, ".foundation", "authority");
 const INSTRUCTION_MANIFESTS = join(ROOT, ".foundation", "instruction-manifests");
+const RECOVERY = join(ROOT, ".foundation", "recovery");
 const CHANGES = join(ROOT, "openspec", "changes");
 mkdirSync(RUNTIME, { recursive: true });
 mkdirSync(RECEIPTS, { recursive: true });
@@ -400,6 +404,7 @@ const {
   stableHash,
   reviewReceiptBinding,
   now,
+  blockWithDecision,
   fail: die
 });
 const hostAttestation = createHostAttestationRuntime({
@@ -941,6 +946,14 @@ const {
   createSandbox,
   showPacket
 });
+let abandonRuntime;
+// The apply guard now stops on an unresolved transaction instead of silently
+// opening a new one over it, so doctor has to be able to see that state coming.
+function unresolvedApplyTransactions(id) {
+  if (!abandonRuntime) return [];
+  return abandonRuntime.transactionJournals(id).filter((journal) =>
+    ["prepared", "applying", "rolling-back", "manual-recovery"].includes(journal.status));
+}
 const {
   doctor,
   migrate,
@@ -949,6 +962,7 @@ const {
   usage
 } = createDiagnosticsRuntime({
   root: ROOT,
+  unresolvedApplyTransactions,
   version: VERSION,
   runtimeApiVersion: RUNTIME_API_VERSION,
   providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
@@ -1106,6 +1120,7 @@ const {
   git,
   gitHead,
   now,
+  blockWithDecision,
   fail: die
 });
 applyRuntime = createApplyRuntime({
@@ -1142,6 +1157,7 @@ applyRuntime = createApplyRuntime({
   proofAudit,
   cleanupChangeLeases,
   now,
+  blockWithDecision,
   fail: die
 });
 const {
@@ -1155,6 +1171,31 @@ const {
   cleanupRepositorySandboxes,
   archive
 } = applyRuntime;
+abandonRuntime = createAbandonRuntime({
+  root: ROOT,
+  paths: {
+    recovery: RECOVERY,
+    runtime: RUNTIME,
+    receipts: RECEIPTS,
+    evidenceVault: EVIDENCE_VAULT,
+    transactions: TRANSACTIONS,
+    snapshots: SNAPSHOTS,
+    plans: PLANS,
+    logs: LOGS,
+    changes: CHANGES
+  },
+  loadRuntime,
+  cleanupChangeLeases,
+  cleanupAppliedSandbox,
+  cleanupRepositorySandboxes,
+  rollbackApplyTransaction,
+  readJson,
+  writeJson,
+  now,
+  blockWithDecision,
+  fail: die
+});
+const { abandonChange } = abandonRuntime;
 function protocolDescriptor() {
   return readJson(join(ROOT, ".claude", "harness", "protocol.json"), {
     runtime: VERSION,
@@ -1431,8 +1472,33 @@ function continueBudget(id, flags) {
   if (!["completion-only", "operator-required"].includes(decision.mode))
     die("budget continue is available only after the active run reaches a completion boundary");
   const extensionNumber = Number(budget.window.extensionNumber || 0);
+  // "Split or rescope" names no command, so the refusal has to carry the shape
+  // of both, plus the exit for work that should simply stop.
   if (extensionNumber >= 1)
-    die("the active run already used its one budget continuation; split or rescope");
+    blockWithDecision(id, "budget-continuation-spent", {
+      kind: "budget-continuation-spent",
+      summary: "This run already used its one extra budget window, so continuing again would hide how much the change actually costs.",
+      options: [
+        {
+          id: "rescope",
+          outcome: "Narrow this change to what is already provable and carry the remainder into a new change."
+        },
+        {
+          id: "split",
+          outcome: "Create a follow-up change for the unfinished tasks and finish this one at its current scope."
+        },
+        {
+          id: "abandon",
+          outcome: "Retire this change without landing it."
+        },
+        { id: "pause", outcome: "Spend nothing further and leave the change as it stands." }
+      ],
+      recommended: "rescope",
+      window: {
+        used: budget.window.usedTokens,
+        target: budget.window.targetTokens
+      }
+    });
   const artifactGaps = changeArtifactGaps(state, activeChangePath(id, state));
   const pending = artifactGaps.length ? [] : pendingTasks(id);
   const readiness = pending.length ? {
@@ -1449,9 +1515,47 @@ function continueBudget(id, flags) {
     issues: artifactGaps.map((artifact) => `missing change artifact: ${artifact}`),
     budget: readinessBudgetPolicy("CONFIGURATION_ERROR")
   } : proofReadinessValue(id, "prove");
-  if (!readiness.budget?.eligible)
-    die(`budget continuation rejected (${readiness.budget?.class || readiness.status}): ${
-      readiness.budget?.reason || "no model-completable work remains"}`);
+  // Refusing a continuation is right when no model work remains, but the state
+  // it leaves behind still has a way forward — usually one that costs no model
+  // budget at all. Saying so is the difference between a gate and a wall.
+  if (!readiness.budget?.eligible) {
+    const unblockByClass = {
+      "external-authority": {
+        id: "external-evidence",
+        outcome: "Provide the external review, acceptance, or evidence the proof is waiting on; this needs no model budget."
+      },
+      infrastructure: {
+        id: "restore-provider",
+        outcome: "Restore or reconfigure the unavailable provider, then re-run proof; this needs no model budget."
+      },
+      "active-work": {
+        id: "wait",
+        outcome: "Let the active workers finish or release their expired leases, then re-check readiness."
+      },
+      deterministic: {
+        id: "run-proof",
+        outcome: "Run the ready deterministic proof operation; no further model work is required."
+      }
+    };
+    const unblock = unblockByClass[readiness.budget?.class] || unblockByClass.deterministic;
+    blockWithDecision(id, "budget-continuation-rejected", {
+      kind: "budget-continuation-rejected",
+      summary: `A larger model budget would not move this change: ${
+        readiness.budget?.reason || "no model-completable work remains"}.`,
+      options: [
+        unblock,
+        {
+          id: "rescope",
+          outcome: "Narrow the change to what is provable here and carry the remainder into a new change."
+        },
+        { id: "abandon", outcome: "Retire this change without landing it." },
+        { id: "pause", outcome: "Spend nothing further and leave the change as it stands." }
+      ],
+      recommended: unblock.id,
+      readinessStatus: readiness.status,
+      budgetClass: readiness.budget?.class || readiness.status
+    });
+  }
   const previous = structuredClone(budget.window);
   const targets = {
     requests: Number(budget.targetRequests),
@@ -1580,6 +1684,7 @@ await routeRuntimeCommand(command, values, {
   rapidStartTemplate,
   startAtomic,
   resolveChange,
+  abandonChange,
   showChanges,
   showProviders,
   showRepositories,

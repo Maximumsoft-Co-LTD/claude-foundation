@@ -125,7 +125,7 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 assert_eq "agent command surface is bounded" "17" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-assert_eq "conditional recovery surface is bounded" "13" \
+assert_eq "conditional recovery surface is bounded" "14" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
@@ -363,7 +363,7 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
-sed -i.bak 's/const RUNTIME_API_VERSION = "13"/const RUNTIME_API_VERSION = "999"/' \
+sed -i.bak 's/const RUNTIME_API_VERSION = "14"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route >/dev/null 2>&1; then

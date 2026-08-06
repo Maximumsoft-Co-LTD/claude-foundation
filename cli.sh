@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=13
+EXPECTED_RUNTIME_API=14
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -55,7 +55,7 @@ run_runtime() {
   fi
   local phase=""
   case "${1:-}" in
-    new|start|resolve|validate|audit-change|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
+    new|start|resolve|validate|audit-change|abandon|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-status|authority-record) phase="prove" ;;
     land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
@@ -231,7 +231,10 @@ case "${1:-}" in
       audit)
         need_arg "change audit" "${1:-}"
         run_runtime read audit-change "$@" ;;
-      *) fail "change requires 'new', 'start', 'resolve', 'validate', or 'audit'" ;;
+      abandon)
+        need_arg "change abandon" "${1:-}"
+        run_runtime write abandon "$@" ;;
+      *) fail "change requires 'new', 'start', 'resolve', 'validate', 'audit', or 'abandon'" ;;
     esac ;;
   validate)
     warn "'validate' is deprecated; use 'change validate'"

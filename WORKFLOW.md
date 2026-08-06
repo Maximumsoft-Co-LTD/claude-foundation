@@ -53,6 +53,16 @@ summarizes the decision into proposal/design without treating the ignored
 selection or its artifacts as evidence. The runtime rejects local prototype
 artifacts and references before they can enter a receipt or proof bundle.
 
+A change that cannot be proven is retired explicitly rather than deleted by
+hand. `change abandon <change> --reason <reason> --decision-ref <ref>` releases
+its leases, cleans up its sandbox, and moves its change directory, runtime
+state, receipts, evidence, and transactions into
+`.foundation/recovery/abandoned/<id>/` with an audit line in
+`.foundation/logs/abandoned.jsonl`. It requires an explicit recorded user
+decision, never touches Git, and refuses an archived change. When the proven
+files are already in the working tree it stops and asks whether to keep or
+revert them; `--applied keep|revert` records that answer.
+
 ### `/build <change>`
 
 The native harness reads the compact change packet and implements it. `tasks.md`
@@ -309,7 +319,8 @@ identifies the reviewer and one or more structured implementation subjects.
 Critical security, migration, compatibility, monetary, or irreversible changes
 require a different model/provider family or a human; other reviews require a
 fresh context and prefer diversity. AI re-review is limited to two rounds, after
-which unresolved work escalates to a human. A change-level hash chain binds each
+which unresolved work escalates to a human; that stop names the human path, the
+return to Build, and retiring the change. A change-level hash chain binds each
 attempt to its receipt payload, so deleting a receipt or renaming its provider
 cannot reset the limit. Missing or modified history fails closed. Workspace edits
 stale prior review.
@@ -325,6 +336,24 @@ or impersonates a human.
 Findings are `verified`, `hypothesis`, `disproved`, or `accepted-risk`.
 Hypotheses require deterministic reproduction before becoming confirmed major
 findings.
+
+## Terminal stops
+
+Some guards end a run rather than returning a blocker: exhausted AI review
+rounds, a corrupt review chain, a spent budget continuation, a continuation that
+more model budget would not unblock, a control repository that moved under a
+multi-repository Land, submodule pointers reset after staging, and an apply that
+could not finish rolling back.
+
+Each emits the same decision envelope readiness recovery uses — a stop code, at
+least two honest options, a recommendation, and a preserved `pause`. Agents
+translate those options into the user's language; they never present a stop as a
+dead end, and they never infer the answer. Retiring the change with
+`change abandon` is one of the offered options wherever it applies.
+
+Foundation also stops on an unresolved apply transaction instead of opening a
+new one over it. `doctor --change <id>` reports unresolved transactions before
+Land reaches them.
 
 ## Security resolver
 
@@ -387,7 +416,9 @@ that a Git worktree or copied directory is safe for Allow All/unattended executi
 - Apply identity covers only paths changed by the proven sandbox. Unrelated
   target edits are preserved and excluded from the projection comparison.
 - Touched paths and change artifacts are backed up and journaled before writes;
-  failures roll back and interrupted transactions recover on retry.
+  failures roll back and interrupted transactions recover on retry. A rollback
+  that could not complete stops the next apply with its recorded options rather
+  than opening a fresh transaction over the divergence.
 - The sandbox remains the proof subject until archive and proof audit finish.
 - Conflicts stop without overwriting unrelated user edits.
 - Mutation testing happens only in isolation.
@@ -402,7 +433,9 @@ Their workspace identity is composite, while providers configured with
 edits therefore preserve scoped evidence; contract and producer/consumer edits
 still invalidate integration evidence. Multiple remotes Land through an
 ordered, resumable saga with explicit commit/CI records and root pointer
-verification, never by claiming atomic remote mutation.
+verification, never by claiming atomic remote mutation. Staging root pointers
+that already hold the landed commit is a no-op and leaves the proof valid, so
+Land and Prove cannot trade a change back and forth.
 
 ## Watchdog
 
@@ -416,6 +449,11 @@ Budget actions:
 - 70%: batch remaining work and reuse evidence;
 - 85%: stop speculative exploration;
 - 100%: stop and split or re-scope.
+
+A run gets one operator continuation. Spending it, or asking for one when more
+model budget would not move the change, stops with the options that would: the
+external evidence, provider, or deterministic operation the proof is actually
+waiting on, re-scoping, retiring the change, or pausing.
 
 The stop applies to further model exploration. Deterministic packet, readiness,
 evidence, proof-resume, metrics, and archive commands remain available, and

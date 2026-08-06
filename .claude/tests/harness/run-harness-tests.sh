@@ -1679,4 +1679,85 @@ policy_doctor="$(node .claude/harness/foundation.mjs doctor \
 assert_contains "an inferred capability names the path that triggered it" \
   "$policy_doctor" 'compatibility (from root/openspec/contracts/pay.yaml)'
 
+# Abandon. Until this existed, a change nobody could prove had no terminal state
+# at all: the only exit was deleting runtime files by hand, which no part of the
+# workflow told anyone was allowed.
+mkdir -p "$TMP/abandon"
+cd "$TMP/abandon"
+cp -R "$TMP/project/.claude" .
+cp -R "$TMP/project/openspec" .
+rm -rf openspec/changes .foundation
+printf 'x\n' > app.txt
+node .claude/harness/foundation.mjs new 'Retire an unprovable change' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve retire-an-unprovable-change \
+  --impact low --coupling isolated >/dev/null
+assert_cmd_fails_with "abandon requires a reason" "--reason" \
+  node .claude/harness/foundation.mjs abandon retire-an-unprovable-change
+assert_cmd_fails_with "abandon requires a recorded user decision" "--decision-ref" \
+  node .claude/harness/foundation.mjs abandon retire-an-unprovable-change \
+    --reason 'evidence contract cannot be satisfied'
+
+# An applied workspace is the user's to keep or undo; abandon never guesses.
+jq '.workspace = {"applied": true, "mode": "copy",
+  "apply": {"transactionId": "t-missing", "touchedPaths": ["app.txt"]}}' \
+  .foundation/runtime/retire-an-unprovable-change.json > "$TMP/applied-state.json"
+cp "$TMP/applied-state.json" .foundation/runtime/retire-an-unprovable-change.json
+applied_block="$({ node .claude/harness/foundation.mjs abandon \
+  retire-an-unprovable-change --reason 'unprovable' \
+  --decision-ref host://decision/abandon-1; } 2>&1 || true)"
+assert_contains "abandon stops on an applied workspace" \
+  "$applied_block" 'abandon-applied-workspace'
+assert_contains "abandon offers keeping the applied files" "$applied_block" '"id": "keep"'
+assert_contains "abandon offers reverting the applied files" "$applied_block" '"id": "revert"'
+assert_contains "abandon preserves pause" "$applied_block" '"id": "pause"'
+assert_file_exists "a stopped abandon changes nothing" \
+  .foundation/runtime/retire-an-unprovable-change.json
+assert_cmd_fails_with "abandon cannot revert without its journal" "journal is missing" \
+  node .claude/harness/foundation.mjs abandon retire-an-unprovable-change \
+    --reason 'unprovable' --decision-ref host://decision/abandon-1 --applied revert
+
+node .claude/harness/foundation.mjs abandon retire-an-unprovable-change \
+  --reason 'evidence contract cannot be satisfied' \
+  --decision-ref host://decision/abandon-1 --applied keep >/dev/null
+assert_file_absent "abandon retires the active change" \
+  openspec/changes/retire-an-unprovable-change
+assert_file_absent "abandon retires the runtime state" \
+  .foundation/runtime/retire-an-unprovable-change.json
+assert_file_exists "abandon quarantines rather than deletes" \
+  .foundation/recovery/abandoned/retire-an-unprovable-change/runtime.json
+assert_file_exists "abandon keeps the retired change record" \
+  .foundation/recovery/abandoned/retire-an-unprovable-change/change/tasks.md
+assert_file_contains "abandon records the authorizing decision" \
+  .foundation/logs/abandoned.jsonl 'host://decision/abandon-1'
+assert_file_contains "abandon records the reason" \
+  .foundation/logs/abandoned.jsonl 'evidence contract cannot be satisfied'
+assert_not_contains "an abandoned change leaves the active list" \
+  "$(node .claude/harness/foundation.mjs changes 2>&1)" 'retire-an-unprovable-change'
+
+# A crashed worker never releases its own lease, so readiness telling the host to
+# release a stale one has to correspond to a release the host can actually run.
+mkdir -p .foundation/leases/tasks/lease-fixture
+stale_expiry="$(node -e 'console.log(new Date(Date.now() - 60000).toISOString())')"
+live_expiry="$(node -e 'console.log(new Date(Date.now() + 600000).toISOString())')"
+write_lease() {
+  printf '{"version":1,"changeId":"lease-fixture","taskId":"T1","owner":"crashed-worker","resources":[],"expiresAt":"%s"}\n' \
+    "$1" > .foundation/leases/tasks/lease-fixture/T1.json
+}
+write_lease "$stale_expiry"
+assert_cmd_fails_with "a foreign lease is not released by mistake" "crashed-worker" \
+  node .claude/harness/foundation.mjs agent-release lease-fixture T1 --owner other-worker
+write_lease "$live_expiry"
+assert_cmd_fails_with "forcing a live lease costs an explicit decision" "--decision-ref" \
+  node .claude/harness/foundation.mjs agent-release lease-fixture T1 \
+    --owner other-worker --force
+assert_cmd_zero "an explicit decision takes over a live lease" \
+  node .claude/harness/foundation.mjs agent-release lease-fixture T1 \
+    --owner other-worker --force --decision-ref host://decision/lease-1
+write_lease "$stale_expiry"
+assert_cmd_zero "an expired lease is force-released without ceremony" \
+  node .claude/harness/foundation.mjs agent-release lease-fixture T1 \
+    --owner other-worker --force
+assert_file_absent "a released lease leaves no index behind" \
+  .foundation/leases/tasks/lease-fixture/T1.json
+
 finish "harness contracts"

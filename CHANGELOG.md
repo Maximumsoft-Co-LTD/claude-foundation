@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A change that cannot be proven can now be retired** —
+  `claude-foundation change abandon <change> --reason <reason> --decision-ref
+  <ref>` releases the change's leases, cleans up its sandbox, and moves its
+  change directory, runtime state, receipts, evidence, transactions, and logs
+  into `.foundation/recovery/abandoned/<id>/`, with an audit line in
+  `.foundation/logs/abandoned.jsonl`. Every other exit from the change loop
+  required the change to succeed, so an unsatisfiable evidence contract, a
+  provider that will never exist, or a corrupt review chain left deleting
+  runtime files by hand as the only way out — and nothing in the workflow said
+  that was allowed. It quarantines rather than deletes, never touches Git, and
+  refuses an archived change. When the proven files are already in the working
+  tree it stops and asks whether to keep or revert them.
+- **Terminal stops carry their exits** — exhausted AI review rounds, a corrupt
+  review chain, a spent budget continuation, a continuation more model budget
+  would not unblock, a control repository that moved under a multi-repository
+  Land, submodule pointers reset after staging, and an apply that could not
+  finish rolling back now emit the same decision envelope readiness recovery
+  uses: a stop code, at least two honest options, a recommendation, and a
+  preserved `pause`. The invariants are enforced in the runtime, not reviewed
+  per call site, and every registered stop is pinned by
+  `run-blocked-decision-tests.mjs`.
+- **`agents release --force`** takes over a lease whose owner crashed. Readiness
+  told the host to release stale leases, but a release required the original
+  owner, so the only real option was waiting out the 45-minute expiry. A lease
+  that has not expired also needs `--decision-ref`, because the worker holding
+  it may still be running; the readiness recovery now names the exact command
+  and the expiry.
+- **`doctor --change <id>` reports unresolved apply transactions** before Land
+  reaches them.
+
+### Changed
+
+- **An unresolved apply transaction stops the next apply** instead of being
+  skipped. A journal left in `rolling-back` or `manual-recovery` was ignored on
+  retry, so the next apply opened a fresh transaction over a working tree
+  Foundation had already failed to restore, and reported success. The recorded
+  recovery options — which the rollback had been writing into the journal and
+  nothing ever displayed — are now what the stop shows. Projects carrying such a
+  journal from an earlier version will see this stop on their next Land;
+  `doctor` reports it first, and `change abandon` is the exit if the change is
+  not worth resuming.
+- **Staging root pointers that already hold the landed commit is a no-op.** It
+  previously invalidated the proof unconditionally, so anything that reset the
+  control repository's index sent Land back to Prove and straight into Land
+  again. Re-staging the same pointers a second time now stops with options
+  rather than restarting the cycle.
+- **`changes` names a next command for every reachable status**, instead of
+  falling back to `doctor --change` for applied and landing changes.
+- Runtime API is **14**.
+
 ## [3.2.3] - 2026-08-05
 
 ### Added
