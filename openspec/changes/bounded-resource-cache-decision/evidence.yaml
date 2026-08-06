@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "no-placeholder-cache-registration-at-project-open",
+      "scenario": "no placeholder cache registration at project open",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "baseline-resource-count-excludes-unused-cache",
+      "scenario": "baseline resource count excludes unused cache",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "bounded-resource-cache-still-tested-in-project-crate",
+      "scenario": "bounded resource cache still tested in project crate",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

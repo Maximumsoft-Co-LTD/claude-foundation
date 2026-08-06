@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "runtime-wiring-types-are-public",
+      "scenario": "runtime wiring types are public",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "provider-execution-is-constructible",
+      "scenario": "provider execution is constructible",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "read-only-tools-refuse-mutation",
+      "scenario": "read-only tools refuse mutation",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "read-only-gate-denies-writes-and-process-tools",
+      "scenario": "read-only gate denies writes and process tools",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "workspace-build-stays-green",
+      "scenario": "workspace build stays green",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

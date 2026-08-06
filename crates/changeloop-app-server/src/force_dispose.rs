@@ -17,7 +17,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use changeloop_project::disposal::{
-    DisposalTrigger, install_panic_force_dispose, process_force_dispose,
+    DisposalTrigger, ForceDispose, ForceDisposeGuard, install_panic_force_dispose,
+    process_force_dispose, register_guarded,
 };
 
 /// How often the watcher checks whether a termination signal arrived. Signal
@@ -163,6 +164,55 @@ impl Drop for ForceDisposeSignalGuard {
     }
 }
 
+/// Process-wide signal and panic backstop for a bootstrap that never opens an
+/// `AppService`, such as `cloop acp`.
+pub struct ProcessBootstrapForceDispose {
+    _signal_guard: ForceDisposeSignalGuard,
+}
+
+impl ProcessBootstrapForceDispose {
+    /// Registers signal-triggered force-dispose and chains panic-triggered
+    /// force-dispose onto the existing panic hook.
+    pub fn install() -> io::Result<Self> {
+        Ok(Self {
+            _signal_guard: ForceDisposeSignalGuard::install_with_panic_hook()?,
+        })
+    }
+}
+
+/// Bootstrap that links a service-owned force-dispose registry to the
+/// process-wide backstop for exits `Drop` does not reach.
+pub struct BootstrapForceDispose {
+    _signal_guard: ForceDisposeSignalGuard,
+    _service_enrolment: ForceDisposeGuard,
+}
+
+impl BootstrapForceDispose {
+    /// Installs the process backstop and enrols `service_disposer` with
+    /// [`process_force_dispose`].
+    pub fn install_with_service_disposer(
+        service_disposer: Arc<ForceDispose>,
+    ) -> io::Result<Self> {
+        let signal_guard = ForceDisposeSignalGuard::install_with_panic_hook()?;
+        let disposer = Arc::clone(&service_disposer);
+        let service_enrolment = register_guarded(
+            &process_force_dispose(),
+            "app-service",
+            move || {
+                let report = disposer.dispose(DisposalTrigger::Signal);
+                match report.failures.first() {
+                    Some(failure) => Err(format!("{}: {}", failure.name, failure.message)),
+                    None => Ok(()),
+                }
+            },
+        );
+        Ok(Self {
+            _signal_guard: signal_guard,
+            _service_enrolment: service_enrolment,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +288,58 @@ mod tests {
 
         assert!(wait_until(|| children.lock().unwrap().is_disposed()));
         assert!(token.is_cancelled());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bootstrap_links_service_disposer_to_process_registry() {
+        let _turn = SIGNAL_TURN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let service_disposer = Arc::new(ForceDispose::new());
+        let released = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&released);
+        let _project_hook = register_guarded(&service_disposer, "probe", move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+        let _bootstrap = BootstrapForceDispose::install_with_service_disposer(service_disposer)
+            .expect("service bootstrap installs");
+
+        assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
+
+        assert!(
+            wait_until(|| released.load(Ordering::SeqCst) > 0),
+            "the process backstop must reach the service registry on SIGTERM"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signalled_service_releases_children_without_drop() {
+        let _turn = SIGNAL_TURN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let directory = tempfile::tempdir().unwrap();
+        let service_disposer = Arc::new(ForceDispose::new());
+        let _bootstrap =
+            BootstrapForceDispose::install_with_service_disposer(Arc::clone(&service_disposer))
+                .expect("service bootstrap installs");
+        let instance = ProjectInstance::new(directory.path().to_path_buf());
+        let token = instance.cancellation_token();
+        let children = instance.children();
+        let _hook = instance.register_force_dispose(&service_disposer);
+        std::mem::forget(instance);
+
+        assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
+
+        assert!(wait_until(|| children.lock().unwrap().is_disposed()));
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn process_bootstrap_installs_without_error() {
+        let _bootstrap =
+            ProcessBootstrapForceDispose::install().expect("process bootstrap installs");
     }
 }

@@ -4,6 +4,10 @@ pub mod executable;
 pub mod force_dispose;
 pub mod pause_control;
 
+pub use executable::{
+    ProviderExecution, ProviderTarget, RuntimeGate, RuntimePolicy, RuntimeProvider, RuntimeTools,
+};
+
 use changeloop_protocol::{
     EventCursor, EventEnvelope, EventId, NegotiationError, ProtocolVersion, SessionId, negotiate,
 };

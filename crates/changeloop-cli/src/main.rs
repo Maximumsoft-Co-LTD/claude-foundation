@@ -300,6 +300,9 @@ async fn run(args: Vec<String>) -> Result<(), CliFailure> {
             headless_control("contract.approve", session).await
         }
         [command] if command == "acp" => {
+            let _bootstrap =
+                changeloop_app_server::force_dispose::ProcessBootstrapForceDispose::install()
+                    .map_err(io_failure)?;
             changeloop_acp::serve_stdio(changeloop_acp_runtime::stdio_driver(), Default::default())
                 .map(|_| ())
                 .map_err(io_failure)
@@ -596,6 +599,11 @@ fn environment_backend(
 
 async fn headless(command: &str, prompt: &str, allow_draft: bool) -> Result<(), CliFailure> {
     let mut service = open_service()?;
+    let _bootstrap =
+        changeloop_app_server::force_dispose::BootstrapForceDispose::install_with_service_disposer(
+            service.force_dispose(),
+        )
+        .map_err(io_failure)?;
     let response = service
         .handle(WireRequest {
             id: "headless".into(),
@@ -638,6 +646,11 @@ async fn headless(command: &str, prompt: &str, allow_draft: bool) -> Result<(), 
 
 async fn headless_control(method: &str, session: &str) -> Result<(), CliFailure> {
     let mut service = open_service()?;
+    let _bootstrap =
+        changeloop_app_server::force_dispose::BootstrapForceDispose::install_with_service_disposer(
+            service.force_dispose(),
+        )
+        .map_err(io_failure)?;
     let response = service
         .handle(WireRequest {
             id: "headless-control".into(),
@@ -682,6 +695,11 @@ async fn tui() -> Result<(), CliFailure> {
 
 async fn serve(args: Vec<String>) -> Result<(), CliFailure> {
     let mut service = open_service()?;
+    let _bootstrap =
+        changeloop_app_server::force_dispose::BootstrapForceDispose::install_with_service_disposer(
+            service.force_dispose(),
+        )
+        .map_err(io_failure)?;
     match args.as_slice() {
         [flag] if flag == "--stdio" => serve_stdio(
             &mut service,
@@ -2023,6 +2041,29 @@ mod tests {
         let failure =
             surface_failure(changeloop_app_server::executable::SurfaceError::ProviderRequired);
         assert_eq!(failure.code, EXIT_AUTH_PROVIDER_FAILURE);
+    }
+
+    #[test]
+    fn service_entry_points_install_force_dispose_bootstrap() {
+        let source = include_str!("main.rs");
+        for entry in ["async fn headless", "async fn headless_control", "async fn serve"] {
+            let start = source
+                .find(entry)
+                .unwrap_or_else(|| panic!("missing CLI entry {entry}"));
+            let body = &source[start..start + 800];
+            assert!(
+                body.contains("BootstrapForceDispose::install_with_service_disposer"),
+                "{entry} must install the service bootstrap"
+            );
+        }
+        let acp_start = source
+            .find(r#"if command == "acp""#)
+            .expect("acp command dispatch");
+        let acp_body = &source[acp_start..acp_start + 400];
+        assert!(
+            acp_body.contains("ProcessBootstrapForceDispose::install"),
+            "acp must install the process bootstrap"
+        );
     }
 
     #[test]

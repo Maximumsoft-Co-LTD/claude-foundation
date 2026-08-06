@@ -27,9 +27,7 @@ use changeloop_policy::{
     OperationKind, PermissionKind, PolicyRequest, Reversibility, RuleAction, SandboxCapability,
     evaluate,
 };
-use changeloop_project::disposal::{
-    DisposalTrigger, ForceDispose, ForceDisposeGuard, register_guarded,
-};
+use changeloop_project::disposal::{ForceDispose, ForceDisposeGuard};
 use changeloop_project::{
     ExecutionCoordinator, ExecutionPermit, InvalidationDispatcher, InvalidationTarget,
     LeaderDisposition as ProcessLeaderDisposition, MutationLease, OwnedResourceHandle,
@@ -121,6 +119,10 @@ const MAX_APP_JSON_BYTES: u64 = 16 * 1024 * 1024;
 #[cfg(test)]
 #[path = "runtime_tool_tests.rs"]
 mod runtime_tool_gap_tests;
+
+#[cfg(test)]
+#[path = "runtime_wiring_tests.rs"]
+mod runtime_wiring_tests;
 
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_HTTP_HEADER_BYTES: usize = 16 * 1024;
@@ -270,22 +272,39 @@ pub struct ProviderBackend {
 }
 
 #[derive(Clone)]
-struct ProviderTarget {
-    provider: ProviderKind,
-    model: String,
-    auth: AuthProfile,
+pub struct ProviderTarget {
+    pub provider: ProviderKind,
+    pub model: String,
+    pub auth: AuthProfile,
 }
 
 #[derive(Clone)]
-struct ProviderExecution {
-    provider: ProviderKind,
-    model: String,
-    auth: AuthProfile,
-    transport: ReqwestTransport,
-    fallback: Option<ProviderTarget>,
+pub struct ProviderExecution {
+    pub provider: ProviderKind,
+    pub model: String,
+    pub auth: AuthProfile,
+    pub transport: ReqwestTransport,
+    pub fallback: Option<ProviderTarget>,
 }
 
 impl ProviderExecution {
+    #[must_use]
+    pub fn new(
+        provider: ProviderKind,
+        model: String,
+        auth: AuthProfile,
+        transport: ReqwestTransport,
+        fallback: Option<ProviderTarget>,
+    ) -> Self {
+        Self {
+            provider,
+            model,
+            auth,
+            transport,
+            fallback,
+        }
+    }
+
     fn validate_subagent_model(&self, spec: &SubagentSpec) -> Result<(), String> {
         let risk_floor = match spec.risk_floor {
             RiskTier::Low => ModelFloor::Fast,
@@ -522,19 +541,19 @@ impl ProviderBackend {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct RuntimePolicy {
-    mode: ExecutionMode,
-    filesystem_read: RuleAction,
-    filesystem_write: RuleAction,
-    shell: RuleAction,
-    git: RuleAction,
-    test: RuleAction,
-    question: RuleAction,
-    mcp: RuleAction,
-    web_search: RuleAction,
-    web_fetch: RuleAction,
-    web_allowed_domains: Vec<String>,
-    web_search_endpoint: Option<String>,
+pub struct RuntimePolicy {
+    pub mode: ExecutionMode,
+    pub filesystem_read: RuleAction,
+    pub filesystem_write: RuleAction,
+    pub shell: RuleAction,
+    pub git: RuleAction,
+    pub test: RuleAction,
+    pub question: RuleAction,
+    pub mcp: RuleAction,
+    pub web_search: RuleAction,
+    pub web_fetch: RuleAction,
+    pub web_allowed_domains: Vec<String>,
+    pub web_search_endpoint: Option<String>,
 }
 
 impl Default for RuntimePolicy {
@@ -557,7 +576,7 @@ impl Default for RuntimePolicy {
 }
 
 impl RuntimePolicy {
-    fn from_environment(environment: &BTreeMap<String, String>) -> Result<Self, SurfaceError> {
+    pub fn from_environment(environment: &BTreeMap<String, String>) -> Result<Self, SurfaceError> {
         Ok(Self {
             mode: parse_mode(environment.get("CHANGELOOP_MODE").map(String::as_str))?,
             filesystem_read: parse_rule(
@@ -980,12 +999,12 @@ impl ProviderBackend {
         }
         let resume_binding = self.resume_binding(workspace_revision, &tools)?;
         let runtime_policy = self.runtime_policy.clone();
-        let provider = RuntimeProvider {
-            execution: self.execution(),
-            cancel: cancel.clone(),
-            runtime: tokio::runtime::Handle::current(),
-            risk_floor: RiskTier::High,
-        };
+        let provider = RuntimeProvider::new(
+            self.execution(),
+            cancel.clone(),
+            tokio::runtime::Handle::current(),
+            RiskTier::High,
+        );
         let child_executor = ScopedChildExecutor {
             execution: self.execution(),
             root: root.to_path_buf(),
@@ -1002,10 +1021,10 @@ impl ProviderBackend {
             storage,
             provider,
             tools,
-            RuntimeGate {
-                policy: runtime_policy,
-                authority: LifecycleAuthority::ConfirmedChange,
-            },
+            RuntimeGate::new(
+                runtime_policy,
+                LifecycleAuthority::ConfirmedChange,
+            ),
             RuntimeControls(cancel.clone()),
             child_executor,
             RuntimeBudget::default(),
@@ -1154,12 +1173,12 @@ impl ProviderBackend {
                     .into(),
             ));
         }
-        let provider = RuntimeProvider {
-            execution: self.execution(),
-            cancel: cancel.clone(),
-            runtime: tokio::runtime::Handle::current(),
-            risk_floor: RiskTier::High,
-        };
+        let provider = RuntimeProvider::new(
+            self.execution(),
+            cancel.clone(),
+            tokio::runtime::Handle::current(),
+            RiskTier::High,
+        );
         let child_executor = ScopedChildExecutor {
             execution: self.execution(),
             root: root.to_path_buf(),
@@ -1173,10 +1192,10 @@ impl ProviderBackend {
             storage,
             provider,
             tools,
-            RuntimeGate {
-                policy: self.runtime_policy.clone(),
-                authority: LifecycleAuthority::ConfirmedChange,
-            },
+            RuntimeGate::new(
+                self.runtime_policy.clone(),
+                LifecycleAuthority::ConfirmedChange,
+            ),
             RuntimeControls(cancel.clone()),
             child_executor,
         )
@@ -1429,11 +1448,28 @@ fn redact_bearer_and_token_prefixes(line: &str) -> String {
     words.join(" ")
 }
 
-struct RuntimeProvider {
+pub struct RuntimeProvider {
     execution: ProviderExecution,
     cancel: CancellationToken,
     runtime: tokio::runtime::Handle,
     risk_floor: RiskTier,
+}
+
+impl RuntimeProvider {
+    #[must_use]
+    pub fn new(
+        execution: ProviderExecution,
+        cancel: CancellationToken,
+        runtime: tokio::runtime::Handle,
+        risk_floor: RiskTier,
+    ) -> Self {
+        Self {
+            execution,
+            cancel,
+            runtime,
+            risk_floor,
+        }
+    }
 }
 
 impl StreamingProvider for RuntimeProvider {
@@ -1479,9 +1515,22 @@ impl StreamingProvider for RuntimeProvider {
     }
 }
 
-struct RuntimeGate {
+pub struct RuntimeGate {
     policy: RuntimePolicy,
     authority: LifecycleAuthority,
+}
+
+impl RuntimeGate {
+    #[must_use]
+    pub fn new(policy: RuntimePolicy, authority: LifecycleAuthority) -> Self {
+        Self { policy, authority }
+    }
+
+    /// Conversation authority with no mutation, process, or delegation surface.
+    #[must_use]
+    pub fn read_only(policy: RuntimePolicy) -> Self {
+        Self::new(policy, LifecycleAuthority::Conversation)
+    }
 }
 
 impl PermissionGate for RuntimeGate {
@@ -1643,12 +1692,12 @@ impl ScopedChildExecutor {
         .map_err(|error| error.to_string())?;
         let changed_paths = tools.changed_paths();
         let scoped_tools = ScopedRuntimeTools::new(tools, spec.clone())?;
-        let provider = RuntimeProvider {
-            execution: self.execution.clone(),
-            cancel: child_cancel.clone(),
-            runtime: self.runtime.clone(),
-            risk_floor: spec.risk_floor,
-        };
+        let provider = RuntimeProvider::new(
+            self.execution.clone(),
+            child_cancel.clone(),
+            self.runtime.clone(),
+            spec.risk_floor,
+        );
         let mut storage = Storage::open_in_memory().map_err(|error| error.to_string())?;
         let mut budget = RuntimeBudget::default();
         budget.max_turns = u16::try_from(spec.budget.max_tool_calls)
@@ -1662,10 +1711,10 @@ impl ScopedChildExecutor {
             &mut storage,
             provider,
             scoped_tools,
-            RuntimeGate {
-                policy: self.policy.clone(),
-                authority: LifecycleAuthority::ConfirmedChange,
-            },
+            RuntimeGate::new(
+                self.policy.clone(),
+                LifecycleAuthority::ConfirmedChange,
+            ),
             RuntimeControls(child_cancel.clone()),
             DepthLimitedChildren,
             budget,
@@ -2425,7 +2474,7 @@ fn top_level_workspace_scope(root: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-struct RuntimeTools {
+pub struct RuntimeTools {
     read_runtime: ToolRuntime,
     write_runtime: ToolRuntime,
     shell_runtime: ToolRuntime,
@@ -3150,7 +3199,7 @@ fn declared_mcp_paths(arguments: &Value) -> Result<Vec<PathBuf>, String> {
 }
 
 impl RuntimeTools {
-    fn new(
+    pub fn new(
         root: &Path,
         artifacts: &Path,
         session: &Session,
@@ -3294,6 +3343,22 @@ impl RuntimeTools {
             mutation,
             hook_reports: VecDeque::new(),
         })
+    }
+
+    /// Builds the tool surface for a conversation session without mutation
+    /// authority, subagent delegation, or MCP discovery.
+    pub fn read_only(
+        root: &Path,
+        artifacts: &Path,
+        session: &Session,
+        policy: RuntimePolicy,
+    ) -> Result<Self, SurfaceError> {
+        if session.kind != SessionKind::Conversation {
+            return Err(SurfaceError::Invalid(
+                "read-only runtime tools require a conversation session".into(),
+            ));
+        }
+        Self::new(root, artifacts, session, policy, false)
     }
 
     fn dispatch_tool_hooks(
@@ -5067,7 +5132,6 @@ impl ManagedProject {
         for (kind, name) in [
             (ResourceKind::Database, "session-storage"),
             (ResourceKind::Watcher, "filesystem-git-watcher"),
-            (ResourceKind::Cache, "provider-tool-cache"),
             (ResourceKind::Mcp, "mcp-connections"),
             (ResourceKind::Lsp, "language-servers"),
             (ResourceKind::Formatter, "formatters"),
@@ -9446,19 +9510,10 @@ pub async fn run_tui<B: SurfaceBackend + Send + 'static>(
     // the process-wide one keeps ownership one-directional — process backstop
     // releases the service, the service releases its projects, a project
     // releases its resources and children.
-    let _force_dispose = crate::force_dispose::ForceDisposeSignalGuard::install_with_panic_hook()?;
-    let service_disposer = service.force_dispose();
-    let _service_enrolment = register_guarded(
-        &changeloop_project::disposal::process_force_dispose(),
-        "app-service",
-        move || {
-            let report = service_disposer.dispose(DisposalTrigger::Signal);
-            match report.failures.first() {
-                Some(failure) => Err(format!("{}: {}", failure.name, failure.message)),
-                None => Ok(()),
-            }
-        },
-    );
+    let _force_dispose =
+        crate::force_dispose::BootstrapForceDispose::install_with_service_disposer(
+            service.force_dispose(),
+        )?;
     let signals = TuiSignalGuard::install()?;
     let mut mode = TuiTerminalMode::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
@@ -11573,7 +11628,7 @@ mod tests {
     }
 
     fn gate(policy: RuntimePolicy, authority: LifecycleAuthority) -> RuntimeGate {
-        RuntimeGate { policy, authority }
+        RuntimeGate::new(policy, authority)
     }
 
     #[tokio::test]
@@ -12136,10 +12191,10 @@ mod tests {
             &mut storage,
             provider,
             tools,
-            RuntimeGate {
-                policy: policy.clone(),
-                authority: LifecycleAuthority::ConfirmedChange,
-            },
+            RuntimeGate::new(
+                policy.clone(),
+                LifecycleAuthority::ConfirmedChange,
+            ),
             RuntimeControls(CancellationToken::default()),
             DepthLimitedChildren,
             RuntimeBudget::default(),
@@ -12447,10 +12502,7 @@ mod tests {
             &mut storage,
             provider,
             tools,
-            RuntimeGate {
-                policy,
-                authority: LifecycleAuthority::ConfirmedChange,
-            },
+            RuntimeGate::new(policy, LifecycleAuthority::ConfirmedChange),
             RuntimeControls(CancellationToken::default()),
             DepthLimitedChildren,
             RuntimeBudget::default(),
@@ -13321,14 +13373,14 @@ mod tests {
                 storage,
                 provider,
                 E2eTools(self.0.clone()),
-                RuntimeGate {
-                    policy: RuntimePolicy::default(),
-                    authority: if session.require_mutation_authority().is_ok() {
+                RuntimeGate::new(
+                    RuntimePolicy::default(),
+                    if session.require_mutation_authority().is_ok() {
                         LifecycleAuthority::ConfirmedChange
                     } else {
                         LifecycleAuthority::Conversation
                     },
-                },
+                ),
                 RuntimeControls(CancellationToken::default()),
                 DepthLimitedChildren,
                 RuntimeBudget::default(),
@@ -13931,7 +13983,7 @@ mod tests {
             service.projects[&canonical_second]
                 .instance
                 .resource_count(),
-            7,
+            6,
             "completed model task must not leak into project resources"
         );
         let rejected = service
@@ -14040,7 +14092,7 @@ mod tests {
         service.finish_execution(read_one).unwrap();
         service.finish_execution(read_two).unwrap();
         service.finish_execution(mutation).unwrap();
-        assert_eq!(service.projects[&root].instance.resource_count(), 7);
+        assert_eq!(service.projects[&root].instance.resource_count(), 6);
         assert_eq!(service.projects[&root].execution.active_readers(), 0);
         assert_eq!(service.projects[&root].execution.active_mutation(), None);
     }

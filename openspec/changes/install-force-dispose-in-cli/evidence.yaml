@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "headless-entry-installs-force-dispose",
+      "scenario": "headless CLI entry installs force dispose bootstrap",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "serve-entry-installs-force-dispose",
+      "scenario": "serve CLI entry installs force dispose bootstrap",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "acp-entry-installs-process-force-dispose",
+      "scenario": "acp CLI entry installs process force dispose bootstrap",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "service-bootstrap-links-to-process-registry",
+      "scenario": "service bootstrap links service force dispose to the process registry",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "signalled-service-children-release-without-drop",
+      "scenario": "a signalled service-backed project releases its children without Drop",
+      "impact": "high",
+      "capabilities": ["test"]
+    }
+  ]
+}
