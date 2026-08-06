@@ -1,5 +1,66 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+
+const OPENSPEC_REQUIRED_MAJOR = 1;
+const OPENSPEC_TESTED_MINOR = 7;
+const OPENSPEC_PACKAGE = "@fission-ai/openspec@^1.7";
+
+// Layered policy rather than a pinned string: a wrong major cannot sync specs,
+// a lower minor predates behavior the archive step depends on, a higher minor
+// is untested but not known-broken, and patch releases inside the tested minor
+// are interchangeable.
+export function openSpecVersionStatus(stdout) {
+  const text = String(stdout ?? "").trim();
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
+  if (!match)
+    return {
+      level: "error", version: null,
+      detail: `unrecognized OpenSpec version output '${text || "(empty)"}'; required ${OPENSPEC_PACKAGE}`
+    };
+  const [version, major, minor] = match;
+  if (Number(major) !== OPENSPEC_REQUIRED_MAJOR)
+    return {
+      level: "error", version,
+      detail: `OpenSpec ${version} is incompatible; required ${OPENSPEC_PACKAGE}`
+    };
+  if (Number(minor) < OPENSPEC_TESTED_MINOR)
+    return {
+      level: "error", version,
+      detail: `OpenSpec ${version} predates the 1.${OPENSPEC_TESTED_MINOR} spec-sync behavior; required ${OPENSPEC_PACKAGE}`
+    };
+  if (Number(minor) > OPENSPEC_TESTED_MINOR)
+    return {
+      level: "warn", version,
+      detail: `OpenSpec ${version} is newer than the tested 1.${OPENSPEC_TESTED_MINOR} line; archive behavior is unverified`
+    };
+  return { level: "ok", version, detail: version };
+}
+
+export function openSpecCliStatus(root) {
+  const probe = spawnSync("openspec", ["--version"], { cwd: root, encoding: "utf8" });
+  if (probe.error?.code === "ENOENT")
+    return {
+      level: "error", version: null,
+      detail: `OpenSpec CLI is required for safe spec sync and archive (${OPENSPEC_PACKAGE})`
+    };
+  if (probe.error || probe.status !== 0)
+    return {
+      level: "error", version: null,
+      detail: `OpenSpec CLI could not report a version: ${
+        (probe.stderr || probe.error?.message || "").trim() || `exit ${probe.status}`}`
+    };
+  // stdout only: matching over stdout+stderr let any warning line mentioning
+  // the pinned version vouch for a CLI that was actually a different version.
+  return openSpecVersionStatus(probe.stdout);
+}
+
+export function assertOpenSpecCli(root, fail) {
+  const status = openSpecCliStatus(root);
+  if (status.level === "error") fail(status.detail);
+  if (status.level === "warn") console.error(`WARNING: ${status.detail}`);
+  return status;
+}
 
 export function createLandRuntime({
   root,
@@ -8,6 +69,9 @@ export function createLandRuntime({
   saveRuntime,
   recoverPendingApply,
   assertNoDroppedScenarios,
+  // Required, not defaulted: a permissive default would let the Land gate
+  // vanish silently if a caller stopped passing it.
+  blockingDrift,
   proofAudit,
   proofPath,
   readJson,
@@ -41,6 +105,10 @@ export function createLandRuntime({
     // fails inside 'openspec archive', by which point the code has landed and
     // the change is stuck half-applied.
     assertNoDroppedScenarios(id);
+    // Same class of failure, different cause: a missing or incompatible
+    // OpenSpec CLI only surfaces at 'openspec archive', after the code has
+    // already landed, leaving the change stuck at land.status "code-applied".
+    assertOpenSpecCli(root, fail);
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
     if (!proof || proof.status !== "pass") fail(`change '${id}' has no passing proof`);
     const audit = proofAudit(id, true);
@@ -60,6 +128,15 @@ export function createLandRuntime({
       const applied = verifyAppliedProjection(state);
       if (!applied.valid) fail(`applied projection is invalid: ${applied.reason}`);
     }
+    // The planner forces a deep tier for risk-sensitive task kinds; a host that
+    // silently ran a weaker model produced evidence the policy never sanctioned.
+    // Only a proven downgrade blocks — unreported models classify as unknown.
+    const drift = blockingDrift(id);
+    if (drift.length)
+      fail(`model tier downgrade on risk-sensitive task(s):\n${drift
+        .map((row) => `  ${row.taskId || (row.blockingTasks || []).join("|") || "?"} (${
+          row.taskKind || "ambiguous"}): requested ${row.requestedTier}, ran ${
+          row.actualModel || "unreported"} — ${row.reason}`).join("\n")}`);
     const multiRepository = state.repositories && Object.keys(state.repositories).length > 1;
     console.log(`LAND READY ${id}\n  workspace: ${hash}\n  next: claude-foundation land ${
       multiRepository ? "resume" : "archive"} ${id}`);

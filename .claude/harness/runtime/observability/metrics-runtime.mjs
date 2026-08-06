@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { createModelDriftInspector } from "./host-execution-contract.mjs";
 
 export function createMetricsRuntime({
   logs,
@@ -10,8 +11,18 @@ export function createMetricsRuntime({
   loadRuntime,
   ensureBudgetState,
   budgetDecision,
+  instructionManifests = null,
+  activeChangePath = null,
+  policy = null,
+  taskBlocks = null,
+  taskMetadata = null,
   output = console.log
 }) {
+  // Absent join inputs report as unknown drift rather than suppressing the
+  // section, so a partially wired install is visible instead of silent.
+  const modelDrift = createModelDriftInspector({
+    logs, instructionManifests, activeChangePath, policy, taskBlocks, taskMetadata
+  });
   function contextMetricState(id) {
     const rows = readJsonLinesTolerant(join(logs, id, "context.jsonl"));
     const dir = join(logs, id, "context-events");
@@ -224,6 +235,7 @@ export function createMetricsRuntime({
         instructionManifestDigests: [...new Set(events
           .map((event) => event.instructionManifestDigest).filter(Boolean))].sort()
       },
+      modelDrift: modelDrift.changeDrift(id),
       budget: {
         lifetime: budget.lifetime,
         window: budget.window,

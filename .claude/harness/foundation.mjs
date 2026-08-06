@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createTelemetryRuntime } from "./runtime/observability/telemetry-runtime.mjs";
 import {
-  createHostExecutionStore, hostExecutionTelemetryRows
+  createHostExecutionStore, createModelDriftInspector, hostExecutionTelemetryRows
 } from "./runtime/observability/host-execution-contract.mjs";
 import { createHostAttestationRuntime } from "./runtime/evidence/attestation.mjs";
 import { validateSignedCiEnvelope } from "./runtime/evidence/signed-ci.mjs";
@@ -37,7 +37,9 @@ import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
 import { createChangeLifecycle } from "./runtime/workflow/change-lifecycle.mjs";
 import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
-import { createLandRuntime } from "./runtime/workflow/land-runtime.mjs";
+import {
+  assertOpenSpecCli, createLandRuntime, openSpecCliStatus
+} from "./runtime/workflow/land-runtime.mjs";
 import { createApplyRuntime } from "./runtime/workflow/apply-runtime.mjs";
 import { createDiagnosticsRuntime } from "./runtime/core/diagnostics-runtime.mjs";
 import { createStateRuntime } from "./runtime/core/state-runtime.mjs";
@@ -446,7 +448,12 @@ const { showMetrics } = createMetricsRuntime({
   readJsonLinesTolerant,
   loadRuntime,
   ensureBudgetState,
-  budgetDecision
+  budgetDecision,
+  instructionManifests: INSTRUCTION_MANIFESTS,
+  activeChangePath,
+  policy: foundationPolicy,
+  taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
+  taskMetadata: (...args) => changeValidationRuntime.taskMetadata(...args)
 });
 repositoryTopology = createRepositoryTopology({
   root: ROOT,
@@ -988,7 +995,7 @@ const {
   repositoryCatalog,
   foundationPolicy,
   isolationInspection,
-  isPinnedOpenSpecVersion,
+  openSpecCliStatus,
   loadRuntime,
   evidence,
   selectedRepositories,
@@ -1086,6 +1093,14 @@ const {
   proofPath,
   die
 });
+const modelDriftInspector = createModelDriftInspector({
+  logs: LOGS,
+  instructionManifests: INSTRUCTION_MANIFESTS,
+  activeChangePath,
+  policy: foundationPolicy,
+  taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
+  taskMetadata: (...args) => changeValidationRuntime.taskMetadata(...args)
+});
 const {
   landCheck,
   orderedRepositories,
@@ -1104,6 +1119,7 @@ const {
   saveRuntime,
   recoverPendingApply: (...args) => applyRuntime.recoverPendingApply(...args),
   assertNoDroppedScenarios,
+  blockingDrift: (...args) => modelDriftInspector.blockingDrift(...args),
   proofAudit,
   proofPath,
   readJson,
@@ -1153,7 +1169,7 @@ applyRuntime = createApplyRuntime({
   assertMultiRepositoryArchiveReady,
   archivedChangeRelativePath,
   pendingTasks,
-  isPinnedOpenSpecVersion,
+  assertOpenSpecCli,
   proofAudit,
   cleanupChangeLeases,
   now,
@@ -1213,9 +1229,6 @@ function protocolDescriptor() {
     authorityProtocol: AUTHORITY_PROTOCOL_VERSION,
     ciEvidenceProtocol: CI_EVIDENCE_PROTOCOL_VERSION
   });
-}
-function isPinnedOpenSpecVersion(value) {
-  return /(^|[^0-9])1\.7\.0([^0-9]|$)/.test(value);
 }
 function commandExists(command, cwd = ROOT) {
   if (!command) return false;
