@@ -35,6 +35,7 @@
     { "name": "land record", "usage": "land record <change> --repo <id> --commit <sha> --decision-ref <ref> [--ci pass]", "audience": "conditional", "kind": "authority", "idempotent": true, "description": "Bind a child repository commit after an explicit host-recorded user decision." },
     { "name": "land resume", "usage": "land resume <change>", "audience": "conditional", "kind": "write", "idempotent": true, "description": "Resume an interrupted or multi-repository Land saga." },
     { "name": "budget continue", "usage": "budget continue <change> --reason <reason> --decision-ref <ref> [--run <id>]", "audience": "conditional", "kind": "authority", "idempotent": false, "description": "Open one policy-gated completion window after an explicit host-recorded user decision." },
+    { "name": "change abandon", "usage": "change abandon <change> --reason <reason> --decision-ref <ref> [--applied keep|revert]", "audience": "conditional", "kind": "authority", "idempotent": false, "description": "Retire a change that cannot be proven, quarantining its record after an explicit host-recorded user decision." },
 
     { "name": "init", "usage": "init [target-path] [options]", "audience": "admin", "kind": "authority", "idempotent": true, "description": "Install or upgrade Foundation in a project." },
     { "name": "providers", "usage": "providers", "audience": "conditional", "kind": "read", "idempotent": true, "description": "Inspect evidence wiring only while defining a change contract." },
@@ -51,7 +52,7 @@
     { "name": "validate", "usage": "validate <change>", "audience": "internal", "kind": "write", "idempotent": true, "deprecated": true, "description": "Compatibility alias for change validate." },
     { "name": "agents task", "usage": "agents task <change> <task>", "audience": "internal", "kind": "read", "idempotent": true, "deprecated": true, "description": "Compatibility alias for packet --task." },
     { "name": "agents acquire", "usage": "agents acquire <change> <task> --owner <id>", "audience": "host", "kind": "write", "idempotent": true, "description": "Acquire a host-managed resource lease." },
-    { "name": "agents release", "usage": "agents release <change> <task> --owner <id>", "audience": "host", "kind": "write", "idempotent": true, "description": "Release a host-managed resource lease." },
+    { "name": "agents release", "usage": "agents release <change> <task> --owner <id> [--force] [--decision-ref <ref>]", "audience": "host", "kind": "write", "idempotent": true, "description": "Release a host-managed resource lease; --force takes over a lease whose owner crashed." },
     { "name": "telemetry sync", "usage": "telemetry sync <change> [transcript.jsonl]", "audience": "host", "kind": "write", "idempotent": true, "description": "Synchronize native host request usage." },
     { "name": "telemetry import", "usage": "telemetry import <change> <file> [--format <format>]", "audience": "host", "kind": "write", "idempotent": true, "description": "Import authoritative host usage." },
     { "name": "telemetry host-import", "usage": "telemetry host-import <change> <result.json>", "audience": "host", "kind": "write", "idempotent": true, "description": "Import a validated host execution result with attempts, actual model, fallback, and instruction provenance." },
@@ -70,7 +71,7 @@
   ],
   "runtimeCommands": [
     "describe",
-    "new", "start", "resolve", "audit-change", "changes", "providers", "repos", "models",
+    "new", "start", "resolve", "abandon", "audit-change", "changes", "providers", "repos", "models",
     "agent-plan", "agent-task", "agent-acquire", "agent-release", "packet",
     "metrics", "budget-continue", "doctor", "validate", "hash", "proof-plan",
     "proof-readiness", "proof-run", "proof-collect", "proof-preflight",

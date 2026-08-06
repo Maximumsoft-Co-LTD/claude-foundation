@@ -48,6 +48,7 @@ export function createDiagnosticsRuntime({
   topologyIssues,
   policyCapabilities,
   policyCapabilityTrigger,
+  unresolvedApplyTransactions,
   parseFlags,
   fail
 }) {
@@ -64,15 +65,18 @@ export function createDiagnosticsRuntime({
       const readiness = proof?.status === "pass" && proof.workspaceHash === current
         ? "ready-to-land"
         : state.status === "proven" ? "stale-proof" : state.status;
-      const next = readiness === "ready-to-land"
-        ? `claude-foundation land check ${id}`
-        : readiness === "stale-proof"
-          ? `claude-foundation proof readiness ${id}`
-          : readiness === "change"
-            ? `claude-foundation change validate ${id}`
-            : readiness === "building"
-              ? `claude-foundation proof readiness ${id}`
-              : `claude-foundation doctor --change ${id}`;
+      // A listed change without a real next command reads as a dead entry, so
+      // every reachable status names the operation that moves it.
+      const nextByReadiness = {
+        "ready-to-land": `claude-foundation land check ${id}`,
+        "stale-proof": `claude-foundation proof readiness ${id}`,
+        change: `claude-foundation change validate ${id}`,
+        building: `claude-foundation proof readiness ${id}`,
+        applied: `claude-foundation land archive ${id}`,
+        landing: `claude-foundation land resume ${id}`
+      };
+      const next = nextByReadiness[readiness] ||
+        `claude-foundation doctor --change ${id}`;
       console.log(`${id}\t${readiness}\t${state.schema || "unknown"}\t${next}`);
     }
     for (const orphan of orphans)
@@ -266,6 +270,20 @@ export function createDiagnosticsRuntime({
           name: "proof-topology",
           detail: issue
         });
+      // Land stops outright on a transaction it could not finish unwinding, so
+      // surfacing it here turns a surprise at Land into a known state earlier.
+      const unresolved = unresolvedApplyTransactions
+        ? unresolvedApplyTransactions(requestedChange) : [];
+      const divergent = unresolved.filter((journal) =>
+        ["rolling-back", "manual-recovery"].includes(journal.status));
+      checks.push({
+        level: divergent.length ? "error" : unresolved.length ? "warn" : "ok",
+        name: "apply-transactions",
+        detail: unresolved.length
+          ? `${unresolved.map((journal) => `${journal.transactionId}:${journal.status}`).join(", ")}${
+            divergent.length ? "; Land will stop until this is resolved" : "; recovers on the next apply"}`
+          : "no unresolved apply transaction"
+      });
       const policy = policyCapabilities(requestedChange);
       checks.push({
         level: "info",
@@ -357,9 +375,10 @@ Commands:
   agent-plan <change> [--group <n>] [--full] [--pretty]
   agent-task <change> <task> [--pretty]
   agent-acquire <change> <task> --owner <agent-id>
-  agent-release <change> <task> --owner <agent-id>
+  agent-release <change> <task> --owner <agent-id> [--force] [--decision-ref <ref>]
   new <intent> [--id <id>] [--rapid] [--draft <project-file.json>]
   resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
+  abandon <change> --reason <reason> --decision-ref <ref> [--applied keep|revert]
   changes
   providers
   packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]

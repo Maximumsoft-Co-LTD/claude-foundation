@@ -412,7 +412,7 @@ jq '.providers["peer-review"] = {"capability":"review","adapter":"external","cla
 cp "$TMP/renamed-review-provider.json" \
   openspec/changes/irreversible-payment-migration/execution.yaml
 assert_cmd_fails_with "provider rename cannot reset the AI review cap" \
-  "AI review is limited to two rounds" \
+  "review-attempts-exhausted" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration peer-review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
     --reviewer-provider-family anthropic --reviewer-model-family claude \
@@ -428,7 +428,7 @@ attempt_dir=.foundation/evidence/irreversible-payment-migration/review-attempts
 attempt_file="$(ls "$attempt_dir" | sort | tail -1)"
 mv "$attempt_dir/$attempt_file" "$TMP/$attempt_file"
 assert_cmd_fails_with "missing monotonic history fails closed" \
-  "review attempt history is missing or corrupt" \
+  "review-history-corrupt" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type human --reviewer-identity security-owner \
     --subject-actor implementer-ai --unresolved-blockers 0 \
@@ -439,7 +439,7 @@ cp "$attempt_dir/$attempt_file" "$TMP/intact-$attempt_file"
 jq '.status = "tampered"' "$TMP/intact-$attempt_file" \
   > "$attempt_dir/$attempt_file"
 assert_cmd_fails_with "tampered monotonic history fails closed" \
-  "review attempt history is missing or corrupt" \
+  "review-history-corrupt" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type human --reviewer-identity security-owner \
     --subject-actor implementer-ai --unresolved-blockers 0 \
@@ -449,7 +449,7 @@ cp "$TMP/intact-$attempt_file" "$attempt_dir/$attempt_file"
 cp .foundation/receipts/irreversible-payment-migration/review.json "$TMP/round-two-review.json"
 rm .foundation/receipts/irreversible-payment-migration/review.json
 assert_cmd_fails_with "receipt deletion cannot reset the AI review cap" \
-  "AI review is limited to two rounds" \
+  "review-attempts-exhausted" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
     --reviewer-provider-family anthropic --reviewer-model-family claude \
@@ -458,6 +458,27 @@ assert_cmd_fails_with "receipt deletion cannot reset the AI review cap" \
     --subject-provider-family openai --subject-model-family gpt-5 \
     --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
     --observed 'Third AI pass' --reference fixture://diverse-review-three
+
+# The cap is a ceiling, not a wall: the stop has to carry the exits with it, or
+# a user reads a bare refusal as "this change can never finish".
+exhausted_output="$({ node .claude/harness/foundation.mjs receipt \
+  irreversible-payment-migration review pass \
+    --reviewer-type ai --reviewer-identity reviewer-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session review-session-four \
+    --subject-actor implementer-ai --subject-session implementation-session \
+    --subject-provider-family openai --subject-model-family gpt-5 \
+    --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
+    --observed 'Fourth AI pass' --reference fixture://diverse-review-four; } 2>&1 || true)"
+assert_contains "exhausted AI review offers a human reviewer" \
+  "$exhausted_output" '"id": "human-review"'
+assert_contains "exhausted AI review offers retiring the change" \
+  "$exhausted_output" '"id": "abandon"'
+assert_contains "exhausted AI review preserves pause" \
+  "$exhausted_output" '"id": "pause"'
+assert_contains "exhausted AI review recommends the human path" \
+  "$exhausted_output" '"recommended": "human-review"'
+
 cp "$TMP/round-two-review.json" \
   .foundation/receipts/irreversible-payment-migration/review.json
 

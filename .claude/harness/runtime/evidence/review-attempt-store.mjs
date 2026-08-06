@@ -11,6 +11,7 @@ export function createReviewAttemptStore({
   stableHash,
   reviewReceiptBinding,
   now,
+  blockWithDecision,
   fail
 }) {
   function reviewHistoryState(id, state = loadRuntime(id)) {
@@ -82,9 +83,50 @@ export function createReviewAttemptStore({
     const state = loadRuntime(id);
     const history = reviewHistoryState(id, state);
     if (history.chainHead && !reviewHistoryChainValid(id, history))
-      fail("review attempt history is missing or corrupt; restore the evidence chain before recording another review");
+      // Failing closed is correct — a broken chain cannot prove how many rounds
+      // already happened — but "restore the chain" is not something a user can
+      // act on without knowing that retiring the change is also allowed.
+      blockWithDecision(id, "review-history-corrupt", {
+        kind: "review-history-corrupt",
+        summary: "The recorded review history no longer matches its own hash chain, so Foundation cannot tell how many review rounds this change already had.",
+        options: [
+          {
+            id: "restore",
+            outcome: "Restore the recorded review attempts from backup and record the review again."
+          },
+          {
+            id: "abandon",
+            outcome: "Retire this change and start a fresh one carrying the same intent."
+          },
+          { id: "pause", outcome: "Record nothing and leave the change as it stands." }
+        ],
+        recommended: "restore",
+        attemptsRecorded: Number(history.totalAttempts || 0)
+      });
     if (reviewerType === "ai" && Number(history.aiAttempts || 0) >= 2)
-      fail("AI review is limited to two rounds (attempts); further review requires a human");
+      // Two AI rounds is a real ceiling, not a transient error. Naming the exits
+      // keeps it from reading as "this change can never finish".
+      blockWithDecision(id, "review-attempts-exhausted", {
+        kind: "review-attempts-exhausted",
+        summary: "Two rounds of AI review have already run on this change, so the next review has to come from a person.",
+        options: [
+          {
+            id: "human-review",
+            outcome: "Ask a named person to review the change and record their result."
+          },
+          {
+            id: "resume-build",
+            outcome: "Return to Build, resolve the blockers the earlier rounds raised, and re-prove."
+          },
+          {
+            id: "abandon",
+            outcome: "Retire this change instead of carrying it through another review."
+          },
+          { id: "pause", outcome: "Record nothing and leave the change as it stands." }
+        ],
+        recommended: "human-review",
+        aiAttempts: Number(history.aiAttempts || 0)
+      });
     const attempt = {
       version: 1, changeId: id,
       attempt: Number(history.totalAttempts || 0) + 1,

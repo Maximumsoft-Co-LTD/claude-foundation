@@ -39,6 +39,7 @@ export function createApplyRuntime({
   proofAudit,
   cleanupChangeLeases,
   now,
+  blockWithDecision,
   fail
 }) {
   function applyPathspec(id, state) {
@@ -199,6 +200,32 @@ export function createApplyRuntime({
       const path = transactionJournalPath(id, entry.name);
       if (!existsSync(path)) continue;
       const journal = readJson(path);
+      // A journal that stopped mid-rollback describes a working tree Foundation
+      // could not put back. Skipping it let the next apply open a fresh
+      // transaction over that divergence and report success, so the stop is
+      // explicit — and it carries the options the rollback already recorded.
+      if (["rolling-back", "manual-recovery"].includes(journal.status))
+        blockWithDecision(id, "apply-manual-recovery", journal.decision || {
+          kind: "manual-recovery",
+          summary: "An earlier apply stopped partway through rolling back and left the working tree in a state Foundation did not finish resolving.",
+          options: [
+            {
+              id: "inspect",
+              outcome: "Inspect the working tree against the recorded transaction backup before choosing a recovery."
+            },
+            {
+              id: "keep-current",
+              outcome: "Preserve the current files and abandon automatic rollback."
+            },
+            {
+              id: "restore-backup",
+              outcome: "Restore the recorded backup after explicitly resolving the divergence."
+            },
+            { id: "pause", outcome: "Leave the journal pending and make no further changes." }
+          ],
+          recommended: "inspect",
+          transactionRoot: join(transactionRoot, entry.name)
+        });
       if (!["prepared", "applying"].includes(journal.status)) continue;
       if (state.workspace?.applied &&
           state.workspace.apply?.transactionId === journal.transactionId) {

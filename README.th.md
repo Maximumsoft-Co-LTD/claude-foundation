@@ -587,7 +587,14 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
+claude-foundation change abandon <change-id> --reason "evidence contract ทำให้ผ่านไม่ได้" --decision-ref <host-user-decision>
 ```
+
+change ที่พิสูจน์ไม่ได้เลิกด้วย `change abandon` ซึ่งปลด lease ล้าง sandbox และย้าย
+record ไปไว้ที่ `.foundation/recovery/abandoned/<id>/` พร้อม audit line โดย
+quarantine ไม่ได้ลบ และไม่แตะ Git ส่วน guard ที่หยุดงาน เช่น AI review ครบสองรอบ
+budget continuation ที่ใช้ไปแล้ว หรือ apply ที่ rollback ไม่จบ จะรายงานทางเลือกที่มี
+แทนการปฏิเสธเปล่า ๆ
 
 Host import telemetry แบบ `generic`, `codex`, `cursor`, `otel` หรือ `claude`
 จาก JSON/JSONL ได้ โดย OpenTelemetry GenAI/LLM token และ model attributes จะถูก

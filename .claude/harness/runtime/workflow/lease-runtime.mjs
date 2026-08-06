@@ -85,17 +85,28 @@ export function createLeaseRuntime({
       return;
     }
     const taskLease = readJson(index);
-    if (taskLease.owner !== owner)
-      fail(`lease owner mismatch for '${id}/${taskId.toUpperCase()}'`);
+    const force = Boolean(flags.force);
+    const expired = Date.parse(taskLease.expiresAt || "") <= Date.now();
+    // A crashed worker leaves a lease nobody can release, and readiness then
+    // tells the user to release it. Takeover is allowed, but a lease that has
+    // not expired may still have a live process behind it, so that case costs
+    // an explicit decision.
+    if (taskLease.owner !== owner) {
+      if (!force)
+        fail(`lease owner mismatch for '${id}/${taskLease.taskId}'; it belongs to '${taskLease.owner}' and expires ${taskLease.expiresAt}. Re-run with --force to take it over.`);
+      if (!expired && !String(flags["decision-ref"] || "").trim())
+        fail(`lease '${id}/${taskLease.taskId}' has not expired (expires ${taskLease.expiresAt}); forcing it requires --decision-ref <host-user-decision> because another worker may still be running it`);
+    }
     for (const resource of taskLease.resources || []) {
       const path = leasePath(resource);
       if (!existsSync(path)) continue;
       const current = readJson(path, {});
       if (current.changeId === id && current.taskId === taskLease.taskId &&
-          current.owner === owner) rmSync(path);
+          (current.owner === owner || force)) rmSync(path);
     }
     rmSync(index);
-    console.log(`LEASE RELEASED ${id}/${taskLease.taskId}`);
+    console.log(`LEASE RELEASED ${id}/${taskLease.taskId}${
+      taskLease.owner === owner ? "" : `\n  taken over from: ${taskLease.owner}`}`);
   }
 
   function active(id) {

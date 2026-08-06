@@ -34,9 +34,22 @@ assert_cmd_zero "command registry has unique public names" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$COMMANDS"
 assert_cmd_zero "authority continuations name their decision reference" \
-  jq -e '[.commands[] | select(.name == "budget continue" or .name == "land record") |
+  jq -e '[.commands[] | select(.name == "budget continue" or .name == "land record" or
+    .name == "change abandon") |
     (.kind == "authority" and (.usage | contains("--decision-ref")))] | all' \
   "$COMMANDS"
+assert_cmd_zero "retiring a change is registered as a runtime command" \
+  jq -e '.runtimeCommands | index("abandon") != null' "$COMMANDS"
+assert_file_contains "the workflow documents retiring an unprovable change" \
+  "$WF" "change abandon <change> --reason <reason> --decision-ref <ref>"
+assert_file_contains "the workflow documents where a retired change goes" \
+  "$WF" ".foundation/recovery/abandoned/"
+assert_file_contains "the workflow documents that stops carry their exits" \
+  "$WF" "## Terminal stops"
+assert_file_contains "change offers retiring rather than deciding it" \
+  "$ROOT/.claude/commands/change.md" "never retire one unasked"
+assert_file_contains "the orchestrator treats a blocked stop as a user decision" \
+  "$ORCH" "including one a blocked operation"
 
 runtime_api="$(jq -r '.runtimeApi' "$ROOT/.claude/harness/protocol.json")"
 cli_api="$(sed -n 's/^EXPECTED_RUNTIME_API=//p' "$ROOT/cli.sh")"
