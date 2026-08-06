@@ -1,3 +1,4 @@
+use crate::executor_approval::ApprovedExecutor;
 use changeloop_sandbox::{Policy as SandboxPolicy, SandboxedChild, Spawn, StdioPlan, exceptions};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -15,28 +16,76 @@ pub struct LifecycleProcessOutput {
     pub truncated: bool,
 }
 
-/// Runs a configured proof, repair, or independent-review process with the
-/// same ownership, timeout, and evidence-retention limits on every surface.
-pub fn run_lifecycle_process(
-    root: &Path,
-    command: &str,
-    args: &[String],
-    environment: &[(&str, &str)],
+/// Runs an approved proof, repair, or independent-review process with the same
+/// ownership, timeout, and evidence-retention limits on every surface.
+///
+/// The program, arguments, environment, and caps come from the
+/// [`ApprovedExecutor`] rather than from this call, so a caller cannot approve
+/// one command line and run another. `working_directory` is the only runtime
+/// input: the reviewer runs in a caller-owned clean directory while proof
+/// providers run at the project root, and the approval binds the *project*, not
+/// the transient cwd.
+pub fn run_approved_lifecycle_process(
+    approved: &ApprovedExecutor,
+    working_directory: &Path,
     stdin: Option<Vec<u8>>,
-    timeout_ms: u64,
 ) -> Result<LifecycleProcessOutput, String> {
-    run_lifecycle_process_cancellable(root, command, args, environment, stdin, timeout_ms, &|| {
-        false
-    })
+    run_approved_lifecycle_process_cancellable(approved, working_directory, stdin, &[], &|| false)
 }
 
-pub fn run_lifecycle_process_cancellable(
+/// `harness_environment` carries values this binary derives per run — a failed
+/// provider id, a failure cause. Its *names* must be exactly the ones the
+/// approval recorded, so a caller cannot slip an unapproved variable into an
+/// approved process.
+pub fn run_approved_lifecycle_process_cancellable(
+    approved: &ApprovedExecutor,
+    working_directory: &Path,
+    stdin: Option<Vec<u8>>,
+    harness_environment: &[(&str, &str)],
+    cancelled: &dyn Fn() -> bool,
+) -> Result<LifecycleProcessOutput, String> {
+    let supplied = harness_environment
+        .iter()
+        .map(|(name, _)| (*name).to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let approved_names = approved
+        .harness_environment_names()
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    if supplied != approved_names {
+        return Err(format!(
+            "harness environment for '{}' does not match its approval",
+            approved.label()
+        ));
+    }
+    let mut environment = approved
+        .environment()
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect::<Vec<_>>();
+    environment.extend_from_slice(harness_environment);
+    run_raw(
+        working_directory,
+        &approved.program().display().to_string(),
+        approved.args(),
+        &environment,
+        stdin,
+        approved.timeout_ms(),
+        approved.max_output_bytes(),
+        cancelled,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_raw(
     root: &Path,
     command: &str,
     args: &[String],
     environment: &[(&str, &str)],
     stdin: Option<Vec<u8>>,
     timeout_ms: u64,
+    max_output_bytes: usize,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<LifecycleProcessOutput, String> {
     let mut variables = BTreeMap::new();
@@ -82,8 +131,9 @@ pub fn run_lifecycle_process_cancellable(
             return Err("executor stderr is unavailable".into());
         }
     };
-    let stdout_reader = std::thread::spawn(move || read_capped(stdout));
-    let stderr_reader = std::thread::spawn(move || read_capped(stderr));
+    let cap = max_output_bytes.min(MAX_LIFECYCLE_OUTPUT_BYTES);
+    let stdout_reader = std::thread::spawn(move || read_capped(stdout, cap));
+    let stderr_reader = std::thread::spawn(move || read_capped(stderr, cap));
     let stdin_writer = if let Some(input) = stdin {
         let Some(mut pipe) = child.take_stdin() else {
             child.terminate();
@@ -194,7 +244,7 @@ fn end_lifecycle_child(child: &mut SandboxedChild) {
     child.terminate();
 }
 
-fn read_capped(mut reader: impl Read) -> Result<(Vec<u8>, bool), String> {
+fn read_capped(mut reader: impl Read, cap: usize) -> Result<(Vec<u8>, bool), String> {
     let mut retained = Vec::new();
     let mut buffer = [0_u8; 16 * 1024];
     let mut truncated = false;
@@ -205,9 +255,7 @@ fn read_capped(mut reader: impl Read) -> Result<(Vec<u8>, bool), String> {
         if count == 0 {
             break;
         }
-        let keep = MAX_LIFECYCLE_OUTPUT_BYTES
-            .saturating_sub(retained.len())
-            .min(count);
+        let keep = cap.saturating_sub(retained.len()).min(count);
         retained.extend_from_slice(&buffer[..keep]);
         truncated |= keep < count;
     }
@@ -217,6 +265,18 @@ fn read_capped(mut reader: impl Read) -> Result<(Vec<u8>, bool), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::executor_approval::CompiledInExecutor;
+
+    #[cfg(unix)]
+    fn shell(args: &[&str], timeout_ms: u64) -> ApprovedExecutor {
+        ApprovedExecutor::compiled_in(
+            CompiledInExecutor::GIT_WORKSPACE_QUERY,
+            "/bin/sh",
+            args.iter().map(|argument| (*argument).to_owned()).collect(),
+            timeout_ms,
+            MAX_LIFECYCLE_OUTPUT_BYTES,
+        )
+    }
 
     /// Declining isolation is a decision the register records, not an accident.
     /// The row has to exist, has to grant exactly the unenforced spawn, and has
@@ -236,13 +296,10 @@ mod tests {
     #[test]
     fn a_lifecycle_executor_runs_bounded_and_leaves_no_defunct_child() {
         let root = tempfile::tempdir().unwrap();
-        let output = run_lifecycle_process(
+        let output = run_approved_lifecycle_process(
+            &shell(&["-c", "printf '%s' \"$$\""], 30_000),
             root.path(),
-            "/bin/sh",
-            &["-c".into(), "printf '%s' \"$$\"".into()],
-            &[],
             None,
-            30_000,
         )
         .expect("the executor runs");
         assert!(output.status.success());
@@ -266,21 +323,13 @@ mod tests {
     fn a_lifecycle_executor_that_outlives_its_budget_takes_its_descendants_with_it() {
         let root = tempfile::tempdir().unwrap();
         let pid_path = root.path().join("descendant.pid");
-        let error = run_lifecycle_process(
-            root.path(),
-            "/bin/sh",
-            &[
-                "-c".into(),
-                format!(
-                    "sh -c 'printf \"%s\" \"$$\" > \"{}\"; while :; do sleep 1; done' & wait",
-                    pid_path.display()
-                ),
-            ],
-            &[],
-            None,
-            300,
-        )
-        .expect_err("the executor exceeds its budget");
+        let script = format!(
+            "sh -c 'printf \"%s\" \"$$\" > \"{}\"; while :; do sleep 1; done' & wait",
+            pid_path.display()
+        );
+        let error =
+            run_approved_lifecycle_process(&shell(&["-c", &script], 300), root.path(), None)
+                .expect_err("the executor exceeds its budget");
         assert!(error.contains("time budget"), "{error}");
 
         if !pid_path.is_file() {

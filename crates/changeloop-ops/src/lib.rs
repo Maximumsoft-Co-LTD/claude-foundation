@@ -18,6 +18,12 @@ pub use release::*;
 mod lifecycle_service;
 pub use lifecycle_service::*;
 
+pub mod executor_approval;
+pub use executor_approval::{
+    ApprovalError, ApprovalProvenance, ApprovalRecord, ApprovalStore, ApprovedExecutor,
+    CompiledInExecutor, ExecutorKind, ExecutorRequest, ResolvedExecutor,
+};
+
 const MAX_OPS_JSON_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_MIGRATION_TREE_ENTRIES: usize = 100_000;
 const MAX_MIGRATION_TREE_DEPTH: usize = 128;

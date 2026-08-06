@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "scripts/evidence/cargo-test-report.mjs"],
+      "report": "target/evidence/cargo-test.json",
+      "minimum": 1000,
+      "timeoutMs": 1800000
+    }
+  },
+  "services": {}
+}

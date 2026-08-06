@@ -49,6 +49,14 @@ json_field() {
   python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$field"
 }
 
+# The provider and reviewer above are repository content, so nothing spawns them
+# until the operator approves exactly these bytes. Without --yes the grant only
+# reports what it would record and exits with the approval-required code.
+run 3 approve-preview approve grant >/dev/null
+run 0 approve-grant approve grant --reviewer-family fixture-reviewer --yes >/dev/null
+run 0 approve-list approve list \
+  | python3 -c 'import json,sys; a=json.load(sys.stdin)["approvals"]; assert len(a) == 2, a; assert {x["kind"] for x in a} == {"proof-provider","reviewer"}, a'
+
 conversation=$(run 0 conversation ask "explain the current code")
 printf '%s' "$conversation" | python3 -c 'import json,sys; assert json.load(sys.stdin)["sessionKind"] == "conversation"'
 test ! -e "$repo/fixture-change.txt"

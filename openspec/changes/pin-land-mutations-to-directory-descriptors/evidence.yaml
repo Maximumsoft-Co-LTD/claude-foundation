@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "a-re-pointed-parent-name-does-not-redirect-the-write",
+      "scenario": "a re-pointed parent name does not redirect the write",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "rollback-restores-through-the-same-descriptor",
+      "scenario": "rollback restores through the same descriptor",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-symlinked-parent-component-is-rejected",
+      "scenario": "a symlinked parent component is rejected",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-symlinked-leaf-is-neither-read-nor-replaced",
+      "scenario": "a symlinked leaf is neither read nor replaced",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "an-absent-leaf-reports-missing",
+      "scenario": "an absent leaf reports missing",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

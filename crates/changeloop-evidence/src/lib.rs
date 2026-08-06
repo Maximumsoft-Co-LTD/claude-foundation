@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod authenticated_record;
 pub mod coverage;
 pub mod divergence;
 pub mod oracle;

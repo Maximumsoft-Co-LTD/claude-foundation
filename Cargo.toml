@@ -56,6 +56,7 @@ keyring = { version = "3.6", default-features = false }
 semver = "1.0"
 rpassword = "7.4"
 zeroize = "1.8"
+getrandom = "0.3"
 crossterm = "0.29"
 ratatui = "0.30.2"
 signal-hook = "0.3"

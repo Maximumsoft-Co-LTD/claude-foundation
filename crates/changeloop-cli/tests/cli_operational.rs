@@ -11,7 +11,15 @@ use tempfile::tempdir;
 fn command(root: &std::path::Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_cloop"));
     command.current_dir(root);
-    command.env("CHANGELOOP_CONFIG_HOME", root.join("isolated-config"));
+    // Record-auth keys and executor approvals are trust roots: they refuse a
+    // path inside the project. Keep the isolated config as a sibling.
+    let config_home = root.parent().expect("temp project has a parent").join(format!(
+        "{}-cloop-config",
+        root.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("project")
+    ));
+    command.env("CHANGELOOP_CONFIG_HOME", config_home);
     command.env("XDG_DATA_HOME", root.join("isolated-data"));
     command.env_remove("ANTHROPIC_API_KEY");
     command.env_remove("OPENAI_API_KEY");

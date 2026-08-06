@@ -16,7 +16,9 @@ use std::{
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
+mod pinned;
 pub mod prove_evidence;
+use pinned::PinnedEntry;
 
 pub use prove_evidence::{ProveEvidenceBriefing, ProveEvidenceGap, read_prove_evidence};
 
@@ -344,32 +346,33 @@ fn apply_entries(
     now: u64,
     control: ApplyControl,
 ) -> Result<(), LandError> {
-    let transaction_root = journal_path
-        .parent()
-        .ok_or_else(|| LandError::UnsafePath(journal_path.into()))?;
     for (index, entry) in journal.plan.entries.clone().into_iter().enumerate() {
-        let destination = scoped_path(target, &entry.path)?;
-        if identity(&destination)? != entry.before {
+        // The parent directory is opened once, here, and every check and
+        // mutation below goes through that descriptor. Re-resolving the name
+        // between the check and the write is exactly the window this closes.
+        let destination =
+            PinnedEntry::resolve(target, &entry.path, entry.after != PathIdentity::Missing)?;
+        if destination.identity()? != entry.before {
             return Err(LandError::TargetConflict(entry.path));
         }
         journal.in_flight_paths = vec![entry.path.clone()];
         save_at(journal_path, journal, now)?;
         if entry.after == PathIdentity::Missing {
-            remove_regular_if_exists(&destination)?;
+            destination.remove_regular_if_exists()?;
         } else {
-            let stage = transaction_root.join("stage").join(index.to_string());
-            remove_regular_if_exists(&stage)?;
-            copy_regular(
-                &scoped_path(&journal.plan.sandbox_path, &entry.path)?,
-                &stage,
-            )?;
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            remove_regular_if_exists(&destination)?;
-            fs::rename(stage, &destination)?;
+            let source_path = scoped_path(&journal.plan.sandbox_path, &entry.path)?;
+            let mut source = open_regular_nofollow(&source_path)?;
+            validate_regular_single_link(&source.metadata()?, &source_path)?;
+            let executable = matches!(
+                entry.after,
+                PathIdentity::File {
+                    executable: true,
+                    ..
+                }
+            );
+            destination.replace_with(&mut source, executable, &index.to_string())?;
         }
-        if identity(&destination)? != entry.after {
+        if destination.identity()? != entry.after {
             return Err(LandError::ProjectionMismatch(entry.path));
         }
         journal.applied_paths.push(entry.path.clone());
@@ -422,14 +425,16 @@ fn rollback(
     let transaction_root = journal_path
         .parent()
         .ok_or_else(|| LandError::UnsafePath(journal_path.into()))?;
-    for entry in journal.plan.entries.clone().into_iter().rev() {
+    for (index, entry) in journal.plan.entries.clone().into_iter().enumerate().rev() {
         if !journal.applied_paths.contains(&entry.path)
             && !journal.in_flight_paths.contains(&entry.path)
         {
             continue;
         }
-        let destination = scoped_path(target, &entry.path)?;
-        let current = identity(&destination)?;
+        // Rollback restores through the same pinned descriptor, so an attacker
+        // cannot redirect the restore either.
+        let destination = PinnedEntry::resolve(target, &entry.path, entry.backup.is_some())?;
+        let current = destination.identity()?;
         if current == entry.before {
             continue;
         }
@@ -439,11 +444,22 @@ fn rollback(
             save_at(journal_path, journal, now)?;
             return Err(LandError::ManualRecovery(entry.path));
         }
-        remove_regular_if_exists(&destination)?;
         if let Some(backup) = entry.backup {
-            copy_regular(&transaction_root.join(backup), &destination)?;
+            let backup_path = transaction_root.join(backup);
+            let mut source = open_regular_nofollow(&backup_path)?;
+            validate_regular_single_link(&source.metadata()?, &backup_path)?;
+            let executable = matches!(
+                entry.before,
+                PathIdentity::File {
+                    executable: true,
+                    ..
+                }
+            );
+            destination.replace_with(&mut source, executable, &format!("rollback-{index}"))?;
+        } else {
+            destination.remove_regular_if_exists()?;
         }
-        if identity(&destination)? != entry.before {
+        if destination.identity()? != entry.before {
             return Err(LandError::RollbackVerification(entry.path));
         }
     }
@@ -636,6 +652,7 @@ fn validate_identifier(value: &str) -> Result<(), LandError> {
         Err(LandError::UnsafeIdentifier(value.into()))
     }
 }
+#[cfg_attr(unix, allow(dead_code))]
 fn remove_regular_if_exists(path: &Path) -> Result<(), LandError> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => Ok(fs::remove_file(path)?),
@@ -893,6 +910,89 @@ mod tests {
     use super::*;
     use changeloop_harness::{ReviewAttempt, ReviewContext};
     use tempfile::tempdir;
+
+    /// The point of holding the descriptor is that the write goes to the
+    /// directory Land checked, even after the *name* of that directory has been
+    /// re-pointed somewhere else. No race is needed to show it: pin first, swap
+    /// the name, then write.
+    #[cfg(unix)]
+    #[test]
+    fn a_pinned_entry_writes_through_the_directory_it_opened_not_the_name_it_came_from() {
+        let root = tempdir().unwrap();
+        let elsewhere = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("nested")).unwrap();
+        fs::write(root.path().join("nested/file.txt"), b"before").unwrap();
+
+        let pinned =
+            PinnedEntry::resolve(root.path(), Path::new("nested/file.txt"), false).unwrap();
+        assert!(matches!(
+            pinned.identity().unwrap(),
+            PathIdentity::File { .. }
+        ));
+
+        fs::rename(root.path().join("nested"), root.path().join("detached")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), root.path().join("nested")).unwrap();
+
+        let staged = root.path().join("staged");
+        fs::write(&staged, b"after").unwrap();
+        let mut source = File::open(&staged).unwrap();
+        pinned.replace_with(&mut source, false, "swap").unwrap();
+
+        assert_eq!(
+            fs::read(root.path().join("detached/file.txt")).unwrap(),
+            b"after",
+            "the write did not land in the directory that was checked"
+        );
+        assert!(
+            !elsewhere.path().join("file.txt").exists(),
+            "the write followed the swapped name instead of the pinned descriptor"
+        );
+    }
+
+    /// Resolution refuses a symlinked component rather than traversing it, so a
+    /// symlink planted before Land starts is not a way in either.
+    #[cfg(unix)]
+    #[test]
+    fn a_pinned_entry_refuses_a_symlinked_parent_component() {
+        let root = tempdir().unwrap();
+        let elsewhere = tempdir().unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), root.path().join("nested")).unwrap();
+        let error = PinnedEntry::resolve(root.path(), Path::new("nested/file.txt"), false)
+            .expect_err("a symlinked component is refused");
+        assert!(matches!(error, LandError::UnsupportedPath(_)), "{error:?}");
+    }
+
+    /// A symlink *at the leaf* is not an identity Land will act on, so it can
+    /// neither be read through nor silently replaced.
+    #[cfg(unix)]
+    #[test]
+    fn a_pinned_entry_refuses_a_symlinked_leaf() {
+        let root = tempdir().unwrap();
+        let outside = root.path().join("outside.txt");
+        fs::write(&outside, b"outside").unwrap();
+        std::os::unix::fs::symlink(&outside, root.path().join("file.txt")).unwrap();
+        let pinned = PinnedEntry::resolve(root.path(), Path::new("file.txt"), false).unwrap();
+        assert!(matches!(
+            pinned.identity(),
+            Err(LandError::UnsupportedPath(_))
+        ));
+        assert!(matches!(
+            pinned.remove_regular_if_exists(),
+            Err(LandError::UnsupportedPath(_))
+        ));
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+    }
+
+    /// An absent leaf is `Missing`, and removing it is success — the same
+    /// contract the path-based helpers had.
+    #[cfg(unix)]
+    #[test]
+    fn a_pinned_entry_reports_an_absent_leaf_as_missing() {
+        let root = tempdir().unwrap();
+        let pinned = PinnedEntry::resolve(root.path(), Path::new("absent.txt"), false).unwrap();
+        assert_eq!(pinned.identity().unwrap(), PathIdentity::Missing);
+        pinned.remove_regular_if_exists().unwrap();
+    }
 
     fn authority(explicit: bool, expires: u64) -> ExternalLandAuthority {
         ExternalLandAuthority {

@@ -2,9 +2,15 @@ use serde::Deserialize;
 use std::{fs, process::Command};
 
 fn cloop(root: &std::path::Path, args: &[&str]) -> std::process::Output {
+    let config_home = root.parent().expect("temp project has a parent").join(format!(
+        "{}-cloop-config",
+        root.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("project")
+    ));
     Command::new(env!("CARGO_BIN_EXE_cloop"))
         .current_dir(root)
-        .env("CHANGELOOP_CONFIG_HOME", root.join("isolated-config"))
+        .env("CHANGELOOP_CONFIG_HOME", config_home)
         .env("XDG_DATA_HOME", root.join("isolated-data"))
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("OPENAI_API_KEY")

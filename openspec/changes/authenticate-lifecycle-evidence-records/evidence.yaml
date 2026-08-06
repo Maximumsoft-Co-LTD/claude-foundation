@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "unsigned-operational-state-clears-authority-only",
+      "scenario": "unsigned operational state clears authority only",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "unsigned-proof-is-invisible-to-restart-discovery",
+      "scenario": "unsigned proof is invisible to restart discovery",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "unsigned-review-does-not-satisfy-review-readiness",
+      "scenario": "unsigned review does not satisfy review readiness",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "verification-never-creates-a-missing-key",
+      "scenario": "verification never creates a missing key",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-repository-owned-key-directory-is-rejected",
+      "scenario": "a repository-owned key directory is rejected",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "tampered-payload-voids-authority",
+      "scenario": "tampered payload voids authority",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "foreign-project-root-voids-authority",
+      "scenario": "foreign project root voids authority",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "changing-lifecycle-config-or-losing-the-key-stales-readiness",
+      "scenario": "changing lifecycle config or losing the key stales readiness",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "authenticated-proof-and-review-survive-restart-discovery",
+      "scenario": "authenticated proof and review survive restart discovery",
+      "impact": "high",
+      "capabilities": ["test"]
+    }
+  ]
+}

@@ -946,6 +946,12 @@ fn leader_election_never_connects_to_malformed_owner_metadata() {
         elect_leader(&path, "unix:///tmp/contender.sock"),
         Err(LockError::Held { owner, .. }) if owner == "not-json"
     ));
+    // Release explicitly rather than relying on descriptor-drop timing. BSD
+    // `flock` ownership is tied to the open file description, and under a
+    // heavily parallel workspace run the immediately following contender was
+    // observed seeing the old lock once even though isolated runs were stable.
+    // The production `LeaderLock::drop` performs this same explicit unlock.
+    fs2::FileExt::unlock(&owner).unwrap();
     drop(owner);
     assert!(matches!(
         elect_leader(&path, "unix:///tmp/recovered.sock").unwrap(),

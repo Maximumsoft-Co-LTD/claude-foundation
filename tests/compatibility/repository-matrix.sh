@@ -78,7 +78,12 @@ seed_change() {
 prove_review() {
   directory=$1
   seed_change "$directory"
-  (cd "$directory" && "$cloop" prove compat >/dev/null && "$cloop" review compat >/dev/null)
+  # The reviewer above is repository content and does not run until the
+  # operator approves exactly these bytes under a declared model family.
+  (cd "$directory" \
+    && "$cloop" approve grant --reviewer-family compatibility-fixture --yes >/dev/null \
+    && "$cloop" prove compat >/dev/null \
+    && "$cloop" review compat >/dev/null)
 }
 
 clean="$scratch/clean"

@@ -12,6 +12,7 @@ base64.workspace = true
 async-trait.workspace = true
 changeloop-agent = { version = "0.1.0", path = "../changeloop-agent" }
 changeloop-config = { version = "0.1.0", path = "../changeloop-config" }
+changeloop-evidence = { version = "0.1.0", path = "../changeloop-evidence" }
 changeloop-mcp = { version = "0.1.0", path = "../changeloop-mcp" }
 changeloop-ops = { version = "0.1.0", path = "../changeloop-ops" }
 changeloop-language = { version = "0.1.0", path = "../changeloop-language" }

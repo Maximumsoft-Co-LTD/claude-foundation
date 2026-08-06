@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "unapproved-proof-provider-refuses-to-run",
+      "scenario": "unapproved proof provider refuses to run",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "unapproved-reviewer-refuses-to-run",
+      "scenario": "unapproved reviewer refuses to run",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "approved-executable-runs",
+      "scenario": "approved executable runs",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "compiled-in-default-provider-needs-no-approval",
+      "scenario": "compiled-in default provider needs no approval",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "swapped-executable-voids-the-approval",
+      "scenario": "swapped executable voids the approval",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "edited-configuration-voids-the-approval",
+      "scenario": "edited configuration voids the approval",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "an-approval-does-not-transfer-to-another-project",
+      "scenario": "an approval does not transfer to another project",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "grant-re-derives-rather-than-accepting-a-digest",
+      "scenario": "grant re-derives rather than accepting a digest",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "repository-content-cannot-record-an-approval",
+      "scenario": "repository content cannot record an approval",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "reviewer-reporting-a-different-family-is-rejected",
+      "scenario": "reviewer reporting a different family is rejected",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "independence-gate-reads-the-approved-family",
+      "scenario": "independence gate reads the approved family",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "the-raw-runner-is-unreachable",
+      "scenario": "the raw runner is unreachable",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "refusal-and-grant-flow-are-usable",
+      "scenario": "An operator upgrading an existing project reads the refusal, understands which program is being asked about, and completes the grant without consulting the source",
+      "impact": "high",
+      "capabilities": ["acceptance"]
+    }
+  ]
+}

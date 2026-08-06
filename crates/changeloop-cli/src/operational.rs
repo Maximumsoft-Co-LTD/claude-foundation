@@ -35,6 +35,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::Url;
 
+/// Variables the harness sets on a repair command. Their names are part of the
+/// approval; their values are derived per failure by this binary.
+const REPAIR_HARNESS_ENVIRONMENT: [&str; 2] =
+    ["CHANGELOOP_FAILED_PROVIDER", "CHANGELOOP_FAILURE_CAUSE"];
+
 const MAX_OPERATIONAL_STATE_BYTES: u64 = 16 * 1024 * 1024;
 pub(crate) const MAX_OPERATIONAL_CONFIG_BYTES: u64 = 1024 * 1024;
 const MAX_OPERATIONAL_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024;
@@ -499,7 +504,47 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
             "provenance":"trusted-policy",
             "authority":{"lifecycle":false,"permissions":false,"land":false}}),
     );
-    let providers = proof_providers(root)?;
+    let (providers, providers_digest) = proof_providers(root)?;
+    // Authority for every repository-configured provider is resolved before any
+    // lifecycle state is touched, so an unapproved provider refuses without
+    // half-advancing the change.
+    let mut approved_providers = BTreeMap::new();
+    let mut approved_repairs = BTreeMap::new();
+    for provider in &providers {
+        if !provider.builtin_hardened_git {
+            approved_providers.insert(
+                provider.id.clone(),
+                authorize_configured_executor(&executor_request(
+                    root,
+                    changeloop_ops::ExecutorKind::ProofProvider,
+                    &provider.id,
+                    &provider.command,
+                    &provider.args,
+                    &[],
+                    provider.timeout_ms,
+                    &providers_digest,
+                ))?,
+            );
+        }
+        // A repair command runs unattended after a failure, so its authority is
+        // resolved up front too rather than at the moment the lifecycle is
+        // least able to refuse.
+        if let Some(command) = provider.repair_command.as_deref() {
+            approved_repairs.insert(
+                provider.id.clone(),
+                authorize_configured_executor(&executor_request(
+                    root,
+                    changeloop_ops::ExecutorKind::RepairCommand,
+                    &provider.id,
+                    command,
+                    &provider.repair_args,
+                    &REPAIR_HARNESS_ENVIRONMENT,
+                    provider.timeout_ms,
+                    &providers_digest,
+                ))?,
+            );
+        }
+    }
     // Oracle configuration is read before the providers run because it decides
     // which provider's output carries per-test outcomes. A bad configuration is
     // a diagnostic, never a Prove failure.
@@ -533,14 +578,13 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
         let execution = if provider.builtin_hardened_git {
             run_hardened_git(root, &provider.args, provider.timeout_ms)
         } else {
-            run_bounded_command(
-                root,
-                &provider.command,
-                &provider.args,
-                &[],
-                None,
-                provider.timeout_ms,
-            )
+            // Repository content chose this program. Authority for it was
+            // resolved before any provider ran, so a refusal cannot leave the
+            // lifecycle half-advanced.
+            let approved = approved_providers
+                .get(provider.id.as_str())
+                .ok_or_else(|| lifecycle("proof provider lost its approval"))?;
+            run_approved_command(approved, root, None, &[])
         };
         let output = match execution {
             Ok(output) => output,
@@ -571,8 +615,8 @@ fn prove_at(root: &Path, change: &str) -> Result<Value, CliFailure> {
                 observed_at_ms: now_ms(),
             };
             let effect = record_failure(record, failure.clone())?;
-            if provider.repair_command.is_some() {
-                apply_configured_repair(root, record, provider, &failure, effect)?;
+            if let Some(repair) = approved_repairs.get(provider.id.as_str()) {
+                apply_configured_repair(root, record, provider, repair, &failure, effect)?;
                 save_state(root, &state)?;
                 // Reload the durable lifecycle and rerun only receipts that the
                 // repair invalidated. Harness repair budget/doom-loop gates make
@@ -675,7 +719,7 @@ fn review_at(root: &Path, change: &str) -> Result<(), CliFailure> {
             "provenance":"trusted-policy",
             "authority":{"lifecycle":false,"permissions":false,"land":false}}),
     );
-    let reviewer_config = reviewer_config(root)?;
+    let approved_reviewer = approved_reviewer(root)?;
     let mut state = load_state(root)?;
     let record = change_mut(&mut state, change)?;
     ensure_not_landed(record)?;
@@ -727,7 +771,7 @@ fn review_at(root: &Path, change: &str) -> Result<(), CliFailure> {
         risk_triggers: harness.risk_triggers().clone(),
     };
     let mut reviewer = CommandReviewer {
-        config: reviewer_config,
+        approved: approved_reviewer,
         root: root.to_path_buf(),
     };
     harness
@@ -1301,11 +1345,18 @@ fn ensure_not_landed(change: &ChangeRecord) -> Result<(), CliFailure> {
     }
 }
 
-fn proof_providers(root: &Path) -> Result<Vec<ProofProviderConfig>, CliFailure> {
+/// Reads the configured proof providers together with the digest of the file
+/// that supplied them. The digest is part of every approval derived from this
+/// configuration, so editing the file voids the approvals it produced.
+fn proof_providers(root: &Path) -> Result<(Vec<ProofProviderConfig>, String), CliFailure> {
     let path = root.join(".changeloop/proof-providers.json");
+    let mut digest = changeloop_ops::executor_approval::absent_config_digest();
     let providers = match read_regular_bounded(&path, MAX_OPERATIONAL_CONFIG_BYTES) {
-        Ok(bytes) => serde_json::from_slice::<Vec<ProofProviderConfig>>(&bytes)
-            .map_err(|error| invalid(format!("invalid {}: {error}", path.display())))?,
+        Ok(bytes) => {
+            digest = changeloop_ops::executor_approval::config_digest(&bytes);
+            serde_json::from_slice::<Vec<ProofProviderConfig>>(&bytes)
+                .map_err(|error| invalid(format!("invalid {}: {error}", path.display())))?
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => vec![ProofProviderConfig {
             id: "git-diff-check".into(),
             command: "git".into(),
@@ -1335,7 +1386,37 @@ fn proof_providers(root: &Path) -> Result<Vec<ProofProviderConfig>, CliFailure> 
     if unique.len() != providers.len() {
         return Err(invalid("proof provider IDs must be unique"));
     }
-    Ok(providers)
+    Ok((providers, digest))
+}
+
+/// Builds the approval request for a configured proof provider, its repair
+/// command, or a reviewer. Every field here is inside the approval digest.
+#[allow(clippy::too_many_arguments)]
+fn executor_request(
+    root: &Path,
+    kind: changeloop_ops::ExecutorKind,
+    label: &str,
+    program: &str,
+    args: &[String],
+    harness_environment_names: &[&str],
+    timeout_ms: u64,
+    config_digest: &str,
+) -> changeloop_ops::ExecutorRequest {
+    changeloop_ops::ExecutorRequest {
+        root: root.to_path_buf(),
+        kind,
+        label: label.to_owned(),
+        program: program.to_owned(),
+        args: args.to_vec(),
+        environment: Vec::new(),
+        harness_environment_names: harness_environment_names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect(),
+        timeout_ms,
+        max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+        config_digest: config_digest.to_owned(),
+    }
 }
 
 fn proof_requirements(providers: &[ProofProviderConfig]) -> BTreeSet<ProofRequirement> {
@@ -1492,13 +1573,10 @@ fn apply_configured_repair(
     root: &Path,
     record: &mut ChangeRecord,
     provider: &ProofProviderConfig,
+    repair: &changeloop_ops::ApprovedExecutor,
     failure: &ProofFailure,
     mut effect: TransitionEffect,
 ) -> Result<(), CliFailure> {
-    let command = provider
-        .repair_command
-        .as_deref()
-        .ok_or_else(|| lifecycle("proof failure has no attached repair executor"))?;
     let harness = record
         .convergence
         .as_mut()
@@ -1516,16 +1594,14 @@ fn apply_configured_repair(
             "repair cannot run after lifecycle effect {effect:?}"
         )));
     };
-    let output = run_bounded_command(
+    let output = run_approved_command(
+        repair,
         root,
-        command,
-        &provider.repair_args,
+        None,
         &[
             ("CHANGELOOP_FAILED_PROVIDER", failure.provider.as_str()),
             ("CHANGELOOP_FAILURE_CAUSE", failure.cause_id.as_str()),
         ],
-        None,
-        provider.timeout_ms,
     )
     .map_err(|error| CliFailure {
         code: EXIT_PROOF_FAILURE,
@@ -1567,7 +1643,11 @@ pub(crate) struct BoundedOutput {
     pub(crate) truncated: bool,
 }
 
-pub(crate) fn run_bounded_command(
+/// Runs an executable this binary compiled in. The register entry names why no
+/// operator approval is required: nothing about the program or its arguments
+/// came from repository content.
+pub(crate) fn run_compiled_in_command(
+    register: changeloop_ops::CompiledInExecutor,
     root: &Path,
     command: &str,
     args: &[String],
@@ -1575,13 +1655,256 @@ pub(crate) fn run_bounded_command(
     stdin: Option<Vec<u8>>,
     timeout_ms: u64,
 ) -> Result<BoundedOutput, String> {
-    let output =
-        changeloop_ops::run_lifecycle_process(root, command, args, environment, stdin, timeout_ms)?;
+    let approved = changeloop_ops::ApprovedExecutor::compiled_in(
+        register,
+        command,
+        args.to_vec(),
+        timeout_ms,
+        changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+    )
+    .with_compiled_in_environment(
+        environment
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect(),
+    );
+    run_approved_command(&approved, root, stdin, &[])
+}
+
+/// Runs an executable the operator approved for this project. Everything but
+/// the working directory, stdin, and harness-derived environment values comes
+/// from the approval.
+pub(crate) fn run_approved_command(
+    approved: &changeloop_ops::ApprovedExecutor,
+    working_directory: &Path,
+    stdin: Option<Vec<u8>>,
+    harness_environment: &[(&str, &str)],
+) -> Result<BoundedOutput, String> {
+    let output = changeloop_ops::run_approved_lifecycle_process_cancellable(
+        approved,
+        working_directory,
+        stdin,
+        harness_environment,
+        &|| false,
+    )?;
     Ok(BoundedOutput {
         status: output.status,
         stdout: output.stdout,
         stderr: output.stderr,
         truncated: output.truncated,
+    })
+}
+
+/// The trusted approval store path, in the operator's configuration directory.
+/// Never inside the repository — a store the repository can write is not a
+/// gate.
+pub(crate) fn approval_store_path() -> Result<PathBuf, CliFailure> {
+    #[cfg(test)]
+    if let Some(path) = tests::approval_store_override() {
+        return Ok(path);
+    }
+    Ok(changeloop_ops::ApprovalStore::path_in(
+        &super::user_config_directory()?,
+    ))
+}
+
+/// Re-derives every lifecycle executable the repository currently configures.
+/// Both `approve grant` and the refusal message come from this one derivation,
+/// so what an operator is shown is what will run.
+pub(crate) fn configured_executors(
+    root: &Path,
+) -> Result<Vec<changeloop_ops::ExecutorRequest>, CliFailure> {
+    let mut requests = Vec::new();
+    let (providers, providers_digest) = proof_providers(root)?;
+    for provider in &providers {
+        if !provider.builtin_hardened_git {
+            requests.push(executor_request(
+                root,
+                changeloop_ops::ExecutorKind::ProofProvider,
+                &provider.id,
+                &provider.command,
+                &provider.args,
+                &[],
+                provider.timeout_ms,
+                &providers_digest,
+            ));
+        }
+        if let Some(command) = provider.repair_command.as_deref() {
+            requests.push(executor_request(
+                root,
+                changeloop_ops::ExecutorKind::RepairCommand,
+                &provider.id,
+                command,
+                &provider.repair_args,
+                &REPAIR_HARNESS_ENVIRONMENT,
+                provider.timeout_ms,
+                &providers_digest,
+            ));
+        }
+    }
+    if let Ok((reviewer, digest)) = reviewer_config(root) {
+        requests.push(executor_request(
+            root,
+            changeloop_ops::ExecutorKind::Reviewer,
+            "reviewer",
+            &reviewer.command,
+            &reviewer.args,
+            &[],
+            reviewer.timeout_ms,
+            &digest,
+        ));
+    }
+    requests.extend(prove_oracle::configured_baseline_executor(root));
+    Ok(requests)
+}
+
+pub(super) fn approve_list() -> Result<(), CliFailure> {
+    let store = changeloop_ops::ApprovalStore::load(&approval_store_path()?)
+        .map_err(|error| invalid(error.to_string()))?;
+    print_json(json!({
+        "version": changeloop_ops::executor_approval::APPROVAL_STORE_VERSION,
+        "approvals": store.approvals(),
+    }));
+    Ok(())
+}
+
+pub(super) fn approve_revoke(digest: &str) -> Result<(), CliFailure> {
+    let path = approval_store_path()?;
+    let mut store =
+        changeloop_ops::ApprovalStore::load(&path).map_err(|error| invalid(error.to_string()))?;
+    let removed = store
+        .revoke(digest)
+        .map_err(|error| invalid(error.to_string()))?;
+    print_json(json!({"digest": digest, "revoked": removed}));
+    Ok(())
+}
+
+/// Grants approvals for the executables the repository configures *right now*.
+///
+/// There is no digest parameter: a repository must not be able to print a
+/// convincing grant string for content it does not have. Everything recorded
+/// here was re-read from disk in this call and is displayed before it is
+/// written.
+pub(super) fn approve_grant(
+    kind: Option<&str>,
+    label: Option<&str>,
+    reviewer_family: Option<&str>,
+    confirmed: bool,
+) -> Result<(), CliFailure> {
+    let root = env::current_dir().map_err(io_failure)?;
+    let selected_kind = match kind {
+        None => None,
+        Some("proof-provider") => Some(changeloop_ops::ExecutorKind::ProofProvider),
+        Some("repair-command") => Some(changeloop_ops::ExecutorKind::RepairCommand),
+        Some("reviewer") => Some(changeloop_ops::ExecutorKind::Reviewer),
+        Some("oracle-baseline") => Some(changeloop_ops::ExecutorKind::OracleBaseline),
+        Some(other) => {
+            return Err(invalid(format!("unknown executor kind '{other}'")));
+        }
+    };
+    let requests = configured_executors(&root)?
+        .into_iter()
+        .filter(|request| selected_kind.is_none_or(|kind| request.kind == kind))
+        .filter(|request| label.is_none_or(|label| request.label == label))
+        .collect::<Vec<_>>();
+    if requests.is_empty() {
+        return Err(invalid(
+            "this project configures no lifecycle executable matching that selection",
+        ));
+    }
+
+    let mut resolved = Vec::new();
+    for request in &requests {
+        resolved.push(
+            changeloop_ops::executor_approval::resolve(request)
+                .map_err(|error| invalid(error.to_string()))?,
+        );
+    }
+    let pending = resolved
+        .iter()
+        .map(|entry| {
+            json!({
+                "kind": entry.request.kind,
+                "label": entry.request.label,
+                "program": entry.resolved_program.display().to_string(),
+                "programDigest": entry.program_digest,
+                "args": entry.request.args,
+                "harnessEnvironment": entry.request.harness_environment_names,
+                "timeoutMs": entry.request.timeout_ms,
+                "maxOutputBytes": entry.request.max_output_bytes,
+                "configDigest": entry.request.config_digest,
+                "digest": entry.digest,
+            })
+        })
+        .collect::<Vec<_>>();
+    if !confirmed {
+        print_json(json!({
+            "status": "confirmation-required",
+            "root": root.display().to_string(),
+            "pending": pending,
+            "next": "re-run with --yes to record these approvals",
+        }));
+        return Err(CliFailure {
+            code: super::EXIT_APPROVAL_REQUIRED,
+            message: "review the executables above, then re-run with --yes".into(),
+        });
+    }
+    if resolved
+        .iter()
+        .any(|entry| entry.request.kind == changeloop_ops::ExecutorKind::Reviewer)
+        && reviewer_family.is_none_or(|family| family.trim().is_empty())
+    {
+        return Err(invalid(
+            "granting a reviewer approval requires --reviewer-family; the independence gate reads it instead of the reviewer's own output",
+        ));
+    }
+
+    let path = approval_store_path()?;
+    let mut store =
+        changeloop_ops::ApprovalStore::load(&path).map_err(|error| invalid(error.to_string()))?;
+    for entry in &resolved {
+        let family = if entry.request.kind == changeloop_ops::ExecutorKind::Reviewer {
+            reviewer_family.map(str::to_owned)
+        } else {
+            None
+        };
+        store
+            .grant(entry, changeloop_ops::ApprovalProvenance::User, family)
+            .map_err(|error| invalid(error.to_string()))?;
+    }
+    print_json(json!({
+        "status": "granted",
+        "root": root.display().to_string(),
+        "store": path.display().to_string(),
+        "granted": pending,
+    }));
+    Ok(())
+}
+
+/// Turns a repository-configured executable into authority, or refuses with the
+/// approval-required exit code and the exact grant command.
+pub(crate) fn authorize_configured_executor(
+    request: &changeloop_ops::ExecutorRequest,
+) -> Result<changeloop_ops::ApprovedExecutor, CliFailure> {
+    let store = approval_store_path()?;
+    changeloop_ops::executor_approval::authorize(&store, request).map_err(|error| match error {
+        changeloop_ops::ApprovalError::Required(resolved) => CliFailure {
+            code: super::EXIT_APPROVAL_REQUIRED,
+            message: format!(
+                "'{}' is not approved to run for this project.\n  {} {}\n  {} sha256 {}\n  approve with: cloop approve grant {} {}",
+                resolved.request.label,
+                resolved.resolved_program.display(),
+                resolved.request.args.join(" "),
+                resolved.request.kind,
+                resolved.program_digest,
+                resolved.request.kind,
+                resolved.request.label,
+            ),
+        },
+        other => CliFailure {
+            code: EXIT_INVALID_INPUT,
+            message: other.to_string(),
+        },
     })
 }
 
@@ -1627,7 +1950,15 @@ fn run_hardened_git_with_environment(
         ("GIT_TERMINAL_PROMPT", "0"),
         ("GIT_PAGER", "cat"),
     ]);
-    run_bounded_command(root, "git", &hardened, &environment, None, timeout_ms)
+    run_compiled_in_command(
+        changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
+        root,
+        "git",
+        &hardened,
+        &environment,
+        None,
+        timeout_ms,
+    )
 }
 
 fn proof_output_summary(output: &BoundedOutput) -> String {
@@ -1724,7 +2055,7 @@ fn review_diff(root: &Path) -> Result<Vec<u8>, CliFailure> {
     Ok(combined)
 }
 
-fn reviewer_config(root: &Path) -> Result<ReviewerConfig, CliFailure> {
+fn reviewer_config(root: &Path) -> Result<(ReviewerConfig, String), CliFailure> {
     let path = root.join(".changeloop/reviewer.json");
     let bytes = read_regular_bounded(&path, MAX_OPERATIONAL_CONFIG_BYTES).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -1741,11 +2072,34 @@ fn reviewer_config(root: &Path) -> Result<ReviewerConfig, CliFailure> {
     if config.command.trim().is_empty() {
         return Err(invalid("reviewer command must not be empty"));
     }
-    Ok(config)
+    let digest = changeloop_ops::executor_approval::config_digest(&bytes);
+    Ok((config, digest))
+}
+
+/// Authorizes the configured reviewer. The model family the independence gate
+/// tests comes back on the approval, not from the reviewer's own output.
+fn approved_reviewer(root: &Path) -> Result<changeloop_ops::ApprovedExecutor, CliFailure> {
+    let (config, digest) = reviewer_config(root)?;
+    let approved = authorize_configured_executor(&executor_request(
+        root,
+        changeloop_ops::ExecutorKind::Reviewer,
+        "reviewer",
+        &config.command,
+        &config.args,
+        &[],
+        config.timeout_ms,
+        &digest,
+    ))?;
+    if approved.reviewer_model_family().is_none() {
+        return Err(lifecycle(
+            "the reviewer approval records no model family; re-grant it with one",
+        ));
+    }
+    Ok(approved)
 }
 
 struct CommandReviewer {
-    config: ReviewerConfig,
+    approved: changeloop_ops::ApprovedExecutor,
     root: PathBuf,
 }
 
@@ -1789,14 +2143,7 @@ impl IndependentReviewer for CommandReviewer {
             risk_triggers: request.risk_triggers.clone(),
         };
         let input = serde_json::to_vec(&clean_request).map_err(|error| error.to_string())?;
-        let output = run_bounded_command(
-            clean.path(),
-            &self.config.command,
-            &self.config.args,
-            &[],
-            Some(input),
-            self.config.timeout_ms,
-        )?;
+        let output = run_approved_command(&self.approved, clean.path(), Some(input), &[])?;
         if !output.status.success() {
             return Err(format!(
                 "reviewer process failed: {}",
@@ -1806,8 +2153,26 @@ impl IndependentReviewer for CommandReviewer {
         if output.truncated {
             return Err("reviewer output exceeded the 1 MiB limit".into());
         }
-        serde_json::from_slice(&output.stdout)
-            .map_err(|error| format!("reviewer returned invalid typed findings: {error}"))
+        let mut result: CleanReviewResult = serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("reviewer returned invalid typed findings: {error}"))?;
+        // The independence gate must not read its input from the process it is
+        // gating. The family is whatever the operator recorded when approving
+        // this reviewer; a process claiming a different one is in breach of the
+        // contract it was approved under, not merely mistaken.
+        let approved_family = self
+            .approved
+            .reviewer_model_family()
+            .ok_or("the reviewer approval records no model family")?;
+        if !result.reviewer_model_family.is_empty()
+            && result.reviewer_model_family != approved_family
+        {
+            return Err(format!(
+                "reviewer reported model family '{}' but was approved as '{approved_family}'",
+                redact_sensitive_text(&result.reviewer_model_family)
+            ));
+        }
+        result.reviewer_model_family = approved_family.to_owned();
+        Ok(result)
     }
 }
 
@@ -1819,7 +2184,8 @@ fn record_phase(record: Option<&ChangeRecord>) -> Value {
 }
 
 fn changed_paths(root: &Path) -> Result<Vec<PathBuf>, CliFailure> {
-    let tracked = run_bounded_command(
+    let tracked = run_compiled_in_command(
+        changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
         root,
         "git",
         &[
@@ -1835,7 +2201,8 @@ fn changed_paths(root: &Path) -> Result<Vec<PathBuf>, CliFailure> {
         30_000,
     )
     .map_err(lifecycle)?;
-    let untracked = run_bounded_command(
+    let untracked = run_compiled_in_command(
+        changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
         root,
         "git",
         &[
@@ -1926,12 +2293,89 @@ fn stage_land_projection(
     Ok(sandbox)
 }
 
+fn record_authenticator() -> Result<changeloop_evidence::authenticated_record::RecordAuthenticator, CliFailure> {
+    let store = approval_store_path()?;
+    let directory = store
+        .parent()
+        .ok_or_else(|| invalid("operator configuration path has no parent"))?;
+    Ok(changeloop_evidence::authenticated_record::RecordAuthenticator::new(directory))
+}
+
+fn bounded_binding_digest(path: &Path, limit: u64) -> Result<String, CliFailure> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(changeloop_ops::executor_approval::absent_config_digest());
+        }
+        Err(error) => return Err(io_failure(error)),
+    };
+    if !metadata.file_type().is_file() || metadata.len() > limit {
+        return Err(invalid(format!(
+            "lifecycle authority binding is not a bounded regular file: {}",
+            path.display()
+        )));
+    }
+    let bytes = fs::read(path).map_err(io_failure)?;
+    Ok(changeloop_ops::executor_approval::config_digest(&bytes))
+}
+
+/// Everything outside the Git/workspace revision that can change what Prove or
+/// Review means. The MAC authenticates these bindings as well as the state
+/// bytes, so editing repository config or revoking an executable approval
+/// invalidates readiness even though `.changeloop` is excluded from the
+/// workspace hash.
+fn lifecycle_authority_bindings(root: &Path) -> Result<BTreeMap<String, String>, CliFailure> {
+    Ok(BTreeMap::from([
+        (
+            "proof-providers".into(),
+            bounded_binding_digest(
+                &root.join(".changeloop/proof-providers.json"),
+                MAX_OPERATIONAL_CONFIG_BYTES,
+            )?,
+        ),
+        (
+            "reviewer".into(),
+            bounded_binding_digest(
+                &root.join(".changeloop/reviewer.json"),
+                MAX_OPERATIONAL_CONFIG_BYTES,
+            )?,
+        ),
+        (
+            "prove-oracle".into(),
+            bounded_binding_digest(
+                &root.join(".changeloop/prove-oracle.json"),
+                MAX_OPERATIONAL_CONFIG_BYTES,
+            )?,
+        ),
+        (
+            "executor-approvals".into(),
+            bounded_binding_digest(&approval_store_path()?, 4 * 1024 * 1024)?,
+        ),
+    ]))
+}
+
+/// Clears every field that could advance or suppress lifecycle authority while
+/// preserving session and change intent. This is how legacy unsigned state,
+/// a tampered payload, or a lost operator key degrades: history remains
+/// inspectable, but Prove and Review must run again before Land.
+fn clear_unauthenticated_authority(state: &mut OperationalState) {
+    for change in state.changes.values_mut() {
+        change.proof = None;
+        change.reviewed = false;
+        change.land_operation = None;
+        change.convergence = None;
+    }
+}
+
 fn load_state(root: &Path) -> Result<OperationalState, CliFailure> {
     let path = root.join(".changeloop/operational.json");
     match read_regular_bounded(&path, MAX_OPERATIONAL_STATE_BYTES) {
         Ok(bytes) => {
-            let state: OperationalState =
+            let mut state: OperationalState =
                 serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
+            // Validate shape before deciding whether the state carries
+            // authority. A malformed convergence record remains an error rather
+            // than being hidden by the conservative authority-clearing migration.
             for (change_id, change) in &state.changes {
                 if let Some(harness) = &change.convergence {
                     harness.validate_restored().map_err(|error| {
@@ -1940,6 +2384,30 @@ fn load_state(root: &Path) -> Result<OperationalState, CliFailure> {
                         ))
                     })?;
                 }
+            }
+            let authenticated = record_authenticator().is_ok_and(|authenticator| {
+                authenticator
+                    .load_sidecar(&path)
+                    .and_then(|sidecar| {
+                        if lifecycle_authority_bindings(root)
+                            .map_or(true, |bindings| bindings != sidecar.bindings)
+                        {
+                            return Err(
+                                changeloop_evidence::authenticated_record::RecordAuthError::Invalid,
+                            );
+                        }
+                        authenticator.verify(
+                            root,
+                            "operational-state",
+                            "operational",
+                            &bytes,
+                            &sidecar,
+                        )
+                    })
+                    .is_ok()
+            });
+            if !authenticated {
+                clear_unauthenticated_authority(&mut state);
             }
             Ok(state)
         }
@@ -2326,18 +2794,25 @@ fn write_private_artifact_json(
 }
 
 fn save_state(root: &Path, state: &OperationalState) -> Result<(), CliFailure> {
-    write_private_json(&root.join(".changeloop/operational.json"), state)
-}
-
-fn write_private_json(path: &Path, value: &impl Serialize) -> Result<(), CliFailure> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| invalid("state path must have a parent directory"))?;
-    let project_root = parent
-        .parent()
-        .ok_or_else(|| invalid("state directory must be inside a project root"))?;
-    let bytes = serde_json::to_vec_pretty(value).map_err(|error| invalid(error.to_string()))?;
-    write_private_bytes(project_root, path, &bytes, MAX_OPERATIONAL_STATE_BYTES).map_err(io_failure)
+    let path = root.join(".changeloop/operational.json");
+    let bytes = serde_json::to_vec_pretty(state).map_err(|error| invalid(error.to_string()))?;
+    write_private_bytes(root, &path, &bytes, MAX_OPERATIONAL_STATE_BYTES).map_err(io_failure)?;
+    // Payload first, sidecar second. A crash between them leaves history to
+    // inspect but no authority — the safe failure direction.
+    let authenticator = record_authenticator()?;
+    let sidecar = authenticator
+        .sign(
+            root,
+            "operational-state",
+            "operational",
+            &bytes,
+            lifecycle_authority_bindings(root)?,
+        )
+        .map_err(|error| lifecycle(format!("could not authenticate operational state: {error}")))?;
+    authenticator
+        .write_sidecar(&path, &sidecar)
+        .map_err(|error| lifecycle(format!("could not persist operational authentication: {error}")))?;
+    Ok(())
 }
 
 fn privacy_path(root: &Path) -> PathBuf {
@@ -2345,7 +2820,8 @@ fn privacy_path(root: &Path) -> PathBuf {
 }
 
 fn workspace_revision(root: &Path) -> Result<String, CliFailure> {
-    let head = run_bounded_command(
+    let head = run_compiled_in_command(
+        changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
         root,
         "git",
         &["rev-parse".into(), "HEAD".into()],
@@ -2354,7 +2830,8 @@ fn workspace_revision(root: &Path) -> Result<String, CliFailure> {
         30_000,
     )
     .map_err(lifecycle)?;
-    let status = run_bounded_command(
+    let status = run_compiled_in_command(
+        changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
         root,
         "git",
         &[
@@ -2520,6 +2997,106 @@ fn lifecycle(message: impl Into<String>) -> CliFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Tests run in parallel threads of one process, so the trusted store
+    // location cannot come from an environment variable without racing. A
+    // thread-local seam keeps each test's operator configuration its own.
+    thread_local! {
+        static APPROVAL_STORE: std::cell::RefCell<Option<PathBuf>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    pub(super) fn approval_store_override() -> Option<PathBuf> {
+        Some(
+            APPROVAL_STORE
+                .with(|cell| cell.borrow().clone())
+                .unwrap_or_else(|| {
+                    let home = tempdir().expect("an operator configuration directory");
+                    let path = home.path().join("executor-approvals.json");
+                    APPROVAL_HOME.with(|slot| *slot.borrow_mut() = Some(home));
+                    APPROVAL_STORE.with(|slot| *slot.borrow_mut() = Some(path.clone()));
+                    path
+                }),
+        )
+    }
+
+    // An operator configuration directory outside the repository, kept alive for
+    // the duration of the test thread.
+    thread_local! {
+        static APPROVAL_HOME: std::cell::RefCell<Option<tempfile::TempDir>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    /// Grants every executable the repository at `root` currently configures,
+    /// into an operator store outside it — the same derivation
+    /// `cloop approve grant` performs.
+    fn approve_configured(root: &Path) {
+        let path = APPROVAL_STORE
+            .with(|cell| cell.borrow().clone())
+            .unwrap_or_else(|| {
+                let home = tempdir().expect("an operator configuration directory");
+                let path = home.path().join("executor-approvals.json");
+                APPROVAL_HOME.with(|slot| *slot.borrow_mut() = Some(home));
+                APPROVAL_STORE.with(|slot| *slot.borrow_mut() = Some(path.clone()));
+                path
+            });
+        let requests = configured_executors(root).expect("configuration resolves");
+        let mut store = changeloop_ops::ApprovalStore::load(&path).expect("store loads");
+        for request in &requests {
+            let resolved =
+                changeloop_ops::executor_approval::resolve(request).expect("program resolves");
+            // The reviewer fixtures in these tests report this family; the
+            // approval is what the independence gate reads, so the two must
+            // agree exactly.
+            let family = (request.kind == changeloop_ops::ExecutorKind::Reviewer)
+                .then(|| "fixture-reviewer".to_owned());
+            store
+                .grant(&resolved, changeloop_ops::ApprovalProvenance::User, family)
+                .expect("approval is recorded");
+        }
+    }
+
+    /// Grants one reviewer approval directly, for tests that drive
+    /// `CommandReviewer` without a repository configuration file.
+    fn approved_test_reviewer(
+        root: &Path,
+        program: &str,
+        args: &[String],
+        family: &str,
+    ) -> changeloop_ops::ApprovedExecutor {
+        let path = root.join("test-approvals.json");
+        APPROVAL_STORE.with(|cell| *cell.borrow_mut() = Some(path.clone()));
+        let request = executor_request(
+            root,
+            changeloop_ops::ExecutorKind::Reviewer,
+            "reviewer",
+            program,
+            args,
+            &[],
+            5_000,
+            &changeloop_ops::executor_approval::config_digest(b"test"),
+        );
+        let resolved =
+            changeloop_ops::executor_approval::resolve(&request).expect("program resolves");
+        let mut store = changeloop_ops::ApprovalStore::load(&path).expect("store loads");
+        store
+            .grant(
+                &resolved,
+                changeloop_ops::ApprovalProvenance::User,
+                Some(family.to_owned()),
+            )
+            .expect("approval is recorded");
+        authorize_configured_executor(&request).expect("the granted reviewer is approved")
+    }
+
+    /// Points this thread's approval lookups at an empty operator store, so
+    /// nothing the repository configures is authorized.
+    fn approve_nothing() {
+        let home = tempdir().expect("an operator configuration directory");
+        let path = home.path().join("executor-approvals.json");
+        APPROVAL_HOME.with(|cell| *cell.borrow_mut() = Some(home));
+        APPROVAL_STORE.with(|cell| *cell.borrow_mut() = Some(path));
+    }
     use tempfile::tempdir;
 
     #[test]
@@ -2864,6 +3441,142 @@ mod tests {
         root
     }
 
+    /// Writes a repository-configured proof provider that runs `script`.
+    fn seed_configured_provider(root: &Path, script: &Path, body: &str) {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(script, format!("#!/bin/sh\n{body}\n")).unwrap();
+        #[cfg(unix)]
+        fs::set_permissions(script, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::create_dir_all(root.join(".changeloop")).unwrap();
+        fs::write(
+            root.join(".changeloop/proof-providers.json"),
+            serde_json::to_vec(&json!([{
+                "id":"configured","command":script.display().to_string(),
+                "args":[],"claims":["configured-claim"]
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// Prove must not spawn a program the repository chose and the operator
+    /// never approved, and must say so with the approval-required code.
+    #[cfg(unix)]
+    #[test]
+    fn prove_refuses_an_unapproved_repository_provider_without_spawning_it() {
+        let root = git_root();
+        let sentinel = root.path().join("provider-ran");
+        let script = root.path().join("provider.sh");
+        seed_configured_provider(
+            root.path(),
+            &script,
+            &format!("touch '{}'", sentinel.display()),
+        );
+        seed_test_change(root.path(), "unapproved");
+        approve_nothing();
+
+        let error =
+            prove_at(root.path(), "unapproved").expect_err("an unapproved provider refuses");
+        assert_eq!(error.code, crate::EXIT_APPROVAL_REQUIRED, "{error:?}");
+        assert!(error.message.contains("cloop approve grant"), "{error:?}");
+        assert!(
+            !sentinel.exists(),
+            "the unapproved provider was spawned anyway"
+        );
+    }
+
+    /// The approval is over bytes, not over a name. Rewriting the approved
+    /// program is exactly the attack, so it must void the approval.
+    #[cfg(unix)]
+    #[test]
+    fn rewriting_an_approved_provider_voids_its_approval() {
+        let root = git_root();
+        let script = root.path().join("provider.sh");
+        seed_configured_provider(root.path(), &script, "exit 0");
+        seed_test_change(root.path(), "swapped");
+        approve_configured(root.path());
+        prove_at(root.path(), "swapped").expect("the approved provider runs");
+
+        let sentinel = root.path().join("swapped-ran");
+        seed_configured_provider(
+            root.path(),
+            &script,
+            &format!("touch '{}'", sentinel.display()),
+        );
+        seed_test_change(root.path(), "swapped");
+        let error =
+            prove_at(root.path(), "swapped").expect_err("the rewritten program is not approved");
+        assert_eq!(error.code, crate::EXIT_APPROVAL_REQUIRED, "{error:?}");
+        assert!(!sentinel.exists(), "the swapped program was spawned anyway");
+    }
+
+    /// Editing the configuration that supplied a command voids the approval it
+    /// produced, even when the program on disk is untouched.
+    #[cfg(unix)]
+    #[test]
+    fn editing_the_provider_configuration_voids_its_approval() {
+        let root = git_root();
+        let script = root.path().join("provider.sh");
+        seed_configured_provider(root.path(), &script, "exit 0");
+        seed_test_change(root.path(), "edited");
+        approve_configured(root.path());
+        prove_at(root.path(), "edited").expect("the approved provider runs");
+
+        fs::write(
+            root.path().join(".changeloop/proof-providers.json"),
+            serde_json::to_vec(&json!([{
+                "id":"configured","command":script.display().to_string(),
+                "args":["--now-with-arguments"],"claims":["configured-claim"]
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        seed_test_change(root.path(), "edited");
+        let error =
+            prove_at(root.path(), "edited").expect_err("the edited configuration is not approved");
+        assert_eq!(error.code, crate::EXIT_APPROVAL_REQUIRED, "{error:?}");
+    }
+
+    /// The independence gate reads the approval, so a reviewer cannot promote
+    /// itself by reporting a different family than the one it was approved as.
+    #[cfg(unix)]
+    #[test]
+    fn a_reviewer_reporting_an_unapproved_model_family_is_refused() {
+        let root = tempdir().unwrap();
+        for (name, content) in [
+            ("diff.patch", "diff"),
+            ("agreement.json", "{}"),
+            ("evidence.json", "{}"),
+        ] {
+            fs::write(root.path().join(name), content).unwrap();
+        }
+        let mut reviewer = CommandReviewer {
+            approved: approved_test_reviewer(
+                root.path(),
+                "sh",
+                &[
+                    "-c".to_owned(),
+                    "cat >/dev/null; printf '%s' '{\"reviewerModelFamily\":\"impersonated\",\"findings\":[],\"completedAtMs\":1}'".to_owned(),
+                ],
+                "approved-family",
+            ),
+            root: root.path().to_owned(),
+        };
+        let error = reviewer
+            .review(&CleanReviewRequest {
+                reviewer_session_id: "review".into(),
+                implementation_session_id: "implementation".into(),
+                diff_artifact: root.path().join("diff.patch").display().to_string(),
+                agreement_artifact: root.path().join("agreement.json").display().to_string(),
+                evidence_artifacts: vec![root.path().join("evidence.json").display().to_string()],
+                residual_risks: vec![],
+                risk_triggers: BTreeSet::from([RiskTrigger::SecurityBoundary]),
+            })
+            .expect_err("a reviewer cannot rename its own model family");
+        assert!(error.contains("approved as 'approved-family'"), "{error}");
+    }
+
     fn seed_test_change(root: &Path, change: &str) {
         let revision = workspace_revision(root).unwrap();
         let mut state = OperationalState::default();
@@ -2927,6 +3640,7 @@ mod tests {
         fs::rename(renamed.path().join("file.txt"), &renamed_path).unwrap();
         fs::write(&renamed_path, "renamed payload").unwrap();
         seed_test_change(renamed.path(), "rename");
+        approve_configured(renamed.path());
         prove_at(renamed.path(), "rename").unwrap();
         review_at(renamed.path(), "rename").unwrap();
         let review_patch = fs::read_dir(renamed.path().join(".changeloop/reviews"))
@@ -2942,6 +3656,7 @@ mod tests {
         let deleted = git_root();
         fs::remove_file(deleted.path().join("file.txt")).unwrap();
         seed_test_change(deleted.path(), "delete");
+        approve_configured(deleted.path());
         prove_at(deleted.path(), "delete").unwrap();
         review_at(deleted.path(), "delete").unwrap();
     }
@@ -3060,6 +3775,7 @@ mod tests {
             land_at(root.path(), "change").unwrap_err().code,
             EXIT_LIFECYCLE_REJECTION
         );
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
         assert_eq!(
             land_at(root.path(), "change").unwrap_err().code,
@@ -3175,6 +3891,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
         measurable_oracle_project(root.path());
         ready_change(root.path());
 
+        approve_configured(root.path());
         let result = prove_at(root.path(), "change").unwrap();
 
         assert_eq!(result["oracle"]["recorded"], true);
@@ -3207,6 +3924,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
         measurable_oracle_project(root.path());
         ready_change(root.path());
 
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
         review_at(root.path(), "change").unwrap();
         let evidence = land_at(root.path(), "change").unwrap()["proveEvidence"].clone();
@@ -3282,6 +4000,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
         measurable_oracle_project(root.path());
         ready_change(root.path());
 
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
 
         let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
@@ -3347,6 +4066,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
         .unwrap();
         ready_change(root.path());
 
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
 
         let briefing = read_prove_evidence(&root.path().join(".changeloop/receipts"), "change");
@@ -3447,6 +4167,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
         );
         save_state(root.path(), &state).unwrap();
 
+        approve_configured(root.path());
         assert_eq!(prove_at(root.path(), "change").unwrap_err().code, 5);
         fs::remove_file(root.path().join("failure.flag")).unwrap();
         fs::write(root.path().join("file.txt"), "change two").unwrap();
@@ -3497,6 +4218,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
         );
         save_state(root.path(), &state).unwrap();
 
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
         assert!(!root.path().join("failure.flag").exists());
         let state = load_state(root.path()).unwrap();
@@ -3513,7 +4235,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored
     #[test]
     fn bounded_executor_drains_large_output_without_deadlock_and_caps_retention() {
         let root = tempdir().unwrap();
-        let output = run_bounded_command(
+        let output = run_compiled_in_command(
+            changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
             root.path(),
             "sh",
             &["-c".into(), "yes x | head -c 2097152".into()],
@@ -3559,7 +4282,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored
                     .success()
             );
         }
-        let raw = run_bounded_command(
+        let raw = run_compiled_in_command(
+            changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
             root.path(),
             "git",
             &["diff".into(), "--ext-diff".into(), "--textconv".into()],
@@ -3608,7 +4332,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored
             } else {
                 vec![(key, config.to_str().unwrap())]
             };
-            let raw = run_bounded_command(
+            let raw = run_compiled_in_command(
+                changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
                 root.path(),
                 "git",
                 &["diff".into(), "--ext-diff".into(), "--textconv".into()],
@@ -3692,7 +4417,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored
     fn bounded_executor_timeout_terminates_descendant_process_group() {
         let root = tempdir().unwrap();
         let started = Instant::now();
-        let error = run_bounded_command(
+        let error = run_compiled_in_command(
+            changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
             root.path(),
             "sh",
             &["-c".into(), "sleep 30 & echo $! > child.pid; wait".into()],
@@ -3733,6 +4459,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
             },
         );
         save_state(root.path(), &state).unwrap();
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
         fs::write(root.path().join("file.txt"), "changed after proof").unwrap();
         assert!(review_at(root.path(), "change").is_err());
@@ -3779,6 +4506,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
             },
         );
         save_state(root.path(), &state).unwrap();
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
         review_at(root.path(), "change").unwrap();
         assert!(load_state(root.path()).unwrap().changes["change"].reviewed);
@@ -3828,6 +4556,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored
             },
         );
         save_state(root.path(), &state).unwrap();
+        approve_configured(root.path());
         prove_at(root.path(), "change").unwrap();
         review_at(root.path(), "change").unwrap();
 
@@ -3861,14 +4590,15 @@ test result: ok. 2 passed; 0 failed; 0 ignored
             fs::write(root.path().join(name), content).unwrap();
         }
         let mut reviewer = CommandReviewer {
-            config: ReviewerConfig {
-                command: "sh".into(),
-                args: vec![
-                    "-c".into(),
-                    "cat >/dev/null; if [ -e operational.json ]; then exit 23; fi; printf '%s' '{\"reviewerModelFamily\":\"clean-family\",\"findings\":[],\"completedAtMs\":1}'".into(),
+            approved: approved_test_reviewer(
+                root.path(),
+                "sh",
+                &[
+                    "-c".to_owned(),
+                    "cat >/dev/null; if [ -e operational.json ]; then exit 23; fi; printf '%s' '{\"reviewerModelFamily\":\"clean-family\",\"findings\":[],\"completedAtMs\":1}'".to_owned(),
                 ],
-                timeout_ms: 5_000,
-            },
+                "clean-family",
+            ),
             root: root.path().to_owned(),
         };
         let result = reviewer
@@ -3883,6 +4613,134 @@ test result: ok. 2 passed; 0 failed; 0 ignored
             })
             .unwrap();
         assert_eq!(result.reviewer_model_family, "clean-family");
+    }
+
+    #[test]
+    fn authenticated_operational_state_restores_authority_while_tampering_clears_only_authority() {
+        let root = git_root();
+        let _ = approval_store_override();
+        let revision = workspace_revision(root.path()).unwrap();
+        let mut state = OperationalState::default();
+        state.sessions.insert(
+            "change".into(),
+            SessionRecord {
+                kind: "change".into(),
+                prompt: "preserve this intent".into(),
+                created_at_ms: 1,
+                parent_session_id: None,
+            },
+        );
+        let mut harness = ConvergenceHarness::new_confirmed(
+            "change",
+            "change",
+            &revision,
+            BTreeSet::from([ProofRequirement {
+                claim_id: "claim".into(),
+                provider: "provider".into(),
+            }]),
+            BTreeSet::new(),
+            RepairBudget::default(),
+        )
+        .unwrap();
+        harness.complete_build(&revision).unwrap();
+        state.changes.insert(
+            "change".into(),
+            ChangeRecord {
+                session_id: "change".into(),
+                expected_revision: revision,
+                proof: None,
+                reviewed: false,
+                landed: false,
+                land_operation: None,
+                convergence: Some(harness),
+                risk_tier: "low".into(),
+                risk_triggers: BTreeSet::new(),
+            },
+        );
+        save_state(root.path(), &state).unwrap();
+        assert!(
+            load_state(root.path()).unwrap().changes["change"]
+                .convergence
+                .is_some()
+        );
+
+        let path = root.path().join(".changeloop/operational.json");
+        let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["sessions"]["change"]["prompt"] = json!("forged authority payload");
+        fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+
+        let recovered = load_state(root.path()).unwrap();
+        assert_eq!(
+            recovered.sessions["change"].prompt,
+            "forged authority payload",
+            "legacy/tampered content remains inspectable"
+        );
+        assert!(
+            recovered.changes["change"].convergence.is_none(),
+            "tampered state must not restore lifecycle authority"
+        );
+        assert!(!recovered.changes["change"].reviewed);
+        assert!(recovered.changes["change"].proof.is_none());
+    }
+
+    #[test]
+    fn changing_lifecycle_config_or_losing_the_key_stales_authenticated_state() {
+        let root = git_root();
+        let _ = approval_store_override();
+        let revision = workspace_revision(root.path()).unwrap();
+        let mut state = OperationalState::default();
+        let mut harness = ConvergenceHarness::new_confirmed(
+            "change",
+            "change",
+            &revision,
+            BTreeSet::from([ProofRequirement {
+                claim_id: "claim".into(),
+                provider: "provider".into(),
+            }]),
+            BTreeSet::new(),
+            RepairBudget::default(),
+        )
+        .unwrap();
+        harness.complete_build(&revision).unwrap();
+        state.changes.insert(
+            "change".into(),
+            ChangeRecord {
+                session_id: "change".into(),
+                expected_revision: revision,
+                proof: None,
+                reviewed: false,
+                landed: false,
+                land_operation: None,
+                convergence: Some(harness),
+                risk_tier: "low".into(),
+                risk_triggers: BTreeSet::new(),
+            },
+        );
+        save_state(root.path(), &state).unwrap();
+        fs::write(
+            root.path().join(".changeloop/proof-providers.json"),
+            b"[]",
+        )
+        .unwrap();
+        assert!(
+            load_state(root.path()).unwrap().changes["change"]
+                .convergence
+                .is_none(),
+            "editing config outside the workspace hash must stale authority"
+        );
+
+        fs::remove_file(root.path().join(".changeloop/proof-providers.json")).unwrap();
+        save_state(root.path(), &state).unwrap();
+        let key = changeloop_evidence::authenticated_record::RecordAuthenticator::key_path_in(
+            approval_store_path().unwrap().parent().unwrap(),
+        );
+        fs::remove_file(key).unwrap();
+        assert!(
+            load_state(root.path()).unwrap().changes["change"]
+                .convergence
+                .is_none(),
+            "lost key must require fresh proof, not trust old state"
+        );
     }
 
     #[test]
@@ -3915,6 +4773,10 @@ test result: ok. 2 passed; 0 failed; 0 ignored
                 risk_triggers: BTreeSet::new(),
             },
         );
+        // Approval is itself a lifecycle-authority binding, so establish it
+        // before signing the initial state. Re-granting after this point is
+        // idempotent and does not change the store bytes.
+        approve_configured(root.path());
         save_state(root.path(), &state).unwrap();
 
         for _ in 0..3 {

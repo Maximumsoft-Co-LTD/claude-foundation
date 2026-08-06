@@ -38,8 +38,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::operational::{
-    MAX_OPERATIONAL_CONFIG_BYTES, create_private_operational_directory, now_ms,
-    read_regular_bounded, run_bounded_command, run_hardened_git,
+    MAX_OPERATIONAL_CONFIG_BYTES, authorize_configured_executor,
+    create_private_operational_directory, now_ms, read_regular_bounded, run_approved_command,
+    run_hardened_git,
 };
 
 /// Receipt provider id for the oracle record. Lowercase and hyphenated because
@@ -78,6 +79,10 @@ pub(crate) struct ProveOracleConfig {
     /// How to obtain the pre-change suite result. Absent means the differential
     /// arm was not attempted, which is recorded, never omitted.
     baseline: Option<BaselineConfig>,
+    /// Digest of the configuration file bytes. Part of every approval derived
+    /// from this file, so editing it voids the approval it produced.
+    #[serde(skip)]
+    config_digest: String,
 }
 
 /// Two ways to obtain a pre-change run, checked in this order:
@@ -101,8 +106,11 @@ impl ProveOracleConfig {
     pub(crate) fn load(root: &Path) -> (Self, Option<String>) {
         let path = root.join(ORACLE_CONFIG_FILE);
         match read_regular_bounded(&path, MAX_OPERATIONAL_CONFIG_BYTES) {
-            Ok(bytes) => match serde_json::from_slice(&bytes) {
-                Ok(config) => (config, None),
+            Ok(bytes) => match serde_json::from_slice::<Self>(&bytes) {
+                Ok(mut config) => {
+                    config.config_digest = changeloop_ops::executor_approval::config_digest(&bytes);
+                    (config, None)
+                }
                 Err(error) => (
                     Self::default(),
                     Some(format!("invalid {}: {error}", path.display())),
@@ -304,7 +312,7 @@ fn differential_evidence(
     let Some(baseline_config) = config.baseline.as_ref() else {
         return DifferentialReport::unavailable(DifferentialUnavailable::NotAttempted);
     };
-    let baseline = match baseline_run(root, baseline_config) {
+    let baseline = match baseline_run(root, baseline_config, &config.config_digest) {
         Ok(run) => run,
         Err(reason) => return DifferentialReport::unavailable(reason),
     };
@@ -322,14 +330,18 @@ fn differential_evidence(
     )
 }
 
-fn baseline_run(root: &Path, config: &BaselineConfig) -> Result<TestRun, DifferentialUnavailable> {
+fn baseline_run(
+    root: &Path,
+    config: &BaselineConfig,
+    config_digest: &str,
+) -> Result<TestRun, DifferentialUnavailable> {
     if let Some(configured) = config.output_path.as_deref() {
         return recorded_baseline(root, configured);
     }
     let Some(command) = config.command.as_deref().filter(|value| !value.is_empty()) else {
         return Err(DifferentialUnavailable::NotAttempted);
     };
-    executed_baseline(root, command, config)
+    executed_baseline(root, command, config, config_digest)
 }
 
 /// A pre-change suite output the project recorded earlier. Cheap, and the only
@@ -350,6 +362,33 @@ fn recorded_baseline(root: &Path, configured: &str) -> Result<TestRun, Different
     }
 }
 
+/// The baseline command this project configures, if any, as an approval
+/// request. Used by `approve grant` so the operator sees every repository-
+/// chosen executable in one place, not only the ones Prove reached today.
+pub(crate) fn configured_baseline_executor(root: &Path) -> Option<changeloop_ops::ExecutorRequest> {
+    let (config, _) = ProveOracleConfig::load(root);
+    let baseline = config.baseline.as_ref()?;
+    let command = baseline
+        .command
+        .as_deref()
+        .filter(|value| !value.is_empty())?;
+    Some(changeloop_ops::ExecutorRequest {
+        root: root.to_path_buf(),
+        kind: changeloop_ops::ExecutorKind::OracleBaseline,
+        label: "prove-oracle-baseline".into(),
+        program: command.to_owned(),
+        args: baseline.args.clone(),
+        environment: Vec::new(),
+        harness_environment_names: Vec::new(),
+        timeout_ms: baseline
+            .timeout_ms
+            .unwrap_or(DEFAULT_BASELINE_TIMEOUT_MS)
+            .min(MAX_BASELINE_TIMEOUT_MS),
+        max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+        config_digest: config.config_digest.clone(),
+    })
+}
+
 /// Re-run the suite at the pre-change revision in a detached throwaway
 /// worktree. The working tree is never touched, and the worktree is removed
 /// whether or not the run succeeded.
@@ -357,7 +396,30 @@ fn executed_baseline(
     root: &Path,
     command: &str,
     config: &BaselineConfig,
+    config_digest: &str,
 ) -> Result<TestRun, DifferentialUnavailable> {
+    let timeout = config
+        .timeout_ms
+        .unwrap_or(DEFAULT_BASELINE_TIMEOUT_MS)
+        .min(MAX_BASELINE_TIMEOUT_MS);
+    // Repository content chose this command too. An unapproved baseline makes
+    // the differential arm unavailable rather than failing Prove, which keeps
+    // the rule that oracle configuration is a diagnostic — but it does not run.
+    let approved = authorize_configured_executor(&changeloop_ops::ExecutorRequest {
+        root: root.to_path_buf(),
+        kind: changeloop_ops::ExecutorKind::OracleBaseline,
+        label: "prove-oracle-baseline".into(),
+        program: command.to_owned(),
+        args: config.args.clone(),
+        environment: Vec::new(),
+        harness_environment_names: Vec::new(),
+        timeout_ms: timeout,
+        max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+        config_digest: config_digest.to_owned(),
+    })
+    .map_err(|error| DifferentialUnavailable::BaselineRunFailed {
+        detail: error.message,
+    })?;
     let head = run_hardened_git(
         root,
         &["rev-parse".into(), "HEAD".into()],
@@ -407,11 +469,7 @@ fn executed_baseline(
         }
     }
 
-    let timeout = config
-        .timeout_ms
-        .unwrap_or(DEFAULT_BASELINE_TIMEOUT_MS)
-        .min(MAX_BASELINE_TIMEOUT_MS);
-    let outcome = run_bounded_command(&worktree, command, &config.args, &[], None, timeout);
+    let outcome = run_approved_command(&approved, &worktree, None, &[]);
     remove_worktree(root, &worktree_argument);
 
     let output = outcome.map_err(|error| DifferentialUnavailable::BaselineRunFailed {

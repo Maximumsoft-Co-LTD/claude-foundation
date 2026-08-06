@@ -169,6 +169,15 @@ async fn run(args: Vec<String>) -> Result<(), CliFailure> {
             validate_public_identifier(change)?;
             operational::land(change)
         }
+        [command, action] if command == "approve" && action == "list" => {
+            operational::approve_list()
+        }
+        [command, action, digest] if command == "approve" && action == "revoke" => {
+            operational::approve_revoke(digest)
+        }
+        [command, action, rest @ ..] if command == "approve" && action == "grant" => {
+            approve_grant_command(rest)
+        }
         [command] if command == "doctor" => doctor(),
         [command, action] if command == "setup" && action == "status" => setup_status(),
         [
@@ -1019,7 +1028,7 @@ fn ops_failure(error: changeloop_ops::OpsError) -> CliFailure {
 
 fn print_help() {
     println!(
-        "cloop (experimental)\n\nUSAGE:\n  cloop                       # TUI conversation\n  cloop <prompt>              # read-only conversation\n  cloop ask <question>\n  cloop run <intent>\n  cloop change confirm|discard <session>\n  cloop contract approve <session>\n  cloop resume [session]\n  cloop fork <session>\n  cloop sessions\n  cloop status\n  cloop undo|redo [session]\n  cloop jobs\n  cloop prove|review [change]\n  cloop land <change>\n  cloop lsp status\n  cloop formatter status\n  cloop serve [--stdio|--unix <path>|--http <127.0.0.1:port>]\n  cloop acp                   # Agent Client Protocol agent on stdio (read-only conversation)\n  cloop doctor\n  cloop setup --provider <anthropic|openai> --model <model> --sandbox <read-only|workspace-write|danger-full-access> --accept-privacy --accept-provider-data\n  cloop setup status\n  cloop models\n  cloop auth login|logout <anthropic|openai>\n  cloop auth list\n  cloop completion <bash|zsh|fish>\n  cloop update --manifest <path> --artifact <path> --public-key <base64> [--target <path>]\n  cloop update check --channel-manifest <path> --public-key <base64> --channel <stable|beta|preview> [--offline]\n  cloop update recover --target <path>\n  cloop config explain <field>\n  cloop migrate --dry-run\n  cloop migrate --apply <plan-digest>\n  cloop privacy inspect|export [session]|delete [session]\n  cloop mcp add <name> <stdio|unix|http> <target>\n  cloop mcp list|extensions|auth <name>|auth refresh <name>|auth logout <name>|remove <name>\n\nEXIT CODES:\n  2 invalid input, 3 approval required, 4 agent failure, 5 proof failure\n  6 cancelled, 7 auth/provider failure, 8 lifecycle rejection, 9 update failure"
+        "cloop (experimental)\n\nUSAGE:\n  cloop                       # TUI conversation\n  cloop <prompt>              # read-only conversation\n  cloop ask <question>\n  cloop run <intent>\n  cloop change confirm|discard <session>\n  cloop contract approve <session>\n  cloop resume [session]\n  cloop fork <session>\n  cloop sessions\n  cloop status\n  cloop undo|redo [session]\n  cloop jobs\n  cloop prove|review [change]\n  cloop land <change>\n  cloop approve list\n  cloop approve grant [<kind> [<label>]] [--reviewer-family <family>] [--yes]\n  cloop approve revoke <digest>\n  cloop lsp status\n  cloop formatter status\n  cloop serve [--stdio|--unix <path>|--http <127.0.0.1:port>]\n  cloop acp                   # Agent Client Protocol agent on stdio (read-only conversation)\n  cloop doctor\n  cloop setup --provider <anthropic|openai> --model <model> --sandbox <read-only|workspace-write|danger-full-access> --accept-privacy --accept-provider-data\n  cloop setup status\n  cloop models\n  cloop auth login|logout <anthropic|openai>\n  cloop auth list\n  cloop completion <bash|zsh|fish>\n  cloop update --manifest <path> --artifact <path> --public-key <base64> [--target <path>]\n  cloop update check --channel-manifest <path> --public-key <base64> --channel <stable|beta|preview> [--offline]\n  cloop update recover --target <path>\n  cloop config explain <field>\n  cloop migrate --dry-run\n  cloop migrate --apply <plan-digest>\n  cloop privacy inspect|export [session]|delete [session]\n  cloop mcp add <name> <stdio|unix|http> <target>\n  cloop mcp list|extensions|auth <name>|auth refresh <name>|auth logout <name>|remove <name>\n\nEXIT CODES:\n  2 invalid input, 3 approval required, 4 agent failure, 5 proof failure\n  6 cancelled, 7 auth/provider failure, 8 lifecycle rejection, 9 update failure"
     );
     println!(
         "\nEXPERIMENTAL EXTENSIONS:\n  cloop mcp extensions run <id> [json]  # explicit bounded stdio-v1 handler"
@@ -1107,7 +1116,48 @@ fn setup_status() -> Result<(), CliFailure> {
     }))
 }
 
-fn user_config_directory() -> Result<std::path::PathBuf, CliFailure> {
+/// `approve grant [<kind> [<label>]] [--reviewer-family <family>] [--yes]`
+fn approve_grant_command(arguments: &[String]) -> Result<(), CliFailure> {
+    let mut positional = Vec::new();
+    let mut reviewer_family = None;
+    let mut confirmed = false;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--yes" => confirmed = true,
+            "--reviewer-family" => {
+                index += 1;
+                reviewer_family =
+                    Some(arguments.get(index).cloned().ok_or_else(|| CliFailure {
+                        code: EXIT_INVALID_INPUT,
+                        message: "--reviewer-family requires a value".into(),
+                    })?);
+            }
+            other if other.starts_with("--") => {
+                return Err(CliFailure {
+                    code: EXIT_INVALID_INPUT,
+                    message: format!("unknown option '{other}'"),
+                });
+            }
+            other => positional.push(other.to_owned()),
+        }
+        index += 1;
+    }
+    if positional.len() > 2 {
+        return Err(CliFailure {
+            code: EXIT_INVALID_INPUT,
+            message: "approve grant takes at most a kind and a label".into(),
+        });
+    }
+    operational::approve_grant(
+        positional.first().map(String::as_str),
+        positional.get(1).map(String::as_str),
+        reviewer_family.as_deref(),
+        confirmed,
+    )
+}
+
+pub(crate) fn user_config_directory() -> Result<std::path::PathBuf, CliFailure> {
     let variables = unicode_environment();
     if let Some(directory) = user_config_directory_override(&variables) {
         return Ok(directory);

@@ -2246,18 +2246,22 @@ fn git_with_paths_bytes(
         }
     }
     bounded_arguments.extend(paths.iter().map(|path| (*path).to_owned()));
-    let output = changeloop_ops::run_lifecycle_process(
+    let output = changeloop_ops::run_approved_lifecycle_process(
+        &changeloop_ops::ApprovedExecutor::compiled_in(
+            changeloop_ops::CompiledInExecutor::GIT_WORKSPACE_QUERY,
+            "git",
+            bounded_arguments,
+            120_000,
+            changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+        )
+        .with_compiled_in_environment(vec![
+            ("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()),
+            ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+            ("GIT_TERMINAL_PROMPT".into(), "0".into()),
+            ("GIT_PAGER".into(), "cat".into()),
+        ]),
         root,
-        "git",
-        &bounded_arguments,
-        &[
-            ("GIT_CONFIG_GLOBAL", "/dev/null"),
-            ("GIT_CONFIG_NOSYSTEM", "1"),
-            ("GIT_TERMINAL_PROMPT", "0"),
-            ("GIT_PAGER", "cat"),
-        ],
         None,
-        120_000,
     )?;
     if output.truncated {
         return Err("git output exceeded the bounded 1 MiB process limit".into());
@@ -5200,15 +5204,27 @@ const fn default_lifecycle_timeout_ms() -> u64 {
     120_000
 }
 
+/// `approved_family` is the family recorded on the reviewer's approval. The
+/// independence gate reads that, never the reviewer's own claim about itself; a
+/// reviewer reporting a different family is in breach of the contract it was
+/// approved under.
 fn validate_app_review_result(
     result: &Value,
     independent_family_required: bool,
     implementation_family: &str,
+    approved_family: &str,
 ) -> Result<(), SurfaceError> {
-    let reviewer_family = result["reviewerModelFamily"].as_str().unwrap_or("");
+    let reported = result["reviewerModelFamily"].as_str().unwrap_or("");
+    if !reported.is_empty() && reported != approved_family {
+        return Err(SurfaceError::Proof(format!(
+            "reviewer reported model family '{}' but was approved as '{approved_family}'",
+            redact_sensitive_text(reported)
+        )));
+    }
+    let reviewer_family = approved_family;
     if reviewer_family.trim().is_empty() {
         return Err(SurfaceError::Proof(
-            "review result must identify the reviewer model family".into(),
+            "the reviewer approval must identify the reviewer model family".into(),
         ));
     }
     if result["completedAtMs"]
@@ -5303,8 +5319,18 @@ fn validate_app_review_result(
     Ok(())
 }
 
+/// Review attempts that survived on disk, keyed by change.
+///
+/// A recorded review counts only while the reviewer that produced it is still
+/// approved under the same model family. Repository artifacts are untrusted
+/// content: without a live approval to check the recorded family against, a
+/// restart has no way to tell a real review from a written-down claim, so it
+/// treats none of them as passed.
 fn durable_reviewed_revisions(root: &Path) -> BTreeMap<String, BTreeSet<String>> {
     const MAX_REVIEW_ATTEMPTS: usize = 200;
+    let Some(approved_family) = approved_reviewer_family(root) else {
+        return BTreeMap::new();
+    };
     let Ok(entries) = std::fs::read_dir(root.join(".changeloop/reviews")) else {
         return BTreeMap::new();
     };
@@ -5315,9 +5341,9 @@ fn durable_reviewed_revisions(root: &Path) -> BTreeMap<String, BTreeSet<String>>
             if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 return None;
             }
-            let agreement = read_regular_bounded_app_json(&entry.path().join("agreement.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
+            let agreement_path = entry.path().join("agreement.json");
+            let agreement_bytes = read_regular_bounded_app_json(&agreement_path).ok()?;
+            let agreement: Value = serde_json::from_slice(&agreement_bytes).ok()?;
             let change = agreement["changeId"].as_str()?.to_owned();
             if change.is_empty()
                 || change.len() > MAX_TUI_TITLE_BYTES
@@ -5327,22 +5353,43 @@ fn durable_reviewed_revisions(root: &Path) -> BTreeMap<String, BTreeSet<String>>
             {
                 return None;
             }
-            let evidence = read_regular_bounded_app_json(&entry.path().join("evidence.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
+            let evidence_path = entry.path().join("evidence.json");
+            let evidence_bytes = read_regular_bounded_app_json(&evidence_path).ok()?;
+            let evidence: Value = serde_json::from_slice(&evidence_bytes).ok()?;
             let revision = evidence["workspaceRevision"].as_str()?.to_owned();
             if evidence["changeId"].as_str() != Some(change.as_str()) || revision.is_empty() {
                 return None;
             }
-            let result = read_regular_bounded_app_json(&entry.path().join("result.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
+            let result_path = entry.path().join("result.json");
+            let result_bytes = read_regular_bounded_app_json(&result_path).ok()?;
+            let attempt = entry.file_name();
+            let attempt = attempt.to_str()?;
+            if !verify_authenticated_app_json(
+                root,
+                &result_path,
+                "app-review",
+                &format!("{change}:{attempt}"),
+                &result_bytes,
+                BTreeMap::from([
+                    (
+                        "agreement".into(),
+                        changeloop_ops::executor_approval::config_digest(&agreement_bytes),
+                    ),
+                    (
+                        "evidence".into(),
+                        changeloop_ops::executor_approval::config_digest(&evidence_bytes),
+                    ),
+                ]),
+            ) {
+                return None;
+            }
+            let result: Value = serde_json::from_slice(&result_bytes).ok()?;
             let blocking = result["findings"].as_array().is_some_and(|findings| {
                 findings
                     .iter()
                     .any(|finding| finding["blocking"] == true && finding["state"] == "verified")
             });
-            (validate_app_review_result(&result, false, "").is_ok() && !blocking)
+            (validate_app_review_result(&result, false, "", &approved_family).is_ok() && !blocking)
                 .then_some((change, revision))
         })
         .fold(BTreeMap::new(), |mut reviews, (change, revision)| {
@@ -5352,6 +5399,27 @@ fn durable_reviewed_revisions(root: &Path) -> BTreeMap<String, BTreeSet<String>>
                 .insert(revision);
             reviews
         })
+}
+
+/// The model family recorded on this project's current reviewer approval, if
+/// the reviewer it names is still configured and still approved.
+fn approved_reviewer_family(root: &Path) -> Option<String> {
+    let bytes = read_regular_bounded_app_json(&root.join(".changeloop/reviewer.json")).ok()?;
+    let config: AppReviewerConfig = serde_json::from_slice(&bytes).ok()?;
+    let approved = authorize_configured_executor(&changeloop_ops::ExecutorRequest {
+        root: root.to_path_buf(),
+        kind: changeloop_ops::ExecutorKind::Reviewer,
+        label: "reviewer".into(),
+        program: config.command,
+        args: config.args,
+        environment: Vec::new(),
+        harness_environment_names: Vec::new(),
+        timeout_ms: config.timeout_ms,
+        max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+        config_digest: changeloop_ops::executor_approval::config_digest(&bytes),
+    })
+    .ok()?;
+    approved.reviewer_model_family().map(str::to_owned)
 }
 
 fn read_regular_bounded_app_json(path: &Path) -> Result<Vec<u8>, std::io::Error> {
@@ -5582,6 +5650,114 @@ fn atomic_write_private_app_json(
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     bytes.push(b'\n');
     atomic_write_private_app_file(root, path, &bytes)
+}
+
+fn app_record_authenticator(
+) -> Result<changeloop_evidence::authenticated_record::RecordAuthenticator, SurfaceError> {
+    #[cfg(test)]
+    let store = tests::approval_store_override().unwrap_or(
+        changeloop_ops::ApprovalStore::path_in(&tui_user_config_directory()?),
+    );
+    #[cfg(not(test))]
+    let store = changeloop_ops::ApprovalStore::path_in(&tui_user_config_directory()?);
+    let directory = store
+        .parent()
+        .ok_or_else(|| SurfaceError::Invalid("operator configuration path has no parent".into()))?;
+    Ok(changeloop_evidence::authenticated_record::RecordAuthenticator::new(directory))
+}
+
+fn app_binding_digest(path: &Path, limit: u64) -> Result<String, SurfaceError> {
+    let bytes = match read_regular_bounded_file(path, limit) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(SurfaceError::Io(error)),
+    };
+    Ok(changeloop_ops::executor_approval::config_digest(&bytes))
+}
+
+/// Configuration outside the workspace revision that changes what a proof or
+/// review means. A signed record is fresh only while these exact bytes remain.
+fn app_lifecycle_bindings(root: &Path) -> Result<BTreeMap<String, String>, SurfaceError> {
+    #[cfg(test)]
+    let approval_store = tests::approval_store_override().unwrap_or(
+        changeloop_ops::ApprovalStore::path_in(&tui_user_config_directory()?),
+    );
+    #[cfg(not(test))]
+    let approval_store = changeloop_ops::ApprovalStore::path_in(&tui_user_config_directory()?);
+    Ok(BTreeMap::from([
+        (
+            "proof-providers".into(),
+            app_binding_digest(
+                &root.join(".changeloop/proof-providers.json"),
+                MAX_APP_JSON_BYTES,
+            )?,
+        ),
+        (
+            "reviewer".into(),
+            app_binding_digest(&root.join(".changeloop/reviewer.json"), MAX_APP_JSON_BYTES)?,
+        ),
+        (
+            "prove-oracle".into(),
+            app_binding_digest(
+                &root.join(".changeloop/prove-oracle.json"),
+                MAX_APP_JSON_BYTES,
+            )?,
+        ),
+        (
+            "executor-approvals".into(),
+            app_binding_digest(&approval_store, 4 * 1024 * 1024)?,
+        ),
+    ]))
+}
+
+fn atomic_write_authenticated_app_json(
+    root: &Path,
+    path: &Path,
+    kind: &str,
+    record_id: &str,
+    value: &Value,
+    extra_bindings: BTreeMap<String, String>,
+) -> Result<(), SurfaceError> {
+    let mut bytes = serde_json::to_vec_pretty(value)
+        .map_err(|error| SurfaceError::Invalid(format!("record serialization: {error}")))?;
+    bytes.push(b'\n');
+    atomic_write_private_app_file(root, path, &bytes)?;
+    let authenticator = app_record_authenticator()?;
+    let mut bindings = app_lifecycle_bindings(root)?;
+    bindings.extend(extra_bindings);
+    let sidecar = authenticator
+        .sign(root, kind, record_id, &bytes, bindings)
+        .map_err(|error| SurfaceError::Invalid(format!("record authentication: {error}")))?;
+    authenticator
+        .write_sidecar(path, &sidecar)
+        .map_err(|error| SurfaceError::Invalid(format!("record authentication: {error}")))?;
+    Ok(())
+}
+
+fn verify_authenticated_app_json(
+    root: &Path,
+    path: &Path,
+    kind: &str,
+    record_id: &str,
+    bytes: &[u8],
+    extra_bindings: BTreeMap<String, String>,
+) -> bool {
+    let Ok(authenticator) = app_record_authenticator() else {
+        return false;
+    };
+    let Ok(sidecar) = authenticator.load_sidecar(path) else {
+        return false;
+    };
+    let Ok(mut bindings) = app_lifecycle_bindings(root) else {
+        return false;
+    };
+    bindings.extend(extra_bindings);
+    if bindings != sidecar.bindings {
+        return false;
+    }
+    authenticator
+        .verify(root, kind, record_id, bytes, &sidecar)
+        .is_ok()
 }
 
 /// Dispatch project lifecycle hooks only when trusted process configuration
@@ -6560,17 +6736,38 @@ impl<B: SurfaceBackend> AppService<B> {
                 let Ok(file_type) = entry.file_type() else {
                     continue;
                 };
+                let path = entry.path();
+                let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("");
                 if !file_type.is_file()
-                    || entry.path().extension().and_then(|value| value.to_str()) != Some("json")
+                    || path.extension().and_then(|value| value.to_str()) != Some("json")
+                    || name.ends_with(".auth.json")
+                    || name.ends_with(".hooks.json")
                     || entry
                         .metadata()
                         .is_ok_and(|metadata| metadata.len() > MAX_DISCOVERY_ARTIFACT_BYTES)
                 {
                     continue;
                 }
-                let Ok(bytes) = read_regular_bounded_app_json(&entry.path()) else {
+                let Ok(bytes) = read_regular_bounded_app_json(&path) else {
                     continue;
                 };
+                let Some(change_from_name) = path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .map(str::to_owned)
+                else {
+                    continue;
+                };
+                if !verify_authenticated_app_json(
+                    root,
+                    &path,
+                    "app-proof",
+                    &change_from_name,
+                    &bytes,
+                    BTreeMap::new(),
+                ) {
+                    continue;
+                }
                 let Ok(proof) = serde_json::from_slice::<Value>(&bytes) else {
                     continue;
                 };
@@ -6651,11 +6848,16 @@ impl<B: SurfaceBackend> AppService<B> {
             self.hook_execution_allowed,
         );
         let path = root.join(".changeloop/proof-providers.json");
+        let mut providers_digest = changeloop_ops::executor_approval::absent_config_digest();
+        let mut builtin_default = false;
         let providers: Vec<AppProofProvider> = if path.is_file() {
-            serde_json::from_slice(&read_bounded_app_json(&path)?).map_err(|error| {
+            let bytes = read_bounded_app_json(&path)?;
+            providers_digest = changeloop_ops::executor_approval::config_digest(&bytes);
+            serde_json::from_slice(&bytes).map_err(|error| {
                 SurfaceError::Invalid(format!("invalid {}: {error}", path.display()))
             })?
         } else {
+            builtin_default = true;
             vec![AppProofProvider {
                 id: "git-diff-check".into(),
                 command: "git".into(),
@@ -6670,20 +6872,49 @@ impl<B: SurfaceBackend> AppService<B> {
                 "reason":"no proof providers configured","requirementsWeakened":false}));
         }
         let revision = workspace_resume_revision(&root)?;
-        let mut receipts = Vec::new();
-        for provider in providers {
+        // Authority for every repository-configured provider is resolved before
+        // any of them runs, so a refusal cannot leave Prove half-executed.
+        let mut approved_providers = BTreeMap::new();
+        for provider in &providers {
             if provider.id.trim().is_empty() || provider.command.trim().is_empty() {
                 return Err(SurfaceError::Invalid(
                     "proof provider id and command are required".into(),
                 ));
             }
-            let output = changeloop_ops::run_lifecycle_process_cancellable(
+            let approved = if builtin_default {
+                changeloop_ops::ApprovedExecutor::compiled_in(
+                    changeloop_ops::CompiledInExecutor::HARDENED_GIT_PROOF,
+                    &provider.command,
+                    provider.args.clone(),
+                    provider.timeout_ms,
+                    changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+                )
+            } else {
+                authorize_configured_executor(&changeloop_ops::ExecutorRequest {
+                    root: root.clone(),
+                    kind: changeloop_ops::ExecutorKind::ProofProvider,
+                    label: provider.id.clone(),
+                    program: provider.command.clone(),
+                    args: provider.args.clone(),
+                    environment: Vec::new(),
+                    harness_environment_names: Vec::new(),
+                    timeout_ms: provider.timeout_ms,
+                    max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+                    config_digest: providers_digest.clone(),
+                })?
+            };
+            approved_providers.insert(provider.id.clone(), approved);
+        }
+        let mut receipts = Vec::new();
+        for provider in providers {
+            let approved = approved_providers
+                .get(&provider.id)
+                .ok_or_else(|| SurfaceError::Invalid("proof provider lost its approval".into()))?;
+            let output = changeloop_ops::run_approved_lifecycle_process_cancellable(
+                approved,
                 &root,
-                &provider.command,
-                &provider.args,
-                &[],
                 None,
-                provider.timeout_ms,
+                &[],
                 &|| self.cancel.is_cancelled(),
             )
             .map_err(|error| {
@@ -6752,13 +6983,16 @@ impl<B: SurfaceBackend> AppService<B> {
         // The proof JSON is the durable commit marker used by restart
         // discovery. Write advisory hook evidence first, then commit proof,
         // and only then advance in-memory lifecycle state.
-        atomic_write_private_app_json(
+        atomic_write_authenticated_app_json(
             &root,
             &proof_directory.join(format!("{change}.json")),
+            "app-proof",
+            &change,
             &json!({
                 "schemaVersion":1,"changeId":change,"workspaceRevision":revision,
                 "receipts":receipts,"completedAtMs":now_ms()
             }),
+            BTreeMap::new(),
         )?;
         self.lifecycle.proof_status = Some("passed");
         self.lifecycle.phase = Some(if risk == ChangeRisk::Low {
@@ -6789,10 +7023,22 @@ impl<B: SurfaceBackend> AppService<B> {
             let proof_path = root
                 .join(".changeloop/proofs")
                 .join(format!("{change}.json"));
-            let proof: Value = read_bounded_app_json(&proof_path)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                .ok_or_else(|| SurfaceError::Invalid("review requires passed proof".into()))?;
+            let proof_bytes = read_bounded_app_json(&proof_path)
+                .map_err(|_| SurfaceError::Invalid("review requires passed proof".into()))?;
+            if !verify_authenticated_app_json(
+                &root,
+                &proof_path,
+                "app-proof",
+                &change,
+                &proof_bytes,
+                BTreeMap::new(),
+            ) {
+                return Err(SurfaceError::Invalid(
+                    "review requires an authenticated proof record".into(),
+                ));
+            }
+            let proof: Value = serde_json::from_slice(&proof_bytes)
+                .map_err(|_| SurfaceError::Invalid("review requires passed proof".into()))?;
             let current_revision = workspace_resume_revision(&root)?;
             if proof["workspaceRevision"].as_str() != Some(current_revision.as_str()) {
                 return Err(SurfaceError::Invalid(
@@ -6819,13 +7065,35 @@ impl<B: SurfaceBackend> AppService<B> {
                 "reason":format!("attach an independent reviewer in {}",config_path.display()),
                 "independent":true}));
         }
+        let reviewer_bytes = read_bounded_app_json(&config_path)?;
+        let reviewer_digest = changeloop_ops::executor_approval::config_digest(&reviewer_bytes);
         let config: AppReviewerConfig =
-            serde_json::from_slice(&read_bounded_app_json(&config_path)?).map_err(|error| {
+            serde_json::from_slice(&reviewer_bytes).map_err(|error| {
                 SurfaceError::Invalid(format!("invalid {}: {error}", config_path.display()))
             })?;
         if config.command.trim().is_empty() {
             return Err(SurfaceError::Invalid("reviewer command is required".into()));
         }
+        let approved_reviewer = authorize_configured_executor(&changeloop_ops::ExecutorRequest {
+            root: root.clone(),
+            kind: changeloop_ops::ExecutorKind::Reviewer,
+            label: "reviewer".into(),
+            program: config.command.clone(),
+            args: config.args.clone(),
+            environment: Vec::new(),
+            harness_environment_names: Vec::new(),
+            timeout_ms: config.timeout_ms,
+            max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+            config_digest: reviewer_digest,
+        })?;
+        let approved_reviewer_family = approved_reviewer
+            .reviewer_model_family()
+            .ok_or_else(|| {
+                SurfaceError::ApprovalRequired(
+                    "the reviewer approval records no model family; re-grant it with one".into(),
+                )
+            })?
+            .to_owned();
         let attempt = format!("review-{}", OperationId::new());
         let artifacts = root.join(".changeloop/reviews").join(&attempt);
         create_private_app_directory(&root, &artifacts)?;
@@ -6892,13 +7160,11 @@ impl<B: SurfaceBackend> AppService<B> {
         atomic_write_private_app_json(&root, &artifacts.join("request.json"), &packet)?;
         let packet_bytes = serde_json::to_vec(&packet)
             .map_err(|error| SurfaceError::Invalid(format!("review request: {error}")))?;
-        let output = changeloop_ops::run_lifecycle_process_cancellable(
+        let output = changeloop_ops::run_approved_lifecycle_process_cancellable(
+            &approved_reviewer,
             clean_review.path(),
-            &config.command,
-            &config.args,
-            &[],
             Some(packet_bytes),
-            config.timeout_ms,
+            &[],
             &|| self.cancel.is_cancelled(),
         )
         .map_err(|error| {
@@ -6918,13 +7184,36 @@ impl<B: SurfaceBackend> AppService<B> {
         }
         let result: Value = serde_json::from_slice(&output.stdout)
             .map_err(|error| SurfaceError::Proof(format!("invalid reviewer result: {error}")))?;
-        validate_app_review_result(&result, independent_family_required, &implementation_family)?;
+        validate_app_review_result(
+            &result,
+            independent_family_required,
+            &implementation_family,
+            &approved_reviewer_family,
+        )?;
         let blocking = result["findings"].as_array().is_some_and(|findings| {
             findings
                 .iter()
                 .any(|finding| finding["blocking"] == true && finding["state"] == "verified")
         });
-        atomic_write_private_app_json(&root, &artifacts.join("result.json"), &result)?;
+        let agreement_bytes = read_regular_bounded_app_json(&artifacts.join("agreement.json"))?;
+        let evidence_bytes = read_regular_bounded_app_json(&artifacts.join("evidence.json"))?;
+        atomic_write_authenticated_app_json(
+            &root,
+            &artifacts.join("result.json"),
+            "app-review",
+            &format!("{change}:{attempt}"),
+            &result,
+            BTreeMap::from([
+                (
+                    "agreement".into(),
+                    changeloop_ops::executor_approval::config_digest(&agreement_bytes),
+                ),
+                (
+                    "evidence".into(),
+                    changeloop_ops::executor_approval::config_digest(&evidence_bytes),
+                ),
+            ]),
+        )?;
         if blocking {
             self.lifecycle.review_status = Some("failed");
             self.lifecycle.phase = Some("review_failed");
@@ -10539,6 +10828,35 @@ fn tui_user_config_directory() -> Result<PathBuf, SurfaceError> {
         })
 }
 
+/// Turns a repository-configured lifecycle executable into authority, or
+/// refuses. The store lives in the operator's configuration directory, which
+/// the repository cannot write; there is no app-server path that grants one.
+fn authorize_configured_executor(
+    request: &changeloop_ops::ExecutorRequest,
+) -> Result<changeloop_ops::ApprovedExecutor, SurfaceError> {
+    #[cfg(test)]
+    let store = match tests::approval_store_override() {
+        Some(path) => path,
+        None => changeloop_ops::ApprovalStore::path_in(&tui_user_config_directory()?),
+    };
+    #[cfg(not(test))]
+    let store = changeloop_ops::ApprovalStore::path_in(&tui_user_config_directory()?);
+    changeloop_ops::executor_approval::authorize(&store, request).map_err(|error| match error {
+        changeloop_ops::ApprovalError::Required(resolved) => SurfaceError::ApprovalRequired(
+            format!(
+                "'{}' is not approved to run for this project ({} {}, sha256 {}); grant it with `cloop approve grant {} {}`",
+                resolved.request.label,
+                resolved.resolved_program.display(),
+                resolved.request.args.join(" "),
+                resolved.program_digest,
+                resolved.request.kind,
+                resolved.request.label,
+            ),
+        ),
+        other => SurfaceError::Invalid(other.to_string()),
+    })
+}
+
 fn validate_tui_model(model: &str) -> Result<(), SurfaceError> {
     if model.is_empty()
         || model.len() > MAX_TUI_TITLE_BYTES
@@ -10564,6 +10882,91 @@ fn now_ms() -> u64 {
 mod tests {
     use std::collections::VecDeque;
     use std::fs;
+
+    // Tests run in parallel threads of one process, so the operator store
+    // location cannot come from an environment variable without racing.
+    thread_local! {
+        static APPROVAL_STORE: std::cell::RefCell<Option<std::path::PathBuf>> =
+            const { std::cell::RefCell::new(None) };
+        static APPROVAL_HOME: std::cell::RefCell<Option<tempfile::TempDir>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    pub(super) fn approval_store_override() -> Option<std::path::PathBuf> {
+        APPROVAL_STORE.with(|cell| cell.borrow().clone())
+    }
+
+    /// Grants every lifecycle executable the repository at `root` configures,
+    /// into an operator store outside it. `reviewer_family` is what the
+    /// independence gate will read — the reviewer's own claim is checked
+    /// against it, never trusted in its place.
+    fn approve_configured_executors(root: &std::path::Path, reviewer_family: &str) {
+        let path = APPROVAL_STORE
+            .with(|cell| cell.borrow().clone())
+            .unwrap_or_else(|| {
+                let home = tempfile::tempdir().expect("an operator configuration directory");
+                let path = home.path().join("executor-approvals.json");
+                APPROVAL_HOME.with(|slot| *slot.borrow_mut() = Some(home));
+                APPROVAL_STORE.with(|slot| *slot.borrow_mut() = Some(path.clone()));
+                path
+            });
+        let mut store = changeloop_ops::ApprovalStore::load(&path).expect("store loads");
+
+        let providers_path = root.join(".changeloop/proof-providers.json");
+        if let Ok(bytes) = fs::read(&providers_path) {
+            let digest = changeloop_ops::executor_approval::config_digest(&bytes);
+            let providers: Vec<super::AppProofProvider> =
+                serde_json::from_slice(&bytes).expect("provider configuration parses");
+            for provider in providers {
+                let request = changeloop_ops::ExecutorRequest {
+                    root: root.to_path_buf(),
+                    kind: changeloop_ops::ExecutorKind::ProofProvider,
+                    label: provider.id.clone(),
+                    program: provider.command.clone(),
+                    args: provider.args.clone(),
+                    environment: Vec::new(),
+                    harness_environment_names: Vec::new(),
+                    timeout_ms: provider.timeout_ms,
+                    max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+                    config_digest: digest.clone(),
+                };
+                let resolved = changeloop_ops::executor_approval::resolve(&request)
+                    .expect("provider program resolves");
+                store
+                    .grant(&resolved, changeloop_ops::ApprovalProvenance::User, None)
+                    .expect("provider approval is recorded");
+            }
+        }
+
+        let reviewer_path = root.join(".changeloop/reviewer.json");
+        if let Ok(bytes) = fs::read(&reviewer_path) {
+            let digest = changeloop_ops::executor_approval::config_digest(&bytes);
+            let reviewer: super::AppReviewerConfig =
+                serde_json::from_slice(&bytes).expect("reviewer configuration parses");
+            let request = changeloop_ops::ExecutorRequest {
+                root: root.to_path_buf(),
+                kind: changeloop_ops::ExecutorKind::Reviewer,
+                label: "reviewer".into(),
+                program: reviewer.command.clone(),
+                args: reviewer.args.clone(),
+                environment: Vec::new(),
+                harness_environment_names: Vec::new(),
+                timeout_ms: reviewer.timeout_ms,
+                max_output_bytes: changeloop_ops::MAX_LIFECYCLE_OUTPUT_BYTES,
+                config_digest: digest,
+            };
+            let resolved = changeloop_ops::executor_approval::resolve(&request)
+                .expect("reviewer program resolves");
+            store
+                .grant(
+                    &resolved,
+                    changeloop_ops::ApprovalProvenance::User,
+                    Some(reviewer_family.to_owned()),
+                )
+                .expect("reviewer approval is recorded");
+        }
+    }
+
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -12536,6 +12939,7 @@ mod tests {
                 &json!({"reviewerModelFamily":"openai","findings":[],"completedAtMs":1}),
                 true,
                 "openai",
+                "openai",
             )
             .is_err()
         );
@@ -12547,6 +12951,7 @@ mod tests {
                 }]}),
                 true,
                 "openai",
+                "anthropic",
             )
             .is_err()
         );
@@ -12558,6 +12963,7 @@ mod tests {
             }]}),
             true,
             "openai",
+            "anthropic",
         )
         .is_err());
         assert!(
@@ -12569,6 +12975,7 @@ mod tests {
                 }]}),
                 true,
                 "openai",
+                "anthropic",
             )
             .is_err()
         );
@@ -13084,6 +13491,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        approve_configured_executors(root.path(), "fixture-reviewer");
         let mut service = AppService::with_project(
             Storage::open_in_memory().unwrap(),
             MockBackend::default(),
@@ -13305,6 +13713,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        approve_configured_executors(root.path(), "fixture-reviewer");
         let database = root.path().join(".changeloop/restart-discovery.db");
         let mut service = AppService::with_project(
             Storage::open(&database).unwrap(),
@@ -13438,6 +13847,38 @@ mod tests {
             .result
             .unwrap();
         assert_eq!(discovered["recoverableChanges"], json!([]));
+
+        // A regular unsigned proof that looks fresh still grants nothing:
+        // authenticity, not shape, decides recoverability.
+        std::fs::write(
+            proof_directory.join("forged-unsigned.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion":1,
+                "changeId":"forged-unsigned",
+                "workspaceRevision":workspace_resume_revision(root.path()).unwrap(),
+                "receipts":[{"receiptId":"r1","provider":"fixture","claims":[],"workspaceRevision":"x","evidenceHash":"sha256:00","completedAtMs":1}],
+                "completedAtMs":1
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let storage = Storage::open_in_memory().unwrap();
+        storage
+            .create_session(&SessionId::from_stable("forged-unsigned"), 1)
+            .unwrap();
+        let mut unsigned_service =
+            AppService::with_project(storage, MockBackend::default(), root.path()).unwrap();
+        let unsigned = unsigned_service
+            .handle(WireRequest {
+                id: "unsigned-discovery".into(),
+                method: "change.get".into(),
+                params: Value::Null,
+                token: None,
+            })
+            .await
+            .result
+            .unwrap();
+        assert_eq!(unsigned["recoverableChanges"], json!([]));
 
         let traversal = service
             .handle(WireRequest {
