@@ -1,5 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
+// Shared with drift classification: the same kinds that force a deep tier here
+// are the ones a silent downgrade must block at Land.
+import { DRIFT_BLOCKING_TASK_KINDS } from "../observability/model-drift.mjs";
 
 export function createAgentPlanner({
   root, plans, runtime, schemaVersion, validate, loadRuntime, policy,
@@ -12,13 +15,12 @@ export function createAgentPlanner({
     const state = loadRuntime(id);
     const highRisk = state.impact === "high" ||
       (state.securityTriggers || []).length > 0 ||
-      ["contract", "architecture", "security", "migration", "review"].includes(task.kind);
+      DRIFT_BLOCKING_TASK_KINDS.has(task.kind);
     let tier = task.requestedModel;
     if (tier && !["fast", "standard", "deep"].includes(tier))
       fail(`task '${task.id}' model must be fast|standard|deep`);
     if (!tier) {
-      if (highRisk && ["contract", "architecture", "security", "migration", "review"]
-        .includes(task.kind)) tier = "deep";
+      if (highRisk && DRIFT_BLOCKING_TASK_KINDS.has(task.kind)) tier = "deep";
       else if (!highRisk && ["inventory", "logs", "mechanical-docs"].includes(task.kind))
         tier = "fast";
       else tier = "standard";

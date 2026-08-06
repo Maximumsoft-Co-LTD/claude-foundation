@@ -1,7 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { classifyDrift, isBlockingDrift } from "./model-drift.mjs";
 
 export const HOST_EXECUTION_SCHEMA_VERSION = 1;
+const DRIFT_KINDS = ["match", "fallback", "upgrade", "downgrade", "unknown"];
 const STATUSES = new Set(["completed", "failed", "timeout", "cancelled", "error"]);
 const ATTEMPT_STATUSES = new Set(["completed", "failed", "timeout", "cancelled", "error"]);
 
@@ -183,4 +185,148 @@ export function createHostExecutionStore({ root, now = () => new Date().toISOStr
   }
 
   return { executionPath, importExecution };
+}
+
+/**
+ * Model drift is derived from stored provenance at read time and is never read
+ * from host-supplied fields: a host that graded its own run could otherwise
+ * clear the finding. Every join step degrades to an "unknown" classification
+ * rather than throwing, because a minimal install legitimately carries
+ * executions with no instruction surface behind them.
+ */
+export function createModelDriftInspector({
+  logs = null, instructionManifests = null, activeChangePath = null,
+  policy = null, taskBlocks = null, taskMetadata = null
+} = {}) {
+  function safeJson(path) {
+    try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
+  }
+
+  function safeFiles(dir) {
+    try {
+      return readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => entry.name).sort();
+    } catch { return []; }
+  }
+
+  function activePolicy() {
+    try { return typeof policy === "function" ? policy() : policy; } catch { return null; }
+  }
+
+  /**
+   * A manifest digest covers instruction content and requested tier but not the
+   * scope it was written for, so sibling tasks sharing a tier share a digest.
+   * The requested tier stays exact; the task attribution becomes a candidate set.
+   */
+  function manifestsByDigest(changeId) {
+    const index = new Map();
+    if (!instructionManifests) return index;
+    const dir = join(instructionManifests, changeId);
+    for (const name of safeFiles(dir)) {
+      const manifest = safeJson(join(dir, name));
+      const digest = manifest?.manifestDigest;
+      if (typeof digest !== "string" || !digest) continue;
+      const scope = name.replace(/\.json$/, "").split("-").slice(1).join("-");
+      const entry = index.get(digest) ||
+        { requestedModel: manifest.execution?.requestedModel ?? null, scopes: [] };
+      if (scope && !entry.scopes.includes(scope)) entry.scopes.push(scope);
+      index.set(digest, entry);
+    }
+    return index;
+  }
+
+  function taskKinds(changeId) {
+    const index = new Map();
+    if (!activeChangePath || !taskBlocks || !taskMetadata) return index;
+    try {
+      const content = readFileSync(join(activeChangePath(changeId), "tasks.md"), "utf8");
+      for (const task of taskBlocks(content).map(taskMetadata))
+        if (task?.id) index.set(String(task.id).toUpperCase(), task.kind || null);
+    } catch { return index; }
+    return index;
+  }
+
+  function storedExecutions(changeId) {
+    if (!logs) return [];
+    const dir = join(logs, changeId, "host-executions");
+    return safeFiles(dir).map((name) => safeJson(join(dir, name)))
+      .filter((value) => value && typeof value === "object" && !Array.isArray(value));
+  }
+
+  function driftRows(changeId) {
+    const manifests = manifestsByDigest(changeId);
+    const kinds = taskKinds(changeId);
+    const selectedPolicy = activePolicy();
+    const rows = [];
+    for (const execution of storedExecutions(changeId)) {
+      const digest = typeof execution.instructionManifestDigest === "string" &&
+        execution.instructionManifestDigest ? execution.instructionManifestDigest : null;
+      const manifest = digest ? manifests.get(digest) || null : null;
+      const candidates = (manifest?.scopes || [])
+        .map((scope) => ({ id: scope, kind: kinds.get(scope.toUpperCase()) ?? null }));
+      const known = candidates.filter((candidate) => candidate.kind !== null);
+      const provenance = !digest ? "no-digest"
+        : !manifest ? "no-manifest"
+          : candidates.length > 1 ? "ambiguous-scope"
+            : known.length ? "task" : "non-task-scope";
+      const attempts = Array.isArray(execution.attempts) && execution.attempts.length
+        ? execution.attempts : [null];
+      for (const attempt of attempts) {
+        const actualModel = attempt?.model || execution.actualModel || null;
+        const drift = classifyDrift({
+          requestedTier: manifest?.requestedModel ?? null,
+          actualModelId: actualModel,
+          policy: selectedPolicy
+        });
+        const blocking = known.filter((candidate) => isBlockingDrift(drift.kind, candidate.kind));
+        rows.push({
+          dispatchId: execution.dispatchId ?? null,
+          attempt: attempt?.attempt ?? null,
+          taskId: candidates.length === 1 ? candidates[0].id : null,
+          taskKind: candidates.length === 1 ? candidates[0].kind : null,
+          ...(candidates.length > 1
+            ? { ambiguousTasks: candidates.map((candidate) => candidate.id) } : {}),
+          requestedTier: drift.requestedTier,
+          actualModel,
+          actualTier: drift.actualTier,
+          kind: drift.kind,
+          blocking: blocking.length > 0,
+          ...(blocking.length && candidates.length > 1
+            ? { blockingTasks: blocking.map((candidate) => candidate.id) } : {}),
+          provenance,
+          reason: drift.reason
+        });
+      }
+    }
+    return rows;
+  }
+
+  function changeDrift(changeId) {
+    const rows = driftRows(changeId);
+    const byKind = Object.fromEntries(DRIFT_KINDS.map((kind) => [kind, 0]));
+    const byProvenance = {};
+    const unknownReasons = {};
+    for (const row of rows) {
+      byKind[row.kind] = Number(byKind[row.kind] || 0) + 1;
+      byProvenance[row.provenance] = Number(byProvenance[row.provenance] || 0) + 1;
+      if (row.kind === "unknown")
+        unknownReasons[row.reason] = Number(unknownReasons[row.reason] || 0) + 1;
+    }
+    return {
+      executions: new Set(rows.map((row) => row.dispatchId)).size,
+      attempts: rows.length,
+      byKind, byProvenance, unknownReasons,
+      downgrades: rows.filter((row) => row.kind === "downgrade"),
+      blocking: rows.filter((row) => row.blocking),
+      measurement: "derived-from-instruction-manifest-join"
+    };
+  }
+
+  /** Gate input for Land. Empty array means nothing to answer for. */
+  function blockingDrift(changeId) {
+    return driftRows(changeId).filter((row) => row.blocking);
+  }
+
+  return { blockingDrift, changeDrift, driftRows };
 }

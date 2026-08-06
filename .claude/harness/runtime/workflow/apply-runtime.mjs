@@ -1,9 +1,10 @@
 import {
-  existsSync, mkdirSync, readdirSync, rmSync
+  existsSync, mkdirSync, readdirSync, readFileSync, rmSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { verifySpecSync } from "./spec-sync-verify.mjs";
 
 export function createApplyRuntime({
   root,
@@ -35,7 +36,7 @@ export function createApplyRuntime({
   assertMultiRepositoryArchiveReady,
   archivedChangeRelativePath,
   pendingTasks,
-  isPinnedOpenSpecVersion,
+  assertOpenSpecCli,
   proofAudit,
   cleanupChangeLeases,
   now,
@@ -387,9 +388,57 @@ export function createApplyRuntime({
     return results;
   }
 
+  function currentSpecText(capability) {
+    const path = join(root, "openspec", "specs", capability, "spec.md");
+    return existsSync(path) ? readFileSync(path, "utf8") : null;
+  }
+
+  function captureSpecSyncInputs(id) {
+    const dir = join(changePath(id), "specs");
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() &&
+        existsSync(join(dir, entry.name, "spec.md")))
+      .map((entry) => ({
+        capability: entry.name,
+        delta: readFileSync(join(dir, entry.name, "spec.md"), "utf8"),
+        before: currentSpecText(entry.name)
+      }));
+  }
+
+  function verifyArchivedSpecs(captured) {
+    return captured.flatMap(({ capability, delta, before }) =>
+      verifySpecSync({ before, after: currentSpecText(capability), delta })
+        .violations.map((violation) => ({ capability, ...violation })));
+  }
+
+  function failSpecSync(violations) {
+    fail(`archived specs do not match the change delta:\n${violations
+      .map((violation) => `  ${violation.capability}/${violation.requirement || "-"}: ${
+        violation.detail}`).join("\n")}`);
+  }
+
+  // The gate can only fire once the change is already recorded archived, so a
+  // retry would otherwise take the early return and land the corrupted specs.
+  // Re-verifying from the inputs captured before the merge means a repaired spec
+  // tree clears the block on its own, with no one hand-editing runtime state.
+  function outstandingSpecSync(state) {
+    if (!state.specSyncViolations?.length) return [];
+    const captured = state.specSyncInputs;
+    return Array.isArray(captured) && captured.length
+      ? verifyArchivedSpecs(captured) : state.specSyncViolations;
+  }
+
   function archive(id) {
     const initial = loadRuntime(id);
     if (initial.status === "archived") {
+      const outstanding = outstandingSpecSync(initial);
+      if (outstanding.length) failSpecSync(outstanding);
+      if (initial.specSyncViolations) {
+        delete initial.specSyncViolations;
+        delete initial.specSyncInputs;
+        saveRuntime(initial);
+      }
       const audit = proofAudit(id, true);
       if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
       let resumed = false;
@@ -437,6 +486,12 @@ export function createApplyRuntime({
       saveRuntime(initial);
       const audit = proofAudit(id, true);
       if (!audit.valid) fail(`recovered archive has invalid proof: ${audit.reason}`);
+      // The merge already ran and the pre-merge spec text died with the
+      // interrupted transaction, so spec sync cannot be checked here: without
+      // 'before', a removal and a preserved requirement are indistinguishable
+      // from a bad merge. Say so rather than let the silence read as verified.
+      console.error(
+        `WARNING: spec sync was not verified for ${id}; the interrupted archive left no pre-merge specs to compare against`);
       console.log(`ARCHIVED ${id}\n  recovered: interrupted archive transaction`);
       return;
     }
@@ -463,12 +518,13 @@ export function createApplyRuntime({
     const pending = pendingTasks(id);
     if (pending.length) fail(`${pending.length} implementation task(s) remain unchecked`);
     const preArchiveWorkspaceHash = readiness.hash;
-    const installed = spawnSync("openspec", ["--version"], { cwd: root, encoding: "utf8" });
-    if (installed.error?.code === "ENOENT")
-      fail("OpenSpec CLI is required for safe spec sync and archive (@fission-ai/openspec@1.7.0)");
-    const installedVersion = `${installed.stdout || ""}${installed.stderr || ""}`;
-    if (!isPinnedOpenSpecVersion(installedVersion))
-      fail(`OpenSpec version mismatch; required 1.7.0, found '${installedVersion.trim()}'`);
+    // 'openspec archive' moves the change out of openspec/changes and rewrites
+    // openspec/specs in one step, so the delta and the pre-merge spec text can
+    // only be read now.
+    const specSyncInputs = captureSpecSyncInputs(id);
+    // landCheck already gated this; repeated here because it is the last point
+    // before the destructive step and the CLI can disappear in between.
+    assertOpenSpecCli(root, fail);
     const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: root, encoding: "utf8" });
     if (cli.status !== 0) fail(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
     state.status = "archived";
@@ -477,6 +533,17 @@ export function createApplyRuntime({
     state.archivedChangePath = archivedChangeRelativePath(id);
     state.land = { ...(state.land || {}), status: "specs-archived", updatedAt: now() };
     saveRuntime(state);
+    // A merge that silently drops or rewrites a requirement still exits 0, and
+    // openspec/specs is durable, so the exit code is not evidence.
+    const specViolations = verifyArchivedSpecs(specSyncInputs);
+    if (specViolations.length) {
+      state.specSyncViolations = specViolations;
+      // Only retained on failure: the retry guard needs the pre-merge text to
+      // re-verify, and carrying it on the happy path would bloat every state file.
+      state.specSyncInputs = specSyncInputs;
+      saveRuntime(state);
+      failSpecSync(specViolations);
+    }
     const audit = proofAudit(id, true);
     if (!audit.valid) fail(`post-archive proof audit failed: ${audit.reason}`);
     state.land = { ...(state.land || {}), status: "archive-audited", updatedAt: now() };

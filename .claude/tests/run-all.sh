@@ -32,6 +32,12 @@ run "instruction contracts" sh "$HERE/harness/run-instruction-contract-tests.sh"
 run "instruction provenance and host execution" sh "$HERE/harness/run-provenance-contract-tests.sh"
 run "bounded infrastructure retry" node "$HERE/harness/run-bounded-retry-tests.mjs"
 run "blocked decision contracts" node "$HERE/harness/run-blocked-decision-tests.mjs"
+run "openspec version policy" node "$HERE/harness/run-openspec-version-tests.mjs"
+run "model tier drift" node "$HERE/harness/run-model-drift-tests.mjs"
+run "model tier drift join" node "$HERE/harness/run-model-drift-join-tests.mjs"
+run "model drift land gate" node "$HERE/harness/run-drift-gate-tests.mjs"
+run "spec sync verification" node "$HERE/harness/run-spec-sync-verify-tests.mjs"
+run "spec sync land gate" sh "$HERE/harness/run-specsync-gate-tests.sh"
 run "dashboard contracts" npm --prefix "$ROOT/dashboard" test
 
 if [ "$failed" -eq 0 ]; then

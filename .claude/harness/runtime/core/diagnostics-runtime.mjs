@@ -5,7 +5,6 @@ import {
   writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
 
 export function createDiagnosticsRuntime({
   root,
@@ -34,7 +33,7 @@ export function createDiagnosticsRuntime({
   repositoryCatalog,
   foundationPolicy,
   isolationInspection,
-  isPinnedOpenSpecVersion,
+  openSpecCliStatus,
   loadRuntime,
   evidence,
   selectedRepositories,
@@ -162,15 +161,13 @@ export function createDiagnosticsRuntime({
         : `legacy numeric limit ${modelPolicy.execution.legacyNumericPacketBytes}; migrate to scoped task/repository/global limits`
     });
 
-    const openspec = spawnSync("openspec", ["--version"], { cwd: root, encoding: "utf8" });
-    const openspecText = `${openspec.stdout || ""}${openspec.stderr || ""}`.trim();
-    const openspecOk = openspec.status === 0 && isPinnedOpenSpecVersion(openspecText);
+    const openspec = openSpecCliStatus(root);
     checks.push({
-      level: openspecOk ? "ok" : (flags["require-archive"] ? "error" : "warn"),
+      // An unusable CLI only blocks doctor when the caller asked about Land.
+      level: openspec.level === "error" && !flags["require-archive"]
+        ? "warn" : openspec.level,
       name: "openspec",
-      detail: openspec.error?.code === "ENOENT"
-        ? "missing; archive unavailable"
-        : openspecOk ? openspecText : `${openspecText || "unavailable"}; required 1.7.0`
+      detail: openspec.detail
     });
 
     const requestedChange = flags.change || null;
