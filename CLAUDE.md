@@ -1,5 +1,26 @@
 # CLAUDE.md
 
+## Identity
+
+This is `claude-foundation` (`Maximumsoft-Co-LTD/claude-foundation`) - the
+upstream source repository of the Claude Foundation harness itself, not a
+project that consumes it.
+
+Work here is **product development on the harness**, not use of the harness on
+someone else's codebase. We are the maintainers and authors:
+
+- The `.claude/` tree, `openspec/schemas/`, `WORKFLOW.md`, and `install.sh` are
+  source code we own and change deliberately - not vendor files to leave alone.
+- A rule, command, skill, or guard that behaves wrongly is our bug to fix here,
+  not a constraint to work around.
+- Consumers install this via `install.sh`; every shipped edit lands in their
+  repositories, so treat shipped files as a public contract with real users.
+- Bug reports and feature requests about Foundation are inbound work for this
+  repository, not questions for an upstream project.
+
+The change loop (`/change` → `/build` → `/prove` → `/land`) still governs how we
+change this repository - we dogfood the harness while developing it.
+
 ## Purpose
 
 This repository packages an installable OpenSpec-native change harness.
@@ -75,7 +96,7 @@ in `docs/research/`.
 - New commands and schemas are included automatically by the installer.
 - `no-direct-main-commit.sh` ships but remains opt-in.
 
-Non-lifecycle skills (`brainstorming`, `plan-writing`,
-`fanout-team-agents`, frontend/UX skills, `skill-creator`) trigger through
-explicit workflow wiring or their own descriptions; do not add them to the
-always-on router merely to make them discoverable.
+Non-lifecycle skills (`brainstorming`, `plan-writing`, frontend/UX skills,
+`skill-creator`) trigger through explicit workflow wiring or their own
+descriptions; do not add them to the always-on router merely to make them
+discoverable.
