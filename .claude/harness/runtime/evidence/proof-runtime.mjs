@@ -24,7 +24,24 @@ export function createProofRuntime({
     const hash = snapshot.workspaceHash;
     const checks = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
     const blockers = checks.filter((row) => row.validity !== "valid");
-    if (blockers.length) fail(blockers.map((row) => `${row.provider}:${row.validity}`).join(", "));
+    if (blockers.length) {
+      const summary = blockers.map((row) => `${row.provider}:${row.validity}`).join(", ");
+      // Two blocked states are unreadable on their own, and both were reached
+      // by following the documented route. Name the cause, not just the code.
+      const executedHash = stateBefore.activeProofRun?.workspaceHash;
+      // Providers ran in this same operation and the workspace moved under
+      // them: something written during execution is inside the hashed surface,
+      // so the run invalidated the receipts it had just produced.
+      if (executedHash && executedHash !== hash &&
+          blockers.every((row) => row.validity === "stale"))
+        fail(`${summary} — the workspace hash changed while providers ran (${
+          executedHash.slice(0, 12)} to ${hash.slice(0, 12)}), so a provider wrote inside the hashed surface. Reports and artifacts must be written to a directory excluded from the surface, such as test-results/`);
+      // Nothing has executed yet. `prove` finalizes from receipts that already
+      // exist; the operation that produces them is `proof run`.
+      if (blockers.every((row) => row.validity === "missing"))
+        fail(`${summary} — no evidence has been executed for this workspace; next: claude-foundation proof run ${id}`);
+      fail(summary);
+    }
     const proofRunId = requestedProofRunId || stateBefore.activeProofRun?.id || `proof-${Date.now()}`;
     const runRoot = proofRunRoot(id, proofRunId);
     const receiptEntries = checks.map((row) => {

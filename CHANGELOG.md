@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A copy sandbox no longer links back into the project it isolates** —
+  `cpSync` resolves symbolic links by default, rewriting a relative link into an
+  absolute path pointing at the *source* tree. Every isolated copy therefore
+  carried links aimed at the real workspace: anything that followed one — a
+  build, an evidence provider, a script — wrote into the project while believing
+  it was sandboxed, and git inside the copy reported the rewritten links as
+  modifications the change never made, which then read as work outside the
+  change's scope. Copies now preserve links verbatim, the way `land-journal`
+  already did on the way back out.
+- **A committed directory is no longer deleted for sharing a name with build
+  output** — workspace surface was decided by matching an excluded name against
+  *every* path segment at *every* depth. `.foundation` and `.workflow` name the
+  harness's own directories at the project root and nothing below it, so a
+  repository that committed a fixture of that name anywhere else lost it from
+  the change surface and from the copy sandbox at once — the file vanished from
+  the hash and reappeared to git as a deletion nobody made. Depth alone cannot
+  decide it either, since `node_modules` legitimately nests in every monorepo.
+  The axis that separates the two is what git already knows: generated output is
+  untracked, committed content is content. `.git` is now excluded at any depth,
+  `.foundation` and `.workflow` at the project root only, and every other name
+  at any depth *unless git tracks the path*. Projects with a nested directory of
+  those names, or with tracked files under a name like `coverage/`, will see
+  their workspace hash change once and must re-run `proof run` for any change
+  proven but not yet landed.
+- **Landing a change no longer costs the next change its worktree** — archiving
+  moves a change's packet into `openspec/changes/archive/` and leaves that move
+  uncommitted, which the dirty-target check counted as unrelated work. The next
+  `sandbox create` therefore fell back to an isolated copy — a mode with
+  strictly lower fidelity — for dirt the operator never produced and could only
+  clear by committing someone else's bookkeeping. `.foundation/` and an
+  uncommitted `changes/archive/` move are now recognised as the harness's own
+  output. Neither is ever a change's surface, so a worktree taken from HEAD
+  cannot lose work by ignoring them. Every other uncommitted path still earns
+  the copy.
+- **A provider no longer expires the receipt it just produced, in silence** —
+  the workspace hash is taken before providers run and again at finalization, so
+  a provider writing its report inside the hashed surface guarantees the two
+  differ: the run passed, printed its receipts, and then declared them `stale`
+  with no indication that its own output was the cause. `change validate` now
+  names a `report` path that sits inside the surface before a run is spent on
+  it, and finalization reports the hash movement and the remedy instead of a
+  bare validity code.
+- **Acceptance now names the claim that requires it** — a claim declaring
+  capability `acceptance` outranks `change resolve --acceptance-not-required`,
+  and `change validate` persisted that derived answer without a word. The flag
+  appeared to do nothing, permanently, and the only way to learn why was to read
+  the runtime. `validate` now names the claims holding the gate open and the
+  file to edit, on every run rather than once, and `proof readiness` carries the
+  acceptance scope and its origin so the one gate that can only be cleared by a
+  named human can say why it is there.
+- **Finalizing before anything has executed now names the operation that
+  executes** — `prove` finalizes from receipts that already exist; `proof run`
+  is what produces them. Reaching the first with none of the second answered
+  with `test:missing, discovery:missing` and no route onward.
+
+### Added
+
+- **The change loop reports where it stands without being asked** — the
+  `SessionStart` hook carried only telemetry identity, so every new session,
+  `/clear`, and compact began blind to work already in flight. It now reports
+  each active change, its status, the command that moves it, and runtime state
+  left behind by a change that no longer exists. The digest is deliberately
+  hash-free and never claims a proof is fresh — readiness is what `/changes`
+  adds, and the digest names it rather than implying an answer it did not
+  compute. With no active change it names the entry points instead.
+- **Every step of the loop names the next one** — the status-to-command map
+  existed only inside `/changes`, so `change resolve` and `change validate`
+  ended a phase saying nothing about what followed. Both now print it, and
+  `validate` names the phase ahead rather than echoing the operation the caller
+  just ran.
+
 ## [3.2.6] - 2026-08-07
 
 ### Fixed

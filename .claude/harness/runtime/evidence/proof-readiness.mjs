@@ -120,24 +120,43 @@ export function createProofReadinessRuntime({
         responseStatuses: ["pass", "fail", "inconclusive", "error"]
       }
     };
-    if (capability === "acceptance") return {
-      provider,
-      kind: "user-decision",
-      request: {
-        command: `claude-foundation authority request ${id} --type acceptance`
-      },
-      decision: {
-        kind: "human-acceptance",
-        summary: "A named person must inspect the final result and decide whether the declared acceptance criteria are satisfied.",
-        options: [
-          { id: "inspect", outcome: "Inspect the final result and then accept, reject, or report uncertainty." },
-          { id: "request-changes", outcome: "Reject the current result and describe what must change." },
-          { id: "pause", outcome: "Keep the change pending without an acceptance decision." }
-        ],
-        recommended: "inspect",
-        responseStatuses: ["pass", "fail", "inconclusive", "error"]
-      }
-    };
+    if (capability === "acceptance") {
+      // `validate` has already normalized acceptance onto the state, so the
+      // scope is read rather than re-derived here. Without it, the one gate in
+      // the loop that can only be cleared by a named human refused to say
+      // which claim was holding it, and the origin — an explicit decision, or
+      // a capability declared on a claim — was invisible entirely.
+      const acceptance = loadRuntime(id).acceptance || {};
+      const claimIds = acceptance.claimIds || [];
+      const origin = acceptance.scopeOrigin || "explicit";
+      return {
+        provider,
+        kind: "user-decision",
+        request: {
+          command: `claude-foundation authority request ${id} --type acceptance`
+        },
+        decision: {
+          kind: "human-acceptance",
+          summary: `A named person must inspect the final result and decide whether the declared acceptance criteria are satisfied${
+            claimIds.length ? ` for claim(s) ${claimIds.join(", ")}` : ""}.`,
+          scope: {
+            claims: claimIds,
+            origin,
+            reason: acceptance.reason || null,
+            detail: origin === "claim-capability"
+              ? "These claims declare capability 'acceptance' in evidence.yaml; that declaration, not the resolve flag, is what requires a human here."
+              : "This gate was recorded by an explicit --acceptance-required decision."
+          },
+          options: [
+            { id: "inspect", outcome: "Inspect the final result and then accept, reject, or report uncertainty." },
+            { id: "request-changes", outcome: "Reject the current result and describe what must change." },
+            { id: "pause", outcome: "Keep the change pending without an acceptance decision." }
+          ],
+          recommended: "inspect",
+          responseStatuses: ["pass", "fail", "inconclusive", "error"]
+        }
+      };
+    }
     return {
       provider,
       kind: "user-decision",

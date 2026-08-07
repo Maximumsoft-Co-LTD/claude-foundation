@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { auditTraceability, normalizedTraceLabel } from "../evidence/traceability.mjs";
 import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
+import { nextAfterValidate } from "../core/next-step.mjs";
 
 export function createChangeValidationRuntime({
   root,
@@ -279,8 +280,17 @@ export function createChangeValidationRuntime({
       }
     }
     if (acceptance.required) {
+      // A claim declaring capability `acceptance` outranks the resolve flag —
+      // `resolvedAcceptance` ORs the two — and this rewrite then persists the
+      // derived answer. Silently. So `--acceptance-not-required` appeared to
+      // do nothing, forever, and the only way to learn why was to read
+      // `resolvedAcceptance`. Name the claims that hold the gate open, the way
+      // `policyCapabilityTrigger` names the file that pulled a capability in.
+      if (acceptance.scopeOrigin === "claim-capability")
+        console.error(`WARNING: acceptance stays required because claim(s) ${acceptance.claimIds.join(", ")} declare capability 'acceptance'; --acceptance-not-required cannot drop a human gate while that capability remains in evidence.yaml`);
       state.acceptance = {
         version: 2,
+        decision: "required",
         required: true,
         reason: acceptance.reason || "declared evidence capability",
         claimIds: acceptance.claimIds,
@@ -337,7 +347,7 @@ export function createChangeValidationRuntime({
     }
     saveRuntime(state);
     if (!options.quiet)
-      console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)`);
+      console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
   }
 
   function requiredProviders(id) {

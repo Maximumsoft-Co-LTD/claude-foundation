@@ -4,6 +4,7 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { isExcludedPath } from "./workspace-surface.mjs";
 
 export function createStateRuntime({
   root,
@@ -222,8 +223,8 @@ export function createStateRuntime({
     if (!force && snapshotCache.has(cacheKey)) return snapshotCache.get(cacheKey);
     const hash = createHash("sha256");
     const files = [];
-    function allowed(rel) {
-      if (rel.split("/").some((segment) => excludedWorkspaceDirs.has(segment)))
+    function allowed(rel, tracked = false) {
+      if (isExcludedPath(rel, { excluded: excludedWorkspaceDirs, tracked }))
         return false;
       if (rel.startsWith("openspec/changes/archive/")) return false;
       if (rel.startsWith("openspec/changes/") && !isCurrentChangePath(rel, id))
@@ -259,7 +260,11 @@ export function createStateRuntime({
             statusEntries[index + 1])
           dirty.add(statusEntries[++index]);
       }
-      const paths = [...new Set([...indexed.keys(), ...dirty])].filter(allowed).sort();
+      // Tracking is per path, so it has to be asked per path: a fixture
+      // directory whose name collides with a build-output name is only
+      // distinguishable from real build output by whether git carries it.
+      const paths = [...new Set([...indexed.keys(), ...dirty])]
+        .filter((rel) => allowed(rel, indexed.has(rel))).sort();
       for (const rel of paths) {
         const path = join(workspace, rel);
         const contentIdentity = dirty.has(rel)

@@ -99,6 +99,11 @@ const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "bot
 // commit source under those names, and excluding a directory removes it from
 // the apply diff as well as the hash — a wrong guess here is silent data loss
 // at Land, not a stale hash.
+//
+// This set names the directories; `runtime/core/workspace-surface.mjs` decides
+// how a path is matched against it. Matching every segment at every depth was
+// its own wrong guess: `.foundation` and `.workflow` mean something only at the
+// project root, and a committed fixture is content whatever it is called.
 const EXCLUDED_WORKSPACE_DIRS = new Set([
   ".git", ".foundation", ".workflow", "node_modules",
   "coverage", "test-results", "playwright-report",

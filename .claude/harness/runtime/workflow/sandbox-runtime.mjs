@@ -3,6 +3,15 @@ import {
 } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { isExcludedPath, trackedPathSet } from "../core/workspace-surface.mjs";
+
+// `cpSync` resolves symlinks by default: a relative link is rewritten as an
+// absolute path into the *source* tree. In a sandbox that is not a cosmetic
+// difference — anything following the link writes into the real project while
+// believing it is isolated, and git inside the copy reports the rewritten link
+// as a modification the change never made. `land-journal.mjs` already carries
+// these two options for the same reason on the way back out.
+const VERBATIM_COPY = { dereference: false, verbatimSymlinks: true };
 
 export function createSandboxRuntime({
   root, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
@@ -51,15 +60,21 @@ export function createSandboxRuntime({
     // exclusion that makes the copy terminate is never seen. Copying each
     // top-level entry instead keeps the exclusion authoritative: `.foundation`
     // is dropped at the top level, so nothing recurses into the sandbox itself.
-    const filter = (source) => {
-      const rel = relative(root, source).replaceAll("\\", "/");
-      return !rel.split("/").some((segment) => copyExcluded.has(segment));
-    };
+    // What git tracks is content, whatever it is named. Without this the copy
+    // silently omitted committed fixtures whose directory name collided with a
+    // build-output name, and git inside the sandbox then reported them deleted.
+    const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
+    const tracked = trackedPathSet(
+      listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : []);
+    const excludes = (rel) =>
+      isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
+    const filter = (source) => !excludes(relative(root, source).replaceAll("\\", "/"));
     for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (copyExcluded.has(entry.name)) continue;
+      if (excludes(entry.name)) continue;
       cpSync(join(root, entry.name), join(requestedPath, entry.name), {
         recursive: true,
         mode: fsConstants.COPYFILE_FICLONE,
+        ...VERBATIM_COPY,
         filter
       });
     }
@@ -176,9 +191,21 @@ export function createSandboxRuntime({
     const dirty = git(["status", "--porcelain", "--untracked-files=all"], root);
     if (dirty.status !== 0) fail(`cannot inspect target workspace: ${dirty.stderr.trim()}`);
     const allowedPrefix = `openspec/changes/${id}/`;
+    // Dirt the harness produced itself must not cost this change its worktree.
+    // Landing a *previous* change moves its packet into `changes/archive/` and
+    // leaves that move uncommitted, so the very next `sandbox create` saw a
+    // dirty target and fell back to an isolated copy — a mode with strictly
+    // lower fidelity — for a reason the operator had no part in. Neither path
+    // is ever this change's surface: `.foundation/` is machine state, and
+    // `allowed()` in the snapshot drops `changes/archive/` outright, so a
+    // worktree taken from HEAD cannot lose work by ignoring them here.
+    const harnessOwned = (path) =>
+      path.startsWith(".foundation/") || path === ".foundation" ||
+      path.startsWith("openspec/changes/archive/");
     const unrelated = dirty.stdout.split("\n").filter(Boolean).filter((line) => {
       const path = line.slice(3).split(" -> ").at(-1);
-      return path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix);
+      return path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix) &&
+        !harnessOwned(path);
     });
     if (unrelated.length) {
       createCopy(id, state, `dirty-target:${unrelated[0]}`);
@@ -189,7 +216,8 @@ export function createSandboxRuntime({
     const result = git(["worktree", "add", "--detach", requestedPath, "HEAD"]);
     if (result.status !== 0) fail(`cannot create sandbox: ${result.stderr.trim()}`);
     const path = canonicalPath(requestedPath);
-    cpSync(changePath(id), join(path, "openspec", "changes", id), { recursive: true });
+    cpSync(changePath(id), join(path, "openspec", "changes", id),
+      { recursive: true, ...VERBATIM_COPY });
     state.workspace = {
       mode: "worktree", path, baseHead: gitHead(root), applied: false,
       changeSourceHash: directoryHash(changePath(id))
@@ -300,7 +328,7 @@ export function createSandboxRuntime({
     const mergedTasks = mergeTaskProgress(sourceTasks, sandboxTasks);
     if (existsSync(destination)) rmSync(destination, { recursive: true });
     mkdirSync(dirname(destination), { recursive: true });
-    cpSync(source, destination, { recursive: true });
+    cpSync(source, destination, { recursive: true, ...VERBATIM_COPY });
     writeFileSync(join(destination, "tasks.md"), mergedTasks);
     state.workspace.changeSourceHash = directoryHash(source);
     state.status = "building";

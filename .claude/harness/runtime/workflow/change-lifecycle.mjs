@@ -2,6 +2,7 @@ import {
   existsSync, mkdirSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { nextCommand } from "../core/next-step.mjs";
 
 export function createChangeLifecycle({
   root,
@@ -257,7 +258,7 @@ export function createChangeLifecycle({
       materializeStandardArtifacts(id, state.intent);
     }
     saveRuntime(state);
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}`);
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
   }
 
   function startAtomic(draftPath) {

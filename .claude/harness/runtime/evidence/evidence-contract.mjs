@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { isExcludedPath } from "../core/workspace-surface.mjs";
 
 export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
@@ -125,6 +126,18 @@ export function createEvidenceContract({
         if (config.repository !== undefined)
           die(`provider '${provider}' contract-digest spans repositories and cannot declare a single 'repository'`);
       }
+      // A report written inside the hashed surface expires the receipt it was
+      // written to justify: the workspace hash is taken before providers run
+      // and again at finalization, so the provider's own output makes every
+      // receipt in the run stale — the run passes, then reports itself void.
+      // A warning rather than a refusal, because a deterministic report that
+      // is already committed reproduces byte-for-byte and leaves the hash
+      // alone; that project is odd, not broken.
+      if (typeof config.report === "string" && config.report.trim() &&
+          !isExcludedPath(config.report.replaceAll("\\", "/"),
+            { excluded: EXCLUDED_WORKSPACE_DIRS }))
+        console.error(`WARNING: provider '${provider}' writes its report to ${config.report}, inside the hashed workspace surface; its own output will expire the receipt it produces. Write it under one of: ${
+          [...EXCLUDED_WORKSPACE_DIRS].filter((dir) => !dir.startsWith(".")).join(", ")}`);
       if (config.adapter === "test-discovery" && capability !== "test")
         die("test-discovery adapter requires capability 'test'");
       if (config.adapter === "test-discovery" && provider !== "test") {

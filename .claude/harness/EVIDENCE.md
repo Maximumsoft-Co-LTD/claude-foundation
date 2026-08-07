@@ -277,7 +277,15 @@ Sandboxes carry the file tree and nothing else:
 - **worktree** mode checks out tracked files only — `node_modules`, local env
   files, and generated assets are absent;
 - **copy** mode additionally excludes `node_modules`, `coverage`,
-  `test-results`, and `playwright-report`.
+  `test-results`, and `playwright-report` — unless git tracks the path, since a
+  committed fixture is content whatever its directory is called. Symbolic links
+  are copied verbatim and keep pointing inside the sandbox.
+
+Write every provider report and artifact to one of those excluded directories.
+The workspace hash is taken before providers run and again at finalization, so
+a report written anywhere else changes the surface mid-run and expires the
+receipt it was produced to justify. `change validate` warns when a configured
+`report` path sits inside the hashed surface.
 
 Everything outside the file tree is shared with the host and with every other
 change: environment variables (including `DATABASE_URL` and API keys passed

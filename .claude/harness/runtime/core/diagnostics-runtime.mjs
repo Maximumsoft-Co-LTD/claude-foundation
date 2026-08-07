@@ -5,6 +5,7 @@ import {
   writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { nextCommand } from "./next-step.mjs";
 
 export function createDiagnosticsRuntime({
   root,
@@ -78,18 +79,10 @@ export function createDiagnosticsRuntime({
         ? "ready-to-land"
         : state.status === "proven" ? "stale-proof" : state.status;
       // A listed change without a real next command reads as a dead entry, so
-      // every reachable status names the operation that moves it.
-      const nextByReadiness = {
-        "ready-to-land": `claude-foundation land check ${id}`,
-        "stale-proof": `claude-foundation proof readiness ${id}`,
-        change: `claude-foundation change validate ${id}`,
-        building: `claude-foundation proof readiness ${id}`,
-        applied: `claude-foundation land archive ${id}`,
-        landing: `claude-foundation land resume ${id}`
-      };
-      const next = nextByReadiness[readiness] ||
-        `claude-foundation doctor --change ${id}`;
-      console.log(`${id}\t${readiness}\t${state.schema || "unknown"}\t${next}`);
+      // every reachable status names the operation that moves it. The map now
+      // lives in core/next-step.mjs because this was the only place that knew
+      // it — a listing nobody thinks to run.
+      console.log(`${id}\t${readiness}\t${state.schema || "unknown"}\t${nextCommand(readiness, id)}`);
     }
     for (const orphan of orphans)
       console.log(`${orphan.id}\torphan-runtime\t${orphan.schema}\t${orphan.reason}`);

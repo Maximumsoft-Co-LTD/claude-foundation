@@ -31,6 +31,18 @@ session='{"session_id":"session-123","transcript_path":"/tmp/project session/ses
 assert_cmd_zero "session lifecycle exposes transcript identity to later checkpoints" \
   sh -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" CLAUDE_ENV_FILE="$3" sh "$4"' \
   _ "$session" "$ROOT" "$ENV_FILE" "$ROOT/.claude/hooks/session-context.sh"
+
+# The hook is named session-*context* but carried only telemetry identity, so a
+# fresh context started blind on every startup, resume, clear, and compact.
+# Digest content is pinned in harness/run-next-step-tests.mjs; what this suite
+# owns is that the wired hook still emits it, and that adding stdout did not
+# disturb the env-file contract asserted below.
+session_stdout="$(printf '%s' "$session" |
+  CLAUDE_PROJECT_DIR="$ROOT" CLAUDE_ENV_FILE="$ENV_FILE" sh "$ROOT/.claude/hooks/session-context.sh")"
+assert_contains "session hook volunteers workflow position as SessionStart context" \
+  "$session_stdout" '"hookEventName":"SessionStart"'
+assert_contains "session hook digest names the loop it reports on" \
+  "$session_stdout" 'Foundation:'
 assert_file_contains "session hook exports only the session identity" \
   "$ENV_FILE" "FOUNDATION_CLAUDE_SESSION_ID='session-123'"
 assert_file_contains "session hook preserves transcript paths with spaces" \

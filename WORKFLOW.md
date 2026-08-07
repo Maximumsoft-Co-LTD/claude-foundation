@@ -173,7 +173,16 @@ Commit, push, and pull-request effects require explicit authorization.
 ### `/changes`
 
 Lists active changes and distinguishes in-progress, proven, stale-proof, and
-ready-to-land states.
+ready-to-land states. Every listed state names the command that moves it.
+
+A session does not have to ask. The `SessionStart` hook reports each active
+change, its status, and that same next command, plus runtime state left behind
+by a change that no longer exists. The digest is deliberately hash-free, so it
+never claims a proof is fresh: readiness is what `/changes` adds, and the
+digest names it rather than implying an answer it did not compute. With no
+active change it names the entry points instead, which is also the only place
+`/investigate` appears — exploration precedes the state machine and holds no
+status of its own.
 
 ### `/dev`
 
@@ -436,7 +445,10 @@ Foundation sandboxes protect workspace/apply integrity. They do not by themselve
 contain processes, network access, host secrets, or system commands. Never infer
 that a Git worktree or copied directory is safe for Allow All/unattended execution.
 
-- Git projects use detached temporary worktrees.
+- Git projects use detached temporary worktrees. A target with uncommitted work
+  falls back to an isolated copy, except for output the harness produced
+  itself: `.foundation/` and an uncommitted `openspec/changes/archive/` move
+  left by landing an earlier change never cost the next change its worktree.
 - The target HEAD must remain at the recorded base before apply.
 - `git apply --check` runs before target mutation.
 - Apply identity covers only paths changed by the proven sandbox. Unrelated
@@ -450,8 +462,16 @@ that a Git worktree or copied directory is safe for Allow All/unattended executi
 - Mutation testing happens only in isolation.
 
 Non-Git projects use an isolated temporary copy with a before/after content
-manifest. Apply rejects any touched target path changed since the baseline,
-then verifies the expected touched-path projection. Multi-repository changes use one
+manifest. The copy preserves symbolic links verbatim, so a relative link never
+becomes an absolute path back into the target. Apply rejects any touched target
+path changed since the baseline, then verifies the expected touched-path
+projection.
+
+Change surface excludes tool-owned output directories, and the copy excludes
+the same set. `.foundation/` and `.workflow/` are matched at the project root
+only; every other name is matched at any depth but never applies to a path git
+tracks. A committed fixture is content whatever its directory is called, and a
+generated directory is untracked wherever it sits. Multi-repository changes use one
 OpenSpec change plus a repository manifest and require cross-repository contract
 evidence before each repository is landed in its declared order. That evidence
 is checked, not asserted: the `contract-digest` adapter hashes one declared

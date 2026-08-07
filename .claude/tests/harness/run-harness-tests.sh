@@ -197,6 +197,54 @@ assert_cmd_zero "drafted agreement validates without a second ledger" \
   node .claude/harness/foundation.mjs validate drafted-change
 assert_file_contains "draft task remains in tasks.md" \
   openspec/changes/drafted-change/tasks.md "**T001**"
+assert_contains "validate names the phase that follows agreement" \
+  "$(node .claude/harness/foundation.mjs validate drafted-change)" \
+  "next: /build drafted-change"
+
+# A claim declaring capability `acceptance` outranks --acceptance-not-required,
+# and `validate` persists the derived answer. That happened in silence, so the
+# flag looked broken and the only diagnosis was reading `resolvedAcceptance`.
+# The gate must name the claim holding it open, on every run — not once.
+printf '%s\n' \
+  '{"title":"Human gated change","why":"Prove acceptance origin is stated.",' \
+  '"currentState":"The gate does not say where it came from.",' \
+  '"compatibility":"No public compatibility impact.",' \
+  '"changes":["State the origin of a human gate."],"nonGoals":["No new state."],' \
+  '"decisions":[{"choice":"Name the claim","why":"Diagnosable","rejected":"Silent override"}],' \
+  '"risks":[{"risk":"Operator cannot clear the gate","mitigation":"Name its source","owner":"test"}],' \
+  '"tasks":[{"id":"T001","outcome":"Implement gating","kind":"implementation","paths":["app.txt"],"verify":"test -f app.txt"}],' \
+  '"claims":[{"id":"subjective-outcome","scenario":"A person judges the result","impact":"low","capabilities":["test","acceptance"]}],' \
+  '"specs":[{"name":"gating","requirement":"State gate origin","description":"The runtime SHALL name the claim that requires acceptance.",' \
+  '"scenario":"Declared capability","when":"a claim declares acceptance","then":"validate names that claim"}]}' \
+  > foundation-gated-draft.json
+node .claude/harness/foundation.mjs new "Human gated change" \
+  --draft foundation-gated-draft.json >/dev/null
+node .claude/harness/foundation.mjs resolve human-gated-change \
+  --impact low --coupling isolated --acceptance-not-required >/dev/null
+gated_first="$({ node .claude/harness/foundation.mjs validate human-gated-change; } 2>&1)"
+assert_contains "declared acceptance capability explains why the flag did not clear it" \
+  "$gated_first" "claim(s) subjective-outcome declare capability 'acceptance'"
+assert_contains "the override warning names the file the operator must edit" \
+  "$gated_first" "evidence.yaml"
+gated_second="$({ node .claude/harness/foundation.mjs validate human-gated-change; } 2>&1)"
+assert_contains "the explanation survives the state rewrite it describes" \
+  "$gated_second" "claim(s) subjective-outcome declare capability 'acceptance'"
+assert_cmd_zero "acceptance scope records the claim capability as its origin" \
+  jq -e '.acceptance.required == true and .acceptance.scopeOrigin == "claim-capability"
+    and .acceptance.claimIds == ["subjective-outcome"] and .acceptance.decision == "required"' \
+  .foundation/runtime/human-gated-change.json
+
+# An explicit --acceptance-required decision is the operator's own; repeating
+# it back as a warning would train them to ignore the one that matters.
+node .claude/harness/foundation.mjs resolve drafted-change \
+  --impact low --coupling isolated --acceptance-required \
+  --acceptance-reason "operator judges the wording" \
+  --acceptance-claims draft-outcome >/dev/null
+assert_not_contains "an explicit acceptance decision is not warned about" \
+  "$({ node .claude/harness/foundation.mjs validate drafted-change; } 2>&1)" \
+  "declare capability 'acceptance'"
+node .claude/harness/foundation.mjs resolve drafted-change \
+  --impact low --coupling isolated --acceptance-not-required >/dev/null
 
 # A human-readable empty security value must not become a real trigger and
 # silently upgrade an otherwise rapid change to the standard schema.
