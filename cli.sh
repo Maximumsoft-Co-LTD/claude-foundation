@@ -135,9 +135,27 @@ case "${1:-}" in
     shift 2 ;;
 esac
 
+# commands.json promises "every command also answers --help". Route it to
+# `describe` before the per-command argument checks below, which otherwise
+# reject it as an unexpected argument for every zero-argument command.
+case "${1:-}" in
+  ""|help|--help|-h|version|--version|-v|describe) : ;;
+  *)
+    for arg in "$@"; do
+      [ "$arg" = "--help" ] || continue
+      help_target="$1"
+      case "${2:-}" in ""|--*) ;; *) help_target="$1 $2" ;; esac
+      run_runtime inspect describe "$help_target"
+    done ;;
+esac
+
 case "${1:-}" in
   version|--version|-v)
     print_version; exit 0 ;;
+  describe)
+    shift
+    [ "$#" -le 2 ] || fail "describe accepts [command] [--json]"
+    run_runtime inspect describe "$@" ;;
   help|--help|-h)
     [ "$#" -le 2 ] || fail "help accepts only --all"
     [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && fail "help accepts only --all"

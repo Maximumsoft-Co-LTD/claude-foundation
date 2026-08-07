@@ -172,6 +172,21 @@ printf '%s\n' ".claude/harness/stale-owned.md" \
   ".claude/commands/prototype.md" ".claude/commands/review.md" >> \
   "$TARGET/.foundation/install-manifest.txt"
 printf '\nUser agent instruction.\n' >> "$TARGET/AGENTS.md"
+# The manifest drives a delete loop, so a tampered entry must be refused rather
+# than resolved. A prefix check alone let `.claude/../../..` through.
+outside_probe="$TMP/outside-manifest-probe.txt"
+printf 'do not delete me\n' > "$outside_probe"
+cp "$TARGET/.foundation/install-manifest.txt" "$TMP/manifest-backup.txt"
+printf '%s\n' ".claude/../../../$(basename "$TMP")/outside-manifest-probe.txt" >> \
+  "$TARGET/.foundation/install-manifest.txt"
+if bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes >/dev/null 2>&1; then
+  fail "installer refuses a traversing managed manifest path"
+else
+  pass "installer refuses a traversing managed manifest path"
+fi
+assert_file_exists "a refused manifest path deletes nothing outside the project" \
+  "$outside_probe"
+cp "$TMP/manifest-backup.txt" "$TARGET/.foundation/install-manifest.txt"
 assert_cmd_zero "installer update removes only stale managed files" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_file_absent "stale managed file removed from prior manifest" \
@@ -363,9 +378,15 @@ fi
 assert_cmd_zero "legacy explicit-path installation remains compatible" \
   bash "$ROOT/cli.sh" "$TARGET" --dry-run
 
+# A project on a different runtime API moves its entrypoint AND its runtime
+# modules together; editing only one simulates a torn install instead, which
+# the load-time pair check rejects for its own reasons.
 sed -i.bak 's/const RUNTIME_API_VERSION = "14"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
+sed -i.bak 's/export const RUNTIME_MODULE_API = "14"/export const RUNTIME_MODULE_API = "999"/' \
+  "$TARGET/.claude/harness/runtime/version.mjs"
+rm "$TARGET/.claude/harness/runtime/version.mjs.bak"
 if bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route >/dev/null 2>&1; then
   fail "runtime API mismatch blocks write commands"
 else
@@ -373,6 +394,16 @@ else
 fi
 assert_cmd_zero "runtime API mismatch permits read-only inspection" \
   bash "$ROOT/cli.sh" --project "$TARGET" changes
+
+# A torn install — entrypoint from one revision, runtime modules from another —
+# used to pass every command up to `archive` and then throw partway through
+# Land. It has to be refused at load, on any command.
+sed -i.bak 's/export const RUNTIME_MODULE_API = "999"/export const RUNTIME_MODULE_API = "14"/' \
+  "$TARGET/.claude/harness/runtime/version.mjs"
+rm "$TARGET/.claude/harness/runtime/version.mjs.bak"
+torn="$( (cd "$TARGET" && node .claude/harness/foundation.mjs changes) 2>&1 || true)"
+assert_contains "a torn harness install is refused at load" \
+  "$torn" "mixture of two revisions"
 
 CURSOR_TARGET="$TMP/cursor-project"
 mkdir -p "$CURSOR_TARGET"

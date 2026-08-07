@@ -397,7 +397,7 @@ project.
 The source installer manages this entire directory, including this README:
 
 ```bash
-bash ./install.sh /path/to/project
+claude-foundation init /path/to/project
 ```
 
 For a packaged installation:
@@ -413,7 +413,7 @@ Foundation-owned files, preserves project files and managed blocks in
 
 ## Troubleshooting
 
-- **`permission denied: ./install.sh`** — run `bash ./install.sh <target>` or
+- **`permission denied` running the installer** — run `claude-foundation init <target>` or
   add executable permission intentionally.
 - **Playwright is unavailable** — install and lock `@playwright/test` plus the
   required browser in the application repository.

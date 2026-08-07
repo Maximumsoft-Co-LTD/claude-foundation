@@ -4,6 +4,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
+. "$ROOT/.claude/tests/lib/harness-fixture.sh"
 
 assert_cmd_fails_with() {
   label="$1"; needle="$2"; shift 2
@@ -22,8 +23,7 @@ assert_cmd_zero "benchmark targets are valid JSON" \
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
-cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/project/.claude/harness/"
-cp -R "$ROOT/.claude/harness/runtime" "$TMP/project/.claude/harness/"
+install_harness_fixture "$ROOT" "$TMP/project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
@@ -62,6 +62,23 @@ assert_contains "describe points at the schema files rather than the source" \
   "$describe_all" 'openspec/schemas/<schema>/schema.yaml'
 assert_file_exists "the schema path describe names exists" \
   "$ROOT/openspec/schemas/foundation-standard/schema.yaml"
+# commands.json promises every command answers --help, so every registered
+# runtime command has to resolve to a registry entry. Twelve did not.
+undescribed=""
+for runtime_command in $(node -e '
+  const registry = require(process.argv[1]);
+  process.stdout.write(registry.runtimeCommands.join(" "));
+' "$ROOT/.claude/harness/commands.json"); do
+  node .claude/harness/foundation.mjs describe "$runtime_command" >/dev/null 2>&1 ||
+    undescribed="$undescribed $runtime_command"
+done
+assert_eq "every registered runtime command describes itself" "" "$undescribed"
+assert_contains "a runtime spelling reaches its public entry" \
+  "$(node .claude/harness/foundation.mjs describe receipt 2>&1)" "evidence record"
+assert_contains "a command family lists its members rather than guessing one" \
+  "$(node .claude/harness/foundation.mjs describe sandbox 2>&1)" "sandbox create"
+assert_contains "the runtime validate route describes the canonical command" \
+  "$(node .claude/harness/foundation.mjs describe validate 2>&1)" "change validate"
 unsupported_flag="$(node .claude/harness/foundation.mjs authority-record x \
   --request y --observed z 2>&1 || true)"
 assert_contains "a rejected flag names the supported surface" "$unsupported_flag" \
@@ -541,6 +558,13 @@ collect_review_packet="$(node .claude/harness/foundation.mjs packet \
   collect-before-review --phase review)"
 assert_contains "review packet receives valid collected test evidence" \
   "$collect_review_packet" '"provider":"test","capability":"test","validity":"valid"'
+# A reference stands in for evidence, so it has to point somewhere.
+assert_cmd_fails_with "free text cannot pass as a reference" \
+  "a reference must be a URI or a path that exists" \
+  node .claude/harness/foundation.mjs receipt collect-before-review \
+    review pass --observed "fixture review found no blockers" \
+    --reviewer harness-test --subject-actor implementation-agent \
+    --reference "trust me bro"
 node .claude/harness/foundation.mjs receipt collect-before-review \
   review pass --observed "fixture review found no blockers" \
   --reviewer harness-test --subject-actor implementation-agent \
@@ -587,6 +611,62 @@ assert_not_contains "external fallback does not expose an artifact placeholder" 
   "$unavailable_readiness" '--artifact <path>'
 assert_contains "reconfiguration preserves the declared claim contract" \
   "$unavailable_readiness" 'proves the same declared claims'
+
+# Security triggers are semantic, so they match words rather than substrings:
+# "accessibility" is not "access", and a passkey is a trust boundary.
+node .claude/harness/foundation.mjs new 'Improve keyboard accessibility of the nav bar' --rapid >/dev/null
+accessibility_resolved="$(node .claude/harness/foundation.mjs resolve \
+  improve-keyboard-accessibility-of-the-nav-bar --impact low --coupling isolated)"
+assert_contains "an accessibility change triggers no security review" \
+  "$accessibility_resolved" "security: none"
+assert_contains "resolve names the schema it settled on" \
+  "$accessibility_resolved" "schema: foundation-rapid"
+node .claude/harness/foundation.mjs new 'Let users sign in with a passkey' --rapid >/dev/null
+passkey_resolved="$(node .claude/harness/foundation.mjs resolve \
+  let-users-sign-in-with-a-passkey --impact low --coupling isolated)"
+assert_contains "a passkey sign-in change is a security trigger" \
+  "$passkey_resolved" "passkey"
+# The trigger upgrades the schema, and the upgrade must leave a change that can
+# actually be validated rather than one missing the artifacts it now requires.
+assert_contains "a schema upgrade is announced" \
+  "$passkey_resolved" "upgraded from foundation-rapid"
+assert_file_exists "a schema upgrade instantiates design.md" \
+  openspec/changes/let-users-sign-in-with-a-passkey/design.md
+assert_file_exists "a schema upgrade instantiates the spec delta" \
+  openspec/changes/let-users-sign-in-with-a-passkey/specs/change/spec.md
+
+# `changes` is how a stuck project is diagnosed, so one unreadable state file
+# must not hide every other change, and abandon must still be able to exit.
+printf 'not json at all' > .foundation/runtime/let-users-sign-in-with-a-passkey.json
+corrupt_listing="$(node .claude/harness/foundation.mjs changes)"
+assert_contains "a corrupt state file is reported as its own row" \
+  "$corrupt_listing" "invalid-runtime-json"
+assert_contains "a corrupt state file does not hide other changes" \
+  "$corrupt_listing" "improve-keyboard-accessibility-of-the-nav-bar"
+assert_cmd_zero "abandon exits a change whose state file is corrupt" \
+  node .claude/harness/foundation.mjs abandon let-users-sign-in-with-a-passkey \
+    --reason "corrupt state" --decision-ref fixture://user/corrupt
+node .claude/harness/foundation.mjs abandon improve-keyboard-accessibility-of-the-nav-bar \
+  --reason "fixture cleanup" --decision-ref fixture://user/cleanup >/dev/null
+
+# A receipt asserts that evidence ran. The caller may not select the adapter
+# that decides whether that assertion is checked, and may not hand-record a
+# pass for a provider the harness is supposed to execute.
+assert_cmd_fails_with "a hand-recorded receipt cannot claim an executing adapter" \
+  "names an adapter the harness executes" \
+  node .claude/harness/foundation.mjs receipt unavailable-provider-recovery \
+    static-analysis pass --adapter command
+assert_cmd_fails_with "a configured executable provider refuses a hand-recorded pass" \
+  "must come from an execution" \
+  node .claude/harness/foundation.mjs receipt unavailable-provider-recovery \
+    static-analysis pass --observed "it passed" --source me \
+    --reference "fixture://forged"
+assert_cmd_fails_with "an adapter override does not lift the evidence floor" \
+  "must come from an execution" \
+  node .claude/harness/foundation.mjs receipt unavailable-provider-recovery \
+    static-analysis pass --adapter external
+assert_file_absent "a refused forgery writes no receipt" \
+  .foundation/receipts/unavailable-provider-recovery/static-analysis.json
 jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | .budget.window.usedTokens = 1' \
   .foundation/runtime/unavailable-provider-recovery.json > "$TMP/infrastructure-budget.json"
 cp "$TMP/infrastructure-budget.json" \
@@ -1116,18 +1196,60 @@ assert_eq "code remains applied for archive retry" "copy-applied" \
 assert_eq "copy apply preserves a new symlink" "app.txt" "$(readlink current-link)"
 assert_file_contains "unrelated target file survives apply" NOTES.md \
   "user-owned and unrelated"
+# Work done in the sandbox after the first projection is proven, so archive
+# must re-project it. Landing the earlier code and then deleting the sandbox
+# would make the proven fix unrecoverable.
+printf 'v2-critical-fix\n' > "$copy_path/app.txt"
+node .claude/harness/foundation.mjs receipt copy-sandbox test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt copy-sandbox discovery pass \
+  --discovered 1 --minimum 1 --observed "1 test discovered" \
+  --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt copy-sandbox dependency-supply-chain pass \
+  --observed "lockfile inspected" --source harness-test --artifact package-lock.json >/dev/null
+node .claude/harness/foundation.mjs prove copy-sandbox >/dev/null
 archive_output="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs archive copy-sandbox)"
 assert_contains "archive delegates once to pinned OpenSpec" "$archive_output" "ARCHIVED copy-sandbox"
 copy_applied="$(tr -d '\n' < app.txt)"
-assert_eq "non-git target matches isolated copy" "copy-applied" "$copy_applied"
+assert_eq "archive re-projects sandbox work done after the first apply" \
+  "v2-critical-fix" "$copy_applied"
 assert_file_absent "archive cleans the applied temporary copy" "$copy_path"
 archive_again="$(node .claude/harness/foundation.mjs archive copy-sandbox)"
 assert_contains "archive is idempotent after spec sync" "$archive_again" "ALREADY ARCHIVED copy-sandbox"
 
+# 'openspec archive' can move the change directory and still fail. Recovery
+# cannot distinguish that from a crash after success, so it re-checks the Land
+# guards instead of declaring the change landed.
+node .claude/harness/foundation.mjs new 'Interrupted archive' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve interrupted-archive \
+  --impact low --coupling isolated >/dev/null
+node .claude/harness/foundation.mjs sandbox create interrupted-archive >/dev/null
+interrupted_path="$(jq -r '.workspace.path' .foundation/runtime/interrupted-archive.json)"
+printf 'never-landed\n' > "$interrupted_path/app.txt"
+sed -i.bak 's/- \[ \]/- [x]/g' "$interrupted_path/openspec/changes/interrupted-archive/tasks.md"
+rm "$interrupted_path/openspec/changes/interrupted-archive/tasks.md.bak"
+node .claude/harness/foundation.mjs receipt interrupted-archive test pass \
+  --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs receipt interrupted-archive discovery pass \
+  --discovered 1 --minimum 1 --observed "1 test discovered" \
+  --source harness-test --artifact app.txt >/dev/null
+node .claude/harness/foundation.mjs prove interrupted-archive >/dev/null
+mkdir -p openspec/changes/archive
+mv openspec/changes/interrupted-archive openspec/changes/archive/interrupted-archive
+assert_cmd_fails_with "a recovered archive refuses a projection that never ran" \
+  "never projected the sandbox into the target" \
+  node .claude/harness/foundation.mjs archive interrupted-archive
+assert_eq "a refused recovery leaves the change unarchived" "proven" \
+  "$(jq -r '.status' .foundation/runtime/interrupted-archive.json)"
+assert_file_contains "a refused recovery leaves the target untouched" app.txt \
+  "v2-critical-fix"
+mv openspec/changes/archive/interrupted-archive openspec/changes/interrupted-archive
+node .claude/harness/foundation.mjs abandon interrupted-archive \
+  --reason "recovery fixture" --decision-ref fixture://user/recovery >/dev/null
+
 # A separate clean Git fixture exercises the complete worktree proof/apply path.
 mkdir -p "$TMP/git-project/.claude/harness" "$TMP/git-project/openspec" "$TMP/git-project/.foundation"
-cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/git-project/.claude/harness/"
-cp -R "$ROOT/.claude/harness/runtime" "$TMP/git-project/.claude/harness/"
+install_harness_fixture "$ROOT" "$TMP/git-project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/git-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/git-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/git-project/openspec/"
@@ -1351,8 +1473,7 @@ for child in api app; do
 done
 mkdir -p "$TMP/multi-project/.claude/harness" "$TMP/multi-project/openspec" \
   "$TMP/multi-project/.foundation"
-cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/multi-project/.claude/harness/"
-cp -R "$ROOT/.claude/harness/runtime" "$TMP/multi-project/.claude/harness/"
+install_harness_fixture "$ROOT" "$TMP/multi-project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/multi-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/multi-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/multi-project/openspec/"
@@ -1382,9 +1503,9 @@ printf '%s\n' \
   '# Tasks' \
   '' \
   '- [ ] **T001** Inventory API [repo:api] [kind:inventory] [paths:api.txt]' \
-  '- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001] [paths:api.txt]' \
+  '- [ ] **T002** Implement API [repo:api] [kind:implementation] [depends:T001] [paths:api.txt,contract.json]' \
   '- [ ] **T003** Implement App [repo:app] [kind:implementation] [paths:app.txt]' \
-  '- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003]' \
+  '- [ ] **T004** Review contract [repo:app] [kind:contract] [depends:T002,T003] [paths:contract.json]' \
   > openspec/changes/cross-repository-profile/tasks.md
 printf '%s\n' \
   '{"version":2,"claims":[' \
@@ -1394,7 +1515,7 @@ printf '%s\n' \
 printf '%s\n' \
   '{"version":1,"providers":{' \
   ' "api-static":{"capability":"static-analysis","adapter":"external","repository":"api"},' \
-  ' "cross-repo-contract":{"adapter":"external"},' \
+  ' "cross-repo-contract":{"adapter":"contract-digest","contract":{"api":"contract.json","app":"contract.json"}},' \
   ' "review":{"adapter":"external"}' \
   '},"services":{}}' > openspec/changes/cross-repository-profile/execution.yaml
 assert_cmd_zero "multi-repository change validates" \
@@ -1499,15 +1620,18 @@ assert_contains "multi-repo Land is an honest saga" \
   "$land_plan" '"strategy": "ordered-resumable-saga"'
 assert_contains "uncommitted child blocks Land" \
   "$land_plan" '"status": "awaiting-explicit-commit"'
+sandboxes=.foundation/repository-sandboxes/cross-repository-profile
+printf '{"profile":"v1"}\n' > "$sandboxes/api/contract.json"
+printf '{"profile":"v1"}\n' > "$sandboxes/app/contract.json"
 git -C .foundation/repository-sandboxes/cross-repository-profile/api \
-  add api.txt
+  add api.txt contract.json
 git -C .foundation/repository-sandboxes/cross-repository-profile/api \
   -c user.name="Foundation Test" \
   -c user.email="foundation@example.invalid" \
   commit -qm "api profile"
 api_commit="$(git -C .foundation/repository-sandboxes/cross-repository-profile/api rev-parse HEAD)"
 git -C .foundation/repository-sandboxes/cross-repository-profile/app \
-  add app.txt
+  add app.txt contract.json
 git -C .foundation/repository-sandboxes/cross-repository-profile/app \
   -c user.name="Foundation Test" \
   -c user.email="foundation@example.invalid" \
@@ -1549,12 +1673,32 @@ assert_cmd_zero "review packet exposes executable app inspection metadata" \
 sed -i.bak 's/- \[ \]/- [x]/g' \
   .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md
 rm .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md.bak
+# The cross-repository contract is checked by hashing the same declared
+# artifact on both sides. Asserting agreement in a receipt proves nothing.
+printf '{"profile":"v2"}\n' > "$sandboxes/app/contract.json"
+contract_mismatch="$(node .claude/harness/foundation.mjs proof-collect \
+  cross-repository-profile 2>&1 || true)"
+assert_contains "a disagreeing cross-repository contract blocks collection" \
+  "$contract_mismatch" "cross-repo-contract:fail"
+assert_cmd_zero "a disagreeing contract records why it disagreed" \
+  jq -e '.status == "fail" and (.observed | test("contract digests disagree"))' \
+  .foundation/receipts/cross-repository-profile/cross-repo-contract.json
+assert_cmd_fails_with "a disagreeing contract cannot be asserted past by hand" \
+  "must come from an execution" \
+  node .claude/harness/foundation.mjs receipt cross-repository-profile \
+    cross-repo-contract pass --observed "trust me" --source harness-test \
+    --reference "fixture://cross-repo-contract"
+git -C "$sandboxes/app" checkout -- contract.json
+node .claude/harness/foundation.mjs proof-collect cross-repository-profile >/dev/null 2>&1 || true
+assert_cmd_zero "an agreeing cross-repository contract is verified by digest" \
+  jq -e '.status == "pass" and (.observed | test("contract digest .* agrees"))' \
+  .foundation/receipts/cross-repository-profile/cross-repo-contract.json
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
   api-static pass --observed "API static fixture passed" \
   --source harness-test --artifact api.txt >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  cross-repo-contract pass --observed "API/App contract fixture passed" \
-  --source harness-test --reference "fixture://cross-repo-contract" >/dev/null
+  compatibility pass --observed "contract change is backward compatible" \
+  --source harness-test --reference https://example.invalid/compat-review >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
 review pass --observed "fixture review found no blockers" \
   --reviewer harness-test --subject-actor implementation-agent \
@@ -1585,9 +1729,10 @@ if node .claude/harness/foundation.mjs land-check \
 else
   pass "root pointer staging invalidates composite proof"
 fi
+node .claude/harness/foundation.mjs proof-collect cross-repository-profile >/dev/null 2>&1 || true
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  cross-repo-contract pass --observed "API/App contract fixture passed" \
-  --source harness-test --reference "fixture://cross-repo-contract" >/dev/null
+  compatibility pass --observed "contract change is backward compatible" \
+  --source harness-test --reference https://example.invalid/compat-review >/dev/null
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
 review pass --observed "fixture review found no blockers" \
   --reviewer harness-test --subject-actor implementation-agent \

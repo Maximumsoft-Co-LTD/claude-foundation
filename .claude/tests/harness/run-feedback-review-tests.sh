@@ -4,6 +4,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
+. "$ROOT/.claude/tests/lib/harness-fixture.sh"
 
 assert_cmd_fails_with() {
   label="$1"; needle="$2"; shift 2
@@ -18,8 +19,7 @@ assert_cmd_fails_with() {
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
-cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/project/.claude/harness/"
-cp -R "$ROOT/.claude/harness/runtime" "$TMP/project/.claude/harness/"
+install_harness_fixture "$ROOT" "$TMP/project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp "$ROOT/.claude/harness/protocol.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
@@ -519,7 +519,7 @@ cp "$TMP/legacy-review.json" \
 legacy_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
 assert_contains "legacy review receipt is specifically stale" \
   "$legacy_plan" "review: review-version-stale"
-assert_eq "provider protocol remains backward-compatible" "6" \
+assert_eq "provider protocol remains backward-compatible" "7" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
   jq -e '.reviewProtocol == "2" and .acceptanceProtocol == "2" and .reviewPacketSchema == "3" and .authorityProtocol == "1" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \

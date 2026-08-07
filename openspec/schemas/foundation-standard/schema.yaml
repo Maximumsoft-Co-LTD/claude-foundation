@@ -33,6 +33,12 @@ artifacts:
     template: evidence.yaml
     instruction: Map every observable scenario to stable claims. Discovery is implicit for test claims.
     requires: [proposal, specs]
+  - id: repositories
+    generates: repositories.yaml
+    description: Repositories this change may touch, and their write scope
+    template: repositories.yaml
+    instruction: Select every repository the change writes plus their dependency closure. A single-repository change keeps the default root entry.
+    requires: [proposal]
   - id: execution
     generates: execution.yaml
     description: Executable provider, report, service, and readiness wiring
@@ -41,5 +47,5 @@ artifacts:
     requires: [evidence]
 
 apply:
-  requires: [tasks, evidence, execution]
+  requires: [tasks, evidence, execution, repositories]
   tracks: tasks.md

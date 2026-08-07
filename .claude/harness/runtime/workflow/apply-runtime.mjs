@@ -56,8 +56,16 @@ export function createApplyRuntime({
     return pathspec;
   }
 
+  // Against the base the sandbox branched from, not its HEAD: an agent that
+  // commits inside the sandbox moves HEAD, and a HEAD-relative diff would
+  // silently omit every committed change while proof — which hashes the
+  // sandbox index — still counts it. That lands a partial change as a success.
+  function sandboxBase(state) {
+    return state.workspace?.baseHead || "HEAD";
+  }
+
   function sandboxDiffNames(id, sandboxPath, state) {
-    const names = git(["diff", "--name-only", "-z", "HEAD", "--",
+    const names = git(["diff", "--name-only", "-z", sandboxBase(state), "--",
       ...applyPathspec(id, state)], sandboxPath);
     if (names.status !== 0) fail(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
     return names.stdout.split("\0").filter(Boolean).sort();
@@ -67,7 +75,7 @@ export function createApplyRuntime({
     git(["add", "-N", "."], sandboxPath);
     const state = loadRuntime(id);
     const pathspec = applyPathspec(id, state);
-    const diff = git(["diff", "--binary", "HEAD", "--", ...pathspec], sandboxPath);
+    const diff = git(["diff", "--binary", sandboxBase(state), "--", ...pathspec], sandboxPath);
     if (diff.status !== 0) fail("cannot inspect sandbox diff");
     if (!diff.stdout) {
       if (state.repositories && Object.keys(state.repositories).length > 1) return [];
@@ -162,7 +170,12 @@ export function createApplyRuntime({
   }
 
   function prepareApplyTransaction(id, state, prepared = null) {
-    if (directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
+    // The recorded baseline only describes a sandbox that has not been
+    // projected yet. Once it has, the control-plane change directory *is* the
+    // projection, and verifyAppliedProjection — already run to build `prepared`
+    // — is what guards it against an edit outside the sandbox.
+    if (!prepared &&
+        directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
       fail("active change was edited after the last sandbox sync");
     const entries = prepared || buildApplyEntries(id, state);
     const transactionId = `apply-${Date.now()}-${process.pid}`;
@@ -298,6 +311,11 @@ export function createApplyRuntime({
     const journal = prepareApplyTransaction(id, state, prepared);
     journal.status = "applying";
     saveApplyJournal(journal);
+    // The marker the phase guard documents as the Land carve-out. Nothing set
+    // it before, so the carve-out was unreachable and any child this
+    // transaction spawns looked like an unaudited Land mutation.
+    const priorTransactionMarker = process.env.FOUNDATION_LAND_TRANSACTION;
+    process.env.FOUNDATION_LAND_TRANSACTION = "1";
     try {
       journal.entries.forEach((entry, index) =>
         applyTransactionEntry(journal, entry, index));
@@ -330,11 +348,18 @@ export function createApplyRuntime({
         fail(`${error.message}; ${rollbackError.message}`);
       }
       fail(`${error.message}; transaction rolled back`);
+    } finally {
+      if (priorTransactionMarker === undefined) delete process.env.FOUNDATION_LAND_TRANSACTION;
+      else process.env.FOUNDATION_LAND_TRANSACTION = priorTransactionMarker;
     }
   }
 
   function cleanupAppliedSandbox(id, state) {
-    const path = state.workspace?.sandboxPath;
+    // `sandboxPath` is only ever written by a successful apply, but sandbox
+    // creation records the directory under `path`. Reading only the former
+    // meant every never-applied sandbox — the abandon case — was reported
+    // "not-needed" and left on disk.
+    const path = state.workspace?.sandboxPath || state.workspace?.path;
     if (!path || resolve(path) === resolve(root) || !existsSync(path))
       return { status: "not-needed", path: path || null };
     if (state.workspace.mode === "copy") {
@@ -429,6 +454,25 @@ export function createApplyRuntime({
       ? verifyArchivedSpecs(captured) : state.specSyncViolations;
   }
 
+  function assertRecoveredArchiveReady(id, state, archivedPath) {
+    const audit = proofAudit(id, true);
+    if (!audit.valid) fail(`recovered archive has invalid proof: ${audit.reason}`);
+    assertMultiRepositoryArchiveReady(id, state);
+    if (["worktree", "copy"].includes(state.workspace?.mode)) {
+      // Specs moved but no code did. Calling that archived would report a land
+      // that never happened and then delete the sandbox holding the work.
+      if (!state.workspace.applied)
+        fail(`the interrupted archive never projected the sandbox into the target; ` +
+          `restore 'openspec/changes/${id}' from '${archivedPath}' and land again`);
+      const verification = verifyAppliedProjection(state);
+      if (!verification.valid)
+        fail(`recovered archive has an invalid applied projection: ${verification.reason}`);
+    }
+    const pending = pendingTasks(id, resolve(root, archivedPath));
+    if (pending.length)
+      fail(`${pending.length} implementation task(s) remain unchecked`);
+  }
+
   function archive(id) {
     const initial = loadRuntime(id);
     if (initial.status === "archived") {
@@ -469,6 +513,11 @@ export function createApplyRuntime({
     const recoveredArchive = initial.status !== "archived" &&
       !existsSync(changePath(id)) && archivedChangeRelativePath(id);
     if (recoveredArchive) {
+      // Recovery cannot tell "succeeded then crashed" from "moved then failed",
+      // so it is not an exemption from the Land guards. Everything still
+      // checkable once the change directory has moved is checked here, before
+      // any state is written: a refusal has to leave the change recoverable.
+      assertRecoveredArchiveReady(id, initial, recoveredArchive);
       initial.status = "archived";
       initial.archivedAt ||= now();
       initial.archivedChangePath = recoveredArchive;
@@ -484,8 +533,6 @@ export function createApplyRuntime({
         initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
       delete initial.workspace.baseline;
       saveRuntime(initial);
-      const audit = proofAudit(id, true);
-      if (!audit.valid) fail(`recovered archive has invalid proof: ${audit.reason}`);
       // The merge already ran and the pre-merge spec text died with the
       // interrupted transaction, so spec sync cannot be checked here: without
       // 'before', a removal and a preserved requirement are indistinguishable
@@ -506,8 +553,11 @@ export function createApplyRuntime({
       updatedAt: now()
     };
     saveRuntime(journal);
-    if (["worktree", "copy"].includes(readiness.state.workspace?.mode) &&
-        !readiness.state.workspace.applied) {
+    // Unconditional, including when the sandbox is already applied: work done
+    // after the first projection is proven and would otherwise archive as a
+    // success while the target still holds the earlier code. applySandbox
+    // returns early by itself when the projection is already current.
+    if (["worktree", "copy"].includes(readiness.state.workspace?.mode)) {
       applySandbox(id, { controlPlane: true });
       journal = loadRuntime(id);
       journal.land = { ...(journal.land || {}), status: "code-applied", updatedAt: now() };

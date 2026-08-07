@@ -4,6 +4,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
+. "$ROOT/.claude/tests/lib/harness-fixture.sh"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -39,8 +40,7 @@ assert_contains "doctor reports legacy numeric policy" "$doctor" \
 
 partial="$TMP/partial"
 mkdir -p "$partial/.claude/harness" "$partial/.claude/hooks" "$partial/openspec"
-cp "$ROOT/.claude/harness/foundation.mjs" "$partial/.claude/harness/"
-cp -R "$ROOT/.claude/harness/runtime" "$partial/.claude/harness/"
+install_harness_fixture "$ROOT" "$partial"
 cp "$ROOT/.claude/harness/commands.json" "$partial/.claude/harness/"
 cp "$ROOT/.claude/harness/protocol.json" "$partial/.claude/harness/"
 cp "$ROOT/.claude/hooks/protect-secrets.sh" "$partial/.claude/hooks/"

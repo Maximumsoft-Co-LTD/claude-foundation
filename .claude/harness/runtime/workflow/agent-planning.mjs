@@ -6,7 +6,8 @@ import { DRIFT_BLOCKING_TASK_KINDS } from "../observability/model-drift.mjs";
 
 export function createAgentPlanner({
   root, plans, runtime, schemaVersion, validate, loadRuntime, policy,
-  selectedRepositories, taskBlocks, taskMetadata, activeChangePath, evidence,
+  selectedRepositories, safeSelectedRepositories, taskBlocks, taskMetadata,
+  activeChangePath, evidence,
   resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
   recordInstructionManifest, showPacket, fail
@@ -35,7 +36,44 @@ export function createAgentPlanner({
     };
   }
 
-  function activeRepositoryConflicts(id, repositories) {
+  // Build resources are repo-qualified (`workspace:api`); evidence resources
+  // are a different vocabulary (`workspace-read`, `dev-server`). Judging build
+  // tasks with the evidence comparator made every pair of tasks in one
+  // repository conflict, so a single-repository change never planned more than
+  // one agent and maxParallelAgents did nothing. Two tasks in one repository
+  // are independent when their declared paths are disjoint — which is what
+  // `[paths:]` is for. An undeclared scope is still treated as the whole tree.
+  function pathScope(value) {
+    return String(value).replace(/[*?[].*$/, "").replace(/\/+$/, "");
+  }
+
+  function pathsOverlap(left, right) {
+    if (!left.length || !right.length) return true;
+    return left.some((one) => right.some((other) => {
+      const a = pathScope(one);
+      const b = pathScope(other);
+      if (!a || !b) return true;
+      return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+    }));
+  }
+
+  function taskResourcesConflict(left, right) {
+    const shared = left.resources.filter((resource) => right.resources.includes(resource));
+    if (!shared.length) return false;
+    if (shared.some((resource) => !resource.startsWith("workspace:"))) return true;
+    return pathsOverlap(left.paths || [], right.paths || []);
+  }
+
+  // A proof run that no process is behind any more must not block forever:
+  // a hard kill can leave the marker set, and the normal paths that clear it
+  // cannot run. Anything older than this is treated as abandoned.
+  const PROOF_RUN_STALE_MS = 2 * 60 * 60 * 1000;
+
+  // `executing` narrows the scan to changes with a proof run in flight. Plan
+  // time wants every change holding write scope; proof time wants only the
+  // ones that would actually be running commands against the repository at the
+  // same moment, or a project with two open changes could never prove either.
+  function activeRepositoryConflicts(id, repositories, { executing = false } = {}) {
     const wanted = new Set(repositories
       .filter((repository) => repository.mode === "write")
       .map((repository) => repository.id));
@@ -45,9 +83,21 @@ export function createAgentPlanner({
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
       const other = readJson(join(runtime, entry.name), {});
       if (!other.id || other.id === id || other.status === "archived") continue;
+      if (executing) {
+        const startedAt = Date.parse(other.activeProofRun?.startedAt || "");
+        if (!other.activeProofRun ||
+            !Number.isFinite(startedAt) ||
+            Date.now() - startedAt > PROOF_RUN_STALE_MS) continue;
+      }
+      // selectedRepositories reports a bad topology by exiting the process, so
+      // this catch never fired: one change with a stale repositories.yaml
+      // reference blocked planning and lease acquisition for every unrelated
+      // change. A change we cannot read cannot be shown to conflict, so skip it
+      // — its own commands still surface the error.
       let selected;
-      try { selected = selectedRepositories(other.id, other); }
+      try { selected = safeSelectedRepositories(other.id, other); }
       catch { continue; }
+      if (!selected) continue;
       for (const repository of selected)
         if (repository.mode === "write" && wanted.has(repository.id))
           conflicts.push({ changeId: other.id, repository: repository.id, status: other.status });
@@ -73,10 +123,17 @@ export function createAgentPlanner({
       if (unknown.length)
         fail(`task '${task.id}' depends on unknown task(s): ${unknown.join(", ")}`);
       const repository = repositoryMap.get(task.repository);
-      for (const dependencyRepository of repository.dependsOn || [])
-        for (const dependencyTask of tasks.filter((candidate) =>
-          candidate.repository === dependencyRepository))
-          if (!task.dependsOn.includes(dependencyTask.id)) task.dependsOn.push(dependencyTask.id);
+      // Repo-level `dependsOn` is a blunt instrument: it makes every task here
+      // wait for every task there. That is the safe default when the author has
+      // said nothing, but a task that declares its own `[depends:]` has said
+      // precisely what it needs — adding the coarse edges on top would
+      // serialize work the author already sequenced.
+      const authorSequenced = task.dependsOn.length > 0;
+      if (!authorSequenced)
+        for (const dependencyRepository of repository.dependsOn || [])
+          for (const dependencyTask of tasks.filter((candidate) =>
+            candidate.repository === dependencyRepository))
+            if (!task.dependsOn.includes(dependencyTask.id)) task.dependsOn.push(dependencyTask.id);
       task.resources = [...new Set([`workspace:${task.repository}`, ...task.resources])].sort();
       task.model = modelForTask(id, task, selectedPolicy);
       task.packetCommand = `claude-foundation packet ${id} --task ${task.id}`;
@@ -89,8 +146,7 @@ export function createAgentPlanner({
       if (!ready.length) fail(`task dependency cycle: ${[...pending.keys()].join(", ")}`);
       const group = [];
       for (const task of ready) {
-        const conflicts = group.some((selected) =>
-          resourcesConflict(selected.resources, task.resources));
+        const conflicts = group.some((selected) => taskResourcesConflict(selected, task));
         if (!conflicts && group.length < selectedPolicy.execution.maxParallelAgents) group.push(task);
       }
       if (!group.length) group.push(ready[0]);
@@ -291,5 +347,5 @@ export function createAgentPlanner({
     });
   }
 
-  return { modelForTask, planValue, showPlan, showTask };
+  return { modelForTask, planValue, showPlan, showTask, activeRepositoryConflicts };
 }

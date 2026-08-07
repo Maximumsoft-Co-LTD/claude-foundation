@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { spawnSync } from "node:child_process";
+import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
 
 const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
@@ -87,6 +88,7 @@ export function createLandRuntime({
   repositoryById,
   git,
   gitHead,
+  ciEvidenceProtocolVersion,
   now,
   blockWithDecision,
   fail
@@ -242,6 +244,51 @@ export function createLandRuntime({
     console.log(JSON.stringify(plan, null, 2));
   }
 
+  // Land's CI signal and the Ed25519-signed CI envelope existed as two paths
+  // that never met. This is the join: the same envelope format, bound to the
+  // child repository's landed commit instead of to a provider workspace.
+  function verifySignedCiAttestation(id, repositoryId, commit, envelopePath) {
+    const absolute = resolvePath(envelopePath);
+    if (!existsSync(absolute))
+      return { valid: false, reason: `attestation file not found: ${envelopePath}` };
+    const envelope = readJson(absolute, null);
+    if (!envelope) return { valid: false, reason: "attestation is not readable JSON" };
+    const trusted = landCiIssuers(id);
+    const issuer = trusted[envelope?.payload?.issuer];
+    if (!issuer)
+      return {
+        valid: false,
+        reason: `issuer '${envelope?.payload?.issuer || "unknown"}' is not configured in ` +
+          `openspec/repositories.yaml for '${repositoryId}'`
+      };
+    const result = validateSignedCiEnvelope({
+      envelope,
+      protocolVersion: ciEvidenceProtocolVersion,
+      issuer: envelope.payload.issuer,
+      publicKey: issuer.publicKey,
+      changeId: id,
+      provider: `land:${repositoryId}`,
+      workspaceHash: commit,
+      head: commit
+    });
+    if (!result.valid) return result;
+    if (result.status !== "pass")
+      return { valid: false, reason: `signed CI reports '${result.status}'` };
+    return {
+      valid: true, status: "pass",
+      issuer: result.payload.issuer, runUrl: result.payload.runUrl
+    };
+  }
+
+  function landCiIssuers(id) {
+    const issuers = {};
+    for (const repository of selectedRepositories(id))
+      for (const [name, config] of Object.entries(repository.ci?.issuers || {}))
+        if (config?.algorithm === "ed25519" && String(config.publicKey || "").includes("PUBLIC KEY"))
+          issuers[name] = config;
+    return issuers;
+  }
+
   function recordRepositoryLand(id, flags) {
     const repositoryId = flags.repo;
     const commit = flags.commit;
@@ -270,15 +317,41 @@ export function createLandRuntime({
     const ci = flags.ci || null;
     if (ci && !["pass", "fail", "pending"].includes(ci))
       fail("land record --ci must be pass|fail|pending");
+    // `--ci pass` is the operator's word for it. The harness already knows how
+    // to verify a signed CI envelope bound to this commit; when one is
+    // supplied, that verdict replaces the assertion, and `--ci-required`
+    // refuses the assertion outright.
+    const envelopePath = String(flags["ci-attestation"] || "").trim();
+    let ciProvenance = { kind: "self-reported", reference: null };
+    if (envelopePath) {
+      const verified = verifySignedCiAttestation(id, repositoryId, normalizedCommit, envelopePath);
+      if (!verified.valid) fail(`CI attestation rejected: ${verified.reason}`);
+      ciProvenance = { kind: "signed-ci", issuer: verified.issuer, reference: verified.runUrl };
+      if (ci && ci !== verified.status)
+        fail(`--ci ${ci} contradicts the signed CI attestation (${verified.status})`);
+    }
+    if (Boolean(flags["ci-required"]) && ciProvenance.kind !== "signed-ci")
+      fail(`repository '${repositoryId}' requires CI evidence; pass --ci-attestation <signed.json>. ` +
+        "A self-reported --ci is not evidence when CI is required.");
     state.repositories[repositoryId].land = {
       commit: normalizedCommit,
-      ci,
+      ci: envelopePath ? "pass" : ci,
+      ciProvenance,
       ciRequired: Boolean(flags["ci-required"]),
       recordedAt: now(),
-      authority: { kind: "host-user-decision", reference: decisionRef }
+      authority: { kind: "host-user-decision", reference: decisionRef },
+      // Machine state is gitignored, so for a `type: "git"` sibling nothing
+      // versioned in the root records which commit this change landed against.
+      // Say so rather than let `child-landed` imply a durable binding.
+      binding: repository.type === "submodule" ? "root-gitlink" : "runtime-state-only"
     };
     saveRuntime(state);
-    console.log(`LAND RECORDED ${id}/${repositoryId}\n  commit: ${normalizedCommit}\n  ci: ${ci || "unknown"}`);
+    if (repository.type !== "submodule")
+      console.error(
+        `WARNING: '${repositoryId}' is a ${repository.type} repository, so nothing versioned in the ` +
+        "root records this commit; the binding lives only in gitignored runtime state");
+    console.log(`LAND RECORDED ${id}/${repositoryId}\n  commit: ${normalizedCommit}\n  ci: ${
+      state.repositories[repositoryId].land.ci || "unknown"} (${ciProvenance.kind})`);
   }
 
   function stageRootPointers(id) {

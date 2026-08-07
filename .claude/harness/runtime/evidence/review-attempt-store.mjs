@@ -66,6 +66,7 @@ export function createReviewAttemptStore({
   function reviewHistoryChainValid(id, history) {
     let digest = history.chainHead || null;
     let expectedAttempt = Number(history.totalAttempts || 0);
+    let base = null;
     const seen = new Set();
     while (digest) {
       if (seen.has(digest) || seen.size > 1000) return false;
@@ -73,10 +74,15 @@ export function createReviewAttemptStore({
       const attempt = reviewAttemptByDigest(id, digest);
       if (!attempt || Number(attempt.attempt) !== expectedAttempt || attempt.changeId !== id)
         return false;
+      base = attempt;
       digest = attempt.priorChainHead || null;
       expectedAttempt -= 1;
     }
-    return expectedAttempt === 0 || Boolean(reviewAttemptByDigest(id, history.chainHead)?.migrated);
+    // A migrated history has no records before its synthetic attempt, so the
+    // walk legitimately stops above zero. That marker sits at the chain *base*;
+    // looking for it on the head declared every migrated change corrupt the
+    // moment a real attempt was appended on top of it.
+    return expectedAttempt === 0 || Boolean(base?.migrated);
   }
 
   function reserveReviewAttempt(id, reviewerType, receiptSeed) {

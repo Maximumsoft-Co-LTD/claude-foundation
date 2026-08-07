@@ -28,6 +28,7 @@ export function createDiagnosticsRuntime({
   runtimePath,
   proofPath,
   readJson,
+  readJsonOrNull,
   relevantHash,
   protocolDescriptor,
   repositoryCatalog,
@@ -49,6 +50,7 @@ export function createDiagnosticsRuntime({
   policyCapabilityTrigger,
   unresolvedApplyTransactions,
   parseFlags,
+  parseStrictCommandFlags,
   fail
 }) {
   function showChanges() {
@@ -56,11 +58,20 @@ export function createDiagnosticsRuntime({
     const orphans = orphanRuntimeChanges();
     if (!ids.length) console.log("No active changes.");
     for (const id of ids) {
-      const state = existsSync(runtimePath(id))
-        ? readJson(runtimePath(id))
-        : { status: "untracked" };
+      // One unreadable state file used to kill the whole listing — every other
+      // change became invisible because of a neighbour. `changes` is how a
+      // stuck project is diagnosed, so it degrades per row instead.
+      let state;
+      if (!existsSync(runtimePath(id))) state = { status: "untracked" };
+      else {
+        state = readJsonOrNull(runtimePath(id));
+        if (state === null) {
+          console.log(`${id}\tinvalid-runtime-json\tunknown\tclaude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>`);
+          continue;
+        }
+      }
       const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
-      const current = existsSync(runtimePath(id)) ? relevantHash(id) : null;
+      const current = state.status === "untracked" ? null : relevantHash(id);
       const readiness = proof?.status === "pass" && proof.workspaceHash === current
         ? "ready-to-land"
         : state.status === "proven" ? "stale-proof" : state.status;
@@ -336,7 +347,14 @@ export function createDiagnosticsRuntime({
   }
 
   function migrate(values) {
-    const { flags, rest } = parseFlags(values);
+    // Strict, not parseFlags: `--apply` is boolean, and the greedy parser
+    // swallowed the following legacy id as its value — so `migrate --apply
+    // <id>` silently migrated *every* legacy run and reported success. It also
+    // accepted `--apply=false`, whose truthy string "false" still wrote.
+    const { flags, rest } = parseStrictCommandFlags(values, "migrate", {
+      boolean: ["apply"]
+    });
+    if (rest.length > 1) fail(`migrate accepts at most one legacy id: ${rest.join(", ")}`);
     const legacyRoot = join(root, ".workflow");
     const candidates = existsSync(legacyRoot)
       ? readdirSync(legacyRoot, { withFileTypes: true })

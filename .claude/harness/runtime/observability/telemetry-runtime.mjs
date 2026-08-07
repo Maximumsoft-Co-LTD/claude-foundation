@@ -12,7 +12,7 @@ import {
   rmSync,
   statSync
 } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { normalizeTelemetryRow } from "./telemetry.mjs";
 
 export function createTelemetryRuntime({
@@ -111,6 +111,30 @@ export function createTelemetryRuntime({
 
   function sourceKey(path) {
     return createHash("sha256").update(path).digest("hex").slice(0, 24);
+  }
+
+  // The session bound works; the project bound did not exist. A transcript is
+  // resolved purely from the environment, so a sibling agent working in a
+  // different repository — same host, same session id space — had its requests
+  // and cache reads counted against this project's change, and reached the
+  // user's cost numbers. Rows that name a working directory must name one
+  // inside this project; rows that name none are kept, since dropping them
+  // would silently under-report rather than mis-attribute.
+  function belongsToThisProject(row) {
+    const cwd = row?.cwd || row?.workingDirectory || row?.projectPath;
+    if (typeof cwd !== "string" || !cwd) return true;
+    const inside = relative(canonicalRoot(), canonicalPathOrSelf(cwd));
+    return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
+  }
+
+  function canonicalPathOrSelf(path) {
+    try { return realpathSync(path); } catch { return resolve(path); }
+  }
+
+  let canonicalRootCache = null;
+  function canonicalRoot() {
+    canonicalRootCache ||= canonicalPathOrSelf(root);
+    return canonicalRootCache;
   }
 
   function claudeHostContext(sourceOverride = null) {
@@ -352,7 +376,8 @@ export function createTelemetryRuntime({
       const source = session.sources[key] || { path, offset: 0 };
       const chunk = readCompleteJsonLines(path, Number(source.offset || 0));
       const isSubagent = path !== context.transcriptPath;
-      imported += appendTelemetryRows(id, chunk.rows, "claude", {
+      const rows = chunk.rows.filter(belongsToThisProject);
+      imported += appendTelemetryRows(id, rows, "claude", {
         sessionId: context.sessionId,
         operationId: session.operationId || "unknown",
         agentId: isSubagent

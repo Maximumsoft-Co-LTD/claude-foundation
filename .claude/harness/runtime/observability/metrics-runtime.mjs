@@ -125,7 +125,11 @@ export function createMetricsRuntime({
         if (event[field] !== null && event[field] !== undefined &&
             Number.isFinite(Number(event[field])))
           phase[field] = Number(phase[field] || 0) + Number(event[field]);
+      // `Number(null)` is 0 and 0 is finite, so an unknown cache read latched
+      // this to a measured zero — and the `=== null` guard then stopped any
+      // real value from ever correcting it.
       if (phase.contextCarryInTokens === null &&
+          event.cacheReadTokens !== null && event.cacheReadTokens !== undefined &&
           Number.isFinite(Number(event.cacheReadTokens)))
         phase.contextCarryInTokens = Number(event.cacheReadTokens);
       if (!phaseFirstEvent.has(name))

@@ -106,10 +106,25 @@ export function createEvidenceContract({
         die(`provider '${provider}' uses unknown adapter '${config.adapter || ""}'`);
       if (config.repository !== undefined)
         repositoryById(id, config.repository);
-      if (config.adapter !== "external" &&
+      if (!["external", "contract-digest"].includes(config.adapter) &&
           (!Array.isArray(config.command) || config.command.length === 0 ||
            config.command.some((part) => typeof part !== "string" || !part)))
         die(`provider '${provider}' adapter '${config.adapter}' requires a non-empty command array`);
+      if (config.adapter === "contract-digest") {
+        // Two sides minimum: a "shared" contract with one participant proves
+        // nothing about agreement.
+        const sides = config.contract;
+        if (!sides || typeof sides !== "object" || Array.isArray(sides) ||
+            Object.keys(sides).length < 2)
+          die(`provider '${provider}' contract-digest requires "contract" mapping at least two repository ids to a file path`);
+        for (const [repository, path] of Object.entries(sides)) {
+          if (typeof path !== "string" || !path.trim())
+            die(`provider '${provider}' contract-digest path for '${repository}' must be a non-empty string`);
+          repositoryById(id, repository);
+        }
+        if (config.repository !== undefined)
+          die(`provider '${provider}' contract-digest spans repositories and cannot declare a single 'repository'`);
+      }
       if (config.adapter === "test-discovery" && capability !== "test")
         die("test-discovery adapter requires capability 'test'");
       if (config.adapter === "test-discovery" && provider !== "test") {
@@ -270,6 +285,14 @@ export function createEvidenceContract({
       singleRelevantSnapshot(id, repository.workspacePath, true).workspaceHash;
   }
   
+  // Which repository a scoped input root belongs to, for a stable label in the
+  // recorded file list.
+  function repositoryLabel(id, workspacePath) {
+    for (const repository of selectedRepositories(id))
+      if (canonicalPath(repository.workspacePath) === workspacePath) return repository.id;
+    return null;
+  }
+
   function providerInputIdentity(id, provider, config = providerConfig(id, provider),
       globalHash = null) {
     const workspace = canonicalPath(providerWorkspace(id, provider, config));
@@ -284,6 +307,19 @@ export function createEvidenceContract({
     }
     const patterns = [...new Set(config.inputs.map((item) =>
       item.replaceAll("\\", "/").replace(/^\.\/+/, "")))].sort();
+    // A provider that spans repositories has no single workspace to walk, so
+    // `inputs` may name one: `api:openapi.yaml` reads from repository `api`.
+    // Without this a cross-repo provider could only bind to the composite hash
+    // — all-or-nothing — and any edit anywhere invalidated its receipt.
+    const scoped = patterns.filter((pattern) => /^[a-z0-9][a-z0-9._-]*:/i.test(pattern));
+    const roots = new Map([[workspace, patterns.filter((pattern) => !scoped.includes(pattern))]]);
+    for (const pattern of scoped) {
+      const separator = pattern.indexOf(":");
+      const repositoryId = pattern.slice(0, separator);
+      const rest = pattern.slice(separator + 1);
+      const repositoryRoot = canonicalPath(repositoryById(id, repositoryId).workspacePath);
+      roots.set(repositoryRoot, [...(roots.get(repositoryRoot) || []), rest]);
+    }
     const matches = (rel, pattern) => {
       if (pattern.endsWith("/**"))
         return rel === pattern.slice(0, -3) || rel.startsWith(pattern.slice(0, -2));
@@ -294,21 +330,24 @@ export function createEvidenceContract({
       return rel === pattern || rel.startsWith(`${pattern.replace(/\/$/, "")}/`);
     };
     const files = [];
-    const collect = (dir) => {
+    const collect = (dir, base, scopePatterns, label) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (EXCLUDED_WORKSPACE_DIRS.has(entry.name)) continue;
         const path = join(dir, entry.name);
         if (entry.isDirectory()) {
-          collect(path);
+          collect(path, base, scopePatterns, label);
           continue;
         }
         if (!entry.isFile()) continue;
-        const rel = relative(workspace, path).replaceAll("\\", "/");
-        if (patterns.some((pattern) => matches(rel, pattern)))
-          files.push({ path: rel, sha256: fileDigest(path) });
+        const rel = relative(base, path).replaceAll("\\", "/");
+        if (scopePatterns.some((pattern) => matches(rel, pattern)))
+          files.push({ path: label ? `${label}:${rel}` : rel, sha256: fileDigest(path) });
       }
     };
-    collect(workspace);
+    for (const [base, scopePatterns] of roots) {
+      if (!scopePatterns.length || !existsSync(base)) continue;
+      collect(base, base, scopePatterns, base === workspace ? null : repositoryLabel(id, base));
+    }
     files.sort((left, right) => left.path.localeCompare(right.path));
     return {
       mode: "declared",

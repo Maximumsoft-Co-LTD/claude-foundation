@@ -50,9 +50,16 @@ export function createStateRuntime({
   function archivedChangeRelativePath(id) {
     const archiveRoot = join(changes, "archive");
     if (!existsSync(archiveRoot)) return null;
+    // OpenSpec prefixes the archived directory with a date, so the suffix is
+    // how the change is found. Anchor it to that prefix: a bare `-${id}` also
+    // matches an unrelated archived change whose own id merely ends this way
+    // (`quick-fix-login` for `fix-login`), which both widens the recovered-
+    // archive trigger and can record the wrong archivedChangePath.
+    const datePrefixed = new RegExp(`^\\d{4}-\\d{2}-\\d{2}(-\\d+)?-${
+      id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
     const candidates = readdirSync(archiveRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() &&
-        (entry.name === id || entry.name.endsWith(`-${id}`)))
+        (entry.name === id || datePrefixed.test(entry.name)))
       .map((entry) => entry.name).sort();
     return candidates.length ? `openspec/changes/archive/${candidates.at(-1)}` : null;
   }
@@ -62,9 +69,31 @@ export function createStateRuntime({
       .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "change";
   }
 
-  function loadRuntime(id) {
-    if (!existsSync(runtimePath(id))) fail(`unknown change '${id}'`);
-    return readJson(runtimePath(id));
+  // `recoverable` is for the one caller that must work precisely when the
+  // state file is gone or unreadable: `change abandon` is the designed exit
+  // from a broken change, and gating it on loadRuntime made it the dead end it
+  // exists to resolve. A minimal placeholder is enough for abandon to
+  // quarantine what is on disk.
+  function loadRuntime(id, { recoverable = false } = {}) {
+    const path = runtimePath(id);
+    const present = existsSync(path);
+    if (!present && !recoverable) fail(`unknown change '${id}'`);
+    if (!present && !existsSync(changePath(id)))
+      fail(`unknown change '${id}'`);
+    if (!present)
+      return { version: 2, id, status: "unknown", schema: null, recoveredState: "missing" };
+    try {
+      return JSON.parse(readFileSync(path, "utf8"));
+    } catch (error) {
+      if (!recoverable)
+        fail(`invalid JSON: ${runtimeRelativePath(id)} (${error.message}); ` +
+          `retire it with 'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
+      return { version: 2, id, status: "unknown", schema: null, recoveredState: "corrupt" };
+    }
+  }
+
+  function runtimeRelativePath(id) {
+    return relative(root, runtimePath(id));
   }
 
   function saveRuntime(state) {

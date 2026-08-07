@@ -62,16 +62,38 @@ else
   pass "proof recovery contains no preselected passing decision"
 fi
 
-# Shipped rules must not point at maintainer-only tests or research paths.
-leaks="$(grep -rlE '\.claude/tests|tests/bench|docs/research' \
-  "$ROOT/.claude/orchestrator.md" "$ROOT/.claude/commands" \
-  "$ROOT/.claude/harness/AGENT.md" "$ROOT/.claude/harness/EVIDENCE.md" \
-  "$ROOT/.claude/rules" "$ROOT/.claude/skills" "$ROOT/WORKFLOW.md" \
-  2>/dev/null || true)"
+# Shipped rules must not point at maintainer-only tests or research paths, nor
+# at repository-only files that never reach a consumer's project. The file list
+# is every shipped documentation surface — the harness README, the hooks, and
+# settings.json were absent before, which is where the escapes were.
+SHIPPED_DOCS="$ROOT/.claude/orchestrator.md $ROOT/.claude/commands
+$ROOT/.claude/harness/AGENT.md $ROOT/.claude/harness/EVIDENCE.md
+$ROOT/.claude/harness/README.md $ROOT/.claude/hooks $ROOT/.claude/settings.json
+$ROOT/.claude/rules $ROOT/.claude/skills $ROOT/WORKFLOW.md"
+# Only unambiguous repository-only filenames. Bare directory words like
+# "dashboard/" appear as ordinary content in the UI skill's data and would be
+# false positives; WORKFLOW.md's `/path/to/claude-foundation/cli.sh` is a
+# documented source-checkout escape hatch, not a shipped-path claim.
+# shellcheck disable=SC2086 -- intentional word-splitting over the path list
+leaks="$(grep -rlE '\.claude/tests|tests/bench|docs/research|install\.sh|install-cursor\.sh|RELEASING\.md|Formula/claude-foundation|release-notes/' \
+  $SHIPPED_DOCS 2>/dev/null || true)"
 if [ -z "$leaks" ]; then
   pass "shipped workflow files do not cite maintainer-only paths"
 else
   fail "shipped workflow files cite maintainer-only paths: $(printf '%s' "$leaks" | tr '\n' ' ')"
+fi
+
+# A shipped file that names a relative path must name one that ships.
+missing=""
+for rel in $(grep -rhoE '(\.\./)?(runtime|skills|rules|commands|hooks|harness)/[A-Za-z0-9._/-]+\.(mjs|md|json)' \
+    $SHIPPED_DOCS 2>/dev/null | sort -u); do
+  case "$rel" in ../*) candidate="$ROOT/.claude/${rel#../}" ;; *) candidate="$ROOT/.claude/$rel" ;; esac
+  [ -e "$candidate" ] || [ -e "$ROOT/.claude/harness/$rel" ] || missing="$missing $rel"
+done
+if [ -z "$missing" ]; then
+  pass "shipped files reference only paths that resolve"
+else
+  fail "shipped files reference non-resolving paths:$missing"
 fi
 
 finish "doc-consistency tests"

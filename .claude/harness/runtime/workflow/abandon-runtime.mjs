@@ -123,7 +123,13 @@ export function createAbandonRuntime({
     const decisionRef = String(flags["decision-ref"] || "").trim();
     if (!decisionRef)
       fail("change abandon requires --decision-ref <host-user-decision>; ask the user whether to retire, keep, or resume this change before discarding it");
-    const state = loadRuntime(id);
+    // Recoverable: abandon is the designed exit from a change that cannot
+    // proceed, so it has to survive the state file being deleted or corrupt —
+    // the very conditions that leave every other command refusing.
+    const state = loadRuntime(id, { recoverable: true });
+    if (state.recoveredState)
+      console.error(`WARNING: runtime state for '${id}' is ${
+        state.recoveredState}; quarantining what remains on disk`);
     if (state.status === "archived")
       fail(`change '${id}' is archived; an archived change is already terminal`);
 
@@ -139,6 +145,22 @@ export function createAbandonRuntime({
     if ((applied || divergent.length) && appliedMode === null)
       blockWithDecision(id, "abandon-applied-workspace",
         appliedDecision(id, divergent, applied));
+
+    // Before anything moves. The record below carries outcomes — what was
+    // reverted, what was cleaned — so it can only be written afterwards, and
+    // an abandon interrupted partway through the reverts would otherwise leave
+    // no trace of what was attempted or who authorized it.
+    const auditPath = join(paths.logs, "abandoned.jsonl");
+    mkdirSync(dirname(auditPath), { recursive: true });
+    appendFileSync(auditPath, `${JSON.stringify({
+      version: 1, changeId: id, event: "abandon-started", reason, decisionRef,
+      applied: appliedMode,
+      appliedPaths: applied?.touchedPaths || [],
+      unresolvedTransactions: divergent.map((journal) => journal.transactionId),
+      schema: state.schema || null, status: state.status || null,
+      actor: process.env.USER || process.env.LOGNAME || "operator",
+      startedAt: now()
+    })}\n`);
 
     const reverted = [];
     // An interrupted apply never represents a state the user chose, so it is
@@ -179,11 +201,8 @@ export function createAbandonRuntime({
       actor: process.env.USER || process.env.LOGNAME || "operator",
       abandonedAt: now()
     };
-    // The audit line is appended before anything moves, so an interrupted
-    // quarantine still leaves a record of what was attempted and why.
-    const auditPath = join(paths.logs, "abandoned.jsonl");
-    mkdirSync(dirname(auditPath), { recursive: true });
-    appendFileSync(auditPath, `${JSON.stringify(record)}\n`);
+    // The outcome line, paired with the intent line written above.
+    appendFileSync(auditPath, `${JSON.stringify({ ...record, event: "abandoned" })}\n`);
 
     const moved = quarantine(id, [
       ["change", join(paths.changes, id)],

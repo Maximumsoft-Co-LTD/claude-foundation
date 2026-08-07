@@ -5,6 +5,45 @@ export function createProofExecutionRuntime({
   durableArtifact, pendingTasks, proofPreflight, prove, proofAudit,
   readJson, proofPath, die
 }) {
+  // Services outlive the run that started them unless something reclaims
+  // them: die() is process.exit, which runs no finally block, and a signal
+  // runs nothing at all. A server left holding its port answers the next
+  // run's readiness probe, so the leak is not merely untidy — it hands a
+  // different change a green suite.
+  const liveSessions = new Set();
+  let reclaimInstalled = false;
+
+  function stopSession(session) {
+    if (!liveSessions.delete(session)) return null;
+    try { return session.stop(); } catch { return null; }
+  }
+
+  function stopAll(sessions) {
+    return [...sessions].reverse().map(stopSession).filter(Boolean);
+  }
+
+  function installReclaim() {
+    if (reclaimInstalled) return;
+    reclaimInstalled = true;
+    const reclaim = () => [...liveSessions].reverse().forEach(stopSession);
+    process.on("exit", reclaim);
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+      process.on(signal, () => { reclaim(); process.exit(130); });
+  }
+
+  async function startTrackedServices(id, nodes, proofRunId) {
+    installReclaim();
+    const sessions = await startRequiredServices(id, nodes, proofRunId);
+    sessions.forEach((session) => liveSessions.add(session));
+    return sessions;
+  }
+
+  function clearActiveProofRun(id) {
+    const current = loadRuntime(id);
+    delete current.activeProofRun;
+    saveRuntime(current);
+  }
+
   async function proofCollect(id) {
     const readiness = proofReadinessValue(id, "prove");
     if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
@@ -35,18 +74,19 @@ export function createProofExecutionRuntime({
     let sessions = [];
     try {
       const { nodes, unavailable } = executionNodes(id, snapshot.workspaceHash);
+      // Throw rather than die: die() is process.exit, so it would skip the
+      // catch that stops services and the cleanup that clears activeProofRun.
       if (unavailable.length)
-        die(`provider environment unavailable: ${unavailable.join(", ")}; run doctor --stage prove --change ${id}`);
+        throw new Error(`provider environment unavailable: ${unavailable.join(", ")}; run doctor --stage prove --change ${id}`);
       const collectable = collectableExecutionNodes(id, nodes, snapshot.workspaceHash);
-      sessions = await startRequiredServices(id, collectable.nodes, proofRunId);
+      sessions = await startTrackedServices(id, collectable.nodes, proofRunId);
       const outcomes = collectable.nodes.length
         ? await runExecutionDag(id, collectable.nodes, proofRunId)
         : [];
       const failed = outcomes.filter((row) => row.status !== "pass");
       if (failed.length)
-        die(`evidence collection failed: ${failed.map((row) => `${row.provider}:${row.status}`).join(", ")}`);
-      const serviceArtifacts = sessions.reverse()
-        .map((session) => session.stop())
+        throw new Error(`evidence collection failed: ${failed.map((row) => `${row.provider}:${row.status}`).join(", ")}`);
+      const serviceArtifacts = stopAll(sessions)
         .map((artifact) => durableArtifact(id, "service", proofRunId, {
           path: artifact.path,
           type: "service-log",
@@ -73,12 +113,13 @@ export function createProofExecutionRuntime({
       console.log(JSON.stringify(outcome, null, 2));
       return outcome;
     } catch (error) {
-      sessions.reverse().forEach((session) => session.stop());
+      stopAll(sessions);
+      // Before die(), not after: a stale activeProofRun makes the next receipt
+      // bind the pre-failure workspace hash and land in a dead run directory.
+      clearActiveProofRun(id);
       die(error.message);
     } finally {
-      const current = loadRuntime(id);
-      delete current.activeProofRun;
-      saveRuntime(current);
+      clearActiveProofRun(id);
     }
   }
   
@@ -106,14 +147,13 @@ export function createProofExecutionRuntime({
       const hash = snapshot.workspaceHash;
       const { nodes, unconfigured, unavailable } = executionNodes(id, hash);
       if (unconfigured.length)
-        die(`missing executable adapter for provider(s): ${unconfigured.join(", ")}; record external receipts or configure evidence v2`);
+        throw new Error(`missing executable adapter for provider(s): ${unconfigured.join(", ")}; record external receipts or configure evidence v2`);
       if (unavailable.length)
-        die(`provider environment unavailable: ${unavailable.join(", ")}; run doctor --stage prove --change ${id}`);
-      sessions = await startRequiredServices(id, nodes, proofRunId);
+        throw new Error(`provider environment unavailable: ${unavailable.join(", ")}; run doctor --stage prove --change ${id}`);
+      sessions = await startTrackedServices(id, nodes, proofRunId);
       if (nodes.length) await runExecutionDag(id, nodes, proofRunId);
       else console.log(`EXECUTION ${proofRunId}: all receipts reused`);
-      const serviceArtifacts = sessions.reverse()
-        .map((session) => session.stop())
+      const serviceArtifacts = stopAll(sessions)
         .map((artifact) => durableArtifact(id, "service", proofRunId, {
           path: artifact.path,
           type: "service-log",
@@ -125,15 +165,11 @@ export function createProofExecutionRuntime({
       sessions = [];
       prove(id, proofRunId);
     } catch (error) {
-      sessions.reverse().forEach((session) => session.stop());
-      const current = loadRuntime(id);
-      delete current.activeProofRun;
-      saveRuntime(current);
+      stopAll(sessions);
+      clearActiveProofRun(id);
       die(error.message);
     } finally {
-      const current = loadRuntime(id);
-      delete current.activeProofRun;
-      saveRuntime(current);
+      clearActiveProofRun(id);
     }
   }
   
