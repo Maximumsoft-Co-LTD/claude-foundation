@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Ordinary engineering vocabulary no longer summons a reviewer** — security
+  triggers are inferred from the change intent, and `token`, `session`,
+  `identity`, `sensitive`, and `escalation` were entries of their own. Whole-word
+  matching did not save them: "reduce the token budget", "resume the session",
+  "record state-identity evidence", "make paths case-sensitive", and "escalate to
+  a human" each bought an independent reviewer, an upgrade to the standard
+  schema, and — because a security trigger also makes reviewer diversity
+  mandatory — a second model or a person. They are now carried as the phrases
+  that actually name a trust boundary (`auth token`, `access token`,
+  `session cookie`, `session id`, `sensitive data`, `identity provider`, and
+  siblings). The auth/oauth/jwt/passkey/credential cluster is untouched, and
+  `--security <trigger>` remains the explicit declaration for a boundary no
+  phrase caught.
+- **`coupling: coupled` at low impact no longer requires review** — coupling
+  reports that a change spans components, which still earns the standard
+  schema's `design.md` and `specs/`. It is not on its own a reason to summon an
+  independent reader, and the cross-repository cases that do need one are caught
+  separately: any claim above low impact spanning repositories already requires
+  review through `multi-repository-claim`, which never consulted this flag.
+  `coupled` at medium or high impact is unchanged.
+
+### Added
+
+- **`review.diversity` in `foundation.json`** — a project with one model
+  available cannot satisfy reviewer diversity with a second provider, so
+  critical work always fell to a person. Setting
+  `"review": { "diversity": "single-model" }` accepts a same-family reviewer
+  there instead. The waiver is not silent: it appears as a
+  `diversity-waived-single-model` trigger in the review packet and is recorded
+  in the receipt as `review.policy.diversityWaived`, inside the hash chain that
+  binds the attempt. It is deliberately not a command flag — a flag would let
+  the party being reviewed write its own exemption at the moment it is caught.
+  It relaxes diversity only; reviewer **independence** is never waived, because
+  a fresh session and a distinct identity cost nothing even with one model.
+
 ## [3.2.4] - 2026-08-07
 
 ### Added

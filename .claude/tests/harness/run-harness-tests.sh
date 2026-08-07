@@ -218,6 +218,59 @@ node .claude/harness/foundation.mjs sandbox create no-security-trigger >/dev/nul
 assert_cmd_zero "Build packet opens after sandbox creation" \
   node .claude/harness/foundation.mjs packet no-security-trigger --phase build
 
+# Ordinary engineering vocabulary must not read as a trust boundary. Each of
+# these sentences used to match a bare SECURITY_TERMS entry, which required an
+# independent reviewer, forced the standard schema, and — because a security
+# trigger also makes reviewer diversity mandatory — a second model or a person.
+vocabulary_case=0
+for phrase in "Reduce the token budget for review packets" \
+  "Resume the session after a restart" \
+  "Record state-identity evidence" \
+  "Make workspace paths case-sensitive" \
+  "Escalate a blocked change to a human"; do
+  vocabulary_case=$((vocabulary_case + 1))
+  slug="ordinary-vocabulary-${vocabulary_case}"
+  node .claude/harness/foundation.mjs new "$phrase" --rapid --id "$slug" >/dev/null
+  vocabulary_output="$(node .claude/harness/foundation.mjs resolve "$slug" \
+    --impact low --coupling isolated)"
+  assert_contains "ordinary vocabulary is not a security trigger: $phrase" \
+    "$vocabulary_output" "security: none"
+  assert_contains "ordinary vocabulary does not require review: $phrase" \
+    "$vocabulary_output" "review: not required"
+done
+
+# The same words in the shape that actually names a trust boundary must still
+# trigger, or the entries above were simply deleted rather than sharpened.
+boundary_case=0
+for phrase in "Rotate the auth token on sign-in" \
+  "Store the session cookie for each user" \
+  "Redact sensitive data from logs" \
+  "Add an identity provider for staff"; do
+  boundary_case=$((boundary_case + 1))
+  slug="trust-boundary-${boundary_case}"
+  node .claude/harness/foundation.mjs new "$phrase" --rapid --id "$slug" >/dev/null
+  boundary_output="$(node .claude/harness/foundation.mjs resolve "$slug" \
+    --impact low --coupling isolated)"
+  assert_contains "trust boundary still triggers review: $phrase" \
+    "$boundary_output" "review: required"
+done
+
+# Coupling reports that a change spans components, which earns the standard
+# schema. It is not on its own a reason to summon an independent reader.
+node .claude/harness/foundation.mjs new 'Share a helper across two modules' --rapid >/dev/null
+coupled_output="$(node .claude/harness/foundation.mjs resolve share-a-helper-across-two-modules \
+  --impact low --coupling coupled --acceptance-not-required)"
+assert_contains "low-impact coupling does not require review" \
+  "$coupled_output" "review: not required"
+assert_cmd_zero "low-impact coupling still upgrades to the standard schema" \
+  jq -e '.schema == "foundation-standard" and .reviewRequired == false' \
+  .foundation/runtime/share-a-helper-across-two-modules.json
+node .claude/harness/foundation.mjs new 'Retune two coupled components' --rapid >/dev/null
+coupled_medium_output="$(node .claude/harness/foundation.mjs resolve retune-two-coupled-components \
+  --impact medium --coupling coupled --acceptance-not-required)"
+assert_contains "coupling above low impact still requires review" \
+  "$coupled_medium_output" "review: required"
+
 jq '.budget = {targetRequests:80,targetTokens:800000,usedRequests:81,usedTokens:900000,measurement:"legacy"}' \
   .foundation/runtime/no-security-trigger.json > "$TMP/legacy-budget.json"
 cp "$TMP/legacy-budget.json" .foundation/runtime/no-security-trigger.json

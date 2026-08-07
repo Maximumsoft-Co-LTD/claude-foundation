@@ -166,7 +166,10 @@ Review receipts additionally identify reviewer type/identity, request and model
 provenance for AI reviewers, one or more structured implementation-subject tuples,
 finding counts, and changed-path scope after the first round. The review packet
 unions committed base-to-HEAD and dirty paths per repository. Critical policy
-requires a different provider/model family or a human. A change-level hash chain
+requires a different provider/model family or a human, unless the project has
+declared `"review": { "diversity": "single-model" }` in `foundation.json`; that
+waiver is named in the packet, recorded as `review.policy.diversityWaived`, and
+never relaxes reviewer independence. A change-level hash chain
 binds the complete receipt payload and limits AI to two recorded attempts even if
 the current receipt is deleted or its provider is renamed; corrupt history fails
 closed. Legacy review receipts remain readable but cannot satisfy protocol v2.

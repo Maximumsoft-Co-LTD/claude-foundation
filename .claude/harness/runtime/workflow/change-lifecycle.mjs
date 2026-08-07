@@ -211,7 +211,14 @@ export function createChangeLifecycle({
         String(value).trim().toLowerCase() !== "none"),
       ...inferred, ...explicitSecurity
     ])];
-    state.reviewRequired = state.impact === "high" || state.coupling === "coupled" ||
+    // Coupling alone no longer summons a reviewer. `coupled` means the change
+    // spans components, which earns the standard schema's design.md and specs/
+    // below — but at low impact there is nothing for an independent reader to
+    // protect, and the cross-repository cases that do matter are caught
+    // separately: reviewPolicy raises `multi-repository-claim` for any claim
+    // above low impact that spans repositories, without consulting this flag.
+    state.reviewRequired = state.impact === "high" ||
+      (state.coupling === "coupled" && state.impact !== "low") ||
       state.securityTriggers.length > 0 || Boolean(flags.review);
     if (flags["acceptance-required"] && flags["acceptance-not-required"])
       fail("resolve cannot combine --acceptance-required and --acceptance-not-required");

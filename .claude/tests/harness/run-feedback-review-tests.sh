@@ -546,4 +546,60 @@ assert_cmd_fails_with "review surface requires the recorded base" \
   "missing baseHead" \
   node .claude/harness/foundation.mjs packet missing-recorded-base --phase review
 
+# A project with one model available cannot satisfy reviewer diversity with a
+# second provider, so critical work would always fall to a person. Declaring
+# review.diversity in the committed policy trades that for a same-family
+# reviewer — and has to say so everywhere the result is read.
+node .claude/harness/foundation.mjs new 'Single model payment migration' >/dev/null
+node .claude/harness/foundation.mjs resolve single-model-payment-migration \
+  --impact high --coupling coupled --security migration --acceptance-not-required >/dev/null
+sed 's/- \[ \]/- [x]/g' openspec/changes/single-model-payment-migration/tasks.md \
+  > "$TMP/single-model-tasks.md"
+cp "$TMP/single-model-tasks.md" openspec/changes/single-model-payment-migration/tasks.md
+
+default_policy_packet="$(node .claude/harness/foundation.mjs packet \
+  single-model-payment-migration --phase review)"
+assert_contains "default policy still demands reviewer diversity" \
+  "$default_policy_packet" '"diversity":"required"'
+
+printf '{"version":1,"review":{"diversity":"whatever"}}\n' > foundation.json
+assert_cmd_fails_with "review diversity policy rejects an unknown mode" \
+  "review.diversity must be required|single-model" \
+  node .claude/harness/foundation.mjs packet single-model-payment-migration --phase review
+
+printf '{"version":1,"review":{"diversity":"single-model"}}\n' > foundation.json
+waived_packet="$(node .claude/harness/foundation.mjs packet \
+  single-model-payment-migration --phase review)"
+assert_contains "single-model policy relaxes diversity to preferred" \
+  "$waived_packet" '"diversity":"preferred"'
+assert_contains "single-model waiver is named in the review packet" \
+  "$waived_packet" 'diversity-waived-single-model'
+
+assert_cmd_fails_with "single-model policy never waives reviewer independence" \
+  "reviewer must use an identity and session independent" \
+  node .claude/harness/foundation.mjs receipt single-model-payment-migration review pass \
+    --reviewer-type ai --reviewer-identity solo-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session shared-session \
+    --subject-actor solo-ai --subject-session shared-session \
+    --subject-provider-family anthropic --subject-model-family claude \
+    --subject-model claude-opus --unresolved-blockers 0 \
+    --observed 'No blockers' --reference fixture://single-model-same-session
+
+assert_cmd_zero "single-model policy accepts a same-family independent reviewer" \
+  node .claude/harness/foundation.mjs receipt single-model-payment-migration review pass \
+    --reviewer-type ai --reviewer-identity reviewer-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session review-session \
+    --subject-actor implementer-ai --subject-session implementation-session \
+    --subject-provider-family anthropic --subject-model-family claude \
+    --subject-model claude-opus --unresolved-blockers 0 \
+    --observed 'No blockers' --reference fixture://single-model-review
+assert_cmd_zero "the waiver is recorded in the review receipt, not just applied" \
+  jq -e '.review.policy.diversityWaived == true
+    and (.review.policy.triggers | index("diversity-waived-single-model") != null)' \
+  .foundation/receipts/single-model-payment-migration/review.json
+
+rm -f foundation.json
+
 finish "feedback review contracts"

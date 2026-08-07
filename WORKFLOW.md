@@ -307,11 +307,22 @@ not construct receipt commands or provenance metadata.
 
 ## Review
 
-Review is required for high impact, `coupling: coupled`, a resolved security
-trigger (authentication/authorization, public compatibility, data migration,
-irreversible mutation, concurrency, monetary logic, multi-repository contracts),
-anomalous evidence, or explicit `--review`. Coupling counts on its own: a change
-that spans components is reviewed even at low impact.
+Review is required for high impact, `coupling: coupled` above low impact, a
+resolved security trigger (authentication/authorization, public compatibility,
+data migration, irreversible mutation, concurrency, monetary logic,
+multi-repository contracts), anomalous evidence, or explicit `--review`.
+Coupling at low impact reports that a change spans components — it earns the
+standard schema's `design.md` and `specs/`, not a reviewer. The cross-repository
+cases that need one are caught separately: any claim above low impact that spans
+repositories requires review on its own.
+
+Security triggers are inferred from the intent as whole words and phrases, so
+the words have to name a trust boundary rather than merely appear near one.
+`auth token`, `session cookie`, `sensitive data`, and `identity provider` are
+triggers; a bare `token`, `session`, `identity`, or `escalation` is not, because
+"reduce the token budget" and "escalate to a human" are ordinary sentences.
+`--security <trigger>` remains the explicit declaration for a boundary no phrase
+caught.
 
 Required review starts from the ≤8 KiB `packet --phase review`, never Build
 history. Its changed surface unions committed base-to-HEAD paths with staged,
@@ -320,7 +331,12 @@ recorded base blocks review instead of appearing clean. Every review receipt
 identifies the reviewer and one or more structured implementation subjects.
 Critical security, migration, compatibility, monetary, or irreversible changes
 require a different model/provider family or a human; other reviews require a
-fresh context and prefer diversity. AI re-review is limited to two rounds, after
+fresh context and prefer diversity. A project with one model available can set
+`"review": { "diversity": "single-model" }` in `foundation.json` to accept a
+same-family reviewer on critical work; the waiver is named in the review packet
+and recorded in the receipt as `diversityWaived`, and it never relaxes reviewer
+independence — a fresh session and a distinct identity are always required.
+AI re-review is limited to two rounds, after
 which unresolved work escalates to a human; that stop names the human path, the
 return to Build, and retiring the change. A change-level hash chain binds each
 attempt to its receipt payload, so deleting a receipt or renaming its provider

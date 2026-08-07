@@ -7,7 +7,7 @@ export function createEvidenceContract({
   activeChangePath, readJson, repositoryById, providerCapability,
   claimsForProvider, canonicalPath, loadRuntime, relevantHash,
   relevantSnapshot, singleRelevantSnapshot, fileDigest, stableHash,
-  policyCapabilities, die
+  policyCapabilities, foundationPolicy, die
 }) {
   function rawExecution(id, dir = activeChangePath(id)) {
     const path = join(dir, "execution.yaml");
@@ -479,11 +479,28 @@ export function createEvidenceContract({
     if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
       diversityTriggers.push("critical-semantics");
     const triggers = [...new Set([...requiredTriggers, ...diversityTriggers])].sort();
+    // A project with one model available cannot satisfy diversity with a second
+    // provider, so the only remaining path is a person — on every critical
+    // change, forever. `review.diversity: "single-model"` in foundation.json
+    // trades that for a same-family reviewer, and says so: the waiver is a
+    // trigger of its own, so it travels into the review packet and the receipt
+    // instead of quietly disappearing. Independence is never waived; a fresh
+    // session costs nothing even when only one model exists.
+    //
+    // contractFingerprint hashes this whole object, so a project that never
+    // opts in must keep producing the byte-identical shape it produced before
+    // the waiver existed — otherwise upgrading Foundation would re-fingerprint
+    // every in-flight change and invalidate evidence nobody asked to re-earn.
+    // Hence the key appears only when the waiver is actually in force.
+    const singleModel = foundationPolicy().review?.diversity === "single-model";
+    const waived = singleModel && diversityTriggers.length > 0;
+    if (waived) triggers.push("diversity-waived-single-model");
     return {
       required: Boolean(state.reviewRequired || requiredTriggers.length || capabilities.has("review")),
       independence: "required",
-      diversity: diversityTriggers.length ? "required" : "preferred",
-      triggers
+      diversity: diversityTriggers.length > 0 && !singleModel ? "required" : "preferred",
+      ...(waived ? { diversityWaived: true } : {}),
+      triggers: triggers.sort()
     };
   }
   

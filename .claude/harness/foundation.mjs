@@ -122,17 +122,33 @@ function providerCapability(provider, config = null) {
 // Matched on whole words, not as substrings. As substrings these fired on
 // "accessibility", "migration guide", and "permission dialog" — and missed
 // "let users sign in with a passkey" entirely, which is the case that
-// actually crosses a trust boundary. Multi-word entries match as phrases.
+// actually crosses a trust boundary. Multi-word entries match as phrases,
+// and whitespace inside one also matches a hyphen ("auth-token").
+//
+// Bare "token", "session", "identity", "sensitive", and "escalation" used to
+// be entries of their own. Whole-word matching does not save them: "reduce the
+// token budget", "resume the session", "state-identity evidence",
+// "case-sensitive paths", and "escalate to a human" are ordinary sentences that
+// each bought an independent reviewer, the standard schema, and — because a
+// security trigger also makes reviewer diversity mandatory — a second model or
+// a person. They are carried here as the phrases that actually name a trust
+// boundary. The auth/oauth/jwt/passkey/credential cluster below is untouched
+// and still covers the same work described in the usual words; `--security`
+// remains the explicit escape for a boundary no phrase here caught.
 const SECURITY_TERMS = [
-  "auth", "authn", "authz", "authentication", "authorization", "identity",
+  "auth", "authn", "authz", "authentication", "authorization",
+  "user identity", "identity provider",
   "access control", "permissions", "secret", "secrets", "credential",
-  "credentials", "session", "sessions", "token", "tokens", "password",
+  "credentials", "user session", "user sessions", "session cookie",
+  "session id", "session token", "session fixation", "session hijack",
+  "auth token", "access token", "refresh token", "bearer token", "api token",
+  "csrf token", "password",
   "passwords", "passkey", "passkeys", "sign in", "sign-in", "signin", "login",
   "log in", "sso", "oauth", "saml", "jwt", "cookie", "cookies", "encryption",
   "decrypt", "encrypt", "crypto", "cross-user", "cross user", "tenant",
-  "multi-tenant", "trust boundary", "irreversible", "sensitive", "pii",
+  "multi-tenant", "trust boundary", "irreversible", "sensitive data", "pii",
   "personal data", "command execution", "injection", "sql injection", "xss",
-  "csrf", "ssrf", "sandbox escape", "privilege", "escalation", "data migration",
+  "csrf", "ssrf", "sandbox escape", "privilege", "data migration",
   "schema migration", "payment", "billing", "refund", "webhook signature"
 ];
 
@@ -691,6 +707,7 @@ evidenceContract = createEvidenceContract({
   fileDigest,
   stableHash,
   policyCapabilities,
+  foundationPolicy,
   die
 });
 const {
@@ -1381,7 +1398,8 @@ function foundationPolicy() {
       "ambiguous-contract", "auth-or-sensitive-data", "migration",
       "concurrency", "public-compatibility", "cross-repository-conflict",
       "evidence-anomaly", "two-failed-attempts"
-    ]
+    ],
+    review: { diversity: "required" }
   };
   if (configured.version !== undefined && configured.version !== 1)
     die("foundation.json requires version 1");
@@ -1390,7 +1408,8 @@ function foundationPolicy() {
     execution: { ...defaults.execution, ...(configured.execution || {}) },
     models: Object.fromEntries(["fast", "standard", "deep"].map((tier) => [
       tier, { ...defaults.models[tier], ...(configured.models?.[tier] || {}) }
-    ]))
+    ])),
+    review: { ...defaults.review, ...(configured.review || {}) }
   };
   if (typeof policy.execution.packetBytes === "number") {
     policy.execution.legacyNumericPacketBytes = policy.execution.packetBytes;
@@ -1429,6 +1448,14 @@ function foundationPolicy() {
   const leaseMinutes = Number(policy.execution.leaseMinutes);
   if (!Number.isFinite(leaseMinutes) || leaseMinutes < 1 || leaseMinutes > 1440)
     die("foundation.json execution.leaseMinutes must be from 1 to 1440");
+  // "single-model" is a project declaring, in a committed file, that it has one
+  // model available — so critical work cannot be reviewed by a second provider
+  // and would otherwise always fall to a person. It relaxes reviewer diversity,
+  // never reviewer independence. It deliberately is not a command flag: a flag
+  // would let the party being reviewed write its own exemption at the moment it
+  // is caught, which is the pattern the attestation trust root exists to refuse.
+  if (!["required", "single-model"].includes(policy.review.diversity))
+    die("foundation.json review.diversity must be required|single-model");
   for (const tier of ["fast", "standard", "deep"])
     if (!policy.models[tier] || typeof policy.models[tier].family !== "string")
       die(`foundation.json models.${tier}.family is required`);
