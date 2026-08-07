@@ -1572,8 +1572,17 @@ footer {
     padding-block: 76px;
   }
 
-  .nav-links a:not(.nav-github) {
+  /* The in-page section anchors are droppable on mobile — scrolling reaches
+     them anyway. Docs is a separate destination, and hiding it left the
+     documentation unreachable from the header on a phone. */
+  .nav-links a:not(.nav-github):not(.nav-docs) {
     display: none;
+  }
+
+  .nav-docs {
+    padding: 8px 12px;
+    border: 1px solid var(--line-dark);
+    border-radius: 6px;
   }
 
   .hero {

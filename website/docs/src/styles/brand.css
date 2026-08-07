@@ -1,34 +1,83 @@
-/* Brand theme for the Foundation docs.
-   The palette and type scale are lifted from ../../styles.css so the docs and
-   the landing page read as one product. Keep the two in step: a colour that
-   drifts here is a colour a reader notices when they cross between them. */
+/* ==========================================================================
+   Claude Foundation documentation — visual system
+
+   Thesis: documentation as an instrument panel. The landing page's editorial
+   cream grid carried into a reference surface — hairline rules that explain
+   structure rather than decorate, monospace reserved for the product's own
+   commands and identifiers, one orange signal owning action and state, and a
+   controlled measure that keeps three-thousand-word pages readable.
+
+   Influences: Swiss grid (structure), editorial scale shifts (expression),
+   the harness's own commands and receipts (product-native motif).
+
+   The palette and typefaces come from ../../../styles.css. Keep the two in
+   step: a value that drifts here is one a reader notices crossing between
+   the landing page and the docs.
+   ========================================================================== */
 
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,500&display=swap");
 
 :root {
+  /* --- Palette, lifted from the landing page ------------------------------ */
   --cf-paper: #f2eee5;
   --cf-paper-deep: #e8e1d4;
   --cf-card: #faf7f0;
   --cf-ink: #17181c;
   --cf-ink-soft: #373a42;
-  --cf-muted: #6b6d72;
+  /* These four are a shade darker than the landing page's equivalents. The
+     docs use them for SMALL text — table headers, sidebar group labels, TOC
+     entries, aside titles, all at 0.7–0.9rem — where WCAG AA needs 4.5:1, and
+     the landing page's values land at 3.86–4.47:1 on this paper. The shift is
+     imperceptible side by side; failing the ratio is not. */
+  --cf-muted: #6a6c71;      /* 4.54:1 on paper */
+  --cf-faint: #8a8a83;      /* 3.00:1 — non-text UI (anchor affordance) */
   --cf-line: #d7d0c3;
   --cf-line-dark: #bcb4a6;
-  --cf-signal: #ff5c35;
-  --cf-signal-dark: #d9401b;
-  --cf-green: #087e67;
+  --cf-signal: #ff5c35;     /* large display and rules only, never small text */
+  --cf-signal-dark: #c53a19; /* 4.54:1 on paper */
+  --cf-blue: #2949e8;       /* 5.65:1 */
+  --cf-green: #087a64;      /* 4.56:1 */
+
+  /* --- Spacing scale ------------------------------------------------------
+     One geometric-ish ramp. Every gap below is drawn from it, so vertical
+     rhythm stays related rather than ad hoc. */
+  --cf-1: 0.25rem;
+  --cf-2: 0.5rem;
+  --cf-3: 0.75rem;
+  --cf-4: 1rem;
+  --cf-5: 1.5rem;
+  --cf-6: 2rem;
+  --cf-7: 3rem;
+  --cf-8: 4rem;
+
+  /* --- Geometry -----------------------------------------------------------
+     Small radii only. The landing page reads as printed matter; large rounded
+     surfaces would break that. */
+  --cf-radius: 6px;
+  --cf-radius-lg: 10px;
+  --cf-hair: 1px;
+
+  /* --- Measure ------------------------------------------------------------
+     Prose is capped in `ch` so the column tracks the font, not the viewport.
+     Tables, code, and media deliberately escape it (see below). */
+  --cf-measure: 68ch;
 
   --sl-font: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --sl-content-width: 47rem;
+  --sl-sidebar-width: 17.5rem;
+  --sl-nav-height: 4rem;
 }
 
 /* One palette, applied for every value of `data-theme`.
    Starlight's inline head script still stamps data-theme="dark" for a visitor
-   whose OS prefers dark, and Pagefind/other components read that attribute — so
-   the selectors below cover :root unqualified AND both explicit values. Styling
+   whose OS prefers dark, and other components read that attribute — so the
+   selectors below cover :root unqualified AND both explicit values. Styling
    only [data-theme="light"] would leave those visitors on Starlight's stock
    dark palette, which is exactly the jump away from the landing page that this
-   is meant to prevent. */
+   is meant to prevent. ThemeProvider.astro pins the attribute itself; this is
+   the belt to that braces. */
 :root,
 :root[data-theme="dark"],
 :root[data-theme="light"] {
@@ -53,73 +102,452 @@
   --sl-color-hairline-light: var(--cf-line);
   --sl-color-hairline-shade: var(--cf-line-dark);
   --sl-color-text-accent: var(--cf-signal-dark);
+  --sl-color-text: var(--cf-ink-soft);
 }
 
-/* Headings use the landing page's display serif, which is what makes the two
-   surfaces recognisably the same site. */
-.sl-markdown-content h1,
-.sl-markdown-content h2,
-.sl-markdown-content h3,
-.content-panel h1,
-.hero h1 {
+body {
+  background: var(--cf-paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================================================
+   Type roles
+   display · heading · subheading · body · label · metadata · code
+   Six roles, fixed. New emphasis comes from weight and space, not new sizes.
+   ========================================================================== */
+
+.sl-markdown-content {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--cf-ink-soft);
+}
+
+/* Display — the page title. Serif, because that is what makes this the same
+   publication as the landing page. */
+.content-panel h1#_top {
   font-family: "Newsreader", Georgia, serif;
   font-weight: 400;
-  letter-spacing: -0.01em;
+  font-size: clamp(2.4rem, 1.9rem + 2vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--cf-ink);
+  text-wrap: balance;
 }
 
+/* Starlight renders each markdown heading as `display: inline` inside a block
+   `.sl-heading-wrapper`, so the anchor link can sit beside the text. Vertical
+   margins and a border-top therefore have to go on the WRAPPER — put them on
+   the heading and the rule shrinks to the width of the words and the spacing
+   silently does nothing. Font styling stays on the heading itself. */
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+  margin-top: var(--cf-8);
+  padding-top: var(--cf-5);
+  border-top: var(--cf-hair) solid var(--cf-line);
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h3 {
+  margin-top: var(--cf-6);
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h4 {
+  margin-top: var(--cf-5);
+}
+
+/* The first section rule would otherwise sit immediately under the page
+   header's own rule, doubling it. */
+.sl-markdown-content > .sl-heading-wrapper.level-h2:first-child {
+  margin-top: var(--cf-5);
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Heading — section breaks. The rule above each one is the grid made visible. */
 .sl-markdown-content h2 {
-  padding-top: 0.4em;
-  border-top: 1px solid var(--sl-color-hairline);
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 400;
+  font-size: 1.85rem;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+  color: var(--cf-ink);
 }
 
-/* The site header's bottom rule is the same weight as the landing page nav. */
-.header {
-  border-bottom: 1px solid var(--sl-color-hairline-shade);
+/* Subheading — deliberately sans, so the jump from h2 to h3 is a change of
+   voice and not just a change of size. */
+.sl-markdown-content h3 {
+  font-family: var(--sl-font);
+  font-weight: 600;
+  font-size: 1.14rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  color: var(--cf-ink);
 }
 
-site-title {
-  font-weight: 700;
-  letter-spacing: -0.015em;
+.sl-markdown-content h4 {
+  font-family: var(--sl-font-mono);
+  font-weight: 500;
+  font-size: 0.94rem;
+  letter-spacing: 0;
+  color: var(--cf-ink);
 }
 
-/* Inline code should read as a token, not as body text in another font. */
+/* Body — measured. Only text elements are capped; tables, code and media
+   below opt out, because a reference table is data, not prose. */
+.sl-markdown-content p,
+.sl-markdown-content ul,
+.sl-markdown-content ol,
+.sl-markdown-content blockquote {
+  max-width: var(--cf-measure);
+}
+
+.sl-markdown-content strong {
+  font-weight: 600;
+  color: var(--cf-ink);
+}
+
+/* ==========================================================================
+   Links — ink text, signal underline. Editorial rather than coloured-text,
+   and it keeps body copy at full contrast while the underline still marks
+   every link without relying on colour alone.
+   ========================================================================== */
+
+.sl-markdown-content a:not(.sl-anchor-link) {
+  color: var(--cf-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--cf-signal);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  transition: text-decoration-thickness 120ms ease, color 120ms ease;
+}
+
+.sl-markdown-content a:not(.sl-anchor-link):hover {
+  color: var(--cf-signal-dark);
+  text-decoration-thickness: 2px;
+}
+
+/* ==========================================================================
+   Code — the product's own voice. Mono is reserved for commands, identifiers,
+   paths, and receipts; it is never used for emphasis.
+   ========================================================================== */
+
+/* A tint, not a bordered chip. Several literals in one sentence is normal in
+   this product's prose ("## ADDED / ## MODIFIED / ## REMOVED Requirements"),
+   and outlining each one turns the paragraph into a ransom note. The tint is
+   enough to mark a literal; the mono face does the rest. */
 .sl-markdown-content code:not(pre code) {
+  padding: 0.12em 0.32em;
+  border: 0;
+  border-radius: 3px;
+  background: var(--cf-paper-deep);
   font-size: 0.86em;
-  padding: 0.15em 0.4em;
-  border-radius: 5px;
-  border: 1px solid var(--sl-color-hairline);
+  color: var(--cf-ink);
+  overflow-wrap: break-word;
 }
+
+/* Headings own their colour; an inline code token inside one should not
+   introduce a second surface. */
+.sl-markdown-content :is(h1, h2, h3, h4) code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.92em;
+}
+
+.sl-markdown-content .expressive-code {
+  margin-block: var(--cf-5);
+}
+
+.expressive-code .frame {
+  border-radius: var(--cf-radius);
+}
+
+.expressive-code .frame pre {
+  border: var(--cf-hair) solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-card);
+}
+
+/* ==========================================================================
+   Tables — reference data. Rules under the header and between rows; no outer
+   box, because the surrounding whitespace already contains them.
+   ========================================================================== */
 
 .sl-markdown-content table {
+  display: table;
+  width: 100%;
+  margin-block: var(--cf-5);
+  border-collapse: collapse;
   font-size: 0.94rem;
+  line-height: 1.55;
 }
 
 .sl-markdown-content th {
+  padding: 0 var(--cf-4) var(--cf-2) 0;
+  border-bottom: var(--cf-hair) solid var(--cf-line-dark);
+  font-family: var(--sl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--cf-muted);
+  white-space: nowrap;
+}
+
+.sl-markdown-content td {
+  padding: var(--cf-3) var(--cf-4) var(--cf-3) 0;
+  border-bottom: var(--cf-hair) solid var(--cf-line);
+  vertical-align: baseline;
+}
+
+.sl-markdown-content :is(th, td):last-child {
+  padding-right: 0;
+}
+
+/* Markdown tables are not wrapped in a scroll container, and the CLI reference
+   carries usage strings well over 100 characters. Wrapping them keeps the table
+   inside the content column — preferable to a scrollbar here, because a reader
+   comparing commands wants the whole column visible at once. `anywhere` rather
+   than `break-word` so a single unbroken flag string still yields. */
+.sl-markdown-content td code {
+  overflow-wrap: anywhere;
+}
+
+/* Inside a table the whole column is already commands, so a box around each
+   cell explains nothing and a long usage string that wraps fragments into
+   ragged boxes. Mono alone carries it. */
+.sl-markdown-content table code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.86em;
+  color: var(--cf-ink);
+}
+
+/* Where an inline token in prose does wrap, each fragment keeps its full
+   padding and border instead of splitting one box across two lines. */
+.sl-markdown-content code:not(pre code) {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ==========================================================================
+   Asides — a rule in the margin, not a filled card. The icon and the title
+   text both carry the meaning, so state is never conveyed by colour alone.
+   ========================================================================== */
+
+.sl-markdown-content .starlight-aside {
+  max-width: var(--cf-measure);
+  padding: var(--cf-1) 0 var(--cf-1) var(--cf-5);
+  border: 0;
+  border-left: 2px solid var(--cf-line-dark);
+  border-radius: 0;
+  background: none;
+}
+
+.starlight-aside__title {
+  display: flex;
+  gap: var(--cf-2);
+  align-items: center;
+  margin-bottom: var(--cf-2);
+  font-family: var(--sl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.starlight-aside__content {
+  color: var(--cf-ink-soft);
+  font-size: 0.96rem;
+}
+
+.starlight-aside__content > :first-child { margin-top: 0; }
+.starlight-aside__content > :last-child { margin-bottom: 0; }
+
+.starlight-aside--note { border-left-color: var(--cf-blue); }
+.starlight-aside--note .starlight-aside__title { color: var(--cf-blue); }
+.starlight-aside--tip { border-left-color: var(--cf-green); }
+.starlight-aside--tip .starlight-aside__title { color: var(--cf-green); }
+.starlight-aside--caution { border-left-color: var(--cf-signal); }
+.starlight-aside--caution .starlight-aside__title { color: var(--cf-signal-dark); }
+.starlight-aside--danger { border-left-color: var(--cf-signal-dark); }
+.starlight-aside--danger .starlight-aside__title { color: var(--cf-signal-dark); }
+
+/* ==========================================================================
+   Chrome — header, sidebar, table of contents
+   ========================================================================== */
+
+.header {
+  border-bottom: var(--cf-hair) solid var(--cf-line);
+  background: var(--cf-card);
+}
+
+/* Group headings read as the landing page's eyebrow label. */
+.sidebar-content .group-label .large {
+  font-family: var(--sl-font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cf-muted);
+}
+
+.sidebar-content a {
+  border-radius: 0;
+  padding-block: 0.32rem;
+  font-size: 0.92rem;
+  color: var(--cf-ink-soft);
+}
+
+.sidebar-content a:hover {
+  color: var(--cf-ink);
+  background: var(--cf-paper-deep);
+}
+
+/* Active state: a signal rule in the margin plus weight, rather than a filled
+   block. The accent marks the position; it does not shout it. */
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover {
+  border-left: 2px solid var(--cf-signal);
+  margin-left: -2px;
+  background: var(--cf-paper-deep);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  color: var(--cf-ink);
 }
 
-/* Wide reference tables must scroll inside their own box rather than pushing
-   the page into a horizontal scroll. */
-.sl-markdown-content .cf-scroll {
-  overflow-x: auto;
+.right-sidebar h2,
+starlight-toc h2 {
+  font-family: var(--sl-font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cf-muted);
 }
 
-/* Thai needs more line height than the Latin default to stay legible with
-   stacked vowels and tone marks. */
+starlight-toc a {
+  font-size: 0.86rem;
+  color: var(--cf-muted);
+}
+
+starlight-toc a[aria-current="true"],
+starlight-toc a:hover {
+  color: var(--cf-ink);
+}
+
+starlight-toc a[aria-current="true"] {
+  font-weight: 600;
+}
+
+/* Previous/next: mono labels over a serif title, matching the page's own
+   hierarchy so the footer reads as part of the document. */
+.pagination-links a {
+  border-color: var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-card);
+}
+
+.pagination-links a:hover {
+  border-color: var(--cf-signal);
+  background: var(--cf-card);
+}
+
+.pagination-links svg { color: var(--cf-muted); }
+
+.pagination-links .link-title {
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 1.15rem;
+  color: var(--cf-ink);
+}
+
+.pagination-links a > span > span:first-child {
+  font-family: var(--sl-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cf-muted);
+}
+
+/* ==========================================================================
+   Interaction and accessibility
+   ========================================================================== */
+
+:where(a, button, summary, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--cf-signal);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.sl-markdown-content .sl-anchor-link {
+  color: var(--cf-faint);
+  text-decoration: none;
+}
+
+.sl-markdown-content .sl-anchor-link:hover { color: var(--cf-signal-dark); }
+
+/* Motion animates change and causality only; nothing here loops or drifts
+   while someone is trying to read. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Thai
+   Thai needs more leading than the Latin default to stay legible with stacked
+   vowels and tone marks, and Newsreader has no Thai coverage — a serif heading
+   would silently fall back to a system face and break the type system, so Thai
+   headings use the sans throughout.
+   ========================================================================== */
+
 :root[lang="th"] .sl-markdown-content {
-  line-height: 1.85;
+  line-height: 1.9;
 }
 
-/* The page title h1 lives in the content header, OUTSIDE .sl-markdown-content —
-   scoping this override to the markdown body alone left Thai pages with a serif
-   h1 above sans h2s. Both selectors are needed. */
-:root[lang="th"] .sl-markdown-content h1,
-:root[lang="th"] .sl-markdown-content h2,
-:root[lang="th"] .sl-markdown-content h3,
-:root[lang="th"] .content-panel h1,
-:root[lang="th"] .hero h1 {
+:root[lang="th"] .sl-markdown-content :is(h2, h3, h4),
+:root[lang="th"] .content-panel h1#_top {
   font-family: var(--sl-font);
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+:root[lang="th"] .content-panel h1#_top {
+  font-size: clamp(2rem, 1.6rem + 1.6vw, 2.7rem);
+}
+
+/* Thai has no spaces between words, so a `ch`-based measure over-runs. Cap by
+   viewport-relative width instead. */
+:root[lang="th"] .sl-markdown-content :is(p, ul, ol, blockquote) {
+  max-width: 46rem;
+}
+
+/* ==========================================================================
+   Responsive — recomposed, not squeezed
+   ========================================================================== */
+
+@media (max-width: 50rem) {
+  .sl-markdown-content .sl-heading-wrapper.level-h2 {
+    margin-top: var(--cf-7);
+  }
+
+  .sl-markdown-content h2 {
+    font-size: 1.55rem;
+  }
+
+  .sl-markdown-content table {
+    font-size: 0.88rem;
+  }
+
+  /* Reference tables carry long identifiers; let them scroll rather than
+     wrapping a command name mid-token. */
+  .sl-markdown-content th {
+    white-space: normal;
+  }
 }
