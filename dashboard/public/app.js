@@ -44,7 +44,19 @@ let lastData = null;
 
 // ── Key handling ────────────────────────────────────────────────────────────
 function getKey() {
-  return localStorage.getItem(KEY_STORE) || new URLSearchParams(location.search).get('key') || '';
+  const stored = localStorage.getItem(KEY_STORE);
+  if (stored) return stored;
+  // A key in the query string lands in browser history, proxy logs, and any
+  // link the viewer shares. Accept it once as a bootstrap, then move it into
+  // storage and scrub it from the address bar.
+  const fromUrl = new URLSearchParams(location.search).get('key') || '';
+  if (fromUrl) {
+    setKey(fromUrl);
+    const url = new URL(location.href);
+    url.searchParams.delete('key');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
+  return fromUrl;
 }
 function setKey(k) { localStorage.setItem(KEY_STORE, k); }
 function clearKey() { localStorage.removeItem(KEY_STORE); }

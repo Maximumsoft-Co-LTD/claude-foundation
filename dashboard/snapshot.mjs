@@ -191,7 +191,10 @@ function main() {
   process.stdout.write(`${JSON.stringify(buildDashboardSnapshot(root))}\n`);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+// fileURLToPath, not URL.pathname: pathname is percent-encoded, so a space in
+// the install path makes the comparison fail, main() never runs, and the exit
+// code is still 0 — every snapshot silently produces nothing.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(); }
   catch (error) {
     console.error(`claude-foundation: dashboard snapshot failed: ${error.message}`);

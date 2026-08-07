@@ -27,6 +27,8 @@ const PRUNE_AFTER_MS = ONLINE_TTL_MS * 20; // forget agents gone this long
 const ONLINE_CACHE_MS = toInt(process.env.ONLINE_CACHE_MS, 2_000); // /api/online is recomputed at most this often, shared by all viewers
 const MAX_BODY_BYTES = 512 * 1024; // rich change payloads (many repos × files × ranges)
 const MAX_FIELD_LEN = 200;
+const MAX_AGENTS = toInt(process.env.MAX_AGENTS, 500); // roster ceiling — a shared key must not buy unbounded rows
+const MIN_HEARTBEAT_INTERVAL_MS = toInt(process.env.MIN_HEARTBEAT_INTERVAL_MS, 5_000); // persisted writes per agent; the client beats every 30s
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 if (!SHARED_KEY) {
@@ -707,7 +709,13 @@ function readJsonBody(req) {
       const raw = Buffer.concat(chunks).toString('utf8').trim();
       if (!raw) return resolve({ ok: true, value: {} });
       try {
-        resolve({ ok: true, value: JSON.parse(raw) });
+        // `JSON.parse('null')` succeeds and yields null, as do '1', '"x"' and
+        // '[]'. Every caller reads named fields off this, so anything that is
+        // not a JSON object is a bad request, not a body.
+        const value = JSON.parse(raw);
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+          return resolve({ ok: false, error: 'body must be a JSON object' });
+        resolve({ ok: true, value });
       } catch {
         resolve({ ok: false, error: 'invalid JSON' });
       }
@@ -753,6 +761,21 @@ async function handleHeartbeat(req, res, url) {
   const now = Date.now();
   const status = clean(body.value.status) || 'online';
   const existing = agents.get(agentId);
+  // A shared key plus an arbitrary agentId is enough to register unbounded
+  // agents; prune() only evicts after idle minutes, far slower than a loop
+  // adds. Cap the roster, and rate-limit each agent's writes — the client
+  // beats every 30s, so anything faster is not a real beat.
+  if (!existing && agents.size >= MAX_AGENTS)
+    return sendJson(res, 429, { ok: false, error: 'agent capacity reached' });
+  if (existing && now - existing.lastSeen < MIN_HEARTBEAT_INTERVAL_MS && status !== 'offline') {
+    existing.lastSeen = now;
+    return sendJson(res, 200, {
+      ok: true,
+      onlineCount: [...agents.values()].filter((a) => now - a.lastSeen <= ONLINE_TTL_MS).length,
+      ttlMs: ONLINE_TTL_MS,
+      throttled: true,
+    });
+  }
   if (!['online', 'offline'].includes(status)) return sendJson(res, 400, { ok: false, error: 'invalid status' });
   const next = {
     agentId,
@@ -1182,8 +1205,33 @@ function handleOnline(req, res, url) {
 }
 
 // ── Server ──────────────────────────────────────────────────────────────────
+/**
+ * Keep an async handler's rejection inside the request. Node's default is to
+ * treat an unhandled rejection as fatal, so one malformed body from any key
+ * holder would otherwise end the process.
+ */
+function guard(res, promise) {
+  return Promise.resolve(promise).catch((error) => {
+    console.error('handler failed:', error && error.stack ? error.stack : error);
+    if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'internal error' });
+    else res.end();
+  });
+}
+
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  // `new URL('//', base)` throws, and so does any Host header the parser
+  // rejects. Both are reachable unauthenticated, so neither may reach the
+  // top of a request listener that has nothing above it to catch.
+  let url;
+  try {
+    // A leading '//' reads as protocol-relative, so '//api/online' would parse
+    // to host 'api' and path '/online' and silently misroute. Proxies do emit
+    // it; collapse it rather than serve the wrong thing.
+    url = new URL(String(req.url || '/').replace(/^\/{2,}/, '/'),
+      `http://${req.headers.host || 'localhost'}`);
+  } catch {
+    return sendJson(res, 400, { ok: false, error: 'bad request target' });
+  }
   const { pathname } = url;
 
   if (req.method === 'OPTIONS') {
@@ -1195,14 +1243,14 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  if (pathname === '/api/health') {
-    const online = [...agents.values()].filter((a) => Date.now() - a.lastSeen <= ONLINE_TTL_MS).length;
-    return sendJson(res, 200, { ok: true, version: APP_VERSION, online, db: db ? 'sqlite' : 'off' });
-  }
-  if (pathname === '/api/heartbeat' && req.method === 'POST') return handleHeartbeat(req, res, url);
+  // Railway's healthcheck needs this open, so it carries liveness and nothing
+  // else. Headcount, build version and storage mode are operational detail an
+  // unauthenticated caller has no claim on.
+  if (pathname === '/api/health') return sendJson(res, 200, { ok: true });
+  if (pathname === '/api/heartbeat' && req.method === 'POST') return guard(res, handleHeartbeat(req, res, url));
   if (pathname === '/api/online' && req.method === 'GET') return handleOnline(req, res, url);
   if (pathname === '/api/usage' && req.method === 'GET') return handleUsage(req, res, url);
-  if (pathname === '/api/profile' && req.method === 'POST') return handleProfile(req, res, url);
+  if (pathname === '/api/profile' && req.method === 'POST') return guard(res, handleProfile(req, res, url));
   if (pathname === '/api/log/heartbeats' && req.method === 'GET') return handleHeartbeatLog(req, res, url);
   if (pathname === '/api/presence' && req.method === 'GET') return handlePresence(req, res, url);
   if (pathname === '/api/history' && req.method === 'GET') return handleHistory(req, res, url);
@@ -1220,6 +1268,15 @@ function startServer(port = PORT) {
 
 if (require.main === module) {
   startServer();
+  // A restart policy turns a reproducible crash into a permanent outage: the
+  // caller who triggers it can spend the retry budget in a few seconds. Log
+  // and keep serving instead — a wedged request beats a dead deployment.
+  process.on('uncaughtException', (error) => {
+    console.error('uncaught exception:', error && error.stack ? error.stack : error);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('unhandled rejection:', reason && reason.stack ? reason.stack : reason);
+  });
   // Railway sends SIGTERM on redeploy — shut the socket cleanly.
   for (const sig of ['SIGTERM', 'SIGINT']) {
     process.on(sig, () => {
