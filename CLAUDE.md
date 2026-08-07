@@ -43,7 +43,9 @@ Product surface, installed into consumer projects:
   attestation, CI), `workflow/` (change lifecycle, sandbox, agents, budget,
   authority, land, spec-sync), `observability/` (telemetry, metrics, model
   drift, host execution), `reliability/` (bounded retry), `contracts/`
-  (portable schemas).
+  (portable schemas), and `runtime/version.mjs`, whose `RUNTIME_MODULE_API`
+  `foundation.mjs` checks at load so a mixed-revision install fails immediately
+  instead of partway through Land. Bump it with `RUNTIME_API_VERSION`.
 - `.claude/harness/commands.json` - command registry that drives `cli.sh help`.
 - `.claude/harness/protocol.json` - runtime and protocol version pins.
 - `.claude/harness/AGENT.md`, `EVIDENCE.md`, `README.md` - shipped agent
@@ -72,6 +74,9 @@ Repository-only surface, never installed:
 - `.claude/tests/run-all.sh` - deterministic workflow test entrypoint. Suites
   live in `.claude/tests/{harness,hooks,docs,interview,e2e,scenarios,ledger,
   lib}`; benchmark tooling and rationale in `.claude/tests/bench/`.
+  `lib/harness-fixture.sh` installs the runtime into a temp project atomically,
+  so a concurrent edit cannot produce a mixed-revision fixture;
+  `harness/wiring-check.mjs` verifies the composition root statically.
 - `dashboard/` - Node observability server plus `client.sh`; its `npm test`
   runs as the last suite of `run-all.sh`.
 - `website/` - GitHub Pages site. `examples/` - sample consumer projects.

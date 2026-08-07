@@ -254,7 +254,7 @@ Supported capabilities:
 Run `claude-foundation providers` to inspect the canonical
 catalog installed in a project. Providers are evidence contracts, not bundled
 vendor tools: `/prove` may execute the repository's existing command with
-`run-provider`, or record a receipt from an external system. Select only
+`claude-foundation evidence run`, or record a receipt from an external system. Select only
 providers justified by observable claims.
 
 Test evidence automatically requires suite-level discovery evidence.
@@ -307,9 +307,11 @@ not construct receipt commands or provenance metadata.
 
 ## Review
 
-Review is required for high impact, authentication/authorization, public
-compatibility, migration, irreversible mutation, concurrency, monetary logic,
-multi-repository contracts, anomalous evidence, or explicit policy.
+Review is required for high impact, `coupling: coupled`, a resolved security
+trigger (authentication/authorization, public compatibility, data migration,
+irreversible mutation, concurrency, monetary logic, multi-repository contracts),
+anomalous evidence, or explicit `--review`. Coupling counts on its own: a change
+that spans components is reviewed even at low impact.
 
 Required review starts from the ≤8 KiB `packet --phase review`, never Build
 history. Its changed surface unions committed base-to-HEAD paths with staged,
@@ -327,7 +329,15 @@ stale prior review.
 
 Human acceptance is separate from review. New standard changes keep this choice
 `undecided` until `/change` explicitly records whether subjective product or
-experience acceptance is required. Its receipt is
+experience acceptance is required, and a change stays unvalidatable while it is
+undecided. `change resolve` records it:
+
+- `--acceptance-not-required` — no subjective human judgement is involved.
+- `--acceptance-required --acceptance-reason <why>` — a named human must accept
+  the outcome; the reason states what they are being asked to judge.
+- `--acceptance-claims <id,id>` — optional, scopes acceptance to named claims.
+
+Its receipt is
 bound to explicit claim IDs, the final workspace, named nonblank criteria, human
 identity, observation, provenance, and a durable artifact or reference. Review and
 acceptance remain external-only; the deterministic runtime never invokes a model
@@ -392,7 +402,7 @@ provider execution time, request/token/cache/cost totals, orchestrator token
 share, and emitted context bytes without double-counting receipts emitted by
 one combined execution.
 
-`claude-foundation packet <change> --phase build|prove|review` emits the bounded
+`claude-foundation packet <change> --phase change|build|prove|review|land` emits the bounded
 handoff for a fresh execution context. Global, repository, task, and review
 packets are capped at 16, 12, 8, and 8 KiB respectively and reference larger artifacts by
 path and digest. Compact JSON is the default and is the exact measured budget;
@@ -427,7 +437,23 @@ Non-Git projects use an isolated temporary copy with a before/after content
 manifest. Apply rejects any touched target path changed since the baseline,
 then verifies the expected touched-path projection. Multi-repository changes use one
 OpenSpec change plus a repository manifest and require cross-repository contract
-evidence before each repository is landed in its declared order.
+evidence before each repository is landed in its declared order. That evidence
+is checked, not asserted: the `contract-digest` adapter hashes one declared
+artifact in every participating repository and passes only when the bytes agree.
+
+`openspec/repositories.yaml` is the project's topology catalog and is
+hand-maintained. Each entry declares `id`, `type` (`root|submodule|git|
+external`), `path`, `mode` (`read|write`), and `dependsOn`; `allowOutsideRoot`
+permits a path outside the project root. Submodules are discovered from
+`.gitmodules`, and an unregistered one is reported by `doctor`. Each change then
+selects the subset it may touch in its own `repositories.yaml`, with the
+dependency closure enforced.
+
+Only a submodule child gets a durable binding: its landed commit is recorded as
+a root gitlink. For a `type: "git"` sibling the commit lives only in gitignored
+runtime state, and `land record` says so. `--ci pass` is the operator's word
+unless `--ci-attestation <signed.json>` supplies an Ed25519-signed CI envelope
+bound to that commit; `--ci-required` refuses the unsigned assertion.
 Their workspace identity is composite, while providers configured with
 `repository` bind receipts to one repository snapshot. Unrelated repository
 edits therefore preserve scoped evidence; contract and producer/consumer edits
