@@ -4,8 +4,16 @@
 // Hosts enable enforcement with FOUNDATION_GUARDRAIL_MODE=block after exporting
 // FOUNDATION_ACTIVE_PHASE and, for Build, FOUNDATION_WORKSPACE_ROOT.
 
-import { appendFileSync, existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
+import {
+  appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
+  realpathSync
+} from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
+// How long a recorded phase governs. The loop writes a new row at every phase
+// transition, so a row older than this means no Foundation phase is running
+// and the guard has nothing to enforce.
+const PHASE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 
 const mode = (process.env.FOUNDATION_GUARDRAIL_MODE || "audit").toLowerCase();
 if (mode === "off") process.exit(0);
@@ -24,8 +32,14 @@ if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
 if (tool === "Bash" && !looksMutating(String(input.command || ""))) process.exit(0);
 
 const projectRoot = canonical(process.env.CLAUDE_PROJECT_DIR || process.cwd());
-const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || "").toLowerCase();
+const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recordedPhase()).toLowerCase();
 const violations = [];
+
+// Block mode still fails closed: a host that asked for enforcement gets it
+// even when the phase cannot be established. Audit mode does not — recording
+// "phase unavailable" there appended a row on every mutating call of every
+// stock install, which is noise, not an audit trail.
+if (!phase && mode !== "block") process.exit(0);
 
 if (!phase) {
   violations.push("active phase is unavailable");
@@ -99,8 +113,42 @@ function looksMutating(command) {
   // Conservative command-word screening. This intentionally does not claim to
   // be a shell sandbox; enforcement of arbitrary shell effects belongs to the host.
   const stripped = command.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " ");
-  return /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:rm|mv|cp|install|mkdir|touch|truncate|tee|chmod|chown|git\s+(?:commit|push|merge|rebase|checkout|switch|reset|clean|apply)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish))\b/m.test(stripped)
+  // `git rm` is spelled with the git verb list, not the bare `rm` alternative:
+  // that one only matches after a shell separator, so `rm` inside `git rm`
+  // never did. cherry-pick/revert/stash/am/pull all write the working tree,
+  // and `sed -i` edits files in place — all five read as non-mutating before.
+  return /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash|am|pull|worktree|submodule)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish))\b/m.test(stripped)
+    // In-place editors: the file is the effect, not an argument to a reader.
+    || /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i/m.test(stripped)
     || /(?:^|[^<])(?:>>?|2>>?)\s*[^&]/m.test(stripped);
+}
+
+// The host is not the only thing that knows the phase. Every `/build`,
+// `/prove` and `/land` runs `packet <change> --phase <phase>`, which appends a
+// row here — so on a stock install, where nothing exports
+// FOUNDATION_ACTIVE_PHASE, this is what the guard reads.
+function recordedPhase() {
+  try {
+    const logs = join(projectRoot, ".foundation", "logs");
+    if (!existsSync(logs)) return "";
+    let newest = null;
+    for (const entry of readdirSync(logs, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const path = join(logs, entry.name, "phase-context.jsonl");
+      if (!existsSync(path)) continue;
+      const last = readFileSync(path, "utf8").split("\n").filter(Boolean).at(-1);
+      if (!last) continue;
+      let row;
+      try { row = JSON.parse(last); } catch { continue; }
+      const at = Date.parse(row?.timestamp || "");
+      if (!Number.isFinite(at)) continue;
+      if (!newest || at > newest.at) newest = { at, phase: String(row.phase || "") };
+    }
+    if (!newest || Date.now() - newest.at > PHASE_FRESHNESS_MS) return "";
+    return newest.phase;
+  } catch {
+    return "";
+  }
 }
 
 function eventPaths(value) {

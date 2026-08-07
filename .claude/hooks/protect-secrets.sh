@@ -144,11 +144,24 @@ case "$tool_name" in
   Grep)
     g_path="$(printf '%s' "$input" | jq -r '.tool_input.path // ""')"
     g_glob="$(printf '%s' "$input" | jq -r '.tool_input.glob // ""')"
+    g_mode="$(printf '%s' "$input" | jq -r '.tool_input.output_mode // ""')"
+    g_pattern="$(printf '%s' "$input" | jq -r '.tool_input.pattern // ""')"
     if [ -n "$g_path" ] && is_secret_path "$g_path"; then
       block "BLOCKED by secrets guard: Grep path \"$g_path\" is a secret/credential file; matching lines would leak its contents. $REF"
     fi
     if [ -n "$g_glob" ] && glob_targets_secret "$g_glob"; then
       block "BLOCKED by secrets guard: Grep glob \"$g_glob\" targets secret/credential files; with output_mode \"content\" this would leak their contents. Narrow the glob to exclude .env/credential files. $REF"
+    fi
+    # is_secret_path is a *filename* matcher, so a directory path with no glob
+    # cleared both checks above and still printed matching lines out of every
+    # .env underneath it. The pattern is what makes that a leak: a repo-wide
+    # content search for credential-shaped text is the accidental disclosure
+    # this hook exists to stop. Narrower modes (files_with_matches, count)
+    # print no line content and stay allowed.
+    if [ "$g_mode" = "content" ] && [ -n "$g_pattern" ] &&
+       printf '%s' "$g_pattern" | grep -Eqi \
+         '(api[_-]?key|secret|passwd|password|private[_-]?key|access[_-]?token|auth[_-]?token|bearer|credential|client[_-]?secret|aws_[a-z_]*key)'; then
+      block "BLOCKED by secrets guard: Grep pattern \"$g_pattern\" with output_mode \"content\" would print credential-shaped lines from every matching file, including .env files under \"${g_path:-the working directory}\". Use output_mode \"files_with_matches\" to locate them without printing their contents. $REF"
     fi
     ;;
 
@@ -188,9 +201,11 @@ case "$tool_name" in
     found=""
     while IFS= read -r seg; do
       [ -n "$seg" ] || continue
-      # Normalise remaining metacharacters so `--file=.env`, `<.env`, `{a,b}`
-      # all tokenise cleanly.
-      seg="$(printf '%s' "$seg" | tr '=<>{},' '      ')"
+      # Normalise metacharacters so `<.env` and `{a,b}` tokenise cleanly, but
+      # KEEP '=' for now: the assignment-skipping below needs it. Erasing it
+      # first turned `FOO=1 cat .env` into command word "FOO", which is not a
+      # reader, so any `VAR=value` prefix walked straight past this guard.
+      seg="$(printf '%s' "$seg" | tr '<>{},' '     ')"
       # shellcheck disable=SC2086 -- intentional word-splitting
       set -- $seg
       [ "$#" -gt 0 ] || continue
@@ -210,7 +225,12 @@ case "$tool_name" in
         cat|tac|nl|head|tail|less|more|bat|view|vi|vim|nano|emacs|od|xxd|hexdump|strings|base64|grep|egrep|fgrep|rg|ag|ack|awk|sed|cut|paste|cp|scp|rsync|dd|gpg|openssl|jq|yq|cmp|diff) ;;
         *) continue ;;   # not a reader → this segment can't leak a file
       esac
+      shift
 
+      # Only now split on '=', so `--file=.env` still yields `.env` as a token.
+      args="$(printf '%s ' "$@" | tr '=' ' ')"
+      # shellcheck disable=SC2086 -- intentional word-splitting
+      set -- $args
       for tok in "$@"; do
         if is_secret_path "$tok"; then found="$tok"; break; fi
       done
