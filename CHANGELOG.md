@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.5] - 2026-08-07
+
 ### Changed
 
 - **Ordinary engineering vocabulary no longer summons a reviewer** — security
@@ -1457,7 +1459,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.4...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.5...HEAD
+[3.2.5]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.4...v3.2.5
 [3.2.4]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.3...v3.2.4
 [3.2.3]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.2...v3.2.3
 [3.2.2]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.1...v3.2.2
