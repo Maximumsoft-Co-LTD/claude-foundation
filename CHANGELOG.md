@@ -39,9 +39,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`doctor --change <id>` reports unresolved apply transactions** before Land
   reaches them.
 
+### Fixed
+
+- **`PROVEN` now means the evidence ran.** The real-evidence requirements were
+  gated on `adapter === "external"`, and the adapter came from
+  `flags.adapter || config?.adapter`, so the caller chose whether to be
+  checked: `evidence record <change> <provider> pass --adapter command` was
+  accepted with no observation, no provenance and no artifact. Repeating it for
+  each required provider produced a change that reported `PROVEN` and
+  `LAND READY` having executed nothing. A receipt now records how it was
+  produced — `execution: "harness"` is set only by a call site that actually
+  ran a command, through an argument the command line cannot supply — and every
+  hand-recorded receipt owes observation, provenance, and an artifact or a
+  reference that resolves. `receiptValidity` re-checks the same floor on read
+  rather than recomputing an expectation from the receipt's own fields.
+- **A reference has to point somewhere.** `references[]` was never validated,
+  so `--reference "trust me bro"` satisfied a passing external receipt. It must
+  now be a URI or a path that exists.
+- **Archive re-projects work done after an earlier failed archive.** Once a
+  sandbox had been applied, archive skipped re-projection, so a fix made after
+  a failed archive was proven, passed `land check`, and archived as success
+  while the target kept the *first* projection — then the sandbox and its
+  transaction backups were deleted, making the proven fix unrecoverable.
+- **Work committed inside a sandbox lands.** The worktree projection was built
+  from `git diff HEAD`, so committed changes were dropped while proof — which
+  hashes the sandbox index — still counted them; a partial land was reported as
+  success. The projection is now taken from the recorded base.
+- **A recovered archive re-checks the Land guards.** If `openspec archive`
+  moved the change directory and then failed, recovery declared the change
+  archived before `landCheck` ran, skipping dropped-scenario, proof-freshness,
+  receipt-validity, projection and pending-task checks — and committed
+  `archived` plus sandbox deletion before auditing the proof, leaving a change
+  every command refused with no exit. Recovery now verifies what remains
+  checkable before writing anything, and refuses a projection that never ran.
+- **Abandoning a change removes its sandbox.** Cleanup read a field only a
+  successful apply writes, so every never-applied sandbox was reported
+  `not-needed` and left on disk while the abandon record claimed a clean exit.
+- **A zero-byte lease no longer deadlocks a resource permanently.** A
+  descriptor created but not written could never expire and never match an
+  ownership check, so `workspace:root` could become unleasable for every change
+  with no command able to release it.
+- **The dashboard survives unauthenticated malformed requests.** `GET //` threw
+  inside the request listener with no handler above it and no
+  `uncaughtException` handler in the file; with the restart policy retrying ten
+  times, eleven requests turned a crash into a permanent outage. A `null` JSON
+  body did the same through `/api/heartbeat` and `/api/profile`.
+- **Host usage is attributed to this project.** The Claude transcript was
+  resolved from the environment with no project check, so a sibling agent
+  working in a different repository had its requests and cache reads counted
+  against this project's change, and its cost.
+- **Leaked services stop handing the next run a green suite.** A failed proof
+  left its server holding the port — `die()` is `process.exit`, which runs no
+  `finally` — and the readiness loop polls before it sleeps, so the next
+  change's suite passed against the previous run's process. Readiness is probed
+  before a service starts, sessions are reclaimed on failure and on signals,
+  and the built-in static server binds its identity to the proof run.
+- Secret-guard bypasses (`VAR=value` command prefixes, repo-wide content
+  searches for credential-shaped patterns), phase-guard gaps (`git rm`,
+  `cherry-pick`, `revert`, `stash`, `am`, in-place `sed`), unquoted hook paths
+  that failed open on any project path containing a space, and an installer
+  that deleted a user's own `.claude/hooks/tests/`.
+- Playwright claims credited to skipped tests, declared readiness enforced only
+  for Playwright, stale reports satisfying the discovery floor, review history
+  wrongly reported corrupt after migration, `--help` refused for 12 registered
+  commands, and unknown token counts recorded as a measured zero.
+
 ### Changed
 
-- **An unresolved apply transaction stops the next apply** instead of being
+- **BREAKING — provider protocol is 7.** Receipts recorded by earlier versions
+  read as `provider-version-stale` and must be re-proven. This is the cost of
+  the evidence floor above: an old receipt cannot say whether it was executed
+  or asserted, so it cannot be trusted to have been executed.
+- **BREAKING — a passing receipt cannot be hand-recorded for a provider the
+  harness executes.** `evidence record` refuses `--adapter command`,
+  `--adapter test-discovery`, `--adapter playwright` and `--adapter
+  contract-digest`, and refuses any passing receipt for a provider configured
+  with one of them. Run `proof run <change>` so the declared command is what
+  executes. `evidence run` likewise refuses a provider that declares its own
+  command, rather than letting an ad-hoc command stand in for it.
+- **A declared readiness probe that was not observed fails every adapter**, not
+  only Playwright. A provider that declared readiness and did not observe it
+  previously passed while its own `observed` string said `readiness
+  not-observed`.
+- `sandbox apply`, `change resolve` and `migrate` reject unknown flags. Loose
+  parsing let `sandbox apply --controlPlane` defeat the multi-repository guard,
+  silently dropped a misspelled `--acceptance-*` flag, and let `migrate
+  --apply <legacy-id>` swallow the id and migrate every legacy run.
+- `/api/health` returns liveness only; headcount, version and storage mode are
+  no longer exposed unauthenticated.
+- Security triggers match whole words. `access` matched "accessibility" and
+  `migration` matched "migration guide", forcing external review on routine
+  work, while "sign in with a passkey" matched nothing.
+- An unresolved apply transaction stops the next apply instead of being
   skipped. A journal left in `rolling-back` or `manual-recovery` was ignored on
   retry, so the next apply opened a fresh transaction over a working tree
   Foundation had already failed to restore, and reported success. The recorded
@@ -56,8 +145,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again. Re-staging the same pointers a second time now stops with options
   rather than restarting the cycle.
 - **`changes` names a next command for every reachable status**, instead of
-  falling back to `doctor --change` for applied and landing changes.
-- Runtime API is **14**.
+  falling back to `doctor --change` for applied and landing changes, and
+  survives one unreadable runtime state file instead of failing the whole
+  listing. `change abandon` works when that state is missing or corrupt — it is
+  the designed exit from a change that cannot proceed, and was itself gated on
+  the state being readable.
+- **A silent schema upgrade instantiates the artifacts it now requires.**
+  Resolving impact, coupling, security or acceptance could move a change from
+  `foundation-rapid` to `foundation-standard`, after which `validate` refused it
+  for missing `design.md` and `specs/**` — the only next command `changes`
+  offered. `resolve` now prints the schema it settled on and adds the files.
+- **Cross-repository contract evidence is checked, not asserted.** The
+  `cross-repo-contract` capability had no verifier: it forced a claim to declare
+  it and a provider to exist, then accepted a free-text receipt. The new
+  `contract-digest` adapter hashes one declared artifact in every participating
+  repository and passes only when the bytes agree.
+- **Review scoped to a repository is no longer voided by an edit elsewhere.**
+  Authority bound every verdict to the composite hash, so on a wide change each
+  repository touched invalidated the reviews already earned.
+- `land record --ci pass` remains the operator's word for it, but
+  `--ci-attestation <signed.json>` now accepts the Ed25519-signed CI envelope
+  the harness already knew how to verify, and `--ci-required` refuses the
+  unsigned assertion. A non-submodule child's binding is reported as
+  runtime-state-only, because nothing versioned in the root records it.
+- Default proof resources are repository-qualified, so two repositories' suites
+  no longer serialize against each other; genuinely shared resources must be
+  declared.
+- Runtime API is **14**; `runtime/version.mjs` now declares the same number and
+  is checked at load, so a mixed-revision install fails immediately instead of
+  partway through Land.
 
 ## [3.2.3] - 2026-08-05
 
