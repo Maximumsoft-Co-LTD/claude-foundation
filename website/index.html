@@ -15,7 +15,7 @@
       property="og:description"
       content="Investigate when needed. Agree with OpenSpec. Build in isolation. Prove claims with reusable executable evidence. Land transactionally."
     />
-    <meta property="og:url" content="https://maximumsoft-co-ltd.github.io/claude-foundation/" />
+    <meta property="og:url" content="https://claude-foundation.dev/" />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2317181c'/%3E%3Cpath d='M8 17h16M16 9v16' stroke='%23ff5c35' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='17' r='4' fill='%23f4f0e7' stroke='%2317181c'/%3E%3C/svg%3E"
@@ -36,6 +36,7 @@
           <a href="#evidence">Evidence</a>
           <a href="#architecture">Architecture</a>
           <a href="#install">Install</a>
+          <a href="./docs/">Docs</a>
           <a
             class="nav-github"
             href="https://github.com/Maximumsoft-Co-LTD/claude-foundation"
@@ -80,7 +81,7 @@
               <div class="console-bar">
                 <span class="console-dots"><i></i><i></i><i></i></span>
                 <span>profile-auth · sandbox</span>
-                <span class="console-api">API 3</span>
+                <span class="console-api">API 14</span>
               </div>
               <div class="console-body" aria-live="polite">
                 <div class="console-command">
@@ -108,9 +109,9 @@
 
       <section class="fact-strip" aria-label="Foundation properties">
         <div class="wrap facts">
-          <div class="fact reveal"><strong>5</strong><span>small workflow commands</span></div>
-          <div class="fact reveal" data-delay="1"><strong>4</strong><span>executable adapter types</span></div>
-          <div class="fact reveal" data-delay="2"><strong>18</strong><span>evidence capabilities</span></div>
+          <div class="fact reveal"><strong>7</strong><span>agent slash commands</span></div>
+          <div class="fact reveal" data-delay="1"><strong>5</strong><span>executable adapter types</span></div>
+          <div class="fact reveal" data-delay="2"><strong>19</strong><span>evidence capabilities</span></div>
           <div class="fact reveal" data-delay="3"><strong>1</strong><span>task ledger: tasks.md</span></div>
         </div>
       </section>
@@ -150,7 +151,7 @@
           <article class="principle reveal" data-delay="3">
             <span class="index">04</span>
             <h3>Transactional finish</h3>
-            <p>Land checks proof freshness, applies only the proven sandbox, verifies identity, syncs specs, archives, and safely cleans up.</p>
+            <p>Land checks proof freshness, applies only the proven sandbox, verifies identity, syncs specs, archives, and safely cleans up. An interrupted or multi-repository Land resumes from its journal.</p>
           </article>
         </div>
       </section>
@@ -207,6 +208,12 @@
             <code>Change ⇄ Build ⇄ Prove</code>
             <span>Revise the same change. Sync. Invalidate stale proof.</span>
           </div>
+
+          <div class="backflow reveal" data-delay="1">
+            <span>Outside the loop</span>
+            <code>/changes · /dev</code>
+            <span><code>/changes</code> lists active work, readiness, and stale proof. <code>/dev</code> is a compatibility composition of change → build → prove.</span>
+          </div>
         </div>
       </section>
 
@@ -220,11 +227,18 @@
               the capabilities that can actually demonstrate it. Missing, stale, failed, erroneous,
               or inconclusive evidence blocks landing.
             </p>
+            <p class="callout reveal">
+              The behavioral contract lives in <code>evidence.yaml</code> and changes only when
+              claims change. Executable wiring lives in <code>execution.yaml</code> and may change
+              as Build discovers the real commands, reports, and ports—invalidating only the
+              provider fingerprints it touches.
+            </p>
 
             <div class="adapter-tabs reveal" role="tablist" aria-label="Evidence adapters">
               <button class="adapter-tab is-active" data-adapter="command" role="tab" aria-selected="true">command</button>
               <button class="adapter-tab" data-adapter="test-discovery" role="tab" aria-selected="false">test-discovery</button>
               <button class="adapter-tab" data-adapter="playwright" role="tab" aria-selected="false">playwright</button>
+              <button class="adapter-tab" data-adapter="contract-digest" role="tab" aria-selected="false">contract-digest</button>
               <button class="adapter-tab" data-adapter="external" role="tab" aria-selected="false">external</button>
             </div>
 
@@ -234,7 +248,8 @@
                 <h3 id="adapter-title">command</h3>
                 <p id="adapter-description">Run one deterministic project command for one evidence capability.</p>
               </div>
-              <pre id="adapter-code"><code>"static-analysis": {
+              <pre id="adapter-code"><code>// execution.yaml
+"static-analysis": {
   "adapter": "command",
   "command": ["npm", "run", "check"],
   "timeoutMs": 120000
@@ -249,7 +264,8 @@
             </div>
             <dl>
               <dt>provider</dt><dd>browser</dd>
-              <dt>adapter</dt><dd>playwright@1</dd>
+              <dt>adapter</dt><dd>playwright · protocol 7</dd>
+              <dt>execution</dt><dd>harness</dd>
               <dt>claims</dt><dd>profile-view<br />profile-update</dd>
               <dt>workspace</dt><dd>sha256:7f31…</dd>
               <dt>environment</dt><dd>node 22 · darwin-arm64</dd>
@@ -258,6 +274,7 @@
               <dt>duration</dt><dd>8.42s</dd>
             </dl>
             <p>Change a bound input and this receipt becomes stale. Foundation never silently reuses mismatched evidence.</p>
+            <p><strong><code>execution: harness</code> is set only by a call site that actually ran a command.</strong> A passing receipt cannot be hand-written for a provider the harness executes; hand-recorded evidence owes an observation, provenance, and an artifact or a reference that resolves.</p>
           </aside>
         </div>
 
@@ -268,15 +285,15 @@
               <h3>Select what the claim needs—never the full catalog by default.</h3>
             </div>
             <button class="catalog-toggle" id="catalog-toggle" aria-expanded="false" aria-controls="capability-list">
-              Show all 18 <span>+</span>
+              Show all 19 <span>+</span>
             </button>
           </div>
           <div class="capability-list" id="capability-list">
             <span>test</span><span>discovery</span><span>browser</span><span>mutation</span>
             <span>state-identity</span><span>integration</span><span>compatibility</span><span>performance</span>
-            <span>security-static</span><span>cross-repo-contract</span><span>review</span><span>static-analysis</span>
-            <span>data-migration</span><span>accessibility</span><span>resilience</span><span>observability</span>
-            <span>deployment</span><span>dependency-supply-chain</span>
+            <span>security-static</span><span>cross-repo-contract</span><span>review</span><span>acceptance</span>
+            <span>static-analysis</span><span>data-migration</span><span>accessibility</span><span>resilience</span>
+            <span>observability</span><span>deployment</span><span>dependency-supply-chain</span>
           </div>
         </div>
       </section>
@@ -378,7 +395,8 @@
               <code>orchestrator.md</code><span>routes</span>
               <code>commands/*.md</code><span>calls</span>
               <code>claude-foundation</code><span>runs</span>
-              <code>foundation.mjs</code>
+              <code>foundation.mjs</code><span>composes</span>
+              <code>runtime/</code>
             </div>
           </div>
         </div>
@@ -399,13 +417,18 @@
 ├── proposal.md
 ├── design.md
 ├── tasks.md          <i># sole task ledger</i>
-├── evidence.yaml     <i># claims + adapters</i>
+├── evidence.yaml     <i># stable claims + capabilities</i>
+├── execution.yaml    <i># provider + service wiring</i>
+├── repositories.yaml <i># write scope</i>
 └── specs/
 
 <span class="folder">.foundation/</span>
 ├── runtime/          <i># lifecycle + resolver</i>
 ├── receipts/         <i># content-bound evidence</i>
+├── authority/        <i># review + acceptance requests</i>
+├── transactions/     <i># recoverable Land journals</i>
 ├── logs/             <i># provider output + events</i>
+├── recovery/         <i># abandoned change records</i>
 └── sandboxes/        <i># isolated worktrees</i></code></pre>
         </div>
       </section>
@@ -429,17 +452,24 @@
               </div>
               <pre><code id="install-command">brew tap maximumsoft-co-ltd/claude-foundation \
   https://github.com/Maximumsoft-Co-LTD/claude-foundation
-brew trust maximumsoft-co-ltd/claude-foundation
 brew install claude-foundation
 claude-foundation init /path/to/project --yes</code></pre>
             </div>
 
             <ol class="start-steps reveal" data-delay="1">
-              <li><span>1</span><div><strong>Check readiness</strong><code>claude-foundation doctor</code></div></li>
+              <li><span>1</span><div><strong>Check readiness</strong><code>claude-foundation doctor --stage change</code></div></li>
               <li><span>2</span><div><strong>Define the change</strong><code>/change add profile authentication</code></div></li>
               <li><span>3</span><div><strong>Build and prove</strong><code>/build profile-auth → /prove profile-auth</code></div></li>
               <li><span>4</span><div><strong>Accept explicitly</strong><code>/land profile-auth</code></div></li>
             </ol>
+          </div>
+
+          <div class="playwright-note reveal">
+            <div class="playwright-mark">REQ</div>
+            <div>
+              <strong>Before you install.</strong>
+              <p>Node.js 20.19 or later, Git for worktree isolation, <code>jq</code> for the Claude settings merge, and the OpenSpec CLI for spec synchronization and archive: <code>npm install -g @fission-ai/openspec@1.7.0</code>. Open a new agent session in the target project afterwards so the slash commands register.</p>
+            </div>
           </div>
 
           <div class="playwright-note reveal">
@@ -459,14 +489,19 @@ claude-foundation init /path/to/project --yes</code></pre>
             <h2>Small commands, explicit effects.</h2>
           </div>
           <div class="command-list reveal" data-delay="1">
-            <div><code>providers</code><span>inspect evidence contracts</span></div>
-            <div><code>doctor --change &lt;id&gt;</code><span>check runtime and executable readiness</span></div>
+            <div><code>doctor --change &lt;id&gt;</code><span>check runtime, provider, and lifecycle readiness</span></div>
+            <div><code>changes</code><span>list active work and the next useful action for each</span></div>
             <div><code>packet &lt;id&gt;</code><span>compact handoff without replaying history</span></div>
+            <div><code>evidence detect &lt;id&gt;</code><span>find project-owned providers without executing them</span></div>
             <div><code>proof readiness &lt;id&gt;</code><span>see typed blockers and canonical next actions</span></div>
             <div><code>proof run &lt;id&gt;</code><span>check readiness, run providers, and finalize proof</span></div>
+            <div><code>authority request &lt;id&gt;</code><span>open a resumable human review or acceptance</span></div>
+            <div><code>evidence verify-ci &lt;id&gt;</code><span>verify signed CI provenance bound to the workspace</span></div>
             <div><code>metrics &lt;id&gt;</code><span>inspect latency, execution, token, and cost data</span></div>
             <div><code>land check &lt;id&gt;</code><span>verify the completion boundary</span></div>
             <div><code>land archive &lt;id&gt;</code><span>apply, verify, sync, archive, clean up</span></div>
+            <div><code>land resume &lt;id&gt;</code><span>resume an interrupted or multi-repository Land</span></div>
+            <div><code>change abandon &lt;id&gt;</code><span>quarantine a change that cannot be proven</span></div>
           </div>
         </div>
       </section>
@@ -478,7 +513,7 @@ claude-foundation init /path/to/project --yes</code></pre>
           <p>One agreement, one implementation owner, executable evidence, and an explicit landing boundary.</p>
           <div class="hero-actions">
             <a class="button primary" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation" target="_blank" rel="noopener">View source <span>↗</span></a>
-            <a class="button text" href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/README.md" target="_blank" rel="noopener">Read the docs <span>→</span></a>
+            <a class="button text" href="./docs/">Read the docs <span>→</span></a>
           </div>
         </div>
       </section>
@@ -490,8 +525,10 @@ claude-foundation init /path/to/project --yes</code></pre>
           <span class="brand-mark">f</span>
           <span>claude<b>-foundation</b></span>
         </a>
-        <p>OpenSpec-native software change harness.</p>
+        <p>OpenSpec-native software change harness. <b>v3.2.4</b> · runtime API 14 · provider protocol 7</p>
         <div class="footer-links">
+          <a href="./docs/">Docs</a>
+          <a href="./docs/th/">เอกสารภาษาไทย</a>
           <a href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/README.md">README</a>
           <a href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/WORKFLOW.md">Workflow</a>
           <a href="https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/CHANGELOG.md">Changelog</a>

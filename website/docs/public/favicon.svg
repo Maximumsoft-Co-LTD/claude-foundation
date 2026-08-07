@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Claude Foundation">
+  <rect width="32" height="32" rx="7" fill="#17181c"/>
+  <path d="M8 17h16M16 9v16" stroke="#ff5c35" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="16" cy="17" r="4" fill="#f4f0e7" stroke="#17181c"/>
+</svg>

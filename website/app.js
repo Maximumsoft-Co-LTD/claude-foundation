@@ -38,6 +38,7 @@
       title: "command",
       description: "Run one deterministic project command for one evidence capability.",
       code:
+        "// execution.yaml\n" +
         '"static-analysis": {\n' +
         '  "adapter": "command",\n' +
         '  "command": ["npm", "run", "check"],\n' +
@@ -49,6 +50,7 @@
       title: "test-discovery",
       description: "Execute the suite once and produce both behavioral-test and discovery evidence from a structured count.",
       code:
+        "// execution.yaml\n" +
         '"test": {\n' +
         '  "adapter": "test-discovery",\n' +
         '  "command": ["npm", "test", "--", "--json"],\n' +
@@ -59,24 +61,44 @@
     playwright: {
       kicker: "REAL BROWSER · CLAIM MAPPING",
       title: "playwright",
-      description: "Consume structured project-owned Playwright output and require annotations for every claim it proves.",
+      description: "Consume structured project-owned Playwright output and require annotations for every claim it proves. One execution may emit several capability receipts.",
       code:
+        "// execution.yaml\n" +
         '"browser": {\n' +
         '  "adapter": "playwright",\n' +
         '  "command": ["npx", "playwright", "test"],\n' +
         '  "project": "chromium",\n' +
+        '  "outputs": ["accessibility"],\n' +
         '  "inputMode": "browser-automation"\n' +
+        "}"
+    },
+    "contract-digest": {
+      kicker: "NO COMMAND · BYTES MUST AGREE",
+      title: "contract-digest",
+      description: "Hash one declared contract artifact in two or more repositories and pass only when every side carries identical bytes.",
+      code:
+        "// execution.yaml\n" +
+        '"cross-repo-contract": {\n' +
+        '  "adapter": "contract-digest",\n' +
+        '  "contract": {\n' +
+        '    "profile-api": "contracts/profile.v1.json",\n' +
+        '    "web": "src/contracts/profile.v1.json"\n' +
+        "  }\n" +
         "}"
     },
     external: {
       kicker: "REMOTE OR HUMAN · EXPLICIT RECEIPT",
       title: "external",
-      description: "Require evidence from CI, a reviewer, or another system that Foundation must not execute locally.",
+      description: "Require evidence from CI, a reviewer, or another system that Foundation must not execute locally. Signed CI envelopes are verified against the workspace.",
       code:
+        "// execution.yaml\n" +
         '"review": {\n' +
         '  "adapter": "external",\n' +
         '  "claims": ["auth-boundary"],\n' +
-        '  "environment": "independent-review"\n' +
+        '  "ci": {\n' +
+        '    "issuer": "github-actions",\n' +
+        '    "publicKey": "-----BEGIN PUBLIC KEY-----\\n…"\n' +
+        "  }\n" +
         "}"
     }
   };
@@ -108,20 +130,20 @@
     var expanded = catalogToggle.getAttribute("aria-expanded") === "true";
     catalogToggle.setAttribute("aria-expanded", String(!expanded));
     capabilityList.classList.toggle("is-expanded", !expanded);
-    catalogToggle.innerHTML = expanded ? "Show all 18 <span>+</span>" : "Show fewer <span>−</span>";
+    catalogToggle.innerHTML = expanded ? "Show all 19 <span>+</span>" : "Show fewer <span>−</span>";
   });
 
   var installs = {
     brew:
       "brew tap maximumsoft-co-ltd/claude-foundation \\\n" +
       "  https://github.com/Maximumsoft-Co-LTD/claude-foundation\n" +
-      "brew trust maximumsoft-co-ltd/claude-foundation\n" +
       "brew install claude-foundation\n" +
       "claude-foundation init /path/to/project --yes",
     source:
+      "npm install -g @fission-ai/openspec@1.7.0\n" +
       "git clone https://github.com/Maximumsoft-Co-LTD/claude-foundation.git\n" +
       "cd claude-foundation\n" +
-      "bash ./install.sh /path/to/project"
+      "./install.sh /path/to/project"
   };
 
   var installTabs = document.querySelectorAll(".install-tab");

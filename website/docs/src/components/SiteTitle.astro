@@ -1,0 +1,60 @@
+---
+/**
+ * Starlight's default SiteTitle renders the configured `title` string next to a
+ * logo image. The landing page's brand is a rotated ink tile with an italic
+ * serif "f" plus a two-weight monospace wordmark — markup an <img> logo cannot
+ * reproduce, because a standalone SVG cannot use the page's webfonts.
+ *
+ * Overriding the component instead lets the docs reuse the landing page's exact
+ * brand structure and typefaces. Keep this in step with `.brand` / `.brand-mark`
+ * in ../../../styles.css.
+ *
+ * The mark links to the landing page rather than the docs index: the docs are a
+ * section of the site, and the header logo is how a reader gets back out.
+ */
+const base = import.meta.env.BASE_URL.replace(/\/docs\/?$/, "/");
+---
+
+<a class="cf-brand" href={base} aria-label="claude-foundation home">
+  <span class="cf-brand-mark" aria-hidden="true">f</span>
+  <span class="cf-brand-word">claude<b>-foundation</b></span>
+</a>
+
+<style>
+  .cf-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--sl-color-white);
+    font-family: var(--sl-font-mono);
+    font-size: 13px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .cf-brand-mark {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    color: var(--cf-paper);
+    border-radius: 6px;
+    background: var(--cf-ink);
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 18px;
+    font-style: italic;
+    transform: rotate(-4deg);
+  }
+
+  .cf-brand-word b {
+    font-weight: 700;
+  }
+
+  /* The wordmark is the smallest thing in the header; drop it below the mark
+     only when there is genuinely no room, rather than letting it wrap. */
+  @media (max-width: 30rem) {
+    .cf-brand-word {
+      display: none;
+    }
+  }
+</style>

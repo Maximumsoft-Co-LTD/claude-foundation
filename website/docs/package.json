@@ -1,0 +1,22 @@
+{
+  "name": "claude-foundation-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.41.7",
+    "astro": "^7.2.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}

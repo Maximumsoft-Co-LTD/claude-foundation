@@ -1,14 +1,21 @@
 name: Deploy website to GitHub Pages
 
-# Build only when files under website/ change on main.
-# workflow_dispatch is kept so the very first deploy (and any manual
-# re-deploy) can be triggered by hand — the commit that adds this file
-# doesn't touch website/**, so it won't auto-run on its own.
+# Build when the landing page OR the docs site changes.
+#
+# The docs are an Astro/Starlight app under website/docs, so its source must be
+# in this filter too — with the old `website/**`-only filter a docs edit still
+# matched, but the filter is spelled out now because the doc pages quote facts
+# from the runtime, and a future change that moves doc source outside website/
+# would otherwise deploy nothing and look like a caching bug.
+#
+# workflow_dispatch is kept so the very first deploy (and any manual re-deploy)
+# can be triggered by hand.
 on:
   push:
     branches: [main]
     paths:
       - "website/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 # Least-privilege token scopes required by the Pages deploy action.
@@ -35,10 +42,55 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
-      - name: Upload website/ as the Pages artifact
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/docs/package-lock.json
+
+      - name: Install docs dependencies
+        run: npm ci
+        working-directory: website/docs
+
+      - name: Build the docs site
+        run: npm run build
+        working-directory: website/docs
+
+      # The landing page is plain static files; the docs are an Astro build.
+      # Assemble both into one artifact so the deploy stays a single upload.
+      #
+      # Everything under website/ ships, deliberately: an enumerated copy list
+      # silently drops any file added later (an image, a new page, an og:image)
+      # and the omission only shows up as a 404 in production. The single
+      # exclusion is the docs *source* tree — its node_modules and src are build
+      # inputs, not artifacts — which is then replaced by the built output.
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          rsync -a --exclude '/docs/' website/ _site/
+          cp -R website/docs/dist/. _site/docs/
+
+          # Fail loudly here rather than deploying a half-assembled site.
+          test -f _site/index.html
+          test -f _site/styles.css
+          test -f _site/app.js
+          test -f _site/.nojekyll
+          test -f _site/demo/index.html
+          test -f _site/docs/index.html
+          test -f _site/docs/th/index.html
+          test -f _site/docs/404.html
+          test -d _site/docs/pagefind
+          # The docs source must not reach the artifact.
+          test ! -e _site/docs/astro.config.mjs
+          test ! -e _site/docs/node_modules
+          echo "Assembled $(find _site -type f | wc -l) files."
+
+      - name: Upload the assembled site as the Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: website
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -1,0 +1,25 @@
+---
+/**
+ * Replaces Starlight's light/dark theme provider.
+ *
+ * Starlight's stock version reads localStorage and `prefers-color-scheme` and
+ * stamps `data-theme` on <html> before paint. Every themed component keys off
+ * that attribute — Starlight's own colour variables, but also Expressive Code,
+ * which swaps its syntax theme independently. Pinning only the CSS variables
+ * left code blocks following the OS, so the attribute itself has to be fixed.
+ *
+ * The landing page declares `color-scheme: light` and has no dark palette, so
+ * the docs commit to light too rather than handing a dark-preferring reader a
+ * cream landing page followed by a dark docs site.
+ *
+ * Setting it in the markup means it is already correct in the served HTML;
+ * there is no flash, and no script is needed to sustain it.
+ */
+---
+
+<script is:inline>
+  // Starlight's client-side navigation and view transitions can re-run theme
+  // logic; keep the attribute pinned rather than assuming the static value
+  // survives. Cheap, idempotent, and no-ops when already correct.
+  document.documentElement.dataset.theme = "light";
+</script>

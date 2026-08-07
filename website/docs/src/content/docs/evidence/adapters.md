@@ -1,0 +1,163 @@
+---
+title: Adapters and wiring
+description: The five executable adapters, how execution.yaml wires them to your project's own tools, and how resources keep providers from colliding.
+---
+
+Foundation separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
+
+## execution.yaml
+
+Where [`evidence.yaml`](/docs/evidence/claims/) says *what must be true*, `execution.yaml` says *what to run*. It may change as Build discovers the actual commands, ports, and reports; a wiring change invalidates only the affected provider fingerprints.
+
+```json
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["npm", "test", "--", "--reporter=json"],
+      "report": "test-results/unit.json",
+      "minimum": 1
+    }
+  },
+  "services": {}
+}
+```
+
+## The five adapters
+
+| Adapter | Purpose |
+|---|---|
+| `command` | Run one deterministic project command for one provider |
+| `test-discovery` | Run a test command once and emit both test and discovery receipts |
+| `playwright` | Run project-owned Playwright tests and map structured claim annotations |
+| `contract-digest` | Hash one declared artifact in two or more repositories; pass only when the bytes agree |
+| `external` | Require a receipt from a system Foundation does not execute |
+
+### command
+
+```json
+"static-analysis": {
+  "adapter": "command",
+  "command": ["npm", "run", "check"],
+  "timeoutMs": 120000
+}
+```
+
+### test-discovery
+
+One process, two receipts. Requires capability `test`.
+
+```json
+"test": {
+  "adapter": "test-discovery",
+  "command": ["npm", "test", "--", "--json"],
+  "report": "test-results/unit.json",
+  "minimum": 1
+}
+```
+
+### playwright
+
+```json
+"browser": {
+  "adapter": "playwright",
+  "command": ["npx", "playwright", "test"],
+  "project": "chromium",
+  "outputs": ["accessibility"],
+  "inputMode": "browser-automation"
+}
+```
+
+For a direct Playwright command the adapter adds `--reporter=json` and the configured `--project` unless already supplied. Wrapper commands such as `npm run e2e` must forward those themselves or write the configured `report` file.
+
+Every browser test that proves a claim must carry a claim annotation:
+
+```ts
+test("owner updates profile", {
+  annotation: { type: "claim", description: "profile-update" }
+}, async ({ page }) => {
+  // interaction and assertions
+});
+```
+
+A successful exit **without** all required annotations is `inconclusive`, never `pass`. Claims are not credited to skipped tests.
+
+`outputs` lets one execution emit separate capability receipts — one Playwright run can satisfy both `browser` and `accessibility`.
+
+:::tip[Input modes]
+Browser automation is not physical operating-system input. Use `browser-automation` for Playwright; reserve `os-input` or `both` for evidence that genuinely requires a focused native window.
+:::
+
+Foundation cannot infer a console-error policy from a successful browser exit, so install a Playwright fixture that fails on unexpected `console.error` and uncaught page errors.
+
+### contract-digest
+
+Executes no command. It hashes the same declared contract artifact in every participating repository and passes only when the bytes agree — which is what makes `cross-repo-contract` a check rather than an assertion.
+
+```json
+"cross-repo-contract": {
+  "adapter": "contract-digest",
+  "contract": {
+    "profile-api": "contracts/profile.v1.json",
+    "web": "src/contracts/profile.v1.json"
+  }
+}
+```
+
+At least two repositories are required: a "shared" contract with one participant proves nothing about agreement. A `contract-digest` provider spans repositories and therefore cannot declare a single `repository`.
+
+### external
+
+For CI, a reviewer, or another system Foundation must not execute locally.
+
+```json
+"review": {
+  "adapter": "external",
+  "claims": ["auth-boundary"],
+  "ci": {
+    "issuer": "github-actions",
+    "publicKey": "-----BEGIN PUBLIC KEY-----\n…"
+  }
+}
+```
+
+`publicKey` is a PEM-encoded Ed25519 key. See [`/prove`](/docs/loop/prove/) for the signed-CI and human-authority flows.
+
+## Bootstrapping wiring
+
+When a change declares claims but `execution.yaml` has no providers yet:
+
+```bash
+claude-foundation evidence detect <change>    # read manifests, execute nothing
+claude-foundation evidence init <change>      # preview
+claude-foundation evidence init <change> --write
+claude-foundation evidence doctor <change>    # explain what is still unresolved
+```
+
+`detect` reads repository-owned manifests and configuration **without executing scripts**. `init` is preview-only unless `--write`, and even then adds only high-confidence wiring while preserving existing providers. Ambiguous, external-authority, missing-count, and operator-review cases stay unresolved with an explicit next action.
+
+Bootstrap never installs a dependency, creates a receipt, weakens a claim, or treats detection as proof.
+
+## Resources and parallelism
+
+Default resources are repository-qualified, so two repositories' suites do not serialize against each other:
+
+- command / test — `workspace-read`
+- Playwright — `workspace-read`, `dev-server:<repo>`, `browser:<repo>`
+- mutation — `workspace-write:<repo>`
+- `contract-digest` — `workspace-read`
+
+Read-only providers run together. `workspace-write` conflicts with all workspace readers, and named exclusive resources such as `browser`, `dev-server`, or `database` cannot overlap.
+
+Override with `resources` and order with `dependsOn`. Use parameterized names such as `port:4173`, `database:test`, or `browser:chromium` when independent instances may run concurrently. Provider dependency cycles and structured-report collisions are rejected by `proof preflight`.
+
+Two providers in different repositories that genuinely share one resource — a single database, one browser profile — must declare it explicitly. The defaults cannot infer it.
+
+## Services and secrets
+
+A service's readiness URL names a literal port. **Every explicit readiness probe requires an expected body or header identity** — a status-only probe is rejected, because a different process could be occupying that port.
+
+A declared readiness probe that was not observed fails on every adapter, not just Playwright.
+
+Literal non-sensitive environment values may use `env`. Secrets, credentials, tokens, passwords, and API keys must use `envFrom`, which names variables to inherit **without storing their values in OpenSpec**.

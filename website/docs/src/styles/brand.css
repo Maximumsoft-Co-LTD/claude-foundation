@@ -1,0 +1,125 @@
+/* Brand theme for the Foundation docs.
+   The palette and type scale are lifted from ../../styles.css so the docs and
+   the landing page read as one product. Keep the two in step: a colour that
+   drifts here is a colour a reader notices when they cross between them. */
+
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,500&display=swap");
+
+:root {
+  --cf-paper: #f2eee5;
+  --cf-paper-deep: #e8e1d4;
+  --cf-card: #faf7f0;
+  --cf-ink: #17181c;
+  --cf-ink-soft: #373a42;
+  --cf-muted: #6b6d72;
+  --cf-line: #d7d0c3;
+  --cf-line-dark: #bcb4a6;
+  --cf-signal: #ff5c35;
+  --cf-signal-dark: #d9401b;
+  --cf-green: #087e67;
+
+  --sl-font: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* One palette, applied for every value of `data-theme`.
+   Starlight's inline head script still stamps data-theme="dark" for a visitor
+   whose OS prefers dark, and Pagefind/other components read that attribute — so
+   the selectors below cover :root unqualified AND both explicit values. Styling
+   only [data-theme="light"] would leave those visitors on Starlight's stock
+   dark palette, which is exactly the jump away from the landing page that this
+   is meant to prevent. */
+:root,
+:root[data-theme="dark"],
+:root[data-theme="light"] {
+  color-scheme: light;
+  --sl-color-accent-low: #ffe3da;
+  --sl-color-accent: var(--cf-signal-dark);
+  --sl-color-accent-high: #8f2a11;
+  --sl-color-white: var(--cf-ink);
+  --sl-color-gray-1: var(--cf-ink);
+  --sl-color-gray-2: var(--cf-ink-soft);
+  --sl-color-gray-3: var(--cf-muted);
+  --sl-color-gray-4: #8a8b90;
+  --sl-color-gray-5: var(--cf-line-dark);
+  --sl-color-gray-6: var(--cf-line);
+  --sl-color-gray-7: var(--cf-paper-deep);
+  --sl-color-black: var(--cf-paper);
+  --sl-color-bg: var(--cf-paper);
+  --sl-color-bg-nav: var(--cf-card);
+  --sl-color-bg-sidebar: var(--cf-card);
+  --sl-color-bg-inline-code: var(--cf-paper-deep);
+  --sl-color-hairline: var(--cf-line);
+  --sl-color-hairline-light: var(--cf-line);
+  --sl-color-hairline-shade: var(--cf-line-dark);
+  --sl-color-text-accent: var(--cf-signal-dark);
+}
+
+/* Headings use the landing page's display serif, which is what makes the two
+   surfaces recognisably the same site. */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.content-panel h1,
+.hero h1 {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.sl-markdown-content h2 {
+  padding-top: 0.4em;
+  border-top: 1px solid var(--sl-color-hairline);
+}
+
+/* The site header's bottom rule is the same weight as the landing page nav. */
+.header {
+  border-bottom: 1px solid var(--sl-color-hairline-shade);
+}
+
+site-title {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* Inline code should read as a token, not as body text in another font. */
+.sl-markdown-content code:not(pre code) {
+  font-size: 0.86em;
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  border: 1px solid var(--sl-color-hairline);
+}
+
+.sl-markdown-content table {
+  font-size: 0.94rem;
+}
+
+.sl-markdown-content th {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Wide reference tables must scroll inside their own box rather than pushing
+   the page into a horizontal scroll. */
+.sl-markdown-content .cf-scroll {
+  overflow-x: auto;
+}
+
+/* Thai needs more line height than the Latin default to stay legible with
+   stacked vowels and tone marks. */
+:root[lang="th"] .sl-markdown-content {
+  line-height: 1.85;
+}
+
+/* The page title h1 lives in the content header, OUTSIDE .sl-markdown-content —
+   scoping this override to the markdown body alone left Thai pages with a serif
+   h1 above sans h2s. Both selectors are needed. */
+:root[lang="th"] .sl-markdown-content h1,
+:root[lang="th"] .sl-markdown-content h2,
+:root[lang="th"] .sl-markdown-content h3,
+:root[lang="th"] .content-panel h1,
+:root[lang="th"] .hero h1 {
+  font-family: var(--sl-font);
+  font-weight: 700;
+  line-height: 1.45;
+}
