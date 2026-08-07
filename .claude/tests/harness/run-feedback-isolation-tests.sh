@@ -5,6 +5,20 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 
+assert_cmd_fails_with() {
+  label="$1"; needle="$2"; shift 2
+  output="$({ "$@"; } 2>&1 || true)"
+  if [ -n "$output" ] && printf '%s' "$output" | grep -qF -- "$needle"; then
+    pass "$label"
+  else
+    fail "$label — expected failure containing '$needle'"
+  fi
+}
+
+assert_not_eq() {
+  if [ "$2" != "$3" ]; then pass "$1"; else fail "$1 — both values were '$2'"; fi
+}
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 TARGET="$TMP/project"
@@ -339,5 +353,77 @@ fi
 assert_file_absent "unattended preflight executes no PATH-resolved Git" \
   "$TMP/fake-git-invoked"
 cp "$TMP/runtime-before-path-test.json" "$TARGET/.foundation/runtime/$CHANGE.json"
+
+# ---------------------------------------------------------------------------
+# An isolated copy is what a dirty target gets instead of a worktree, and it is
+# by far the more common case: a scaffold in progress has untracked files, so
+# the copy path is the one real work lands on. It used to be created in the
+# system temp directory without `.git`, which quietly removed every git-aware
+# behaviour the runtime depends on — the changed surface degraded to a walk of
+# the whole tree, the workspace hash stopped honouring `.gitignore`, and macOS
+# was free to delete the sandbox mid-run.
+# ---------------------------------------------------------------------------
+COPY_TARGET="$TMP/copy-project"
+mkdir -p "$COPY_TARGET"
+assert_cmd_zero "copy fixture installs current Foundation runtime" \
+  bash "$ROOT/install.sh" "$COPY_TARGET" --source "$ROOT" --yes
+printf '.next/\nnoise.log\n' > "$COPY_TARGET/.gitignore"
+assert_cmd_zero "copy fixture is an initialized Git project" \
+  sh -c 'git -C "$1" init -q &&
+    git -C "$1" config user.name "Foundation Tests" &&
+    git -C "$1" config user.email "foundation-tests@example.invalid" &&
+    git -C "$1" add . &&
+    git -C "$1" commit -q -m initial' _ "$COPY_TARGET"
+assert_cmd_zero "copy fixture change is created" \
+  bash "$ROOT/cli.sh" --project "$COPY_TARGET" runtime new \
+    "Isolated copy contract" --rapid
+
+COPY_CHANGE="isolated-copy-contract"
+# An unrelated untracked file is all it takes to make the runtime choose a copy.
+printf 'work in progress\n' > "$COPY_TARGET/unrelated-wip.txt"
+copy_create="$(bash "$ROOT/cli.sh" --project "$COPY_TARGET" \
+  sandbox create "$COPY_CHANGE")"
+assert_contains "a dirty target still selects an isolated copy" \
+  "$copy_create" "mode: isolated-copy"
+assert_contains "the copy reports that it carries git metadata" \
+  "$copy_create" "git: carried"
+
+COPY_STATE="$COPY_TARGET/.foundation/runtime/$COPY_CHANGE.json"
+copy_path="$(jq -r '.workspace.path' "$COPY_STATE")"
+assert_cmd_zero "the copy sandbox lives under .foundation/sandboxes, not the system temp dir" \
+  sh -c 'case "$1" in */.foundation/sandboxes/*) exit 0 ;; *) exit 1 ;; esac' _ "$copy_path"
+assert_cmd_zero "the copy sandbox records the base commit it was taken from" \
+  jq -e '.workspace.baseHead != null and .workspace.git == "carried"' "$COPY_STATE"
+assert_cmd_zero "the copy sandbox is itself a git repository" \
+  git -C "$copy_path" rev-parse HEAD
+assert_cmd_zero "the copy sandbox carries the target's uncommitted work" \
+  test -f "$copy_path/unrelated-wip.txt"
+# A copied `.git/worktrees` would name the target's linked worktrees by
+# absolute path, letting a `git worktree` command inside the sandbox act
+# outside it.
+assert_cmd_zero "the copy sandbox inherits no worktree registrations" \
+  sh -c 'test ! -d "$1/.git/worktrees"' _ "$copy_path"
+
+# The evidence for a frontend change is collected by building it. If the build
+# output counts as workspace surface, collecting the evidence expires it.
+hash_before="$(bash "$ROOT/cli.sh" --project "$COPY_TARGET" runtime hash "$COPY_CHANGE")"
+mkdir -p "$copy_path/.next/cache"
+printf 'built artifact\n' > "$copy_path/.next/cache/chunk.js"
+printf 'ignored noise\n' > "$copy_path/noise.log"
+hash_after="$(bash "$ROOT/cli.sh" --project "$COPY_TARGET" runtime hash "$COPY_CHANGE")"
+assert_eq "build output does not expire the evidence that produced it" \
+  "$hash_before" "$hash_after"
+
+# Source edits must still move the hash, or the check above only proves the
+# hash stopped working.
+printf 'real source change\n' > "$copy_path/src-change.txt"
+hash_source="$(bash "$ROOT/cli.sh" --project "$COPY_TARGET" runtime hash "$COPY_CHANGE")"
+assert_not_eq "a real source edit still expires prior evidence" \
+  "$hash_before" "$hash_source"
+
+# A second create must not silently merge into an occupied directory.
+assert_cmd_fails_with "an occupied sandbox path is refused, not merged into" \
+  "sandbox already exists" \
+  bash "$ROOT/cli.sh" --project "$COPY_TARGET" sandbox create "$COPY_CHANGE"
 
 finish "feedback isolation contracts"

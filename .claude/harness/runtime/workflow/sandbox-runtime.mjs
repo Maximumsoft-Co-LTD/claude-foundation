@@ -1,36 +1,89 @@
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync
+  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { tmpdir } from "node:os";
 
 export function createSandboxRuntime({
-  root, excludedWorkspaceDirs, hostAttestation, loadRuntime, saveRuntime,
+  root, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
+  loadRuntime, saveRuntime,
   canonicalPath, workspaceManifest, directoryHash, changePath, gitHead, git,
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, fail
 }) {
+  function sandboxRoot(id) {
+    return join(root, ".foundation", "sandboxes", id);
+  }
+
+  // A linked worktree or a submodule carries `.git` as a *file* pointing at a
+  // gitdir somewhere else. Copying that file would hand the sandbox a pointer
+  // straight back into the target's repository, so every commit, checkout, or
+  // index write made in isolation would land in the very tree the sandbox
+  // exists to leave alone. Only a real directory is safe to carry.
+  function gitMetadataIsCarryable() {
+    const gitPath = join(root, ".git");
+    if (!existsSync(gitPath)) return false;
+    try {
+      return statSync(gitPath).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
   function createCopy(id, state, reason) {
-    const path = canonicalPath(mkdtempSync(join(tmpdir(), `foundation-${id}-`)));
-    cpSync(root, path, {
-      recursive: true,
-      mode: fsConstants.COPYFILE_FICLONE,
-      filter: (source) => {
-        const rel = relative(root, source).replaceAll("\\", "/");
-        return (rel === "" && source === root) ||
-          !rel.split("/").some((segment) => excludedWorkspaceDirs.has(segment));
-      }
-    });
+    const requestedPath = sandboxRoot(id);
+    if (existsSync(requestedPath))
+      fail(`sandbox path already occupied: ${requestedPath}`);
+    // `.git` is excluded from every hash and every apply diff by name, so a
+    // copy that carries it never projects it back and never hashes it. What it
+    // does buy is that the copy stays a git repository: without it `gitHead`
+    // returns null, the changed surface degrades from `git diff` to a walk of
+    // the whole tree, and `singleRelevantSnapshot` loses its `.gitignore`
+    // awareness — so running the evidence wrote build output into the workspace
+    // hash and expired the evidence that had just been collected.
+    const carriesGit = gitMetadataIsCarryable();
+    const copyExcluded = carriesGit ? sandboxCopyExcludedDirs : excludedWorkspaceDirs;
+    mkdirSync(requestedPath, { recursive: true });
+    // The sandbox lives under `.foundation/`, which is inside the tree being
+    // copied. `cpSync(root, dest)` rejects that outright — it checks for a
+    // destination inside the source before it ever consults `filter`, so the
+    // exclusion that makes the copy terminate is never seen. Copying each
+    // top-level entry instead keeps the exclusion authoritative: `.foundation`
+    // is dropped at the top level, so nothing recurses into the sandbox itself.
+    const filter = (source) => {
+      const rel = relative(root, source).replaceAll("\\", "/");
+      return !rel.split("/").some((segment) => copyExcluded.has(segment));
+    };
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (copyExcluded.has(entry.name)) continue;
+      cpSync(join(root, entry.name), join(requestedPath, entry.name), {
+        recursive: true,
+        mode: fsConstants.COPYFILE_FICLONE,
+        filter
+      });
+    }
+    const path = canonicalPath(requestedPath);
+    // The copied `.git/worktrees` still names the *target's* linked worktrees by
+    // absolute path. Left in place, a `git worktree` command run inside the
+    // sandbox would operate on directories outside it.
+    if (carriesGit)
+      rmSync(join(path, ".git", "worktrees"), { recursive: true, force: true });
     state.workspace = {
       mode: "copy", path, applied: false, reason,
+      // Recorded for the same reason the worktree mode records it: without a
+      // base commit the changed surface cannot separate what this change did
+      // from what the working tree already carried.
+      baseHead: carriesGit ? gitHead(root) : null,
+      git: carriesGit ? "carried" : "absent",
       baseline: workspaceManifest(root, id, true),
       changeSourceHash: directoryHash(changePath(id))
     };
     state.status = "building";
     saveRuntime(state);
-    console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  path: ${path}`);
+    console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  git: ${
+      carriesGit ? "carried" : "absent (target has no usable .git directory)"
+    }\n  path: ${path}`);
   }
 
   function createChallenge(id) {
@@ -131,7 +184,7 @@ export function createSandboxRuntime({
       createCopy(id, state, `dirty-target:${unrelated[0]}`);
       return;
     }
-    const requestedPath = join(root, ".foundation", "sandboxes", id);
+    const requestedPath = sandboxRoot(id);
     mkdirSync(dirname(requestedPath), { recursive: true });
     const result = git(["worktree", "add", "--detach", requestedPath, "HEAD"]);
     if (result.status !== 0) fail(`cannot create sandbox: ${result.stderr.trim()}`);

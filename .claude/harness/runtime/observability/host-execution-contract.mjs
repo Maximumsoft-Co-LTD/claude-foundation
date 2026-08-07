@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { classifyDrift, isBlockingDrift } from "./model-drift.mjs";
+import { classifyDrift, isBlockingDrift, isUnverifiedDrift } from "./model-drift.mjs";
 
 export const HOST_EXECUTION_SCHEMA_VERSION = 1;
 const DRIFT_KINDS = ["match", "fallback", "upgrade", "downgrade", "unknown"];
@@ -342,6 +342,7 @@ export function createModelDriftInspector({
           policy: selectedPolicy
         });
         const blocking = known.filter((candidate) => isBlockingDrift(drift.kind, candidate.kind));
+        const unverified = known.filter((candidate) => isUnverifiedDrift(drift.kind, candidate.kind));
         rows.push({
           dispatchId: execution.dispatchId ?? null,
           attempt: attempt?.attempt ?? null,
@@ -354,8 +355,13 @@ export function createModelDriftInspector({
           actualTier: drift.actualTier,
           kind: drift.kind,
           blocking: blocking.length > 0,
+          // Never blocks Land; exists so "could not be checked" stops reading
+          // exactly like "checked and matched" on a risk-sensitive task.
+          unverified: unverified.length > 0,
           ...(blocking.length && candidates.length > 1
             ? { blockingTasks: blocking.map((candidate) => candidate.id) } : {}),
+          ...(unverified.length && candidates.length > 1
+            ? { unverifiedTasks: unverified.map((candidate) => candidate.id) } : {}),
           provenance,
           reason: drift.reason
         });
@@ -381,6 +387,7 @@ export function createModelDriftInspector({
       byKind, byProvenance, unknownReasons,
       downgrades: rows.filter((row) => row.kind === "downgrade"),
       blocking: rows.filter((row) => row.blocking),
+      unverified: rows.filter((row) => row.unverified),
       measurement: "derived-from-instruction-manifest-join"
     };
   }

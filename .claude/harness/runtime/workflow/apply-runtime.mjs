@@ -2,7 +2,7 @@ import {
   existsSync, mkdirSync, readdirSync, readFileSync, rmSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifySpecSync } from "./spec-sync-verify.mjs";
 
@@ -363,9 +363,29 @@ export function createApplyRuntime({
     if (!path || resolve(path) === resolve(root) || !existsSync(path))
       return { status: "not-needed", path: path || null };
     if (state.workspace.mode === "copy") {
-      const expectedPrefix = `${canonicalPath(tmpdir())}/foundation-${id}-`;
-      if (!canonicalPath(path).startsWith(expectedPrefix))
-        return { status: "refused", path, reason: "copy path is outside the Foundation temp prefix" };
+      // A copy sandbox now lives beside the worktree ones, under
+      // `.foundation/sandboxes/<id>`. The temp-prefix form is still accepted so
+      // that a sandbox created by an older runtime can still be cleaned up
+      // rather than stranded — but it is no longer where new ones are put, and
+      // it is no longer trusted as the only legitimate location: `tmpdir()` is
+      // per-session on macOS, so a shell with a different TMPDIR than the one
+      // that created the sandbox refused to remove it and leaked it forever.
+      const canonical = canonicalPath(path);
+      const expected = resolve(root, ".foundation", "sandboxes", id);
+      // The legacy form stays narrow: the directory must still be named
+      // `foundation-<id>-<suffix>` AND sit directly under a system temp root.
+      // Widening it to "anywhere with that name" would turn a corrupt state
+      // file into a recursive delete of an arbitrary directory.
+      const legacyTempRoots = [canonicalPath(tmpdir()), "/tmp", "/var/folders", "/private/var/folders"];
+      const legacyRecognised = basename(canonical).startsWith(`foundation-${id}-`) &&
+        legacyTempRoots.some((tempRoot) =>
+          canonical === tempRoot || canonical.startsWith(`${tempRoot}/`));
+      const recognised = resolve(canonical) === expected || legacyRecognised;
+      if (!recognised)
+        return {
+          status: "refused", path,
+          reason: "copy path is neither the Foundation sandbox location nor a Foundation temp copy"
+        };
       try {
         rmSync(path, { recursive: true });
         return { status: "removed", path };

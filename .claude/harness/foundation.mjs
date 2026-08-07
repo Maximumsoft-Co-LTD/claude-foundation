@@ -58,8 +58,8 @@ import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
-const VERSION = "2.7.0";
-const RUNTIME_API_VERSION = "14";
+const VERSION = "2.8.0";
+const RUNTIME_API_VERSION = "15";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -90,10 +90,30 @@ const ADAPTERS = new Set([
   "command", "test-discovery", "playwright", "contract-digest", "external"
 ]);
 const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
+// Directories that are never change surface: never hashed, never walked as
+// evidence input, never projected back onto the target at apply.
+//
+// The generated-output entries below are deliberately limited to tool-owned
+// directories whose names are unambiguous and conventionally ignored. `dist`,
+// `build`, `out`, `target`, and `vendor` are NOT here on purpose: projects do
+// commit source under those names, and excluding a directory removes it from
+// the apply diff as well as the hash — a wrong guess here is silent data loss
+// at Land, not a stale hash.
 const EXCLUDED_WORKSPACE_DIRS = new Set([
   ".git", ".foundation", ".workflow", "node_modules",
-  "coverage", "test-results", "playwright-report"
+  "coverage", "test-results", "playwright-report",
+  ".next", ".nuxt", ".svelte-kit", ".turbo", ".astro", ".parcel-cache",
+  ".pytest_cache", ".mypy_cache", ".ruff_cache", "__pycache__", ".tox",
+  ".gradle", ".terraform"
 ]);
+// The copy sandbox needs the same list minus `.git`. One set cannot answer both
+// "what is change surface?" and "what does an isolated copy need to function?":
+// `.git` must stay out of every hash and every apply diff, but a copy that
+// lacks it stops being a git repository, and every git-aware path in the
+// runtime then degrades to whole-tree behaviour without saying so.
+const SANDBOX_COPY_EXCLUDED_DIRS = new Set(
+  [...EXCLUDED_WORKSPACE_DIRS].filter((dir) => dir !== ".git")
+);
 const PROVIDER_CONTRACTS = {
   "test": "Executable behavioral checks for the declared claim.",
   "discovery": "Expected tests were found and the discovered count meets the floor.",
@@ -453,6 +473,8 @@ const {
   serializedJson,
   compactList,
   compactStrings,
+  expandList,
+  listCount,
   fileDigest,
   singleRelevantSnapshot,
   relevantSnapshot,
@@ -796,6 +818,8 @@ const {
   now,
   reviewPolicy,
   readJson,
+  expandList,
+  listCount,
   receiptPath,
   recordReceipt: (...args) => receiptRuntime.recordReceipt(...args),
   receiptValidity,
@@ -1016,6 +1040,7 @@ let applyRuntime;
 const sandboxRuntime = createSandboxRuntime({
   root: ROOT,
   excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,
+  sandboxCopyExcludedDirs: SANDBOX_COPY_EXCLUDED_DIRS,
   hostAttestation,
   loadRuntime,
   saveRuntime,
@@ -1134,6 +1159,8 @@ const {
   topologyIssues,
   policyCapabilities,
   policyCapabilityTrigger,
+  providerCapability,
+  unverifiedDrift: (id) => modelDriftInspector.changeDrift(id).unverified,
   parseFlags,
   parseStrictCommandFlags,
   fail: die

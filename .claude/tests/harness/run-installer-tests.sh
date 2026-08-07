@@ -381,12 +381,18 @@ assert_cmd_zero "legacy explicit-path installation remains compatible" \
 # A project on a different runtime API moves its entrypoint AND its runtime
 # modules together; editing only one simulates a torn install instead, which
 # the load-time pair check rejects for its own reasons.
-sed -i.bak 's/const RUNTIME_API_VERSION = "14"/const RUNTIME_API_VERSION = "999"/' \
+# Matched by shape, not by value: pinning the current API number here made this
+# guard silently stop simulating anything the first time the number moved — the
+# sed found nothing, the fixture stayed consistent, and the test that exists to
+# prove a mismatch is refused was instead proving that a matched pair works.
+sed -i.bak -E 's/const RUNTIME_API_VERSION = "[0-9]+"/const RUNTIME_API_VERSION = "999"/' \
   "$TARGET/.claude/harness/foundation.mjs"
 rm "$TARGET/.claude/harness/foundation.mjs.bak"
-sed -i.bak 's/export const RUNTIME_MODULE_API = "14"/export const RUNTIME_MODULE_API = "999"/' \
+sed -i.bak -E 's/export const RUNTIME_MODULE_API = "[0-9]+"/export const RUNTIME_MODULE_API = "999"/' \
   "$TARGET/.claude/harness/runtime/version.mjs"
 rm "$TARGET/.claude/harness/runtime/version.mjs.bak"
+assert_file_contains "the API mismatch fixture actually moved the entrypoint pin" \
+  "$TARGET/.claude/harness/foundation.mjs" 'const RUNTIME_API_VERSION = "999"'
 if bash "$ROOT/cli.sh" --project "$TARGET" change validate cli-proof-route >/dev/null 2>&1; then
   fail "runtime API mismatch blocks write commands"
 else
@@ -398,9 +404,11 @@ assert_cmd_zero "runtime API mismatch permits read-only inspection" \
 # A torn install — entrypoint from one revision, runtime modules from another —
 # used to pass every command up to `archive` and then throw partway through
 # Land. It has to be refused at load, on any command.
-sed -i.bak 's/export const RUNTIME_MODULE_API = "999"/export const RUNTIME_MODULE_API = "14"/' \
+sed -i.bak -E 's/export const RUNTIME_MODULE_API = "[0-9]+"/export const RUNTIME_MODULE_API = "998"/' \
   "$TARGET/.claude/harness/runtime/version.mjs"
 rm "$TARGET/.claude/harness/runtime/version.mjs.bak"
+assert_file_contains "the torn-install fixture leaves the two pins disagreeing" \
+  "$TARGET/.claude/harness/runtime/version.mjs" 'export const RUNTIME_MODULE_API = "998"'
 torn="$( (cd "$TARGET" && node .claude/harness/foundation.mjs changes) 2>&1 || true)"
 assert_contains "a torn harness install is refused at load" \
   "$torn" "mixture of two revisions"

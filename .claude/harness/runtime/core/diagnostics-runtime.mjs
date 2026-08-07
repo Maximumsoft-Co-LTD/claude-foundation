@@ -48,6 +48,8 @@ export function createDiagnosticsRuntime({
   topologyIssues,
   policyCapabilities,
   policyCapabilityTrigger,
+  providerCapability,
+  unverifiedDrift,
   unresolvedApplyTransactions,
   parseFlags,
   parseStrictCommandFlags,
@@ -305,6 +307,29 @@ export function createDiagnosticsRuntime({
           }).join(", ")
           : "none inferred from changed surface"
       });
+      // `mutation` is the only provider that answers "do these gates actually
+      // detect a fault?", and it is the one no file pattern can infer: nothing
+      // about a path says the suite around it is load-bearing. So it is exactly
+      // the capability a change under time pressure omits, and its absence looks
+      // identical to a change that considered it and decided against. Naming it
+      // is not the same as requiring it — the contract stays the author's.
+      const proves = requiredProviders(requestedChange).some((provider) =>
+        providerCapability(provider, providerConfig(requestedChange, provider)) === "mutation");
+      if (state.impact === "high" && !proves)
+        checks.push({
+          level: "warn",
+          name: "mutation-coverage",
+          detail: "high-impact change declares no 'mutation' provider; nothing proves the evidence suite detects a deliberate fault"
+        });
+      // "could not be checked" must not read like "checked and matched".
+      const unverified = unverifiedDrift ? unverifiedDrift(requestedChange) : [];
+      if (unverified.length)
+        checks.push({
+          level: "warn",
+          name: "model-drift-unverified",
+          detail: `${unverified.length} risk-sensitive execution(s) ran a model the host did not report; tier compliance is unproven, not confirmed (${
+            [...new Set(unverified.map((row) => row.reason))].join("; ")})`
+        });
       if (contract.version === 1)
         checks.push({
           level: "info",

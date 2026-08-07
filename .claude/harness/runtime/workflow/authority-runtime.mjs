@@ -37,6 +37,8 @@ export function createAuthorityRuntime({
   gitHead,
   validateSignedCiEnvelope,
   providerClaims,
+  expandList,
+  listCount,
   fail
 }) {
   function authorityProvider(id, type, repository = null) {
@@ -144,8 +146,16 @@ export function createAuthorityRuntime({
   // waits. The identity fields are prefilled because those are exactly the
   // ones `validateResponse` matches against the request.
   function responseTemplate(request) {
-    const criteria = (request.packet?.claims || [])
-      .map((claim) => claim.criterion).filter(Boolean);
+    // An acceptance packet carries its claims as a plain array; a review packet
+    // compacts them past twelve into `{count, preview, digest}`. Only acceptance
+    // reads `criterion`, but this ran before the type check, so `.map` on the
+    // compact object threw for every review with more than twelve claims — the
+    // template was unreachable for exactly the changes with the most to inspect.
+    const claimRows = expandList(request.packet?.claims);
+    const criteria = claimRows.map((claim) => claim.criterion).filter(Boolean);
+    if (criteria.length && criteria.length < listCount(request.packet?.claims))
+      criteria.push(`<${listCount(request.packet?.claims) - criteria.length
+        } further criteria omitted from this preview; read the packet's claims>`);
     const evidence = {
       observed: "<what the responder actually saw, in their own words>",
       artifact: [],

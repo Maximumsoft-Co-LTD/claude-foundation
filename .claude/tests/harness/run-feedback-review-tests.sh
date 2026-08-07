@@ -602,4 +602,38 @@ assert_cmd_zero "the waiver is recorded in the review receipt, not just applied"
 
 rm -f foundation.json
 
+# A review packet compacts its claims past twelve into {count, preview, digest}.
+# The response template read that field as an array unconditionally — before it
+# even checked whether the request was the acceptance kind that uses it — so
+# emitting the shape a responder has to fill in threw for exactly the changes
+# carrying the most to inspect.
+node .claude/harness/foundation.mjs new 'Wide review packet' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve wide-review-packet \
+  --impact low --coupling isolated --review --acceptance-not-required >/dev/null
+jq '.claims = [range(0;13) | {
+      id: ("wide-claim-" + (. | tostring)),
+      scenario: ("Observable outcome number " + (. | tostring)),
+      impact: "low",
+      capabilities: ["test"]
+    }]' openspec/changes/wide-review-packet/evidence.yaml > "$TMP/wide-claims.json"
+cp "$TMP/wide-claims.json" openspec/changes/wide-review-packet/evidence.yaml
+sed 's/- \[ \]/- [x]/g' openspec/changes/wide-review-packet/tasks.md \
+  > "$TMP/wide-tasks.md"
+cp "$TMP/wide-tasks.md" openspec/changes/wide-review-packet/tasks.md
+
+wide_request="$(node .claude/harness/foundation.mjs authority-request \
+  wide-review-packet --type review)"
+wide_request_id="$(printf '%s' "$wide_request" | jq -r '.requestId')"
+assert_eq "a thirteen-claim review packet compacts its claims" "13" \
+  "$(printf '%s' "$wide_request" | jq -r '.packet.claims.count')"
+
+assert_cmd_zero "the response template survives a compacted claim list" \
+  node .claude/harness/foundation.mjs authority-status wide-review-packet --template
+wide_template="$(node .claude/harness/foundation.mjs authority-status \
+  wide-review-packet --template)"
+assert_eq "the emitted template still binds the open request" "$wide_request_id" \
+  "$(printf '%s' "$wide_template" | jq -r '.requestId')"
+assert_eq "a review template asks for a reviewer, not an acceptor" "true" \
+  "$(printf '%s' "$wide_template" | jq -r '.evidence | has("reviewer")')"
+
 finish "feedback review contracts"

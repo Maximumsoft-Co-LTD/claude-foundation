@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An isolated copy is a git repository again** — a target with any unrelated
+  dirty or untracked file falls back from a worktree to an isolated copy, which
+  is the common case for work in progress. That copy was created in the system
+  temp directory with `.git` filtered out, and three subsystems then degraded
+  silently: the changed surface fell back from `git diff` to a walk of the whole
+  tree, the workspace hash stopped honouring `.gitignore`, and the sandbox lived
+  somewhere the operating system is free to delete mid-run. Running a frontend
+  build to collect evidence therefore wrote `.next` into the workspace hash and
+  expired the evidence that had just been produced. A copy now carries `.git`,
+  records the base commit it was taken from, and lives beside the worktree
+  sandboxes under `.foundation/sandboxes/<change>`. `.git` remains excluded from
+  every hash and every apply diff, so it is never projected back onto the
+  target; a `.git` that is a *file* — a linked worktree or submodule — is still
+  refused, because carrying it would point the sandbox at the repository it
+  exists to leave alone.
+- **`authority status --template` no longer throws on a wide review** — a review
+  packet compacts its claims past twelve into `{count, preview, digest}`, and
+  the response template called `.map` on that field unconditionally, before it
+  even checked whether the request was the acceptance kind that reads it. The
+  template was unreachable for exactly the changes carrying the most to inspect,
+  and a responder met a stack trace at the moment they needed the shape. Read
+  through `expandList`, which now ships as the missing half of `compactList`.
+- **A copy sandbox is no longer stranded by a changed `TMPDIR`** — cleanup
+  compared the recorded path against the *current* `tmpdir()` prefix. On macOS
+  that value is per-session, so a shell other than the one that created the
+  sandbox refused to remove it and leaked it permanently. Cleanup now recognises
+  the current sandbox location and still accepts the legacy temp form, narrowed
+  to a `foundation-<change>-` directory directly under a system temp root so a
+  corrupt state file cannot direct a recursive delete anywhere else.
+- **Generated output is no longer change surface** — `.next`, `.nuxt`,
+  `.svelte-kit`, `.turbo`, `.astro`, `.parcel-cache`, `.pytest_cache`,
+  `.mypy_cache`, `.ruff_cache`, `__pycache__`, `.tox`, `.gradle`, and
+  `.terraform` join the excluded set. `dist`, `build`, `out`, `target`, and
+  `vendor` are deliberately **not** excluded: projects do commit source under
+  those names, and excluding a directory removes it from the apply diff as well
+  as the hash — a wrong guess there is silent data loss at Land, not a stale
+  hash.
+
+### Added
+
+- **"Could not be checked" no longer reads like "checked and passed"** — model
+  tier drift classifies an unreported or unresolvable model as `unknown`, and
+  `unknown` never blocks Land, by design: a reporting gap is not proof of a
+  downgrade. But it also left no trace, so a host that never reported a model
+  produced the same silence as one that ran exactly the planned tier — across
+  the contract, architecture, security, migration, and review tasks the planner
+  forces a deep tier for. Those rows now carry `unverified`, the change drift
+  summary lists them, and `doctor` warns. What blocks Land is unchanged.
+- **`doctor` names missing mutation coverage on high-impact changes** — the
+  `mutation` provider is the only one that answers whether the rest of the
+  evidence suite detects a deliberate fault, and it is the one capability no
+  file pattern can infer: nothing about a path says the suite around it is
+  load-bearing. A high-impact change that omitted it looked identical to one
+  that weighed it and declined. `doctor` now warns; the evidence contract stays
+  the author's, so nothing new is required and no contract fingerprint moves.
+
+### Changed
+
+- **Runtime 2.8.0, runtime API 15** — the composition root gained
+  `sandboxCopyExcludedDirs`, `providerCapability`, `unverifiedDrift`,
+  `expandList`, and `listCount`. A mixed-revision install would pass `undefined`
+  for these and fail partway through, which is precisely what the API pin
+  exists to refuse up front.
+- **In-flight changes on an isolated copy must re-collect evidence.** The
+  workspace hash for a copy sandbox now honours `.gitignore` instead of walking
+  the whole tree, so it legitimately differs from the value recorded before this
+  release. Changes already proven and landed are unaffected; a change mid-Prove
+  on a copy sandbox will report its receipts as stale and needs `proof-collect`
+  again. Worktree sandboxes are unchanged.
+
 ## [3.2.5] - 2026-08-07
 
 ### Changed

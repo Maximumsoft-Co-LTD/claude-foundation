@@ -1877,6 +1877,40 @@ policy_doctor="$(node .claude/harness/foundation.mjs doctor \
 assert_contains "an inferred capability names the path that triggered it" \
   "$policy_doctor" 'compatibility (from root/openspec/contracts/pay.yaml)'
 
+# `mutation` is the only capability that answers whether the other gates detect
+# a fault at all, and no file pattern can infer it — nothing about a path says
+# the suite around it is load-bearing. So it is named rather than required: a
+# high-impact change that omitted it must not read like one that weighed it.
+if printf '%s' "$policy_doctor" | grep -qF "mutation-coverage"; then
+  fail "a low-impact change is not asked to prove its gates detect faults"
+else
+  pass "a low-impact change is not asked to prove its gates detect faults"
+fi
+node .claude/harness/foundation.mjs new 'Rework the pricing engine' >/dev/null
+node .claude/harness/foundation.mjs resolve rework-the-pricing-engine \
+  --impact high --coupling isolated >/dev/null
+mutation_doctor="$(node .claude/harness/foundation.mjs doctor \
+  --stage change --change rework-the-pricing-engine 2>&1 || true)"
+assert_contains "a high-impact change without a mutation provider is named, not failed" \
+  "$mutation_doctor" "mutation-coverage"
+assert_contains "the warning says what is unproven rather than what is forbidden" \
+  "$mutation_doctor" "detects a deliberate fault"
+if printf '%s' "$mutation_doctor" | grep -qE "^(FAIL|error)"; then
+  fail "naming missing mutation coverage does not fail the change"
+else
+  pass "naming missing mutation coverage does not fail the change"
+fi
+jq '.claims[0].capabilities += ["mutation"]' \
+  openspec/changes/rework-the-pricing-engine/evidence.yaml > "$TMP/mutation-claims.json"
+cp "$TMP/mutation-claims.json" openspec/changes/rework-the-pricing-engine/evidence.yaml
+covered_doctor="$(node .claude/harness/foundation.mjs doctor \
+  --stage change --change rework-the-pricing-engine 2>&1 || true)"
+if printf '%s' "$covered_doctor" | grep -qF "mutation-coverage"; then
+  fail "declaring a mutation provider clears the warning"
+else
+  pass "declaring a mutation provider clears the warning"
+fi
+
 # Abandon. Until this existed, a change nobody could prove had no terminal state
 # at all: the only exit was deleting runtime files by hand, which no part of the
 # workflow told anyone was allowed.

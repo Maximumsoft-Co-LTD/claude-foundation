@@ -108,3 +108,22 @@ export function isBlockingDrift(kind, taskKind) {
   return kind === "downgrade" && typeof taskKind === "string" &&
     DRIFT_BLOCKING_TASK_KINDS.has(taskKind);
 }
+
+/**
+ * A risk-sensitive task whose model could not be classified at all.
+ *
+ * This deliberately does not block: a host that cannot report which model ran
+ * is a reporting gap, not proof of a downgrade, and failing Land on it would
+ * punish every integration that has not wired execution reporting yet.
+ *
+ * It does have to be *distinguishable*, which it was not. "unknown" and "match"
+ * both left `blocking: false` and nothing else, so a host that never reported a
+ * model produced the same silence as one that reported the planned tier —
+ * across the exact task kinds (contract, architecture, security, migration,
+ * review) the planner forces a deep tier for. A check that cannot fail and a
+ * check that passed have to read differently, or the gate is decoration.
+ */
+export function isUnverifiedDrift(kind, taskKind) {
+  return kind === "unknown" && typeof taskKind === "string" &&
+    DRIFT_BLOCKING_TASK_KINDS.has(taskKind);
+}

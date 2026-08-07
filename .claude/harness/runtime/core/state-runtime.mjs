@@ -182,6 +182,27 @@ export function createStateRuntime({
     return compactList(values, limit, (value) => String(value));
   }
 
+  // `compactList` returns an array under the limit and `{count, preview, digest}`
+  // over it, so every reader has to accept both shapes. Most do, by testing
+  // `Array.isArray` at the point of use; `authority status --template` did not,
+  // and called `.map` on the compact object — so emitting the response template
+  // threw for any review carrying more than twelve claims, at exactly the moment
+  // a responder needed the shape. Read compacted fields through this instead of
+  // re-deriving the check: it is the half of the pair that was missing.
+  //
+  // A compacted list is deliberately lossy, so a caller that must not silently
+  // work from a prefix should compare `expandList(value).length` against
+  // `listCount(value)` and say so.
+  function expandList(value) {
+    if (Array.isArray(value)) return value;
+    return Array.isArray(value?.preview) ? value.preview : [];
+  }
+
+  function listCount(value) {
+    if (Array.isArray(value)) return value.length;
+    return Number.isInteger(value?.count) ? value.count : 0;
+  }
+
   const snapshotCache = new Map();
   const policyCache = new Map();
 
@@ -383,6 +404,8 @@ export function createStateRuntime({
     serializedJson,
     compactList,
     compactStrings,
+    expandList,
+    listCount,
     fileDigest,
     singleRelevantSnapshot,
     relevantSnapshot,

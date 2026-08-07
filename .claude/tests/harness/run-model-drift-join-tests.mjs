@@ -158,6 +158,17 @@ try {
   check(row("e09", 1).blocking, true, "a mid-run downgrade is not hidden by the final model");
   check(row("e09", 2).kind, "match", "the succeeding attempt matches");
 
+  // "unverified" separates a check that could not run from one that passed.
+  // It never blocks, so the only thing keeping it from being decoration is that
+  // it is visible and precise about which rows it covers.
+  check(row("e01").unverified, false, "a confirmed match is not an unverified check");
+  check(row("e02").unverified, false, "a proven downgrade is a finding, not a gap");
+  check(row("e03").unverified, false,
+    "a downgrade on an ordinary task is classified, not unverified");
+  check(row("e05").unverified, false,
+    "an unknown with no task attribution is not a risk-sensitive gap");
+  check(row("e07").unverified, false, "a task absent from tasks.md carries no risk kind");
+
   const summary = inspector.changeDrift(CHANGE);
   check(summary.byKind, { match: 2, fallback: 0, upgrade: 0, downgrade: 5, unknown: 3 },
     "counts cover every drift kind");
@@ -172,6 +183,41 @@ try {
   check(inspector.blockingDrift(CHANGE).map((finding) => finding.dispatchId),
     ["e02", "e08", "e09"], "the gate input lists only blocking findings");
   check(inspector.blockingDrift(CLEAN), [], "a change with no executions is clean");
+
+  // A host that never reports which model ran, on the task kinds the planner
+  // forces a deep tier for. Kept on its own change so the counts above still
+  // describe the fixtures they were written for.
+  const UNVERIFIED = "unverified-change";
+  writeFixture(join(changes, UNVERIFIED, "tasks.md"),
+    "- [ ] T001 harden the auth boundary [kind:security]\n" +
+    "- [ ] T002 implement the thing [kind:implementation]\n");
+  writeFixture(join(manifests, UNVERIFIED, "build-T001.json"), {
+    schemaVersion: 1, manifestDigest: "sha256:unreported-security",
+    dispatch: { command: "build" },
+    execution: { skills: [], requestedModel: "deep", actualModel: null }
+  });
+  writeFixture(join(manifests, UNVERIFIED, "build-T002.json"), {
+    schemaVersion: 1, manifestDigest: "sha256:unreported-ordinary",
+    dispatch: { command: "build" },
+    execution: { skills: [], requestedModel: "deep", actualModel: null }
+  });
+  writeFixture(join(logs, UNVERIFIED, "host-executions", "u01.json"),
+    { schemaVersion: 1, dispatchId: "u01", instructionManifestDigest: "sha256:unreported-security" });
+  writeFixture(join(logs, UNVERIFIED, "host-executions", "u02.json"),
+    { schemaVersion: 1, dispatchId: "u02", instructionManifestDigest: "sha256:unreported-ordinary" });
+
+  const unverifiedRows = inspector.driftRows(UNVERIFIED);
+  const security = unverifiedRows.find((candidate) => candidate.dispatchId === "u01");
+  const ordinary = unverifiedRows.find((candidate) => candidate.dispatchId === "u02");
+  check(security.kind, "unknown", "an unreported model cannot be classified");
+  check(security.reason, "actual model not reported", "the gap is named, not guessed");
+  check(security.blocking, false, "an unreported model is still not proof of a downgrade");
+  check(security.unverified, true, "a risk-sensitive task with no reported model is unverified");
+  check(ordinary.unverified, false,
+    "the same gap on an ordinary task is not raised as unverified");
+  check(inspector.blockingDrift(UNVERIFIED), [], "unverified never reaches the Land gate");
+  check(inspector.changeDrift(UNVERIFIED).unverified.map((finding) => finding.dispatchId),
+    ["u01"], "the summary surfaces exactly the unverified rows");
 
   // Degradation: every join input can be absent on a minimal install.
   const bare = createModelDriftInspector();
