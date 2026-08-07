@@ -94,7 +94,6 @@ LEGACY=(
   ".claude/agents/references/engineer.md" ".claude/agents/references/qa.md"
   ".claude/hooks/dev-agent-guard.sh" ".claude/hooks/dev-state-mark.sh"
   ".claude/hooks/dev-state-validate.sh" ".claude/hooks/artifact-lint.sh"
-  ".claude/hooks/tests"
   ".claude/orchestrator/references"
   ".claude/skills/fanout-team-agents" ".claude/skills/qa-handoff-note"
   ".claude/skills/brainstorming/references" ".claude/skills/plan-writing/references"
@@ -187,6 +186,12 @@ done | LC_ALL=C sort -u > "$NEW_MANIFEST"
 if [ -f "$MANIFEST_PATH" ]; then
   while IFS= read -r old_rel; do
     [ -n "$old_rel" ] || continue
+    # Prefix alone is not containment: `.claude/../../../tmp/x` starts with
+    # `.claude/` and resolves outside the project, and this list guards a
+    # delete. Reject traversal, absolute paths, and backslashes outright.
+    case "$old_rel" in
+      /*|*..*|*\\*|*$'\n'*) fail "refusing unsafe managed manifest path: $old_rel" ;;
+    esac
     case "$old_rel" in
       .claude/*|openspec/schemas/*|.foundation/.gitignore|.foundation/README.md|WORKFLOW.md) ;;
       *) fail "refusing unsafe managed manifest path: $old_rel" ;;
@@ -195,6 +200,13 @@ if [ -f "$MANIFEST_PATH" ]; then
       [ ! -e "$TARGET_PATH/$old_rel" ] || rm -f "$TARGET_PATH/$old_rel"
     fi
   done < "$MANIFEST_PATH"
+  # Removing the files leaves their directories behind, which reads as "the
+  # obsolete tree is still installed". Prune only what is now empty, so a
+  # directory holding anything of the user's is untouched.
+  for root in ".claude" "openspec/schemas"; do
+    [ -d "$TARGET_PATH/$root" ] || continue
+    find "$TARGET_PATH/$root" -depth -type d -empty -exec rmdir {} + 2>/dev/null || true
+  done
 fi
 
 for rel in "${MANAGED[@]}"; do
@@ -261,6 +273,22 @@ elif command -v jq >/dev/null 2>&1; then
           ))
         ) | .value |= map(select((.hooks | length) > 0))
       );
+    # Foundation once shipped these commands unquoted, so a project path with a
+    # space word-split and every hook silently failed open. Rewrite the old
+    # spelling in place; upserting the quoted one beside it would leave the
+    # broken entry running and double-fire the guard.
+    def quote_foundation_hooks:
+      .hooks //= {} |
+      .hooks |= with_entries(
+        .value |= map(
+          .hooks |= map(
+            if (.command | type) == "string" and
+               (.command | startswith("${CLAUDE_PROJECT_DIR}/.claude/hooks/"))
+            then .command = "\"${CLAUDE_PROJECT_DIR}\"" +
+              (.command | ltrimstr("${CLAUDE_PROJECT_DIR}"))
+            else . end)
+        )
+      );
     def upsert($event; $matcher; $hook):
       .hooks //= {} |
       .hooks[$event] //= [] |
@@ -271,6 +299,7 @@ elif command -v jq >/dev/null 2>&1; then
           else . end)
       else .hooks[$event] += [{matcher:$matcher,hooks:[$hook]}] end;
     remove_legacy |
+    quote_foundation_hooks |
     reduce ($src[0].hooks | to_entries[]) as $event (.;
       reduce ($event.value[]) as $entry (.;
         reduce ($entry.hooks[]) as $hook (.;

@@ -52,9 +52,12 @@ export function createChangeValidationRuntime({
     return blocks;
   }
 
-  function pendingTasks(id) {
-    const content = readFileSync(join(activeChangePath(id), "tasks.md"), "utf8");
-    return taskBlocks(content).filter((task) => !task.done);
+  // `dir` is an override for the one case where the ledger is no longer at the
+  // active path: an archive that moved the change directory and then failed.
+  function pendingTasks(id, dir = activeChangePath(id)) {
+    const path = join(dir, "tasks.md");
+    if (!existsSync(path)) return [];
+    return taskBlocks(readFileSync(path, "utf8")).filter((task) => !task.done);
   }
 
   function taskMetadata(task) {

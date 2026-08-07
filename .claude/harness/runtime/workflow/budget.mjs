@@ -5,11 +5,15 @@ export function createBudgetRuntime({ policy, now }) {
   // length rather than with the work done, and the budget stops meaning
   // anything. Context re-read is reported separately by `metrics`.
   function eventTokenCount(event) {
+    // `Number(null)` is 0 and 0 is finite, so an event that explicitly reports
+    // "unknown" as null used to derive a cache write of 0 and then a total of
+    // 0 — a measured zero where nothing was measured. Unknown is never zero.
+    const known = (value) =>
+      value !== null && value !== undefined && Number.isFinite(Number(value));
     const cacheWrite = event.cacheCreationTokens ?? (
-      Number.isFinite(Number(event.cacheTokens)) && Number.isFinite(Number(event.cacheReadTokens))
+      known(event.cacheTokens) && known(event.cacheReadTokens)
         ? Number(event.cacheTokens) - Number(event.cacheReadTokens) : null);
-    const values = [event.inputTokens, event.outputTokens, cacheWrite]
-      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
+    const values = [event.inputTokens, event.outputTokens, cacheWrite].filter(known);
     return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
   }
 
@@ -124,9 +128,19 @@ export function createBudgetRuntime({ policy, now }) {
       requests: Number(budget.targetRequests),
       tokens: Number(budget.targetTokens)
     };
+    const previous = budget.window;
     const priorRunUsage = eventUsage(priorEvents.filter((event) => event.runId === runId));
     budget.window = budgetWindow(runId, targets, priorRunUsage,
-      Number(budget.window.sequence || 0) + 1, reason);
+      Number(previous.sequence || 0) + 1, reason);
+    // A new run id resets this window's usage — that is what a genuine host
+    // session rollover means. It must not also hand back the *allowance*: the
+    // run id is caller-supplied, so clearing an operator stop or the
+    // one-extension cap here would let `--run anything-new` re-arm the gate
+    // indefinitely with no decision recorded. Only `budget continue` widens
+    // the allowance, and it records why.
+    budget.window.extensionRootId = previous.extensionRootId || previous.id || null;
+    budget.window.extensionNumber = Number(previous.extensionNumber || 0);
+    if (previous.mode === "operator-required") budget.window.mode = "operator-required";
     return budget.window;
   }
 

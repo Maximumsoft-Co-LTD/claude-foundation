@@ -16,6 +16,7 @@ export function createProofReadinessRuntime({
   executionNodes,
   pendingTasks,
   activeChangeLeases,
+  activeRepositoryConflicts,
   changePath,
   proofPath,
   readJson,
@@ -214,12 +215,21 @@ export function createProofReadinessRuntime({
     ];
   }
 
-  function activeWorkRecovery(id, leases) {
+  function activeWorkRecovery(id, leases, repositoryConflicts = []) {
     return [{
       kind: "wait-for-active-work",
       instruction: "The host must wait for active workers or release stale leases; do not spend model budget while ownership is unresolved.",
       leases: leases.map((lease) => ({
         taskId: lease.taskId, owner: lease.owner, expiresAt: lease.expiresAt || null
+      })),
+      // Another change holding write scope on a repository this proof would
+      // execute in. Naming it is the difference between "wait" and "wait for
+      // what": nothing else in the output identifies the other change.
+      repositoryConflicts: repositoryConflicts.map((conflict) => ({
+        changeId: conflict.changeId,
+        repository: conflict.repository,
+        status: conflict.status,
+        note: "Land or retire that change before proving this one; both would execute against the same repository."
       })),
       // Telling the host to release a stale lease is only actionable if the
       // release it can actually run is named: a crashed worker never comes back
@@ -275,9 +285,16 @@ export function createProofReadinessRuntime({
     const { unconfigured, unavailable } = executionNodes(id, hash);
     const pending = pendingTasks(id);
     const leases = stage === "prove" ? activeChangeLeases(id) : [];
+    // The cross-change guard reached dispatch and lease acquisition but never
+    // the proof path, so two changes could execute providers against the same
+    // repository at once — sharing ports, databases and the working tree.
+    // `activeChangeLeases` only sees this change's own leases, so it cannot
+    // stand in for it.
+    const repositoryConflicts = activeRepositoryConflicts(
+      id, selectedRepositories(id), { executing: true });
     const status = pending.length ? "NEEDS_CODE_CHANGE"
       : issues.length ? "CONFIGURATION_ERROR"
-        : leases.length ? "BLOCKED_BY_ACTIVE_WORK"
+        : leases.length || repositoryConflicts.length ? "BLOCKED_BY_ACTIVE_WORK"
           : unavailable.length ? "INFRASTRUCTURE_ERROR"
           : unconfigured.length ? "NEEDS_USER_DECISION" : "READY";
     return {
@@ -292,6 +309,7 @@ export function createProofReadinessRuntime({
       activeLeases: leases.map((lease) => ({
         taskId: lease.taskId, owner: lease.owner, expiresAt: lease.expiresAt || null
       })),
+      repositoryConflicts,
       issues,
       budget: readinessBudgetPolicy(status),
       next: status === "NEEDS_CODE_CHANGE"
@@ -299,7 +317,7 @@ export function createProofReadinessRuntime({
         : status === "CONFIGURATION_ERROR"
           ? configurationRecovery(id, issues)
           : status === "BLOCKED_BY_ACTIVE_WORK"
-            ? activeWorkRecovery(id, leases)
+            ? activeWorkRecovery(id, leases, repositoryConflicts)
             : status === "NEEDS_USER_DECISION"
               ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
               : status === "INFRASTRUCTURE_ERROR"

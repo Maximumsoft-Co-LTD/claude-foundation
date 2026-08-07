@@ -39,7 +39,13 @@ export function createLeaseRuntime({
         mkdirSync(dirname(path), { recursive: true });
         if (existsSync(path)) {
           const current = readJson(path, {});
-          if (Date.parse(current.expiresAt || "") <= Date.now()) rmSync(path);
+          // A descriptor with no expiry is a lease nothing can ever release:
+          // the expiry branch never fires and every ownership-guarded delete
+          // needs a changeId an empty file cannot carry. It is the residue of
+          // a create that succeeded and a write that did not, so treat it the
+          // same as expired.
+          if (!current.expiresAt || Date.parse(current.expiresAt) <= Date.now())
+            rmSync(path);
           else if (current.changeId === id && current.taskId === task.id &&
                    current.owner === owner) {
             writeJson(path, { ...current, expiresAt, renewedAt: now() });
@@ -53,17 +59,22 @@ export function createLeaseRuntime({
           version: 1, resource, changeId: id, taskId: task.id, owner,
           planDigest: plan.planDigest, acquiredAt: now(), expiresAt
         };
+        // Record ownership before the write, not after: a write that fails
+        // here would otherwise leave a file this process created and no longer
+        // claims, and the rollback below would skip it.
         const handle = openSync(path, "wx");
+        created.push(path);
         try { writeFileSync(handle, `${JSON.stringify(descriptor, null, 2)}\n`); }
         finally { closeSync(handle); }
         acquired.push(path);
-        created.push(path);
       }
     } catch (error) {
       for (const path of created) {
         if (!existsSync(path)) continue;
         const current = readJson(path, {});
-        if (current.changeId === id && current.taskId === task.id && current.owner === owner)
+        // An empty descriptor is one this loop created and failed to fill in.
+        if (!current.changeId ||
+            (current.changeId === id && current.taskId === task.id && current.owner === owner))
           rmSync(path);
       }
       fail(error.message);
@@ -101,8 +112,9 @@ export function createLeaseRuntime({
       const path = leasePath(resource);
       if (!existsSync(path)) continue;
       const current = readJson(path, {});
-      if (current.changeId === id && current.taskId === taskLease.taskId &&
-          (current.owner === owner || force)) rmSync(path);
+      if (!current.expiresAt ||
+          (current.changeId === id && current.taskId === taskLease.taskId &&
+            (current.owner === owner || force))) rmSync(path);
     }
     rmSync(index);
     console.log(`LEASE RELEASED ${id}/${taskLease.taskId}${

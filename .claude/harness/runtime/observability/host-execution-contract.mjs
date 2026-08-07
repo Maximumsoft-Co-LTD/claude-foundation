@@ -124,6 +124,68 @@ export function normalizeHostExecution(input, { changeId = null, importedAt = nu
 }
 
 export function hostExecutionTelemetryRows(execution) {
+  // The schema declares a top-level `usage` block as first-class and sets no
+  // minItems on `attempts`, so a host that reports its spend there — or that
+  // reports attempts carrying no usage of their own — produced no telemetry
+  // row at all: `imported 0`, a null cost, and a budget that never trips.
+  const attemptUsage = execution.attempts.reduce((total, attempt) => ({
+    inputTokens: sum(total.inputTokens, attempt.usage.inputTokens),
+    outputTokens: sum(total.outputTokens, attempt.usage.outputTokens),
+    cacheTokens: sum(total.cacheTokens, attempt.usage.cacheTokens),
+    cost: sum(total.cost, attempt.usage.cost)
+  }), { inputTokens: null, outputTokens: null, cacheTokens: null, cost: null });
+  const declared = execution.usage || {};
+  const unattributed = {
+    inputTokens: remainder(declared.inputTokens, attemptUsage.inputTokens),
+    outputTokens: remainder(declared.outputTokens, attemptUsage.outputTokens),
+    cacheTokens: remainder(declared.cacheTokens, attemptUsage.cacheTokens),
+    cost: remainder(declared.cost, attemptUsage.cost)
+  };
+  const rows = attemptRows(execution);
+  if (Object.values(unattributed).every((value) => value === null)) return rows;
+  // One synthetic row carries whatever the top-level block declared beyond
+  // what the attempts already account for, so it is measured exactly once.
+  rows.push({
+    version: 2,
+    runId: execution.dispatchId,
+    operationId: "host-execution",
+    agentId: execution.host,
+    modelId: execution.actualModel,
+    requestId: `${execution.dispatchId}:execution`,
+    timestamp: execution.finishedAt || execution.startedAt || execution.importedAt,
+    inputTokens: unattributed.inputTokens,
+    outputTokens: unattributed.outputTokens,
+    cacheTokens: unattributed.cacheTokens,
+    cost: unattributed.cost,
+    durationMs: execution.attempts.length ? null : execution.durationMs,
+    changeId: execution.changeId,
+    instructionManifestDigest: execution.instructionManifestDigest,
+    attempt: null,
+    attemptStatus: execution.result.status,
+    fallbackReason: null,
+    failureClass: execution.result.failureClass,
+    source: "host-execution-contract"
+  });
+  return rows;
+}
+
+// Unknown is never zero: a null on either side leaves the sum unknown only
+// when both are null, so a partially-reported total still measures what it can.
+function sum(left, right) {
+  if (left === null || left === undefined) return right ?? null;
+  if (right === null || right === undefined) return left;
+  return left + right;
+}
+
+// What the declared total claims over and above what the attempts accounted
+// for. Null when nothing was declared, or when the attempts already cover it.
+function remainder(declared, attributed) {
+  if (declared === null || declared === undefined) return null;
+  const rest = declared - (attributed ?? 0);
+  return rest > 0 ? rest : null;
+}
+
+function attemptRows(execution) {
   return execution.attempts.map((attempt) => ({
     version: 2,
     runId: execution.dispatchId,

@@ -1,8 +1,21 @@
-import { accessSync, existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  accessSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync,
+  statSync, writeFileSync
+} from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { verifySignedPayload } from "../core/trust.mjs";
+
+function canonicalOrSelf(path) {
+  try { return realpathSync(path); } catch { return resolve(path); }
+}
+
+function isWithinPath(parent, candidate) {
+  const rel = relative(parent, candidate);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
 
 function writableControlSocket(path) {
   if (!path || !existsSync(path)) return false;
@@ -109,22 +122,46 @@ export function createHostAttestationRuntime({
   }
 
   function trustedHostRoots() {
-    const roots = process.platform === "darwin"
+    const roots = (process.platform === "darwin"
       ? ["/Library/Application Support/Claude Foundation/trusted-hosts.json",
         "/etc/claude-foundation/trusted-hosts.json"]
-      : ["/etc/claude-foundation/trusted-hosts.json"];
-    if (process.env.FOUNDATION_TESTING === "1" && process.env.FOUNDATION_TEST_TRUST_ROOT)
-      roots.unshift(resolve(process.env.FOUNDATION_TEST_TRUST_ROOT));
+      : ["/etc/claude-foundation/trusted-hosts.json"])
+      .map((path) => ({ path, administered: true }));
+    // The trust root decides who may authorize unattended work, so the party
+    // being gated must not be able to point it at a file they wrote. A fixture
+    // root is accepted only from inside the system temp directory — where a
+    // suite puts one and an installed project does not — and it is announced,
+    // so it cannot be in force without anyone noticing.
+    const fixture = process.env.FOUNDATION_TESTING === "1" &&
+      process.env.FOUNDATION_TEST_TRUST_ROOT
+      ? resolve(process.env.FOUNDATION_TEST_TRUST_ROOT) : "";
+    if (fixture) {
+      if (!isWithinPath(canonicalOrSelf(tmpdir()), canonicalOrSelf(fixture)))
+        console.error(
+          `WARNING: ignoring FOUNDATION_TEST_TRUST_ROOT '${fixture}': a fixture trust root must live under ${tmpdir()}`);
+      else {
+        console.error(`WARNING: using the fixture attestation trust root '${fixture}'`);
+        roots.unshift({ path: fixture, administered: false });
+      }
+    }
     return roots;
   }
 
   function trustedHostIssuers() {
     const issuers = {};
-    for (const path of trustedHostRoots()) {
+    for (const { path, administered } of trustedHostRoots()) {
       if (!existsSync(path)) continue;
       let stat;
       try { stat = lstatSync(path); } catch { continue; }
       if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o022) !== 0) continue;
+      // `chmod 600` on a self-authored file satisfies the mode check, so mode
+      // alone does not establish that an administrator installed this. The
+      // real roots live in root-owned system directories; require that.
+      if (administered && stat.uid !== 0) {
+        console.error(
+          `WARNING: ignoring trust root '${path}': it is not owned by root, so it does not establish administered trust`);
+        continue;
+      }
       const value = readJson(path, {});
       if (value.version !== 1 || !value.issuers || typeof value.issuers !== "object") continue;
       for (const [issuer, config] of Object.entries(value.issuers))
@@ -166,11 +203,24 @@ export function createHostAttestationRuntime({
       return { valid: false, reason: `attestation permission mismatch: ${mismatched.map(([key]) => key).join(", ")}` };
     const usedPath = join(attestations, "used", `${stableHash(payload.nonce)}.json`);
     if (existsSync(usedPath)) return { valid: false, reason: "attestation nonce was already consumed" };
-    if (consume) writeJson(usedPath, {
-      version: 1, changeId: id, issuer: payload.issuer,
-      nonceDigest: stableHash(payload.nonce), agreementHash: payload.agreementHash,
-      consumedAt: now(), trustRoot: issuer.trustRoot
-    });
+    if (consume) {
+      // Exclusive create, not check-then-write: writeJson is temp+rename, so
+      // two concurrent unattended runs presenting the same attestation would
+      // both observe "not consumed" and both win. The replay window is not the
+      // only control this should have.
+      mkdirSync(dirname(usedPath), { recursive: true });
+      try {
+        writeFileSync(usedPath, `${JSON.stringify({
+          version: 1, changeId: id, issuer: payload.issuer,
+          nonceDigest: stableHash(payload.nonce), agreementHash: payload.agreementHash,
+          consumedAt: now(), trustRoot: issuer.trustRoot
+        }, null, 2)}\n`, { flag: "wx" });
+      } catch (error) {
+        if (error.code === "EEXIST")
+          return { valid: false, reason: "attestation nonce was already consumed" };
+        throw error;
+      }
+    }
     return {
       valid: true, reason: "signed host attestation is valid", issuer: payload.issuer,
       expiresAt: payload.expiresAt, permissions, trustRoot: issuer.trustRoot

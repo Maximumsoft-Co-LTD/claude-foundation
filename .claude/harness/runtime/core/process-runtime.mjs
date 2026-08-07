@@ -8,6 +8,15 @@ function pathInside(parent, candidate) {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+// Only an http(s) readiness URL names a port another run can be holding. A
+// data: URL, for instance, always answers, and pre-probing one would report
+// every service as already served.
+function servesOverNetwork(url) {
+  if (!url) return false;
+  try { return ["http:", "https:"].includes(new URL(url).protocol); }
+  catch { return false; }
+}
+
 export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
   async function readinessMatches(readiness) {
     try {
@@ -77,6 +86,16 @@ export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
 
   async function startServiceSession(id, name, config, proofRunId) {
     const cwd = resolveServiceCwd(id, config);
+    // Something already answering here is not our service: the readiness loop
+    // below polls before it sleeps, so a server left behind by an earlier run
+    // satisfies the very first probe and the suite runs green against code
+    // that never started. Ports are declared literally, so two changes of one
+    // project collide by construction.
+    if (servesOverNetwork(config.readiness?.url) && await readinessMatches(config.readiness))
+      throw new Error(
+        `service '${name}' readiness URL ${config.readiness.url} is already being served ` +
+        "before this run started it; another run may have leaked a process holding the port"
+      );
     if (config.staticRoot) {
       const staticRoot = resolve(cwd, config.staticRoot);
       if (!pathInside(cwd, staticRoot) || !existsSync(staticRoot) || !statSync(staticRoot).isDirectory())
@@ -84,7 +103,13 @@ export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
       const readinessUrl = new URL(config.readiness.url);
       const port = Number(readinessUrl.port || (readinessUrl.protocol === "https:" ? 443 : 80));
       const host = readinessUrl.hostname;
-      const identityHeaders = config.identityHeader || { "x-foundation-service": name };
+      // The service name is copied byte-identical into every sandbox, so it
+      // tells "our service" from "some other program" but cannot tell change
+      // A's server from change B's. The run id can.
+      const identityHeaders = {
+        ...(config.identityHeader || { "x-foundation-service": name }),
+        "x-foundation-proof-run": String(proofRunId)
+      };
       const mime = {
         ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8",
         ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
@@ -117,7 +142,14 @@ export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
         server.once("error", reject);
         server.listen(port, host, complete);
       });
-      if (!await readinessMatches(config.readiness)) {
+      const runBoundReadiness = {
+        ...config.readiness,
+        expectHeader: {
+          ...(config.readiness.expectHeader || {}),
+          "x-foundation-proof-run": String(proofRunId)
+        }
+      };
+      if (!await readinessMatches(runBoundReadiness)) {
         await new Promise((complete) => server.close(complete));
         throw new Error(`service '${name}' native static readiness failed`);
       }
@@ -155,8 +187,16 @@ export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("close", (status) => { closed = true; exitStatus = status; });
+    // Without this listener Node rethrows a spawn failure as an asynchronous
+    // uncaught exception, so the caller's try/catch — the thing that stops the
+    // services already started — never runs, and the process dies holding
+    // their ports.
+    let spawnError = null;
+    child.on("error", (error) => { spawnError = error; closed = true; });
     const deadline = Date.now() + Number(config.timeoutMs || 30000);
     while (Date.now() < deadline) {
+      if (spawnError)
+        throw new Error(`service '${name}' could not start: ${spawnError.message}`);
       if (closed)
         throw new Error(
           `service '${name}' exited before readiness (status ${exitStatus}): ` +

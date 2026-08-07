@@ -56,10 +56,21 @@ import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
+import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
 const VERSION = "2.7.0";
 const RUNTIME_API_VERSION = "14";
-const PROVIDER_PROTOCOL_VERSION = "6";
+// Checked here, at load, rather than only inside `doctor`: a torn install —
+// this file from one revision, runtime/** from another — otherwise passed
+// every command up to `archive` and then threw partway through Land.
+if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
+  console.error(
+    `BLOCKED: harness entrypoint API ${RUNTIME_API_VERSION} does not match ` +
+    `runtime modules API ${RUNTIME_MODULE_API}; the installed .claude/harness ` +
+    "is a mixture of two revisions. Reinstall it with 'claude-foundation init <project>'.");
+  process.exit(1);
+}
+const PROVIDER_PROTOCOL_VERSION = "7";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
 const PACKET_SCHEMA_VERSION = "5";
@@ -71,7 +82,13 @@ const REVIEW_PACKET_SCHEMA_VERSION = "3";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "1";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
-const ADAPTERS = new Set(["command", "test-discovery", "playwright", "external"]);
+// `contract-digest` executes no command: it hashes the same declared contract
+// artifact in two or more repositories and passes only when every side carries
+// the identical bytes. It is what makes `cross-repo-contract` a check rather
+// than an assertion.
+const ADAPTERS = new Set([
+  "command", "test-discovery", "playwright", "contract-digest", "external"
+]);
 const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
 const EXCLUDED_WORKSPACE_DIRS = new Set([
   ".git", ".foundation", ".workflow", "node_modules",
@@ -102,10 +119,21 @@ const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
 function providerCapability(provider, config = null) {
   return config?.capability || (PROVIDERS.has(provider) ? provider : null);
 }
+// Matched on whole words, not as substrings. As substrings these fired on
+// "accessibility", "migration guide", and "permission dialog" — and missed
+// "let users sign in with a passkey" entirely, which is the case that
+// actually crosses a trust boundary. Multi-word entries match as phrases.
 const SECURITY_TERMS = [
-  "auth", "identity", "access", "permission", "secret", "credential", "session",
-  "token", "cross-user", "cross user", "trust boundary", "irreversible",
-  "sensitive", "personal data", "command execution", "injection", "migration"
+  "auth", "authn", "authz", "authentication", "authorization", "identity",
+  "access control", "permissions", "secret", "secrets", "credential",
+  "credentials", "session", "sessions", "token", "tokens", "password",
+  "passwords", "passkey", "passkeys", "sign in", "sign-in", "signin", "login",
+  "log in", "sso", "oauth", "saml", "jwt", "cookie", "cookies", "encryption",
+  "decrypt", "encrypt", "crypto", "cross-user", "cross user", "tenant",
+  "multi-tenant", "trust boundary", "irreversible", "sensitive", "pii",
+  "personal data", "command execution", "injection", "sql injection", "xss",
+  "csrf", "ssrf", "sandbox escape", "privilege", "escalation", "data migration",
+  "schema migration", "payment", "billing", "refund", "webhook signature"
 ];
 
 // A refusal is a lifecycle stop, not a crash. Recording it as a failure would
@@ -166,8 +194,23 @@ mkdirSync(CHANGES, { recursive: true });
 const operationStartedAt = Date.now();
 let operationChangeId = null;
 let operationName = null;
+// Commands that only read. `showMetrics` buckets every row of operations.jsonl
+// and then this handler appended a row for the read itself, so each inspection
+// permanently inflated the next one — and an archived change, which is
+// finished evidence, still accumulated rows from sessions that only looked at
+// it. A read is not an operation the change performed.
+// Lifecycle commands stay: metrics derives rework and typed-stop signals from
+// their rows, so proof-* and land-* are measurements, not inspections.
+const READ_ONLY_OPERATIONS = new Set([
+  "metrics", "hash", "changes", "providers", "repos", "models", "describe",
+  "packet", "agent-task", "audit-change", "authority-status",
+  "evidence-detect", "evidence-doctor", "doctor", "api-version", "version"
+]);
 process.on("exit", (code) => {
   if (process.env.FOUNDATION_TELEMETRY === "0" || !operationChangeId || !operationName) return;
+  if (READ_ONLY_OPERATIONS.has(operationName)) return;
+  // An archived change is finished. Nothing this session did belongs in it.
+  if (readJson(runtimePath(operationChangeId), {}).status === "archived") return;
   try {
     const path = join(LOGS, operationChangeId, "operations.jsonl");
     mkdirSync(dirname(path), { recursive: true });
@@ -196,6 +239,14 @@ function readJson(path, fallback = null) {
     if (fallback !== null) return fallback;
     die(`invalid JSON: ${relative(ROOT, path)} (${error.message})`);
   }
+}
+
+// `readJson(path, null)` means "die on bad JSON", so a caller that wants to
+// report a corrupt file rather than exit needs its own spelling. Used by
+// `changes`, which must survive one unreadable state file among many.
+function readJsonOrNull(path) {
+  try { return JSON.parse(readFileSync(path, "utf8")); }
+  catch { return null; }
 }
 
 let commandRegistryCache = null;
@@ -230,6 +281,23 @@ function commandRegistry() {
   return commandRegistryCache;
 }
 
+// Runtime spellings whose public name shares no token with them. Everything
+// else resolves by shape; these would not.
+const RUNTIME_COMMAND_ALIASES = {
+  "audit-change": "change audit",
+  "agent-plan": "agents plan",
+  "agent-task": "agents task",
+  "agent-acquire": "agents acquire",
+  "agent-release": "agents release",
+  receipt: "evidence record",
+  "run-provider": "evidence run",
+  prove: "proof finalize",
+  "host-execution-import": "telemetry host-import",
+  // The runtime command is the real implementation of `change validate`; the
+  // bare public `validate` is the deprecated alias for it.
+  validate: "change validate"
+};
+
 // The registry is the contract. Without a way to read it back, an agent that
 // hits a rejection has only one route left — reading this file.
 function describeCommand(name, options = {}) {
@@ -250,10 +318,27 @@ function describeCommand(name, options = {}) {
     return;
   }
   // Callers arrive with either name: the public CLI spells it `change resolve`,
-  // the runtime spells it `resolve`. Both must reach the same entry.
+  // the runtime spells it `resolve`. Both must reach the same entry. The
+  // shape-based rules below cover most of that, but a runtime name that shares
+  // no token with its public spelling needs saying outright — guessing gave
+  // `unknown command` for twelve of them and the wrong entry for two more.
   const normalize = (value) => value.replace(/[\s-]+/g, "-");
   const target = normalize(name);
-  const entry = entries.find((candidate) => normalize(candidate.name) === target) ||
+  const aliased = RUNTIME_COMMAND_ALIASES[target];
+  // A family name is not one command. Listing its members beats silently
+  // picking whichever member happened to sort first.
+  const exact = entries.find((candidate) => normalize(candidate.name) === target);
+  const family = entries.filter((candidate) =>
+    normalize(candidate.name).startsWith(`${target}-`));
+  if (!aliased && !exact && family.length > 1) {
+    if (options.json) { console.log(JSON.stringify(family, null, 2)); return; }
+    console.log(`${name} — ${family.length} commands:\n`);
+    for (const member of family)
+      console.log(`  ${member.name.padEnd(22)} ${member.description}`);
+    return;
+  }
+  const entry = entries.find((candidate) => candidate.name === aliased) ||
+    entries.find((candidate) => normalize(candidate.name) === target) ||
     entries.find((candidate) => normalize(candidate.name).endsWith(`-${target}`)) ||
     entries.find((candidate) => normalize(candidate.name).split("-").includes(target));
   if (!entry) {
@@ -511,7 +596,15 @@ function importHostExecution(id, source) {
   loadRuntime(id);
   const path = resolve(process.cwd(), source);
   if (!existsSync(path)) die(`host execution result not found: ${source}`);
-  const result = hostExecutionStore.importExecution(id, readJson(path));
+  // A malformed host file is the host's input being wrong, not the harness
+  // breaking. Letting the throw escape reported it as a crash and logged the
+  // operation "failed" rather than "blocked".
+  let result;
+  try {
+    result = hostExecutionStore.importExecution(id, readJson(path));
+  } catch (error) {
+    die(`host execution result is invalid: ${error.message}`);
+  }
   const imported = appendTelemetryRows(
     id,
     hostExecutionTelemetryRows(result.execution),
@@ -710,9 +803,11 @@ const { runCommand, startServiceSession } = createProcessRuntime({
   }
 });
 receiptRuntime = createReceiptRuntime({
+  ROOT,
   LOGS,
   PROVIDERS,
   INPUT_MODES,
+  providerWorkspace,
   ADAPTER_PROTOCOL_VERSION,
   PROVIDER_PROTOCOL_VERSION,
   REVIEW_PROTOCOL_VERSION,
@@ -765,6 +860,9 @@ adapterRuntime = createAdapterRuntime({
   resultAdapterResources,
   loadRuntime,
   providerRepository,
+  repositoryById,
+  fileDigest,
+  pathInside,
   configuredCommand,
   stableHash,
   runCommand,
@@ -809,7 +907,8 @@ const {
   modelForTask,
   planValue: agentPlanValue,
   showPlan: showAgentPlan,
-  showTask: showAgentTask
+  showTask: showAgentTask,
+  activeRepositoryConflicts
 } = createAgentPlanner({
   root: ROOT,
   plans: PLANS,
@@ -819,6 +918,13 @@ const {
   loadRuntime,
   policy: foundationPolicy,
   selectedRepositories,
+  // Reading *another* change's topology must not end this process when that
+  // change's selection is stale — see activeRepositoryConflicts.
+  safeSelectedRepositories: (id, state) => {
+    try {
+      return selectedRepositories(id, state, (message) => { throw new Error(message); });
+    } catch { return null; }
+  },
   taskBlocks,
   taskMetadata,
   activeChangePath,
@@ -881,6 +987,7 @@ const {
   executionNodes,
   pendingTasks,
   activeChangeLeases,
+  activeRepositoryConflicts,
   changePath,
   proofPath,
   readJson,
@@ -990,6 +1097,7 @@ const {
   runtimePath,
   proofPath,
   readJson,
+  readJsonOrNull,
   relevantHash,
   protocolDescriptor,
   repositoryCatalog,
@@ -1010,6 +1118,7 @@ const {
   policyCapabilities,
   policyCapabilityTrigger,
   parseFlags,
+  parseStrictCommandFlags,
   fail: die
 });
 const {
@@ -1135,6 +1244,7 @@ const {
   repositoryById,
   git,
   gitHead,
+  ciEvidenceProtocolVersion: CI_EVIDENCE_PROTOCOL_VERSION,
   now,
   blockWithDecision,
   fail: die
@@ -1426,7 +1536,13 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
     artifact.required !== false && !validateArtifact(artifact));
   if (invalidArtifacts.length)
     return { provider, validity: "invalid-artifacts", status: value.status };
-  if ((value.adapter || "external") === "external" && value.status === "pass") {
+  // The floor keys off how the receipt was produced, not off `adapter`, which
+  // the caller chooses. An executed receipt is corroborated by its command log
+  // (digest-checked above); everything else owes observation and provenance.
+  if (value.status === "pass" && value.execution === "harness") {
+    if (!(value.artifacts || []).some((artifact) => artifact.type === "command-log"))
+      return { provider, validity: "execution-log-missing", status: value.status };
+  } else if (value.status === "pass") {
     if (!String(value.observed || "").trim())
       return { provider, validity: "external-observation-missing", status: value.status };
     if (!String(value.provenance?.source || "").trim())
@@ -1645,9 +1761,13 @@ const telemetrySuppressed = command === "sandbox" && (
 );
 if (telemetrySuppressed) process.env.FOUNDATION_TELEMETRY = "0";
 operationName = command || null;
-operationChangeId = command === "sandbox" ? values[1] :
+// Positional, so a flag in the change slot became a directory name:
+// `sandbox create --all <change>` created `.foundation/logs/--all/`.
+const namedChange = (value) =>
+  typeof value === "string" && !value.startsWith("-") ? value : null;
+operationChangeId = command === "sandbox" ? namedChange(values[1]) :
   ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-status", "authority-record", "receipt", "run-provider", "prove",
-    "evidence-detect", "evidence-init", "evidence-doctor", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? values[0] : null;
+    "evidence-detect", "evidence-init", "evidence-doctor", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
 
 const telemetryPhase = {
   resolve: "change",

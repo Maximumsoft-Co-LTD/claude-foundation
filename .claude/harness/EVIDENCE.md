@@ -133,6 +133,7 @@ not the normal interactive recovery flow.
 | `command` | Run one deterministic project command for one provider |
 | `test-discovery` | Run a test command once and emit both test and discovery receipts |
 | `playwright` | Run project-owned Playwright tests and map structured claim annotations |
+| `contract-digest` | Hash one declared artifact in two or more repositories and pass only when the bytes agree |
 | `external` | Require a receipt from a system Foundation does not execute |
 
 Configured commands run from the active workspace. The normal path is:
@@ -152,9 +153,14 @@ execution. Providers with non-conflicting resources run concurrently. A
 provider may declare workspace-relative `inputs`; its receipt can be rebound
 when those inputs are unchanged even if unrelated workspace files changed.
 
-An external passing receipt must include `--observed`, `--source` or
-`--reviewer`, and at least one `--artifact` or `--reference`. Empty reviewer or
-supply-chain assertions cannot become passing evidence.
+A receipt records how it was produced. Receipts the harness executed carry
+`execution: "harness"` and their command log; everything recorded by hand is
+`execution: "manual"` and must include `--observed`, `--source` or `--reviewer`,
+and at least one `--artifact` or `--reference`. That floor does not depend on
+`--adapter`, which the caller supplies: naming an executing adapter by hand is
+refused, and a provider configured for one cannot be given a passing receipt at
+all — run `proof run` so the declared command is what executes. A `--reference`
+must be a URI or a path that exists; free text is not a reference.
 
 Review receipts additionally identify reviewer type/identity, request and model
 provenance for AI reviewers, one or more structured implementation-subject tuples,
@@ -222,11 +228,18 @@ that policy from a successful browser exit.
 
 ## Resources and dependencies
 
-Default resources are:
+Default resources are repository-qualified, so two repositories' suites do not
+serialize against each other:
 
 - command/test: `workspace-read`;
-- Playwright: `workspace-read`, `dev-server`, `browser`;
-- mutation: `workspace-write`.
+- Playwright: `workspace-read`, `dev-server:<repo>`, `browser:<repo>`;
+- mutation: `workspace-write:<repo>`;
+- `contract-digest`: `workspace-read`.
+
+A provider without `repository` keeps the unqualified names. Two providers in
+different repositories that genuinely share one resource — a single database, a
+single browser profile — must declare it explicitly; the defaults cannot infer
+it.
 
 Override with `resources` and order providers with `dependsOn`. Read-only
 providers may run together. `workspace-write` conflicts with all workspace
@@ -241,6 +254,34 @@ dependency cycles and structured-report collisions are rejected by
 Literal non-sensitive environment values may use `env`. Secrets, credentials,
 tokens, passwords, and API keys must use `envFrom`, which names variables to
 inherit without storing their values in OpenSpec.
+
+## Services, ports, and isolation
+
+A service's readiness URL names a literal port, and `execution.yaml` is copied
+byte-identical into every sandbox — so two changes of one project declare the
+same port. Before starting a service the runtime probes its readiness URL and
+refuses to start when something already answers: a server left behind by a
+failed run would otherwise satisfy the very first poll and hand this change a
+green suite for code that never started. The built-in static server also echoes
+`x-foundation-proof-run`, and readiness requires it to match this run.
+
+Services started by a proof run are reclaimed on failure, on `SIGINT`/`SIGTERM`,
+and at exit. A provider or service failure no longer leaves a listener holding
+the port.
+
+Sandboxes carry the file tree and nothing else:
+
+- **worktree** mode checks out tracked files only — `node_modules`, local env
+  files, and generated assets are absent;
+- **copy** mode additionally excludes `node_modules`, `coverage`,
+  `test-results`, and `playwright-report`.
+
+Everything outside the file tree is shared with the host and with every other
+change: environment variables (including `DATABASE_URL` and API keys passed
+through `envFrom`), ports, `/tmp`, the Playwright browser cache, and any
+external database or queue a service talks to. An end-to-end provider that
+needs installed dependencies must either install them as part of its command or
+run against the control workspace; the sandbox will not provide them.
 
 ## Receipt reuse
 

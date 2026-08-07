@@ -21,6 +21,19 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 | `harness/run-harness-tests.sh` | Change packets, single/composite hashing, multi-repo worktrees and packets, model routing, atomic task leases, repository-scoped provider instances, executable adapters, Playwright claim mapping, proof invalidation, transactional apply, resumable Land saga, and idempotent archive |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
+| `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, audit-only default, and block-mode refusals |
+| `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |
+| `harness/run-feedback-isolation-tests.sh` | Prototype evidence isolation |
+| `harness/run-feedback-review-tests.sh` | Review and acceptance protocol, provenance, and attempt-chain integrity |
+| `harness/run-instruction-contract-tests.sh` | Instruction manifest contract |
+| `harness/run-provenance-contract-tests.sh` | Instruction provenance and host execution import |
+| `harness/run-specsync-gate-tests.sh` | Spec-sync Land gate |
+| `interview/run-interview-tests.sh` | Human-interaction contracts |
+| `docs/run-doc-consistency.sh` | Shipped documentation contracts and shipped-path resolution |
+| `harness/*.mjs` node suites | Bounded retry, blocked decisions, OpenSpec version policy, model drift, drift gate, spec-sync verification |
+| `dashboard` (`npm test`) | Dashboard server, snapshot projection, usage scan, and client |
+
+`run-all.sh` is the authoritative list; this table follows it.
 
 Historical phase-orchestrator fixtures remain under `bench/`, `docs/`,
 `interview/`, `ledger/`, and `scenarios/` for research and migration analysis.

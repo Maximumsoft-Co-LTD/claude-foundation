@@ -19,6 +19,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
+. "$ROOT/.claude/tests/lib/harness-fixture.sh"
 
 assert_cmd_fails_with() {
   label="$1"; needle="$2"; shift 2
@@ -33,8 +34,7 @@ assert_cmd_fails_with() {
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec" "$TMP/bin" "$TMP/merged"
-cp "$ROOT/.claude/harness/foundation.mjs" "$TMP/project/.claude/harness/"
-cp -R "$ROOT/.claude/harness/runtime" "$TMP/project/.claude/harness/"
+install_harness_fixture "$ROOT" "$TMP/project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"

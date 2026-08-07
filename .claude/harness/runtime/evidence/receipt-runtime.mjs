@@ -1,8 +1,20 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+
+// Adapters the harness itself executes. A receipt may only claim one of these
+// when this process ran the command; naming one on the command line is a claim
+// about execution that the caller is not in a position to make.
+const EXECUTING_ADAPTERS = new Set([
+  "command", "test-discovery", "playwright", "contract-digest"
+]);
+
+// A reference stands in for evidence, so it has to be something a reader can
+// go and look at. Free text ("trust me bro") is not a reference. Accept a
+// URI-shaped token with a scheme, or a path that exists in the workspace.
+const REFERENCE_URI = /^[a-zA-Z][a-zA-Z0-9+.-]*:[^\s]*$/;
 
 export function createReceiptRuntime({
-  LOGS, PROVIDERS, INPUT_MODES,
+  ROOT, LOGS, PROVIDERS, INPUT_MODES, providerWorkspace,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
   REVIEW_PROTOCOL_VERSION, ACCEPTANCE_PROTOCOL_VERSION,
   validate, relevantHash, requiredProviders, receiptValidity, now,
@@ -54,7 +66,20 @@ export function createReceiptRuntime({
     })}\n`);
   }
   
-  function recordReceipt(id, provider, status, flags = {}) {
+  function unresolvableReference(id, provider, reference) {
+    if (REFERENCE_URI.test(reference)) return null;
+    const workspace = providerWorkspace(id, provider);
+    if ([ROOT, workspace].some((base) => existsSync(resolve(base, reference))))
+      return null;
+    return reference;
+  }
+
+  // `options` is deliberately not reachable from the command line: only a call
+  // site inside this process — one that actually ran a command — may declare
+  // an execution. Everything arriving over the CLI is a manual assertion and
+  // owes the evidence floor below.
+  function recordReceipt(id, provider, status, flags = {}, options = {}) {
+    const harnessExecuted = options.executed === true;
     const configured = providerConfig(id, provider);
     const capability = providerCapability(provider, configured);
     if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
@@ -85,6 +110,14 @@ export function createReceiptRuntime({
     const command = flags.command || null;
     const providerVersion = String(flags.version || config?.version || "1");
     const adapter = flags.adapter || config?.adapter || "external";
+    if (!harnessExecuted) {
+      if (typeof flags.adapter === "string" && EXECUTING_ADAPTERS.has(flags.adapter))
+        die(`--adapter ${flags.adapter} names an adapter the harness executes; ` +
+          "a hand-recorded receipt cannot claim it. Run 'proof run <change>' instead");
+      if (status === "pass" && EXECUTING_ADAPTERS.has(String(configured?.adapter || "")))
+        die(`provider '${provider}' is configured for adapter '${configured.adapter}'; ` +
+          "a passing receipt for it must come from an execution — run 'proof run <change>'");
+    }
     const inputMode = flags["input-mode"] || config?.inputMode || null;
     const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
       `manual-${Date.now()}-${process.pid}`;
@@ -109,6 +142,12 @@ export function createReceiptRuntime({
       .flatMap((value) => String(value).split(","))
       .map((value) => value.trim()).filter(Boolean);
     rejectPrototypeEvidenceInputs(id, provider, uniqueArtifactFlags, references);
+    const unresolvable = references
+      .map((reference) => unresolvableReference(id, provider, reference))
+      .filter(Boolean);
+    if (unresolvable.length)
+      die("a reference must be a URI or a path that exists; these resolve to " +
+        `nothing: ${unresolvable.join(", ")}`);
     const artifacts = uniqueArtifactFlags
       .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
     const observed = String(flags.observed || "").trim();
@@ -123,7 +162,7 @@ export function createReceiptRuntime({
       provenanceSource = `human:${String(flags.acceptor).trim()}`;
     // Report every missing requirement at once. Revealing them one per failure
     // costs a round trip each, and the person who gave the verdict is waiting.
-    if (adapter === "external" && status === "pass") {
+    if (!harnessExecuted && status === "pass") {
       const missing = [];
       if (!observed)
         missing.push("observed — flag --observed, or evidence.observed in the response file");
@@ -135,6 +174,9 @@ export function createReceiptRuntime({
       if (missing.length)
         die(`passing external receipt '${provider}' is missing:\n  ${missing.join("\n  ")}`);
     }
+    if (harnessExecuted && status === "pass" &&
+        !artifacts.some((artifact) => artifact.type === "command-log"))
+      die(`executed receipt '${provider}' must carry its command log`);
     const inputIdentity = providerInputIdentity(
       id, provider, config, workspaceHash
     );
@@ -142,7 +184,10 @@ export function createReceiptRuntime({
         inputIdentity.files.length === 0)
       die(`passing receipt '${provider}' declared inputs but matched no files`);
     const receipt = {
-      version: 6, changeId: id, provider, providerVersion, adapter,
+      version: 7, changeId: id, provider, providerVersion, adapter,
+      // Who produced this: an execution the harness performed, or an assertion
+      // somebody made. `adapter` cannot answer that — the caller supplies it.
+      execution: harnessExecuted ? "harness" : "manual",
       repositoryId: repository?.id || null,
       adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
       providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,

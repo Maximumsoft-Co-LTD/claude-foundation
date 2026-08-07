@@ -34,19 +34,24 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
-# is_git_commit CMD  ->  exit 0 if CMD is a real `git commit` invocation.
+# is_git_commit CMD  ->  exit 0 if CMD is a real git invocation that writes a
+# commit on the current branch (commit, merge, cherry-pick, revert, am, rebase,
+# or a non-ff pull).
 # Dequotes first (so a commit-message body can't false-trigger), then splits
 # into simple-command segments and judges each on its command word: the word
 # must be `git` (after skipping VAR=val assignments, wrapper prefixes, and
 # git's own global flags) and the first non-flag git subcommand must be
-# `commit`.
+# one of the commit-writing verbs.
 # ---------------------------------------------------------------------------
 is_git_commit() {
   local cmd="$1"
   [ -n "$cmd" ] || return 1
 
-  # Cheap pre-filter: if "commit" never appears, it can't be a git commit.
-  case "$cmd" in *commit*) ;; *) return 1 ;; esac
+  # Cheap pre-filter: none of the commit-writing verbs present means no match.
+  case "$cmd" in
+    *commit*|*merge*|*cherry-pick*|*revert*|*\ am\ *|*rebase*|*pull*) ;;
+    *) return 1 ;;
+  esac
 
   # (1) Drop the contents of quoted spans so `git commit` text inside a
   # message body / echo argument is never read as a real invocation. Portable
@@ -105,8 +110,13 @@ is_git_commit() {
     done
     [ "$#" -gt 0 ] || continue
 
-    # First non-flag subcommand: is it commit?
-    [ "$1" = "commit" ] && return 0
+    # First non-flag subcommand: does it create a commit on the current branch?
+    # `commit` is not the only one — a merge on main is the most common form of
+    # the slip this hook exists to catch, and cherry-pick, revert, am, rebase
+    # and a non-ff pull all write commits just as directly.
+    case "$1" in
+      commit|merge|cherry-pick|revert|am|rebase|pull) return 0 ;;
+    esac
   done <<EOF
 $segments
 EOF
@@ -204,6 +214,19 @@ run_self_test() {
   fi
 
   git -C "$tmp" checkout -q main 2>/dev/null
+
+  # Every verb that writes a commit, not just `commit`: a merge on main is the
+  # most common form of this slip.
+  local verb verbevent
+  for verb in merge cherry-pick revert am rebase pull; do
+    verbevent="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git $verb other\"}}"
+    out="$(cd "$tmp" && printf '%s' "$verbevent" | bash "$self")"
+    if printf '%s' "$out" | jq -e '.decision == "block"' >/dev/null 2>&1; then
+      echo "PASS: git $verb on main is blocked"
+    else
+      echo "FAIL: git $verb on main was NOT blocked (got: ${out:-<empty>})"; rc=1
+    fi
+  done
 
   # boundary: a non-commit command on main is allowed (AC2 boundary)
   local statusevent='{"tool_name":"Bash","tool_input":{"command":"git status"}}'

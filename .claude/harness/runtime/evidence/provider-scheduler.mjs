@@ -29,7 +29,10 @@ export function createProviderScheduler({
         unconfigured.push(provider);
         continue;
       }
-      if (!commandExists(config.command?.[0], providerWorkspace(id, provider, config))) {
+      // contract-digest runs no command: its work is reading and hashing the
+      // declared artifact on each side.
+      if (config.adapter !== "contract-digest" &&
+          !commandExists(config.command?.[0], providerWorkspace(id, provider, config))) {
         unavailable.push(`${provider}:command`);
         continue;
       }

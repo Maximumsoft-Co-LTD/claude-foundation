@@ -104,6 +104,21 @@ export function createChangeLifecycle({
     }
   }
 
+  // The artifacts the standard schema adds over the rapid one. Written only
+  // when absent, so an upgrade never overwrites work already done.
+  function materializeStandardArtifacts(id, intent) {
+    const source = templateDir("foundation-standard");
+    const target = changePath(id);
+    const design = join(target, "design.md");
+    if (!existsSync(design))
+      writeFileSync(design, instantiate(join(source, "design.md"), intent));
+    const spec = join(target, "specs", "change", "spec.md");
+    if (!existsSync(spec)) {
+      mkdirSync(join(target, "specs", "change"), { recursive: true });
+      writeFileSync(spec, instantiate(join(source, "spec.md"), intent));
+    }
+  }
+
   function createChange(intent, flags) {
     const id = slugify(flags.id || intent);
     setOperationChangeId(id);
@@ -181,7 +196,14 @@ export function createChangeLifecycle({
       if (flags[key]) state[key] = flags[key];
     if (flags.size) state.size = flags.size;
     const semanticText = `${state.intent} ${flags.security || ""}`.toLowerCase();
-    const inferred = securityTerms.filter((term) => semanticText.includes(term));
+    // Word boundaries, not substrings. `includes("access")` fired on
+    // "accessibility" and `includes("migration")` on "migration guide", so
+    // routine work acquired external review it did not need — while the
+    // trigger the docs promise ("semantic, not syntax") went unmet either way.
+    const inferred = securityTerms.filter((term) => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+      return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(semanticText);
+    });
     const explicitSecurity = String(flags.security || "").split(",")
       .map((value) => value.trim()).filter((value) => value && value.toLowerCase() !== "none");
     state.securityTriggers = [...new Set([
@@ -214,14 +236,21 @@ export function createChangeLifecycle({
         version: 2, decision: "not-required", required: false,
         reason: null, claimIds: [], declaredAt: now()
       };
+    let upgraded = false;
     if (state.schema === "foundation-rapid" &&
         (state.impact !== "low" || state.coupling !== "isolated" || state.reviewRequired ||
          state.acceptance?.required)) {
       state.schema = "foundation-standard";
       state.upgradedFrom = "foundation-rapid";
+      upgraded = true;
+      // The rapid packet has no design.md and no specs/, which the standard
+      // schema requires. Leaving them absent made `validate` refuse a change
+      // whose only listed next command was `validate` — a dead end that had to
+      // be guessed out of. Instantiate them here, with the upgrade.
+      materializeStandardArtifacts(id, state.intent);
     }
     saveRuntime(state);
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}`);
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}`);
   }
 
   function startAtomic(draftPath) {
@@ -233,6 +262,12 @@ export function createChangeLifecycle({
     const securityTriggers = draft.securityTriggers || [];
     if (!draft.acceptance || typeof draft.acceptance.required !== "boolean")
       fail("start draft requires acceptance.required true|false from an explicit user-facing decision");
+    // Validated here, with everything else, rather than inside resolveChange:
+    // createChange has already persisted by then, so a late refusal leaves a
+    // half-created change whose only exit is `change abandon --decision-ref`,
+    // a flag the error does not mention. `start` is meant to be atomic.
+    if (draft.acceptance.required && !String(draft.acceptance.reason || "").trim())
+      fail("start draft requires acceptance.reason when acceptance.required is true");
     if (!["low", "medium", "high"].includes(impact))
       fail("start draft impact must be low|medium|high");
     if (!["isolated", "coupled"].includes(coupling))

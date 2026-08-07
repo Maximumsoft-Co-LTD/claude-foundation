@@ -89,12 +89,12 @@ export function createRepositoryTopology({
     return { version: 1, repositories: rows, discovered, drift };
   }
 
-  function changeSelection(id) {
+  function changeSelection(id, reportFailure = fail) {
     const path = join(activeChangePath(id), "repositories.yaml");
     if (!existsSync(path)) return null;
     const value = readJson(path);
     if (value.version !== 1 || !Array.isArray(value.repositories) || value.repositories.length === 0)
-      fail(`${id}/repositories.yaml requires version 1 and a non-empty repositories array`);
+      reportFailure(`${id}/repositories.yaml requires version 1 and a non-empty repositories array`);
     return value;
   }
 
@@ -107,17 +107,17 @@ export function createRepositoryTopology({
     return value.repositories.map((entry) => typeof entry === "string" ? entry : entry.id).sort();
   }
 
-  function selected(id, state = loadRuntime(id)) {
+  function selected(id, state = loadRuntime(id), reportFailure = fail) {
     const catalogValue = catalog();
-    const selection = changeSelection(id);
+    const selection = changeSelection(id, reportFailure);
     const requested = selection?.repositories || [{ id: "root", mode: "write" }];
     const rows = [];
     const seen = new Set();
     for (const entry of requested) {
       const normalized = typeof entry === "string" ? { id: entry } : entry;
       const repository = catalogValue.repositories.find((item) => item.id === normalized.id);
-      if (!repository) fail(`${id}/repositories.yaml references unknown repository '${normalized.id}'`);
-      if (seen.has(repository.id)) fail(`${id}/repositories.yaml repeats '${repository.id}'`);
+      if (!repository) reportFailure(`${id}/repositories.yaml references unknown repository '${normalized.id}'`);
+      if (seen.has(repository.id)) reportFailure(`${id}/repositories.yaml repeats '${repository.id}'`);
       seen.add(repository.id);
       const runtimeState = state.repositories?.[repository.id] || {};
       rows.push({
@@ -133,7 +133,7 @@ export function createRepositoryTopology({
     for (const repository of rows)
       for (const dependency of repository.dependsOn)
         if (!selectedIds.has(dependency))
-          fail(`change '${id}' must select dependency '${dependency}' for repository '${repository.id}'`);
+          reportFailure(`change '${id}' must select dependency '${dependency}' for repository '${repository.id}'`);
     return rows;
   }
 

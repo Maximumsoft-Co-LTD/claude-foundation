@@ -36,8 +36,17 @@ export async function routeRuntimeCommand(command, values, api) {
       break;
     }
     case "resolve": {
-      const { flags, rest } = parseFlags(values);
-      if (!rest[0]) die("resolve requires a change");
+      // Strict: the lenient parser silently dropped a misspelled acceptance
+      // flag, so `validate` kept failing with the identical message and the
+      // typo was invisible.
+      const { flags, rest } = parseStrictCommandFlags(values, "change resolve", {
+        boolean: ["review", "acceptance-required", "acceptance-not-required"],
+        value: [
+          "impact", "coupling", "security", "size", "ambiguity",
+          "acceptance-reason", "acceptance-claims"
+        ]
+      });
+      if (rest.length !== 1) die("change resolve requires exactly one change");
       resolveChange(rest[0], flags); break;
     }
     case "abandon": {
@@ -146,7 +155,7 @@ export async function routeRuntimeCommand(command, values, api) {
     }
     case "authority-request": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority request", {
-        value: ["type"]
+        value: ["type", "repo"]
       });
       if (rest.length !== 1) die("authority request requires exactly one change");
       requestAuthority(rest[0], flags); break;
@@ -207,7 +216,12 @@ export async function routeRuntimeCommand(command, values, api) {
       }
       else if (values[0] === "sync") syncSandbox(values[1]);
       else if (values[0] === "apply") {
-        const { flags, rest } = parseFlags(values.slice(1));
+        // Strict, like every other authority command: `controlPlane` is an
+        // internal argument that defeats the multi-repository guard, and
+        // `refresh` has no caller. Loose parsing handed both to the CLI.
+        const { flags, rest } = parseStrictCommandFlags(values.slice(1), "sandbox apply");
+        if (Object.keys(flags).length || rest.length !== 1)
+          die("sandbox apply requires exactly one change");
         applySandbox(rest[0], flags);
       }
       else die("sandbox requires challenge|inspect|create|sync|apply <change>");

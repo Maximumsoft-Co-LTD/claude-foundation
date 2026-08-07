@@ -39,9 +39,22 @@ export function createAuthorityRuntime({
   providerClaims,
   fail
 }) {
-  function authorityProvider(id, type) {
-    return requiredProviders(id).find((provider) =>
-      providerCapability(provider, providerConfig(id, provider)) === type) || type;
+  function authorityProvider(id, type, repository = null) {
+    return requiredProviders(id).find((provider) => {
+      const config = providerConfig(id, provider);
+      if (providerCapability(provider, config) !== type) return false;
+      return repository ? config?.repository === repository : true;
+    }) || (repository ? null : type);
+  }
+
+  // A review provider that names a repository is a verdict about that
+  // repository, so it binds to that repository's workspace hash. Binding every
+  // verdict to the composite meant an edit in *any* selected repository
+  // invalidated a review already earned elsewhere — on a wide change, review
+  // became a moving target.
+  function authorityWorkspaceHash(id, provider) {
+    const scoped = providerConfig(id, provider)?.repository;
+    return scoped ? providerWorkspaceHash(id, provider) : relevantHash(id);
   }
 
   function authorityPacket(id, type) {
@@ -85,10 +98,13 @@ export function createAuthorityRuntime({
     const pending = pendingTasks(id);
     if (pending.length)
       fail(`authority request requires completed implementation tasks: ${pending.map((task) => task.id).join(", ")}`);
-    const provider = authorityProvider(id, type);
-    if (!requiredProviders(id).includes(provider))
-      fail(`change '${id}' does not require ${type} authority`);
-    const workspaceHash = relevantHash(id);
+    const repository = String(flags.repo || "").trim() || null;
+    const provider = authorityProvider(id, type, repository);
+    if (!provider || !requiredProviders(id).includes(provider))
+      fail(repository
+        ? `change '${id}' has no ${type} provider scoped to repository '${repository}'`
+        : `change '${id}' does not require ${type} authority`);
+    const workspaceHash = authorityWorkspaceHash(id, provider);
     const existing = authorityStore.list(id).find((entry) =>
       entry.value.type === type && entry.value.provider === provider &&
       entry.value.workspaceHash === workspaceHash &&
@@ -116,6 +132,8 @@ export function createAuthorityRuntime({
   function authorityStatusValue(id, requestId = null) {
     loadRuntime(id);
     const workspaceHash = relevantHash(id);
+    // Scoped requests carry their own hash; status compares against the
+    // composite for unscoped ones only.
     const result = authorityStore.status(id, workspaceHash, requestId);
     if (!result.found) fail(`unknown authority request '${requestId}'`);
     return result.value;
@@ -173,7 +191,7 @@ export function createAuthorityRuntime({
     const request = entry.value;
     if (!authorityStore.isOpen(request.status))
       fail(`authority request '${requestId}' is ${request.status}`);
-    if (request.workspaceHash !== relevantHash(id))
+    if (request.workspaceHash !== authorityWorkspaceHash(id, request.provider))
       fail(`authority request '${requestId}' is stale`);
     if (!existsSync(responsePath)) fail(`authority response not found: ${flags.response}`);
     const response = readJson(responsePath);

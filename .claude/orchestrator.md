@@ -62,9 +62,9 @@ providers, reuse only fingerprint/hash-valid receipts, and execute missing
 evidence by a resource-safe DAG. Test evidence requires discovery. Required
 failed, missing, stale, error, or inconclusive evidence blocks Land.
 
-Run independent review for high impact, auth/access, public compatibility,
-migration, irreversible mutation, concurrency, money, multi-repo contracts,
-evidence anomalies, or explicit policy. Findings are
+Review independently for high impact, coupled changes, auth/access, public
+compatibility, migration, irreversible mutation, concurrency, money, multi-repo
+contracts, evidence anomalies, or policy. Findings are
 `verified|hypothesis|disproved|accepted-risk`; only deterministic verified
 blockers and missing evidence block.
 
