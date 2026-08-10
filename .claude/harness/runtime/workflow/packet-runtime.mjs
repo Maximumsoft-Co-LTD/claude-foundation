@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 export function createPacketRuntime({
@@ -110,12 +110,15 @@ export function createPacketRuntime({
       left.repositoryId.localeCompare(right.repositoryId) || left.path.localeCompare(right.path));
   }
   
-  function policyAnalysis(id) {
-    if (policyCache.has(id)) return policyCache.get(id);
-    const state = loadRuntime(id);
-    const files = canonicalChangedSurface(id, state)
-      .map((row) => `${row.repositoryId}/${row.path}`);
-    const relevantFiles = files
+  // The rule table is a pure function of a path list: nothing in it reads change
+  // state, the filesystem, or git. Keeping it that way is what lets a forecast
+  // run the *same* rules over paths that do not exist yet. A second table tuned
+  // for globs would drift, and a forecast that disagrees with enforcement is
+  // worse than none — it teaches the author to distrust it.
+  function capabilitiesForPaths(paths) {
+    // A change's own packet never pulls a capability. That is a property of the
+    // rules, not of how the path list was obtained, so both callers get it here.
+    const relevantFiles = paths
       .filter((path) => !path.startsWith("openspec/changes/") &&
         !path.startsWith("root/openspec/changes/"));
     const defaults = [
@@ -171,7 +174,79 @@ export function createPacketRuntime({
         for (const capability of rule.capabilities)
           if (PROVIDERS.has(capability)) require(capability, trigger);
     }
-    const result = { capabilities: [...required].sort(), triggers };
+    return { capabilities: [...required].sort(), triggers };
+  }
+
+  // `**/` spans directories including none at all, so `src/**/*.ts` matches
+  // `src/a.ts`; a bare `**` spans the rest of the path; `*` and `?` stop at a
+  // separator. Everything else is literal.
+  function globToRegExp(glob) {
+    let out = "";
+    for (let i = 0; i < glob.length; i += 1) {
+      const character = glob[i];
+      if (character === "*") {
+        if (glob[i + 1] === "*") {
+          if (glob[i + 2] === "/") { out += "(?:.*/)?"; i += 2; } else { out += ".*"; i += 1; }
+        } else out += "[^/]*";
+        continue;
+      }
+      if (character === "?") { out += "[^/]"; continue; }
+      out += character.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+    return new RegExp(`^${out}$`);
+  }
+
+  // Both directions are needed and each fails where the other works. A file the
+  // change will add (`frontend/app/page.tsx`) exists only as the literal
+  // declaration; a directory the change will work inside (`frontend/**`) names
+  // no file at all until it is expanded. Taking either alone under-forecasts,
+  // which is the exact failure a forecast exists to remove.
+  const FORECAST_WALK_LIMIT = 5000;
+  function expandDeclaredSurface(globs) {
+    const paths = new Set();
+    let budget = FORECAST_WALK_LIMIT;
+    for (const glob of globs) {
+      const declared = String(glob).replace(/^\.\//, "");
+      if (!declared) continue;
+      paths.add(declared);
+      const wildcard = declared.search(/[*?[]/);
+      if (wildcard === -1) continue;
+      const prefix = declared.slice(0, wildcard);
+      const directory = prefix.endsWith("/") ? prefix : prefix.replace(/\/[^/]*$/, "");
+      // Walking is bounded to the static prefix the author named, so declaring a
+      // surface can never turn a command into a whole-repository scan.
+      const base = directory ? join(ROOT, directory) : ROOT;
+      if (!existsSync(base)) continue;
+      const matcher = globToRegExp(declared);
+      const walk = (absolute, relativePath) => {
+        if (budget <= 0) return;
+        let entries;
+        try { entries = readdirSync(absolute, { withFileTypes: true }); } catch { return; }
+        for (const entry of entries) {
+          if (budget <= 0) return;
+          if (entry.name === ".git" || entry.name === "node_modules") continue;
+          const next = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) { walk(join(absolute, entry.name), next); continue; }
+          budget -= 1;
+          if (matcher.test(next)) paths.add(next);
+        }
+      };
+      walk(base, directory.replace(/\/$/, ""));
+    }
+    return [...paths];
+  }
+
+  // The one forecast entry point. Every caller goes through it so that two
+  // commands warning about the same declared surface can never disagree.
+  function forecastCapabilities(globs) {
+    return capabilitiesForPaths(expandDeclaredSurface(globs || []));
+  }
+
+  function policyAnalysis(id) {
+    if (policyCache.has(id)) return policyCache.get(id);
+    const state = loadRuntime(id);
+    const result = capabilitiesForPaths(canonicalChangedSurface(id, state)
+      .map((row) => `${row.repositoryId}/${row.path}`));
     policyCache.set(id, result);
     return result;
   }
@@ -216,15 +291,22 @@ export function createPacketRuntime({
         !["inventory", "logs", "mechanical-docs"].includes(selectedTask.kind))
       die(`task '${selectedTask.id}' has no claims in repository '${selectedTask.repository}'`);
     const claimIds = new Set(claims.map((claim) => claim.id));
-    const compositeSnapshot = repository
-      ? readJson(snapshotPath(id), {})
-      : relevantSnapshot(id);
+    // One live composite for the whole packet, scoped or not: reading the
+    // stored snapshot for display while receiptValidity recomputed its own
+    // fresh composite per provider row showed the operator one hash and judged
+    // receipts against another — and rewrote the stored snapshot M times from
+    // a read command.
+    const compositeSnapshot = relevantSnapshot(id);
     const hash = repository
       ? singleRelevantSnapshot(id, repository.workspacePath).workspaceHash
       : compositeSnapshot.workspaceHash;
     const providerRows = requiredProviders(id).map((provider) => {
-      const check = receiptValidity(id, provider, hash);
       const config = providerConfig(id, provider);
+      // In a repository-scoped packet an unscoped provider's receipt is bound
+      // to the composite hash, not this repository's — validating it against
+      // the single-repo hash reported fresh global evidence as stale.
+      const check = receiptValidity(id, provider,
+        repository && !config?.repository ? compositeSnapshot.workspaceHash : hash);
       return {
         provider, adapter: config?.adapter || "external",
         repository: config?.repository || null,
@@ -522,6 +604,8 @@ export function createPacketRuntime({
     canonicalChangedSurface,
     policyCapabilities,
     policyCapabilityTrigger,
+    capabilitiesForPaths,
+    forecastCapabilities,
     packetValue,
     reviewPacketValue,
     showPacket

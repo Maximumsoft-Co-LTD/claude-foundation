@@ -42,7 +42,7 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "change resolve", {
         boolean: ["review", "acceptance-required", "acceptance-not-required"],
         value: [
-          "impact", "coupling", "security", "size", "ambiguity",
+          "impact", "coupling", "security", "size", "ambiguity", "surface",
           "acceptance-reason", "acceptance-claims"
         ]
       });

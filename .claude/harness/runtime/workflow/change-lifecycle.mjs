@@ -206,9 +206,25 @@ export function createChangeLifecycle({
 
   function resolveChange(id, flags) {
     const state = loadRuntime(id);
+    // The only consumer gates on strict equality with "unclear", so an
+    // unvalidated value silently defeats the /investigate blocker it feeds.
+    if (flags.ambiguity && !["clear", "unclear"].includes(flags.ambiguity))
+      fail("--ambiguity must be clear|unclear");
     for (const key of ["ambiguity", "impact", "coupling"])
       if (flags[key]) state[key] = flags[key];
     if (flags.size) state.size = flags.size;
+    // The paths the author expects to touch, declared before they exist. Policy
+    // infers capabilities from the *changed* surface, which at change time is
+    // empty — so a `.tsx` file pulls `accessibility` only once it is written,
+    // by which point the contract is signed and the evidence is collected.
+    // Declaring nothing keeps that behavior exactly; this is advisory input to
+    // a forecast, never an input to enforcement.
+    if (flags.surface !== undefined) {
+      const globs = String(flags.surface).split(",")
+        .map((value) => value.trim()).filter(Boolean);
+      if (!globs.length) fail("--surface requires at least one path or glob");
+      state.declaredSurface = [...new Set(globs)].sort();
+    }
     const semanticText = `${state.intent} ${flags.security || ""}`.toLowerCase();
     // Word boundaries, not substrings. `includes("access")` fired on
     // "accessibility" and `includes("migration")` on "migration guide", so
@@ -272,7 +288,12 @@ export function createChangeLifecycle({
       materializeStandardArtifacts(id, state.intent);
     }
     saveRuntime(state);
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
+    // The surface line appears only when one was declared, so a change that
+    // never used the flag keeps producing the output it produced before it
+    // existed.
+    const surfaceLine = state.declaredSurface?.length
+      ? `\n  surface: ${state.declaredSurface.join(", ")}` : "";
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
   }
 
   function startAtomic(draftPath) {
@@ -290,6 +311,12 @@ export function createChangeLifecycle({
     // a flag the error does not mention. `start` is meant to be atomic.
     if (draft.acceptance.required && !String(draft.acceptance.reason || "").trim())
       fail("start draft requires acceptance.reason when acceptance.required is true");
+    // The converse direction, for the same reason: resolveChange refuses a
+    // reason or claims without required, and by then the change exists.
+    if (!draft.acceptance.required &&
+        (String(draft.acceptance.reason || "").trim() ||
+         (draft.acceptance.claimIds || []).length))
+      fail("start draft acceptance.reason and acceptance.claimIds require acceptance.required true");
     if (!["low", "medium", "high"].includes(impact))
       fail("start draft impact must be low|medium|high");
     if (!["isolated", "coupled"].includes(coupling))

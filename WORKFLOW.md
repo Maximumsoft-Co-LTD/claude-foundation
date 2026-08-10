@@ -278,6 +278,15 @@ changed-surface policy adds supply-chain, migration, accessibility,
 compatibility, security/review, or deployment obligations when relevant files
 changed.
 
+Because that policy reads files already changed, it can only speak after Build —
+by which point the contract is signed and its evidence collected, so a late
+obligation expires both the receipts and the review signature bound to them.
+`change resolve --surface <glob,glob>` declares the paths a change expects to
+touch, and `doctor --stage change` and `change validate` then run the same rules
+against them and name the glob behind each forecast capability. The forecast
+warns and never gates: enforcement stays with the real changed surface, so a
+mis-declared surface can never reduce required evidence.
+
 Each receipt records provider/version, change, claims, workspace hash, result,
 observations, capability metadata, command/log, and timestamps. Status is one of
 `pass`, `fail`, `inconclusive`, or `error`.

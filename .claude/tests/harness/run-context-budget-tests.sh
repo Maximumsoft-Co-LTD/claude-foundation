@@ -79,8 +79,21 @@ assert_file_contains "fundamentals records decision answers in the change packet
   "$ROOT/.claude/rules/fundamentals.md" \
   'record the answers in the change packet'
 
+# 120 words is the standing budget for a slash command. `change.md` carries 15
+# more because it is the only command that must also tell the author to declare
+# `--surface`: without that instruction the capability forecast never runs, and
+# the cost it exists to remove is paid on every change. `build.md` carries 25
+# more because it must also route long external commands through `exec`:
+# without that instruction the largest block of wall time never reaches
+# metrics. Raised deliberately and per command, so the standing budget still
+# binds everywhere else.
 for command in "$ROOT"/.claude/commands/*.md; do
-  assert_words_at_most "command budget: $(basename "$command")" 120 "$command"
+  case "$(basename "$command")" in
+    change.md) limit=135 ;;
+    build.md) limit=145 ;;
+    *) limit=120 ;;
+  esac
+  assert_words_at_most "command budget: $(basename "$command")" "$limit" "$command"
 done
 assert_eq "normal slash command surface is bounded" "7" \
   "$(find "$ROOT/.claude/commands" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')"

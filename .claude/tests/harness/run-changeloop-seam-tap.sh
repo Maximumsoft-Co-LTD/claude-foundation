@@ -16,9 +16,15 @@ trap 'rm -f "$report"' EXIT HUP INT TERM
 status=0
 for suite in \
   "$HERE/run-changeloop-seam-tests.sh" \
-  "$ROOT/.claude/tests/hooks/run-phase-mutation-guard-tests.sh"
+  "$ROOT/.claude/tests/hooks/run-phase-mutation-guard-tests.sh" \
+  "$HERE/run-workspace-surface-tests.mjs" \
+  "$HERE/run-context-budget-tests.sh"
 do
-  sh "$suite" >> "$report" 2>&1 || status=1
+  # Node suites carry change-loop evidence too; only the interpreter differs.
+  case "$suite" in
+    *.mjs) node "$suite" >> "$report" 2>&1 || status=1 ;;
+    *) sh "$suite" >> "$report" 2>&1 || status=1 ;;
+  esac
 done
 
 count="$(grep -c '^\(PASS\|FAIL\): ' "$report" 2>/dev/null || true)"

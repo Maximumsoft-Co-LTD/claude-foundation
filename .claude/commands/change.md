@@ -9,10 +9,10 @@ With `--prototype-selection`, summarize that file; never use it as evidence.
 
 Run `doctor --stage change`; reuse the change.
 Otherwise classify before creating it: `change new <intent> --rapid` only for
-low-impact, isolated, unit/static work, standard otherwise. Resolve impact,
-coupling, security, and evidence.
+low-impact, isolated, unit/static work, standard otherwise. Resolve ambiguity,
+impact, coupling, security, surface, and evidence.
 Omit `--security` when there are no triggers. Require review only for policy
-triggers.
+triggers. Declare `--surface`, then act on its forecast before signing.
 
 Complete artifacts, tasks, evidence, execution. Run `change validate`, then
 `doctor --stage build --change <change>`. Sync any sandbox.

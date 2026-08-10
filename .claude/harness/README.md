@@ -302,6 +302,15 @@ deployment, and supply-chain checks.
 The project selects only the capabilities required by the risk and claims of
 the change. Task size affects budgeting and slicing; it does not weaken proof.
 
+Changed-surface policy can only speak once files exist. `change resolve
+--surface <glob,glob>` records the paths a change expects to touch so the same
+rules run at change time: `doctor --stage change` reports the forecast
+capabilities, names the declared glob behind each, and says whether an
+independent reviewer and reviewer diversity will be required — before a
+signature is spent on a contract that is still moving. `change validate` warns
+on the same gap. The forecast never gates: a declared surface is advisory, and
+required evidence still comes from the real changed surface.
+
 ## Runtime state
 
 Generated state lives under `.foundation/` and must not be treated as product

@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "declared-surface-forecasts-before-files-exist",
+      "scenario": "A change that declares a .tsx path which has not been written, and a lockfile-class path, has doctor --stage change report accessibility and dependency-supply-chain as forecast and name the declared path that pulls each one.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "forecast-never-replaces-enforcement",
+      "scenario": "Declaring a surface leaves the policy-capabilities check reading the real changed surface, so a declared surface can never reduce the capabilities required at Prove.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "forecast-gap-warns-without-failing",
+      "scenario": "When a forecast capability has no provider in the evidence contract, doctor --stage change reports it at warn level naming the capability, and change validate warns and still exits successfully.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "review-consequence-is-stated-at-change-time",
+      "scenario": "A declared surface that forecasts a review-forcing capability makes doctor --stage change name both the required independent review and the required reviewer diversity, before a signature is spent.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-change-packet-pulls-no-capability",
+      "scenario": "A declared surface consisting of paths inside the change's own openspec/changes/ directory forecasts no capability, matching the rule already applied to the changed surface.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "declaring-no-surface-changes-nothing",
+      "scenario": "A change resolved without --surface emits no forecast rows at all and leaves the existing policy-capabilities check exactly as it was.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

@@ -43,7 +43,11 @@ import {
 import { createApplyRuntime } from "./runtime/workflow/apply-runtime.mjs";
 import { createDiagnosticsRuntime } from "./runtime/core/diagnostics-runtime.mjs";
 import { createStateRuntime } from "./runtime/core/state-runtime.mjs";
-import { createEvidenceContract } from "./runtime/evidence/evidence-contract.mjs";
+import {
+  createEvidenceContract,
+  REVIEW_FORCING_CAPABILITIES,
+  REVIEW_DIVERSITY_CAPABILITIES
+} from "./runtime/evidence/evidence-contract.mjs";
 import { createChangeValidationRuntime } from "./runtime/workflow/change-validation.mjs";
 import { routeRuntimeCommand } from "./runtime/core/cli-router.mjs";
 import { createProviderScheduler } from "./runtime/evidence/provider-scheduler.mjs";
@@ -731,6 +735,8 @@ const {
   canonicalChangedSurface,
   policyCapabilities,
   policyCapabilityTrigger,
+  capabilitiesForPaths,
+  forecastCapabilities,
   packetValue,
   reviewPacketValue,
   showPacket
@@ -746,6 +752,7 @@ evidenceContract = createEvidenceContract({
   activeChangePath,
   readJson,
   repositoryById,
+  selectedRepositories,
   providerCapability,
   claimsForProvider: (...args) => changeValidationRuntime.claimsForProvider(...args),
   canonicalPath,
@@ -791,6 +798,7 @@ changeValidationRuntime = createChangeValidationRuntime({
   resolvedAcceptance,
   reviewPolicy,
   policyCapabilities,
+  forecastCapabilities,
   scopedReviewClaims,
   rawExecution,
   commandExists,
@@ -1188,6 +1196,9 @@ const {
   topologyIssues,
   policyCapabilities,
   policyCapabilityTrigger,
+  forecastCapabilities: (...args) => packetRuntime.forecastCapabilities(...args),
+  reviewForcingCapabilities: REVIEW_FORCING_CAPABILITIES,
+  reviewDiversityCapabilities: REVIEW_DIVERSITY_CAPABILITIES,
   providerCapability,
   unverifiedDrift: (id) => modelDriftInspector.changeDrift(id).unverified,
   parseFlags,

@@ -49,6 +49,9 @@ export function createDiagnosticsRuntime({
   topologyIssues,
   policyCapabilities,
   policyCapabilityTrigger,
+  forecastCapabilities,
+  reviewForcingCapabilities,
+  reviewDiversityCapabilities,
   providerCapability,
   unverifiedDrift,
   unresolvedApplyTransactions,
@@ -56,6 +59,52 @@ export function createDiagnosticsRuntime({
   parseStrictCommandFlags,
   fail
 }) {
+  // A forecast is a prediction about files that do not exist. It warns, names
+  // the glob responsible, and never gates anything — making it binding would let
+  // a mis-declared surface *reduce* required evidence, turning a cost saving
+  // into an evidence hole. Enforcement stays with the real changed surface.
+  function surfaceForecast(id, state) {
+    const globs = state?.declaredSurface || [];
+    if (!globs.length) return [];
+    const { capabilities, triggers } = forecastCapabilities(globs);
+    const named = (capability) => {
+      const from = triggers[capability];
+      return from && from.length ? `${capability} (from ${from[0]})` : capability;
+    };
+    const covered = new Set(requiredProviders(id).map((provider) =>
+      providerCapability(provider, providerConfig(id, provider))));
+    const missing = capabilities.filter((capability) => !covered.has(capability));
+    const checks = [{
+      level: "info",
+      name: "surface-forecast",
+      detail: capabilities.length
+        ? `${capabilities.map(named).join(", ")} (declared surface: ${globs.join(", ")})`
+        : `no capability inferred from declared surface: ${globs.join(", ")}`
+    }];
+    if (missing.length)
+      checks.push({
+        level: "warn",
+        name: "surface-forecast-undeclared",
+        detail: `${missing.map(named).join(", ")}; declare a provider now or Prove will widen the contract and expire evidence already collected`
+      });
+    // The review signature is bound to the contract, so a capability that
+    // arrives late does not merely add a provider — it expires a signature a
+    // person already gave. Saying so here is the whole point of forecasting.
+    const forcesReview = capabilities.filter((capability) =>
+      reviewForcingCapabilities.includes(capability));
+    const forcesDiversity = capabilities.filter((capability) =>
+      reviewDiversityCapabilities.includes(capability));
+    if (forcesReview.length || forcesDiversity.length)
+      checks.push({
+        level: "info",
+        name: "surface-forecast-review",
+        detail: `${forcesReview.length ? `independent review from ${forcesReview.join(", ")}` : "review not forced"}; ${
+          forcesDiversity.length ? `reviewer diversity from ${forcesDiversity.join(", ")}` : "diversity not forced"
+        }; sign after the contract stops moving`
+      });
+    return checks;
+  }
+
   function showChanges() {
     const ids = activeChanges();
     const orphans = orphanRuntimeChanges();
@@ -74,7 +123,22 @@ export function createDiagnosticsRuntime({
         }
       }
       const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
-      const current = state.status === "untracked" ? null : relevantHash(id);
+      // Same degradation for a change whose recorded workspace is gone: the
+      // snapshot throws with the exit instruction, and this listing is where
+      // that instruction has to reach the operator.
+      let current = null;
+      if (state.status !== "untracked") {
+        try {
+          current = relevantHash(id);
+        } catch (error) {
+          // Only the typed missing-workspace case degrades; anything else
+          // (permissions, git failure) is a real fault this label would hide.
+          if (error.code !== "FOUNDATION_WORKSPACE_MISSING") throw error;
+          console.log(`${id}\tworkspace-missing\t${state.schema || "unknown"
+            }\tclaude-foundation sandbox create ${id}`);
+          continue;
+        }
+      }
       const readiness = proof?.status === "pass" && proof.workspaceHash === current
         ? "ready-to-land"
         : state.status === "proven" ? "stale-proof" : state.status;
@@ -300,6 +364,13 @@ export function createDiagnosticsRuntime({
           }).join(", ")
           : "none inferred from changed surface"
       });
+      // Policy infers from the surface a change has *already* touched, so at
+      // change time the check above is correctly empty and uselessly so: the
+      // author signs a contract that policy will widen the moment a `.tsx` file
+      // is written. Re-earning that evidence — and the review signature bound
+      // to it — is the single largest avoidable cost in the loop. A declared
+      // surface runs the same rules early, against paths that need not exist.
+      for (const check of surfaceForecast(requestedChange, state)) checks.push(check);
       // `mutation` is the only provider that answers "do these gates actually
       // detect a fault?", and it is the one no file pattern can infer: nothing
       // about a path says the suite around it is load-bearing. So it is exactly

@@ -10,19 +10,33 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
-  mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync,
+  rmSync, symlinkSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, trackedPathSet
 } from "../../harness/runtime/core/workspace-surface.mjs";
+import { createStateRuntime } from "../../harness/runtime/core/state-runtime.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
 let assertions = 0;
-const check = (fn) => { fn(); assertions += 1; };
+// A label makes one assertion countable by the TAP wrapper that carries change
+// evidence; without one the assertion still runs and still fails the suite, it
+// just is not individually named. Optional, so existing checks are unaffected.
+const check = (fn, label) => {
+  try {
+    fn();
+  } catch (error) {
+    if (label) console.log(`FAIL: ${label}`);
+    throw error;
+  }
+  assertions += 1;
+  if (label) console.log(`PASS: ${label}`);
+};
 
 const SURFACE = new Set([
   ".git", ".foundation", ".workflow", "node_modules", "coverage",
@@ -151,6 +165,129 @@ try {
   writeFileSync(join(project, "unrelated.txt"), "dirty again\n");
   check(() => assert.match(fm(["sandbox", "create", "still-copies"], project),
     /mode: isolated-copy/, "real uncommitted work still earns the copy"));
+
+  // The manifests whose diff decides what apply projects must admit tracked
+  // content under excluded-named directories, exactly as the snapshot and the
+  // copy filter do. A name-only exclusion here passed proof (the hash saw the
+  // edit) and then silently dropped the same edit at Land.
+  const stateRuntime = createStateRuntime({
+    root: project,
+    runtime: join(project, ".foundation", "runtime"),
+    changes: join(project, "openspec", "changes"),
+    receipts: join(project, ".foundation", "receipts"),
+    evidenceVault: join(project, ".foundation", "evidence"),
+    snapshots: join(project, ".foundation", "snapshots"),
+    excludedWorkspaceDirs: SURFACE,
+    readJson: (path, fallback) => {
+      try { return JSON.parse(readFileSync(path, "utf8")); }
+      catch { if (fallback !== undefined) return fallback; throw new Error(`unreadable ${path}`); }
+    },
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, JSON.stringify(value));
+    },
+    canonicalPath: (path) => (existsSync(resolve(path))
+      ? realpathSync(resolve(path)) : resolve(path)),
+    selectedRepositories: () => [],
+    now: () => new Date().toISOString(),
+    fail: (message) => { throw new Error(message); }
+  });
+  mkdirSync(join(project, "tests", "fixtures", "coverage"), { recursive: true });
+  writeFileSync(join(project, "tests", "fixtures", "coverage", "expected.info"), "fixture\n");
+  git(["add", "tests"]);
+  git(["commit", "-qm", "fixture"]);
+  mkdirSync(join(project, "coverage"), { recursive: true });
+  writeFileSync(join(project, "coverage", "lcov.info"), "generated\n");
+  const manifest = stateRuntime.workspaceManifest(
+    realpathSync(project), "still-copies", true);
+  check(() => assert.ok("tests/fixtures/coverage/expected.info" in manifest,
+    "a committed fixture under an excluded name belongs in the apply manifest"));
+  check(() => assert.ok(!("coverage/lcov.info" in manifest),
+    "untracked build output stays out of the apply manifest"));
+
+  // A recorded workspace that no longer exists must surface as an instruction,
+  // not as a raw ENOENT from the directory walk.
+  stateRuntime.saveRuntime({
+    id: "gone-workspace", status: "building",
+    workspace: { mode: "copy", path: join(fixture, "deleted-sandbox") }
+  });
+  check(() => assert.throws(
+    () => stateRuntime.singleRelevantSnapshot("gone-workspace"),
+    /no longer exists/,
+    "a missing workspace names the exit instead of stack-tracing"));
+
+  // ---- capability forecast from a declared surface -----------------------
+  // Policy infers capabilities from the surface a change has *already* touched,
+  // so at change time it is correctly empty and uselessly so: the author signs a
+  // contract that policy widens the moment a `.tsx` file is written, expiring
+  // both the collected evidence and the review signature bound to it. These pin
+  // the forecast that closes the gap — and that it never becomes enforcement.
+  // The fixture has no hooks installed, so doctor legitimately exits non-zero.
+  // The checks it printed are still the subject under test, so read stdout
+  // either way rather than making these assertions depend on fixture hygiene.
+  const checksFor = (id) => {
+    let out;
+    try {
+      out = fm(["doctor", "--stage", "change", "--change", id, "--json"], project);
+    } catch (error) {
+      out = error.stdout;
+    }
+    return JSON.parse(out).checks;
+  };
+  const row = (rows, name) => rows.find((entry) => entry.name === name);
+
+  fm(["new", "forecast fixture"], project);
+  const withoutSurface = checksFor("forecast-fixture");
+  check(() => assert.equal(row(withoutSurface, "surface-forecast"), undefined,
+    "a change that declares no surface emits no forecast row at all"), "a change that declares no surface emits no forecast row");
+  check(() => assert.match(row(withoutSurface, "policy-capabilities").detail,
+    /none inferred from changed surface/,
+    "declaring nothing leaves the existing policy check exactly as it was"), "declaring nothing leaves the policy check unchanged");
+
+  fm(["resolve", "forecast-fixture", "--impact", "low", "--coupling", "isolated",
+    "--acceptance-not-required", "--surface", "web/app/page.tsx,package.json"], project);
+  const forecast = checksFor("forecast-fixture");
+
+  // `web/app/page.tsx` is never written by this fixture. That is the whole
+  // point: the capability a `.tsx` file pulls has to be knowable before the file
+  // exists, or the forecast arrives exactly as late as the thing it replaces.
+  check(() => assert.ok(!existsSync(join(project, "web", "app", "page.tsx")),
+    "the forecast subject must not exist, or this proves nothing"), "the forecast subject does not exist");
+  check(() => assert.match(row(forecast, "surface-forecast").detail,
+    /accessibility \(from web\/app\/page\.tsx\)/,
+    "a .tsx path that does not exist yet still forecasts accessibility, and names itself"), "a .tsx path that does not exist yet forecasts accessibility and names itself");
+  check(() => assert.match(row(forecast, "surface-forecast").detail,
+    /dependency-supply-chain \(from package\.json\)/,
+    "a lockfile-class path forecasts its capability and names itself"), "a lockfile-class path forecasts its capability and names itself");
+
+  // A forecast that could reduce required evidence would be worse than none.
+  check(() => assert.match(row(forecast, "policy-capabilities").detail,
+    /none inferred from changed surface/,
+    "declaring a surface must not feed enforcement; policy still reads real changed files"), "declaring a surface does not feed enforcement");
+
+  // The gap is a warning, never a failure: making it fail would be routed
+  // around by declaring nothing, which costs more than it saves.
+  const undeclared = row(forecast, "surface-forecast-undeclared");
+  check(() => assert.equal(undeclared.level, "warn",
+    "an undeclared forecast capability warns rather than erroring"), "an undeclared forecast capability warns rather than erroring");
+  check(() => assert.match(undeclared.detail, /accessibility/,
+    "the warning names the capability that has no provider"), "the warning names the capability that has no provider");
+
+  // The review signature is bound to the contract, so a late capability does
+  // not merely add a provider — it expires a signature a person already gave.
+  fm(["resolve", "forecast-fixture", "--surface", "db/migrations/001.sql"], project);
+  const reviewForecast = row(checksFor("forecast-fixture"), "surface-forecast-review");
+  check(() => assert.match(reviewForecast.detail, /independent review from data-migration/,
+    "a review-forcing capability is announced before a signature is spent"), "a review-forcing capability is announced before a signature is spent");
+  check(() => assert.match(reviewForecast.detail, /reviewer diversity from data-migration/,
+    "diversity is announced with it, since it is the expensive half"), "reviewer diversity is announced with it");
+
+  // A change's own packet is not part of its surface, in either direction.
+  fm(["resolve", "forecast-fixture", "--surface", "openspec/changes/forecast-fixture/ui.tsx"], project);
+  check(() => assert.match(
+    row(checksFor("forecast-fixture"), "surface-forecast").detail,
+    /no capability inferred/,
+    "paths inside the change packet pull nothing, exactly as they do when changed"), "paths inside the change packet pull nothing");
 } finally {
   rmSync(fixture, { recursive: true, force: true });
 }

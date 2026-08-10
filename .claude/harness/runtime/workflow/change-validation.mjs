@@ -18,6 +18,7 @@ export function createChangeValidationRuntime({
   resolvedAcceptance,
   reviewPolicy,
   policyCapabilities,
+  forecastCapabilities,
   scopedReviewClaims,
   rawExecution,
   commandExists,
@@ -356,6 +357,19 @@ export function createChangeValidationRuntime({
         console.error(`WARNING: ${name} is ${words} words (soft budget ${limit}); retain only load-bearing content`);
     }
     saveRuntime(state);
+    // A declared surface predicts capabilities that the *changed* surface will
+    // only reveal once files exist — by which point this contract is signed and
+    // its evidence collected. Warn, never fail: the forecast is a prediction the
+    // author owns, and failing here would be routed around by declaring nothing.
+    if (state.declaredSurface?.length && !options.quiet) {
+      const covered = new Set(requiredProviders(id).map((provider) =>
+        providerCapability(provider, providerConfig(id, provider))));
+      const missing = forecastCapabilities(state.declaredSurface)
+        .capabilities.filter((capability) => !covered.has(capability));
+      if (missing.length)
+        console.error(`WARNING: declared surface forecasts ${missing.join(", ")} with no provider; ` +
+          "Prove will widen the contract and expire evidence already collected");
+    }
     if (!options.quiet)
       console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
   }

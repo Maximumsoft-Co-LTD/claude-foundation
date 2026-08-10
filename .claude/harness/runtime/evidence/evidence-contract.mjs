@@ -2,10 +2,24 @@ import { existsSync, readdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
 
+// Named once and read by both `reviewPolicy` and the change-time forecast. The
+// forecast has to answer "will this need a reviewer?" from the same lists, but
+// `contractFingerprint` hashes `reviewPolicy`'s returned object — so the answer
+// is shared as a constant rather than by widening that return value, which
+// would re-fingerprint every in-flight change and invalidate evidence nobody
+// asked to re-earn.
+export const REVIEW_FORCING_CAPABILITIES = Object.freeze([
+  "review", "security-static", "data-migration", "compatibility",
+  "cross-repo-contract", "state-identity"
+]);
+export const REVIEW_DIVERSITY_CAPABILITIES = Object.freeze([
+  "security-static", "data-migration", "compatibility"
+]);
+
 export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
-  activeChangePath, readJson, repositoryById, providerCapability,
+  activeChangePath, readJson, repositoryById, selectedRepositories, providerCapability,
   claimsForProvider, canonicalPath, loadRuntime, relevantHash,
   relevantSnapshot, singleRelevantSnapshot, fileDigest, stableHash,
   policyCapabilities, foundationPolicy, die
@@ -485,10 +499,7 @@ export function createEvidenceContract({
     const requiredTriggers = [];
     const diversityTriggers = [];
     const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
-    const requiredCapabilities = [
-      "review", "security-static", "data-migration", "compatibility",
-      "cross-repo-contract", "state-identity"
-    ];
+    const requiredCapabilities = REVIEW_FORCING_CAPABILITIES;
     if (riskClaims.some((claim) =>
       claim.capabilities.some((capability) => requiredCapabilities.includes(capability))))
       requiredTriggers.push("risk-capability");
@@ -497,7 +508,7 @@ export function createEvidenceContract({
     if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
       requiredTriggers.push("risk-semantics");
     if ((state.securityTriggers || []).length ||
-        ["security-static", "data-migration", "compatibility"].some((value) => capabilities.has(value)))
+        REVIEW_DIVERSITY_CAPABILITIES.some((value) => capabilities.has(value)))
       diversityTriggers.push("critical-capability");
     if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
       diversityTriggers.push("critical-semantics");
