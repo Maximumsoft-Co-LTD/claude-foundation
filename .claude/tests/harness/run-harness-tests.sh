@@ -426,6 +426,50 @@ assert_cmd_fails_with "tampered CI payload is rejected" "signature is invalid" \
   node .claude/harness/foundation.mjs evidence-verify-ci \
     verify-signed-ci-evidence deployment "$TMP/tampered-ci-envelope.json"
 
+# The rest of what makes this evidence trustworthy, none of which a tampered
+# payload exercises: a well-formed envelope signed by the wrong key, a valid
+# envelope replayed onto another change, and the payload rules that stop a
+# "pass" from carrying nothing anyone can check.
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" generate \
+  "$TMP/ci-attacker-private.pem" "$TMP/ci-attacker-public.pem"
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" sign \
+  "$TMP/ci-payload.json" "$TMP/ci-attacker-private.pem" "$TMP/ci-attacker-envelope.json"
+assert_cmd_fails_with "an envelope signed by another key is rejected" "signature is invalid" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/ci-attacker-envelope.json"
+
+jq '.issuer = "other-ci"' "$TMP/ci-payload.json" > "$TMP/ci-issuer-payload.json"
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" sign \
+  "$TMP/ci-issuer-payload.json" "$TMP/ci-private.pem" "$TMP/ci-issuer-envelope.json"
+assert_cmd_fails_with "a correctly signed envelope from another issuer is rejected" \
+  "issuer does not match" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/ci-issuer-envelope.json"
+
+jq '.artifacts = []' "$TMP/ci-payload.json" > "$TMP/ci-bare-payload.json"
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" sign \
+  "$TMP/ci-bare-payload.json" "$TMP/ci-private.pem" "$TMP/ci-bare-envelope.json"
+assert_cmd_fails_with "a passing envelope must carry an artifact digest" \
+  "requires at least one signed artifact digest" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/ci-bare-envelope.json"
+
+jq '.runUrl = "file:///etc/passwd"' "$TMP/ci-payload.json" > "$TMP/ci-url-payload.json"
+node "$ROOT/.claude/tests/harness/sign-envelope.mjs" sign \
+  "$TMP/ci-url-payload.json" "$TMP/ci-private.pem" "$TMP/ci-url-envelope.json"
+assert_cmd_fails_with "a run reference that is not http(s) is rejected" "http(s) runUrl" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/ci-url-envelope.json"
+
+# Content-binding: the same signed envelope stops being evidence once the
+# workspace it attests to has moved on.
+printf 'ci drift\n' >> app.txt
+assert_cmd_fails_with "a valid envelope stops matching once the workspace changes" \
+  "does not match the provider workspace" \
+  node .claude/harness/foundation.mjs evidence-verify-ci \
+    verify-signed-ci-evidence deployment "$TMP/ci-envelope.json"
+git checkout -- app.txt 2>/dev/null || true
+
 # Existing evidence v1 remains readable and has an explicit, non-destructive
 # upgrade into the executable-ready v2 envelope.
 node .claude/harness/foundation.mjs new 'Legacy evidence' --rapid >/dev/null
