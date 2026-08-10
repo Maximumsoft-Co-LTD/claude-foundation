@@ -1,5 +1,6 @@
 import {
-  closeSync, existsSync, mkdirSync, openSync, readdirSync, rmSync, writeFileSync
+  closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync,
+  renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -15,6 +16,53 @@ export function createLeaseRuntime({
 }) {
   function leasePath(resource) {
     return join(leases, "resources", `${stableHash(resource)}.json`);
+  }
+
+  // Removing an expired descriptor and creating a fresh one are two steps, so
+  // two contenders racing on the same expired lease could interleave them: B's
+  // delete of the "expired" path removed the fresh lease A had just created,
+  // and both then held the resource. The sidecar `wx` lock serializes the
+  // takeover, and the re-read under the lock is what makes the delete safe —
+  // by then the path may already hold the winner's fresh lease.
+  function reapExpiredLease(path) {
+    const lock = `${path}.reap`;
+    try {
+      // A reaper that crashed between create and remove would deadlock every
+      // later takeover; the lock only ever lives for milliseconds. Claimed by
+      // rename, not deleted in place: two contenders both observing it stale
+      // would otherwise race the delete, and the loser's delete would remove
+      // the winner's *fresh* lock — both inside the critical section.
+      if (Date.now() - lstatSync(lock).mtimeMs > 60_000) {
+        const tombstone = `${lock}.${process.pid}.stale`;
+        renameSync(lock, tombstone);
+        rmSync(tombstone, { force: true });
+      }
+    } catch {
+      // No lock on disk, or another contender claimed the stale one first.
+    }
+    let handle;
+    try {
+      handle = openSync(lock, "wx");
+    } catch {
+      return; // Another contender is mid-takeover; the `wx` create below decides.
+    }
+    try {
+      const current = readJson(path, {});
+      // An expiryless descriptor is usually crashed-create residue — but for
+      // the first few seconds it is indistinguishable from a winner's `wx`
+      // create whose write has not landed yet, and deleting that re-opens the
+      // double-hold. Residue is old; a mid-create file is milliseconds old.
+      const residue = !current.expiresAt &&
+        Date.now() - lstatSync(path).mtimeMs > 10_000;
+      if (residue || (current.expiresAt && Date.parse(current.expiresAt) <= Date.now()))
+        rmSync(path, { force: true });
+    } catch {
+      // The descriptor vanished between the caller's existsSync and here —
+      // the takeover already happened; the `wx` create below decides.
+    } finally {
+      closeSync(handle);
+      rmSync(lock, { force: true });
+    }
   }
 
   function acquire(id, taskId, flags) {
@@ -45,7 +93,7 @@ export function createLeaseRuntime({
           // a create that succeeded and a write that did not, so treat it the
           // same as expired.
           if (!current.expiresAt || Date.parse(current.expiresAt) <= Date.now())
-            rmSync(path);
+            reapExpiredLease(path);
           else if (current.changeId === id && current.taskId === task.id &&
                    current.owner === owner) {
             writeJson(path, { ...current, expiresAt, renewedAt: now() });
@@ -62,7 +110,16 @@ export function createLeaseRuntime({
         // Record ownership before the write, not after: a write that fails
         // here would otherwise leave a file this process created and no longer
         // claims, and the rollback below would skip it.
-        const handle = openSync(path, "wx");
+        let handle;
+        try {
+          handle = openSync(path, "wx");
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          // A contender won the takeover between the expiry check and here.
+          const winner = readJson(path, {});
+          throw new Error(`resource '${resource}' is leased by ${
+            winner.changeId || "unknown"}/${winner.taskId || "unknown"}`);
+        }
         created.push(path);
         try { writeFileSync(handle, `${JSON.stringify(descriptor, null, 2)}\n`); }
         finally { closeSync(handle); }
