@@ -5,6 +5,7 @@
     { "name": "doctor", "usage": "doctor [--stage change|build|prove] [--change <id>] [--require-archive] [--unattended --attestation <file>] [--json]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Diagnose project, provider, and lifecycle readiness." },
     { "name": "packet", "usage": "packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Read the bounded machine handoff for the current operation." },
     { "name": "metrics", "usage": "metrics <change>", "audience": "agent", "kind": "read", "idempotent": true, "description": "Inspect measured usage, active budget, cost, and execution timing." },
+    { "name": "exec", "usage": "exec <change> [--phase change|build|prove|land] -- <command...>", "audience": "agent", "kind": "write", "idempotent": false, "description": "Run and time an external command (build, container, tests), recording its duration for metrics." },
     { "name": "describe", "usage": "describe [command] [--json]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Describe the command surface; every command also answers --help." },
 
     { "name": "change new", "usage": "change new <intent> [--rapid]", "audience": "agent", "kind": "write", "idempotent": false, "description": "Create a change agreement when atomic draft start does not apply." },
@@ -82,7 +83,7 @@
     "evidence-doctor", "evidence-verify-ci", "evidence-upgrade", "authority-request", "authority-status",
     "authority-record", "receipt",
     "run-provider", "prove", "land-check", "land-plan", "land-record",
-    "land-pointers", "land-resume", "sandbox", "archive", "event",
+    "land-pointers", "land-resume", "sandbox", "archive", "event", "exec",
     "telemetry-sync", "telemetry-import", "host-execution-import", "migrate", "api-version", "version"
   ]
 }

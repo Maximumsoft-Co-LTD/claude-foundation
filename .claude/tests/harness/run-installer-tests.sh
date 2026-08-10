@@ -126,7 +126,7 @@ assert_file_exists "command registry installed" "$TARGET/.claude/harness/command
 assert_cmd_zero "command registry has one unique entry per public name" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$TARGET/.claude/harness/commands.json"
-assert_eq "agent command surface is bounded" "17" \
+assert_eq "agent command surface is bounded" "18" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_eq "conditional recovery surface is bounded" "14" \

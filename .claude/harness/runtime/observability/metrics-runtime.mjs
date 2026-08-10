@@ -190,8 +190,15 @@ export function createMetricsRuntime({
       (sum, row) => sum + Number(row.bytes || 0), 0);
     const contextBytes = contextRows.length || Number(contextRollup.count || 0)
       ? currentContextBytes + Number(contextRollup.totalBytes || 0) : null;
-    const operationActiveTimeMs = operations.length
-      ? operations.reduce((sum, row) => sum + Number(row.durationMs || 0), 0) : null;
+    // `exec` rows time an external command (a build, an install), not a
+    // harness operation, so they get their own bucket instead of inflating
+    // operation time. They still count toward wall time below.
+    const externalRows = operations.filter((row) => row.operation === "exec");
+    const harnessRows = operations.filter((row) => row.operation !== "exec");
+    const operationActiveTimeMs = harnessRows.length
+      ? harnessRows.reduce((sum, row) => sum + Number(row.durationMs || 0), 0) : null;
+    const externalExecutionTimeMs = externalRows.length
+      ? externalRows.reduce((sum, row) => sum + Number(row.durationMs || 0), 0) : null;
     const evidenceExecutionTimeMs = executions.size
       ? [...executions.values()].reduce((sum, value) => sum + value, 0) : null;
     const activeTimeMs = operationActiveTimeMs === null
@@ -222,6 +229,7 @@ export function createMetricsRuntime({
       humanWaitReason: "not inferred without an explicit host/user transition signal",
       phases, providers,
       evidenceExecutionTimeMs,
+      externalExecutionTimeMs,
       requests: events.length || null,
       inputTokens: sumKnown(events, "inputTokens"),
       outputTokens: sumKnown(events, "outputTokens"),

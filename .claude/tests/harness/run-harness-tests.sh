@@ -1319,6 +1319,24 @@ case "$pinned_resolution" in
   *"ignoring sandbox copy"*) fail "an explicit pin keeps sandbox-local resolution" ;;
   *) pass "an explicit pin keeps sandbox-local resolution" ;;
 esac
+# External build commands are wall time the harness never saw: `exec` runs
+# them, passes the exit code through, and records the duration for metrics.
+assert_cmd_zero "exec passes a zero exit code through" \
+  node .claude/harness/foundation.mjs exec copy-sandbox --phase build -- true
+exec_failure_code=0
+node .claude/harness/foundation.mjs exec copy-sandbox -- sh -c 'exit 3' \
+  || exec_failure_code=$?
+assert_eq "exec passes a failing exit code through" "3" "$exec_failure_code"
+assert_cmd_fails_with "exec refuses an empty command" \
+  "exec requires a command after --" \
+  node .claude/harness/foundation.mjs exec copy-sandbox
+assert_file_contains "exec records the observed external duration" \
+  .foundation/logs/copy-sandbox/operations.jsonl '"operation":"exec"'
+assert_file_contains "exec attributes the declared phase" \
+  .foundation/logs/copy-sandbox/operations.jsonl '"phase":"build"'
+exec_metrics="$(node .claude/harness/foundation.mjs metrics copy-sandbox)"
+assert_contains "metrics reports external execution time separately" \
+  "$exec_metrics" '"externalExecutionTimeMs"'
 printf 'copy-applied\n' > "$copy_path/app.txt"
 ln -s app.txt "$copy_path/current-link"
 printf '%s\n' '{"lockfileVersion":3}' > "$copy_path/package-lock.json"

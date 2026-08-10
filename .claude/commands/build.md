@@ -15,7 +15,8 @@ For multi-repo work, run `agents plan`; keep single-agent work single. The host
 owns leases and gives workers only `packet --task <task>`.
 
 Edit only allowed sandbox paths. Run focused checks and update the sole ledger,
-`tasks.md`. Run `claude-foundation proof readiness <change>` and resolve
+`tasks.md`. Wrap long external commands (container builds, installs, full test
+runs) in `exec <change> -- <command>` so metrics sees their time. Run `claude-foundation proof readiness <change>` and resolve
 code/configuration blockers before fresh Prove.
 
 Never replay history, mirror tasks, archive, commit, or Land.

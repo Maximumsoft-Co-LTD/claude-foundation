@@ -4,7 +4,7 @@ export async function routeRuntimeCommand(command, values, api) {
     startAtomic, resolveChange, abandonChange, showChanges, showProviders, showRepositories,
     foundationPolicy, showAgentPlan, showAgentTask, acquireAgentLease,
     releaseAgentLease, prepareClaudeTelemetry, recordPhaseContext, showPacket,
-    showMetrics, continueBudget, doctor, validate, showTraceabilityAudit,
+    showMetrics, execObserved, continueBudget, doctor, validate, showTraceabilityAudit,
     relevantHash, proofPlan, proofReadiness, proofRun, proofCollect,
     proofPreflight, proofExecute, proofAudit, showEvidenceDetection,
     initializeEvidence, showEvidenceDoctor, recordVerifiedCi, requestAuthority,
@@ -94,6 +94,19 @@ export async function routeRuntimeCommand(command, values, api) {
       break;
     }
     case "metrics": showMetrics(values[0]); break;
+    case "exec": {
+      // Everything after `--` belongs to the external command, including its
+      // own flags, so the separator is honored before any flag parsing.
+      const separator = values.indexOf("--");
+      const own = separator === -1 ? values : values.slice(0, separator);
+      const commandArgs = separator === -1 ? [] : values.slice(separator + 1);
+      const { flags, rest } = parseStrictCommandFlags(own, "exec", {
+        value: ["phase"]
+      });
+      if (!rest.length) die("exec requires a change id");
+      process.exitCode = execObserved(rest[0], commandArgs, { phase: flags.phase });
+      break;
+    }
     case "budget-continue": {
       const { flags, rest } = parseStrictCommandFlags(values, "budget continue", {
         value: ["reason", "run", "decision-ref"]

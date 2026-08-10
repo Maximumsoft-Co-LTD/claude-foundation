@@ -7,6 +7,7 @@ import {
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
+import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
 import { createTelemetryRuntime } from "./runtime/observability/telemetry-runtime.mjs";
 import {
   createHostExecutionStore, createModelDriftInspector, hostExecutionTelemetryRows
@@ -63,7 +64,7 @@ import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
 const VERSION = "2.8.0";
-const RUNTIME_API_VERSION = "15";
+const RUNTIME_API_VERSION = "17";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -623,6 +624,12 @@ const { showMetrics } = createMetricsRuntime({
   policy: foundationPolicy,
   taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
   taskMetadata: (...args) => changeValidationRuntime.taskMetadata(...args)
+});
+const { execObserved } = createExecRuntime({
+  logs: LOGS,
+  loadRuntime,
+  now,
+  fail: die
 });
 repositoryTopology = createRepositoryTopology({
   root: ROOT,
@@ -1939,6 +1946,7 @@ await routeRuntimeCommand(command, values, {
   recordPhaseContext,
   showPacket,
   showMetrics,
+  execObserved,
   continueBudget,
   doctor,
   validate,
