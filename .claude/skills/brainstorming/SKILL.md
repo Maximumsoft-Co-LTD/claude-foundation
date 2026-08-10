@@ -16,11 +16,16 @@ Use the lightest path that resolves the decision.
 5. Ask in rounds, not one at a time. A round is every open decision whose
    prerequisites are already settled; a question depending on another still
    open belongs to the next round. Carry your recommended answer with each
-   question and mark it `(Recommended)`. Ask only what materially changes
-   behavior, compatibility, security, persistence, or scope; recompute the
-   round from the answers and stop when nothing settled remains open.
+   question and mark it `(Recommended)`. Present the round through the host's
+   structured question tool (AskUserQuestion) when the session provides one,
+   one question per decision; otherwise ask in plain text.
+   Ask only what materially changes behavior, compatibility, security,
+   persistence, or scope; recompute the round from the answers and stop only
+   when every material decision has been asked and answered.
 6. End with a compact agreement: outcome, in/out, observable scenarios, chosen
-   approach, and remaining risk.
+   approach, remaining risk, and each asked question with its chosen answer.
+   Carry the agreement into the change proposal so no answer lives only in
+   chat.
 
 Use `/investigate` when the exploration should remain no-stakes. Once the
 agreement is clear, hand it to `/change`; do not create a separate spec, plan,

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "route-agent-questions-through-the-host-structured-question-tool--outcome",
+      "scenario": "The always-on conduct digest and the brainstorming round procedure both direct user decisions through the host's structured question tool with a plain-text fallback, close questioning only when every material decision has been asked and answered, record the answers in the change packet rather than chat, and the context-budget suite pins each phrase while the fundamentals word budget still holds.",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

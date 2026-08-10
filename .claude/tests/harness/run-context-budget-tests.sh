@@ -63,6 +63,21 @@ assert_file_contains "brainstorming batches settled decisions into rounds" \
 assert_file_contains "brainstorming keeps the material-change question filter" \
   "$ROOT/.claude/skills/brainstorming/SKILL.md" \
   'Ask only what materially changes'
+assert_file_contains "fundamentals routes decisions through the structured question tool" \
+  "$ROOT/.claude/rules/fundamentals.md" \
+  'structured question tool'
+assert_file_contains "brainstorming presents rounds through the structured question tool" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'structured question tool'
+assert_file_contains "brainstorming closes only when every decision is asked and answered" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'every material decision has been asked and answered'
+assert_file_contains "brainstorming records each answer in the agreement" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'each asked question with its chosen answer'
+assert_file_contains "fundamentals records decision answers in the change packet" \
+  "$ROOT/.claude/rules/fundamentals.md" \
+  'record the answers in the change packet'
 
 for command in "$ROOT"/.claude/commands/*.md; do
   assert_words_at_most "command budget: $(basename "$command")" 120 "$command"

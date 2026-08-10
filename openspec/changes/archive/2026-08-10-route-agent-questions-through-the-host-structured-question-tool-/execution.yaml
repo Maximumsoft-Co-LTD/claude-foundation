@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-changeloop-seam-tap.sh"],
+      "minimum": 150,
+      "reportFormat": "tap"
+    }
+  },
+  "services": {}
+}

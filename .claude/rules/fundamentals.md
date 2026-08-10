@@ -7,6 +7,10 @@ procedure; do not preload them.
 
 - Think before coding. State consequential assumptions; investigate genuinely
   ambiguous direction.
+- Put user decisions through the host's structured question tool
+  (AskUserQuestion) when the session provides one, options with your
+  recommendation first; otherwise ask in plain text. Verify every open
+  decision was asked; record the answers in the change packet, not chat.
 - Prefer no code, then stdlib/platform, installed dependencies, and finally the
   smallest new implementation.
 - Keep every changed line traceable to the request. Do not bundle cleanup.
