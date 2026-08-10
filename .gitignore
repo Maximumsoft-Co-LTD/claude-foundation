@@ -41,3 +41,8 @@ solar-system/
 dashboard/data/*.db
 dashboard/data/*.db-shm
 dashboard/data/*.db-wal
+
+# Externally cloned scratch. It carries its own .git, so committing it would
+# record a gitlink to a repository with no configured URL — broken for anyone
+# who clones this one.
+opencode/

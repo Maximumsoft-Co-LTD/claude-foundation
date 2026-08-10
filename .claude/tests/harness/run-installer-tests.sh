@@ -150,10 +150,28 @@ assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundat
 assert_file_exists "repository topology default installed" "$TARGET/openspec/repositories.yaml"
 assert_file_exists "model policy default installed" "$TARGET/foundation.json"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
-assert_file_contains "prototype runtime artifacts stay ignored" \
-  "$TARGET/.foundation/.gitignore" "prototypes/"
-assert_file_contains "recoverable quarantined runtime stays ignored" \
-  "$TARGET/.foundation/.gitignore" "recovery/"
+# Ask git what it ignores rather than matching directory names in the file. The
+# name-matching version passed while `authority/`, `attestations/`, and
+# `install-manifest.txt` were all leaking into `git status`, because it could
+# only check the names someone had already remembered to add.
+ignores() {
+  git -C "$TARGET" check-ignore -q ".foundation/$1"
+}
+tracked_after_install() {
+  git -C "$TARGET" check-ignore -q ".foundation/$1" && return 1
+  return 0
+}
+git -C "$TARGET" init -q . 2>/dev/null || true
+for machine_state in \
+  runtime receipts logs evidence snapshots sandboxes repository-sandboxes \
+  transactions plans leases prototypes instruction-manifests recovery \
+  authority attestations install-manifest.txt
+do
+  assert_cmd_zero "machine state stays out of history: $machine_state" \
+    ignores "$machine_state"
+done
+assert_cmd_zero "the ignore file itself stays tracked" tracked_after_install ".gitignore"
+assert_cmd_zero "the runtime README stays tracked" tracked_after_install "README.md"
 assert_file_absent "obsolete packaged hook tests removed" "$TARGET/.claude/hooks/tests"
 assert_file_exists "legacy run preserved" "$TARGET/.workflow/0001-legacy/state.json"
 assert_file_absent "legacy lifecycle agent removed" "$TARGET/.claude/agents/pm.md"
