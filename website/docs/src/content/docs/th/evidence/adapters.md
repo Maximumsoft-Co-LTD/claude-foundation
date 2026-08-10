@@ -57,6 +57,27 @@ Foundation แยกสัญญาเชิงพฤติกรรมที่
 }
 ```
 
+`minimum` คือพื้นขั้นต่ำที่จำนวน test ที่ค้นพบต้องผ่าน มันคือสิ่งที่แยก
+"suite ผ่าน" ออกจาก "suite ได้รันจริงหรือเปล่า" — runner ที่จับไฟล์ไม่เจอเลย
+ก็ exit เป็นศูนย์ และถ้าไม่มีพื้นขั้นต่ำ อันนั้นจะอ่านว่าสำเร็จ
+
+เมื่อ repository หนึ่งมี test provider มากกว่าหนึ่งตัว มีเฉพาะตัวที่ชื่อ `test`
+เท่านั้นที่ได้ discovery receipt โดยอัตโนมัติ ตัวอื่นต้องระบุ discovery provider
+ที่พูดแทนมัน
+
+```json
+"test-api": {
+  "adapter": "test-discovery",
+  "command": ["npm", "--prefix", "api", "test", "--", "--json"],
+  "report": "api/test-results/unit.json",
+  "discoveryProvider": "discovery-api",
+  "minimum": 1
+}
+```
+
+ถ้าไม่เชื่อมไว้ discovery ของ suite ที่สองจะถูกนับให้ suite แรก
+และ repository หนึ่งอาจผ่าน discovery ที่มันไม่เคยรันเลย
+
 ### playwright
 
 ```json
@@ -161,3 +182,21 @@ readiness URL ของ service ต้องระบุพอร์ตตรง
 readiness probe ที่ประกาศไว้แต่ไม่ได้ถูกสังเกตจริงจะ fail กับทุก adapter ไม่ใช่แค่ Playwright
 
 ค่า environment ที่ไม่เป็นความลับใส่ใน `env` ได้ ส่วน secret, credential, token, รหัสผ่าน และ API key ต้องใช้ `envFrom` ซึ่งระบุแค่ชื่อตัวแปรที่จะรับสืบทอดมา **โดยไม่เก็บค่าลงใน OpenSpec**
+
+:::caution[กับดัก server ที่ค้างอยู่]
+นี่คือเหตุผลที่ต้องดูตัวตน ไม่ใช่แค่ดูว่ามีชีวิต Build รันใน sandbox
+แต่ service ฟังอยู่บนพอร์ตที่เป็นของทั้งเครื่อง ถ้า development server
+จาก working tree ของคุณยึดพอร์ตนั้นอยู่ก่อนแล้ว readiness probe
+ที่ดูแค่ status code จะสำเร็จทันที — โดยคุยกับ code ผิดตัว —
+แล้วส่ง suite สีเขียวที่ไม่ได้พิสูจน์อะไรเกี่ยวกับ change นี้เลยมาให้คุณ
+
+body หรือ header ที่คาดหวังคือสิ่งที่แยก server ของ build *นี้*
+ออกจากอะไรก็ตามที่ตอบกลับมา ใส่พารามิเตอร์ให้ resource (`port:4173`)
+เมื่ออาจมีหลายตัวรันพร้อมกัน และเลือกพอร์ตที่ sandbox เป็นเจ้าของ
+:::
+
+sandbox โหมด `worktree` มีเฉพาะไฟล์ที่ถูก track ดังนั้น provider
+ที่พึ่งพา fixture ที่ไม่ได้ track หรือไดเรกทอรี build ที่ถูก ignore จะหาไม่เจอในนั้น
+ส่วน sandbox โหมด `copy` พา working tree มาด้วยแต่ข้ามผลลัพธ์ที่สร้างใหม่ได้
+ไม่ว่าทางไหน ให้สร้างสิ่งที่ provider ต้องใช้ขึ้นมาใน sandbox
+แทนที่จะเดาว่ามันถูกสืบทอดมาแล้ว

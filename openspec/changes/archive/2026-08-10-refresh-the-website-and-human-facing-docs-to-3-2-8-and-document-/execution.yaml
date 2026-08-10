@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/docs/run-docs-tap.sh"],
+      "minimum": 110,
+      "reportFormat": "tap",
+      "claims": [
+        "version-pins-track-the-release",
+        "adapter-catalog-matches-runtime",
+        "foundation-artifact-listing-is-canonical",
+        "approval-boundaries-documented-without-overclaim",
+        "docs-site-builds-with-paired-translations"
+      ]
+    },
+    "static-analysis": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/docs/build-docs-site.sh"],
+      "timeoutMs": 300000,
+      "claims": ["docs-site-builds-with-paired-translations"]
+    },
+    "accessibility": {
+      "adapter": "external",
+      "claims": ["landing-page-accessibility-unchanged"]
+    }
+  },
+  "services": {}
+}

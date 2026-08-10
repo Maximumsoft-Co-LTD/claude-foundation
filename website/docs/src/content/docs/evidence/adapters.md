@@ -57,6 +57,28 @@ One process, two receipts. Requires capability `test`.
 }
 ```
 
+`minimum` is the floor the discovered test count must clear. It is what
+separates "the suite passed" from "the suite ran at all" — a runner that
+silently matched zero files exits zero, and without a floor that reads as
+success.
+
+When one repository has more than one test provider, only the instance named
+`test` gets its discovery receipt implicitly. Any other instance must name the
+discovery provider that speaks for it:
+
+```json
+"test-api": {
+  "adapter": "test-discovery",
+  "command": ["npm", "--prefix", "api", "test", "--", "--json"],
+  "report": "api/test-results/unit.json",
+  "discoveryProvider": "discovery-api",
+  "minimum": 1
+}
+```
+
+Without that link, a second suite's discovery would be attributed to the first,
+and a repository could pass discovery it never actually ran.
+
 ### playwright
 
 ```json
@@ -161,3 +183,21 @@ A service's readiness URL names a literal port. **Every explicit readiness probe
 A declared readiness probe that was not observed fails on every adapter, not just Playwright.
 
 Literal non-sensitive environment values may use `env`. Secrets, credentials, tokens, passwords, and API keys must use `envFrom`, which names variables to inherit **without storing their values in OpenSpec**.
+
+:::caution[The leftover-server trap]
+This is why identity matters rather than liveness. Build runs in a sandbox, but
+a service listens on a port belonging to the whole machine. If a development
+server from your working tree is already on that port, a status-only readiness
+probe succeeds instantly — against the wrong code — and hands you a green suite
+that proved nothing about the change.
+
+An expected body or header is what distinguishes *this* build's server from
+whatever else answered. Parameterize the resource (`port:4173`) when independent
+instances may run at once, and prefer a port the sandbox owns.
+:::
+
+A sandbox in `worktree` mode contains only tracked files, so a provider that
+depends on an untracked fixture or an ignored build directory will not find it
+there. A `copy` sandbox carries the working tree but skips regenerable output.
+Either way, generate what a provider needs inside the sandbox rather than
+assuming it was inherited.

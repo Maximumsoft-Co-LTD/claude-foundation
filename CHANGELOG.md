@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The shipped operator guide named four adapters and documented four of the
+  five** — `contract-digest` was missing from the adapter table in
+  `.claude/harness/README.md`, so a reader of an installed harness could not
+  learn that the adapter exists while `EVIDENCE.md`, two files away, documented
+  it. The table now carries a row per adapter and says which of them execute
+  without running a command.
+- **Four `.foundation/` listings each described a different subset of what the
+  runtime writes** — the one in `WORKFLOW.md` omitted `evidence/`, the immutable
+  proof vault. `.claude/harness/README.md` now carries the canonical table of
+  every state root, and the shorter listings name it as their source rather than
+  restating it.
+
+### Added
+
+- **Documentation that states a release now fails a test when it drifts from
+  one.** `WORKFLOW.md` was the only surface with a version assertion, and it was
+  the only one that stayed current — both READMEs, the landing page, and the
+  docs site had been pinned to v3.2.4 across four releases, one of them telling
+  readers which receipts read as `provider-version-stale` using the wrong
+  number. `run-doc-consistency.sh` now derives the release, runtime, protocol
+  API, and adapter set from `VERSION`, `protocol.json`, and `foundation.mjs` at
+  run time, so nothing in it can go stale the way the documentation did. The
+  release workflow bumps every one of those surfaces, and `docs/run-docs-tap.sh`
+  restates the suite as counted evidence.
+- **Documentation for the artifacts the system produces, and for human
+  approval.** New pages, in English and Thai, cover every artifact the harness
+  writes — the change packet, the `.foundation/` tree, the evidence vault, and
+  the two outputs that are deliberately inadmissible as evidence — receipts,
+  the four provider statuses, the executed-versus-asserted floor, and content
+  binding; and the four distinct approval boundaries the runtime implements.
+  The approval page states plainly that Land gates on evidence rather than
+  consent, and a test now fails if any surface claims otherwise.
+- **`discoveryProvider` and the leftover-server hazard are documented for
+  readers**, having previously existed only in the agent-facing reference: a
+  second test suite in one repository must name the discovery provider that
+  speaks for it, and a status-only readiness probe can be satisfied by a
+  development server already holding the port.
+
 ## [3.2.8] - 2026-08-10
 
 ### Fixed

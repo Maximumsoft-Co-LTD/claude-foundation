@@ -35,6 +35,21 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
 `run-all.sh` is the authoritative list; this table follows it.
 
+## Evidence views
+
+Two wrappers restate suites above as TAP so a provider can check a discovered
+count against a `minimum` floor. They are deliberately absent from `run-all.sh`,
+which needs only an exit code — running them there would execute the same
+assertions twice.
+
+| Wrapper | Restates |
+|---|---|
+| `harness/run-changeloop-seam-tap.sh` | Change-loop seams, phase mutation guard, workspace surface, context budgets |
+| `docs/run-docs-tap.sh` | Documentation contracts and context budgets |
+
+A wrapper adds no assertions of its own. Add the assertion to the underlying
+suite, where a human reading `run-all.sh` output will also see it.
+
 Historical phase-orchestrator fixtures remain under `bench/`, `docs/`,
 `interview/`, `ledger/`, and `scenarios/` for research and migration analysis.
 They are not the acceptance suite for the OpenSpec-native runtime and must not

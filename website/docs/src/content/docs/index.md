@@ -49,5 +49,5 @@ Foundation deliberately splits responsibility so that no single party can both d
 - [The change loop](/docs/loop/) — what each of the five commands does and why
 
 :::note[Version]
-These docs track Foundation **v3.2.4** — runtime API 14, provider protocol 7. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
+These docs track Foundation **v3.2.8** — runtime API 17, provider protocol 7. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
 :::

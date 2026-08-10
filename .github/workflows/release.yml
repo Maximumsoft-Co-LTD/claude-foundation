@@ -5,7 +5,8 @@ name: Release
 # with the new version. It runs everything mechanical end-to-end on a
 # current-Xcode macOS runner (so Homebrew's toolchain check passes here):
 #   1. rename [Unreleased] -> [X.Y.Z] (dated), add a fresh [Unreleased], fix link refs
-#   2. bump VERSION + the WORKFLOW.md version mirror
+#   2. bump VERSION + every surface that states the release (WORKFLOW.md,
+#      both READMEs, the landing page, and the docs site in both locales)
 #   3. commit `chore(release): vX.Y.Z`, tag vX.Y.Z, push
 #   4. compute the source-tarball sha256, bump the formula url + sha256
 #   5. publish the GitHub release from the new changelog section
@@ -87,8 +88,37 @@ jobs:
             { print }' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
 
           printf '%s\n' "$NEW" > VERSION
-          perl -pi -e "s/\*\*Version \Q${PREV}\E\*\*/**Version ${NEW}**/" WORKFLOW.md
-          grep -q "\*\*Version $NEW\*\*" WORKFLOW.md || { echo "::error::WORKFLOW.md version line not updated"; exit 1; }
+
+          # Every surface that states the release has to move with it. The
+          # documentation suite derives its expectations from VERSION, so a
+          # surface left behind here fails `run-doc-consistency.sh` rather than
+          # drifting quietly the way the website did for four releases.
+          perl -pi -e "s/\*\*Version \Q${PREV}\E\*\*/**Version ${NEW}**/" \
+            WORKFLOW.md README.md README.th.md
+          perl -pi -e "s/<b>v\Q${PREV}\E<\/b>/<b>v${NEW}<\/b>/" website/index.html
+          perl -pi -e "s/\*\*v\Q${PREV}\E\*\*/**v${NEW}**/" \
+            website/docs/src/content/docs/index.md \
+            website/docs/src/content/docs/th/index.md
+          perl -pi -e "s/\| Pin \| v\Q${PREV}\E \|/| Pin | v${NEW} |/" \
+            website/docs/src/content/docs/cli.md \
+            website/docs/src/content/docs/th/cli.md
+
+          for f in WORKFLOW.md README.md README.th.md; do
+            grep -q "\*\*Version $NEW\*\*" "$f" ||
+              { echo "::error::$f version line not updated"; exit 1; }
+          done
+          grep -q "<b>v$NEW</b>" website/index.html ||
+            { echo "::error::website/index.html version line not updated"; exit 1; }
+          for f in website/docs/src/content/docs/index.md \
+                   website/docs/src/content/docs/th/index.md; do
+            grep -q "\*\*v$NEW\*\*" "$f" ||
+              { echo "::error::$f version line not updated"; exit 1; }
+          done
+          for f in website/docs/src/content/docs/cli.md \
+                   website/docs/src/content/docs/th/cli.md; do
+            grep -q "| Pin | v$NEW |" "$f" ||
+              { echo "::error::$f pin row not updated"; exit 1; }
+          done
 
           # Release notes = the new section body (header line dropped).
           awk -v new="$NEW" '$0 ~ ("^## \\[" new "\\]") {f=1; next} /^## \[/{f=0} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
@@ -100,7 +130,12 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add VERSION WORKFLOW.md CHANGELOG.md
+          git add VERSION WORKFLOW.md CHANGELOG.md README.md README.th.md \
+            website/index.html \
+            website/docs/src/content/docs/index.md \
+            website/docs/src/content/docs/th/index.md \
+            website/docs/src/content/docs/cli.md \
+            website/docs/src/content/docs/th/cli.md
           git commit -m "chore(release): v$NEW"
           git tag -a "v$NEW" -m "Release v$NEW"
           git push origin HEAD:main

@@ -581,14 +581,23 @@ openspec/
 .foundation/
   runtime/
   receipts/
+  evidence/
+  snapshots/
   logs/
   sandboxes/
   repository-sandboxes/
   plans/
   leases/
+  transactions/
+  authority/
+  attestations/
+  instruction-manifests/
+  recovery/
 ```
 
 The contents under `.foundation/` are machine-owned and ignored by Git.
+`.claude/harness/README.md` carries the canonical table of what each directory
+holds; the listing above names them without restating it.
 
 ## Requirements
 

@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "version-pins-track-the-release",
+      "scenario": "Every human-facing documentation surface — both READMEs, the landing page, and the docs site in English and Thai — states the release, runtime, and runtime API the repository actually carries, and the documentation suite fails when any of them drifts from VERSION or protocol.json rather than from a value hard-coded in the test.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "adapter-catalog-matches-runtime",
+      "scenario": "Shipped operator documentation names every adapter the runtime implements, so a reader of the installed harness README sees the same adapter set as ADAPTERS in foundation.mjs, contract-digest included, and the suite fails if the runtime gains an adapter the documentation omits.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "foundation-artifact-listing-is-canonical",
+      "scenario": "One canonical table describes the artifacts the system writes under .foundation/ and inside a change packet, every other listing names that table as its source instead of contradicting it, and no listing claims a directory the runtime does not declare.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "approval-boundaries-documented-without-overclaim",
+      "scenario": "Human-facing documentation distinguishes the four approval boundaries the runtime implements — acceptance, independent review, the authority request and record bridge, and host attestation — states that a standard change starts undecided and fails change validate until a human decides, and no documentation surface claims Land is gated on human consent.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "docs-site-builds-with-paired-translations",
+      "scenario": "The docs site builds with the new artifact, evidence, provider, and approval pages present, and every English page under the docs content root has a Thai counterpart at the mirrored path.",
+      "impact": "low",
+      "capabilities": ["static-analysis", "test"]
+    },
+    {
+      "id": "landing-page-accessibility-unchanged",
+      "scenario": "The landing page changes are confined to text nodes carrying version and protocol numbers, leaving markup structure, semantics, and styling unchanged, so the page's accessibility posture is the same before and after.",
+      "impact": "low",
+      "capabilities": ["accessibility"]
+    }
+  ]
+}

@@ -285,14 +285,18 @@ Foundation does not commit, push, or open a pull request implicitly.
 `evidence.yaml` stores stable behavioral claims. `execution.yaml` stores
 commands, reports, services, readiness identity, and resource wiring. Legacy
 changes that keep `providers` in `evidence.yaml` remain readable; `evidence
-upgrade` separates them. Four adapters are available:
+upgrade` separates them. Five adapters are available:
 
 | Adapter | Use |
 |---|---|
 | `command` | One deterministic command for one provider |
 | `test-discovery` | One test process that emits test and discovery receipts |
 | `playwright` | Structured browser evidence mapped to claim annotations |
+| `contract-digest` | One declared file hashed across two or more repositories, passing only when the bytes agree |
 | `external` | A receipt produced outside Foundation |
+
+Only `external` skips execution entirely. `contract-digest` runs no command but
+still executes: it reads and hashes the declared file itself.
 
 Provider names describe what is proven, not which tool runs. The built-in
 contracts include behavioral tests, discovery, browser behavior, mutation,
@@ -317,14 +321,31 @@ required evidence still comes from the real changed surface.
 Generated state lives under `.foundation/` and must not be treated as product
 source:
 
+This table is the canonical listing of what the runtime writes. Shorter
+listings elsewhere name this file as their source rather than restating it.
+
 | Path | Contents |
 |---|---|
-| `.foundation/runtime/` | Runtime operation and handoff state |
-| `.foundation/receipts/` | Content-bound provider receipts |
-| `.foundation/evidence/` | Immutable proof bundles, receipt copies, reports, logs, and attachments |
+| `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
+| `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
+| `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |
 | `.foundation/snapshots/` | One content snapshot descriptor per proof |
-| `.foundation/logs/` | Provider logs and telemetry events |
-| `.foundation/sandboxes/` | Isolated Git worktrees |
+| `.foundation/logs/` | Provider logs, telemetry events, receipt-reuse and budget audits |
+| `.foundation/sandboxes/` | The control sandbox, a Git worktree or a copy |
+| `.foundation/repository-sandboxes/` | Per-repository sandboxes for multi-repository work |
+| `.foundation/plans/` | Agent execution plans |
+| `.foundation/leases/` | Task and resource leases |
+| `.foundation/transactions/` | Land apply journals and staged backups |
+| `.foundation/authority/` | Review and acceptance requests and their completion records |
+| `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
+| `.foundation/instruction-manifests/` | Instruction provenance per command |
+| `.foundation/recovery/` | Quarantined abandoned changes and orphaned runtime state |
+| `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
+| `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |
+| `.foundation/install-manifest.txt` | Installer-owned record of managed files |
+
+`repository-sandboxes/`, `prototypes/`, `recovery/`, and `policy.json` appear
+only once something creates them.
 
 Receipts are reusable only while their bound inputs remain unchanged. Every
 required artifact is copied into the evidence vault and bound by SHA-256 and

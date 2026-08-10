@@ -96,4 +96,153 @@ else
   fail "shipped files reference non-resolving paths:$missing"
 fi
 
+# --- Documentation tracks the release and the runtime ------------------------
+# WORKFLOW.md carried the only version assertion in this suite, which is exactly
+# why it stayed current while every unguarded surface drifted four releases. The
+# expected values below are read from VERSION, protocol.json, and the runtime
+# source at run time rather than written here, so a release either updates the
+# documentation or fails this suite. An assertion holding a literal release
+# number would reproduce the same drift one release later.
+
+runtime_ver="$(jq -r '.runtime' "$ROOT/.claude/harness/protocol.json")"
+SITE="$ROOT/website/index.html"
+DOCS="$ROOT/website/docs/src/content/docs"
+HARNESS_README="$ROOT/.claude/harness/README.md"
+
+assert_file_contains "English README states the release" "$README" "Version $ver"
+assert_file_contains "Thai README states the release" "$README_TH" "Version $ver"
+assert_file_contains "the landing page states the release" "$SITE" "<b>v$ver</b>"
+assert_file_contains "the landing page states the runtime API" \
+  "$SITE" "runtime API $runtime_api"
+assert_file_contains "the landing page console shows the runtime API" \
+  "$SITE" "class=\"console-api\">API $runtime_api<"
+assert_file_contains "the English docs index states the release" \
+  "$DOCS/index.md" "**v$ver**"
+assert_file_contains "the Thai docs index states the release" \
+  "$DOCS/th/index.md" "**v$ver**"
+assert_file_contains "the English CLI page pins the release" \
+  "$DOCS/cli.md" "| Pin | v$ver |"
+assert_file_contains "the Thai CLI page pins the release" \
+  "$DOCS/th/cli.md" "| Pin | v$ver |"
+assert_file_contains "the English CLI page pins the runtime" \
+  "$DOCS/cli.md" "| runtime | $runtime_ver |"
+assert_file_contains "the Thai CLI page pins the runtime" \
+  "$DOCS/th/cli.md" "| runtime | $runtime_ver |"
+assert_file_contains "the English CLI page pins the runtime API" \
+  "$DOCS/cli.md" "| runtime API | $runtime_api |"
+assert_file_contains "the Thai CLI page pins the runtime API" \
+  "$DOCS/th/cli.md" "| runtime API | $runtime_api |"
+
+# Every adapter the runtime implements must appear in the shipped operator
+# guide. Deriving the set from foundation.mjs turns "contract-digest is missing
+# from the table" from something a reader has to notice into a failing test.
+adapters="$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8");
+const m=s.match(/const ADAPTERS = new Set\(\[([\s\S]*?)\]\)/);
+process.stdout.write(m ? m[1].replace(/["\s]/g,"").split(",").filter(Boolean).join(" ") : "");' \
+  "$ROOT/.claude/harness/foundation.mjs")"
+# Match the table row, not the bare name: prose elsewhere in the file mentions
+# individual adapters, so a name-anywhere check passes even when the table that
+# readers actually consult has lost its row.
+missing_adapters=""
+for adapter in $adapters; do
+  grep -qF "| \`$adapter\` |" "$HARNESS_README" || missing_adapters="$missing_adapters $adapter"
+done
+if [ -n "$adapters" ] && [ -z "$missing_adapters" ]; then
+  pass "shipped operator guide documents every runtime adapter"
+else
+  fail "shipped operator guide omits adapters:$missing_adapters"
+fi
+
+# The runtime's own state roots are the authority on what the system writes.
+# Four listings previously disagreed with each other and with disk, and the one
+# most readers reach for omitted the evidence vault.
+roots="$(grep -rhoE '"\.foundation", *"[a-z-]+"' \
+  "$ROOT/.claude/harness/foundation.mjs" "$ROOT/.claude/harness/runtime" \
+  | sed -E 's/.*"\.foundation", *"([a-z-]+)"/\1/' | sort -u)"
+undocumented=""
+for root in $roots; do
+  grep -qF ".foundation/$root/" "$HARNESS_README" || undocumented="$undocumented $root"
+done
+if [ -n "$roots" ] && [ -z "$undocumented" ]; then
+  pass "the canonical artifact table names every runtime state root"
+else
+  fail "the canonical artifact table omits state roots:$undocumented"
+fi
+
+invented=""
+for named in $(grep -oE '\.foundation/[a-z-]+/' "$WF" \
+    | sed -E 's|\.foundation/([a-z-]+)/|\1|' | sort -u); do
+  printf '%s\n' "$roots" | grep -qx "$named" || invented="$invented $named"
+done
+if [ -z "$invented" ]; then
+  pass "the workflow names only state roots the runtime declares"
+else
+  fail "the workflow names directories the runtime never creates:$invented"
+fi
+
+assert_file_contains "the workflow names where the canonical table lives" \
+  "$WF" ".claude/harness/README.md"
+
+# --- The documentation site covers what a reader needs -----------------------
+# Starlight falls back to the default locale for a missing translation, which
+# strands a Thai reader on an English page instead of failing the build. The
+# sidebar is the declaration of intent, so it is what gets checked.
+sidebar_slugs="$(grep -oE 'slug: "[a-z0-9/-]+"' "$ROOT/website/docs/astro.config.mjs" \
+  | sed -E 's|slug: "([a-z0-9/-]+)"|\1|' | sort -u)"
+unpaired=""
+for slug in $sidebar_slugs; do
+  [ -f "$DOCS/$slug.md" ] || unpaired="$unpaired en:$slug"
+  [ -f "$DOCS/th/$slug.md" ] || unpaired="$unpaired th:$slug"
+done
+if [ -n "$sidebar_slugs" ] && [ -z "$unpaired" ]; then
+  pass "every page in the sidebar exists in both locales"
+else
+  fail "sidebar pages missing a locale:$unpaired"
+fi
+
+APPROVAL="$DOCS/approval.md"
+ARTIFACTS="$DOCS/artifacts.md"
+RECEIPTS="$DOCS/evidence/receipts.md"
+
+assert_file_contains "the approval page covers acceptance" "$APPROVAL" "## Acceptance"
+assert_file_contains "the approval page covers independent review" \
+  "$APPROVAL" "## Independent review"
+assert_file_contains "the approval page covers the authority bridge" \
+  "$APPROVAL" "## The authority bridge"
+assert_file_contains "the approval page covers host attestation" \
+  "$APPROVAL" "## Host attestation"
+assert_file_contains "the approval page names the blocker a user hits first" \
+  "$APPROVAL" "undecided blocks"
+assert_file_contains "the approval page names the command that blocks" \
+  "$APPROVAL" "change validate"
+assert_file_contains "the English README documents acceptance" \
+  "$README" "--acceptance-required"
+assert_file_contains "the Thai README documents acceptance" \
+  "$README_TH" "--acceptance-required"
+
+assert_file_contains "the artifacts page names the sole ledger" \
+  "$ARTIFACTS" "sole implementation ledger"
+assert_file_contains "the artifacts page documents the evidence vault" \
+  "$ARTIFACTS" "## The evidence vault"
+assert_file_contains "the artifacts page rules prototypes out as evidence" \
+  "$ARTIFACTS" "rejected as evidence"
+
+assert_file_contains "the receipts page names the blocking status" \
+  "$RECEIPTS" "inconclusive"
+assert_file_contains "the receipts page documents the execution floor" \
+  "$RECEIPTS" "execution: \"manual\""
+
+# Land refuses on evidence, not on consent. Documenting a guarantee the harness
+# does not make is worse than documenting none, so the overclaim is a failure
+# rather than a matter of taste.
+overclaims="$(grep -rlE 'Land (requires|needs|is gated on|is blocked until)[^.]{0,24}(approval|consent)' \
+  "$DOCS" "$README" "$README_TH" "$SITE" 2>/dev/null || true)"
+if [ -z "$overclaims" ]; then
+  pass "no documentation surface claims Land is gated on consent"
+else
+  fail "documentation claims Land is gated on consent: $(printf '%s' "$overclaims" | tr '\n' ' ')"
+fi
+assert_file_contains "the approval page says what Land actually gates on" \
+  "$APPROVAL" "Land gates on **evidence**, not on consent"
+
 finish "doc-consistency tests"

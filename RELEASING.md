@@ -30,7 +30,13 @@ Use this if the workflow is unavailable or you're releasing by hand. Replace `X.
 
 1. **Bump the version + changelog.**
    - Write the bare version (no `v` prefix) into `VERSION`, e.g. `echo "X.Y.Z" > VERSION`. This is the source of truth for `claude-foundation version`; keep it in lockstep with the tag below.
-   - Update the `**Version X.Y.Z**` line at the top of `WORKFLOW.md` to match (it mirrors `VERSION` for at-a-glance reading).
+   - Update every surface that states the release. `run-doc-consistency.sh` derives its expectations from `VERSION`, so a surface left behind fails the suite rather than drifting quietly:
+     - `**Version X.Y.Z**` in `WORKFLOW.md`, `README.md`, and `README.th.md`
+     - `<b>vX.Y.Z</b>` in `website/index.html`
+     - `**vX.Y.Z**` in `website/docs/src/content/docs/index.md` and its `th/` mirror
+     - `| Pin | vX.Y.Z |` in `website/docs/src/content/docs/cli.md` and its `th/` mirror
+
+     The runtime and protocol-API numbers alongside them come from `protocol.json` and only move when a wire contract does.
    - In `CHANGELOG.md`, rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, and update the link-reference block at the bottom:
      ```
      [Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/vX.Y.Z...HEAD

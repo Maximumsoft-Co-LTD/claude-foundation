@@ -79,12 +79,15 @@ export default defineConfig({
           items: [
             { slug: "evidence/claims", label: "Claims and capabilities", translations: { th: "Claim และ capability" } },
             { slug: "evidence/adapters", label: "Adapters and wiring", translations: { th: "Adapter และการต่อสาย" } },
+            { slug: "evidence/receipts", label: "Receipts and staleness", translations: { th: "Receipt และความ stale" } },
           ],
         },
         {
           label: "Reference",
           translations: { th: "อ้างอิง" },
           items: [
+            { slug: "artifacts", label: "What Foundation writes", translations: { th: "Foundation เขียนอะไรบ้าง" } },
+            { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
             { slug: "cli", label: "CLI reference", translations: { th: "คำสั่ง CLI" } },
           ],
         },

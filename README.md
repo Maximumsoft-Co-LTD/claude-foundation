@@ -15,6 +15,9 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
+**Version 3.2.8** — runtime API 17, provider protocol 7. Receipts recorded by
+earlier versions read as `provider-version-stale` and must be re-proven.
+
 ## How the AI and harness divide responsibility
 
 Foundation is not an AI and does not write code itself. It is a deterministic
@@ -486,8 +489,22 @@ Users never need to construct receipt commands, provenance JSON, provider
 metadata, or workspace hashes. Those remain machine protocol and are shown only
 when technical detail is requested.
 
+A provider returns one of four statuses. Only `pass` lands; `fail`, `error`, and
+`inconclusive` all block. `inconclusive` is the one worth knowing about — it
+means the provider ran but produced no verdict for your claim, so it usually
+signals wiring that reports against the wrong thing rather than broken code.
+
 See [Executable evidence adapters](.claude/harness/EVIDENCE.md) when wiring a
-new provider or browser workflow.
+new provider or browser workflow. The documentation site covers the same ground
+for readers rather than agents:
+
+- [Receipts, statuses, and staleness](https://claude-foundation.dev/docs/evidence/receipts/)
+  — what a receipt binds itself to, why a hand-written pass is refused, and what
+  expires proof.
+- [Adapters and wiring](https://claude-foundation.dev/docs/evidence/adapters/)
+  — all five adapters, declared inputs, services, and readiness identity.
+- [What Foundation writes](https://claude-foundation.dev/docs/artifacts/)
+  — every artifact the harness produces and which of them you are meant to read.
 
 ## When the requirement changes during Build
 
@@ -576,6 +593,33 @@ you to.
 - `protect-secrets.sh` and `lint.sh` are enabled by default.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
+
+### Human approval
+
+A standard change starts with acceptance **undecided**, and `change validate`
+fails until somebody decides. This is deliberate — silence is never read as
+consent — but it is also the blocker people hit first, so decide it explicitly:
+
+```bash
+claude-foundation change resolve <change-id> --acceptance-not-required
+claude-foundation change resolve <change-id> \
+  --acceptance-required --acceptance-reason "<why a person must judge this>"
+```
+
+Independent review is a separate boundary and becomes required by policy — high
+impact, a coupled non-low change, a security trigger, or a claim that spans
+repositories. A reviewer may be a human or a different AI, but never the
+implementer: independence cannot be waived, and after two AI rounds a third is
+refused and escalated to a person.
+
+Land itself gates on evidence rather than consent. The agent is instructed to
+explain the effects and offer to inspect, proceed, or pause first, and the
+continuation commands (`land record`, `budget continue`, `change abandon`) each
+require a `--decision-ref` naming the decision you actually made.
+
+[Human approval](https://claude-foundation.dev/docs/approval/) covers all four
+boundaries, including how `authority request`, `authority status --template`,
+and `authority record` turn a verdict into a receipt.
 
 ## Operator commands and troubleshooting
 

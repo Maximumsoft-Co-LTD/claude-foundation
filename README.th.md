@@ -14,6 +14,9 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
+**Version 3.2.8** — runtime API 17, provider protocol 7 receipt ที่บันทึกด้วย
+เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร
 
 Foundation ไม่ใช่ AI และไม่ได้เขียน code เอง แต่เป็น deterministic control plane
@@ -484,8 +487,21 @@ Harness จะไม่ลด claim coverage หรือเปลี่ยน p
 directory เดิมหรือย้าย runtime JSON ไป `.foundation/recovery/orphaned-runtime/`
 เพื่อ quarantine แบบย้อนกลับได้
 
+provider คืนสถานะหนึ่งในสี่ มีแค่ `pass` ที่ land ได้ ส่วน `fail`, `error` และ
+`inconclusive` บล็อกทั้งหมด ตัวที่ควรรู้จักคือ `inconclusive` มันแปลว่า provider
+รันแล้วแต่ไม่ได้ให้คำตัดสินกับ claim ของคุณ ซึ่งมักหมายถึงการต่อสายที่รายงานผิดที่
+ไม่ใช่ code พัง
+
 หากต้อง wire provider หรือ browser workflow ใหม่ ดู
 [Executable evidence adapters](.claude/harness/EVIDENCE.md)
+ส่วนเว็บเอกสารครอบคลุมเรื่องเดียวกันสำหรับคนอ่าน ไม่ใช่สำหรับ agent
+
+- [Receipt และความ stale](https://claude-foundation.dev/docs/th/evidence/receipts/)
+  — receipt ผูกกับอะไร ทำไม pass ที่เขียนด้วยมือถูกปฏิเสธ และอะไรทำให้ proof หมดอายุ
+- [Adapter และการต่อสาย](https://claude-foundation.dev/docs/th/evidence/adapters/)
+  — adapter ทั้งห้าตัว การประกาศ input, service และตัวระบุ readiness
+- [Foundation เขียนอะไรบ้าง](https://claude-foundation.dev/docs/th/artifacts/)
+  — artifact ทุกตัวที่ harness สร้าง และตัวไหนที่ตั้งใจให้คุณอ่าน
 
 ## ถ้า Requirement เปลี่ยนระหว่าง Build
 
@@ -569,6 +585,32 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 - `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
+
+### การอนุมัติโดยคน
+
+standard change เริ่มต้นด้วย acceptance ที่ **ยังไม่ตัดสิน** และ `change validate`
+จะไม่ผ่านจนกว่าจะมีคนตัดสิน นี่เป็นความตั้งใจ เพราะความเงียบไม่เคยถูกอ่านว่ายินยอม
+แต่มันก็เป็นตัวบล็อกที่คนเจอเป็นอย่างแรก จึงควรตัดสินให้ชัดเจน
+
+```bash
+claude-foundation change resolve <change-id> --acceptance-not-required
+claude-foundation change resolve <change-id> \
+  --acceptance-required --acceptance-reason "<ทำไมต้องให้คนตัดสิน>"
+```
+
+Review อิสระเป็นคนละจุดกัน และถูกบังคับโดยนโยบาย — impact สูง, change แบบ coupled
+ที่ไม่ใช่ low, มี security trigger หรือ claim ที่ครอบคลุมหลาย repository
+ผู้รีวิวเป็นคนหรือ AI ตัวอื่นก็ได้ แต่ต้องไม่ใช่ผู้ implement
+ความเป็นอิสระยกเว้นไม่ได้ และหลัง AI รีวิวสองรอบ รอบที่สามจะถูกปฏิเสธและส่งต่อให้คน
+
+ตัว Land เองตรวจที่หลักฐาน ไม่ใช่ที่ความยินยอม agent ถูกสั่งให้อธิบายผลกระทบ
+และเสนอให้ตรวจดู ไปต่อ หรือหยุดก่อน ส่วนคำสั่งต่อเนื่อง (`land record`,
+`budget continue`, `change abandon`) แต่ละตัวต้องมี `--decision-ref`
+ระบุการตัดสินใจที่คุณทำจริง
+
+[การอนุมัติโดยคน](https://claude-foundation.dev/docs/th/approval/)
+ครอบคลุมทั้งสี่จุด รวมถึงวิธีที่ `authority request`,
+`authority status --template` และ `authority record` เปลี่ยนคำตัดสินให้เป็น receipt
 
 ## Operator Commands และการแก้ปัญหา
 
