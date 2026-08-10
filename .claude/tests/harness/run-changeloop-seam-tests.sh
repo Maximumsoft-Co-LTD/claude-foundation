@@ -1,0 +1,217 @@
+#!/usr/bin/env sh
+# The seams of the change loop, where state crosses a boundary.
+#
+# Every defect pinned here survived the rest of the suite because each half
+# works alone. `evidence init --write` writes; `sandbox sync` syncs; together
+# the sync deleted what the init had just written. `sandbox create` copies; a
+# repository has ignored build output; together the copy filled the disk. What
+# these assertions hold is the handoff, not either side of it.
+
+set -eu
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
+. "$ROOT/.claude/tests/lib/assert.sh"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+
+F="node .claude/harness/foundation.mjs"
+# Command logs live outside the project. Written inside it they are themselves
+# untracked dirt, which is exactly the condition these scenarios measure — the
+# first draft of this suite made `sandbox create` report its own redirect file
+# as the dirty target, and blamed the code for it.
+LOGS="$TMP/logs"
+mkdir -p "$LOGS"
+
+# One project per scenario: two changes holding sandboxes on one repository is a
+# repository conflict, which is a real blocker and not the one under test.
+setup_project() {
+  mkdir -p "$TMP/$1/.claude/harness" "$TMP/$1/openspec" "$TMP/$1/src"
+  cp -R "$ROOT/.claude/harness/." "$TMP/$1/.claude/harness/"
+  cp -R "$ROOT/openspec/schemas" "$TMP/$1/openspec/"
+  cp "$ROOT/openspec/config.yaml" "$TMP/$1/openspec/"
+  cd "$TMP/$1"
+  printf 'export function add(a,b){return a+b;}\n' > src/calc.js
+  printf '{"name":"seam","version":"1.0.0","type":"module","scripts":{"test":"node --test"}}\n' \
+    > package.json
+  mkdir -p test
+  printf 'import { test } from "node:test";\nimport assert from "node:assert";\nimport { add } from "../src/calc.js";\ntest("add", () => assert.equal(add(1,2), 3));\n' \
+    > test/calc.test.js
+  printf '.foundation/\nbuild-output/\n' > .gitignore
+  git init -q . && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init
+}
+
+providers_of() {
+  node -e "
+    const fs=require('fs');
+    const p='$1';
+    if(!fs.existsSync(p)){console.log('MISSING');process.exit(0)}
+    console.log(Object.keys(JSON.parse(fs.readFileSync(p,'utf8')).providers||{}).sort().join(',')||'NONE')"
+}
+
+# --- Detected provider config survives a sync. ------------------------------
+setup_project init-survives-sync
+$F new "add subtract to calc" --rapid > /dev/null
+C=add-subtract-to-calc
+$F sandbox create "$C" > /dev/null
+$F evidence-init "$C" --write > "$LOGS/init.log" 2>&1
+
+assert_file_contains "evidence init reports the provider it wired" "$LOGS/init.log" '"test"'
+assert_eq "the durable change directory carries the provider" \
+  "test" "$(providers_of "openspec/changes/$C/execution.yaml")"
+assert_eq "the active sandbox sees it without a sync" \
+  "test" "$(providers_of ".foundation/sandboxes/$C/openspec/changes/$C/execution.yaml")"
+
+$F sandbox sync "$C" > /dev/null
+assert_eq "a sync does not destroy it in the durable directory" \
+  "test" "$(providers_of "openspec/changes/$C/execution.yaml")"
+assert_eq "a sync does not destroy it in the sandbox" \
+  "test" "$(providers_of ".foundation/sandboxes/$C/openspec/changes/$C/execution.yaml")"
+
+# --- Git-ignored output is neither copied nor hashed. -----------------------
+setup_project ignores-build-output
+mkdir -p build-output/nested
+# Large enough that a copy is unmistakable, cheap enough to stay a unit test.
+dd if=/dev/zero of=build-output/nested/artifact.bin bs=1024 count=4096 2>/dev/null
+printf 'generated\n' > build-output/report.txt
+# A dirty tracked file forces copy mode, which is the mode under test.
+printf 'export function add(a,b){return a+b;}\n// touched\n' > src/calc.js
+$F new "copy skips ignored output" --rapid > /dev/null
+C=copy-skips-ignored-output
+$F sandbox create "$C" > "$LOGS/create.log" 2>&1
+
+assert_file_contains "a dirty tracked file still selects copy mode" "$LOGS/create.log" "isolated-copy"
+assert_file_absent "the copy omits the git-ignored directory" \
+  ".foundation/sandboxes/$C/build-output/nested/artifact.bin"
+assert_file_exists "the copy still carries tracked source" \
+  ".foundation/sandboxes/$C/src/calc.js"
+assert_eq "the recorded baseline holds no ignored entry" "0" \
+  "$(node -e "
+    const j=require('$TMP/ignores-build-output/.foundation/runtime/$C.json');
+    const k=Object.keys(j.workspace.baseline||{});
+    process.stdout.write(String(k.filter((p)=>p.startsWith('build-output/')).length))")"
+
+# --- Another change's uncommitted draft keeps worktree isolation. -----------
+setup_project concurrent-drafts
+$F new "first change" --rapid > /dev/null
+$F new "second change" --rapid > /dev/null
+# Both drafts are uncommitted, which is how the loop keeps them until Land.
+$F sandbox create second-change > "$LOGS/second.log" 2>&1
+
+assert_file_not_contains "an unrelated draft does not force a copy" "$LOGS/second.log" "isolated-copy"
+assert_file_not_contains "the draft is not reported as a dirty target" "$LOGS/second.log" "dirty-target"
+
+# --- A rapid proposal validates against OpenSpec. ---------------------------
+setup_project rapid-validates
+$F new "rapid header probe" --rapid > /dev/null
+assert_file_contains "the rapid template uses the required Why header" \
+  "openspec/changes/rapid-header-probe/proposal.md" "## Why"
+assert_file_contains "the rapid template uses the required What Changes header" \
+  "openspec/changes/rapid-header-probe/proposal.md" "## What Changes"
+assert_file_not_contains "the merged header is gone" \
+  "openspec/changes/rapid-header-probe/proposal.md" "## Why and what"
+
+# --- The orphan diagnostic names its supported exit. ------------------------
+setup_project orphan-exit
+$F new "orphan probe" --rapid > /dev/null
+rm -rf openspec/changes/orphan-probe
+orphan_doctor="$({ $F doctor --change orphan-probe; } 2>&1 || true)"
+assert_contains "the orphan diagnostic names change abandon" \
+  "$orphan_doctor" "change abandon"
+assert_not_contains "the orphan diagnostic no longer prescribes a manual move" \
+  "$orphan_doctor" "recovery/orphaned-runtime/"
+assert_contains "changes still reports the orphan" \
+  "$($F changes 2>&1 || true)" "orphan-runtime"
+# The named command is the one that actually works.
+assert_cmd_zero "the named command retires the orphan" \
+  node .claude/harness/foundation.mjs abandon orphan-probe --reason cleanup --decision-ref test
+assert_not_contains "the orphan is gone afterwards" \
+  "$($F changes 2>&1 || true)" "orphan-runtime"
+
+# --- Upgrading a project retires the superseded guard command. --------------
+#
+# `run-installer-tests.sh` covers the installer, but it cannot run here: a copy
+# sandbox never carries `.foundation/`, whose `.gitignore` the installer checks
+# as a source precondition, so the suite fails before it starts. This scenario
+# therefore builds its own complete source tree and exercises just the seam that
+# matters — `upsert` matches on the command string, so a guard whose command
+# changed lands beside the old one unless retirement removes it first.
+if command -v jq > /dev/null 2>&1; then
+  source_tree="$TMP/upgrade-source"
+  mkdir -p "$source_tree"
+  cp -R "$ROOT/.claude" "$ROOT/openspec" "$source_tree/"
+  cp "$ROOT/install.sh" "$ROOT/foundation.json" "$ROOT/WORKFLOW.md" "$source_tree/"
+  mkdir -p "$source_tree/.foundation"
+  printf 'runtime/\n' > "$source_tree/.foundation/.gitignore"
+  printf '# machine state\n' > "$source_tree/.foundation/README.md"
+
+  target="$TMP/upgrade-target"
+  mkdir -p "$target/.claude"
+  printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]}]}}' \
+    > "$target/.claude/settings.json"
+
+  sh "$source_tree/install.sh" "$target" --yes --source "$source_tree" \
+    > "$LOGS/upgrade.log" 2>&1 || true
+
+  assert_file_not_contains "upgrading retires the superseded guard command" \
+    "$target/.claude/settings.json" "phase-mutation-guard.mjs"
+  assert_eq "exactly one phase guard is wired after upgrading" "1" \
+    "$(grep -c 'phase-mutation-guard\.sh' "$target/.claude/settings.json")"
+else
+  pass "upgrade retirement skipped: jq unavailable, installer merges manually"
+  pass "upgrade retirement skipped: jq unavailable, installer merges manually"
+fi
+
+# --- A review response records through the authority bridge. ----------------
+#
+# `authority record` accepts only --request and --response, while the receipt it
+# writes requires implementation provenance. The response file is the only place
+# that provenance can come from, so the emitted template has to name it: without
+# these fields the documented path dead-ends on a flag the command rejects.
+setup_project authority-review
+$F new "review response records" > /dev/null
+C=review-response-records
+$F resolve "$C" --impact high --coupling coupled --acceptance-not-required > /dev/null
+$F sandbox create "$C" > /dev/null
+sed -i.bak 's/- \[ \]/- [x]/g' "openspec/changes/$C/tasks.md" && rm -f "openspec/changes/$C/tasks.md.bak"
+$F sandbox sync "$C" > /dev/null
+$F authority-request "$C" --type review > "$LOGS/request.json" 2>&1
+$F authority-status "$C" --template > "$LOGS/template.json" 2>&1
+
+assert_file_contains "the review template names the reviewer type" \
+  "$LOGS/template.json" '"reviewer-type"'
+assert_file_contains "the review template names implementation provenance" \
+  "$LOGS/template.json" '"subject-actor"'
+
+# Fill the emitted template exactly as a responder would: a human reviewer, an
+# AI implementer, and nothing invented that the template did not ask for.
+node -e '
+  const fs = require("fs");
+  const raw = fs.readFileSync(process.argv[1], "utf8");
+  const template = JSON.parse(raw.slice(raw.indexOf("{")));
+  template.status = "pass";
+  template.evidence.observed = "Reviewed the change and its evidence.";
+  template.evidence.reference = ["openspec/changes"];
+  template.evidence.reviewer = "a-human-reviewer";
+  template.evidence["reviewer-type"] = "human";
+  template.evidence["subject-actor"] = "an-implementing-agent";
+  template.evidence["subject-session"] = "session-under-test";
+  template.evidence["subject-provider-family"] = "anthropic";
+  template.evidence["subject-model-family"] = "claude";
+  template.evidence["subject-model"] = "model-under-test";
+  fs.writeFileSync(process.argv[2], JSON.stringify(template, null, 2));
+' "$LOGS/template.json" "$LOGS/response.json"
+
+request_id="$(node -e '
+  const fs = require("fs");
+  const raw = fs.readFileSync(process.argv[1], "utf8");
+  process.stdout.write(JSON.parse(raw.slice(raw.indexOf("{"))).requestId);
+' "$LOGS/response.json")"
+
+recorded="$($F authority-record "$C" --request "$request_id" --response "$LOGS/response.json" 2>&1 || true)"
+assert_contains "a template-shaped review response records" "$recorded" "AUTHORITY $request_id: pass"
+assert_not_contains "no unsupported provenance flag is demanded" "$recorded" "subject-actor for implementation provenance"
+assert_file_exists "the review receipt is written" ".foundation/receipts/$C/review.json"
+
+finish "changeloop seams"

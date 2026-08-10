@@ -1,8 +1,15 @@
 # Phase mutation guard
 
 `phase-mutation-guard.mjs` is a `PreToolUse` policy layer for file mutations and
-obviously mutating shell commands. It is wired in `.claude/settings.json` in
-audit-only mode by default.
+obviously mutating shell commands. It runs in audit-only mode by default.
+
+What `.claude/settings.json` wires is `phase-mutation-guard.sh`, a prefilter that
+answers the "no phase to guard" case with shell builtins alone and `exec`s the
+`.mjs` whenever a decision is actually needed. On a stock install with no active
+change that is the difference between ~50ms and ~4ms on every mutating tool call.
+The prefilter never reports a violation and never reads the event body: `block`
+mode and any recorded phase context always reach the guard, so enforcement and
+freshness policy stay in one place.
 
 The phase comes from one of two places, in this order:
 

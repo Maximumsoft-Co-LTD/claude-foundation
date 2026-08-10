@@ -166,7 +166,22 @@ export function createAuthorityRuntime({
       evidence.decision = "accept";
       evidence.criterion = criteria.length ? criteria
         : ["<criterion the responder confirmed>"];
-    } else evidence.reviewer = "<independent reviewer identity>";
+    } else {
+      // `validateResponse` forwards every key under `evidence` into the receipt
+      // flags, so this is where a reviewer states provenance. Omitting these
+      // fields from the template made the documented path a dead end: the
+      // receipt refused the response for a missing `--subject-actor`, and
+      // `authority record` does not accept that flag. Naming them here is the
+      // difference between a template a responder can complete and one that
+      // cannot be recorded at all.
+      evidence.reviewer = "<independent reviewer identity>";
+      evidence["reviewer-type"] = "human|ai";
+      evidence["subject-actor"] = "<who or what implemented the change>";
+      evidence["subject-session"] = "<implementation session id, omit for a human implementer>";
+      evidence["subject-provider-family"] = "<implementation provider family, omit for a human implementer>";
+      evidence["subject-model-family"] = "<implementation model family, omit for a human implementer>";
+      evidence["subject-model"] = "<implementation model id, omit for a human implementer>";
+    }
     return {
       version: Number(protocolVersion),
       requestId: request.requestId,

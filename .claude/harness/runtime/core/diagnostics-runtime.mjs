@@ -182,7 +182,7 @@ export function createDiagnosticsRuntime({
       level: orphanRuntimes.length ? "warn" : "ok",
       name: "runtime-state",
       detail: orphanRuntimes.length
-        ? `orphan runtime(s): ${orphanRuntimes.map((item) => `${item.id}:${item.reason}`).join(", ")}; restore the active change or quarantine the runtime file`
+        ? `orphan runtime(s): ${orphanRuntimes.map((item) => `${item.id}:${item.reason}`).join(", ")}; restore the active change or retire it with 'claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>'`
         : "no orphan active runtime state"
     });
     const requestedOrphan = requestedChange
@@ -192,7 +192,7 @@ export function createDiagnosticsRuntime({
       checks.push({
         level: "error",
         name: `change:${requestedChange}`,
-        detail: `${requestedOrphan.reason}; restore openspec/changes/${requestedChange} or move .foundation/runtime/${requestedChange}.json to .foundation/recovery/orphaned-runtime/`
+        detail: `${requestedOrphan.reason}; restore openspec/changes/${requestedChange} or retire it with 'claude-foundation change abandon ${requestedChange} --reason <reason> --decision-ref <ref>', which quarantines the runtime state for you`
       });
     } else if (requestedChange) {
       const state = loadRuntime(requestedChange);

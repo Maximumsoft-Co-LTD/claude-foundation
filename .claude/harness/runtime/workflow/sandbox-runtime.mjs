@@ -40,6 +40,25 @@ export function createSandboxRuntime({
     }
   }
 
+  // Regenerable build output is pure cost to copy, and at real repository sizes
+  // it is a fault rather than an inefficiency: a 79GB Rust `target/` exhausted
+  // the disk mid-copy and left a 41GB tree the runtime had never recorded. A
+  // fixed list of directory *names* cannot keep up with that — it knew
+  // `node_modules` and `coverage` but not `target`, `dist`, `build`, `vendor`,
+  // or `.venv`. Git already tracks the distinction the copy actually needs, so
+  // ask it. `--others --ignored` never reports a tracked path, so committed
+  // content stays carried no matter what it is named, and `--directory`
+  // collapses a wholly-ignored tree to one entry the filter can refuse before
+  // descending into it.
+  function ignoredPathSet(carriesGit) {
+    if (!carriesGit) return new Set();
+    const listed = git(
+      ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], root);
+    if (listed.status !== 0) return new Set();
+    return new Set(listed.stdout.split("\0").filter(Boolean)
+      .map((path) => (path.endsWith("/") ? path.slice(0, -1) : path)));
+  }
+
   function createCopy(id, state, reason) {
     const requestedPath = sandboxRoot(id);
     if (existsSync(requestedPath))
@@ -66,17 +85,29 @@ export function createSandboxRuntime({
     const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
     const tracked = trackedPathSet(
       listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : []);
+    const ignored = ignoredPathSet(carriesGit);
     const excludes = (rel) =>
+      ignored.has(rel) ||
       isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
     const filter = (source) => !excludes(relative(root, source).replaceAll("\\", "/"));
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (excludes(entry.name)) continue;
-      cpSync(join(root, entry.name), join(requestedPath, entry.name), {
-        recursive: true,
-        mode: fsConstants.COPYFILE_FICLONE,
-        ...VERBATIM_COPY,
-        filter
-      });
+    // A copy that dies partway leaves a directory the runtime never recorded:
+    // `state.workspace` is still whatever it was, so nothing knows the tree
+    // exists, while `sandbox path already occupied` blocks every retry. Filling
+    // the disk is exactly how that happens, so the failure path has to remove
+    // what it wrote before reporting.
+    try {
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (excludes(entry.name)) continue;
+        cpSync(join(root, entry.name), join(requestedPath, entry.name), {
+          recursive: true,
+          mode: fsConstants.COPYFILE_FICLONE,
+          ...VERBATIM_COPY,
+          filter
+        });
+      }
+    } catch (error) {
+      rmSync(requestedPath, { recursive: true, force: true });
+      fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
     }
     const path = canonicalPath(requestedPath);
     // The copied `.git/worktrees` still names the *target's* linked worktrees by
@@ -199,9 +230,16 @@ export function createSandboxRuntime({
     // is ever this change's surface: `.foundation/` is machine state, and
     // `allowed()` in the snapshot drops `changes/archive/` outright, so a
     // worktree taken from HEAD cannot lose work by ignoring them here.
+    //
+    // Every other change's draft belongs in that same category. The loop keeps
+    // drafts uncommitted until Land by design, so a second active change made
+    // every later `sandbox create` fall back to a copy — the expensive mode —
+    // for state the operator was told to leave uncommitted. Nothing is lost by
+    // ignoring it: `singleRelevantSnapshot` drops `openspec/changes/` that is
+    // not this change, and the apply diff excludes this change's own directory.
     const harnessOwned = (path) =>
       path.startsWith(".foundation/") || path === ".foundation" ||
-      path.startsWith("openspec/changes/archive/");
+      path.startsWith("openspec/changes/") || path === "openspec/changes";
     const unrelated = dirty.stdout.split("\n").filter(Boolean).filter((line) => {
       const path = line.slice(3).split(" -> ").at(-1);
       return path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix) &&

@@ -51,7 +51,11 @@ printf 'legacy\n' > "$TARGET/.workflow/0001-legacy/state.json"
 printf 'old\n' > "$TARGET/.claude/agents/pm.md"
 printf '# User project\n' > "$TARGET/CLAUDE.md"
 mkdir -p "$TARGET/.claude"
-printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Agent","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh"},{"type":"command","command":"user-hook.sh"}]}]}}' > "$TARGET/.claude/settings.json"
+# The second matcher carries the phase guard as an earlier release wired it. The
+# guard has since moved to a shell prefilter, and `upsert` matches on the command
+# string — so without retirement the upgrade would leave both wired and every
+# mutating call would pay for the guard twice.
+printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Agent","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh"},{"type":"command","command":"user-hook.sh"}]},{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]}]}}' > "$TARGET/.claude/settings.json"
 
 assert_cmd_zero "installer applies non-interactively" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
@@ -159,6 +163,10 @@ else
   pass "legacy hook wiring removed"
 fi
 assert_file_contains "user hook wiring preserved" "$TARGET/.claude/settings.json" "user-hook.sh"
+assert_file_not_contains "superseded phase guard command retired on upgrade" \
+  "$TARGET/.claude/settings.json" "phase-mutation-guard.mjs"
+assert_eq "exactly one phase guard is wired after upgrade" "1" \
+  "$(grep -c 'phase-mutation-guard\.sh' "$TARGET/.claude/settings.json")"
 assert_file_contains "request telemetry binds once at session lifecycle" \
   "$TARGET/.claude/settings.json" "session-context.sh"
 assert_file_contains "user CLAUDE content preserved" "$TARGET/CLAUDE.md" "# User project"

@@ -264,12 +264,18 @@ elif command -v jq >/dev/null 2>&1; then
   backup="$SETTINGS_DST.backup-$(date +%Y%m%d-%H%M%S)"
   cp "$SETTINGS_DST" "$backup"
   merged="$(jq --slurpfile src "$SETTINGS_SRC" '
+    # `upsert` below matches on the command string, so a hook whose command
+    # changed reads to it as a new hook and lands *beside* the old one. The
+    # phase guard moved from the .mjs entry point to the .sh prefilter that
+    # execs it; without retiring the old spelling here an upgraded project would
+    # run both on every mutating call — the exact double-fire this step exists
+    # to prevent.
     def remove_legacy:
       .hooks //= {} |
       .hooks |= with_entries(
         .value |= map(
           .hooks |= map(select(
-            (.command | test("hooks/(dev-agent-guard|dev-state-mark|dev-state-validate|artifact-lint)\\.sh")) | not
+            (.command | test("hooks/(dev-agent-guard|dev-state-mark|dev-state-validate|artifact-lint)\\.sh|hooks/phase-mutation-guard\\.mjs")) | not
           ))
         ) | .value |= map(select((.hooks | length) > 0))
       );
@@ -388,4 +394,23 @@ fi
 
 INSTALL_COMMITTED=yes
 ok "OpenSpec-native Foundation installed at $TARGET_PATH"
+
+# Until these files are committed they are the working tree's dirt, and the loop
+# reads dirt as change surface: the harness's own shipped paths then trip its own
+# policy triggers, so the first change is asked for accessibility, compatibility,
+# and data-migration evidence it cannot produce, and every `sandbox create` falls
+# back to a whole-tree copy. Staging makes the commit one command; making the
+# commit itself is not an authority an installer holds over someone's repository.
+if command -v git >/dev/null 2>&1 &&
+   git -C "$TARGET_PATH" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$TARGET_PATH" add -- "${MANAGED[@]}" CLAUDE.md AGENTS.md \
+    openspec/config.yaml openspec/repositories.yaml foundation.json \
+    .claude/settings.json >/dev/null 2>&1 || true
+  if ! git -C "$TARGET_PATH" diff --cached --quiet 2>/dev/null; then
+    printf '▸ Managed files are staged. Commit them before your first change:\n'
+    printf '    git commit -m "chore: install claude-foundation harness"\n'
+    printf '  The loop treats uncommitted files as the change surface, so an\n'
+    printf '  uncommitted harness becomes the first change'"'"'s surface.\n'
+  fi
+fi
 printf 'Next: /change <intent>\n'

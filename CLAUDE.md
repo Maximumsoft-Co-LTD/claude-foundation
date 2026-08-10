@@ -55,7 +55,8 @@ Product surface, installed into consumer projects:
 - `.claude/skills/` - procedures loaded only when their trigger fires; the
   whole directory ships.
 - `.claude/hooks/` + `.claude/settings.json` - `session-context.sh`,
-  `phase-mutation-guard.mjs`, `protect-secrets.sh`, and `lint.sh` are wired in
+  `phase-mutation-guard.sh` (a prefilter that execs `phase-mutation-guard.mjs`
+  only when a decision is needed), `protect-secrets.sh`, and `lint.sh` are wired in
   `settings.json`; `no-direct-main-commit.sh` ships but stays unwired.
 - `openspec/schemas/` - `foundation-rapid` and `foundation-standard` assurance
   profiles.

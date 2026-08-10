@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "workspace-walks-skip-ignored-output",
+      "scenario": "Neither the copy sandbox nor the workspace baseline includes git-ignored build output, so a repository carrying a large ignored directory keeps a small sandbox and a small runtime state file.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "failed-copy-leaves-no-orphan",
+      "scenario": "A sandbox copy that fails partway removes the partial tree so the next 'sandbox create' is not blocked by an occupied path.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "evidence-init-survives-sandbox-sync",
+      "scenario": "Provider config written by 'evidence init --write' during Build is still configured after 'sandbox sync', in both the durable change directory and the active sandbox.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "concurrent-drafts-keep-worktree-isolation",
+      "scenario": "A second change's uncommitted draft under openspec/changes/ does not force 'sandbox create' into isolated-copy mode.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "rapid-proposal-validates",
+      "scenario": "A change created from the rapid template passes OpenSpec validation without a missing-section warning.",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "orphan-diagnostic-names-supported-command",
+      "scenario": "The orphan-runtime diagnostic points at 'change abandon' rather than a manual filesystem move.",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

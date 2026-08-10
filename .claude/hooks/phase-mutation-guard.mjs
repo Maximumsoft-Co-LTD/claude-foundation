@@ -6,9 +6,13 @@
 
 import {
   appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
-  realpathSync
+  realpathSync, renameSync, statSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
+// Large enough that a real audit trail survives a working session, small enough
+// that an unattended project never carries an unbounded file.
+const AUDIT_MAX_BYTES = 1024 * 1024;
 
 // How long a recorded phase governs. The loop writes a new row at every phase
 // transition, so a row older than this means no Foundation phase is running
@@ -203,13 +207,29 @@ function recordAudit(row) {
   try {
     const logDir = join(projectRoot, ".foundation", "logs");
     mkdirSync(logDir, { recursive: true, mode: 0o700 });
-    appendFileSync(join(logDir, "guardrail-audit.jsonl"), `${JSON.stringify({
+    const auditPath = join(logDir, "guardrail-audit.jsonl");
+    rotateAudit(auditPath);
+    appendFileSync(auditPath, `${JSON.stringify({
       schemaVersion: 1,
       timestamp: new Date().toISOString(),
       ...row,
     })}\n`, { mode: 0o600 });
   } catch {
     // Audit storage failure must not transform audit-only rollout into a block.
+  }
+}
+
+// An audit trail that deletes itself is not an audit trail, and one that grows
+// without limit is a defect: this file reached 2,495 rows in a single
+// repository and nothing in the runtime ever pruned it. One retained generation
+// bounds it at 2x the cap while keeping recent history readable.
+function rotateAudit(path) {
+  try {
+    if (!existsSync(path)) return;
+    if (statSync(path).size < AUDIT_MAX_BYTES) return;
+    renameSync(path, `${path}.1`);
+  } catch {
+    // A failed rotation must not lose the row that triggered it.
   }
 }
 

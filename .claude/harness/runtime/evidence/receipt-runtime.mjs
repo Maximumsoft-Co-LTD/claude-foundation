@@ -249,7 +249,10 @@ export function createReceiptRuntime({
       ].some((value) => !value))
         die("AI review requires reviewer provider/model family, model ID, and session");
       if (!subjects.length)
-        die("review requires at least one --subject-actor for implementation provenance");
+        die("review requires implementation provenance: --subject-actor on " +
+          "'evidence record', or a \"subject-actor\" field under \"evidence\" in " +
+          "the response file when recording through 'authority record', which " +
+          "takes no provenance flags of its own");
       const provenance = reviewProvenanceResult({ reviewer, subjects });
       if (!provenance.complete)
         die("review requires complete structured reviewer and subject provenance");

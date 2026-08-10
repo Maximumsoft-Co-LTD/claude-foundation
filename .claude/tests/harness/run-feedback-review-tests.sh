@@ -336,7 +336,7 @@ assert_cmd_fails_with "same-family critical AI review is rejected" \
     --observed 'No blockers' --reference fixture://same-family
 
 assert_cmd_fails_with "human review without implementation provenance is rejected" \
-  "requires at least one --subject-actor" \
+  "review requires implementation provenance" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type human --reviewer-identity security-owner \
     --unresolved-blockers 0 --observed 'No blockers' \

@@ -1,0 +1,12 @@
+# Tasks
+
+> This is the sole implementation ledger. Check an item only when its verify
+> condition passes.
+
+- [x] **T001** copy sandbox and workspace baseline skip git-ignored paths — `.claude/harness/runtime/workflow/sandbox-runtime.mjs`, `.claude/harness/runtime/core/state-runtime.mjs` — verify: `sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:workspace-walks-skip-ignored-output] [repo:root] [paths:.claude/harness/runtime/workflow/sandbox-runtime.mjs,.claude/harness/runtime/core/state-runtime.mjs]
+- [x] **T002** a failed sandbox copy removes its partial tree instead of blocking retries — `.claude/harness/runtime/workflow/sandbox-runtime.mjs` — verify: `sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:failed-copy-leaves-no-orphan] [repo:root] [paths:.claude/harness/runtime/workflow/sandbox-runtime.mjs]
+- [x] **T003** `evidence init --write` writes to the durable change directory and mirrors into an active sandbox — `.claude/harness/runtime/workflow/change-validation.mjs` — verify: `sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:evidence-init-survives-sandbox-sync] [repo:root] [paths:.claude/harness/runtime/workflow/change-validation.mjs]
+- [x] **T004** `sandbox create` treats every `openspec/changes/` draft as harness-owned — `.claude/harness/runtime/workflow/sandbox-runtime.mjs` — verify: `sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:concurrent-drafts-keep-worktree-isolation] [repo:root] [paths:.claude/harness/runtime/workflow/sandbox-runtime.mjs]
+- [x] **T005** rapid proposal template uses OpenSpec's expected `## Why` / `## What Changes` headers — `openspec/schemas/foundation-rapid/templates/proposal.md` — verify: `sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:rapid-proposal-validates] [repo:root] [paths:openspec/schemas/foundation-rapid/templates/proposal.md]
+- [x] **T006** orphan-runtime diagnostic names `change abandon` instead of a manual `mv` — `.claude/harness/runtime/core/diagnostics-runtime.mjs` — verify: `sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:orphan-diagnostic-names-supported-command] [repo:root] [paths:.claude/harness/runtime/core/diagnostics-runtime.mjs]
+- [x] **T007** `install.sh` stages managed files and states they must be committed before the first `/change` — `install.sh` — verify: `sh .claude/tests/run-all.sh` [repo:root] [paths:install.sh]

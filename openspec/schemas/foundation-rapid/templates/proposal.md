@@ -1,8 +1,12 @@
 # Rapid change: <title>
 
-## Why and what
+## Why
 
-<Brief outcome and scope.>
+<Problem and desired outcome.>
+
+## What Changes
+
+- <Observable behavior that changes.>
 
 ## Eligibility
 

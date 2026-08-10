@@ -367,13 +367,31 @@ export function createStateRuntime({
     else policyCache.clear();
   }
 
+  // Git-ignored output is regenerable, so it belongs in no baseline. Walking it
+  // is not a small waste: this repository's gitignored `target/` put 906,814 of
+  // 909,041 entries into one manifest, cost ~250s of hashing to build, and grew
+  // the runtime state file to 156MB — which every later command then had to
+  // parse, taking `changes` from 0.09s to 1.96s and `packet` from 0.22s to 9.3s.
+  // The copy sandbox already refuses these paths, so including them here would
+  // also describe files the sandbox does not have.
+  function ignoredPathSet(workspace) {
+    const listed = git(
+      ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
+      workspace);
+    if (listed.status !== 0) return new Set();
+    return new Set(listed.stdout.split("\0").filter(Boolean)
+      .map((path) => (path.endsWith("/") ? path.slice(0, -1) : path)));
+  }
+
   function workspaceManifest(workspace, id, excludeChange = false) {
     const result = {};
+    const ignored = ignoredPathSet(workspace);
     function collect(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (excludedWorkspaceDirs.has(entry.name)) continue;
         const path = join(dir, entry.name);
         const rel = relative(workspace, path).replaceAll("\\", "/");
+        if (ignored.has(rel)) continue;
         if (rel.startsWith("openspec/changes/archive/")) continue;
         if (rel.startsWith("openspec/changes/") &&
             (excludeChange || !isCurrentChangePath(rel, id))) continue;

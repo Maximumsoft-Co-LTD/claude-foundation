@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "prefilter-skips-only-what-the-guard-skips",
+      "scenario": "The prefilter exits without starting Node only when the guard itself would have exited without a violation: guardrail mode off, or audit mode with no active phase and no recorded phase context. Block mode and any recorded phase always reach the guard.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "guard-still-enforces-through-the-prefilter",
+      "scenario": "With an active phase, a mutation outside the allowed surface still produces the same violation through the prefilter as it does when the guard is invoked directly, including a block decision in block mode.",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "upgrade-runs-one-guard-not-two",
+      "scenario": "Installing over a project whose settings.json wires the previous phase-mutation-guard.mjs command leaves exactly one phase guard wired, the prefilter.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "audit-log-stays-bounded",
+      "scenario": "The guardrail audit log rotates at its size cap and keeps one previous generation, so repeated appends cannot grow it without limit.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "authority-review-response-records",
+      "scenario": "A review response file written from the emitted template, carrying reviewer type and subject provenance, records through 'authority record' without any unsupported flag.",
+      "impact": "high",
+      "capabilities": ["test"]
+    }
+  ]
+}

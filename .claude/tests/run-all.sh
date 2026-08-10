@@ -36,6 +36,7 @@ run "blocked decision contracts" node "$HERE/harness/run-blocked-decision-tests.
 run "next-step contracts" node "$HERE/harness/run-next-step-tests.mjs"
 run "workspace surface" node "$HERE/harness/run-workspace-surface-tests.mjs"
 run "proof loop end to end" sh "$HERE/harness/run-proof-loop-tests.sh"
+run "change loop seams" sh "$HERE/harness/run-changeloop-seam-tests.sh"
 run "openspec version policy" node "$HERE/harness/run-openspec-version-tests.mjs"
 run "model tier drift" node "$HERE/harness/run-model-drift-tests.mjs"
 run "model tier drift join" node "$HERE/harness/run-model-drift-join-tests.mjs"

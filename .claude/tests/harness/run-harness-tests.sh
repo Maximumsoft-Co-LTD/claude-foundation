@@ -1900,7 +1900,7 @@ doctor_with_orphan="$(node .claude/harness/foundation.mjs doctor \
 assert_contains "doctor gives an explicit orphan error" \
   "$doctor_with_orphan" 'ERROR change:orphan-fixture'
 assert_contains "doctor gives a recoverable orphan action" \
-  "$doctor_with_orphan" '.foundation/recovery/orphaned-runtime/'
+  "$doctor_with_orphan" 'change abandon'
 
 # An inferred capability that does not name the file that pulled it in can only
 # be diagnosed by reading the runtime source, which is what this prevents.

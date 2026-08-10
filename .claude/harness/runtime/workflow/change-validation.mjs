@@ -400,7 +400,21 @@ export function createChangeValidationRuntime({
 
   function initializeEvidence(id, flags = {}) {
     const detection = evidenceDetectionValue(id);
-    const executionPath = join(activeChangePath(id), "execution.yaml");
+    // `activeChangePath` points into the sandbox while one is active, which is
+    // right for reading a Build packet and fatal for writing contract. `sync`
+    // is one-way source → sandbox: it removes the destination, copies the
+    // source over it, and merges back only `tasks.md`. Writing detected
+    // providers into the sandbox therefore handed them to the next sync to
+    // delete — silently, in both trees, after reporting them written. The
+    // durable directory is what Land archives and what sync copies forward, so
+    // it is the only placement a sync cannot destroy.
+    const executionPath = join(changePath(id), "execution.yaml");
+    // Build still has to see the wiring without paying for a sync, which would
+    // bump `revision` and drop `provenHash`. The mirror is the identical value,
+    // and the next sync overwrites it from the same source.
+    const activePath = activeChangePath(id);
+    const mirrorPath = activePath === changePath(id)
+      ? null : join(activePath, "execution.yaml");
     const current = rawExecution(id);
     const additions = {};
     for (const candidate of detection.candidates.filter((row) => row.recommended && row.config)) {
@@ -422,10 +436,12 @@ export function createChangeValidationRuntime({
         }))
     };
     if (flags.write && Object.keys(additions).length) {
-      writeJson(executionPath, {
+      const next = {
         ...current,
         providers: { ...current.providers, ...additions }
-      });
+      };
+      writeJson(executionPath, next);
+      if (mirrorPath) writeJson(mirrorPath, next);
       preview.written = Object.keys(additions).sort();
     } else {
       preview.written = [];
