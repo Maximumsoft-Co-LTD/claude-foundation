@@ -4,7 +4,7 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { isExcludedPath } from "./workspace-surface.mjs";
+import { isExcludedPath, trackedPathSet } from "./workspace-surface.mjs";
 
 export function createStateRuntime({
   root,
@@ -208,7 +208,12 @@ export function createStateRuntime({
   const policyCache = new Map();
 
   function git(args, cwd = root) {
-    return spawnSync("git", args, { cwd, encoding: "utf8" });
+    // The default 1MB maxBuffer silently truncates `ls-files`/`status` on
+    // large repositories, and a failed listing here degrades into a wrong
+    // surface rather than an error.
+    return spawnSync("git", args, {
+      cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024
+    });
   }
 
   function gitHead(cwd) {
@@ -219,6 +224,17 @@ export function createStateRuntime({
   function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
     const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
     const workspace = canonicalPath(workspaceOverride || state.workspace?.path || root);
+    // A recorded workspace that no longer exists used to surface as a raw
+    // ENOENT from the directory walk — a stack trace where the operator needs
+    // the exit instruction. Typed so callers that degrade per row (`changes`)
+    // can recognize exactly this case and rethrow everything else.
+    if (!existsSync(workspace)) {
+      const error = new Error(`workspace '${workspace}' for change '${id}' no longer exists; ` +
+        `recreate it with 'claude-foundation sandbox create ${id}' or run ` +
+        `'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
+      error.code = "FOUNDATION_WORKSPACE_MISSING";
+      throw error;
+    }
     const cacheKey = `${id}\0${workspace}\0${Number(state.contractRevision || state.revision || 0)}`;
     if (!force && snapshotCache.has(cacheKey)) return snapshotCache.get(cacheKey);
     const hash = createHash("sha256");
@@ -414,11 +430,22 @@ export function createStateRuntime({
   function workspaceManifest(workspace, id, excludeChange = false) {
     const result = {};
     const ignored = ignoredPathSet(workspace);
+    // Tracked-aware, like the snapshot and the copy filter: both admit a
+    // committed file under an excluded-named directory, so the manifests whose
+    // diff decides what apply projects must admit it too — a name-only
+    // exclusion here dropped exactly those edits at Land, silently, while
+    // proof (whose hash includes them) reported pass.
+    const listed = git(["ls-files", "-z"], workspace);
+    const tracked = listed.status === 0
+      ? trackedPathSet(listed.stdout.split("\0").filter(Boolean))
+      : new Set();
     function collect(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (excludedWorkspaceDirs.has(entry.name)) continue;
         const path = join(dir, entry.name);
         const rel = relative(workspace, path).replaceAll("\\", "/");
+        if (isExcludedPath(rel, {
+          excluded: excludedWorkspaceDirs, tracked: tracked.has(rel)
+        })) continue;
         if (ignored.has(rel)) continue;
         if (rel.startsWith("openspec/changes/archive/")) continue;
         if (rel.startsWith("openspec/changes/") &&
