@@ -215,6 +215,47 @@ assert_cmd_zero "a reference outside the prototype tree still records" \
     --claims declared --observed probe --source fixture \
     --reference "$LOGS/real/report.json"
 
+# --- Legacy migration writes only what was asked for. -----------------------
+#
+# `migrate` is an authority command that had no test at all. Its own comment
+# records why the flag parsing is strict: a greedy parser read the legacy id as
+# the value of `--apply`, so `migrate --apply <id>` migrated *every* legacy run
+# and reported success — and `--apply=false` wrote too, because the string
+# "false" is truthy. Both are one careless parser change away from returning.
+setup_project legacy-migration
+
+assert_contains "a project with no legacy runs says so" \
+  "$($F migrate 2>&1 || true)" "No matching legacy runs."
+
+mkdir -p .workflow/0001-alpha .workflow/0002-beta .workflow/_templates
+printf '{"id":"0001"}\n' > .workflow/0001-alpha/state.json
+printf '{"id":"0002"}\n' > .workflow/0002-beta/state.json
+printf 'template\n' > .workflow/_templates/x.md
+
+candidates() { ls openspec/migration-candidates 2>/dev/null | tr '\n' ' '; }
+
+dry="$($F migrate 2>&1 || true)"
+assert_contains "the default run is a dry run" "$dry" "MIGRATION DRY RUN"
+assert_not_contains "underscore directories are not legacy runs" "$dry" "_templates"
+assert_eq "a dry run writes nothing" "" "$(candidates)"
+
+$F migrate --apply 0001-alpha > /dev/null 2>&1
+assert_eq "an id after --apply selects only that run" "0001-alpha.md " "$(candidates)"
+
+rm -rf openspec/migration-candidates
+assert_contains "--apply refuses a value rather than reading it as truthy" \
+  "$($F migrate --apply=false 2>&1 || true)" "does not accept a value"
+assert_eq "and writes nothing when it refuses" "" "$(candidates)"
+
+assert_contains "two legacy ids are refused" \
+  "$($F migrate 0001-alpha 0002-beta 2>&1 || true)" "at most one legacy id"
+
+$F migrate --apply > /dev/null 2>&1
+first="$(candidates)"
+$F migrate --apply > /dev/null 2>&1
+assert_eq "re-applying is idempotent" "$first" "$(candidates)"
+assert_file_exists "the legacy source is left where it was" ".workflow/0001-alpha/state.json"
+
 # --- A rapid proposal validates against OpenSpec. ---------------------------
 setup_project rapid-validates
 $F new "rapid header probe" --rapid > /dev/null
