@@ -41,7 +41,12 @@ export function createAdapterRuntime({
     mkdirSync(logDir, { recursive: true });
     const logPath = join(logDir, `${provider}-${Date.now()}.log`);
     writeFileSync(logPath, `${result.stdout || ""}${result.stderr || ""}`);
-    recordReceipt(id, provider, result.status === 0 ? "pass" : "fail", {
+    // A spawn failure (missing binary, signal death) is infrastructure, not a
+    // failing check: `error` steers recovery toward restoring the provider,
+    // where `fail` steers it toward changing code.
+    recordReceipt(id, provider,
+      result.error || result.status === null
+        ? "error" : result.status === 0 ? "pass" : "fail", {
       ...flags,
       started, command: [command, ...commandArgs].join(" "),
       log: relative(ROOT, logPath), observed: `exit ${result.status ?? "error"}`,
