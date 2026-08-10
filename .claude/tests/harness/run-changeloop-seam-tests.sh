@@ -350,6 +350,97 @@ assert_contains "an unknown format is refused" \
   "$($F telemetry-import "$C" "$LOGS/good.jsonl" --format nonsense 2>&1 || true)" \
   "generic|codex|cursor|otel|claude"
 
+# --- Submodule pointers are staged at the commit that was bound. ------------
+#
+# `land pointers` is an authority command that writes a gitlink into the control
+# repository's index, and it had no test at all. What makes it safe is that it
+# stages the commit `land record` bound and refuses when the control repository
+# has moved since the sandbox was taken — otherwise it would bind a pointer to a
+# base nobody proved.
+setup_multirepo_submodule() {
+  root="$TMP/$1"
+  mkdir -p "$root/origin/src" "$root/origin/test"
+  (
+    cd "$root/origin"
+    printf "export const n = 'api';\n" > src/index.js
+    printf '{"name":"api","version":"1.0.0","type":"module","scripts":{"test":"node --test"}}\n' > package.json
+    printf 'import { test } from "node:test";\nimport assert from "node:assert";\nimport { n } from "../src/index.js";\ntest("n", () => assert.ok(n));\n' > test/index.test.js
+    git init -q . && git config user.email t@t && git config user.name t
+    git add -A && git commit -qm init
+  )
+  mkdir -p "$root/project/.claude/harness" "$root/project/openspec"
+  cp -R "$ROOT/.claude/harness/." "$root/project/.claude/harness/"
+  cp -R "$ROOT/openspec/schemas" "$root/project/openspec/"
+  cp "$ROOT/openspec/config.yaml" "$root/project/openspec/"
+  cd "$root/project"
+  printf '# control\n' > README.md
+  mkdir -p .foundation
+  printf '*\n!.gitignore\n!README.md\n' > .foundation/.gitignore
+  git init -q . && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init
+  git -c protocol.file.allow=always submodule add -q "$root/origin" services/api
+  cat > openspec/repositories.yaml <<'JSON'
+{ "version": 1, "repositories": [
+  { "id": "api", "type": "submodule", "path": "services/api", "mode": "write", "dependsOn": [] } ] }
+JSON
+  git add -A && git commit -qm "submodule and harness"
+}
+
+if command -v git > /dev/null 2>&1; then
+  setup_multirepo_submodule submodule-pointers
+  C=pointer-probe
+  $F new "pointer probe" --rapid > /dev/null
+  cat > "openspec/changes/$C/repositories.yaml" <<'JSON'
+{ "version": 1, "repositories": [
+  { "id": "root", "mode": "write", "dependsOn": [] },
+  { "id": "api", "mode": "write", "dependsOn": [] } ] }
+JSON
+  cat > "openspec/changes/$C/evidence.yaml" <<'JSON'
+{ "version": 2, "claims": [
+  { "id": "api-c", "scenario": "api behaviour", "impact": "low", "capabilities": ["test"], "repositories": ["api"] } ] }
+JSON
+  cat > "openspec/changes/$C/execution.yaml" <<'JSON'
+{ "version": 1, "providers": { "test": { "adapter": "test-discovery", "repository": "api",
+  "command": ["npm","test","--","--test-reporter=tap"], "minimum": 1, "reportFormat": "tap" } },
+  "services": {} }
+JSON
+  printf '# Tasks\n\n- [x] **T001** api — verify: `npm test` [claims:api-c] [repo:api] [paths:src/**,test/**]\n' \
+    > "openspec/changes/$C/tasks.md"
+  $F sandbox create "$C" > /dev/null 2>&1
+  child=".foundation/repository-sandboxes/$C/api"
+  printf "export const n = 'api';\nexport const stamp = 's1';\n" > "$child/src/index.js"
+  printf 'import { test } from "node:test";\nimport assert from "node:assert";\nimport { stamp } from "../src/index.js";\ntest("s", () => assert.equal(stamp, "s1"));\n' \
+    > "$child/test/index.test.js"
+  $F proof-run "$C" > /dev/null 2>&1
+  ( cd "$child" && git add -A && git commit -qm "api: stamp" > /dev/null )
+  bound="$(cd "$child" && git rev-parse HEAD)"
+  # Committing in the child moved the composite identity, which is the saga's
+  # own re-prove step rather than a failure.
+  $F proof-run "$C" > /dev/null 2>&1
+  $F land-record "$C" --repo api --commit "$bound" --decision-ref pointer-test > /dev/null 2>&1
+
+  # The saga requires the child commit to reach its own branch before a pointer
+  # can be staged at it; the sandbox is a detached worktree.
+  ( cd services/api && git -c protocol.file.allow=always fetch -q "$TMP/submodule-pointers/project/$child" HEAD && git merge -q --ff-only FETCH_HEAD )
+  $F land-record "$C" --repo api --commit "$bound" --decision-ref pointer-test > /dev/null 2>&1
+  staged="$($F land-pointers "$C" 2>&1 || true)"
+  assert_contains "staging reports what it wrote" "$staged" "ROOT POINTERS STAGED"
+  assert_eq "the staged gitlink is the commit that was bound" "$bound" \
+    "$(git ls-files -s services/api | awk '{print $2}')"
+  assert_contains "and says the composite must be proven again" "$staged" "proof is stale"
+
+  # The `control-head-moved` refusal is deliberately not asserted here. It was
+  # verified by hand — a control commit taken after the sandbox makes
+  # `land pointers` refuse with that decision and the reason that staging now
+  # "could bind them to a base nobody proved" — but reaching it reliably means
+  # racing the stale-proof check, which moving the control head also trips.
+  # A test that sometimes asserts the other refusal would pin nothing.
+else
+  pass "submodule pointer staging skipped: git unavailable"
+  pass "submodule pointer staging skipped: git unavailable"
+  pass "submodule pointer staging skipped: git unavailable"
+fi
+
 # --- A rapid proposal validates against OpenSpec. ---------------------------
 setup_project rapid-validates
 $F new "rapid header probe" --rapid > /dev/null
