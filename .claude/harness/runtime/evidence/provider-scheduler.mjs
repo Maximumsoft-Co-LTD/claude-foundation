@@ -6,7 +6,6 @@ export function createProviderScheduler({
   providerWorkspace,
   playwrightAvailability,
   evidence,
-  stableHash,
   providerCapability,
   adapterResources,
   resourcesConflict,
@@ -43,24 +42,38 @@ export function createProviderScheduler({
           continue;
         }
       }
-      const configuredProducer = config.adapter === "test-discovery"
+      // A discovery provider is written by the test provider that names it, in
+      // the same execution — it is never a node of its own. Which one owns it
+      // used to be inferred from an identical config hash, and that can only
+      // ever match the single provider literally named `discovery`: a
+      // repository-scoped pair differs in `capability` by construction, so
+      // `discovery-api` was scheduled standalone and no adapter can produce a
+      // discovered count alone. Follow the `discoveryProvider` reference
+      // instead, which states the ownership directly and works whichever of the
+      // pair `needed` happens to reach first.
+      const producer = providerCapability(provider, config) === "discovery"
         ? Object.entries(evidence(id).providers || {}).find(([candidate, value]) =>
-          stableHash(value) === stableHash(config) &&
-          providerCapability(candidate, value) === "test")?.[0]
+          value?.adapter === "test-discovery" &&
+          providerCapability(candidate, value) === "test" &&
+          (value.discoveryProvider || "discovery") === provider)
         : null;
-      const nodeProvider = configuredProducer || provider;
-      const covers = config.adapter === "test-discovery"
-        ? [nodeProvider, config.discoveryProvider || "discovery"]
+      const nodeProvider = producer ? producer[0] : provider;
+      // The node runs the producer's command, so it must carry the producer's
+      // config; using the discovery entry's would execute the wrong thing and
+      // record the receipt against the wrong workspace.
+      const nodeConfig = producer ? producer[1] : config;
+      const covers = nodeConfig.adapter === "test-discovery"
+        ? [nodeProvider, nodeConfig.discoveryProvider || "discovery"]
           .filter((output) => needed.includes(output))
-        : [...new Set([provider, ...(config.outputs || [])])]
+        : [...new Set([provider, ...(nodeConfig.outputs || [])])]
           .filter((output) => needed.includes(output));
       covers.forEach((item) => claimed.add(item));
       nodes.push({
         provider: nodeProvider,
         covers,
-        config,
-        resources: adapterResources(provider, config),
-        dependsOn: config.dependsOn || []
+        config: nodeConfig,
+        resources: adapterResources(nodeProvider, nodeConfig),
+        dependsOn: nodeConfig.dependsOn || []
       });
     }
     return { nodes, unconfigured, unavailable };

@@ -136,6 +136,38 @@ not the normal interactive recovery flow.
 | `contract-digest` | Hash one declared artifact in two or more repositories and pass only when the bytes agree |
 | `external` | Require a receipt from a system Foundation does not execute |
 
+### Test and discovery in more than one repository
+
+`test-discovery` writes both receipts from a single run: the test receipt under
+the provider's own name, and the discovery receipt under `discoveryProvider`
+(default `discovery`). A provider named exactly `test` needs nothing further.
+
+Two repositories need two test providers, so at most one of them can be named
+`test`. Each of the others names its own discovery provider, and that provider
+must be configured — repository-scoped claims resolve to repository-scoped
+providers:
+
+```json
+{
+  "test-api": {
+    "capability": "test", "adapter": "test-discovery", "repository": "api",
+    "discoveryProvider": "discovery-api",
+    "command": ["npm", "test", "--", "--test-reporter=tap"],
+    "minimum": 1, "reportFormat": "tap"
+  },
+  "discovery-api": {
+    "capability": "discovery", "adapter": "test-discovery", "repository": "api",
+    "command": ["npm", "test", "--", "--test-reporter=tap"],
+    "minimum": 1, "reportFormat": "tap"
+  }
+}
+```
+
+The discovery entry declares the same adapter but never runs on its own — the
+test provider that names it produces its receipt in the same execution. Giving
+it a different adapter passes validation and then fails at run time, because no
+other adapter produces a discovered count.
+
 Configured commands run from the active workspace. The normal path is:
 
 ```bash

@@ -251,6 +251,92 @@ else
   pass "upgrade retirement skipped: jq unavailable, installer merges manually"
 fi
 
+# --- Test evidence proves in more than one repository. ----------------------
+#
+# A `test-discovery` provider not literally named `test` must name a
+# `discoveryProvider`, and that reference had no satisfiable target: the
+# discovery half was refused this adapter, every other adapter passed validation
+# and then failed at execution because none can produce a discovered count, and
+# the scheduler only collapsed the pair when their configs hashed identically —
+# impossible once `capability` differs. So a change with test claims in two
+# repositories could not be proven at all.
+setup_multirepo() {
+  root="$TMP/$1"
+  mkdir -p "$root"
+  for repository in api app; do
+    mkdir -p "$root/services/$repository/src" "$root/services/$repository/test"
+    (
+      cd "$root/services/$repository"
+      printf "export const n = '%s';\n" "$repository" > src/index.js
+      printf '{"name":"%s","version":"1.0.0","type":"module","scripts":{"test":"node --test"}}\n' \
+        "$repository" > package.json
+      printf 'import { test } from "node:test";\nimport assert from "node:assert";\nimport { n } from "../src/index.js";\ntest("n", () => assert.ok(n));\n' \
+        > test/index.test.js
+      git init -q . && git config user.email t@t && git config user.name t
+      git add -A && git commit -qm init
+    )
+  done
+  mkdir -p "$root/.claude/harness" "$root/openspec"
+  cp -R "$ROOT/.claude/harness/." "$root/.claude/harness/"
+  cp -R "$ROOT/openspec/schemas" "$root/openspec/"
+  cp "$ROOT/openspec/config.yaml" "$root/openspec/"
+  cd "$root"
+  printf 'services/\n' > .gitignore
+  printf '# control plane\n' > README.md
+  cat > openspec/repositories.yaml <<'JSON'
+{ "version": 1, "repositories": [
+  { "id": "api", "type": "git", "path": "services/api", "mode": "write", "dependsOn": [] },
+  { "id": "app", "type": "git", "path": "services/app", "mode": "write", "dependsOn": [] } ] }
+JSON
+  git init -q . && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init
+}
+
+setup_multirepo two-repo-evidence
+$F new "two repo evidence" --rapid > /dev/null
+C=two-repo-evidence
+cat > "openspec/changes/$C/repositories.yaml" <<'JSON'
+{ "version": 1, "repositories": [
+  { "id": "root", "mode": "write", "dependsOn": [] },
+  { "id": "api", "mode": "write", "dependsOn": [] },
+  { "id": "app", "mode": "write", "dependsOn": [] } ] }
+JSON
+cat > "openspec/changes/$C/evidence.yaml" <<'JSON'
+{ "version": 2, "claims": [
+  { "id": "api-c", "scenario": "api behaviour", "impact": "low", "capabilities": ["test"], "repositories": ["api"] },
+  { "id": "app-c", "scenario": "app behaviour", "impact": "low", "capabilities": ["test"], "repositories": ["app"] } ] }
+JSON
+cat > "openspec/changes/$C/execution.yaml" <<'JSON'
+{ "version": 1, "providers": {
+  "test-api": { "capability": "test", "adapter": "test-discovery", "repository": "api",
+    "discoveryProvider": "discovery-api",
+    "command": ["npm","test","--","--test-reporter=tap"], "minimum": 1, "reportFormat": "tap" },
+  "discovery-api": { "capability": "discovery", "adapter": "test-discovery", "repository": "api",
+    "command": ["npm","test","--","--test-reporter=tap"], "minimum": 1, "reportFormat": "tap" },
+  "test-app": { "capability": "test", "adapter": "test-discovery", "repository": "app",
+    "discoveryProvider": "discovery-app",
+    "command": ["npm","test","--","--test-reporter=tap"], "minimum": 1, "reportFormat": "tap" },
+  "discovery-app": { "capability": "discovery", "adapter": "test-discovery", "repository": "app",
+    "command": ["npm","test","--","--test-reporter=tap"], "minimum": 1, "reportFormat": "tap" } },
+  "services": {} }
+JSON
+printf '# Tasks\n\n- [x] **T001** api — verify: `npm test` [claims:api-c] [repo:api] [paths:src/**]\n- [x] **T002** app — verify: `npm test` [claims:app-c] [repo:app] [paths:src/**]\n' \
+  > "openspec/changes/$C/tasks.md"
+
+assert_cmd_zero "a repository-scoped discovery provider validates" \
+  node .claude/harness/foundation.mjs validate "$C"
+$F sandbox create "$C" > /dev/null 2>&1
+proof="$($F proof-run "$C" 2>&1 || true)"
+assert_contains "each repository's test provider runs once" \
+  "$proof" "EXECUTION"
+assert_contains "the api discovery receipt is written by its test provider" \
+  "$proof" "RECEIPT $C/discovery-api: pass"
+assert_contains "the app discovery receipt is written by its test provider" \
+  "$proof" "RECEIPT $C/discovery-app: pass"
+assert_contains "test evidence proves in both repositories" "$proof" "PROVEN $C"
+assert_not_contains "no discovery provider is scheduled on its own" \
+  "$proof" "requires --discovered"
+
 # --- A review response records through the authority bridge. ----------------
 #
 # `authority record` accepts only --request and --response, while the receipt it

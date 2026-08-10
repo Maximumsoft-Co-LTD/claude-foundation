@@ -138,9 +138,19 @@ export function createEvidenceContract({
             { excluded: EXCLUDED_WORKSPACE_DIRS }))
         console.error(`WARNING: provider '${provider}' writes its report to ${config.report}, inside the hashed workspace surface; its own output will expire the receipt it produces. Write it under one of: ${
           [...EXCLUDED_WORKSPACE_DIRS].filter((dir) => !dir.startsWith(".")).join(", ")}`);
-      if (config.adapter === "test-discovery" && capability !== "test")
-        die("test-discovery adapter requires capability 'test'");
-      if (config.adapter === "test-discovery" && provider !== "test") {
+      // A discovery provider may declare this adapter too. It does not run on
+      // its own — the test provider that names it writes both receipts in one
+      // execution — but it has to be *configurable* so that a change with test
+      // claims in two repositories can scope discovery per repository. Refusing
+      // it here left multi-repository test evidence unprovable: the only other
+      // adapters pass validation and then fail at execution, because none of
+      // them can produce a discovered count.
+      if (config.adapter === "test-discovery" && !["test", "discovery"].includes(capability))
+        die("test-discovery adapter requires capability 'test' or 'discovery'");
+      // Only the *test* half owes this reference. The discovery half is the
+      // thing being referred to, and demanding it name a discovery provider of
+      // its own asked it to point at itself.
+      if (config.adapter === "test-discovery" && capability === "test" && provider !== "test") {
         if (!config.discoveryProvider ||
             !configuredProviders[config.discoveryProvider] ||
             providerCapability(
