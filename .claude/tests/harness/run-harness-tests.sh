@@ -333,6 +333,44 @@ assert_contains "legacy metrics exposes an empty migrated window" \
 assert_cmd_zero "metrics remains read-only during legacy normalization" \
   cmp "$TMP/legacy-budget-before-metrics.json" .foundation/runtime/no-security-trigger.json
 
+# Requests bind long before tokens on high-impact work, so the request target
+# is policy-configurable and widens when the declared impact is high. Targets
+# are derived on every read: an impact resolved after the first window exists
+# must widen the window the change is already spending from.
+node .claude/harness/foundation.mjs new 'Impact widens request budget' >/dev/null
+impact_budget_default="$(node .claude/harness/foundation.mjs metrics impact-widens-request-budget)"
+assert_contains "standard change starts at the standard request target" \
+  "$impact_budget_default" '"targetRequests": 160'
+node .claude/harness/foundation.mjs resolve impact-widens-request-budget \
+  --impact high --coupling isolated --acceptance-not-required >/dev/null
+impact_budget_high="$(node .claude/harness/foundation.mjs metrics impact-widens-request-budget)"
+assert_contains "high impact widens the active request window" \
+  "$impact_budget_high" '"targetRequests": 240'
+impact_budget_policy_backup=""
+if [ -f foundation.json ]; then
+  cp foundation.json "$TMP/impact-budget-policy-backup.json"
+  impact_budget_policy_backup=1
+fi
+printf '{"version":1,"execution":{"requestBudgets":{"standard":200}}}\n' > foundation.json
+impact_budget_policy="$(node .claude/harness/foundation.mjs metrics impact-widens-request-budget)"
+assert_contains "policy request budget scales with declared impact" \
+  "$impact_budget_policy" '"targetRequests": 300'
+printf '{"version":1,"execution":{"requestBudgets":{"standard":5}}}\n' > foundation.json
+assert_cmd_fails_with "out-of-range request budget is refused with its bounds" \
+  "requestBudgets.standard must be 10..100000" \
+  node .claude/harness/foundation.mjs metrics impact-widens-request-budget
+if [ -n "$impact_budget_policy_backup" ]; then
+  cp "$TMP/impact-budget-policy-backup.json" foundation.json
+else
+  rm foundation.json
+fi
+jq '.budget.window.reason = "operator-continue" | .budget.window.targetRequests = 999' \
+  .foundation/runtime/impact-widens-request-budget.json > "$TMP/operator-window-budget.json"
+cp "$TMP/operator-window-budget.json" .foundation/runtime/impact-widens-request-budget.json
+impact_budget_operator="$(node .claude/harness/foundation.mjs metrics impact-widens-request-budget)"
+assert_contains "operator-continue window keeps its granted request target" \
+  "$impact_budget_operator" '"targetRequests": 999'
+
 node .claude/harness/foundation.mjs new 'Missing artifact budget recovery' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve missing-artifact-budget-recovery \
   --impact low --coupling isolated >/dev/null
@@ -542,7 +580,7 @@ assert_cmd_zero "discovery provider receipt" node .claude/harness/foundation.mjs
 assert_cmd_zero "complete evidence proves" node .claude/harness/foundation.mjs prove profile-owner-update
 assert_cmd_zero "fresh proof is land-ready" node .claude/harness/foundation.mjs land-check profile-owner-update
 
-jq '.budget.window.targetTokens = 1 | .budget.window.usedTokens = 1 | .budget.window.mode = "completion-only"' \
+jq '.budget.window.usedTokens = 1600001' \
   .foundation/runtime/profile-owner-update.json > "$TMP/proven-budget.json"
 cp "$TMP/proven-budget.json" .foundation/runtime/profile-owner-update.json
 if node .claude/harness/foundation.mjs budget-continue profile-owner-update \
@@ -688,7 +726,7 @@ assert_file_exists "proof collect records test evidence" \
   .foundation/receipts/collect-before-review/test.json
 assert_file_absent "proof collect does not finalize proof" \
   .foundation/receipts/collect-before-review/proof.json
-jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | .budget.window.usedTokens = 1' \
+jq '.budget.window.usedTokens = 1600001' \
   .foundation/runtime/collect-before-review.json > "$TMP/external-budget.json"
 cp "$TMP/external-budget.json" .foundation/runtime/collect-before-review.json
 if external_budget_error="$(node .claude/harness/foundation.mjs budget-continue \
@@ -812,7 +850,7 @@ assert_cmd_fails_with "an adapter override does not lift the evidence floor" \
     static-analysis pass --adapter external
 assert_file_absent "a refused forgery writes no receipt" \
   .foundation/receipts/unavailable-provider-recovery/static-analysis.json
-jq '.budget.window.mode = "completion-only" | .budget.window.targetTokens = 1 | .budget.window.usedTokens = 1' \
+jq '.budget.window.usedTokens = 1600001' \
   .foundation/runtime/unavailable-provider-recovery.json > "$TMP/infrastructure-budget.json"
 cp "$TMP/infrastructure-budget.json" \
   .foundation/runtime/unavailable-provider-recovery.json
@@ -1171,11 +1209,17 @@ assert_eq "watchdog accumulates known request tokens" "162" \
   "$(jq -r '.budget.usedTokens' .foundation/runtime/tiny-copy-edit.json)"
 assert_eq "watchdog excludes cache reads from spend" "3" \
   "$(jq -r '.budget.version' .foundation/runtime/tiny-copy-edit.json)"
-tmp_runtime="$TMP/tiny-copy-budget.json"
-jq '.budget.window.targetTokens = 162' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
-cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
+# Targets derive from policy on every read, so over-budget is forced the honest
+# way: a tiny policy budget plus real ingested usage that crosses it.
+tiny_copy_policy_backup=""
+if [ -f foundation.json ]; then
+  cp foundation.json "$TMP/tiny-copy-policy-backup.json"
+  tiny_copy_policy_backup=1
+fi
+printf '{"version":1,"execution":{"tokenBudgets":{"rapid":10000,"standard":10000}}}\n' \
+  > foundation.json
 budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-token-limit --operation build)"
+  --request req-token-limit --operation build --input 9838)"
 assert_contains "token budget enters completion-only without failing accounting" \
   "$budget_event" "COMPLETION_ONLY"
 assert_file_contains "over-budget request remains auditable" \
@@ -1196,11 +1240,8 @@ assert_eq "continuation preserves lifetime usage" "4" \
   "$(jq -r '.budget.lifetime.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
 assert_eq "continuation resets only the active window" "0" \
   "$(jq -r '.budget.window.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
-tmp_runtime="$TMP/tiny-copy-budget-second.json"
-jq '.budget.window.targetTokens = 1' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
-cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-second-limit --operation build --input 2 >/dev/null
+  --request req-second-limit --operation build --input 10001 >/dev/null
 if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
   --reason "second required attempt" --run tiny-copy-edit \
   --decision-ref fixture://user/continue-second-attempt >/dev/null 2>&1; then
@@ -1268,11 +1309,8 @@ assert_eq "session rollover preserves lifetime but resets run usage" "1" \
 # Crossing a model budget must stop further exploration, not lock deterministic
 # lifecycle commands. Telemetry is ingested and warns while the requested
 # packet/readiness/proof command remains resumable and can reuse prior evidence.
-tmp_runtime="$TMP/tiny-copy-resume-budget.json"
-jq '.budget.window.targetTokens = 1' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
-cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 printf '%s\n' \
-  '{"type":"assistant","requestId":"over-budget-before-prove","message":{"id":"over-budget","role":"assistant","model":"claude-test","usage":{"input_tokens":11,"output_tokens":7}}}' \
+  '{"type":"assistant","requestId":"over-budget-before-prove","message":{"id":"over-budget","role":"assistant","model":"claude-test","usage":{"input_tokens":10011,"output_tokens":7}}}' \
   >> "$BOUND_TRANSCRIPT"
 resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
   FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \
@@ -1294,8 +1332,11 @@ assert_contains "Land can still be resumed under the operator stop" \
   "$resume_packet" '"land-recovery"'
 assert_file_contains "over-budget lifecycle resume still emits stop warning" \
   "$TMP/over-budget-resume.err" "CONTINUE_OR_RESCOPE"
-jq '.budget.window.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
-cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
+if [ -n "$tiny_copy_policy_backup" ]; then
+  cp "$TMP/tiny-copy-policy-backup.json" foundation.json
+else
+  rm -f foundation.json
+fi
 
 # Non-Git repositories use a manifest-guarded isolated copy.
 node .claude/harness/foundation.mjs new 'Copy sandbox' --rapid >/dev/null

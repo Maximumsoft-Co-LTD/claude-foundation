@@ -196,6 +196,10 @@ assert_cmd_zero "rapid token budget is explicit" \
   jq -e '.execution.tokenBudgets.rapid == 800000' "$ROOT/foundation.json"
 assert_cmd_zero "standard token budget is explicit" \
   jq -e '.execution.tokenBudgets.standard == 1600000' "$ROOT/foundation.json"
+assert_cmd_zero "rapid request budget is explicit" \
+  jq -e '.execution.requestBudgets.rapid == 80' "$ROOT/foundation.json"
+assert_cmd_zero "standard request budget is explicit" \
+  jq -e '.execution.requestBudgets.standard == 160' "$ROOT/foundation.json"
 
 if [ "$budget_failures" -gt 0 ]; then
   budget_decision_guidance >&2

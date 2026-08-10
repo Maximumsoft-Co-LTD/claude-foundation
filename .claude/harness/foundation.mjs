@@ -1475,6 +1475,7 @@ function foundationPolicy() {
       maxParallelAgents: 3,
       packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
       tokenBudgets: { rapid: 800000, standard: 1600000 },
+      requestBudgets: { rapid: 80, standard: 160 },
       planSummaryBytes: 4096,
       leaseMinutes: 45
     },
@@ -1518,6 +1519,10 @@ function foundationPolicy() {
     ...defaults.execution.tokenBudgets,
     ...(policy.execution.tokenBudgets || {})
   };
+  policy.execution.requestBudgets = {
+    ...defaults.execution.requestBudgets,
+    ...(policy.execution.requestBudgets || {})
+  };
   for (const type of ["task", "review", "repository", "global"]) {
     const bytes = Number(policy.execution.packetBytes?.[type]);
     if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
@@ -1530,6 +1535,11 @@ function foundationPolicy() {
     const tokens = Number(policy.execution.tokenBudgets[type]);
     if (!Number.isInteger(tokens) || tokens < 10000 || tokens > 100000000)
       die(`foundation.json execution.tokenBudgets.${type} must be 10000..100000000`);
+  }
+  for (const type of ["rapid", "standard"]) {
+    const requests = Number(policy.execution.requestBudgets[type]);
+    if (!Number.isInteger(requests) || requests < 10 || requests > 100000)
+      die(`foundation.json execution.requestBudgets.${type} must be 10..100000`);
   }
   const parallel = Number(policy.execution.maxParallelAgents);
   if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)

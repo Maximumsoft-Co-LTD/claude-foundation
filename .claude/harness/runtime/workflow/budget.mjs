@@ -17,11 +17,16 @@ export function createBudgetRuntime({ policy, now }) {
     return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
   }
 
-  function budgetTargets(schema) {
-    const configured = policy().execution.tokenBudgets;
+  function budgetTargets(schema, impact) {
+    const { requestBudgets, tokenBudgets } = policy().execution;
+    const lane = schema === "foundation-rapid" ? "rapid" : "standard";
+    // Requests bind long before tokens on high-impact work (measured: 91% of
+    // requests spent at 33% of tokens), so the request lane widens with the
+    // declared impact. Tokens do not scale: they were never the limiter.
+    const scale = impact === "high" ? 1.5 : 1;
     return {
-      requests: schema === "foundation-rapid" ? 80 : 160,
-      tokens: schema === "foundation-rapid" ? configured.rapid : configured.standard
+      requests: Math.ceil((requestBudgets?.[lane] ?? (lane === "rapid" ? 80 : 160)) * scale),
+      tokens: tokenBudgets[lane]
     };
   }
 
@@ -68,13 +73,11 @@ export function createBudgetRuntime({ policy, now }) {
 
   function ensureBudgetState(state) {
     const existing = state.budget || {};
-    const defaults = budgetTargets(state.schema);
-    const targets = {
-      requests: knownNumber(existing.targetRequests)
-        ? Number(existing.targetRequests) : defaults.requests,
-      tokens: knownNumber(existing.targetTokens)
-        ? Number(existing.targetTokens) : defaults.tokens
-    };
+    // Targets are derived, never trusted from stored state: `change resolve
+    // --impact high` arrives after the first window already exists, and policy
+    // budgets can change between runs. Recomputing here is what lets a later
+    // impact declaration actually widen the allowance.
+    const targets = budgetTargets(state.schema, state.impact);
     if (existing.version !== 3 || !existing.lifetime || !existing.window) {
       const legacyRequests = knownNumber(existing.usedRequests)
         ? Number(existing.usedRequests) : null;
@@ -103,10 +106,19 @@ export function createBudgetRuntime({ policy, now }) {
         ? Number(state.budget.lifetime.usedTokens) : null;
       state.budget.usedRequests = state.budget.lifetime.usedRequests;
       state.budget.usedTokens = state.budget.lifetime.usedTokens;
-      if (!knownNumber(state.budget.window.targetRequests))
+      // The active window follows the derived targets too — an impact declared
+      // mid-change must widen the window the change is actually spending from,
+      // not only the next one. An operator-continue window keeps the numbers
+      // that were granted and audited; only unknown fields are filled there.
+      if (state.budget.window.reason !== "operator-continue") {
         state.budget.window.targetRequests = targets.requests;
-      if (!knownNumber(state.budget.window.targetTokens))
         state.budget.window.targetTokens = targets.tokens;
+      } else {
+        if (!knownNumber(state.budget.window.targetRequests))
+          state.budget.window.targetRequests = targets.requests;
+        if (!knownNumber(state.budget.window.targetTokens))
+          state.budget.window.targetTokens = targets.tokens;
+      }
     }
     return state.budget;
   }
