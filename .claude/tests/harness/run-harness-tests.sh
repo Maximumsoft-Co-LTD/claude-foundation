@@ -1236,12 +1236,20 @@ resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
   2>"$TMP/over-budget-resume.err")"
 assert_contains "over-budget telemetry does not block lifecycle resume" \
   "$resume_packet" '"packetType":"global"'
-assert_contains "over-budget packet declares completion-only policy" \
-  "$resume_packet" '"mode":"completion-only"'
-assert_contains "completion-only packet forbids scope expansion" \
+# This run already spent its one extra window above, so exhausting it again is
+# the operator stop rather than another completion boundary — otherwise renaming
+# the run would hand back a full allowance with no decision recorded.
+assert_contains "over-budget packet after a spent extension requires an operator" \
+  "$resume_packet" '"mode":"operator-required"'
+assert_contains "the stopped packet forbids scope expansion" \
   "$resume_packet" '"scope-expansion"'
+# The stop withholds new work, not the loop's own completion path.
+assert_contains "required proof still runs under the operator stop" \
+  "$resume_packet" '"provider-run"'
+assert_contains "Land can still be resumed under the operator stop" \
+  "$resume_packet" '"land-recovery"'
 assert_file_contains "over-budget lifecycle resume still emits stop warning" \
-  "$TMP/over-budget-resume.err" "STOP_AND_RESCOPE"
+  "$TMP/over-budget-resume.err" "CONTINUE_OR_RESCOPE"
 jq '.budget.window.targetTokens = 800000' .foundation/runtime/tiny-copy-edit.json > "$tmp_runtime"
 cp "$tmp_runtime" .foundation/runtime/tiny-copy-edit.json
 

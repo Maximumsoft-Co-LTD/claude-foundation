@@ -168,7 +168,13 @@ export function createBudgetRuntime({ policy, now }) {
         "focused-fix", "provider-run", "receipt-reuse", "proof-resume",
         "metrics", "land-recovery", "archive"
       ] : mode === "operator-required" ? [
-        "packet", "readiness", "receipt-reuse", "metrics", "budget-continue", "archive"
+        // An operator stop withholds *new* work, not the loop's own completion
+        // path. `Required proof remains` is stated for this state too, and a
+        // change that cannot run its providers or resume Land is stranded
+        // rather than gated. What stays out is anything that would grow the
+        // change while the operator is being asked whether to fund it.
+        "packet", "readiness", "provider-run", "proof-resume", "receipt-reuse",
+        "metrics", "land-recovery", "budget-continue", "archive"
       ] : ["scoped-execution"],
       forbidden: mode === "completion-only" ? [
         "scope-expansion", "speculative-investigation", "new-subagent", "optional-refactor"
@@ -179,11 +185,25 @@ export function createBudgetRuntime({ policy, now }) {
   }
 
   function applyBudgetDecision(state) {
-    const decision = budgetDecision(state);
     const window = state.budget.window;
-    if (window.mode !== "operator-required") window.mode = decision.mode;
-    if (decision.ratio >= 1 && !window.exhaustedAt) window.exhaustedAt = now();
-    return decision;
+    const preliminary = budgetDecision(state);
+    if (window.mode !== "operator-required") window.mode = preliminary.mode;
+    if (preliminary.ratio >= 1 && !window.exhaustedAt) window.exhaustedAt = now();
+    // Blowing through the one extra window an operator already funded is the
+    // stop `activateBudgetWindow` carries across a run id — and nothing ever
+    // raised it, so that carry-forward was unreachable and the protection its
+    // comment describes never engaged. An exhausted run read `completion-only`,
+    // which a caller-supplied `--run` reset to `normal` with a full fresh
+    // allowance: the gate re-armed indefinitely, with no decision recorded.
+    //
+    // Only after the extension is spent. A first window that runs out is a
+    // normal completion boundary, and a genuine host rollover still earns a
+    // fresh one — that is what a new run id legitimately means.
+    if (preliminary.ratio >= 1 && Number(window.extensionNumber || 0) >= 1)
+      window.mode = "operator-required";
+    // Recomputed, because the transition above changes the answer the caller is
+    // about to act on.
+    return budgetDecision(state);
   }
 
   function synchronizeBudgetUsage(state, events, runId, measurement, newEventCount = 0) {

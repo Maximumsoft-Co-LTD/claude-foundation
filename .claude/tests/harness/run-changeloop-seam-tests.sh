@@ -123,6 +123,47 @@ $F sandbox create second-change > "$LOGS/second.log" 2>&1
 assert_file_not_contains "an unrelated draft does not force a copy" "$LOGS/second.log" "isolated-copy"
 assert_file_not_contains "the draft is not reported as a dirty target" "$LOGS/second.log" "dirty-target"
 
+# --- The budget stop survives a renamed run. --------------------------------
+#
+# A new run id resets the window's usage, which is what a genuine host session
+# rollover means. It must not also hand back the allowance: the id is
+# caller-supplied. `activateBudgetWindow` carries `operator-required` across for
+# exactly that reason — but nothing ever raised it, so an exhausted run read
+# `completion-only`, and `--run anything-new` reset it to `normal` with a full
+# fresh allowance. The gate re-armed indefinitely, with no decision recorded.
+setup_project budget-stop
+$F new "budget stop" --rapid > /dev/null
+C=budget-stop
+
+mode_of() {
+  node -e "
+    const w = require('$TMP/budget-stop/.foundation/runtime/$C.json').budget.window;
+    process.stdout.write(w.mode + ':' + w.extensionNumber)"
+}
+
+$F event "$C" --request b1 --input 800000 --output 0 > /dev/null 2>&1
+assert_eq "an exhausted first window is completion-only" "completion-only:0" "$(mode_of)"
+
+# No extension spent yet, so a genuine rollover still earns a fresh window.
+$F event "$C" --request b2 --run rollover --input 10 --output 0 > /dev/null 2>&1
+assert_eq "a rollover before any extension still resets" "normal:0" "$(mode_of)"
+
+$F event "$C" --request b3 --input 800000 --output 0 > /dev/null 2>&1
+$F budget-continue "$C" --reason "operator window" --decision-ref ops-1 > /dev/null 2>&1
+$F event "$C" --request b4 --input 800000 --output 0 > /dev/null 2>&1
+assert_eq "exhausting the one extension raises the operator stop" "operator-required:1" "$(mode_of)"
+
+$F event "$C" --request b5 --run escape-hatch --input 10 --output 0 > /dev/null 2>&1
+assert_eq "a renamed run cannot clear that stop" "operator-required:1" "$(mode_of)"
+
+stopped="$($F packet "$C" --phase change 2>/dev/null)"
+assert_contains "the agent is told an operator decision is required" \
+  "$stopped" '"action":"OPERATOR_REQUIRED"'
+# The stop withholds new work, not the loop's own completion path.
+assert_contains "required proof stays permitted under the stop" "$stopped" '"provider-run"'
+assert_contains "Land recovery stays permitted under the stop" "$stopped" '"land-recovery"'
+assert_contains "scope expansion does not" "$stopped" '"scope-expansion"'
+
 # --- A rapid proposal validates against OpenSpec. ---------------------------
 setup_project rapid-validates
 $F new "rapid header probe" --rapid > /dev/null
