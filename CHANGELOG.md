@@ -7,6 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A sandbox no longer copies — or hashes — regenerable build output** — both
+  the copy sandbox and the workspace baseline decided what to walk from a fixed
+  list of directory names. That list knew `node_modules` and `coverage` but not
+  `target`, `dist`, `build`, `vendor`, or `.venv`, so a repository carrying a
+  large ignored build directory paid for it twice. On this project's own 79GB
+  gitignored Rust `target/`, `sandbox create` copied until the filesystem was
+  full, died on an uncaught `ENOSPC`, and left a 41GB tree `state.workspace` had
+  never recorded — invisible to the runtime, and enough to make every retry fail
+  with `sandbox path already occupied`. `workspaceManifest` hashed the same tree
+  into the copy baseline: 906,814 of 909,041 entries, and a 156MB runtime state
+  file that every later command re-parsed, taking `changes` from 0.09s to 1.96s
+  and `packet` from 0.22s to 9.31s. Both walks now ask git what it ignores.
+  Measured after: `sandbox create` 0.92s, the sandbox 29MB, the state file
+  104KB, `packet` 0.23s. A copy that fails partway now removes what it wrote
+  instead of leaving a tree nothing knows about.
+- **Detected provider configuration survives a sandbox sync** — `evidence init
+  --write` resolved its target through `activeChangePath`, which points into the
+  sandbox during Build. `sandbox sync` is one-way source → sandbox: it removes
+  the destination, copies the source over it, and merges back only `tasks.md`.
+  Provider configuration written during Build was therefore handed to the next
+  sync to delete, silently, in both trees, after being reported as written — and
+  `evidence doctor` recommends the very command that lost its own output. It now
+  writes the durable change directory and mirrors into the active sandbox.
+- **The working tree's existing contents are no longer counted as change
+  surface** — the surface came from `git status`, which cannot tell a file this
+  change wrote from one that was already lying around. A stray untracked
+  `theme.css` pulled the `accessibility` policy trigger onto a one-line rapid
+  change that had touched no stylesheet, and Prove then asked for evidence the
+  author could not honestly produce. `change new` now records a digest of every
+  dirty path before the change writes anything, and the surface drops a path
+  whose digest still matches. Digests rather than names: a pre-existing file the
+  change *does* edit returns to the surface.
+- **Uncommitted state no longer costs a change its worktree** — `sandbox create`
+  fell back to a whole-tree copy for any dirt it did not recognise. Another
+  change's draft did it, though the loop deliberately keeps drafts uncommitted
+  until Land, and so did a single stray untracked file. Both now keep the
+  git-worktree sandbox; editing a carried-in file still makes it a dirty target.
+- **Test evidence can be proven in more than one repository** — a
+  `test-discovery` provider not named exactly `test` must name a
+  `discoveryProvider`, and that reference had no satisfiable target: the
+  discovery half was refused the adapter outright, every other adapter passed
+  validation and then failed at execution because none produces a discovered
+  count, and the scheduler only folded the pair into one node when their configs
+  hashed identically — impossible once `capability` differs. Two repositories
+  need two test providers, so at most one could be named `test` and every other
+  repository was unprovable. The scheduler now follows the `discoveryProvider`
+  reference, and `EVIDENCE.md` documents the pairing.
+- **Rapid changes are valid to OpenSpec** — the rapid schema declares no spec
+  artifact, so a rapid change never has deltas to find, and OpenSpec reads that
+  absence as an error rather than an omission. Every rapid change was invalid to
+  `openspec validate`, and Land printed the validator's five-line remedy at the
+  user each time. Rapid changes now carry `skip_specs: true`, and the rapid
+  proposal template uses the `## Why` and `## What Changes` headers OpenSpec
+  expects.
+- **The budget's operator stop is real, and required proof stays inside it** —
+  `activateBudgetWindow` carries `operator-required` across a run id because the
+  id is caller-supplied, but nothing ever raised that mode. An exhausted run
+  read `completion-only`, and renaming the run reset it to `normal` with a full
+  fresh allowance: the gate re-armed indefinitely with no decision recorded.
+  Exhausting the one extra window an operator already funded now raises the
+  stop, and the stop's allowances were wrong as well as unused — they listed
+  neither `provider-run` nor `land-recovery`, so reaching it would have stranded
+  a change rather than gating it. A first window running out is still an
+  ordinary completion boundary, and a genuine host rollover still earns a fresh
+  one.
+- **An unreadable telemetry export fails in a sentence** — a telemetry export is
+  written by the host, so a truncated one is an ordinary input. The JSONL
+  fallback parsed it with a bare `map`, so one malformed line threw out of the
+  command and printed a Node stack trace with absolute runtime paths. Skipping
+  is already this command's vocabulary; unparseable lines now join the reported
+  `skipped` count, and only a file with nothing readable in it is an error.
+- **Machine state under `.foundation/` is ignored by default** — the runtime
+  ignore file named each machine-state directory, so every directory added since
+  had to be remembered. Two were not: `authority/` and `attestations/` surfaced
+  as untracked files in any project using external review or host attestation,
+  and `install-manifest.txt` did the same in every project that ran the
+  installer. It is now an allow-list.
+- **A change that requires acceptance says how to leave that state** — declaring
+  acceptance required without naming what is to be accepted left every later
+  command refusing the change, with a message naming two flags of `change
+  resolve`, a command already run by the time anything reads it. All three exits
+  are now named.
+- **The orphan-runtime diagnostic names `change abandon`** rather than
+  instructing an operator to move runtime state files by hand.
+
+### Changed
+
+- **The phase guard costs 4ms instead of 51ms per mutating tool call** — of the
+  guard's measured 53ms, 44ms was Node startup, and on a stock install with no
+  active change its answer is always "nothing to enforce". A shell prefilter now
+  answers that case with builtins alone and `exec`s the guard whenever a
+  decision is needed. Block mode and any recorded phase context always delegate,
+  so enforcement and freshness policy stay in one place. Installing over a
+  project retires the superseded `phase-mutation-guard.mjs` wiring, so an
+  upgraded project runs one guard rather than two.
+- **The guardrail audit log is bounded**, rotating at 1MB and keeping one
+  previous generation.
+- **`install.sh` stages the files it manages** and states that they must be
+  committed before the first `/change`. Until they are, the loop reads them as
+  the change surface: the harness's own shipped paths then trip its own policy
+  triggers, and the first change is asked for accessibility, compatibility, and
+  data-migration evidence it cannot produce.
+- **The review response template carries reviewer and implementation
+  provenance** — `authority record` accepts only `--request` and `--response`,
+  while the receipt it writes requires subject provenance. `validateResponse`
+  already forwards the response file's `evidence` keys, so the file could always
+  carry it; the emitted template simply never named the fields, and an operator
+  following the template hit a dead end on a flag the command rejects.
+
 ## [3.2.7] - 2026-08-07
 
 ### Fixed
