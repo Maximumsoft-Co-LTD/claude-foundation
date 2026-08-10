@@ -95,9 +95,12 @@ try {
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
 
-  // Force the copy path: an untracked file the harness does not own.
-  writeFileSync(join(project, "unrelated.txt"), "dirty\n");
   fm(["new", "Surface case", "--rapid"], project);
+  // Force the copy path: an untracked file the harness does not own, written
+  // after the change exists. Dirt the tree already carried when the change
+  // began no longer costs it a worktree, so writing this first would now
+  // select the mode this fixture exists to avoid.
+  writeFileSync(join(project, "unrelated.txt"), "dirty\n");
   fm(["resolve", "surface-case", "--impact", "low", "--coupling", "isolated"], project);
   const created = fm(["sandbox", "create", "surface-case"], project);
   check(() => assert.match(created, /mode: isolated-copy/,
@@ -140,10 +143,12 @@ try {
   check(() => assert.doesNotMatch(second, /isolated-copy/,
     "an uncommitted archive move is the harness's own output, not a dirty target"));
 
-  // The trigger must stay conservative for everything else.
-  writeFileSync(join(project, "unrelated.txt"), "dirty\n");
+  // The trigger must stay conservative for everything else. The edit lands
+  // after the change begins and changes the committed content, so it is this
+  // change's dirt rather than something the tree was already carrying.
   fm(["new", "Still copies", "--rapid"], project);
   fm(["resolve", "still-copies", "--impact", "low", "--coupling", "isolated"], project);
+  writeFileSync(join(project, "unrelated.txt"), "dirty again\n");
   check(() => assert.match(fm(["sandbox", "create", "still-copies"], project),
     /mode: isolated-copy/, "real uncommitted work still earns the copy"));
 } finally {

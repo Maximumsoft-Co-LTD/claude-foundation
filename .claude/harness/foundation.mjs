@@ -1053,6 +1053,7 @@ const sandboxRuntime = createSandboxRuntime({
   canonicalPath,
   workspaceManifest,
   directoryHash,
+  fileDigest,
   changePath,
   gitHead,
   git,

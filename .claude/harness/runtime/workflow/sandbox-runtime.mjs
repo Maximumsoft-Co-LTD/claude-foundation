@@ -18,7 +18,7 @@ const VERBATIM_COPY = { dereference: false, verbatimSymlinks: true };
 export function createSandboxRuntime({
   root, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
   loadRuntime, saveRuntime,
-  canonicalPath, workspaceManifest, directoryHash, changePath, gitHead, git,
+  canonicalPath, workspaceManifest, directoryHash, fileDigest, changePath, gitHead, git,
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, fail
@@ -265,10 +265,27 @@ export function createSandboxRuntime({
     const harnessOwned = (path) =>
       path.startsWith(".foundation/") || path === ".foundation" ||
       path.startsWith("openspec/changes/") || path === "openspec/changes";
+    // Dirt that was already there when the change began is not this change's
+    // doing, and it should not cost the change its worktree. The surface
+    // already ignores these paths; without the same test here a single stray
+    // untracked file downgraded every sandbox to a whole-tree copy — lower
+    // fidelity and, on a large repository, the expensive mode — for a file
+    // nobody in this change had touched. Compared by digest, so a pre-existing
+    // file the operator has since edited still counts as a dirty target.
+    const preexisting = state.workspace?.preexisting || {};
+    const carriedIn = (path) => {
+      if (!Object.prototype.hasOwnProperty.call(preexisting, path)) return false;
+      const absolute = join(root, path);
+      try {
+        return existsSync(absolute) && preexisting[path] === fileDigest(absolute);
+      } catch {
+        return false;
+      }
+    };
     const unrelated = dirty.stdout.split("\n").filter(Boolean).filter((line) => {
       const path = line.slice(3).split(" -> ").at(-1);
       return path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix) &&
-        !harnessOwned(path);
+        !harnessOwned(path) && !carriedIn(path);
     });
     if (unrelated.length) {
       createCopy(id, state, `dirty-target:${unrelated[0]}`);

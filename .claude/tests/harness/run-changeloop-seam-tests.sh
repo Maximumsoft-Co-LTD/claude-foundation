@@ -82,10 +82,12 @@ mkdir -p build-output/nested
 # Large enough that a copy is unmistakable, cheap enough to stay a unit test.
 dd if=/dev/zero of=build-output/nested/artifact.bin bs=1024 count=4096 2>/dev/null
 printf 'generated\n' > build-output/report.txt
-# A dirty tracked file forces copy mode, which is the mode under test.
-printf 'export function add(a,b){return a+b;}\n// touched\n' > src/calc.js
 $F new "copy skips ignored output" --rapid > /dev/null
 C=copy-skips-ignored-output
+# A dirty tracked file forces copy mode, which is the mode under test. Dirtied
+# after the change exists, because dirt the tree already carried no longer costs
+# a change its worktree — writing it first would now select the other mode.
+printf 'export function add(a,b){return a+b;}\n// touched\n' > src/calc.js
 $F sandbox create "$C" > "$LOGS/create.log" 2>&1
 
 assert_file_contains "a dirty tracked file still selects copy mode" "$LOGS/create.log" "isolated-copy"
@@ -178,6 +180,42 @@ assert_eq "a stray untracked file is not this change's surface" \
 printf 'body { color: blue }\n' > theme.css
 assert_eq "editing a pre-existing file returns it to the surface" \
   "accessibility,discovery,test" "$(providers_for "$C")"
+
+# --- Pre-existing dirt does not cost a change its worktree. -----------------
+#
+# The surface already ignores what the tree carried in, but `sandbox create`
+# chose its isolation mode by a separate test that did not. One stray untracked
+# file therefore downgraded every sandbox to a whole-tree copy — the lower
+# fidelity mode, and on a large repository the expensive one.
+setup_project preexisting-isolation
+printf 'stray\n' > stray.txt
+$F new "probe one" --rapid > /dev/null
+$F new "probe two" --rapid > /dev/null
+
+$F sandbox create probe-one > "$LOGS/probe-one.log" 2>&1
+assert_file_not_contains "an untouched stray file does not force a copy" \
+  "$LOGS/probe-one.log" "isolated-copy"
+
+# Edited after the change began, the same file is a dirty target again — which
+# is why the comparison is by digest and not by remembering the path.
+printf 'stray edited\n' > stray.txt
+$F sandbox create probe-two > "$LOGS/probe-two.log" 2>&1
+assert_file_contains "editing that file makes it a dirty target again" \
+  "$LOGS/probe-two.log" "dirty-target"
+
+# --- A rapid change is valid to OpenSpec. -----------------------------------
+#
+# The rapid schema declares no spec artifact, so a rapid change never has deltas
+# to find, and OpenSpec reads that absence as an error rather than an omission.
+# Every rapid change was invalid, and Land printed the validator's five-line
+# remedy at the user each time.
+setup_project rapid-validity
+$F new "rapid validity probe" --rapid > /dev/null
+assert_file_contains "a rapid change declares it modifies no specs" \
+  "openspec/changes/rapid-validity-probe/.openspec.yaml" "skip_specs: true"
+$F new "standard validity probe" > /dev/null
+assert_file_not_contains "a standard change still owes its spec deltas" \
+  "openspec/changes/standard-validity-probe/.openspec.yaml" "skip_specs"
 
 # --- Upgrading a project retires the superseded guard command. --------------
 #

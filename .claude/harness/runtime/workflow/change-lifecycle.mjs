@@ -130,7 +130,14 @@ export function createChangeLifecycle({
     const source = templateDir(schema);
     const target = changePath(id);
     mkdirSync(target, { recursive: true });
-    writeFileSync(join(target, ".openspec.yaml"), `schema: ${schema}\n`);
+    // The rapid schema declares no spec artifact, so a rapid change never has
+    // deltas to find. OpenSpec reads that absence as an error — every rapid
+    // change was invalid to `openspec validate`, and Land printed five lines of
+    // raw validator text at the user for a lane whose whole point is small work.
+    // `skip_specs` is the flag OpenSpec's own message names for exactly this.
+    writeFileSync(join(target, ".openspec.yaml"), schema === "foundation-rapid"
+      ? `schema: ${schema}\nskip_specs: true\n`
+      : `schema: ${schema}\n`);
     for (const name of ["proposal.md", "tasks.md", "evidence.yaml", "execution.yaml", "repositories.yaml"])
       writeFileSync(join(target, name), instantiate(join(source, name), intent));
     if (schema === "foundation-standard") {
