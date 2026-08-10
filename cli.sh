@@ -272,6 +272,9 @@ case "${1:-}" in
         warn "'proof finish' is deprecated; use 'proof run'"
         run_runtime write proof-run "$@" ;;
       collect) run_runtime write proof-collect "$@" ;;
+      # Deliberately `write` despite the read registry kind: preflight is a
+      # gate, and the read path only warns on a mixed-revision runtime — a
+      # "ready" from an incompatible runtime is worse than an unavailable one.
       preflight) run_runtime write proof-preflight "$@" ;;
       execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
