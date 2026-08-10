@@ -159,3 +159,40 @@ Non-lifecycle skills (`brainstorming`, `plan-writing`, frontend/UX skills,
 `skill-creator`) trigger through explicit workflow wiring or their own
 descriptions; do not add them to the always-on router merely to make them
 discoverable.
+
+## Playbook
+
+Full procedure: `docs/reports/harness-development-playbook.md`.
+
+Triage by lane before writing. The lane sets the gates, not the diff size.
+
+| Lane | Touches | Gates beyond Working Rules |
+|---|---|---|
+| Runtime | `harness/foundation.mjs`, `harness/runtime/**` | wiring test, protocol pins, regression at the seam |
+| Instruction | `orchestrator.md`, `commands/`, `rules/`, `skills/`, `hooks/`, `WORKFLOW.md` | context budgets, doc consistency, `commands.json` |
+| Shipping | `install.sh`, `install-cursor.sh`, `openspec/schemas/`, `protocol.json` | installer smoke, upgrade compatibility, `MANAGED` + manifest |
+| Repo-only | `.claude/tests/**`, `dashboard/`, `website/`, `examples/`, `docs/` | `run-all.sh` |
+| Release | `VERSION`, `CHANGELOG.md`, `Formula/`, `.github/workflows/` | `RELEASING.md`; rehearse with `dry_run` |
+
+`cli.sh` is repo-only in file terms but is the public command surface; a change
+to its grammar takes the Instruction and Shipping gates.
+
+Self-hosting holds for two reasons. The control plane is not the code under
+change — `find_project_root` walks past sandbox copies, so the root keeps
+running the last landed revision until Land applies. And the evidence base sits
+outside the loop — `run-all.sh` needs no lifecycle state, and the test fixture
+installs from `git archive HEAD`. Never point a harness provider at
+`claude-foundation`; the deterministic suites are the evidence.
+
+Skip the loop for release work and for bootstrap-breaking edits: the four
+runtime-API pins (`cli.sh EXPECTED_RUNTIME_API`, `foundation.mjs
+RUNTIME_API_VERSION`, `runtime/version.mjs RUNTIME_MODULE_API`,
+`protocol.json runtimeApi` — all must match), `foundation.mjs` load checks, and
+`install.sh` `MANAGED`. Those can leave the loop unable to run the commands
+that would prove the fix; edit at the root, verify with `run-all.sh`, record
+afterward.
+
+Put a regression at the lowest deterministic boundary that caught the defect
+(`.claude/tests/README.md`). Pair a human-read suite with a TAP wrapper and a
+`minimum` floor when it must also serve as evidence. A new suite is three edits
+together: the script, a `run` line in `run-all.sh`, and a README row.
