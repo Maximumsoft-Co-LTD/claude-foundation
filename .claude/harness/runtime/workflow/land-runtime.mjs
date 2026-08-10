@@ -251,9 +251,12 @@ export function createLandRuntime({
     const absolute = resolvePath(envelopePath);
     if (!existsSync(absolute))
       return { valid: false, reason: `attestation file not found: ${envelopePath}` };
-    const envelope = readJson(absolute, null);
-    if (!envelope) return { valid: false, reason: "attestation is not readable JSON" };
-    const trusted = landCiIssuers(id);
+    // `readJson`'s null fallback means die-on-bad-JSON; the sentinel keeps the
+    // graceful refusal below reachable for a corrupt envelope file.
+    const envelope = readJson(absolute, false);
+    if (!envelope || typeof envelope !== "object")
+      return { valid: false, reason: "attestation is not readable JSON" };
+    const trusted = landCiIssuers(id, repositoryId);
     const issuer = trusted[envelope?.payload?.issuer];
     if (!issuer)
       return {
@@ -280,12 +283,18 @@ export function createLandRuntime({
     };
   }
 
-  function landCiIssuers(id) {
+  // Scoped to the repository being attested: pooling issuers across every
+  // selected repository let a signer trusted only for one repository attest CI
+  // for another, and two repositories declaring the same issuer name with
+  // different keys silently collided.
+  function landCiIssuers(id, repositoryId = null) {
     const issuers = {};
-    for (const repository of selectedRepositories(id))
+    for (const repository of selectedRepositories(id)) {
+      if (repositoryId && repository.id !== repositoryId) continue;
       for (const [name, config] of Object.entries(repository.ci?.issuers || {}))
         if (config?.algorithm === "ed25519" && String(config.publicKey || "").includes("PUBLIC KEY"))
           issuers[name] = config;
+    }
     return issuers;
   }
 
