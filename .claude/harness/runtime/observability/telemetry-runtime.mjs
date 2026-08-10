@@ -419,7 +419,24 @@ export function createTelemetryRuntime({
       const parsed = JSON.parse(text);
       rows = Array.isArray(parsed) ? parsed : [parsed];
     } catch {
-      rows = text.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      // A telemetry export is someone else's file, so a malformed line is an
+      // expected input rather than an exceptional one. Parsing the JSONL
+      // fallback with a bare `map` threw out of the command: the operator got a
+      // Node stack trace with absolute runtime paths instead of a sentence, for
+      // the ordinary case of a truncated or half-written export. Skipping is
+      // already this command's vocabulary — it reports `imported N; skipped M` —
+      // so unparseable lines join that count, and only a file with nothing
+      // readable in it is an error.
+      rows = [];
+      let unparseable = 0;
+      for (const line of text.split("\n").filter(Boolean)) {
+        try { rows.push(JSON.parse(line)); }
+        catch { unparseable += 1; }
+      }
+      if (!rows.length)
+        fail(`telemetry source is neither JSON nor JSONL: ${source}`);
+      if (unparseable)
+        console.error(`WARNING: skipped ${unparseable} unparseable telemetry line(s) in ${source}`);
     }
     if (format === "claude" && !rows.some((row) =>
       row.type === "assistant" && row.message?.role === "assistant" && row.message?.usage))

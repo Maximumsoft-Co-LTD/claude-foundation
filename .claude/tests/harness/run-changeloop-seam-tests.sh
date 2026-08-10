@@ -256,6 +256,100 @@ $F migrate --apply > /dev/null 2>&1
 assert_eq "re-applying is idempotent" "$first" "$(candidates)"
 assert_file_exists "the legacy source is left where it was" ".workflow/0001-alpha/state.json"
 
+# --- Unattended work is refused without a trusted attestation. --------------
+#
+# The flag parsing is covered elsewhere; the refusals are not. `--unattended`
+# asks the runtime to drop a human from the loop, so what matters is that it
+# says no when the host has not vouched for the boundary — and that it never
+# activates by implication. Assertions name only reasons that hold on any
+# machine; the hazard list itself is environment-specific.
+setup_project unattended-guard
+$F new "unattended probe" --rapid > /dev/null
+C=unattended-probe
+
+refused="$($F sandbox create "$C" --unattended 2>&1 || true)"
+assert_contains "unattended sandbox creation needs a host attestation" \
+  "$refused" "trusted host attestation was not supplied"
+assert_contains "and says virtualization alone is not enough" \
+  "$refused" "detected virtualization alone is insufficient"
+assert_file_absent "the refused run creates no sandbox" ".foundation/sandboxes/$C"
+
+# An envelope the project made for itself is not a host vouching for anything.
+printf '{"version":1,"issuer":"attacker","boundary":"container","signature":"ZmFrZQ==","payload":{"ok":true}}\n' \
+  > "$LOGS/forged-attestation.json"
+forged="$($F sandbox create "$C" --unattended --attestation "$LOGS/forged-attestation.json" 2>&1 || true)"
+assert_contains "an untrusted issuer is refused" "$forged" "is not trusted"
+
+# The challenge is what a host signs. Handing it back unsigned is not a response.
+$F sandbox challenge "$C" > "$LOGS/challenge.json" 2>&1
+assert_file_contains "the challenge states the permissions being requested" \
+  "$LOGS/challenge.json" '"filesystem": "sandbox-only"'
+assert_file_contains "the challenge carries a nonce" "$LOGS/challenge.json" '"nonce"'
+replayed="$($F sandbox create "$C" --unattended --attestation "$LOGS/challenge.json" 2>&1 || true)"
+assert_contains "replaying the challenge as its own answer is refused" \
+  "$replayed" "attestation envelope is malformed"
+
+# The guard reports, and only when it was asked for.
+$F doctor --stage change --change "$C" --unattended > "$LOGS/doctor-unattended.txt" 2>&1 || true
+assert_file_contains "doctor reports the boundary when unattended is requested" \
+  "$LOGS/doctor-unattended.txt" "unattended-security-boundary"
+$F doctor --stage change --change "$C" > "$LOGS/doctor-plain.txt" 2>&1 || true
+assert_file_not_contains "and stays silent when it was not" \
+  "$LOGS/doctor-plain.txt" "unattended-security-boundary"
+
+# --- Telemetry import survives someone else's file. -------------------------
+#
+# A telemetry export is written by the host, not by us, so a truncated or
+# half-written one is an ordinary input. The JSONL fallback parsed it with a
+# bare `map`, so one bad line threw out of the command and printed a Node stack
+# trace with absolute runtime paths. The accounting rules below had no test
+# either, and they are the ones that decide what a budget means.
+setup_project telemetry-import
+$F new "telemetry probe" --rapid > /dev/null
+C=telemetry-probe
+
+lifetime() {
+  node -e "
+    const b = require('$TMP/telemetry-import/.foundation/runtime/$C.json').budget;
+    process.stdout.write(String(b.lifetime.usedTokens))"
+}
+
+printf 'not json at all\n' > "$LOGS/bad.jsonl"
+assert_contains "a file with nothing readable fails in a sentence" \
+  "$($F telemetry-import "$C" "$LOGS/bad.jsonl" 2>&1 || true)" \
+  "neither JSON nor JSONL"
+assert_not_contains "and not with a stack trace" \
+  "$($F telemetry-import "$C" "$LOGS/bad.jsonl" 2>&1 || true)" "SyntaxError"
+
+printf '{"requestId":"t1","inputTokens":100,"outputTokens":50}\n' > "$LOGS/good.jsonl"
+$F telemetry-import "$C" "$LOGS/good.jsonl" > /dev/null 2>&1
+assert_eq "input and output are what spend means" "150" "$(lifetime)"
+
+$F telemetry-import "$C" "$LOGS/good.jsonl" > /dev/null 2>&1
+assert_eq "re-importing the same request counts once" "150" "$(lifetime)"
+
+# Cache reads are excluded on purpose: counting them makes spend grow with
+# session length rather than with the work done.
+printf '{"requestId":"t2","inputTokens":0,"outputTokens":0,"cacheReadTokens":999999,"cacheTokens":999999}\n' \
+  > "$LOGS/cache.jsonl"
+$F telemetry-import "$C" "$LOGS/cache.jsonl" > /dev/null 2>&1
+assert_eq "cache reads are not spend" "150" "$(lifetime)"
+
+# Unknown is never zero — a null must not silently derive a measured 0.
+printf '{"requestId":"t3","inputTokens":null,"outputTokens":null}\n' > "$LOGS/unknown.jsonl"
+$F telemetry-import "$C" "$LOGS/unknown.jsonl" > /dev/null 2>&1
+assert_eq "unknown usage does not read as zero spend" "150" "$(lifetime)"
+
+printf '{"requestId":"t4","inputTokens":10,"outputTokens":5}\nnot json\n' > "$LOGS/mixed.jsonl"
+mixed="$($F telemetry-import "$C" "$LOGS/mixed.jsonl" 2>&1 || true)"
+assert_contains "a partly readable file reports what it skipped" \
+  "$mixed" "skipped 1 unparseable telemetry line"
+assert_eq "and still imports the rows it could read" "165" "$(lifetime)"
+
+assert_contains "an unknown format is refused" \
+  "$($F telemetry-import "$C" "$LOGS/good.jsonl" --format nonsense 2>&1 || true)" \
+  "generic|codex|cursor|otel|claude"
+
 # --- A rapid proposal validates against OpenSpec. ---------------------------
 setup_project rapid-validates
 $F new "rapid header probe" --rapid > /dev/null
