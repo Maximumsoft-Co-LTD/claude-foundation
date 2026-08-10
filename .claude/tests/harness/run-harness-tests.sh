@@ -1305,6 +1305,20 @@ assert_contains "non-git sandbox uses isolated copy" "$copy_output" "mode: isola
 assert_eq "copy sandbox enters Build" "building" \
   "$(jq -r '.status' .foundation/runtime/copy-sandbox.json)"
 copy_path="$(jq -r '.workspace.path' .foundation/runtime/copy-sandbox.json)"
+# A sandbox is a full copy, marker files included, so root resolution from a
+# cwd inside it must walk past the copy instead of splitting runtime state —
+# unless an explicit CLAUDE_FOUNDATION_PROJECT pin asks for the copy itself.
+sandbox_resolution="$( (cd "$copy_path" && node .claude/harness/foundation.mjs changes) 2>&1 )"
+assert_contains "runtime resolution walks past a sandbox copy" \
+  "$sandbox_resolution" "ignoring sandbox copy"
+assert_contains "commands from inside a sandbox act on the project root" \
+  "$sandbox_resolution" "copy-sandbox"
+pinned_resolution="$( (cd "$copy_path" && CLAUDE_FOUNDATION_PROJECT="$copy_path" \
+  node .claude/harness/foundation.mjs changes) 2>&1 )"
+case "$pinned_resolution" in
+  *"ignoring sandbox copy"*) fail "an explicit pin keeps sandbox-local resolution" ;;
+  *) pass "an explicit pin keeps sandbox-local resolution" ;;
+esac
 printf 'copy-applied\n' > "$copy_path/app.txt"
 ln -s app.txt "$copy_path/current-link"
 printf '%s\n' '{"lockfileVersion":3}' > "$copy_path/package-lock.json"

@@ -4,7 +4,7 @@ import {
   appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync,
   renameSync, rmSync, writeFileSync
 } from "node:fs";
-import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createTelemetryRuntime } from "./runtime/observability/telemetry-runtime.mjs";
@@ -192,11 +192,26 @@ function die(message, code = 1) {
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail: die });
 const { blockedDecisionValue, blockWithDecision } = createBlockedDecision({ fail: die });
 
+function insideSandboxCopy(path) {
+  const segments = path.split(sep);
+  return segments.some((segment, index) => segment === ".foundation" &&
+    ["sandboxes", "repository-sandboxes"].includes(segments[index + 1]));
+}
+
 function findRoot(start = process.cwd()) {
-  let cursor = resolve(start);
+  const pinned = process.env.CLAUDE_FOUNDATION_PROJECT;
+  let cursor = resolve(pinned || start);
   for (;;) {
     if (existsSync(join(cursor, "openspec", "config.yaml")) &&
-        existsSync(join(cursor, ".claude", "harness", "foundation.mjs"))) return cursor;
+        existsSync(join(cursor, ".claude", "harness", "foundation.mjs"))) {
+      // A Build sandbox is a full copy of the project, marker files included.
+      // Resolving to the copy would silently split runtime state between the
+      // sandbox's .foundation/ and the project's, so resolution walks past a
+      // sandbox unless CLAUDE_FOUNDATION_PROJECT deliberately pins one.
+      if (pinned || !insideSandboxCopy(cursor)) return cursor;
+      console.error(
+        `claude-foundation: ignoring sandbox copy at ${cursor}; resolving the project root`);
+    }
     const parent = dirname(cursor);
     if (parent === cursor) die("not inside a Foundation project");
     cursor = parent;

@@ -29,8 +29,23 @@ find_project_root() {
   while :; do
     if [ -f "$cursor/openspec/config.yaml" ] &&
        [ -f "$cursor/.claude/harness/foundation.mjs" ]; then
-      printf '%s\n' "$cursor"
-      return
+      # A Build sandbox is a full copy of the project, marker files included.
+      # Resolving to the copy would split runtime state between the sandbox's
+      # .foundation/ and the project's, so resolution walks past a sandbox
+      # unless CLAUDE_FOUNDATION_PROJECT deliberately pins one.
+      case "${CLAUDE_FOUNDATION_PROJECT:+pinned}:$cursor" in
+        pinned:*)
+          printf '%s\n' "$cursor"
+          return
+          ;;
+        *:*/.foundation/sandboxes/*|*:*/.foundation/repository-sandboxes/*)
+          warn "ignoring sandbox copy at $cursor; resolving the project root"
+          ;;
+        *)
+          printf '%s\n' "$cursor"
+          return
+          ;;
+      esac
     fi
     [ "$cursor" != "/" ] || break
     cursor="$(dirname "$cursor")"
