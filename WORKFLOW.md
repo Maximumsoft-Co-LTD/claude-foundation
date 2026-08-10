@@ -117,7 +117,13 @@ change, then synchronize it without losing unchanged completed tasks:
 claude-foundation sandbox sync <change>
 ```
 
-Sync increments the revision and invalidates previous proof.
+Sync increments the revision and invalidates previous proof. For an isolated
+copy it also fast-forwards files the target moved (another change landing)
+while the sandbox left them alone, names any double-edited file as a
+`CONFLICT` immediately, and accepts `--resolve <path,path>` once the target's
+version has been merged into the sandbox copy. Packet artifacts flow the other
+way: edit them in `openspec/changes/<change>/` in the target — a packet file
+edited only in the sandbox blocks the sync; only `tasks.md` ticks merge back.
 
 ### `/prove <change>`
 

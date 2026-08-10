@@ -749,4 +749,57 @@ unknown="$($F frobnicate xyz 2>&1 || true)"
 assert_contains "a genuinely unknown command still fails plainly" "$unknown" "'frobnicate' is not registered"
 assert_not_contains "an unknown command invents no internal name" "$unknown" "internal name:"
 
+# --- A target that moves under an isolated copy fast-forwards at sync. -------
+# Another change landing mid-build used to surface only at Land, as an
+# isolated-copy conflict with no command that could resolve it.
+setup_project sync-fast-forwards
+$F new "fast forward target moves" --rapid > /dev/null
+C=fast-forward-target-moves
+printf 'export function add(a,b){return a+b;}\n// dirty\n' > src/calc.js
+$F sandbox create "$C" > /dev/null
+printf 'landed by another change\n' > src/other.js
+printf 'revised by another change\n' > test/calc.test.js
+sync_out="$($F sandbox sync "$C")"
+assert_contains "sync reports the fast-forward" "$sync_out" "fast-forwarded: 2 file(s)"
+assert_file_contains "a file the target grew arrives in the sandbox" \
+  ".foundation/sandboxes/$C/src/other.js" "landed by another change"
+assert_file_contains "a file the target revised arrives in the sandbox" \
+  ".foundation/sandboxes/$C/test/calc.test.js" "revised by another change"
+second_sync="$($F sandbox sync "$C")"
+assert_not_contains "the fast-forward advanced the baseline" "$second_sync" "fast-forwarded"
+
+# --- A double-edited file is named at sync and resolved explicitly. ----------
+setup_project sync-names-conflicts
+$F new "conflict is named at sync" --rapid > /dev/null
+C=conflict-is-named-at-sync
+printf 'export function add(a,b){return a+b;}\n// dirty\n' > src/calc.js
+$F sandbox create "$C" > /dev/null
+printf 'target version\n' > src/calc.js
+printf 'sandbox version\n' > ".foundation/sandboxes/$C/src/calc.js"
+conflict_out="$($F sandbox sync "$C")"
+assert_contains "a double edit is named at sync, not at Land" \
+  "$conflict_out" "CONFLICT src/calc.js"
+bad_resolve="$($F sandbox sync "$C" --resolve src/nope.js 2>&1 || true)"
+assert_contains "--resolve refuses a path not in conflict" "$bad_resolve" "not in conflict"
+printf 'target version\nsandbox version\n' > ".foundation/sandboxes/$C/src/calc.js"
+resolved="$($F sandbox sync "$C" --resolve src/calc.js)"
+assert_not_contains "a resolved conflict stops being named" "$resolved" "CONFLICT"
+settled="$($F sandbox sync "$C")"
+assert_not_contains "the resolution advanced the baseline" "$settled" "CONFLICT"
+
+# --- A packet edited only in the sandbox refuses to be clobbered. ------------
+# The packet's source of truth is the target copy; sync overwrites the sandbox
+# copy wholesale, and only tasks.md ticks merge back.
+setup_project sync-preserves-packet-edits
+$F new "packet edits stay visible" --rapid > /dev/null
+C=packet-edits-stay-visible
+$F sandbox create "$C" > /dev/null
+printf 'sandbox-side edit\n' >> ".foundation/sandboxes/$C/openspec/changes/$C/proposal.md"
+clobber="$($F sandbox sync "$C" 2>&1 || true)"
+assert_contains "a sandbox packet edit refuses to be clobbered" \
+  "$clobber" "sandbox packet edits would be lost at 'openspec/changes/$C/proposal.md'"
+cp "openspec/changes/$C/proposal.md" ".foundation/sandboxes/$C/openspec/changes/$C/proposal.md"
+unblocked="$($F sandbox sync "$C" 2>&1)"
+assert_contains "reverting or porting the edit unblocks the sync" "$unblocked" "SYNCED"
+
 finish "changeloop seams"

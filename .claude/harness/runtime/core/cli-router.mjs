@@ -214,7 +214,12 @@ export async function routeRuntimeCommand(command, values, api) {
         if (rest.length !== 1) die("sandbox create requires exactly one change");
         createSandbox(rest[0], flags);
       }
-      else if (values[0] === "sync") syncSandbox(values[1]);
+      else if (values[0] === "sync") {
+        const { flags, rest } = parseStrictCommandFlags(
+          values.slice(1), "sandbox sync", { value: ["resolve"] });
+        if (rest.length !== 1) die("sandbox sync requires exactly one change");
+        syncSandbox(rest[0], flags);
+      }
       else if (values[0] === "apply") {
         // Strict, like every other authority command: `controlPlane` is an
         // internal argument that defeats the multi-repository guard, and

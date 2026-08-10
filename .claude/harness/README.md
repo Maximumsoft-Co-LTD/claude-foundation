@@ -126,7 +126,7 @@ claude-foundation doctor --stage prove --change <change>
 | `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |
 | `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
 | `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
-| `sandbox sync <change>` | Synchronizes a revised agreement | When requirements change during Build |
+| `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and fast-forwards target moves the sandbox left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
 | `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |
 | `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
@@ -218,6 +218,16 @@ claude-foundation sandbox sync <change>
 
 Synchronization increments the change revision and invalidates receipts or
 proofs that no longer describe the current agreement.
+
+For an isolated copy, sync also reconciles the moving target: files another
+change landed that this sandbox never touched fast-forward into the sandbox
+(baseline included), and a file both sides edited is named as a `CONFLICT` at
+sync rather than discovered at Land. Merge the target's version into the
+sandbox copy, then declare it with `--resolve <path>` (comma-separate several
+paths). Packet artifacts are the other direction: their source of truth is
+`openspec/changes/<change>/` in the target, so a packet file edited only in
+the sandbox blocks the sync until the edit is ported there — only `tasks.md`
+ticks merge back automatically.
 
 ### 3. Prove the claims
 

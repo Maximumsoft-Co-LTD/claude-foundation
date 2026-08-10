@@ -27,6 +27,23 @@ export function createSandboxRuntime({
     return join(root, ".foundation", "sandboxes", id);
   }
 
+  // Per-file digests of a packet directory. `sync` copies the target's packet
+  // over the sandbox's wholesale; without a record of what the last copy wrote,
+  // a packet edited in the sandbox is indistinguishable from one the copy wrote,
+  // and the overwrite is silent.
+  function packetManifest(dir) {
+    const result = {};
+    function collect(current) {
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const path = join(current, entry.name);
+        if (entry.isDirectory()) collect(path);
+        else result[relative(dir, path).replaceAll("\\", "/")] = fileDigest(path);
+      }
+    }
+    if (existsSync(dir)) collect(dir);
+    return result;
+  }
+
   // A linked worktree or a submodule carries `.git` as a *file* pointing at a
   // gitdir somewhere else. Copying that file would hand the sandbox a pointer
   // straight back into the target's repository, so every commit, checkout, or
@@ -148,7 +165,8 @@ export function createSandboxRuntime({
       baseHead: carriesGit ? gitHead(root) : null,
       git: carriesGit ? "carried" : "absent",
       baseline: workspaceManifest(root, id, true),
-      changeSourceHash: directoryHash(changePath(id))
+      changeSourceHash: directoryHash(changePath(id)),
+      packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
     };
     state.status = "building";
     saveRuntime(state);
@@ -293,6 +311,11 @@ export function createSandboxRuntime({
     }
     const requestedPath = sandboxRoot(id);
     mkdirSync(dirname(requestedPath), { recursive: true });
+    // A sandbox directory deleted out from under git stays registered, and
+    // `worktree add` then refuses the same path — dead-ending the recovery
+    // the missing-workspace error advertises. Prune only drops registrations
+    // whose directories are gone, so it is safe unconditionally.
+    git(["worktree", "prune"]);
     const result = git(["worktree", "add", "--detach", requestedPath, "HEAD"]);
     if (result.status !== 0) fail(`cannot create sandbox: ${result.stderr.trim()}`);
     const path = canonicalPath(requestedPath);
@@ -301,7 +324,8 @@ export function createSandboxRuntime({
     state.workspace = {
       preexisting: state.workspace?.preexisting || {},
       mode: "worktree", path, baseHead: gitHead(root), applied: false,
-      changeSourceHash: directoryHash(changePath(id))
+      changeSourceHash: directoryHash(changePath(id)),
+      packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
     };
     state.status = "building";
     saveRuntime(state);
@@ -345,6 +369,8 @@ export function createSandboxRuntime({
         const requestedPath = join(root, ".foundation", "repository-sandboxes", id, repository.id);
         if (existsSync(requestedPath)) throw new Error(`repository sandbox already exists: ${requestedPath}`);
         mkdirSync(dirname(requestedPath), { recursive: true });
+        // Same dead registration hazard as the single-repo path.
+        git(["worktree", "prune"], repository.path);
         const result = git(["worktree", "add", "--detach", requestedPath, baseHead], repository.path);
         if (result.status !== 0)
           throw new Error(`cannot create sandbox for '${repository.id}': ${result.stderr.trim()}`);
@@ -357,7 +383,13 @@ export function createSandboxRuntime({
     } catch (error) {
       cleanupRepositorySandboxes(id, state);
       cleanupAppliedSandbox(id, state);
-      state.workspace = { mode: "current", path: root, baseHead: gitHead(root) };
+      state.workspace = {
+        // What the tree carried at `change new` survives the rollback; both
+        // single-repo paths preserve it for the same reason — dropping it
+        // pulls pre-existing dirt back into the changed surface.
+        preexisting: state.workspace?.preexisting || {},
+        mode: "current", path: root, baseHead: gitHead(root)
+      };
       delete state.repositories;
       state.status = "change";
       saveRuntime(state);
@@ -386,7 +418,7 @@ export function createSandboxRuntime({
     }).join("\n");
   }
 
-  function sync(id) {
+  function sync(id, flags = {}) {
     validate(id, "root", { quiet: true });
     const state = loadRuntime(id);
     const workspace = state.workspace;
@@ -395,6 +427,24 @@ export function createSandboxRuntime({
       fail(`change '${id}' has no active sandbox`);
     const source = changePath(id);
     const destination = join(workspace.path, "openspec", "changes", id);
+    // The packet's source of truth is the target copy; the sandbox copy is a
+    // projection this sync overwrites. `tasks.md` is exempt because its ticks
+    // merge back below. Anything else edited only in the sandbox would vanish
+    // here without a trace, so refuse while the edit is still recoverable.
+    if (workspace.packetSnapshot && existsSync(destination)) {
+      const snapshot = workspace.packetSnapshot;
+      const current = packetManifest(destination);
+      const sourcePacket = packetManifest(source);
+      const lost = [...new Set([...Object.keys(snapshot), ...Object.keys(current)])]
+        .filter((rel) => rel !== "tasks.md")
+        .filter((rel) => (current[rel] ?? null) !== (snapshot[rel] ?? null))
+        .filter((rel) => (current[rel] ?? null) !== (sourcePacket[rel] ?? null))
+        .sort();
+      if (lost.length)
+        fail(`sandbox packet edits would be lost at ${
+          lost.map((rel) => `'openspec/changes/${id}/${rel}'`).join(", ")
+        }; the packet's source of truth is 'openspec/changes/${id}/' in the target - port the edit there (or remove it from the sandbox copy), then sync again`);
+    }
     const priorRepositories = repositorySelectionIdsAt(destination);
     const nextRepositories = repositorySelectionIdsAt(source);
     if (JSON.stringify(priorRepositories) !== JSON.stringify(nextRepositories))
@@ -411,6 +461,60 @@ export function createSandboxRuntime({
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(source, destination, { recursive: true, ...VERBATIM_COPY });
     writeFileSync(join(destination, "tasks.md"), mergedTasks);
+    state.workspace.packetSnapshot = packetManifest(destination);
+    // An isolated copy is a snapshot; the target keeps moving while it builds
+    // (another change lands, a hook rewrites a file). Every target move the
+    // sandbox did not also touch fast-forwards here, baseline included, so
+    // only genuinely double-edited paths reach the apply guard - and those are
+    // named now, at sync, not discovered at Land. `--resolve` is the explicit
+    // way out: it declares the sandbox copy already carries the merged result,
+    // so the baseline may advance without the harness guessing.
+    let forwarded = 0;
+    const conflicts = [];
+    // Once projected, the baseline no longer describes the sandbox's relation
+    // to the target - the apply transaction journal does. Reconciling here
+    // would flag the change's own applied content as a conflict.
+    if (workspace.mode === "copy" && !workspace.applied) {
+      const resolves = new Set(String(flags.resolve || "")
+        .split(",").map((entry) => entry.trim()).filter(Boolean));
+      const usedResolves = new Set();
+      const baseline = { ...(workspace.baseline || {}) };
+      const targetManifest = workspaceManifest(root, id, true);
+      const sandboxManifest = workspaceManifest(workspace.path, id, true);
+      const paths = [...new Set([
+        ...Object.keys(baseline), ...Object.keys(targetManifest),
+        ...Object.keys(sandboxManifest)
+      ])].sort();
+      for (const rel of paths) {
+        const base = baseline[rel] ?? null;
+        const target = targetManifest[rel] ?? null;
+        const sandboxEntry = sandboxManifest[rel] ?? null;
+        const advance = () => {
+          if (target === null) delete baseline[rel]; else baseline[rel] = target;
+        };
+        if (target === base) continue;
+        if (sandboxEntry === target) { advance(); continue; }
+        if (sandboxEntry === base) {
+          const to = join(workspace.path, rel);
+          rmSync(to, { force: true });
+          if (target !== null) {
+            mkdirSync(dirname(to), { recursive: true });
+            cpSync(join(root, rel), to, VERBATIM_COPY);
+          }
+          advance();
+          forwarded += 1;
+          continue;
+        }
+        if (resolves.has(rel)) { usedResolves.add(rel); advance(); continue; }
+        conflicts.push(rel);
+      }
+      const unusedResolves = [...resolves].filter((rel) => !usedResolves.has(rel));
+      if (unusedResolves.length)
+        fail(`--resolve names ${unusedResolves.map((rel) => `'${rel}'`).join(", ")
+        }, which ${unusedResolves.length === 1 ? "is" : "are"} not in conflict; drop ${
+          unusedResolves.length === 1 ? "it" : "them"} and sync again`);
+      workspace.baseline = baseline;
+    }
     state.workspace.changeSourceHash = directoryHash(source);
     state.status = "building";
     state.revision = Number(state.revision || 0) + 1;
@@ -420,7 +524,11 @@ export function createSandboxRuntime({
     if (existsSync(proofPath(id))) rmSync(proofPath(id));
     clearSnapshotCache(id);
     saveRuntime(state);
-    console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}`);
+    console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}${
+      forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
+    }`);
+    for (const rel of conflicts)
+      console.log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy, then rerun sandbox sync with --resolve ${rel} (comma-separate several paths). Land stays blocked until every conflict is resolved.`);
   }
 
   return {

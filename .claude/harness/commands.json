@@ -14,7 +14,7 @@
     { "name": "change audit", "usage": "change audit <change> [--json]", "audience": "agent", "kind": "read", "idempotent": true, "description": "Audit scenario, claim, task, and provider traceability." },
 
     { "name": "sandbox create", "usage": "sandbox create <change> [--all] [--unattended --attestation <file>]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Create the isolated Build workspace." },
-    { "name": "sandbox sync", "usage": "sandbox sync <change>", "audience": "agent", "kind": "write", "idempotent": true, "description": "Synchronize an intentional contract revision into Build." },
+    { "name": "sandbox sync", "usage": "sandbox sync <change> [--resolve <path,path>]", "audience": "agent", "kind": "write", "idempotent": true, "description": "Synchronize an intentional contract revision into Build, fast-forwarding target moves the sandbox left alone." },
 
     { "name": "proof readiness", "usage": "proof readiness <change>", "audience": "agent", "kind": "read", "idempotent": true, "description": "Return typed blockers and canonical next commands." },
     { "name": "proof collect", "usage": "proof collect <change>", "audience": "agent", "kind": "write", "idempotent": false, "description": "Collect executable evidence before an external boundary." },
