@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "a-public-two-word-form-names-its-internal-command",
+      "scenario": "Running a documented two-word command form at the runtime entrypoint fails naming both the CLI that accepts that form and the internal command name this entrypoint takes, for both the hyphenated shape (proof run) and the bare-second-word shape (change new).",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "an-unknown-command-invents-no-internal-name",
+      "scenario": "A command that is not part of any public two-word form still fails in one plain line and suggests no internal name.",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

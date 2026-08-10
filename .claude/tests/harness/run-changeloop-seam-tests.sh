@@ -735,4 +735,18 @@ assert_contains "a template-shaped review response records" "$recorded" "AUTHORI
 assert_not_contains "no unsupported provenance flag is demanded" "$recorded" "subject-actor for implementation provenance"
 assert_file_exists "the review receipt is written" ".foundation/receipts/$C/review.json"
 
+# `describe` prints the public two-word usage because that is what the
+# `claude-foundation` CLI accepts, but this entrypoint dispatches on the
+# internal single token. Rejecting the documented form while naming only its
+# first word left the reader with a true statement and no way forward.
+two_word="$($F proof run 2>&1 || true)"
+assert_contains "a public two-word form names its internal command" "$two_word" "internal name: proof-run"
+assert_contains "a public two-word form names the CLI that accepts it" "$two_word" "claude-foundation proof run"
+bare_second="$($F change new x 2>&1 || true)"
+assert_contains "a public form whose internal name is the second word resolves too" \
+  "$bare_second" "internal name: new"
+unknown="$($F frobnicate xyz 2>&1 || true)"
+assert_contains "a genuinely unknown command still fails plainly" "$unknown" "'frobnicate' is not registered"
+assert_not_contains "an unknown command invents no internal name" "$unknown" "internal name:"
+
 finish "changeloop seams"

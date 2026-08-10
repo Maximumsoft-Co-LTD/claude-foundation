@@ -395,10 +395,31 @@ function describeCommand(name, options = {}) {
   console.log(`  kind:      ${entry.kind}${entry.idempotent ? " (idempotent)" : ""}`);
 }
 
-function assertRegisteredRuntimeCommand(command) {
+function assertRegisteredRuntimeCommand(command, values = []) {
   if (!command) return;
-  if (!commandRegistry().runtimeCommands.includes(command))
-    die(`runtime command '${command}' is not registered`);
+  const registry = commandRegistry().runtimeCommands;
+  if (registry.includes(command)) return;
+  // `describe` and `help` print the public two-word usage (`change new`,
+  // `proof run`) because that is what `claude-foundation` accepts, but this
+  // entrypoint dispatches on the internal single token (`new`, `proof-run`).
+  // So the binary documented a form it then rejected, and said only that the
+  // first word was unregistered — which is true and useless, because the first
+  // word was never meant to be a command. When the joined form is real, name it.
+  const word = values[0] && !values[0].startsWith("-") ? values[0] : null;
+  const publicForm = word ? `${command} ${word}` : null;
+  const known = publicForm &&
+    commandRegistry().commands.some((entry) => entry.name === publicForm);
+  // The internal token is either the hyphenated join (`proof run` → `proof-run`)
+  // or the bare second word (`change new` → `new`). Ask the registry rather than
+  // guessing a rule, so a future naming choice cannot make this advice wrong.
+  const internal = known
+    ? [`${command}-${word}`, word].find((candidate) => registry.includes(candidate))
+    : null;
+  if (internal)
+    die(`runtime command '${command}' is not registered\n` +
+      `  '${publicForm}' is the CLI form: claude-foundation ${publicForm}\n` +
+      `  this entrypoint takes the internal name: ${internal}`);
+  die(`runtime command '${command}' is not registered`);
 }
 
 function writeJson(path, value) {
@@ -1808,7 +1829,7 @@ if (command === "--help" || command === "-h" || command === "help") {
     { json: values.includes("--json") });
   process.exit(0);
 }
-assertRegisteredRuntimeCommand(command);
+assertRegisteredRuntimeCommand(command, values);
 if (values.includes("--help") || values.includes("-h")) {
   describeCommand(command, { json: values.includes("--json") });
   process.exit(0);
