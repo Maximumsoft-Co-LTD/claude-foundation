@@ -584,7 +584,10 @@ export function createApplyRuntime({
       saveRuntime(journal);
       readiness = landCheck(id);
     }
-    const state = readiness.state;
+    // Re-read rather than reuse readiness.state: on the no-sandbox path that
+    // object predates the journal write above, and saving it below would
+    // silently erase land.proofRunId from the record.
+    const state = loadRuntime(id);
     const pending = pendingTasks(id);
     if (pending.length) fail(`${pending.length} implementation task(s) remain unchecked`);
     const preArchiveWorkspaceHash = readiness.hash;
