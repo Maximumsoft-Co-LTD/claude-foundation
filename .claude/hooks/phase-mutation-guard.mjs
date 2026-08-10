@@ -26,7 +26,16 @@ let event;
 try {
   event = JSON.parse(await readStdin());
 } catch {
-  process.exit(0); // A broken hook must not brick the host.
+  // A broken hook must not brick an audit-mode host — but a host that asked
+  // for enforcement asked for it on the event axis too: an unreadable event
+  // could be any mutation, so allowing it would fail open exactly where the
+  // guard was told not to.
+  if (mode === "block")
+    process.stdout.write(JSON.stringify({
+      decision: "block",
+      reason: "phase guard: hook event is unreadable; retry the tool call"
+    }));
+  process.exit(0);
 }
 
 const tool = String(event.tool_name || "");
