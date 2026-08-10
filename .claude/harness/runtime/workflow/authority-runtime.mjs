@@ -136,7 +136,8 @@ export function createAuthorityRuntime({
     const workspaceHash = relevantHash(id);
     // Scoped requests carry their own hash; status compares against the
     // composite for unscoped ones only.
-    const result = authorityStore.status(id, workspaceHash, requestId);
+    const result = authorityStore.status(id, workspaceHash, requestId,
+      (request) => authorityWorkspaceHash(id, request.provider));
     if (!result.found) fail(`unknown authority request '${requestId}'`);
     return result.value;
   }
