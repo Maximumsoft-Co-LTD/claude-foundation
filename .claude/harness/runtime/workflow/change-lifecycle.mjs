@@ -18,6 +18,7 @@ export function createChangeLifecycle({
   setOperationChangeId,
   initialBudget,
   gitHead,
+  preexistingDirty,
   now,
   bindClaudeSession,
   validate,
@@ -149,7 +150,12 @@ export function createChangeLifecycle({
         required: false, reason: null, claimIds: [], declaredAt: null
       },
       reviewHistory: { version: 1, aiAttempts: 0, totalAttempts: 0, chainHead: null },
-      workspace: { mode: "current", path: root, baseHead: gitHead(root) },
+      // Recorded now, before the change writes anything, so the surface can
+      // later tell what this change did from what the tree already carried.
+      workspace: {
+        mode: "current", path: root, baseHead: gitHead(root),
+        preexisting: preexistingDirty(root)
+      },
       budget: initialBudget(schema, id),
       createdAt: now(), updatedAt: now()
     };

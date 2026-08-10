@@ -48,11 +48,30 @@ export function createPacketRuntime({
     return [];
   }
   
+  // A path the working tree already carried when the change began, still byte
+  // for byte as it was. `git status` reports it as dirty forever, but this
+  // change did not write it: counting it pulled policy capabilities — an
+  // untracked `theme.css` demanded `accessibility` — onto changes that had
+  // touched nothing of the kind. Compared by digest, so a pre-existing file the
+  // change *does* edit returns to the surface.
+  function carriedInUnchanged(workspace, preexisting, rel) {
+    if (!preexisting || !Object.prototype.hasOwnProperty.call(preexisting, rel))
+      return false;
+    const path = join(workspace, rel);
+    try {
+      return existsSync(path) && preexisting[rel] === fileDigest(path);
+    } catch {
+      return false;
+    }
+  }
+
   function canonicalChangedSurface(id, state = loadRuntime(id)) {
     const repositories = selectedRepositories(id, state);
     const rows = [];
     for (const repository of repositories) {
       const workspace = repository.workspacePath;
+      const preexisting = repository.id === "root"
+        ? state.workspace?.preexisting || null : null;
       const sources = new Map();
       const add = (path, source) => {
         if (!path) return;
@@ -76,9 +95,13 @@ export function createPacketRuntime({
             die(`cannot resolve changed surface for repository '${repository.id}' from base ${baseHead}`);
           committed.stdout.split("\0").filter(Boolean).forEach((path) => add(path, "committed"));
         }
-        changedFilesInWorkspace(id, workspace, head).forEach((path) => add(path, "dirty"));
+        changedFilesInWorkspace(id, workspace, head)
+          .filter((path) => !carriedInUnchanged(workspace, preexisting, path))
+          .forEach((path) => add(path, "dirty"));
       } else if (repository.id === "root") {
-        changedFiles(id, state).forEach((path) => add(path, "dirty"));
+        changedFiles(id, state)
+          .filter((path) => !carriedInUnchanged(workspace, preexisting, path))
+          .forEach((path) => add(path, "dirty"));
       }
       for (const [path, rowSources] of sources)
         rows.push({ repositoryId: repository.id, path, sources: [...rowSources].sort() });

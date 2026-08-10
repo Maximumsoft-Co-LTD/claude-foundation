@@ -383,6 +383,34 @@ export function createStateRuntime({
       .map((path) => (path.endsWith("/") ? path.slice(0, -1) : path)));
   }
 
+  // What the working tree already carried when a change began.
+  //
+  // The changed surface is derived from `git status`, which cannot tell a file
+  // this change wrote from a file that was simply sitting there. A stray
+  // untracked `theme.css` therefore counted as change surface and pulled the
+  // `accessibility` policy trigger onto a one-line rapid change that had not
+  // touched a stylesheet — evidence the author could not honestly produce.
+  //
+  // Digests, not just paths: a pre-existing file the change later edits is real
+  // surface again, and dropping it by name would silently lose it.
+  function preexistingDirty(workspace = root) {
+    const dirty = git(["status", "--porcelain", "--untracked-files=all"], workspace);
+    if (dirty.status !== 0) return {};
+    const result = {};
+    for (const line of dirty.stdout.split("\n").filter(Boolean)) {
+      const rel = line.slice(3).split(" -> ").at(-1);
+      if (!rel) continue;
+      const path = join(workspace, rel);
+      try {
+        if (!existsSync(path) || !lstatSync(path).isFile()) continue;
+        result[rel] = fileDigest(path);
+      } catch {
+        // A path that cannot be read now cannot be compared later either.
+      }
+    }
+    return result;
+  }
+
   function workspaceManifest(workspace, id, excludeChange = false) {
     const result = {};
     const ignored = ignoredPathSet(workspace);
@@ -435,6 +463,7 @@ export function createStateRuntime({
     relevantHash,
     clearSnapshotCache,
     workspaceManifest,
+    preexistingDirty,
     git,
     gitHead
   };

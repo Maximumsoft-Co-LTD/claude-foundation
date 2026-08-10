@@ -1915,9 +1915,14 @@ git config user.name "Foundation Test"
 git config user.email "foundation@example.invalid"
 git add . >/dev/null
 git commit -qm "policy fixture"
+node .claude/harness/foundation.mjs new 'Touch a contract' >/dev/null
+# Written after the change exists, because that is what "touch a contract"
+# means. A file already sitting in the tree when the change began is not this
+# change's surface — that is what stopped a stray stylesheet from demanding
+# accessibility evidence — so a fixture that wrote it first would be asserting
+# the opposite of the behaviour it names.
 mkdir -p openspec/contracts
 printf 'openapi: 3.0.0\n' > openspec/contracts/pay.yaml
-node .claude/harness/foundation.mjs new 'Touch a contract' >/dev/null
 node .claude/harness/foundation.mjs resolve touch-a-contract \
   --impact low --coupling isolated >/dev/null
 policy_doctor="$(node .claude/harness/foundation.mjs doctor \

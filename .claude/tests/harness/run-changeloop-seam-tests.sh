@@ -37,7 +37,14 @@ setup_project() {
   mkdir -p test
   printf 'import { test } from "node:test";\nimport assert from "node:assert";\nimport { add } from "../src/calc.js";\ntest("add", () => assert.equal(add(1,2), 3));\n' \
     > test/calc.test.js
-  printf '.foundation/\nbuild-output/\n' > .gitignore
+  # How an installed project actually looks: the root ignore file says nothing
+  # about `.foundation/`, and `.foundation/.gitignore` — itself tracked, because
+  # the installer manages it — ignores the machine state beside it. A fixture
+  # that ignored `.foundation/` wholesale could not carry the tracked file the
+  # installer checks for, which is the condition these scenarios measure.
+  printf 'build-output/\n' > .gitignore
+  mkdir -p .foundation
+  printf '*\n!.gitignore\n!README.md\n' > .foundation/.gitignore
   git init -q . && git config user.email t@t && git config user.name t
   git add -A && git commit -qm init
 }
@@ -86,6 +93,18 @@ assert_file_absent "the copy omits the git-ignored directory" \
   ".foundation/sandboxes/$C/build-output/nested/artifact.bin"
 assert_file_exists "the copy still carries tracked source" \
   ".foundation/sandboxes/$C/src/calc.js"
+# The installer checks `.foundation/.gitignore` as a source precondition, so a
+# sandbox that omits it cannot run `run-installer-tests.sh` at all — Build could
+# not verify the installer it was changing. Tracked files under the root-only
+# excluded directories are carried; untracked machine state still is not, which
+# is what keeps the copy from recursing into itself.
+assert_file_exists "a tracked file under .foundation reaches the sandbox" \
+  ".foundation/sandboxes/$C/.foundation/.gitignore"
+assert_file_absent "untracked machine state stays out of the sandbox" \
+  ".foundation/sandboxes/$C/.foundation/runtime"
+assert_file_absent "the sandbox does not contain itself" \
+  ".foundation/sandboxes/$C/.foundation/sandboxes"
+
 assert_eq "the recorded baseline holds no ignored entry" "0" \
   "$(node -e "
     const j=require('$TMP/ignores-build-output/.foundation/runtime/$C.json');
@@ -128,6 +147,37 @@ assert_cmd_zero "the named command retires the orphan" \
   node .claude/harness/foundation.mjs abandon orphan-probe --reason cleanup --decision-ref test
 assert_not_contains "the orphan is gone afterwards" \
   "$($F changes 2>&1 || true)" "orphan-runtime"
+
+# --- What the tree already carried is not this change's surface. ------------
+#
+# The surface comes from `git status`, which cannot tell a file this change
+# wrote from one that was simply lying around. A stray untracked stylesheet
+# therefore pulled the `accessibility` policy trigger onto a rapid change that
+# had touched nothing of the kind, and the author was asked for evidence they
+# could not honestly produce.
+setup_project preexisting-surface
+printf 'body { color: red }\n' > theme.css
+mkdir -p notes && printf 'todo\n' > notes/scratch.md
+$F new "tiny tweak" --rapid > /dev/null
+C=tiny-tweak
+
+providers_for() {
+  $F packet "$1" --phase prove 2>/dev/null | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => { s += d; })
+      .on("end", () => {
+        process.stdout.write(JSON.parse(s).providers.map((p) => p.provider).sort().join(","));
+      });'
+}
+
+assert_eq "a stray untracked file is not this change's surface" \
+  "discovery,test" "$(providers_for "$C")"
+
+# The same file, once the change actually edits it, is surface again — which is
+# why this is compared by digest and not by remembering the path.
+printf 'body { color: blue }\n' > theme.css
+assert_eq "editing a pre-existing file returns it to the surface" \
+  "accessibility,discovery,test" "$(providers_for "$C")"
 
 # --- Upgrading a project retires the superseded guard command. --------------
 #

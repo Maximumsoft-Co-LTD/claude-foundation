@@ -486,6 +486,7 @@ const {
   relevantHash,
   clearSnapshotCache,
   workspaceManifest,
+  preexistingDirty,
   git,
   gitHead
 } = stateRuntime;
@@ -1101,6 +1102,7 @@ const {
   setOperationChangeId(id) { operationChangeId = id; },
   initialBudget,
   gitHead,
+  preexistingDirty,
   now,
   bindClaudeSession,
   validate,

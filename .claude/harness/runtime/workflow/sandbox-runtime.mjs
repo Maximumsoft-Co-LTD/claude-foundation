@@ -3,7 +3,9 @@ import {
 } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { isExcludedPath, trackedPathSet } from "../core/workspace-surface.mjs";
+import {
+  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, trackedPathSet
+} from "../core/workspace-surface.mjs";
 
 // `cpSync` resolves symlinks by default: a relative link is rewritten as an
 // absolute path into the *source* tree. In a sandbox that is not a cosmetic
@@ -109,6 +111,25 @@ export function createSandboxRuntime({
       rmSync(requestedPath, { recursive: true, force: true });
       fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
     }
+    // `.foundation/` and `.workflow/` are excluded by name at the root because
+    // they are machine state, and that exclusion must not weaken — the sandbox
+    // itself lives under `.foundation/`. But the installer *ships* two tracked
+    // files inside `.foundation/`, and it checks for one of them as a source
+    // precondition: without them `run-installer-tests.sh` cannot run in any
+    // sandbox, so Build could not verify the installer it was changing.
+    //
+    // Carry exactly what git tracks and nothing else. Untracked machine state —
+    // including this sandbox — is never listed, so the recursion the name-based
+    // exclusion prevents stays prevented.
+    for (const rel of listed.status === 0
+      ? listed.stdout.split("\0").filter(Boolean) : []) {
+      if (!ROOT_ONLY_EXCLUDED_DIRS.has(rel.split("/")[0])) continue;
+      const source = join(root, rel);
+      if (!existsSync(source)) continue;
+      const destination = join(requestedPath, rel);
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(source, destination, VERBATIM_COPY);
+    }
     const path = canonicalPath(requestedPath);
     // The copied `.git/worktrees` still names the *target's* linked worktrees by
     // absolute path. Left in place, a `git worktree` command run inside the
@@ -116,6 +137,10 @@ export function createSandboxRuntime({
     if (carriesGit)
       rmSync(join(path, ".git", "worktrees"), { recursive: true, force: true });
     state.workspace = {
+      // What the tree already carried at `change new` is still not this
+      // change's surface once a sandbox exists; replacing the workspace record
+      // wholesale would forget it and pull those paths back into the surface.
+      preexisting: state.workspace?.preexisting || {},
       mode: "copy", path, applied: false, reason,
       // Recorded for the same reason the worktree mode records it: without a
       // base commit the changed surface cannot separate what this change did
@@ -257,6 +282,7 @@ export function createSandboxRuntime({
     cpSync(changePath(id), join(path, "openspec", "changes", id),
       { recursive: true, ...VERBATIM_COPY });
     state.workspace = {
+      preexisting: state.workspace?.preexisting || {},
       mode: "worktree", path, baseHead: gitHead(root), applied: false,
       changeSourceHash: directoryHash(changePath(id))
     };
