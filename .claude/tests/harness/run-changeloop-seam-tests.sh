@@ -203,6 +203,35 @@ $F sandbox create probe-two > "$LOGS/probe-two.log" 2>&1
 assert_file_contains "editing that file makes it a dirty target again" \
   "$LOGS/probe-two.log" "dirty-target"
 
+# --- Required acceptance is refused where the flags are. --------------------
+#
+# `resolve --acceptance-required` with nothing in scope used to succeed, print
+# `acceptance: required`, and recommend `change validate` — which then blocked,
+# as did readiness, sync and Land. The message named flags of the command
+# already run, so the change was stuck with no stated way out.
+setup_project acceptance-scope
+$F new "restyle the copy" --rapid > /dev/null
+C=restyle-the-copy
+
+$F resolve "$C" --impact low --coupling isolated \
+  --acceptance-required --acceptance-reason "tone is a judgement call" > /dev/null
+# Declaring the claim afterwards is legitimate, so resolve accepts this. What
+# must not happen is the refusal that follows saying nothing about the way out.
+blocked="$($F validate "$C" 2>&1 || true)"
+assert_contains "the refusal names the command that sets the scope" \
+  "$blocked" "--acceptance-claims <ids>"
+assert_contains "the refusal names the other way to declare it" \
+  "$blocked" "capability 'acceptance' on a claim"
+assert_contains "the refusal names how to withdraw the requirement" \
+  "$blocked" "--acceptance-not-required"
+
+assert_cmd_zero "the same declaration succeeds once a claim is in scope" \
+  node .claude/harness/foundation.mjs resolve "$C" --impact low --coupling isolated \
+    --acceptance-required --acceptance-reason "tone is a judgement call" \
+    --acceptance-claims "$C-outcome"
+assert_cmd_zero "and the change still validates afterwards" \
+  node .claude/harness/foundation.mjs validate "$C"
+
 # --- A rapid change is valid to OpenSpec. -----------------------------------
 #
 # The rapid schema declares no spec artifact, so a rapid change never has deltas

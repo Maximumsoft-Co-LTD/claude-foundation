@@ -276,7 +276,17 @@ export function createChangeValidationRuntime({
         };
         console.error("WARNING: migrated legacy acceptance scope to all current claims");
       } else {
-        fail("required acceptance needs --acceptance-claims or claims declaring capability 'acceptance'");
+        // Declaring acceptance required without naming what is to be accepted
+        // leaves every later command refusing the change — validate, readiness,
+        // sync and Land alike. The old wording named two flags of `change
+        // resolve`, a command already run by the time anything reads this, and
+        // said nothing about how to get out. Both exits belong here.
+        fail(`change '${id}' requires acceptance but nothing is in scope. Either name the ` +
+          "claims a person is accepting:\n" +
+          `  claude-foundation change resolve ${id} --impact <impact> --coupling <coupling> ` +
+          "--acceptance-required --acceptance-reason <why> --acceptance-claims <ids>\n" +
+          "or declare capability 'acceptance' on a claim in evidence.yaml. To withdraw the " +
+          "requirement instead, re-resolve with --acceptance-not-required.");
       }
     }
     if (acceptance.required) {

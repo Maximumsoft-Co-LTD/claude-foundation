@@ -242,13 +242,14 @@ export function createChangeLifecycle({
     if (flags["acceptance-required"]) {
       const reason = String(flags["acceptance-reason"] || "").trim();
       if (!reason) fail("--acceptance-required requires --acceptance-reason");
+      const acceptanceClaims = String(flags["acceptance-claims"] || "").split(",")
+        .map((value) => value.trim()).filter(Boolean);
       state.acceptance = {
         version: 2,
         decision: "required",
         required: true,
         reason,
-        claimIds: String(flags["acceptance-claims"] || "").split(",")
-          .map((value) => value.trim()).filter(Boolean),
+        claimIds: acceptanceClaims,
         scopeOrigin: "explicit",
         declaredAt: now()
       };
