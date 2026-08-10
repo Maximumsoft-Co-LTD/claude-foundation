@@ -164,6 +164,57 @@ assert_contains "required proof stays permitted under the stop" "$stopped" '"pro
 assert_contains "Land recovery stays permitted under the stop" "$stopped" '"land-recovery"'
 assert_contains "scope expansion does not" "$stopped" '"scope-expansion"'
 
+# --- Prototype output cannot become evidence. -------------------------------
+#
+# `/investigate --compare` writes throwaway alternatives under
+# `.foundation/prototypes/`, and the loop calls them non-authoritative. The
+# runtime enforces that when a receipt is recorded — a guard that resolves
+# `file:` URLs, percent-encoding, traversal, and symlinks before deciding, and
+# which had no test of its own. Everything below is the same file reached a
+# different way.
+setup_project prototype-evidence
+$F new "prototype probe" --rapid > /dev/null
+C=prototype-probe
+jq '.claims[0].capabilities = ["deployment"]' "openspec/changes/$C/evidence.yaml" > "$LOGS/e.json"
+cp "$LOGS/e.json" "openspec/changes/$C/evidence.yaml"
+jq '.providers.deployment = {"adapter":"external"}' "openspec/changes/$C/execution.yaml" > "$LOGS/x.json"
+cp "$LOGS/x.json" "openspec/changes/$C/execution.yaml"
+sed 's/- \[ \]/- [x]/g' "openspec/changes/$C/tasks.md" > "$LOGS/t.md"
+cp "$LOGS/t.md" "openspec/changes/$C/tasks.md"
+
+project="$(pwd)"
+mkdir -p .foundation/prototypes/p1
+printf '{"ok":true}\n' > .foundation/prototypes/p1/out.json
+mkdir -p "$LOGS/real"
+printf '{"ok":true}\n' > "$LOGS/real/report.json"
+ln -s "$project/.foundation/prototypes/p1/out.json" "$LOGS/real/sneaky.json"
+
+refuses() {
+  $F receipt "$C" deployment pass --claims declared --observed probe --source fixture "$@" 2>&1 \
+    | grep -q "non-authoritative"
+}
+
+assert_cmd_zero "a relative prototype path cannot satisfy evidence" \
+  refuses --reference ".foundation/prototypes/p1/out.json"
+assert_cmd_zero "an absolute prototype path cannot either" \
+  refuses --reference "$project/.foundation/prototypes/p1/out.json"
+assert_cmd_zero "nor a file: URL naming it" \
+  refuses --reference "file://$project/.foundation/prototypes/p1/out.json"
+assert_cmd_zero "nor a path that traverses into it" \
+  refuses --reference "openspec/../.foundation/prototypes/p1/out.json"
+assert_cmd_zero "nor a percent-encoded spelling of it" \
+  refuses --reference ".foundation/prototypes%2Fp1%2Fout.json"
+assert_cmd_zero "nor a symlink from outside pointing in" \
+  refuses --reference "$LOGS/real/sneaky.json"
+assert_cmd_zero "and not as an artifact either" \
+  refuses --artifact ".foundation/prototypes/p1/out.json"
+
+# The control: the guard must be specific, or the seven above prove nothing.
+assert_cmd_zero "a reference outside the prototype tree still records" \
+  node .claude/harness/foundation.mjs receipt "$C" deployment pass \
+    --claims declared --observed probe --source fixture \
+    --reference "$LOGS/real/report.json"
+
 # --- A rapid proposal validates against OpenSpec. ---------------------------
 setup_project rapid-validates
 $F new "rapid header probe" --rapid > /dev/null
