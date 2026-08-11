@@ -1,3 +1,5 @@
+import { LIFECYCLE_PHASES } from "./lifecycle-phase.mjs";
+
 export async function routeRuntimeCommand(command, values, api) {
   const {
     parseFlags, parseStrictCommandFlags, fail, createChange, rapidStartTemplate,
@@ -104,6 +106,11 @@ export async function routeRuntimeCommand(command, values, api) {
         value: ["phase"]
       });
       if (!rest.length) die("exec requires a change id");
+      // The registry advertises this as an enum but nothing checked it, so
+      // `--phase buidl` wrote a `buidl` bucket straight into `metrics.phases`
+      // and the typo looked like a phase.
+      if (flags.phase !== undefined && !LIFECYCLE_PHASES.includes(flags.phase))
+        die(`exec --phase must be ${LIFECYCLE_PHASES.join("|")}`);
       process.exitCode = execObserved(rest[0], commandArgs, { phase: flags.phase });
       break;
     }

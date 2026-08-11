@@ -13,8 +13,8 @@
       "standard": 1600000
     },
     "requestBudgets": {
-      "rapid": 80,
-      "standard": 160
+      "rapid": 100,
+      "standard": 200
     },
     "planSummaryBytes": 4096,
     "leaseMinutes": 45
@@ -45,5 +45,8 @@
     "cross-repository-conflict",
     "evidence-anomaly",
     "two-failed-attempts"
-  ]
+  ],
+  "review": {
+    "diversity": "required"
+  }
 }

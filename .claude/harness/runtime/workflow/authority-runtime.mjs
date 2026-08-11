@@ -182,6 +182,12 @@ export function createAuthorityRuntime({
       evidence["subject-provider-family"] = "<implementation provider family, omit for a human implementer>";
       evidence["subject-model-family"] = "<implementation model family, omit for a human implementer>";
       evidence["subject-model"] = "<implementation model id, omit for a human implementer>";
+      // Numbers, not placeholders, because the receipt parses them. A passing
+      // review now has to state its blocker count rather than inherit a zero
+      // from an absent flag, so the template is where the responder is asked
+      // for it — the same lesson as the provenance fields above.
+      evidence["unresolved-blockers"] = 0;
+      evidence["verified-findings"] = 0;
     }
     return {
       version: Number(protocolVersion),

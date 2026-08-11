@@ -99,29 +99,40 @@ export function createMetricsRuntime({
     const budget = ensureBudgetState(state);
     const operations = readJsonLines(join(logs, id, "operations.jsonl"));
     const events = readJsonLines(join(logs, id, "events.jsonl"));
+    const userTransitions = readJsonLines(join(logs, id, "user-transitions.jsonl"));
     const { rows: contextRows, rollup: contextRollup } = contextMetricState(id);
     const phaseContextRows = readJsonLines(join(logs, id, "phase-context.jsonl"));
     const reuseRows = readJsonLines(join(logs, id, "reuse.jsonl"));
     const phases = {};
     const phaseEntry = (name) => (phases[name] ||= {
-      operations: 0, durationMs: 0, failed: 0, requests: 0,
-      outputTokens: null, cacheCreationTokens: null, cacheReadTokens: null,
+      operations: 0, durationMs: 0, failed: 0, blocked: 0, requests: 0,
+      inputTokens: null, outputTokens: null,
+      cacheCreationTokens: null, cacheReadTokens: null, spendTokens: null,
       contextMode: null, contextCarryInTokens: null, contextCarryCostTokens: null,
       loggedContextMode: undefined
     });
     for (const operation of operations) {
+      // `operation.phase` is now written for every lifecycle command, whether
+      // the call arrived through `cli.sh` or straight into the runtime, so the
+      // fallback only catches rows from an older revision.
       const name = operation.phase || operation.operation || "unknown";
       const phase = phaseEntry(name);
       phase.operations += 1;
       phase.durationMs += Number(operation.durationMs || 0);
-      if (operation.status !== "completed") phase.failed += 1;
+      // A typed stop and a failure have to read differently — the same
+      // distinction `rework` draws below, and the one `model-drift` documents.
+      // Collapsing them here reported six blocked lifecycle stops as six
+      // failures on a change that had none.
+      if (operation.status === "blocked") phase.blocked += 1;
+      else if (operation.status !== "completed") phase.failed += 1;
     }
     const phaseFirstEvent = new Map();
     for (const event of events) {
       const name = event.operationId || "unknown";
       const phase = phaseEntry(name);
       phase.requests += 1;
-      for (const field of ["outputTokens", "cacheCreationTokens", "cacheReadTokens"])
+      for (const field of
+        ["inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens"])
         if (event[field] !== null && event[field] !== undefined &&
             Number.isFinite(Number(event[field])))
           phase[field] = Number(phase[field] || 0) + Number(event[field]);
@@ -145,9 +156,18 @@ export function createMetricsRuntime({
       if (entry.session) seenSessions.add(entry.session);
       phases[name].contextMode = retained ? "retained" : "initial";
     }
-    for (const phase of Object.values(phases))
+    for (const phase of Object.values(phases)) {
       phase.contextCarryCostTokens = phase.contextCarryInTokens === null
         ? null : phase.contextCarryInTokens * phase.requests;
+      // The budget measures spend as input + output + cache-write and excludes
+      // cache reads. Without that sum per phase the numbers here could not be
+      // compared against the budget window at all, which is why "what did build
+      // cost against prove" had no answer.
+      const spend = [phase.inputTokens, phase.outputTokens, phase.cacheCreationTokens]
+        .filter((value) => value !== null && Number.isFinite(Number(value)));
+      phase.spendTokens = spend.length
+        ? spend.reduce((sum, value) => sum + Number(value), 0) : null;
+    }
     const retainedCarryTokens = Object.values(phases)
       .filter((phase) => phase.contextMode === "retained")
       .map((phase) => phase.contextCarryCostTokens)
@@ -209,6 +229,65 @@ export function createMetricsRuntime({
     const wallTimeMs = operations.length
       ? Math.max(...operations.map((row) => Date.parse(row.finishedAt))) -
         Math.min(...operations.map((row) => Date.parse(row.startedAt))) : null;
+    // `authority-request` and `authority-record` are separate timestamped
+    // operations bracketing a decision only a person can make. That is the
+    // host/user transition signal this report used to declare missing — it was
+    // on disk the whole time, just never read. Each request pairs with the next
+    // record after it, so a request nobody answered contributes nothing rather
+    // than swallowing the remainder of the run.
+    const candidateHumanWaitSpans = [];
+    for (let index = 0; index < operations.length; index += 1) {
+      if (operations[index].operation !== "authority-request") continue;
+      const answered = operations.slice(index + 1)
+        .find((row) => row.operation === "authority-record");
+      if (!answered) continue;
+      const from = Date.parse(operations[index].finishedAt);
+      const to = Date.parse(answered.startedAt);
+      if (Number.isFinite(from) && Number.isFinite(to) && to > from)
+        candidateHumanWaitSpans.push({
+          from: operations[index].finishedAt, to: answered.startedAt,
+          ms: to - from, sources: ["authority"]
+        });
+    }
+    // The transcript already contains the other explicit host/user transition:
+    // an orchestrator answer followed by the user's next message. Only the
+    // timestamp-only projection is retained; prompt content never reaches the
+    // logs. Subagent answers are excluded because they do not hand control to
+    // the user.
+    for (const transition of userTransitions) {
+      const to = Date.parse(transition.timestamp);
+      const preceding = events
+        .filter((event) => event.agentId === "orchestrator" &&
+          event.sessionId && event.sessionId === transition.sessionId &&
+          Number.isFinite(Date.parse(event.timestamp)) && Date.parse(event.timestamp) < to)
+        .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))[0];
+      if (!preceding || !Number.isFinite(to)) continue;
+      const from = Date.parse(preceding.timestamp);
+      candidateHumanWaitSpans.push({
+        from: preceding.timestamp, to: transition.timestamp,
+        ms: to - from, sources: ["transcript"]
+      });
+    }
+    // Multiple authority requests can wait concurrently, and an authority wait
+    // may cover the same interval as a transcript handoff. Report elapsed human
+    // wait, not the sum of overlapping observations of that wait.
+    const humanWaitSpans = candidateHumanWaitSpans
+      .sort((left, right) => Date.parse(left.from) - Date.parse(right.from))
+      .reduce((merged, span) => {
+        const previous = merged.at(-1);
+        const spanFrom = Date.parse(span.from);
+        const spanTo = Date.parse(span.to);
+        if (!previous || spanFrom > Date.parse(previous.to)) {
+          merged.push({ ...span });
+          return merged;
+        }
+        if (spanTo > Date.parse(previous.to)) previous.to = span.to;
+        previous.ms = Date.parse(previous.to) - Date.parse(previous.from);
+        previous.sources = [...new Set([...previous.sources, ...span.sources])];
+        return merged;
+      }, []);
+    const humanWaitMs = humanWaitSpans.length
+      ? humanWaitSpans.reduce((sum, span) => sum + span.ms, 0) : null;
     const contextModes = {};
     for (const row of phaseContextRows)
       contextModes[row.contextMode || "unknown"] =
@@ -220,17 +299,25 @@ export function createMetricsRuntime({
       return result;
     }, {});
     output(JSON.stringify({
-      version: 4, changeId: id,
+      version: 5, changeId: id,
       wallTimeMs,
       activeTimeMs,
       unattributedWaitMs: wallTimeMs === null || activeTimeMs === null
         ? null : Math.max(0, wallTimeMs - activeTimeMs),
-      humanWaitMs: null,
-      humanWaitReason: "not inferred without an explicit host/user transition signal",
+      humanWaitMs,
+      humanWaitSpans,
+      humanWaitBasis: "authority-request to authority-record intervals, plus " +
+        "orchestrator-answer to next-user-message intervals from the host " +
+        "transcript; overlapping spans are merged, so this is elapsed wait " +
+        "rather than the sum of observations. Waits in a session whose " +
+        "transcript was never ingested remain inside unattributedWaitMs",
       phases, providers,
       evidenceExecutionTimeMs,
       externalExecutionTimeMs,
-      requests: events.length || null,
+      // A measured zero, not unknown: `measurement` below states whether host
+      // events were ingested at all, so this field does not need to overload
+      // null to say it.
+      requests: events.length,
       inputTokens: sumKnown(events, "inputTokens"),
       outputTokens: sumKnown(events, "outputTokens"),
       cacheCreationTokens: sumKnown(events, "cacheCreationTokens"),

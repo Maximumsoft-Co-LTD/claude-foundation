@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A typed lifecycle stop was reported as a failure.** `metrics` counted every
+  operation that was not `completed` as failed rework, so a change with nineteen
+  completed operations, six blocked stops, and zero failures reported six
+  failures. The same file's `rework` section had it right, and the test suite
+  only ever asserted on that section. Underneath it, the status itself was
+  guessed rather than declared: the exit handler inferred "blocked" from exit
+  code 2 against a hardcoded list of three command names, so any path that set
+  an exit code without going through `die` was filed as a failure — the same
+  `validate` refusal read `failed` in one change and `blocked` in another.
+  Blocking is now declared by the command that decides it, and the phase rollup
+  counts `blocked` separately.
+- **A failing test suite was reported as `blocked`.** The `test-discovery`
+  adapter collapsed four possible statuses into `pass`/`blocked`, so a suite
+  that ran and failed was indistinguishable from one still waiting on something
+  external — the meaning `blocked` carries everywhere else in the harness. The
+  adapter now reports the worst real status, and the Playwright aggregate takes
+  the highest severity instead of whichever output happened to come last.
+- **A passing review inherited a blocker count nobody stated.** `--unresolved-blockers`
+  defaulted to zero when the flag was absent, which satisfied the gate that
+  exists to stop a review with open blockers from reaching Land. A reviewer who
+  never counted and one who counted zero were indistinguishable. A passing
+  review must now state the count, and the authority response template asks for
+  it so the documented path stays completable.
+- **A deleted `repositories.yaml` passed validation and failed inside Land.**
+  The file is named in both schemas' `apply.requires` and written by
+  `change new`, but `changeArtifactGaps` never checked for it.
+- **Per-phase token accounting was empty whenever a call bypassed `cli.sh`.**
+  The lifecycle-phase table existed twice — as a `case` grammar in `cli.sh` and
+  as an object literal in `foundation.mjs` — and the two disagreed on seven
+  commands. Operations bucketed by phase only when the phase came from the CLI,
+  so a direct `node foundation.mjs` call, which is what an agent runs, split one
+  change's rollup into two disjoint halves: operations with no tokens, tokens
+  with no operations. One table now lives in `runtime/core/lifecycle-phase.mjs`,
+  the runtime derives the phase itself, and a test asserts the shell grammar
+  still agrees with it.
+- **`humanWaitMs` was a hardcoded null beside the data that computes it.** The
+  stated reason was the absence of a host/user transition signal, while
+  `authority-request` and `authority-record` had bracketed every human decision
+  with timestamps all along. Both those brackets and the host transcript's
+  orchestrator-answer-to-next-user-message intervals are now read, overlapping
+  spans merged so the figure is elapsed wait rather than a sum of observations.
+  Only a timestamp-and-identity projection of a user row is retained; prompt
+  content never reaches the logs.
+- **The `event` CLI could not report cache-write spend.** `cacheCreationTokens`
+  was hardcoded null and `--cache` was written to both the read and total
+  fields, so the budget derived cache-write as exactly zero for every manually
+  recorded event. `--cache-create` now exists.
+- **`--size` was accepted verbatim and read by nothing.** `WORKFLOW.md` says
+  size is "for budget and slicing only", but the budget calculator took no size
+  argument, and the one check that read it compared against the literal `"S"` —
+  which the atomic-start path's own `"xs"` could never match. Size is now
+  validated against an enum, stored lowercase, and scales the request lane.
+- **`budget` printed `0.0% CONTINUE` when nothing had been measured.** Unknown
+  spend still fails open, but it now reports `unmeasured` rather than a zero
+  that reads as a measurement. A discovery receipt likewise writes
+  `discovered: null` instead of a zero contradicting its own "count
+  unavailable" text.
+- **The dashboard read `proof.json` as if it were a provider receipt**, which
+  produced a phantom provider row and reported a receipt set containing
+  failures as the same `partial` as an all-green set still awaiting `prove`.
+
+### Added
+
+- **A suite for the tables that must agree.** `run-single-source-tests.mjs`
+  asserts the `cli.sh` phase grammar against the runtime table, the four
+  runtime-API pins pairwise, `foundation.mjs` `VERSION` against
+  `protocol.json`, and `install.sh` `MANAGED` against CLAUDE.md. Four of those
+  pin pairs had no check at all, so an edit to `cli.sh` alone was caught by
+  nothing.
+- **`metrics` output version 5** adds `blocked` and `spendTokens` per phase,
+  per-phase `inputTokens`, and `humanWaitSpans`/`humanWaitBasis`; `budget`
+  decisions carry `measured`. `spendTokens` sums input, output, and cache-write
+  — the budget's own measure — so a phase can be compared against its window.
+
+### Changed
+
+- **Request budgets re-derived from the archived runs**, 80/160 → 100/200.
+  Standard changes with real implementation cost 100–170 model turns, and one
+  landed on exactly the old 160 target while its tokens sat near half. `--size`
+  widens the lane further (`xs` 0.5x, `s` 1x, `m` 1.5x, `l` 2x), combining with
+  impact by the larger of the two rather than multiplying them.
+- **Runtime API 17 → 18.** The entrypoint imports a runtime module an older
+  `runtime/` tree does not contain, which is the mixed-install case those pins
+  exist to catch. Projects upgrade with `claude-foundation init`.
+- **`state.provenHash` removed** along with the three modules that paid to
+  invalidate it. Freshness is decided from `proof.workspaceHash`; the mirror was
+  read by nothing.
+
 ## [3.2.9] - 2026-08-10
 
 ### Fixed

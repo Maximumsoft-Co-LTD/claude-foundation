@@ -23,6 +23,7 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 | `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, audit-only default, and block-mode refusals |
 | `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |
+| `harness/run-single-source-tests.mjs` | Tables that encode one fact in two files agree: the lifecycle-phase map against the `cli.sh` grammar, the four runtime-API pins pairwise, the runtime version against `protocol.json`, and `install.sh` `MANAGED` against CLAUDE.md |
 | `harness/run-feedback-isolation-tests.sh` | Prototype evidence isolation |
 | `harness/run-feedback-review-tests.sh` | Review and acceptance protocol, provenance, and attempt-chain integrity |
 | `harness/run-instruction-contract-tests.sh` | Instruction manifest contract |

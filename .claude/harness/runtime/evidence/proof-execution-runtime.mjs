@@ -3,7 +3,7 @@ export function createProofExecutionRuntime({
   requiredProviders, receiptValidity, rebindReusableReceipt, executionNodes,
   collectableExecutionNodes, startRequiredServices, runExecutionDag,
   durableArtifact, pendingTasks, proofPreflight, prove, proofAudit,
-  readJson, proofPath, die
+  readJson, proofPath, die, markBlocked = () => {}
 }) {
   // Services outlive the run that started them unless something reclaims
   // them: die() is process.exit, which runs no finally block, and a signal
@@ -52,6 +52,7 @@ export function createProofExecutionRuntime({
         command: "proof collect",
         completed: false
       }, null, 2));
+      markBlocked();
       process.exitCode = 2;
       return readiness;
     }
@@ -181,6 +182,7 @@ export function createProofExecutionRuntime({
         command: "proof run",
         completed: false
       }, null, 2));
+      markBlocked();
       process.exitCode = 2;
       return readiness;
     }

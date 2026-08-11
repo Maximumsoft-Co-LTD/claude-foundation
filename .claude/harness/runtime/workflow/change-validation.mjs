@@ -5,6 +5,7 @@ import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
 import { nextAfterValidate } from "../core/next-step.mjs";
 
 export function createChangeValidationRuntime({
+  markBlocked = () => {},
   root,
   activeChangePath,
   changePath,
@@ -205,14 +206,23 @@ export function createChangeValidationRuntime({
       for (const finding of audit.findings)
         console.log(`  ${finding.level.toUpperCase().padEnd(7)} ${finding.code}: ${finding.message}`);
     }
-    if (audit.status === "error") process.exitCode = 1;
+    // A failing traceability audit is a refusal, not a crash. It exits without
+    // `die` because the findings are already printed above, so it declares the
+    // block explicitly instead.
+    if (audit.status === "error") { markBlocked(); process.exitCode = 1; }
   }
 
   function changeArtifactGaps(state, dir) {
     const required = state.schema === "foundation-rapid"
       ? ["proposal.md", "tasks.md", "evidence.yaml"]
       : ["proposal.md", "design.md", "tasks.md", "evidence.yaml"];
-    if (Number(state.version || 1) >= 2) required.push("execution.yaml");
+    // `repositories.yaml` sits in both schemas' `apply.requires` and is written
+    // by `createChange`, but nothing checked it here: deleting the file passed
+    // `change validate` and only failed later, inside Land, where the recovery
+    // is expensive. Gated with `execution.yaml` because the two arrived
+    // together in the version-2 packet.
+    if (Number(state.version || 1) >= 2)
+      required.push("execution.yaml", "repositories.yaml");
     const missing = required.filter((name) => !existsSync(join(dir, name)));
     if (state.schema === "foundation-standard") {
       let specCount = 0;
@@ -346,7 +356,11 @@ export function createChangeValidationRuntime({
 
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
-    const budgets = state.size === "S" || state.impact === "low"
+    // Case-insensitive and `xs`-aware: this compared against the literal "S",
+    // so an atomic start's own "xs" fell through to the wide budget and the
+    // check only ever passed via the impact disjunct.
+    const budgets = ["xs", "s"].includes(String(state.size || "").toLowerCase())
+      || state.impact === "low"
       ? { "proposal.md": 900, "design.md": 1400, "tasks.md": 900 }
       : { "proposal.md": 1600, "design.md": 2600, "tasks.md": 1600 };
     for (const [name, limit] of Object.entries(budgets)) {

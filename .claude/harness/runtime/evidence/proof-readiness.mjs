@@ -2,6 +2,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export function createProofReadinessRuntime({
+  markBlocked = () => {},
   evidence,
   loadRuntime,
   taskBlocks,
@@ -348,7 +349,9 @@ export function createProofReadinessRuntime({
   function proofReadiness(id, stage = "prove") {
     const value = proofReadinessValue(id, stage);
     console.log(JSON.stringify(value, null, 2));
-    if (value.status !== "READY") process.exitCode = 2;
+    // A non-ready readiness is a typed lifecycle stop, so it says so rather
+    // than leaving the exit handler to infer it from the exit code.
+    if (value.status !== "READY") { markBlocked(); process.exitCode = 2; }
     return value;
   }
 
@@ -389,7 +392,6 @@ export function createProofReadinessRuntime({
     state.version = 2;
     state.revision = Number(state.revision || 0) + 1;
     state.executionRevision = Number(state.executionRevision || 0) + 1;
-    delete state.provenHash;
     if (existsSync(proofPath(id))) rmSync(proofPath(id));
     saveRuntime(state);
     console.log(`EVIDENCE ${id}: contract and execution wiring separated\n  configure execution.yaml before proof execute`);

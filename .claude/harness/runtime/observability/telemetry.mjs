@@ -68,3 +68,26 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
       ? createHash("sha256").update(context.sourcePath).digest("hex") : null
   };
 }
+
+// Claude transcript user rows are useful for timing even though they must never
+// enter the token-event stream. Keep only an opaque identity and timestamp: in
+// particular, do not retain message.content or any other prompt material.
+export function normalizeClaudeUserTransition(id, row, context = {}, timestamp = null) {
+  const message = row.message && typeof row.message === "object" ? row.message : {};
+  if (row.type !== "user" && message.role !== "user") return null;
+  const at = row.timestamp || row.created_at || timestamp;
+  if (!at || !Number.isFinite(Date.parse(at))) return null;
+  const sessionId = row.sessionId || row.session_id || context.sessionId || null;
+  const sourcePathHash = context.sourcePath
+    ? createHash("sha256").update(context.sourcePath).digest("hex") : null;
+  const identity = [id, sessionId, row.uuid || row.id || "", at, sourcePathHash]
+    .map((value) => value ?? "").join("\0");
+  return {
+    version: 1,
+    kind: "user-message",
+    transitionId: createHash("sha256").update(identity).digest("hex"),
+    sessionId,
+    timestamp: at,
+    sourcePathHash
+  };
+}

@@ -802,4 +802,27 @@ cp "openspec/changes/$C/proposal.md" ".foundation/sandboxes/$C/openspec/changes/
 unblocked="$($F sandbox sync "$C" 2>&1)"
 assert_contains "reverting or porting the edit unblocks the sync" "$unblocked" "SYNCED"
 
+# --- Every artifact the schema requires is checked at validate. -------------
+# `repositories.yaml` is named in both schemas' apply.requires and is written by
+# `change new`, but nothing verified it was still there. Deleting it passed
+# `change validate` cleanly and only failed later, inside Land.
+setup_project validate-checks-every-required-artifact
+$F new "artifact gap is named early" --rapid > /dev/null
+C=artifact-gap-is-named-early
+assert_cmd_zero "a freshly created change validates" $F validate "$C"
+rm "openspec/changes/$C/repositories.yaml"
+missing_repositories="$($F validate "$C" 2>&1 || true)"
+assert_contains "a deleted repositories.yaml is named at validate" \
+  "$missing_repositories" "missing change artifacts: repositories.yaml"
+
+# --- Size is a declaration the budget actually reads. ------------------------
+# `--size` was stored verbatim with no enum, and the budget never looked at it
+# even though WORKFLOW.md says size is "for budget and slicing only".
+size_rejected="$($F resolve "$C" --size medium 2>&1 || true)"
+assert_contains "an unrecognized size is refused" "$size_rejected" "--size must be xs|s|m|l"
+$F resolve "$C" --size l > /dev/null
+sized_budget="$($F metrics "$C")"
+assert_contains "a declared size widens the request lane" \
+  "$sized_budget" '"targetRequests": 200'
+
 finish "changeloop seams"

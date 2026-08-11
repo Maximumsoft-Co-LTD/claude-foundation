@@ -96,7 +96,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.2.9 |
 |---|---|
 | runtime | 2.8.0 |
-| runtime API | 17 |
+| runtime API | 18 |
 | provider protocol | 7 |
 | evidence schema | 1, 2 |
 | packet schema | 5 |

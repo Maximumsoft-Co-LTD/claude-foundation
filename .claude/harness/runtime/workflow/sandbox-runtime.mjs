@@ -21,7 +21,8 @@ export function createSandboxRuntime({
   canonicalPath, workspaceManifest, directoryHash, fileDigest, changePath, gitHead, git,
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
-  executionFingerprint, taskBlocks, proofPath, relevantHash, fail
+  executionFingerprint, taskBlocks, proofPath, relevantHash, fail,
+  markBlocked = () => {}
 }) {
   function sandboxRoot(id) {
     return join(root, ".foundation", "sandboxes", id);
@@ -250,7 +251,12 @@ export function createSandboxRuntime({
       console.log(`  safe for unattended: ${result.execution.safeForUnattended ? "yes" : "no"}`);
       for (const reason of result.execution.reasons) console.log(`  reason: ${reason}`);
     }
-    if (flags.unattended && !result.execution.safeForUnattended) process.exitCode = 1;
+    // Refusing unattended execution on an unsafe boundary is the guard working,
+    // not the command breaking.
+    if (flags.unattended && !result.execution.safeForUnattended) {
+      markBlocked();
+      process.exitCode = 1;
+    }
   }
 
   function createSingle(id) {
@@ -520,7 +526,6 @@ export function createSandboxRuntime({
     state.revision = Number(state.revision || 0) + 1;
     if (priorContract !== nextContract) state.contractRevision = Number(state.contractRevision || 0) + 1;
     if (priorExecution !== nextExecution) state.executionRevision = Number(state.executionRevision || 0) + 1;
-    delete state.provenHash;
     if (existsSync(proofPath(id))) rmSync(proofPath(id));
     clearSnapshotCache(id);
     saveRuntime(state);

@@ -498,7 +498,6 @@ export function createLandRuntime({
       pointersStagedAt: now()
     };
     state.status = "building";
-    delete state.provenHash;
     clearSnapshotCache(id);
     saveRuntime(state);
     console.log(`ROOT POINTERS STAGED ${id}\n  proof is stale; run /prove ${id}`);

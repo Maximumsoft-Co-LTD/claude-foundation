@@ -340,12 +340,12 @@ assert_cmd_zero "metrics remains read-only during legacy normalization" \
 node .claude/harness/foundation.mjs new 'Impact widens request budget' >/dev/null
 impact_budget_default="$(node .claude/harness/foundation.mjs metrics impact-widens-request-budget)"
 assert_contains "standard change starts at the standard request target" \
-  "$impact_budget_default" '"targetRequests": 160'
+  "$impact_budget_default" '"targetRequests": 200'
 node .claude/harness/foundation.mjs resolve impact-widens-request-budget \
   --impact high --coupling isolated --acceptance-not-required >/dev/null
 impact_budget_high="$(node .claude/harness/foundation.mjs metrics impact-widens-request-budget)"
 assert_contains "high impact widens the active request window" \
-  "$impact_budget_high" '"targetRequests": 240'
+  "$impact_budget_high" '"targetRequests": 300'
 impact_budget_policy_backup=""
 if [ -f foundation.json ]; then
   cp foundation.json "$TMP/impact-budget-policy-backup.json"
@@ -747,10 +747,12 @@ assert_cmd_fails_with "free text cannot pass as a reference" \
   node .claude/harness/foundation.mjs receipt collect-before-review \
     review pass --observed "fixture review found no blockers" \
     --reviewer harness-test --subject-actor implementation-agent \
+    --unresolved-blockers 0 \
     --reference "trust me bro"
 node .claude/harness/foundation.mjs receipt collect-before-review \
   review pass --observed "fixture review found no blockers" \
   --reviewer harness-test --subject-actor implementation-agent \
+  --unresolved-blockers 0 \
   --reference "fixture://collect-review" >/dev/null
 assert_cmd_zero "final proof reuses evidence collected before review" \
   node .claude/harness/foundation.mjs proof-run collect-before-review
@@ -872,6 +874,27 @@ assert_cmd_zero "typed readiness stop is counted separately" \
   jq -e '.rework.expectedStops >= 1' "$TMP/unavailable-metrics.json"
 assert_contains "typed readiness stop is not failed rework" \
   "$unavailable_metrics" '"failedOperations": 0'
+# The same contract, one level down. `rework` had it right while the per-phase
+# rollup counted every non-completed row as a failure, so one change reported
+# six failures it never had. The suite only ever looked at `rework`, which is
+# how that survived.
+assert_cmd_zero "a typed stop lands in the phase's blocked count" \
+  jq -e '[.phases[].blocked] | add >= 1' "$TMP/unavailable-metrics.json"
+assert_cmd_zero "a typed stop is not counted as a phase failure" \
+  jq -e '[.phases[].failed] | add == 0' "$TMP/unavailable-metrics.json"
+# Buckets are keyed by lifecycle phase whether or not the call came through
+# cli.sh — this one did not, and used to bucket under the command name.
+assert_cmd_zero "a direct runtime call still buckets under its phase" \
+  jq -e '.phases | has("prove")' "$TMP/unavailable-metrics.json"
+assert_cmd_zero "per-phase spend is reported in the budget's own measure" \
+  jq -e '.phases | has("prove") and (.prove | has("spendTokens"))' \
+  "$TMP/unavailable-metrics.json"
+# `--phase` is advertised as an enum; it used to accept anything and write the
+# typo straight into metrics.phases as if it were a phase.
+assert_cmd_fails_with "exec refuses a phase outside the enum" \
+  "exec --phase must be change|build|prove|land" \
+  node .claude/harness/foundation.mjs exec unavailable-provider-recovery \
+  --phase buidl -- true
 mkdir -p .foundation/leases/tasks/unavailable-provider-recovery
 printf '%s\n' \
   '{"taskId":"T001","owner":"fixture-agent","expiresAt":"2999-01-01T00:00:00.000Z"}' \
@@ -1256,7 +1279,7 @@ fi
 CLAUDE_TRANSCRIPT="$TMP/claude-native.jsonl"
 mkdir -p "$TMP/claude-native/subagents"
 printf '%s\n' \
-  '{"type":"user","message":{"role":"user","content":"DO-NOT-COPY-PRIVATE-PROMPT"}}' \
+  '{"type":"user","sessionId":"claude-native","timestamp":"2026-07-30T00:00:10.000Z","message":{"role":"user","content":"DO-NOT-COPY-PRIVATE-PROMPT"}}' \
   '{"type":"assistant","requestId":"claude-main-1","sessionId":"claude-native","timestamp":"2026-07-30T00:00:00.000Z","message":{"id":"msg-main-1","role":"assistant","model":"claude-test","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":40,"cache_read_input_tokens":60}}}' \
   > "$CLAUDE_TRANSCRIPT"
 printf '%s\n' \
@@ -1268,6 +1291,8 @@ assert_contains "native Claude transcript sync imports main and subagent request
   "$claude_sync" "imported 2"
 assert_file_not_contains "telemetry never copies prompt content" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" "DO-NOT-COPY-PRIVATE-PROMPT"
+assert_file_not_contains "transition timing never copies prompt content" \
+  ".foundation/logs/tiny-copy-edit/user-transitions.jsonl" "DO-NOT-COPY-PRIVATE-PROMPT"
 assert_file_contains "Claude cache creation tokens remain distinct" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" '"cacheCreationTokens":40'
 assert_file_contains "Claude cache read tokens remain distinct" \
@@ -1276,6 +1301,9 @@ claude_sync="$(node .claude/harness/foundation.mjs telemetry-sync tiny-copy-edit
   "$CLAUDE_TRANSCRIPT")"
 assert_contains "incremental Claude sync does not recount requests" \
   "$claude_sync" "imported 0"
+claude_wait_metrics="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
+assert_contains "user transcript timestamps measure human wait" \
+  "$claude_wait_metrics" '"humanWaitMs": 10000'
 
 # An automatically bound session begins at the current byte offset, so earlier
 # unrelated conversation is not attributed to the change. Later checkpoints
@@ -1928,6 +1956,7 @@ node .claude/harness/foundation.mjs receipt cross-repository-profile \
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
 review pass --observed "fixture review found no blockers" \
   --reviewer harness-test --subject-actor implementation-agent \
+  --unresolved-blockers 0 \
   --reference "fixture://review" >/dev/null
 assert_cmd_zero "committed multi-repo work proves" \
   node .claude/harness/foundation.mjs prove cross-repository-profile
@@ -1962,6 +1991,7 @@ node .claude/harness/foundation.mjs receipt cross-repository-profile \
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
 review pass --observed "fixture review found no blockers" \
   --reviewer harness-test --subject-actor implementation-agent \
+  --unresolved-blockers 0 \
   --reference "fixture://review" >/dev/null
 assert_cmd_zero "pointer-aware composite proof refreshes" \
   node .claude/harness/foundation.mjs prove cross-repository-profile

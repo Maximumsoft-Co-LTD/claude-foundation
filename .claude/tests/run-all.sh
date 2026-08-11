@@ -16,6 +16,7 @@ run() {
 
 run "runtime syntax" node --check "$ROOT/.claude/harness/foundation.mjs"
 run "composition-root wiring" sh "$HERE/harness/run-wiring-tests.sh"
+run "single-source tables" node "$HERE/harness/run-single-source-tests.mjs"
 run "context budgets" sh "$HERE/harness/run-context-budget-tests.sh"
 run "agent contracts" sh "$HERE/harness/run-agent-contract-tests.sh"
 run "human interaction contracts" sh "$HERE/interview/run-interview-tests.sh"

@@ -335,6 +335,17 @@ assert_cmd_fails_with "same-family critical AI review is rejected" \
     --subject-model gpt-5.3 --unresolved-blockers 0 \
     --observed 'No blockers' --reference fixture://same-family
 
+# A passing review asserts nothing is left to resolve. The count used to default
+# to zero when the flag was absent, so a reviewer who never counted and one who
+# counted zero were indistinguishable on the gate that exists to stop an
+# unresolved blocker from reaching Land.
+assert_cmd_fails_with "a passing review must state its blocker count" \
+  "passing review requires --unresolved-blockers" \
+  node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
+    --reviewer-type human --reviewer-identity security-owner \
+    --subject-actor implementer-ai --observed 'No blockers' \
+    --reference fixture://unstated-blocker-count
+
 assert_cmd_fails_with "human review without implementation provenance is rejected" \
   "review requires implementation provenance" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \

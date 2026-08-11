@@ -13,7 +13,10 @@ import {
   statSync
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { normalizeTelemetryRow } from "./telemetry.mjs";
+import {
+  normalizeClaudeUserTransition,
+  normalizeTelemetryRow
+} from "./telemetry.mjs";
 
 export function createTelemetryRuntime({
   root,
@@ -195,11 +198,23 @@ export function createTelemetryRuntime({
       if (!known) fail(`event references unknown task '${flags.task}'`);
       flags.task = taskId;
     }
-    for (const field of ["input", "output", "cache", "cost", "duration"])
+    for (const field of ["input", "output", "cache", "cache-create", "cost", "duration"])
       if (flags[field] !== undefined && !Number.isFinite(Number(flags[field])))
         fail(`event --${field} must be numeric`);
     const snapshot = state.activeProofRun || readJson(snapshotPath(id), {});
-    const cacheTokens = flags.cache === undefined ? null : Number(flags.cache);
+    // `--cache` is the read. Without a separate write input, `cacheCreationTokens`
+    // was hardcoded null and the budget derived cache-write as
+    // `cacheTokens - cacheReadTokens` — structurally zero for every event
+    // recorded through this path, so cache-write spend was unbillable.
+    const cacheReadTokens = flags.cache === undefined ? null : Number(flags.cache);
+    const cacheCreationTokens = flags["cache-create"] === undefined
+      ? null : Number(flags["cache-create"]);
+    const cacheTokens = [cacheReadTokens, cacheCreationTokens]
+      .some((value) => value !== null)
+      ? [cacheReadTokens, cacheCreationTokens]
+        .filter((value) => value !== null)
+        .reduce((sum, value) => sum + value, 0)
+      : null;
     const event = {
       version: 2,
       runId: flags.run || process.env.FOUNDATION_RUN_ID ||
@@ -212,8 +227,8 @@ export function createTelemetryRuntime({
       timestamp: now(),
       inputTokens: flags.input === undefined ? null : Number(flags.input),
       outputTokens: flags.output === undefined ? null : Number(flags.output),
-      cacheCreationTokens: null,
-      cacheReadTokens: cacheTokens,
+      cacheCreationTokens,
+      cacheReadTokens,
       cacheTokens,
       cost: flags.cost === undefined ? null : Number(flags.cost),
       durationMs: flags.duration === undefined ? null : Number(flags.duration),
@@ -323,13 +338,29 @@ export function createTelemetryRuntime({
 
   function appendTelemetryRows(id, rows, format, context = {}) {
     const target = join(logs, id, "events.jsonl");
+    const transitionTarget = join(logs, id, "user-transitions.jsonl");
     const known = new Set(readJsonLines(target).map((row) => row.requestId));
+    const knownTransitions = new Set(readJsonLines(transitionTarget)
+      .map((row) => row.transitionId));
     const normalized = [];
+    const transitions = [];
     for (const row of rows) {
+      if (format === "claude") {
+        const transition = normalizeClaudeUserTransition(id, row, context, now());
+        if (transition && !knownTransitions.has(transition.transitionId)) {
+          knownTransitions.add(transition.transitionId);
+          transitions.push(transition);
+        }
+      }
       const event = normalizeTelemetryRow(id, row, format, context, now());
       if (!event || known.has(event.requestId)) continue;
       known.add(event.requestId);
       normalized.push(event);
+    }
+    if (transitions.length) {
+      mkdirSync(dirname(transitionTarget), { recursive: true });
+      appendFileSync(transitionTarget,
+        transitions.map((row) => JSON.stringify(row)).join("\n") + "\n");
     }
     if (normalized.length) {
       // Loading runtime state can normalize it, so it stays inside this branch:

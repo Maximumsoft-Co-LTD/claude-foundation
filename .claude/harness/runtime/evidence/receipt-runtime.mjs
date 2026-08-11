@@ -260,6 +260,13 @@ export function createReceiptRuntime({
       if (!independent) die("reviewer must use an identity and session independent of implementation");
       if (status === "pass" && policy.diversity === "required" && !diverse)
         die("review policy requires a different provider/model family or a human reviewer");
+      // A passing review asserts there is nothing left to resolve, so the count
+      // has to be stated rather than defaulted. `Number(undefined || 0)` is 0,
+      // which made "nobody counted" and "counted zero" identical on the one
+      // gate whose job is to stop an unresolved blocker from reaching Land.
+      if (status === "pass" && flags["unresolved-blockers"] === undefined)
+        die("passing review requires --unresolved-blockers; state the count " +
+          "explicitly rather than leaving it unstated");
       const blockers = Number(flags["unresolved-blockers"] || 0);
       const verified = Number(flags["verified-findings"] || 0);
       if (![blockers, verified].every((value) => Number.isInteger(value) && value >= 0))

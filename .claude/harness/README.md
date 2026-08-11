@@ -373,7 +373,9 @@ available for cost reporting. Targets come from `foundation.json`
 (`execution.requestBudgets`, `execution.tokenBudgets`, keyed by lane) and are
 derived on every read: a change resolved to high impact widens its request
 target by 1.5x, including the window it is already spending from, because
-requests bind long before tokens on high-impact work. Only a window opened by
+requests bind long before tokens on high-impact work. A declared `--size`
+widens the same lane (`xs` 0.5x, `s` 1x, `m` 1.5x, `l` 2x); size and impact
+combine by the larger of the two, never by multiplying them together. Only a window opened by
 `budget continue` keeps its granted numbers. At 85% the packet enters `completion-only`: it
 forbids speculative investigation, scope expansion, optional refactors, and new
 subagents while allowing focused fixes and required proof work. Crossing 100%

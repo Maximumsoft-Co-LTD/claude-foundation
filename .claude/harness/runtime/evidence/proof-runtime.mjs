@@ -78,8 +78,11 @@ export function createProofRuntime({
     writeJson(proofPath(id), proof);
     writeJson(join(runRoot, "manifest.json"), proof);
     const state = loadRuntime(id);
+    // No `provenHash` mirror here. Freshness is decided from
+    // `proof.workspaceHash` against the current relevant hash, and the mirror
+    // was read by nothing while three separate modules paid to invalidate it —
+    // a field that looked authoritative and answered no question.
     state.status = "proven";
-    state.provenHash = hash;
     saveRuntime(state);
     console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}\n  next: /land ${id}`);
   }

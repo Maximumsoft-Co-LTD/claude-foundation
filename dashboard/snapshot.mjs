@@ -62,18 +62,32 @@ function receiptProjection(root, id) {
   const dir = join(root, ".foundation", "receipts", id);
   if (!existsSync(dir)) return { status: "missing", providers: [] };
   const providers = [];
+  let proofStatus = null;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const value = readJson(join(dir, entry.name));
     if (!value || typeof value !== "object") continue;
+    // proof.json is the manifest the receipts roll up into, not a provider —
+    // the harness skips it here for the same reason. Listing it produced a
+    // phantom provider row, and reading its absence as the only signal meant a
+    // receipt set containing failures reported the same "partial" as an
+    // all-green set still waiting for `prove`.
+    if (entry.name === "proof.json") {
+      proofStatus = typeof value.status === "string" ? value.status : null;
+      continue;
+    }
     providers.push({
       provider: entry.name.slice(0, -5),
       status: typeof value.status === "string" ? value.status : "unknown"
     });
   }
   providers.sort((a, b) => a.provider.localeCompare(b.provider));
-  const proof = providers.find((item) => item.provider === "proof");
-  return { status: proof?.status || (providers.length ? "partial" : "missing"), providers };
+  const failing = providers.some((item) => ["fail", "error"].includes(item.status));
+  return {
+    status: proofStatus
+      || (failing ? "failing" : providers.length ? "partial" : "missing"),
+    providers
+  };
 }
 
 function stateBlockers(state) {

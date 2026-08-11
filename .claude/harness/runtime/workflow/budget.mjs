@@ -17,15 +17,26 @@ export function createBudgetRuntime({ policy, now }) {
     return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
   }
 
-  function budgetTargets(schema, impact) {
+  // Size scales the request lane for the same reason impact does: requests bind
+  // first. The loop already asks the author to declare a size and WORKFLOW.md
+  // says it is "for budget and slicing only", but nothing here read it, so the
+  // declaration meant nothing. Scales combine by max rather than product — a
+  // large high-impact change earns one widening, not two multiplied together.
+  const SIZE_REQUEST_SCALE = { xs: 0.5, s: 1, m: 1.5, l: 2 };
+
+  function budgetTargets(schema, impact, size) {
     const { requestBudgets, tokenBudgets } = policy().execution;
+    // An unrecognized schema takes the standard lane deliberately: a spend
+    // target is not an assurance gate, and refusing to compute one would strand
+    // the change rather than protect anything.
     const lane = schema === "foundation-rapid" ? "rapid" : "standard";
     // Requests bind long before tokens on high-impact work (measured: 91% of
     // requests spent at 33% of tokens), so the request lane widens with the
     // declared impact. Tokens do not scale: they were never the limiter.
-    const scale = impact === "high" ? 1.5 : 1;
+    const sizeScale = SIZE_REQUEST_SCALE[String(size || "").toLowerCase()] ?? 1;
+    const scale = Math.max(impact === "high" ? 1.5 : 1, sizeScale);
     return {
-      requests: Math.ceil((requestBudgets?.[lane] ?? (lane === "rapid" ? 80 : 160)) * scale),
+      requests: Math.ceil((requestBudgets?.[lane] ?? (lane === "rapid" ? 100 : 200)) * scale),
       tokens: tokenBudgets[lane]
     };
   }
@@ -77,7 +88,7 @@ export function createBudgetRuntime({ policy, now }) {
     // --impact high` arrives after the first window already exists, and policy
     // budgets can change between runs. Recomputing here is what lets a later
     // impact declaration actually widen the allowance.
-    const targets = budgetTargets(state.schema, state.impact);
+    const targets = budgetTargets(state.schema, state.impact, state.size);
     if (existing.version !== 3 || !existing.lifetime || !existing.window) {
       const legacyRequests = knownNumber(existing.usedRequests)
         ? Number(existing.usedRequests) : null;
@@ -159,12 +170,20 @@ export function createBudgetRuntime({ policy, now }) {
   function budgetDecision(state) {
     const budget = ensureBudgetState(state);
     const window = budget.window;
-    const requestRatio = knownNumber(window.usedRequests)
+    const requestsKnown = knownNumber(window.usedRequests);
+    const tokensKnown = knownNumber(window.usedTokens);
+    const requestRatio = requestsKnown
       ? Number(window.usedRequests) / Number(window.targetRequests || 1) : 0;
-    const tokenRatio = knownNumber(window.usedTokens)
+    const tokenRatio = tokensKnown
       ? Number(window.usedTokens) / Number(window.targetTokens || 1) : 0;
     const ratio = Math.max(requestRatio, tokenRatio);
-    const limiter = tokenRatio > requestRatio ? "tokens" : "requests";
+    // Unknown spend still fails open — an unwired host must not gate the loop —
+    // but the zero it falls back to is not a measurement, and the report used
+    // to print it as one: "BUDGET <id>: 0.0% CONTINUE" for a change nobody had
+    // measured at all. `measured` is what lets the reader tell the two apart.
+    const measured = requestsKnown || tokensKnown;
+    const limiter = !measured ? null
+      : tokenRatio > requestRatio ? "tokens" : "requests";
     const operatorRequired = window.mode === "operator-required";
     const mode = operatorRequired ? "operator-required" :
       ratio >= 0.85 ? "completion-only" : ratio >= 0.7 ? "conserve" : "normal";
@@ -175,7 +194,7 @@ export function createBudgetRuntime({ policy, now }) {
       ratio >= 1 ? "STOP_AND_RESCOPE" : ratio >= 0.85 ? "STOP_EXPLORATION" :
         ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
     return {
-      ratio, limiter, mode, action, recommendation,
+      ratio, measured, limiter, mode, action, recommendation,
       allowed: mode === "completion-only" ? [
         "focused-fix", "provider-run", "receipt-reuse", "proof-resume",
         "metrics", "land-recovery", "archive"

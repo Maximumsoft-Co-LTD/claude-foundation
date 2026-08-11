@@ -27,6 +27,9 @@ import {
   resourcesConflict
 } from "./runtime/evidence/evidence-results.mjs";
 import { createFlagParser } from "./runtime/core/cli-flags.mjs";
+import {
+  phaseForCommand, telemetryPhaseForCommand
+} from "./runtime/core/lifecycle-phase.mjs";
 import { createProcessRuntime } from "./runtime/core/process-runtime.mjs";
 import { createInstructionManifest } from "./runtime/core/instruction-manifest.mjs";
 import { createAgentPlanner } from "./runtime/workflow/agent-planning.mjs";
@@ -64,7 +67,7 @@ import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
 const VERSION = "2.8.0";
-const RUNTIME_API_VERSION = "17";
+const RUNTIME_API_VERSION = "18";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -185,8 +188,13 @@ const SECURITY_TERMS = [
 // A refusal is a lifecycle stop, not a crash. Recording it as a failure would
 // bury real breakage under the guards that are working as designed.
 let operationBlocked = false;
+// A command that prints a structured non-ready result and returns has also
+// ended in a refusal, not a crash — but it never reaches `die`. `block()` is
+// that second spelling: it records the decision without exiting, so the exit
+// handler reports what the command decided instead of inferring it.
+function markBlocked() { operationBlocked = true; }
 function die(message, code = 1) {
-  operationBlocked = true;
+  markBlocked();
   console.error(`BLOCKED: ${message}`);
   process.exit(code);
 }
@@ -255,6 +263,7 @@ mkdirSync(CHANGES, { recursive: true });
 const operationStartedAt = Date.now();
 let operationChangeId = null;
 let operationName = null;
+let operationPhase = null;
 // Commands that only read. `showMetrics` buckets every row of operations.jsonl
 // and then this handler appended a row for the read itself, so each inspection
 // permanently inflated the next one — and an archived change, which is
@@ -275,13 +284,17 @@ process.on("exit", (code) => {
   try {
     const path = join(LOGS, operationChangeId, "operations.jsonl");
     mkdirSync(dirname(path), { recursive: true });
-    const typedBlock = code === 2 &&
-      ["proof-readiness", "proof-run", "proof-collect"].includes(operationName);
     appendFileSync(path, `${JSON.stringify({
       version: 2, changeId: operationChangeId, operation: operationName,
-      phase: process.env.FOUNDATION_PUBLIC_OPERATION || null,
+      phase: process.env.FOUNDATION_PUBLIC_OPERATION || operationPhase || null,
+      // Blocked is declared by the command through `block()`/`die()`, never
+      // inferred here. The previous spelling guessed from (exit code 2,
+      // operation name) against a hardcoded list, so any path that set an exit
+      // code without going through `die` was filed as a failure: the same
+      // `validate` refusal read `failed` in one change and `blocked` in
+      // another, and `metrics` counted the difference as rework.
       status: code === 0 ? "completed"
-        : (typedBlock || operationBlocked) ? "blocked" : "failed", exitCode: code,
+        : operationBlocked ? "blocked" : "failed", exitCode: code,
       startedAt: new Date(operationStartedAt).toISOString(), finishedAt: now(),
       durationMs: Date.now() - operationStartedAt,
       requests: null, inputTokens: null, outputTokens: null,
@@ -807,6 +820,7 @@ const {
   executionFingerprint
 } = evidenceContract;
 changeValidationRuntime = createChangeValidationRuntime({
+  markBlocked,
   root: ROOT,
   activeChangePath,
   changePath,
@@ -1071,6 +1085,7 @@ const {
   unavailableProviderRecovery,
   upgradeEvidence
 } = createProofReadinessRuntime({
+  markBlocked,
   evidence,
   loadRuntime,
   taskBlocks,
@@ -1095,6 +1110,7 @@ const {
 });
 let applyRuntime;
 const sandboxRuntime = createSandboxRuntime({
+  markBlocked,
   root: ROOT,
   excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,
   sandboxCopyExcludedDirs: SANDBOX_COPY_EXCLUDED_DIRS,
@@ -1287,6 +1303,7 @@ const {
   proofExecute,
   proofRun
 } = createProofExecutionRuntime({
+  markBlocked,
   proofReadinessValue,
   relevantSnapshot,
   loadRuntime,
@@ -1475,7 +1492,11 @@ function foundationPolicy() {
       maxParallelAgents: 3,
       packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
       tokenBudgets: { rapid: 800000, standard: 1600000 },
-      requestBudgets: { rapid: 80, standard: 160 },
+      // Re-derived from the archived runs rather than set by feel: standard
+      // changes with real implementation cost 100-170 model turns, and one
+      // landed on exactly the old 160 target while its tokens sat near half.
+      // The lane funds the work now; `--size` widens it further from here.
+      requestBudgets: { rapid: 100, standard: 200 },
       planSummaryBytes: 4096,
       leaseMinutes: 45
     },
@@ -1687,8 +1708,10 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
 
 function reportBudget(id, state, quiet = false) {
   const decision = applyBudgetDecision(state);
-  const message = `BUDGET ${id}: ${(decision.ratio * 100).toFixed(1)}% ` +
-    `${decision.action} ${decision.recommendation} (${decision.limiter})`;
+  const spent = decision.measured
+    ? `${(decision.ratio * 100).toFixed(1)}%` : "unmeasured";
+  const message = `BUDGET ${id}: ${spent} ` +
+    `${decision.action} ${decision.recommendation} (${decision.limiter || "unknown"})`;
   if (!quiet) console.log(message);
   else if (decision.ratio >= 0.7 || decision.mode === "operator-required")
     console.error(`WARNING: ${message}`);
@@ -1895,35 +1918,12 @@ operationChangeId = command === "sandbox" ? namedChange(values[1]) :
   ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-status", "authority-record", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
 
-const telemetryPhase = {
-  resolve: "change",
-  "audit-change": "change",
-  "evidence-detect": "change",
-  "evidence-init": "change",
-  "evidence-doctor": "change",
-  "evidence-verify-ci": "prove",
-  "evidence-upgrade": "change",
-  sandbox: "build",
-  "proof-plan": "prove",
-  "proof-readiness": "prove",
-  "proof-run": "prove",
-  "proof-collect": "prove",
-  "proof-preflight": "prove",
-  "proof-execute": "prove",
-  "proof-audit": "prove",
-  "authority-request": "prove",
-  "authority-status": "prove",
-  "authority-record": "prove",
-  receipt: "prove",
-  "run-provider": "prove",
-  prove: "prove",
-  "land-check": "land",
-  "land-plan": "land",
-  "land-record": "land",
-  "land-pointers": "land",
-  "land-resume": "land",
-  archive: "land"
-}[command];
+// One table, in `runtime/core/lifecycle-phase.mjs`, shared with the operations
+// row written on exit. The phase is derived here rather than read only from
+// FOUNDATION_PUBLIC_OPERATION so a direct runtime invocation buckets the same
+// way a `cli.sh` one does.
+operationPhase = phaseForCommand(command);
+const telemetryPhase = telemetryPhaseForCommand(command);
 // An archived change is finished evidence. Reading it back — `metrics` on a
 // landed run, say — must never append this session's telemetry to its log.
 const telemetryWritable = (id) => Boolean(id) && existsSync(runtimePath(id)) &&

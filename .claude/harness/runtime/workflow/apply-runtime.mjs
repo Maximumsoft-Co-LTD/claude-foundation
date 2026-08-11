@@ -604,6 +604,10 @@ export function createApplyRuntime({
     state.archivedAt = now();
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
     state.archivedChangePath = archivedChangeRelativePath(id);
+    // `land.status` is a breadcrumb, not the saga's position. Resume branches on
+    // `workspace.cleanup?.status` and `repositoryCleanup` — never on this — so
+    // reading it to work out where a Land stopped will give a confident wrong
+    // answer. Named here because it reads exactly like a checkpoint.
     state.land = { ...(state.land || {}), status: "specs-archived", updatedAt: now() };
     saveRuntime(state);
     // A merge that silently drops or rewrites a requirement still exits 0, and

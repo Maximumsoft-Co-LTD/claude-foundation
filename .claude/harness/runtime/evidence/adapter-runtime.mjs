@@ -4,6 +4,18 @@ import {
 import { spawnSync } from "node:child_process";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+// The receipt vocabulary, ordered. An adapter that runs more than one provider
+// has to report the worst thing that happened — not the last one in the array,
+// and never a word from a different vocabulary. `blocked` is deliberately
+// absent: it means "waiting on something external" everywhere else in the
+// harness, so returning it for a suite that ran and failed made a red test
+// indistinguishable from a test that never got to run.
+const STATUS_SEVERITY = { pass: 0, inconclusive: 1, fail: 2, error: 3 };
+const worstStatus = (...values) => values
+  .filter((value) => value in STATUS_SEVERITY)
+  .reduce((worst, value) =>
+    STATUS_SEVERITY[value] > STATUS_SEVERITY[worst] ? value : worst, "pass");
+
 export function createAdapterRuntime({
   ROOT, LOGS, PROVIDERS,
   providerCapability, providerConfig, parseFlags, providerWorkspace,
@@ -254,11 +266,14 @@ export function createAdapterRuntime({
       recordReceipt(id, discoveryProvider, discoveryStatus, {
         ...baseFlags, config: discoveryConfig,
         claims: providerClaims(id, discoveryProvider, discoveryConfig).join(","),
-        discovered: discovered ?? 0, minimum,
+        // Not `?? 0`: this line runs precisely when the count could not be read,
+        // so a zero here would state "the suite found no tests" in the same
+        // receipt whose `observed` says the count was unavailable.
+        discovered, minimum,
         observed: discovered === null ? "structured test count unavailable" :
           `${discovered} discovered; minimum ${minimum}`
       }, { executed: true });
-      return { provider, status: testStatus === "pass" && discoveryStatus === "pass" ? "pass" : "blocked" };
+      return { provider, status: worstStatus(testStatus, discoveryStatus) };
     }
   
     if (config.adapter === "playwright") {
@@ -282,7 +297,7 @@ export function createAdapterRuntime({
         const status = result.timedOut || result.error || readinessMissed ? "error" :
           result.status !== 0 || (summary?.failed || 0) > 0 ? "fail" :
           !summary || missingClaims.length ? "inconclusive" : "pass";
-        if (status !== "pass") aggregateStatus = status;
+        aggregateStatus = worstStatus(aggregateStatus, status);
         recordReceipt(id, output, status, {
           ...baseFlags,
           claims: requiredClaims.join(","),

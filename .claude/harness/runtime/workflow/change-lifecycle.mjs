@@ -212,7 +212,17 @@ export function createChangeLifecycle({
       fail("--ambiguity must be clear|unclear");
     for (const key of ["ambiguity", "impact", "coupling"])
       if (flags[key]) state[key] = flags[key];
-    if (flags.size) state.size = flags.size;
+    // Sizes are stored lowercase and validated. `--size` was accepted verbatim
+    // with no enum, so `--size medium` or `--size 5` persisted happily, and the
+    // one place that read it compared against the literal "S" — which
+    // `startAtomic`'s own "xs" could never match. Now that size scales the
+    // request budget, an unrecognized value would silently take the default
+    // lane instead of the one the author asked for.
+    if (flags.size) {
+      const size = String(flags.size).toLowerCase();
+      if (!["xs", "s", "m", "l"].includes(size)) fail("--size must be xs|s|m|l");
+      state.size = size;
+    }
     // The paths the author expects to touch, declared before they exist. Policy
     // infers capabilities from the *changed* surface, which at change time is
     // empty — so a `.tsx` file pulls `accessibility` only once it is written,
@@ -334,7 +344,7 @@ export function createChangeLifecycle({
     resolveChange(id, {
       impact,
       coupling,
-      size: draft.size || (rapid ? "xs" : "S"),
+      size: String(draft.size || (rapid ? "xs" : "s")).toLowerCase(),
       security: securityTriggers.join(","),
       review: Boolean(draft.reviewRequired),
       "acceptance-required": Boolean(draft.acceptance?.required),
