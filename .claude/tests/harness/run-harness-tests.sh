@@ -1687,6 +1687,42 @@ declared_removal="$({ node .claude/harness/foundation.mjs validate \
 assert_not_contains "a declared removal clears the scenario guard" \
   "$declared_removal" "spec delta drops"
 
+# A capability with no canonical spec has nothing to modify or remove.
+# OpenSpec used to reveal this only during archive, after implementation and
+# proof. Foundation validates the delta operation before Build instead.
+node .claude/harness/foundation.mjs new 'New capability operation guard' >/dev/null
+node .claude/harness/foundation.mjs resolve new-capability-operation-guard \
+  --impact low --coupling isolated --acceptance-not-required >/dev/null
+mkdir -p openspec/changes/new-capability-operation-guard/specs/brand-new-capability
+printf '%s\n' \
+  '## MODIFIED Requirements' '' \
+  '### Requirement: A new behavior' '' \
+  'The system SHALL expose the behavior.' '' \
+  '#### Scenario: The behavior is used' '' \
+  '- **WHEN** the behavior is requested' '- **THEN** it is available' \
+  > openspec/changes/new-capability-operation-guard/specs/brand-new-capability/spec.md
+assert_cmd_fails_with "a new capability cannot modify an absent requirement" \
+  "'MODIFIED Requirements'" \
+  node .claude/harness/foundation.mjs validate new-capability-operation-guard
+assert_cmd_fails_with "the new-capability refusal names the valid operation" \
+  "declare every new requirement under '## ADDED Requirements'" \
+  node .claude/harness/foundation.mjs validate new-capability-operation-guard
+sed 's/## MODIFIED Requirements/## REMOVED Requirements/' \
+  openspec/changes/new-capability-operation-guard/specs/brand-new-capability/spec.md \
+  > "$TMP/new-capability-removed.md"
+cp "$TMP/new-capability-removed.md" \
+  openspec/changes/new-capability-operation-guard/specs/brand-new-capability/spec.md
+assert_cmd_fails_with "a new capability cannot remove an absent requirement" \
+  "'REMOVED Requirements'" \
+  node .claude/harness/foundation.mjs validate new-capability-operation-guard
+sed 's/## REMOVED Requirements/## ADDED Requirements/' \
+  openspec/changes/new-capability-operation-guard/specs/brand-new-capability/spec.md \
+  > "$TMP/new-capability-added.md"
+cp "$TMP/new-capability-added.md" \
+  openspec/changes/new-capability-operation-guard/specs/brand-new-capability/spec.md
+assert_cmd_zero "an additive delta remains valid for a new capability" \
+  node .claude/harness/foundation.mjs validate new-capability-operation-guard
+
 # Self-measurement must not depend on being launched through the shell wrapper.
 # A direct 'node' invocation is measured unless telemetry is explicitly off,
 # and a refusal is recorded as a lifecycle stop rather than a failure so real

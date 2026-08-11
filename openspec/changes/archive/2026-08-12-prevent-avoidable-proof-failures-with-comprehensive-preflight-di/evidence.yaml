@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "a-new-capability-declares-a-non-additive-operation",
+      "scenario": "A new capability declares a non-additive operation",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-new-capability-declares-only-additions",
+      "scenario": "A new capability declares only additions",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

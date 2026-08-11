@@ -161,6 +161,43 @@ export function createChangeValidationRuntime({
     return findings;
   }
 
+  // OpenSpec cannot modify or remove a requirement from a capability that has
+  // no canonical specification yet. Archive catches that, but only after
+  // Build and Prove have spent their work. Validate it while the contract is
+  // still the only artifact that needs changing.
+  function newCapabilityOperationFindings(id, dir = activeChangePath(id)) {
+    const specsRoot = join(dir, "specs");
+    const findings = [];
+    if (!existsSync(specsRoot)) return findings;
+    walk(specsRoot, (path) => {
+      if (!path.endsWith(".md")) return;
+      const capability = relative(specsRoot, path).replaceAll("\\", "/").split("/")[0];
+      const currentPath = join(root, "openspec", "specs", capability, "spec.md");
+      if (existsSync(currentPath)) return;
+      for (const requirement of parseSpecRequirements(readFileSync(path, "utf8"))) {
+        if (/^ADDED\b/i.test(requirement.section || "")) continue;
+        findings.push({
+          capability,
+          operation: requirement.section || "an ungrouped requirement",
+          requirement: requirement.name,
+          path: relative(root, path).replaceAll("\\", "/")
+        });
+      }
+    });
+    return findings;
+  }
+
+  function assertNewCapabilitiesAreAdditive(id, dir = activeChangePath(id)) {
+    const findings = newCapabilityOperationFindings(id, dir);
+    if (!findings.length) return;
+    const detail = findings.map((finding) =>
+      `'${finding.operation}' for requirement '${finding.requirement}' in ${finding.capability}`
+    ).join("; ");
+    fail(`new capability spec delta uses a non-additive operation: ${detail}. ` +
+      "A capability absent from openspec/specs/ has nothing to modify or remove; " +
+      "declare every new requirement under '## ADDED Requirements'.");
+  }
+
   // No bypass flag: OpenSpec enforces the same rule at archive time, so
   // skipping this check would only move the same failure past the point where
   // the code has already been projected into the target.
@@ -244,6 +281,7 @@ export function createChangeValidationRuntime({
       fail(`resolve coupling for '${id}'`);
     if (state.acceptance?.decision === "undecided")
       fail(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
+    assertNewCapabilitiesAreAdditive(id, dir);
     assertNoDroppedScenarios(id, dir);
 
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
@@ -524,6 +562,7 @@ export function createChangeValidationRuntime({
   }
 
   return {
+    assertNewCapabilitiesAreAdditive,
     assertNoDroppedScenarios,
     changeArtifactGaps,
     changeSpecScenarios,
@@ -531,6 +570,7 @@ export function createChangeValidationRuntime({
     droppedScenarioFindings,
     evidenceDetectionValue,
     initializeEvidence,
+    newCapabilityOperationFindings,
     pendingTasks,
     requiredProviders,
     showEvidenceDetection,
