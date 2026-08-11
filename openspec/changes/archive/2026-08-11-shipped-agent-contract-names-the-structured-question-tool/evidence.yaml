@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "the-contract-names-the-question-channel",
+      "scenario": "The documentation contract suite fails unless the shipped agent contract names the structured question tool as the channel for decisions and plain text as its fallback, and unless it cites the fundamentals rule for conduct rather than skill routing alone.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "the-contract-still-fits-its-budget",
+      "scenario": "The context budget suite measures the shipped agent contract within its 175-word limit, raised for that file alone with its reason recorded, while the standing 120-word slash-command budget and every other named limit stay unchanged.",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

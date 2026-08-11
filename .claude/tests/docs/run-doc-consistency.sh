@@ -19,6 +19,15 @@ assert_file_contains "VERSION is reflected in the workflow" "$WF" "Version $ver"
 
 assert_file_contains "agent contract translates machine handoffs" \
   "$AGENT" "Harness output is a machine handoff"
+# The installer's pointer block cites AGENT.md and nothing else, so a decision
+# protocol stated there only in prose leaves the tool rule in `fundamentals.md`
+# unreachable — and a host offering selectable options gets a paragraph instead.
+assert_file_contains "agent contract names the structured question channel" \
+  "$AGENT" "AskUserQuestion"
+assert_file_contains "agent contract states the plain-text fallback" \
+  "$AGENT" "plain text when"
+assert_file_contains "agent contract cites fundamentals for conduct" \
+  "$AGENT" 'for conduct and skill routing'
 assert_file_contains "orchestrator stops on structured decisions" \
   "$ORCH" '`decision` requires an explicit user answer'
 assert_file_contains "prove uses the authority request bridge" \

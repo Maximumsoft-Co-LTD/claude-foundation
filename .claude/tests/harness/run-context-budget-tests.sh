@@ -44,7 +44,16 @@ assert_file_contains "fundamentals separates skill judgment from harness control
   'Skills supply judgment and procedures; the harness owns lifecycle'
 assert_words_at_most "orchestrator troubleshooting budget" 750 \
   "$ROOT/.claude/orchestrator.md"
-assert_words_at_most "portable agent contract budget" 150 \
+# 175, raised from 150 for this file alone. The installer's pointer block cites
+# AGENT.md and nothing else, so it is the only Foundation instruction a consumer
+# project is guaranteed to load — and it was describing the decision protocol
+# without naming the channel, which is how a host that offers selectable options
+# ended up handed a paragraph. Naming the tool could not be absorbed by
+# rewording: the tightest phrasing that still named it measured 159, and the
+# words left to cut were each another rule the contract carries. Raised
+# deliberately and for this file, like `change.md` and `build.md` below, so
+# every other limit still binds.
+assert_words_at_most "portable agent contract budget" 175 \
   "$ROOT/.claude/harness/AGENT.md"
 assert_file_contains "fundamentals routes abstraction depth" \
   "$ROOT/.claude/rules/fundamentals.md" 'module boundary, abstraction depth'

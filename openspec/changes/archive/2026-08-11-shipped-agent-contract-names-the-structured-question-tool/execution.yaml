@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/docs/run-docs-tap.sh"],
+      "minimum": 141,
+      "reportFormat": "tap"
+    }
+  },
+  "services": {}
+}
