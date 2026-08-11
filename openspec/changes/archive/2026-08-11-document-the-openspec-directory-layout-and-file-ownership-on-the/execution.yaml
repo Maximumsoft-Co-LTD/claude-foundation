@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/docs/run-docs-tap.sh"],
+      "minimum": 110,
+      "reportFormat": "tap",
+      "claims": ["openspec-tree-documented"]
+    },
+    "static-analysis": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/docs/build-docs-site.sh"],
+      "timeoutMs": 300000,
+      "claims": ["openspec-tree-documented"]
+    }
+  },
+  "services": {}
+}

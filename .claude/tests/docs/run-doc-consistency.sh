@@ -227,6 +227,18 @@ assert_file_contains "the artifacts page documents the evidence vault" \
 assert_file_contains "the artifacts page rules prototypes out as evidence" \
   "$ARTIFACTS" "rejected as evidence"
 
+# The page claims to cover every artifact, so the openspec/ tree itself has to
+# be on it — the first version documented the packet's files while never saying
+# what config.yaml, schemas/, or foundation.json are. Ownership is the load
+# bearing part: schemas/ is overwritten on every install and the rest is not.
+for entry in "config.yaml" "repositories.yaml" "schemas/" "investigations/" "foundation.json"; do
+  assert_file_contains "the artifacts page names $entry" "$ARTIFACTS" "$entry"
+done
+assert_file_contains "the artifacts page states what an install overwrites" \
+  "$ARTIFACTS" "Overwritten every install"
+assert_file_contains "the artifacts page separates the two repositories.yaml files" \
+  "$ARTIFACTS" "Two files named"
+
 assert_file_contains "the receipts page names the blocking status" \
   "$RECEIPTS" "inconclusive"
 assert_file_contains "the receipts page documents the execution floor" \

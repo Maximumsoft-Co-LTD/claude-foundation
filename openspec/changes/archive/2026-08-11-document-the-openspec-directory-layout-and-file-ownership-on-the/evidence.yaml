@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "openspec-tree-documented",
+      "scenario": "A reader of the artifacts page can learn what every file and directory in openspec/ is, which of them an upgrade overwrites and which are theirs to keep, that foundation.json holds policy at the repository root, and that the two files named repositories.yaml describe different scopes.",
+      "impact": "low",
+      "capabilities": ["test", "static-analysis"]
+    }
+  ]
+}

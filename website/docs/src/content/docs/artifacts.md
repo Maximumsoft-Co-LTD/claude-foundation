@@ -12,6 +12,48 @@ bundles, ignored by Git and safe to delete between changes.
 Nothing durable is ever stored only in chat, and nothing machine-generated is
 ever committed as if a human wrote it.
 
+## The `openspec/` tree
+
+```text
+openspec/
+├── config.yaml          project OpenSpec configuration and authoring rules
+├── repositories.yaml    repository topology and per-repository CI issuers
+├── specs/               the requirements the landed system is held to
+├── changes/
+│   ├── <change-id>/     one active change packet
+│   └── archive/         landed packets, dated
+├── investigations/      durable findings from /investigate
+└── schemas/             the two assurance profiles and their templates
+```
+
+Ownership is not uniform across that tree, and it decides what an upgrade may
+overwrite:
+
+| Path | Owner | On install |
+|---|---|---|
+| `schemas/` | Foundation | **Overwritten every install.** Edit a profile here and the next upgrade discards it |
+| `config.yaml` | your project | Copied only when missing, yours afterwards |
+| `repositories.yaml` | your project | Copied only when missing, yours afterwards |
+| `specs/`, `changes/`, `investigations/` | your project | Never touched by the installer |
+
+`foundation.json` sits at the repository root rather than in `openspec/`,
+because it holds project *policy* rather than intent: execution budgets, packet
+size caps, model tiers, escalation triggers, and the review diversity setting.
+It is seeded when missing and yours afterwards.
+
+:::caution[Two files named `repositories.yaml`]
+`openspec/repositories.yaml` describes the project's repository topology.
+`openspec/changes/<id>/repositories.yaml` describes the repositories **one
+change** touches and in which mode. They are different files with the same
+name; a provider that reads the wrong one silently scopes to the wrong set.
+:::
+
+`config.yaml` is worth reading once. It carries the default schema plus the
+authoring rules every change inherits — what a proposal must state, that specs
+use stable names and WHEN/THEN, that design records only decisions constraining
+implementation or rollback, and that `tasks.md` stays a single ledger. Changing
+it changes what the harness asks of every future change.
+
 ## The change packet
 
 One directory per active change, at `openspec/changes/<change-id>/`. This is
