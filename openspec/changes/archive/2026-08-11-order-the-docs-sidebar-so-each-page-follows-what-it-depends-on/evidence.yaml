@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "sidebar-follows-reading-order",
+      "scenario": "A reader working top to bottom meets the vocabulary for artifacts before the change-loop and evidence pages that use it, and reaches human approval only after the change loop and receipts it depends on, in both English and Thai.",
+      "impact": "low",
+      "capabilities": ["test", "static-analysis"]
+    }
+  ]
+}

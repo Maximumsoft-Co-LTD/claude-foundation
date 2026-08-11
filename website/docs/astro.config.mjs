@@ -51,6 +51,14 @@ export default defineConfig({
       // the default locale for a missing translation, which silently strands a
       // Thai reader on an English page — the fallback is a safety net, not a
       // licence to ship half a locale.
+      // Ordered by what a page depends on, not by how deep it is. "What
+      // Foundation writes" sits in Get started because it names the files that
+      // appear the moment you run the quickstart, and the loop and evidence
+      // pages then use that vocabulary — packet, receipt, vault — without
+      // reintroducing it. "Human approval" sits last in Evidence for the
+      // mirror-image reason: acceptance and review ARE evidence capabilities,
+      // and the page leans on receipts and the change loop, so it cannot be
+      // read before them.
       sidebar: [
         {
           label: "Get started",
@@ -59,6 +67,7 @@ export default defineConfig({
             { slug: "index", label: "What is Foundation?", translations: { th: "Foundation คืออะไร" } },
             { slug: "install", label: "Install", translations: { th: "ติดตั้ง" } },
             { slug: "quickstart", label: "Quickstart", translations: { th: "เริ่มใช้งาน" } },
+            { slug: "artifacts", label: "What Foundation writes", translations: { th: "Foundation เขียนอะไรบ้าง" } },
           ],
         },
         {
@@ -80,14 +89,13 @@ export default defineConfig({
             { slug: "evidence/claims", label: "Claims and capabilities", translations: { th: "Claim และ capability" } },
             { slug: "evidence/adapters", label: "Adapters and wiring", translations: { th: "Adapter และการต่อสาย" } },
             { slug: "evidence/receipts", label: "Receipts and staleness", translations: { th: "Receipt และความ stale" } },
+            { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
           ],
         },
         {
           label: "Reference",
           translations: { th: "อ้างอิง" },
           items: [
-            { slug: "artifacts", label: "What Foundation writes", translations: { th: "Foundation เขียนอะไรบ้าง" } },
-            { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
             { slug: "cli", label: "CLI reference", translations: { th: "คำสั่ง CLI" } },
           ],
         },
