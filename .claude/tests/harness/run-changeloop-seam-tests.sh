@@ -593,7 +593,14 @@ if command -v jq > /dev/null 2>&1; then
   printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]}]}}' \
     > "$target/.claude/settings.json"
 
-  sh "$source_tree/install.sh" "$target" --yes --source "$source_tree" \
+  # `bash`, not `sh`: install.sh declares `#!/usr/bin/env bash` and uses
+  # `set -o pipefail`, which dash rejects outright. Every real caller honors the
+  # shebang — cli.sh and run-installer-tests.sh both say `bash` — so invoking it
+  # through `sh` tested a way nobody installs. On a macOS developer machine `sh`
+  # is bash and it passed; on the CI runner `sh` is dash, the installer exited 2
+  # before doing anything, and the assertion below read that as the upgrade
+  # failing to retire the old guard.
+  bash "$source_tree/install.sh" "$target" --yes --source "$source_tree" \
     > "$LOGS/upgrade.log" 2>&1 || true
 
   assert_file_not_contains "upgrading retires the superseded guard command" \
