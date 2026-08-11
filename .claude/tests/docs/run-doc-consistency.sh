@@ -25,7 +25,7 @@ assert_file_contains "agent contract translates machine handoffs" \
 assert_file_contains "agent contract names the structured question channel" \
   "$AGENT" "AskUserQuestion"
 assert_file_contains "agent contract states the plain-text fallback" \
-  "$AGENT" "plain text when"
+  "$AGENT" "plain text otherwise"
 assert_file_contains "agent contract cites fundamentals for conduct" \
   "$AGENT" 'for conduct and skill routing'
 assert_file_contains "orchestrator stops on structured decisions" \

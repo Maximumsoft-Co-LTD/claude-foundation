@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "the-contract-fits-its-original-budget-with-every-rule",
+      "scenario": "The shipped agent contract measures within the restored 150-word budget while the documentation contract suite still finds the machine-handoff sentence, the AskUserQuestion channel, its plain-text fallback, the conduct pointer, and the no-pass-bias sentence.",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}
