@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Review independence can be waived by committed project policy.** Projects
+  driven from a single session may set `review.independence: "self"` in
+  `foundation.json`. Review receipts preserve the observed self-review and the
+  policy waiver; critical work still needs any separately required diversity
+  waiver.
+
+### Fixed
+
+- **Invalid deltas for new capabilities now fail before Build.** A capability
+  without a canonical specification may only declare `ADDED Requirements`;
+  validation rejects `MODIFIED` and `REMOVED` sections with a corrective
+  diagnostic instead of letting the change fail during archive.
+- **The portable agent contract names the structured question channel.** The
+  only instruction file guaranteed to reach consumer projects now explicitly
+  names `AskUserQuestion`, retains plain text as the fallback, and points to
+  the conduct rules.
+
+### Changed
+
+- **The portable agent contract is back within its original 150-word budget.**
+  Its wording is tighter without dropping workflow, authority, evidence,
+  translation, or interaction rules, and the temporary 175-word allowance has
+  been removed.
+
 ## [3.2.10] - 2026-08-11
 
 ### Fixed
