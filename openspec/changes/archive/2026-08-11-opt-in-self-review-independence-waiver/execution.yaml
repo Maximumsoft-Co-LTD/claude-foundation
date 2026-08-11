@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-review-gate-tap.sh"],
+      "minimum": 92,
+      "reportFormat": "tap"
+    }
+  },
+  "services": {}
+}

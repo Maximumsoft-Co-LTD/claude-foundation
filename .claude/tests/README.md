@@ -38,7 +38,7 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
 ## Evidence views
 
-Two wrappers restate suites above as TAP so a provider can check a discovered
+Three wrappers restate suites above as TAP so a provider can check a discovered
 count against a `minimum` floor. They are deliberately absent from `run-all.sh`,
 which needs only an exit code — running them there would execute the same
 assertions twice.
@@ -46,6 +46,7 @@ assertions twice.
 | Wrapper | Restates |
 |---|---|
 | `harness/run-changeloop-seam-tap.sh` | Change-loop seams, phase mutation guard, workspace surface, context budgets |
+| `harness/run-review-gate-tap.sh` | Review and acceptance protocol, provenance, waiver policy, attempt-chain integrity |
 | `docs/run-docs-tap.sh` | Documentation contracts and context budgets |
 
 A wrapper adds no assertions of its own. Add the assertion to the underlying

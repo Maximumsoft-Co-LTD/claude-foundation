@@ -71,18 +71,30 @@ Review becomes required when any of these hold:
 - a non-low claim spans more than one repository
 - the intent mentions concurrency, money, migration, or irreversibility
 
-Two properties govern who may review:
+Two properties govern who may review. Both are waivable, and each waiver is
+declared the same way: a key in the committed `foundation.json`, never a
+command flag — an exemption the reviewed party can write at the moment it is
+caught is not an exemption.
 
-**Independence is never waivable.** The reviewer's identity must differ from
-every implementation subject, and an AI reviewer's session must differ from
-every AI subject's session. Something cannot review itself.
+**Independence.** By default the reviewer's identity must differ from every
+implementation subject, and an AI reviewer's session must differ from every AI
+subject's session. A project driven from a single session has nowhere to send
+the packet, so `"review": { "independence": "self" }` lets a reviewer share an
+implementer's identity and session. It applies at every impact, and it stamps
+an `independence-waived-self-review` trigger on the policy. The receipt still
+records what actually happened: `review.policy.independent` stays `false`, with
+`independenceWaived: true` beside it explaining why it passed.
 
-**Diversity is waivable, visibly.** By default an AI reviewer must come from a
-different provider and model family than the implementer. A project that runs a
+**Diversity.** By default an AI reviewer must come from a different provider and
+model family than the implementer. A project that runs a
 single model can set `"review": { "diversity": "single-model" }` in
 `foundation.json`, which relaxes diversity to *preferred* and stamps a
-`diversity-waived-single-model` trigger on the policy so the waiver is visible
-in the record rather than hidden in config.
+`diversity-waived-single-model` trigger on the policy.
+
+Each waiver relaxes only its own axis. A same-model self-review of critical work
+needs both declared; declaring one leaves the other enforced. Withdrawing either
+key invalidates the receipts it allowed, because the review policy is part of
+the contract fingerprint.
 
 :::note[The two-round ceiling]
 After two AI review rounds, a third is refused and escalated to human review.

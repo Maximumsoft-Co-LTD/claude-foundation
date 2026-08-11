@@ -257,7 +257,13 @@ export function createReceiptRuntime({
       if (!provenance.complete)
         die("review requires complete structured reviewer and subject provenance");
       const { independent, diverse } = provenance;
-      if (!independent) die("reviewer must use an identity and session independent of implementation");
+      // `independent` stays the observed fact and is persisted as one below; the
+      // policy only decides whether that fact blocks. Folding the waiver into
+      // the predicate would make a self-review's own receipt claim an
+      // independence it did not have, which is the record a later reader needs
+      // most.
+      if (!independent && policy.independence !== "self")
+        die("reviewer must use an identity and session independent of implementation");
       if (status === "pass" && policy.diversity === "required" && !diverse)
         die("review policy requires a different provider/model family or a human reviewer");
       // A passing review asserts there is nothing left to resolve, so the count

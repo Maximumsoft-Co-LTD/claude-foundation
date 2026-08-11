@@ -358,8 +358,13 @@ require a different model/provider family or a human; other reviews require a
 fresh context and prefer diversity. A project with one model available can set
 `"review": { "diversity": "single-model" }` in `foundation.json` to accept a
 same-family reviewer on critical work; the waiver is named in the review packet
-and recorded in the receipt as `diversityWaived`, and it never relaxes reviewer
-independence — a fresh session and a distinct identity are always required.
+and recorded in the receipt as `diversityWaived`. A project driven from one
+session can likewise set `"review": { "independence": "self" }` to let a
+reviewer share an implementer's identity and session at any impact; that waiver
+is named the same way, recorded as `independenceWaived` beside the observed
+`independent: false`, and relaxes only its own axis — a same-family self-review
+of critical work still needs the diversity waiver declared alongside it. Both
+live only in the committed policy file; neither is a command flag.
 AI re-review is limited to two rounds, after
 which unresolved work escalates to a human; that stop names the human path, the
 return to Build, and retiring the change. A change-level hash chain binds each

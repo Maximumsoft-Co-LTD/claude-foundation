@@ -110,7 +110,7 @@ workspace hash ใหม่แทนที่จะรันซ้ำ และ�
 | `provider-fingerprint-stale` | คำสั่ง สภาพแวดล้อม หรือ lockfile เปลี่ยน |
 | `stale` | workspace เปลี่ยนและไม่ได้ประกาศ input ไว้ |
 | `provider-inputs-stale` | input ที่ประกาศไว้เปลี่ยนเอง |
-| `review-not-independent` | ผู้รีวิวเป็นผู้ implement ด้วย |
+| `review-not-independent` | ผู้รีวิวเป็นผู้ implement ด้วย และนโยบายไม่ได้ยกเว้นความเป็นอิสระ |
 | `review-not-diverse` | AI ผู้รีวิวใช้ตระกูลโมเดลเดียวกับผู้ implement |
 | `acceptance-invalid` | ขอบเขต hash หรือเหตุผลเปลี่ยนไปหลังการยอมรับ |
 | `external-observation-missing` | receipt แบบ manual ขาดสิ่งที่สังเกตเห็นหรือแหล่งที่มา |

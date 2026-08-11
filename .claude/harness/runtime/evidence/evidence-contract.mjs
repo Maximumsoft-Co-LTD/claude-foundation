@@ -518,22 +518,32 @@ export function createEvidenceContract({
     // change, forever. `review.diversity: "single-model"` in foundation.json
     // trades that for a same-family reviewer, and says so: the waiver is a
     // trigger of its own, so it travels into the review packet and the receipt
-    // instead of quietly disappearing. Independence is never waived; a fresh
-    // session costs nothing even when only one model exists.
+    // instead of quietly disappearing.
+    //
+    // `review.independence: "self"` is the same trade for the other property,
+    // for a project driven from a single session: a fresh session is free only
+    // when there is a second one to open. It applies at every impact, because
+    // the changes that force review are exactly the ones that would otherwise
+    // be understated to get past it — and it relaxes nothing else, so a
+    // critical self-review still has to satisfy diversity on its own terms.
     //
     // contractFingerprint hashes this whole object, so a project that never
     // opts in must keep producing the byte-identical shape it produced before
-    // the waiver existed — otherwise upgrading Foundation would re-fingerprint
-    // every in-flight change and invalidate evidence nobody asked to re-earn.
-    // Hence the key appears only when the waiver is actually in force.
-    const singleModel = foundationPolicy().review?.diversity === "single-model";
+    // either waiver existed — otherwise upgrading Foundation would
+    // re-fingerprint every in-flight change and invalidate evidence nobody
+    // asked to re-earn. Hence each key appears only when its waiver is in force.
+    const policy = foundationPolicy().review || {};
+    const singleModel = policy.diversity === "single-model";
     const waived = singleModel && diversityTriggers.length > 0;
     if (waived) triggers.push("diversity-waived-single-model");
+    const selfReview = policy.independence === "self";
+    if (selfReview) triggers.push("independence-waived-self-review");
     return {
       required: Boolean(state.reviewRequired || requiredTriggers.length || capabilities.has("review")),
-      independence: "required",
+      independence: selfReview ? "self" : "required",
       diversity: diversityTriggers.length > 0 && !singleModel ? "required" : "preferred",
       ...(waived ? { diversityWaived: true } : {}),
+      ...(selfReview ? { independenceWaived: true } : {}),
       triggers: triggers.sort()
     };
   }

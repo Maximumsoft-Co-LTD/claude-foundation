@@ -200,8 +200,12 @@ finding counts, and changed-path scope after the first round. The review packet
 unions committed base-to-HEAD and dirty paths per repository. Critical policy
 requires a different provider/model family or a human, unless the project has
 declared `"review": { "diversity": "single-model" }` in `foundation.json`; that
-waiver is named in the packet, recorded as `review.policy.diversityWaived`, and
-never relaxes reviewer independence. A change-level hash chain
+waiver is named in the packet and recorded as `review.policy.diversityWaived`.
+Reviewer independence is waived the same way and nowhere else: with
+`"review": { "independence": "self" }`, a reviewer may share an implementer's
+identity and session at any impact, the receipt still records the observed
+`review.policy.independent` as false alongside `independenceWaived`, and each
+waiver relaxes only its own axis. A change-level hash chain
 binds the complete receipt payload and limits AI to two recorded attempts even if
 the current receipt is deleted or its provider is renamed; corrupt history fails
 closed. Legacy review receipts remain readable but cannot satisfy protocol v2.

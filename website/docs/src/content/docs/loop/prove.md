@@ -81,4 +81,4 @@ The envelope binds the change, provider, workspace hash, optional commit, run UR
 
 ## What Prove must never do
 
-It never substitutes self-review for independent review, never claims an unproven pass, and never Lands.
+It never substitutes self-review for independent review unless the project's committed policy declares that waiver, never claims an unproven pass, and never Lands.

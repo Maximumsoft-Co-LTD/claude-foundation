@@ -38,7 +38,8 @@ overwrite:
 
 `foundation.json` sits at the repository root rather than in `openspec/`,
 because it holds project *policy* rather than intent: execution budgets, packet
-size caps, model tiers, escalation triggers, and the review diversity setting.
+size caps, model tiers, escalation triggers, and the review diversity and
+independence settings.
 It is seeded when missing and yours afterwards.
 
 :::caution[Two files named `repositories.yaml`]

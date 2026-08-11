@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "independence-policy-is-read-and-validated",
+      "scenario": "foundation.json review.independence accepts required and self, defaults to required, and fails naming the allowlist on any other value; a project that omits the key keeps the same review policy object and contract fingerprint it produced before the waiver existed.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-configured-waiver-is-named-in-the-record",
+      "scenario": "With review.independence set to self the review policy reports independence self, independenceWaived true, and an independence-waived-self-review trigger, and that policy reaches the review packet and the written receipt.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "a-waived-self-review-writes-and-reads-back-valid",
+      "scenario": "A reviewer sharing the implementation subject's identity and session records a passing review receipt under the waiver, the receipt states independent false alongside independenceWaived true, and it stays valid on re-read; the same receipt is refused without the waiver, is refused under diversity single-model alone, and goes invalid if the waiver is removed afterward.",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    }
+  ]
+}

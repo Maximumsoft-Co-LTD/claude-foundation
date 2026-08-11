@@ -1510,7 +1510,7 @@ function foundationPolicy() {
       "concurrency", "public-compatibility", "cross-repository-conflict",
       "evidence-anomaly", "two-failed-attempts"
     ],
-    review: { diversity: "required" }
+    review: { diversity: "required", independence: "required" }
   };
   if (configured.version !== undefined && configured.version !== 1)
     die("foundation.json requires version 1");
@@ -1576,6 +1576,16 @@ function foundationPolicy() {
   // is caught, which is the pattern the attestation trust root exists to refuse.
   if (!["required", "single-model"].includes(policy.review.diversity))
     die("foundation.json review.diversity must be required|single-model");
+  // "self" is the same bargain for the other review property. A project driven
+  // from a single session has no second session to hand the packet to, so every
+  // change that forces review stalls — and the ways out are all worse than the
+  // gate: abandon the change, understate its impact until review stops being
+  // required, or write the receipt outside the harness. Declaring the waiver in
+  // the same committed file keeps it a decision on the record instead. It stays
+  // out of the flag surface for the reason above: an exemption the reviewed
+  // party can write at the moment it is caught is not an exemption.
+  if (!["required", "self"].includes(policy.review.independence))
+    die("foundation.json review.independence must be required|self");
   for (const tier of ["fast", "standard", "deep"])
     if (!policy.models[tier] || typeof policy.models[tier].family !== "string")
       die(`foundation.json models.${tier}.family is required`);
@@ -1611,7 +1621,12 @@ function receiptValidity(id, provider, hash = relevantHash(id)) {
     if (String(value.reviewProtocolVersion || "") !== REVIEW_PROTOCOL_VERSION)
       return { provider, validity: "review-version-stale", status: value.status };
     const provenance = reviewProvenanceResult(value.review);
-    if (!provenance.complete || !provenance.independent)
+    // Read against the policy in force now, not the one stamped on the receipt.
+    // Dropping `review.independence` from foundation.json has to invalidate the
+    // self-reviews it allowed, the same way the diversity check below already
+    // re-decides on every read.
+    if (!provenance.complete ||
+        (!provenance.independent && reviewPolicy(id).independence !== "self"))
       return { provider, validity: "review-not-independent", status: value.status };
     const attemptDigest = String(value.review?.attemptDigest || "");
     const attemptDir = join(EVIDENCE_VAULT, id, "review-attempts");

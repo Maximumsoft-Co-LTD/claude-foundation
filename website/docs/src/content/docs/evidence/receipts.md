@@ -119,7 +119,7 @@ verdicts, in the order they are checked:
 | `provider-fingerprint-stale` | The command, environment, or lockfiles changed |
 | `stale` | The workspace changed and inputs were not declared |
 | `provider-inputs-stale` | The declared inputs themselves changed |
-| `review-not-independent` | The reviewer was also an implementer |
+| `review-not-independent` | The reviewer was also an implementer and the policy does not waive independence |
 | `review-not-diverse` | The AI reviewer shared a model family with the implementer |
 | `acceptance-invalid` | The scope, hash, or stated reason drifted after acceptance |
 | `external-observation-missing` | A manual receipt lacks its observation or provenance |

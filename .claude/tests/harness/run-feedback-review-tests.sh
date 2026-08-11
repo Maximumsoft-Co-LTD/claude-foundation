@@ -613,6 +613,136 @@ assert_cmd_zero "the waiver is recorded in the review receipt, not just applied"
 
 rm -f foundation.json
 
+# Independence is the other half of the same bargain. A project driven from one
+# session has no second session to hand the packet to, so review.independence in
+# the committed policy is what keeps a self-review on the record instead of
+# pushing the maintainer to understate impact or write the receipt by hand.
+node .claude/harness/foundation.mjs new 'Solo session self review' >/dev/null
+node .claude/harness/foundation.mjs resolve solo-session-self-review \
+  --impact high --coupling coupled --acceptance-not-required >/dev/null
+sed 's/- \[ \]/- [x]/g' openspec/changes/solo-session-self-review/tasks.md \
+  > "$TMP/solo-session-tasks.md"
+cp "$TMP/solo-session-tasks.md" openspec/changes/solo-session-self-review/tasks.md
+
+default_independence_packet="$(node .claude/harness/foundation.mjs packet \
+  solo-session-self-review --phase review)"
+assert_contains "default policy still demands reviewer independence" \
+  "$default_independence_packet" '"independence":"required"'
+if printf '%s' "$default_independence_packet" | grep -qF 'independence-waived-self-review'; then
+  fail "a project that never opts in names no independence waiver"
+else
+  pass "a project that never opts in names no independence waiver"
+fi
+
+printf '{"version":1,"review":{"independence":"whatever"}}\n' > foundation.json
+assert_cmd_fails_with "review independence policy rejects an unknown mode" \
+  "review.independence must be required|self" \
+  node .claude/harness/foundation.mjs packet solo-session-self-review --phase review
+
+printf '{"version":1,"review":{"independence":"self"}}\n' > foundation.json
+self_packet="$(node .claude/harness/foundation.mjs packet \
+  solo-session-self-review --phase review)"
+assert_contains "self policy relaxes independence" \
+  "$self_packet" '"independence":"self"'
+assert_contains "the independence waiver is named in the review packet" \
+  "$self_packet" 'independence-waived-self-review'
+
+assert_cmd_fails_with "a waived self-review still cannot pass with a blocker open" \
+  "passing review cannot contain unresolved blockers" \
+  node .claude/harness/foundation.mjs receipt solo-session-self-review review pass \
+    --reviewer-type ai --reviewer-identity solo-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session shared-session \
+    --subject-actor solo-ai --subject-session shared-session \
+    --subject-provider-family anthropic --subject-model-family claude \
+    --subject-model claude-opus --unresolved-blockers 1 \
+    --observed 'One blocker open' --reference fixture://self-review-blocker
+
+assert_cmd_zero "self policy accepts a reviewer sharing the implementer identity and session" \
+  node .claude/harness/foundation.mjs receipt solo-session-self-review review pass \
+    --reviewer-type ai --reviewer-identity solo-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session shared-session \
+    --subject-actor solo-ai --subject-session shared-session \
+    --subject-provider-family anthropic --subject-model-family claude \
+    --subject-model claude-opus --unresolved-blockers 0 \
+    --observed 'Reviewed my own implementation' --reference fixture://self-review
+assert_cmd_zero "the receipt records the observed dependence and the waiver that allowed it" \
+  jq -e '.review.policy.independent == false
+    and .review.policy.independenceWaived == true
+    and .review.policy.independence == "self"
+    and (.review.policy.triggers | index("independence-waived-self-review") != null)' \
+  .foundation/receipts/solo-session-self-review/review.json
+self_plan="$(node .claude/harness/foundation.mjs proof-plan solo-session-self-review)"
+if printf '%s' "$self_plan" | grep -qF 'review: review-not-independent'; then
+  fail "a waived self-review reads back valid"
+else
+  pass "a waived self-review reads back valid"
+fi
+
+# Validity is re-derived on every read, so withdrawing the waiver has to
+# invalidate the receipts it allowed rather than letting them carry over.
+# contractFingerprint hashes the review policy, so withdrawal moves the contract
+# and the receipt is stale before the independence branch is reached — a
+# stricter answer than review-not-independent, naming the actual cause.
+rm -f foundation.json
+withdrawn_plan="$(node .claude/harness/foundation.mjs proof-plan solo-session-self-review)"
+assert_contains "withdrawing the waiver invalidates the self-review it allowed" \
+  "$withdrawn_plan" "review: contract-stale"
+printf '{"version":1,"review":{"independence":"self"}}\n' > foundation.json
+restored_plan="$(node .claude/harness/foundation.mjs proof-plan solo-session-self-review)"
+if printf '%s' "$restored_plan" | grep -qF 'review: review-not-independent'; then
+  fail "restoring the waiver revalidates the self-review"
+else
+  pass "restoring the waiver revalidates the self-review"
+fi
+
+# The waiver reaches critical work too — and relaxes only its own axis there.
+# Diversity is a separate decision, so a same-model self-review of a migration
+# still needs the diversity waiver declared alongside it.
+node .claude/harness/foundation.mjs new 'Critical solo self review' >/dev/null
+node .claude/harness/foundation.mjs resolve critical-solo-self-review \
+  --impact high --coupling coupled --security migration --acceptance-not-required >/dev/null
+sed 's/- \[ \]/- [x]/g' openspec/changes/critical-solo-self-review/tasks.md \
+  > "$TMP/critical-solo-tasks.md"
+cp "$TMP/critical-solo-tasks.md" openspec/changes/critical-solo-self-review/tasks.md
+critical_packet="$(node .claude/harness/foundation.mjs packet \
+  critical-solo-self-review --phase review)"
+assert_contains "the independence waiver applies to critical work" \
+  "$critical_packet" 'independence-waived-self-review'
+assert_contains "critical work keeps demanding reviewer diversity" \
+  "$critical_packet" '"diversity":"required"'
+assert_cmd_fails_with "the independence waiver does not waive diversity" \
+  "review policy requires a different provider/model family or a human" \
+  node .claude/harness/foundation.mjs receipt critical-solo-self-review review pass \
+    --reviewer-type ai --reviewer-identity solo-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session shared-session \
+    --subject-actor solo-ai --subject-session shared-session \
+    --subject-provider-family anthropic --subject-model-family claude \
+    --subject-model claude-opus --unresolved-blockers 0 \
+    --observed 'No blockers' --reference fixture://critical-self-review
+
+printf '{"version":1,"review":{"diversity":"single-model","independence":"self"}}\n' \
+  > foundation.json
+assert_cmd_zero "both waivers together let a solo session review critical work" \
+  node .claude/harness/foundation.mjs receipt critical-solo-self-review review pass \
+    --reviewer-type ai --reviewer-identity solo-ai \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model claude-opus --reviewer-session shared-session \
+    --subject-actor solo-ai --subject-session shared-session \
+    --subject-provider-family anthropic --subject-model-family claude \
+    --subject-model claude-opus --unresolved-blockers 0 \
+    --observed 'Reviewed my own migration' --reference fixture://critical-self-review
+assert_cmd_zero "both waivers are named separately in the receipt" \
+  jq -e '.review.policy.diversityWaived == true
+    and .review.policy.independenceWaived == true
+    and (.review.policy.triggers | index("diversity-waived-single-model") != null)
+    and (.review.policy.triggers | index("independence-waived-self-review") != null)' \
+  .foundation/receipts/critical-solo-self-review/review.json
+
+rm -f foundation.json
+
 # A review packet compacts its claims past twelve into {count, preview, digest}.
 # The response template read that field as an array unconditionally — before it
 # even checked whether the request was the acceptance kind that uses it — so
