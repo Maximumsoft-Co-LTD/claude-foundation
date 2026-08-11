@@ -17,6 +17,19 @@ on:
       - "website/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
+  # A push made with the default GITHUB_TOKEN deliberately fires no `push`
+  # event, so the release workflow — which bumps every version-bearing surface
+  # on the site — cannot reach the trigger above by pushing. It calls this
+  # workflow directly instead. Without that call the site keeps serving the
+  # previous release's numbers until somebody remembers to deploy by hand,
+  # which is exactly what left v3.2.9 showing v3.2.8.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Branch or SHA to deploy; defaults to the triggering ref"
+        type: string
+        required: false
+        default: ""
 
 # Least-privilege token scopes required by the Pages deploy action.
 permissions:
@@ -38,6 +51,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # A called run would otherwise check out the caller's triggering SHA,
+          # which predates the release commit that bumped the site — deploying
+          # the very numbers this call exists to replace.
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

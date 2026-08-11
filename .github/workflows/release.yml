@@ -215,3 +215,21 @@ jobs:
           git add Formula/claude-foundation.rb
           git commit -m "chore(brew): formula for v$NEW (url/sha + bottle)"
           git push origin HEAD:main
+
+  # The release job bumps the landing page and both docs locales, then pushes
+  # with GITHUB_TOKEN — which fires no push event, so pages.yml never sees the
+  # change and the site keeps serving the previous release's numbers. Calling
+  # the deploy directly is what closes that gap; a PAT would work too but adds
+  # a secret to own, and duplicating the build here would drift from pages.yml.
+  # `ref: main` matters: the call would otherwise deploy this run's triggering
+  # SHA, which predates the version bump.
+  deploy-site:
+    needs: release
+    if: github.event.inputs.dry_run != 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      ref: main
