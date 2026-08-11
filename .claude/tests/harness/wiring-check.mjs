@@ -14,7 +14,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const root = process.argv[2];
-const mode = process.argv[3] === "--unreferenced" ? "unreferenced" : "params";
+const mode = process.argv[3] === "--unreferenced" ? "unreferenced"
+  : process.argv[3] === "--late-bindings" ? "late-bindings" : "params";
 const harness = join(root, ".claude", "harness");
 const runtimeRoot = join(harness, "runtime");
 // Comments sit inside these argument objects and would otherwise tokenize as
@@ -30,6 +31,8 @@ function walk(dir) {
 }
 
 const modules = walk(runtimeRoot).filter((path) => path.endsWith(".mjs"));
+const moduleSources = new Map(modules.map((path) =>
+  [path, stripComments(readFileSync(path, "utf8"))]));
 
 // Read a balanced brace-delimited span starting at `open`.
 function balanced(source, open, [start, end]) {
@@ -77,7 +80,7 @@ const findings = [];
 
 if (mode === "params") {
   for (const path of modules) {
-    const source = stripComments(readFileSync(path, "utf8"));
+    const source = moduleSources.get(path);
     const factory = /export function (create[A-Za-z0-9_]*)\s*\(\s*\{/g;
     let match;
     while ((match = factory.exec(source)) !== null) {
@@ -87,20 +90,24 @@ if (mode === "params") {
       const required = destructuredKeys(pattern)
         // A destructured key with a default is optional by construction.
         .filter((key) => !new RegExp(`\\b${key}\\s*=`).test(pattern));
-      const callAt = entrypoint.indexOf(`${name}({`);
-      if (callAt === -1) {
-        findings.push(`${relative(root, path)}: ${name} is never called by foundation.mjs`);
+      const callers = [[join(harness, "foundation.mjs"), entrypoint],
+        ...[...moduleSources].filter(([candidate]) => candidate !== path)];
+      const caller = callers.find(([, callerSource]) => callerSource.includes(`${name}({`));
+      if (!caller) {
+        findings.push(`${relative(root, path)}: ${name} is never called by shipped runtime code`);
         continue;
       }
-      const argument = balanced(entrypoint, entrypoint.indexOf("{", callAt), ["{", "}"]);
+      const [callerPath, callerSource] = caller;
+      const callAt = callerSource.indexOf(`${name}({`);
+      const argument = balanced(callerSource, callerSource.indexOf("{", callAt), ["{", "}"]);
       if (argument === null) continue;
       const supplied = new Set(suppliedKeys(argument));
       const missing = required.filter((key) => !supplied.has(key));
       if (missing.length)
-        findings.push(`${relative(root, path)}: ${name} does not receive ${missing.join(", ")}`);
+        findings.push(`${relative(root, callerPath)}: ${name} does not receive ${missing.join(", ")}`);
     }
   }
-} else {
+} else if (mode === "unreferenced") {
   // Modules that ship deliberately unwired. Each is offered to project-owned
   // provider code rather than called by the runtime, and its contract is
   // documented; keeping the list explicit is what makes an *accidental* orphan
@@ -119,6 +126,9 @@ if (mode === "params") {
     if (![...imported].some((specifier) => specifier.endsWith(`/${base}`) || specifier.endsWith(base)))
       findings.push(`runtime/${name}`);
   }
+} else {
+  for (const match of entrypoint.matchAll(/^let\s+([A-Za-z_$][\w$]*(?:Runtime|Topology))\s*;/gm))
+    findings.push(`foundation.mjs:${match.index}: delayed runtime binding '${match[1]}'`);
 }
 
 console.log(findings.length ? findings.join("\n") : "OK");

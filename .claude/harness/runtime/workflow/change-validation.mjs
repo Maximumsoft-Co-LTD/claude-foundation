@@ -3,6 +3,9 @@ import { isAbsolute, join, relative } from "node:path";
 import { auditTraceability, normalizedTraceLabel } from "../evidence/traceability.mjs";
 import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
 import { nextAfterValidate } from "../core/next-step.mjs";
+import {
+  parseSpecRequirements, taskBlocks, taskMetadata
+} from "./change-artifacts.mjs";
 
 export function createChangeValidationRuntime({
   markBlocked = () => {},
@@ -20,7 +23,6 @@ export function createChangeValidationRuntime({
   reviewPolicy,
   policyCapabilities,
   forecastCapabilities,
-  scopedReviewClaims,
   rawExecution,
   commandExists,
   stableHash,
@@ -29,60 +31,12 @@ export function createChangeValidationRuntime({
   now,
   fail
 }) {
-  function taskBlocks(content) {
-    const blocks = [];
-    let current = null;
-    for (const line of content.split("\n")) {
-      const match = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)$/);
-      if (match) {
-        if (current) blocks.push(current);
-        const id = match[2].match(/^\*{0,2}(T\d{3,})\*{0,2}\b/i)?.[1]?.toUpperCase() || null;
-        current = {
-          done: match[1].toLowerCase() === "x",
-          lines: [line],
-          text: match[2],
-          id
-        };
-      } else if (current && (/^\s+/.test(line) || line.trim() === "")) {
-        current.lines.push(line);
-        current.text += ` ${line.trim()}`;
-      } else if (current) {
-        blocks.push(current);
-        current = null;
-      }
-    }
-    if (current) blocks.push(current);
-    return blocks;
-  }
-
   // `dir` is an override for the one case where the ledger is no longer at the
   // active path: an archive that moved the change directory and then failed.
   function pendingTasks(id, dir = activeChangePath(id)) {
     const path = join(dir, "tasks.md");
     if (!existsSync(path)) return [];
     return taskBlocks(readFileSync(path, "utf8")).filter((task) => !task.done);
-  }
-
-  function taskMetadata(task) {
-    const value = task.text;
-    const list = (name) => {
-      const match = value.match(new RegExp(`\\[${name}:([^\\]]+)\\]`, "i"));
-      return match
-        ? match[1].split(",").map((item) => item.trim()).filter(Boolean)
-        : [];
-    };
-    return {
-      id: task.id,
-      done: task.done,
-      repository: list("repo")[0] || "root",
-      kind: list("kind")[0] || "implementation",
-      requestedModel: list("model")[0] || null,
-      dependsOn: list("depends").map((item) => item.toUpperCase()),
-      paths: list("paths"),
-      resources: list("resources"),
-      claims: list("claims"),
-      text: value.replace(/\s+/g, " ").trim().slice(0, 1000)
-    };
   }
 
   function changeSpecScenarios(id, dir = activeChangePath(id)) {
@@ -107,27 +61,6 @@ export function createChangeValidationRuntime({
     });
     return scenarios.sort((left, right) =>
       `${left.path}:${left.name}`.localeCompare(`${right.path}:${right.name}`));
-  }
-
-  function parseSpecRequirements(text) {
-    const requirements = [];
-    let section = null;
-    let current = null;
-    for (const line of text.split("\n")) {
-      const requirement = line.match(/^###\s+Requirement:\s*(.+?)\s*$/);
-      const scenario = line.match(/^####\s+Scenario:\s*(.+?)\s*$/);
-      const heading = line.match(/^##\s+(.+?)\s*$/);
-      if (requirement) {
-        current = { section, name: requirement[1].trim(), scenarios: [] };
-        requirements.push(current);
-      } else if (scenario) {
-        if (current) current.scenarios.push(scenario[1].trim());
-      } else if (heading) {
-        section = heading[1].trim();
-        current = null;
-      }
-    }
-    return requirements;
   }
 
   // OpenSpec reconciles a MODIFIED requirement by replacing its scenario list
@@ -542,31 +475,11 @@ export function createChangeValidationRuntime({
       console.log(`  next: claude-foundation evidence init ${id} --write`);
   }
 
-  function claimsForProvider(id, provider) {
-    const claims = evidence(id).claims;
-    const config = providerConfig(id, provider);
-    const capability = providerCapability(provider, config);
-    let scoped = capability === "review" ? scopedReviewClaims(claims)
-      : capability === "acceptance" ? (() => {
-        const ids = resolvedAcceptance(id, loadRuntime(id), evidence(id)).claimIds;
-        return claims.filter((claim) => ids.includes(claim.id));
-      })()
-        : policyCapabilities(id).includes(capability) ? claims
-          : claims.filter((claim) =>
-            claim.capabilities.includes(capability) ||
-            (capability === "discovery" && claim.capabilities.includes("test")));
-    if (config?.repository)
-      scoped = scoped.filter((claim) =>
-        !claim.repositories || claim.repositories.includes(config.repository));
-    return scoped;
-  }
-
   return {
     assertNewCapabilitiesAreAdditive,
     assertNoDroppedScenarios,
     changeArtifactGaps,
     changeSpecScenarios,
-    claimsForProvider,
     droppedScenarioFindings,
     evidenceDetectionValue,
     initializeEvidence,

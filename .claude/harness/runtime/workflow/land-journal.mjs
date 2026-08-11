@@ -1,8 +1,18 @@
 import {
-  cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, renameSync,
+  cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, readdirSync, renameSync,
   rmSync, symlinkSync
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+
+export function transactionJournals(transactions, id, readJson) {
+  const root = join(transactions, id);
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name, "journal.json"))
+    .filter((path) => existsSync(path))
+    .map((path) => readJson(path, {}));
+}
 
 export function createLandJournal({
   root, transactions, fileDigest, directoryHash, pathInside, readJson, writeJson, now

@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "runtime-dependencies-are-initialized-before-use",
+      "scenario": "Runtime dependencies are initialized before use",
+      "impact": "medium",
+      "capabilities": ["static-analysis", "test"]
+    },
+    {
+      "id": "composition-root-owns-only-bootstrap-wiring-and-dispatch",
+      "scenario": "The composition root owns only bootstrap wiring and dispatch",
+      "impact": "medium",
+      "capabilities": ["static-analysis", "test"]
+    },
+    {
+      "id": "harness-contract-tests-are-domain-focused",
+      "scenario": "Harness contract tests are domain focused",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "observable-harness-behavior-is-preserved",
+      "scenario": "Observable harness behavior is preserved",
+      "impact": "medium",
+      "capabilities": ["test", "compatibility"]
+    }
+  ]
+}

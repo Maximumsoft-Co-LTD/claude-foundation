@@ -1,4 +1,31 @@
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { relative } from "node:path";
+
+export function createJsonlReader({ root, fail }) {
+  function readJsonLines(path) {
+    if (!existsSync(path)) return [];
+    return readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => {
+      try { return JSON.parse(line); }
+      catch (error) { fail(`invalid JSONL: ${relative(root, path)} (${error.message})`); }
+    });
+  }
+
+  function readJsonLinesTolerant(path) {
+    if (!existsSync(path)) return [];
+    const rows = [];
+    for (const line of readFileSync(path, "utf8").split("\n").filter(Boolean)) {
+      try { rows.push(JSON.parse(line)); }
+      catch {
+        if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
+          console.error(`WARNING: skipped invalid telemetry row in ${relative(root, path)}`);
+      }
+    }
+    return rows;
+  }
+
+  return { readJsonLines, readJsonLinesTolerant };
+}
 
 function nullableSum(...values) {
   const known = values.filter((value) =>

@@ -20,7 +20,7 @@ export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
   activeChangePath, readJson, repositoryById, selectedRepositories, providerCapability,
-  claimsForProvider, canonicalPath, loadRuntime, relevantHash,
+  canonicalPath, loadRuntime, relevantHash,
   relevantSnapshot, singleRelevantSnapshot, fileDigest, stableHash,
   policyCapabilities, foundationPolicy, die
 }) {
@@ -292,6 +292,25 @@ export function createEvidenceContract({
         return config;
     return null;
   }
+
+  function claimsForProvider(id, provider) {
+    const claims = evidence(id).claims;
+    const config = providerConfig(id, provider);
+    const capability = providerCapability(provider, config);
+    let scoped = capability === "review" ? scopedReviewClaims(claims)
+      : capability === "acceptance" ? (() => {
+        const ids = resolvedAcceptance(id, loadRuntime(id), evidence(id)).claimIds;
+        return claims.filter((claim) => ids.includes(claim.id));
+      })()
+        : policyCapabilities(id).includes(capability) ? claims
+          : claims.filter((claim) =>
+            claim.capabilities.includes(capability) ||
+            (capability === "discovery" && claim.capabilities.includes("test")));
+    if (config?.repository)
+      scoped = scoped.filter((claim) =>
+        !claim.repositories || claim.repositories.includes(config.repository));
+    return scoped;
+  }
   
   function providerClaims(id, provider, config = providerConfig(id, provider)) {
     const declared = claimsForProvider(id, provider).map((claim) => claim.id);
@@ -561,6 +580,7 @@ export function createEvidenceContract({
     rawExecution,
     scopedReviewClaims,
     evidence,
+    claimsForProvider,
     providerConfig,
     providerClaims,
     providerRepository,

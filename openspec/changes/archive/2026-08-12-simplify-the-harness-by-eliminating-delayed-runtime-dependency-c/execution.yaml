@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/run-all.sh"],
+      "timeoutMs": 300000
+    },
+    "discovery": {
+      "adapter": "external"
+    },
+    "static-analysis": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-wiring-tests.sh"]
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-upgrade-compat-tests.sh"]
+    },
+    "accessibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/docs/run-doc-consistency.sh"]
+    }
+  },
+  "services": {}
+}

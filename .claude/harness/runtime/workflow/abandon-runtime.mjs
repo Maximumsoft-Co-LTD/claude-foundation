@@ -1,6 +1,4 @@
-import {
-  appendFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 // Every other exit from the change loop requires the change to succeed. A
@@ -20,6 +18,7 @@ export function createAbandonRuntime({
   cleanupChangeLeases,
   cleanupAppliedSandbox,
   cleanupRepositorySandboxes,
+  transactionJournals,
   rollbackApplyTransaction,
   readJson,
   writeJson,
@@ -31,16 +30,6 @@ export function createAbandonRuntime({
 
   function recoveryRoot(id) {
     return join(paths.recovery, "abandoned", id);
-  }
-
-  function transactionJournals(id) {
-    const transactionRoot = join(paths.transactions, id);
-    if (!existsSync(transactionRoot)) return [];
-    return readdirSync(transactionRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(transactionRoot, entry.name, "journal.json"))
-      .filter((path) => existsSync(path))
-      .map((path) => readJson(path, {}));
   }
 
   function appliedDecision(id, divergent, applied) {
@@ -224,5 +213,5 @@ export function createAbandonRuntime({
       console.error(`WARNING: sandbox cleanup ${workspaceCleanup.status}: ${workspaceCleanup.reason}`);
   }
 
-  return { abandonChange, recoveryRoot, transactionJournals };
+  return { abandonChange, recoveryRoot };
 }

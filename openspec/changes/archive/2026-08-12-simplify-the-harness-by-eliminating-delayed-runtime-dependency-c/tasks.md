@@ -1,0 +1,19 @@
+# Tasks
+
+> This is the sole implementation ledger. Check an item only when its verify
+> condition passes. Group by coherent behavior, not workflow phase. Add
+> `[claims:<claim-id>]` after each stable task ID once evidence claims exist.
+>
+> Annotations the planner reads, all optional for a single-repository change:
+> `[repo:<id>]` (default `root`), `[kind:<kind>]` (default `implementation`),
+> `[paths:<glob,glob>]` — declare these to let two tasks in one repository run
+> in parallel — `[depends:<T00n,T00n>]`, and `[resources:<token>]` for a
+> genuinely shared resource such as a database. A multi-repository change must
+> annotate `[repo:]` and `[paths:]` on every task.
+
+- [x] **T001** Extract task/spec interpretation and changed-surface policy, then construct packet, validation, and evidence without delayed runtime references — `.claude/harness/runtime/workflow/{change-artifacts,change-policy,packet-runtime,change-validation}.mjs`, `.claude/harness/foundation.mjs` — verify: `sh .claude/tests/harness/run-harness-tests.sh && sh .claude/tests/harness/run-wiring-tests.sh` [claims:runtime-dependencies-are-initialized-before-use,observable-harness-behavior-is-preserved] [repo:root] [paths:.claude/harness/foundation.mjs,.claude/harness/runtime/workflow/**,.claude/tests/harness/run-wiring-tests.sh]
+- [x] **T002** Reorder authority/receipt construction and separate sandbox cleanup, apply transactions, archive orchestration, and journal discovery until no runtime handle is late-bound — `.claude/harness/runtime/{workflow,core,evidence}/**`, `.claude/harness/foundation.mjs` — verify: `sh .claude/tests/harness/run-harness-tests.sh && sh .claude/tests/harness/run-changeloop-seam-tests.sh` [claims:runtime-dependencies-are-initialized-before-use,observable-harness-behavior-is-preserved] [repo:root] [paths:.claude/harness/foundation.mjs,.claude/harness/runtime/**]
+- [x] **T003** Extend the static wiring contract to reject delayed runtime bindings and prove every factory remains supplied and reachable — `.claude/tests/harness/{wiring-check.mjs,run-wiring-tests.sh}` — verify: `sh .claude/tests/harness/run-wiring-tests.sh` [claims:runtime-dependencies-are-initialized-before-use] [repo:root] [paths:.claude/tests/harness/wiring-check.mjs,.claude/tests/harness/run-wiring-tests.sh]
+- [x] **T004** Move cohesive command registry, protocol/config, budget, instruction-manifest, and telemetry orchestration out of the entrypoint so it contains bootstrap, composition, and dispatch only — `.claude/harness/{foundation.mjs,runtime/**}` — verify: `sh .claude/tests/harness/run-harness-tests.sh && sh .claude/tests/harness/run-single-source-tests.mjs` [claims:composition-root-owns-only-bootstrap-wiring-and-dispatch,observable-harness-behavior-is-preserved] [repo:root] [paths:.claude/harness/foundation.mjs,.claude/harness/runtime/**]
+- [x] **T005** Split the monolithic harness contract script into domain suites without changing assertions, fixtures, ordering, or the `run-all.sh` entrypoint — `.claude/tests/{harness,lib,run-all.sh,README.md}` — verify: `sh .claude/tests/run-all.sh` [claims:harness-contract-tests-are-domain-focused,observable-harness-behavior-is-preserved] [repo:root] [paths:.claude/tests/**]
+- [x] **T006** Bump all runtime API pins for the new shipped module graph and prove installation/upgrade compatibility and the complete exact-workspace behavior baseline — `.claude/harness/{foundation.mjs,protocol.json,runtime/version.mjs}`, `cli.sh`, compatibility suites — verify: `sh .claude/tests/harness/run-upgrade-compat-tests.sh && sh .claude/tests/run-all.sh` [claims:observable-harness-behavior-is-preserved] [repo:root] [paths:.claude/harness/foundation.mjs,.claude/harness/protocol.json,.claude/harness/runtime/version.mjs,cli.sh,.claude/tests/**] [depends:T001,T002,T003,T004,T005]

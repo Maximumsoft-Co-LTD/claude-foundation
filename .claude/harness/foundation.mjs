@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
 import { createTelemetryRuntime } from "./runtime/observability/telemetry-runtime.mjs";
+import { createJsonlReader } from "./runtime/observability/telemetry.mjs";
 import {
   createHostExecutionStore, createModelDriftInspector, hostExecutionTelemetryRows
 } from "./runtime/observability/host-execution-contract.mjs";
@@ -16,6 +17,9 @@ import { createHostAttestationRuntime } from "./runtime/evidence/attestation.mjs
 import { validateSignedCiEnvelope } from "./runtime/evidence/signed-ci.mjs";
 import { createAuthorityStore } from "./runtime/workflow/authority.mjs";
 import { createBudgetRuntime } from "./runtime/workflow/budget.mjs";
+import {
+  createBudgetContinuation, createBudgetReporter
+} from "./runtime/workflow/budget-commands.mjs";
 import {
   adapterResources as resultAdapterResources,
   configuredCommand,
@@ -27,17 +31,25 @@ import {
   resourcesConflict
 } from "./runtime/evidence/evidence-results.mjs";
 import { createFlagParser } from "./runtime/core/cli-flags.mjs";
+import { createCommandRegistry } from "./runtime/core/command-registry.mjs";
+import { createRuntimeEnvironment } from "./runtime/core/runtime-environment.mjs";
 import {
   phaseForCommand, telemetryPhaseForCommand
 } from "./runtime/core/lifecycle-phase.mjs";
 import { createProcessRuntime } from "./runtime/core/process-runtime.mjs";
-import { createInstructionManifest } from "./runtime/core/instruction-manifest.mjs";
-import { createAgentPlanner } from "./runtime/workflow/agent-planning.mjs";
+import { createInstructionRecorder } from "./runtime/core/instruction-recorder.mjs";
+import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
-import { createLandJournal } from "./runtime/workflow/land-journal.mjs";
+import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
+import {
+  createLandJournal, transactionJournals as readTransactionJournals
+} from "./runtime/workflow/land-journal.mjs";
 import { createProofRuntime } from "./runtime/evidence/proof-runtime.mjs";
 import { createRepositoryTopology } from "./runtime/workflow/repository-topology.mjs";
+import { createRepositorySnapshot } from "./runtime/workflow/repository-snapshot.mjs";
 import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
+import { createChangePolicy } from "./runtime/workflow/change-policy.mjs";
+import { taskBlocks, taskMetadata } from "./runtime/workflow/change-artifacts.mjs";
 import { createChangeLifecycle } from "./runtime/workflow/change-lifecycle.mjs";
 import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
@@ -45,6 +57,7 @@ import {
   assertOpenSpecCli, createLandRuntime, openSpecCliStatus
 } from "./runtime/workflow/land-runtime.mjs";
 import { createApplyRuntime } from "./runtime/workflow/apply-runtime.mjs";
+import { createApplyRecovery } from "./runtime/workflow/apply-recovery.mjs";
 import { createDiagnosticsRuntime } from "./runtime/core/diagnostics-runtime.mjs";
 import { createStateRuntime } from "./runtime/core/state-runtime.mjs";
 import {
@@ -60,6 +73,7 @@ import { createArtifactStore } from "./runtime/evidence/artifact-store.mjs";
 import { createReviewAttemptStore } from "./runtime/evidence/review-attempt-store.mjs";
 import { createProofReadinessRuntime } from "./runtime/evidence/proof-readiness.mjs";
 import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
+import { createReceiptValidity } from "./runtime/evidence/receipt-validity.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
@@ -67,7 +81,7 @@ import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
 const VERSION = "2.8.0";
-const RUNTIME_API_VERSION = "18";
+const RUNTIME_API_VERSION = "19";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -260,6 +274,11 @@ mkdirSync(AUTHORITY, { recursive: true });
 mkdirSync(INSTRUCTION_MANIFESTS, { recursive: true });
 mkdirSync(CHANGES, { recursive: true });
 
+const { readJsonLines, readJsonLinesTolerant } = createJsonlReader({
+  root: ROOT,
+  fail: die
+});
+
 const operationStartedAt = Date.now();
 let operationChangeId = null;
 let operationName = null;
@@ -323,137 +342,15 @@ function readJsonOrNull(path) {
   catch { return null; }
 }
 
-let commandRegistryCache = null;
-function commandRegistry() {
-  if (!commandRegistryCache) {
-    const registry = readJson(join(dirname(fileURLToPath(import.meta.url)), "commands.json"));
-    if (!registry || registry.version !== 1 || !Array.isArray(registry.commands) ||
-        !Array.isArray(registry.runtimeCommands))
-      die("invalid command registry: expected version 1 commands and runtimeCommands arrays");
-    const audiences = new Set(["agent", "conditional", "admin", "host", "internal"]);
-    const kinds = new Set(["read", "write", "authority"]);
-    const names = new Set();
-    for (const entry of registry.commands) {
-      if (!entry || typeof entry.name !== "string" || !entry.name.trim() ||
-          typeof entry.usage !== "string" || typeof entry.description !== "string" ||
-          !audiences.has(entry.audience) || !kinds.has(entry.kind) ||
-          typeof entry.idempotent !== "boolean")
-        die("invalid command registry entry");
-      if (names.has(entry.name)) die(`duplicate command registry entry '${entry.name}'`);
-      names.add(entry.name);
-    }
-    const runtimeCommands = new Set();
-    for (const runtimeCommand of registry.runtimeCommands) {
-      if (typeof runtimeCommand !== "string" || !runtimeCommand.trim())
-        die("invalid runtime command registry entry");
-      if (runtimeCommands.has(runtimeCommand))
-        die(`duplicate runtime command registry entry '${runtimeCommand}'`);
-      runtimeCommands.add(runtimeCommand);
-    }
-    commandRegistryCache = registry;
-  }
-  return commandRegistryCache;
-}
-
-// Runtime spellings whose public name shares no token with them. Everything
-// else resolves by shape; these would not.
-const RUNTIME_COMMAND_ALIASES = {
-  "audit-change": "change audit",
-  "agent-plan": "agents plan",
-  "agent-task": "agents task",
-  "agent-acquire": "agents acquire",
-  "agent-release": "agents release",
-  receipt: "evidence record",
-  "run-provider": "evidence run",
-  prove: "proof finalize",
-  "host-execution-import": "telemetry host-import",
-  // The runtime command is the real implementation of `change validate`; the
-  // bare public `validate` is the deprecated alias for it.
-  validate: "change validate"
-};
-
-// The registry is the contract. Without a way to read it back, an agent that
-// hits a rejection has only one route left — reading this file.
-function describeCommand(name, options = {}) {
-  const registry = commandRegistry();
-  const entries = [...registry.commands].sort((left, right) =>
-    left.name.localeCompare(right.name));
-  if (!name) {
-    if (options.json) { console.log(JSON.stringify(entries, null, 2)); return; }
-    console.log("Commands (describe <command> for one):\n");
-    for (const entry of entries)
-      console.log(`  ${entry.name.padEnd(22)} ${entry.description}`);
-    // File shapes are data, not runtime source. Say where they are so nobody
-    // reconstructs them by reading the implementation.
-    console.log("\nFile shapes:\n");
-    console.log("  evidence.yaml, execution.yaml   openspec/schemas/<schema>/schema.yaml");
-    console.log("  host execution, instruction     .claude/harness/runtime/contracts/");
-    console.log("  authority response              authority status <change> --template");
-    return;
-  }
-  // Callers arrive with either name: the public CLI spells it `change resolve`,
-  // the runtime spells it `resolve`. Both must reach the same entry. The
-  // shape-based rules below cover most of that, but a runtime name that shares
-  // no token with its public spelling needs saying outright — guessing gave
-  // `unknown command` for twelve of them and the wrong entry for two more.
-  const normalize = (value) => value.replace(/[\s-]+/g, "-");
-  const target = normalize(name);
-  const aliased = RUNTIME_COMMAND_ALIASES[target];
-  // A family name is not one command. Listing its members beats silently
-  // picking whichever member happened to sort first.
-  const exact = entries.find((candidate) => normalize(candidate.name) === target);
-  const family = entries.filter((candidate) =>
-    normalize(candidate.name).startsWith(`${target}-`));
-  if (!aliased && !exact && family.length > 1) {
-    if (options.json) { console.log(JSON.stringify(family, null, 2)); return; }
-    console.log(`${name} — ${family.length} commands:\n`);
-    for (const member of family)
-      console.log(`  ${member.name.padEnd(22)} ${member.description}`);
-    return;
-  }
-  const entry = entries.find((candidate) => candidate.name === aliased) ||
-    entries.find((candidate) => normalize(candidate.name) === target) ||
-    entries.find((candidate) => normalize(candidate.name).endsWith(`-${target}`)) ||
-    entries.find((candidate) => normalize(candidate.name).split("-").includes(target));
-  if (!entry) {
-    const near = entries.filter((candidate) => target.split("-")
-      .some((token) => normalize(candidate.name).includes(token)));
-    die(`unknown command '${name}'\n  ${near.length ? "did you mean" : "known"}: ` +
-      `${(near.length ? near : entries).map((candidate) => candidate.name).join(", ")}`);
-  }
-  if (options.json) { console.log(JSON.stringify(entry, null, 2)); return; }
-  console.log(`${entry.name} — ${entry.description}\n`);
-  console.log(`  usage:     ${entry.usage}`);
-  console.log(`  audience:  ${entry.audience}`);
-  console.log(`  kind:      ${entry.kind}${entry.idempotent ? " (idempotent)" : ""}`);
-}
-
-function assertRegisteredRuntimeCommand(command, values = []) {
-  if (!command) return;
-  const registry = commandRegistry().runtimeCommands;
-  if (registry.includes(command)) return;
-  // `describe` and `help` print the public two-word usage (`change new`,
-  // `proof run`) because that is what `claude-foundation` accepts, but this
-  // entrypoint dispatches on the internal single token (`new`, `proof-run`).
-  // So the binary documented a form it then rejected, and said only that the
-  // first word was unregistered — which is true and useless, because the first
-  // word was never meant to be a command. When the joined form is real, name it.
-  const word = values[0] && !values[0].startsWith("-") ? values[0] : null;
-  const publicForm = word ? `${command} ${word}` : null;
-  const known = publicForm &&
-    commandRegistry().commands.some((entry) => entry.name === publicForm);
-  // The internal token is either the hyphenated join (`proof run` → `proof-run`)
-  // or the bare second word (`change new` → `new`). Ask the registry rather than
-  // guessing a rule, so a future naming choice cannot make this advice wrong.
-  const internal = known
-    ? [`${command}-${word}`, word].find((candidate) => registry.includes(candidate))
-    : null;
-  if (internal)
-    die(`runtime command '${command}' is not registered\n` +
-      `  '${publicForm}' is the CLI form: claude-foundation ${publicForm}\n` +
-      `  this entrypoint takes the internal name: ${internal}`);
-  die(`runtime command '${command}' is not registered`);
-}
+const {
+  commandRegistry,
+  describeCommand,
+  assertRegisteredRuntimeCommand
+} = createCommandRegistry({
+  path: join(dirname(fileURLToPath(import.meta.url)), "commands.json"),
+  readJson,
+  fail: die
+});
 
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -467,33 +364,38 @@ function writeJson(path, value) {
 }
 
 function now() { return new Date().toISOString(); }
-function recordInstructionManifest(id, phase, options = {}) {
-  const command = phase === "review" ? "prove" : phase;
-  if (!["change", "build", "prove", "land"].includes(command)) return null;
-  const instructionPaths = [
-    `.claude/commands/${command}.md`,
-    ".claude/orchestrator.md",
-    ".claude/rules/fundamentals.md"
-  ];
-  // Minimal legacy/test installations may contain the runtime without the host
-  // instruction surface. Preserve their lifecycle behavior and report absent
-  // provenance instead of turning observability into a runtime blocker.
-  if (instructionPaths.some((path) => !existsSync(join(ROOT, path)))) return null;
-  const manifest = createInstructionManifest({
-    root: ROOT,
-    foundationVersion: VERSION,
-    command,
-    commandPath: instructionPaths[0],
-    orchestratorPath: ".claude/orchestrator.md",
-    rulePaths: [".claude/rules/fundamentals.md"],
-    skills: [],
-    requestedModel: options.requestedModel || null
-  });
-  const scope = String(options.scope || "global").replace(/[^A-Za-z0-9._-]/g, "-");
-  writeJson(join(INSTRUCTION_MANIFESTS, id, `${command}-${scope}.json`), manifest);
-  return manifest;
-}
-let repositoryTopology;
+const {
+  protocolDescriptor,
+  commandExists,
+  playwrightAvailability,
+  foundationPolicy
+} = createRuntimeEnvironment({
+  root: ROOT,
+  protocols: {
+    runtime: VERSION,
+    runtimeApi: RUNTIME_API_VERSION,
+    providerProtocol: PROVIDER_PROTOCOL_VERSION,
+    adapterProtocol: ADAPTER_PROTOCOL_VERSION,
+    proofProtocol: PROOF_PROTOCOL_VERSION,
+    packetSchema: PACKET_SCHEMA_VERSION,
+    agentPlanSchema: AGENT_PLAN_SCHEMA_VERSION,
+    contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION,
+    reviewProtocol: REVIEW_PROTOCOL_VERSION,
+    acceptanceProtocol: ACCEPTANCE_PROTOCOL_VERSION,
+    reviewPacketSchema: REVIEW_PACKET_SCHEMA_VERSION,
+    attestationProtocol: ATTESTATION_PROTOCOL_VERSION,
+    authorityProtocol: AUTHORITY_PROTOCOL_VERSION,
+    ciEvidenceProtocol: CI_EVIDENCE_PROTOCOL_VERSION
+  },
+  readJson,
+  fail: die
+});
+const { recordInstructionManifest } = createInstructionRecorder({
+  root: ROOT,
+  foundationVersion: VERSION,
+  instructionManifests: INSTRUCTION_MANIFESTS,
+  writeJson
+});
 const stateRuntime = createStateRuntime({
   root: ROOT,
   runtime: RUNTIME,
@@ -505,7 +407,6 @@ const stateRuntime = createStateRuntime({
   readJson,
   writeJson,
   canonicalPath,
-  selectedRepositories: (...args) => repositoryTopology.selected(...args),
   now,
   fail: die
 });
@@ -536,19 +437,12 @@ const {
   listCount,
   fileDigest,
   singleRelevantSnapshot,
-  relevantSnapshot,
-  relevantHash,
   clearSnapshotCache,
   workspaceManifest,
   preexistingDirty,
   git,
   gitHead
 } = stateRuntime;
-let evidenceContract;
-let packetRuntime;
-let changeValidationRuntime;
-let receiptRuntime;
-let adapterRuntime;
 const {
   flagValues,
   provenanceResult: reviewProvenanceResult,
@@ -556,24 +450,6 @@ const {
   subjectProvenance,
   attemptIsValid: reviewAttemptIsValid
 } = createReviewProtocol({ stableHash, fail: die });
-const {
-  decodedEvidencePath,
-  evidenceInputTargetsPrototype,
-  rejectPrototypeEvidenceInputs,
-  receiptPrototypeEvidence,
-  durableArtifact,
-  validateArtifact
-} = createArtifactStore({
-  root: ROOT,
-  prototypesRoot: PROTOTYPES,
-  evidenceVault: EVIDENCE_VAULT,
-  canonicalPath,
-  providerWorkspace: (...args) => evidenceContract.providerWorkspace(...args),
-  proofRunRoot,
-  pathInside,
-  fileDigest,
-  fail: die
-});
 const {
   reviewHistoryState,
   reviewAttemptByDigest,
@@ -623,6 +499,7 @@ const {
   eventUsage,
   synchronizeBudgetUsage
 } = createBudgetRuntime({ policy: foundationPolicy, now });
+const { reportBudget } = createBudgetReporter({ applyBudgetDecision });
 const { showMetrics } = createMetricsRuntime({
   logs: LOGS,
   receipts: RECEIPTS,
@@ -635,8 +512,8 @@ const { showMetrics } = createMetricsRuntime({
   instructionManifests: INSTRUCTION_MANIFESTS,
   activeChangePath,
   policy: foundationPolicy,
-  taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
-  taskMetadata: (...args) => changeValidationRuntime.taskMetadata(...args)
+  taskBlocks,
+  taskMetadata
 });
 const { execObserved } = createExecRuntime({
   logs: LOGS,
@@ -644,7 +521,7 @@ const { execObserved } = createExecRuntime({
   now,
   fail: die
 });
-repositoryTopology = createRepositoryTopology({
+const repositoryTopology = createRepositoryTopology({
   root: ROOT,
   slugify,
   readJson,
@@ -664,6 +541,40 @@ const {
   byId: repositoryById,
   show: showRepositories
 } = repositoryTopology;
+const { relevantSnapshot, relevantHash } = createRepositorySnapshot({
+  root: ROOT,
+  runtimePath,
+  snapshotPath,
+  readJson,
+  writeJson,
+  singleRelevantSnapshot,
+  selectedRepositories,
+  gitHead,
+  stableHash,
+  now
+});
+const {
+  changedFilesInWorkspace,
+  changedFiles,
+  canonicalChangedSurface,
+  policyCapabilities,
+  policyCapabilityTrigger,
+  capabilitiesForPaths,
+  forecastCapabilities
+} = createChangePolicy({
+  root: ROOT,
+  excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,
+  providers: PROVIDERS,
+  gitHead,
+  git,
+  workspaceManifest,
+  loadRuntime,
+  selectedRepositories,
+  isCurrentChangePath,
+  readJson,
+  fileDigest,
+  fail: die
+});
 const {
   appendTelemetryRows,
   bindClaudeSession,
@@ -692,7 +603,7 @@ const {
   parseFlags,
   activeChangePath,
   repositoryById,
-  taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
+  taskBlocks,
   fail: die
 });
 const hostExecutionStore = createHostExecutionStore({ root: ROOT, now });
@@ -717,66 +628,7 @@ function importHostExecution(id, source) {
   );
   console.log(`HOST EXECUTION ${id}: ${result.duplicate ? "duplicate" : "recorded"}; imported ${imported}`);
 }
-packetRuntime = createPacketRuntime({
-  ROOT,
-  EXCLUDED_WORKSPACE_DIRS,
-  PROVIDERS,
-  PACKET_SCHEMA_VERSION,
-  REVIEW_PACKET_SCHEMA_VERSION,
-  gitHead,
-  git,
-  workspaceManifest,
-  loadRuntime,
-  selectedRepositories,
-  isCurrentChangePath,
-  readJson,
-  activeChangePath,
-  evidence: (...args) => evidenceContract.evidence(...args),
-  taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
-  taskMetadata: (...args) => changeValidationRuntime.taskMetadata(...args),
-  repositoryById,
-  claimsForProvider: (...args) => changeValidationRuntime.claimsForProvider(...args),
-  relevantSnapshot,
-  snapshotPath,
-  singleRelevantSnapshot,
-  requiredProviders: (...args) => changeValidationRuntime.requiredProviders(...args),
-  receiptValidity,
-  providerConfig: (...args) => evidenceContract.providerConfig(...args),
-  adapterResources: (...args) => adapterRuntime.adapterResources(...args),
-  stableHash,
-  compactStrings,
-  modelForTask: (...args) => modelForTask(...args),
-  compactList,
-  fileDigest,
-  directoryHash,
-  ensureBudgetState,
-  budgetDecision,
-  scopedReviewClaims: (...args) => evidenceContract.scopedReviewClaims(...args),
-  relevantHash,
-  providerCapability,
-  receiptPath,
-  contractFingerprint: (...args) => evidenceContract.contractFingerprint(...args),
-  reviewPolicy: (...args) => evidenceContract.reviewPolicy(...args),
-  resolvedAcceptance: (...args) => evidenceContract.resolvedAcceptance(...args),
-  serializedJson,
-  foundationPolicy,
-  recordContextMetric,
-  recordInstructionManifest,
-  fail: die
-});
-const {
-  changedFilesInWorkspace,
-  changedFiles,
-  canonicalChangedSurface,
-  policyCapabilities,
-  policyCapabilityTrigger,
-  capabilitiesForPaths,
-  forecastCapabilities,
-  packetValue,
-  reviewPacketValue,
-  showPacket
-} = packetRuntime;
-evidenceContract = createEvidenceContract({
+const evidenceContract = createEvidenceContract({
   ROOT,
   PROVIDERS,
   ADAPTERS,
@@ -789,7 +641,6 @@ evidenceContract = createEvidenceContract({
   repositoryById,
   selectedRepositories,
   providerCapability,
-  claimsForProvider: (...args) => changeValidationRuntime.claimsForProvider(...args),
   canonicalPath,
   loadRuntime,
   relevantHash,
@@ -805,6 +656,7 @@ const {
   rawExecution,
   scopedReviewClaims,
   evidence,
+  claimsForProvider,
   providerConfig,
   providerClaims,
   providerRepository,
@@ -819,7 +671,50 @@ const {
   reviewPolicy,
   executionFingerprint
 } = evidenceContract;
-changeValidationRuntime = createChangeValidationRuntime({
+const {
+  decodedEvidencePath,
+  evidenceInputTargetsPrototype,
+  rejectPrototypeEvidenceInputs,
+  receiptPrototypeEvidence,
+  durableArtifact,
+  validateArtifact
+} = createArtifactStore({
+  root: ROOT,
+  prototypesRoot: PROTOTYPES,
+  evidenceVault: EVIDENCE_VAULT,
+  canonicalPath,
+  providerWorkspace,
+  proofRunRoot,
+  pathInside,
+  fileDigest,
+  fail: die
+});
+const { receiptValidity } = createReceiptValidity({
+  evidenceVault: EVIDENCE_VAULT,
+  providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
+  adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
+  reviewProtocolVersion: REVIEW_PROTOCOL_VERSION,
+  acceptanceProtocolVersion: ACCEPTANCE_PROTOCOL_VERSION,
+  receiptPath,
+  readJson,
+  receiptPrototypeEvidence,
+  contractFingerprint,
+  providerConfig,
+  providerCapability,
+  reviewProvenanceResult,
+  reviewPolicy,
+  reviewAttemptByDigest,
+  reviewAttemptIsValid,
+  resolvedAcceptance,
+  claimsForProvider,
+  stableHash,
+  adapterFingerprint,
+  providerWorkspaceHash,
+  providerInputIdentity,
+  validateArtifact,
+  relevantHash
+});
+const changeValidationRuntime = createChangeValidationRuntime({
   markBlocked,
   root: ROOT,
   activeChangePath,
@@ -835,7 +730,6 @@ changeValidationRuntime = createChangeValidationRuntime({
   reviewPolicy,
   policyCapabilities,
   forecastCapabilities,
-  scopedReviewClaims,
   rawExecution,
   commandExists,
   stableHash,
@@ -848,7 +742,6 @@ const {
   assertNoDroppedScenarios,
   changeArtifactGaps,
   changeSpecScenarios,
-  claimsForProvider,
   evidenceDetectionValue,
   initializeEvidence,
   pendingTasks,
@@ -856,53 +749,9 @@ const {
   showEvidenceDetection,
   showEvidenceDoctor,
   showTraceabilityAudit,
-  taskBlocks,
-  taskMetadata,
   traceabilityAuditValue,
   validate
 } = changeValidationRuntime;
-const {
-  authorityProvider,
-  authorityPacket,
-  requestAuthority,
-  authorityStatusValue,
-  showAuthorityStatus,
-  recordAuthority,
-  recordVerifiedCi
-} = createAuthorityRuntime({
-  root: ROOT,
-  protocolVersion: AUTHORITY_PROTOCOL_VERSION,
-  ciEvidenceProtocolVersion: CI_EVIDENCE_PROTOCOL_VERSION,
-  authorityStore,
-  requiredProviders,
-  providerCapability,
-  providerConfig,
-  reviewPacketValue,
-  loadRuntime,
-  evidence,
-  resolvedAcceptance,
-  relevantHash,
-  validate,
-  pendingTasks,
-  claimsForProvider,
-  stableHash,
-  now,
-  reviewPolicy,
-  readJson,
-  expandList,
-  listCount,
-  receiptPath,
-  recordReceipt: (...args) => receiptRuntime.recordReceipt(...args),
-  receiptValidity,
-  fileDigest,
-  providerWorkspaceHash,
-  providerRepository,
-  providerWorkspace,
-  gitHead,
-  validateSignedCiEnvelope,
-  providerClaims,
-  fail: die
-});
 const { runCommand, startServiceSession } = createProcessRuntime({
   root: ROOT,
   logs: LOGS,
@@ -914,7 +763,7 @@ const { runCommand, startServiceSession } = createProcessRuntime({
       : state.workspace?.path || ROOT;
   }
 });
-receiptRuntime = createReceiptRuntime({
+const receiptRuntime = createReceiptRuntime({
   ROOT,
   LOGS,
   PROVIDERS,
@@ -958,7 +807,7 @@ receiptRuntime = createReceiptRuntime({
   die
 });
 const { proofPlan, rebindReusableReceipt, recordReceipt } = receiptRuntime;
-adapterRuntime = createAdapterRuntime({
+const adapterRuntime = createAdapterRuntime({
   ROOT,
   LOGS,
   PROVIDERS,
@@ -1015,8 +864,100 @@ const {
   executeAdapter,
   fail: die
 });
-const {
+const { modelForTask } = createModelRouter({
+  loadRuntime,
+  policy: foundationPolicy,
+  fail: die
+});
+const packetRuntime = createPacketRuntime({
+  ROOT,
+  PACKET_SCHEMA_VERSION,
+  REVIEW_PACKET_SCHEMA_VERSION,
+  loadRuntime,
+  readJson,
+  activeChangePath,
+  canonicalChangedSurface,
+  evidence,
+  taskBlocks,
+  taskMetadata,
+  repositoryById,
+  claimsForProvider,
+  relevantSnapshot,
+  snapshotPath,
+  singleRelevantSnapshot,
+  requiredProviders,
+  receiptValidity,
+  providerConfig,
+  adapterResources,
+  stableHash,
+  compactStrings,
   modelForTask,
+  compactList,
+  fileDigest,
+  directoryHash,
+  ensureBudgetState,
+  budgetDecision,
+  scopedReviewClaims,
+  relevantHash,
+  providerCapability,
+  receiptPath,
+  contractFingerprint,
+  reviewPolicy,
+  resolvedAcceptance,
+  serializedJson,
+  foundationPolicy,
+  recordContextMetric,
+  recordInstructionManifest,
+  fail: die
+});
+const {
+  packetValue,
+  reviewPacketValue,
+  showPacket
+} = packetRuntime;
+const {
+  authorityProvider,
+  authorityPacket,
+  requestAuthority,
+  authorityStatusValue,
+  showAuthorityStatus,
+  recordAuthority,
+  recordVerifiedCi
+} = createAuthorityRuntime({
+  root: ROOT,
+  protocolVersion: AUTHORITY_PROTOCOL_VERSION,
+  ciEvidenceProtocolVersion: CI_EVIDENCE_PROTOCOL_VERSION,
+  authorityStore,
+  requiredProviders,
+  providerCapability,
+  providerConfig,
+  reviewPacketValue,
+  loadRuntime,
+  evidence,
+  resolvedAcceptance,
+  relevantHash,
+  validate,
+  pendingTasks,
+  claimsForProvider,
+  stableHash,
+  now,
+  reviewPolicy,
+  readJson,
+  expandList,
+  listCount,
+  receiptPath,
+  recordReceipt,
+  receiptValidity,
+  fileDigest,
+  providerWorkspaceHash,
+  providerRepository,
+  providerWorkspace,
+  gitHead,
+  validateSignedCiEnvelope,
+  providerClaims,
+  fail: die
+});
+const {
   planValue: agentPlanValue,
   showPlan: showAgentPlan,
   showTask: showAgentTask,
@@ -1052,6 +993,7 @@ const {
   serializedJson,
   recordContextMetric,
   recordInstructionManifest,
+  modelForTask,
   showPacket,
   fail: die
 });
@@ -1108,7 +1050,28 @@ const {
   saveRuntime,
   fail: die
 });
-let applyRuntime;
+const { continueBudget } = createBudgetContinuation({
+  logs: LOGS,
+  loadRuntime,
+  saveRuntime,
+  ensureBudgetState,
+  applyBudgetDecision,
+  changeArtifactGaps,
+  activeChangePath,
+  pendingTasks,
+  readinessBudgetPolicy,
+  proofReadinessValue,
+  eventUsage,
+  budgetWindow,
+  readJsonLines,
+  now,
+  blockWithDecision,
+  fail: die
+});
+const {
+  cleanupAppliedSandbox,
+  cleanupRepositorySandboxes
+} = createSandboxCleanup({ root: ROOT, canonicalPath, git });
 const sandboxRuntime = createSandboxRuntime({
   markBlocked,
   root: ROOT,
@@ -1125,8 +1088,8 @@ const sandboxRuntime = createSandboxRuntime({
   gitHead,
   git,
   selectedRepositories,
-  cleanupRepositorySandboxes: (...args) => applyRuntime.cleanupRepositorySandboxes(...args),
-  cleanupAppliedSandbox: (...args) => applyRuntime.cleanupAppliedSandbox(...args),
+  cleanupRepositorySandboxes,
+  cleanupAppliedSandbox,
   clearSnapshotCache,
   validate,
   repositorySelectionIdsAt,
@@ -1177,12 +1140,8 @@ const {
   createSandbox,
   showPacket
 });
-let abandonRuntime;
-// The apply guard now stops on an unresolved transaction instead of silently
-// opening a new one over it, so doctor has to be able to see that state coming.
 function unresolvedApplyTransactions(id) {
-  if (!abandonRuntime) return [];
-  return abandonRuntime.transactionJournals(id).filter((journal) =>
+  return readTransactionJournals(TRANSACTIONS, id, readJson).filter((journal) =>
     ["prepared", "applying", "rolling-back", "manual-recovery"].includes(journal.status));
 }
 const {
@@ -1234,7 +1193,7 @@ const {
   topologyIssues,
   policyCapabilities,
   policyCapabilityTrigger,
-  forecastCapabilities: (...args) => packetRuntime.forecastCapabilities(...args),
+  forecastCapabilities,
   reviewForcingCapabilities: REVIEW_FORCING_CAPABILITIES,
   reviewDiversityCapabilities: REVIEW_DIVERSITY_CAPABILITIES,
   providerCapability,
@@ -1263,6 +1222,17 @@ const {
   readJson,
   writeJson,
   now
+});
+const { recoverPendingApply } = createApplyRecovery({
+  transactions: TRANSACTIONS,
+  transactionJournalPath,
+  readJson,
+  verifyAppliedProjection,
+  saveApplyJournal,
+  rollbackApplyTransaction,
+  now,
+  blockWithDecision,
+  fail: die
 });
 const { finalize: prove, audit: proofAudit } = createProofRuntime({
   root: ROOT,
@@ -1330,8 +1300,8 @@ const modelDriftInspector = createModelDriftInspector({
   instructionManifests: INSTRUCTION_MANIFESTS,
   activeChangePath,
   policy: foundationPolicy,
-  taskBlocks: (...args) => changeValidationRuntime.taskBlocks(...args),
-  taskMetadata: (...args) => changeValidationRuntime.taskMetadata(...args)
+  taskBlocks,
+  taskMetadata
 });
 const {
   landCheck,
@@ -1349,7 +1319,7 @@ const {
   transactions: TRANSACTIONS,
   loadRuntime,
   saveRuntime,
-  recoverPendingApply: (...args) => applyRuntime.recoverPendingApply(...args),
+  recoverPendingApply,
   assertNoDroppedScenarios,
   blockingDrift: (...args) => modelDriftInspector.blockingDrift(...args),
   proofAudit,
@@ -1372,7 +1342,7 @@ const {
   blockWithDecision,
   fail: die
 });
-applyRuntime = createApplyRuntime({
+const applyRuntime = createApplyRuntime({
   root: ROOT,
   transactions: TRANSACTIONS,
   loadRuntime,
@@ -1395,9 +1365,11 @@ applyRuntime = createApplyRuntime({
   rollbackApplyTransaction,
   applyTransactionEntry,
   cleanupApplyTransaction,
-  canonicalPath,
   git,
   gitHead,
+  cleanupAppliedSandbox,
+  cleanupRepositorySandboxes,
+  recoverPendingApply,
   landCheck,
   assertMultiRepositoryArchiveReady,
   archivedChangeRelativePath,
@@ -1413,14 +1385,11 @@ const {
   gitApplyInputs,
   buildApplyEntries,
   prepareApplyTransaction,
-  recoverPendingApply,
   refreshAppliedProjection,
   applySandbox,
-  cleanupAppliedSandbox,
-  cleanupRepositorySandboxes,
   archive
 } = applyRuntime;
-abandonRuntime = createAbandonRuntime({
+const abandonRuntime = createAbandonRuntime({
   root: ROOT,
   paths: {
     recovery: RECOVERY,
@@ -1437,6 +1406,7 @@ abandonRuntime = createAbandonRuntime({
   cleanupChangeLeases,
   cleanupAppliedSandbox,
   cleanupRepositorySandboxes,
+  transactionJournals: (id) => readTransactionJournals(TRANSACTIONS, id, readJson),
   rollbackApplyTransaction,
   readJson,
   writeJson,
@@ -1445,461 +1415,9 @@ abandonRuntime = createAbandonRuntime({
   fail: die
 });
 const { abandonChange } = abandonRuntime;
-function protocolDescriptor() {
-  return readJson(join(ROOT, ".claude", "harness", "protocol.json"), {
-    runtime: VERSION,
-    runtimeApi: RUNTIME_API_VERSION,
-    providerProtocol: PROVIDER_PROTOCOL_VERSION,
-    adapterProtocol: ADAPTER_PROTOCOL_VERSION,
-    proofProtocol: PROOF_PROTOCOL_VERSION,
-    packetSchema: PACKET_SCHEMA_VERSION,
-    agentPlanSchema: AGENT_PLAN_SCHEMA_VERSION,
-    contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION,
-    reviewProtocol: REVIEW_PROTOCOL_VERSION,
-    acceptanceProtocol: ACCEPTANCE_PROTOCOL_VERSION,
-    reviewPacketSchema: REVIEW_PACKET_SCHEMA_VERSION,
-    attestationProtocol: ATTESTATION_PROTOCOL_VERSION,
-    authorityProtocol: AUTHORITY_PROTOCOL_VERSION,
-    ciEvidenceProtocol: CI_EVIDENCE_PROTOCOL_VERSION
-  });
-}
-function commandExists(command, cwd = ROOT) {
-  if (!command) return false;
-  if (command.includes("/") || isAbsolute(command))
-    return existsSync(resolve(cwd, command));
-  return String(process.env.PATH || "").split(delimiter)
-    .some((directory) => existsSync(join(directory, command)));
-}
-function playwrightAvailability(workspace) {
-  const packageJson = readJson(join(workspace, "package.json"), {});
-  const packages = {
-    ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {})
-  };
-  const packageOwned = Boolean(packages["@playwright/test"] || packages.playwright);
-  const binary = join(workspace, "node_modules", ".bin", "playwright");
-  const config = [
-    "playwright.config.ts", "playwright.config.js", "playwright.config.mjs",
-    "playwright.config.cjs"
-  ].find((name) => existsSync(join(workspace, name))) || null;
-  return { packageOwned, binary, binaryAvailable: existsSync(binary), config };
-}
-function foundationPolicy() {
-  const path = join(ROOT, "foundation.json");
-  const configured = existsSync(path) ? readJson(path) : {};
-  const defaults = {
-    version: 1,
-    execution: {
-      maxParallelAgents: 3,
-      packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
-      tokenBudgets: { rapid: 800000, standard: 1600000 },
-      // Re-derived from the archived runs rather than set by feel: standard
-      // changes with real implementation cost 100-170 model turns, and one
-      // landed on exactly the old 160 target while its tokens sat near half.
-      // The lane funds the work now; `--size` widens it further from here.
-      requestBudgets: { rapid: 100, standard: 200 },
-      planSummaryBytes: 4096,
-      leaseMinutes: 45
-    },
-    models: {
-      fast: { family: "haiku", fallbackTier: "standard", purposes: ["inventory", "logs", "mechanical-docs"] },
-      standard: { family: "sonnet", fallbackTier: "deep", purposes: ["implementation", "tests", "focused-investigation"] },
-      deep: { family: "opus", fallbackTier: null, purposes: ["architecture", "security", "migration", "independent-review"] }
-    },
-    escalation: [
-      "ambiguous-contract", "auth-or-sensitive-data", "migration",
-      "concurrency", "public-compatibility", "cross-repository-conflict",
-      "evidence-anomaly", "two-failed-attempts"
-    ],
-    review: { diversity: "required", independence: "required" }
-  };
-  if (configured.version !== undefined && configured.version !== 1)
-    die("foundation.json requires version 1");
-  const policy = {
-    ...defaults, ...configured,
-    execution: { ...defaults.execution, ...(configured.execution || {}) },
-    models: Object.fromEntries(["fast", "standard", "deep"].map((tier) => [
-      tier, { ...defaults.models[tier], ...(configured.models?.[tier] || {}) }
-    ])),
-    review: { ...defaults.review, ...(configured.review || {}) }
-  };
-  if (typeof policy.execution.packetBytes === "number") {
-    policy.execution.legacyNumericPacketBytes = policy.execution.packetBytes;
-    policy.execution.packetBytes = {
-      task: policy.execution.packetBytes,
-      review: policy.execution.packetBytes,
-      repository: policy.execution.packetBytes,
-      global: policy.execution.packetBytes
-    };
-  } else {
-    policy.execution.packetBytes = {
-      ...defaults.execution.packetBytes,
-      ...(policy.execution.packetBytes || {})
-    };
-  }
-  policy.execution.tokenBudgets = {
-    ...defaults.execution.tokenBudgets,
-    ...(policy.execution.tokenBudgets || {})
-  };
-  policy.execution.requestBudgets = {
-    ...defaults.execution.requestBudgets,
-    ...(policy.execution.requestBudgets || {})
-  };
-  for (const type of ["task", "review", "repository", "global"]) {
-    const bytes = Number(policy.execution.packetBytes?.[type]);
-    if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
-      die(`foundation.json execution.packetBytes.${type} must be 2048..65536`);
-  }
-  const summaryBytes = Number(policy.execution.planSummaryBytes);
-  if (!Number.isInteger(summaryBytes) || summaryBytes < 1024 || summaryBytes > 16384)
-    die("foundation.json execution.planSummaryBytes must be 1024..16384");
-  for (const type of ["rapid", "standard"]) {
-    const tokens = Number(policy.execution.tokenBudgets[type]);
-    if (!Number.isInteger(tokens) || tokens < 10000 || tokens > 100000000)
-      die(`foundation.json execution.tokenBudgets.${type} must be 10000..100000000`);
-  }
-  for (const type of ["rapid", "standard"]) {
-    const requests = Number(policy.execution.requestBudgets[type]);
-    if (!Number.isInteger(requests) || requests < 10 || requests > 100000)
-      die(`foundation.json execution.requestBudgets.${type} must be 10..100000`);
-  }
-  const parallel = Number(policy.execution.maxParallelAgents);
-  if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
-    die("foundation.json execution.maxParallelAgents must be an integer from 1 to 16");
-  const leaseMinutes = Number(policy.execution.leaseMinutes);
-  if (!Number.isFinite(leaseMinutes) || leaseMinutes < 1 || leaseMinutes > 1440)
-    die("foundation.json execution.leaseMinutes must be from 1 to 1440");
-  // "single-model" is a project declaring, in a committed file, that it has one
-  // model available — so critical work cannot be reviewed by a second provider
-  // and would otherwise always fall to a person. It relaxes reviewer diversity,
-  // never reviewer independence. It deliberately is not a command flag: a flag
-  // would let the party being reviewed write its own exemption at the moment it
-  // is caught, which is the pattern the attestation trust root exists to refuse.
-  if (!["required", "single-model"].includes(policy.review.diversity))
-    die("foundation.json review.diversity must be required|single-model");
-  // "self" is the same bargain for the other review property. A project driven
-  // from a single session has no second session to hand the packet to, so every
-  // change that forces review stalls — and the ways out are all worse than the
-  // gate: abandon the change, understate its impact until review stops being
-  // required, or write the receipt outside the harness. Declaring the waiver in
-  // the same committed file keeps it a decision on the record instead. It stays
-  // out of the flag surface for the reason above: an exemption the reviewed
-  // party can write at the moment it is caught is not an exemption.
-  if (!["required", "self"].includes(policy.review.independence))
-    die("foundation.json review.independence must be required|self");
-  for (const tier of ["fast", "standard", "deep"])
-    if (!policy.models[tier] || typeof policy.models[tier].family !== "string")
-      die(`foundation.json models.${tier}.family is required`);
-  for (const tier of ["fast", "standard", "deep"]) {
-    const fallback = policy.models[tier].fallbackTier;
-    if (fallback !== null && fallback !== undefined &&
-        !["fast", "standard", "deep"].includes(fallback))
-      die(`foundation.json models.${tier}.fallbackTier is invalid`);
-    if (tier === "deep" && fallback && fallback !== "deep")
-      die("deep model tier cannot downgrade when unavailable");
-  }
-  return policy;
-}
-
 function pathInside(parent, candidate) {
   const rel = relative(resolve(parent), resolve(candidate));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function receiptValidity(id, provider, hash = relevantHash(id)) {
-  const path = receiptPath(id, provider);
-  if (!existsSync(path)) return { provider, validity: "missing" };
-  const value = readJson(path);
-  if (String(value.providerProtocolVersion || "") !== PROVIDER_PROTOCOL_VERSION)
-    return { provider, validity: "provider-version-stale", status: value.status };
-  if (receiptPrototypeEvidence(id, provider, value))
-    return { provider, validity: "prototype-evidence", status: value.status };
-  if (value.contractFingerprint !== contractFingerprint(id))
-    return { provider, validity: "contract-stale", status: value.status };
-  const config = providerConfig(id, provider);
-  const capability = providerCapability(provider, config);
-  if (capability === "review") {
-    if (String(value.reviewProtocolVersion || "") !== REVIEW_PROTOCOL_VERSION)
-      return { provider, validity: "review-version-stale", status: value.status };
-    const provenance = reviewProvenanceResult(value.review);
-    // Read against the policy in force now, not the one stamped on the receipt.
-    // Dropping `review.independence` from foundation.json has to invalidate the
-    // self-reviews it allowed, the same way the diversity check below already
-    // re-decides on every read.
-    if (!provenance.complete ||
-        (!provenance.independent && reviewPolicy(id).independence !== "self"))
-      return { provider, validity: "review-not-independent", status: value.status };
-    const attemptDigest = String(value.review?.attemptDigest || "");
-    const attemptDir = join(EVIDENCE_VAULT, id, "review-attempts");
-    const attemptPath = attemptDigest && existsSync(attemptDir)
-      ? readdirSync(attemptDir).find((name) => name.includes(attemptDigest.slice(0, 12))) : null;
-    if (!attemptPath) return { provider, validity: "review-attempt-history-missing", status: value.status };
-    const attempt = reviewAttemptByDigest(id, attemptDigest);
-    if (!reviewAttemptIsValid(value, attempt))
-      return { provider, validity: "review-attempt-history-invalid", status: value.status };
-    if (reviewPolicy(id).diversity === "required" && !provenance.diverse)
-      return { provider, validity: "review-not-diverse", status: value.status };
-    if (Number(value.review?.findings?.unresolvedBlockers || 0) > 0)
-      return { provider, validity: "review-blockers", status: value.status };
-  }
-  if (capability === "acceptance") {
-    if (String(value.acceptanceProtocolVersion || "") !== ACCEPTANCE_PROTOCOL_VERSION)
-      return { provider, validity: "acceptance-version-stale", status: value.status };
-    const currentAcceptance = resolvedAcceptance(id);
-    const criteria = value.acceptance?.criteria;
-    const actualClaims = Array.isArray(value.claims) ? [...value.claims].sort() : [];
-    const expectedClaims = claimsForProvider(id, provider).map((claim) => claim.id).sort();
-    if (value.acceptance?.actor?.type !== "human" ||
-        !String(value.acceptance?.actor?.identity || "").trim() ||
-        value.acceptance?.decision !== "accept" ||
-        !Array.isArray(criteria) || criteria.length === 0 ||
-        criteria.some((criterion) => !String(criterion).trim()) ||
-        new Set(criteria.map((criterion) => String(criterion).trim())).size !== criteria.length ||
-        stableHash(actualClaims) !== stableHash(expectedClaims) ||
-        value.acceptance?.subjectWorkspaceHash !== value.workspaceHash ||
-        value.acceptance?.reason !== currentAcceptance.reason)
-      return { provider, validity: "acceptance-invalid", status: value.status };
-  }
-  const expectedFingerprint = config
-    ? adapterFingerprint(id, provider, config)
-    : stableHash({
-      adapterProtocolVersion: value.adapterProtocolVersion || ADAPTER_PROTOCOL_VERSION,
-      providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
-      provider,
-      adapter: value.adapter || "external",
-      adapterVersion: String(value.providerVersion || "1"),
-      command: value.command || null,
-      claims: value.claims || [],
-      environment: value.environment || null,
-      inputMode: value.capability?.inputMode || null,
-      project: value.project || null
-    });
-  if (value.providerFingerprint !== expectedFingerprint)
-    return { provider, validity: "provider-fingerprint-stale", status: value.status };
-  const expectedWorkspaceHash = providerWorkspaceHash(id, provider, hash);
-  const expectedInputs = providerInputIdentity(
-    id, provider, config, expectedWorkspaceHash
-  );
-  let reusableInputs = false;
-  if (value.workspaceHash !== expectedWorkspaceHash) {
-    if (expectedInputs.mode === "declared" &&
-        value.inputIdentity?.mode === "declared" &&
-        value.inputIdentity.fingerprint === expectedInputs.fingerprint)
-      reusableInputs = true;
-    else return { provider, validity: "stale", status: value.status };
-  }
-  if (value.inputIdentity?.fingerprint !== expectedInputs.fingerprint)
-    return { provider, validity: "provider-inputs-stale", status: value.status };
-  if (value.status !== "pass") return { provider, validity: value.status };
-  const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
-  const covered = new Set(value.claims || []);
-  if (requiredClaims.some((claim) => !covered.has(claim)))
-    return { provider, validity: "incomplete-claims", status: value.status };
-  const invalidArtifacts = (value.artifacts || []).filter((artifact) =>
-    artifact.required !== false && !validateArtifact(artifact));
-  if (invalidArtifacts.length)
-    return { provider, validity: "invalid-artifacts", status: value.status };
-  // The floor keys off how the receipt was produced, not off `adapter`, which
-  // the caller chooses. An executed receipt is corroborated by its command log
-  // (digest-checked above); everything else owes observation and provenance.
-  if (value.status === "pass" && value.execution === "harness") {
-    if (!(value.artifacts || []).some((artifact) => artifact.type === "command-log"))
-      return { provider, validity: "execution-log-missing", status: value.status };
-  } else if (value.status === "pass") {
-    if (!String(value.observed || "").trim())
-      return { provider, validity: "external-observation-missing", status: value.status };
-    if (!String(value.provenance?.source || "").trim())
-      return { provider, validity: "external-provenance-missing", status: value.status };
-    if ((value.artifacts || []).length === 0 &&
-        (value.references || []).length === 0)
-      return { provider, validity: "external-evidence-missing", status: value.status };
-  }
-  return reusableInputs
-    ? {
-      provider, validity: "reusable-inputs", status: value.status,
-      receipt: value, expectedWorkspaceHash, expectedInputs
-    }
-    : { provider, validity: "valid", receipt: value };
-}
-
-function reportBudget(id, state, quiet = false) {
-  const decision = applyBudgetDecision(state);
-  const spent = decision.measured
-    ? `${(decision.ratio * 100).toFixed(1)}%` : "unmeasured";
-  const message = `BUDGET ${id}: ${spent} ` +
-    `${decision.action} ${decision.recommendation} (${decision.limiter || "unknown"})`;
-  if (!quiet) console.log(message);
-  else if (decision.ratio >= 0.7 || decision.mode === "operator-required")
-    console.error(`WARNING: ${message}`);
-  return decision;
-}
-
-function budgetAuditPath(id) {
-  return join(LOGS, id, "budget-events.jsonl");
-}
-
-function appendBudgetAudit(id, action, reason, decisionRef, previous, current) {
-  const path = budgetAuditPath(id);
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify({
-    version: 1,
-    changeId: id,
-    action,
-    reason,
-    decisionRef,
-    previous,
-    current,
-    actor: process.env.USER || process.env.LOGNAME || "operator",
-    timestamp: now()
-  })}\n`);
-}
-
-function continueBudget(id, flags) {
-  const reason = String(flags.reason || "").trim();
-  if (!reason) die("budget continue requires --reason <reason>");
-  const decisionRef = String(flags["decision-ref"] || "").trim();
-  if (!decisionRef)
-    die("budget continue requires --decision-ref <host-user-decision>; ask the user whether to continue, rescope, or pause before opening another window");
-  const state = loadRuntime(id);
-  const budget = ensureBudgetState(state);
-  const decision = applyBudgetDecision(state);
-  if (!["completion-only", "operator-required"].includes(decision.mode))
-    die("budget continue is available only after the active run reaches a completion boundary");
-  const extensionNumber = Number(budget.window.extensionNumber || 0);
-  // "Split or rescope" names no command, so the refusal has to carry the shape
-  // of both, plus the exit for work that should simply stop.
-  if (extensionNumber >= 1)
-    blockWithDecision(id, "budget-continuation-spent", {
-      kind: "budget-continuation-spent",
-      summary: "This run already used its one extra budget window, so continuing again would hide how much the change actually costs.",
-      options: [
-        {
-          id: "rescope",
-          outcome: "Narrow this change to what is already provable and carry the remainder into a new change."
-        },
-        {
-          id: "split",
-          outcome: "Create a follow-up change for the unfinished tasks and finish this one at its current scope."
-        },
-        {
-          id: "abandon",
-          outcome: "Retire this change without landing it."
-        },
-        { id: "pause", outcome: "Spend nothing further and leave the change as it stands." }
-      ],
-      recommended: "rescope",
-      window: {
-        used: budget.window.usedTokens,
-        target: budget.window.targetTokens
-      }
-    });
-  const artifactGaps = changeArtifactGaps(state, activeChangePath(id, state));
-  const pending = artifactGaps.length ? [] : pendingTasks(id);
-  const readiness = pending.length ? {
-    status: "NEEDS_CODE_CHANGE",
-    pendingTasks: pending.map((task) => task.id || task.text),
-    externalProviders: [],
-    unavailableProviders: [],
-    budget: readinessBudgetPolicy("NEEDS_CODE_CHANGE")
-  } : artifactGaps.length ? {
-    status: "CONFIGURATION_ERROR",
-    pendingTasks: [],
-    externalProviders: [],
-    unavailableProviders: [],
-    issues: artifactGaps.map((artifact) => `missing change artifact: ${artifact}`),
-    budget: readinessBudgetPolicy("CONFIGURATION_ERROR")
-  } : proofReadinessValue(id, "prove");
-  // Refusing a continuation is right when no model work remains, but the state
-  // it leaves behind still has a way forward — usually one that costs no model
-  // budget at all. Saying so is the difference between a gate and a wall.
-  if (!readiness.budget?.eligible) {
-    const unblockByClass = {
-      "external-authority": {
-        id: "external-evidence",
-        outcome: "Provide the external review, acceptance, or evidence the proof is waiting on; this needs no model budget."
-      },
-      infrastructure: {
-        id: "restore-provider",
-        outcome: "Restore or reconfigure the unavailable provider, then re-run proof; this needs no model budget."
-      },
-      "active-work": {
-        id: "wait",
-        outcome: "Let the active workers finish or release their expired leases, then re-check readiness."
-      },
-      deterministic: {
-        id: "run-proof",
-        outcome: "Run the ready deterministic proof operation; no further model work is required."
-      }
-    };
-    const unblock = unblockByClass[readiness.budget?.class] || unblockByClass.deterministic;
-    blockWithDecision(id, "budget-continuation-rejected", {
-      kind: "budget-continuation-rejected",
-      summary: `A larger model budget would not move this change: ${
-        readiness.budget?.reason || "no model-completable work remains"}.`,
-      options: [
-        unblock,
-        {
-          id: "rescope",
-          outcome: "Narrow the change to what is provable here and carry the remainder into a new change."
-        },
-        { id: "abandon", outcome: "Retire this change without landing it." },
-        { id: "pause", outcome: "Spend nothing further and leave the change as it stands." }
-      ],
-      recommended: unblock.id,
-      readinessStatus: readiness.status,
-      budgetClass: readiness.budget?.class || readiness.status
-    });
-  }
-  const previous = structuredClone(budget.window);
-  const targets = {
-    requests: Number(budget.targetRequests),
-    tokens: Number(budget.targetTokens)
-  };
-  const runId = String(flags.run || process.env.FOUNDATION_RUN_ID ||
-    process.env.FOUNDATION_CLAUDE_SESSION_ID ||
-    previous.id);
-  const events = readJsonLines(join(LOGS, id, "events.jsonl"));
-  const currentRunUsage = eventUsage(events.filter((event) => event.runId === runId));
-  budget.window = budgetWindow(runId, targets, currentRunUsage,
-    Number(previous.sequence || 0) + 1, "operator-continue");
-  budget.window.extensionRootId = previous.extensionRootId || previous.id;
-  budget.window.extensionNumber = extensionNumber + 1;
-  const auditWindow = {
-    ...budget.window,
-    requiredStatus: readiness.status,
-    pendingTasks: readiness.pendingTasks,
-    missingExternalProviders: readiness.externalProviders,
-    unavailableProviders: readiness.unavailableProviders
-  };
-  try {
-    saveRuntime(state);
-    appendBudgetAudit(id, "continue", reason, decisionRef, previous, auditWindow);
-  } catch (error) {
-    budget.window = previous;
-    try { saveRuntime(state); } catch { /* preserve the original failure */ }
-    throw error;
-  }
-  console.log(`BUDGET CONTINUED ${id}\n  run: ${runId}\n  reason: ${reason}\n  decision: ${decisionRef}`);
-}
-
-function readJsonLines(path) {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => {
-    try { return JSON.parse(line); }
-    catch (error) { die(`invalid JSONL: ${relative(ROOT, path)} (${error.message})`); }
-  });
-}
-
-function readJsonLinesTolerant(path) {
-  if (!existsSync(path)) return [];
-  const rows = [];
-  for (const line of readFileSync(path, "utf8").split("\n").filter(Boolean)) {
-    try { rows.push(JSON.parse(line)); }
-    catch {
-      if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
-        console.error(`WARNING: skipped invalid telemetry row in ${relative(ROOT, path)}`);
-    }
-  }
-  return rows;
 }
 
 const [command, ...values] = process.argv.slice(2);

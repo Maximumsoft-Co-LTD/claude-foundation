@@ -4,14 +4,7 @@ import { join, relative } from "node:path";
 // are the ones a silent downgrade must block at Land.
 import { DRIFT_BLOCKING_TASK_KINDS } from "../observability/model-drift.mjs";
 
-export function createAgentPlanner({
-  root, plans, runtime, schemaVersion, validate, loadRuntime, policy,
-  selectedRepositories, safeSelectedRepositories, taskBlocks, taskMetadata,
-  activeChangePath, evidence,
-  resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
-  readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
-  recordInstructionManifest, showPacket, fail
-}) {
+export function createModelRouter({ loadRuntime, policy, fail }) {
   function modelForTask(id, task, selectedPolicy = policy()) {
     const state = loadRuntime(id);
     const highRisk = state.impact === "high" ||
@@ -35,7 +28,17 @@ export function createAgentPlanner({
       reason: highRisk ? "risk-sensitive task" : `${task.kind} task`
     };
   }
+  return { modelForTask };
+}
 
+export function createAgentPlanner({
+  root, plans, runtime, schemaVersion, validate, loadRuntime, policy,
+  selectedRepositories, safeSelectedRepositories, taskBlocks, taskMetadata,
+  activeChangePath, evidence,
+  resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
+  readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
+  recordInstructionManifest, modelForTask, showPacket, fail
+}) {
   // Build resources are repo-qualified (`workspace:api`); evidence resources
   // are a different vocabulary (`workspace-read`, `dev-server`). Judging build
   // tasks with the evidence comparator made every pair of tasks in one
@@ -347,5 +350,5 @@ export function createAgentPlanner({
     });
   }
 
-  return { modelForTask, planValue, showPlan, showTask, activeRepositoryConflicts };
+  return { planValue, showPlan, showTask, activeRepositoryConflicts };
 }

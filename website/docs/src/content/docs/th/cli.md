@@ -96,7 +96,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | Pin | v3.2.11 |
 |---|---|
 | runtime | 2.8.0 |
-| runtime API | 18 |
+| runtime API | 19 |
 | provider protocol | 7 |
 | evidence schema | 1, 2 |
 | packet schema | 5 |

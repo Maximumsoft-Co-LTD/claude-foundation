@@ -1,8 +1,5 @@
-import {
-  existsSync, mkdirSync, readdirSync, readFileSync, rmSync
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifySpecSync } from "./spec-sync-verify.mjs";
 
@@ -29,9 +26,11 @@ export function createApplyRuntime({
   rollbackApplyTransaction,
   applyTransactionEntry,
   cleanupApplyTransaction,
-  canonicalPath,
   git,
   gitHead,
+  cleanupAppliedSandbox,
+  cleanupRepositorySandboxes,
+  recoverPendingApply,
   landCheck,
   assertMultiRepositoryArchiveReady,
   archivedChangeRelativePath,
@@ -206,59 +205,6 @@ export function createApplyRuntime({
     return journal;
   }
 
-  function recoverPendingApply(id, state) {
-    const transactionRoot = join(transactions, id);
-    if (!existsSync(transactionRoot)) return;
-    for (const entry of readdirSync(transactionRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const path = transactionJournalPath(id, entry.name);
-      if (!existsSync(path)) continue;
-      const journal = readJson(path);
-      // A journal that stopped mid-rollback describes a working tree Foundation
-      // could not put back. Skipping it let the next apply open a fresh
-      // transaction over that divergence and report success, so the stop is
-      // explicit — and it carries the options the rollback already recorded.
-      if (["rolling-back", "manual-recovery"].includes(journal.status))
-        blockWithDecision(id, "apply-manual-recovery", journal.decision || {
-          kind: "manual-recovery",
-          summary: "An earlier apply stopped partway through rolling back and left the working tree in a state Foundation did not finish resolving.",
-          options: [
-            {
-              id: "inspect",
-              outcome: "Inspect the working tree against the recorded transaction backup before choosing a recovery."
-            },
-            {
-              id: "keep-current",
-              outcome: "Preserve the current files and abandon automatic rollback."
-            },
-            {
-              id: "restore-backup",
-              outcome: "Restore the recorded backup after explicitly resolving the divergence."
-            },
-            { id: "pause", outcome: "Leave the journal pending and make no further changes." }
-          ],
-          recommended: "inspect",
-          transactionRoot: join(transactionRoot, entry.name)
-        });
-      if (!["prepared", "applying"].includes(journal.status)) continue;
-      if (state.workspace?.applied &&
-          state.workspace.apply?.transactionId === journal.transactionId) {
-        const verification = verifyAppliedProjection(state);
-        if (!verification.valid)
-          fail(`interrupted apply cannot resume: ${verification.reason}`);
-        journal.status = "verified";
-        journal.verifiedAt = now();
-        saveApplyJournal(journal);
-      } else {
-        try {
-          rollbackApplyTransaction(journal, "interrupted apply recovered before retry");
-        } catch (error) {
-          fail(error.message);
-        }
-      }
-    }
-  }
-
   function refreshAppliedProjection(state) {
     const transactionId = state.workspace?.apply?.transactionId;
     const journalPath = transactionJournalPath(state.id, transactionId);
@@ -352,85 +298,6 @@ export function createApplyRuntime({
       if (priorTransactionMarker === undefined) delete process.env.FOUNDATION_LAND_TRANSACTION;
       else process.env.FOUNDATION_LAND_TRANSACTION = priorTransactionMarker;
     }
-  }
-
-  function cleanupAppliedSandbox(id, state) {
-    // `sandboxPath` is only ever written by a successful apply, but sandbox
-    // creation records the directory under `path`. Reading only the former
-    // meant every never-applied sandbox — the abandon case — was reported
-    // "not-needed" and left on disk.
-    const path = state.workspace?.sandboxPath || state.workspace?.path;
-    if (!path || resolve(path) === resolve(root) || !existsSync(path))
-      return { status: "not-needed", path: path || null };
-    if (state.workspace.mode === "copy") {
-      // A copy sandbox now lives beside the worktree ones, under
-      // `.foundation/sandboxes/<id>`. The temp-prefix form is still accepted so
-      // that a sandbox created by an older runtime can still be cleaned up
-      // rather than stranded — but it is no longer where new ones are put, and
-      // it is no longer trusted as the only legitimate location: `tmpdir()` is
-      // per-session on macOS, so a shell with a different TMPDIR than the one
-      // that created the sandbox refused to remove it and leaked it forever.
-      const canonical = canonicalPath(path);
-      const expected = resolve(root, ".foundation", "sandboxes", id);
-      // The legacy form stays narrow: the directory must still be named
-      // `foundation-<id>-<suffix>` AND sit directly under a system temp root.
-      // Widening it to "anywhere with that name" would turn a corrupt state
-      // file into a recursive delete of an arbitrary directory.
-      const legacyTempRoots = [canonicalPath(tmpdir()), "/tmp", "/var/folders", "/private/var/folders"];
-      const legacyRecognised = basename(canonical).startsWith(`foundation-${id}-`) &&
-        legacyTempRoots.some((tempRoot) =>
-          canonical === tempRoot || canonical.startsWith(`${tempRoot}/`));
-      const recognised = resolve(canonical) === expected || legacyRecognised;
-      if (!recognised)
-        return {
-          status: "refused", path,
-          reason: "copy path is neither the Foundation sandbox location nor a Foundation temp copy"
-        };
-      try {
-        rmSync(path, { recursive: true });
-        return { status: "removed", path };
-      } catch (error) {
-        return { status: "failed", path, reason: error.message };
-      }
-    }
-    if (state.workspace.mode === "worktree") {
-      const expected = resolve(root, ".foundation", "sandboxes", id);
-      if (resolve(path) !== expected)
-        return { status: "refused", path, reason: "worktree path is outside the expected sandbox location" };
-      const removed = git(["worktree", "remove", "--force", path], root);
-      if (removed.status !== 0)
-        return { status: "failed", path, reason: removed.stderr.trim() };
-      git(["worktree", "prune"], root);
-      return { status: "removed", path };
-    }
-    return { status: "not-needed", path };
-  }
-
-  function cleanupRepositorySandboxes(id, state) {
-    const results = {};
-    for (const [repositoryId, runtime] of Object.entries(state.repositories || {})) {
-      if (repositoryId === "root" || runtime.mode !== "worktree" ||
-          !runtime.path || !existsSync(runtime.path)) {
-        results[repositoryId] = { status: "not-needed" };
-        continue;
-      }
-      const expected = resolve(root, ".foundation", "repository-sandboxes", id, repositoryId);
-      if (resolve(runtime.path) !== expected) {
-        results[repositoryId] = {
-          status: "refused", reason: "repository sandbox path is outside the expected location"
-        };
-        continue;
-      }
-      const target = runtime.targetPath;
-      const removed = git(["worktree", "remove", "--force", runtime.path], target);
-      if (removed.status !== 0) {
-        results[repositoryId] = { status: "failed", reason: removed.stderr.trim() };
-        continue;
-      }
-      git(["worktree", "prune"], target);
-      results[repositoryId] = { status: "removed" };
-    }
-    return results;
   }
 
   function currentSpecText(capability) {
@@ -645,11 +512,8 @@ export function createApplyRuntime({
     gitApplyInputs,
     buildApplyEntries,
     prepareApplyTransaction,
-    recoverPendingApply,
     refreshAppliedProjection,
     applySandbox,
-    cleanupAppliedSandbox,
-    cleanupRepositorySandboxes,
     archive
   };
 }
