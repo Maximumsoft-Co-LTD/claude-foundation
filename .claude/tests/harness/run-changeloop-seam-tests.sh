@@ -412,7 +412,13 @@ JSON
   printf 'import { test } from "node:test";\nimport assert from "node:assert";\nimport { stamp } from "../src/index.js";\ntest("s", () => assert.equal(stamp, "s1"));\n' \
     > "$child/test/index.test.js"
   $F proof-run "$C" > /dev/null 2>&1
-  ( cd "$child" && git add -A && git commit -qm "api: stamp" > /dev/null )
+  # The repository sandbox is a detached worktree cloned by the harness, so it
+  # carries no local identity and a CI runner has no global one — the commit
+  # died with "empty ident name" on Linux while passing on any developer
+  # machine that happened to have git configured. The suite states its own
+  # identity rather than borrowing the environment's.
+  ( cd "$child" && git add -A &&
+    git -c user.email=t@t -c user.name=t commit -qm "api: stamp" > /dev/null )
   bound="$(cd "$child" && git rev-parse HEAD)"
   # Committing in the child moved the composite identity, which is the saga's
   # own re-prove step rather than a failure.
@@ -421,7 +427,8 @@ JSON
 
   # The saga requires the child commit to reach its own branch before a pointer
   # can be staged at it; the sandbox is a detached worktree.
-  ( cd services/api && git -c protocol.file.allow=always fetch -q "$TMP/submodule-pointers/project/$child" HEAD && git merge -q --ff-only FETCH_HEAD )
+  ( cd services/api && git -c protocol.file.allow=always fetch -q "$TMP/submodule-pointers/project/$child" HEAD &&
+    git -c user.email=t@t -c user.name=t merge -q --ff-only FETCH_HEAD )
   $F land-record "$C" --repo api --commit "$bound" --decision-ref pointer-test > /dev/null 2>&1
   staged="$($F land-pointers "$C" 2>&1 || true)"
   assert_contains "staging reports what it wrote" "$staged" "ROOT POINTERS STAGED"
