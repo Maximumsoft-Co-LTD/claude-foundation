@@ -1,6 +1,38 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+// A validity code names what is wrong with a receipt and nothing about how to
+// fix it, so every caller that stopped on one printed a code and left. These
+// are the routes out, kept beside the codes they answer so the two cannot drift
+// apart. Anything unlisted falls back to re-running proof, which is correct for
+// every staleness class.
+const VALIDITY_RECOVERY = {
+  missing: (id) => `no evidence has been executed for this workspace; run: claude-foundation proof run ${id}`,
+  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}`,
+  "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation proof run ${id}`,
+  "contract-stale": (id) => `evidence.yaml changed after this receipt; re-run: claude-foundation proof run ${id}`,
+  "provider-fingerprint-stale": (id) => `the provider's execution.yaml wiring changed; re-run: claude-foundation proof run ${id}`,
+  "incomplete-claims": (id, provider) => `provider '${provider}' did not cover every claim declared for it; check its claim list in execution.yaml, then re-run: claude-foundation proof run ${id}`,
+  "review-not-independent": (id) => "the reviewer shares an identity or session with the implementation. Use a fresh reviewer, or — for a project driven from one session — set \"review\": {\"independence\": \"self\"} in foundation.json, which records the waiver on the receipt",
+  "review-not-diverse": () => "the reviewer shares a provider and model family with the implementation. Use a human or a different model family, or set \"review\": {\"diversity\": \"single-model\"} in foundation.json",
+  "review-blockers": (id) => `the review recorded unresolved blockers; resolve them, then request a new review: claude-foundation authority request ${id} --type review`,
+  "acceptance-invalid": (id) => `acceptance needs a named human, an "accept" decision, and criteria matching the current scope. Either record a real acceptance, or withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required (a claim that declares capability 'acceptance' must drop it in evidence.yaml instead)`,
+  "external-observation-missing": () => "a passing external receipt must state what was observed (--observed)",
+  "external-provenance-missing": () => "a passing external receipt must state its source (--source or --reviewer)",
+  "external-evidence-missing": () => "a passing external receipt must carry an artifact or reference (--artifact or --reference)",
+  "execution-log-missing": (id) => `a harness-executed receipt must carry its command log; re-run: claude-foundation proof run ${id}`,
+  "invalid-artifacts": (id) => `a required artifact is missing or altered since it was recorded; re-run: claude-foundation proof run ${id}`,
+  "prototype-evidence": () => "prototype output cannot serve as evidence; prove the real implementation"
+};
+
+export function validityRecovery(validity, id, provider) {
+  const route = VALIDITY_RECOVERY[validity];
+  if (route) return route(id, provider);
+  if (String(validity).endsWith("-version-stale"))
+    return `this receipt predates the current protocol; re-run: claude-foundation proof run ${id}`;
+  return `re-run: claude-foundation proof run ${id}`;
+}
+
 export function createReceiptValidity({
   evidenceVault, providerProtocolVersion, adapterProtocolVersion,
   reviewProtocolVersion, acceptanceProtocolVersion, receiptPath, readJson,

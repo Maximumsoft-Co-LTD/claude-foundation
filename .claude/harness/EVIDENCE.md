@@ -175,6 +175,15 @@ claude-foundation proof readiness <change>
 claude-foundation proof run <change>
 ```
 
+`proof readiness` reports a `next` array whenever it is not `READY`, and every
+command that stops on a readiness result prints that recovery rather than the
+blocker alone. When a required provider has no adapter but the project owns a
+safe command for its capability, the recommended route is
+`evidence init --write`, not a request to a person. A capability the
+changed-surface policy inferred and nobody wired is not a required provider at
+all: it appears under `advisories` in readiness, `proof plan`, and the proof
+record, and does not block.
+
 Prototype files under `.foundation/prototypes/` are non-authoritative. The
 runtime rejects them, including local-path references and symlinked origins,
 before copying any artifact or writing a receipt.

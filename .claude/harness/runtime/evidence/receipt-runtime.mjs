@@ -17,7 +17,7 @@ export function createReceiptRuntime({
   ROOT, LOGS, PROVIDERS, INPUT_MODES, providerWorkspace,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
   REVIEW_PROTOCOL_VERSION, ACCEPTANCE_PROTOCOL_VERSION,
-  validate, relevantHash, requiredProviders, receiptValidity, now,
+  validate, relevantHash, requiredProviders, advisoryCapabilities, receiptValidity, now,
   writeJson, receiptPath, providerConfig, providerCapability, loadRuntime,
   resolvedAcceptance, evidence, claimsForProvider, providerWorkspaceHash,
   providerRepository, rejectPrototypeEvidenceInputs, durableArtifact,
@@ -32,6 +32,14 @@ export function createReceiptRuntime({
     const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
     console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
     for (const row of rows) console.log(`  ${row.provider}: ${row.validity}`);
+    // A capability the policy inferred from the diff but nothing wired is not
+    // part of the plan — it cannot be executed and no receipt will satisfy it.
+    // It is still printed, because "the policy saw a lockfile change and this
+    // project has no supply-chain provider" is a fact the plan's reader needs,
+    // and the alternative was inventing an unsatisfiable row for it.
+    for (const advisory of advisoryCapabilities(id))
+      console.log(`  advisory ${advisory.capability}: not blocking (inferred from ${
+        advisory.trigger || "the changed surface"}; no provider wired)`);
   }
   
   function rebindReusableReceipt(id, row, snapshot, proofRunId) {

@@ -22,6 +22,8 @@ export function createChangeValidationRuntime({
   resolvedAcceptance,
   reviewPolicy,
   policyCapabilities,
+  policyCapabilityTrigger,
+  changedSurfaceResolvable,
   forecastCapabilities,
   rawExecution,
   commandExists,
@@ -224,8 +226,13 @@ export function createChangeValidationRuntime({
       fail("every implementation task requires a stable ID such as T001");
     if (new Set(taskIds).size !== taskIds.length)
       fail("tasks.md contains duplicate task IDs");
+    // The gate is about a task that names a lifecycle *command*, so the slash
+    // has to start a token. Matching a bare `/land` anywhere also matched the
+    // path `runtime/workflow/land-runtime.mjs`, which made every change that
+    // declares that file's path in `[paths:]` unvalidatable — the guard blocked
+    // work on the very code it guards.
     const lifecycleTasks = taskBlocks(tasks).filter((task) =>
-      !task.done && /\/(?:prove|land)\b/.test(task.text));
+      !task.done && /(?:^|[\s(`"'])\/(?:prove|land)\b/.test(task.text));
     if (lifecycleTasks.length)
       fail("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
 
@@ -351,9 +358,36 @@ export function createChangeValidationRuntime({
         providerCapability(provider, providerConfig(id, provider))));
       const missing = forecastCapabilities(state.declaredSurface)
         .capabilities.filter((capability) => !covered.has(capability));
-      if (missing.length)
-        console.error(`WARNING: declared surface forecasts ${missing.join(", ")} with no provider; ` +
-          "Prove will widen the contract and expire evidence already collected");
+      // A warning that names no action is a warning nobody acts on, and this
+      // one fires at the last moment the contract is still cheap to change.
+      // Say what each outcome actually is now: a wired capability is enforced,
+      // an unwired one is carried as an advisory rather than becoming an
+      // unsatisfiable gate at Prove — except review, which stops the loop until
+      // a reviewer or a foundation.json waiver exists.
+      if (missing.length) {
+        console.error(`WARNING: declared surface forecasts ${missing.join(", ")} with no provider`);
+        console.error(`  wire them now: claude-foundation evidence init ${id} --write`);
+        console.error(`  inspect first: claude-foundation evidence doctor ${id}`);
+        if (missing.includes("review"))
+          console.error("  review needs an independent reviewer at Prove; a solo project sets " +
+            "\"review\": {\"independence\": \"self\"} in foundation.json before Build");
+        console.error("  anything left unwired is carried as a non-blocking advisory, not a gate");
+      }
+    }
+    // Review is the one gate a change cannot wire its way out of, and the loop
+    // used to reveal it at Prove — after the build is spent, and with the
+    // waiver that resolves it named nowhere. A forecast only covers what is not
+    // yet required; once it *is* required, saying so here is the last cheap
+    // moment to find a reviewer or decide the project reviews itself.
+    // Guarded for the same reason as `advisoryCapabilities`: `reviewPolicy`
+    // reads the changed surface, which a multi-repository change cannot resolve
+    // until its sandboxes exist. A hint must never be able to fail validate.
+    if (!options.quiet && changedSurfaceResolvable(id, state)) {
+      const policy = reviewPolicy(id, state, evidence(id, dir));
+      if (policy.required && !policy.independenceWaived) {
+        console.error("NOTE: this change requires review evidence; an independent reviewer must exist by Prove");
+        console.error("  solo project: set \"review\": {\"independence\": \"self\"} in foundation.json before Build");
+      }
     }
     if (!options.quiet)
       console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
@@ -381,8 +415,57 @@ export function createChangeValidationRuntime({
     }
     if (reviewPolicy(id, state, contract).required) addCapability("review");
     if (resolvedAcceptance(id, state, contract).required) addCapability("acceptance");
-    for (const capability of policyCapabilities(id)) addCapability(capability);
+    for (const capability of policyCapabilitySplit(id, contract).enforced)
+      addCapability(capability);
     return [...required].sort();
+  }
+
+  // A capability the policy infers from the *realized* diff is a risk hint, not
+  // a contract the author signed. It can only appear once the files exist —
+  // after Build — and an inferred capability nobody wired defaults to adapter
+  // "external" (`evidence-contract`), so the required set grew past the point
+  // where the contract could still be negotiated and Prove stopped on a gate
+  // that had no way to pass. Enforce an inferred capability only where the
+  // project actually wired a provider for it, or where the author declared the
+  // same capability on a claim; otherwise carry it as an advisory that is
+  // reported and recorded but does not block.
+  //
+  // `review` is deliberately unaffected: `reviewPolicy` reads the same inferred
+  // set and adds review itself, and it owns a documented waiver
+  // (`review.independence`, `review.diversity` in foundation.json). Downgrading
+  // it here would drop a gate that has a way out rather than one that does not.
+  function policyCapabilitySplit(id, contract = evidence(id)) {
+    const configured = new Set(Object.entries(contract.providers || {})
+      .map(([provider, config]) => providerCapability(provider, config)));
+    const declared = new Set(contract.claims.flatMap((claim) => claim.capabilities || []));
+    const enforced = [];
+    const advisory = [];
+    for (const capability of policyCapabilities(id))
+      (configured.has(capability) || declared.has(capability) ? enforced : advisory)
+        .push(capability);
+    return { enforced, advisory };
+  }
+
+  // Advisories are the record that the downgrade above happened. Dropping an
+  // inferred capability silently would make "the policy saw nothing" and "the
+  // policy saw something nobody wired" identical in the evidence, which is
+  // exactly the distinction a later reader needs.
+  // Advisories are reporting, never a gate, so they must not be able to fail a
+  // command. The changed surface is unresolvable in states that are not errors
+  // — a multi-repository change before its sandboxes exist cannot answer "what
+  // changed" yet — and that path exits the process rather than throwing, so the
+  // precondition is checked instead of caught. `requiredProviders` deliberately
+  // does not get this treatment: dropping an inferred capability there would
+  // under-require evidence, so it must still stop.
+  function advisoryCapabilities(id) {
+    if (!changedSurfaceResolvable(id)) return [];
+    return policyCapabilitySplit(id).advisory.map((capability) => ({
+      capability,
+      trigger: policyCapabilityTrigger(id, capability),
+      reason: "policy-inferred-unwired",
+      next: `configure a project-owned ${capability} provider in openspec/changes/${
+        id}/execution.yaml, or accept the advisory`
+    }));
   }
 
   function evidenceDetectionValue(id) {
@@ -394,7 +477,14 @@ export function createChangeValidationRuntime({
       root,
       contract,
       repositories,
-      required: requiredProviders(id),
+      // Detection wires what Prove will look for *and* what it downgraded to an
+      // advisory: an inferred capability with a safe project-owned script is
+      // better wired than waived, and `evidence init --write` is the only thing
+      // that can promote it back into the enforced set.
+      required: [...new Set([
+        ...requiredProviders(id),
+        ...advisoryCapabilities(id).map((row) => row.capability)
+      ])].sort(),
       providerConfig: (provider) => providerConfig(id, provider),
       providerCapability,
       knownProviders,
@@ -476,6 +566,7 @@ export function createChangeValidationRuntime({
   }
 
   return {
+    advisoryCapabilities,
     assertNewCapabilitiesAreAdditive,
     assertNoDroppedScenarios,
     changeArtifactGaps,

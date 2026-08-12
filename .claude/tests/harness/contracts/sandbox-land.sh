@@ -45,15 +45,23 @@ printf '%s\n' '{"lockfileVersion":3}' > "$copy_path/package-lock.json"
 sed -i.bak 's/- \[ \]/- [x]/g' "$copy_path/openspec/changes/copy-sandbox/tasks.md"
 rm "$copy_path/openspec/changes/copy-sandbox/tasks.md.bak"
 copy_plan="$(node .claude/harness/foundation.mjs proof-plan copy-sandbox)"
-assert_contains "changed lockfile escalates supply-chain evidence by policy" \
+# The lockfile edit still raises `dependency-supply-chain` from the changed
+# surface, and this fixture wires no provider for it. That combination used to
+# become a required provider with adapter "external" — a gate that appeared
+# only after Build, could not be executed, and stopped Prove and Land for good.
+# It is now carried as an advisory: still reported, so the inference is not lost,
+# and not counted as evidence, because there is none to count.
+assert_contains "changed lockfile reports supply-chain as an advisory" \
+  "$copy_plan" "advisory dependency-supply-chain: not blocking"
+assert_not_contains "an unwired inferred capability is not a required provider" \
   "$copy_plan" "dependency-supply-chain: missing"
 node .claude/harness/foundation.mjs receipt copy-sandbox test pass \
   --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs receipt copy-sandbox discovery pass \
   --discovered 1 --minimum 1 --observed "1 test discovered" \
   --source harness-test --artifact app.txt >/dev/null
-node .claude/harness/foundation.mjs receipt copy-sandbox dependency-supply-chain pass \
-  --observed "lockfile inspected" --source harness-test --artifact package-lock.json >/dev/null
+# No supply-chain receipt is recorded, and Prove still finishes. This is the
+# regression: the loop completes without evidence nobody could ever produce.
 node .claude/harness/foundation.mjs prove copy-sandbox >/dev/null
 
 mkdir -p "$TMP/bin"

@@ -48,6 +48,24 @@ export function createChangePolicy({
     }
   }
 
+  // `canonicalChangedSurface` calls `fail`, which exits the process rather than
+  // throwing, so a caller that only wants a hint cannot protect itself with
+  // try/catch. It has to ask first. This mirrors the one precondition that
+  // function enforces — a repository with a git head needs a recorded base to
+  // diff against — and is deliberately the only thing it answers: a false here
+  // costs an advisory, never a gate.
+  function changedSurfaceResolvable(id, state = loadRuntime(id)) {
+    let repositories;
+    try { repositories = selectedRepositories(id, state); }
+    catch { return false; }
+    return repositories.every((repository) => {
+      if (!gitHead(repository.workspacePath)) return true;
+      return Boolean(repository.id === "root"
+        ? state.repositories?.root?.baseHead || state.workspace?.baseHead
+        : state.repositories?.[repository.id]?.baseHead);
+    });
+  }
+
   function canonicalChangedSurface(id, state = loadRuntime(id)) {
     const repositories = selectedRepositories(id, state);
     const rows = [];
@@ -224,6 +242,7 @@ export function createChangePolicy({
     changedFilesInWorkspace,
     changedFiles,
     canonicalChangedSurface,
+    changedSurfaceResolvable,
     capabilitiesForPaths,
     forecastCapabilities,
     policyCapabilities,

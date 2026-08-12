@@ -1,10 +1,11 @@
 import { cpSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { validityRecovery } from "./receipt-validity.mjs";
 
 export function createProofRuntime({
   root, protocolVersion, loadRuntime, saveRuntime, validate, changedSurfaceIssues,
   activeChangeLeases, pendingTasks, clearSnapshotCache, relevantSnapshot,
-  requiredProviders, receiptValidity, proofRunRoot, receiptPath, fileDigest,
+  requiredProviders, advisoryCapabilities, receiptValidity, proofRunRoot, receiptPath, fileDigest,
   protocolDescriptor, contractFingerprint, executionFingerprint, proofPath,
   writeJson, readJson, pathInside, validateArtifact, instructionProvenance, now, fail
 }) {
@@ -40,7 +41,11 @@ export function createProofRuntime({
       // exist; the operation that produces them is `proof run`.
       if (blockers.every((row) => row.validity === "missing"))
         fail(`${summary} — no evidence has been executed for this workspace; next: claude-foundation proof run ${id}`);
-      fail(summary);
+      // Every other mixture used to stop at the code list alone. Each code has a
+      // route; printing them together is the difference between a diagnosis and
+      // an instruction.
+      fail(`${summary}\n${blockers.map((row) =>
+        `  ${row.provider}: ${validityRecovery(row.validity, id, row.provider)}`).join("\n")}`);
     }
     const proofRunId = requestedProofRunId || stateBefore.activeProofRun?.id || `proof-${Date.now()}`;
     const runRoot = proofRunRoot(id, proofRunId);
@@ -70,6 +75,12 @@ export function createProofRuntime({
       contractFingerprint: contractFingerprint(id),
       executionFingerprint: executionFingerprint(id),
       providers: checks.map((row) => row.provider),
+      // Additive and optional, so it carries no protocol bump: a reader that
+      // ignores it behaves exactly as before, and an older proof simply lacks
+      // it. Bumping `proofProtocol` for an informational field would invalidate
+      // every in-flight proof on upgrade — the same class of stuck state this
+      // field exists to document.
+      advisories: advisoryCapabilities?.(id) || [],
       receipts: receiptEntries,
       artifacts: stateBefore.activeProofRun?.serviceArtifacts || [],
       instructionProvenance: instructionProvenance?.(id) || null,

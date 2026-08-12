@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { spawnSync } from "node:child_process";
 import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
+import { validityRecovery } from "../evidence/receipt-validity.mjs";
 
 const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
@@ -121,7 +122,12 @@ export function createLandRuntime({
       fail(`proof is stale (${proof.workspaceHash.slice(0, 8)} != ${hash.slice(0, 8)})`);
     for (const provider of requiredProviders(id)) {
       const check = receiptValidity(id, provider, hash);
-      if (check.validity !== "valid") fail(`${provider} evidence is ${check.validity}`);
+      // Land is the last place a person finds out, and it used to be the least
+      // helpful: a bare validity code, at the end of the loop, with the fix
+      // several commands away. The route is derivable from the code, so say it.
+      if (check.validity !== "valid")
+        fail(`${provider} evidence is ${check.validity}\n  ${
+          validityRecovery(check.validity, id, provider)}`);
       const manifestEntry = (proof.receipts || []).find((entry) => entry.provider === provider);
       if (!manifestEntry || fileDigest(receiptPath(id, provider)) !== manifestEntry.sha256)
         fail(`${provider} live receipt differs from the proven receipt manifest`);

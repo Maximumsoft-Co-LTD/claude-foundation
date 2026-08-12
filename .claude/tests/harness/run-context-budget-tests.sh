@@ -79,18 +79,29 @@ assert_file_contains "fundamentals records decision answers in the change packet
   "$ROOT/.claude/rules/fundamentals.md" \
   'record the answers in the change packet'
 
-# 120 words is the standing budget for a slash command. `change.md` carries 15
-# more because it is the only command that must also tell the author to declare
-# `--surface`: without that instruction the capability forecast never runs, and
-# the cost it exists to remove is paid on every change. `build.md` carries 25
-# more because it must also route long external commands through `exec`:
-# without that instruction the largest block of wall time never reaches
-# metrics. Raised deliberately and per command, so the standing budget still
-# binds everywhere else.
+# 120 words is the standing budget for a slash command. `change.md` carries 55
+# more because it is the only command that must tell the author to declare
+# `--surface` — without that instruction the capability forecast never runs —
+# and because it must settle the reviewer question here: a change that reaches
+# Prove needing a reviewer nobody has cannot finish, and the whole build is
+# already spent by then. `build.md` carries 25 more because it must also route
+# long external commands through `exec`: without that instruction the largest
+# block of wall time never reaches metrics. `prove.md` carries 50 more because
+# it owns the two instructions that keep a blocked Prove from reading as a dead
+# end — wire a missing adapter before asking a person, and relay the route the
+# harness prints — plus the fact that `review.independence: "self"` is a real
+# configuration rather than a rule to break. That last one replaced a flat ban
+# on self-review, which had made a supported solo setup unusable.
+#
+# Raised deliberately and per command, so the standing budget still binds
+# everywhere else. Raise a limit here only to admit a rule that removes a
+# failure the command cannot otherwise avoid; never to make room by deleting an
+# existing one.
 for command in "$ROOT"/.claude/commands/*.md; do
   case "$(basename "$command")" in
-    change.md) limit=135 ;;
+    change.md) limit=175 ;;
     build.md) limit=145 ;;
+    prove.md) limit=170 ;;
     *) limit=120 ;;
   esac
   assert_words_at_most "command budget: $(basename "$command")" "$limit" "$command"

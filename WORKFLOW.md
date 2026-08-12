@@ -287,6 +287,17 @@ against them and name the glob behind each forecast capability. The forecast
 warns and never gates: enforcement stays with the real changed surface, so a
 mis-declared surface can never reduce required evidence.
 
+An obligation the policy infers this way is enforced only where the project has
+actually wired a provider for that capability, or where a claim already declares
+it. An inferred capability nobody wired is carried as an **advisory**: reported
+by `proof plan`, `proof readiness`, and the proof record, and not counted as
+evidence. The alternative was worse than it sounds — an unwired capability
+defaults to adapter `external`, so a late inference became a gate that appeared
+after Build, could not be executed, and stopped Prove and Land with no way
+forward. Wire the capability with `evidence init --write` to make it binding.
+Review is deliberately outside this rule: it stays a gate, and it has its own
+declared waivers below.
+
 Each receipt records provider/version, change, claims, workspace hash, result,
 observations, capability metadata, command/log, and timestamps. Status is one of
 `pass`, `fail`, `inconclusive`, or `error`.

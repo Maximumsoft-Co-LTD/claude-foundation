@@ -285,6 +285,28 @@ assert_contains "review decision routes through the authority bridge" \
   "$review_decision" "authority request collect-before-review --type review"
 assert_not_contains "review recovery never manufactures a passing receipt" \
   "$review_decision" "evidence record collect-before-review review pass"
+# A project driven from one session has no second session to open, so the
+# reviewer gate had no reachable end state and the loop stopped here for good.
+# The waiver already existed in `reviewPolicy`; it was never named at the point
+# where somebody is stuck behind it.
+assert_contains "review recovery names the independence waiver" \
+  "$review_decision" 'independence'
+# Review cannot be wired around, so the last cheap moment to find a reviewer is
+# before Build. Announcing it only at Prove spent the whole build first.
+assert_contains "validate announces a required reviewer before Build" \
+  "$({ node .claude/harness/foundation.mjs validate collect-before-review; } 2>&1 || true)" \
+  "an independent reviewer must exist by Prove"
+# `proofReadinessValue` always computed a recovery under `next`, and preflight
+# threw it away and printed the blocker list alone — which is what made a
+# blocked Prove read as a dead end. The route has to survive the stop.
+review_preflight="$(node .claude/harness/foundation.mjs proof-preflight \
+  collect-before-review 2>&1 || true)"
+assert_contains "blocked preflight states the blocker" \
+  "$review_preflight" "proof preflight failed"
+assert_contains "blocked preflight states how to clear it" \
+  "$review_preflight" "how to clear this"
+assert_contains "blocked preflight names the command that clears it" \
+  "$review_preflight" "authority request collect-before-review --type review"
 collect_output="$(node .claude/harness/foundation.mjs proof-collect collect-before-review)"
 assert_contains "proof collect completes without finalizing" \
   "$collect_output" '"proofFinalized": false'
@@ -518,6 +540,14 @@ rm openspec/changes/executable-evidence/evidence.yaml.bak
 plan="$(node .claude/harness/foundation.mjs proof-plan executable-evidence)"
 assert_contains "adapter policy change invalidates receipt fingerprint" \
   "$plan" "provider-fingerprint-stale"
+# A validity code names what is wrong and nothing about what to do, so every
+# stop on one used to end the loop with a diagnosis and no instruction. The
+# route is derivable from the code; both Prove and Land now print it.
+stale_prove="$(node .claude/harness/foundation.mjs prove executable-evidence 2>&1 || true)"
+assert_contains "a stale receipt blocks prove" \
+  "$stale_prove" "provider-fingerprint-stale"
+assert_contains "a blocked prove names the route out of each stale receipt" \
+  "$stale_prove" "claude-foundation proof run executable-evidence"
 sed -i.bak 's/"minimum":5/"minimum":4/' \
   openspec/changes/executable-evidence/evidence.yaml
 rm openspec/changes/executable-evidence/evidence.yaml.bak

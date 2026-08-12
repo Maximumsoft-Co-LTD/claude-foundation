@@ -502,9 +502,17 @@ assert_eq "a stray untracked file is not this change's surface" \
 
 # The same file, once the change actually edits it, is surface again — which is
 # why this is compared by digest and not by remembering the path.
+#
+# It returns as an *advisory*, not as a provider. Nothing in this project wires
+# an accessibility command, so promoting the inference to a required provider
+# produced a gate with adapter "external" that appeared only after the edit and
+# could never pass. The seam being tested here is surface detection, so it is
+# asserted where the inference now lands.
 printf 'body { color: blue }\n' > theme.css
-assert_eq "editing a pre-existing file returns it to the surface" \
-  "accessibility,discovery,test" "$(providers_for "$C")"
+assert_eq "an unwired inferred capability stays out of the provider set" \
+  "discovery,test" "$(providers_for "$C")"
+assert_contains "editing a pre-existing file returns it to the surface" \
+  "$($F proof-plan "$C" 2>&1 || true)" "advisory accessibility: not blocking"
 
 # --- Pre-existing dirt does not cost a change its worktree. -----------------
 #

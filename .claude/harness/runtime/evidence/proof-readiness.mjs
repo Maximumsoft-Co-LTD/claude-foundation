@@ -12,6 +12,8 @@ export function createProofReadinessRuntime({
   selectedRepositories,
   providerCapability,
   providerConfig,
+  advisoryCapabilities,
+  evidenceDetectionValue,
   validate,
   relevantHash,
   executionNodes,
@@ -100,6 +102,29 @@ export function createProofReadinessRuntime({
     return issues;
   }
 
+  // An unconfigured provider is not always a person-shaped problem: when the
+  // project already owns a safe command for that capability, the fix is a write
+  // to execution.yaml, not a wait for a human. Detection knows which providers
+  // those are, so the recovery names the wiring route first instead of routing
+  // every unconfigured provider through an external-evidence decision that most
+  // of them never needed.
+  function wiringChoice(id, provider) {
+    let detection;
+    try { detection = evidenceDetectionValue(id); }
+    catch { return null; }
+    const candidate = (detection.candidates || []).find((row) =>
+      row.provider === provider && row.recommended && row.config);
+    if (!candidate) return null;
+    return {
+      kind: "configure-provider",
+      command: `claude-foundation evidence init ${id} --write`,
+      source: candidate.source,
+      instruction: `Wire provider '${provider}' from the project-owned command detected at ${
+        candidate.source}, then re-run proof.`,
+      verify: `claude-foundation proof readiness ${id}`
+    };
+  }
+
   function externalEvidenceRecovery(id, provider) {
     const capability = providerCapability(provider, providerConfig(id, provider));
     if (capability === "review") return {
@@ -115,6 +140,11 @@ export function createProofReadinessRuntime({
         options: [
           { id: "prepare-for-user", outcome: "Prepare a bounded review packet for the user to inspect." },
           { id: "prepare-for-reviewer", outcome: "Prepare the packet for a fresh independent reviewer." },
+          // A project driven from one session has no second session to open, so
+          // the reviewer gate had no reachable end state and the loop stopped
+          // here for good. The waiver already existed in `reviewPolicy`; it was
+          // simply never named at the point where somebody needs it.
+          { id: "waive-independence", outcome: "Record that this project reviews itself: set \"review\": {\"independence\": \"self\"} in foundation.json. The receipt still records that independence was not observed." },
           { id: "pause", outcome: "Keep the change pending without recording a review result." }
         ],
         recommended: "prepare-for-reviewer",
@@ -151,6 +181,15 @@ export function createProofReadinessRuntime({
           options: [
             { id: "inspect", outcome: "Inspect the final result and then accept, reject, or report uncertainty." },
             { id: "request-changes", outcome: "Reject the current result and describe what must change." },
+            // Acceptance is the one gate with no waiver — a self-attested human
+            // acceptance would be a false record, so the escape is to withdraw
+            // the requirement, not to fake satisfying it. Which command does
+            // that depends on where the requirement came from, and getting that
+            // wrong is why this gate read as permanent: clearing the flag has
+            // no effect while a claim still declares the capability.
+            origin === "claim-capability"
+              ? { id: "withdraw-requirement", outcome: `Drop capability 'acceptance' from claim(s) ${claimIds.join(", ") || "in evidence.yaml"}, then re-run 'claude-foundation change validate ${id}'. Clearing the resolve flag alone will not lift this gate while the claim declares it.` }
+              : { id: "withdraw-requirement", outcome: `Withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required` },
             { id: "pause", outcome: "Keep the change pending without an acceptance decision." }
           ],
           recommended: "inspect",
@@ -158,18 +197,25 @@ export function createProofReadinessRuntime({
         }
       };
     }
+    const wiring = wiringChoice(id, provider);
     return {
       provider,
       kind: "user-decision",
+      ...(wiring ? { wiring } : {}),
       decision: {
         kind: "external-evidence",
-        summary: `Provider '${provider}' needs verifiable evidence from outside the local harness.`,
+        summary: wiring
+          ? `Provider '${provider}' has no adapter yet, but this project already owns a command that can prove it (${wiring.source}).`
+          : `Provider '${provider}' needs verifiable evidence from outside the local harness.`,
         options: [
+          // The command itself is carried on `wiring`, which every renderer
+          // prints; repeating it here made the rendered recovery echo itself.
+          ...(wiring ? [{ id: "wire-provider", outcome: `Wire the project-owned command detected at ${wiring.source}.` }] : []),
           { id: "provide-evidence", outcome: "Provide a real external result and durable reference." },
           { id: "configure-provider", outcome: "Configure an equivalent project-owned executable provider." },
           { id: "pause", outcome: "Keep the change pending without claiming a result." }
         ],
-        recommended: "provide-evidence",
+        recommended: wiring ? "wire-provider" : "provide-evidence",
         responseStatuses: ["pass", "fail", "inconclusive", "error"]
       }
     };
@@ -331,6 +377,10 @@ export function createProofReadinessRuntime({
       })),
       repositoryConflicts,
       issues,
+      // Reported, never counted into `status`: these are the capabilities the
+      // policy inferred from the diff and the project never wired. They are the
+      // record that a gate was downgraded rather than silently dropped.
+      advisories: advisoryCapabilities(id),
       budget: readinessBudgetPolicy(status),
       next: status === "NEEDS_CODE_CHANGE"
         ? codeChangeRecovery(id, pending)
@@ -355,6 +405,35 @@ export function createProofReadinessRuntime({
     return value;
   }
 
+  // `proofReadinessValue` has always carried a full recovery under `next`, and
+  // every caller that stopped on it threw the recovery away and printed the
+  // blocker list alone. That is the whole reason a blocked Prove read as a dead
+  // end: the way out was computed, then discarded one frame before the person
+  // who needed it. Render it as prose here — `/prove` is told not to expose raw
+  // readiness JSON, so JSON is not a substitute for saying the next command.
+  function recoveryLines(next = []) {
+    const lines = [];
+    for (const entry of next) {
+      if (!entry) continue;
+      const heading = entry.provider ? `${entry.provider}: ` : "";
+      if (entry.decision?.summary) lines.push(`  ${heading}${entry.decision.summary}`);
+      else if (entry.reason) lines.push(`  ${heading}${entry.reason}`);
+      const commands = [
+        entry.wiring?.command,
+        entry.request?.command,
+        entry.request?.packet,
+        entry.verify,
+        ...(entry.choices || []).map((choice) => choice.command || choice.verify)
+      ].filter(Boolean);
+      for (const command of [...new Set(commands)]) lines.push(`    ${command}`);
+      for (const option of entry.decision?.options || [])
+        if (option?.outcome) lines.push(`    - ${option.outcome}`);
+      for (const choice of entry.choices || [])
+        if (choice?.instruction) lines.push(`    - ${choice.instruction}`);
+    }
+    return lines;
+  }
+
   function proofPreflight(id, stage = "prove", quiet = false) {
     const value = proofReadinessValue(id, stage);
     const blockers = [
@@ -365,9 +444,18 @@ export function createProofReadinessRuntime({
     ];
     if (value.pendingTasks.length)
       blockers.push(`${value.pendingTasks.length} implementation task(s) remain unchecked`);
-    if (blockers.length) fail(`proof preflight failed: ${blockers.join("; ")}`);
-    if (!quiet)
+    if (blockers.length) {
+      const recovery = recoveryLines(value.next);
+      fail(`proof preflight failed: ${blockers.join("; ")}${
+        recovery.length ? `\n\nhow to clear this (${value.status}):\n${recovery.join("\n")}` : ""
+      }\n\nfull detail: claude-foundation proof readiness ${id}`);
+    }
+    if (!quiet) {
       console.log(`PROOF PREFLIGHT ${id}: ready\n  stage: ${stage}\n  workspace: ${value.workspaceHash}`);
+      for (const advisory of value.advisories || [])
+        console.error(`  ADVISORY ${advisory.capability}: inferred from ${
+          advisory.trigger || "the changed surface"} with no provider wired; not blocking`);
+    }
     return true;
   }
 
@@ -406,6 +494,7 @@ export function createProofReadinessRuntime({
     proofPreflight,
     proofReadiness,
     proofReadinessValue,
+    recoveryLines,
     readinessBudgetPolicy,
     topologyIssues,
     unavailableProviderRecovery,

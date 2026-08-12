@@ -557,6 +557,7 @@ const {
   changedFilesInWorkspace,
   changedFiles,
   canonicalChangedSurface,
+  changedSurfaceResolvable,
   policyCapabilities,
   policyCapabilityTrigger,
   capabilitiesForPaths,
@@ -729,6 +730,8 @@ const changeValidationRuntime = createChangeValidationRuntime({
   resolvedAcceptance,
   reviewPolicy,
   policyCapabilities,
+  policyCapabilityTrigger,
+  changedSurfaceResolvable,
   forecastCapabilities,
   rawExecution,
   commandExists,
@@ -739,6 +742,7 @@ const changeValidationRuntime = createChangeValidationRuntime({
   fail: die
 });
 const {
+  advisoryCapabilities,
   assertNoDroppedScenarios,
   changeArtifactGaps,
   changeSpecScenarios,
@@ -776,6 +780,7 @@ const receiptRuntime = createReceiptRuntime({
   validate,
   relevantHash,
   requiredProviders,
+  advisoryCapabilities,
   receiptValidity,
   now,
   writeJson,
@@ -1023,6 +1028,7 @@ const {
   proofReadiness,
   proofReadinessValue,
   readinessBudgetPolicy,
+  recoveryLines,
   topologyIssues,
   unavailableProviderRecovery,
   upgradeEvidence
@@ -1037,6 +1043,8 @@ const {
   selectedRepositories,
   providerCapability,
   providerConfig,
+  advisoryCapabilities,
+  evidenceDetectionValue,
   validate,
   relevantHash,
   executionNodes,
@@ -1246,6 +1254,7 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
   clearSnapshotCache,
   relevantSnapshot,
   requiredProviders,
+  advisoryCapabilities,
   receiptValidity,
   proofRunRoot,
   receiptPath,
