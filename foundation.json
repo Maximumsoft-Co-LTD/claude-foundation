@@ -47,6 +47,7 @@
     "two-failed-attempts"
   ],
   "review": {
-    "diversity": "required"
+    "independence": "self",
+    "diversity": "single-model"
   }
 }
