@@ -439,6 +439,7 @@ const {
   singleRelevantSnapshot,
   clearSnapshotCache,
   workspaceManifest,
+  declaredSurfaceMatcher,
   preexistingDirty,
   git,
   gitHead
@@ -1231,7 +1232,7 @@ const {
   writeJson,
   now
 });
-const { recoverPendingApply } = createApplyRecovery({
+const { recoverPendingApply, pendingApplyTransactions } = createApplyRecovery({
   transactions: TRANSACTIONS,
   transactionJournalPath,
   readJson,
@@ -1314,6 +1315,7 @@ const modelDriftInspector = createModelDriftInspector({
 });
 const {
   landCheck,
+  recoverLand,
   orderedRepositories,
   repositoryCommitLanded,
   rootGitlink,
@@ -1328,6 +1330,7 @@ const {
   transactions: TRANSACTIONS,
   loadRuntime,
   saveRuntime,
+  pendingApplyTransactions,
   recoverPendingApply,
   assertNoDroppedScenarios,
   blockingDrift: (...args) => modelDriftInspector.blockingDrift(...args),
@@ -1358,6 +1361,7 @@ const applyRuntime = createApplyRuntime({
   saveRuntime,
   selectedRepositories,
   workspaceManifest,
+  declaredSurfaceMatcher,
   currentChangeRelativePath,
   changePath,
   safeRootPath,
@@ -1523,6 +1527,7 @@ await routeRuntimeCommand(command, values, {
   runProvider,
   prove,
   landCheck,
+  recoverLand,
   showLandPlan,
   recordRepositoryLand,
   stageRootPointers,

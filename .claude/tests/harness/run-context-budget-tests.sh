@@ -102,6 +102,12 @@ for command in "$ROOT"/.claude/commands/*.md; do
     change.md) limit=175 ;;
     build.md) limit=145 ;;
     prove.md) limit=170 ;;
+    # `land check` no longer settles an interrupted apply, so Land owns a route
+    # it did not have: read the projection counts, then recover under an explicit
+    # decision reference. Without it the agent's only options on a pending
+    # transaction are to invent a command or to stop — the failure the command
+    # cannot otherwise avoid.
+    land.md) limit=140 ;;
     *) limit=120 ;;
   esac
   assert_words_at_most "command budget: $(basename "$command")" "$limit" "$command"

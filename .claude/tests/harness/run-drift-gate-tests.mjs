@@ -76,6 +76,7 @@ function landRuntime(overrides = {}) {
   return createLandRuntime({
     root: workspace,
     loadRuntime: (id) => ({ id, status: "proven" }),
+    pendingApplyTransactions: () => [],
     recoverPendingApply: () => {},
     assertNoDroppedScenarios: () => {},
     proofPath,

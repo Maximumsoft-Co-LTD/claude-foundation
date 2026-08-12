@@ -43,12 +43,13 @@ setup_project() {
 # $1 = change id, $2 = report path the provider writes
 draft() {
   node .claude/harness/foundation.mjs start --template > draft.json
-  REPORT="$2" TITLE="$1" node -e '
+  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" node -e '
     const { readFileSync, writeFileSync } = require("fs");
     const d = JSON.parse(readFileSync("draft.json", "utf8"));
     d.intent = process.env.TITLE;
     d.tasks = [{ id: "T001", outcome: "Update app.txt", kind: "implementation",
-      paths: ["app.txt"], verify: "sh run-test.sh " + process.env.REPORT }];
+      paths: (process.env.DECLARE_REPORT ? ["app.txt", process.env.REPORT] : ["app.txt"]),
+      verify: "sh run-test.sh " + process.env.REPORT }];
     d.claims = [{ id: "greeting-updated", scenario: "app.txt carries v2",
       impact: "low", capabilities: ["test"] }];
     d.execution.providers.test = { adapter: "test-discovery",
@@ -73,9 +74,25 @@ assert_file_contains "a report inside the hashed surface is named before a run i
 implement report-at-root
 root_proof="$({ node .claude/harness/foundation.mjs proof-run report-at-root; } 2>&1 || true)"
 assert_contains "the provider still runs and still passes" "$root_proof" "RECEIPT"
-assert_contains "finalization names the cause, not just the code" \
+# The warning above still earns its place — a report at the root is a bad habit
+# and the run says so. What it no longer does is void the run: the report is
+# untracked and no task declares it, so it is not this change's surface and
+# cannot expire the evidence just collected.
+assert_contains "a report outside the declared surface no longer voids its own run" \
+  "$root_proof" "PROVEN report-at-root"
+assert_not_contains "an undeclared report is not reported as a mid-run change" \
   "$root_proof" "the workspace hash changed while providers ran"
-assert_contains "finalization names the remedy" "$root_proof" "test-results/"
+
+# The expiry message still has a job. Declare the report path and the same run
+# voids itself again: a declared path written while providers run is a real
+# mid-run change to this change's surface, and finalization has to name it.
+setup_project at-root-declared
+draft "Report at root declared" "report.json" 1
+implement report-at-root-declared
+declared_proof="$({ node .claude/harness/foundation.mjs proof-run report-at-root-declared; } 2>&1 || true)"
+assert_contains "a declared report written mid-run still expires the evidence" \
+  "$declared_proof" "the workspace hash changed while providers ran"
+assert_contains "finalization names the remedy" "$declared_proof" "test-results/"
 
 # --- `prove` finalizes; it does not execute. --------------------------------
 setup_project excluded

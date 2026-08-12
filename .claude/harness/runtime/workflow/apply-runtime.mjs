@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifySpecSync } from "./spec-sync-verify.mjs";
+import { projectionCounts, undeclaredDeletions } from "./apply-recovery.mjs";
 
 export function createApplyRuntime({
   root,
@@ -10,6 +11,7 @@ export function createApplyRuntime({
   saveRuntime,
   selectedRepositories,
   workspaceManifest,
+  declaredSurfaceMatcher,
   currentChangeRelativePath,
   changePath,
   safeRootPath,
@@ -168,6 +170,17 @@ export function createApplyRuntime({
     });
   }
 
+  function assertDeletionsAreDeclared(id, state, entries) {
+    const undeclared = undeclaredDeletions(entries, declaredSurfaceMatcher(id, state));
+    if (!undeclared.length) return;
+    const preview = undeclared.slice(0, 10).map((entry) => entry.path);
+    fail(`apply would delete ${undeclared.length} path(s) no task declares: ${
+      preview.join(", ")}${undeclared.length > preview.length ? ", ..." : ""
+    }. A deletion has to come from a removal observed inside the sandbox, not ` +
+      "from a path missing from its manifest; declare the path in tasks.md " +
+      "`[paths:]` if the change really owns it.");
+  }
+
   function prepareApplyTransaction(id, state, prepared = null) {
     // The recorded baseline only describes a sandbox that has not been
     // projected yet. Once it has, the control-plane change directory *is* the
@@ -177,6 +190,7 @@ export function createApplyRuntime({
         directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
       fail("active change was edited after the last sandbox sync");
     const entries = prepared || buildApplyEntries(id, state);
+    assertDeletionsAreDeclared(id, state, entries);
     const transactionId = `apply-${Date.now()}-${process.pid}`;
     const transactionRoot = applyTransactionRoot(id, transactionId);
     mkdirSync(transactionRoot, { recursive: true });
@@ -238,11 +252,13 @@ export function createApplyRuntime({
       fail("multi-repository sandboxes do not apply as one local transaction; use land plan/record/resume");
     if (initialState.workspace?.applied && options.refresh)
       refreshAppliedProjection(initialState);
+    // Before `landCheck`, not after: an apply is the authorized place to settle
+    // an interrupted apply, and `landCheck` now refuses while one is pending
+    // rather than quietly settling it itself.
+    recoverPendingApply(id, initialState);
     const readiness = landCheck(id);
     if (readiness.archived) return;
     let state = loadRuntime(id);
-    recoverPendingApply(id, state);
-    state = loadRuntime(id);
     let prepared = null;
     if (state.workspace?.applied) {
       const verification = verifyAppliedProjection(state);
@@ -257,6 +273,11 @@ export function createApplyRuntime({
     const journal = prepareApplyTransaction(id, state, prepared);
     journal.status = "applying";
     saveApplyJournal(journal);
+    // Before the first path moves, not after the last one. A projection that
+    // does not match the change is only cheap to notice here.
+    const counts = projectionCounts(journal.entries);
+    console.log(`PROJECTION ${id}\n  update: ${counts.update}; create: ${
+      counts.create}; delete: ${counts.delete}`);
     // The marker the phase guard documents as the Land carve-out. Nothing set
     // it before, so the carve-out was unreachable and any child this
     // transaction spawns looked like an unaudited Land mutation.

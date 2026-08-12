@@ -38,6 +38,28 @@ export function isExcludedPath(rel, { excluded, tracked = false }) {
     excluded.has(segment));
 }
 
+// What the change said it would touch, normalized once.
+//
+// A path git does not track and the change did not declare is not this
+// change's surface. Treating it as surface is what let an untracked tree
+// sitting in the working directory expire collected evidence — and, because
+// the apply projection reads the same manifests, be projected as a deletion of
+// files the change never named.
+//
+// The glob vocabulary is the one `[paths:]` already uses: a trailing `/**`,
+// `/*` or `/` is a prefix, `*` alone is everything, anything else is an exact
+// path or a directory prefix.
+export function declaredPathMatcher(globs) {
+  const scopes = [...new Set((globs || [])
+    .map((glob) => String(glob).trim())
+    .filter(Boolean))];
+  if (scopes.includes("*")) return () => true;
+  const prefixes = scopes.map((scope) =>
+    scope.replace(/\/\*\*?$/, "").replace(/\/$/, ""));
+  return (rel) => prefixes.some((prefix) =>
+    rel === prefix || rel.startsWith(`${prefix}/`));
+}
+
 // Every ancestor directory of a tracked file is itself worth descending into,
 // which a directory-level filter has to know before it reaches the file.
 export function trackedPathSet(relativePaths) {

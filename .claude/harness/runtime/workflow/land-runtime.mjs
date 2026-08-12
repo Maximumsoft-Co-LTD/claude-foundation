@@ -69,6 +69,7 @@ export function createLandRuntime({
   transactions,
   loadRuntime,
   saveRuntime,
+  pendingApplyTransactions,
   recoverPendingApply,
   assertNoDroppedScenarios,
   // Required, not defaulted: a permissive default would let the Land gate
@@ -95,15 +96,37 @@ export function createLandRuntime({
   fail
 }) {
   function landCheck(id) {
-    let state = loadRuntime(id);
-    recoverPendingApply(id, state);
-    state = loadRuntime(id);
+    const state = loadRuntime(id);
     if (state.status === "archived") {
       const audit = proofAudit(id, true);
       if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
       console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
       return { archived: true, state };
     }
+    // A check reports; it does not settle. Resuming or rolling back an
+    // interrupted apply replays filesystem mutations against the target, so it
+    // belongs to `land recover`, under a decision reference — not to the
+    // command an operator runs to ask whether landing is possible.
+    const pending = pendingApplyTransactions(id);
+    if (pending.length)
+      blockWithDecision(id, "apply-pending-recovery", {
+        kind: "apply-pending-recovery",
+        summary: `An earlier apply for '${id}' is unresolved. Land check changes nothing while it is pending.`,
+        transactions: pending.map((transaction) => ({
+          transactionId: transaction.transactionId,
+          status: transaction.status,
+          appliedPaths: transaction.appliedPaths,
+          update: transaction.counts.update,
+          create: transaction.counts.create,
+          delete: transaction.counts.delete
+        })),
+        options: [
+          { id: "inspect", outcome: "Inspect the transaction journal and the working tree before recovering." },
+          { id: "recover", outcome: `Settle it with 'claude-foundation land recover ${id} --decision-ref <ref>'.` },
+          { id: "pause", outcome: "Leave the transaction pending and make no change." }
+        ],
+        recommended: "inspect"
+      });
     // Before any projection: a spec delta that silently drops a scenario only
     // fails inside 'openspec archive', by which point the code has landed and
     // the change is stuck half-applied.
@@ -149,6 +172,28 @@ export function createLandRuntime({
     console.log(`LAND READY ${id}\n  workspace: ${hash}\n  next: claude-foundation land ${
       multiRepository ? "resume" : "archive"} ${id}`);
     return { archived: false, state, hash };
+  }
+
+  // The explicit half of the split. Recovery replays or reverses filesystem
+  // mutations, so it carries the same decision reference every other authority
+  // action does, and it says what it is about to settle before it settles it.
+  function recoverLand(id, flags = {}) {
+    const decisionRef = String(flags["decision-ref"] || "").trim();
+    if (!decisionRef)
+      fail("land recover requires --decision-ref <host-user-decision>; ask the user to authorize settling the interrupted apply before running it");
+    const pending = pendingApplyTransactions(id);
+    if (!pending.length) {
+      console.log(`NOTHING TO RECOVER ${id}\n  no unresolved apply transaction`);
+      return;
+    }
+    for (const transaction of pending)
+      console.log(`RECOVERING ${transaction.transactionId}\n  status: ${
+        transaction.status}\n  update: ${transaction.counts.update}; create: ${
+        transaction.counts.create}; delete: ${transaction.counts.delete}`);
+    recoverPendingApply(id, loadRuntime(id));
+    const remaining = pendingApplyTransactions(id);
+    console.log(`RECOVERED ${id}\n  settled: ${
+      pending.length - remaining.length}/${pending.length}\n  next: claude-foundation land check ${id}`);
   }
 
   function orderedRepositories(id, state = loadRuntime(id)) {
@@ -547,6 +592,7 @@ export function createLandRuntime({
 
   return {
     landCheck,
+    recoverLand,
     orderedRepositories,
     repositoryCommitLanded,
     rootGitlink,

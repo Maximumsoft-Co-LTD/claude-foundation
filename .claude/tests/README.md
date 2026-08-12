@@ -18,6 +18,8 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 | `harness/run-packet-scaling-tests.sh` | 1,000-task and 500-claim progressive compaction under exact output limits |
 | `harness/run-telemetry-concurrency-tests.sh` | Concurrent context events, malformed legacy tolerance, and non-blocking telemetry |
 | `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
+| `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
+| `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
 | `harness/run-upgrade-compat-tests.sh` | Legacy-default migration, custom-policy preservation, and partial-policy deep merge |
 | `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases; preserves the full contract assertion order in one shared fixture process |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |

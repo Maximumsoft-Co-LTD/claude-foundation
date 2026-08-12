@@ -1,10 +1,60 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+// What a transaction would do to the target, in the three shapes an operator
+// has to weigh differently. Shared so the pre-apply report and the pending
+// report cannot drift apart.
+export function projectionCounts(entries) {
+  return (entries || []).reduce((counts, entry) => {
+    if (entry.after === null) counts.delete += 1;
+    else if (entry.before === null) counts.create += 1;
+    else counts.update += 1;
+    return counts;
+  }, { update: 0, create: 0, delete: 0 });
+}
+
+// Deletion is the one entry a transaction cannot take back, and the only one a
+// manifest can invent: a path the sandbox never carried is indistinguishable
+// from a path the change removed, because both are simply absent. Absence is
+// not an instruction — the change has to have named the path.
+export function undeclaredDeletions(entries, declared) {
+  return (entries || []).filter((entry) =>
+    entry.after === null && entry.role !== "change-artifacts" &&
+    !declared(entry.path));
+}
+
+const UNRESOLVED_APPLY_STATUS = [
+  "prepared", "applying", "rolling-back", "manual-recovery"
+];
+
 export function createApplyRecovery({
   transactions, transactionJournalPath, readJson, verifyAppliedProjection,
   saveApplyJournal, rollbackApplyTransaction, now, blockWithDecision, fail
 }) {
+  // Read-only by construction. `land check` needs to say what is pending
+  // without touching it: resuming or rolling back an interrupted transaction
+  // replays filesystem mutations, and a command named "check" performing them
+  // is how thousands of paths moved with nobody having authorized anything.
+  function pendingApplyTransactions(id) {
+    const transactionRoot = join(transactions, id);
+    if (!existsSync(transactionRoot)) return [];
+    const pending = [];
+    for (const entry of readdirSync(transactionRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const path = transactionJournalPath(id, entry.name);
+      if (!existsSync(path)) continue;
+      const journal = readJson(path);
+      if (!UNRESOLVED_APPLY_STATUS.includes(journal.status)) continue;
+      pending.push({
+        transactionId: journal.transactionId || entry.name,
+        status: journal.status,
+        counts: projectionCounts(journal.entries),
+        appliedPaths: (journal.appliedPaths || []).length
+      });
+    }
+    return pending;
+  }
+
   function recoverPendingApply(id, state) {
     const transactionRoot = join(transactions, id);
     if (!existsSync(transactionRoot)) return;
@@ -54,5 +104,5 @@ export function createApplyRecovery({
     }
   }
 
-  return { recoverPendingApply };
+  return { recoverPendingApply, pendingApplyTransactions };
 }

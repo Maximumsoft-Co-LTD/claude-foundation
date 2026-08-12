@@ -4,7 +4,10 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { isExcludedPath, trackedPathSet } from "./workspace-surface.mjs";
+import {
+  declaredPathMatcher, isExcludedPath, trackedPathSet
+} from "./workspace-surface.mjs";
+import { taskBlocks, taskMetadata } from "../workflow/change-artifacts.mjs";
 
 export function createStateRuntime({
   root,
@@ -206,6 +209,30 @@ export function createStateRuntime({
   const snapshotCache = new Map();
   const policyCache = new Map();
 
+  // One definition of "this change's surface", read by the proof hash and by
+  // the apply projection alike. They used to derive it separately — the hash
+  // from git plus every untracked path, the projection from a filesystem walk —
+  // and a tree present to one and absent from the other became 6,509 deletions
+  // of files no task ever named.
+  //
+  // Declared means the resolved `--surface` globs plus every task's `[paths:]`,
+  // so a file the change creates is surface as soon as the ledger says the
+  // change owns that path.
+  function declaredSurfaceMatcher(id, state = {}) {
+    const globs = [...(state.declaredSurface || [])];
+    const tasks = join(changePath(id), "tasks.md");
+    if (existsSync(tasks))
+      for (const task of taskBlocks(readFileSync(tasks, "utf8")).map(taskMetadata))
+        globs.push(...(task.paths || []));
+    // Declaring nothing confines nothing. A change that has not said which
+    // paths it owns keeps the old, unconfined surface: narrowing it on silence
+    // would drop the untracked files such a change legitimately creates, which
+    // is a worse failure than the one being fixed. Confinement is what
+    // declaring a surface buys.
+    if (!globs.length) return () => true;
+    return declaredPathMatcher(globs);
+  }
+
   function git(args, cwd = root) {
     // The default 1MB maxBuffer silently truncates `ls-files`/`status` on
     // large repositories, and a failed listing here degrades into a wrong
@@ -238,8 +265,15 @@ export function createStateRuntime({
     if (!force && snapshotCache.has(cacheKey)) return snapshotCache.get(cacheKey);
     const hash = createHash("sha256");
     const files = [];
+    const declared = declaredSurfaceMatcher(id, state);
+    // Without git there is no tracked/untracked axis to confine by, and a walk
+    // that guessed would drop content instead of noise.
+    let gitAware = false;
     function allowed(rel, tracked = false) {
       if (isExcludedPath(rel, { excluded: excludedWorkspaceDirs, tracked }))
+        return false;
+      // Untracked and undeclared is somebody else's file sitting in the tree.
+      if (gitAware && !tracked && !isCurrentChangePath(rel, id) && !declared(rel))
         return false;
       if (rel.startsWith("openspec/changes/archive/")) return false;
       if (rel.startsWith("openspec/changes/") && !isCurrentChangePath(rel, id))
@@ -261,6 +295,7 @@ export function createStateRuntime({
       "status", "--porcelain=v1", "-z", "--untracked-files=all"
     ], workspace);
     if (gitIndex.status === 0 && gitStatus.status === 0) {
+      gitAware = true;
       const indexed = new Map();
       for (const line of gitIndex.stdout.split("\0").filter(Boolean)) {
         const match = line.match(/^(\d+)\s+([0-9a-f]+)\s+\d+\t(.+)$/);
@@ -380,9 +415,16 @@ export function createStateRuntime({
     // exclusion here dropped exactly those edits at Land, silently, while
     // proof (whose hash includes them) reported pass.
     const listed = git(["ls-files", "-z"], workspace);
-    const tracked = listed.status === 0
+    const gitAware = listed.status === 0;
+    const tracked = gitAware
       ? trackedPathSet(listed.stdout.split("\0").filter(Boolean))
       : new Set();
+    // The same predicate the proof hash uses. Two manifests are diffed to decide
+    // what apply projects, so a path either manifest admits and the other does
+    // not becomes a create or a delete; confining both to one surface is what
+    // keeps an unrelated tree out of that diff.
+    const declared = declaredSurfaceMatcher(id,
+      existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {});
     function collect(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
@@ -394,8 +436,10 @@ export function createStateRuntime({
         if (rel.startsWith("openspec/changes/archive/")) continue;
         if (rel.startsWith("openspec/changes/") &&
             (excludeChange || !isCurrentChangePath(rel, id))) continue;
-        if (entry.isDirectory()) collect(path);
-        else if (entry.isFile() || entry.isSymbolicLink())
+        if (entry.isDirectory()) { collect(path); continue; }
+        if (gitAware && !tracked.has(rel) && !isCurrentChangePath(rel, id) &&
+            !declared(rel)) continue;
+        if (entry.isFile() || entry.isSymbolicLink())
           result[rel] = filesystemEntryIdentity(path);
       }
     }
@@ -430,6 +474,7 @@ export function createStateRuntime({
     listCount,
     fileDigest,
     singleRelevantSnapshot,
+    declaredSurfaceMatcher,
     clearSnapshotCache,
     workspaceManifest,
     preexistingDirty,

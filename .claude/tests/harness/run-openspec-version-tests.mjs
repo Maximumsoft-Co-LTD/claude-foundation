@@ -106,6 +106,7 @@ try {
   const runtime = createLandRuntime({
     root: workspace,
     loadRuntime: () => ({ id: "demo", status: "proven" }),
+    pendingApplyTransactions: () => [],
     recoverPendingApply: () => {},
     assertNoDroppedScenarios: () => calls.push("scenarios"),
     proofPath: () => {

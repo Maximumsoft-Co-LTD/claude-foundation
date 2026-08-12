@@ -8,9 +8,11 @@ Land **$ARGUMENTS** explicitly.
 Start from `packet <change> --phase land` in a fresh context; Land reads
 recorded state.
 
-Run `claude-foundation land check`. For multi-repo work follow its structured
-next action, bind only authorized child commits/CI with `land record`, then use
-`land resume`. It stages eligible root pointers and reports when fresh Prove is
+Run `claude-foundation land check`; it mutates nothing. On an unresolved apply
+it reports update/create/delete counts; settle it with `land recover
+--decision-ref` only once the user authorizes. For multi-repo work follow its
+next action, bind authorized child commits/CI with `land record`, then
+`land resume`, which stages root pointers and reports when fresh Prove is
 required.
 
 Run `claude-foundation land archive` only when ready. Its journal applies the

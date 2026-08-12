@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-land-surface-tests.mjs"],
+      "minimum": 8,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/runtime/core/state-runtime.mjs",
+        ".claude/harness/runtime/workflow/apply-runtime.mjs",
+        ".claude/harness/runtime/workflow/apply-recovery.mjs",
+        ".claude/harness/runtime/workflow/land-runtime.mjs",
+        ".claude/harness/runtime/core/cli-router.mjs",
+        ".claude/tests/harness/run-land-surface-tests.mjs"
+      ]
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-changeloop-seam-tests.sh"]
+    },
+    "mutation": {
+      "adapter": "command",
+      "classification": "behavioral-kill",
+      "command": ["sh", ".claude/tests/harness/run-land-surface-mutation.sh"]
+    }
+  },
+  "services": {}
+}

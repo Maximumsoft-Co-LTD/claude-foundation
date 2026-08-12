@@ -55,6 +55,7 @@ export const PHASE_BY_COMMAND = {
   prove: "prove",
 
   "land-check": "land",
+  "land-recover": "land",
   "land-plan": "land",
   "land-record": "land",
   "land-pointers": "land",

@@ -73,7 +73,7 @@ run_runtime() {
     new|start|resolve|validate|audit-change|abandon|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-status|authority-record) phase="prove" ;;
-    land-check|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
+    land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
@@ -346,15 +346,16 @@ case "${1:-}" in
   land)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "land ${sub:-<check|plan|record|pointers|resume|archive>}" "${1:-}"
+    need_arg "land ${sub:-<check|recover|plan|record|pointers|resume|archive>}" "${1:-}"
     case "$sub" in
       check) run_runtime read land-check "$@" ;;
+      recover) run_runtime write land-recover "$@" ;;
       plan) run_runtime write land-plan "$@" ;;
       record) run_runtime write land-record "$@" ;;
       pointers) run_runtime write land-pointers "$@" ;;
       resume) run_runtime write land-resume "$@" ;;
       archive) run_runtime write archive "$@" ;;
-      *) fail "land requires 'check', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
+      *) fail "land requires 'check', 'recover', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
     esac ;;
   migrate)
     shift

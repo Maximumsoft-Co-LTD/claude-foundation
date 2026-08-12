@@ -37,6 +37,8 @@ run "bounded infrastructure retry" node "$HERE/harness/run-bounded-retry-tests.m
 run "blocked decision contracts" node "$HERE/harness/run-blocked-decision-tests.mjs"
 run "next-step contracts" node "$HERE/harness/run-next-step-tests.mjs"
 run "workspace surface" node "$HERE/harness/run-workspace-surface-tests.mjs"
+run "land surface" node --test "$HERE/harness/run-land-surface-tests.mjs"
+run "land surface mutation" sh "$HERE/harness/run-land-surface-mutation.sh"
 run "proof loop end to end" sh "$HERE/harness/run-proof-loop-tests.sh"
 run "change loop seams" sh "$HERE/harness/run-changeloop-seam-tests.sh"
 run "openspec version policy" node "$HERE/harness/run-openspec-version-tests.mjs"

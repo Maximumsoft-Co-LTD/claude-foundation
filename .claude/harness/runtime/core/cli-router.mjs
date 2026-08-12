@@ -11,7 +11,7 @@ export async function routeRuntimeCommand(command, values, api) {
     proofPreflight, proofExecute, proofAudit, showEvidenceDetection,
     initializeEvidence, showEvidenceDoctor, recordVerifiedCi, requestAuthority,
     showAuthorityStatus, recordAuthority, upgradeEvidence, recordReceipt,
-    runProvider, prove, landCheck, showLandPlan, recordRepositoryLand,
+    runProvider, prove, landCheck, recoverLand, showLandPlan, recordRepositoryLand,
     stageRootPointers, resumeLand, createAttestationChallenge,
     showSandboxInspection, createSandbox, syncSandbox, applySandbox, archive,
     recordEvent, syncClaudeTelemetry, importTelemetry, importHostExecution, migrate, usage,
@@ -202,6 +202,10 @@ export async function routeRuntimeCommand(command, values, api) {
     case "run-provider": runProvider(values[0], values[1], values.slice(2)); break;
     case "prove": prove(values[0]); break;
     case "land-check": landCheck(values[0]); break;
+    case "land-recover": {
+      const { flags, rest } = parseFlags(values);
+      recoverLand(rest[0], flags); break;
+    }
     case "land-plan": showLandPlan(values[0]); break;
     case "land-record": {
       const { flags, rest } = parseFlags(values);

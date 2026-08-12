@@ -171,8 +171,20 @@ pinned OpenSpec CLI.
 
 ```bash
 claude-foundation land check <change>
+claude-foundation land recover <change> --decision-ref <ref>
 claude-foundation land archive <change>
 ```
+
+`land check` mutates nothing. An apply is a transaction over the target, and an
+interrupted one stays pending until somebody settles it deliberately: the check
+reports the transaction, its status, and how many paths it would update, create
+and delete, and `land recover` settles it under a recorded decision.
+
+The projection itself is confined to the change's surface — what git tracks plus
+what `tasks.md` declares in `[paths:]`. An untracked path no task names is not
+change surface: it neither expires collected evidence nor becomes a deletion at
+Land. A path is only deleted from the target when the sandbox is observed to
+have removed it.
 
 Commit, push, and pull-request effects require explicit authorization.
 

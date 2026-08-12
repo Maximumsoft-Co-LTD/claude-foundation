@@ -62,6 +62,7 @@ const REGISTERED = new Set([
   "abandon-applied-workspace",
   "abandon-revert-failed",
   "apply-manual-recovery",
+  "apply-pending-recovery",
   "budget-continuation-rejected",
   "budget-continuation-spent",
   "control-head-moved",

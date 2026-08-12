@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "undeclared-untracked-paths-are-not-change-surface",
+      "scenario": "An undeclared untracked tree enters neither the proof hash nor an apply projection",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "manifest-and-snapshot-agree-on-surface",
+      "scenario": "The workspace manifest and the relevant snapshot admit the same paths",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "deletion-requires-sandbox-evidence",
+      "scenario": "A deletion produced by absence alone fails the apply and names the paths",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "declared-deletion-still-lands",
+      "scenario": "A real removal inside declared paths still lands",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "apply-reports-its-projection",
+      "scenario": "An apply reports update, create and delete counts before running",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "land-check-does-not-mutate",
+      "scenario": "Land check reports a pending apply transaction without changing the tree",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "recovery-is-explicit-and-authorized",
+      "scenario": "Recovery runs only through land recover with a decision reference",
+      "impact": "high",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "evidence-suite-detects-a-removed-deletion-guard",
+      "scenario": "Removing the deletion guard makes the evidence suite fail",
+      "impact": "high",
+      "capabilities": ["mutation"]
+    },
+    {
+      "id": "existing-land-behavior-remains-compatible",
+      "scenario": "Existing land, sandbox and seam behavior remains compatible",
+      "impact": "high",
+      "capabilities": ["test", "compatibility"]
+    }
+  ]
+}

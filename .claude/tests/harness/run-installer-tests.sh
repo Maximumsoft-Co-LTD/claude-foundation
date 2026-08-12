@@ -129,7 +129,7 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 assert_eq "agent command surface is bounded" "18" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-assert_eq "conditional recovery surface is bounded" "14" \
+assert_eq "conditional recovery surface is bounded" "15" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
