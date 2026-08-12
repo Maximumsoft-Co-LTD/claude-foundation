@@ -33,6 +33,10 @@ function nullableSum(...values) {
   return known.length ? known.reduce((sum, value) => sum + Number(value), 0) : null;
 }
 
+export function runtimeSessionId(env = process.env) {
+  return String(env.FOUNDATION_SESSION_ID || env.CODEX_THREAD_ID || "").trim() || null;
+}
+
 export function normalizeTelemetryRow(id, row, format, context = {}, timestamp = null) {
   const message = row.message && typeof row.message === "object" ? row.message : {};
   const attributes = row.attributes && typeof row.attributes === "object" ? row.attributes : {};

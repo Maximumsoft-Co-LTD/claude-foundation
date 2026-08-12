@@ -31,6 +31,14 @@ printf 'initial\n' > "$TMP/project/app.txt"
 
 cd "$TMP/project"
 
+# The contracts below attribute telemetry to run ids they choose themselves.
+# `event` falls back to the ambient host session when no --run is given, so a
+# real Claude or Codex session running this suite would re-attribute fixture
+# events to its own identity and leave the window assertions reading a run
+# nobody recorded against. Cases that need a bound session still set one inline.
+unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH
+unset FOUNDATION_RUN_ID FOUNDATION_SESSION_ID CODEX_THREAD_ID
+
 providers="$(node .claude/harness/foundation.mjs providers)"
 assert_contains "provider catalog includes static analysis" "$providers" "static-analysis"
 assert_contains "provider catalog includes data migration" "$providers" "data-migration"

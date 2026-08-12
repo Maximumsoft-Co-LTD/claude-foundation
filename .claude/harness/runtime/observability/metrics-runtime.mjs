@@ -314,10 +314,10 @@ export function createMetricsRuntime({
       phases, providers,
       evidenceExecutionTimeMs,
       externalExecutionTimeMs,
-      // A measured zero, not unknown: `measurement` below states whether host
-      // events were ingested at all, so this field does not need to overload
-      // null to say it.
-      requests: events.length,
+      // No host events means no request observation. Lifecycle operations are
+      // known, but they cannot establish how many model requests occurred.
+      requests: events.length ? events.length : null,
+      usageMeasurement: events.length ? "host-events" : "unavailable",
       inputTokens: sumKnown(events, "inputTokens"),
       outputTokens: sumKnown(events, "outputTokens"),
       cacheCreationTokens: sumKnown(events, "cacheCreationTokens"),

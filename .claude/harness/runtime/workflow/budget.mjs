@@ -42,6 +42,7 @@ export function createBudgetRuntime({ policy, now }) {
   }
 
   function budgetWindow(id, targets, baseline = {}, sequence = 1, reason = "initial-run") {
+    const baselineMeasured = baseline.measured === true;
     return {
       id,
       extensionRootId: id,
@@ -51,8 +52,11 @@ export function createBudgetRuntime({ policy, now }) {
       targetTokens: targets.tokens,
       baselineRequests: Number(baseline.requests || 0),
       baselineTokens: Number(baseline.tokens || 0),
-      usedRequests: 0,
-      usedTokens: 0,
+      // A newly opened window has spent zero only when its baseline came from
+      // observed host events. Before the first observation, zero would be a
+      // claim about usage rather than an initialized counter.
+      usedRequests: baselineMeasured ? 0 : null,
+      usedTokens: baselineMeasured && knownNumber(baseline.tokens) ? 0 : null,
       mode: "normal",
       reason,
       startedAt: now(),
@@ -117,6 +121,18 @@ export function createBudgetRuntime({ policy, now }) {
         ? Number(state.budget.lifetime.usedTokens) : null;
       state.budget.usedRequests = state.budget.lifetime.usedRequests;
       state.budget.usedTokens = state.budget.lifetime.usedTokens;
+      // Runtime v3 originally persisted numeric zero in a fresh window while
+      // explicitly saying its measurement was unavailable. Heal that
+      // contradictory state on read so an upgraded change does not keep
+      // reporting invented usage forever.
+      if (state.budget.measurement === "unavailable-until-external-events" &&
+          state.budget.lifetime.usedRequests === null &&
+          state.budget.lifetime.usedTokens === null &&
+          Number(state.budget.window.usedRequests) === 0 &&
+          Number(state.budget.window.usedTokens) === 0) {
+        state.budget.window.usedRequests = null;
+        state.budget.window.usedTokens = null;
+      }
       // The active window follows the derived targets too — an impact declared
       // mid-change must widen the window the change is actually spending from,
       // not only the next one. An operator-continue window keeps the numbers
@@ -140,7 +156,8 @@ export function createBudgetRuntime({ policy, now }) {
       requests: events.length,
       tokens: knownTokens.length
         ? knownTokens.reduce((sum, value) => sum + value, 0)
-        : events.length ? null : 0
+        : null,
+      measured: events.length > 0
     };
   }
 
@@ -181,6 +198,9 @@ export function createBudgetRuntime({ policy, now }) {
     // but the zero it falls back to is not a measurement, and the report used
     // to print it as one: "BUDGET <id>: 0.0% CONTINUE" for a change nobody had
     // measured at all. `measured` is what lets the reader tell the two apart.
+    // `ensureBudgetState` removes the legacy invented zeros before this point.
+    // Any number that remains is therefore an explicit observation or an
+    // operator/test injection and must retain its numeric meaning.
     const measured = requestsKnown || tokensKnown;
     const limiter = !measured ? null
       : tokenRatio > requestRatio ? "tokens" : "requests";

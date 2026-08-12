@@ -15,7 +15,8 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   normalizeClaudeUserTransition,
-  normalizeTelemetryRow
+  normalizeTelemetryRow,
+  runtimeSessionId
 } from "./telemetry.mjs";
 
 export function createTelemetryRuntime({
@@ -158,7 +159,7 @@ export function createTelemetryRuntime({
       const path = join(logs, id, "phase-context.jsonl");
       const prior = readJsonLinesTolerant(path).at(-1) || null;
       const host = claudeHostContext();
-      const sessionId = host?.sessionId || process.env.FOUNDATION_SESSION_ID || null;
+      const sessionId = host?.sessionId || runtimeSessionId();
       const recommendedTier = {
         change: "deep",
         build: "standard",
@@ -473,7 +474,10 @@ export function createTelemetryRuntime({
       row.type === "assistant" && row.message?.role === "assistant" && row.message?.usage))
       fail("Claude telemetry source has no assistant.message.usage records");
     const snapshot = readJson(snapshotPath(id), {});
-    const imported = appendTelemetryRows(id, rows, format, { snapshot });
+    const imported = appendTelemetryRows(id, rows, format, {
+      snapshot,
+      sessionId: format === "codex" ? runtimeSessionId() : null
+    });
     console.log(`TELEMETRY ${id}: imported ${imported}; skipped ${rows.length - imported}`);
   }
 

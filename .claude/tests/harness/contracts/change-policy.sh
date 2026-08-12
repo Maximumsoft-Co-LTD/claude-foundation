@@ -283,8 +283,8 @@ assert_contains "legacy change-wide budget migrates without carrying a lock" \
   "$legacy_budget" '"reason": "runtime-upgrade"'
 assert_contains "legacy lifetime usage is visible without mutating metrics" \
   "$legacy_budget" '"usedTokens": 900000'
-assert_contains "legacy metrics exposes an empty migrated window" \
-  "$legacy_budget" '"usedRequests": 0'
+assert_contains "legacy metrics preserves an unmeasured migrated window" \
+  "$legacy_budget" '"usedRequests": null'
 assert_cmd_zero "metrics remains read-only during legacy normalization" \
   cmp "$TMP/legacy-budget-before-metrics.json" .foundation/runtime/no-security-trigger.json
 

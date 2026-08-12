@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "unobserved-host-usage-remains-unknown",
+      "scenario": "Unobserved host usage remains unknown",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "observed-zero-remains-measured",
+      "scenario": "An observed numeric zero remains measured",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "codex-identity-correlates-without-inventing-usage",
+      "scenario": "Codex identity correlates records without inventing usage",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "existing-telemetry-contracts-remain-compatible",
+      "scenario": "Existing telemetry contracts remain compatible",
+      "impact": "medium",
+      "capabilities": ["test", "compatibility"]
+    }
+  ]
+}

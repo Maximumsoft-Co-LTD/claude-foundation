@@ -17,6 +17,7 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, model ceiling, and dispatch conflicts |
 | `harness/run-packet-scaling-tests.sh` | 1,000-task and 500-claim progressive compaction under exact output limits |
 | `harness/run-telemetry-concurrency-tests.sh` | Concurrent context events, malformed legacy tolerance, and non-blocking telemetry |
+| `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
 | `harness/run-upgrade-compat-tests.sh` | Legacy-default migration, custom-policy preservation, and partial-policy deep merge |
 | `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases; preserves the full contract assertion order in one shared fixture process |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |

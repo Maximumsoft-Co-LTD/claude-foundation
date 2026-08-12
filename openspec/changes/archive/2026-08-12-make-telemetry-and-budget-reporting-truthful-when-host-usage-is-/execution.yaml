@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-telemetry-truth-tests.mjs"],
+      "minimum": 4,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/runtime/observability/metrics-runtime.mjs",
+        ".claude/harness/runtime/observability/telemetry-runtime.mjs",
+        ".claude/harness/runtime/observability/telemetry.mjs",
+        ".claude/harness/runtime/workflow/budget.mjs",
+        ".claude/tests/harness/run-telemetry-truth-tests.mjs"
+      ]
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-changeloop-seam-tests.sh"]
+    }
+  },
+  "services": {}
+}
