@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A new project is seeded with both review waivers.** The shipped
+  `foundation.json` now carries `"review": { "independence": "self",
+  "diversity": "single-model" }`, because the common setup is one operator
+  driving one model, and the stricter posture made that setup unable to satisfy
+  its own review gate. A project with a second reviewer available sets either
+  axis back to `"required"`. This changes only what a *new* install is seeded
+  with: `foundation.json` is copied when missing and never overwritten, and the
+  runtime still defaults to `required` on both axes when the key is absent, so
+  existing projects keep whatever policy they committed. Receipts continue to
+  record what was observed — `independent: false` and the named waiver — rather
+  than what the policy permitted.
+
 ## [3.2.12] - 2026-08-13
 
 ### Added

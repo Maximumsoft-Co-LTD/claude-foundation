@@ -402,7 +402,11 @@ reviewer share an implementer's identity and session at any impact; that waiver
 is named the same way, recorded as `independenceWaived` beside the observed
 `independent: false`, and relaxes only its own axis — a same-family self-review
 of critical work still needs the diversity waiver declared alongside it. Both
-live only in the committed policy file; neither is a command flag.
+live only in the committed policy file; neither is a command flag. The shipped
+`foundation.json` seeds both, because the common setup is one operator driving
+one model; a project with a second reviewer available should set either axis to
+`"required"` to demand it. Whichever way the file reads, the receipt records
+what was observed, not what was permitted.
 AI re-review is limited to two rounds, after
 which unresolved work escalates to a human; that stop names the human path, the
 return to Build, and retiring the change. A change-level hash chain binds each
