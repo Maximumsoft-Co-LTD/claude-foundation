@@ -34,6 +34,31 @@ assert_contains "a command family lists its members rather than guessing one" \
   "$(node .claude/harness/foundation.mjs describe sandbox 2>&1)" "sandbox create"
 assert_contains "the runtime validate route describes the canonical command" \
   "$(node .claude/harness/foundation.mjs describe validate 2>&1)" "change validate"
+# The change loop is the surface an agent is actually driven by, and describe
+# knew nothing about it: `describe build` answered "unknown command" and
+# `describe prove` answered with the internal `proof finalize`. Descriptions are
+# read from the shipped command files, so a second copy cannot drift.
+undescribed_loop=""
+for loop_command in investigate change build prove land changes dev; do
+  loop_help="$(node .claude/harness/foundation.mjs describe "$loop_command" 2>&1)" &&
+    case "$loop_help" in *"/$loop_command "*) ;; *) false ;; esac ||
+    undescribed_loop="$undescribed_loop $loop_command"
+done
+assert_eq "every change-loop command describes itself" "" "$undescribed_loop"
+assert_contains "describe lists the change loop beside the CLI surface" \
+  "$describe_all" "/investigate"
+assert_contains "a loop command names the file that defines it" \
+  "$(node .claude/harness/foundation.mjs describe build 2>&1)" \
+  ".claude/commands/build.md"
+describe_prove="$(node .claude/harness/foundation.mjs describe prove 2>&1)"
+assert_contains "the bare word reaches the loop step, not the internal alias" \
+  "$describe_prove" "Produce content-bound evidence"
+assert_contains "the CLI commands sharing the word stay visible" \
+  "$describe_prove" "proof finalize"
+assert_contains "the slash spelling resolves too" \
+  "$(node .claude/harness/foundation.mjs describe /land 2>&1)" "/land <change>"
+assert_contains "an unknown command offers the loop as well as the CLI" \
+  "$(node .claude/harness/foundation.mjs describe nosuchcommand 2>&1 || true)" "/investigate"
 unsupported_flag="$(node .claude/harness/foundation.mjs authority-record x \
   --request y --observed z 2>&1 || true)"
 assert_contains "a rejected flag names the supported surface" "$unsupported_flag" \

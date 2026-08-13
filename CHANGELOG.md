@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A failing gate now has a recorded way out: `change waive`.** A provider
+  that executed and failed used to leave one printed route — re-run — which is
+  useless when the gate itself is wrong or the user decides to land without
+  it. `claude-foundation change waive <change> --capability <c> --reason <why>
+  --decision-ref <ref>` withdraws that one capability's enforcement on an
+  explicit host-recorded user decision: the claim keeps declaring it, the
+  waiver travels as a `user-waived` advisory into proof readiness, the proof
+  record, the archive, and the `LAND READY` line, and `--revoke` restores the
+  requirement. Receipts already earned stay valid — a waiver is subtractive
+  and cannot change what any other provider attested — so the re-prove after a
+  waive executes zero providers. There is deliberately no route that lands a
+  failing proof, and `review`/`acceptance` are refused here in favor of their
+  own documented waiver and withdrawal routes. The `fail` validity now prints
+  all three exits (fix, rewire, waive) beside the blocker at Prove and Land.
+- **`describe` now covers the change loop.** `describe build` answered
+  "unknown command" and `describe prove` answered with the internal `proof
+  finalize` — the surface an agent is actually driven by was the one surface
+  `describe` knew nothing about. The seven host commands are now read from the
+  shipped `.claude/commands/*.md` files (no second copy to drift), listed
+  ahead of the CLI surface, and resolvable by bare word or `/slash` spelling.
+
 ## [3.2.16] - 2026-08-13
 
 ### Added

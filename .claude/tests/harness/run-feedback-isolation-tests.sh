@@ -81,7 +81,7 @@ fi
 help_text="$(bash "$ROOT/cli.sh" help)"
 help_all_text="$(bash "$ROOT/cli.sh" help --all)"
 assert_contains "full CLI help retains isolation diagnostics" \
-  "$help_all_text" "sandbox inspect <change> [--json]"
+  "$help_all_text" "sandbox inspect <change> [--unattended --attestation <file>] [--json]"
 assert_contains "CLI help advertises guarded sandbox creation" \
   "$help_text" "sandbox create <change> [--all] [--unattended --attestation <file>]"
 

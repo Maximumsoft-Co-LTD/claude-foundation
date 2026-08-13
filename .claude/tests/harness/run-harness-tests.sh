@@ -25,6 +25,10 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
 install_harness_fixture "$ROOT" "$TMP/project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
+# `describe` reads the change-loop descriptions from the shipped command files
+# rather than keeping a second copy in commands.json. They are MANAGED, so a
+# real install always has them; the fixture has to carry them too.
+cp -R "$ROOT/.claude/commands" "$TMP/project/.claude/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
 printf 'initial\n' > "$TMP/project/app.txt"
