@@ -43,7 +43,12 @@ bash "$SOURCE_PATH/install.sh" "${args[@]}"
 mkdir -p "$TARGET_PATH/.cursor/commands" "$TARGET_PATH/.cursor/rules"
 cp "$SOURCE_PATH/.claude/orchestrator.md" "$TARGET_PATH/.cursor/orchestrator.md"
 cp "$SOURCE_PATH/.claude/commands/"*.md "$TARGET_PATH/.cursor/commands/"
-cp "$SOURCE_PATH/.claude/rules/fundamentals.md" "$TARGET_PATH/.cursor/rules/fundamentals.mdc"
+# Cursor only applies a rule on every request when its MDC frontmatter says
+# so; a bare rename shipped the always-on router as an agent-requested rule.
+{
+  printf -- '---\ndescription: Foundation always-on skill router\nalwaysApply: true\n---\n\n'
+  cat "$SOURCE_PATH/.claude/rules/fundamentals.md"
+} > "$TARGET_PATH/.cursor/rules/fundamentals.mdc"
 
 # Remove exact lifecycle files written by older Cursor adapters.
 for old in \

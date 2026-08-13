@@ -457,5 +457,90 @@ assert_file_absent "cursor review command is proof-internal" \
   "$CURSOR_TARGET/.cursor/commands/review.md"
 assert_file_exists "cursor orchestrator installed" "$CURSOR_TARGET/.cursor/orchestrator.md"
 assert_file_exists "shared runtime installed for cursor" "$CURSOR_TARGET/.claude/harness/foundation.mjs"
+# A bare .md→.mdc rename ships the always-on router as an agent-requested rule.
+assert_file_contains "cursor rules router is always applied" \
+  "$CURSOR_TARGET/.cursor/rules/fundamentals.mdc" "alwaysApply: true"
+
+OPENCODE_TARGET="$TMP/opencode-project"
+mkdir -p "$OPENCODE_TARGET"
+assert_cmd_zero "opencode adapter installs" \
+  bash "$ROOT/install-opencode.sh" "$OPENCODE_TARGET" --source "$ROOT" --yes
+assert_file_exists "opencode change command installed" \
+  "$OPENCODE_TARGET/.opencode/commands/change.md"
+assert_file_exists "opencode guard plugin installed" \
+  "$OPENCODE_TARGET/.opencode/plugins/foundation.js"
+assert_file_exists "shared runtime installed for opencode" \
+  "$OPENCODE_TARGET/.claude/harness/foundation.mjs"
+
+# The plugin is an envelope over the shipped hooks, so drive it the way
+# OpenCode does — import, build the hook set, fire tool.execute.before — and
+# assert the same decisions the Claude Code wiring produces.
+plugin_probe() {
+  ( cd "$OPENCODE_TARGET" && \
+    FOUNDATION_ACTIVE_PHASE="$1" FOUNDATION_GUARDRAIL_MODE="$2" \
+    node --input-type=module -e '
+      const [plugin, tool, argsJson] = process.argv.slice(1);
+      const { FoundationGuard } = await import(plugin);
+      const hooks = await FoundationGuard({ directory: process.cwd() });
+      try {
+        await hooks["tool.execute.before"](
+          { tool, callID: "probe" }, { args: JSON.parse(argsJson) });
+        console.log("ALLOWED");
+      } catch (error) {
+        console.log("BLOCKED: " + error.message);
+      }
+    ' "$OPENCODE_TARGET/.opencode/plugins/foundation.js" "$3" "$4" )
+}
+
+probe="$(plugin_probe prove block write '{"filePath":"src/app.js"}')"
+assert_contains "opencode plugin enforces the phase guard" "$probe" "BLOCKED: phase guard"
+if command -v jq >/dev/null 2>&1; then
+  probe="$(plugin_probe "" audit read '{"filePath":".env"}')"
+  assert_contains "opencode plugin enforces the secrets guard" \
+    "$probe" "BLOCKED by secrets guard"
+fi
+probe="$(plugin_probe prove block read '{"filePath":"README.md"}')"
+assert_eq "opencode plugin allows a harmless read" "ALLOWED" "$probe"
+
+CODEX_TARGET="$TMP/codex-project"
+CODEX_HOME_FIXTURE="$TMP/codex-home"
+mkdir -p "$CODEX_TARGET"
+assert_cmd_zero "codex adapter installs" \
+  env CODEX_HOME="$CODEX_HOME_FIXTURE" \
+  bash "$ROOT/install-codex.sh" "$CODEX_TARGET" --source "$ROOT" --yes
+assert_file_exists "codex change prompt installed" \
+  "$CODEX_HOME_FIXTURE/prompts/change.md"
+assert_file_contains "codex prompt carries the ownership marker" \
+  "$CODEX_HOME_FIXTURE/prompts/change.md" "claude-foundation:prompt"
+assert_file_contains "portable AGENTS pointer serves codex" \
+  "$CODEX_TARGET/AGENTS.md" "claude-foundation:portable-agent:start"
+assert_file_exists "shared runtime installed for codex" \
+  "$CODEX_TARGET/.claude/harness/foundation.mjs"
+# The prompt directory is user-global and shared; a same-named prompt without
+# the Foundation marker belongs to the user and must survive a re-install.
+printf 'my own build prompt\n' > "$CODEX_HOME_FIXTURE/prompts/build.md"
+assert_cmd_zero "codex adapter reinstalls beside a user prompt" \
+  env CODEX_HOME="$CODEX_HOME_FIXTURE" \
+  bash "$ROOT/install-codex.sh" "$CODEX_TARGET" --source "$ROOT" --yes
+assert_file_contains "codex adapter keeps the user prompt" \
+  "$CODEX_HOME_FIXTURE/prompts/build.md" "my own build prompt"
+assert_file_contains "codex adapter still refreshes its own prompts" \
+  "$CODEX_HOME_FIXTURE/prompts/prove.md" "claude-foundation:prompt"
+
+# `init --host` is the routed spelling of the adapter installers — the only
+# spelling a Homebrew install has, since the adapters live in libexec there.
+HOST_ROUTE_TARGET="$TMP/host-route-project"
+mkdir -p "$HOST_ROUTE_TARGET"
+assert_cmd_zero "cli init routes a host adapter" \
+  bash "$ROOT/cli.sh" init "$HOST_ROUTE_TARGET" --host opencode --yes
+assert_file_exists "routed opencode install carries the guard plugin" \
+  "$HOST_ROUTE_TARGET/.opencode/plugins/foundation.js"
+assert_file_exists "routed opencode install carries the shared runtime" \
+  "$HOST_ROUTE_TARGET/.claude/harness/foundation.mjs"
+if bash "$ROOT/cli.sh" init "$HOST_ROUTE_TARGET" --host vscode --yes >/dev/null 2>&1; then
+  fail "cli init refuses an unknown host"
+else
+  pass "cli init refuses an unknown host"
+fi
 
 finish "installer"

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OpenCode and Codex CLI host adapters.** `claude-foundation init --host
+  cursor|opencode|codex` (also runnable as `install-opencode.sh` /
+  `install-codex.sh` from a source checkout) layers a host adapter over the
+  shared install. OpenCode gets the seven commands in `.opencode/commands/`
+  and a guard plugin at `.opencode/plugins/foundation.js` that replays the
+  shipped hooks through `tool.execute.before/after` — secrets guard and
+  phase-mutation guard block live, lint feeds back on edit — while skills and
+  the agent contract need no adapter at all: OpenCode reads `.claude/skills/`
+  and `AGENTS.md` natively. Codex gets the seven prompts in
+  `$CODEX_HOME/prompts` (Codex has no per-project prompt directory) stamped
+  with an ownership marker, so re-installs refresh Foundation prompts and
+  never clobber a same-named user prompt; Codex has no tool hooks, so the
+  installer says plainly that live guards are inert there and Land gates plus
+  the opt-in `no-direct-main-commit.sh` remain the enforcement.
+- **`.claude/hooks/README.md` states the hook contract.** The stdin event
+  shape, the two answer channels (block JSON before the tool, exit 2 with
+  stderr after it), and the per-host wiring matrix are now a shipped contract,
+  so a new host adapter targets the contract instead of forking guard logic.
+
+### Fixed
+
+- **The Cursor adapter now ships the skill router as an always-on rule.** A
+  bare `.md`→`.mdc` rename left `fundamentals.mdc` without MDC frontmatter,
+  so Cursor treated the always-on router as an agent-requested rule; the
+  adapter now writes `alwaysApply: true` frontmatter around it.
+
 ## [3.2.15] - 2026-08-13
 
 ### Added

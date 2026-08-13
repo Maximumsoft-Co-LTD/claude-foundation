@@ -84,7 +84,7 @@ $ROOT/.claude/rules $ROOT/.claude/skills $ROOT/WORKFLOW.md"
 # false positives; WORKFLOW.md's `/path/to/claude-foundation/cli.sh` is a
 # documented source-checkout escape hatch, not a shipped-path claim.
 # shellcheck disable=SC2086 -- intentional word-splitting over the path list
-leaks="$(grep -rlE '\.claude/tests|tests/bench|docs/research|install\.sh|install-cursor\.sh|RELEASING\.md|Formula/claude-foundation|release-notes/' \
+leaks="$(grep -rlE '\.claude/tests|tests/bench|docs/research|install\.sh|install-(cursor|opencode|codex)\.sh|RELEASING\.md|Formula/claude-foundation|release-notes/' \
   $SHIPPED_DOCS 2>/dev/null || true)"
 if [ -z "$leaks" ]; then
   pass "shipped workflow files do not cite maintainer-only paths"

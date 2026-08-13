@@ -267,11 +267,11 @@
     },
     {
       "name": "init",
-      "usage": "init [target-path] [options]",
+      "usage": "init [target-path] [--host claude|cursor|opencode|codex] [options]",
       "audience": "admin",
       "kind": "authority",
       "idempotent": true,
-      "description": "Install or upgrade Foundation in a project."
+      "description": "Install or upgrade Foundation in a project; --host adds that host's adapter."
     },
     {
       "name": "providers",

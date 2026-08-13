@@ -176,10 +176,30 @@ case "${1:-}" in
     [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && fail "help accepts only --all"
     usage "${2:-}"; exit 0 ;;
   init)
-    # Explicit alias for the installer. Strip `init`; the rest of the surface
-    # (`[target-path] [options]`) is install.sh's, unchanged.
+    # Explicit alias for the installer. `--host` picks the adapter (every
+    # adapter layers over install.sh); the rest of the surface
+    # (`[target-path] [options]`) is the installer's, unchanged.
     shift
-    exec bash "$SCRIPT_DIR/install.sh" "$@" --source "$SCRIPT_DIR" ;;
+    host=claude
+    init_args=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --host)
+          [ "$#" -ge 2 ] || fail "--host needs one of: claude, cursor, opencode, codex"
+          host="$2"; shift 2 ;;
+        --host=*)
+          host="${1#--host=}"; shift ;;
+        *) init_args+=("$1"); shift ;;
+      esac
+    done
+    case "$host" in
+      claude|claude-code) installer="install.sh" ;;
+      cursor) installer="install-cursor.sh" ;;
+      opencode) installer="install-opencode.sh" ;;
+      codex) installer="install-codex.sh" ;;
+      *) fail "unknown host '$host'; expected claude, cursor, opencode, or codex" ;;
+    esac
+    exec bash "$SCRIPT_DIR/$installer" ${init_args[@]+"${init_args[@]}"} --source "$SCRIPT_DIR" ;;
   providers)
     shift; [ "$#" -eq 0 ] || fail "providers takes no arguments"
     run_runtime read providers ;;

@@ -50,6 +50,8 @@ Product surface, installed into consumer projects:
 - `.claude/harness/protocol.json` - runtime and protocol version pins.
 - `.claude/harness/AGENT.md`, `EVIDENCE.md`, `README.md` - shipped agent
   contract, evidence-adapter reference, and runtime reference.
+- `.claude/harness/adapters/` - host adapter payloads; today the OpenCode
+  guard plugin that `install-opencode.sh` copies into `.opencode/plugins/`.
 - `.claude/rules/fundamentals.md` - always-on skill router and canonical
   construction order.
 - `.claude/skills/` - procedures loaded only when their trigger fires; the
@@ -58,6 +60,8 @@ Product surface, installed into consumer projects:
   `phase-mutation-guard.sh` (a prefilter that execs `phase-mutation-guard.mjs`
   only when a decision is needed), `protect-secrets.sh`, and `lint.sh` are wired in
   `settings.json`; `no-direct-main-commit.sh` ships but stays unwired.
+  `hooks/README.md` states the host-neutral event/answer contract and the
+  per-host wiring matrix.
 - `openspec/schemas/` - `foundation-rapid` and `foundation-standard` assurance
   profiles.
 - `openspec/config.yaml`, `openspec/repositories.yaml`, `foundation.json` -
@@ -70,8 +74,9 @@ Product surface, installed into consumer projects:
 Repository-only surface, never installed:
 
 - `cli.sh` - top-level `claude-foundation` router; resolves the target project
-  and forwards to its own installed runtime. `install.sh` and
-  `install-cursor.sh` install.
+  and forwards to its own installed runtime. `install.sh` installs;
+  `install-cursor.sh`, `install-opencode.sh`, and `install-codex.sh` layer
+  host adapters over it.
 - `.claude/tests/run-all.sh` - deterministic workflow test entrypoint. Suites
   live in `.claude/tests/{harness,hooks,docs,interview,e2e,scenarios,ledger,
   lib}`; benchmark tooling and rationale in `.claude/tests/bench/`.
@@ -170,7 +175,7 @@ Triage by lane before writing. The lane sets the gates, not the diff size.
 |---|---|---|
 | Runtime | `harness/foundation.mjs`, `harness/runtime/**` | wiring test, protocol pins, regression at the seam |
 | Instruction | `orchestrator.md`, `commands/`, `rules/`, `skills/`, `hooks/`, `WORKFLOW.md` | context budgets, doc consistency, `commands.json` |
-| Shipping | `install.sh`, `install-cursor.sh`, `openspec/schemas/`, `protocol.json` | installer smoke, upgrade compatibility, `MANAGED` + manifest |
+| Shipping | `install.sh`, `install-{cursor,opencode,codex}.sh`, `openspec/schemas/`, `protocol.json` | installer smoke, upgrade compatibility, `MANAGED` + manifest |
 | Repo-only | `.claude/tests/**`, `dashboard/`, `website/`, `examples/`, `docs/` | `run-all.sh` |
 | Release | `VERSION`, `CHANGELOG.md`, `Formula/`, `.github/workflows/` | `RELEASING.md`; rehearse with `dry_run` |
 
