@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`agents acquire` no longer pretends to accept a takeover.** Its flag spec
+  was copied from `agents release` and accepted `--force` and `--decision-ref`,
+  but `acquire()` reads nothing but `--owner`. Both were swallowed in silence,
+  so a host reaching for a takeover got a plain contended acquire and an exit
+  code that read as a considered refusal rather than a flag the runtime never
+  saw. Takeover belongs to `release`, which frees the resource so the next
+  acquire can win it fairly; the registry usage already said `--owner` alone,
+  so the parser is the half that changed. Both flags now fail with the
+  supported surface named. Files:
+  `.claude/harness/runtime/core/cli-router.mjs`,
+  `.claude/tests/harness/contracts/planning-diagnostics.sh`.
+
 ## [3.2.17] - 2026-08-13
 
 ### Added
