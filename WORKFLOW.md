@@ -154,6 +154,16 @@ claude-foundation proof run <change>
 Required evidence that is failed, missing, stale, erroneous, or inconclusive
 blocks landing.
 
+A gate whose provider executed and failed has three exits, all printed beside
+the blocker: fix the cause and re-run, rewire the provider in `execution.yaml`,
+or withdraw the gate on record with `claude-foundation change waive <change>
+--capability <c> --reason <why> --decision-ref <ref>`. A waiver removes the
+capability from the required set while the claim keeps declaring it; it is
+carried as a `user-waived` advisory in the proof record and named on the
+`LAND READY` line, receipts already earned stay valid, and `--revoke` restores
+the requirement. There is no route that lands a failing proof, and `review`
+and `acceptance` keep their own waiver and withdrawal routes.
+
 Execution adapters run project-owned commands. `test-discovery` produces
 two receipts from one process; `playwright` consumes a structured JSON report
 and requires claim annotations. The scheduler reuses valid receipts,

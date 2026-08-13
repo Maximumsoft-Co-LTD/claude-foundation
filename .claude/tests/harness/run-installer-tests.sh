@@ -129,10 +129,10 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 assert_eq "agent command surface is bounded" "18" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 16 as of the public `hash <change> [provider]` route — the workspace hash a
-# signed CI envelope must bind, documented in EVIDENCE.md but previously only
-# reachable through the deprecated runtime namespace.
-assert_eq "conditional recovery surface is bounded" "16" \
+# 17 as of `change waive` — the recorded withdrawal of one failing capability
+# gate under a host-user decision; before that, 16 as of the public
+# `hash <change> [provider]` route the signed CI envelope binds.
+assert_eq "conditional recovery surface is bounded" "17" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \

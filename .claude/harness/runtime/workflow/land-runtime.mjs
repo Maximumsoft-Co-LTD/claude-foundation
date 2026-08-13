@@ -188,7 +188,12 @@ export function createLandRuntime({
           row.taskKind || "ambiguous"}): requested ${row.requestedTier}, ran ${
           row.actualModel || "unreported"} — ${row.reason}`).join("\n")}`);
     const multiRepository = state.repositories && Object.keys(state.repositories).length > 1;
-    console.log(`LAND READY ${id}\n  workspace: ${hash}\n  next: claude-foundation land ${
+    // A waived gate must be visible in the same breath as the word READY:
+    // landing with a withdrawn requirement is legitimate, hiding it is not.
+    const waived = (state.waivers || []).map((row) =>
+      `${row.capability} (${row.authority?.reference || "user decision"})`);
+    console.log(`LAND READY ${id}\n  workspace: ${hash}${
+      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}\n  next: claude-foundation land ${
       multiRepository ? "resume" : "archive"} ${id}`);
     return { archived: false, state, hash };
   }

@@ -47,7 +47,7 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "description": "Describe the command surface; every command also answers --help."
+      "description": "Describe both surfaces — the change-loop host commands and the CLI commands; every command also answers --help."
     },
     {
       "name": "change new",
@@ -71,7 +71,7 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "description": "Persist ambiguity, impact, coupling, security, expected surface, and review decisions."
+      "description": "Persist ambiguity, impact, coupling, size, security, expected surface, review, and acceptance decisions."
     },
     {
       "name": "change validate",
@@ -266,6 +266,14 @@
       "description": "Retire a change that cannot be proven, quarantining its record after an explicit host-recorded user decision."
     },
     {
+      "name": "change waive",
+      "usage": "change waive <change> --capability <capability> --reason <why> --decision-ref <ref> [--revoke]",
+      "audience": "conditional",
+      "kind": "authority",
+      "idempotent": false,
+      "description": "Withdraw one failing capability gate after an explicit host-recorded user decision; recorded in proof advisories and at Land, never a force-land. Review and acceptance keep their own routes."
+    },
+    {
       "name": "init",
       "usage": "init [target-path] [--host claude|cursor|opencode|codex] [options]",
       "audience": "admin",
@@ -386,7 +394,7 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "description": "Release a host-managed resource lease; --force takes over a lease whose owner crashed."
+      "description": "Release a host-managed resource lease; --force takes over another owner's lease, and one that has not expired also needs --decision-ref because a worker may still be running it."
     },
     {
       "name": "telemetry sync",
@@ -430,11 +438,11 @@
     },
     {
       "name": "sandbox inspect",
-      "usage": "sandbox inspect <change> [--json]",
+      "usage": "sandbox inspect <change> [--unattended --attestation <file>] [--json]",
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "description": "Inspect isolation diagnostics."
+      "description": "Inspect isolation diagnostics; with --unattended it also gates, failing when the security boundary is unsafe."
     },
     {
       "name": "sandbox apply",
@@ -541,6 +549,7 @@
     "start",
     "resolve",
     "abandon",
+    "waive",
     "audit-change",
     "changes",
     "providers",

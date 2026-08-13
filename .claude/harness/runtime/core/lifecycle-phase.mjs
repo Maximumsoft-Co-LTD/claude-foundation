@@ -28,6 +28,7 @@ export const PHASE_BY_COMMAND = {
   resolve: "change",
   validate: "change",
   abandon: "change",
+  waive: "change",
   "audit-change": "change",
   "evidence-detect": "change",
   "evidence-init": "change",

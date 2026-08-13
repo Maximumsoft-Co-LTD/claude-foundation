@@ -397,8 +397,15 @@ export function createChangeValidationRuntime({
     const state = loadRuntime(id);
     const contract = evidence(id);
     const providers = contract.providers || {};
+    // A waiver withdraws one capability's enforcement on a recorded user
+    // decision (`change waive`). The claim keeps declaring the capability —
+    // that is what keeps the record honest — but nothing requires it here, so
+    // the next finalize simply no longer asks for it. `waiveGate` refuses
+    // `review` and `acceptance`, which own their documented routes.
+    const waived = new Set((state.waivers || []).map((row) => row.capability));
     const required = new Set();
     const addCapability = (capability, repositories = []) => {
+      if (waived.has(capability)) return;
       const instances = Object.entries(providers).filter(([provider, config]) => {
         if (providerCapability(provider, config) !== capability) return false;
         if (!config.repository || repositories.length === 0) return true;
@@ -410,7 +417,10 @@ export function createChangeValidationRuntime({
     for (const claim of contract.claims) {
       for (const capability of claim.capabilities) {
         addCapability(capability, claim.repositories || []);
-        if (capability === "test") addCapability("discovery", claim.repositories || []);
+        // Discovery exists only as test's counting half; a waived test must
+        // not leave a stranded discovery gate no provider will ever write.
+        if (capability === "test" && !waived.has("test"))
+          addCapability("discovery", claim.repositories || []);
       }
     }
     if (reviewPolicy(id, state, contract).required) addCapability("review");
@@ -458,14 +468,80 @@ export function createChangeValidationRuntime({
   // does not get this treatment: dropping an inferred capability there would
   // under-require evidence, so it must still stop.
   function advisoryCapabilities(id) {
-    if (!changedSurfaceResolvable(id)) return [];
-    return policyCapabilitySplit(id).advisory.map((capability) => ({
-      capability,
-      trigger: policyCapabilityTrigger(id, capability),
-      reason: "policy-inferred-unwired",
-      next: `configure a project-owned ${capability} provider in openspec/changes/${
-        id}/execution.yaml, or accept the advisory`
+    // Waived gates ride the same reporting channel: advisories already flow
+    // into readiness, validate output, the proof record, and the archive, so a
+    // landing with a withdrawn gate can never read as one that never required
+    // it. Reported before the surface guard — a waiver is state, not surface,
+    // and must not disappear in the states where the surface is unresolvable.
+    const waived = (loadRuntime(id).waivers || []).map((row) => ({
+      capability: row.capability,
+      reason: "user-waived",
+      detail: row.reason,
+      authority: row.authority,
+      recordedAt: row.recordedAt,
+      next: `restore it: claude-foundation change waive ${id} --capability ${
+        row.capability} --revoke --decision-ref <ref>`
     }));
+    if (!changedSurfaceResolvable(id)) return waived;
+    return [
+      ...policyCapabilitySplit(id).advisory.map((capability) => ({
+        capability,
+        trigger: policyCapabilityTrigger(id, capability),
+        reason: "policy-inferred-unwired",
+        next: `configure a project-owned ${capability} provider in openspec/changes/${
+          id}/execution.yaml, or accept the advisory`
+      })),
+      ...waived
+    ];
+  }
+
+  // The third exit from a gate that executed and failed — beside fixing the
+  // code and rewiring the provider. It withdraws the capability's enforcement
+  // on a recorded host-user decision; it never lands a failing proof, because
+  // proof still has to end "pass" over the reduced required set. Deliberately
+  // absent from `contractFingerprint`: a waiver is subtractive and cannot
+  // change what any other provider's receipt attested, so the receipts already
+  // earned stay valid instead of being re-run to remove a requirement.
+  function waiveGate(id, flags = {}) {
+    const capability = String(flags.capability || "").trim();
+    const decisionRef = String(flags["decision-ref"] || "").trim();
+    const reason = String(flags.reason || "").trim();
+    if (!capability) fail("change waive requires --capability <capability>");
+    if (!decisionRef)
+      fail("change waive requires --decision-ref <host-user-decision>; ask the user to authorize withdrawing this gate before recording it");
+    const state = loadRuntime(id);
+    if (state.status === "archived") fail(`change '${id}' is already archived`);
+    const waivers = state.waivers || [];
+    if (flags.revoke) {
+      if (!waivers.some((row) => row.capability === capability))
+        fail(`capability '${capability}' has no recorded waiver to revoke`);
+      state.waivers = waivers.filter((row) => row.capability !== capability);
+      saveRuntime(state);
+      console.log(`WAIVER REVOKED ${id}/${capability}\n  the capability is required again\n  next: claude-foundation proof run ${id}`);
+      return;
+    }
+    if (!reason) fail("change waive requires --reason <why>");
+    // Each of these gates owns a documented route built to keep provenance a
+    // generic waiver would bypass.
+    if (capability === "review")
+      fail("review cannot be waived here; a solo project sets \"review\": {\"independence\": \"self\"} (or {\"diversity\": \"single-model\"}) in foundation.json, which records the waiver on the receipt");
+    if (capability === "acceptance")
+      fail(`acceptance cannot be waived here; withdraw the requirement instead: claude-foundation change resolve ${id} --acceptance-not-required (a claim that declares capability 'acceptance' must drop it in evidence.yaml)`);
+    if (waivers.some((row) => row.capability === capability))
+      fail(`capability '${capability}' is already waived`);
+    // Waiving what is not required would record a decision about nothing.
+    const required = requiredProviders(id);
+    if (!required.includes(capability) && !required.some((provider) =>
+      providerCapability(provider, providerConfig(id, provider)) === capability))
+      fail(`capability '${capability}' is not required by change '${id}'; nothing to waive`);
+    state.waivers = [...waivers, {
+      capability,
+      reason,
+      authority: { kind: "host-user-decision", reference: decisionRef },
+      recordedAt: now()
+    }];
+    saveRuntime(state);
+    console.log(`GATE WAIVED ${id}/${capability}\n  reason: ${reason}\n  decision: ${decisionRef}\n  recorded in proof advisories; the claim keeps declaring it\n  next: claude-foundation proof run ${id}`);
   }
 
   function evidenceDetectionValue(id) {
@@ -583,6 +659,7 @@ export function createChangeValidationRuntime({
     taskBlocks,
     taskMetadata,
     traceabilityAuditValue,
-    validate
+    validate,
+    waiveGate
   };
 }

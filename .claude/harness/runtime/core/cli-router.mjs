@@ -3,7 +3,7 @@ import { LIFECYCLE_PHASES } from "./lifecycle-phase.mjs";
 export async function routeRuntimeCommand(command, values, api) {
   const {
     parseFlags, parseStrictCommandFlags, fail, createChange, rapidStartTemplate,
-    startAtomic, resolveChange, abandonChange, showChanges, showProviders, showRepositories,
+    startAtomic, resolveChange, abandonChange, waiveGate, showChanges, showProviders, showRepositories,
     foundationPolicy, showAgentPlan, showAgentTask, acquireAgentLease,
     releaseAgentLease, prepareClaudeTelemetry, recordPhaseContext, showPacket,
     showMetrics, execObserved, continueBudget, doctor, validate, showTraceabilityAudit,
@@ -57,6 +57,14 @@ export async function routeRuntimeCommand(command, values, api) {
       });
       if (rest.length !== 1) die("change abandon requires exactly one change");
       abandonChange(rest[0], flags); break;
+    }
+    case "waive": {
+      const { flags, rest } = parseStrictCommandFlags(values, "change waive", {
+        boolean: ["revoke"],
+        value: ["capability", "reason", "decision-ref"]
+      });
+      if (rest.length !== 1) die("change waive requires exactly one change");
+      waiveGate(rest[0], flags); break;
     }
     case "describe":
       describeCommand(values.find((value) => !value.startsWith("-")) || null,

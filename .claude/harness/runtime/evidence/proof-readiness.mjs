@@ -453,8 +453,12 @@ export function createProofReadinessRuntime({
     if (!quiet) {
       console.log(`PROOF PREFLIGHT ${id}: ready\n  stage: ${stage}\n  workspace: ${value.workspaceHash}`);
       for (const advisory of value.advisories || [])
-        console.error(`  ADVISORY ${advisory.capability}: inferred from ${
-          advisory.trigger || "the changed surface"} with no provider wired; not blocking`);
+        console.error(advisory.reason === "user-waived"
+          ? `  WAIVED ${advisory.capability}: withdrawn by ${
+            advisory.authority?.reference || "user decision"}${
+            advisory.detail ? ` — ${advisory.detail}` : ""}; not blocking`
+          : `  ADVISORY ${advisory.capability}: inferred from ${
+            advisory.trigger || "the changed surface"} with no provider wired; not blocking`);
     }
     return true;
   }

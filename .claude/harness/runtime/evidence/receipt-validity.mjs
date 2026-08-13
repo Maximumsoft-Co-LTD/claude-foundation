@@ -8,6 +8,11 @@ import { join } from "node:path";
 // every staleness class.
 const VALIDITY_RECOVERY = {
   missing: (id) => `no evidence has been executed for this workspace; run: claude-foundation proof run ${id}`,
+  // The one gate class that had no named exit: a provider that ran and failed.
+  // "Re-run" is correct when the gate caught a real defect and useless when
+  // the gate itself is wrong, so all three honest exits are stated. There is
+  // deliberately no route that lands a failing proof.
+  fail: (id, provider) => `provider '${provider}' executed and failed. Fix the cause and re-run: claude-foundation proof run ${id}. If the gate itself is wrong, rewire it in openspec/changes/${id}/execution.yaml. If the user decides to land without it, withdraw it on record: claude-foundation change waive ${id} --capability <capability> --reason <why> --decision-ref <ref>`,
   stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them`,
   "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation proof run ${id}`,
   "contract-stale": (id) => `evidence.yaml changed after this receipt; re-run: claude-foundation proof run ${id}`,

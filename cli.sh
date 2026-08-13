@@ -70,7 +70,7 @@ run_runtime() {
   fi
   local phase=""
   case "${1:-}" in
-    new|start|resolve|validate|audit-change|abandon|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
+    new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-status|authority-record) phase="prove" ;;
     land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
@@ -294,7 +294,10 @@ case "${1:-}" in
       abandon)
         need_arg "change abandon" "${1:-}"
         run_runtime write abandon "$@" ;;
-      *) fail "change requires 'new', 'start', 'resolve', 'validate', 'audit', or 'abandon'" ;;
+      waive)
+        need_arg "change waive" "${1:-}"
+        run_runtime write waive "$@" ;;
+      *) fail "change requires 'new', 'start', 'resolve', 'validate', 'audit', 'abandon', or 'waive'" ;;
     esac ;;
   validate)
     warn "'validate' is deprecated; use 'change validate'"

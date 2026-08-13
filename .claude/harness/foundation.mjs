@@ -763,7 +763,8 @@ const {
   showEvidenceDoctor,
   showTraceabilityAudit,
   traceabilityAuditValue,
-  validate
+  validate,
+  waiveGate
 } = changeValidationRuntime;
 const { runCommand, startServiceSession } = createProcessRuntime({
   root: ROOT,
@@ -1501,6 +1502,7 @@ await routeRuntimeCommand(command, values, {
   startAtomic,
   resolveChange,
   abandonChange,
+  waiveGate,
   showChanges,
   showProviders,
   showRepositories,

@@ -1057,3 +1057,86 @@ if [ -n "$tiny_copy_policy_backup" ]; then
 else
   rm -f foundation.json
 fi
+
+# A gate that executed and failed has a recorded exit: `change waive` withdraws
+# the capability on an explicit host-recorded user decision, the receipts
+# already earned stay valid, and the proof record carries the waiver. It is
+# never a force-land — proof still has to end "pass", just over the reduced
+# required set — and review/acceptance keep their own documented routes.
+node .claude/harness/foundation.mjs new 'Waivable gate' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve waivable-gate \
+  --impact low --coupling isolated >/dev/null
+printf '%s\n' '#!/usr/bin/env sh' \
+  'count=0' \
+  '[ ! -f .foundation/waive-pass-count.txt ] || count="$(cat .foundation/waive-pass-count.txt)"' \
+  'count=$((count + 1))' \
+  'printf "%s\\n" "$count" > .foundation/waive-pass-count.txt' \
+  'printf "%s\\n" "{\"numTotalTests\":1}"' > waive-pass.sh
+printf '%s\n' '#!/usr/bin/env sh' 'exit 1' > waive-fail.sh
+chmod +x waive-pass.sh waive-fail.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "test": {"adapter":"test-discovery","command":["sh","waive-pass.sh"],"minimum":1,"inputs":["waive-pass.sh"]},' \
+  '    "static-analysis": {"adapter":"command","command":["sh","waive-fail.sh"],"inputs":["waive-fail.sh"]}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"waive-outcome","scenario":"A failing gate can be withdrawn on record","impact":"low","capabilities":["test","static-analysis"]}' \
+  '  ]' \
+  '}' > openspec/changes/waivable-gate/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/waivable-gate/tasks.md
+rm openspec/changes/waivable-gate/tasks.md.bak
+# The browser-adapter block above leaves its activeProofRun behind by design;
+# to the cross-change executing guard that reads as live work against this
+# same repository, so clear it the way the cleared-run precedent above does.
+jq 'del(.activeProofRun)' .foundation/runtime/browser-adapter.json > "$TMP/waive-clear-run.json"
+cp "$TMP/waive-clear-run.json" .foundation/runtime/browser-adapter.json
+node .claude/harness/foundation.mjs proof-execute waivable-gate >/dev/null 2>&1 || true
+assert_eq "the failing provider recorded a fail receipt" "fail" \
+  "$(jq -r '.status' .foundation/receipts/waivable-gate/static-analysis.json)"
+if prove_fail_output="$(node .claude/harness/foundation.mjs prove waivable-gate 2>&1)"; then
+  fail "a failing gate must block finalize"
+else
+  assert_contains "a failed gate names the waive route beside the blocker" \
+    "$prove_fail_output" "change waive waivable-gate"
+fi
+assert_cmd_fails_with "waive requires a host-recorded decision reference" \
+  "requires --decision-ref" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability static-analysis --reason "vendor linter broken"
+assert_cmd_fails_with "waive requires a reason" "requires --reason" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability static-analysis --decision-ref fixture://user/waive-static
+assert_cmd_fails_with "review keeps its own waiver route" \
+  "review cannot be waived here" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability review --reason "no reviewer" --decision-ref fixture://user/waive-review
+assert_cmd_fails_with "acceptance keeps its withdrawal route" \
+  "acceptance cannot be waived here" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability acceptance --reason "no acceptor" --decision-ref fixture://user/waive-acceptance
+assert_cmd_fails_with "a capability that is not required cannot be waived" \
+  "not required" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability deployment --reason "unused" --decision-ref fixture://user/waive-deployment
+assert_cmd_zero "a failing gate is waived on user authority" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability static-analysis --reason "vendor linter broken upstream" \
+    --decision-ref fixture://user/waive-static
+waive_pass_runs="$(tr -d '\n' < .foundation/waive-pass-count.txt)"
+assert_cmd_zero "proof run passes over the reduced required set" \
+  node .claude/harness/foundation.mjs proof-run waivable-gate
+assert_eq "the waive re-prove executed no providers" "$waive_pass_runs" \
+  "$(tr -d '\n' < .foundation/waive-pass-count.txt)"
+assert_cmd_zero "the proof record carries the waiver as an advisory" \
+  jq -e '.advisories[] | select(.capability == "static-analysis" and .reason == "user-waived" and .authority.reference == "fixture://user/waive-static")' \
+  .foundation/receipts/waivable-gate/proof.json
+assert_cmd_zero "the waived provider left the proof provider set" \
+  jq -e '.providers | index("static-analysis") | not' \
+  .foundation/receipts/waivable-gate/proof.json
+assert_cmd_zero "the waiver revokes on the same authority" \
+  node .claude/harness/foundation.mjs waive waivable-gate \
+    --capability static-analysis --revoke --decision-ref fixture://user/restore-static
+assert_cmd_fails_with "a revoked waiver blocks finalize again" "static-analysis" \
+  node .claude/harness/foundation.mjs prove waivable-gate

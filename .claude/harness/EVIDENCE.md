@@ -386,3 +386,28 @@ Reuse is bound to:
 Reports, logs, and attachments are copied immediately into
 `.foundation/evidence/<change>/<proof-run>/`. `proof audit` verifies copied
 receipt and artifact digests even after sandbox cleanup or archival.
+
+## A gate that executed and failed
+
+A provider that ran and exited non-zero blocks proof with validity `fail`. It
+has exactly three honest exits, and the blocker output prints all three:
+
+- fix the cause and `proof run` again — right when the gate caught a defect;
+- rewire the provider in `execution.yaml` — right when the gate is wrong;
+- withdraw the gate on record — right when the user decides to land without it:
+
+```sh
+claude-foundation change waive <change> --capability <capability> \
+  --reason <why> --decision-ref <host-user-decision>
+```
+
+The waiver removes the capability from the required set; the claim keeps
+declaring it, and the waiver is carried as a `user-waived` advisory in proof
+readiness, the proof record, the archive, and on the `LAND READY` line. The
+receipts already earned stay valid — a waiver is subtractive and cannot change
+what any other provider attested — so the next `proof run` executes nothing.
+`--revoke` restores the requirement. There is no route that lands a failing
+proof. `review` and `acceptance` are refused here: review is waived through
+`review.independence` / `review.diversity` in `foundation.json`, and acceptance
+is withdrawn through `change resolve --acceptance-not-required` or by dropping
+the capability from the claim.

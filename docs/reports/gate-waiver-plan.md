@@ -1,8 +1,9 @@
 # Plan: give a failing gate a recorded way out of the loop
 
-Status: proposed, not entered into the change loop.
-Written against `1fec967` (the `codeHash` packet rebinding is already in
-HEAD; nothing here depends on the uncommitted hardening batch in the tree).
+Status: implemented at the root (change-loop-skip lane: the loop's own gate
+logic is what changed), verified by `run-all.sh`; recorded per the playbook.
+Written against `89d4f13`; line references verified at that revision. The
+`codeHash` packet rebinding and the hardening batch are already in HEAD.
 Lane: Runtime (`.claude/harness/runtime/**`) plus Instruction
 (`commands.json`, command docs) — gates are the wiring test, protocol pins,
 a regression at the required-providers seam, and doc consistency.
@@ -26,7 +27,7 @@ executed and failed. The loop now has exactly one printed route: re-run.
 
 Every other gate class already has a named exit. Review has two waivers in
 `foundation.json` (`review.independence`, `review.diversity` —
-`evidence-contract.mjs:556-580`). Acceptance has withdrawal
+`evidence-contract.mjs:559-583`). Acceptance has withdrawal
 (`change resolve --acceptance-not-required`, or dropping the capability from
 the claim — `proof-readiness.mjs:184-193`). A policy-inferred capability
 nobody wired is downgraded to a reported advisory (`bec90ec`,
@@ -41,7 +42,7 @@ from the claim in `evidence.yaml`, `change validate`, re-prove. Three defects:
    afterwards as "never required", not "required, then withdrawn by a named
    decision". The review waivers set the standard here: a waiver is a trigger
    that travels into the packet and the receipt "instead of quietly
-   disappearing" (`evidence-contract.mjs:558-562`).
+   disappearing" (`evidence-contract.mjs:559-566`).
 3. **The exit costs a full re-prove.** Editing `evidence.yaml` changes
    `contractFingerprint`, which every receipt binds
    (`receipt-validity.mjs:53`), so the twelve valid receipts all go
@@ -93,7 +94,7 @@ end of the derivation (`change-validation.mjs:396-421`): a capability in
 not added. Deliberately *after* the review/acceptance forcing logic, and with
 one asymmetry called out: waiving a risk capability (say `security-static`)
 does **not** lift the review it forced — `reviewPolicy` reads the claim's
-capabilities (`evidence-contract.mjs:540-545`), which the waiver leaves alone.
+capabilities (`evidence-contract.mjs:543-548`), which the waiver leaves alone.
 Withdrawing the automated check must not also silently withdraw the human one.
 
 **3. The waiver is reported everywhere the advisories already flow.**
@@ -187,7 +188,7 @@ prevent. Item 6 can trail by one commit.
   the root, no boundary moves; confirm against `wiring-check.mjs`.
 - `contractFingerprint` byte-identical for every change with no waiver — the
   same backwards-compatibility rule the review waivers document
-  (`evidence-contract.mjs:570-574`): a project that never opts in must keep
+  (`evidence-contract.mjs:573-577`): a project that never opts in must keep
   producing the shape it produced before the feature existed. Guarded by the
   upgrade-compat suite.
 
