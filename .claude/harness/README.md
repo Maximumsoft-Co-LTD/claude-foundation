@@ -127,7 +127,7 @@ claude-foundation doctor --stage prove --change <change>
 | `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |
 | `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
 | `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
-| `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and fast-forwards target moves the sandbox left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
+| `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and reconciles a moved target: a worktree replays onto the new commit, a copy fast-forwards what it left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
 | `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |
 | `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
@@ -220,12 +220,28 @@ claude-foundation sandbox sync <change>
 Synchronization increments the change revision and invalidates receipts or
 proofs that no longer describe the current agreement.
 
-For an isolated copy, sync also reconciles the moving target: files another
-change landed that this sandbox never touched fast-forward into the sandbox
-(baseline included), and a file both sides edited is named as a `CONFLICT` at
-sync rather than discovered at Land. Merge the target's version into the
-sandbox copy, then declare it with `--resolve <path>` (comma-separate several
-paths). Packet artifacts are the other direction: their source of truth is
+Sync is also how a moving target is reconciled, and the command is the same in
+either sandbox mode.
+
+For a **git worktree**, sync replays the sandbox's diff onto the target's
+current commit and reports `rebased: <base> -> <head>`; commits made inside the
+sandbox flatten into that diff, which nothing downstream reads. The replay is
+verified in a throwaway worktree first, so a hunk that no longer applies leaves
+the sandbox untouched and names each rejected file as a `CONFLICT` — merge the
+target's version in the sandbox worktree and sync again.
+
+For an **isolated copy**, files another change landed that this sandbox never
+touched fast-forward into the sandbox (baseline included), and a file both sides
+edited is named as a `CONFLICT` at sync rather than discovered at Land. Merge
+the target's version into the sandbox copy, then declare it with
+`--resolve <path>` (comma-separate several paths).
+
+A target that moved and could not be reconciled is always reported, never
+silent: `sandbox inspect <change>` shows the recorded base against the target's
+head, and `land check` refuses a worktree sandbox whose base the target has
+left, naming the replay as the way out.
+
+Packet artifacts are the other direction: their source of truth is
 `openspec/changes/<change>/` in the target, so a packet file edited only in
 the sandbox blocks the sync until the edit is ported there — only `tasks.md`
 ticks merge back automatically.

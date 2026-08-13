@@ -117,13 +117,28 @@ change, then synchronize it without losing unchanged completed tasks:
 claude-foundation sandbox sync <change>
 ```
 
-Sync increments the revision and invalidates previous proof. For an isolated
-copy it also fast-forwards files the target moved (another change landing)
-while the sandbox left them alone, names any double-edited file as a
-`CONFLICT` immediately, and accepts `--resolve <path,path>` once the target's
-version has been merged into the sandbox copy. Packet artifacts flow the other
-way: edit them in `openspec/changes/<change>/` in the target — a packet file
-edited only in the sandbox blocks the sync; only `tasks.md` ticks merge back.
+Sync increments the revision and invalidates previous proof. It is also how a
+target that moved during Build — a teammate's pull, another change landing — is
+reconciled, and the answer is the same command in either sandbox mode:
+
+- A **git worktree** is pinned to the commit it branched from. Sync replays the
+  sandbox's diff onto the current commit and reports
+  `rebased: <base> -> <head>`; commits made inside the sandbox flatten into that
+  diff. If a hunk no longer applies, the sandbox is left untouched and each
+  rejected file is named as a `CONFLICT` — merge the target's version in the
+  sandbox worktree and sync again.
+- An **isolated copy** fast-forwards files the target moved while the sandbox
+  left them alone, names any double-edited file as a `CONFLICT` immediately, and
+  accepts `--resolve <path,path>` once the target's version has been merged into
+  the sandbox copy.
+
+A target that moved and could not be reconciled is always reported, never
+silent. `sandbox inspect <change>` shows the recorded base against the target's
+head, and `land check` refuses a worktree sandbox whose base the target has left.
+
+Packet artifacts flow the other way: edit them in `openspec/changes/<change>/`
+in the target — a packet file edited only in the sandbox blocks the sync; only
+`tasks.md` ticks merge back.
 
 ### `/prove <change>`
 

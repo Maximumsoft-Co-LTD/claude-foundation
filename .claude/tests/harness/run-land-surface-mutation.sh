@@ -22,7 +22,14 @@ restore() {
   [ -f "$WORK/apply-recovery.mjs" ] && cp "$WORK/apply-recovery.mjs" "$DELETION"
   rm -rf "$WORK"
 }
-trap restore EXIT INT TERM
+
+# Serialized against every other in-place mutation of this checkout, and
+# refused outright on a tree that still carries one. Two runs overlapping
+# restores one run's injected fault as the other's "clean" source.
+. "$ROOT/.claude/tests/lib/mutation-lock.sh"
+acquire_mutation_lock "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
+trap 'restore; release_mutation_lock' EXIT INT TERM
+assert_no_injected_fault "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
 
 cp "$SURFACE" "$WORK/state-runtime.mjs"
 cp "$DELETION" "$WORK/apply-recovery.mjs"
@@ -49,7 +56,7 @@ const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
   /if \(gitAware && !tracked\.has\(rel\) && !isCurrentChangePath\(rel, id\) &&\s*\n\s*!declared\(rel\)\) continue;/,
-  "// mutated: surface filter removed");
+  "// FOUNDATION-INJECTED-FAULT: surface filter removed");
 if (mutated === source) { console.error("surface fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
@@ -68,7 +75,7 @@ const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /!declared\(entry\.path\)\);/, "true);");
+  /!declared\(entry\.path\)\);/, "true /* FOUNDATION-INJECTED-FAULT */);");
 if (mutated === source) { console.error("deletion fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE

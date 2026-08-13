@@ -60,6 +60,25 @@ export function declaredPathMatcher(globs) {
     rel === prefix || rel.startsWith(`${prefix}/`));
 }
 
+// The git pathspec separating a change's own code work from everything a
+// sandbox carries but does not own: the packet (whose source of truth is the
+// target), provider output, machine state, and nested repositories.
+//
+// Shared because two callers must agree on it exactly. `apply` projects the
+// sandbox through this pathspec, and the worktree rebase replays the sandbox
+// through it onto a moved target. A path one includes and the other excludes is
+// either work silently dropped at Land or a teammate's file replayed as this
+// change's own.
+export function sandboxCodePathspec(changeId, submoduleRelativePaths = []) {
+  return [
+    ".",
+    `:(exclude)openspec/changes/${changeId}/**`,
+    ":(exclude)coverage/**", ":(exclude)test-results/**",
+    ":(exclude)playwright-report/**", ":(exclude).foundation/**",
+    ...submoduleRelativePaths.map((rel) => `:(exclude)${rel}`)
+  ];
+}
+
 // Every ancestor directory of a tracked file is itself worth descending into,
 // which a directory-level filter has to know before it reaches the file.
 export function trackedPathSet(relativePaths) {

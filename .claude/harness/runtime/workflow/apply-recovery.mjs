@@ -23,6 +23,46 @@ export function undeclaredDeletions(entries, declared) {
     !declared(entry.path));
 }
 
+// A worktree sandbox is pinned to the commit it branched from, so a target
+// that moved — a teammate's pull, another change landing — leaves the proven
+// projection describing a base the target no longer has.
+//
+// Built here because three call sites state the same condition and used to
+// disagree about whether it had a way out: `land check`, both apply guards, and
+// the multi-repository pointer stage. A bare refusal reads as permanent even
+// though re-basing the sandbox is the ordinary fix, so the exits are named.
+export function targetHeadMovedDecision({
+  changeId, recordedBase, currentHead, multiRepository = false, action = "Applying"
+}) {
+  return {
+    kind: "control-head-moved",
+    summary: `The target repository moved to a different commit after this change's sandbox was created. ${
+      action} now would project work proven against a base the target no longer has.`,
+    options: [
+      // A multi-repository sandbox holds a worktree per repository, and a sync
+      // reconciles only the root; offering it here would advertise a partial
+      // fix as a whole one.
+      ...(multiRepository ? [] : [{
+        id: "sync",
+        outcome: `Replay the sandbox onto the current commit and re-prove it: 'claude-foundation sandbox sync ${
+          changeId}', then 'claude-foundation proof run ${changeId}'.`
+      }]),
+      {
+        id: "inspect",
+        outcome: "Compare the recorded base with the current target history before choosing."
+      },
+      {
+        id: "abandon",
+        outcome: "Retire this change and reopen it against the current commit."
+      },
+      { id: "pause", outcome: "Change nothing and leave both workspaces as they are." }
+    ],
+    recommended: multiRepository ? "inspect" : "sync",
+    recordedBase: recordedBase || null,
+    currentHead: currentHead || null
+  };
+}
+
 const UNRESOLVED_APPLY_STATUS = [
   "prepared", "applying", "rolling-back", "manual-recovery"
 ];

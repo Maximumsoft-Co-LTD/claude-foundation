@@ -16,11 +16,14 @@ import test from "node:test";
 
 import { createStateRuntime } from "../../harness/runtime/core/state-runtime.mjs";
 import {
-  declaredPathMatcher
+  declaredPathMatcher, sandboxCodePathspec
 } from "../../harness/runtime/core/workspace-surface.mjs";
 import {
-  createApplyRecovery, projectionCounts, undeclaredDeletions
+  createApplyRecovery, projectionCounts, targetHeadMovedDecision, undeclaredDeletions
 } from "../../harness/runtime/workflow/apply-recovery.mjs";
+import {
+  createBlockedDecision
+} from "../../harness/runtime/core/blocked-decision.mjs";
 
 const EXCLUDED = new Set([".git", ".foundation", ".workflow", "node_modules"]);
 
@@ -260,4 +263,69 @@ test("a change with no transactions has nothing pending", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-land-empty-"));
   const { runtime } = recovery(root);
   assert.deepEqual(runtime.pendingApplyTransactions("confine-surface"), []);
+});
+
+// --- The moved-target stop, and the pathspec two callers have to agree on. ---
+// A worktree sandbox is pinned to the commit it branched from. The refusal was
+// bare, so it read as permanent; three call sites now state the same exits.
+
+test("a moved target offers replaying, and recommends it", () => {
+  const decision = targetHeadMovedDecision({
+    changeId: "confine-surface", recordedBase: "aaa", currentHead: "bbb"
+  });
+
+  assert.equal(decision.kind, "control-head-moved");
+  assert.equal(decision.recommended, "sync");
+  assert.equal(decision.recordedBase, "aaa");
+  assert.equal(decision.currentHead, "bbb");
+  const ids = decision.options.map((option) => option.id);
+  assert.deepEqual(ids, ["sync", "inspect", "abandon", "pause"]);
+  assert.match(decision.options[0].outcome, /sandbox sync confine-surface/);
+});
+
+// One worktree per repository, and sync reconciles only the root: offering it
+// here would advertise a partial fix as a whole one.
+test("a multi-repository sandbox is not offered a root-only replay", () => {
+  const decision = targetHeadMovedDecision({
+    changeId: "confine-surface", recordedBase: "aaa", currentHead: "bbb",
+    multiRepository: true
+  });
+
+  assert.equal(decision.recommended, "inspect");
+  assert.deepEqual(decision.options.map((option) => option.id),
+    ["inspect", "abandon", "pause"]);
+});
+
+// Enforced centrally rather than reviewed per call site, so a stop that offers
+// no real choice cannot ship.
+test("the moved-target stop satisfies the blocked-decision contract", () => {
+  const { blockedDecisionValue } = createBlockedDecision({
+    fail: (message) => { throw new Error(message); }
+  });
+  for (const multiRepository of [false, true])
+    assert.doesNotThrow(() => blockedDecisionValue("c", "control-head-moved",
+      targetHeadMovedDecision({
+        changeId: "c", recordedBase: "a", currentHead: "b", multiRepository
+      })));
+});
+
+// Apply projects the sandbox through this pathspec and the worktree replay
+// replays it through the same one. A path one includes and the other excludes
+// is either work dropped at Land or a teammate's file replayed as this change's.
+test("the sandbox code pathspec excludes what the change does not own", () => {
+  const pathspec = sandboxCodePathspec("confine-surface", ["vendor/api"]);
+
+  assert.equal(pathspec[0], ".");
+  for (const excluded of [
+    ":(exclude)openspec/changes/confine-surface/**",
+    ":(exclude)coverage/**",
+    ":(exclude)test-results/**",
+    ":(exclude)playwright-report/**",
+    ":(exclude).foundation/**",
+    ":(exclude)vendor/api"
+  ]) assert.ok(pathspec.includes(excluded), `missing ${excluded}`);
+});
+
+test("the pathspec needs no submodules to be well formed", () => {
+  assert.deepEqual(sandboxCodePathspec("x"), sandboxCodePathspec("x", []));
 });

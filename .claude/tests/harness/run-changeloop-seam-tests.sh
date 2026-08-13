@@ -809,6 +809,11 @@ assert_not_contains "a resolved conflict stops being named" "$resolved" "CONFLIC
 settled="$($F sandbox sync "$C")"
 assert_not_contains "the resolution advanced the baseline" "$settled" "CONFLICT"
 
+# The worktree half of this same seam — a moved target replayed onto, or named
+# as a conflict — lives in run-target-drift-tests.sh. It is a separate suite
+# only because run-target-drift-mutation.sh runs a whole suite three times, and
+# running these thirty scenarios for two of them dominated the whole run.
+
 # --- A packet edited only in the sandbox refuses to be clobbered. ------------
 # The packet's source of truth is the target copy; sync overwrites the sandbox
 # copy wholesale, and only tasks.md ticks merge back.

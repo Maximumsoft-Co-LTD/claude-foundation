@@ -1,56 +1,123 @@
 #!/usr/bin/env sh
 # Deterministic verification for the OpenSpec-native harness.
+#
+# Suites run concurrently. Every suite builds its own fixture under `mktemp -d`
+# and touches nothing in this repository, so nothing orders them — running them
+# one at a time spent most of the wall clock with the machine idle.
+#
+# The exception is marked `!` in the table below. A mutation suite deliberately
+# corrupts a file under `.claude/harness/` and restores it, so anything running
+# beside it reads a source that is briefly wrong and fails for a reason that has
+# nothing to do with it. Those run alone, after the rest.
+#
+# Output is buffered per suite and replayed in table order, so a parallel run
+# reads exactly like a serial one and stays diffable. `FOUNDATION_TEST_JOBS`
+# overrides the pool size; 1 restores fully serial execution.
 
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-failed=0
 
-run() {
-  label="$1"; shift
-  printf '▶ %s\n' "$label"
-  if "$@"; then printf '✓ %s\n\n' "$label"
-  else printf '✗ %s\n\n' "$label" >&2; failed=1
-  fi
+# label|command — `!` prefixes a label that must run with the repository to
+# itself. Commands are expanded by the child with $HERE and $ROOT in scope.
+suites() {
+  cat <<'TABLE'
+runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
+composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"
+single-source tables|node "$HERE/harness/run-single-source-tests.mjs"
+context budgets|sh "$HERE/harness/run-context-budget-tests.sh"
+agent contracts|sh "$HERE/harness/run-agent-contract-tests.sh"
+human interaction contracts|sh "$HERE/interview/run-interview-tests.sh"
+workflow documentation contracts|sh "$HERE/docs/run-doc-consistency.sh"
+packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"
+telemetry concurrency|sh "$HERE/harness/run-telemetry-concurrency-tests.sh"
+telemetry truth|node --test "$HERE/harness/run-telemetry-truth-tests.mjs"
+upgrade compatibility|sh "$HERE/harness/run-upgrade-compat-tests.sh"
+feedback isolation|sh "$HERE/harness/run-feedback-isolation-tests.sh"
+feedback review|sh "$HERE/harness/run-feedback-review-tests.sh"
+harness contracts|sh "$HERE/harness/run-harness-tests.sh"
+installer smoke|sh "$HERE/harness/run-installer-tests.sh"
+current hook contracts|sh "$HERE/hooks/run-hook-tests.sh"
+phase mutation guard|sh "$HERE/hooks/run-phase-mutation-guard-tests.sh"
+instruction contracts|sh "$HERE/harness/run-instruction-contract-tests.sh"
+instruction provenance and host execution|sh "$HERE/harness/run-provenance-contract-tests.sh"
+bounded infrastructure retry|node "$HERE/harness/run-bounded-retry-tests.mjs"
+blocked decision contracts|node "$HERE/harness/run-blocked-decision-tests.mjs"
+next-step contracts|node "$HERE/harness/run-next-step-tests.mjs"
+workspace surface|node "$HERE/harness/run-workspace-surface-tests.mjs"
+land surface|node --test "$HERE/harness/run-land-surface-tests.mjs"
+proof loop end to end|sh "$HERE/harness/run-proof-loop-tests.sh"
+change loop seams|sh "$HERE/harness/run-changeloop-seam-tests.sh"
+target drift|sh "$HERE/harness/run-target-drift-tests.sh"
+openspec version policy|node "$HERE/harness/run-openspec-version-tests.mjs"
+model tier drift|node "$HERE/harness/run-model-drift-tests.mjs"
+model tier drift join|node "$HERE/harness/run-model-drift-join-tests.mjs"
+model drift land gate|node "$HERE/harness/run-drift-gate-tests.mjs"
+spec sync verification|node "$HERE/harness/run-spec-sync-verify-tests.mjs"
+spec sync land gate|sh "$HERE/harness/run-specsync-gate-tests.sh"
+dashboard contracts|npm --prefix "$ROOT/dashboard" test
+!land surface mutation|sh "$HERE/harness/run-land-surface-mutation.sh"
+!target drift mutation|sh "$HERE/harness/run-target-drift-mutation.sh"
+TABLE
 }
 
-run "runtime syntax" node --check "$ROOT/.claude/harness/foundation.mjs"
-run "composition-root wiring" sh "$HERE/harness/run-wiring-tests.sh"
-run "single-source tables" node "$HERE/harness/run-single-source-tests.mjs"
-run "context budgets" sh "$HERE/harness/run-context-budget-tests.sh"
-run "agent contracts" sh "$HERE/harness/run-agent-contract-tests.sh"
-run "human interaction contracts" sh "$HERE/interview/run-interview-tests.sh"
-run "workflow documentation contracts" sh "$HERE/docs/run-doc-consistency.sh"
-run "packet scaling" sh "$HERE/harness/run-packet-scaling-tests.sh"
-run "telemetry concurrency" sh "$HERE/harness/run-telemetry-concurrency-tests.sh"
-run "telemetry truth" node --test "$HERE/harness/run-telemetry-truth-tests.mjs"
-run "upgrade compatibility" sh "$HERE/harness/run-upgrade-compat-tests.sh"
-run "feedback isolation" sh "$HERE/harness/run-feedback-isolation-tests.sh"
-run "feedback review" sh "$HERE/harness/run-feedback-review-tests.sh"
-run "harness contracts" sh "$HERE/harness/run-harness-tests.sh"
-run "installer smoke" sh "$HERE/harness/run-installer-tests.sh"
-run "current hook contracts" sh "$HERE/hooks/run-hook-tests.sh"
-run "phase mutation guard" sh "$HERE/hooks/run-phase-mutation-guard-tests.sh"
-run "instruction contracts" sh "$HERE/harness/run-instruction-contract-tests.sh"
-run "instruction provenance and host execution" sh "$HERE/harness/run-provenance-contract-tests.sh"
-run "bounded infrastructure retry" node "$HERE/harness/run-bounded-retry-tests.mjs"
-run "blocked decision contracts" node "$HERE/harness/run-blocked-decision-tests.mjs"
-run "next-step contracts" node "$HERE/harness/run-next-step-tests.mjs"
-run "workspace surface" node "$HERE/harness/run-workspace-surface-tests.mjs"
-run "land surface" node --test "$HERE/harness/run-land-surface-tests.mjs"
-run "land surface mutation" sh "$HERE/harness/run-land-surface-mutation.sh"
-run "proof loop end to end" sh "$HERE/harness/run-proof-loop-tests.sh"
-run "change loop seams" sh "$HERE/harness/run-changeloop-seam-tests.sh"
-run "openspec version policy" node "$HERE/harness/run-openspec-version-tests.mjs"
-run "model tier drift" node "$HERE/harness/run-model-drift-tests.mjs"
-run "model tier drift join" node "$HERE/harness/run-model-drift-join-tests.mjs"
-run "model drift land gate" node "$HERE/harness/run-drift-gate-tests.mjs"
-run "spec sync verification" node "$HERE/harness/run-spec-sync-verify-tests.mjs"
-run "spec sync land gate" sh "$HERE/harness/run-specsync-gate-tests.sh"
-run "dashboard contracts" npm --prefix "$ROOT/dashboard" test
+nth() { suites | sed -n "${1}p"; }
+label_of() { _l="${1%%|*}"; printf '%s' "${_l#!}"; }
+exclusive() { case "$1" in !*) return 0 ;; *) return 1 ;; esac; }
+
+# One suite, into its own buffer. Re-entered as a child so the pool below can be
+# a plain `xargs -P`; nothing else calls this form.
+if [ "${1:-}" = "--suite" ]; then
+  index="$2"; work="$3"
+  line="$(nth "$index")"
+  if eval "${line#*|}" > "$work/$index.out" 2>&1
+  then echo 0 > "$work/$index.status"
+  else echo 1 > "$work/$index.status"
+  fi
+  exit 0
+fi
+
+pool_size() {
+  [ -n "${FOUNDATION_TEST_JOBS:-}" ] && { echo "$FOUNDATION_TEST_JOBS"; return; }
+  cores="$( { nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null; } | head -1 )"
+  case "$cores" in "" | *[!0-9]*) cores=4 ;; esac
+  [ "$cores" -gt 8 ] && cores=8
+  [ "$cores" -lt 1 ] && cores=1
+  echo "$cores"
+}
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+TOTAL="$(suites | wc -l | tr -d ' ')"
+JOBS="$(pool_size)"
+
+shared=""
+alone=""
+index=1
+while [ "$index" -le "$TOTAL" ]; do
+  if exclusive "$(nth "$index")"; then alone="$alone $index"; else shared="$shared $index"; fi
+  index=$((index + 1))
+done
+
+printf '%s\n' $shared | xargs -P "$JOBS" -I@ sh "$0" --suite @ "$WORK"
+for index in $alone; do sh "$0" --suite "$index" "$WORK"; done
+
+# Replayed in table order: a parallel run has to read like a serial one.
+failed=0
+index=1
+while [ "$index" -le "$TOTAL" ]; do
+  label="$(label_of "$(nth "$index")")"
+  printf '▶ %s\n' "$label"
+  [ -f "$WORK/$index.out" ] && cat "$WORK/$index.out"
+  if [ "$(cat "$WORK/$index.status" 2>/dev/null || echo 1)" -eq 0 ]
+  then printf '✓ %s\n\n' "$label"
+  else printf '✗ %s\n\n' "$label" >&2; failed=1
+  fi
+  index=$((index + 1))
+done
 
 if [ "$failed" -eq 0 ]; then
-  echo "foundation tests: ALL SUITES PASS"
+  echo "foundation tests: ALL SUITES PASS ($TOTAL suites, ${JOBS}-way)"
   exit 0
 fi
 echo "foundation tests: SOME SUITES FAILED" >&2

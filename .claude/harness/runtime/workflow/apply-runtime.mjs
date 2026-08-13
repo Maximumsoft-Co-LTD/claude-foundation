@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifySpecSync } from "./spec-sync-verify.mjs";
-import { projectionCounts, undeclaredDeletions } from "./apply-recovery.mjs";
+import {
+  projectionCounts, targetHeadMovedDecision, undeclaredDeletions
+} from "./apply-recovery.mjs";
+import { sandboxCodePathspec } from "../core/workspace-surface.mjs";
 
 export function createApplyRuntime({
   root,
@@ -45,16 +48,9 @@ export function createApplyRuntime({
   fail
 }) {
   function applyPathspec(id, state) {
-    const pathspec = [
-      ".",
-      `:(exclude)openspec/changes/${id}/**`,
-      ":(exclude)coverage/**", ":(exclude)test-results/**",
-      ":(exclude)playwright-report/**", ":(exclude).foundation/**"
-    ];
-    for (const repository of selectedRepositories(id, state))
-      if (repository.type === "submodule")
-        pathspec.push(`:(exclude)${repository.relativePath}`);
-    return pathspec;
+    return sandboxCodePathspec(id, selectedRepositories(id, state)
+      .filter((repository) => repository.type === "submodule")
+      .map((repository) => repository.relativePath));
   }
 
   // Against the base the sandbox branched from, not its HEAD: an agent that
@@ -90,6 +86,18 @@ export function createApplyRuntime({
     return sandboxDiffNames(id, sandboxPath, state);
   }
 
+  function assertTargetHeadUnmoved(id, state) {
+    const currentHead = gitHead(root);
+    if (currentHead === state.workspace.baseHead) return;
+    blockWithDecision(id, "control-head-moved", targetHeadMovedDecision({
+      changeId: id,
+      recordedBase: state.workspace.baseHead,
+      currentHead,
+      multiRepository: Object.keys(state.repositories || {}).length > 1,
+      action: "Applying"
+    }));
+  }
+
   function buildApplyEntries(id, state) {
     const sandboxPath = state.workspace.path;
     let codePaths;
@@ -103,8 +111,7 @@ export function createApplyRuntime({
         if ((target[path] ?? null) !== (baseline[path] ?? null))
           fail(`isolated-copy conflict at '${path}'`);
     } else if (state.workspace.mode === "worktree") {
-      if (gitHead(root) !== state.workspace.baseHead)
-        fail("target HEAD moved since sandbox creation");
+      assertTargetHeadUnmoved(id, state);
       codePaths = gitApplyInputs(id, sandboxPath);
     } else {
       fail("change has no isolated sandbox");
@@ -143,8 +150,7 @@ export function createApplyRuntime({
         .filter((path) => baseline[path] !== sandbox[path]).sort();
     }
     if (state.workspace.mode !== "worktree") fail("change has no isolated sandbox");
-    if (gitHead(root) !== state.workspace.baseHead)
-      fail("target HEAD moved since sandbox creation");
+    assertTargetHeadUnmoved(id, state);
     git(["add", "-N", "."], sandboxPath);
     return sandboxDiffNames(id, sandboxPath, state);
   }

@@ -3,6 +3,7 @@ import { join, resolve as resolvePath } from "node:path";
 import { spawnSync } from "node:child_process";
 import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
 import { validityRecovery } from "../evidence/receipt-validity.mjs";
+import { targetHeadMovedDecision } from "./apply-recovery.mjs";
 
 const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
@@ -135,6 +136,24 @@ export function createLandRuntime({
     // OpenSpec CLI only surfaces at 'openspec archive', after the code has
     // already landed, leaving the change stuck at land.status "code-applied".
     assertOpenSpecCli(root, fail);
+    // A check that answers "is this landable?" has to weigh the target, not
+    // only the change. This condition used to surface two commands later, from
+    // inside the apply transaction, so `land check` reported LAND READY for a
+    // projection `land archive` would refuse — and every evidence question
+    // below is a red herring while the base is wrong.
+    //
+    // Worktree only: an isolated copy reconciles a moved target at sync and is
+    // not blocked by one. Pre-projection only: once applied, the transaction
+    // journal is what governs, and the target legitimately carries the change.
+    if (state.workspace?.mode === "worktree" && !state.workspace.applied &&
+        gitHead(root) !== state.workspace.baseHead)
+      blockWithDecision(id, "control-head-moved", targetHeadMovedDecision({
+        changeId: id,
+        recordedBase: state.workspace.baseHead,
+        currentHead: gitHead(root),
+        multiRepository: Object.keys(state.repositories || {}).length > 1,
+        action: "Landing"
+      }));
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
     if (!proof || proof.status !== "pass") fail(`change '${id}' has no passing proof`);
     const audit = proofAudit(id, true);

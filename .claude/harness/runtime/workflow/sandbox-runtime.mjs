@@ -4,8 +4,38 @@ import {
 import { constants as fsConstants } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, trackedPathSet
+  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
 } from "../core/workspace-surface.mjs";
+
+// Which files `git apply` refused, so a replay that cannot proceed names the
+// same thing the isolated-copy path names: the files, not the exit code.
+//
+// Merge conflicts are read first and exclusively. A three-way apply reports
+// `patch failed:` for every hunk it could not place directly — including the
+// ones it then merged successfully — so mixing the two vocabularies names files
+// that are not in conflict at all. `git apply --3way` reports a genuine
+// conflict as `U <path>`, not in `git merge`'s vocabulary.
+function rejectedPaths(output) {
+  const text = String(output || "");
+  const merged = new Set();
+  for (const pattern of [
+    /^U (.+)$/gm,
+    /^Applied patch to '(.+)' with conflicts\.$/gm,
+    /^CONFLICT \([^)]*\): Merge conflict in (.+)$/gm
+  ])
+    for (const match of text.matchAll(pattern)) merged.add(match[1]);
+  if (merged.size) return [...merged].sort();
+  const paths = new Set();
+  const patterns = [
+    /^error: patch failed: (.+?):\d+$/gm,
+    /^error: (.+?): patch does not apply$/gm,
+    /^error: (.+?): does not exist in index$/gm,
+    /^error: (.+?): already exists in working directory$/gm
+  ];
+  for (const pattern of patterns)
+    for (const match of text.matchAll(pattern)) paths.add(match[1]);
+  return [...paths].sort();
+}
 
 // `cpSync` resolves symlinks by default: a relative link is rewritten as an
 // absolute path into the *source* tree. In a sandbox that is not a cosmetic
@@ -203,6 +233,45 @@ export function createSandboxRuntime({
     }
   }
 
+  // A commit read, not executed.
+  //
+  // Isolation inspection is the diagnostic someone reaches for when the
+  // environment is suspect, and the unattended preflight beside it decides
+  // whether running anything is safe at all — so neither may resolve a program
+  // through PATH. Shelling out to `git rev-parse` here would hand the decision
+  // to whatever PATH happens to name. The ref files answer the same question.
+  function headOfRepository(start) {
+    let gitPath = join(start, ".git");
+    if (!existsSync(gitPath)) return null;
+    try {
+      if (statSync(gitPath).isFile()) {
+        const pointer = readFileSync(gitPath, "utf8").match(/^gitdir:\s*(.+?)\s*$/m);
+        if (!pointer) return null;
+        gitPath = resolve(start, pointer[1]);
+      }
+      const head = readFileSync(join(gitPath, "HEAD"), "utf8").trim();
+      if (/^[0-9a-f]{40}$/i.test(head)) return head;
+      const ref = head.match(/^ref:\s*(.+)$/)?.[1]?.trim();
+      if (!ref) return null;
+      const loose = join(gitPath, ...ref.split("/"));
+      if (existsSync(loose)) {
+        const value = readFileSync(loose, "utf8").trim();
+        return /^[0-9a-f]{40}$/i.test(value) ? value : null;
+      }
+      // A ref that has been packed away has no loose file, and a repository
+      // that has ever been gc'd keeps most of its refs that way.
+      const packed = join(gitPath, "packed-refs");
+      if (!existsSync(packed)) return null;
+      for (const line of readFileSync(packed, "utf8").split("\n")) {
+        const match = line.match(/^([0-9a-f]{40})\s+(.+)$/);
+        if (match && match[2].trim() === ref) return match[1];
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   function workspaceInspection(id, state = loadRuntime(id)) {
     const workspace = state.workspace || {};
     const kind = workspace.mode === "worktree" ? "git-worktree" :
@@ -219,7 +288,19 @@ export function createSandboxRuntime({
       status: runtime.path && existsSync(runtime.path) ? "active" : "missing",
       path: runtime.path || null
     })).sort((left, right) => left.id.localeCompare(right.id));
-    return { kind, status, path: workspace.path || root, repositories };
+    // The recorded base and the target's head, because the difference between
+    // them decides whether a proven change can still land — and diagnosing it
+    // used to mean reading `.foundation/` by hand. Only a worktree is pinned to
+    // a commit; an isolated copy reconciles a moved target at sync, so it
+    // reports no drift.
+    const targetHead = headOfRepository(root);
+    const baseHead = workspace.baseHead || null;
+    const drift = kind === "git-worktree" && baseHead && targetHead &&
+      baseHead !== targetHead ? "target-moved" : "none";
+    return {
+      kind, status, path: workspace.path || root,
+      baseHead, targetHead, drift, repositories
+    };
   }
 
   function inspect(id, flags = {}) {
@@ -247,6 +328,10 @@ export function createSandboxRuntime({
     else {
       console.log(`ISOLATION ${id}`);
       console.log(`  workspace isolation: ${result.workspaceIsolation.kind} (${result.workspaceIsolation.status})`);
+      if (result.workspaceIsolation.drift === "target-moved")
+        console.log(`  target drift: base ${
+          String(result.workspaceIsolation.baseHead).slice(0, 8)} -> target ${
+          String(result.workspaceIsolation.targetHead).slice(0, 8)}; run 'claude-foundation sandbox sync ${id}' to replay onto it`);
       console.log(`  security boundary: ${result.securityBoundary.kind} (${result.securityBoundary.status})`);
       console.log(`  safe for unattended: ${result.execution.safeForUnattended ? "yes" : "no"}`);
       for (const reason of result.execution.reasons) console.log(`  reason: ${reason}`);
@@ -424,6 +509,98 @@ export function createSandboxRuntime({
     }).join("\n");
   }
 
+  // A worktree sandbox is pinned to the commit it branched from and nothing
+  // moved it. An isolated copy has always reconciled a moving target here; a
+  // worktree did not, and said nothing either — so Build and Prove ran to
+  // completion against a base the target no longer had, and the refusal only
+  // arrived inside the apply transaction, after the evidence was spent.
+  //
+  // Replay, not `git rebase`: the sandbox's whole contribution is its diff from
+  // `baseHead`, which is exactly what apply projects, and no contract downstream
+  // reads sandbox commit history. Flattening it into working-tree changes costs
+  // nothing that is ever consulted.
+  function rebaseWorktree(id, state) {
+    const workspace = state.workspace;
+    const currentHead = gitHead(root);
+    if (workspace.mode !== "worktree" || !currentHead || !workspace.baseHead ||
+        currentHead === workspace.baseHead) return null;
+    const movement = {
+      from: workspace.baseHead, to: currentHead, rebased: false, conflicts: []
+    };
+    // A multi-repository change holds one worktree per repository and this sync
+    // reconciles only the root. Advancing the root's base alone would leave the
+    // others describing a different world, so report the movement and leave the
+    // resolution to the multi-repository Land decision.
+    if (Object.keys(state.repositories || {}).length > 1) return movement;
+    const pathspec = sandboxCodePathspec(id, selectedRepositories(id, state)
+      .filter((repository) => repository.type === "submodule")
+      .map((repository) => repository.relativePath));
+    // A real `add`, not the intent-to-add the apply path uses: the three-way
+    // fallback below needs the sandbox's blobs to exist in the object database
+    // before it can merge against them. Staging is invisible downstream —
+    // everything that reads this sandbox diffs the working tree against a
+    // commit, which ignores the index.
+    git(["add", "-A"], workspace.path);
+    const diff = git(["diff", "--binary", workspace.baseHead, "--", ...pathspec],
+      workspace.path);
+    if (diff.status !== 0)
+      fail(`cannot read the sandbox diff to replay: ${diff.stderr.trim()}`);
+    // Verified in a throwaway worktree before the real one is touched: a
+    // rejected hunk has to leave the sandbox exactly as it was, because merging
+    // the target's version is only possible there.
+    const staging = `${workspace.path}.rebase`;
+    const patch = `${workspace.path}.rebase.patch`;
+    rmSync(staging, { recursive: true, force: true });
+    // A worktree directory removed out from under git stays registered, and
+    // `worktree add` then refuses the same path — dead-ending the retry.
+    git(["worktree", "prune"]);
+    const staged = git(["worktree", "add", "--detach", staging, currentHead]);
+    if (staged.status !== 0)
+      fail(`cannot stage the rebase worktree: ${staged.stderr.trim()}`);
+    const discardStaging = () => {
+      git(["worktree", "remove", "--force", staging]);
+      rmSync(staging, { recursive: true, force: true });
+      rmSync(patch, { force: true });
+    };
+    if (diff.stdout) {
+      // Written before it is used, and kept until the swap completes: it is the
+      // only copy of the sandbox's work between removing the old worktree and
+      // moving the new one into its place.
+      writeFileSync(patch, diff.stdout);
+      // Three-way, not a straight apply. A straight apply matches the base's
+      // context lines, so once the user merges the target's version into the
+      // sandbox to clear a conflict, the very diff carrying that merge stops
+      // applying — the fix would make the next sync fail for the same reason.
+      // A three-way merge is what actually resolves a moved base.
+      const replayed = git(
+        ["apply", "--3way", "--binary", "--whitespace=nowarn", patch], staging);
+      if (replayed.status !== 0) {
+        // Both streams: `git apply --3way` writes its conflict summary to
+        // stdout and its errors to stderr, and either one alone loses half the
+        // vocabulary that names the file.
+        movement.conflicts = rejectedPaths(
+          `${replayed.stderr || ""}\n${replayed.stdout || ""}`);
+        if (!movement.conflicts.length) movement.conflicts.push(".");
+        discardStaging();
+        return movement;
+      }
+    }
+    const removed = git(["worktree", "remove", "--force", workspace.path]);
+    if (removed.status !== 0) {
+      discardStaging();
+      fail(`cannot replace the sandbox worktree: ${removed.stderr.trim()}`);
+    }
+    const moved = git(["worktree", "move", staging, workspace.path]);
+    if (moved.status !== 0)
+      fail(`the sandbox worktree was removed and its replacement could not be moved into place: ${
+        moved.stderr.trim()}. The replayed work is at '${staging}' and the patch at '${patch}'.`);
+    rmSync(patch, { force: true });
+    workspace.baseHead = currentHead;
+    if (state.repositories?.root) state.repositories.root.baseHead = currentHead;
+    movement.rebased = true;
+    return movement;
+  }
+
   function sync(id, flags = {}) {
     validate(id, "root", { quiet: true });
     const state = loadRuntime(id);
@@ -463,6 +640,10 @@ export function createSandboxRuntime({
     const nextContract = contractFingerprint(id, source);
     const nextExecution = executionFingerprint(id, source);
     const mergedTasks = mergeTaskProgress(sourceTasks, sandboxTasks);
+    // Before the packet is written, because a successful replay rebuilds the
+    // worktree the packet is written into. Everything above reads the outgoing
+    // sandbox and has already been captured.
+    const movement = workspace.applied ? null : rebaseWorktree(id, state);
     if (existsSync(destination)) rmSync(destination, { recursive: true });
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(source, destination, { recursive: true, ...VERBATIM_COPY });
@@ -529,11 +710,24 @@ export function createSandboxRuntime({
     if (existsSync(proofPath(id))) rmSync(proofPath(id));
     clearSnapshotCache(id);
     saveRuntime(state);
+    const shortHead = (value) => String(value || "").slice(0, 8);
+    // Stated whether or not it could be resolved. A target that moved and a
+    // sandbox that silently kept building against the old base is the failure
+    // this line exists to make impossible.
+    const movementLine = !movement ? ""
+      : movement.rebased
+        ? `\n  rebased: ${shortHead(movement.from)} -> ${shortHead(movement.to)} (sandbox commits flattened into the replayed diff)`
+        : `\n  target moved: ${shortHead(movement.from)} -> ${shortHead(movement.to)} (sandbox NOT rebased)`;
     console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}${
+      movementLine}${
       forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
     }`);
     for (const rel of conflicts)
       console.log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy, then rerun sandbox sync with --resolve ${rel} (comma-separate several paths). Land stays blocked until every conflict is resolved.`);
+    for (const rel of movement?.conflicts || [])
+      console.log(`CONFLICT ${rel}: the sandbox diff no longer applies to the moved target; merge the target's version into the sandbox worktree, then rerun sandbox sync. Land stays blocked until the sandbox replays onto the current commit.`);
+    if (movement && !movement.rebased && !movement.conflicts.length)
+      console.log(`TARGET MOVED ${id}: a multi-repository sandbox reconciles only through Land; run 'claude-foundation land plan ${id}' to see how the recorded base compares.`);
   }
 
   return {

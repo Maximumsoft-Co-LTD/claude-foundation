@@ -9,6 +9,22 @@ sh .claude/tests/run-all.sh
 
 The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
+Suites run concurrently — each builds its own fixture under `mktemp -d`, so
+nothing orders them — and their output is buffered and replayed in table order,
+so a parallel run reads and diffs exactly like a serial one. The mutation suites
+are the exception, marked `!` in the `run-all.sh` table: each corrupts a file
+under `.claude/harness/` and restores it, so anything running beside one reads a
+source that is briefly wrong. They run alone, after everything else. Set
+`FOUNDATION_TEST_JOBS=1` to force fully serial execution when bisecting.
+
+That lane orders one run. A *second* run in the same checkout — another session,
+or a script invoked directly — is a different hazard: whichever mutation suite
+starts second saves the first one's injected fault as its "clean" copy and
+restores that fault permanently. `lib/mutation-lock.sh` serializes them across
+runs and refuses to start on a tree that still carries a
+`FOUNDATION-INJECTED-FAULT` marker. Every mutation suite takes the lock before
+it copies anything, so running one directly is as safe as running the suite.
+
 ## Current suites
 
 | Suite | Contract |
@@ -20,6 +36,8 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 | `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
+| `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
+| `harness/run-target-drift-mutation.sh` | Removing the worktree replay or the `land check` target stop is detected by the suite above |
 | `harness/run-upgrade-compat-tests.sh` | Legacy-default migration, custom-policy preservation, and partial-policy deep merge |
 | `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases; preserves the full contract assertion order in one shared fixture process |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |

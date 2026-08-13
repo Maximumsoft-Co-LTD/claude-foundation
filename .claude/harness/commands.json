@@ -103,7 +103,7 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "description": "Synchronize an intentional contract revision into Build, fast-forwarding target moves the sandbox left alone."
+      "description": "Synchronize an intentional contract revision into Build and reconcile a moved target: a worktree replays onto the new commit, an isolated copy fast-forwards the files it left alone."
     },
     {
       "name": "proof readiness",
