@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "OpenSpec-native change harness for AI coding agents"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
-  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v3.2.16.tar.gz"
-  sha256 "e5c1c11f27a4e27b2fed52ea9fff40f27446591b7196d760350ebbf48be9bb63"
+  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v3.2.17.tar.gz"
+  sha256 "7623c8bea9611ccf749dbeb5b5439a3f294999d115c9aa54ecf2ca5258a0831a"
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
@@ -19,8 +19,8 @@ class ClaudeFoundation < Formula
   # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
   # RELEASING.md). Platforms with no line fall back to build-from-source.
   bottle do
-    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v3.2.16"
-    sha256 cellar: :any_skip_relocation, arm64_sequoia: "f6360e3281fe5754a515f7714149aa4049c5c64a88a7526f80b2a387758a1539"
+    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v3.2.17"
+    sha256 cellar: :any_skip_relocation, arm64_sequoia: "b800063aaa435ca126d627fb238784ec68a23ce35d4429afc41aa92fb1cfccc0"
   end
 
   def install
