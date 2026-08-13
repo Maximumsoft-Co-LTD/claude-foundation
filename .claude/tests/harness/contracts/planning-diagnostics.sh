@@ -197,5 +197,17 @@ assert_cmd_zero "an expired lease is force-released without ceremony" \
     --owner other-worker --force
 assert_file_absent "a released lease leaves no index behind" \
   .foundation/leases/tasks/lease-fixture/T1.json
+# Takeover is `release`'s, not `acquire`'s: acquire reads nothing but --owner.
+# Its flag spec was copied from release and swallowed both takeover flags in
+# silence, so a caller reaching for a takeover got a plain contended acquire and
+# an exit code that read as a considered refusal.
+assert_cmd_fails_with "acquire does not pretend to accept a takeover" \
+  "supported: --owner <value>" \
+  node .claude/harness/foundation.mjs agent-acquire lease-fixture T1 \
+    --owner other-worker --force
+assert_cmd_fails_with "acquire does not pretend to accept a takeover decision" \
+  "supported: --owner <value>" \
+  node .claude/harness/foundation.mjs agent-acquire lease-fixture T1 \
+    --owner other-worker --decision-ref host://decision/lease-2
 
 finish "harness contracts"

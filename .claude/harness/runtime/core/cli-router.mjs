@@ -85,8 +85,13 @@ export async function routeRuntimeCommand(command, values, api) {
       showAgentTask(rest[0], rest[1], flags); break;
     }
     case "agent-acquire": {
+      // Only `--owner`. Takeover belongs to `release`, which frees the resource
+      // so the next acquire can win it fairly; `acquire` reads nothing but the
+      // owner. This spec was copied from `release` and accepted `--force` and
+      // `--decision-ref` in silence, so a caller reaching for a takeover here
+      // got a plain contended acquire and an exit code that looked deliberate.
       const { flags, rest } = parseStrictCommandFlags(values, "agents acquire", {
-        boolean: ["force"], value: ["owner", "decision-ref"]
+        value: ["owner"]
       });
       acquireAgentLease(rest[0], rest[1], flags); break;
     }
