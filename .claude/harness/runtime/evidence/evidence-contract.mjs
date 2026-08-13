@@ -425,7 +425,10 @@ export function createEvidenceContract({
       if (!scopePatterns.length || !existsSync(base)) continue;
       collect(base, base, scopePatterns, base === workspace ? null : repositoryLabel(id, base));
     }
-    files.sort((left, right) => left.path.localeCompare(right.path));
+    // Codepoint order, not localeCompare: the fingerprint must not depend on
+    // the machine's collation tables, or identical inputs expire receipts.
+    files.sort((left, right) =>
+      (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
     return {
       mode: "declared",
       patterns,

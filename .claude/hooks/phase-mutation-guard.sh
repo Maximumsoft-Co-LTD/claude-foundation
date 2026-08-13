@@ -18,10 +18,15 @@ set -u
 # The fast path uses shell builtins only — no `tr`, no `dirname`, no subshell.
 # That keeps it independent of PATH and of process creation entirely, so the
 # saving is real rather than one external command traded for another.
+#
+# Only exact known spellings take a fast path. The guard lowercases the mode,
+# so any other casing ("BLock", "oFF") could mean enforcement there; treating
+# an unrecognised spelling as block delegates every call, which is the safe
+# direction — the guard, not this prefilter, then decides.
 case "${FOUNDATION_GUARDRAIL_MODE:-audit}" in
   off|OFF|Off) exit 0 ;;
-  block|BLOCK|Block) mode=block ;;
-  *) mode=audit ;;
+  audit|AUDIT|Audit) mode=audit ;;
+  *) mode=block ;;
 esac
 
 HERE="${0%/*}"

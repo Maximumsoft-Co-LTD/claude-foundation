@@ -93,8 +93,12 @@ export function createProofExecutionRuntime({
           type: "service-log",
           required: true
         }));
+      // Not on activeProofRun: the finally below clears that before `prove`
+      // ever reads it, so service logs collected here silently vanished from
+      // the proof manifest. This key survives the clear; finalize consumes and
+      // removes it.
       const withServices = loadRuntime(id);
-      withServices.activeProofRun.serviceArtifacts = serviceArtifacts;
+      withServices.collectedServiceArtifacts = serviceArtifacts;
       saveRuntime(withServices);
       sessions = [];
       const after = proofReadinessValue(id, "prove");

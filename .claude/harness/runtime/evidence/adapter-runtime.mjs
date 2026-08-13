@@ -45,8 +45,12 @@ export function createAdapterRuntime({
     const commandArgs = values.slice(split + 2);
     const started = now();
     const startedMs = Date.now();
+    // Same 64 MB ceiling as the git helper: the default 1 MB maxBuffer kills a
+    // verbose green suite with ENOBUFS and records the run as an infrastructure
+    // error.
     const result = spawnSync(command, commandArgs, {
       cwd: providerWorkspace(id, provider), encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, FOUNDATION_CHANGE_ID: id }
     });
     const logDir = join(LOGS, id);

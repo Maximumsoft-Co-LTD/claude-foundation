@@ -631,6 +631,7 @@ openspec/
   schemas/
   specs/
   changes/
+  investigations/
 
 .foundation/
   runtime/

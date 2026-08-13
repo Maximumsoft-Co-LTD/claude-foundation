@@ -28,6 +28,7 @@ const ONLINE_CACHE_MS = toInt(process.env.ONLINE_CACHE_MS, 2_000); // /api/onlin
 const MAX_BODY_BYTES = 512 * 1024; // rich change payloads (many repos × files × ranges)
 const MAX_FIELD_LEN = 200;
 const MAX_AGENTS = toInt(process.env.MAX_AGENTS, 500); // roster ceiling — a shared key must not buy unbounded rows
+const MAX_PROFILES = toInt(process.env.MAX_PROFILES, 500); // profile ceiling — /api/profile takes the same shared key
 const MIN_HEARTBEAT_INTERVAL_MS = toInt(process.env.MIN_HEARTBEAT_INTERVAL_MS, 5_000); // persisted writes per agent; the client beats every 30s
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -760,6 +761,9 @@ async function handleHeartbeat(req, res, url) {
 
   const now = Date.now();
   const status = clean(body.value.status) || 'online';
+  // Validate before the throttle: a throttled beat still returns 200, so a
+  // status checked afterwards is a status a fast client never has to pass.
+  if (!['online', 'offline'].includes(status)) return sendJson(res, 400, { ok: false, error: 'invalid status' });
   const existing = agents.get(agentId);
   // A shared key plus an arbitrary agentId is enough to register unbounded
   // agents; prune() only evicts after idle minutes, far slower than a loop
@@ -767,7 +771,11 @@ async function handleHeartbeat(req, res, url) {
   // beats every 30s, so anything faster is not a real beat.
   if (!existing && agents.size >= MAX_AGENTS)
     return sendJson(res, 429, { ok: false, error: 'agent capacity reached' });
-  if (existing && now - existing.lastSeen < MIN_HEARTBEAT_INTERVAL_MS && status !== 'offline') {
+  // Throttle against the last ACCEPTED beat, not the last one seen. Sliding the
+  // window on rejections would let a client beating faster than the interval
+  // throttle itself forever and never persist data again; lastSeen still moves
+  // so liveness keeps working.
+  if (existing && now - (existing.lastAccepted ?? existing.lastSeen) < MIN_HEARTBEAT_INTERVAL_MS && status !== 'offline') {
     existing.lastSeen = now;
     return sendJson(res, 200, {
       ok: true,
@@ -776,7 +784,6 @@ async function handleHeartbeat(req, res, url) {
       throttled: true,
     });
   }
-  if (!['online', 'offline'].includes(status)) return sendJson(res, 400, { ok: false, error: 'invalid status' });
   const next = {
     agentId,
     gitUser: clean(body.value.gitUser) || 'unknown',
@@ -794,6 +801,7 @@ async function handleHeartbeat(req, res, url) {
     prs: cleanDateCounts(body.value.prs, 'n'),
     firstSeen: existing ? existing.firstSeen : now,
     lastSeen: now,
+    lastAccepted: now,
   };
   next.datasetHashes = datasetHashes(next);
   const changed = changedDatasets(existing, next.datasetHashes);
@@ -1086,6 +1094,11 @@ async function handleProfile(req, res, url) {
   if (!body.ok) return sendJson(res, 400, { ok: false, error: body.error });
   const user = clean(body.value.user, 80);
   if (!user) return sendJson(res, 400, { ok: false, error: 'user required' });
+  // Profiles have no idle eviction at all — unlike agents, nothing ever prunes
+  // them — and every one is serialized into /api/online. Cap the map the same
+  // way the agent roster is capped.
+  if (!profiles.has(user) && profiles.size >= MAX_PROFILES)
+    return sendJson(res, 429, { ok: false, error: 'profile capacity reached' });
   const teams = (Array.isArray(body.value.teams) ? body.value.teams : [])
     .map((t) => clean(t, 40).toLowerCase()).filter(Boolean).slice(0, 10);
   const color = /^#[0-9a-fA-F]{6}$/.test(String(body.value.color || '')) ? String(body.value.color).toLowerCase() : '';
@@ -1184,7 +1197,7 @@ function handleOnline(req, res, url) {
     onlineCount: all.filter((a) => a.online).length,
     totalCount: all.length,
     agents: all,
-    profiles: [...profiles.values()],
+    profiles: [...profiles.values()].slice(0, MAX_PROFILES),
     conflicts: computeConflicts(now),
     // Deduped run list — the client computes stats + feed from this so it can
     // filter by teammate and use the viewer's own timezone for day buckets.
@@ -1289,5 +1302,5 @@ if (require.main === module) {
 
 module.exports = {
   server, startServer,
-  _internals: { agents, db, datasetHashes, changedDatasets, computeConflicts },
+  _internals: { agents, profiles, db, datasetHashes, changedDatasets, computeConflicts },
 };

@@ -60,11 +60,19 @@ export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
       child.stdout.on("data", (chunk) => { stdout += chunk; });
       child.stderr.on("data", (chunk) => { stderr += chunk; });
       if (options.readiness?.url) observeReadiness();
-      child.on("error", (error) => complete({
-        status: null, signal: null, error, stdout, stderr,
-        timedOut, readinessObserved,
-        startedAt, finishedAt: now(), durationMs: Date.now() - startedMs
-      }));
+      // A spawn failure never emits `close`, so this handler owns the same
+      // cleanup: without it the readiness poll rescheduled itself forever and
+      // the timeout timer pinned the event loop after the result was known.
+      child.on("error", (error) => {
+        closed = true;
+        clearTimeout(timer);
+        if (readinessTimer) clearTimeout(readinessTimer);
+        complete({
+          status: null, signal: null, error, stdout, stderr,
+          timedOut, readinessObserved,
+          startedAt, finishedAt: now(), durationMs: Date.now() - startedMs
+        });
+      });
       const timeoutMs = Number(options.timeoutMs || 120000);
       const timer = setTimeout(() => {
         timedOut = true;

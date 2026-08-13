@@ -40,6 +40,22 @@ assert_contains "Prove keeps product files read-only" "$out" '"decision":"block"
 out="$(invoke prove block "" "$(bash_event 'git commit -m x')")"
 assert_contains "Prove blocks mutating shell command" "$out" '"decision":"block"'
 
+# /dev/null redirects are how read-only commands silence noise; treating them
+# as mutations blocked every `2>/dev/null` during Change/Prove.
+out="$(invoke prove block "" "$(bash_event 'git log 2>/dev/null')")"
+assert_eq "Prove permits read-only commands silencing stderr" "" "$out"
+
+out="$(invoke prove block "" "$(bash_event 'echo x > notes.txt')")"
+assert_contains "Prove still blocks redirects to real files" "$out" '"decision":"block"'
+
+# /investigate writes openspec/investigations and records no phase; a phase
+# left behind by an earlier packet must not block investigation notes.
+out="$(invoke change block "" "$(write_event "$TMP/project/openspec/investigations/probe.md")")"
+assert_eq "Change permits investigation notes" "" "$out"
+
+out="$(invoke prove block "" "$(write_event "$TMP/project/openspec/investigations/probe.md")")"
+assert_eq "Prove permits investigation notes" "" "$out"
+
 out="$(invoke land block "" "$(write_event "$TMP/project/src/app.js")")"
 assert_contains "Land requires transaction marker" "$out" '"decision":"block"'
 
@@ -91,6 +107,13 @@ out="$(pre audit prove "$(write_event "$TMP/pre/src/app.js")")"
 assert_eq "an exported phase delegates and audit mode still does not block" "" "$out"
 assert_file_contains "an exported phase reaches the guard through the prefilter" \
   "$TMP/pre/.foundation/logs/guardrail-audit.jsonl" '"phase":"prove"'
+
+# The guard lowercases the mode, so "BLock" means enforcement there. A
+# prefilter that only recognised three block spellings took the audit fast
+# path and failed open — the one direction it promises never to skip.
+out="$(pre BLock "" "$(write_event "$TMP/pre/src/app.js")")"
+assert_contains "an unrecognised mode spelling delegates instead of fast-pathing" \
+  "$out" 'active phase is unavailable'
 
 # Presence of any recorded phase context must delegate, whatever its age: the
 # freshness window is the guard's policy, and the prefilter must not second-guess it.

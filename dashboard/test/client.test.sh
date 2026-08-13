@@ -90,4 +90,20 @@ assert_cmd_zero "public dashboard snapshot route emits valid JSON" node -e \
   'const s=JSON.parse(process.argv[1]);if(s.schemaVersion!==1||s.runs[0].id!=="current-change")process.exit(1)' \
   "$snapshot_cli"
 
+# The scans run detached, so anything they derive reaches the heartbeat only via
+# a cache file. Stub the scans that need network or a full repo walk; scan_runs
+# (asserted above) is the one that produces the metadata under test.
+scan_changes() { CHANGES_JSON='[]'; }
+scan_usage() { USAGE_JSON='[]'; SESSIONS_JSON='[]'; TOOLS_JSON='[]'; }
+scan_prs() { PRS_JSON='[]'; }
+RUNS_CACHE="$TMP/runs.json"; CHG_CACHE="$TMP/changes.json"
+RUNS_META_CACHE="$TMP/runs-meta.txt"; SCAN_LOCK="$TMP/scan.lock"
+( run_scans_to_cache )
+RUNS_SOURCE_SCHEMA=lost; RUNS_FOUNDATION_VERSION=lost
+load_cache
+assert_eq "background scan publishes source schema to the beating parent" \
+  "foundation-runtime-v2+legacy-workflow" "$RUNS_SOURCE_SCHEMA"
+assert_eq "background scan publishes foundation version to the beating parent" \
+  "$(cat "$ROOT/VERSION")" "$RUNS_FOUNDATION_VERSION"
+
 finish "dashboard client"

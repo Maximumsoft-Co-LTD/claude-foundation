@@ -170,21 +170,33 @@ case "$tool_name" in
     cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
     [ -n "$cmd" ] || exit 0
 
-    # (1) Drop the contents of quoted spans first, so a secret filename that
-    # only appears INSIDE a string argument — a commit message, an echo, a
-    # generated doc — is never mistaken for a file being read. This is what
-    # lets `git commit -m "... cat .env ..."` through while `cat .env` is still
-    # caught. Portable char state machine (handles multi-line input).
+    # (1) Neutralise quoted spans first, so a secret filename that only appears
+    # INSIDE a string argument — a commit message, an echo, a generated doc —
+    # is never mistaken for a file being read. A span that is a single plain
+    # word (no whitespace or shell metacharacters) is kept literally, because
+    # quoting a path is a common accidental shape: `cat ".env"` must be caught
+    # exactly like `cat .env`. A span with whitespace/metacharacters is prose
+    # or a nested command, and is blanked — which is what lets
+    # `git commit -m "... cat .env ..."` through. Portable char state machine
+    # (handles multi-line input).
     # Known gap: `bash -c "cat .env"` loses its inner command with the quotes —
     # acceptable, since this guards against accidental reads, not deliberate
     # obfuscation.
     dequoted="$(printf '%s' "$cmd" | awk '
       BEGIN { RS = "\0" }
       {
-        n = length($0); inq = 0; q = ""
+        n = length($0); inq = 0; q = ""; buf = ""
         for (i = 1; i <= n; i++) {
           c = substr($0, i, 1)
-          if (inq)            { if (c == q) inq = 0; printf " "; continue }
+          if (inq) {
+            if (c == q) {
+              inq = 0
+              if (buf !~ /[[:space:];|&`()<>]/) printf "%s", buf
+              else printf " "
+              buf = ""
+            } else buf = buf c
+            continue
+          }
           if (c == "\47" || c == "\"") { inq = 1; q = c; printf " "; continue }
           printf "%s", c
         }

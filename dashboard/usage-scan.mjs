@@ -24,7 +24,8 @@ function discoverJsonl(root, cutoffMs, cap) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) walk(path);
       else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        const stat = statSync(path);
+        let stat;
+        try { stat = statSync(path); } catch { continue; }
         if (stat.mtimeMs >= cutoffMs) files.push({ path: resolve(path), stat });
       }
     }

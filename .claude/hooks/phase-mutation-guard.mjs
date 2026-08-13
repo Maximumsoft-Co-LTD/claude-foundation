@@ -82,14 +82,21 @@ function inspectPath(rawPath) {
 
   if (isWithin(target, join(projectRoot, ".foundation"))) return;
 
+  // Investigation notes are exploratory documentation, not product or
+  // instruction files; /investigate writes them and records no phase, so a
+  // phase left behind by an earlier packet must not block them.
+  const investigations = join(projectRoot, "openspec", "investigations");
+
   if (phase === "change") {
-    if (!isWithin(target, join(projectRoot, "openspec", "changes")))
-      violations.push("Change may write only OpenSpec change drafts or .foundation state");
+    if (!isWithin(target, join(projectRoot, "openspec", "changes")) &&
+        !isWithin(target, investigations))
+      violations.push("Change may write only OpenSpec change drafts, investigation notes, or .foundation state");
     return;
   }
 
   if (phase === "prove") {
-    violations.push("Prove keeps product and instruction files read-only");
+    if (!isWithin(target, investigations))
+      violations.push("Prove keeps product and instruction files read-only");
     return;
   }
 
@@ -133,7 +140,10 @@ function looksMutating(command) {
   return /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash|am|pull|worktree|submodule)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish))\b/m.test(stripped)
     // In-place editors: the file is the effect, not an argument to a reader.
     || /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i/m.test(stripped)
-    || /(?:^|[^<])(?:>>?|2>>?)\s*[^&]/m.test(stripped);
+    // A redirect only mutates when it targets a real file; >/dev/null and
+    // 2>/dev/null are how read-only commands silence noise, and >&2 / 2>&1
+    // are fd duplication, not writes.
+    || /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/null(?:[\s;&|)]|$))\S/m.test(stripped);
 }
 
 // The host is not the only thing that knows the phase. Every `/build`,

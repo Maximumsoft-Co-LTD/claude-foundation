@@ -19,7 +19,7 @@
     },
     {
       "name": "packet",
-      "usage": "packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>]",
+      "usage": "packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]",
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
@@ -155,7 +155,7 @@
     },
     {
       "name": "agents plan",
-      "usage": "agents plan <change> [--group <n>] [--pretty]",
+      "usage": "agents plan <change> [--group <n>] [--full] [--pretty]",
       "audience": "conditional",
       "kind": "write",
       "idempotent": true,
@@ -192,6 +192,14 @@
       "kind": "authority",
       "idempotent": true,
       "description": "Verify signed CI provenance bound to the provider workspace."
+    },
+    {
+      "name": "hash",
+      "usage": "hash <change> [provider]",
+      "audience": "conditional",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Print the workspace hash a signed CI envelope must bind: the provider's receipt hash, or without a provider the change's workspace hash."
     },
     {
       "name": "authority request",
@@ -496,7 +504,7 @@
     },
     {
       "name": "runtime hash",
-      "usage": "runtime hash <change>",
+      "usage": "runtime hash <change> [provider]",
       "audience": "internal",
       "kind": "read",
       "idempotent": true,

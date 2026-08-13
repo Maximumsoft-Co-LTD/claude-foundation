@@ -49,6 +49,7 @@ export function createSandboxRuntime({
   root, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
   loadRuntime, saveRuntime,
   canonicalPath, workspaceManifest, directoryHash, fileDigest, changePath, gitHead, git,
+  gitBuffer, porcelainStatusRecords,
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, fail,
@@ -353,7 +354,7 @@ export function createSandboxRuntime({
       createCopy(id, state, "no-git");
       return;
     }
-    const dirty = git(["status", "--porcelain", "--untracked-files=all"], root);
+    const dirty = git(["status", "--porcelain", "-z", "--untracked-files=all"], root);
     if (dirty.status !== 0) fail(`cannot inspect target workspace: ${dirty.stderr.trim()}`);
     const allowedPrefix = `openspec/changes/${id}/`;
     // Dirt the harness produced itself must not cost this change its worktree.
@@ -391,13 +392,11 @@ export function createSandboxRuntime({
         return false;
       }
     };
-    const unrelated = dirty.stdout.split("\n").filter(Boolean).filter((line) => {
-      const path = line.slice(3).split(" -> ").at(-1);
-      return path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix) &&
-        !harnessOwned(path) && !carriedIn(path);
-    });
+    const unrelated = porcelainStatusRecords(dirty.stdout).filter(({ path }) =>
+      path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix) &&
+        !harnessOwned(path) && !carriedIn(path));
     if (unrelated.length) {
-      createCopy(id, state, `dirty-target:${unrelated[0]}`);
+      createCopy(id, state, `dirty-target:${unrelated[0].status} ${unrelated[0].path}`);
       return;
     }
     const requestedPath = sandboxRoot(id);
@@ -541,10 +540,13 @@ export function createSandboxRuntime({
     // everything that reads this sandbox diffs the working tree against a
     // commit, which ignores the index.
     git(["add", "-A"], workspace.path);
-    const diff = git(["diff", "--binary", workspace.baseHead, "--", ...pathspec],
+    // gitBuffer, not git: the binary diff is bytes, and a UTF-8 decode
+    // replaces invalid sequences with U+FFFD — corrupting the replayed patch
+    // and surfacing phantom conflicts on files nobody double-edited.
+    const diff = gitBuffer(["diff", "--binary", workspace.baseHead, "--", ...pathspec],
       workspace.path);
     if (diff.status !== 0)
-      fail(`cannot read the sandbox diff to replay: ${diff.stderr.trim()}`);
+      fail(`cannot read the sandbox diff to replay: ${String(diff.stderr).trim()}`);
     // Verified in a throwaway worktree before the real one is touched: a
     // rejected hunk has to leave the sandbox exactly as it was, because merging
     // the target's version is only possible there.
@@ -562,7 +564,7 @@ export function createSandboxRuntime({
       rmSync(staging, { recursive: true, force: true });
       rmSync(patch, { force: true });
     };
-    if (diff.stdout) {
+    if (diff.stdout.length) {
       // Written before it is used, and kept until the swap completes: it is the
       // only copy of the sandbox's work between removing the old worktree and
       // moving the new one into its place.

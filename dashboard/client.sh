@@ -222,6 +222,7 @@ SESSIONS_JSON="[]"
 TOOLS_JSON="[]"
 LAST_SCAN=0
 RUNS_CACHE="$STATE_DIR/runs.json"      # background scan publishes results here
+RUNS_META_CACHE="$STATE_DIR/runs-meta.txt"  # sourceSchema + foundationVersion from that same scan
 CHG_CACHE="$STATE_DIR/changes.json"
 USAGE_CACHE="$STATE_DIR/usage.json"
 USAGE_STATE="$STATE_DIR/usage-state.json"
@@ -768,6 +769,10 @@ run_scans_to_cache() {
   scan_usage
   scan_prs
   printf '%s' "$RUNS_JSON" > "$RUNS_CACHE.tmp" 2>/dev/null && mv "$RUNS_CACHE.tmp" "$RUNS_CACHE" 2>/dev/null
+  # scan_runs derives these alongside RUNS_JSON, but this whole function runs in
+  # a detached subshell — anything not published to a cache file dies with it.
+  printf '%s\n%s' "$RUNS_SOURCE_SCHEMA" "$RUNS_FOUNDATION_VERSION" > "$RUNS_META_CACHE.tmp" 2>/dev/null \
+    && mv "$RUNS_META_CACHE.tmp" "$RUNS_META_CACHE" 2>/dev/null
   printf '%s' "$CHANGES_JSON" > "$CHG_CACHE.tmp" 2>/dev/null && mv "$CHG_CACHE.tmp" "$CHG_CACHE" 2>/dev/null
   rm -f "$SCAN_LOCK"
 }
@@ -791,6 +796,10 @@ maybe_scan() {
 # Load the latest published scan results into the payload vars.
 load_cache() {
   [ -s "$RUNS_CACHE" ] && RUNS_JSON="$(cat "$RUNS_CACHE" 2>/dev/null)"
+  if [ -s "$RUNS_META_CACHE" ]; then
+    RUNS_SOURCE_SCHEMA="$(sed -n 1p "$RUNS_META_CACHE" 2>/dev/null)"
+    RUNS_FOUNDATION_VERSION="$(sed -n 2p "$RUNS_META_CACHE" 2>/dev/null)"
+  fi
   [ -s "$CHG_CACHE" ] && CHANGES_JSON="$(cat "$CHG_CACHE" 2>/dev/null)"
   if [ "$USAGE" = "yes" ] && [ -s "$USAGE_CACHE" ]; then
     USAGE_JSON="$(sed -n 1p "$USAGE_CACHE" 2>/dev/null)"
@@ -799,6 +808,8 @@ load_cache() {
   fi
   [ -s "$PRS_CACHE" ] && PRS_JSON="$(cat "$PRS_CACHE" 2>/dev/null)"
   [ -n "$RUNS_JSON" ] || RUNS_JSON="[]"
+  [ -n "$RUNS_SOURCE_SCHEMA" ] || RUNS_SOURCE_SCHEMA="none"
+  [ -n "$RUNS_FOUNDATION_VERSION" ] || RUNS_FOUNDATION_VERSION="unknown"
   [ -n "$CHANGES_JSON" ] || CHANGES_JSON="[]"
   [ -n "$USAGE_JSON" ] || USAGE_JSON="[]"
   [ -n "$SESSIONS_JSON" ] || SESSIONS_JSON="[]"

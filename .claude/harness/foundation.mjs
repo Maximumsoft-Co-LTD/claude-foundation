@@ -438,10 +438,13 @@ const {
   fileDigest,
   singleRelevantSnapshot,
   clearSnapshotCache,
+  registerPolicyCacheClearer,
   workspaceManifest,
   declaredSurfaceMatcher,
   preexistingDirty,
+  porcelainStatusRecords,
   git,
+  gitBuffer,
   gitHead
 } = stateRuntime;
 const {
@@ -562,13 +565,15 @@ const {
   policyCapabilities,
   policyCapabilityTrigger,
   capabilitiesForPaths,
-  forecastCapabilities
+  forecastCapabilities,
+  clearPolicyCache
 } = createChangePolicy({
   root: ROOT,
   excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,
   providers: PROVIDERS,
   gitHead,
   git,
+  porcelainStatusRecords,
   workspaceManifest,
   loadRuntime,
   selectedRepositories,
@@ -577,6 +582,9 @@ const {
   fileDigest,
   fail: die
 });
+// clearSnapshotCache is what every surface mutation already calls; the policy
+// cache invalidates with it or not at all.
+registerPolicyCacheClearer(clearPolicyCache);
 const {
   appendTelemetryRows,
   bindClaudeSession,
@@ -1096,6 +1104,8 @@ const sandboxRuntime = createSandboxRuntime({
   changePath,
   gitHead,
   git,
+  gitBuffer,
+  porcelainStatusRecords,
   selectedRepositories,
   cleanupRepositorySandboxes,
   cleanupAppliedSandbox,
@@ -1379,6 +1389,7 @@ const applyRuntime = createApplyRuntime({
   applyTransactionEntry,
   cleanupApplyTransaction,
   git,
+  gitBuffer,
   gitHead,
   cleanupAppliedSandbox,
   cleanupRepositorySandboxes,

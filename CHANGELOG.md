@@ -7,7 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.2.13] - 2026-08-13
+### Added
+
+- **`hash <change> [provider]` is a public command.** EVIDENCE.md has always
+  documented it as the way to read the workspace hash a signed CI envelope must
+  bind, but only the deprecated `runtime` namespace actually reached it — the
+  documented signed-CI flow failed at the first step. The provider-scoped form
+  is now in the command registry and routed by the CLI.
+
+### Fixed
+
+- **`exec <change> -- <command>` routes through the public CLI.** The registry
+  advertised it and `/build` instructed agents to wrap long externals in it,
+  but `cli.sh` had no route, so external-command timing silently never reached
+  metrics. A new single-source check asserts every public registry entry is
+  routable, so a command can no longer ship documented-but-dead.
+- **The secrets hook catches quoted paths.** `cat ".env"` and `cat '.env'`
+  passed the guard because dequoting erased quoted spans wholesale; a quoted
+  span that is a single plain word is now kept, while prose strings (commit
+  messages) stay exempt.
+- **The phase guard fails closed on unrecognised mode spellings and stops
+  blocking `/dev/null` redirects.** The prefilter fast-pathed any casing it did
+  not recognise (`BLock` fell through to audit while the guard meant block),
+  and pure `2>/dev/null` / `>/dev/null` redirects counted as mutations. It also
+  now permits `openspec/investigations/` notes during Change and Prove, so a
+  phase left by an earlier packet cannot block `/investigate`.
+- **`proof collect` no longer loses service logs.** Collected service
+  artifacts were saved onto `activeProofRun` and then cleared by the same
+  command's cleanup before `prove` ever read them; they now survive to the
+  proof manifest and are consumed exactly once.
+- **A provider whose spawn fails no longer hangs `proof run`.** The error path
+  now stops the readiness poll and clears the timeout timer; previously the
+  poll rescheduled itself forever. Verbose providers are safe too: the
+  external-receipt runner's 1 MB `maxBuffer` killed any green suite printing
+  more, recording it as an infrastructure error — it now matches the 64 MB
+  ceiling used everywhere else.
+- **Sandbox sync and apply no longer corrupt non-UTF-8 content.** The binary
+  git diff was decoded through UTF-8 (invalid bytes became U+FFFD) before being
+  replayed, silently corrupting files and surfacing phantom conflicts; the
+  patch now stays bytes end to end.
+- **Quoted (non-ASCII) filenames no longer break status parsing.** Three
+  hand-rolled porcelain parsers broke on `core.quotepath` C-quoting — silently
+  downgrading every sandbox to the expensive isolated-copy mode and dropping
+  files from the pre-existing-dirt ledger. One shared `-z` parser replaces
+  them.
+- **A new change cannot reuse an archived change's id.** Leftover receipts and
+  review history under the old id were silently inherited, so a brand-new
+  change could open already `review-attempts-exhausted`; the id is now refused
+  while that history exists.
+- **A blocked provider dependency no longer strands `activeProofRun`.** The
+  scheduler exited the process from inside the execution DAG, skipping the
+  cleanup that stops services and clears the run, so the next `evidence
+  record` bound a dead run's workspace hash.
+- **Workspace hashing no longer depends on the machine's locale.** Directory
+  and fingerprint sorts used `localeCompare`, so byte-identical trees could
+  hash differently across environments and expire receipts spuriously; all
+  hash-feeding sorts are now codepoint-ordered.
+- **Authority-bearing commands parse flags strictly.** `agents
+  plan/acquire/release`, `land recover`, and `land record` now reject unknown
+  flags, and `land record --ci-required` is a true boolean — the lenient
+  parser consumed the next positional as its value, so a falsy-looking token
+  could silently disable the requirement it was meant to assert.
+- **The installer survives hostile-but-legal input.** A user hook entry
+  without a `command` string no longer aborts the whole install (jq type
+  guard); a failed fresh install no longer leaves `install-manifest.txt` or a
+  seeded `openspec/repositories.yaml` behind after rollback; preflight now
+  checks `.foundation/README.md`; and a non-interactive run without `--yes`
+  dies with an actionable message instead of a bare read failure.
+- **Dashboard daemon heartbeats report real schema/version metadata.** The
+  background scan derived them in a subshell and never published them, so
+  every heartbeat sent `none`/`unknown` and mixed-revision detection could
+  never fire. The server also validates status before throttling, throttles
+  against the last accepted beat (a fast client could previously starve its
+  own persistence forever), and caps the profile roster the way agents are
+  capped.
 
 ### Changed
 

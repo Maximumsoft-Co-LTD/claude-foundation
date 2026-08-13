@@ -152,7 +152,14 @@ export function createStateRuntime({
     const hash = createHash("sha256");
     const files = [];
     walk(dir, (path) => files.push(path));
-    files.sort((a, b) => relative(dir, a).localeCompare(relative(dir, b)));
+    // Codepoint order, not localeCompare: ICU collation varies by locale, so
+    // the same tree hashed differently on two machines — a hash that must be
+    // reproducible cannot depend on the environment's collation tables.
+    files.sort((a, b) => {
+      const left = relative(dir, a);
+      const right = relative(dir, b);
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
     for (const path of files) {
       hash.update(relative(dir, path).replaceAll("\\", "/"));
       hash.update("\0");
@@ -206,7 +213,11 @@ export function createStateRuntime({
   }
 
   const snapshotCache = new Map();
-  const policyCache = new Map();
+  // The policy cache lives in change-policy; it registers its clearer here so
+  // one invalidation covers both. A local Map that nothing populated used to
+  // stand in for it, so the real cache was never invalidated.
+  const policyCacheClearers = [];
+  function registerPolicyCacheClearer(clear) { policyCacheClearers.push(clear); }
 
   // One definition of "this change's surface", read by the proof hash and by
   // the apply projection alike. They used to derive it separately — the hash
@@ -239,6 +250,30 @@ export function createStateRuntime({
     return spawnSync("git", args, {
       cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024
     });
+  }
+
+  // No encoding: `diff --binary` output is bytes, and decoding it through
+  // UTF-8 replaces any invalid sequence with U+FFFD — silently corrupting the
+  // very patch `apply` is later asked to replay. stdout/stderr are Buffers.
+  function gitBuffer(args, cwd = root) {
+    return spawnSync("git", args, { cwd, maxBuffer: 64 * 1024 * 1024 });
+  }
+
+  // Porcelain v1 `-z` records: `XY <path>` NUL-terminated, a rename/copy
+  // carrying its source path as the NEXT NUL record. One parser for every
+  // status listing: the by-hand line parsers broke on quoted paths, because
+  // core.quotepath C-quotes any non-ASCII name in the non-`-z` format.
+  function porcelainStatusRecords(stdout) {
+    const records = String(stdout).split("\0").filter(Boolean);
+    const rows = [];
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      const status = record.slice(0, 2);
+      const path = record.slice(3);
+      const origPath = /[RC]/.test(status) && records[index + 1] ? records[++index] : null;
+      rows.push({ status, path, origPath });
+    }
+    return rows;
   }
 
   function gitHead(cwd) {
@@ -317,13 +352,9 @@ export function createStateRuntime({
         if (match) indexed.set(match[3], { mode: match[1], oid: match[2] });
       }
       const dirty = new Set();
-      const statusEntries = gitStatus.stdout.split("\0").filter(Boolean);
-      for (let index = 0; index < statusEntries.length; index += 1) {
-        const line = statusEntries[index];
-        dirty.add(line.slice(3));
-        if ((/^[RC]/.test(line) || /^[RC]/.test(line.slice(1))) &&
-            statusEntries[index + 1])
-          dirty.add(statusEntries[++index]);
+      for (const row of porcelainStatusRecords(gitStatus.stdout)) {
+        dirty.add(row.path);
+        if (row.origPath) dirty.add(row.origPath);
       }
       // Tracking is per path, so it has to be asked per path: a fixture
       // directory whose name collides with a build-output name is only
@@ -342,7 +373,9 @@ export function createStateRuntime({
       }
     } else {
       collect(workspace);
-      files.sort(([a], [b]) => a.localeCompare(b));
+      // Codepoint order for the same reason as directoryHash: the git-aware
+      // branch above sorts by codepoint, and the two must agree.
+      files.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
       for (const [rel, path] of files) fold(rel, filesystemEntryIdentity(path));
     }
     const revisionMarker = `foundation-contract-revision:${
@@ -369,8 +402,7 @@ export function createStateRuntime({
   function clearSnapshotCache(id = null) {
     for (const key of snapshotCache.keys())
       if (!id || key.startsWith(`${id}\0`)) snapshotCache.delete(key);
-    if (id) policyCache.delete(id);
-    else policyCache.clear();
+    for (const clear of policyCacheClearers) clear(id);
   }
 
   // Git-ignored output is regenerable, so it belongs in no baseline. Walking it
@@ -400,11 +432,10 @@ export function createStateRuntime({
   // Digests, not just paths: a pre-existing file the change later edits is real
   // surface again, and dropping it by name would silently lose it.
   function preexistingDirty(workspace = root) {
-    const dirty = git(["status", "--porcelain", "--untracked-files=all"], workspace);
+    const dirty = git(["status", "--porcelain", "-z", "--untracked-files=all"], workspace);
     if (dirty.status !== 0) return {};
     const result = {};
-    for (const line of dirty.stdout.split("\n").filter(Boolean)) {
-      const rel = line.slice(3).split(" -> ").at(-1);
+    for (const { path: rel } of porcelainStatusRecords(dirty.stdout)) {
       if (!rel) continue;
       const path = join(workspace, rel);
       try {
@@ -487,9 +518,12 @@ export function createStateRuntime({
     singleRelevantSnapshot,
     declaredSurfaceMatcher,
     clearSnapshotCache,
+    registerPolicyCacheClearer,
     workspaceManifest,
     preexistingDirty,
+    porcelainStatusRecords,
     git,
+    gitBuffer,
     gitHead
   };
 }

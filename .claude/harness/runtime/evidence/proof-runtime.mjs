@@ -82,7 +82,11 @@ export function createProofRuntime({
       // field exists to document.
       advisories: advisoryCapabilities?.(id) || [],
       receipts: receiptEntries,
-      artifacts: stateBefore.activeProofRun?.serviceArtifacts || [],
+      // The execute path carries service logs on activeProofRun; the collect →
+      // record-external-receipts → finalize path cleared activeProofRun long
+      // before this runs, so its logs arrive via collectedServiceArtifacts.
+      artifacts: stateBefore.activeProofRun?.serviceArtifacts ||
+        stateBefore.collectedServiceArtifacts || [],
       instructionProvenance: instructionProvenance?.(id) || null,
       createdAt: now()
     };
@@ -94,6 +98,9 @@ export function createProofRuntime({
     // was read by nothing while three separate modules paid to invalidate it —
     // a field that looked authoritative and answered no question.
     state.status = "proven";
+    // Consumed into the proof above; leaving it would attach this run's
+    // service logs to a future, unrelated proof.
+    delete state.collectedServiceArtifacts;
     saveRuntime(state);
     console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}\n  next: /land ${id}`);
   }

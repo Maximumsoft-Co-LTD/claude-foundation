@@ -14,6 +14,21 @@ if command -v jq >/dev/null 2>&1; then
     bash "$ROOT/.claude/hooks/protect-secrets.sh")"
   assert_eq "secret hook allows templates" "" "$allowed"
 
+  # Quoting a path is a common accidental shape; blanking quoted spans wholesale
+  # let `cat ".env"` through while `cat .env` was caught. Single plain words in
+  # quotes must survive dequoting; prose strings must still be exempt.
+  quoted="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"cat \".env\""}}' |
+    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  assert_contains "secret hook catches a double-quoted secret path" "$quoted" '"decision": "block"'
+
+  quoted_single="$(printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat '.env'\"}}" |
+    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  assert_contains "secret hook catches a single-quoted secret path" "$quoted_single" '"decision": "block"'
+
+  message="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix: cat .env handling\""}}' |
+    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  assert_eq "secret hook still exempts secret names inside prose strings" "" "$message"
+
   assert_cmd_zero "opt-in direct-main hook self-test" \
     bash "$ROOT/.claude/hooks/no-direct-main-commit.sh" --self-test
 else

@@ -2,25 +2,26 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export function createChangePolicy({
-  root, excludedWorkspaceDirs, providers, gitHead, git, workspaceManifest,
-  loadRuntime, selectedRepositories, isCurrentChangePath, readJson, fileDigest,
-  fail
+  root, excludedWorkspaceDirs, providers, gitHead, git, porcelainStatusRecords,
+  workspaceManifest, loadRuntime, selectedRepositories, isCurrentChangePath,
+  readJson, fileDigest, fail
 }) {
   const policyCache = new Map();
+
+  // Registered with state-runtime's clearSnapshotCache so a surface mutation
+  // invalidates this cache too — it used to clear a dead Map of its own.
+  function clearPolicyCache(id = null) {
+    if (id) policyCache.delete(id);
+    else policyCache.clear();
+  }
 
   function changedFilesInWorkspace(id, workspace, knownHead = undefined) {
     const head = knownHead === undefined ? gitHead(workspace) : knownHead;
     if (!head) return [];
     const result = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], workspace);
     if (result.status !== 0) return [];
-    const records = result.stdout.split("\0").filter(Boolean);
-    const paths = [];
-    for (let index = 0; index < records.length; index += 1) {
-      const record = records[index];
-      const status = record.slice(0, 2);
-      paths.push(record.slice(3));
-      if (/[RC]/.test(status) && records[index + 1]) paths.push(records[++index]);
-    }
+    const paths = porcelainStatusRecords(result.stdout)
+      .flatMap((row) => (row.origPath ? [row.path, row.origPath] : [row.path]));
     return [...new Set(paths)].sort();
   }
 
@@ -246,6 +247,7 @@ export function createChangePolicy({
     capabilitiesForPaths,
     forecastCapabilities,
     policyCapabilities,
-    policyCapabilityTrigger
+    policyCapabilityTrigger,
+    clearPolicyCache
   };
 }

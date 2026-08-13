@@ -222,6 +222,13 @@ case "${1:-}" in
   metrics)
     shift; need_arg "metrics" "${1:-}"
     run_runtime read metrics "$@" ;;
+  exec)
+    shift; need_arg "exec" "${1:-}"
+    run_runtime write exec "$@" ;;
+  hash)
+    shift; need_arg "hash" "${1:-}"
+    [ "$#" -le 2 ] || fail "hash accepts <change> [provider]"
+    run_runtime read hash "$@" ;;
   budget)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift

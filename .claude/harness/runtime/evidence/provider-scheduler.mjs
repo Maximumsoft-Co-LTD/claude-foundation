@@ -89,8 +89,12 @@ export function createProviderScheduler({
         node.dependsOn.every((dependency) =>
           completed.has(dependency) ||
           receiptValidity(id, dependency).validity === "valid"));
+      // Throw rather than fail(): fail is process.exit, which skips the
+      // caller's catch — the thing that stops services and clears
+      // activeProofRun — so the next `evidence record` bound a dead run's
+      // workspace hash. A failed dependency lands here too, not only a cycle.
       if (!ready.length)
-        fail(`provider dependency cycle or blocked dependency: ${[...pending.keys()].join(", ")}`);
+        throw new Error(`provider dependency cycle or blocked dependency: ${[...pending.keys()].join(", ")}`);
       const batch = [];
       for (const node of ready)
         if (batch.every((selected) => !resourcesConflict(selected.resources, node.resources)))

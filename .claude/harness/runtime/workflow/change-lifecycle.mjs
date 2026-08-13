@@ -125,6 +125,18 @@ export function createChangeLifecycle({
     const id = slugify(flags.id || intent);
     setOperationChangeId(id);
     if (existsSync(changePath(id))) fail(`change already exists: ${id}`);
+    // An archived change keeps its runtime state, receipts, and evidence vault
+    // as history. A new change reusing the id would inherit them — review
+    // rounds it never ran, receipts bound to another workspace — so the id is
+    // refused rather than quietly adopted.
+    const residue = [
+      join(root, ".foundation", "runtime", `${id}.json`),
+      join(root, ".foundation", "receipts", id),
+      join(root, ".foundation", "evidence", id)
+    ].filter((path) => existsSync(path));
+    if (residue.length)
+      fail(`change id '${id}' was used before and its recorded history remains ` +
+        `(${residue.map((path) => path.slice(root.length + 1)).join(", ")}); pick a new id`);
     const draft = flags.draft ? loadDraft(flags.draft) : null;
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
     const source = templateDir(schema);

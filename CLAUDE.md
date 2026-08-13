@@ -79,7 +79,7 @@ Repository-only surface, never installed:
   so a concurrent edit cannot produce a mixed-revision fixture;
   `harness/wiring-check.mjs` verifies the composition root statically.
 - `dashboard/` - Node observability server plus `client.sh`; its `npm test`
-  runs as the last suite of `run-all.sh`.
+  runs as one suite in `run-all.sh`'s shared parallel pool.
 - `website/` - GitHub Pages site. `examples/` - sample consumer projects.
 - `VERSION`, `RELEASING.md`, `Formula/claude-foundation.rb`, `release-notes/`,
   and `.github/workflows/{release,bottle,pages,workflow-tests}.yml` - release
@@ -146,7 +146,7 @@ stay untracked; commit a durable finding to `docs/reports/`.
 - Keep changes surgical. A shipped-rule change also updates its deterministic
   tests and, when evidence-driven, the benchmark rationale.
 - Run `sh .claude/tests/run-all.sh` after changing shipped files. It needs Node
-  >= 20.19.0 and finishes with `npm --prefix dashboard test`.
+  >= 20.19.0 and finishes with the exclusive mutation suites.
 - Schemas and command files are picked up by the installer automatically, but a
   new agent-facing command also needs an entry in
   `.claude/harness/commands.json`.

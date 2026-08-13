@@ -55,6 +55,25 @@ for (const [command, phase] of Object.entries(PHASE_BY_COMMAND)) {
       `the runtime maps '${command}' to '${phase}'; cli.sh must say the same`));
 }
 
+// --- public command registry vs cli.sh grammar -------------------------------
+
+// `commands.json` generates `help`, but cli.sh owns the actual routes. An entry
+// the runtime implements but cli.sh never routes is a documented dead end —
+// `exec` and `hash` both shipped exactly that way. Every token of a public
+// command's name must appear in cli.sh, either as a case label or as a quoted
+// literal (the `dashboard snapshot` form).
+const registry = JSON.parse(read(".claude", "harness", "commands.json"));
+const publicCommands = registry.commands.filter(
+  (command) => !["internal", "host"].includes(command.audience));
+check(() => assert.ok(publicCommands.length > 20,
+  "the command registry failed to parse — this test is reading the wrong file"));
+for (const command of publicCommands)
+  for (const token of command.name.split(" "))
+    check(() => assert.ok(
+      new RegExp(`(?:^|\\s)(?:[\\w.-]+\\|)*${token}(?:\\|[\\w.-]+)*\\)`, "m").test(cli) ||
+        cli.includes(`"${token}"`),
+      `commands.json advertises '${command.name}' but cli.sh has no route for '${token}'`));
+
 // --- the four runtime-API pins ----------------------------------------------
 
 // CLAUDE.md states all four must match. Only four of the six pairs were checked

@@ -32,6 +32,7 @@ export function createApplyRuntime({
   applyTransactionEntry,
   cleanupApplyTransaction,
   git,
+  gitBuffer,
   gitHead,
   cleanupAppliedSandbox,
   cleanupRepositorySandboxes,
@@ -72,9 +73,11 @@ export function createApplyRuntime({
     git(["add", "-N", "."], sandboxPath);
     const state = loadRuntime(id);
     const pathspec = applyPathspec(id, state);
-    const diff = git(["diff", "--binary", sandboxBase(state), "--", ...pathspec], sandboxPath);
+    // gitBuffer, not git: a UTF-8 decode of the binary diff corrupts non-UTF-8
+    // content and makes `apply --check` report phantom conflicts.
+    const diff = gitBuffer(["diff", "--binary", sandboxBase(state), "--", ...pathspec], sandboxPath);
     if (diff.status !== 0) fail("cannot inspect sandbox diff");
-    if (!diff.stdout) {
+    if (!diff.stdout.length) {
       if (state.repositories && Object.keys(state.repositories).length > 1) return [];
       fail("sandbox has no applicable diff");
     }

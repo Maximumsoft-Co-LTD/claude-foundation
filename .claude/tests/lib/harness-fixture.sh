@@ -27,6 +27,10 @@ install_harness_fixture() {
     # Committed revision: one consistent snapshot by construction.
     git -C "$fixture_source" archive HEAD -- .claude/harness |
       tar -x -C "$fixture_stage" 2>/dev/null || fixture_stage_failed=1
+    # Only tar's status reaches that `||`, and bsdtar (macOS) exits 0 on empty
+    # input — so a failed `git archive` reads as a successful extraction and
+    # skips the working-tree fallback. Check that the payload actually landed.
+    [ -d "$fixture_stage/.claude/harness" ] || fixture_stage_failed=1
   else
     fixture_stage_failed=1
   fi

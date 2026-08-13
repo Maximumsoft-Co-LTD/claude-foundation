@@ -56,7 +56,7 @@ for required in \
   .claude/harness/commands.json \
   .claude/skills .claude/rules .claude/hooks .claude/settings.json \
   openspec/config.yaml openspec/repositories.yaml openspec/schemas \
-  foundation.json .foundation/.gitignore WORKFLOW.md; do
+  foundation.json .foundation/.gitignore .foundation/README.md WORKFLOW.md; do
   [ -e "$SOURCE_PATH/$required" ] || fail "source is missing $required"
 done
 
@@ -113,7 +113,7 @@ done
 if [ "$DRY_RUN" = yes ]; then ok "dry run complete"; exit 0; fi
 if [ "$ASSUME_YES" != yes ]; then
   printf 'Proceed? [y/N] '
-  read -r answer
+  read -r answer || fail "aborted; no input to confirm with, pass --yes to install"
   case "$answer" in y|Y|yes|YES) : ;; *) fail "aborted" ;; esac
 fi
 
@@ -127,6 +127,7 @@ PROJECT_MUTABLE=(
   "CLAUDE.md"
   "AGENTS.md"
   "openspec/config.yaml"
+  "openspec/repositories.yaml"
   "foundation.json"
 )
 for rel in "${MANAGED[@]}"; do
@@ -158,8 +159,13 @@ rollback_install() {
       cp -R "$BACKUP_DIR/$rel" "$TARGET_PATH/$rel"
     fi
   done
+  # A fresh install has no prior manifest to restore, so the one this run wrote
+  # would otherwise survive the rollback and claim ownership of files that were
+  # just removed.
   if [ -f "$BACKUP_DIR/install-manifest.txt" ]; then
     cp "$BACKUP_DIR/install-manifest.txt" "$MANIFEST_PATH"
+  else
+    rm -f "$MANIFEST_PATH"
   fi
 }
 cleanup_install() {
@@ -275,7 +281,9 @@ elif command -v jq >/dev/null 2>&1; then
       .hooks |= with_entries(
         .value |= map(
           .hooks |= map(select(
-            (.command | test("hooks/(dev-agent-guard|dev-state-mark|dev-state-validate|artifact-lint)\\.sh|hooks/phase-mutation-guard\\.mjs")) | not
+            if (.command? | type) == "string"
+            then (.command | test("hooks/(dev-agent-guard|dev-state-mark|dev-state-validate|artifact-lint)\\.sh|hooks/phase-mutation-guard\\.mjs")) | not
+            else true end
           ))
         ) | .value |= map(select((.hooks | length) > 0))
       );

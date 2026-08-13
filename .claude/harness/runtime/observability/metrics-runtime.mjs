@@ -113,8 +113,8 @@ export function createMetricsRuntime({
     });
     for (const operation of operations) {
       // `operation.phase` is now written for every lifecycle command, whether
-      // the call arrived through `cli.sh` or straight into the runtime, so the
-      // fallback only catches rows from an older revision.
+      // the call arrived through the public CLI wrapper or straight into the
+      // runtime, so the fallback only catches rows from an older revision.
       const name = operation.phase || operation.operation || "unknown";
       const phase = phaseEntry(name);
       phase.operations += 1;

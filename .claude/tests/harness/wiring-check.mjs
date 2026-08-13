@@ -34,12 +34,35 @@ const modules = walk(runtimeRoot).filter((path) => path.endsWith(".mjs"));
 const moduleSources = new Map(modules.map((path) =>
   [path, stripComments(readFileSync(path, "utf8"))]));
 
-// Read a balanced brace-delimited span starting at `open`.
+// Read a balanced brace-delimited span starting at `open`. String and template
+// literals are skipped: a brace inside `"}"` is text, and counting it would end
+// the span early and silently under-report the keys a call supplies. Template
+// interpolations re-enter code, so each open `${` remembers the brace depth it
+// started at and its own `}` closes it rather than the enclosing object.
 function balanced(source, open, [start, end]) {
   let depth = 0;
+  let quote = "";
+  const interpolations = [];
   for (let index = open; index < source.length; index += 1) {
-    if (source[index] === start) depth += 1;
-    else if (source[index] === end) {
+    const character = source[index];
+    if (quote) {
+      if (character === "\\") { index += 1; continue; }
+      if (character === quote) quote = "";
+      else if (quote === "`" && character === "$" && source[index + 1] === "{") {
+        interpolations.push(depth);
+        quote = "";
+        index += 1;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") { quote = character; continue; }
+    if (character === start) depth += 1;
+    else if (character === end) {
+      if (interpolations.length && interpolations[interpolations.length - 1] === depth) {
+        interpolations.pop();
+        quote = "`";
+        continue;
+      }
       depth -= 1;
       if (depth === 0) return source.slice(open + 1, index);
     }
@@ -61,11 +84,22 @@ function destructuredKeys(pattern) {
     if (name && !token.trim().startsWith("...")) keys.push(name);
     token = "";
   };
-  for (const character of pattern) {
-    if ("{[(".includes(character)) { depth += 1; token += character; continue; }
-    if ("}])".includes(character)) { depth -= 1; token += character; continue; }
-    if (character === "," && depth === 0) { flush(); continue; }
+  // Brackets and commas inside a string literal are text. Counting them drives
+  // `depth` negative, which stops every later comma from splitting a key off —
+  // one `"}"` in a call argument would hide every property after it.
+  let quote = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
     token += character;
+    if (quote) {
+      if (character === "\\") { token += pattern[index + 1] ?? ""; index += 1; continue; }
+      if (character === quote) quote = "";
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") { quote = character; continue; }
+    if ("{[(".includes(character)) { depth += 1; continue; }
+    if ("}])".includes(character)) { depth -= 1; continue; }
+    if (character === "," && depth === 0) { token = token.slice(0, -1); flush(); }
   }
   flush();
   return [...new Set(keys)];
@@ -92,19 +126,26 @@ if (mode === "params") {
         .filter((key) => !new RegExp(`\\b${key}\\s*=`).test(pattern));
       const callers = [[join(harness, "foundation.mjs"), entrypoint],
         ...[...moduleSources].filter(([candidate]) => candidate !== path)];
-      const caller = callers.find(([, callerSource]) => callerSource.includes(`${name}({`));
-      if (!caller) {
+      // Every call site, not just the first: a factory constructed in two
+      // places can be wired correctly in one and short a key in the other.
+      const callSites = callers.flatMap(([callerPath, callerSource]) => {
+        const sites = [];
+        for (let at = callerSource.indexOf(`${name}({`); at !== -1;
+          at = callerSource.indexOf(`${name}({`, at + 1)) sites.push([callerPath, callerSource, at]);
+        return sites;
+      });
+      if (!callSites.length) {
         findings.push(`${relative(root, path)}: ${name} is never called by shipped runtime code`);
         continue;
       }
-      const [callerPath, callerSource] = caller;
-      const callAt = callerSource.indexOf(`${name}({`);
-      const argument = balanced(callerSource, callerSource.indexOf("{", callAt), ["{", "}"]);
-      if (argument === null) continue;
-      const supplied = new Set(suppliedKeys(argument));
-      const missing = required.filter((key) => !supplied.has(key));
-      if (missing.length)
-        findings.push(`${relative(root, callerPath)}: ${name} does not receive ${missing.join(", ")}`);
+      for (const [callerPath, callerSource, callAt] of callSites) {
+        const argument = balanced(callerSource, callerSource.indexOf("{", callAt), ["{", "}"]);
+        if (argument === null) continue;
+        const supplied = new Set(suppliedKeys(argument));
+        const missing = required.filter((key) => !supplied.has(key));
+        if (missing.length)
+          findings.push(`${relative(root, callerPath)}:${callAt}: ${name} does not receive ${missing.join(", ")}`);
+      }
     }
   }
 } else if (mode === "unreferenced") {

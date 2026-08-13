@@ -67,7 +67,9 @@ export async function routeRuntimeCommand(command, values, api) {
     case "repos": showRepositories(values[0] || null); break;
     case "models": console.log(JSON.stringify(foundationPolicy().models, null, 2)); break;
     case "agent-plan": {
-      const { flags, rest } = parseFlags(values);
+      const { flags, rest } = parseStrictCommandFlags(values, "agents plan", {
+        boolean: ["full", "pretty"], value: ["group"]
+      });
       showAgentPlan(rest[0], flags); break;
     }
     case "agent-task": {
@@ -75,11 +77,15 @@ export async function routeRuntimeCommand(command, values, api) {
       showAgentTask(rest[0], rest[1], flags); break;
     }
     case "agent-acquire": {
-      const { flags, rest } = parseFlags(values);
+      const { flags, rest } = parseStrictCommandFlags(values, "agents acquire", {
+        boolean: ["force"], value: ["owner", "decision-ref"]
+      });
       acquireAgentLease(rest[0], rest[1], flags); break;
     }
     case "agent-release": {
-      const { flags, rest } = parseFlags(values);
+      const { flags, rest } = parseStrictCommandFlags(values, "agents release", {
+        boolean: ["force"], value: ["owner", "decision-ref"]
+      });
       releaseAgentLease(rest[0], rest[1], flags); break;
     }
     case "packet": {
@@ -208,12 +214,21 @@ export async function routeRuntimeCommand(command, values, api) {
     case "prove": prove(values[0]); break;
     case "land-check": landCheck(values[0]); break;
     case "land-recover": {
-      const { flags, rest } = parseFlags(values);
+      const { flags, rest } = parseStrictCommandFlags(values, "land recover", {
+        value: ["decision-ref"]
+      });
       recoverLand(rest[0], flags); break;
     }
     case "land-plan": showLandPlan(values[0]); break;
     case "land-record": {
-      const { flags, rest } = parseFlags(values);
+      // Strict, and --ci-required declared boolean: the lenient parser
+      // consumed the next positional as its value, so `--ci-required pass`
+      // stored the string "pass" and any falsy-looking token disabled the
+      // requirement it was meant to assert.
+      const { flags, rest } = parseStrictCommandFlags(values, "land record", {
+        boolean: ["ci-required"],
+        value: ["repo", "commit", "ci", "ci-attestation", "decision-ref"]
+      });
       recordRepositoryLand(rest[0], flags); break;
     }
     case "land-pointers": stageRootPointers(values[0]); break;

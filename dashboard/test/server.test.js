@@ -131,6 +131,49 @@ test('a null JSON body is a bad request, not a crash', async () => {
   assert.equal(health.body.ok, true);
 });
 
+test('an invalid status is rejected even on a throttled beat', async () => {
+  assert.equal((await heartbeat('throttle-status')).response.status, 200);
+  // The second beat lands inside the throttle window. Validating status only
+  // after the throttle check would let this one through with a 200.
+  const { response } = await heartbeat('throttle-status', { status: 'pretending' });
+  assert.equal(response.status, 400);
+  _internals.agents.delete('throttle-status');
+});
+
+test('a client beating faster than the interval still persists again', async () => {
+  await heartbeat('throttle-window', { gitUser: 'before' });
+  for (let i = 0; i < 5; i += 1) {
+    const { body } = await heartbeat('throttle-window', { gitUser: 'ignored' });
+    assert.equal(body.throttled, true);
+  }
+  assert.equal(_internals.agents.get('throttle-window').gitUser, 'before');
+  // Age the last *accepted* beat past the window while lastSeen stays fresh —
+  // exactly the state those rejected beats leave behind. A window measured from
+  // lastSeen would have been pushed out of reach by them, permanently.
+  _internals.agents.get('throttle-window').lastAccepted -= 60_000;
+  const { body } = await heartbeat('throttle-window', { gitUser: 'after' });
+  assert.equal(body.throttled, undefined);
+  assert.equal(_internals.agents.get('throttle-window').gitUser, 'after');
+  _internals.agents.delete('throttle-window');
+});
+
+test('the profile roster is bounded', async () => {
+  let rejected = 0;
+  for (let i = 0; i < 600; i += 1) {
+    const response = await fetch(`${origin}/api/profile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-cf-key': 'test-key' },
+      body: JSON.stringify({ user: `flood-profile-${i}` }),
+    });
+    await response.json();
+    if (response.status === 429) { rejected += 1; break; }
+  }
+  assert.equal(rejected, 1);
+  const online = await request('/api/online', { headers: { 'x-cf-key': 'view-key' } });
+  assert.equal(online.body.profiles.length <= 500, true);
+  for (let i = 0; i < 600; i += 1) _internals.profiles.delete(`flood-profile-${i}`);
+});
+
 test('the agent roster is bounded', async () => {
   let rejected = 0;
   for (let i = 0; i < 600; i += 1) {

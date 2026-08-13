@@ -11,9 +11,9 @@
 // two disjoint halves of a phase rollup: operations with no tokens, tokens with
 // no operations.
 //
-// `cli.sh` is shell and cannot import this module, so the pairing is asserted
-// by `.claude/tests/harness/run-phase-identity-tests.sh` instead. Keep the two
-// in step, or that suite fails.
+// The CLI wrapper is shell and cannot import this module, so the two are kept
+// in lockstep by the repository's single-source table checks. Keep them in
+// step, or those checks fail.
 //
 // `meta` covers commands that act on a change without belonging to a phase of
 // its construction — budget extension, telemetry ingestion, event recording.

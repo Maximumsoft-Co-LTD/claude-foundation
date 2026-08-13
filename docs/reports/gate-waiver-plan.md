@@ -1,8 +1,8 @@
 # Plan: give a failing gate a recorded way out of the loop
 
 Status: proposed, not entered into the change loop.
-Written against `1fec967` (working tree carries the in-flight `codeHash`
-rebinding; nothing here depends on it).
+Written against `1fec967` (the `codeHash` packet rebinding is already in
+HEAD; nothing here depends on the uncommitted hardening batch in the tree).
 Lane: Runtime (`.claude/harness/runtime/**`) plus Instruction
 (`commands.json`, command docs) — gates are the wiring test, protocol pins,
 a regression at the required-providers seam, and doc consistency.
