@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`harness-html-report` skill.** A shipped skill that projects harness state
+  into a self-contained Thai-language HTML report and publishes it as an
+  Artifact when the host supports one (file fallback otherwise). The report
+  opens with an eight-dimension KPI scorecard — quality, bugs, time, speed,
+  tokens, cost, improvement proposals, overall health — followed by a
+  per-phase walltime/token/cost table joined from `operations.jsonl` and
+  `events.jsonl`, gate receipts quoted verbatim, and a derived
+  improvement-candidates list. Read-only over `.foundation/` and `openspec/`;
+  cost estimates are allowed only when labeled with the assumed per-MTok
+  rates, and a `null` host cost is reported verbatim, never invented.
+
 ## [3.2.14] - 2026-08-13
 
 ### Added
