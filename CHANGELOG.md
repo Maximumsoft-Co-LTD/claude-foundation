@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`land recover <change> --decision-ref <ref>` settles an interrupted apply.**
+  Recovery replays or reverses filesystem mutations, so it now carries the same
+  decision reference every other authority action does and reports what it is
+  about to settle before settling it. `land check` reports a pending
+  transaction with its status and counts instead of resolving it.
+- **`sandbox sync` reconciles a worktree sandbox with a moved target.** It
+  replays the sandbox's diff onto the target's current commit and reports
+  `rebased: <base> -> <head>`. The replay is staged in a throwaway worktree
+  first, so a hunk that no longer applies leaves the sandbox untouched and
+  names each rejected file as a `CONFLICT`. `sandbox inspect` reports the
+  recorded base against the target's head, reading `.git/HEAD` and the ref
+  files rather than running `git`, so the diagnostic still works when the
+  environment is suspect.
+- **`hash <change> [provider]` prints the hash that provider binds**, which is
+  what a CI system signing an evidence envelope needs to state.
+
+### Fixed
+
+- **Land could project deletions for paths the change never declared.** The
+  apply projection was derived from a whole-tree manifest diff, so a projection
+  of 9 updates and 1 create also carried 6,509 deletions of undeclared files
+  under a nested repository sitting in the working tree. The change surface is
+  now the union of git-tracked paths and the paths the change declares, and a
+  projected deletion requires the path to be inside that surface. A change that
+  declares nothing keeps the previous unconfined surface, so undeclared new
+  files are never silently dropped. Every apply reports its update, create and
+  delete counts before it runs.
+- **A moving target was only refused after the evidence was spent.** A worktree
+  sandbox is pinned to the commit it branched from, and nothing moved it:
+  `sandbox sync` printed an ordinary success while the sandbox kept building
+  against a base the target no longer had, and the refusal arrived inside the
+  apply transaction as a bare string after Build and Prove had already run.
+  Both apply guards and `land check` now emit the `control-head-moved` decision
+  naming the replay as the way out, and a target that moved is always reported,
+  including for a multi-repository sandbox this sync cannot resolve.
+- **Editing the change packet expired every receipt.** The proof hash covered
+  the whole change surface, so a note added to `design.md` after proving
+  charged a full provider re-run for an edit no test or lint command can read.
+  The workspace snapshot is now folded twice: `workspaceHash` is every path the
+  change surface admits, `codeHash` is that minus the change packet. An
+  executable provider binds the second; `review` and `acceptance` still bind
+  the first, because a reviewer read the proposal.
+- **The loop dead-ended on gates it could not prove.** A capability inferred
+  from the realized diff can only appear after Build, and an inferred
+  capability nobody wired defaulted to adapter `external`, so Prove and Land
+  stopped on a gate with no executable path and no stated way out. An inferred
+  capability is now enforced only where a provider is wired or a claim declares
+  it, and is otherwise carried as a reported, non-blocking advisory. Preflight,
+  Prove finalize, and Land print the recovery route beside the blocker, and
+  `/prove` no longer bans self-review outright, which had made that supported
+  solo setup unusable.
+- **Unmeasured host usage was reported as zero.** Metrics reported
+  `requests: 0` and the budget window initialized numeric zero while
+  `measurement` still said no host events had been ingested, so a real run
+  appeared to consume nothing and `budgetDecision` claimed to be measured.
+  Unknown usage now stays null, a genuinely observed zero stays a measured
+  zero, and `ensureBudgetState` heals the legacy invented zero on read.
+
+### Changed
+
+- **`foundation.mjs` is a composition root again.** The runtime implementation
+  moved under `.claude/harness/runtime/`, leaving the entrypoint to wire the
+  domains together; the command registry and runtime environment are now their
+  own modules.
+- **`runtimeApi` moves to 19 and `providerProtocol` to 8** for the
+  provider-scoped hash and the runtime module split.
+- **The test suite runs suites through a bounded pool**, buffering each suite's
+  output and replaying it in table order so a parallel run diffs like a serial
+  one: 5m54s to 1m56s. Mutation suites hold a lock and refuse a tree that still
+  carries an injected fault, because two overlapping runs had already written
+  one run's fault into the working tree permanently.
+
 ## [3.2.11] - 2026-08-11
 
 ### Added

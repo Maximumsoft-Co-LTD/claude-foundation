@@ -46,3 +46,4 @@ dashboard/data/*.db-wal
 # record a gitlink to a repository with no configured URL — broken for anyone
 # who clones this one.
 opencode/
+changeloop-cli/
