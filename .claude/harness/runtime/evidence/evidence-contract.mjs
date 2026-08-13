@@ -333,12 +333,33 @@ export function createEvidenceContract({
       loadRuntime(id).workspace?.path || ROOT);
   }
   
+  // Which hash a provider's receipt is bound to, and therefore what expires it.
+  //
+  // `review` and `acceptance` are verdicts about the packet as much as the code
+  // — a reviewer read the proposal — so they stay bound to the whole surface.
+  // Everything else runs a command that cannot read `design.md`, and binding it
+  // to the packet charged a full provider re-run for a note added after
+  // proving. Those bind the code hash instead.
+  //
+  // The `fallback` a proof run passes in is the run's full workspace hash, so
+  // it cannot answer for the code-bound half; the snapshot is read instead. In
+  // a run that is the same cached snapshot the run created, so recording and
+  // checking still agree on one value.
+  function packetBoundCapability(id, provider) {
+    return ["review", "acceptance"]
+      .includes(providerCapability(provider, providerConfig(id, provider)));
+  }
+
   function providerWorkspaceHash(id, provider, fallback = null) {
+    const field = packetBoundCapability(id, provider) ? "workspaceHash" : "codeHash";
     const repository = providerRepository(id, provider);
-    if (!repository) return fallback || relevantHash(id);
+    if (!repository)
+      return field === "workspaceHash"
+        ? fallback || relevantHash(id)
+        : relevantSnapshot(id)[field] || fallback || relevantHash(id);
     const snapshot = relevantSnapshot(id);
-    return snapshot.repositories?.[repository.id]?.workspaceHash ||
-      singleRelevantSnapshot(id, repository.workspacePath, true).workspaceHash;
+    return snapshot.repositories?.[repository.id]?.[field] ||
+      singleRelevantSnapshot(id, repository.workspacePath, true)[field];
   }
   
   // Which repository a scoped input root belongs to, for a stable label in the

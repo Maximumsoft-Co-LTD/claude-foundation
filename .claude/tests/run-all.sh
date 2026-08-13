@@ -58,6 +58,7 @@ spec sync land gate|sh "$HERE/harness/run-specsync-gate-tests.sh"
 dashboard contracts|npm --prefix "$ROOT/dashboard" test
 !land surface mutation|sh "$HERE/harness/run-land-surface-mutation.sh"
 !target drift mutation|sh "$HERE/harness/run-target-drift-mutation.sh"
+!evidence binding mutation|sh "$HERE/harness/run-evidence-binding-mutation.sh"
 TABLE
 }
 

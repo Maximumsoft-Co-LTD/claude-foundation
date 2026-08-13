@@ -7,7 +7,7 @@ export async function routeRuntimeCommand(command, values, api) {
     foundationPolicy, showAgentPlan, showAgentTask, acquireAgentLease,
     releaseAgentLease, prepareClaudeTelemetry, recordPhaseContext, showPacket,
     showMetrics, execObserved, continueBudget, doctor, validate, showTraceabilityAudit,
-    relevantHash, proofPlan, proofReadiness, proofRun, proofCollect,
+    relevantHash, providerWorkspaceHash, proofPlan, proofReadiness, proofRun, proofCollect,
     proofPreflight, proofExecute, proofAudit, showEvidenceDetection,
     initializeEvidence, showEvidenceDoctor, recordVerifiedCi, requestAuthority,
     showAuthorityStatus, recordAuthority, upgradeEvidence, recordReceipt,
@@ -137,7 +137,12 @@ export async function routeRuntimeCommand(command, values, api) {
       if (rest.length !== 1) die("change audit requires exactly one change");
       showTraceabilityAudit(rest[0], flags); break;
     }
-    case "hash": console.log(relevantHash(values[0])); break;
+    // With a provider, the hash *that provider's* receipt binds — which is what
+    // an external system signing evidence has to state. Without one, the change's
+    // workspace hash, as before.
+    case "hash": console.log(values[1]
+      ? providerWorkspaceHash(values[0], values[1])
+      : relevantHash(values[0])); break;
     case "proof-plan": proofPlan(values[0]); break;
     case "proof-readiness": proofReadiness(values[0]); break;
     case "proof-run": await proofRun(values[0]); break;

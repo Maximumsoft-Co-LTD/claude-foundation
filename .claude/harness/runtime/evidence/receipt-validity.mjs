@@ -8,7 +8,7 @@ import { join } from "node:path";
 // every staleness class.
 const VALIDITY_RECOVERY = {
   missing: (id) => `no evidence has been executed for this workspace; run: claude-foundation proof run ${id}`,
-  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}`,
+  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them`,
   "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation proof run ${id}`,
   "contract-stale": (id) => `evidence.yaml changed after this receipt; re-run: claude-foundation proof run ${id}`,
   "provider-fingerprint-stale": (id) => `the provider's execution.yaml wiring changed; re-run: claude-foundation proof run ${id}`,

@@ -17,7 +17,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, trackedPathSet
+  ROOT_ONLY_EXCLUDED_DIRS, isChangePacketPath, isExcludedPath,
+  sandboxCodePathspec, trackedPathSet
 } from "../../harness/runtime/core/workspace-surface.mjs";
 import { createStateRuntime } from "../../harness/runtime/core/state-runtime.mjs";
 
@@ -54,6 +55,25 @@ check(() => assert.equal(excluded(".codex/hooks/tests/fixtures/.workflow/case.md
 check(() => assert.equal(excluded(".foundation/runtime/x.json"), true));
 check(() => assert.equal(excluded("examples/app/.foundation/runtime/x.json"), false));
 check(() => assert.deepEqual([...ROOT_ONLY_EXCLUDED_DIRS].sort(), [".foundation", ".workflow"]));
+
+// The packet boundary. Three callers read it — the sandbox pathspec, the
+// workspace walk, and the code hash an executable provider binds — so it is
+// stated once and pinned here.
+check(() => assert.equal(isChangePacketPath("openspec/changes/add-auth/design.md", "add-auth"), true),
+  "a file inside the change packet is packet");
+check(() => assert.equal(isChangePacketPath("openspec/changes/add-auth", "add-auth"), true),
+  "the packet directory itself is packet");
+check(() => assert.equal(isChangePacketPath("openspec/changes/add-auth-extra/design.md", "add-auth"), false),
+  "a sibling change whose id shares a prefix is not this packet");
+check(() => assert.equal(isChangePacketPath("openspec/specs/auth/spec.md", "add-auth"), false),
+  "a landed spec is code surface, not packet");
+check(() => assert.equal(isChangePacketPath("src/auth.ts", "add-auth"), false),
+  "ordinary source is not packet");
+// The sandbox pathspec excludes the same packet; a disagreement here is either
+// work dropped at Land or evidence surviving an edit it should not.
+check(() => assert.ok(
+  sandboxCodePathspec("add-auth").includes(":(exclude)openspec/changes/add-auth/**")),
+"the sandbox pathspec excludes the packet the code hash omits");
 
 // Depth alone cannot decide it: every monorepo nests node_modules, and pulling
 // one into the hash would be a worse failure than the one being fixed.

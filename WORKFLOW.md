@@ -462,6 +462,13 @@ It excludes runtime receipts, sandboxes, dependencies, legacy workflow records,
 other active changes, and archived changes. Any relevant edit makes prior
 receipts and proof stale.
 
+What is relevant depends on the provider. A provider that runs a command is
+bound to the workspace minus the change packet, so editing the proposal,
+design, tasks, or a spec delta after proving re-finalizes proof without
+re-executing evidence; `review` and `acceptance` are bound to the packet as
+well and expire with it. A provider may narrow its binding further by declaring
+`inputs` in its execution config, and `proof plan` prints what each one binds.
+
 ## Preflight and telemetry
 
 Run `doctor --stage change|build|prove`. Change and Build allow commands that

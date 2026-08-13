@@ -105,7 +105,10 @@ claude-foundation evidence verify-ci <change> <provider> signed-result.json
 ```
 
 The envelope binds the change, provider, workspace hash, optional Git commit,
-run URL, status, observation, and artifact SHA-256 digests. An invalid signature,
+run URL, status, observation, and artifact SHA-256 digests. The hash it must
+carry is the one that provider binds, which
+`claude-foundation hash <change> <provider>` prints; without a provider the same
+command prints the change's workspace hash. An invalid signature,
 stale workspace, wrong issuer, or unsigned passing artifact is rejected before
 a receipt is written.
 
@@ -190,9 +193,34 @@ before copying any artifact or writing a receipt.
 
 Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
-execution. Providers with non-conflicting resources run concurrently. A
-provider may declare workspace-relative `inputs`; its receipt can be rebound
-when those inputs are unchanged even if unrelated workspace files changed.
+execution. Providers with non-conflicting resources run concurrently.
+
+What expires a receipt is what it is bound to. A provider that runs a command
+binds the workspace minus the change packet, so editing `proposal.md`,
+`design.md`, `tasks.md`, or a spec delta after proving re-finalizes the proof
+without re-executing anything. `review` and `acceptance` bind the whole
+workspace including the packet — a reviewer read it — and cannot narrow that.
+
+Narrow it further with workspace-relative `inputs`, and an edit outside them
+rebinds the receipt instead of re-earning it:
+
+```json
+{"providers": {
+  "test": {"adapter": "test-discovery", "command": ["npm", "test"],
+           "minimum": 1, "inputs": ["src/**", "tests/**", "package.json"]},
+  "static-analysis": {"adapter": "command", "command": ["npm", "run", "lint"],
+                      "inputs": ["src/**", ".eslintrc.json"]}
+}}
+```
+
+A `discovery` provider produced by a `test-discovery` adapter reads the test
+provider's config, so declaring `inputs` once covers both. A cross-repository
+provider may scope a pattern to a repository: `api:openapi.yaml`. Patterns are
+workspace-relative, reject `..`, and a passing receipt whose declared inputs
+matched no file is refused rather than bound to an empty set. `inputs` is a
+claim about what the command reads: name too little and a real code edit reuses
+evidence that never saw it. `proof plan` prints each provider's binding, and
+reuse is logged to `.foundation/logs/<change>/reuse.jsonl`.
 
 A receipt records how it was produced. Receipts the harness executed carry
 `execution: "harness"` and their command log; everything recorded by hand is

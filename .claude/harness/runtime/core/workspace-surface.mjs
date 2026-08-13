@@ -60,6 +60,18 @@ export function declaredPathMatcher(globs) {
     rel === prefix || rel.startsWith(`${prefix}/`));
 }
 
+// The change packet: proposal, design, tasks, spec deltas, evidence contract.
+//
+// Named here rather than spelled inline because three callers must agree on it
+// exactly — the sandbox pathspec below, the workspace walk, and the code hash
+// that decides whether an executable provider's receipt survives an edit. A
+// path one counts as packet and another counts as code is either a receipt
+// expiring for a note in `design.md` or a real code edit reusing evidence.
+export function isChangePacketPath(rel, changeId) {
+  const base = `openspec/changes/${changeId}`;
+  return rel === base || rel.startsWith(`${base}/`);
+}
+
 // The git pathspec separating a change's own code work from everything a
 // sandbox carries but does not own: the packet (whose source of truth is the
 // target), provider output, machine state, and nested repositories.

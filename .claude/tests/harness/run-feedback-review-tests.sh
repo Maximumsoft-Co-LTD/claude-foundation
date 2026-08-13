@@ -521,6 +521,27 @@ assert_contains "validity recomputes tampered independence" \
   "$tampered_plan" "review: review-not-independent"
 cp "$TMP/valid-review.json" .foundation/receipts/irreversible-payment-migration/review.json
 
+# An executable provider binds the code half of the workspace, so a note added
+# to the packet after proving costs nothing. A reviewer read the packet, so the
+# same edit must expire their verdict — the exemption stops at review.
+review_packet="openspec/changes/irreversible-payment-migration/design.md"
+[ -f "$review_packet" ] ||
+  review_packet="openspec/changes/irreversible-payment-migration/proposal.md"
+cp "$review_packet" "$TMP/review-packet-before"
+assert_contains "the restored review receipt is valid" \
+  "$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)" \
+  "review: valid"
+printf '\nA note added after the review.\n' >> "$review_packet"
+packet_edit_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
+assert_contains "a packet edit expires a review receipt" \
+  "$packet_edit_plan" "review: stale"
+assert_contains "the stale review names its whole-workspace binding" \
+  "$packet_edit_plan" "review is bound to the whole workspace by design"
+cp "$TMP/review-packet-before" "$review_packet"
+assert_contains "restoring the packet restores the review receipt" \
+  "$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)" \
+  "review: valid"
+
 # Legacy review receipts stay readable but cannot satisfy the new review policy.
 jq 'del(.reviewProtocolVersion)' \
   .foundation/receipts/irreversible-payment-migration/review.json \
@@ -530,7 +551,7 @@ cp "$TMP/legacy-review.json" \
 legacy_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
 assert_contains "legacy review receipt is specifically stale" \
   "$legacy_plan" "review: review-version-stale"
-assert_eq "provider protocol remains backward-compatible" "7" \
+assert_eq "provider protocol remains backward-compatible" "8" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
   jq -e '.reviewProtocol == "2" and .acceptanceProtocol == "2" and .reviewPacketSchema == "3" and .authorityProtocol == "1" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \

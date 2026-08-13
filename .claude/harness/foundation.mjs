@@ -92,7 +92,7 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
     "is a mixture of two revisions. Reinstall it with 'claude-foundation init <project>'.");
   process.exit(1);
 }
-const PROVIDER_PROTOCOL_VERSION = "7";
+const PROVIDER_PROTOCOL_VERSION = "8";
 const ADAPTER_PROTOCOL_VERSION = "4";
 const PROOF_PROTOCOL_VERSION = "4";
 const PACKET_SCHEMA_VERSION = "5";
@@ -1508,6 +1508,7 @@ await routeRuntimeCommand(command, values, {
   validate,
   showTraceabilityAudit,
   relevantHash,
+  providerWorkspaceHash,
   proofPlan,
   proofReadiness,
   proofRun,

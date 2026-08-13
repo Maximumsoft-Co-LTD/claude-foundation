@@ -26,12 +26,31 @@ export function createReceiptRuntime({
   reviewProvenanceResult, readJson, flagValues, reviewHistoryState,
   reserveReviewAttempt, reviewReceiptBinding, die
 }) {
+  // What a provider is bound to decides what re-running proof will cost, and
+  // the plan is where that is cheap to learn. `stale` alone told an operator to
+  // pay again without saying that declaring `inputs` would have made the edit
+  // free — a route the shipped reference mentioned in one sentence.
+  function bindingNote(id, provider, validity) {
+    if (["missing", "valid"].includes(validity)) return null;
+    const config = providerConfig(id, provider);
+    const capability = providerCapability(provider, config);
+    if (["review", "acceptance"].includes(capability))
+      return `${capability} is bound to the whole workspace by design`;
+    const declared = Array.isArray(config?.inputs) ? config.inputs : null;
+    return declared
+      ? `declared inputs: ${declared.join(", ")}`
+      : "whole-workspace binding; declare inputs to narrow it";
+  }
+
   function proofPlan(id) {
     validate(id, "active", { quiet: true });
     const hash = relevantHash(id);
     const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
     console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
-    for (const row of rows) console.log(`  ${row.provider}: ${row.validity}`);
+    for (const row of rows) {
+      const note = bindingNote(id, row.provider, row.validity);
+      console.log(`  ${row.provider}: ${row.validity}${note ? ` (${note})` : ""}`);
+    }
     // A capability the policy inferred from the diff but nothing wired is not
     // part of the plan — it cannot be executed and no receipt will satisfy it.
     // It is still printed, because "the policy saw a lockfile change and this
@@ -129,8 +148,12 @@ export function createReceiptRuntime({
     const inputMode = flags["input-mode"] || config?.inputMode || null;
     const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
       `manual-${Date.now()}-${process.pid}`;
-    const workspaceHash = flags.workspaceHash || state.activeProofRun?.workspaceHash ||
-      providerWorkspaceHash(id, provider);
+    // Through `providerWorkspaceHash`, not around it: the active run records
+    // one hash for the whole run, and a provider scoped to a repository — or
+    // bound to the code half — expects its own. Taking the run's value first
+    // wrote a receipt that was stale the moment it existed.
+    const workspaceHash = flags.workspaceHash ||
+      providerWorkspaceHash(id, provider, state.activeProofRun?.workspaceHash);
     const repository = providerRepository(id, provider, config);
     const artifactFlags = [
       ...(Array.isArray(flags.artifact) ? flags.artifact : []),

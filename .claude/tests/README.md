@@ -38,6 +38,7 @@ it copies anything, so running one directly is as safe as running the suite.
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
 | `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
 | `harness/run-target-drift-mutation.sh` | Removing the worktree replay or the `land check` target stop is detected by the suite above |
+| `harness/run-evidence-binding-mutation.sh` | Folding the change packet back into the code hash, or dropping review's exemption from that omission, is detected by the harness-contract and feedback-review suites |
 | `harness/run-upgrade-compat-tests.sh` | Legacy-default migration, custom-policy preservation, and partial-policy deep merge |
 | `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases; preserves the full contract assertion order in one shared fixture process |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |

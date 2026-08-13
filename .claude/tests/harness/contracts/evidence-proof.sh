@@ -17,7 +17,12 @@ cp "$TMP/ci-execution.json" openspec/changes/verify-signed-ci-evidence/execution
 sed 's/- \[ \]/- [x]/g' openspec/changes/verify-signed-ci-evidence/tasks.md \
   > "$TMP/ci-tasks.md"
 cp "$TMP/ci-tasks.md" openspec/changes/verify-signed-ci-evidence/tasks.md
-ci_workspace_hash="$(node .claude/harness/foundation.mjs hash verify-signed-ci-evidence)"
+# The hash the *provider* binds, not the change's. A deployment provider runs a
+# command and binds the code half, so signing the whole-workspace hash produced
+# an envelope that could never match.
+ci_workspace_hash="$(node .claude/harness/foundation.mjs hash verify-signed-ci-evidence deployment)"
+assert_cmd_zero "a provider-scoped hash omits the change packet" \
+  test "$ci_workspace_hash" != "$(node .claude/harness/foundation.mjs hash verify-signed-ci-evidence)"
 jq -n --arg workspace "$ci_workspace_hash" \
   '{version:1,issuer:"fixture-ci",changeId:"verify-signed-ci-evidence",provider:"deployment",workspaceHash:$workspace,status:"pass",runUrl:"https://ci.example.invalid/runs/42",observed:"Deployment package and rollback checks passed",artifacts:[{name:"deployment-report.json",sha256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}' \
   > "$TMP/ci-payload.json"
@@ -212,6 +217,28 @@ for provider in static-analysis data-migration accessibility resilience observab
     --observed "fixture evidence for $provider" --source harness-test --artifact app.txt >/dev/null
 done
 assert_cmd_zero "new provider receipts produce a complete proof" \
+  node .claude/harness/foundation.mjs prove production-provider-coverage
+
+# A receipt binds the hash its own provider binds. A run records one hash for
+# the whole run, and an activeProofRun left behind by an abnormal exit used to
+# be taken ahead of the provider's — writing a receipt that was stale the moment
+# it existed, for a reason no operator could see.
+expected_binding="$(node .claude/harness/foundation.mjs hash \
+  production-provider-coverage accessibility)"
+jq --arg stale "$(printf '0%.0s' $(seq 64))" \
+  '.activeProofRun = {"id":"collect-abandoned","snapshotId":"snapshot-abandoned","workspaceHash":$stale}' \
+  .foundation/runtime/production-provider-coverage.json > "$TMP/leftover-run.json"
+cp "$TMP/leftover-run.json" .foundation/runtime/production-provider-coverage.json
+node .claude/harness/foundation.mjs receipt production-provider-coverage accessibility pass \
+  --observed 'fixture evidence for accessibility' --source harness-test \
+  --artifact app.txt >/dev/null
+assert_eq "a receipt binds its provider's hash, not a leftover run's" \
+  "$expected_binding" \
+  "$(jq -r '.workspaceHash' .foundation/receipts/production-provider-coverage/accessibility.json)"
+jq 'del(.activeProofRun)' .foundation/runtime/production-provider-coverage.json \
+  > "$TMP/cleared-run.json"
+cp "$TMP/cleared-run.json" .foundation/runtime/production-provider-coverage.json
+assert_cmd_zero "the change still proves after the leftover run is cleared" \
   node .claude/harness/foundation.mjs prove production-provider-coverage
 
 # Evidence v2 executes a DAG, emits test+discovery from one process, and
@@ -557,6 +584,69 @@ assert_eq "behavioral contract no longer carries provider commands" "false" \
   "$(jq 'has("providers")' openspec/changes/executable-evidence/evidence.yaml)"
 assert_eq "execution file receives migrated provider commands" "test-discovery" \
   "$(jq -r '.providers.test.adapter' openspec/changes/executable-evidence/execution.yaml)"
+
+# A provider that declares no inputs binds the whole workspace *minus* the
+# change packet. Editing the packet after proving used to expire every receipt
+# in the change and charge a full provider re-run for a note in design.md.
+node .claude/harness/foundation.mjs new 'Packet edit reuse' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve packet-edit-reuse \
+  --impact low --coupling isolated >/dev/null
+printf 'code under test\n' > packet-edit-code.txt
+printf '%s\n' '#!/usr/bin/env sh' \
+  'count=0' \
+  '[ ! -f .foundation/packet-edit-count.txt ] || count="$(cat .foundation/packet-edit-count.txt)"' \
+  'count=$((count + 1))' \
+  'printf "%s\\n" "$count" > .foundation/packet-edit-count.txt' \
+  'printf "%s\\n" "{\"numTotalTests\":2}"' > packet-edit-fixture.sh
+chmod +x packet-edit-fixture.sh
+printf '%s\n' \
+  '{' \
+  '  "version": 2,' \
+  '  "providers": {' \
+  '    "test": {"adapter":"test-discovery","command":["sh","packet-edit-fixture.sh"],"minimum":2}' \
+  '  },' \
+  '  "claims": [' \
+  '    {"id":"packet-edit-outcome","scenario":"Evidence survives packet edits","impact":"low","capabilities":["test"]}' \
+  '  ]' \
+  '}' > openspec/changes/packet-edit-reuse/evidence.yaml
+sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/packet-edit-reuse/tasks.md
+rm openspec/changes/packet-edit-reuse/tasks.md.bak
+assert_cmd_zero "an undeclared-inputs provider proves once" \
+  node .claude/harness/foundation.mjs proof-run packet-edit-reuse
+assert_eq "the provider ran once" "1" "$(tr -d '\n' < .foundation/packet-edit-count.txt)"
+assert_cmd_zero "a provider-scoped hash differs from the change hash" \
+  test "$(node .claude/harness/foundation.mjs hash packet-edit-reuse test)" != \
+    "$(node .claude/harness/foundation.mjs hash packet-edit-reuse)"
+printf '\nA note added after proving.\n' >> openspec/changes/packet-edit-reuse/design.md
+packet_plan="$(node .claude/harness/foundation.mjs proof-plan packet-edit-reuse)"
+assert_contains "a packet edit leaves an executable receipt valid" \
+  "$packet_plan" "test: valid"
+assert_cmd_zero "re-proving after a packet edit succeeds" \
+  node .claude/harness/foundation.mjs proof-run packet-edit-reuse
+assert_eq "a packet edit executes no provider" "1" \
+  "$(tr -d '\n' < .foundation/packet-edit-count.txt)"
+printf 'changed\n' > packet-edit-code.txt
+code_plan="$(node .claude/harness/foundation.mjs proof-plan packet-edit-reuse)"
+assert_contains "a code edit still expires the receipt" "$code_plan" "test: stale"
+assert_contains "the stale row names the route to a narrower binding" \
+  "$code_plan" "declare inputs to narrow it"
+
+# What every existing project meets on the upgrade that changed what a receipt
+# binds. A receipt from the previous provider protocol must be refused for that
+# reason specifically — not silently accepted, and not reported as some other
+# staleness whose route happens to coincide.
+cp .foundation/receipts/packet-edit-reuse/test.json "$TMP/current-protocol-receipt.json"
+jq '.providerProtocolVersion = "7"' "$TMP/current-protocol-receipt.json" \
+  > .foundation/receipts/packet-edit-reuse/test.json
+legacy_protocol_plan="$(node .claude/harness/foundation.mjs proof-plan packet-edit-reuse)"
+assert_contains "a receipt from the previous provider protocol is refused" \
+  "$legacy_protocol_plan" "test: provider-version-stale"
+legacy_protocol_prove="$(node .claude/harness/foundation.mjs prove packet-edit-reuse 2>&1 || true)"
+assert_contains "the refusal names the protocol as the cause" \
+  "$legacy_protocol_prove" "predates the current protocol"
+assert_contains "the refusal names the route out" \
+  "$legacy_protocol_prove" "claude-foundation proof run packet-edit-reuse"
+cp "$TMP/current-protocol-receipt.json" .foundation/receipts/packet-edit-reuse/test.json
 
 # Discovery accepts only an actual non-negative integer. JavaScript-coercible
 # values are unknown evidence, while a numeric zero is a real empty suite.

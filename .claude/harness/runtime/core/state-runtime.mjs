@@ -5,7 +5,7 @@ import {
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  declaredPathMatcher, isExcludedPath, trackedPathSet
+  declaredPathMatcher, isChangePacketPath, isExcludedPath, trackedPathSet
 } from "./workspace-surface.mjs";
 import { taskBlocks, taskMetadata } from "../workflow/change-artifacts.mjs";
 
@@ -32,8 +32,7 @@ export function createStateRuntime({
   function currentChangeRelativePath(id) { return `openspec/changes/${id}`; }
 
   function isCurrentChangePath(rel, id) {
-    const base = currentChangeRelativePath(id);
-    return rel === base || rel.startsWith(`${base}/`);
+    return isChangePacketPath(rel, id);
   }
 
   function activeChangePath(id, state = loadRuntime(id)) {
@@ -264,8 +263,24 @@ export function createStateRuntime({
     const cacheKey = `${id}\0${workspace}\0${Number(state.contractRevision || state.revision || 0)}`;
     if (!force && snapshotCache.has(cacheKey)) return snapshotCache.get(cacheKey);
     const hash = createHash("sha256");
+    // The same walk, folded twice. `hash` is every path the change surface
+    // admits; `codeHash` is that minus the change packet, which no test or lint
+    // command reads. An executable provider binds the second, so a note added
+    // to `design.md` after proving no longer expires evidence that ran against
+    // code nobody touched. Review and acceptance still bind the first — a
+    // reviewer read the proposal, and editing it must expire their verdict.
+    const codeHash = createHash("sha256");
     const files = [];
     const declared = declaredSurfaceMatcher(id, state);
+    function fold(rel, contentIdentity) {
+      for (const digest of [hash, codeHash]) {
+        if (digest === codeHash && isChangePacketPath(rel, id)) continue;
+        digest.update(rel);
+        digest.update("\0");
+        digest.update(contentIdentity);
+        digest.update("\0");
+      }
+    }
     // Without git there is no tracked/untracked axis to confine by, and a walk
     // that guessed would drop content instead of noise.
     let gitAware = false;
@@ -323,22 +338,17 @@ export function createStateRuntime({
             : (existsSync(path) ? filesystemEntryIdentity(path) : "deleted"))
           : indexed.get(rel)?.oid;
         files.push([rel, path]);
-        hash.update(rel);
-        hash.update("\0");
-        hash.update(contentIdentity || "missing");
-        hash.update("\0");
+        fold(rel, contentIdentity || "missing");
       }
     } else {
       collect(workspace);
       files.sort(([a], [b]) => a.localeCompare(b));
-      for (const [rel, path] of files) {
-        hash.update(rel);
-        hash.update("\0");
-        hash.update(filesystemEntryIdentity(path));
-        hash.update("\0");
-      }
+      for (const [rel, path] of files) fold(rel, filesystemEntryIdentity(path));
     }
-    hash.update(`foundation-contract-revision:${Number(state.contractRevision || state.revision || 0)}`);
+    const revisionMarker = `foundation-contract-revision:${
+      Number(state.contractRevision || state.revision || 0)}`;
+    hash.update(revisionMarker);
+    codeHash.update(revisionMarker);
     const workspaceHash = hash.digest("hex");
     const value = {
       version: 1,
@@ -346,6 +356,7 @@ export function createStateRuntime({
       changeId: id,
       workspace,
       workspaceHash,
+      codeHash: codeHash.digest("hex"),
       revision: Number(state.contractRevision || state.revision || 0),
       fileCount: files.length,
       createdAt: now()
