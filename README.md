@@ -15,7 +15,7 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
-**Version 3.2.18** — runtime API 19, provider protocol 7. Receipts recorded by
+**Version 3.2.19** — runtime API 19, provider protocol 7. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 
 ## How the AI and harness divide responsibility
