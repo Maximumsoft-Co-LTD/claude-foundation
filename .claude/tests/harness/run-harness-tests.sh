@@ -59,8 +59,24 @@ assert_contains "test wiring names the structured report field" "$providers" \
 # Domain slices share this fixture process deliberately: assertion order,
 # mutable fixture state, and the aggregate result remain the same contract this
 # runner exposed before the split.
-. "$HERE/contracts/change-policy.sh"
-. "$HERE/contracts/evidence-proof.sh"
-. "$HERE/contracts/sandbox-land.sh"
-. "$HERE/contracts/multi-repository.sh"
-. "$HERE/contracts/planning-diagnostics.sh"
+#
+# Arguments select slices so independent slices can run as parallel suites and
+# a mutation kill can target the slice that owns the detecting assertion. No
+# arguments runs all five — the original aggregate contract. The only
+# cross-slice state is `cross-repository-profile`, created by multi-repository
+# and read by planning-diagnostics: a run selecting planning-diagnostics must
+# select multi-repository before it, and `run-all.sh` schedules them together.
+slices="${*:-change-policy evidence-proof sandbox-land multi-repository planning-diagnostics}"
+for slice in $slices; do
+  case "$slice" in
+    change-policy|evidence-proof|sandbox-land|multi-repository|planning-diagnostics) ;;
+    *) echo "unknown contract slice: $slice" >&2; exit 2 ;;
+  esac
+done
+for slice in $slices; do
+  . "$HERE/contracts/$slice.sh"
+done
+
+# The summary lives here, not in the last slice, so a partial selection still
+# fails the run when any assertion failed.
+finish "harness contracts"

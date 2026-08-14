@@ -47,7 +47,7 @@ cp "$STATE" "$WORK/state-runtime.mjs"
 # outcome this script cannot interpret, and swallowing the output turned it into
 # a bare "not-applied" with nothing to act on.
 suite_passes() {
-  ( cd "$ROOT" && sh "$1" > "$WORK/suite.log" 2>&1 )
+  ( cd "$ROOT" && sh "$@" > "$WORK/suite.log" 2>&1 )
 }
 
 report_baseline() {
@@ -57,11 +57,34 @@ report_baseline() {
   exit 1
 }
 
+# A kill targets the slice that owns the detecting assertions, not the whole
+# aggregate runner: the packet-omission assertions live in the evidence-proof
+# contract slice, and a mutated run only has to reach them.
 CODE_SUITE=".claude/tests/harness/run-harness-tests.sh"
+CODE_SLICE="evidence-proof"
 REVIEW_SUITE=".claude/tests/harness/run-feedback-review-tests.sh"
 
-suite_passes "$CODE_SUITE" || report_baseline "$CODE_SUITE"
-suite_passes "$REVIEW_SUITE" || report_baseline "$REVIEW_SUITE"
+# `run-all.sh` vouches for detector rows its pool already ran green against
+# this same unmutated tree (FOUNDATION_PREPROVEN_SUITES). A vouched baseline is
+# a repeat, so skip it; a standalone invocation carries no vouchers and proves
+# both baselines itself.
+preproven() {
+  case " ${FOUNDATION_PREPROVEN_SUITES:-} " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if preproven evidence-proof; then
+  echo "PASS: evidence-proof baseline vouched by the pooled run"
+else
+  suite_passes "$CODE_SUITE" "$CODE_SLICE" || report_baseline "$CODE_SUITE $CODE_SLICE"
+fi
+if preproven feedback-review; then
+  echo "PASS: feedback-review baseline vouched by the pooled run"
+else
+  suite_passes "$REVIEW_SUITE" || report_baseline "$REVIEW_SUITE"
+fi
 echo "PASS: baseline suites pass before mutation"
 
 killed=0
@@ -80,7 +103,7 @@ const mutated = source.replace(
 if (mutated === source) { console.error("packet-omission fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
-if suite_passes "$CODE_SUITE"; then
+if suite_passes "$CODE_SUITE" "$CODE_SLICE"; then
   echo "FAIL: folding the packet back into the code hash went undetected"
 else
   echo "PASS: folding the packet back into the code hash is detected"

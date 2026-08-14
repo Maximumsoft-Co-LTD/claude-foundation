@@ -209,5 +209,3 @@ assert_cmd_fails_with "acquire does not pretend to accept a takeover decision" \
   "supported: --owner <value>" \
   node .claude/harness/foundation.mjs agent-acquire lease-fixture T1 \
     --owner other-worker --decision-ref host://decision/lease-2
-
-finish "harness contracts"
