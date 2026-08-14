@@ -5,7 +5,7 @@ description: The commands your agent runs, grouped by what they do and what auth
 
 Your agent runs these; you rarely need to. They are documented so you can read what the agent is doing, and drive it yourself when you want to.
 
-Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface.
+Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the seven slash commands, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
 
 ## Read-only
 
@@ -75,6 +75,7 @@ Human review and acceptance, resumable across sessions.
 | Command | Purpose |
 |---|---|
 | `change abandon <change> --reason <r> --decision-ref <ref>` | Quarantine a change that cannot be proven |
+| `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | Withdraw one capability's enforcement after its provider ran and failed; `--revoke` restores it |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | Open one policy-gated completion window |
 | `agents release <change> <task> --owner <id> [--force]` | Release a lease; `--force` takes over one whose owner crashed |
 

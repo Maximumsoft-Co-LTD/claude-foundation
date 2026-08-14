@@ -17,6 +17,8 @@ claude-foundation sandbox create <change>
 
 คำสั่งนี้สร้าง Git worktree แยกไว้ใต้ `.foundation/sandboxes/` working tree ของคุณจะไม่ถูกแตะจนกว่าจะถึง Land ถ้าข้อตกลงถูกแก้ ให้ใช้ `sandbox sync <change>` ดึงการแก้เข้ามาแทนการสร้าง sandbox ใหม่
 
+worktree พกมาแค่ไฟล์ที่ Git ติดตาม — ไม่มี `node_modules` ถ้า provider ของคุณต้องติดตั้ง dependency ก่อน ให้ประกาศคำสั่ง setup ไว้ครั้งเดียว: `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json` หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` มันจะรันหนึ่งครั้งในทุก workspace ที่สร้างใหม่ และผลลัพธ์ถูกบันทึกลง workspace record ถ้า setup ล้มเหลว sandbox จะถูกเก็บไว้พร้อมพิมพ์วิธีกู้คืน ไม่ใช่ถูกทำลายทิ้ง
+
 :::caution[แยกพื้นที่ ไม่ใช่ขอบเขตความปลอดภัย]
 sandbox คือ **การแยกพื้นที่ทำงาน** ไม่ใช่ security boundary ระดับ OS โค้ดที่รันในนั้นก็ยังคือโค้ดที่รันบนเครื่องคุณ ตรวจความต่างนี้ได้ด้วย `sandbox inspect <change>`
 :::
@@ -69,6 +71,8 @@ claude-foundation proof readiness <change>
 ```
 
 readiness คืนค่าเป็น **blocker แบบมีชนิด** พร้อมคำสั่งถัดไปที่ถูกต้องของแต่ละอัน แก้ blocker ที่เป็นเรื่องโค้ดและการตั้งค่าให้จบตรงนี้ ใน Build ก่อนจะไปเสียรอบ Prove ใหม่กับมัน
+
+มี blocker หนึ่งตัวที่ยื่นวิธีแก้มาให้เลย: เมื่อรีโปมีไฟล์ที่เปลี่ยนแต่ไม่มี task ไหนประกาศไว้ readiness จะแสดง path ที่ไม่ได้ประกาศเป็น annotation `[paths:...]` รายรีโปที่พร้อมวางลงไฟล์ได้ทันที ประกาศไฟล์ใหม่ใน `[paths:]` ของ task เจ้าของตั้งแต่ตอนสร้างไฟล์ แล้ว blocker นี้จะไม่โผล่มาเลย
 
 ## สิ่งที่ Build ต้องไม่ทำ
 

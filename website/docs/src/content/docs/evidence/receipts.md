@@ -107,6 +107,16 @@ more than it declares will reuse a receipt it should have re-earned.
 `review` and `acceptance` may not declare inputs. A human verdict is about the
 whole change.
 
+## Waiving a failed gate
+
+A provider that executed and failed leaves three exits, and the `fail` verdict prints all of them: fix the code, rewire the provider, or withdraw that one capability's enforcement on an explicit recorded decision:
+
+```bash
+claude-foundation change waive <change> --capability <c> --reason <why> --decision-ref <ref>
+```
+
+The waiver travels as a `user-waived` advisory into readiness, the proof record, the archive, and the `LAND READY` line; `--revoke` restores the requirement. It is deliberately subtractive: it cannot change what any other provider attested, receipts already earned stay valid, and there is no route that lands a failing proof. `review` and `acceptance` cannot be waived here — they have their own declared waiver routes in `foundation.json`.
+
 ## Why proof goes stale
 
 `prove` refuses unless every required provider is currently valid. The common

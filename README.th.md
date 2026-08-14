@@ -89,6 +89,18 @@ cd /path/to/claude-foundation
 claude-foundation init /path/to/your-project
 ```
 
+Claude Code ไม่ต้องใช้ adapter ส่วน agent host อื่นใช้ `--host` วาง adapter
+ทับการติดตั้งชุดเดียวกัน:
+
+```bash
+claude-foundation init /path/to/your-project --host cursor    # หรือ opencode, codex
+```
+
+Cursor ได้ command ทั้งเจ็ดพร้อม skill router เป็น rule แบบ `alwaysApply`;
+OpenCode ได้ command พร้อม guard plugin ที่ replay hook ที่ ship มาแบบ live;
+Codex ได้ prompt ทั้งเจ็ดใน `$CODEX_HOME/prompts` พร้อม ownership marker —
+Codex ไม่มี tool hook การบังคับใช้ที่นั่นจึงเหลือ Land gate
+
 หลังติดตั้ง ให้เปิด Claude Code session ใหม่ใน project เป้าหมายเพื่อโหลด slash
 commands แล้วตรวจ installation ด้วย:
 
@@ -180,6 +192,11 @@ change อยู่แล้วหรือไม่ใช่ Git repository จ
 ```bash
 jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 ```
+
+worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า provider ต้องติดตั้ง dependency ก่อน ให้
+ประกาศ `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json`
+หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` มันจะรันหนึ่งครั้ง
+ในทุก workspace ใหม่ และถ้า setup ล้มเหลว sandbox จะถูกเก็บไว้พร้อมพิมพ์วิธีกู้คืน
 
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน
@@ -492,6 +509,14 @@ provider คืนสถานะหนึ่งในสี่ มีแค่ 
 รันแล้วแต่ไม่ได้ให้คำตัดสินกับ claim ของคุณ ซึ่งมักหมายถึงการต่อสายที่รายงานผิดที่
 ไม่ใช่ code พัง
 
+gate ที่รันแล้ว fail มีทางออกสามทาง และ blocker พิมพ์ให้ครบ: แก้ code, ต่อสาย
+provider ใหม่ หรือ waive capability ตัวนั้นด้วยการตัดสินใจที่บันทึกไว้ผ่าน
+`change waive <change-id> --capability <c> --reason <why> --decision-ref <ref>`
+(`--revoke` คืนข้อบังคับ) waiver เดินทางเป็น advisory `user-waived` ผ่าน proof,
+archive และบรรทัด `LAND READY` มันเป็นการหักออกเท่านั้น receipt ที่ได้มาแล้ว
+ยังใช้ได้ และไม่มีเส้นทางที่พา proof ที่ fail ไป land ส่วน review กับ acceptance
+มีเส้นทาง waiver ของตัวเองจึงถูกปฏิเสธที่นี่
+
 หากต้อง wire provider หรือ browser workflow ใหม่ ดู
 [Executable evidence adapters](.claude/harness/EVIDENCE.md)
 ส่วนเว็บเอกสารครอบคลุมเรื่องเดียวกันสำหรับคนอ่าน ไม่ใช่สำหรับ agent
@@ -578,8 +603,12 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   agreement, nonce, expiry และ permission ที่แน่นอน ก่อนส่ง envelope แบบใช้ครั้ง
   เดียวผ่าน `--attestation`; ถ้ายังเปิด host-control socket หรือ credential ระบบ
   จะ block ต่อไป
-- Land ปฏิเสธ stale proof และ conflicting edit ใน target path ที่แตะ
+- Land ปฏิเสธ stale proof และ conflicting edit ใน target path ที่แตะ และ apply
+  ปฏิเสธที่จะทับ edit ใน target ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทน
+  ที่จะปล่อยให้คนเขียนทีหลังชนะ
 - Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
+- Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
+  โดย guard ของ land ทุกตัวยังอิง commit
 - Foundation ไม่ commit, push, เปิด pull request หรือมอบอำนาจเหล่านั้นให้ worker
   agent โดยไม่ได้รับอนุญาตชัดเจน
 - `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
@@ -629,6 +658,7 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
+claude-foundation change waive <change-id> --capability <c> --reason "gate ไม่เหมาะกับ change นี้" --decision-ref <host-user-decision>
 claude-foundation change abandon <change-id> --reason "evidence contract ทำให้ผ่านไม่ได้" --decision-ref <host-user-decision>
 ```
 
@@ -643,7 +673,12 @@ Host import telemetry แบบ `generic`, `codex`, `cursor`, `otel` หรื�
 normalize เป็น usage event แบบ append-only ชุดเดียวกับที่ `metrics` และ budget ใช้
 
 CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
-`claude-foundation help` เพื่อดู command ทั้งหมด
+`claude-foundation help` เพื่อดู command ทั้งหมด หรือ
+`claude-foundation describe [command]` เพื่อดูทีละตัว — รวม slash command
+ทั้งเจ็ด เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` ส่วน skill `harness-html-report`
+ที่ ship มาด้วยจะ render สถานะ harness — gate, receipt, เวลาต่อ phase และ
+ต้นทุน — เป็นรายงาน HTML ในไฟล์เดียว เมื่ออยากอ่านรอบงานเป็นเรื่องเล่า
+มากกว่ารายการสถานะ
 
 ปัญหาที่พบบ่อย:
 

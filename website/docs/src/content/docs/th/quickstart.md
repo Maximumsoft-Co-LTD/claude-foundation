@@ -82,3 +82,5 @@ claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
 ```
 
 คำสั่งนี้กักบันทึกของ change ไว้ใต้ `.foundation/recovery/abandoned/<id>/` แทนการลบทิ้ง ไม่แตะ Git และปฏิเสธ change ที่ archive ไปแล้ว agent จะเสนอทางนี้เมื่อเข้าเงื่อนไข แต่จะไม่ปลดระวาง change โดยไม่ถามคุณก่อน
+
+ยังมีทางออกที่เล็กกว่านั้นสำหรับ gate เดียวที่รันแล้ว fail ทั้งที่ตัว gate เองผิด: `change waive --capability <c>` ถอนการบังคับใช้ capability ตัวนั้นตัวเดียวตามการตัดสินใจที่ถูกบันทึกไว้ และ `--revoke` คืนข้อบังคับ ไม่มีเส้นทางที่พา proof ที่ fail ไป land โดยเจตนา

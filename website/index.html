@@ -473,6 +473,14 @@ claude-foundation init /path/to/project --yes</code></pre>
           </div>
 
           <div class="playwright-note reveal">
+            <div class="playwright-mark">HOST</div>
+            <div>
+              <strong>More hosts than Claude Code.</strong>
+              <p><code>claude-foundation init --host cursor|opencode|codex</code> layers a host adapter over the same install: Cursor gets the commands and an always-on rule, OpenCode gets the commands plus a plugin that replays the live guards, and Codex gets the prompts with Land gates as the enforcement. Worktree sandboxes can also install their own dependencies via <code>sandbox.setupCommand</code> in <code>foundation.json</code>.</p>
+            </div>
+          </div>
+
+          <div class="playwright-note reveal">
             <div class="playwright-mark">PW</div>
             <div>
               <strong>Browser proof stays project-owned.</strong>
@@ -501,7 +509,9 @@ claude-foundation init /path/to/project --yes</code></pre>
             <div><code>land check &lt;id&gt;</code><span>verify the completion boundary</span></div>
             <div><code>land archive &lt;id&gt;</code><span>apply, verify, sync, archive, clean up</span></div>
             <div><code>land resume &lt;id&gt;</code><span>resume an interrupted or multi-repository Land</span></div>
+            <div><code>change waive &lt;id&gt; --capability &lt;c&gt;</code><span>withdraw one failed gate's enforcement on a recorded decision</span></div>
             <div><code>change abandon &lt;id&gt;</code><span>quarantine a change that cannot be proven</span></div>
+            <div><code>describe [command]</code><span>explain any surface — the seven slash commands included</span></div>
           </div>
         </div>
       </section>

@@ -34,6 +34,10 @@ claude-foundation land archive <change>
 
 `ALREADY ARCHIVED` เป็นผลลัพธ์ที่สำเร็จ ไม่ใช่ error — มันแปลว่ารอบก่อนหน้าไปถึงจุดนั้นแล้ว
 
+ก่อนขั้น archive ที่ย้อนกลับไม่ได้ จะมีการซิงก์ telemetry เงียบ ๆ หนึ่งรอบเพื่อดูดข้อมูลจาก transcript ของ session ที่ผูกไว้ บันทึกที่ถูกปิดผนึกจึงมีการใช้งานโมเดลจริงของ change นั้น ถ้า archive ทั้งที่ไม่มีข้อมูลการใช้งานเลย มันจะเตือนว่าคอลัมน์ต้นทุนจะว่าง และบอกคำสั่ง `telemetry sync` ที่รันเองได้ — telemetry ไม่เคยเป็นเงื่อนไขขวางการ archive
+
+`land check` ยังเพิ่มบรรทัด `branch:` ใน `LAND READY` เมื่อรีโปเป้าหมาย checkout อยู่บน `main`/`master` และ `land record` เตือนเมื่อเป้าหมายอยู่บน default branch ทั้งคู่เป็นแค่คำเตือน — guard ของ land ทุกตัวยังอิง commit และการอ่าน branch ที่ล้มเหลวจะเงียบ ไม่ทำให้คำสั่งพัง
+
 :::caution[Land ไม่ commit]
 Land ไม่ commit ไม่ push และไม่เปิด pull request สิ่งเหล่านั้นต้องได้รับอนุญาตจากคุณแยกต่างหาก การรัน `/land` ไม่ใช่การอนุญาตให้ push
 :::
@@ -57,6 +61,8 @@ claude-foundation land resume <change>
 ## เมื่อมีอะไรผิดพลาด
 
 Land ถูกออกแบบให้ล้มเหลวอย่างปลอดภัยและบอกคุณว่ามันทิ้งอะไรไว้
+
+**apply ปฏิเสธที่จะทับงานของ change อื่น** ไฟล์เป้าหมายที่มีการแก้ไขซึ่งยังไม่ commit — เช่นจาก change ที่เพิ่ง land ไปก่อนหน้า — จะไม่ถูกเขียนทับเงียบ ๆ ด้วยการคัดลอกทั้งไฟล์ apply จะปฏิเสธ ระบุ path ที่จะถูกทับ และบอกวิธี reconcile ส่วน symlink ถูกเทียบด้วย link target แบบเดียวกับ blob ของ Git
 
 **apply transaction ที่ค้างจะหยุด apply ครั้งถัดไป** journal ที่ค้างอยู่ในสถานะ `rolling-back` หรือ `manual-recovery` จะไม่ถูกข้าม เพราะไม่อย่างนั้นมันจะเปิด transaction ใหม่ทับ working tree ที่ Foundation กู้คืนไม่สำเร็จ แล้วรายงานว่าสำเร็จ `doctor --change <id>` รายงานเรื่องนี้ก่อนที่ Land จะไปถึง
 

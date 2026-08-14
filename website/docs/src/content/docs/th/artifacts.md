@@ -37,7 +37,9 @@ openspec/
 
 `foundation.json` อยู่ที่ root ของ repository ไม่ได้อยู่ใน `openspec/`
 เพราะมันเก็บ *นโยบาย* ไม่ใช่เจตนา ได้แก่ budget การรัน เพดานขนาด packet
-ระดับของโมเดล เงื่อนไขการยกระดับ และการตั้งค่า review diversity กับ independence
+ระดับของโมเดล เงื่อนไขการยกระดับ การตั้งค่า review diversity กับ independence
+และคำสั่ง setup ของ sandbox (`sandbox.setupCommand`) ที่รันหนึ่งครั้งในทุก
+workspace ของ Build ที่สร้างใหม่
 มันถูกสร้างให้ตอนยังไม่มี และหลังจากนั้นเป็นของคุณ
 
 :::caution[มีไฟล์ชื่อ `repositories.yaml` สองตัว]

@@ -98,6 +98,23 @@ workspace hash ใหม่แทนที่จะรันซ้ำ และ�
 
 `review` กับ `acceptance` ประกาศ input ไม่ได้ คำตัดสินของคนพูดถึง change ทั้งก้อน
 
+## การ waive gate ที่ fail
+
+provider ที่รันแล้ว fail ทิ้งทางออกไว้สามทาง และคำตัดสิน `fail` พิมพ์ให้ครบทุกทาง:
+แก้โค้ด, ต่อสาย provider ใหม่ หรือถอนการบังคับใช้ capability ตัวนั้นตัวเดียว
+ด้วยการตัดสินใจชัดเจนที่ถูกบันทึกไว้:
+
+```bash
+claude-foundation change waive <change> --capability <c> --reason <why> --decision-ref <ref>
+```
+
+waiver เดินทางเป็น advisory `user-waived` เข้าไปใน readiness, บันทึก proof,
+archive และบรรทัด `LAND READY` ส่วน `--revoke` คืนข้อบังคับ
+มันเป็นการหักออกโดยเจตนา: เปลี่ยนสิ่งที่ provider ตัวอื่นรับรองไว้ไม่ได้
+receipt ที่ได้มาแล้วยังใช้ได้ และไม่มีเส้นทางที่พา proof ที่ fail ไป land
+`review` กับ `acceptance` waive ที่นี่ไม่ได้ — สองตัวนั้นมีเส้นทาง waiver
+ของตัวเองที่ประกาศใน `foundation.json`
+
 ## ทำไม proof ถึง stale
 
 `prove` จะไม่ยอมทำงานจนกว่าทุก provider ที่ต้องมีจะอยู่ในสถานะถูกต้อง

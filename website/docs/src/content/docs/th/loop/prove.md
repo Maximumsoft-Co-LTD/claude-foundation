@@ -34,6 +34,14 @@ provider ประกาศ `inputs` แบบอิงพาธใน workspace
 
 หลักฐานคืนค่าเป็น `pass`, `fail`, `inconclusive` หรือ `error` ทุกอย่างที่ไม่ใช่ `pass` บล็อกการ land
 
+gate ที่รันแล้ว **fail** มีทางออกสามทาง และตัว blocker พิมพ์ให้ครบทั้งสาม: แก้โค้ดแล้ว prove ใหม่, ต่อสาย provider ใหม่ถ้าตัว gate เองผิด หรือ waive capability ตัวนั้นตัวเดียวด้วยการตัดสินใจของผู้ใช้ที่ถูกบันทึกไว้:
+
+```bash
+claude-foundation change waive <change> --capability <c> --reason <why> --decision-ref <ref>
+```
+
+claim ยังคงประกาศ capability นั้นอยู่ ส่วน waiver เดินทางเป็น advisory `user-waived` เข้าไปใน readiness, บันทึก proof, archive และบรรทัด `LAND READY` โดย `--revoke` คืนข้อบังคับกลับมา waiver เป็นการหักออกเท่านั้น — มันเปลี่ยนสิ่งที่ provider ตัวอื่นรับรองไว้ไม่ได้ receipt ที่ได้มาแล้วจึงยังใช้ได้ และการ prove ใหม่หลัง waive รัน provider ศูนย์ตัว ไม่มีเส้นทางที่พา proof ที่ fail ไป land ได้โดยเจตนา และ `review` กับ `acceptance` ถูกปฏิเสธที่นี่ เพราะมีเส้นทาง waiver ของตัวเองอยู่แล้ว
+
 `inconclusive` คือตัวที่คนมักประเมินต่ำไป browser suite ที่ exit 0 แต่ไม่มี claim annotation ครบถือว่า inconclusive — โปรเซสสำเร็จก็จริง แต่ไม่มีอะไรพิสูจน์ claim นั้น เช่นเดียวกับคำสั่งเทสที่ผ่านแต่ไม่เปิดเผยจำนวนเทสที่แน่นอน จะทำให้ discovery เป็น inconclusive ทั้งคู่ไม่ใช่การผ่านแบบหย่อน ๆ
 
 ## receipt บันทึกว่ามันถูกผลิตอย่างไร
@@ -62,6 +70,8 @@ claude-foundation authority record <change> --request <id> --response <file>
 ```
 
 คำขอบรรจุ packet ที่มีขอบเขต มีวันหมดอายุ และ stale ไปพร้อม workspace คำตอบต้องตรงกับตัวตนของคำขอและ workspace แล้วผ่าน validator ของ review หรือ acceptance ตามปกติ คำขอที่เสร็จแล้วเล่นซ้ำไม่ได้
+
+การปฏิเสธเพราะ stale จะบอกลำดับการกู้คืน ไม่ใช่ตอบว่าไม่เฉย ๆ: `proof is stale` บอกให้แก้ contract กับโค้ดให้จบ ซิงก์ แล้วรัน prove ใหม่หนึ่งรอบ ส่วนคำขอ authority ที่ stale บอกให้ขอ review กับ acceptance เป็นลำดับสุดท้าย หลัง workspace หยุดขยับแล้ว — แต่ละอันระบุคำสั่งที่ใช้ทำต่อให้ด้วย
 
 agent จะแปล packet เป็นภาษาปกติแล้วถามว่าจะตรวจ ส่ง หรือพักไว้ คุณตอบด้วยภาษาปกติ — ไม่มีใครถามคุณเรื่อง syntax ของ receipt, ฟิลด์ provenance หรือ placeholder
 

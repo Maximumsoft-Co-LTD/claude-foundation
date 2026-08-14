@@ -80,3 +80,5 @@ claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
 ```
 
 This quarantines the change's records under `.foundation/recovery/abandoned/<id>/` rather than deleting them, never touches Git, and refuses to run on an already-archived change. Your agent will offer this when it applies, but it will never retire a change without asking.
+
+A smaller escape exists for a single gate that ran and failed when the gate itself is wrong: `change waive --capability <c>` withdraws that one capability's enforcement on a recorded decision, and `--revoke` restores it. There is deliberately no route that lands a failing proof.

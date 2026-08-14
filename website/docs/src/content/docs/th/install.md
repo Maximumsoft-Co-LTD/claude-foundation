@@ -41,6 +41,24 @@ claude-foundation init /path/to/your-project --yes
 เปิด session ของ agent **ใหม่** ในโปรเจกต์ปลายทางหลังติดตั้งเสร็จ เพื่อให้ slash command ถูกลงทะเบียน
 :::
 
+## agent host อื่นนอกจาก Claude Code
+
+Claude Code ไม่ต้องใช้ adapter ส่วน host อื่นใช้ `--host` เพื่อวาง adapter ทับการติดตั้งชุดเดียวกัน:
+
+```bash
+claude-foundation init /path/to/your-project --host cursor    # หรือ opencode, codex
+```
+
+| Host | adapter เพิ่มอะไรให้ |
+|---|---|
+| **Cursor** | คำสั่งทั้งเจ็ดใน `.cursor/commands/` และ skill router แบบ always-on เป็น rule `.mdc` ที่ตั้ง `alwaysApply: true` |
+| **OpenCode** | คำสั่งทั้งเจ็ดใน `.opencode/commands/` และ guard plugin ที่ `.opencode/plugins/foundation.js` ซึ่ง replay hook ที่ ship มา — secrets guard กับ phase-mutation guard บล็อกแบบ live ส่วน lint ให้ feedback ตอนแก้ไฟล์ ส่วน skill กับ agent contract ไม่ต้องมี adapter เลย เพราะ OpenCode อ่าน `.claude/skills/` และ `AGENTS.md` ได้เอง |
+| **Codex CLI** | prompt ทั้งเจ็ดใน `$CODEX_HOME/prompts` (Codex ไม่มีไดเรกทอรี prompt ต่อโปรเจกต์) พร้อม ownership marker เพื่อให้การติดตั้งซ้ำรีเฟรชเฉพาะ prompt ของ Foundation โดยไม่ทับ prompt ชื่อซ้ำของผู้ใช้ |
+
+:::caution[Codex ไม่มี tool hook]
+Codex รัน guard แบบ live ไม่ได้ ดังนั้น secrets guard กับ phase-mutation guard จะไม่ทำงานที่นั่น — การบังคับใช้จึงเหลือ Land gate กับ `no-direct-main-commit.sh` ที่เป็น opt-in
+:::
+
 ## ตรวจสอบ
 
 ```bash

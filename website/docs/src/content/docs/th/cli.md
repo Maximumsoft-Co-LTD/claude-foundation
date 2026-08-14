@@ -5,7 +5,7 @@ description: คำสั่งที่ agent ของคุณรัน จ�
 
 agent ของคุณเป็นคนรันคำสั่งเหล่านี้ คุณแทบไม่ต้องรันเอง เอกสารนี้มีไว้ให้คุณอ่านออกว่า agent กำลังทำอะไร และรันเองได้เมื่ออยากรัน
 
-ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface
+ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวม slash command ทั้งเจ็ด เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift
 
 ## อ่านอย่างเดียว
 
@@ -75,6 +75,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `change abandon <change> --reason <r> --decision-ref <ref>` | กัก change ที่พิสูจน์ไม่ได้ |
+| `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | ถอนการบังคับใช้ capability หนึ่งตัวหลัง provider ของมันรันแล้วล้มเหลว `--revoke` คืนข้อบังคับ |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | เปิดหน้าต่างทำงานต่อหนึ่งครั้งตามนโยบาย |
 | `agents release <change> <task> --owner <id> [--force]` | ปล่อย lease `--force` ยึดคืนจากเจ้าของที่ crash |
 

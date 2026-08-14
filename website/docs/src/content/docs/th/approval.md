@@ -20,8 +20,15 @@ fail หรือ inconclusive และตรวจ digest ของ receipt �
 agent ถูกสั่งแยกต่างหากให้อธิบายผลกระทบและเสนอทางเลือกให้คุณ ตรวจดู ไปต่อ หรือหยุดพัก
 ก่อนจะ land — แต่นั่นคือคำสั่งที่ agent ปฏิบัติตาม ไม่ใช่กลอนที่ harness ล็อกไว้
 คำสั่งที่ **บังคับ** ให้มีการตัดสินใจของคนที่บันทึกไว้จริงคือกลุ่มคำสั่งต่อเนื่อง ได้แก่
-`land record`, `budget continue`, `change abandon` และ `agents release --force`
-ซึ่งแต่ละตัวต้องมี `--decision-ref` ระบุการตัดสินใจที่คุณทำจริง
+`land record`, `budget continue`, `change abandon`, `change waive` และ
+`agents release --force` ซึ่งแต่ละตัวต้องมี `--decision-ref`
+ระบุการตัดสินใจที่คุณทำจริง
+
+`change waive` คือทางออกที่ถูกบันทึกไว้สำหรับ gate ที่รันแล้ว fail:
+มันถอนการบังคับใช้ capability หนึ่งตัวตามการตัดสินใจชัดเจนของคุณ
+เดินทางเป็น advisory `user-waived` ผ่าน proof เข้าไปถึง archive และ `--revoke`
+คืนข้อบังคับกลับมา ส่วน review กับ acceptance ถูกปฏิเสธที่นั่น — waiver
+ของสองตัวนี้ประกาศใน `foundation.json` ตามที่อธิบายด้านล่าง
 :::
 
 ## Acceptance

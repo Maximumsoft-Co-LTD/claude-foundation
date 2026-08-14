@@ -17,6 +17,8 @@ claude-foundation sandbox create <change>
 
 This creates an isolated Git worktree under `.foundation/sandboxes/`. Your working tree is untouched until Land. If the change's agreement was revised, `sandbox sync <change>` brings the revision in rather than recreating the sandbox.
 
+A worktree carries tracked files only — no `node_modules`. If your providers need dependencies installed, declare a setup command once: `sandbox.setupCommand` (plus `setupTimeoutMs`) in `foundation.json`, or a per-repository `setupCommand` in `openspec/repositories.yaml`. It runs once inside every newly created workspace, and its outcome is recorded on the workspace record. A failing setup keeps the sandbox and prints the recovery rather than destroying the workspace.
+
 :::caution[Isolation, not a security boundary]
 A sandbox is **workspace isolation**, not an OS security boundary. Code executing inside it is still code executing on your machine. Inspect the distinction with `sandbox inspect <change>`.
 :::
@@ -69,6 +71,8 @@ claude-foundation proof readiness <change>
 ```
 
 Readiness returns **typed blockers** and the canonical next command for each. Resolve code and configuration blockers here, in Build, before spending a fresh Prove run on them.
+
+One blocker hands back its own fix: when a repository changed files no task declares, readiness renders the undeclared paths as a paste-ready `[paths:...]` annotation per repository. Declare new files in the owning task's `[paths:]` the moment you create them and the blocker never appears.
 
 ## What Build must never do
 

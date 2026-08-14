@@ -93,6 +93,19 @@ Or, when the packaged command is available:
 claude-foundation init /path/to/your-project
 ```
 
+Claude Code needs no adapter. For other agent hosts, `--host` layers one over
+the same shared install:
+
+```bash
+claude-foundation init /path/to/your-project --host cursor    # or opencode, codex
+```
+
+Cursor gets the seven commands and the always-on skill router as an
+`alwaysApply` rule; OpenCode gets the commands plus a guard plugin that replays
+the shipped hooks live; Codex gets the seven prompts in `$CODEX_HOME/prompts`
+with an ownership marker — Codex has no tool hooks, so Land gates remain the
+enforcement there.
+
 Open a new Claude Code session in the target project after installation so the
 slash commands are registered. Check the installation with:
 
@@ -188,6 +201,12 @@ To find the workspace:
 ```bash
 jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 ```
+
+A worktree carries tracked files only. If providers need dependencies
+installed, declare `sandbox.setupCommand` (plus `setupTimeoutMs`) in
+`foundation.json`, or a per-repository `setupCommand` in
+`openspec/repositories.yaml`; it runs once inside every new workspace, and a
+failing setup keeps the sandbox and prints the recovery.
 
 Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.
@@ -494,6 +513,15 @@ A provider returns one of four statuses. Only `pass` lands; `fail`, `error`, and
 means the provider ran but produced no verdict for your claim, so it usually
 signals wiring that reports against the wrong thing rather than broken code.
 
+A gate that ran and failed has three exits, and the blocker prints all three:
+fix the code, rewire the provider, or waive that one capability on a recorded
+user decision with `change waive <change-id> --capability <c> --reason <why>
+--decision-ref <ref>` (`--revoke` restores it). The waiver travels as a
+`user-waived` advisory through proof, the archive, and the `LAND READY` line;
+it is subtractive, so receipts already earned stay valid and there is no route
+that lands a failing proof. Review and acceptance keep their own declared
+waiver routes and are refused here.
+
 See [Executable evidence adapters](.claude/harness/EVIDENCE.md) when wiring a
 new provider or browser workflow. The documentation site covers the same ground
 for readers rather than agents:
@@ -586,8 +614,12 @@ you to.
   project, agreement, nonce, expiry, and exact permissions, then supplies the
   single-use envelope with `--attestation`. Exposed host-control sockets or
   credentials still block execution.
-- Land refuses stale proof and conflicting edits on touched target paths.
+- Land refuses stale proof and conflicting edits on touched target paths, and
+  apply refuses to overwrite uncommitted target edits — it names the clobbered
+  paths instead of letting the last writer win.
 - Apply uses backups and a journal; an interrupted Land can be retried.
+- Land warns — without blocking — when the target is checked out on
+  `main`/`master`; every land guard stays commit-based.
 - Foundation never commits, pushes, opens a pull request, or grants those powers
   to a worker agent without explicit authorization.
 - `protect-secrets.sh` and `lint.sh` are enabled by default.
@@ -638,6 +670,7 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
+claude-foundation change waive <change-id> --capability <c> --reason "gate is wrong for this change" --decision-ref <host-user-decision>
 claude-foundation change abandon <change-id> --reason "evidence contract cannot be satisfied" --decision-ref <host-user-decision>
 ```
 
@@ -654,7 +687,11 @@ into the same append-only usage events used by `metrics` and budget accounting.
 
 The CLI finds the installed project from the current directory or from
 `--project <path>`. Run `claude-foundation help` for the complete command
-surface.
+surface, or `claude-foundation describe [command]` for any single one — the
+seven slash commands included, resolvable by bare word or `/slash` spelling.
+The shipped `harness-html-report` skill renders harness state — gates,
+receipts, phase timing, and cost — as a self-contained HTML report when you
+want the round told as a story rather than a status listing.
 
 Common problems:
 

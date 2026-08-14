@@ -34,6 +34,14 @@ A provider may declare workspace-relative `inputs`, so its receipt can be reboun
 
 Evidence returns `pass`, `fail`, `inconclusive`, or `error`. Everything except `pass` blocks landing.
 
+A gate that ran and **failed** has three exits, and the blocker prints all three: fix the code and re-prove, rewire the provider if the gate itself is wrong, or waive that one capability on a recorded user decision:
+
+```bash
+claude-foundation change waive <change> --capability <c> --reason <why> --decision-ref <ref>
+```
+
+The claim keeps declaring the capability; the waiver travels as a `user-waived` advisory into readiness, the proof record, the archive, and the `LAND READY` line, and `--revoke` restores the requirement. A waiver is subtractive — it cannot change what any other provider attested, so receipts already earned stay valid and the re-prove after a waive executes zero providers. There is deliberately no route that lands a failing proof, and `review` and `acceptance` are refused here in favor of their own documented waiver routes.
+
 `inconclusive` is the one people underestimate. A browser suite that exits 0 without the required claim annotations is inconclusive — the process succeeded, but nothing demonstrated the claim. A test command that passes but exposes no deterministic test count leaves discovery inconclusive. Neither is a soft pass.
 
 ## A receipt records how it was produced
@@ -62,6 +70,8 @@ claude-foundation authority record <change> --request <id> --response <file>
 ```
 
 Requests carry bounded packets, expire, and go stale with the workspace. A response must match the request identity and workspace, then pass the ordinary review or acceptance validator. Completed requests cannot be replayed.
+
+Staleness refusals state their recovery order rather than a bare no: `proof is stale` says to finish contract and code edits, sync, and run one fresh prove; a stale authority request says to request review and acceptance last, after the workspace stops changing — each naming the resuming command.
 
 Your agent translates the packet into ordinary language and asks whether to inspect, send, or pause. You answer in ordinary language — you are never asked for receipt syntax, provenance fields, or placeholders.
 

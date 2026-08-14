@@ -22,8 +22,14 @@ The agent is separately instructed to explain the effects and offer you
 inspect, proceed, or pause before it lands — but that is an instruction the
 agent follows, not a lock the harness enforces. The commands that *do* demand a
 recorded human decision are the continuations: `land record`, `budget continue`,
-`change abandon`, and `agents release --force`, each of which requires a
-`--decision-ref` naming the decision you actually made.
+`change abandon`, `change waive`, and `agents release --force`, each of which
+requires a `--decision-ref` naming the decision you actually made.
+
+`change waive` is the recorded exit for a gate that ran and failed: it
+withdraws one capability's enforcement on your explicit decision, travels as a
+`user-waived` advisory through proof and into the archive, and `--revoke`
+restores the requirement. Review and acceptance are refused there — their
+waivers are declared in `foundation.json`, as described below.
 :::
 
 ## Acceptance
