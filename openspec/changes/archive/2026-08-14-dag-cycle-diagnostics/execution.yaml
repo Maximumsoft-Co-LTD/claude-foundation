@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-dag-cycle-tests.mjs"],
+      "minimum": 6,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/runtime/core/graph.mjs",
+        ".claude/harness/runtime/workflow/agent-planning.mjs",
+        ".claude/harness/runtime/evidence/provider-scheduler.mjs",
+        ".claude/tests/harness/run-dag-cycle-tests.mjs"
+      ]
+    }
+  },
+  "services": {}
+}

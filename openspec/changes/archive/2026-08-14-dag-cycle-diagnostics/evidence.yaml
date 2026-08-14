@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "task-cycle-path-reported",
+      "scenario": "A tasks.md dependency cycle fails planning with the actual cycle path named",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "provider-cycle-path-reported",
+      "scenario": "A provider dependency cycle throws with the cycle path named",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "provider-failed-dependency-distinguished",
+      "scenario": "A provider blocked by a failed dependency is reported as blocked by that provider, not as a cycle",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "acyclic-scheduling-unchanged",
+      "scenario": "Acyclic graphs schedule into the same waves and outcomes as before",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}
