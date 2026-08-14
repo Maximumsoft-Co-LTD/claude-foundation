@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-proof-fixit-tests.mjs"],
+      "minimum": 4,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/runtime/evidence/proof-readiness.mjs",
+        ".claude/commands/build.md",
+        ".claude/tests/harness/run-proof-fixit-tests.mjs"
+      ]
+    }
+  },
+  "services": {}
+}

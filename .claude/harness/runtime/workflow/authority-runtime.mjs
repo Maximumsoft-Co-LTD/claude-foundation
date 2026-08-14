@@ -224,7 +224,7 @@ export function createAuthorityRuntime({
     if (!authorityStore.isOpen(request.status))
       fail(`authority request '${requestId}' is ${request.status}`);
     if (request.workspaceHash !== authorityWorkspaceHash(id, request.provider))
-      fail(`authority request '${requestId}' is stale`);
+      fail(`authority request '${requestId}' is stale — the workspace changed after it was issued; request review and acceptance last, after the workspace stops changing, then re-request: claude-foundation authority request ${id} --type ${request.type}`);
     if (!existsSync(responsePath)) fail(`authority response not found: ${flags.response}`);
     const response = readJson(responsePath);
     const validated = authorityStore.validateResponse(response, request, id);

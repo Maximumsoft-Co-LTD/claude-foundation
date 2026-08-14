@@ -211,6 +211,26 @@ security negative paths, and migration rollback/integrity expectations.
 Use `/build <change>`. For a Git project, the harness creates an isolated
 workspace under `.foundation/sandboxes/<change>`.
 
+A fresh sandbox has no installed dependencies — the copy path excludes them
+and a worktree is a bare checkout. Declare a setup command and the harness
+runs it once inside every newly created sandbox:
+
+```json
+// foundation.json
+{ "sandbox": { "setupCommand": "npm ci", "setupTimeoutMs": 600000 } }
+```
+
+In a multi-repository topology, each `openspec/repositories.yaml` row may
+declare its own `setupCommand`, which runs inside that repository's sandbox;
+`sandbox.setupCommand` still covers the root workspace. The outcome is
+recorded on the workspace record (`setup: ok|failed`). A failing command keeps
+the sandbox and prints a warning naming the command and workspace path — rerun
+it there manually before Prove.
+
+Keep the setup command to dependency installation. Anything it writes outside
+ignored directories counts toward the change's surface, exactly as if the
+change had written it.
+
 If Build reveals a new requirement, revise the same change and synchronize it:
 
 ```bash

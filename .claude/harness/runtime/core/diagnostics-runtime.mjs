@@ -424,7 +424,10 @@ export function createDiagnosticsRuntime({
     const settingsText = JSON.stringify(settings);
     const directMainEnabled = settingsText.includes("no-direct-main-commit.sh");
     checks.push({
-      level: "info",
+      // Disabled is a warning, not information: the Hydra incident landed both
+      // repositories' commits directly on main with nothing saying the guard
+      // existed. Warn never changes the exit code, so CI reads are unaffected.
+      level: directMainEnabled ? "info" : "warn",
       name: "no-direct-main",
       detail: directMainEnabled ? "enabled" : "disabled (opt-in policy)"
     });

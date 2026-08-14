@@ -161,7 +161,7 @@ export function createLandRuntime({
     clearSnapshotCache(id);
     const hash = relevantHash(id, null, true);
     if (proof.workspaceHash !== hash)
-      fail(`proof is stale (${proof.workspaceHash.slice(0, 8)} != ${hash.slice(0, 8)})`);
+      fail(`proof is stale (${proof.workspaceHash.slice(0, 8)} != ${hash.slice(0, 8)}) — the workspace changed after Prove; finish contract and code edits first, sync, then run one fresh prove: claude-foundation proof run ${id}`);
     for (const provider of requiredProviders(id)) {
       const check = receiptValidity(id, provider, hash);
       // Land is the last place a person finds out, and it used to be the least
@@ -192,8 +192,11 @@ export function createLandRuntime({
     // landing with a withdrawn requirement is legitimate, hiding it is not.
     const waived = (state.waivers || []).map((row) =>
       `${row.capability} (${row.authority?.reference || "user decision"})`);
+    const rootBranch = targetBranch(root);
+    const branchLine = rootBranch && ["main", "master"].includes(rootBranch)
+      ? `\n  branch: ${rootBranch} (default branch — branch-first policy suggests a feature branch)` : "";
     console.log(`LAND READY ${id}\n  workspace: ${hash}${
-      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}\n  next: claude-foundation land ${
+      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: claude-foundation land ${
       multiRepository ? "resume" : "archive"} ${id}`);
     return { archived: false, state, hash };
   }
@@ -373,6 +376,26 @@ export function createLandRuntime({
     return issuers;
   }
 
+  // Branch name of the checked-out target, or null for detached HEAD or any
+  // error. Warnings only — every land guard stays commit-based, so a failed
+  // branch read can never change what lands.
+  function targetBranch(path) {
+    try {
+      const result = git(["rev-parse", "--abbrev-ref", "HEAD"], path);
+      if (!result || result.status !== 0) return null;
+      const branch = String(result.stdout || "").trim();
+      return !branch || branch === "HEAD" ? null : branch;
+    } catch {
+      return null;
+    }
+  }
+
+  function defaultBranchWarning(label, branch) {
+    if (!branch || !["main", "master"].includes(branch)) return false;
+    console.error(`WARNING: ${label} is checked out on '${branch}'; this lands directly onto the default branch — branch-first policy suggests a feature branch`);
+    return true;
+  }
+
   function recordRepositoryLand(id, flags) {
     const repositoryId = flags.repo;
     const commit = flags.commit;
@@ -398,6 +421,8 @@ export function createLandRuntime({
     const dirty = git(["status", "--porcelain"], runtime.path);
     if (dirty.status !== 0 || dirty.stdout.trim())
       fail(`repository '${repositoryId}' sandbox must be clean before recording Land`);
+    defaultBranchWarning(`repository '${repositoryId}' target`,
+      targetBranch(runtime.targetPath));
     const ci = flags.ci || null;
     if (ci && !["pass", "fail", "pending"].includes(ci))
       fail("land record --ci must be pass|fail|pending");

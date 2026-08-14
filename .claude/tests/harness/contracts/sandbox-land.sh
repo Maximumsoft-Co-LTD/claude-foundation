@@ -388,3 +388,48 @@ assert_cmd_zero "wall-clock time is measured without a shell wrapper" \
 assert_cmd_zero "a refused command surfaces as an expected stop" \
   jq -e '.rework.expectedStops >= 1 and .rework.unexpectedFailures == 0' \
   "$TMP/telemetry-metrics.json"
+
+# A fresh sandbox has no installed dependencies; `sandbox.setupCommand` runs
+# once inside it after creation. Absent config must stay byte-identical, and a
+# failing command must keep the sandbox and say how to recover.
+node .claude/harness/foundation.mjs new 'Setup absent' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve setup-absent --impact low --coupling isolated >/dev/null
+setup_absent_output="$(node .claude/harness/foundation.mjs sandbox create setup-absent)"
+assert_not_contains "absent setup config adds no setup line" "$setup_absent_output" "setup:"
+assert_eq "absent setup config records nothing" "null" \
+  "$(jq -r '.workspace.setup // "null"' .foundation/runtime/setup-absent.json)"
+
+printf '%s\n' '{"version":1,"sandbox":{"setupCommand":"printf ready > setup-marker.txt"}}' > foundation.json
+node .claude/harness/foundation.mjs new 'Setup ok' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve setup-ok --impact low --coupling isolated >/dev/null
+setup_ok_output="$(node .claude/harness/foundation.mjs sandbox create setup-ok)"
+assert_contains "sandbox create reports setup ok" "$setup_ok_output" "setup: ok"
+setup_ok_path="$(jq -r '.workspace.path' .foundation/runtime/setup-ok.json)"
+assert_file_exists "setup command ran inside the new sandbox" "$setup_ok_path/setup-marker.txt"
+assert_eq "setup outcome is recorded on the workspace" "ok" \
+  "$(jq -r '.workspace.setup.status' .foundation/runtime/setup-ok.json)"
+
+printf '%s\n' '{"version":1,"sandbox":{"setupCommand":"echo install exploded >&2; exit 7"}}' > foundation.json
+node .claude/harness/foundation.mjs new 'Setup fail' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve setup-fail --impact low --coupling isolated >/dev/null
+setup_fail_output="$(node .claude/harness/foundation.mjs sandbox create setup-fail 2>&1)"
+assert_contains "failed setup warns with the command" "$setup_fail_output" \
+  "WARNING: sandbox setup command failed"
+assert_contains "failed setup says how to recover" "$setup_fail_output" \
+  "rerun it there manually"
+assert_eq "failed setup keeps the sandbox in Build" "building" \
+  "$(jq -r '.status' .foundation/runtime/setup-fail.json)"
+assert_eq "failed setup records the exit code" "7" \
+  "$(jq -r '.workspace.setup.exitCode' .foundation/runtime/setup-fail.json)"
+assert_file_exists "failed setup keeps the workspace" \
+  "$(jq -r '.workspace.path' .foundation/runtime/setup-fail.json)/app.txt"
+
+printf '%s\n' '{"version":1,"sandbox":{"setupCommand":5}}' > foundation.json
+assert_cmd_fails_with "invalid setup command is rejected by policy" \
+  "sandbox.setupCommand must be a non-empty string" \
+  node .claude/harness/foundation.mjs doctor
+printf '%s\n' '{"version":1,"sandbox":{"setupTimeoutMs":"soon"}}' > foundation.json
+assert_cmd_fails_with "invalid setup timeout is rejected by policy" \
+  "sandbox.setupTimeoutMs must be 1000..3600000" \
+  node .claude/harness/foundation.mjs doctor
+rm foundation.json

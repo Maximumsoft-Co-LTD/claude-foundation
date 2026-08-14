@@ -253,14 +253,23 @@ assert_cmd_fails_with "Land record stops for explicit user authority" \
   "requires --decision-ref" \
   node .claude/harness/foundation.mjs land-record cross-repository-profile \
   --repo api --commit "$api_commit" --ci pass
-assert_cmd_zero "explicit API commit is bound to Land" \
-  node .claude/harness/foundation.mjs land-record cross-repository-profile \
+# Branch state is set explicitly so the default-branch warning is
+# deterministic regardless of the machine's init.defaultBranch.
+git -C api checkout -q -B main
+api_record="$({ node .claude/harness/foundation.mjs land-record cross-repository-profile \
   --repo api --commit "$api_commit" --ci pass \
-  --decision-ref fixture://user/land-api
-assert_cmd_zero "explicit app commit is bound to Land" \
-  node .claude/harness/foundation.mjs land-record cross-repository-profile \
+  --decision-ref fixture://user/land-api; } 2>&1)" \
+  && pass "explicit API commit is bound to Land" \
+  || fail "explicit API commit is bound to Land"
+assert_contains "binding onto main warns without blocking" "$api_record" \
+  "repository 'api' target is checked out on 'main'"
+git -C app checkout -q -B feature-probe
+app_record="$({ node .claude/harness/foundation.mjs land-record cross-repository-profile \
   --repo app --commit "$app_commit" --ci pass \
-  --decision-ref fixture://user/land-app
+  --decision-ref fixture://user/land-app; } 2>&1)" \
+  && pass "explicit app commit is bound to Land" \
+  || fail "explicit app commit is bound to Land"
+assert_not_contains "a feature branch stays silent at record" "$app_record" "WARNING"
 resume_stage="$(node .claude/harness/foundation.mjs land-resume \
   cross-repository-profile)"
 assert_contains "Land resume stages eligible root gitlinks transactionally" \
@@ -287,3 +296,67 @@ assert_contains "Land resume observes landed children" \
   "$resume_plan" '"status": "child-landed"'
 assert_contains "root target gitlink matches recorded commit" \
   "$resume_plan" '"readyToArchive": true'
+
+# Per-repository setup: a topology row's `setupCommand` runs inside that
+# repository's worktree, and `sandbox.setupCommand` still covers the root
+# worktree. A separate superproject keeps the marker files out of the
+# cross-repository-profile surface above.
+mkdir -p "$TMP/setup-child"
+cd "$TMP/setup-child"
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+printf 'lib-before\n' > lib.txt
+git add .
+git commit -qm "lib fixture"
+mkdir -p "$TMP/setup-multi/.claude/harness" "$TMP/setup-multi/openspec" \
+  "$TMP/setup-multi/.foundation"
+install_harness_fixture "$ROOT" "$TMP/setup-multi"
+cp "$ROOT/.claude/harness/commands.json" "$TMP/setup-multi/.claude/harness/"
+cp -R "$ROOT/openspec/schemas" "$TMP/setup-multi/openspec/"
+cp "$ROOT/openspec/config.yaml" "$TMP/setup-multi/openspec/"
+cp "$ROOT/.foundation/.gitignore" "$TMP/setup-multi/.foundation/"
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"lib","path":"lib","setupCommand":"printf repo-ready > setup-marker.txt"}' \
+  ']}' > "$TMP/setup-multi/openspec/repositories.yaml"
+printf '%s\n' \
+  '{"version":1,"sandbox":{"setupCommand":"printf root-ready > setup-marker.txt"}}' \
+  > "$TMP/setup-multi/foundation.json"
+cd "$TMP/setup-multi"
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+git -c protocol.file.allow=always submodule add -q "$TMP/setup-child" lib
+git add .
+git commit -qm "setup fixture"
+node .claude/harness/foundation.mjs new 'Setup fanout' >/dev/null
+node .claude/harness/foundation.mjs resolve setup-fanout \
+  --impact medium --coupling coupled --acceptance-not-required >/dev/null
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"lib","mode":"write","dependsOn":[]}' \
+  ']}' > openspec/changes/setup-fanout/repositories.yaml
+printf '%s\n' \
+  '# Tasks' \
+  '' \
+  '- [ ] **T001** Prepare lib [repo:lib] [kind:implementation] [paths:lib.txt]' \
+  > openspec/changes/setup-fanout/tasks.md
+assert_cmd_zero "setup fanout sandboxes create" \
+  node .claude/harness/foundation.mjs sandbox create setup-fanout --all
+assert_file_exists "root worktree setup command ran" \
+  "$(jq -r '.workspace.path' .foundation/runtime/setup-fanout.json)/setup-marker.txt"
+assert_eq "root worktree setup outcome recorded" "ok" \
+  "$(jq -r '.workspace.setup.status' .foundation/runtime/setup-fanout.json)"
+assert_file_exists "repository setup command ran in its worktree" \
+  .foundation/repository-sandboxes/setup-fanout/lib/setup-marker.txt
+assert_eq "repository setup outcome recorded" "ok" \
+  "$(jq -r '.repositories.lib.setup.status' .foundation/runtime/setup-fanout.json)"
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"lib","path":"lib","setupCommand":42}' \
+  ']}' > openspec/repositories.yaml
+assert_cmd_fails_with "invalid repository setupCommand is rejected" \
+  "setupCommand must be a non-empty string" \
+  node .claude/harness/foundation.mjs repos
+cd "$TMP/multi-project"

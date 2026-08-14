@@ -79,7 +79,10 @@ export function createProofReadinessRuntime({
     return issues;
   }
 
-  function changedSurfaceIssues(id) {
+  // `details`, when supplied, collects `{ repositoryId, paths }` per blocked
+  // repository so the recovery can render a paste-ready annotation. The string
+  // return stays as-is — proof-runtime consumes it verbatim.
+  function changedSurfaceIssues(id, details = null) {
     const state = loadRuntime(id);
     if (!state.repositories || Object.keys(state.repositories).length <= 1) return [];
     const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
@@ -96,8 +99,10 @@ export function createProofReadinessRuntime({
         const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
         return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
       }));
-      if (outside.length)
+      if (outside.length) {
         issues.push(`repository '${repository.id}' changed outside task paths: ${outside.join(", ")}`);
+        details?.push({ repositoryId: repository.id, paths: outside });
+      }
     }
     return issues;
   }
@@ -261,8 +266,18 @@ export function createProofReadinessRuntime({
     }];
   }
 
-  function configurationRecovery(id, issues) {
+  function configurationRecovery(id, issues, surfaceFixits = []) {
     return [
+      // The changed-surface blocker already names every offending path; this
+      // entry restates them in the exact form `tasks.md` accepts, so clearing
+      // the block is a paste instead of a reconstruction.
+      ...(surfaceFixits.length ? [{
+        kind: "declare-surface",
+        reason: `append each listed annotation to the owning task's [paths:] in openspec/changes/${id}/tasks.md, then rerun readiness`,
+        choices: surfaceFixits.map((fixit) => ({
+          instruction: `repository '${fixit.repositoryId}': [paths:${fixit.paths.join(",")}]`
+        }))
+      }] : []),
       {
         kind: "diagnose",
         command: `claude-foundation doctor --stage prove --change ${id}`
@@ -346,7 +361,8 @@ export function createProofReadinessRuntime({
   function proofReadinessValue(id, stage = "prove") {
     validate(id, "active", { quiet: true });
     const issues = topologyIssues(id);
-    if (stage === "prove") issues.push(...changedSurfaceIssues(id));
+    const surfaceFixits = [];
+    if (stage === "prove") issues.push(...changedSurfaceIssues(id, surfaceFixits));
     const hash = relevantHash(id);
     const { unconfigured, unavailable } = executionNodes(id, hash);
     const pending = pendingTasks(id);
@@ -385,7 +401,7 @@ export function createProofReadinessRuntime({
       next: status === "NEEDS_CODE_CHANGE"
         ? codeChangeRecovery(id, pending)
         : status === "CONFIGURATION_ERROR"
-          ? configurationRecovery(id, issues)
+          ? configurationRecovery(id, issues, surfaceFixits)
           : status === "BLOCKED_BY_ACTIVE_WORK"
             ? activeWorkRecovery(id, leases, repositoryConflicts)
             : status === "NEEDS_USER_DECISION"

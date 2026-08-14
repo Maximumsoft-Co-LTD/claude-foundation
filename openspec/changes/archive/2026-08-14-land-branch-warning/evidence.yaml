@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "record-warns-on-main",
+      "scenario": "land record warns on a default branch",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "feature-branch-silent",
+      "scenario": "a feature branch stays silent",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "check-reports-branch",
+      "scenario": "land check reports the root target branch",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "doctor-warns-unwired",
+      "scenario": "disabled guard is a warning",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

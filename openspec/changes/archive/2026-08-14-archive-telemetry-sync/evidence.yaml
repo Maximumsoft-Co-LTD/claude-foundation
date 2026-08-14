@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "archive-imports-telemetry",
+      "scenario": "ambient transcript is imported at archive",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "archive-warns-when-empty",
+      "scenario": "absent transcript stays silent and non-blocking",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "telemetry-never-gates",
+      "scenario": "telemetry never gates the archive",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

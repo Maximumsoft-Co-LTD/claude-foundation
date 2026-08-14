@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-branch-warning-tests.mjs"],
+      "minimum": 3,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/runtime/workflow/land-runtime.mjs",
+        ".claude/harness/runtime/core/diagnostics-runtime.mjs",
+        ".claude/tests/harness/run-branch-warning-tests.mjs"
+      ]
+    }
+  },
+  "services": {}
+}

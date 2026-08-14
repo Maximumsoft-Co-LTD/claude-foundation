@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-sandbox-seam-tap.sh"],
+      "minimum": 440,
+      "reportFormat": "tap",
+      "timeoutMs": 900000
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-upgrade-compat-tests.sh"],
+      "timeoutMs": 300000
+    }
+  },
+  "services": {}
+}

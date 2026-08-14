@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "stale-proof-hint",
+      "scenario": "stale proof names the order",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "stale-authority-hint",
+      "scenario": "stale authority request names the order",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "fresh-state-unchanged",
+      "scenario": "fresh state stays unchanged",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

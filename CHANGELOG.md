@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sandboxes can install their own dependencies.** `foundation.json` accepts
+  `sandbox.setupCommand` (+ `setupTimeoutMs`), and `openspec/repositories.yaml`
+  rows accept a per-repository `setupCommand`; the harness runs the command
+  once inside every newly created Build workspace and records the outcome on
+  the workspace record. A failing setup keeps the sandbox and prints a
+  recovery warning instead of destroying the workspace — the jest-without-
+  `node_modules` first-proof failure is gone.
+- **`land archive` imports session telemetry before sealing the record.** One
+  quiet Claude-transcript sync runs before the destructive archive step, and a
+  change archived with no model usage warns that its cost columns will stay
+  empty, naming the manual `telemetry sync` command. Telemetry never gates an
+  archive.
+- **Default-branch visibility at Land.** `land record` warns — without
+  blocking — when the target repository is checked out on `main`/`master`,
+  `land check` adds a `branch:` line to `LAND READY` for a default-branch root
+  target, and `doctor` now reports the unwired `no-direct-main` hook at `warn`
+  instead of `info`. All branch reads are failure-silent; every land guard
+  stays commit-based.
+- **DAG cycle diagnostics.** When the task planner or the provider scheduler
+  detects a stuck graph, the error now names one concrete dependency cycle
+  (`a -> b -> a`) instead of listing every pending node, and the provider
+  scheduler distinguishes a cycle from a dependency that ran and failed.
+
+### Changed
+
+- **The changed-surface proof blocker now hands back the fix.** When a
+  repository changed files no task declares, readiness recovery renders the
+  undeclared paths as a paste-ready `[paths:...]` annotation per repository,
+  and `/build` instructs that new files are declared in the owning task's
+  `[paths:]` as they are created.
+- **Staleness refusals state the recovery order.** `proof is stale` now says
+  to finish contract and code edits, sync, and run one fresh prove;
+  `authority request … is stale` says to request review and acceptance last,
+  after the workspace stops changing — each naming the resuming command.
+
+### Fixed
+
+- **Landing two changes over the same file no longer loses the first one's
+  work.** Worktree apply validated the patch textually but applied by copying
+  whole files, so a target file carrying uncommitted edits from a previously
+  landed change was silently overwritten (last writer wins). Apply now
+  refuses, names the clobbered paths, and says how to reconcile; symlinks are
+  compared by link target like git blobs.
+
 ## [3.2.19] - 2026-08-14
 
 ### Changed

@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "fixit-annotation",
+      "scenario": "undeclared paths are rendered as a paste-ready annotation",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "fixit-silent-when-declared",
+      "scenario": "declared surfaces stay silent",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "build-declares-tests",
+      "scenario": "instruction present",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

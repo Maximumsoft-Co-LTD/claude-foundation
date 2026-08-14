@@ -32,16 +32,21 @@ it copies anything, so running one directly is as safe as running the suite.
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, model ceiling, and dispatch conflicts |
 | `harness/run-packet-scaling-tests.sh` | 1,000-task and 500-claim progressive compaction under exact output limits |
+| `harness/run-archive-telemetry-tests.mjs` | Archive drains the bound transcript once, warns when sealing with no usage, and never blocks on telemetry |
 | `harness/run-telemetry-concurrency-tests.sh` | Concurrent context events, malformed legacy tolerance, and non-blocking telemetry |
 | `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
+| `harness/run-proof-fixit-tests.mjs` | Changed-surface blocker recovery renders undeclared paths as a paste-ready `[paths:]` annotation |
+| `harness/run-apply-conflict-tests.mjs` | Worktree apply refuses to overwrite uncommitted target edits instead of last-writer-wins |
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
 | `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
 | `harness/run-target-drift-mutation.sh` | Removing the worktree replay or the `land check` target stop is detected by the suite above |
 | `harness/run-evidence-binding-mutation.sh` | Folding the change packet back into the code hash, or dropping review's exemption from that omission, is detected by the harness-contract and feedback-review suites |
+| `harness/run-branch-warning-tests.mjs` | Default-branch visibility at Land (warn, never block) and the doctor escalation for the unwired branch guard |
 | `harness/run-upgrade-compat-tests.sh` | Legacy-default migration, custom-policy preservation, and partial-policy deep merge |
 | `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases; preserves the full contract assertion order in one shared fixture process |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |
+| `harness/run-stale-recovery-tests.mjs` | Stale proof and stale authority refusals carry the recovery order and the resuming command |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 | `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, audit-only default, and block-mode refusals |
 | `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |
@@ -69,6 +74,7 @@ assertions twice.
 |---|---|
 | `harness/run-changeloop-seam-tap.sh` | Change-loop seams, phase mutation guard, workspace surface, context budgets |
 | `harness/run-review-gate-tap.sh` | Review and acceptance protocol, provenance, waiver policy, attempt-chain integrity |
+| `harness/run-sandbox-seam-tap.sh` | Shared contract slices (sandbox creation and setup, apply, Land, multi-repository) plus the wiring contract |
 | `docs/run-docs-tap.sh` | Documentation contracts and context budgets |
 
 A wrapper adds no assertions of its own. Add the assertion to the underlying

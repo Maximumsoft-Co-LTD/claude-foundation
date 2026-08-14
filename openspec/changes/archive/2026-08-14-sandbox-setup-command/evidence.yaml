@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "setup-command-runs",
+      "scenario": "configured setup command runs in a new sandbox",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "setup-absent-noop",
+      "scenario": "absent configuration changes nothing",
+      "impact": "medium",
+      "capabilities": ["test", "compatibility"]
+    },
+    {
+      "id": "setup-failure-preserves-sandbox",
+      "scenario": "failed setup keeps the sandbox",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "setup-multi-repo",
+      "scenario": "per-repository setup in a multi-repository change",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "setup-config-validation",
+      "scenario": "invalid configuration is rejected",
+      "impact": "low",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "setup-wiring",
+      "scenario": "composition root supplies every factory input",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

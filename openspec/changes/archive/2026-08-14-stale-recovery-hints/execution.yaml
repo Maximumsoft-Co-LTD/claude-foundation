@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-stale-recovery-tests.mjs"],
+      "minimum": 3,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/runtime/workflow/land-runtime.mjs",
+        ".claude/harness/runtime/workflow/authority-runtime.mjs",
+        ".claude/tests/harness/run-stale-recovery-tests.mjs"
+      ]
+    }
+  },
+  "services": {}
+}
