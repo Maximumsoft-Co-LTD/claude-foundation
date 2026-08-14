@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`harness-html-report` now specifies a round-ledger report, not a bare
+  status dump.** The skill's procedure was rewritten around the strongest
+  report the harness has produced so far: the newest finished change told as a
+  complete story with the active change appended as next-round status. The
+  reference now pins the header shape (lede + verdict/profile/next-round
+  chips), a KPI scorecard that adds Harness (blocked/total commands), Code,
+  and Docs volume dimensions, a non-overlapping phase-attribution timeline
+  whose per-phase times sum exactly to the span, a harness-interventions
+  section that groups `blocked` operations by what the guard prevented — 
+  including what the harness did *not* catch and the rework its strictness
+  forced — slowest-command and code-volume tables derived from the round's
+  actual commits, budget used/target from the runtime state file, and
+  plain-Thai first-use glosses for harness jargon. Verbatim-receipt quoting
+  and the no-invented-cost rule are unchanged. File:
+  `.claude/skills/harness-html-report/references/report.md`.
+
 ## [3.2.18] - 2026-08-13
 
 ### Fixed
