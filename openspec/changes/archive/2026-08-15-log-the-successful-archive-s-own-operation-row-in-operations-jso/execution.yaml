@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        ".claude/tests/harness/run-archive-telemetry-tests.mjs"
+      ],
+      "minimum": 5,
+      "reportFormat": "tap",
+      "inputs": [
+        ".claude/harness/foundation.mjs",
+        ".claude/tests/harness/run-archive-telemetry-tests.mjs"
+      ]
+    }
+  },
+  "services": {}
+}

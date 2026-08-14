@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "archive-logs-own-operation",
+      "scenario": "A successful archive appends its own completed operation row to operations.jsonl",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "archived-change-stays-quiet",
+      "scenario": "A command run against an already-archived change appends no operation row",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ]
+}

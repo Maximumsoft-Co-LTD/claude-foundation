@@ -147,3 +147,30 @@ test("an unreadable telemetry source never gates the archive", () => {
   const output = cli(fixture, env, "archive", "telemetry-probe");
   assert.match(output, /ARCHIVED telemetry-probe/);
 });
+
+// The exit hook used to re-read runtime status at exit, and archive flips the
+// status to "archived" mid-command — so the one command that finished a change
+// was the only one missing from its own operations.jsonl.
+test("a successful archive appends its own operation row", () => {
+  const fixture = project();
+  provenChange(fixture);
+  const result = cliRaw(fixture, {}, "archive", "telemetry-probe");
+  assert.equal(result.status, 0, result.stderr);
+  const ops = join(fixture.root, ".foundation", "logs", "telemetry-probe", "operations.jsonl");
+  const rows = readFileSync(ops, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const archiveRows = rows.filter((row) => row.operation === "archive");
+  assert.equal(archiveRows.length, 1, "expected exactly one archive row");
+  assert.equal(archiveRows[0].status, "completed");
+});
+
+test("a command against an already-archived change appends no operation row", () => {
+  const fixture = project();
+  provenChange(fixture);
+  const result = cliRaw(fixture, {}, "archive", "telemetry-probe");
+  assert.equal(result.status, 0, result.stderr);
+  const ops = join(fixture.root, ".foundation", "logs", "telemetry-probe", "operations.jsonl");
+  const before = readFileSync(ops, "utf8");
+  cliRaw(fixture, {}, "archive", "telemetry-probe");
+  const after = readFileSync(ops, "utf8");
+  assert.equal(after, before, "archived change accumulated a new operation row");
+});

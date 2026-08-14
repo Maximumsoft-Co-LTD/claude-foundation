@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A successful archive now logs its own operation row.** The telemetry exit
+  hook re-read the change's runtime status at exit, and `archive` flips the
+  status to `archived` mid-command — so the one command that finished a change
+  was the only one missing from its `operations.jsonl` timeline (blocked and
+  failed archives still logged). The hook now gates on the status captured
+  when the command started: the finishing archive logs its row, while later
+  sessions that merely touch an archived change stay silent, as before.
+  (Reported from a consumer round report's timeline gap.)
+
 ## [3.2.20] - 2026-08-14
 
 ### Added

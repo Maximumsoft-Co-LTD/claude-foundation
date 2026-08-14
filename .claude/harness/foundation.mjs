@@ -283,6 +283,7 @@ const operationStartedAt = Date.now();
 let operationChangeId = null;
 let operationName = null;
 let operationPhase = null;
+let operationStatusAtStart = null;
 // Commands that only read. `showMetrics` buckets every row of operations.jsonl
 // and then this handler appended a row for the read itself, so each inspection
 // permanently inflated the next one — and an archived change, which is
@@ -298,8 +299,11 @@ const READ_ONLY_OPERATIONS = new Set([
 process.on("exit", (code) => {
   if (process.env.FOUNDATION_TELEMETRY === "0" || !operationChangeId || !operationName) return;
   if (READ_ONLY_OPERATIONS.has(operationName)) return;
-  // An archived change is finished. Nothing this session did belongs in it.
-  if (readJson(runtimePath(operationChangeId), {}).status === "archived") return;
+  // An archived change is finished. Nothing this session did belongs in it —
+  // judged by the status the change had when the command started, so the
+  // archive that finishes it still logs its own row while later sessions that
+  // merely touch the finished change stay silent.
+  if (operationStatusAtStart === "archived") return;
   try {
     const path = join(LOGS, operationChangeId, "operations.jsonl");
     mkdirSync(dirname(path), { recursive: true });
@@ -1479,6 +1483,8 @@ const namedChange = (value) =>
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
   ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-status", "authority-record", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
+operationStatusAtStart = operationChangeId
+  ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
 
 // One table, in `runtime/core/lifecycle-phase.mjs`, shared with the operations
 // row written on exit. The phase is derived here rather than read only from
