@@ -53,6 +53,7 @@ export function createDiagnosticsRuntime({
   reviewForcingCapabilities,
   reviewDiversityCapabilities,
   providerCapability,
+  reviewerStatus,
   unverifiedDrift,
   unresolvedApplyTransactions,
   parseFlags,
@@ -85,7 +86,7 @@ export function createDiagnosticsRuntime({
       checks.push({
         level: "warn",
         name: "surface-forecast-undeclared",
-        detail: `${missing.map(named).join(", ")}; declare a provider now or Prove will widen the contract and expire evidence already collected`
+        detail: `${missing.map(named).join(", ")}; advisory only and does not block Build or Prove — declare a provider before signing only when this capability must become a required proof gate`
       });
     // The review signature is bound to the contract, so a capability that
     // arrives late does not merely add a provider — it expires a signature a
@@ -223,6 +224,17 @@ export function createDiagnosticsRuntime({
       name: "model-policy",
       detail: `fast=${modelPolicy.models.fast.family}; standard=${modelPolicy.models.standard.family}; deep=${modelPolicy.models.deep.family}; max-parallel=${modelPolicy.execution.maxParallelAgents}`
     });
+    if (stage === "prove") {
+      const configuredReviewer = modelPolicy.review.defaultReviewer || null;
+      if (configuredReviewer) {
+        const reviewer = reviewerStatus(configuredReviewer);
+        checks.push({
+          level: reviewer.ok ? "ok" : "error",
+          name: `reviewer:${configuredReviewer}`,
+          detail: reviewer.detail
+        });
+      }
+    }
     checks.push({
       level: modelPolicy.execution.legacyNumericPacketBytes === undefined ? "ok" : "warn",
       name: "packet-policy",

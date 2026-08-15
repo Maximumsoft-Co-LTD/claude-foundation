@@ -47,7 +47,35 @@
     "two-failed-attempts"
   ],
   "review": {
-    "independence": "self",
-    "diversity": "single-model"
+    "independence": "required",
+    "diversity": "required",
+    "defaultReviewer": "codex-sol",
+    "reviewers": {
+      "codex-sol": {
+        "adapter": "codex-cli",
+        "executable": "codex",
+        "providerFamily": "openai",
+        "modelFamily": "gpt-5.6",
+        "modelId": "gpt-5.6-sol",
+        "reasoningEffort": "high",
+        "sandbox": "read-only",
+        "ephemeral": true
+      },
+      "claude-opus": {
+        "adapter": "claude-cli",
+        "executable": "claude",
+        "providerFamily": "anthropic",
+        "modelFamily": "claude",
+        "modelId": "opus",
+        "reasoningEffort": "high",
+        "sandbox": "read-only",
+        "ephemeral": true
+      }
+    }
+  },
+  "workflow": {
+    "grounding": "required",
+    "reviewCircuit": "full-delta",
+    "reviewPolicy": "risk-tiered"
   }
 }

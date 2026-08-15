@@ -14,7 +14,7 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
-**Version 3.2.21** — runtime API 17, provider protocol 7 receipt ที่บันทึกด้วย
+**Version 3.3.0** — runtime API 20, provider protocol 8 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร
@@ -343,8 +343,10 @@ openspec/changes/<change-id>/
 ├── design.md                  # standard lane เท่านั้น
 ├── tasks.md
 ├── evidence.yaml
+├── grounding.yaml
 ├── execution.yaml
-└── repositories.yaml
+├── repositories.yaml
+└── handoffs.yaml
 ```
 
 | File | ตอบคำถามอะไร | Harness ต้องใช้ทำไม |
@@ -355,8 +357,10 @@ openspec/changes/<change-id>/
 | `design.md` | Technical decision ใดบังคับวิธี implement และ rollback | เก็บเฉพาะ current-state fact, compatibility, migration, risk และ rejected alternative ที่สำคัญ |
 | `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
 | `evidence.yaml` | Behavioral claim ใดต้องพิสูจน์ | แยก proof obligation ออกจาก tool ที่นำมารัน |
+| `grounding.yaml` | อ่านข้อเท็จจริงใดและล็อกมติอะไรตั้งแต่ต้น | ผูก Decision Sheet รอบเดียวกับ production/failure path ของแต่ละ claim |
 | `execution.yaml` | Project จะสร้าง evidence อย่างไร | Wire command, report, service, timeout และ readiness check |
 | `repositories.yaml` | Change อ่านหรือเขียน repository ใดได้ | จำกัดอำนาจของ agent และกำหนด dependency order |
+| `handoffs.yaml` | Operation ใดต้องส่งต่อเจ้าของสิทธิ์ | ย้าย AWS, secret, Terraform, deploy, restart และงาน environment ออกจาก task ของ developer โดยยังคุม activation safety |
 
 ห้ามใส่ `/prove` หรือ `/land` เป็น checkbox ใน `tasks.md` เพราะสองอย่างนี้เป็น
 lifecycle command ไม่ใช่ implementation task
@@ -462,9 +466,11 @@ claim ที่ไม่มี task/provider, scenario ที่ไม่ตร�
 และ migration ที่ไม่มี rollback/integrity coverage
 
 Remote CI ตั้งค่า issuer กับ Ed25519 public key แล้ว import ด้วย `evidence
-verify-ci` ได้ ส่วน review/acceptance ข้าม external boundary ผ่าน `authority
-request`, `authority status` และ `authority record` ทั้งสองทางผูก evidence กับ
-workspace ปัจจุบันและยังผ่าน receipt validator เดิม จึงปฏิเสธ response ที่ stale,
+verify-ci` ได้ ส่วน Prove ปกติใช้ `proof advance` ซึ่งรันหลักฐานที่ขาดหนึ่งครั้ง,
+จัด review ก่อน acceptance และคืนสถานะรอที่ทำต่อได้โดยไม่ polling การรีวิว AI
+ที่ตั้งค่าไว้ใช้ `authority run`; named-human review ต้อง reserve packet ด้วย
+`authority dispatch` ก่อน `authority record`; acceptance ไม่ต้อง dispatch แบบ
+review ทุกทางผูก evidence กับ workspace ปัจจุบัน จึงปฏิเสธ response ที่ stale,
 ไม่ตรง, ไม่มีลายเซ็น หรือถูก replay
 
 Foundation ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
@@ -480,12 +486,11 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 ```
 
-ถ้า change ต้องใช้ external review ให้รัน
-`claude-foundation proof collect <change-id>` ก่อน เพื่อเก็บหลักฐานที่รันได้ใน
-project โดยยังไม่ finalize จากนั้น Agent จะสร้าง authority request อธิบาย
-review packet เป็นภาษาปกติ และถามว่าจะตรวจเอง ส่งให้ผู้ตรวจอิสระ หรือหยุดไว้ก่อน
-เมื่อมีผลตรวจจริงแล้ว Agent จึงบันทึก response และใช้ `proof run` เพื่อ reuse
-receipts และปิด proof
+ให้รัน `claude-foundation proof advance <change-id>` หนึ่งครั้งเป็นทางปกติ Agent
+จะอธิบาย external wait เป็นภาษาปกติและส่ง bounded packet ให้ reviewer อิสระที่ตั้ง
+ไว้หรือ named human การเรียกซ้ำตอน workspace และ request ไม่เปลี่ยนจะไม่รัน provider
+หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
+`proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้
 
 ผู้ใช้ไม่ต้องประกอบ receipt command, provenance JSON, provider metadata หรือ
 workspace hash เอง รายละเอียดเหล่านี้เป็น protocol ภายในและจะแสดงเมื่อผู้ใช้
@@ -627,10 +632,17 @@ claude-foundation change resolve <change-id> \
   --acceptance-required --acceptance-reason "<ทำไมต้องให้คนตัดสิน>"
 ```
 
-Review อิสระเป็นคนละจุดกัน และถูกบังคับโดยนโยบาย — impact สูง, change แบบ coupled
-ที่ไม่ใช่ low, มี security trigger หรือ claim ที่ครอบคลุมหลาย repository
-ผู้รีวิวเป็นคนหรือ AI ตัวอื่นก็ได้ แต่ต้องไม่ใช่ผู้ implement
-ความเป็นอิสระยกเว้นไม่ได้ และหลัง AI รีวิวสองรอบ รอบที่สามจะถูกปฏิเสธและส่งต่อให้คน
+Review อิสระเป็นคนละจุดและแบ่งตามความเสี่ยง งาน low ใช้ AI full review หนึ่งรอบ
+งาน medium ใช้ full review หนึ่งรอบ และหลังแก้รวมหนึ่ง batch จึงใช้ fresh-session
+delta ได้อีกหนึ่งรอบเพื่อปิด finding IDs เดิม งาน high ถาม material risk ใน
+Decision Sheet ต้นทางและใช้ full/delta circuit แบบมีเพดาน โดยไม่มี human approval
+บังคับและไม่มี AI รอบสาม ค่าเริ่มต้นใช้ Codex GPT-5.6 Sol ใน session ใหม่แบบ
+read-only/ephemeral และมี Claude Code Opus แบบ read-only/non-persistent ให้เลือก
+ทีมที่ใช้ Codex ล้วนหรือ Claude Code ล้วนตั้ง reviewer ให้ตรงและ commit
+`diversity: "single-model"` โดยยังต้องใช้ reviewer identity และ session ใหม่
+ถ้า reviewer infrastructure ล้มเหลวจะ retry ได้หนึ่งครั้ง เมื่อใช้รอบ review ครบแล้วจะไม่ถาม redesign/split/pause: defect ใน contract เข้า deterministic repair closure, ความขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch อีกครั้ง และถ้าขาดสิทธิ์จะสร้าง external handoff
+
+Build และ Prove ไม่รอ operator เพียงเพราะ developer ไม่มีสิทธิ์ cloud; `handoff packet` ส่ง operation ไปยัง owner ที่ระบุ Land จะรอเฉพาะงาน pre-Land หรือ activation-coupled; งาน post-Land ที่มี ticket และพิสูจน์ว่ายังไม่ activate สามารถ Land ได้
 
 ตัว Land เองตรวจที่หลักฐาน ไม่ใช่ที่ความยินยอม agent ถูกสั่งให้อธิบายผลกระทบ
 และเสนอให้ตรวจดู ไปต่อ หรือหยุดก่อน ส่วนคำสั่งต่อเนื่อง (`land record`,
@@ -638,8 +650,8 @@ Review อิสระเป็นคนละจุดกัน และถู
 ระบุการตัดสินใจที่คุณทำจริง
 
 [การอนุมัติโดยคน](https://claude-foundation.dev/docs/th/approval/)
-ครอบคลุมทั้งสี่จุด รวมถึงวิธีที่ `authority request`,
-`authority status --template` และ `authority record` เปลี่ยนคำตัดสินให้เป็น receipt
+ครอบคลุมทั้งสี่จุด รวมถึง `authority run`, การ dispatch review ที่ชัดเจน และการ
+เปลี่ยนคำตัดสินจริงของคนให้เป็น receipt
 
 ## Operator Commands และการแก้ปัญหา
 
@@ -655,6 +667,7 @@ claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
 claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ" --decision-ref <host-user-decision>
 claude-foundation proof readiness <change-id>
+claude-foundation proof advance <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
@@ -664,7 +677,7 @@ claude-foundation change abandon <change-id> --reason "evidence contract ทำ�
 
 change ที่พิสูจน์ไม่ได้เลิกด้วย `change abandon` ซึ่งปลด lease ล้าง sandbox และย้าย
 record ไปไว้ที่ `.foundation/recovery/abandoned/<id>/` พร้อม audit line โดย
-quarantine ไม่ได้ลบ และไม่แตะ Git ส่วน guard ที่หยุดงาน เช่น AI review ครบสองรอบ
+quarantine ไม่ได้ลบ และไม่แตะ Git ส่วน guard ที่หยุดงาน เช่น ใช้ review route ตาม risk tier ครบแล้ว
 budget continuation ที่ใช้ไปแล้ว หรือ apply ที่ rollback ไม่จบ จะรายงานทางเลือกที่มี
 แทนการปฏิเสธเปล่า ๆ
 

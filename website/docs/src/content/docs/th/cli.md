@@ -20,6 +20,8 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
 | `land check <change>` | ตรวจว่า projection ที่พิสูจน์แล้วยัง land ได้ |
+| `handoff status <change>` | ดู operation ที่ต้องสิทธิ์ภายนอกและผลต่อ Land |
+| `handoff packet <change> [--id <H00n>]` | อ่าน packet ที่ไม่มี credential สำหรับ DevOps/SRE owner |
 | `repos [change]` | ดู topology และการเลือกรีโป |
 | `models` | ดูนโยบาย model tier |
 | `providers` | ดูการต่อสายหลักฐานระหว่างนิยาม change contract |
@@ -35,8 +37,10 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
 | `sandbox sync <change>` | ซิงก์การแก้ข้อตกลงที่ตั้งใจเข้าไปใน Build |
-| `proof collect <change>` | รวบรวมหลักฐานที่รันได้ก่อนถึงขอบเขตภายนอก |
-| `proof run <change>` | รัน readiness, provider, finalization และ audit แบบ atomic |
+| `proof advance <change>` | ทาง Prove ปกติที่ทำต่อได้: รันหนึ่งครั้ง จัด external gate และ finalize เมื่อพร้อม |
+| `proof collect <change>` | การเก็บระดับล่างสำหรับวิเคราะห์หรือ integration ที่ตั้งใจไว้ |
+| `proof run <change>` | atomic run ระดับล่างเมื่อไม่ต้องมี external handoff ที่ทำต่อได้ |
+| `handoff record <change> --id <H00n> …` | บันทึก accepted/completed/rejected จาก operator ที่ระบุชื่อพร้อม reference |
 
 ## การต่อสายหลักฐาน
 
@@ -49,12 +53,16 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 ## อำนาจจากภายนอก
 
-การรีวิวและการยอมรับจากคน ซึ่งทำต่อข้าม session ได้
+การรีวิวและการยอมรับที่ทำต่อข้าม session ได้ ปกติใช้ `proof advance`; ใช้คำสั่ง
+เหล่านี้โดยตรงเมื่อตรวจวิเคราะห์หรือทำ integration ที่ตั้งใจไว้
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `authority request <change> --type review\|acceptance` | สร้างคำขอภายนอกที่ทำต่อได้ |
 | `authority status <change> [--request <id>] [--template]` | ดูสถานะ `--template` ออกไฟล์คำตอบให้กรอก |
+| `authority dispatch <change> …` | reserve full/delta packet ที่แน่นอนเมื่อส่งให้ AI หรือ named human review |
+| `authority run <change> …` | รัน AI reviewer ที่ตั้งค่าไว้แบบ read-only/ephemeral และบันทึก session จริง |
+| `authority abort <change> …` | ปิด request ที่ใช้ต่อไม่ได้โดยไม่อ้างว่า dispatched attempt เสร็จแล้ว |
 | `authority record <change> --request <id> --response <file>` | ตรวจคำตอบที่ผูกกับ host แล้วบันทึกเป็นหลักฐาน |
 | `evidence record <change> <provider> <status> …` | ทางเชื่อมระดับล่างสำหรับหลักฐานที่สังเกตจากภายนอก |
 
@@ -94,18 +102,18 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 สัญญาที่มองเห็นจากภายนอกถูกตรึงไว้ใน `.claude/harness/protocol.json` การติดตั้งที่ปนกันหลายรุ่นจะล้มเหลวทันทีตอนโหลด แทนที่จะไปพังกลางทาง Land
 
-| Pin | v3.2.21 |
+| Pin | v3.3.0 |
 |---|---|
-| runtime | 2.8.0 |
-| runtime API | 19 |
-| provider protocol | 7 |
+| runtime | 3.3.0 |
+| runtime API | 20 |
+| provider protocol | 8 |
 | evidence schema | 1, 2 |
-| packet schema | 5 |
-| review protocol | 2 |
+| packet schema | 6 |
+| review protocol | 3 |
 | acceptance protocol | 2 |
 | attestation protocol | 1 |
-| authority protocol | 1 |
+| authority protocol | 2 |
 
 :::note
-provider protocol 7 หมายความว่า receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันถูกรันจริงหรือแค่ถูกกล่าวอ้าง จึงเชื่อไม่ได้ว่าถูกรัน
+provider protocol 8 หมายความว่า receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันถูกรันจริงหรือแค่ถูกกล่าวอ้าง จึงเชื่อไม่ได้ว่าถูกรัน
 :::

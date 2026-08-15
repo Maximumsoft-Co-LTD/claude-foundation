@@ -68,14 +68,18 @@ afterward, the acceptance goes invalid rather than silently carrying over.
 Review asks whether the implementation is sound. The reviewer may be a human
 **or** a different AI — what matters is independence, not species.
 
-Review becomes required when any of these hold:
+With `workflow.reviewPolicy: "risk-tiered"`, every change is reviewed and risk
+controls the bounded route:
 
-- impact is high, or the change is coupled and impact is not low
-- a security trigger is present
-- a non-low claim declares `review`, `security-static`, `data-migration`,
-  `compatibility`, `cross-repo-contract`, or `state-identity`
-- a non-low claim spans more than one repository
-- the intent mentions concurrency, money, migration, or irreversibility
+- **low:** one full AI review; a material correction promotes to medium
+- **medium:** one full AI review, one correction batch, then at most one
+  fresh-session delta that closes the original finding IDs
+- **high:** material risks are decided in the initial Decision Sheet; one full
+  AI review and at most one post-correction delta; no mandatory human final
+
+Authorization/secrets, public or cross-repository contracts, migrations or
+destructive state, money, concurrency, replay/idempotency, brokers/real wire,
+and activation of legacy behavior are high-risk signals.
 
 Two properties govern who may review. Both are waivable, and each waiver is
 declared the same way: a key in the committed `foundation.json`, never a
@@ -97,31 +101,45 @@ single model can set `"review": { "diversity": "single-model" }` in
 `foundation.json`, which relaxes diversity to *preferred* and stamps a
 `diversity-waived-single-model` trigger on the policy.
 
+The shipped profiles support both homogeneous setups: select `codex-sol` for a
+Codex-only team or `claude-opus` for a Claude-Code-only team. Keep
+`independence: "required"`; Foundation launches a separate read-only fresh
+session and rejects the coding identity/session even though the family matches.
+
 Each waiver relaxes only its own axis. A same-model self-review of critical work
 needs both declared; declaring one leaves the other enforced. Withdrawing either
 key invalidates the receipts it allowed, because the review policy is part of
 the contract fingerprint.
 
-:::note[The two-round ceiling]
-After two AI review rounds, a third is refused and escalated to human review.
-The attempt history is a SHA-256 hash chain; a broken chain fails closed. This
-exists so a change cannot be re-reviewed by machines until one of them says yes.
+:::note[The risk circuit]
+The tier limit is enforced before dispatch: low receives one full review; a
+correction promotes it to the bounded full/delta route used by medium and high.
+Reviewer infrastructure gets one separate full retry. After two delivered AI
+waves, Foundation refuses another open review. A final in-contract blocker can
+close only through the claims and current critical-case receipts named by that
+finding; a real contract contradiction reopens one batched Decision Sheet, and
+missing authority becomes an external handoff. The attempt history is a
+SHA-256 hash chain; a broken chain fails closed.
 :::
 
 ## The authority bridge
 
-This is the plumbing that turns a human verdict into a receipt the harness will
-accept. Three commands:
+The normal entry point is one resumable command:
 
 ```bash
-claude-foundation authority request <change> --type review   # or --type acceptance
-claude-foundation authority status  <change> --template      # emits the response shape
-claude-foundation authority record  <change> --request <id> --response <file>
+claude-foundation proof advance <change>
 ```
+
+It creates or reuses the request and never polls an unchanged external wait.
+When the packet is actually handed off, configured Codex or Claude Code review
+uses `authority run`. A named-human review must use `authority dispatch` before `authority
+record`. Human acceptance uses request/status/record without a review dispatch.
 
 `authority request` refuses to open unless the implementation tasks are
 complete and that authority is genuinely required. The request is bound to the
-workspace hash, expires after 24 hours, and is single-use.
+workspace hash, expires after 24 hours, and is single-use. Dispatch records the
+exact full or delta packet and consumes an attempt even if the reviewer crashes;
+only a completed response can unlock the next route.
 
 `authority record` validates the response against the request — version,
 request ID, change ID, type, and workspace hash must all match — and then runs

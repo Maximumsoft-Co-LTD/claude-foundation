@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-08-15
+
+### Added
+
+- Risk-tiered review: low uses one AI full review; medium and high permit one
+  correction batch and a delta-only closure. High-risk decisions are batched at
+  intake and Prove has no mandatory human approval gate.
+- Grounding v2 records production entry, real wire, legacy activation,
+  cross-service interaction, observability, critical-case, and mutant
+  decisions in the initial Decision Sheet.
+- A configured Codex CLI reviewer runs GPT-5.6 Sol in a fresh read-only
+  ephemeral session with structured output and durable provenance.
+- A configured Claude Code CLI reviewer runs a high-effort Opus review with a
+  JSON schema, read-only tools and a fresh non-persistent session. Codex-only
+  and Claude-Code-only projects may commit the single-model diversity waiver
+  without waiving reviewer identity/session independence.
+- `proof advance` serializes proof/authority mutation, resumes external waits
+  without polling, checks freshness, and orders review before acceptance.
+- Permission-bound AWS, secret, Terraform, deploy, restart, and environment
+  work uses activation-aware `handoffs.yaml` plus durable operator records;
+  Build and Prove continue while Land blocks only unsafe unresolved operations.
+- A final in-contract AI finding closes through its named claims and current
+  critical-case receipts, producing a hash-chained deterministic closure
+  without a third AI or mandatory human review.
+
+### Changed
+
+- Runtime API 20 and the review, authority, proof, packet, and adapter
+  protocols bind the new routing and evidence contracts.
+
 ## [3.2.21] - 2026-08-14
 
 ### Fixed

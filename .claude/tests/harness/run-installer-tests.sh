@@ -120,19 +120,22 @@ assert_file_exists "authority bridge runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/authority-runtime.mjs"
 assert_file_exists "Land runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/land-runtime.mjs"
+assert_file_exists "external handoff runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/handoff-runtime.mjs"
 assert_file_exists "apply runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/apply-runtime.mjs"
 assert_file_exists "command registry installed" "$TARGET/.claude/harness/commands.json"
 assert_cmd_zero "command registry has one unique entry per public name" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$TARGET/.claude/harness/commands.json"
-assert_eq "agent command surface is bounded" "18" \
+assert_eq "agent command surface is bounded" "21" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 17 as of `change waive` — the recorded withdrawal of one failing capability
-# gate under a host-user decision; before that, 16 as of the public
-# `hash <change> [provider]` route the signed CI envelope binds.
-assert_eq "conditional recovery surface is bounded" "17" \
+# 21 includes the bounded proof controller, explicit authority
+# dispatch/abort/configured-reviewer routes, and the operator-owned handoff
+# record. Keep this count intentional so a newly exposed recovery command
+# cannot appear silently.
+assert_eq "conditional recovery surface is bounded" "21" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
@@ -148,10 +151,21 @@ assert_file_exists "Claude session context hook installed" \
 assert_file_exists "portable agent contract installed" "$TARGET/.claude/harness/AGENT.md"
 assert_file_contains "portable agent contract translates machine output" \
   "$TARGET/.claude/harness/AGENT.md" "Harness output is a machine handoff"
+assert_file_exists "developer setup guide installed" "$TARGET/.claude/harness/DEVELOPER-SETUP.md"
+assert_file_contains "developer setup guide pins Codex login" \
+  "$TARGET/.claude/harness/DEVELOPER-SETUP.md" "codex login"
+assert_file_contains "developer setup guide pins Claude Code login" \
+  "$TARGET/.claude/harness/DEVELOPER-SETUP.md" "claude auth login"
+assert_file_exists "configured reviewer runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/configured-reviewer.mjs"
 assert_file_exists "evidence adapter guide installed" "$TARGET/.claude/harness/EVIDENCE.md"
 assert_file_exists "standard schema installed" "$TARGET/openspec/schemas/foundation-standard/schema.yaml"
 assert_file_exists "repository topology default installed" "$TARGET/openspec/repositories.yaml"
 assert_file_exists "model policy default installed" "$TARGET/foundation.json"
+assert_cmd_zero "Claude Code reviewer profile is installed" \
+  jq -e '.review.reviewers["claude-opus"] | .adapter == "claude-cli" and
+    .providerFamily == "anthropic" and .sandbox == "read-only" and
+    .ephemeral == true' "$TARGET/foundation.json"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
 # Ask git what it ignores rather than matching directory names in the file. The
 # name-matching version passed while `authority/`, `attestations/`, and
@@ -244,6 +258,15 @@ assert_contains "native doctor exposes opt-in branch policy" "$doctor" "no-direc
 CLI="bash $ROOT/cli.sh"
 providers="$(bash "$ROOT/cli.sh" --project "$TARGET" providers)"
 assert_contains "native CLI exposes installed providers" "$providers" "dependency-supply-chain"
+# These two drafts predate Grounding v2 and exercise only atomic lifecycle
+# compatibility. Run them under the explicit legacy-optional policy, then
+# restore the installed required policy before later installer assertions.
+cp "$TARGET/foundation.json" "$TMP/foundation-required.json"
+jq '.workflow.grounding = "optional" |
+    .workflow.reviewPolicy = "legacy" |
+    .workflow.reviewCircuit = "legacy"' "$TARGET/foundation.json" \
+  > "$TMP/foundation-atomic.json"
+cp "$TMP/foundation-atomic.json" "$TARGET/foundation.json"
 start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
   "$start_template" '"version": 1'
@@ -392,6 +415,7 @@ assert_cmd_zero "native proof finish routes the resumable proof path" \
   bash "$ROOT/cli.sh" --project "$TARGET" proof finish cli-proof-route
 assert_cmd_zero "native land check accepts fresh proof" \
   bash "$ROOT/cli.sh" --project "$TARGET" land check cli-proof-route
+cp "$TMP/foundation-required.json" "$TARGET/foundation.json"
 
 if bash "$ROOT/cli.sh" definitely-not-a-command >/dev/null 2>&1; then
   fail "unknown native command fails without entering installer"
@@ -516,6 +540,15 @@ assert_file_contains "portable AGENTS pointer serves codex" \
   "$CODEX_TARGET/AGENTS.md" "claude-foundation:portable-agent:start"
 assert_file_exists "shared runtime installed for codex" \
   "$CODEX_TARGET/.claude/harness/foundation.mjs"
+assert_eq "codex feature skill links to the canonical Claude skill" \
+  "../../.claude/skills/feature" \
+  "$(readlink "$CODEX_TARGET/.agents/skills/feature")"
+assert_eq "codex behavioral rules remain a canonical compatibility link" \
+  "../.claude/rules" \
+  "$(readlink "$CODEX_TARGET/.codex/foundation-rules")"
+assert_eq "codex guard scripts remain readable but inert through one link" \
+  "../.claude/hooks" \
+  "$(readlink "$CODEX_TARGET/.codex/hooks")"
 # The prompt directory is user-global and shared; a same-named prompt without
 # the Foundation marker belongs to the user and must survive a re-install.
 printf 'my own build prompt\n' > "$CODEX_HOME_FIXTURE/prompts/build.md"

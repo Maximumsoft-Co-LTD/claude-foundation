@@ -20,6 +20,14 @@ cp -R "$ROOT/openspec/schemas" "$TMP/multi-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/multi-project/openspec/"
 cp "$ROOT/openspec/repositories.yaml" "$TMP/multi-project/openspec/"
 cp "$ROOT/foundation.json" "$TMP/multi-project/"
+# This fixture exercises the pre-v3.3 multi-repository contract. New
+# risk-tiered/grounding behavior has dedicated tests and must not make this
+# compatibility case fabricate a Decision Sheet.
+jq '.workflow.grounding = "optional" |
+    .workflow.reviewPolicy = "legacy" |
+    .workflow.reviewCircuit = "legacy"' \
+  "$TMP/multi-project/foundation.json" > "$TMP/multi-foundation.json"
+mv "$TMP/multi-foundation.json" "$TMP/multi-project/foundation.json"
 cp "$ROOT/.foundation/.gitignore" "$TMP/multi-project/.foundation/"
 cd "$TMP/multi-project"
 git init -q
@@ -199,10 +207,10 @@ assert_cmd_zero "review packet names the API sandbox workspace" \
       select(.repositoryId == "api" and .workspacePath == $workspace)' \
     "$TMP/committed-review-packet.json"
 assert_cmd_zero "review decision artifacts expose their readable workspace" \
-  jq -e '.decisions.proposal.workspacePath and
+  jq -e '.contractWorkspacePath and
     .decisions.proposal.relativePath == "proposal.md" and
-    .decisions.design.workspacePath and
-    .decisions.specs.workspacePath' \
+    .decisions.design.relativePath == "design.md" and
+    .decisions.specs.relativePath == "specs"' \
     "$TMP/committed-review-packet.json"
 assert_cmd_zero "review packet exposes executable app inspection metadata" \
   jq -e --arg base "$(jq -r '.repositories.app.baseHead' \

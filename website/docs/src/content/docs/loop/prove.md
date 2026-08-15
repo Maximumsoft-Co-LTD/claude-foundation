@@ -60,22 +60,23 @@ In an earlier version the real-evidence requirements were gated on the adapter *
 
 ## Human and external authority
 
-Some evidence cannot be executed locally — an independent review, a subjective acceptance, a CI run on another machine. Those use the resumable authority bridge:
+Some evidence cannot be executed locally — an independent review, a subjective acceptance, a CI run on another machine. Normally you advance the state machine once:
 
 ```bash
-claude-foundation proof collect <change>
-claude-foundation authority request <change> --type review|acceptance
-claude-foundation authority status <change> --request <id>
-claude-foundation authority record <change> --request <id> --response <file>
+claude-foundation proof advance <change>
 ```
 
-Requests carry bounded packets, expire, and go stale with the workspace. A response must match the request identity and workspace, then pass the ordinary review or acceptance validator. Completed requests cannot be replayed.
+`proof advance` executes missing project evidence once, routes review before acceptance, and returns a stable waiting handoff. Repeating it on an unchanged open request does not poll, rerun providers, or dispatch another reviewer. Configured AI review uses `authority run`; named-human review reserves its exact packet with `authority dispatch` before `authority record`; acceptance does not use a review dispatch.
+
+Requests carry bounded packets, expire, and go stale with the workspace. A response must match the request identity and workspace, then pass the ordinary review or acceptance validator. Completed requests cannot be replayed. A crashed, aborted, or tool-failed AI dispatch is infrastructure rather than a delivered verdict and receives at most one bounded full retry.
 
 Staleness refusals state their recovery order rather than a bare no: `proof is stale` says to finish contract and code edits, sync, and run one fresh prove; a stale authority request says to request review and acceptance last, after the workspace stops changing — each naming the resuming command.
 
 Your agent translates the packet into ordinary language and asks whether to inspect, send, or pause. You answer in ordinary language — you are never asked for receipt syntax, provenance fields, or placeholders.
 
-**Review.** Critical policy requires a different provider/model family, or a human. A change-level hash chain binds the complete receipt payload and limits AI to two recorded attempts, even if the current receipt is deleted or its provider renamed. Corrupt history fails closed.
+**Review.** Low risk uses one full AI review. A corrected low change promotes to the same bounded full/delta route used by medium and high. The delta must close the first-round finding IDs and stay within changed artifacts. If that final delta finds an in-contract blocker, it must bind the finding to declared claims and critical cases; after repair, current passing provider receipts close those exact IDs deterministically. There is no third AI and no mandatory human-final gate. A real behavior, compatibility, security, data, or rollout contradiction reopens one batched Decision Sheet; missing environment authority becomes a DevOps handoff. A change-level hash chain binds dispatch, completion, scope, findings, closure evidence, and receipt; corrupt history fails closed.
+
+**External operations.** Build and Prove do not ask a developer for cloud credentials. AWS/IAM/secret/Terraform/deploy/restart work lives in `handoffs.yaml`; send `handoff packet` once and continue evidence. Land waits for pre-Land or activation-coupled work, while accepted tracked post-Land work may remain only when the merged artifact is proven safe before activation.
 
 **Acceptance.** External and human-only. A passing receipt requires explicit claim scope, `--acceptor`, `--decision accept`, unique non-blank `--criterion` values, `--observed`, provenance, and a durable artifact or reference. Every read revalidates all of it against the final workspace identity.
 

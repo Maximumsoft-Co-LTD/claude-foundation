@@ -20,6 +20,8 @@ Safe to run at any time. These mutate nothing.
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
 | `proof readiness <change>` | Typed blockers and canonical next commands |
 | `land check <change>` | Validate that the proven projection remains landable |
+| `handoff status <change>` | Inspect permission-bound operations and their Land disposition |
+| `handoff packet <change> [--id <H00n>]` | Read the credential-free packet for a named DevOps/SRE owner |
 | `repos [change]` | Inspect repository topology and selection |
 | `models` | Inspect model-tier policy |
 | `providers` | Inspect evidence wiring while defining a change contract |
@@ -35,8 +37,10 @@ Safe to run at any time. These mutate nothing.
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
 | `sandbox sync <change>` | Synchronize an intentional contract revision into Build |
-| `proof collect <change>` | Collect executable evidence before an external boundary |
-| `proof run <change>` | Run readiness, providers, finalization, and audit atomically |
+| `proof advance <change>` | Normal resumable Prove path; execute once, route external gates, and finalize when ready |
+| `proof collect <change>` | Low-level collection for diagnosis or an explicit integration |
+| `proof run <change>` | Low-level atomic run when no resumable external handoff is needed |
+| `handoff record <change> --id <H00n> …` | Record a named operator's accepted/completed/rejected result and durable references |
 
 ## Evidence wiring
 
@@ -49,12 +53,16 @@ Safe to run at any time. These mutate nothing.
 
 ## External authority
 
-Human review and acceptance, resumable across sessions.
+Review and acceptance, resumable across sessions. Prefer `proof advance`; use
+these directly for diagnosis or an explicit integration.
 
 | Command | Purpose |
 |---|---|
 | `authority request <change> --type review\|acceptance` | Create a resumable external request |
 | `authority status <change> [--request <id>] [--template]` | Inspect authority; `--template` emits the response file to fill in |
+| `authority dispatch <change> …` | Reserve the exact full/delta packet when handing review to an AI or named human |
+| `authority run <change> …` | Run the configured read-only ephemeral AI reviewer and record its real session |
+| `authority abort <change> …` | Close an unusable request without pretending its dispatched attempt completed |
 | `authority record <change> --request <id> --response <file>` | Validate a bound host response and record its evidence |
 | `evidence record <change> <provider> <status> …` | Low-level integration path for externally observed evidence |
 
@@ -94,18 +102,18 @@ Commands marked as needing a `--decision-ref` require an **explicit host-recorde
 
 Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-revision install fails immediately at load rather than partway through Land.
 
-| Pin | v3.2.21 |
+| Pin | v3.3.0 |
 |---|---|
-| runtime | 2.8.0 |
-| runtime API | 19 |
-| provider protocol | 7 |
+| runtime | 3.3.0 |
+| runtime API | 20 |
+| provider protocol | 8 |
 | evidence schema | 1, 2 |
-| packet schema | 5 |
-| review protocol | 2 |
+| packet schema | 6 |
+| review protocol | 3 |
 | acceptance protocol | 2 |
 | attestation protocol | 1 |
-| authority protocol | 1 |
+| authority protocol | 2 |
 
 :::note
-Provider protocol 7 means receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven. An old receipt cannot say whether it was executed or merely asserted, so it cannot be trusted to have been executed.
+Provider protocol 8 means receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven. An old receipt cannot say whether it was executed or merely asserted, so it cannot be trusted to have been executed.
 :::

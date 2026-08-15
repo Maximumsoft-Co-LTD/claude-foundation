@@ -85,6 +85,7 @@ function landRuntime(overrides = {}) {
     clearSnapshotCache: () => {},
     relevantHash: () => HASH,
     requiredProviders: () => [],
+    handoffReadiness: () => ({ operations: [], blocking: [], tracked: [], status: "COMPLETE" }),
     fail: (message) => {
       throw new Error(message);
     },

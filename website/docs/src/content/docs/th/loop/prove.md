@@ -60,22 +60,23 @@ receipt ที่ผ่าน **บันทึกด้วยมือไม่
 
 ## อำนาจจากคนและระบบภายนอก
 
-หลักฐานบางอย่างรันในเครื่องไม่ได้ — การรีวิวอิสระ การยอมรับเชิงอัตวิสัย หรือ CI ที่รันบนเครื่องอื่น พวกนี้ใช้สะพาน authority ที่ทำต่อได้
+หลักฐานบางอย่างรันในเครื่องไม่ได้ — การรีวิวอิสระ การยอมรับเชิงอัตวิสัย หรือ CI ที่รันบนเครื่องอื่น ปกติให้ขยับ state machine หนึ่งครั้ง
 
 ```bash
-claude-foundation proof collect <change>
-claude-foundation authority request <change> --type review|acceptance
-claude-foundation authority status <change> --request <id>
-claude-foundation authority record <change> --request <id> --response <file>
+claude-foundation proof advance <change>
 ```
 
-คำขอบรรจุ packet ที่มีขอบเขต มีวันหมดอายุ และ stale ไปพร้อม workspace คำตอบต้องตรงกับตัวตนของคำขอและ workspace แล้วผ่าน validator ของ review หรือ acceptance ตามปกติ คำขอที่เสร็จแล้วเล่นซ้ำไม่ได้
+`proof advance` รันหลักฐานใน project ที่ขาดหนึ่งครั้ง จัด review ก่อน acceptance และคืน handoff ที่รอทำต่อได้ การเรียกซ้ำบน request เดิมจะไม่ poll, ไม่รัน provider และไม่ dispatch reviewer ซ้ำ การรีวิว AI ที่ตั้งค่าไว้ใช้ `authority run`; named-human review ต้อง reserve packet ด้วย `authority dispatch` ก่อน `authority record`; acceptance ไม่ใช้ review dispatch
+
+คำขอบรรจุ packet ที่มีขอบเขต มีวันหมดอายุ และ stale ไปพร้อม workspace คำตอบต้องตรงกับตัวตนของคำขอและ workspace แล้วผ่าน validator ตามปกติ AI dispatch ที่ crash, abort หรือ tool fail เป็น infrastructure ไม่นับเป็น verdict และ retry แบบ full ได้หนึ่งครั้ง
 
 การปฏิเสธเพราะ stale จะบอกลำดับการกู้คืน ไม่ใช่ตอบว่าไม่เฉย ๆ: `proof is stale` บอกให้แก้ contract กับโค้ดให้จบ ซิงก์ แล้วรัน prove ใหม่หนึ่งรอบ ส่วนคำขอ authority ที่ stale บอกให้ขอ review กับ acceptance เป็นลำดับสุดท้าย หลัง workspace หยุดขยับแล้ว — แต่ละอันระบุคำสั่งที่ใช้ทำต่อให้ด้วย
 
 agent จะแปล packet เป็นภาษาปกติแล้วถามว่าจะตรวจ ส่ง หรือพักไว้ คุณตอบด้วยภาษาปกติ — ไม่มีใครถามคุณเรื่อง syntax ของ receipt, ฟิลด์ provenance หรือ placeholder
 
-**Review** นโยบายระดับ critical บังคับให้ต้องใช้ provider/model คนละตระกูล หรือใช้คน hash chain ระดับ change ผูกกับ payload ของ receipt ทั้งก้อน และจำกัดให้ AI บันทึกได้สองครั้ง แม้ receipt ปัจจุบันจะถูกลบหรือ provider ถูกเปลี่ยนชื่อ ประวัติที่เสียหายจะ fail แบบปิด
+**Review** งาน low ใช้ AI full review หนึ่งรอบ และถ้าต้องแก้จะเข้าเส้นทาง full/delta แบบเดียวกับ medium/high delta ต้องปิด finding IDs เดิมและอยู่ใน artifact ที่เปลี่ยน ถ้ารอบสุดท้ายพบ defect ใน contract finding ต้องผูก claim และ critical case; เมื่อแก้แล้ว provider receipt ปัจจุบันจะปิด ID เหล่านั้นแบบ deterministic ไม่มี AI รอบสามและไม่บังคับ human final ความขัดแย้งของ behavior/compatibility/security/data/rollout เท่านั้นที่เปิด Decision Sheet แบบ batch; ขาดสิทธิ์เป็น DevOps handoff
+
+**External operations** Build และ Prove ไม่ถามขอ cloud credential จาก developer งาน AWS/IAM/secret/Terraform/deploy/restart อยู่ใน `handoffs.yaml`; ส่ง `handoff packet` หนึ่งครั้งแล้วรัน evidence ต่อ Land รอ pre-Land หรือ activation-coupled แต่ยอมให้ post-Land ที่มี ticket ค้างได้เฉพาะเมื่อพิสูจน์ว่า merged artifact ยังไม่ activate
 
 **Acceptance** เป็นเรื่องภายนอกและต้องเป็นคนเท่านั้น receipt ที่ผ่านต้องมีขอบเขต claim ที่ชัดเจน, `--acceptor`, `--decision accept`, ค่า `--criterion` ที่ไม่ซ้ำและไม่ว่าง, `--observed`, provenance และ artifact หรือ reference ที่คงอยู่ ทุกครั้งที่อ่านจะตรวจทั้งหมดนี้ซ้ำเทียบกับตัวตนสุดท้ายของ workspace
 

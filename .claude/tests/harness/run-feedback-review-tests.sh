@@ -423,7 +423,7 @@ jq '.providers["peer-review"] = {"capability":"review","adapter":"external","cla
 cp "$TMP/renamed-review-provider.json" \
   openspec/changes/irreversible-payment-migration/execution.yaml
 assert_cmd_fails_with "provider rename cannot reset the AI review cap" \
-  "review-attempts-exhausted" \
+  "REVIEW_ROUTE_COMPLETE" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration peer-review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
     --reviewer-provider-family anthropic --reviewer-model-family claude \
@@ -460,7 +460,7 @@ cp "$TMP/intact-$attempt_file" "$attempt_dir/$attempt_file"
 cp .foundation/receipts/irreversible-payment-migration/review.json "$TMP/round-two-review.json"
 rm .foundation/receipts/irreversible-payment-migration/review.json
 assert_cmd_fails_with "receipt deletion cannot reset the AI review cap" \
-  "review-attempts-exhausted" \
+  "REVIEW_ROUTE_COMPLETE" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
     --reviewer-provider-family anthropic --reviewer-model-family claude \
@@ -470,8 +470,9 @@ assert_cmd_fails_with "receipt deletion cannot reset the AI review cap" \
     --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
     --observed 'Third AI pass' --reference fixture://diverse-review-three
 
-# The cap is a ceiling, not a wall: the stop has to carry the exits with it, or
-# a user reads a bare refusal as "this change can never finish".
+# The cap refuses another open review without reopening the generic interview.
+# Its three typed routes tell the agent whether to repair, amend the contract,
+# or wait for external authority.
 exhausted_output="$({ node .claude/harness/foundation.mjs receipt \
   irreversible-payment-migration review pass \
     --reviewer-type ai --reviewer-identity reviewer-ai \
@@ -481,14 +482,18 @@ exhausted_output="$({ node .claude/harness/foundation.mjs receipt \
     --subject-provider-family openai --subject-model-family gpt-5 \
     --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
     --observed 'Fourth AI pass' --reference fixture://diverse-review-four; } 2>&1 || true)"
-assert_contains "exhausted AI review offers a human reviewer" \
-  "$exhausted_output" '"id": "human-review"'
-assert_contains "exhausted AI review offers retiring the change" \
-  "$exhausted_output" '"id": "abandon"'
-assert_contains "exhausted AI review preserves pause" \
+assert_not_contains "exhausted AI review does not create a mandatory human gate" \
+  "$exhausted_output" '"id": "named-human"'
+assert_contains "exhausted AI review names in-contract repair" \
+  "$exhausted_output" 'AUTO_REPAIR'
+assert_contains "exhausted AI review names a true contract decision" \
+  "$exhausted_output" 'CONTRACT_DECISION_REQUIRED'
+assert_contains "exhausted AI review names missing authority" \
+  "$exhausted_output" 'EXTERNAL_WAIT'
+assert_not_contains "exhausted AI review does not ask the generic split choice" \
+  "$exhausted_output" '"id": "split"'
+assert_not_contains "exhausted AI review does not ask the generic pause choice" \
   "$exhausted_output" '"id": "pause"'
-assert_contains "exhausted AI review recommends the human path" \
-  "$exhausted_output" '"recommended": "human-review"'
 
 cp "$TMP/round-two-review.json" \
   .foundation/receipts/irreversible-payment-migration/review.json
@@ -554,7 +559,7 @@ assert_contains "legacy review receipt is specifically stale" \
 assert_eq "provider protocol remains backward-compatible" "8" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
-  jq -e '.reviewProtocol == "2" and .acceptanceProtocol == "2" and .reviewPacketSchema == "3" and .authorityProtocol == "1" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
+  jq -e '.reviewProtocol == "3" and .acceptanceProtocol == "2" and .reviewPacketSchema == "4" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
     .claude/harness/protocol.json
 
 node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null
@@ -567,7 +572,7 @@ recorded_base_packet="$(node .claude/harness/foundation.mjs packet \
   missing-recorded-base --phase review)"
 printf '%s' "$recorded_base_packet" > "$TMP/recorded-base-packet.json"
 assert_cmd_zero "review surface includes committed root change from recorded base" \
-  jq -e '.changedSurface.rows[] |
+  jq -e '.changedSurface.manifest[] |
     select(.repositoryId == "root" and .path == "app.txt") |
     .sources | index("committed") != null' "$TMP/recorded-base-packet.json"
 jq 'del(.workspace.baseHead) | del(.repositories.root.baseHead)' \

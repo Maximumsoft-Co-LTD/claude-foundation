@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=19
+EXPECTED_RUNTIME_API=20
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -72,8 +72,8 @@ run_runtime() {
   case "${1:-}" in
     new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-status|authority-record) phase="prove" ;;
-    land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
+    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record) phase="prove" ;;
+    handoff-status|handoff-packet|handoff-record|land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
@@ -306,12 +306,13 @@ case "${1:-}" in
   proof)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|readiness|run|finish|collect|preflight|execute|finalize|audit>}" "${1:-}"
+    need_arg "proof ${sub:-<plan|readiness|advance|run|finish|collect|preflight|execute|finalize|audit>}" "${1:-}"
     case "$sub" in
       plan)
         warn "'proof plan' is deprecated; use 'proof readiness'"
         run_runtime read proof-readiness "$@" ;;
       readiness) run_runtime read proof-readiness "$@" ;;
+      advance) run_runtime write proof-advance "$@" ;;
       run) run_runtime write proof-run "$@" ;;
       finish)
         warn "'proof finish' is deprecated; use 'proof run'"
@@ -324,7 +325,7 @@ case "${1:-}" in
       execute) run_runtime write proof-execute "$@" ;;
       finalize) run_runtime write prove "$@" ;;
       audit) run_runtime read proof-audit "$@" ;;
-      *) fail "proof requires 'plan', 'readiness', 'run', 'finish', 'collect', 'preflight', 'execute', 'finalize', or 'audit'" ;;
+      *) fail "proof requires 'plan', 'readiness', 'advance', 'run', 'finish', 'collect', 'preflight', 'execute', 'finalize', or 'audit'" ;;
     esac ;;
   evidence)
     shift
@@ -356,12 +357,25 @@ case "${1:-}" in
   authority)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "authority ${sub:-<request|status|record>}" "${1:-}"
+    need_arg "authority ${sub:-<request|dispatch|run|abort|status|record>}" "${1:-}"
     case "$sub" in
       request) run_runtime write authority-request "$@" ;;
+      dispatch) run_runtime write authority-dispatch "$@" ;;
+      run) run_runtime write authority-run "$@" ;;
+      abort) run_runtime write authority-abort "$@" ;;
       status) run_runtime read authority-status "$@" ;;
       record) run_runtime write authority-record "$@" ;;
-      *) fail "authority requires 'request', 'status', or 'record'" ;;
+      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', or 'record'" ;;
+    esac ;;
+  handoff)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    need_arg "handoff ${sub:-<status|packet|record>}" "${1:-}"
+    case "$sub" in
+      status) run_runtime read handoff-status "$@" ;;
+      packet) run_runtime read handoff-packet "$@" ;;
+      record) run_runtime write handoff-record "$@" ;;
+      *) fail "handoff requires 'status', 'packet', or 'record'" ;;
     esac ;;
   sandbox)
     shift

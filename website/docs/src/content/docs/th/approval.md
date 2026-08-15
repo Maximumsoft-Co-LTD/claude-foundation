@@ -67,14 +67,18 @@ receipt ของ acceptance ที่ผ่านต้องมีชื่อ
 Review ถามว่าการ implement นี้ดีพอไหม ผู้รีวิวเป็นคน **หรือ** AI ตัวอื่นก็ได้
 สิ่งที่สำคัญคือความเป็นอิสระ ไม่ใช่ว่าเป็นคนหรือเครื่อง
 
-Review จะถูกบังคับเมื่อเข้าเงื่อนไขข้อใดข้อหนึ่ง
+เมื่อใช้ `workflow.reviewPolicy: "risk-tiered"` ทุก change ได้รับ review และระดับ
+ความเสี่ยงกำหนดเส้นทางที่มีขอบเขต:
 
-- impact เป็น high หรือ change เป็น coupled และ impact ไม่ใช่ low
-- มี security trigger
-- claim ที่ไม่ใช่ low ประกาศ `review`, `security-static`, `data-migration`,
-  `compatibility`, `cross-repo-contract` หรือ `state-identity`
-- claim ที่ไม่ใช่ low ครอบคลุมมากกว่าหนึ่ง repository
-- เจตนาพูดถึง concurrency, เงิน, migration หรือสิ่งที่ย้อนกลับไม่ได้
+- **low:** AI full review หนึ่งรอบ ถ้าต้องแก้สาระสำคัญจะเลื่อนเป็น medium
+- **medium:** full review หนึ่งรอบ แก้รวมหนึ่ง batch แล้วใช้ fresh-session delta
+  ได้ไม่เกินหนึ่งรอบเพื่อปิด finding IDs เดิม
+- **high:** ตัดสินใจความเสี่ยงสำคัญใน Decision Sheet ต้นทาง ใช้ AI full review
+  หนึ่งรอบและ post-correction delta ได้ไม่เกินหนึ่งรอบ โดยไม่บังคับ human final
+
+authorization/secrets, public หรือ cross-repository contract, migration/การแก้
+state ที่ย้อนกลับยาก, เงิน, concurrency, replay/idempotency, broker/real wire
+และการ activate legacy behavior เป็นสัญญาณ high risk
 
 มีสองคุณสมบัติกำหนดว่าใครรีวิวได้ ทั้งคู่ยกเว้นได้ และยกเว้นด้วยวิธีเดียวกัน
 คือคีย์ใน `foundation.json` ที่ commit ไว้ ไม่ใช่ flag บนคำสั่ง — ข้อยกเว้นที่ฝ่ายถูกรีวิว
@@ -95,30 +99,36 @@ Review จะถูกบังคับเมื่อเข้าเงื่�
 ซึ่งจะผ่อนความหลากหลายเป็น *preferred* และประทับ trigger
 `diversity-waived-single-model` ลงในนโยบาย
 
+profile ที่ให้มารองรับทั้งสองแบบ: ทีม Codex ล้วนเลือก `codex-sol` และทีม Claude
+Code ล้วนเลือก `claude-opus` โดยคง `independence: "required"` ไว้ Foundation
+จะเปิด reviewer แบบ read-only ใน session ใหม่ และปฏิเสธ identity/session ของตัว coding
+
 การยกเว้นแต่ละอันผ่อนเฉพาะแกนของตัวเอง การรีวิวตัวเองด้วยโมเดลเดียวกันบนงาน critical
 ต้องประกาศทั้งสองอัน ประกาศอันเดียวอีกอันยังบังคับอยู่ และการถอนคีย์ใดคีย์หนึ่งออก
 จะทำให้ receipt ที่มันเคยอนุญาตใช้ไม่ได้ เพราะนโยบายรีวิวเป็นส่วนหนึ่งของ
 contract fingerprint
 
-:::note[เพดานสองรอบ]
-หลังจาก AI รีวิวไปสองรอบ รอบที่สามจะถูกปฏิเสธและยกระดับไปหาคน
-ประวัติของรอบรีวิวเป็น hash chain แบบ SHA-256 ถ้าโซ่ขาดระบบจะ fail แบบปิดประตู
-สิ่งนี้มีไว้เพื่อไม่ให้ change ถูกรีวิวซ้ำด้วยเครื่องไปเรื่อย ๆ จนกว่าจะมีตัวหนึ่งบอกว่าผ่าน
+:::note[วงจรตามความเสี่ยง]
+ระบบบังคับเพดานก่อน dispatch: low ได้ full หนึ่งรอบ และถ้าแก้จะเลื่อนเข้าเส้นทาง full/delta แบบเดียวกับ medium/high infrastructure retry หนึ่งครั้งแยกจาก delivered wave หลัง AI สองรอบจะไม่เปิด review ใหม่ defect ใน contract ปิดได้เฉพาะผ่าน claim และ critical-case receipt ปัจจุบัน ส่วน contract ขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch และถ้าขาดสิทธิ์จะเป็น external handoff ประวัติเป็น SHA-256 hash chain ถ้าโซ่ขาดระบบจะ fail closed
 :::
 
 ## Authority bridge
 
-นี่คือท่อที่เปลี่ยนคำตัดสินของคนให้เป็น receipt ที่ harness ยอมรับ มีสามคำสั่ง
+ทางปกติเริ่มด้วยคำสั่งที่ทำต่อได้คำสั่งเดียว
 
 ```bash
-claude-foundation authority request <change> --type review   # หรือ --type acceptance
-claude-foundation authority status  <change> --template      # พิมพ์รูปแบบคำตอบออกมา
-claude-foundation authority record  <change> --request <id> --response <file>
+claude-foundation proof advance <change>
 ```
+
+คำสั่งนี้สร้างหรือ reuse request และไม่ poll external wait ที่ไม่เปลี่ยน เมื่อส่ง packet
+จริง การรีวิว Codex หรือ Claude Code ที่ตั้งค่าไว้ใช้ `authority run` ส่วน named-human review ต้องใช้
+`authority dispatch` ก่อน `authority record` และ human acceptance ใช้
+request/status/record โดยไม่ต้อง review dispatch
 
 `authority request` จะไม่ยอมเปิดถ้า task การ implement ยังไม่เสร็จ
 หรือถ้า authority นั้นไม่ได้ถูกบังคับจริง คำขอถูกผูกกับ workspace hash
-หมดอายุใน 24 ชั่วโมง และใช้ได้ครั้งเดียว
+หมดอายุใน 24 ชั่วโมง และใช้ได้ครั้งเดียว Dispatch จะบันทึก full/delta packet ที่แน่นอน
+และใช้ attempt แม้ reviewer crash แต่เฉพาะ response ที่เสร็จจริงเท่านั้นที่เปิด route ถัดไป
 
 `authority record` ตรวจคำตอบเทียบกับคำขอ — version, request ID, change ID, type
 และ workspace hash ต้องตรงกันทั้งหมด — แล้วจึงรัน validator ของ receipt ตามปกติ

@@ -112,7 +112,7 @@ for command in "$ROOT"/.claude/commands/*.md; do
   esac
   assert_words_at_most "command budget: $(basename "$command")" "$limit" "$command"
 done
-assert_eq "normal slash command surface is bounded" "7" \
+assert_eq "normal slash command surface is bounded" "8" \
   "$(find "$ROOT/.claude/commands" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')"
 if grep -R -Eq 'runtime (new|start|resolve)|proof (plan|finish|preflight|execute|finalize|audit)' \
   "$ROOT/.claude/commands"; then
@@ -137,6 +137,9 @@ assert_file_contains "dev command forbids redundant framework exploration" \
 assert_file_contains "dev command uses atomic rapid start" \
   "$ROOT/.claude/commands/dev.md" \
   'change start --template'
+assert_file_contains "dev routes every fresh intent through complete Change intake" \
+  "$ROOT/.claude/commands/dev.md" \
+  'For all fresh work use `/change`'
 assert_file_contains "change command selects rapid before creation" \
   "$ROOT/.claude/commands/change.md" \
   "classify before creating it"
@@ -175,11 +178,15 @@ for skill in programming-fundamentals database-fundamentals hexagonal-backend \
 done
 
 all_skill_words="$(wc -w "$ROOT"/.claude/skills/*/SKILL.md | tail -1 | awk '{print $1}')"
-if [ "$all_skill_words" -le 8000 ]; then
-  pass "complete shipped skill budget ($all_skill_words <= 8000 words)"
+# Foundation lifecycle bridges and the one-batch intake skill are discovered
+# lazily by Codex; they are not loaded together. Keep every individual skill at
+# 700 words and every representative hot context bounded, while allowing the
+# installed catalog to contain the eight portable lifecycle entry points.
+if [ "$all_skill_words" -le 9500 ]; then
+  pass "complete shipped lazy skill inventory ($all_skill_words <= 9500 words)"
 else
-  fail_context_budget "complete shipped skill budget" \
-    "$all_skill_words" 8000 words "all shipped SKILL.md bodies"
+  fail_context_budget "complete shipped lazy skill inventory" \
+    "$all_skill_words" 9500 words "all shipped SKILL.md bodies"
 fi
 for skill in "$ROOT"/.claude/skills/*/SKILL.md; do
   assert_words_at_most "lazy skill budget: $(basename "$(dirname "$skill")")" 700 "$skill"

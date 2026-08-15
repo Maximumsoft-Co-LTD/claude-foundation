@@ -15,7 +15,7 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
-**Version 3.2.21** — runtime API 19, provider protocol 7. Receipts recorded by
+**Version 3.3.0** — runtime API 20, provider protocol 8. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 
 ## How the AI and harness divide responsibility
@@ -359,8 +359,10 @@ openspec/changes/<change-id>/
 ├── design.md                  # standard lane only
 ├── tasks.md
 ├── evidence.yaml
+├── grounding.yaml
 ├── execution.yaml
-└── repositories.yaml
+├── repositories.yaml
+└── handoffs.yaml
 ```
 
 | File | What it answers | Why the harness needs it |
@@ -371,8 +373,10 @@ openspec/changes/<change-id>/
 | `design.md` | Which technical decisions constrain implementation and rollback? | Records only load-bearing current-state facts, compatibility, migration, risks, and rejected alternatives |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
 | `evidence.yaml` | Which behavioral claims must be proven? | Separates the proof obligation from whichever tool happens to run it |
+| `grounding.yaml` | Which facts were read and which material decisions were settled up front? | Locks one complete Decision Sheet and the production/failure paths behind each claim |
 | `execution.yaml` | How does this project produce the evidence? | Wires commands, reports, services, timeouts, and readiness checks |
 | `repositories.yaml` | Which repositories may this change read or write? | Bounds agent authority and establishes dependency order |
+| `handoffs.yaml` | Which permission-bound operations belong to an external owner? | Keeps AWS, secret, Terraform, deploy, restart, and environment work out of the developer task ledger without losing activation safety |
 
 Do not add `/prove` or `/land` as checkboxes in `tasks.md`; they are lifecycle
 commands, not implementation tasks.
@@ -479,10 +483,13 @@ unknown links, claims without tasks/providers, scenario mismatches, missing
 security negative paths, and incomplete migration rollback/integrity coverage.
 
 Remote CI can be configured with an issuer and Ed25519 public key, then imported
-with `evidence verify-ci`. Review and acceptance can cross an external boundary
-through `authority request`, `authority status`, and `authority record`. Both
-paths bind evidence to the current workspace and still use the normal receipt
-validator; stale, mismatched, unsigned, or replayed responses fail closed.
+with `evidence verify-ci`. `proof advance` is the normal resumable Prove path:
+it executes missing project evidence once, routes review before acceptance, and
+returns a stable waiting handoff without polling. Configured AI review runs
+through `authority run`; named-human review reserves its packet with `authority
+dispatch` before `authority record`; acceptance needs no review dispatch. Every
+path binds evidence to the current workspace, so stale, mismatched, unsigned,
+or replayed responses fail closed.
 
 Foundation does not install a test framework or browser. It runs the tools your
 repository declares and stores receipts under
@@ -498,11 +505,12 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 ```
 
-For changes that also require external review, collect project-owned evidence
-first with `claude-foundation proof collect <change-id>`. The agent then creates
-an authority request, explains the review packet in ordinary language, and asks
-whether to inspect it, send it to an independent reviewer, or pause. After a real
-response is recorded, `proof run` reuses the collected receipts and finalizes.
+Run `claude-foundation proof advance <change-id>` once. The agent explains a
+real external wait in ordinary language and hands the bounded packet to the
+configured independent reviewer or a named human. Repeating `proof advance` on
+an unchanged wait does not rerun providers or dispatch another reviewer.
+`proof collect`, direct authority commands, and `proof run` remain available for
+diagnosis and explicit integrations.
 
 Users never need to construct receipt commands, provenance JSON, provider
 metadata, or workspace hashes. Those remain machine protocol and are shown only
@@ -638,11 +646,26 @@ claude-foundation change resolve <change-id> \
   --acceptance-required --acceptance-reason "<why a person must judge this>"
 ```
 
-Independent review is a separate boundary and becomes required by policy — high
-impact, a coupled non-low change, a security trigger, or a claim that spans
-repositories. A reviewer may be a human or a different AI, but never the
-implementer: independence cannot be waived, and after two AI rounds a third is
-refused and escalated to a person.
+Independent review is a separate boundary and is risk-tiered. Low risk gets one
+full AI review. Medium risk gets one full review and, only after one correction
+batch, one fresh-session delta that must close the original finding IDs. High
+risk asks material decisions during intake and permits the same bounded
+full/delta route—never a third AI and never a mandatory human approval gate.
+The default reviewer is Codex GPT-5.6 Sol in a read-only ephemeral session;
+the shipped alternative is Claude Code Opus in a read-only non-persistent
+session. Codex-only and Claude-Code-only teams select the matching reviewer and
+commit `diversity: "single-model"` while retaining a distinct reviewer identity
+and fresh session. Reviewer infrastructure receives one bounded retry. After the
+delivered review route is complete, Foundation refuses another open review:
+in-contract findings follow deterministic repair closure, a genuine contract
+contradiction reopens one batched Decision Sheet, and missing authority becomes
+an external handoff rather than another interview.
+
+Build and Prove do not wait for an operator merely because a developer lacks
+cloud access. `handoff packet` sends the exact operation to its named owner.
+Land waits only for pre-Land or activation-coupled work; an accepted tracked
+post-Land operation may remain when the merged artifact is proven dark until
+activation.
 
 Land itself gates on evidence rather than consent. The agent is instructed to
 explain the effects and offer to inspect, proceed, or pause first, and the
@@ -650,8 +673,8 @@ continuation commands (`land record`, `budget continue`, `change abandon`) each
 require a `--decision-ref` naming the decision you actually made.
 
 [Human approval](https://claude-foundation.dev/docs/approval/) covers all four
-boundaries, including how `authority request`, `authority status --template`,
-and `authority record` turn a verdict into a receipt.
+boundaries, including automatic `authority run`, explicit review dispatch, and
+how a real human verdict becomes a receipt.
 
 ## Operator commands and troubleshooting
 
@@ -667,6 +690,7 @@ claude-foundation packet <change-id> --phase build|prove|review
 claude-foundation metrics <change-id>
 claude-foundation budget continue <change-id> --reason "finish required proof" --decision-ref <host-user-decision>
 claude-foundation proof readiness <change-id>
+claude-foundation proof advance <change-id>
 claude-foundation proof run <change-id>
 claude-foundation land check <change-id>
 claude-foundation land archive <change-id>
