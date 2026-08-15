@@ -34,7 +34,10 @@ assert_cmd_zero "installer preserves custom numeric policy" \
   bash "$ROOT/install.sh" "$custom" --source "$ROOT" --yes
 assert_eq "custom numeric budget survives install" "32768" \
   "$(jq -r '.execution.packetBytes' "$custom/foundation.json")"
-doctor="$(bash "$ROOT/cli.sh" --project "$custom" doctor)"
+# These compatibility probes inspect policy migration, not a host's reviewer
+# installation. Prove-stage doctor correctly requires the configured agent CLI,
+# which a clean CI runner intentionally does not carry.
+doctor="$(bash "$ROOT/cli.sh" --project "$custom" doctor --stage build)"
 assert_contains "doctor reports legacy numeric policy" "$doctor" \
   "legacy numeric limit 32768"
 
@@ -52,7 +55,7 @@ printf '%s\n' \
   > "$partial/foundation.json"
 models="$(cd "$partial" && node .claude/harness/foundation.mjs models)"
 assert_contains "partial scoped policy deep-merges defaults" "$models" '"fast"'
-doctor="$(cd "$partial" && node .claude/harness/foundation.mjs doctor)"
+doctor="$(cd "$partial" && node .claude/harness/foundation.mjs doctor --stage build)"
 assert_contains "partial policy retains custom task budget" "$doctor" "task=4096"
 assert_contains "partial policy receives repository default" "$doctor" \
   "repository=12288"

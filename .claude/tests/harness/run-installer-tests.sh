@@ -251,7 +251,10 @@ else
   pass "runtime rejects an invalid command registry"
 fi
 cp "$TMP/commands-valid.json" "$TARGET/.claude/harness/commands.json"
-doctor="$(bash "$ROOT/cli.sh" --project "$TARGET" doctor)"
+# This smoke check exercises the installed runtime and branch-policy surface.
+# Reviewer readiness belongs to the configured-reviewer suite; selecting Build
+# keeps this fixture hermetic on CI hosts that intentionally have no agent CLI.
+doctor="$(bash "$ROOT/cli.sh" --project "$TARGET" doctor --stage build)"
 assert_contains "native doctor reports runtime readiness" "$doctor" "node:"
 assert_contains "native doctor exposes opt-in branch policy" "$doctor" "no-direct-main:"
 

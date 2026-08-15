@@ -37,7 +37,11 @@ jobs:
   deterministic:
     runs-on: ubuntu-latest
     steps:
+      # Upgrade compatibility archives the real previous release tag, so the
+      # deterministic job needs release history rather than a depth-1 checkout.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
