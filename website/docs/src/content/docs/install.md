@@ -51,9 +51,9 @@ claude-foundation init /path/to/your-project --host cursor    # or opencode, cod
 
 | Host | What the adapter adds |
 |---|---|
-| **Cursor** | The seven commands in `.cursor/commands/` and the always-on skill router as a `.mdc` rule with `alwaysApply: true` |
-| **OpenCode** | The seven commands in `.opencode/commands/` and a guard plugin at `.opencode/plugins/foundation.js` that replays the shipped hooks — the secrets and phase-mutation guards block live, lint feeds back on edit. Skills and the agent contract need no adapter: OpenCode reads `.claude/skills/` and `AGENTS.md` natively |
-| **Codex CLI** | The seven prompts in `$CODEX_HOME/prompts` (Codex has no per-project prompt directory), stamped with an ownership marker so re-installs refresh Foundation prompts without clobbering a same-named user prompt |
+| **Cursor** | The eight commands in `.cursor/commands/` and the always-on skill router as a `.mdc` rule with `alwaysApply: true` |
+| **OpenCode** | The eight commands in `.opencode/commands/` and a guard plugin at `.opencode/plugins/foundation.js` that replays the shipped hooks — the secrets and phase-mutation guards block live, lint feeds back on edit. Skills and the agent contract need no adapter: OpenCode reads `.claude/skills/` and `AGENTS.md` natively |
+| **Codex CLI** | The eight prompts in `$CODEX_HOME/prompts` (Codex has no per-project prompt directory), stamped with an ownership marker so re-installs refresh Foundation prompts without clobbering a same-named user prompt |
 
 :::caution[Codex has no tool hooks]
 Codex cannot run live guards, so the secrets and phase-mutation hooks are inert there. Land gates and the opt-in `no-direct-main-commit.sh` remain the enforcement.

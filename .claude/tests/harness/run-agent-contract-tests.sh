@@ -23,6 +23,11 @@ cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
 cp "$ROOT/foundation.json" "$TMP/project/"
+jq '.workflow.grounding = "optional" |
+    .workflow.reviewCircuit = "legacy" |
+    .workflow.reviewPolicy = "legacy"' \
+  "$TMP/project/foundation.json" > "$TMP/project/foundation.json.tmp"
+mv "$TMP/project/foundation.json.tmp" "$TMP/project/foundation.json"
 printf 'initial\n' > "$TMP/project/app.txt"
 cd "$TMP/project"
 
@@ -30,6 +35,9 @@ RUNTIME=".claude/harness/foundation.mjs"
 node "$RUNTIME" new 'Agent contract' --rapid >/dev/null
 node "$RUNTIME" resolve agent-contract --impact low --coupling isolated >/dev/null
 CHANGE="openspec/changes/agent-contract"
+jq '.providers.test = {"adapter":"external"}' "$CHANGE/execution.yaml" \
+  > "$CHANGE/execution.yaml.tmp"
+mv "$CHANGE/execution.yaml.tmp" "$CHANGE/execution.yaml"
 printf '%s\n' \
   '# Tasks' '' \
   '- [x] **T001** Completed prerequisite [kind:inventory]' \
@@ -47,7 +55,7 @@ assert_eq "mixed-risk single session selects deep model" "deep" \
 
 task_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
 if printf '%s' "$task_packet" | jq -e \
-  '.version == 5 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
+  '.version == 6 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
   >/dev/null; then
   pass "task packet is JSON with claim and provider authority"
 else

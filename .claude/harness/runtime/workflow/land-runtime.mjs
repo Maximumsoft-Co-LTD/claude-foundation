@@ -86,6 +86,7 @@ export function createLandRuntime({
   receiptValidity,
   fileDigest,
   receiptPath,
+  handoffReadiness,
   verifyAppliedProjection,
   selectedRepositories,
   repositoryById,
@@ -174,6 +175,15 @@ export function createLandRuntime({
       if (!manifestEntry || fileDigest(receiptPath(id, provider)) !== manifestEntry.sha256)
         fail(`${provider} live receipt differs from the proven receipt manifest`);
     }
+    const externalOperations = handoffReadiness(id);
+    if (externalOperations.blocking.length) {
+      const blocked = externalOperations.operations
+        .filter((row) => row.landBlocking)
+        .map((row) => `  ${row.id}: ${row.owner} (${row.environment}) — ${row.operation}; ${
+          row.validity}/${row.status}, ${row.timing}/${row.activation}`)
+        .join("\n");
+      fail(`WAITING_EXTERNAL ${id}\n${blocked}\n  next: claude-foundation handoff packet ${id}`);
+    }
     if (state.workspace?.applied) {
       const applied = verifyAppliedProjection(state);
       if (!applied.valid) fail(`applied projection is invalid: ${applied.reason}`);
@@ -195,10 +205,14 @@ export function createLandRuntime({
     const rootBranch = targetBranch(root);
     const branchLine = rootBranch && ["main", "master"].includes(rootBranch)
       ? `\n  branch: ${rootBranch} (default branch — branch-first policy suggests a feature branch)` : "";
+    const tracked = externalOperations.operations
+      .filter((row) => row.landDisposition === "tracked-post-land")
+      .map((row) => `${row.id} (${row.owner}: ${row.reference})`);
     console.log(`LAND READY ${id}\n  workspace: ${hash}${
+      tracked.length ? `\n  tracked post-Land handoff: ${tracked.join(", ")}` : ""}${
       waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: claude-foundation land ${
       multiRepository ? "resume" : "archive"} ${id}`);
-    return { archived: false, state, hash };
+    return { archived: false, state, hash, externalOperations };
   }
 
   // The explicit half of the split. Recovery replays or reverses filesystem

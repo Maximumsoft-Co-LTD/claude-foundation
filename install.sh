@@ -253,6 +253,19 @@ elif command -v jq >/dev/null 2>&1; then
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
     printf '⚠ preserving custom numeric execution.packetBytes; use scoped task/review/repository/global limits when ready\n' >&2
   fi
+  tmp="$(mktemp)"
+  jq --slurpfile src "$SOURCE_PATH/foundation.json" '
+    .workflow //= $src[0].workflow |
+    .workflow.grounding //= $src[0].workflow.grounding |
+    .workflow.reviewCircuit //= $src[0].workflow.reviewCircuit |
+    .workflow.reviewPolicy //= $src[0].workflow.reviewPolicy |
+    .review //= {} |
+    .review.defaultReviewer //= $src[0].review.defaultReviewer |
+    .review.reviewers //= {} |
+    .review.reviewers = ($src[0].review.reviewers + .review.reviewers)
+  ' "$TARGET_PATH/foundation.json" > "$tmp"
+  mv "$tmp" "$TARGET_PATH/foundation.json"
+  printf '✓ installed risk-tiered workflow and configured reviewer defaults; existing explicit review waivers were preserved\n'
 else
   printf '⚠ jq unavailable; inspect legacy numeric execution.packetBytes manually\n' >&2
 fi

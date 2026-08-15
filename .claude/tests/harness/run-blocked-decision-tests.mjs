@@ -66,7 +66,6 @@ const REGISTERED = new Set([
   "budget-continuation-rejected",
   "budget-continuation-spent",
   "control-head-moved",
-  "review-attempts-exhausted",
   "review-history-corrupt",
   "root-pointers-restaged"
 ]);

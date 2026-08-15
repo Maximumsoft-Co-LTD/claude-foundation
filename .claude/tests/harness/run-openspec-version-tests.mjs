@@ -117,6 +117,7 @@ try {
     clearSnapshotCache: () => {},
     relevantHash: () => "hash",
     requiredProviders: () => [],
+    handoffReadiness: () => ({ operations: [], blocking: [], tracked: [], status: "COMPLETE" }),
     fail: (message) => {
       throw new Error(message);
     }

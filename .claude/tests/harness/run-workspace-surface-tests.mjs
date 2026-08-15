@@ -292,6 +292,10 @@ try {
     "an undeclared forecast capability warns rather than erroring"), "an undeclared forecast capability warns rather than erroring");
   check(() => assert.match(undeclared.detail, /accessibility/,
     "the warning names the capability that has no provider"), "the warning names the capability that has no provider");
+  check(() => assert.match(undeclared.detail, /advisory only and does not block Build or Prove/,
+    "the warning states its non-blocking effect rather than promising late proof churn"), "an undeclared forecast is explicitly non-blocking");
+  check(() => assert.doesNotMatch(undeclared.detail, /expire evidence|Prove will widen/,
+    "an advisory forecast must not claim that proof will automatically widen or expire evidence"), "an undeclared forecast does not threaten automatic proof churn");
 
   // The review signature is bound to the contract, so a late capability does
   // not merely add a provider — it expires a signature a person already gave.

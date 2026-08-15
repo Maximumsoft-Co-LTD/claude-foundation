@@ -1,0 +1,344 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation:2026-08-14-codex-only-and-claude-code-only",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-14T17:58:48+07:00",
+    "decisions": [
+      {
+        "id": "review-policy-v33",
+        "question": "Which bounded review policy should Foundation implement?",
+        "answer": "Low uses one AI full review. Medium and high use one AI full plus one finding-bound delta only after correction. No tier dispatches a third AI.",
+        "source": "user-batch"
+      },
+      {
+        "id": "high-risk-human-boundary",
+        "question": "Must high-risk Prove wait for mandatory human approval?",
+        "answer": "No. Ask predefined material risks once in the initial Decision Sheet so developers can continue; Prove remains AI-bounded without a human gate.",
+        "source": "user-batch"
+      },
+      {
+        "id": "codex-independent-reviewer",
+        "question": "How should Codex participate as an independent reviewer?",
+        "answer": "Use configured gpt-5.6-sol, high reasoning, exact cwd, read-only ephemeral execution, structured output, truthful session provenance, and model-family diversity.",
+        "source": "user-batch"
+      },
+      {
+        "id": "single-family-configured-reviewers",
+        "question": "How should Codex-only and Claude-Code-only teams satisfy review without another provider family?",
+        "answer": "Support codex-cli and claude-cli as configured read-only reviewers. A committed single-model diversity waiver permits the same provider/model family, but the reviewer must retain a distinct identity and fresh session with truthful provenance; the waiver never claims observed diversity.",
+        "source": "user-batch"
+      },
+      {
+        "id": "proof-no-loop",
+        "question": "How should Build and Prove avoid repeated correction loops without weakening quality?",
+        "answer": "Name critical cases and mutants, serialize proof mutations, require current-workspace evidence, persist completed review findings, and stop on bounded typed exits.",
+        "source": "user-batch"
+      },
+      {
+        "id": "external-operation-handoff",
+        "question": "What happens when implementation needs AWS, secret, Terraform, deploy, restart, or environment authority the developer does not have?",
+        "answer": "Finish repository implementation, declare a named DevOps handoff, and continue Prove. Land permits only an accepted tracked post-land operation proven safe before activation; every pre-land or activation-coupled operation waits for named completion evidence.",
+        "source": "user-batch"
+      },
+      {
+        "id": "post-build-question-boundary",
+        "question": "When may Build or Prove ask another question after the initial Decision Sheet?",
+        "answer": "Only when new evidence contradicts the locked behavior, compatibility, security, data, or rollout decision. In-contract defects auto-repair; CLI/model/provider failures use bounded infrastructure recovery; missing permission becomes EXTERNAL_WAIT without an interview.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "child-process-execution",
+      "concurrency",
+      "review-provenance",
+      "activation",
+      "compatibility",
+      "permission-handoff"
+    ],
+    "rationale": "The change activates a configured external reviewer, changes cross-process locking and durable review identity, and upgrades active installations."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "All public workflow behavior enters through the CLI composition root.",
+    "paths": [{ "repository": "root", "path": "cli.sh" }]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "Review packets, attempts, receipts, proof and authority are versioned durable wire contracts.",
+    "contracts": [{ "repository": "root", "path": ".claude/harness/protocol.json" }]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "v3.3 installation activates risk-tiered review and configured Codex/Claude reviewer support for new work while preserving legacy changes.",
+    "activatedPaths": [
+      { "repository": "root", "path": "install.sh" },
+      { "repository": "root", "path": "install-codex.sh" }
+    ],
+    "failureSemanticChanges": [
+      "A dispatched reviewer crash becomes indeterminate and cannot be silently retried.",
+      "A corrected medium or high change receives at most one finding-bound AI delta and no human approval gate.",
+      "A reviewer infrastructure failure has one separate full retry and does not manufacture a delivered review baseline.",
+      "A committed single-model waiver permits a same-family configured reviewer only through a distinct fresh session and records observed non-diversity.",
+      "Permission-bound operations leave the developer task ledger and become activation-aware DevOps handoffs.",
+      "A v3.2.19 active change remains an explicit Grounding migration exception."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "Foundation spawns the selected Codex or Claude Code reviewer as a separate authenticated process and projects managed runtime files into developer repositories.",
+    "rows": [
+      {
+        "id": "foundation-configured-review",
+        "owner": "Foundation workflow owner",
+        "producer": "authority runtime",
+        "consumer": "Codex CLI or Claude Code CLI reviewer",
+        "contract": "review packet schema 4 and structured review JSON schema",
+        "delivery": "one reserved synchronous child-process dispatch",
+        "timeoutRetry": "bounded timeout; no automatic rerun after indeterminate dispatch",
+        "idempotency": "authority request plus immutable attempt digest",
+        "ordering": "shared proof lock then authority lock, review before acceptance",
+        "consistency": "receipt is valid only after actual thread completion and current workspace binding",
+        "rollout": "install v3.3 policy and verify doctor before Prove",
+        "rollback": "disable configured dispatch and restore the prior release without fabricating evidence or reopening product scope"
+      },
+      {
+        "id": "foundation-host-install",
+        "owner": "Foundation release owner",
+        "producer": "v3.3 installer",
+        "consumer": "Claude and Codex repository hosts",
+        "contract": "managed install manifest, runtime API 20, and canonical symlink targets",
+        "delivery": "atomic managed-file projection",
+        "timeoutRetry": "installer rollback on failure; explicit rerun after repair",
+        "idempotency": "managed manifest and preserved project-owned collisions",
+        "ordering": "runtime files before config merge and host adapters",
+        "consistency": "CLI release pin, runtime API and installed protocol agree",
+        "rollout": "real v3.2.19 upgrade fixture then v3.3 clean install",
+        "rollback": "restore installer backup and retain the active legacy change"
+      },
+      {
+        "id": "foundation-external-operation",
+        "owner": "Foundation workflow owner",
+        "producer": "Change and Build handoff classifier",
+        "consumer": "DevOps, SRE, security, or named environment operator",
+        "contract": "handoffs.yaml version 1 plus content-bound operator record",
+        "delivery": "one bounded handoff packet per stable operation ID",
+        "timeoutRetry": "no polling; status resumes from the existing record",
+        "idempotency": "operation digest and per-change mutation lock",
+        "ordering": "declare before Build; prove code; complete pre-land/activation-coupled work before Land",
+        "consistency": "record becomes stale when any operation field changes",
+        "rollout": "merge only after completion or accepted safe-before-activation tracking",
+        "rollback": "execute the declared operator rollback and record a new completion reference"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Operators must distinguish missing setup, infrastructure failure, findings, stale proof, and bounded policy stops.",
+    "rows": [
+      {
+        "interactionId": "foundation-configured-review",
+        "correlation": "changeId, requestId, attemptDigest, adapter, and actual reviewer session ID",
+        "structuredEvents": "authority request/dispatch/completion, reviewer report, receipt validity",
+        "sli": "configured reviews completed with truthful provenance and no out-of-scope delta findings",
+        "alert": "indeterminate dispatch, missing receipt, stale workspace, or exhausted AI route",
+        "runbook": "record the infrastructure outcome, repair the configured reviewer, run doctor, and use the single full infrastructure retry; route delivered findings by AUTO_REPAIR or CONTRACT_DECISION_REQUIRED",
+        "operatorQuestion": "Did the actual reviewer thread complete the exact packet and close the declared finding IDs?"
+      },
+      {
+        "interactionId": "foundation-host-install",
+        "correlation": "release version, runtime API, target root, and install manifest",
+        "structuredEvents": "install plan, migrated policy, preserved collision, doctor checks",
+        "sli": "v3.2.19 active changes remain readable and new changes receive Grounding v2",
+        "alert": "runtime/API mismatch, missing selected reviewer executable/auth, or broken canonical link",
+        "runbook": "reinstall the pinned v3.3 source, authenticate the configured Codex or Claude Code reviewer, then rerun doctor",
+        "operatorQuestion": "Are the pinned runtime, host links, active changes, and configured reviewer ready on this machine?"
+      },
+      {
+        "interactionId": "foundation-external-operation",
+        "correlation": "changeId, operationId, operationDigest, owner, tracking reference",
+        "structuredEvents": "pending, accepted, completed, rejected, stale, WAITING_EXTERNAL",
+        "sli": "developer proof completes without unauthorized work and activation-coupled Land never bypasses operator evidence",
+        "alert": "stale handoff, rejected owner, missing completion evidence, or attempted secret material",
+        "runbook": "handoff packet to the named owner, record tracking acceptance or completion, then resume Land once",
+        "operatorQuestion": "Who owns the remaining operation, is merge dark, and what evidence proves activation or rollback?"
+      }
+    ]
+  },
+  "readSet": [
+    { "repository": "root", "path": "openspec/changes/ship-foundation-v3-3-risk-tiered-review-codex-reviewer-orchestra/proposal.md", "role": "requirement", "mode": "full", "sha256": "fcd3c0631613980fff86a8dafb9ea60f4b13ca04483e54ae7fe6f8e51af6f703" },
+    { "repository": "root", "path": "openspec/changes/ship-foundation-v3-3-risk-tiered-review-codex-reviewer-orchestra/design.md", "role": "architecture", "mode": "full", "sha256": "ea449175b1194b8c9bd4eaf4b62fb14f750a916a589f542628a8be263b94de73" },
+    { "repository": "root", "path": "openspec/changes/ship-foundation-v3-3-risk-tiered-review-codex-reviewer-orchestra/specs/review-policy/spec.md", "role": "contract", "mode": "full", "sha256": "0110e6563eff29d1d309b14e4f58d21c9775b048819cd31503385d9d6f4bb887" },
+    { "repository": "root", "path": "openspec/changes/ship-foundation-v3-3-risk-tiered-review-codex-reviewer-orchestra/specs/external-operation-handoff/spec.md", "role": "contract", "mode": "full", "sha256": "5b81cb9df1dd2eb9536ee5fc18116b67d556480ceadc125e729c2f87be5ad6e3" },
+    { "repository": "root", "path": ".claude/harness/protocol.json", "role": "contract", "mode": "full", "sha256": "e93892ab8cf593ff5bd21b9cfea76ab0275bc5676c5592e3d439b69f36e4e32f" },
+    { "repository": "root", "path": ".claude/harness/foundation.mjs", "role": "composition-root", "mode": "full", "sha256": "56ee582d397c2d2637d744bf17ffe4973a09ae4d4c622d987825d55759533e66" },
+    { "repository": "root", "path": ".claude/commands/change.md", "role": "production-path", "mode": "full", "sha256": "8ad8ce4728ea362ce571f17e58639b45a94b643259a357ab1a5b601931de9cc6" },
+    { "repository": "root", "path": ".claude/commands/dev.md", "role": "production-path", "mode": "full", "sha256": "b49dbfcd68f7066156ea62893e3d4f8337eb6a01ab40753ed2502a38a17a8615" },
+    { "repository": "root", "path": ".claude/commands/feature.md", "role": "production-path", "mode": "full", "sha256": "457d72f817ca494bf86c35e270a2dc6a9627fcc54b44a2ff33b8ae1a9e4c0f8b" },
+    { "repository": "root", "path": ".claude/skills/grill-task-gu/SKILL.md", "role": "production-path", "mode": "full", "sha256": "a78c48135e76b4bc2e8bd1273fff7887c77efbf4bc83828ca586ca6d79457546" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/authority-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "0bfb91ba5c1bba5e6864d8ab07f6ca4731440bc785326a1bcc81bd7e5dfe0af3" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/review-routing.mjs", "role": "production-path", "mode": "full", "sha256": "2b60595094fcceb6e3068cf4dc3d4b577f73f1777b5c8cef3e2e8562e6e57a85" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/handoff-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "d623a35acc0a18edd56a67bd1c2b7a50fb839d13542b38a612ad546712503876" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/land-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "1ead3e0c20cf9824088d5c48a67f37e30afade2706f9b9d1c1fead6ac45295be" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/packet-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "c8bb73c2b3b0a317c157fd5b2d45dd9a04e3cc13fd23ca4fce9ad58827b1a006" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/change-validation.mjs", "role": "production-path", "mode": "full", "sha256": "753e01c030f5bf24d0d8536f6f4f05b153536d30f228ad727357b3d4c249ddb2" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/change-lifecycle.mjs", "role": "production-path", "mode": "full", "sha256": "572f36ea70b77ba4b34d7c3ec659682500cf32528da420306995fadc8865abb9" },
+    { "repository": "root", "path": "cli.sh", "role": "production-path", "mode": "full", "sha256": "103dd11439f67acdfb9d66da9235de6aa86707ca4953a517e11e2e0c1b31d7d5" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/codex-reviewer.mjs", "role": "production-path", "mode": "full", "sha256": "5fcdcbe575fe7e94f82ac71c119f3a8d909e7253916878b51c25d5424d54b8ee" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs", "role": "production-path", "mode": "full", "sha256": "d85bd5dea213aee98833e03b8536d91db6ef4c5bc259bb2240fa29bb5e9866fc" },
+    { "repository": "root", "path": ".claude/harness/runtime/core/runtime-environment.mjs", "role": "production-path", "mode": "full", "sha256": "6fae10980fc0f997f474d3f7892d2de1b0b4a44c606dac43c270189510e604da" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/adapter-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "4a652e9cca8a3618ecfc25fe45a05a188b50c5cb2ea78e0b22d2d869dbba48c1" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/proof-execution-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "88686609164d3bcbbc55f4e7cc9de544b243fc9ead4834f3c8a0d24c866a9471" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/proof-readiness.mjs", "role": "production-path", "mode": "full", "sha256": "eb72370e14a14cf0057f8932fdfc1e462f00d86460e625a83e7307be5b1c8871" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "c4860bcee2e808619da6c3b9b354d84880cf030b893121415e991bc9562f7fe9" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-validity.mjs", "role": "production-path", "mode": "full", "sha256": "e44b85dcb5b4ddc13818c8148a321cc726ca7a9c9fe05d1455cb1a24ee0fffb5" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs", "role": "production-path", "mode": "full", "sha256": "55b9b84ff45ca06278a765ee87b355e9a817d4b15106164f73e1160984725c9c" },
+    { "repository": "root", "path": ".claude/harness/runtime/evidence/review-protocol.mjs", "role": "production-path", "mode": "full", "sha256": "9337bc709c39adac790c209c83d3cd9ed1a9d2471b984224e059e289df58ad6b" },
+    { "repository": "root", "path": "install.sh", "role": "production-path", "mode": "full", "sha256": "70fe14bc526ed210b28b8ee5158d8d7d553f48874abd1cbc57982b6b5dba194f" },
+    { "repository": "root", "path": "install-codex.sh", "role": "production-path", "mode": "full", "sha256": "4e9f31ddcb8c449ccc35e79b8f4bdee109cf586c0c73ce806a8b578ab1da0591" },
+    { "repository": "root", "path": ".claude/tests/harness/run-risk-tiered-review-tests.mjs", "role": "test-topology", "mode": "full", "sha256": "7a572d4e020d280394feff2617799f31bc9637ed0cc7016546fecb0f0b071a50" },
+    { "repository": "root", "path": ".claude/harness/tests/proof-advance.test.mjs", "role": "test-topology", "mode": "full", "sha256": "524b1f24d827de50c9cb9db6f47f1ae62d712eb3077b156dd68aa022ee41689f" },
+    { "repository": "root", "path": ".claude/harness/tests/grounding-policy.test.mjs", "role": "test-topology", "mode": "full", "sha256": "d60c00761e43fe0d5b5fbc56435b70b7400905390b6c8a3f2950810363f89b8b" },
+    { "repository": "root", "path": ".claude/harness/tests/review-repair-closure.test.mjs", "role": "test-topology", "mode": "full", "sha256": "9870ac150c7106d5cb1443c261bedbd6e8238dde96f89490b4e6d9f345d00421" },
+    { "repository": "root", "path": ".claude/harness/tests/handoff-policy.test.mjs", "role": "test-topology", "mode": "full", "sha256": "09e7597ebf66adf5bc61522b0ef3f01ce20f3041e1fb02349481d8c3f49fdc6c" },
+    { "repository": "root", "path": ".claude/harness/tests/configured-reviewer.test.mjs", "role": "test-topology", "mode": "full", "sha256": "198a2d153a6a8d7f2febdee19c122ec9bdea14acff35a15e8ddb32a0047ea7cd" },
+    { "repository": "root", "path": ".claude/harness/tests/workflow-policy.test.mjs", "role": "test-topology", "mode": "full", "sha256": "e1e15f91562c751ddd91dea6dbbbc664ae919d56749d2bed74e05e5a650ed59e" },
+    { "repository": "root", "path": "package.json", "role": "dependency-source", "mode": "full", "sha256": "3a71726a8bdd8e6b8f265377ec6453a73d604ca96f4c52a67f057134ea387e13" }
+  ],
+  "claims": [
+    {
+      "id": "grounded-intake-v2",
+      "productionPath": [
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/change-validation.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/change-lifecycle.mjs" },
+        { "repository": "root", "path": ".claude/commands/change.md" },
+        { "repository": "root", "path": ".claude/commands/dev.md" },
+        { "repository": "root", "path": ".claude/commands/feature.md" },
+        { "repository": "root", "path": ".claude/skills/grill-task-gu/SKILL.md" }
+      ],
+      "failurePaths": [
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/change-lifecycle.mjs", "failure": "a locked Decision Sheet is silently rewritten or a reopen decision is not audited" },
+        { "repository": "root", "path": ".claude/commands/dev.md", "failure": "a compatibility entry point starts implementation before the complete Change intake" },
+        { "repository": "root", "path": ".claude/skills/grill-task-gu/SKILL.md", "failure": "intake reads only fixtures or asks material decisions one at a time" }
+      ],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "risk-tiered-review",
+      "productionPath": [
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/authority-runtime.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/review-routing.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-runtime.mjs" }
+      ],
+      "failurePaths": [
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/authority-runtime.mjs", "failure": "an invalid full or delta scope reaches the configured reviewer" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs", "failure": "an infrastructure outcome consumes a delivered wave or a third AI is dispatched" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-runtime.mjs", "failure": "a final in-contract finding closes without current claim and critical-case evidence" }
+      ],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "codex-reviewer",
+      "productionPath": [
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/codex-reviewer.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs" }
+      ],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs", "failure": "the executable, cwd, model, sandbox, schema, auth, or actual thread provenance is wrong" }],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "same-family-reviewer",
+      "productionPath": [
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/authority-runtime.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/core/runtime-environment.mjs" }
+      ],
+      "failurePaths": [
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs", "failure": "a reviewer receives write-capable tools, returns an unbound session, or bypasses structured output" },
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/authority-runtime.mjs", "failure": "same-family review ignores policy or reuses an implementation session" }
+      ],
+      "evidenceClass": ["test", "review", "security"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "critical-proof",
+      "productionPath": [{ "repository": "root", "path": ".claude/harness/runtime/evidence/adapter-runtime.mjs" }],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/evidence/adapter-runtime.mjs", "failure": "a skipped case, non-applied mutant, wrong killer, or surviving mutant passes" }],
+      "evidenceClass": ["test", "mutation", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "proof-does-not-loop",
+      "productionPath": [
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/proof-execution-runtime.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-runtime.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-validity.mjs" }
+      ],
+      "failurePaths": [
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/proof-execution-runtime.mjs", "failure": "concurrent or stale proof execution repeats a provider or opens another reviewer after the bounded route" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/receipt-validity.mjs", "failure": "modified closure evidence remains valid for a newer workspace" }
+      ],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "upgrade-compatible",
+      "productionPath": [
+        { "repository": "root", "path": "install.sh" },
+        { "repository": "root", "path": "install-codex.sh" }
+      ],
+      "failurePaths": [{ "repository": "root", "path": "install.sh", "failure": "a v3.2.19 active change, policy override, or project-owned file is lost during upgrade" }],
+      "evidenceClass": ["test", "cross-repo-contract", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "external-operation-handoff",
+      "productionPath": [
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/handoff-runtime.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/proof-readiness.mjs" },
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/land-runtime.mjs" }
+      ],
+      "failurePaths": [
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/handoff-runtime.mjs", "failure": "an unauthorized operation remains developer work, a stale record passes, or credential material enters a packet" },
+        { "repository": "root", "path": ".claude/harness/runtime/evidence/proof-readiness.mjs", "failure": "a pending external operation blocks Build or Prove instead of becoming a resumable handoff" },
+        { "repository": "root", "path": ".claude/harness/runtime/workflow/land-runtime.mjs", "failure": "an incomplete pre-land or activation-coupled operation bypasses WAITING_EXTERNAL" }
+      ],
+      "evidenceClass": ["test", "review", "security", "deployment"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    { "id": "CASE-GROUNDING-V2", "claimIds": ["grounded-intake-v2"], "oracle": "production-entry" },
+    { "id": "CASE-RISK-ROUTES", "claimIds": ["risk-tiered-review"], "oracle": "failure-path" },
+    { "id": "CASE-CODEX-PROVENANCE", "claimIds": ["codex-reviewer"], "oracle": "real-wire" },
+    { "id": "CASE-SAME-FAMILY-REVIEW", "claimIds": ["same-family-reviewer", "risk-tiered-review"], "oracle": "failure-path" },
+    { "id": "CASE-CRITICAL-EVIDENCE", "claimIds": ["critical-proof"], "oracle": "contract-oracle" },
+    { "id": "CASE-MUTANT-KILLER", "claimIds": ["critical-proof"], "oracle": "failure-path" },
+    { "id": "CASE-PROOF-ONE-SHOT", "claimIds": ["proof-does-not-loop"], "oracle": "production-entry" },
+    { "id": "CASE-UPGRADE-COMPAT", "claimIds": ["upgrade-compatible"], "oracle": "production-entry" },
+    { "id": "CASE-EXTERNAL-HANDOFF", "claimIds": ["external-operation-handoff"], "oracle": "failure-path" },
+    { "id": "CASE-REVIEW-REPAIR-CLOSURE", "claimIds": ["risk-tiered-review", "proof-does-not-loop"], "oracle": "failure-path" }
+  ],
+  "mutants": [
+    {
+      "id": "MUT-KILLER-BINDING",
+      "claimIds": ["critical-proof"],
+      "class": "semantic-killer-substitution",
+      "killerCaseId": "CASE-MUTANT-KILLER"
+    }
+  ],
+  "derivedFacts": [
+    { "fact": "Runtime API is 20", "command": "node .claude/harness/foundation.mjs api-version" },
+    { "fact": "Runtime release is 3.3.0", "command": "node .claude/harness/foundation.mjs version" },
+    { "fact": "The selected Codex or Claude Code reviewer prerequisites are checked before Prove", "command": "node .claude/harness/foundation.mjs doctor --stage prove" }
+  ]
+}

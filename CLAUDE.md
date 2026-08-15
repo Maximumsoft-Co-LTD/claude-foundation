@@ -33,8 +33,8 @@ The workflow files and deterministic runtime are the product.
 Product surface, installed into consumer projects:
 
 - `.claude/orchestrator.md` - concise change-loop contract.
-- `.claude/commands/` - `/investigate`, `/change`, `/build`, `/prove`, `/land`,
-  `/changes`, and the `/dev` compatibility composition. Seven commands; there
+- `.claude/commands/` - `/feature`, `/investigate`, `/change`, `/build`,
+  `/prove`, `/land`, `/changes`, and the `/dev` compatibility composition. Eight commands; there
   is no migration command.
 - `.claude/harness/foundation.mjs` - CLI-compatibility entrypoint and
   composition root only. Implementation lives under

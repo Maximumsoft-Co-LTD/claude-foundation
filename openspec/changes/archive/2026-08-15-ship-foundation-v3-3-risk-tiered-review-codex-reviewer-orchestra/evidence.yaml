@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "grounded-intake-v2",
+      "scenario": "One Decision Sheet grounds material risk, production, service-interaction and observability decisions before Build",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "risk-tiered-review",
+      "scenario": "Low, medium and high changes ask material risks once, use bounded AI full/delta review, and close final in-contract findings with current critical-case evidence without human approval or a third AI loop",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "codex-reviewer",
+      "scenario": "Codex Sol dispatch is read-only, structured, fresh, diversity-aware and provenance-bound",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "same-family-reviewer",
+      "scenario": "Codex-only and Claude-Code-only teams use a fresh read-only configured reviewer with an explicit same-family waiver and truthful observed provenance",
+      "impact": "high",
+      "capabilities": ["test", "review", "security-static"]
+    },
+    {
+      "id": "critical-proof",
+      "scenario": "Missing or skipped critical cases and surviving required mutants block proof regardless of exit code or aggregate count",
+      "impact": "high",
+      "capabilities": ["test", "mutation", "review"]
+    },
+    {
+      "id": "proof-does-not-loop",
+      "scenario": "Concurrent, crashed, stale and external proof transitions are serialized, recoverable, fresh and one-shot",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "upgrade-compatible",
+      "scenario": "A clean v3.3 install and upgrade preserves host adapters, active changes and legacy readability",
+      "impact": "high",
+      "capabilities": ["test", "compatibility", "review"]
+    },
+    {
+      "id": "external-operation-handoff",
+      "scenario": "Permission-bound infrastructure is handed to a named operator without blocking developer proof, while Land permits only accepted safe post-Land work",
+      "impact": "high",
+      "capabilities": ["test", "review", "security-static", "deployment"]
+    }
+  ]
+}
