@@ -1,14 +1,7 @@
 import { randomBytes } from "node:crypto";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { acquireProcessLock } from "../core/process-lock.mjs";
 
 export function createAuthorityRuntime({
   root,
@@ -58,38 +51,11 @@ export function createAuthorityRuntime({
   function withAuthorityLock(id, operation) {
     const locks = join(root, ".foundation", "locks");
     const lock = join(locks, `authority-${id}.lock`);
-    mkdirSync(locks, { recursive: true });
-    const token = randomBytes(16).toString("hex");
-    const owner = { version: 1, pid: process.pid, token, acquiredAt: now() };
-    const processAlive = (pid) => {
-      if (!Number.isInteger(pid) || pid <= 0) return false;
-      try { process.kill(pid, 0); return true; }
-      catch (error) { return error?.code === "EPERM"; }
-    };
-    const acquire = (allowRecovery = true) => {
-      let descriptor;
-      try {
-        descriptor = openSync(lock, "wx", 0o600);
-        writeFileSync(descriptor, `${JSON.stringify(owner, null, 2)}\n`);
-        closeSync(descriptor);
-      }
-      catch (error) {
-        if (descriptor !== undefined) try { closeSync(descriptor); } catch {}
-        if (error?.code !== "EEXIST") throw error;
-        const current = readJson(lock, null);
-        if (allowRecovery && current?.token && !processAlive(Number(current.pid))) {
-          rmSync(lock, { recursive: true, force: true });
-          return acquire(false);
-        }
-        fail(`authority mutation for '${id}' is already in progress; retry after it completes`);
-      }
-    };
-    acquire();
+    const acquired = acquireProcessLock(lock, { now });
+    if (!acquired.acquired)
+      fail(`authority mutation for '${id}' is already in progress; retry after it completes`);
     try { return operation(); }
-    finally {
-      const current = readJson(lock, null);
-      if (current?.token === token) rmSync(lock, { recursive: true, force: true });
-    }
+    finally { acquired.release(); }
   }
   function authorityProvider(id, type, repository = null) {
     return requiredProviders(id).find((provider) => {

@@ -163,6 +163,20 @@ async function captured(operation) {
   }
 }
 
+async function within(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const serialized = fixture();
 let releaseMutation;
 let mutationStarted;
@@ -174,7 +188,8 @@ const mutationHolder = serialized.runtime.guardProofMutation(
     await mutationGate;
     return "recorded";
   });
-await mutationStartedPromise;
+await within(mutationStartedPromise, 5_000,
+  "guardProofMutation never entered its critical section");
 const contendedMutation = await captured(() =>
   serialized.runtime.guardProofMutation(
     "change-a", "evidence receipt", () => "must-not-run"));

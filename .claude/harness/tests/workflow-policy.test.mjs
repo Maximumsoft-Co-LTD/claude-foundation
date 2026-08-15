@@ -5,13 +5,14 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
 import { createReviewProtocol } from "../runtime/evidence/review-protocol.mjs";
 import { createAuthorityStore } from "../runtime/workflow/authority.mjs";
 import { createAuthorityRuntime } from "../runtime/workflow/authority-runtime.mjs";
 
-const root = new URL("../../..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../../..", import.meta.url));
 const canonical = (value) => Array.isArray(value)
   ? value.map(canonical)
   : value && typeof value === "object"

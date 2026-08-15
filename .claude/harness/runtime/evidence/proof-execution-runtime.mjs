@@ -1,9 +1,4 @@
-import { randomBytes } from "node:crypto";
-import {
-  closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync,
-  writeFileSync
-} from "node:fs";
-import { dirname } from "node:path";
+import { acquireProcessLock } from "../core/process-lock.mjs";
 
 export function createProofExecutionRuntime({
   proofReadinessValue, relevantSnapshot, loadRuntime, saveRuntime, now,
@@ -28,11 +23,6 @@ export function createProofExecutionRuntime({
   const activeAdvance = new Set();
   let reclaimInstalled = false;
 
-  function safeReadJson(path) {
-    try { return JSON.parse(readFileSync(path, "utf8")); }
-    catch { return null; }
-  }
-
   // `proof advance` may be invoked by two agents at the same time. The
   // authority store already serializes request mutations, but that is too late
   // to prevent both agents from starting the same executable provider. This
@@ -47,86 +37,13 @@ export function createProofExecutionRuntime({
       try { return { acquired: true, value: await operation() }; }
       finally { activeAdvance.delete(id); }
     }
-    mkdirSync(dirname(path), { recursive: true });
-    const token = randomBytes(16).toString("hex");
-    const owner = { version: 1, pid: process.pid, token, acquiredAt: now() };
-    const processAlive = (pid) => {
-      if (!Number.isInteger(pid) || pid <= 0) return false;
-      try { process.kill(pid, 0); return true; }
-      catch (error) { return error?.code === "EPERM"; }
-    };
-    const reapDeadLock = () => {
-      const reaper = `${path}.reap`;
-      try {
-        // A crashed reaper must not permanently block recovery. Claim stale
-        // sidecars by rename: deleting one in place lets two observers remove
-        // each other's freshly-created reaper.
-        if (Date.now() - lstatSync(reaper).mtimeMs > 60_000) {
-          const tombstone = `${reaper}.${process.pid}.stale`;
-          renameSync(reaper, tombstone);
-          rmSync(tombstone, { force: true });
-        }
-      } catch {}
-      let handle;
-      try { handle = openSync(reaper, "wx", 0o600); }
-      catch { return false; }
-      try {
-        const current = safeReadJson(path);
-        let residue = false;
-        try {
-          residue = !current?.token &&
-            Date.now() - lstatSync(path).mtimeMs > 10_000;
-        } catch {
-          // The prior reaper already removed the target. Both contenders may
-          // now try the target's `wx`; only one can become the new owner.
-          return true;
-        }
-        if (residue || (current?.token && !processAlive(Number(current.pid)))) {
-          // Re-read happened while holding the sidecar, so this can only
-          // remove the same dead descriptor — never a winner's fresh lock.
-          rmSync(path, { force: true });
-          return true;
-        }
-        return false;
-      } finally {
-        closeSync(handle);
-        rmSync(reaper, { force: true });
-      }
-    };
-    const observedOwner = () => {
-      const current = safeReadJson(path);
-      if (current?.token) return current;
-      try {
-        const recoverAtMs = lstatSync(path).mtimeMs + 10_000;
-        return {
-          version: 1,
-          state: "initializing",
-          pid: null,
-          recoverableAfter: new Date(recoverAtMs).toISOString(),
-          retryAfterMs: Math.max(1, recoverAtMs - Date.now())
-        };
-      } catch { return null; }
-    };
-    const acquire = (allowRecovery = true) => {
-      let descriptor;
-      try {
-        descriptor = openSync(path, "wx", 0o600);
-        writeFileSync(descriptor, `${JSON.stringify(owner, null, 2)}\n`);
-        closeSync(descriptor);
-        return true;
-      } catch (error) {
-        if (descriptor !== undefined) try { closeSync(descriptor); } catch {}
-        if (error?.code !== "EEXIST") throw error;
-        if (allowRecovery && reapDeadLock()) return acquire(false);
-        return false;
-      }
-    };
-    if (!acquire()) return { acquired: false, owner: observedOwner() };
+    const lock = acquireProcessLock(path, { now });
+    if (!lock.acquired) return { acquired: false, owner: lock.owner };
     activeAdvance.add(id);
     try { return { acquired: true, value: await operation() }; }
     finally {
       activeAdvance.delete(id);
-      if (safeReadJson(path)?.token === token) rmSync(path, { force: true });
+      lock.release();
     }
   }
 

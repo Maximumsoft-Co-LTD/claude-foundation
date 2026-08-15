@@ -1,7 +1,6 @@
-import {
-  existsSync, mkdirSync, readFileSync, rmSync
-} from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { acquireProcessLock } from "../core/process-lock.mjs";
 
 const TIMINGS = new Set(["pre-land", "post-land"]);
 const ACTIVATIONS = new Set(["safe-before-activation", "activation-coupled"]);
@@ -151,7 +150,7 @@ export function createHandoffRuntime({
 
   function readRecord(id, operation) {
     const path = recordPath(id, operation.id);
-    const record = existsSync(path) ? readJson(path) : null;
+    const record = existsSync(path) ? readJson(path, {}) : null;
     if (!record) return { validity: "missing", status: "pending", record: null };
     if (record.version !== 1 || record.changeId !== id ||
         record.operationId !== operation.id)
@@ -203,32 +202,13 @@ export function createHandoffRuntime({
     };
   }
 
-  function lockOwnerAlive(owner) {
-    if (!Number.isInteger(owner?.pid) || owner.pid <= 0) return false;
-    try { process.kill(owner.pid, 0); return true; } catch { return false; }
-  }
-
   function withLock(id, callback) {
-    const directory = join(handoffsRoot, id, ".lock");
-    mkdirSync(join(handoffsRoot, id), { recursive: true });
-    try {
-      mkdirSync(directory);
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-      let owner = null;
-      try { owner = JSON.parse(readFileSync(join(directory, "owner.json"), "utf8")); } catch {}
-      const stale = !lockOwnerAlive(owner) ||
-        Date.now() - Number(owner?.startedEpochMs || 0) > 5 * 60 * 1000;
-      if (!stale)
-        fail(`handoff mutation already active for '${id}' (pid ${owner.pid})`);
-      rmSync(directory, { recursive: true, force: true });
-      mkdirSync(directory);
-    }
-    writeJson(join(directory, "owner.json"), {
-      version: 1, pid: process.pid, startedAt: now(), startedEpochMs: Date.now()
-    });
+    const lock = acquireProcessLock(
+      join(handoffsRoot, id, ".mutation.lock"), { now });
+    if (!lock.acquired)
+      fail(`handoff mutation already active for '${id}' (pid ${lock.owner?.pid || "unknown"})`);
     try { return callback(); }
-    finally { rmSync(directory, { recursive: true, force: true }); }
+    finally { lock.release(); }
   }
 
   function recordHandoff(id, flags = {}) {

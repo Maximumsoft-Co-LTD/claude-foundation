@@ -508,6 +508,7 @@ Commands:
   hash <change>
   proof-plan <change>
   proof-readiness <change>
+  proof-advance <change> [--retry-indeterminate --decision-ref <ref>]
   proof-run <change>
   proof-collect <change>
   proof-preflight <change>
@@ -521,7 +522,13 @@ Commands:
   evidence-upgrade <change>
   authority-request <change> --type review|acceptance
   authority-status <change> [--request <id>]
+  authority-dispatch <change> --request <id> --scope full|delta --reviewer-type ai|human --reviewer-identity <id>
+  authority-run <change> --request <id> [--reviewer <configured-id>] [subject provenance options]
+  authority-abort <change> --request <id> --reason <reason>
   authority-record <change> --request <id> --response <file>
+  handoff-status <change>
+  handoff-packet <change> [--id <operation-id>]
+  handoff-record <change> --id <operation-id> --status accepted|completed|rejected --actor <name> --reference <ref> [--evidence <refs> --reason <why>]
   run-provider <change> <provider> -- <command> [args...]
   prove <change>
   land-check <change>

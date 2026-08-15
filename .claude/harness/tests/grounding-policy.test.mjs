@@ -177,6 +177,12 @@ try {
     }],
     mutants: [], derivedFacts: []
   });
+  const missingReadSet = v2();
+  delete missingReadSet.readSet;
+  writeGrounding(missingReadSet);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    /readSet must be non-empty/,
+    "a missing Grounding v2 read set fails with a typed validation message");
   writeGrounding(v2());
   assert.equal(runtime.groundingValue("change-a", state, packet).value.version, 2);
   contract.claims[0].capabilities.push("deployment");

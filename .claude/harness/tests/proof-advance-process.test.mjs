@@ -13,10 +13,11 @@ import { createProofExecutionRuntime } from "../runtime/evidence/proof-execution
 
 const SELF = fileURLToPath(import.meta.url);
 
-function readJson(path, fallback = null) {
+const NO_FALLBACK = Symbol("no-fallback");
+function readJson(path, fallback = NO_FALLBACK) {
   try { return JSON.parse(readFileSync(path, "utf8")); }
   catch (error) {
-    if (fallback !== null) return fallback;
+    if (fallback !== NO_FALLBACK) return fallback;
     throw error;
   }
 }
@@ -110,11 +111,13 @@ async function runWorker(root) {
 }
 
 function child(root, env = {}) {
-  return spawn(process.execPath, [SELF, "worker", root], {
-    encoding: "utf8",
+  const processHandle = spawn(process.execPath, [SELF, "worker", root], {
     env: { ...process.env, ...env },
     stdio: ["ignore", "pipe", "pipe"]
   });
+  processHandle.stdout.setEncoding("utf8");
+  processHandle.stderr.setEncoding("utf8");
+  return processHandle;
 }
 
 function completion(processHandle) {

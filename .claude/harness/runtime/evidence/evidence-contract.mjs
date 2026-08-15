@@ -639,7 +639,9 @@ export function createEvidenceContract({
     const policy = foundationPolicy().review || {};
     const riskTiered = foundationPolicy().workflow.reviewPolicy === "risk-tiered";
     const singleModel = policy.diversity === "single-model";
-    const waived = singleModel && diversityTriggers.length > 0;
+    const diversityRequired = diversityTriggers.length > 0 ||
+      (riskTiered && riskRoute.tier === "high");
+    const waived = singleModel && diversityRequired;
     if (waived) triggers.push("diversity-waived-single-model");
     const selfReview = policy.independence === "self";
     if (selfReview) triggers.push("independence-waived-self-review");
@@ -655,7 +657,7 @@ export function createEvidenceContract({
         requiresHumanFinal: riskRoute.requiresHumanFinal
       } : {}),
       independence: selfReview ? "self" : "required",
-      diversity: diversityTriggers.length > 0 && !singleModel ? "required" : "preferred",
+      diversity: diversityRequired && !singleModel ? "required" : "preferred",
       ...(waived ? { diversityWaived: true } : {}),
       ...(selfReview ? { independenceWaived: true } : {}),
       triggers: [...new Set(riskTiered

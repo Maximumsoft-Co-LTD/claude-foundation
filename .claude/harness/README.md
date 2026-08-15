@@ -122,7 +122,7 @@ claude-foundation doctor --stage prove --change <change>
 | `evidence doctor <change>` | Explains configured, detectable, and unresolved capabilities | Diagnosing why Prove lacks a provider |
 | `evidence verify-ci <change> <provider> <signed.json>` | Verifies a signed, workspace-bound CI envelope | Importing trusted remote CI evidence |
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
-| `authority request|status|dispatch|run|abort|record ...` | Routes configured AI review and bound human review/acceptance responses | Crossing a human or remote authority boundary |
+| `authority request\|status\|dispatch\|run\|abort\|record ...` | Routes configured AI review and bound human review/acceptance responses | Crossing a human or remote authority boundary |
 | `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
 | `sandbox create <change>` | Creates an isolated Git worktree | Before Build |
 | `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |

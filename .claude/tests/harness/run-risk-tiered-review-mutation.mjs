@@ -19,19 +19,17 @@ try {
   writeFileSync(modulePath, mutated);
   const runtime = await import(`${pathToFileURL(modulePath).href}?v=${Date.now()}`);
   compiled = true;
-  try {
-    assert.equal(runtime.mutationV2Result({
-      criticalCases: [{ id: "CASE-MUTANT-KILLER", status: "passed" }],
-      mutants: [{
-        id: "MUT-KILLER-BINDING", applied: true, compiled: true,
-        result: "killed", killedBy: "WRONG-CASE"
-      }]
-    }, ["MUT-KILLER-BINDING"], {
-      "MUT-KILLER-BINDING": "CASE-MUTANT-KILLER"
-    }).status, "fail");
-  } catch {
-    killed = true;
-  }
+  const status = runtime.mutationV2Result({
+    criticalCases: [{ id: "CASE-MUTANT-KILLER", status: "passed" }],
+    mutants: [{
+      id: "MUT-KILLER-BINDING", applied: true, compiled: true,
+      result: "killed", killedBy: "WRONG-CASE"
+    }]
+  }, ["MUT-KILLER-BINDING"], {
+    "MUT-KILLER-BINDING": "CASE-MUTANT-KILLER"
+  }).status;
+  assert.equal(status, "pass");
+  killed = true;
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

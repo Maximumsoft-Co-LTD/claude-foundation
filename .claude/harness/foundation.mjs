@@ -1432,8 +1432,6 @@ const guardedRunAuthorityReviewer = guardPublicProofMutation(
   "authority run", runAuthorityReviewer);
 const guardedAbortAuthority = guardPublicProofMutation(
   "authority abort", abortAuthority);
-const guardedShowAuthorityStatus = guardPublicProofMutation(
-  "authority status", showAuthorityStatus);
 const guardedRecordAuthority = guardPublicProofMutation(
   "authority record", recordAuthority);
 const guardedRecordReceipt = guardPublicProofMutation(
@@ -1669,7 +1667,7 @@ await routeRuntimeCommand(command, values, {
   dispatchAuthority: guardedDispatchAuthority,
   runAuthorityReviewer: guardedRunAuthorityReviewer,
   abortAuthority: guardedAbortAuthority,
-  showAuthorityStatus: guardedShowAuthorityStatus,
+  showAuthorityStatus,
   recordAuthority: guardedRecordAuthority,
   upgradeEvidence,
   recordReceipt: guardedRecordReceipt,

@@ -96,9 +96,9 @@ Claude Code ไม่ต้องใช้ adapter ส่วน agent host อ�
 claude-foundation init /path/to/your-project --host cursor    # หรือ opencode, codex
 ```
 
-Cursor ได้ command ทั้งเจ็ดพร้อม skill router เป็น rule แบบ `alwaysApply`;
+Cursor ได้ command ทั้งแปดพร้อม skill router เป็น rule แบบ `alwaysApply`;
 OpenCode ได้ command พร้อม guard plugin ที่ replay hook ที่ ship มาแบบ live;
-Codex ได้ prompt ทั้งเจ็ดใน `$CODEX_HOME/prompts` พร้อม ownership marker —
+Codex ได้ prompt ทั้งแปดใน `$CODEX_HOME/prompts` พร้อม ownership marker —
 Codex ไม่มี tool hook การบังคับใช้ที่นั่นจึงเหลือ Land gate
 
 หลังติดตั้ง ให้เปิด Claude Code session ใหม่ใน project เป้าหมายเพื่อโหลด slash
@@ -688,7 +688,7 @@ normalize เป็น usage event แบบ append-only ชุดเดีย�
 CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
 `claude-foundation help` เพื่อดู command ทั้งหมด หรือ
 `claude-foundation describe [command]` เพื่อดูทีละตัว — รวม slash command
-ทั้งเจ็ด เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` ส่วน skill `harness-html-report`
+ทั้งแปด เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` ส่วน skill `harness-html-report`
 ที่ ship มาด้วยจะ render สถานะ harness — gate, receipt, เวลาต่อ phase และ
 ต้นทุน — เป็นรายงาน HTML ในไฟล์เดียว เมื่ออยากอ่านรอบงานเป็นเรื่องเล่า
 มากกว่ารายการสถานะ

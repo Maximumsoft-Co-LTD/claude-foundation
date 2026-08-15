@@ -587,6 +587,21 @@ assert_cmd_fails_with "review surface requires the recorded base" \
 # second provider, so critical work would always fall to a person. Declaring
 # review.diversity in the committed policy trades that for a same-family
 # reviewer — and has to say so everywhere the result is read.
+printf '%s\n' '{"version":1,"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered","reviewCircuit":"full-delta"},"review":{"diversity":"required"}}' \
+  > foundation.json
+node .claude/harness/foundation.mjs new 'High impact without semantic trigger' >/dev/null
+node .claude/harness/foundation.mjs resolve high-impact-without-semantic-trigger \
+  --impact high --coupling isolated --acceptance-not-required >/dev/null
+sed 's/- \[ \]/- [x]/g' openspec/changes/high-impact-without-semantic-trigger/tasks.md \
+  > "$TMP/high-impact-tasks.md"
+cp "$TMP/high-impact-tasks.md" \
+  openspec/changes/high-impact-without-semantic-trigger/tasks.md
+high_impact_packet="$(node .claude/harness/foundation.mjs packet \
+  high-impact-without-semantic-trigger --phase review)"
+assert_contains "risk-tiered high impact always requires reviewer diversity" \
+  "$high_impact_packet" '"diversity":"required"'
+rm -f foundation.json
+
 node .claude/harness/foundation.mjs new 'Single model payment migration' >/dev/null
 node .claude/harness/foundation.mjs resolve single-model-payment-migration \
   --impact high --coupling coupled --security migration --acceptance-not-required >/dev/null

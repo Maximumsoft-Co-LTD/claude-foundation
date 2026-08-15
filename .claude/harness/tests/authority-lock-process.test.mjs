@@ -67,10 +67,11 @@ const waitFor = async (condition, timeoutMs = 3000) => {
   }
 };
 
+let holder = null;
 try {
   mkdirSync(join(fixture, ".foundation", "locks"), { recursive: true });
   writeFileSync(worker, workerSource);
-  const holder = child(30000);
+  holder = child(30000);
   const lock = join(fixture, ".foundation", "locks", "authority-race.lock");
   await waitFor(() => existsSync(lock));
   const refused = await child().done;
@@ -78,10 +79,15 @@ try {
   assert.match(refused.stderr, /already in progress/);
   holder.processHandle.kill("SIGKILL");
   await holder.done;
+  holder = null;
   const recovered = await child().done;
   assert.equal(recovered.code, 0, recovered.stderr);
   assert.equal(existsSync(lock), false);
   console.log("authority process lock tests: PASS");
 } finally {
+  if (holder) {
+    holder.processHandle.kill("SIGKILL");
+    await holder.done;
+  }
   rmSync(fixture, { recursive: true, force: true });
 }

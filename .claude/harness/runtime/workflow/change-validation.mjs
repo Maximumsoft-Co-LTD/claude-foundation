@@ -288,6 +288,9 @@ export function createChangeValidationRuntime({
       decisionIds.add(row.id);
     }
 
+    if (!Array.isArray(value.readSet) || value.readSet.length === 0)
+      fail(`${id}/grounding.yaml readSet must be non-empty`);
+
     if (value.version === 2) {
       const risk = value.risk || {};
       if (!["low", "medium", "high"].includes(risk.tier))
@@ -432,8 +435,6 @@ export function createChangeValidationRuntime({
       }
     }
 
-    if (!Array.isArray(value.readSet) || value.readSet.length === 0)
-      fail(`${id}/grounding.yaml readSet must be non-empty`);
     const repositories = new Map(selectedRepositories(id, state)
       .map((repository) => [repository.id, repository]));
     const roles = new Set([

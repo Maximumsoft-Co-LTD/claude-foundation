@@ -1,7 +1,8 @@
 # external-operation-handoff Specification
 
 ## Purpose
-TBD - created by archiving change ship-foundation-v3-3-risk-tiered-review-codex-reviewer-orchestra. Update Purpose after archive.
+Define typed, secret-free handoffs for authority-bound operations while keeping
+delivery safe before activation and auditable through Land.
 ## Requirements
 ### Requirement: Unauthorized infrastructure work becomes a typed handoff
 

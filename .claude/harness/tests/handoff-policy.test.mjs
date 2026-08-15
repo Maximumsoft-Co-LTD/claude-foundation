@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
+  mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -73,6 +73,20 @@ try {
   assert.equal(validated.operations.length, 1);
   assert.deepEqual(runtime.handoffReadiness(changeId).blocking, ["H001"]);
 
+  const lockPath = join(fixture, ".foundation", "handoffs", changeId,
+    ".mutation.lock");
+  writeJson(lockPath, {
+    version: 1, pid: process.pid, token: "live-owner",
+    acquiredAt: "2026-08-14T00:00:00.000Z"
+  });
+  const oldLock = new Date(Date.now() - 10 * 60 * 1000);
+  utimesSync(lockPath, oldLock, oldLock);
+  assert.throws(() => runtime.recordHandoff(changeId, {
+    id: "H001", status: "accepted", actor: "Nok SRE", reference: "OPS-1842"
+  }), /handoff mutation already active/,
+  "a live owner is never evicted merely because its lock is old");
+  rmSync(lockPath, { force: true });
+
   const priorLog = console.log;
   console.log = () => {};
   try {
@@ -129,6 +143,11 @@ try {
     });
   } finally { console.log = priorLog; }
   assert.equal(runtime.handoffReadiness(changeId).status, "COMPLETE");
+
+  writeFileSync(join(fixture, ".foundation", "handoffs", changeId, "H001.json"),
+    "{not-json");
+  assert.equal(runtime.handoffReadiness(changeId).operations[0].validity, "invalid",
+    "a torn operator record becomes a typed invalid state instead of crashing readiness");
 
   writeJson(join(change, "handoffs.yaml"), {
     version: 1,

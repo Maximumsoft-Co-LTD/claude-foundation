@@ -100,9 +100,9 @@ the same shared install:
 claude-foundation init /path/to/your-project --host cursor    # or opencode, codex
 ```
 
-Cursor gets the seven commands and the always-on skill router as an
+Cursor gets the eight commands and the always-on skill router as an
 `alwaysApply` rule; OpenCode gets the commands plus a guard plugin that replays
-the shipped hooks live; Codex gets the seven prompts in `$CODEX_HOME/prompts`
+the shipped hooks live; Codex gets the eight prompts in `$CODEX_HOME/prompts`
 with an ownership marker — Codex has no tool hooks, so Land gates remain the
 enforcement there.
 
@@ -712,7 +712,7 @@ into the same append-only usage events used by `metrics` and budget accounting.
 The CLI finds the installed project from the current directory or from
 `--project <path>`. Run `claude-foundation help` for the complete command
 surface, or `claude-foundation describe [command]` for any single one — the
-seven slash commands included, resolvable by bare word or `/slash` spelling.
+eight slash commands included, resolvable by bare word or `/slash` spelling.
 The shipped `harness-html-report` skill renders harness state — gates,
 receipts, phase timing, and cost — as a self-contained HTML report when you
 want the round told as a story rather than a status listing.

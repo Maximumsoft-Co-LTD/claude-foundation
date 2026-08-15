@@ -1,7 +1,8 @@
 # evidence-quality Specification
 
 ## Purpose
-TBD - created by archiving change ship-foundation-v3-3-risk-tiered-review-codex-reviewer-orchestra. Update Purpose after archive.
+Define content-bound critical-case and mutation evidence that fails when a
+required behavior is skipped, missing, or killed by the wrong oracle.
 ## Requirements
 ### Requirement: Critical test evidence names each required case
 

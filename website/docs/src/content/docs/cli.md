@@ -5,7 +5,7 @@ description: The commands your agent runs, grouped by what they do and what auth
 
 Your agent runs these; you rarely need to. They are documented so you can read what the agent is doing, and drive it yourself when you want to.
 
-Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the seven slash commands, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
+Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the eight slash commands, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
 
 ## Read-only
 

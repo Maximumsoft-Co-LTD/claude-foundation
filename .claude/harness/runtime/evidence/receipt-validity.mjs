@@ -189,6 +189,11 @@ export function createReceiptValidity({
       if ((value.artifacts || []).length === 0 && (value.references || []).length === 0)
         return { provider, validity: "external-evidence-missing", status: value.status };
     }
+    // This is intentionally transitional rather than "valid": proof execute
+    // and proof advance first rebind the unchanged declared inputs to the new
+    // workspace hash, then recompute validity before finalize. Treating it as
+    // valid here would let Land accept the old receipt without that durable,
+    // content-bound rebind.
     return reusableInputs
       ? {
         provider, validity: "reusable-inputs", status: value.status,

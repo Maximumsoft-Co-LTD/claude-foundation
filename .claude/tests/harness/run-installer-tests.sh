@@ -80,6 +80,8 @@ assert_file_exists "CLI router runtime installed" "$TARGET/.claude/harness/runti
 assert_file_exists "state runtime installed" "$TARGET/.claude/harness/runtime/core/state-runtime.mjs"
 assert_file_exists "diagnostics runtime installed" \
   "$TARGET/.claude/harness/runtime/core/diagnostics-runtime.mjs"
+assert_file_exists "shared process lock runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/process-lock.mjs"
 assert_file_exists "runtime architecture guide installed" "$TARGET/.claude/harness/runtime/README.md"
 assert_file_exists "repository topology runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/repository-topology.mjs"
