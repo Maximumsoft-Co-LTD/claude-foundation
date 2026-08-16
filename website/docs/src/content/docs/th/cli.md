@@ -102,9 +102,9 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 สัญญาที่มองเห็นจากภายนอกถูกตรึงไว้ใน `.claude/harness/protocol.json` การติดตั้งที่ปนกันหลายรุ่นจะล้มเหลวทันทีตอนโหลด แทนที่จะไปพังกลางทาง Land
 
-| Pin | v3.2.24 |
+| Pin | v3.2.25 |
 |---|---|
-| runtime | 3.2.24 |
+| runtime | 3.2.25 |
 | runtime API | 21 |
 | provider protocol | 8 |
 | evidence schema | 1, 2 |

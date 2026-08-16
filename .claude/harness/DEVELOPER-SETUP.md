@@ -1,6 +1,6 @@
 # Developer setup
 
-Foundation v3.2.24 front-loads material decisions so Build and Prove can run to a
+Foundation v3.2.25 front-loads material decisions so Build and Prove can run to a
 bounded conclusion without repeatedly interviewing the developer. The shipped
 workflow adds:
 
@@ -22,11 +22,11 @@ workflow adds:
 Before the first Foundation packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
-2. Verify `claude-foundation version` is `3.2.24` and the repository runtime API
+2. Verify `claude-foundation version` is `3.2.25` and the repository runtime API
    is `21`.
-3. If the pinned source is absent, clone tag `v3.2.24` from
+3. If the pinned source is absent, clone tag `v3.2.25` from
    `Maximumsoft-Co-LTD/claude-foundation` into
-   `~/.local/share/claude-foundation/3.2.24`.
+   `~/.local/share/claude-foundation/3.2.25`.
 4. From that checkout run
    `node scripts/install-foundation-runtime.mjs <project-path>`.
 5. Add `~/.local/bin` to `PATH`, then run

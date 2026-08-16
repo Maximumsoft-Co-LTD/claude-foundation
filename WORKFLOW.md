@@ -1,6 +1,6 @@
 # Foundation workflow
 
-**Version 3.2.24**
+**Version 3.2.25**
 
 Foundation is an OpenSpec-native harness for safe, economical software changes
 in brownfield repositories.

@@ -82,7 +82,7 @@ import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
-const VERSION = "3.2.24";
+const VERSION = "3.2.25";
 const RUNTIME_API_VERSION = "21";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
