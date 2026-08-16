@@ -40,6 +40,7 @@ it copies anything, so running one directly is as safe as running the suite.
 | `harness/run-risk-tiered-review-mutation.mjs` | Mutation-v2 rejects a mutant killed by any case other than its declared killer |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
 | `harness/run-proof-fixit-tests.mjs` | Changed-surface blocker recovery renders undeclared paths as a paste-ready `[paths:]` annotation |
+| `harness/run-service-session-tests.mjs` | Proof services stop in reverse order, stop idempotently, and are reclaimed on termination signals |
 | `harness/run-apply-conflict-tests.mjs` | Worktree apply refuses to overwrite uncommitted target edits instead of last-writer-wins |
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
 | `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
@@ -53,6 +54,7 @@ it copies anything, so running one directly is as safe as running the suite.
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 | `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, audit-only default, and block-mode refusals |
 | `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |
+| `harness/run-architecture-tests.mjs` | Runtime dependency direction, forbidden-edge mutation detection, syntax for every shipped module, and CI path-filter coverage |
 | `harness/run-single-source-tests.mjs` | Tables that encode one fact in two files agree: the lifecycle-phase map against the `cli.sh` grammar, the four runtime-API pins pairwise, the runtime version against `protocol.json`, and `install.sh` `MANAGED` against CLAUDE.md |
 | `harness/run-feedback-isolation-tests.sh` | Prototype evidence isolation |
 | `harness/run-feedback-review-tests.sh` | Review and acceptance protocol, provenance, and attempt-chain integrity |

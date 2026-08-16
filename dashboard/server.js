@@ -17,6 +17,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const APP_VERSION = require('./package.json').version; // surfaced in /api/health, /api/online, and the UI footer
+const {
+  clean, cleanChanges, cleanDateCounts, cleanRuns, cleanSessions, cleanTools,
+  cleanUsage, toInt,
+} = require('./sanitize');
+const { migrateDashboardSchema } = require('./migrations');
 
 // ── Config (env) ────────────────────────────────────────────────────────────
 const PORT = toInt(process.env.PORT, 8473); // off the common dev ports; Railway overrides via PORT
@@ -26,7 +31,6 @@ const ONLINE_TTL_MS = toInt(process.env.ONLINE_TTL_MS, 75_000); // online window
 const PRUNE_AFTER_MS = ONLINE_TTL_MS * 20; // forget agents gone this long
 const ONLINE_CACHE_MS = toInt(process.env.ONLINE_CACHE_MS, 2_000); // /api/online is recomputed at most this often, shared by all viewers
 const MAX_BODY_BYTES = 512 * 1024; // rich change payloads (many repos × files × ranges)
-const MAX_FIELD_LEN = 200;
 const MAX_AGENTS = toInt(process.env.MAX_AGENTS, 500); // roster ceiling — a shared key must not buy unbounded rows
 const MAX_PROFILES = toInt(process.env.MAX_PROFILES, 500); // profile ceiling — /api/profile takes the same shared key
 const MIN_HEARTBEAT_INTERVAL_MS = toInt(process.env.MIN_HEARTBEAT_INTERVAL_MS, 5_000); // persisted writes per agent; the client beats every 30s
@@ -51,120 +55,11 @@ try {
   const { DatabaseSync } = require('node:sqlite');
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = new DatabaseSync(DB_PATH);
-  // v2: usage_daily gains a `project` dimension (PK reshape → drop, it repopulates
-  // from the next heartbeats); runs gains an `artifacts` column.
-  const dbVersion = db.prepare('PRAGMA user_version').get().user_version;
-  if (dbVersion < 2) {
-    db.exec('DROP TABLE IF EXISTS usage_daily;');
-    try { db.exec('ALTER TABLE runs ADD COLUMN artifacts TEXT;'); } catch { /* fresh db — CREATE below carries it */ }
-    db.exec('PRAGMA user_version = 2;');
-  }
-  // v3: runs gain owner/owner_email/size/repo_id (true per-run attribution +
-  // effort points), agents gain git_email, and presence moves to an hourly
-  // aggregate (backfilled from the raw beat log below, after CREATE).
-  const needsV3 = dbVersion < 3;
-  if (needsV3) {
-    for (const sql of [
-      'ALTER TABLE runs ADD COLUMN owner TEXT',
-      'ALTER TABLE runs ADD COLUMN owner_email TEXT',
-      'ALTER TABLE runs ADD COLUMN size TEXT',
-      'ALTER TABLE runs ADD COLUMN repo_id TEXT',
-      'ALTER TABLE agents ADD COLUMN git_email TEXT',
-    ]) { try { db.exec(sql); } catch { /* fresh db — CREATE below carries them */ } }
-    db.exec('PRAGMA user_version = 3;');
-  }
-  const needsV4 = dbVersion < 4;
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    CREATE TABLE IF NOT EXISTS agents (
-      agent_id   TEXT PRIMARY KEY,
-      git_user   TEXT, git_email TEXT, host TEXT, version TEXT, status TEXT,
-      first_seen INTEGER, last_seen INTEGER,
-      state      TEXT              -- full sanitized record (runs/changes/usage/…) as JSON
-    );
-    CREATE TABLE IF NOT EXISTS heartbeats (
-      id       INTEGER PRIMARY KEY AUTOINCREMENT,
-      ts       INTEGER NOT NULL,
-      agent_id TEXT, git_user TEXT, host TEXT, version TEXT, status TEXT,
-      runs_n   INTEGER, changes_n INTEGER, files_n INTEGER, usage_n INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_hb_ts    ON heartbeats(ts);
-    CREATE INDEX IF NOT EXISTS idx_hb_agent ON heartbeats(agent_id, ts);
-    CREATE TABLE IF NOT EXISTS runs (
-      agent_id TEXT, repo TEXT, run_id TEXT,
-      git_user TEXT, type TEXT, phase TEXT,
-      started INTEGER, finished INTEGER, done INTEGER,
-      artifacts TEXT,               -- {"spec":<epoch>,"plan":<epoch>,…} for the phase funnel
-      owner TEXT, owner_email TEXT, -- who actually ran it (state.json / first-commit author) — '' = unknown, attribute to reporter
-      size TEXT,                    -- XS/S/M/L from state.json — powers effort points
-      repo_id TEXT,                 -- normalized remote URL (host/org/repo) — cross-clone dedupe key
-      PRIMARY KEY (agent_id, repo, run_id)
-    );
-    CREATE TABLE IF NOT EXISTS usage_daily (
-      agent_id TEXT, git_user TEXT, date TEXT, model TEXT, project TEXT,
-      input INTEGER, output INTEGER, cache_create INTEGER, cache_read INTEGER, count INTEGER,
-      PRIMARY KEY (agent_id, date, model, project)
-    );
-    CREATE TABLE IF NOT EXISTS sessions_daily (
-      agent_id TEXT, git_user TEXT, date TEXT, count INTEGER, seconds INTEGER,
-      PRIMARY KEY (agent_id, date)
-    );
-    CREATE TABLE IF NOT EXISTS tools (
-      agent_id TEXT, git_user TEXT, tool TEXT, count INTEGER, ts INTEGER,
-      PRIMARY KEY (agent_id, tool)
-    );
-    CREATE TABLE IF NOT EXISTS commits_daily (
-      repo_id TEXT, date TEXT, n INTEGER, reported_by TEXT, ts INTEGER,
-      PRIMARY KEY (repo_id, date)
-    );
-    CREATE TABLE IF NOT EXISTS followups (
-      repo_id TEXT PRIMARY KEY, open INTEGER, closed INTEGER, ts INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS file_edits (
-      day TEXT, repo_id TEXT, path TEXT, git_user TEXT,
-      PRIMARY KEY (day, repo_id, path, git_user)
-    );
-    CREATE TABLE IF NOT EXISTS conflict_log (
-      day TEXT, repo_id TEXT, path TEXT, users TEXT, last_ts INTEGER,
-      PRIMARY KEY (day, repo_id, path, users)
-    );
-    CREATE TABLE IF NOT EXISTS work_daily (
-      agent_id TEXT, git_user TEXT, date TEXT,
-      commits INTEGER, added INTEGER, deleted INTEGER, pushes INTEGER, prs INTEGER,
-      PRIMARY KEY (agent_id, date)
-    );
-    CREATE TABLE IF NOT EXISTS profiles (
-      user TEXT PRIMARY KEY,        -- the gitUser display string every aggregate groups by
-      email TEXT, org TEXT,
-      teams TEXT,                   -- JSON array of team tags, e.g. ["payments","platform"]
-      color TEXT,                   -- '#rrggbb' or '' = auto (hashed palette)
-      updated_at INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS presence_hourly (
-      hour INTEGER, git_user TEXT, minutes INTEGER,
-      PRIMARY KEY (hour, git_user)  -- hour = epoch_ms/3600000; replaces raw-beat presence scans
-    );
-    CREATE TABLE IF NOT EXISTS presence_minutes (
-      minute INTEGER, git_user TEXT,
-      PRIMARY KEY (minute, git_user) -- union across all machines owned by one person
-    );
-    CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_daily(date);
-    CREATE INDEX IF NOT EXISTS idx_work_date  ON work_daily(date);
-  `);
-  // One-time presence backfill so the heatmap doesn't reset when v3 lands.
-  if (needsV3) {
-    try {
-      db.exec(`
-        INSERT OR IGNORE INTO presence_hourly (hour, git_user, minutes)
-        SELECT ts/3600000, git_user, COUNT(DISTINCT ts/60000)
-        FROM heartbeats WHERE status != 'offline' GROUP BY ts/3600000, git_user;
-      `);
-    } catch (err) { console.warn(`presence backfill failed: ${err.message}`); }
-  }
-  if (needsV4) db.exec('PRAGMA user_version = 4;');
+  migrateDashboardSchema(db);
   console.log(`sqlite: persisting to ${DB_PATH} (heartbeat log kept ${HEARTBEAT_LOG_DAYS}d)`);
 } catch (err) {
+  try { db && db.close(); } catch { /* the original storage error is authoritative */ }
+  db = null;
   console.warn(`sqlite unavailable (${err.message}) — running in-memory only; presence and history reset on restart.`);
 }
 
@@ -506,159 +401,6 @@ function snapshot(a, now) {
     ageMs,
     online: ageMs <= ONLINE_TTL_MS && a.status !== 'offline',
   };
-}
-
-// ── Pure helpers ────────────────────────────────────────────────────────────
-function toInt(v, fallback) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-/** Coerce to a clean, bounded, control-char-free string. */
-function clean(v, max = MAX_FIELD_LEN) {
-  if (v == null) return '';
-  return String(v).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, max).trim();
-}
-
-/** Sanitize the reported /dev runs (active + completed) used for activity + stats. */
-function cleanRuns(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .slice(0, 300)
-    .map((r) => ({
-      id: clean(r && r.id, 80),
-      type: clean(r && r.type, 20),
-      repo: clean(r && r.repo, 120),
-      repoId: clean(r && r.repoId, 200),
-      branch: clean(r && r.branch, 120),
-      owner: clean(r && r.owner, 80),
-      ownerEmail: clean(r && r.ownerEmail, 120),
-      size: clean(r && r.size, 8),
-      phase: clean(r && r.phase, 40),
-      started: Math.max(0, toInt(r && r.started, 0)),
-      finished: Math.max(0, toInt(r && r.finished, 0)),
-      done: !!(r && r.done),
-      art: cleanArtifacts(r && r.art),
-    }))
-    .filter((r) => r.id);
-}
-
-/** Sanitize the run's artifact mtimes ({spec: <epoch>, plan: <epoch>, …}). */
-const ARTIFACT_KEYS = ['spec', 'plan', 'test-plan', 'tests', 'review', 'security', 'retro'];
-function cleanArtifacts(raw) {
-  const out = {};
-  if (raw && typeof raw === 'object') {
-    for (const k of ARTIFACT_KEYS) {
-      const v = toInt(raw[k], 0);
-      if (v > 0) out[k] = v;
-    }
-  }
-  return out;
-}
-
-/** Sanitize the reported Claude token usage rows (per day × model aggregates). */
-function cleanUsage(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .slice(0, 3000)
-    .map((u) => ({
-      date: clean(u && u.date, 10),
-      model: clean(u && u.model, 80),
-      project: clean(u && u.project, 80),
-      input: Math.max(0, toInt(u && u.input, 0)),
-      output: Math.max(0, toInt(u && u.output, 0)),
-      cacheCreate: Math.max(0, toInt(u && u.cacheCreate, 0)),
-      cacheRead: Math.max(0, toInt(u && u.cacheRead, 0)),
-      count: Math.max(0, toInt(u && u.count, 0)),
-    }))
-    .filter((u) => /^\d{4}-\d{2}-\d{2}$/.test(u.date) && u.model);
-}
-
-/** Sanitize the reported per-day Claude session stats. */
-function cleanSessions(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .slice(0, 100)
-    .map((s) => ({
-      date: clean(s && s.date, 10),
-      count: Math.max(0, toInt(s && s.count, 0)),
-      seconds: Math.max(0, toInt(s && s.seconds, 0)),
-    }))
-    .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.date));
-}
-
-/** Sanitize a list of {date, <field>} count rows. */
-function cleanDateCounts(raw, field) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .slice(0, 20)
-    .map((c) => ({ date: clean(c && c.date, 10), [field]: Math.max(0, toInt(c && c[field], 0)) }))
-    .filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.date));
-}
-
-/** Sanitize the reported tool-call counts. */
-function cleanTools(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .slice(0, 3000)
-    .map((t) => ({
-      date: clean(t && t.date, 10),
-      tool: clean(t && t.tool, 60),
-      count: Math.max(0, toInt(t && t.count, 0)),
-    }))
-    .filter((t) => t.tool && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
-}
-
-/** Sanitize a list of [start,end] line ranges. */
-function cleanRanges(raw) {
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  for (const r of raw.slice(0, 200)) {
-    if (!Array.isArray(r) || r.length < 2) continue;
-    const s = Math.max(0, Math.floor(Number(r[0])) || 0);
-    const e = Math.max(s, Math.floor(Number(r[1])) || s);
-    out.push([s, e]);
-  }
-  return out;
-}
-
-/** Sanitize the optional changes array (per-repo changed files+line-ranges for conflict detection). */
-function cleanChanges(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .slice(0, 60)
-    .map((r) => ({
-      repoId: clean(r && r.repoId, 200),
-      branch: clean(r && r.branch, 120),
-      path: clean(r && r.path, 300),
-      label: clean(r && r.label, 80),
-      fuOpen: Math.max(0, toInt(r && r.fuOpen, 0)),
-      fuClosed: Math.max(0, toInt(r && r.fuClosed, 0)),
-      commits: cleanDateCounts(r && r.commits, 'n'),
-      pushes: cleanDateCounts(r && r.pushes, 'n'),
-      work: Array.isArray(r && r.work)
-        ? r.work
-            .slice(0, 20)
-            .map((w) => ({
-              date: clean(w && w.date, 10),
-              commits: Math.max(0, toInt(w && w.commits, 0)),
-              added: Math.max(0, toInt(w && w.added, 0)),
-              deleted: Math.max(0, toInt(w && w.deleted, 0)),
-            }))
-            .filter((w) => /^\d{4}-\d{2}-\d{2}$/.test(w.date))
-        : [],
-      files: Array.isArray(r && r.files)
-        ? r.files
-            .slice(0, 100)
-            .map((f) => ({ path: clean(f && f.path, 300), ranges: cleanRanges(f && f.ranges) }))
-            .filter((f) => f.path && f.ranges.length)
-        : [],
-    }))
-    // File-less entries are legit since client 1.10: a clean-but-recently-active
-    // repo still reports commits/work/pushes so finished work keeps counting.
-    .filter((r) => r.repoId && (
-      r.files.length || r.work.length || r.commits.length || r.pushes.length || r.fuOpen || r.fuClosed
-    ));
 }
 
 /** Constant-time string compare that tolerates length differences. */

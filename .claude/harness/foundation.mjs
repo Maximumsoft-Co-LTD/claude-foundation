@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
 import {
-  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync,
-  renameSync, rmSync, writeFileSync
+  appendFileSync, existsSync, mkdirSync
 } from "node:fs";
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
@@ -49,7 +48,7 @@ import { createRepositoryTopology } from "./runtime/workflow/repository-topology
 import { createRepositorySnapshot } from "./runtime/workflow/repository-snapshot.mjs";
 import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
 import { createChangePolicy } from "./runtime/workflow/change-policy.mjs";
-import { taskBlocks, taskMetadata } from "./runtime/workflow/change-artifacts.mjs";
+import { taskBlocks, taskMetadata } from "./runtime/contracts/change-artifacts.mjs";
 import { createChangeLifecycle } from "./runtime/workflow/change-lifecycle.mjs";
 import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
@@ -81,6 +80,14 @@ import { createConfiguredReviewerRuntime } from "./runtime/evidence/codex-review
 import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
+import { createBootstrap } from "./runtime/composition/bootstrap.mjs";
+import {
+  EXCLUDED_WORKSPACE_DIRS, SANDBOX_COPY_EXCLUDED_DIRS
+} from "./runtime/core/workspace-policy.mjs";
+import {
+  ADAPTERS, INPUT_MODES, PROVIDER_CONTRACTS, PROVIDERS, providerCapability
+} from "./runtime/evidence/provider-catalog.mjs";
+import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 
 const VERSION = "3.2.25";
 const RUNTIME_API_VERSION = "21";
@@ -106,101 +113,6 @@ const REVIEW_PACKET_SCHEMA_VERSION = "4";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "2";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
-// `contract-digest` executes no command: it hashes the same declared contract
-// artifact in two or more repositories and passes only when every side carries
-// the identical bytes. It is what makes `cross-repo-contract` a check rather
-// than an assertion.
-const ADAPTERS = new Set([
-  "command", "test-discovery", "playwright", "contract-digest", "external"
-]);
-const INPUT_MODES = new Set(["browser-automation", "dom-event", "os-input", "both"]);
-// Directories that are never change surface: never hashed, never walked as
-// evidence input, never projected back onto the target at apply.
-//
-// The generated-output entries below are deliberately limited to tool-owned
-// directories whose names are unambiguous and conventionally ignored. `dist`,
-// `build`, `out`, `target`, and `vendor` are NOT here on purpose: projects do
-// commit source under those names, and excluding a directory removes it from
-// the apply diff as well as the hash — a wrong guess here is silent data loss
-// at Land, not a stale hash.
-//
-// This set names the directories; `runtime/core/workspace-surface.mjs` decides
-// how a path is matched against it. Matching every segment at every depth was
-// its own wrong guess: `.foundation` and `.workflow` mean something only at the
-// project root, and a committed fixture is content whatever it is called.
-const EXCLUDED_WORKSPACE_DIRS = new Set([
-  ".git", ".foundation", ".workflow", "node_modules",
-  "coverage", "test-results", "playwright-report",
-  ".next", ".nuxt", ".svelte-kit", ".turbo", ".astro", ".parcel-cache",
-  ".pytest_cache", ".mypy_cache", ".ruff_cache", "__pycache__", ".tox",
-  ".gradle", ".terraform"
-]);
-// The copy sandbox needs the same list minus `.git`. One set cannot answer both
-// "what is change surface?" and "what does an isolated copy need to function?":
-// `.git` must stay out of every hash and every apply diff, but a copy that
-// lacks it stops being a git repository, and every git-aware path in the
-// runtime then degrades to whole-tree behaviour without saying so.
-const SANDBOX_COPY_EXCLUDED_DIRS = new Set(
-  [...EXCLUDED_WORKSPACE_DIRS].filter((dir) => dir !== ".git")
-);
-const PROVIDER_CONTRACTS = {
-  "test": "Executable behavioral checks for the declared claim.",
-  "discovery": "Expected tests were found and the discovered count meets the floor.",
-  "browser": "Rendered behavior in a real browser with the required input capability.",
-  "mutation": "A deliberate behavioral fault is detected by the evidence suite.",
-  "state-identity": "State before, during, or after the change belongs to the intended actor and revision.",
-  "integration": "Multiple components or external boundaries work together.",
-  "compatibility": "Public or persisted contracts remain compatible across supported versions.",
-  "performance": "Measured latency, throughput, resource, or size budgets are met.",
-  "security-static": "Static security checks cover the changed trust boundary and unsafe sinks.",
-  "cross-repo-contract": "Producer and consumer repositories agree on the same versioned contract.",
-  "review": "Independent risk review covers the declared claims and unresolved findings.",
-  "acceptance": "A named human accepts an explicitly subjective product or experience decision.",
-  "static-analysis": "Compilation, type checking, linting, and applicable static quality gates pass.",
-  "data-migration": "Schema or data evolution is forward-safe, backward-compatible, and rollback-aware.",
-  "accessibility": "Rendered semantics, keyboard use, focus, contrast, and assistive access meet policy.",
-  "resilience": "Timeout, retry, partial-failure, recovery, and degraded-dependency behavior is proven.",
-  "observability": "Required logs, metrics, traces, and alerts expose success and failure safely.",
-  "deployment": "Packaging, configuration, rollout health checks, and rollback behavior are proven.",
-  "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes."
-};
-const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
-function providerCapability(provider, config = null) {
-  return config?.capability || (PROVIDERS.has(provider) ? provider : null);
-}
-// Matched on whole words, not as substrings. As substrings these fired on
-// "accessibility", "migration guide", and "permission dialog" — and missed
-// "let users sign in with a passkey" entirely, which is the case that
-// actually crosses a trust boundary. Multi-word entries match as phrases,
-// and whitespace inside one also matches a hyphen ("auth-token").
-//
-// Bare "token", "session", "identity", "sensitive", and "escalation" used to
-// be entries of their own. Whole-word matching does not save them: "reduce the
-// token budget", "resume the session", "state-identity evidence",
-// "case-sensitive paths", and "escalate to a human" are ordinary sentences that
-// each bought an independent reviewer, the standard schema, and — because a
-// security trigger also makes reviewer diversity mandatory — a second model or
-// a person. They are carried here as the phrases that actually name a trust
-// boundary. The auth/oauth/jwt/passkey/credential cluster below is untouched
-// and still covers the same work described in the usual words; `--security`
-// remains the explicit escape for a boundary no phrase here caught.
-const SECURITY_TERMS = [
-  "auth", "authn", "authz", "authentication", "authorization",
-  "user identity", "identity provider",
-  "access control", "permissions", "secret", "secrets", "credential",
-  "credentials", "user session", "user sessions", "session cookie",
-  "session id", "session token", "session fixation", "session hijack",
-  "auth token", "access token", "refresh token", "bearer token", "api token",
-  "csrf token", "password",
-  "passwords", "passkey", "passkeys", "sign in", "sign-in", "signin", "login",
-  "log in", "sso", "oauth", "saml", "jwt", "cookie", "cookies", "encryption",
-  "decrypt", "encrypt", "crypto", "cross-user", "cross user", "tenant",
-  "multi-tenant", "trust boundary", "irreversible", "sensitive data", "pii",
-  "personal data", "command execution", "injection", "sql injection", "xss",
-  "csrf", "ssrf", "sandbox escape", "privilege", "data migration",
-  "schema migration", "payment", "billing", "refund", "webhook signature"
-];
-
 // A refusal is a lifecycle stop, not a crash. Recording it as a failure would
 // bury real breakage under the guards that are working as designed.
 let operationBlocked = false;
@@ -217,66 +129,22 @@ function die(message, code = 1) {
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail: die });
 const { blockedDecisionValue, blockWithDecision } = createBlockedDecision({ fail: die });
 
-function insideSandboxCopy(path) {
-  const segments = path.split(sep);
-  return segments.some((segment, index) => segment === ".foundation" &&
-    ["sandboxes", "repository-sandboxes"].includes(segments[index + 1]));
-}
-
-function findRoot(start = process.cwd()) {
-  const pinned = process.env.CLAUDE_FOUNDATION_PROJECT;
-  let cursor = resolve(pinned || start);
-  for (;;) {
-    if (existsSync(join(cursor, "openspec", "config.yaml")) &&
-        existsSync(join(cursor, ".claude", "harness", "foundation.mjs"))) {
-      // A Build sandbox is a full copy of the project, marker files included.
-      // Resolving to the copy would silently split runtime state between the
-      // sandbox's .foundation/ and the project's, so resolution walks past a
-      // sandbox unless CLAUDE_FOUNDATION_PROJECT deliberately pins one.
-      if (pinned || !insideSandboxCopy(cursor)) return cursor;
-      console.error(
-        `claude-foundation: ignoring sandbox copy at ${cursor}; resolving the project root`);
-    }
-    const parent = dirname(cursor);
-    if (parent === cursor) die("not inside a Foundation project");
-    cursor = parent;
-  }
-}
-
-function canonicalPath(path) {
-  const absolute = resolve(path);
-  return existsSync(absolute) ? realpathSync(absolute) : absolute;
-}
-
-const ROOT = canonicalPath(findRoot());
-const RUNTIME = join(ROOT, ".foundation", "runtime");
-const RECEIPTS = join(ROOT, ".foundation", "receipts");
-const LOGS = join(ROOT, ".foundation", "logs");
-const EVIDENCE_VAULT = join(ROOT, ".foundation", "evidence");
-const SNAPSHOTS = join(ROOT, ".foundation", "snapshots");
-const TRANSACTIONS = join(ROOT, ".foundation", "transactions");
-const PLANS = join(ROOT, ".foundation", "plans");
-const LEASES = join(ROOT, ".foundation", "leases");
-const PROTOTYPES = join(ROOT, ".foundation", "prototypes");
-const ATTESTATIONS = join(ROOT, ".foundation", "attestations");
-const AUTHORITY = join(ROOT, ".foundation", "authority");
-const HANDOFFS = join(ROOT, ".foundation", "handoffs");
-const INSTRUCTION_MANIFESTS = join(ROOT, ".foundation", "instruction-manifests");
-const RECOVERY = join(ROOT, ".foundation", "recovery");
-const CHANGES = join(ROOT, "openspec", "changes");
-mkdirSync(RUNTIME, { recursive: true });
-mkdirSync(RECEIPTS, { recursive: true });
-mkdirSync(LOGS, { recursive: true });
-mkdirSync(EVIDENCE_VAULT, { recursive: true });
-mkdirSync(SNAPSHOTS, { recursive: true });
-mkdirSync(TRANSACTIONS, { recursive: true });
-mkdirSync(PLANS, { recursive: true });
-mkdirSync(LEASES, { recursive: true });
-mkdirSync(ATTESTATIONS, { recursive: true });
-mkdirSync(AUTHORITY, { recursive: true });
-mkdirSync(HANDOFFS, { recursive: true });
-mkdirSync(INSTRUCTION_MANIFESTS, { recursive: true });
-mkdirSync(CHANGES, { recursive: true });
+const {
+  root: ROOT,
+  paths: {
+    runtime: RUNTIME, receipts: RECEIPTS, logs: LOGS, evidenceVault: EVIDENCE_VAULT,
+    snapshots: SNAPSHOTS, transactions: TRANSACTIONS, plans: PLANS, leases: LEASES,
+    prototypes: PROTOTYPES, attestations: ATTESTATIONS, authority: AUTHORITY,
+    handoffs: HANDOFFS, instructionManifests: INSTRUCTION_MANIFESTS,
+    recovery: RECOVERY, changes: CHANGES
+  },
+  readJson, readJsonOrNull, writeJson, canonicalPath, pathInside, now
+} = createBootstrap({
+  start: process.cwd(),
+  pinned: process.env.CLAUDE_FOUNDATION_PROJECT,
+  fail: die,
+  warn: console.error
+});
 
 const { readJsonLines, readJsonLinesTolerant } = createJsonlReader({
   root: ROOT,
@@ -335,22 +203,6 @@ process.on("exit", (code) => {
   }
 });
 
-function readJson(path, fallback = null) {
-  try { return JSON.parse(readFileSync(path, "utf8")); }
-  catch (error) {
-    if (fallback !== null) return fallback;
-    die(`invalid JSON: ${relative(ROOT, path)} (${error.message})`);
-  }
-}
-
-// `readJson(path, null)` means "die on bad JSON", so a caller that wants to
-// report a corrupt file rather than exit needs its own spelling. Used by
-// `changes`, which must survive one unreadable state file among many.
-function readJsonOrNull(path) {
-  try { return JSON.parse(readFileSync(path, "utf8")); }
-  catch { return null; }
-}
-
 const {
   commandRegistry,
   describeCommand,
@@ -361,18 +213,6 @@ const {
   fail: die
 });
 
-function writeJson(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
-  try {
-    renameSync(temporary, path);
-  } finally {
-    if (existsSync(temporary)) rmSync(temporary);
-  }
-}
-
-function now() { return new Date().toISOString(); }
 const {
   protocolDescriptor,
   commandExists,
@@ -1572,11 +1412,6 @@ const abandonRuntime = createAbandonRuntime({
   fail: die
 });
 const { abandonChange } = abandonRuntime;
-function pathInside(parent, candidate) {
-  const rel = relative(resolve(parent), resolve(candidate));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
 const [command, ...values] = process.argv.slice(2);
 // Help is answered before anything else. It must never be parsed as a change
 // id, and it must never depend on the command's arguments being valid.

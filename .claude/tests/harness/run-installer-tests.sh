@@ -78,6 +78,19 @@ assert_file_exists "agent planner runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/agent-planning.mjs"
 assert_file_exists "CLI router runtime installed" "$TARGET/.claude/harness/runtime/core/cli-router.mjs"
 assert_file_exists "state runtime installed" "$TARGET/.claude/harness/runtime/core/state-runtime.mjs"
+assert_file_exists "canonical change-artifact contract installed" \
+  "$TARGET/.claude/harness/runtime/contracts/change-artifacts.mjs"
+assert_file_exists "change-artifact compatibility path retained" \
+  "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
+assert_cmd_zero "change-artifact compatibility path exports the canonical parser API" \
+  node --input-type=module -e '
+    const [canonical, compatibility] = await Promise.all([
+      import(process.argv[1]), import(process.argv[2])
+    ]);
+    for (const name of ["parseSpecRequirements", "taskBlocks", "taskMetadata"])
+      if (canonical[name] !== compatibility[name]) process.exit(1);
+  ' "$TARGET/.claude/harness/runtime/contracts/change-artifacts.mjs" \
+    "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
 assert_file_exists "diagnostics runtime installed" \
   "$TARGET/.claude/harness/runtime/core/diagnostics-runtime.mjs"
 assert_file_exists "shared process lock runtime installed" \

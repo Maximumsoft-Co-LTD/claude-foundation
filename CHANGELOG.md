@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Runtime architecture boundaries are now executable contracts.** A new
+  deterministic guard rejects reverse dependencies through static imports,
+  dynamic imports, CommonJS `require`, and `createRequire`; it also syntax-checks
+  every shipped module and verifies that CI path filters cover each tested
+  product surface.
+- **Dashboard schema evolution now has isolated migration coverage.** Fresh,
+  legacy v1-v3, current, future, rollback, and idempotent SQLite paths are
+  exercised independently from the HTTP server.
+
+### Changed
+
+- **The harness runtime now follows explicit domain direction.** Portable
+  change-artifact and model-policy contracts, workspace policy, provider
+  catalog, bootstrap persistence, spec-delta validation, and proof-service
+  lifecycle behavior live behind narrower domain seams instead of the
+  compatibility entrypoint and oversized runtime modules.
+- **Dashboard sanitization and SQLite migrations are separate modules.** Schema
+  changes run transactionally, service startup resets cleanly to in-memory mode
+  after storage failure, and the server retains its existing HTTP contract.
+
+### Fixed
+
+- **A rollback deployment can no longer downgrade a newer dashboard database's
+  migration marker.** Future schema versions are rejected without rewriting
+  `PRAGMA user_version`, preventing destructive migrations from being replayed.
+- **Architecture and dashboard-only changes can no longer bypass CI.** Workflow
+  filters now include dashboard, host installers, package locks, and committed
+  policy surfaces.
+- **Change-artifact imports remain available during harness upgrades.** The old
+  workflow path is retained as a compatibility re-export while new code uses
+  the canonical contract module.
+
 ## [3.2.25] - 2026-08-16
 
 ### Added

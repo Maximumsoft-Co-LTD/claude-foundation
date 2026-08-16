@@ -143,12 +143,12 @@ assert_file_contains "the Thai CLI page pins the runtime API" \
   "$DOCS/th/cli.md" "| runtime API | $runtime_api |"
 
 # Every adapter the runtime implements must appear in the shipped operator
-# guide. Deriving the set from foundation.mjs turns "contract-digest is missing
+# guide. Deriving the set from the provider catalog turns "contract-digest is missing
 # from the table" from something a reader has to notice into a failing test.
 adapters="$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8");
 const m=s.match(/const ADAPTERS = new Set\(\[([\s\S]*?)\]\)/);
 process.stdout.write(m ? m[1].replace(/["\s]/g,"").split(",").filter(Boolean).join(" ") : "");' \
-  "$ROOT/.claude/harness/foundation.mjs")"
+  "$ROOT/.claude/harness/runtime/evidence/provider-catalog.mjs")"
 # Match the table row, not the bare name: prose elsewhere in the file mentions
 # individual adapters, so a name-anywhere check passes even when the table that
 # readers actually consult has lost its row.
