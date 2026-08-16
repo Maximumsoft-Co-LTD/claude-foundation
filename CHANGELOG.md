@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release artifacts now report the version they were published as.** The
+  release workflow updates the executable runtime, protocol descriptor,
+  installed agent/setup guidance, and CLI documentation together, while the
+  single-source contract prevents those mirrors from drifting from `VERSION`.
+
 ## [3.2.23] - 2026-08-16
 
 ### Fixed

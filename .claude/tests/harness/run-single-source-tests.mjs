@@ -101,7 +101,7 @@ for (let left = 0; left < pinNames.length; left += 1)
       String(pins[pinNames[left]]), String(pins[pinNames[right]]),
       `${pinNames[left]} and ${pinNames[right]} disagree`));
 
-// --- the runtime version pair ------------------------------------------------
+// --- release version surfaces ------------------------------------------------
 
 // `doctor` compares thirteen protocol keys and deliberately not this one, so
 // `runtime version` and the `protocols.runtime` stamped into every proof could
@@ -111,6 +111,30 @@ const runtimeVersion =
 const protocolRuntime = JSON.parse(read(".claude/harness/protocol.json")).runtime;
 check(() => assert.equal(runtimeVersion, protocolRuntime,
   "foundation.mjs VERSION and protocol.json runtime name the same runtime"));
+
+const releaseVersion = read("VERSION").trim();
+const releaseSurfaces = {
+  "foundation.mjs VERSION": runtimeVersion,
+  "protocol.json runtime": protocolRuntime,
+  "AGENT.md Foundation version":
+    read(".claude/harness/AGENT.md").match(/verify Foundation ([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
+  "DEVELOPER-SETUP.md heading version":
+    read(".claude/harness/DEVELOPER-SETUP.md").match(/Foundation v([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
+  "DEVELOPER-SETUP.md CLI version":
+    read(".claude/harness/DEVELOPER-SETUP.md").match(/version` is `([0-9]+\.[0-9]+\.[0-9]+)`/)?.[1],
+  "DEVELOPER-SETUP.md clone tag":
+    read(".claude/harness/DEVELOPER-SETUP.md").match(/clone tag `v([0-9]+\.[0-9]+\.[0-9]+)`/)?.[1],
+  "DEVELOPER-SETUP.md install path":
+    read(".claude/harness/DEVELOPER-SETUP.md").match(/claude-foundation\/([0-9]+\.[0-9]+\.[0-9]+)`/)?.[1],
+  "English CLI runtime":
+    read("website/docs/src/content/docs/cli.md").match(/\| runtime \| ([0-9]+\.[0-9]+\.[0-9]+) \|/)?.[1],
+  "Thai CLI runtime":
+    read("website/docs/src/content/docs/th/cli.md").match(/\| runtime \| ([0-9]+\.[0-9]+\.[0-9]+) \|/)?.[1]
+};
+
+for (const [name, value] of Object.entries(releaseSurfaces))
+  check(() => assert.equal(value, releaseVersion,
+    `${name} must agree with VERSION`));
 
 // --- shipping boundary -------------------------------------------------------
 

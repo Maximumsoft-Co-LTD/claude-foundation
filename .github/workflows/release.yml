@@ -5,8 +5,8 @@ name: Release
 # with the new version. It runs everything mechanical end-to-end on a
 # current-Xcode macOS runner (so Homebrew's toolchain check passes here):
 #   1. rename [Unreleased] -> [X.Y.Z] (dated), add a fresh [Unreleased], fix link refs
-#   2. bump VERSION + every surface that states the release (WORKFLOW.md,
-#      both READMEs, the landing page, and the docs site in both locales)
+#   2. bump VERSION + every executable, protocol, installed guidance, and
+#      documentation surface that states the release
 #   3. commit `chore(release): vX.Y.Z`, tag vX.Y.Z, push
 #   4. compute the source-tarball sha256, bump the formula url + sha256
 #   5. publish the GitHub release from the new changelog section
@@ -89,6 +89,15 @@ jobs:
 
           printf '%s\n' "$NEW" > VERSION
 
+          perl -pi -e "s/const VERSION = \"\Q${PREV}\E\"/const VERSION = \"${NEW}\"/" \
+            .claude/harness/foundation.mjs
+          perl -pi -e "s/\"runtime\": \"\Q${PREV}\E\"/\"runtime\": \"${NEW}\"/" \
+            .claude/harness/protocol.json
+          perl -pi -e "s/Foundation \Q${PREV}\E/Foundation ${NEW}/" \
+            .claude/harness/AGENT.md
+          perl -pi -e "s/\Q${PREV}\E/${NEW}/g" \
+            .claude/harness/DEVELOPER-SETUP.md
+
           # Every surface that states the release has to move with it. The
           # documentation suite derives its expectations from VERSION, so a
           # surface left behind here fails `run-doc-consistency.sh` rather than
@@ -102,6 +111,25 @@ jobs:
           perl -pi -e "s/\| Pin \| v\Q${PREV}\E \|/| Pin | v${NEW} |/" \
             website/docs/src/content/docs/cli.md \
             website/docs/src/content/docs/th/cli.md
+          perl -pi -e "s/\| runtime \| \Q${PREV}\E \|/| runtime | ${NEW} |/" \
+            website/docs/src/content/docs/cli.md \
+            website/docs/src/content/docs/th/cli.md
+
+          grep -q "const VERSION = \"$NEW\"" .claude/harness/foundation.mjs ||
+            { echo "::error::.claude/harness/foundation.mjs version not updated"; exit 1; }
+          jq -e --arg version "$NEW" '.runtime == $version' \
+            .claude/harness/protocol.json >/dev/null ||
+            { echo "::error::.claude/harness/protocol.json runtime not updated"; exit 1; }
+          grep -q "Foundation $NEW" .claude/harness/AGENT.md ||
+            { echo "::error::.claude/harness/AGENT.md version not updated"; exit 1; }
+          grep -q "Foundation v$NEW" .claude/harness/DEVELOPER-SETUP.md ||
+            { echo "::error::.claude/harness/DEVELOPER-SETUP.md version not updated"; exit 1; }
+          grep -q 'version` is `'$NEW'`' .claude/harness/DEVELOPER-SETUP.md ||
+            { echo "::error::.claude/harness/DEVELOPER-SETUP.md CLI pin not updated"; exit 1; }
+          grep -q 'clone tag `v'$NEW'`' .claude/harness/DEVELOPER-SETUP.md ||
+            { echo "::error::.claude/harness/DEVELOPER-SETUP.md clone tag not updated"; exit 1; }
+          grep -q "claude-foundation/$NEW" .claude/harness/DEVELOPER-SETUP.md ||
+            { echo "::error::.claude/harness/DEVELOPER-SETUP.md install path not updated"; exit 1; }
 
           for f in WORKFLOW.md README.md README.th.md; do
             grep -q "\*\*Version $NEW\*\*" "$f" ||
@@ -118,11 +146,19 @@ jobs:
                    website/docs/src/content/docs/th/cli.md; do
             grep -q "| Pin | v$NEW |" "$f" ||
               { echo "::error::$f pin row not updated"; exit 1; }
+            grep -q "| runtime | $NEW |" "$f" ||
+              { echo "::error::$f runtime row not updated"; exit 1; }
           done
 
           # Release notes = the new section body (header line dropped).
           awk -v new="$NEW" '$0 ~ ("^## \\[" new "\\]") {f=1; next} /^## \[/{f=0} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
           echo "----- release notes -----"; cat "$RUNNER_TEMP/notes.md"
+
+      - name: Validate rewritten release
+        run: |
+          set -euo pipefail
+          node .claude/tests/harness/run-single-source-tests.mjs
+          sh .claude/tests/docs/run-doc-consistency.sh
 
       - name: Commit, tag, push
         if: env.DRY != 'true'
@@ -131,6 +167,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add VERSION WORKFLOW.md CHANGELOG.md README.md README.th.md \
+            .claude/harness/foundation.mjs \
+            .claude/harness/protocol.json \
+            .claude/harness/AGENT.md \
+            .claude/harness/DEVELOPER-SETUP.md \
             website/index.html \
             website/docs/src/content/docs/index.md \
             website/docs/src/content/docs/th/index.md \
