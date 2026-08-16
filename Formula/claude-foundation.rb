@@ -1,8 +1,8 @@
 class ClaudeFoundation < Formula
   desc "OpenSpec-native change harness for AI coding agents"
   homepage "https://github.com/Maximumsoft-Co-LTD/claude-foundation"
-  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v3.2.21.tar.gz"
-  sha256 "0321052f0ebcaf57a6dae927e9df900619344668bd2dae82ea78cb9c29f74ab5"
+  url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/archive/refs/tags/v3.2.22.tar.gz"
+  sha256 "6eb6580abaa1eba3530009e6d663dfb0856d68a4c6ca20f2550975a95cf79616"
   license "MIT"
   head "https://github.com/Maximumsoft-Co-LTD/claude-foundation.git", branch: "main"
 
@@ -18,11 +18,6 @@ class ClaudeFoundation < Formula
   # (forward-compatible), so arm64_sequoia also covers arm64_tahoe; add a
   # `sha256 … <tag>:` line per platform (see .github/workflows/bottle.yml +
   # RELEASING.md). Platforms with no line fall back to build-from-source.
-  bottle do
-    root_url "https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/download/v3.2.21"
-    sha256 cellar: :any_skip_relocation, arm64_sequoia: "bb3e562406f24f5118503946bdae6c534aea32e6b0e63e362ee2ec8fddf96b9e"
-  end
-
   def install
     libexec.install ".claude", ".foundation", ".workflow", "openspec",
                     "WORKFLOW.md", "CLAUDE.md", "package.json", "package-lock.json",
