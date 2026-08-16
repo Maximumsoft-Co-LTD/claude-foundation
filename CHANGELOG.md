@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The review-receipt guard no longer blocks a change forever.** "A completed
+  AI response has no matching recorded receipt" compared delivered-attempt
+  counts against a receipt that only ever records the latest attempt digest, so
+  a delta receipt overwriting the full receipt, a human receipt superseding the
+  AI one, or an errored completion (which never gains a receipt) locked
+  dispatch, record, and run permanently. The guard now reconciles the latest
+  delivered AI attempt against the newest recorded receipt of any reviewer
+  type, at both the dispatch and `authority run` paths, while a genuinely
+  unrecorded response still refuses. (Reported by the Model Router V1 consumer
+  round; see `docs/reports/model-router-v1-harness-defects.md`.)
+- **`REVIEW_SCHEMA` no longer carries `uniqueItems`.** OpenAI structured output
+  rejects the keyword, so every codex-adapter review dispatch failed as an
+  infrastructure error. Uniqueness is still enforced after parse, now over
+  trimmed IDs so normalization-equivalent duplicates ("F1" vs " F1") are
+  rejected before dispatch instead of throwing afterwards.
+- **A rapid change upgraded to the standard schema no longer contradicts
+  itself.** The upgrade materialized `specs/` while leaving `skip_specs: true`
+  in `.openspec.yaml`, which OpenSpec strict validation refuses; the upgrade
+  now rewrites the marker.
+
+### Added
+
+- **`authority reset-infra <change> --decision-ref <ref>`** — the recovery the
+  infrastructure-error message always instructed but never provided. After the
+  reviewer diagnosis passes, it acknowledges completed infrastructure errors so
+  they stop consuming the bounded retry; it refuses a reused decision
+  reference, refuses while any AI attempt is still dispatched, and never
+  mutates the recorded attempt chain.
+- **`sandbox apply --refresh`** — the sanctioned recovery for a target that
+  legitimately moved after apply, routing to the existing
+  `refreshAppliedProjection`; unknown flags still die and diverged applied
+  paths still refuse.
+- **`change validate` now runs the OpenSpec strict lint** when the CLI is
+  available, so missing SHALL/MUST wording surfaces before Prove instead of
+  inside `openspec archive` after the code has landed; an absent CLI degrades
+  to a warning.
+- **`review guard reconciliation` deterministic suite** covering all of the
+  above at the store, router, and lint seams, wired into `run-all.sh` as
+  suite 56 with five critical cases.
+
 ## [3.2.26] - 2026-08-16
 
 ### Added

@@ -330,7 +330,8 @@ const {
   recordRepairClosureAttempt,
   reviewAttempts,
   deliveredAiAttempts,
-  infrastructureAiAttempts
+  infrastructureAiAttempts,
+  acknowledgeInfrastructureAttempts
 } = createReviewAttemptStore({
   receiptsRoot: RECEIPTS,
   evidenceVault: EVIDENCE_VAULT,
@@ -849,6 +850,7 @@ const {
   dispatchAuthority,
   runAuthorityReviewer,
   abortAuthority,
+  resetInfrastructureAuthority,
   authorityStatusValue,
   showAuthorityStatus,
   recordAuthority,
@@ -884,7 +886,9 @@ const {
   assertReviewDispatchAllowed,
   foundationPolicy,
   reviewerConfig,
+  reviewerStatus,
   runConfiguredReview,
+  acknowledgeInfrastructureAttempts,
   writeJson,
   receiptPath,
   recordReceipt,
@@ -1278,6 +1282,8 @@ const guardedRunAuthorityReviewer = guardPublicProofMutation(
   "authority run", runAuthorityReviewer);
 const guardedAbortAuthority = guardPublicProofMutation(
   "authority abort", abortAuthority);
+const guardedResetInfrastructureAuthority = guardPublicProofMutation(
+  "authority reset-infra", resetInfrastructureAuthority);
 const guardedRecordAuthority = guardPublicProofMutation(
   "authority record", recordAuthority);
 const guardedRecordReceipt = guardPublicProofMutation(
@@ -1440,7 +1446,7 @@ operationName = command || null;
 const namedChange = (value) =>
   typeof value === "string" && !value.startsWith("-") ? value : null;
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
-  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
 operationStatusAtStart = operationChangeId
   ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
@@ -1508,6 +1514,7 @@ await routeRuntimeCommand(command, values, {
   dispatchAuthority: guardedDispatchAuthority,
   runAuthorityReviewer: guardedRunAuthorityReviewer,
   abortAuthority: guardedAbortAuthority,
+  resetInfrastructureAuthority: guardedResetInfrastructureAuthority,
   showAuthorityStatus,
   recordAuthority: guardedRecordAuthority,
   upgradeEvidence,

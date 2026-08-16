@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "receipt-guard-reconciliation",
+      "scenario": "Authority dispatch, record, and run proceed after a recorded delta receipt overwrote the full receipt, after a human receipt superseded the AI receipt, and after an errored AI completion, while a delivered AI response newer than every recorded receipt still refuses",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "compatibility",
+        "review"
+      ]
+    },
+    {
+      "id": "review-schema-portability",
+      "scenario": "The reviewer request schema contains no uniqueItems keyword and duplicate finding or verified IDs are still rejected after parse",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "infra-retry-reset",
+      "scenario": "After a failed reviewer infrastructure attempt, an operator reset with a passing provider diagnosis and a fresh decision-ref restores AI dispatch, while a failing diagnosis or reused decision-ref refuses and the attempt chain stays intact",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "apply-refresh-cli",
+      "scenario": "sandbox apply --refresh reaches refreshAppliedProjection for a legitimately moved target, unknown flags still die, and diverged applied paths still refuse",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "validate-spec-lint",
+      "scenario": "change validate fails a spec delta without SHALL/MUST wording when the OpenSpec CLI is present, passes it once corrected, and warns without failing when the CLI is absent",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ]
+}

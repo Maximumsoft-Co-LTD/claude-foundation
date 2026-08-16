@@ -72,7 +72,7 @@ run_runtime() {
   case "${1:-}" in
     new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record) phase="prove" ;;
+    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra) phase="prove" ;;
     handoff-status|handoff-packet|handoff-record|land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
@@ -365,7 +365,8 @@ case "${1:-}" in
       abort) run_runtime write authority-abort "$@" ;;
       status) run_runtime read authority-status "$@" ;;
       record) run_runtime write authority-record "$@" ;;
-      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', or 'record'" ;;
+      reset-infra) run_runtime write authority-reset-infra "$@" ;;
+      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', 'record', or 'reset-infra'" ;;
     esac ;;
   handoff)
     shift

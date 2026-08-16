@@ -1,0 +1,351 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "recommended-default",
+    "reference": "docs/reports/model-router-v1-harness-defects.md (user feedback 2026-08-16 + round report artifact 6be265a2-2daf-4edb-a44b-c7a39a0a1cb4); defaults settled autonomously in a background session and recorded here",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-16T13:38:49Z",
+    "decisions": [
+      {
+        "id": "D1-receipt-guard",
+        "question": "How should the 'completed AI response has no receipt' guard be made sound?",
+        "answer": "Reconcile latest-vs-latest: locate the receipt's recorded attempt in the chain and fail only when the latest delivered AI attempt is newer than the newest recorded receipt of any reviewer type; use error-excluding deliveredAiAttempts at both guard sites. Rejected: recording all historical receipt digests (wire-visible receipt change).",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D2-schema-uniqueitems",
+        "question": "How should REVIEW_SCHEMA become acceptable to OpenAI structured output?",
+        "answer": "Delete uniqueItems from the schema; validReview/validStringList already reject duplicates after parse. Rejected: provider-conditional schema variants.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D3-infra-reset",
+        "question": "What form does the infrastructure-retry reset take?",
+        "answer": "authority reset-infra <change> --decision-ref <ref>: re-run the prove-stage provider diagnosis in-process; on pass, record acknowledged infrastructure attempt digests in state.reviewHistory so infrastructureAiAttempts skips them; refuse a reused decision-ref or failing diagnosis; never mutate the attempt chain. Rejected: automatic reset on doctor pass (unbounded), deleting attempt records (breaks the hash chain).",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D4-apply-refresh",
+        "question": "How is refreshAppliedProjection exposed?",
+        "answer": "Accept --refresh as a strict boolean flag on sandbox apply, routed to the existing options.refresh; controlPlane stays internal; unknown flags still die. Rejected: a separate sandbox refresh command.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D5-validate-lint",
+        "question": "How does the SHALL/MUST lint surface at change validate?",
+        "answer": "When the OpenSpec CLI probe succeeds, run openspec validate <id> --strict --json --no-interactive during change validate and fail with its findings; when the CLI is absent, warn and continue (land keeps the hard requirement). Rejected: reimplementing the lint in the harness (drift).",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D6-defer-telemetry",
+        "question": "Is the null per-operation requests/cost defect in scope?",
+        "answer": "No — defect 6 is deferred to a follow-up telemetry change; this change fixes the five land-blocking defects.",
+        "source": "recommended-default"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "review-guard-correctness",
+      "land-availability"
+    ],
+    "rationale": "The change relaxes false positives in review-authority guards and adds an audited reset and recovery surface; a wrong relaxation would let unrecorded or unbounded AI reviews pass, and a wrong recovery would corrupt apply projections. Regression tests pin the true positives; the full deterministic suite covers the rest of the runtime."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "The five defect sites are shipped runtime entrypoints exercised by every consumer round (authority dispatch/run, configured reviewer, review attempt store, sandbox apply routing, change validate).",
+    "paths": [
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/authority-runtime.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/core/cli-router.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+      }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "REVIEW_SCHEMA is sent to the reviewer provider SDK as a structured-output JSON Schema; the deterministic reviewer test pins the request-side shape.",
+    "contracts": [
+      {
+        "repository": "root",
+        "path": ".claude/harness/tests/configured-reviewer.test.mjs"
+      }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "sandbox apply --refresh activates the existing dormant refreshAppliedProjection path in apply-runtime.mjs.",
+    "activatedPaths": [
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/apply-runtime.mjs"
+      }
+    ],
+    "failureSemanticChanges": [
+      "sandbox apply previously died on any flag; with --refresh it now runs refreshAppliedProjection, which still fails on a diverged applied path or a missing transaction journal"
+    ]
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "All changed code runs inside the single-process Foundation CLI; no cross-process or cross-service interaction is added or altered.",
+    "rows": []
+  },
+  "observability": {
+    "status": "not-applicable",
+    "sourceReason": "Failures surface as deterministic CLI command errors; no operated runtime service boundary exists.",
+    "rows": []
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "docs/reports/model-router-v1-harness-defects.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "6360645db86f1209d6f6f4e5311409369770f116f60ec7ce189d03554b2c1fda"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/authority-runtime.mjs",
+      "role": "production-path",
+      "mode": "targeted",
+      "sha256": "d46abdba1dd7718915f0a0f28be693cf5096ada834045f4d3167feaa7a7e7a30"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "55b9b84ff45ca06278a765ee87b355e9a817d4b15106164f73e1160984725c9c"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs",
+      "role": "production-path",
+      "mode": "targeted",
+      "sha256": "d85bd5dea213aee98833e03b8536d91db6ef4c5bc259bb2240fa29bb5e9866fc"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/cli-router.mjs",
+      "role": "production-path",
+      "mode": "targeted",
+      "sha256": "b3549cd19bc328ece2f7dc9ff1bfeacaaa42ce8b5ce3a8e7eeeab1ada232647d"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/apply-runtime.mjs",
+      "role": "production-path",
+      "mode": "targeted",
+      "sha256": "d68d9e1f97909c124d7e776851cfff2015962995b919156b325e3b8644d573c7"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/change-validation.mjs",
+      "role": "production-path",
+      "mode": "targeted",
+      "sha256": "a809ae96588846955e0a6c2a698fa659624cd3ba9a10f2a5376e718ba3c0f595"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/land-runtime.mjs",
+      "role": "runtime-path",
+      "mode": "targeted",
+      "sha256": "380c1bfcea1c979d45f65058a6cb5658d0bbef51b1b4c26f47bfd3c5fb12ae07"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/tests/configured-reviewer.test.mjs",
+      "role": "test-topology",
+      "mode": "targeted",
+      "sha256": "198a2d153a6a8d7f2febdee19c122ec9bdea14acff35a15e8ddb32a0047ea7cd"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/run-all.sh",
+      "role": "test-topology",
+      "mode": "targeted",
+      "sha256": "172dc56500413e363ed55d5643d3ad710978d0987433fb880ffc3af168345591"
+    }
+  ],
+  "claims": [
+    {
+      "id": "receipt-guard-reconciliation",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/authority-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/authority-runtime.mjs",
+          "failure": "latest delivered AI attempt newer than every recorded receipt still refuses dispatch, record, and run"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "review-schema-portability",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/evidence/configured-reviewer.mjs",
+          "failure": "duplicate finding or verified IDs are rejected by validReview after parse"
+        }
+      ],
+      "evidenceClass": [
+        "test"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "infra-retry-reset",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/evidence/review-attempt-store.mjs",
+          "failure": "a reused decision-ref or a failing provider diagnosis refuses the reset and leaves the attempt chain intact"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "apply-refresh-cli",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/cli-router.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/apply-runtime.mjs",
+          "failure": "a diverged applied path or missing transaction journal refuses the refresh"
+        }
+      ],
+      "evidenceClass": [
+        "test"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "validate-spec-lint",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/change-validation.mjs",
+          "failure": "a spec delta without SHALL/MUST wording fails strict validate while an absent OpenSpec CLI degrades to a warning"
+        }
+      ],
+      "evidenceClass": [
+        "test"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "CASE-RECEIPT-RECONCILE",
+      "claimIds": [
+        "receipt-guard-reconciliation"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "CASE-SCHEMA-PORTABLE",
+      "claimIds": [
+        "review-schema-portability"
+      ],
+      "oracle": "real-wire"
+    },
+    {
+      "id": "CASE-INFRA-RESET",
+      "claimIds": [
+        "infra-retry-reset"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "CASE-APPLY-REFRESH",
+      "claimIds": [
+        "apply-refresh-cli"
+      ],
+      "oracle": "production-entry"
+    },
+    {
+      "id": "CASE-VALIDATE-SPEC-LINT",
+      "claimIds": [
+        "validate-spec-lint"
+      ],
+      "oracle": "contract-oracle"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "applySandbox already honors options.refresh; only the CLI router strict-parse blocks the flag",
+      "command": "grep -n \"refresh\" .claude/harness/runtime/workflow/apply-runtime.mjs .claude/harness/runtime/core/cli-router.mjs"
+    },
+    {
+      "fact": "recordedCompletedAiReviews can return at most one attempt because the receipt stores a single attemptDigest",
+      "command": "sed -n \"117,123p\" .claude/harness/runtime/workflow/authority-runtime.mjs"
+    },
+    {
+      "fact": "the authority-run guard counts completions with resultStatus error that can never gain a receipt",
+      "command": "sed -n \"468,474p\" .claude/harness/runtime/workflow/authority-runtime.mjs"
+    },
+    {
+      "fact": "validStringList already enforces uniqueness for every reviewer ID list after parse",
+      "command": "sed -n \"58,80p\" .claude/harness/runtime/evidence/configured-reviewer.mjs"
+    },
+    {
+      "fact": "land-runtime already surfaces archive-time failures early via assertNoDroppedScenarios and assertOpenSpecCli",
+      "command": "grep -n \"assertNoDroppedScenarios\\|assertOpenSpecCli\" .claude/harness/runtime/workflow/land-runtime.mjs"
+    }
+  ]
+}

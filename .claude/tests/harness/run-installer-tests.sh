@@ -146,11 +146,11 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 assert_eq "agent command surface is bounded" "21" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 21 includes the bounded proof controller, explicit authority
-# dispatch/abort/configured-reviewer routes, and the operator-owned handoff
-# record. Keep this count intentional so a newly exposed recovery command
-# cannot appear silently.
-assert_eq "conditional recovery surface is bounded" "21" \
+# 22 includes the bounded proof controller, explicit authority
+# dispatch/abort/configured-reviewer/reset-infra routes, and the operator-owned
+# handoff record. Keep this count intentional so a newly exposed recovery
+# command cannot appear silently.
+assert_eq "conditional recovery surface is bounded" "22" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \

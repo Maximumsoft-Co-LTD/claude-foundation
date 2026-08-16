@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", ".claude/tests/harness/run-review-guard-fix-tests.mjs"],
+      "minimum": 5,
+      "resources": ["foundation-test-suite"],
+      "reportFormat": "json",
+      "report": ".foundation/test-results/review-guard-fix.json",
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/review-guard-fix.json"
+      },
+      "criticalCases": [
+        "CASE-RECEIPT-RECONCILE",
+        "CASE-SCHEMA-PORTABLE",
+        "CASE-INFRA-RESET",
+        "CASE-APPLY-REFRESH",
+        "CASE-VALIDATE-SPEC-LINT"
+      ],
+      "inputs": [
+        ".claude/harness/runtime/workflow/authority-runtime.mjs",
+        ".claude/harness/runtime/evidence/configured-reviewer.mjs",
+        ".claude/harness/runtime/evidence/review-attempt-store.mjs",
+        ".claude/harness/runtime/core/cli-router.mjs",
+        ".claude/harness/runtime/workflow/apply-runtime.mjs",
+        ".claude/harness/runtime/workflow/change-validation.mjs",
+        ".claude/harness/commands.json",
+        ".claude/tests/harness/run-review-guard-fix-tests.mjs",
+        ".claude/tests/harness/run-guard-fix-cli-tests.mjs",
+        ".claude/harness/tests/review-guard-reconciliation.test.mjs",
+        ".claude/harness/tests/configured-reviewer.test.mjs"
+      ]
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/run-all.sh"],
+      "resources": ["foundation-test-suite"],
+      "timeoutMs": 600000
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

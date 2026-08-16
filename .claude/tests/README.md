@@ -37,6 +37,7 @@ it copies anything, so running one directly is as safe as running the suite.
 | `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
 | `harness/run-v33-policy-tests.mjs` | Risk-tier review routing, named critical-case and mutation-v2 oracles, and the pinned read-only ephemeral Codex reviewer invocation |
 | `harness/run-risk-tiered-review-tests.mjs` | End-to-end Grounding v2, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
+| `harness/run-review-guard-fix-tests.mjs` | Receipt-guard reconciliation (overwrite/human/error), reviewer-schema portability, infra-retry reset, `sandbox apply --refresh` routing, and validate-time OpenSpec strict lint |
 | `harness/run-risk-tiered-review-mutation.mjs` | Mutation-v2 rejects a mutant killed by any case other than its declared killer |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
 | `harness/run-proof-fixit-tests.mjs` | Changed-surface blocker recovery renders undeclared paths as a paste-ready `[paths:]` annotation |

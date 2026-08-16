@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { auditTraceability } from "../evidence/traceability.mjs";
@@ -7,6 +8,28 @@ import {
   taskBlocks, taskMetadata
 } from "../contracts/change-artifacts.mjs";
 import { createSpecDeltaValidator } from "./validation/spec-delta.mjs";
+
+// Module scope, taking `fail` explicitly: the check has no runtime state and
+// the deterministic tests exercise it against a stubbed CLI.
+export function assertOpenSpecStrictValid(id, dir, fail) {
+  // dir is <projectRoot>/openspec/changes/<id> for both the root and the
+  // sandbox copy, so the CLI runs against whichever tree is being validated.
+  const projectRoot = resolve(dir, "..", "..", "..");
+  const probe = spawnSync("openspec", ["--version"], {
+    cwd: projectRoot, encoding: "utf8", timeout: 15_000
+  });
+  if (probe.error || probe.status !== 0) {
+    console.error("WARNING: OpenSpec CLI unavailable; strict spec lint deferred to Land, which requires it");
+    return;
+  }
+  const lint = spawnSync("openspec",
+    ["validate", id, "--type", "change", "--strict", "--json", "--no-interactive"],
+    { cwd: projectRoot, encoding: "utf8", timeout: 60_000 });
+  if (lint.error || lint.status !== 0) {
+    const detail = `${lint.stdout || ""}\n${lint.stderr || ""}`.trim().slice(0, 4000);
+    fail(`OpenSpec strict validation failed for '${id}'; repair the spec delta wording before Prove:\n${detail}`);
+  }
+}
 
 export function createChangeValidationRuntime({
   markBlocked = () => {},
@@ -541,6 +564,13 @@ export function createChangeValidationRuntime({
       fail(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
     assertNewCapabilitiesAreAdditive(id, dir);
     assertNoDroppedScenarios(id, dir);
+    // The OpenSpec strict lint used to surface only inside 'openspec archive',
+    // after the code had landed, so a pure wording defect forced a re-prove.
+    // Same tool, same mode, earlier. Quiet internal validations skip the
+    // subprocess; the explicit gate is the one that must catch it. Rapid
+    // changes declare skip_specs and have no deltas to lint.
+    if (!options.quiet && state.schema !== "foundation-rapid")
+      assertOpenSpecStrictValid(id, dir, fail);
 
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);
