@@ -86,25 +86,27 @@ declared the same way: a key in the committed `foundation.json`, never a
 command flag — an exemption the reviewed party can write at the moment it is
 caught is not an exemption.
 
-**Independence.** By default the reviewer's identity must differ from every
-implementation subject, and an AI reviewer's session must differ from every AI
-subject's session. A project driven from a single session has nowhere to send
-the packet, so `"review": { "independence": "self" }` lets a reviewer share an
-implementer's identity and session. It applies at every impact, and it stamps
-an `independence-waived-self-review` trigger on the policy. The receipt still
-records what actually happened: `review.policy.independent` stays `false`, with
-`independenceWaived: true` beside it explaining why it passed.
+**Independence.** The shipped policy uses
+`"review": { "independence": "self" }`, allowing the reviewer to share an
+implementer's identity and session. It applies at every impact and stamps an
+`independence-waived-self-review` trigger on the policy. The receipt records
+what happened: `review.policy.independent` stays `false`, with
+`independenceWaived: true` beside it explaining why it passed. Projects that
+require separation of duties can strengthen the value to `required`; reviewer
+identity must then differ from every implementation subject and an AI reviewer
+must use a different session.
 
-**Diversity.** By default an AI reviewer must come from a different provider and
-model family than the implementer. A project that runs a
-single model can set `"review": { "diversity": "single-model" }` in
-`foundation.json`, which relaxes diversity to *preferred* and stamps a
-`diversity-waived-single-model` trigger on the policy.
+**Diversity.** The shipped policy uses
+`"review": { "diversity": "single-model" }`, so diversity is preferred and a
+Claude-Code-only installation can review in a fresh Claude session without
+requiring Codex. This stamps a `diversity-waived-single-model` trigger on the
+policy. Teams with both providers can strengthen the value to `required`; the
+AI reviewer must then come from a different provider and model family than the
+implementer.
 
-The shipped profiles support both homogeneous setups: select `codex-sol` for a
-Codex-only team or `claude-opus` for a Claude-Code-only team. Keep
-`independence: "required"`; Foundation launches a separate read-only fresh
-session and rejects the coding identity/session even though the family matches.
+The shipped default selects `claude-opus`; select `codex-sol` instead for a
+Codex-only team. Configured AI review still runs read-only and ephemeral even
+though the default policy does not require a distinct identity or session.
 
 Each waiver relaxes only its own axis. A same-model self-review of critical work
 needs both declared; declaring one leaves the other enforced. Withdrawing either

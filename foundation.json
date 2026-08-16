@@ -47,9 +47,9 @@
     "two-failed-attempts"
   ],
   "review": {
-    "independence": "required",
-    "diversity": "required",
-    "defaultReviewer": "codex-sol",
+    "independence": "self",
+    "diversity": "single-model",
+    "defaultReviewer": "claude-opus",
     "reviewers": {
       "codex-sol": {
         "adapter": "codex-cli",

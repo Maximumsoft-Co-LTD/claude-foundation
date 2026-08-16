@@ -591,10 +591,39 @@ adds security or observability guidance only when the change crosses those
 boundaries. Domain-boundary work begins with `ddd-strategic`; ordinary UI,
 backend, data, or documentation work should not preload that entire skill chain.
 
-`foundation.json` maps portable `fast`, `standard`, and `deep` tiers to model
-families and defines execution budgets. Inventory and mechanical work use fast,
-normal implementation uses standard, and architecture, security, migration, or
-independent review uses deep. High-risk work cannot be downgraded to fast.
+### Execution policy in `foundation.json`
+
+`foundation.json` is the committed, project-owned policy for how Foundation
+spends agent work. The shipped defaults route portable tiers by purpose rather
+than hard-coding one host-specific model name:
+
+| Tier | Default family | Intended work | Fallback |
+|---|---|---|---|
+| `fast` | Haiku | Inventory, logs, and mechanical documentation | `standard` |
+| `standard` | Sonnet | Implementation, tests, and focused investigation | `deep` |
+| `deep` | Opus | Architecture, security, migration, and independent review | None |
+
+High-risk work cannot be downgraded to `fast`. Ambiguous contracts, sensitive
+data or authentication, migrations, concurrency, public compatibility,
+cross-repository conflicts, evidence anomalies, and two failed attempts all
+trigger escalation.
+
+The same file bounds an autonomous run: at most three parallel agents; 8 KiB
+task and review packets, 12 KiB repository packets, and a 16 KiB global packet;
+45-minute leases; and separate rapid/standard budgets of 800,000/1,600,000
+tokens and 100/200 requests. These are ceilings, not targets—ordinary small
+changes normally stay with one agent.
+
+The shipped policy permits self-review and treats model diversity as preferred,
+so a single Claude Code installation works without Codex or a distinct reviewer
+identity. Review receipts explicitly record both waivers. The configured
+reviewer remains Claude Code Opus at high reasoning effort in a read-only,
+ephemeral run, with Codex GPT-5.6 Sol available as the alternate reviewer. Teams
+that need separation of duties can commit `independence: "required"`; teams with
+both providers can additionally commit `diversity: "required"`.
+
+See [Configure `foundation.json`](https://claude-foundation.dev/docs/foundation-config/)
+for every field, validation range, and ready-to-use review profile.
 
 ## What Foundation owns
 
@@ -651,11 +680,12 @@ full AI review. Medium risk gets one full review and, only after one correction
 batch, one fresh-session delta that must close the original finding IDs. High
 risk asks material decisions during intake and permits the same bounded
 full/delta route—never a third AI and never a mandatory human approval gate.
-The default reviewer is Codex GPT-5.6 Sol in a read-only ephemeral session;
-the shipped alternative is Claude Code Opus in a read-only non-persistent
-session. Codex-only and Claude-Code-only teams select the matching reviewer and
-commit `diversity: "single-model"` while retaining a distinct reviewer identity
-and fresh session. Reviewer infrastructure receives one bounded retry. After the
+The default reviewer is Claude Code Opus in a read-only ephemeral run; the
+shipped alternative is Codex GPT-5.6 Sol. The default `independence: "self"`
+and `diversity: "single-model"` policy supports a single-model, single-identity
+installation. Projects that require separation of duties can commit
+`independence: "required"`; teams with both providers can also require
+cross-provider review with `diversity: "required"`. Reviewer infrastructure receives one bounded retry. After the
 delivered review route is complete, Foundation refuses another open review:
 in-contract findings follow deterministic repair closure, a genuine contract
 contradiction reopens one batched Decision Sheet, and missing authority becomes

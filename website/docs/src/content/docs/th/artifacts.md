@@ -42,6 +42,26 @@ openspec/
 workspace ของ Build ที่สร้างใหม่
 มันถูกสร้างให้ตอนยังไม่มี และหลังจากนั้นเป็นของคุณ
 
+นโยบายเริ่มต้นอนุญาต agent ทำงานขนานกันสูงสุดสามตัวและใช้ lease 45 นาที
+task packet กับ review packet มีเพดาน 8 KiB, repository packet 12 KiB และ
+global packet 16 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
+และ standard run มีเพดาน 1,600,000 token กับ 200 request ตัวเลขเหล่านี้เป็น
+ขอบเขตสูงสุดของการรัน ไม่ใช่โควตาที่ต้องใช้ให้หมด
+
+model tier แบ่งตามจุดประสงค์: `fast`/Haiku ใช้กับ inventory, log และงานเอกสาร
+เชิงกล; `standard`/Sonnet ใช้กับ implementation, test และ investigation
+ที่เจาะจง; `deep`/Opus ใช้กับ architecture, security, migration และ review
+reviewer เริ่มต้นคือ Claude Code Opus ใน run แบบ read-only และ ephemeral
+โดยมี Codex GPT-5.6 Sol เป็นทางเลือก ค่าเริ่มต้น `independence: "self"` กับ
+`diversity: "single-model"` จึงทำงานได้โดยไม่ต้องมี identity หรือ provider
+ตัวที่สอง และ receipt จะบันทึก waiver ทั้งคู่ โปรเจกต์ที่ต้องการ separation of
+duties สามารถเพิ่ม independence, diversity หรือทั้งคู่เป็น `required` ได้
+วงจร review แบบ risk-tiered อนุญาต full review หนึ่งรอบและ delta เพิ่มได้
+ไม่เกินหนึ่งรอบเมื่อจำเป็นตามนโยบาย
+
+ดูรายละเอียดทุก field, ช่วงค่าที่ใช้ได้ และ policy recipe พร้อมใช้ได้ที่
+[ตั้งค่า foundation.json](/docs/th/foundation-config/)
+
 :::caution[มีไฟล์ชื่อ `repositories.yaml` สองตัว]
 `openspec/repositories.yaml` อธิบายโครงสร้าง repository ของทั้งโปรเจกต์
 ส่วน `openspec/changes/<id>/repositories.yaml` อธิบายว่า **change ตัวนั้น**

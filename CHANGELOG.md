@@ -7,9 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project policy is now documented as a first-class configuration surface.**
+  The English and Thai documentation explain every `foundation.json` section,
+  validation range, execution budget, model tier, escalation trigger, sandbox
+  setup, and review profile, with links from install, artifacts, README, and
+  the landing page.
+
+### Changed
+
+- **New installations default to a single-model self-review profile.** Claude
+  Code Opus remains the configured read-only ephemeral reviewer, while
+  `independence: "self"` and `diversity: "single-model"` let Claude-only users
+  start without Codex or a distinct reviewer identity. Stricter independence
+  and cross-provider diversity remain opt-in committed policies.
+- **The landing page now exposes committed execution policy.** Model routing,
+  packet limits, leases, parallelism, escalation, and the review circuit are
+  visible in a responsive policy section; the mobile evidence layout no longer
+  overflows the viewport.
+
 ## [3.2.24] - 2026-08-16
 
 ### Fixed
+
+- **Upgrade compatibility tests now follow the release source of truth.** The
+  real previous-installation fixture derives its expected upgraded CLI version
+  from `VERSION` instead of retaining a stale patch-version literal that
+  blocked later release suites.
 
 - **Release artifacts now report the version they were published as.** The
   release workflow updates the executable runtime, protocol descriptor,

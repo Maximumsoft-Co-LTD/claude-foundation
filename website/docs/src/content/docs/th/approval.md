@@ -84,24 +84,24 @@ state ที่ย้อนกลับยาก, เงิน, concurrency, rep
 คือคีย์ใน `foundation.json` ที่ commit ไว้ ไม่ใช่ flag บนคำสั่ง — ข้อยกเว้นที่ฝ่ายถูกรีวิว
 เขียนเองได้ตอนที่โดนจับ ไม่นับเป็นข้อยกเว้น
 
-**ความเป็นอิสระ** โดยปกติตัวตนของผู้รีวิวต้องต่างจากผู้ implement ทุกคน
-และ session ของ AI ผู้รีวิวต้องต่างจาก session ของ AI ผู้ implement ทุกตัว
-โปรเจกต์ที่ขับด้วย session เดียวไม่มี session ที่สองให้ส่ง packet ไปหา
-จึงตั้ง `"review": { "independence": "self" }` เพื่อให้ผู้รีวิวใช้ตัวตนและ session
-เดียวกับผู้ implement ได้ ใช้ได้ทุกระดับ impact และจะประทับ trigger
-`independence-waived-self-review` ลงในนโยบาย receipt ยังบันทึกสิ่งที่เกิดขึ้นจริง
+**ความเป็นอิสระ** นโยบายที่ให้มาใช้
+`"review": { "independence": "self" }` จึงอนุญาตให้ reviewer ใช้ identity และ
+session เดียวกับผู้ implement ได้ ใช้ได้ทุกระดับ impact และจะประทับ trigger
+`independence-waived-self-review` ลงในนโยบาย receipt บันทึกสิ่งที่เกิดขึ้นจริง
 คือ `review.policy.independent` ยังเป็น `false` โดยมี `independenceWaived: true`
-อยู่ข้าง ๆ เพื่ออธิบายว่าทำไมมันผ่าน
+อธิบายว่าทำไมจึงผ่าน โปรเจกต์ที่ต้องการ separation of duties สามารถเพิ่มเป็น
+`required` ซึ่งจะบังคับให้ reviewer ใช้ identity และ session ที่ต่างออกไป
 
-**ความหลากหลาย** โดยปกติ AI ผู้รีวิวต้องมาจากคนละ provider
-และคนละตระกูลโมเดลกับผู้ implement โปรเจกต์ที่ใช้โมเดลเดียวตั้ง
-`"review": { "diversity": "single-model" }` ใน `foundation.json` ได้
-ซึ่งจะผ่อนความหลากหลายเป็น *preferred* และประทับ trigger
-`diversity-waived-single-model` ลงในนโยบาย
+**ความหลากหลาย** นโยบายที่ให้มาใช้
+`"review": { "diversity": "single-model" }` จึงให้ความหลากหลายเป็น
+*preferred* และผู้ใช้ Claude Code อย่างเดียวสามารถรีวิวผ่าน Claude session ใหม่
+ได้โดยไม่ต้องมี Codex พร้อมประทับ trigger `diversity-waived-single-model`
+ลงในนโยบาย ทีมที่มีทั้งสอง provider สามารถเพิ่มความเข้มเป็น `required`
+ซึ่งจะบังคับให้ AI ผู้รีวิวต้องมาจากคนละ provider และคนละตระกูลโมเดลกับผู้ implement
 
-profile ที่ให้มารองรับทั้งสองแบบ: ทีม Codex ล้วนเลือก `codex-sol` และทีม Claude
-Code ล้วนเลือก `claude-opus` โดยคง `independence: "required"` ไว้ Foundation
-จะเปิด reviewer แบบ read-only ใน session ใหม่ และปฏิเสธ identity/session ของตัว coding
+ค่าเริ่มต้นที่ให้มาเลือก `claude-opus`; ทีม Codex ล้วนเปลี่ยนเป็น `codex-sol`
+configured AI review ยังคงทำงานแบบ read-only และ ephemeral แม้นโยบายเริ่มต้น
+จะไม่ได้บังคับให้ใช้ identity หรือ session ที่ต่างออกไป
 
 การยกเว้นแต่ละอันผ่อนเฉพาะแกนของตัวเอง การรีวิวตัวเองด้วยโมเดลเดียวกันบนงาน critical
 ต้องประกาศทั้งสองอัน ประกาศอันเดียวอีกอันยังบังคับอยู่ และการถอนคีย์ใดคีย์หนึ่งออก

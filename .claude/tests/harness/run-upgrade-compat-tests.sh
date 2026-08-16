@@ -67,6 +67,7 @@ assert_contains "partial policy receives review default" "$doctor" "review=8192"
 # after upgrade must use Grounding v2.
 previous_source="$TMP/foundation-3.2.19"
 previous_target="$TMP/previous-project"
+current_version="$(cat "$ROOT/VERSION")"
 mkdir -p "$previous_source" "$previous_target"
 git -C "$ROOT" archive v3.2.19 | tar -x -C "$previous_source"
 assert_cmd_zero "v3.2.19 installs into the upgrade fixture" \
@@ -77,10 +78,10 @@ assert_cmd_zero "v3.2.19 creates an active legacy change" \
     change new "Legacy active upgrade" --rapid
 assert_file_exists "legacy active state exists before upgrade" \
   "$previous_target/.foundation/runtime/legacy-active-upgrade.json"
-assert_cmd_zero "v3.2.22 upgrades the real previous installation" \
+assert_cmd_zero "current Foundation upgrades the real previous installation" \
   bash "$ROOT/install.sh" "$previous_target" --source "$ROOT" --yes
-assert_contains "upgraded CLI reports v3.2.22" \
-  "$(bash "$ROOT/cli.sh" --project "$previous_target" version)" "3.2.22"
+assert_contains "upgraded CLI reports the current version" \
+  "$(bash "$ROOT/cli.sh" --project "$previous_target" version)" "$current_version"
 assert_contains "upgraded runtime keeps the active legacy change readable" \
   "$(bash "$ROOT/cli.sh" --project "$previous_target" changes)" \
   "legacy-active-upgrade"

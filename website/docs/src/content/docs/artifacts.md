@@ -43,6 +43,26 @@ independence settings, and the sandbox setup command (`sandbox.setupCommand`)
 that runs once inside every new Build workspace.
 It is seeded when missing and yours afterwards.
 
+The shipped policy permits at most three parallel agents and uses 45-minute
+leases. Task and review packets are capped at 8 KiB, repository packets at
+12 KiB, and the global packet at 16 KiB. Rapid runs receive ceilings of 800,000
+tokens and 100 requests; standard runs receive 1,600,000 tokens and 200
+requests. These values bound a run—they are not work quotas.
+
+Model tiers are purpose-based: `fast`/Haiku handles inventory, logs, and
+mechanical docs; `standard`/Sonnet handles implementation, tests, and focused
+investigation; `deep`/Opus handles architecture, security, migration, and
+review. The default reviewer is Claude Code Opus in a read-only ephemeral run,
+with Codex GPT-5.6 Sol configured as an alternate. The shipped
+`independence: "self"` and `diversity: "single-model"` policy works without a
+second identity or provider and records both waivers in its receipts. Projects
+that need separation of duties can strengthen independence, diversity, or both
+to `required`. The risk-tiered review circuit allows one full review and at
+most one required delta.
+
+See [Configure foundation.json](/docs/foundation-config/) for every field,
+valid ranges, and ready-to-use policy recipes.
+
 :::caution[Two files named `repositories.yaml`]
 `openspec/repositories.yaml` describes the project's repository topology.
 `openspec/changes/<id>/repositories.yaml` describes the repositories **one

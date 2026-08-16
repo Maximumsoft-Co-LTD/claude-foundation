@@ -97,6 +97,10 @@ CLAUDE.md / AGENTS.md          # only the marked pointer block is rewritten
 
 Your specs, active changes, runtime state, custom agents, and hooks survive every upgrade. A path dropped from the managed list is removed from your project only if the manifest previously claimed it — so Foundation never deletes a file it did not install.
 
+Because `foundation.json` belongs to your project, an upgrade does not replace
+its budgets or review policy with newer defaults. Read
+[Configure foundation.json](/docs/foundation-config/) before changing it.
+
 ## Browser proof stays yours
 
 Foundation does not install test frameworks, browsers, or project dependencies. If a claim needs browser evidence, install and lock `@playwright/test` and its browser binaries **in your application**. Foundation validates and executes the local tool; it will never download an unpinned browser framework during proof.

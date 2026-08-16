@@ -34,6 +34,7 @@
         <nav class="nav-links" aria-label="Primary navigation">
           <a href="#flow">Flow</a>
           <a href="#evidence">Evidence</a>
+          <a href="#policy">Policy</a>
           <a href="#architecture">Architecture</a>
           <a href="#install">Install</a>
           <a class="nav-docs" href="./docs/">Docs</a>
@@ -351,6 +352,62 @@
             <h3>Measured cost</h3>
             <p>Wall time, unique executions, requests, tokens, cache, cost, and orchestrator share stay inspectable.</p>
           </article>
+        </div>
+      </section>
+
+      <section class="section policy-section" id="policy">
+        <div class="wrap policy-head">
+          <div class="section-head reveal">
+            <p class="eyebrow">Committed execution policy</p>
+            <h2>Spend judgment where the risk lives.</h2>
+            <p>
+              <code>foundation.json</code> makes model routing, budgets, escalation, and review
+              policy visible in the repository. Portable tiers describe the work; the native host
+              selects the configured model family.
+            </p>
+            <a class="policy-doc-link" href="./docs/foundation-config/">Configure the policy <span>→</span></a>
+          </div>
+          <div class="policy-limits reveal" data-delay="1" aria-label="Default execution limits">
+            <span><b>03</b> parallel agents max</span>
+            <span><b>45m</b> workspace lease</span>
+            <span><b>16K</b> global packet ceiling</span>
+          </div>
+        </div>
+
+        <div class="wrap tier-grid">
+          <article class="tier-card fast reveal">
+            <div class="tier-top"><span>FAST</span><code>haiku</code></div>
+            <h3>Scan the ground.</h3>
+            <p>Inventory, logs, and mechanical documentation.</p>
+            <small>fallback → standard</small>
+          </article>
+          <article class="tier-card standard reveal" data-delay="1">
+            <div class="tier-top"><span>STANDARD</span><code>sonnet</code></div>
+            <h3>Build the change.</h3>
+            <p>Implementation, tests, and focused investigation.</p>
+            <small>fallback → deep</small>
+          </article>
+          <article class="tier-card deep reveal" data-delay="2">
+            <div class="tier-top"><span>DEEP</span><code>opus</code></div>
+            <h3>Resolve the risk.</h3>
+            <p>Architecture, security, migration, and independent review.</p>
+            <small>no lower-confidence exit</small>
+          </article>
+        </div>
+
+        <div class="wrap review-circuit reveal">
+          <div class="review-copy">
+            <p class="eyebrow">Explicit review policy</p>
+            <h3>Start with one model. Tighten when needed.</h3>
+            <p>The shipped self + single-model policy works with Claude alone. Projects that need separation of duties can require an independent identity, another provider, or both.</p>
+          </div>
+          <div class="review-route" aria-label="Default review route">
+            <span><b>BUILD</b><small>native agent</small></span>
+            <i>→</i>
+            <span><b>FULL REVIEW</b><small>Claude Opus · fresh session</small></span>
+            <i>→</i>
+            <span><b>DELTA</b><small>fresh session · when required</small></span>
+          </div>
         </div>
       </section>
 
