@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.26] - 2026-08-16
+
 ### Added
 
 - **Runtime architecture boundaries are now executable contracts.** A new
@@ -2337,7 +2339,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.25...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.26...HEAD
+[3.2.26]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.25...v3.2.26
 [3.2.25]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.24...v3.2.25
 [3.2.24]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.23...v3.2.24
 [3.2.23]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.22...v3.2.23
