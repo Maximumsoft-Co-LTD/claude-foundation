@@ -77,10 +77,10 @@ assert_cmd_zero "v3.2.19 creates an active legacy change" \
     change new "Legacy active upgrade" --rapid
 assert_file_exists "legacy active state exists before upgrade" \
   "$previous_target/.foundation/runtime/legacy-active-upgrade.json"
-assert_cmd_zero "v3.3 upgrades the real previous installation" \
+assert_cmd_zero "v3.2.22 upgrades the real previous installation" \
   bash "$ROOT/install.sh" "$previous_target" --source "$ROOT" --yes
-assert_contains "upgraded CLI reports v3.3" \
-  "$(bash "$ROOT/cli.sh" --project "$previous_target" version)" "3.3.0"
+assert_contains "upgraded CLI reports v3.2.22" \
+  "$(bash "$ROOT/cli.sh" --project "$previous_target" version)" "3.2.22"
 assert_contains "upgraded runtime keeps the active legacy change readable" \
   "$(bash "$ROOT/cli.sh" --project "$previous_target" changes)" \
   "legacy-active-upgrade"

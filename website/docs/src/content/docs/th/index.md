@@ -49,5 +49,5 @@ Foundation จงใจแยกความรับผิดชอบ เพ�
 - [วงจรการเปลี่ยนแปลง](/docs/th/loop/) — ห้าคำสั่งทำอะไรและทำไม
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Foundation **v3.3.0** — runtime API 20, provider protocol 8 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Foundation **v3.2.22** — runtime API 20, provider protocol 8 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::
