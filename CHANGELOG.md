@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-repository copy Land no longer projects child repositories through
+  the control root.** Both nested Git repositories and submodules are excluded
+  from initial apply, reapply, and the final transaction guard, preventing
+  child `.git` metadata or independently landed files from being replaced.
+- **Manual apply recovery now has executable, crash-resumable outcomes.**
+  `land recover --resolution restore-backup` stages and verifies every backup
+  before swapping targets, while `keep-current` preserves the target and
+  requires a sandbox sync before proving or landing again. Recovery journals
+  retain their authority reference and remain pending across interrupted
+  settlement.
+
+### Changed
+
+- Runtime API 21 binds the new Land journal settlement boundary across the
+  CLI, entrypoint, runtime modules, protocol descriptor, and public docs.
+
 ## [3.2.22] - 2026-08-16
 
 ### Added

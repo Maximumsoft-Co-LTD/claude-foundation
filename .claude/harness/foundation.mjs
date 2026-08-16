@@ -83,7 +83,7 @@ import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 
 const VERSION = "3.2.22";
-const RUNTIME_API_VERSION = "20";
+const RUNTIME_API_VERSION = "21";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -1251,7 +1251,9 @@ const {
 });
 function unresolvedApplyTransactions(id) {
   return readTransactionJournals(TRANSACTIONS, id, readJson).filter((journal) =>
-    ["prepared", "applying", "rolling-back", "manual-recovery"].includes(journal.status));
+    ["prepared", "applying", "rolling-back", "manual-recovery", "recovering-backup",
+      "settling-current"]
+      .includes(journal.status));
 }
 const {
   doctor,
@@ -1321,6 +1323,7 @@ const {
   save: saveApplyJournal,
   applyEntry: applyTransactionEntry,
   rollback: rollbackApplyTransaction,
+  settle: settleApplyTransaction,
   verify: verifyAppliedProjection,
   cleanup: cleanupApplyTransaction
 } = createLandJournal({
@@ -1340,6 +1343,9 @@ const { recoverPendingApply, pendingApplyTransactions } = createApplyRecovery({
   verifyAppliedProjection,
   saveApplyJournal,
   rollbackApplyTransaction,
+  settleApplyTransaction,
+  saveRuntime,
+  clearSnapshotCache,
   now,
   blockWithDecision,
   fail: die

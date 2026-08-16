@@ -291,7 +291,7 @@ export async function routeRuntimeCommand(command, values, api) {
     case "land-check": landCheck(values[0]); break;
     case "land-recover": {
       const { flags, rest } = parseStrictCommandFlags(values, "land recover", {
-        value: ["decision-ref"]
+        value: ["decision-ref", "resolution"]
       });
       recoverLand(rest[0], flags); break;
     }

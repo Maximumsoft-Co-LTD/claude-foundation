@@ -171,11 +171,11 @@
     },
     {
       "name": "land recover",
-      "usage": "land recover <change> --decision-ref <ref>",
+      "usage": "land recover <change> --decision-ref <ref> [--resolution keep-current|restore-backup]",
       "audience": "conditional",
       "kind": "authority",
       "idempotent": true,
-      "description": "Settle an interrupted apply transaction after an explicit host-recorded user decision."
+      "description": "Settle an interrupted apply transaction after an explicit host-recorded user decision; manual recovery requires an explicit resolution."
     },
     {
       "name": "land archive",

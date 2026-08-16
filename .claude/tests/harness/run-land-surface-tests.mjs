@@ -16,7 +16,7 @@ import test from "node:test";
 
 import { createStateRuntime } from "../../harness/runtime/core/state-runtime.mjs";
 import {
-  declaredPathMatcher, sandboxCodePathspec
+  declaredPathMatcher, nestedRepositoryPathMatcher, sandboxCodePathspec
 } from "../../harness/runtime/core/workspace-surface.mjs";
 import {
   createApplyRecovery, projectionCounts, targetHeadMovedDecision, undeclaredDeletions
@@ -24,6 +24,8 @@ import {
 import {
   createBlockedDecision
 } from "../../harness/runtime/core/blocked-decision.mjs";
+import { createLandJournal } from "../../harness/runtime/workflow/land-journal.mjs";
+import { createApplyRuntime } from "../../harness/runtime/workflow/apply-runtime.mjs";
 
 const EXCLUDED = new Set([".git", ".foundation", ".workflow", "node_modules"]);
 
@@ -211,6 +213,11 @@ function recovery(root) {
       rollbackApplyTransaction: () => {
         throw new Error("rollback must not run while only reporting");
       },
+      settleApplyTransaction: () => {
+        throw new Error("settlement must not run while only reporting");
+      },
+      saveRuntime: () => {},
+      clearSnapshotCache: () => {},
       now: () => "2026-01-01T00:00:00.000Z",
       blockWithDecision: () => {
         throw new Error("blocking must not run while only reporting");
@@ -328,4 +335,142 @@ test("the sandbox code pathspec excludes what the change does not own", () => {
 
 test("the pathspec needs no submodules to be well formed", () => {
   assert.deepEqual(sandboxCodePathspec("x"), sandboxCodePathspec("x", []));
+});
+
+test("nested repository paths include the root and every descendant", () => {
+  const nested = nestedRepositoryPathMatcher(["repos/api/", "services/web"]);
+  assert.equal(nested("repos/api"), true);
+  assert.equal(nested("repos/api/.git"), true);
+  assert.equal(nested("services/web/src/app.ts"), true);
+  assert.equal(nested("repos/api-client"), false);
+  assert.equal(nested("src/app.ts"), false);
+});
+
+test("copy apply entries never cross into a selected child repository", () => {
+  const root = "/target";
+  const sandbox = "/sandbox";
+  const state = {
+    workspace: {
+      path: sandbox,
+      mode: "copy",
+      baseline: {
+        "src/app.ts": "before",
+        "repos/api/.git": "git-before",
+        "repos/api/server.ts": "api-before"
+      }
+    }
+  };
+  const runtime = createApplyRuntime({
+    root,
+    selectedRepositories: () => [
+      { id: "root", type: "root", relativePath: "." },
+      { id: "api", type: "git", relativePath: "repos/api" }
+    ],
+    workspaceManifest: (path) => path === sandbox ? {
+      "src/app.ts": "after",
+      "repos/api/.git": "git-after",
+      "repos/api/server.ts": "api-after"
+    } : state.workspace.baseline,
+    safeRootPath: (path) => join(root, path),
+    pathIdentity: (path) => path,
+    currentChangeRelativePath: (id) => `openspec/changes/${id}`,
+    changePath: (id) => join(root, "openspec", "changes", id)
+  });
+
+  assert.deepEqual(runtime.buildApplyEntries("safe-copy", state).map((entry) => entry.path), [
+    "src/app.ts", "openspec/changes/safe-copy"
+  ]);
+});
+
+function recoveryJournal(root) {
+  const transactions = join(root, ".foundation", "transactions");
+  return createLandJournal({
+    root,
+    transactions,
+    fileDigest: (path) => readFileSync(path, "utf8"),
+    directoryHash: (path) => `directory:${path}`,
+    pathInside: (parent, path) => path.startsWith(`${parent}/`),
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => "2026-01-01T00:00:00.000Z"
+  });
+}
+
+function manualJournal(root, transactionId) {
+  const transactionRoot = join(root, ".foundation", "transactions", "recover", transactionId);
+  write(root, "app.txt", "divergent\n");
+  write(transactionRoot, "backup/0", "before\n");
+  return {
+    version: 1,
+    changeId: "recover",
+    transactionId,
+    status: "manual-recovery",
+    entries: [{
+      path: "app.txt", role: "code", before: "before\n", after: "after\n", backup: "backup/0"
+    }],
+    appliedPaths: ["app.txt"],
+    inFlightPaths: []
+  };
+}
+
+test("restore-backup settles manual recovery and verifies the original content", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-restore-backup-"));
+  const runtime = recoveryJournal(root);
+  const value = manualJournal(root, "apply-restore");
+
+  runtime.settle(value, "restore-backup", "decision-1");
+
+  assert.equal(readFileSync(join(root, "app.txt"), "utf8"), "before\n");
+  assert.equal(value.status, "rolled-back");
+  assert.equal(value.recovery.decisionRef, "decision-1");
+});
+
+test("restore-backup verifies every backup before moving the current target", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-bad-backup-"));
+  const runtime = recoveryJournal(root);
+  const value = manualJournal(root, "apply-bad-backup");
+  write(root, ".foundation/transactions/recover/apply-bad-backup/backup/0", "corrupt\n");
+
+  assert.throws(() => runtime.settle(value, "restore-backup", "decision-3"),
+    /backup verification failed/);
+
+  assert.equal(readFileSync(join(root, "app.txt"), "utf8"), "divergent\n");
+  assert.equal(value.status, "recovering-backup");
+});
+
+test("keep-current closes the journal only after runtime requires a sync", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-keep-current-"));
+  const journalRuntime = recoveryJournal(root);
+  const value = manualJournal(root, "apply-keep");
+  journalRuntime.save(value);
+  const state = { id: "recover", status: "proven", workspace: { applied: true } };
+  const runtime = createApplyRecovery({
+    transactions: join(root, ".foundation", "transactions"),
+    transactionJournalPath: (id, transactionId) =>
+      join(root, ".foundation", "transactions", id, transactionId, "journal.json"),
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    verifyAppliedProjection: () => ({ valid: false }),
+    saveApplyJournal: journalRuntime.save,
+    rollbackApplyTransaction: journalRuntime.rollback,
+    settleApplyTransaction: journalRuntime.settle,
+    saveRuntime: () => {},
+    clearSnapshotCache: () => {},
+    now: () => "2026-01-01T00:00:00.000Z",
+    blockWithDecision: () => { throw new Error("unexpected decision block"); },
+    fail: (message) => { throw new Error(message); }
+  });
+
+  runtime.recoverPendingApply("recover", state, {
+    resolution: "keep-current", decisionRef: "decision-2"
+  });
+
+  assert.equal(readFileSync(join(root, "app.txt"), "utf8"), "divergent\n");
+  assert.equal(state.workspace.recovery.requiresSync, true);
+  assert.equal(runtime.pendingApplyTransactions("recover").length, 0);
+  assert.equal(JSON.parse(readFileSync(
+    join(root, ".foundation", "transactions", "recover", "apply-keep", "journal.json"),
+    "utf8")).status, "settled-current");
 });
