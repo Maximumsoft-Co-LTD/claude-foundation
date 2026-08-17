@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-repository worktree sandboxes now reconcile target movement at
+  `sandbox sync`.** Every moved writable repository is replayed in a temporary
+  worktree before any live sandbox is replaced. A conflict in one repository
+  names `<repository>:<path>`, cleans all prepared replays, and leaves every
+  live sandbox and recorded base unchanged instead of forcing abandon/reopen.
+- **Land now follows the deterministic target-movement recovery automatically.**
+  Structured blockers name `sandbox sync` as `automaticRecovery` for both
+  single- and multi-repository worktrees, while conflicts and non-deterministic
+  choices still stop for repair or explicit authority.
+- **Repository commit identity no longer expires content-identical evidence.**
+  Composite workspace/code hashes bind repository content and agreement
+  revision, while recorded base heads remain explicit target-drift and Land
+  guards. Provider protocol 9 and proof protocol 6 mark the identity boundary
+  honestly for active changes.
+
 ## [3.2.27] - 2026-08-16
 
 ### Fixed

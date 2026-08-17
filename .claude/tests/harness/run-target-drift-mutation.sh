@@ -19,11 +19,13 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 SUITE=".claude/tests/harness/run-target-drift-tests.sh"
 REPLAY="$ROOT/.claude/harness/runtime/workflow/sandbox-runtime.mjs"
 LANDABLE="$ROOT/.claude/harness/runtime/workflow/land-runtime.mjs"
+SNAPSHOT="$ROOT/.claude/harness/runtime/workflow/repository-snapshot.mjs"
 WORK="$(mktemp -d)"
 
 restore() {
   [ -f "$WORK/sandbox-runtime.mjs" ] && cp "$WORK/sandbox-runtime.mjs" "$REPLAY"
   [ -f "$WORK/land-runtime.mjs" ] && cp "$WORK/land-runtime.mjs" "$LANDABLE"
+  [ -f "$WORK/repository-snapshot.mjs" ] && cp "$WORK/repository-snapshot.mjs" "$SNAPSHOT"
   rm -rf "$WORK"
 }
 
@@ -37,6 +39,7 @@ assert_no_injected_fault "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-appli
 
 cp "$REPLAY" "$WORK/sandbox-runtime.mjs"
 cp "$LANDABLE" "$WORK/land-runtime.mjs"
+cp "$SNAPSHOT" "$WORK/repository-snapshot.mjs"
 
 suite_passes() {
   ( cd "$ROOT" && sh "$SUITE" >/dev/null 2>&1 )
@@ -61,7 +64,7 @@ const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /if \(workspace\.mode !== "worktree" \|\| !currentHead \|\| !workspace\.baseHead \|\|\s*\n\s*currentHead === workspace\.baseHead\) return null;/,
+  /if \(state\.workspace\.mode !== "worktree"\) return null;/,
   "return null; // FOUNDATION-INJECTED-FAULT: replay and its report removed");
 if (mutated === source) { console.error("replay fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
@@ -95,8 +98,31 @@ else
 fi
 cp "$WORK/land-runtime.mjs" "$LANDABLE"
 
+# Fault 3: commit identity is folded back into the composite content hash, so a
+# history-only base movement charges another proof/review despite identical
+# tracked bytes.
+total=$((total + 1))
+node - "$SNAPSHOT" <<'MUTATE'
+const fs = require("node:fs");
+const path = process.argv[2];
+const source = fs.readFileSync(path, "utf8");
+const mutated = source.replace(
+  /repository, workspaceHash: value\[field\]/,
+  "repository, workspaceHash: value[field], baseHead: value.baseHead // FOUNDATION-INJECTED-FAULT");
+if (mutated === source) { console.error("content identity fault did not apply"); process.exit(3); }
+fs.writeFileSync(path, mutated);
+MUTATE
+if suite_passes; then
+  echo "FAIL: rebinding content identity to baseHead went undetected"
+else
+  echo "PASS: rebinding content identity to baseHead is detected"
+  killed=$((killed + 1))
+fi
+cp "$WORK/repository-snapshot.mjs" "$SNAPSHOT"
+
 if ! cmp -s "$WORK/sandbox-runtime.mjs" "$REPLAY" ||
-   ! cmp -s "$WORK/land-runtime.mjs" "$LANDABLE"; then
+   ! cmp -s "$WORK/land-runtime.mjs" "$LANDABLE" ||
+   ! cmp -s "$WORK/repository-snapshot.mjs" "$SNAPSHOT"; then
   echo "FAIL: a mutated source was not restored byte for byte"
   echo "FOUNDATION_MUTATION_RESULT=not-applied"
   exit 1

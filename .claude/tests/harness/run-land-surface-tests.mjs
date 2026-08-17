@@ -283,6 +283,7 @@ test("a moved target offers replaying, and recommends it", () => {
 
   assert.equal(decision.kind, "control-head-moved");
   assert.equal(decision.recommended, "sync");
+  assert.equal(decision.automaticRecovery, "sync");
   assert.equal(decision.recordedBase, "aaa");
   assert.equal(decision.currentHead, "bbb");
   const ids = decision.options.map((option) => option.id);
@@ -290,17 +291,17 @@ test("a moved target offers replaying, and recommends it", () => {
   assert.match(decision.options[0].outcome, /sandbox sync confine-surface/);
 });
 
-// One worktree per repository, and sync reconciles only the root: offering it
-// here would advertise a partial fix as a whole one.
-test("a multi-repository sandbox is not offered a root-only replay", () => {
+test("a multi-repository sandbox offers the conflict-atomic replay", () => {
   const decision = targetHeadMovedDecision({
     changeId: "confine-surface", recordedBase: "aaa", currentHead: "bbb",
     multiRepository: true
   });
 
-  assert.equal(decision.recommended, "inspect");
+  assert.equal(decision.recommended, "sync");
+  assert.equal(decision.automaticRecovery, "sync");
   assert.deepEqual(decision.options.map((option) => option.id),
-    ["inspect", "abandon", "pause"]);
+    ["sync", "inspect", "abandon", "pause"]);
+  assert.match(decision.options[0].outcome, /every moved repository sandbox/);
 });
 
 // Enforced centrally rather than reviewed per call site, so a stop that offers

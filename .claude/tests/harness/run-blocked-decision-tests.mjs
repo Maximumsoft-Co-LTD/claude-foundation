@@ -44,6 +44,14 @@ assert.throws(() => blockedDecisionValue("c", "phantom-recommendation", {
   ...valid, recommended: "not-offered"
 }), /recommends an option it does not offer/);
 
+assert.throws(() => blockedDecisionValue("c", "phantom-automatic-recovery", {
+  ...valid, automaticRecovery: "not-offered"
+}), /names an automatic recovery it does not offer/);
+
+assert.throws(() => blockedDecisionValue("c", "unrecommended-automatic-recovery", {
+  ...valid, automaticRecovery: "pause"
+}), /must recommend its automatic recovery/);
+
 assert.throws(() => blockedDecisionValue("c", "duplicate", {
   ...valid, options: [...valid.options, { id: "pause", outcome: "again" }]
 }), /repeats an option id/);

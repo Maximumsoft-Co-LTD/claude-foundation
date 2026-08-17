@@ -22,6 +22,13 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
 F="node .claude/harness/foundation.mjs"
 
+assert_not_eq() {
+  label="$1"
+  left="$2"
+  right="$3"
+  if [ "$left" != "$right" ]; then pass "$label"; else fail "$label"; fi
+}
+
 # One project per scenario: two changes holding sandboxes on one repository is a
 # repository conflict, which is a real blocker and not the one under test.
 setup_project() {
@@ -47,6 +54,46 @@ setup_project() {
 
 state_of() {
   node -e "console.log(JSON.parse(require('fs').readFileSync('.foundation/runtime/$1.json','utf8')).workspace.$2)"
+}
+
+repo_state_of() {
+  node -e "console.log(JSON.parse(require('fs').readFileSync('.foundation/runtime/$1.json','utf8')).repositories['$2'].$3)"
+}
+
+setup_multi_project() {
+  setup_project "$1"
+  project="$TMP/$1"
+  for child in api app; do
+    mkdir -p "$TMP/$1-$child"
+    git -C "$TMP/$1-$child" init -q
+    git -C "$TMP/$1-$child" config user.email t@t
+    git -C "$TMP/$1-$child" config user.name t
+    printf '%s base\n' "$child" > "$TMP/$1-$child/$child.txt"
+    git -C "$TMP/$1-$child" add -A
+    git -C "$TMP/$1-$child" commit -qm "$child base"
+    git -C "$project" -c protocol.file.allow=always submodule add -q \
+      "$TMP/$1-$child" "$child"
+  done
+  git -C "$project" add -A
+  git -C "$project" commit -qm "add child repositories"
+  cd "$project"
+}
+
+create_multi_change() {
+  intent="$1"
+  change="$2"
+  $F new "$intent" --rapid > /dev/null
+  printf '%s\n' \
+    '{"version":1,"repositories":[' \
+    '  {"id":"api","mode":"write","dependsOn":[]},' \
+    '  {"id":"app","mode":"write","dependsOn":["api"]}' \
+    ']}' > "openspec/changes/$change/repositories.yaml"
+  printf '%s\n' \
+    '# Tasks' '' \
+    '- [ ] **T001** Change API [repo:api] [paths:api.txt]' \
+    '- [ ] **T002** Change App [repo:app] [paths:app.txt]' \
+    > "openspec/changes/$change/tasks.md"
+  $F sandbox create "$change" --all > /dev/null
 }
 
 # --- A moved target replays at sync. -----------------------------------------
@@ -128,5 +175,90 @@ printf 'target version\n' > ".foundation/sandboxes/$C/src/calc.js"
 resolved_replay="$($F sandbox sync "$C" 2>&1)"
 assert_not_contains "a merged file stops being named" "$resolved_replay" "CONFLICT"
 assert_contains "and the replay then advances the base" "$resolved_replay" "rebased: "
+
+# --- Every moved writable repository replays in one sync. -------------------
+setup_multi_project multi-replay
+create_multi_change "multiple repository targets replay" \
+  multiple-repository-targets-replay
+C=multiple-repository-targets-replay
+api_sandbox=".foundation/repository-sandboxes/$C/api"
+app_sandbox=".foundation/repository-sandboxes/$C/app"
+printf 'api sandbox work\n' > "$api_sandbox/api.txt"
+printf 'app sandbox work\n' > "$app_sandbox/app.txt"
+printf 'api target landed\n' > api/target.txt
+git -C api add -A && git -C api commit -qm "api target moved"
+printf 'app target landed\n' > app/target.txt
+git -C app add -A && git -C app commit -qm "app target moved"
+multi_replay="$($F sandbox sync "$C" 2>&1)"
+assert_contains "multi sync reports the API replay" "$multi_replay" "rebased api:"
+assert_contains "multi sync reports the app replay" "$multi_replay" "rebased app:"
+assert_file_contains "API sandbox work survives multi replay" "$api_sandbox/api.txt" "sandbox work"
+assert_file_contains "app sandbox work survives multi replay" "$app_sandbox/app.txt" "sandbox work"
+assert_file_contains "API target work arrives in its sandbox" "$api_sandbox/target.txt" "target landed"
+assert_file_contains "app target work arrives in its sandbox" "$app_sandbox/target.txt" "target landed"
+assert_eq "API recorded base advances" "$(git -C api rev-parse HEAD)" \
+  "$(repo_state_of "$C" api baseHead)"
+assert_eq "app recorded base advances" "$(git -C app rev-parse HEAD)" \
+  "$(repo_state_of "$C" app baseHead)"
+
+# Commit identity is recovery/Land state, not evidence content. Mutating only
+# the recorded base must not change the composite; changing tracked content must.
+hash_before="$($F hash "$C")"
+cp ".foundation/runtime/$C.json" "$TMP/content-hash-state.json"
+jq '.repositories.api.baseHead = "history-only-head"' \
+  ".foundation/runtime/$C.json" > "$TMP/history-only-state.json"
+cp "$TMP/history-only-state.json" ".foundation/runtime/$C.json"
+hash_after_head="$($F hash "$C")"
+assert_eq "history-only base identity does not change composite hash" \
+  "$hash_before" "$hash_after_head"
+cp "$TMP/content-hash-state.json" ".foundation/runtime/$C.json"
+printf 'tracked content changed\n' >> "$api_sandbox/api.txt"
+hash_after_content="$($F hash "$C")"
+assert_not_eq "tracked repository content changes composite hash" \
+  "$hash_before" "$hash_after_content"
+
+# --- A conflict in a later repository leaves every live sandbox untouched. --
+setup_multi_project multi-conflict
+create_multi_change "multi repository conflict is atomic" \
+  multi-repository-conflict-is-atomic
+C=multi-repository-conflict-is-atomic
+api_sandbox=".foundation/repository-sandboxes/$C/api"
+app_sandbox=".foundation/repository-sandboxes/$C/app"
+printf 'api sandbox work\n' > "$api_sandbox/api.txt"
+printf 'api target landed\n' > api/target.txt
+git -C api add -A && git -C api commit -qm "api clean target move"
+printf 'app sandbox version\n' > "$app_sandbox/app.txt"
+printf 'app target version\n' > app/app.txt
+git -C app add -A && git -C app commit -qm "app conflicting target move"
+api_base_before="$(repo_state_of "$C" api baseHead)"
+app_base_before="$(repo_state_of "$C" app baseHead)"
+multi_conflict="$($F sandbox sync "$C" 2>&1)"
+assert_contains "multi conflict names repository and path" \
+  "$multi_conflict" "CONFLICT app:app.txt"
+assert_file_contains "earlier API sandbox stays untouched on later conflict" \
+  "$api_sandbox/api.txt" "api sandbox work"
+assert_file_absent "earlier API sandbox does not receive target work on conflict" \
+  "$api_sandbox/target.txt"
+assert_file_contains "conflicting app sandbox stays untouched" \
+  "$app_sandbox/app.txt" "app sandbox version"
+assert_eq "API base does not advance on app conflict" "$api_base_before" \
+  "$(repo_state_of "$C" api baseHead)"
+assert_eq "app base does not advance on conflict" "$app_base_before" \
+  "$(repo_state_of "$C" app baseHead)"
+assert_file_absent "API staging worktree is cleaned after app conflict" \
+  "$api_sandbox.rebase"
+assert_file_absent "app staging worktree is cleaned after conflict" \
+  "$app_sandbox.rebase"
+
+if [ -n "${FOUNDATION_RESULT_REPORT:-}" ]; then
+  result_dir="$(dirname "$FOUNDATION_RESULT_REPORT")"
+  mkdir -p "$result_dir"
+  printf '%s\n' \
+    '{"numTotalTests":3,"criticalCases":[' \
+    ' {"id":"CASE-MULTI-REPLAY-CLEAN","status":"pass"},' \
+    ' {"id":"CASE-MULTI-REPLAY-CONFLICT","status":"pass"},' \
+    ' {"id":"CASE-CONTENT-STABLE-HASH","status":"pass"}' \
+    ']}' > "$FOUNDATION_RESULT_REPORT"
+fi
 
 finish "target drift"

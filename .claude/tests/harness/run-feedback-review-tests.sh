@@ -556,7 +556,7 @@ cp "$TMP/legacy-review.json" \
 legacy_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
 assert_contains "legacy review receipt is specifically stale" \
   "$legacy_plan" "review: review-version-stale"
-assert_eq "provider protocol remains backward-compatible" "8" \
+assert_eq "provider protocol remains backward-compatible" "9" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
   jq -e '.reviewProtocol == "3" and .acceptanceProtocol == "2" and .reviewPacketSchema == "4" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \

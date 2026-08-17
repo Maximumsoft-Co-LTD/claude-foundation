@@ -25,6 +25,10 @@ export function createBlockedDecision({ fail }) {
       throw new Error(`blocked decision '${code}' must preserve a 'pause' outcome`);
     if (!ids.includes(decision.recommended))
       throw new Error(`blocked decision '${code}' recommends an option it does not offer`);
+    if (decision.automaticRecovery && !ids.includes(decision.automaticRecovery))
+      throw new Error(`blocked decision '${code}' names an automatic recovery it does not offer`);
+    if (decision.automaticRecovery && decision.automaticRecovery !== decision.recommended)
+      throw new Error(`blocked decision '${code}' must recommend its automatic recovery`);
     return decision;
   }
 

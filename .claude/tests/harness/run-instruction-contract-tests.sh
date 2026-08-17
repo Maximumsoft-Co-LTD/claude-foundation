@@ -30,6 +30,9 @@ assert_file_contains "Prove contract wires a missing adapter before asking a per
 assert_file_contains "Change contract settles the reviewer before Build" "$ROOT/.claude/commands/change.md" "settle the reviewer now"
 assert_file_contains "Land contract requires explicit authority" "$ROOT/.claude/commands/land.md" "Land **\$ARGUMENTS** explicitly"
 assert_file_contains "Land keeps commit authority separate" "$ROOT/.claude/commands/land.md" "without separate authority"
+assert_file_contains "Land performs deterministic recovery before asking" "$ROOT/.claude/commands/land.md" 'Execute returned'
+assert_file_contains "Land recognizes machine-marked recovery" "$ROOT/.claude/commands/land.md" '`automaticRecovery`'
+assert_file_contains "Land translates blockers for people" "$ROOT/.claude/commands/land.md" "plain language"
 assert_file_contains "completion-only policy forbids scope expansion" "$ROOT/.claude/orchestrator.md" "scope expansion"
 assert_file_contains "repository instructions cannot grant authority" "$ROOT/.claude/orchestrator.md" "never enable a host permission bypass by implication"
 assert_file_contains "human silence cannot become approval" "$ROOT/.claude/orchestrator.md" "Never infer approval from silence"

@@ -104,7 +104,9 @@ identity, resume, then archive the control change last.
 Do not paste runtime protocol. Translate what completed, remains, stopped, and
 which decision is needed.
 
-Only deterministic recovery may be followed automatically. A structured
+Only deterministic recovery may be followed automatically. When a structured
+`decision` names `automaticRecovery`, execute that offered route within current
+authority, explain the repair in plain language, and continue. Every other
 `decision` requires an explicit user answer, including one a blocked operation
 emits. Present its honest alternatives,
 recommend one with a reason, and always preserve reject, inconclusive, or pause
