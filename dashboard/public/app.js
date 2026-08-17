@@ -41,6 +41,11 @@ function userDot(name) { return `<span class="ml-dot" style="background:${userCo
 const $ = (id) => document.getElementById(id);
 let timer = null;
 let lastData = null;
+const modalManager = FoundationModalManager.createModalManager({
+  document,
+  shell: $('dashboard-shell'),
+  skipLink: $('skip-link'),
+});
 
 // ── Key handling ────────────────────────────────────────────────────────────
 function getKey() {
@@ -64,11 +69,10 @@ function clearKey() { localStorage.removeItem(KEY_STORE); }
 function showGate(withError) {
   if (timer) { clearInterval(timer); timer = null; }
   if (typeof extrasTimer !== 'undefined' && extrasTimer) { clearInterval(extrasTimer); extrasTimer = null; }
-  $('gate').hidden = false;
   $('gate-error').hidden = !withError;
-  $('gate-key').focus();
+  modalManager.open($('gate'), $('gate-key'));
 }
-function hideGate() { $('gate').hidden = true; }
+function hideGate() { modalManager.close($('gate'), { restoreFocus: false }); }
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 function escapeHtml(s) {
@@ -459,7 +463,7 @@ function renderHistoryExtras(hist) {
     <div class="mini-row" title="${escapeHtml(c.repoId + ' · ' + c.path)}">
       <span class="mini-main">${escapeHtml(String(c.path).split('/').slice(-2).join('/'))}</span>
       <span class="mini-meta">${escapeHtml(c.users)} · ${escapeHtml(c.day)}</span>
-    </div>`).join('') : '<p class="empty empty--sm">no conflicts recorded 🎉</p>';
+    </div>`).join('') : '<p class="empty empty--sm">No conflicts recorded.</p>';
 }
 
 const EXTRAS_MS = 60000;
@@ -1118,11 +1122,10 @@ function openProfile() {
   $('pf-users').innerHTML = membersFrom(lastRuns, lastUsage)
     .map((m) => `<option value="${escapeHtml(m.name)}">`).join('');
   $('pf-error').hidden = true;
-  $('profile-modal').hidden = false;
-  $('pf-user').focus();
+  modalManager.open($('profile-modal'), $('pf-user'), { dismissible: true });
 }
 $('profile-btn').addEventListener('click', openProfile);
-$('pf-cancel').addEventListener('click', () => { $('profile-modal').hidden = true; });
+$('pf-cancel').addEventListener('click', () => { modalManager.close($('profile-modal')); });
 $('pf-color').addEventListener('input', () => { pfColorAuto = false; });
 $('pf-color-clear').addEventListener('click', () => {
   pfColorAuto = true;
@@ -1148,7 +1151,7 @@ $('profile-form').addEventListener('submit', async (e) => {
     const out = await res.json();
     localStorage.setItem(ME_STORE, user);
     profilesByUser.set(user, out.profile || body);
-    $('profile-modal').hidden = true;
+    modalManager.close($('profile-modal'));
     renderMemberFilter(membersFrom(lastRuns, lastUsage));
     applyFilter();
   } catch (err) {

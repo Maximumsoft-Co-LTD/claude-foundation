@@ -182,6 +182,12 @@ The agent inspects the project, asks only for decisions that materially affect
 the result, and creates `openspec/changes/<change-id>/`. Review the proposal,
 observable scenarios, tasks, and evidence claims before moving on.
 
+The agent answers in your language and leads with the outcome. It performs safe
+recovery and routine commands itself, then reports what it changed and checked.
+You are asked only when behavior, risk, authority, or an unresolved conflict
+needs your judgment; machine JSON, hashes, and receipt metadata stay internal
+unless you ask for diagnostic detail.
+
 Why this step exists: a concrete agreement prevents implementation details from
 silently redefining the requested behavior.
 
@@ -240,6 +246,9 @@ Land verifies that proof is still fresh, checks for conflicting target edits,
 applies only the proven sandbox diff, synchronizes the accepted delta specs,
 and archives the change. If the code, tests, configuration, agreement, or
 relevant target paths moved after Prove, Land stops instead of overwriting them.
+If the target branch simply advanced, the agent synchronizes the existing
+sandbox, re-proves it, and continues Land. Your work is preserved and you do
+not create a new change. A real replay conflict still stops for your judgment.
 
 Why this step exists: applying code and updating the durable requirements are
 one guarded, resumable completion boundary.

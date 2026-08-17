@@ -174,6 +174,11 @@ Agent จะสำรวจ project ถามเฉพาะ decision ที่�
 `openspec/changes/<change-id>/` ก่อนทำต่อ ให้ review proposal, observable
 scenario, task และ evidence claim ว่าตรงกับสิ่งที่ต้องการ
 
+Agent จะตอบด้วยภาษาของคุณและเริ่มจากผลลัพธ์ งานกู้คืนที่ปลอดภัยกับคำสั่งปกติ
+Agent จะทำให้เอง แล้วบอกว่าแก้อะไรและตรวจอะไรแล้ว คุณจะถูกถามเฉพาะเมื่อ behavior,
+ความเสี่ยง, authority หรือ conflict ต้องใช้การตัดสินใจ ส่วน JSON, hash และข้อมูล
+receipt เป็น protocol ภายในจนกว่าคุณจะขอดูเพื่อวิเคราะห์
+
 ทำไมต้องมีขั้นนี้: ข้อตกลงที่ชัดช่วยไม่ให้รายละเอียดตอน implement ค่อย ๆ
 เปลี่ยนความหมายของ requirement โดยไม่มีใครสังเกต
 
@@ -227,6 +232,9 @@ next: /land <change-id>
 Land จะตรวจว่า proof ยัง fresh ตรวจ conflict ใน target apply เฉพาะ diff ที่
 prove แล้ว sync delta spec ที่ยอมรับ และ archive change ถ้า code, test, config,
 agreement หรือ target path ที่เกี่ยวข้องเปลี่ยนหลัง Prove ระบบจะหยุดแทนการเขียนทับ
+ถ้า target branch แค่มี commit ใหม่ Agent จะ sync sandbox เดิม, Prove ใหม่ และ
+Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ แต่ถ้า replay conflict จริง
+ระบบจะหยุดเพื่อให้คุณตัดสินใจ
 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
 เป็น completion boundary เดียวที่มี guard และ resume ได้

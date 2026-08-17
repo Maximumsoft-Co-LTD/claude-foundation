@@ -384,9 +384,10 @@ how to restore or quarantine them.
 Subjective acceptance or a genuine contract contradiction returns
 `NEEDS_USER_DECISION`. Its `decision` envelope is a
 machine handoff for the agent, not text to paste to the user. The agent explains
-the outcome in the user's language, presents honest choices (including reject,
-inconclusive, or pause), and owns all commands and metadata after the user
-answers. Decision recovery never embeds a preselected passing receipt.
+the outcome in the user's language and owns routine commands and metadata. It
+never asks the user to run a safe authorized operation it can perform. Genuine
+decisions present honest choices (including reject, inconclusive, or pause) and
+wait for the answer. Decision recovery never embeds a preselected passing receipt.
 
 Run `claude-foundation proof advance <change>` once as the normal path. It
 collects executable evidence, creates or reuses the authority request, and
@@ -501,9 +502,10 @@ multi-repository Land, submodule pointers reset after staging, and an apply that
 could not finish rolling back.
 
 Each emits the same decision envelope readiness recovery uses — a stop code, at
-least two honest options, a recommendation, and a preserved `pause`. Agents
-translate those options into the user's language; they never present a stop as a
-dead end, and they never infer the answer. Retiring the change with
+least two honest options, a recommendation, and a preserved `pause`. A marked
+`automaticRecovery` is performed and explained by the agent without opening a
+user interview. Agents translate every other option into the user's language;
+they never present a stop as a dead end or infer the answer. Retiring with
 `change abandon` is one of the offered options wherever it applies.
 
 Foundation also stops on an unresolved apply transaction instead of opening a

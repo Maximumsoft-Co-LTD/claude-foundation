@@ -415,6 +415,7 @@ fi
 
 INSTALL_COMMITTED=yes
 ok "OpenSpec-native Foundation installed at $TARGET_PATH"
+printf '  Your product source was not changed; managed workflow files were installed or updated.\n'
 
 # Until these files are committed they are the working tree's dirt, and the loop
 # reads dirt as change surface: the harness's own shipped paths then trip its own
@@ -428,10 +429,11 @@ if command -v git >/dev/null 2>&1 &&
     openspec/config.yaml openspec/repositories.yaml foundation.json \
     .claude/settings.json >/dev/null 2>&1 || true
   if ! git -C "$TARGET_PATH" diff --cached --quiet 2>/dev/null; then
-    printf '▸ Managed files are staged. Commit them before your first change:\n'
+    printf '▸ Setup is complete, but the managed workflow files are only staged.\n'
+    printf '  Commit them before the first Foundation change so they are not mistaken for product work:\n'
     printf '    git commit -m "chore: install claude-foundation harness"\n'
     printf '  The loop treats uncommitted files as the change surface, so an\n'
     printf '  uncommitted harness becomes the first change'"'"'s surface.\n'
   fi
 fi
-printf 'Next: /change <intent>\n'
+printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'

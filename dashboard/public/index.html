@@ -8,38 +8,44 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body data-tab="team">
+  <a id="skip-link" class="skip-link" href="#main-content">Skip to dashboard content</a>
   <!-- Key gate -->
-  <div id="gate" class="gate" hidden>
+  <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title" aria-describedby="gate-sub" tabindex="-1" hidden>
     <form id="gate-form" class="gate-card">
-      <h1 class="gate-title">claude-foundation</h1>
-      <p class="gate-sub">Enter the dashboard key to view the team board.</p>
-      <input id="gate-key" class="gate-input" type="password" placeholder="dashboard key" autocomplete="off" spellcheck="false" />
+      <h1 id="gate-title" class="gate-title">claude-foundation</h1>
+      <p id="gate-sub" class="gate-sub">Enter the dashboard key to view the team board.</p>
+      <label class="field-label" for="gate-key">Dashboard key</label>
+      <input id="gate-key" class="gate-input" type="password" autocomplete="off" spellcheck="false" aria-describedby="gate-help gate-error" />
+      <p id="gate-help" class="field-help">Stored in this browser and sent to this dashboard server with each request. It is not used as an account password.</p>
       <button class="gate-btn" type="submit">View dashboard</button>
       <button type="button" id="gate-demo" class="gate-demo">or view a demo →</button>
-      <p id="gate-error" class="gate-error" hidden>That key was rejected.</p>
+      <p id="gate-error" class="gate-error" role="alert" hidden>Dashboard access failed. Check the key and connection, then try again.</p>
     </form>
   </div>
 
   <!-- My profile (org / team tags / color) -->
-  <div id="profile-modal" class="gate" hidden>
+  <div id="profile-modal" class="gate" role="dialog" aria-modal="true" aria-labelledby="profile-title" aria-describedby="profile-sub" tabindex="-1" hidden>
     <form id="profile-form" class="gate-card">
-      <h1 class="gate-title">My profile</h1>
-      <p class="gate-sub">Pick who you are and tag your org + team(s). Filters, grouping, and chart colors use this — visible to the whole dashboard.</p>
-      <input id="pf-user" class="gate-input" list="pf-users" placeholder="display name (your git user.name)" autocomplete="off" spellcheck="false" />
+      <h1 id="profile-title" class="gate-title">My profile</h1>
+      <p id="profile-sub" class="gate-sub">Pick who you are and tag your org + team(s). Filters, grouping, and chart colors use this — visible to the whole dashboard.</p>
+      <label class="field-label" for="pf-user">Display name</label>
+      <input id="pf-user" class="gate-input" list="pf-users" autocomplete="name" spellcheck="false" />
       <datalist id="pf-users"></datalist>
-      <input id="pf-org" class="gate-input" placeholder="org (e.g. hpk)" autocomplete="off" spellcheck="false" />
-      <input id="pf-teams" class="gate-input" placeholder="teams, comma-separated (e.g. payments, platform)" autocomplete="off" spellcheck="false" />
+      <label class="field-label" for="pf-org">Organization</label>
+      <input id="pf-org" class="gate-input" autocomplete="organization" spellcheck="false" />
+      <label class="field-label" for="pf-teams">Teams <span class="field-optional">optional, comma-separated</span></label>
+      <input id="pf-teams" class="gate-input" autocomplete="off" spellcheck="false" />
       <label class="pf-color-row"><span>chart color</span>
         <input id="pf-color" type="color" value="#2c46f0" />
         <button type="button" id="pf-color-clear" class="gate-demo">auto</button>
       </label>
       <button class="gate-btn" type="submit">Save profile</button>
       <button type="button" id="pf-cancel" class="gate-demo">cancel</button>
-      <p id="pf-error" class="gate-error" hidden>Save failed — check your key / connection.</p>
+      <p id="pf-error" class="gate-error" role="alert" hidden>Profile was not saved. Check the key and connection, then try again.</p>
     </form>
   </div>
 
-  <div class="shell">
+  <div id="dashboard-shell" class="shell">
     <!-- ── Sidebar ── -->
     <aside class="sidebar">
       <div class="side-brand">
@@ -50,17 +56,17 @@
 
       <nav class="nav">
         <span class="nav-group">Live</span>
-        <button class="nav-item" data-go="team"><span class="ni-ic">◍</span><span class="ni-label">Team</span><span id="nav-online" class="ni-badge"></span></button>
-        <button class="nav-item" data-go="activity"><span class="ni-ic">≣</span><span class="ni-label">Activity</span></button>
-        <button class="nav-item" data-go="conflicts"><span class="ni-ic">⚠</span><span class="ni-label">Conflicts</span><span id="nav-conflicts" class="ni-badge ni-badge--warn" hidden></span></button>
+        <button class="nav-item" data-go="team"><span class="ni-label">Team</span><span id="nav-online" class="ni-badge"></span></button>
+        <button class="nav-item" data-go="activity"><span class="ni-label">Activity</span></button>
+        <button class="nav-item" data-go="conflicts"><span class="ni-label">Conflicts</span><span id="nav-conflicts" class="ni-badge ni-badge--warn" hidden></span></button>
         <span class="nav-group">Analytics</span>
-        <button class="nav-item" data-go="usage"><span class="ni-ic">◔</span><span class="ni-label">Usage</span></button>
-        <button class="nav-item" data-go="insights"><span class="ni-ic">▤</span><span class="ni-label">Insights</span></button>
-        <button class="nav-item" data-go="presence"><span class="ni-ic">◷</span><span class="ni-label">Presence</span></button>
+        <button class="nav-item" data-go="usage"><span class="ni-label">Usage</span></button>
+        <button class="nav-item" data-go="insights"><span class="ni-label">Insights</span></button>
+        <button class="nav-item" data-go="presence"><span class="ni-label">Presence</span></button>
       </nav>
 
       <div class="side-foot">
-        <div class="side-status"><span id="pulse" class="pulse" data-state="loading"></span><span id="status-text" class="status-text">connecting…</span></div>
+        <div class="side-status" role="status" aria-live="polite"><span id="pulse" class="pulse" data-state="loading" aria-hidden="true"></span><span id="status-text" class="status-text">Connecting…</span></div>
         <div class="side-actions">
           <button id="profile-btn" class="side-btn" title="Set your org / team tags / color">my profile</button>
           <button id="header-demo" class="side-btn side-btn--accent" title="Preview with sample data">demo</button>
@@ -71,7 +77,7 @@
     </aside>
 
     <!-- ── Main ── -->
-    <main class="main">
+    <main id="main-content" class="main" tabindex="-1">
       <div id="demo-banner" class="demo-banner" hidden>
         <span class="demo-tag">DEMO</span>
         <span class="demo-text">Sample data — this is how every tab renders. Nothing here is real.</span>
@@ -122,11 +128,11 @@
       <!-- CONFLICTS -->
       <section class="tab" data-tab="conflicts">
         <header class="tab-head">
-          <h1 class="head--warn">⚠ Potential conflicts</h1>
+          <h1 class="head--warn">Potential conflicts</h1>
           <p>Same file edited by two people whose changed lines overlap — coordinate before you merge.</p>
         </header>
         <div id="conflicts-list" class="conflicts"></div>
-        <p id="conflicts-empty" class="empty" hidden>No overlapping edits right now — all clear. 🎉</p>
+        <p id="conflicts-empty" class="empty" hidden>No overlapping edits right now. The team can continue normally.</p>
         <div class="ins-grid" style="margin-top:24px">
           <div class="panel"><h3>File hotspots · 120d</h3><div id="cf-hotspots" class="mini-list"></div></div>
           <div class="panel"><h3>Conflict history</h3><div id="cf-history" class="mini-list"></div></div>
@@ -202,6 +208,7 @@
     </main>
   </div>
 
+  <script src="./modal-manager.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

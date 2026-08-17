@@ -502,6 +502,10 @@ assert_file_exists "shared runtime installed for cursor" "$CURSOR_TARGET/.claude
 # A bare .md→.mdc rename ships the always-on router as an agent-requested rule.
 assert_file_contains "cursor rules router is always applied" \
   "$CURSOR_TARGET/.cursor/rules/fundamentals.mdc" "alwaysApply: true"
+assert_file_contains "cursor human guidance is always applied" \
+  "$CURSOR_TARGET/.cursor/rules/foundation-human-guidance.mdc" "alwaysApply: true"
+assert_file_contains "cursor human guidance keeps routine recovery agent-owned" \
+  "$CURSOR_TARGET/.cursor/rules/foundation-human-guidance.mdc" "never hand the user commands"
 
 OPENCODE_TARGET="$TMP/opencode-project"
 mkdir -p "$OPENCODE_TARGET"

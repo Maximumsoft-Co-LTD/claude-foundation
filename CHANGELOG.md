@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **User guidance is now consistent across the whole shipped workflow.** Agents
+  match the user's language, lead with outcomes, perform safe authorized
+  recovery instead of handing back commands, keep protocol JSON and hashes
+  internal, and report work completed, verification, remaining risk, and the
+  next useful action. Commands, session context, CLI help, installers, hooks,
+  English/Thai documentation, and host adapters share the contract.
+- **The dashboard now gives accessible, recoverable feedback.** Authentication
+  and profile fields have visible labels and actionable announced errors; live
+  connection state uses an ARIA status region; keyboard users get a skip link
+  and visible focus; reduced-motion preferences are respected; empty and
+  conflict states no longer rely on emoji or color alone.
+
 ## [3.2.28] - 2026-08-17
 
 ### Fixed

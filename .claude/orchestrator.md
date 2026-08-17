@@ -101,8 +101,10 @@ identity, resume, then archive the control change last.
 
 ## Human interaction boundary
 
-Do not paste runtime protocol. Translate what completed, remains, stopped, and
-which decision is needed.
+Match the user's language. Lead with outcome, work done, verification, remaining
+work, and next action; omit empty sections. Do not paste runtime protocol or ask
+the user to run a safe authorized operation the agent can run. Expose hashes,
+receipts, provider codes, task IDs, and commands only for requested diagnosis.
 
 Only deterministic recovery may be followed automatically. When a structured
 `decision` names `automaticRecovery`, execute that offered route within current

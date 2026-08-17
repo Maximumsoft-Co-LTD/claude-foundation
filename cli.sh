@@ -139,6 +139,7 @@ for (const [title, audience] of groups) {
 }
 console.log("Global options: --project <path>, -C <path>");
 console.log("Workflow: /investigate → /change → /build → /prove → /land");
+console.log("Normal use: describe the outcome to your coding agent; it runs recovery and CLI details for you.");
 if (!showAll) console.log("Run `claude-foundation help --all` for host and compatibility commands.");
 NODE
 }

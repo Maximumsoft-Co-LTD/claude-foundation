@@ -50,6 +50,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button { font-family: inherit; cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 3px;
+}
+.skip-link {
+  position: fixed;
+  z-index: 1000;
+  top: 8px;
+  left: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  background: var(--signal);
+  border-radius: var(--radius-sm);
+  transform: translateY(-160%);
+}
+.skip-link:focus { transform: translateY(0); }
 
 /* Blueprint grid backdrop */
 body::before {
@@ -330,6 +346,16 @@ body::before {
 }
 .gate-title { font-family: var(--display); font-size: 26px; font-weight: 600; margin: 0 0 6px; }
 .gate-sub { color: var(--muted); font-size: 14px; margin: 0 0 22px; }
+.field-label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.field-optional { color: var(--muted); font-weight: 400; }
+.field-help { margin: -4px 0 12px; color: var(--muted); font-size: 12px; text-align: left; }
 .gate-input {
   width: 100%;
   font-family: var(--mono);
@@ -353,6 +379,15 @@ body::before {
 }
 .gate-btn:hover { background: #1d31c4; }
 .gate-error { color: var(--marker); font-size: 13px; margin: 12px 0 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 /* --- Demo mode ------------------------------------------------------------ */
 .gate-demo {

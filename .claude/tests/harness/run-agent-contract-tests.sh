@@ -9,7 +9,7 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 assert_file_contains "agent contract translates machine output for users" \
   "$ROOT/.claude/harness/AGENT.md" "Harness output is a machine handoff"
 assert_file_contains "agent contract executes deterministic recovery" \
-  "$ROOT/.claude/harness/AGENT.md" 'Run offered `automaticRecovery`'
+  "$ROOT/.claude/harness/AGENT.md" 'authorized `automaticRecovery`'
 assert_file_contains "agent contract forbids pass-biased decisions" \
   "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
 assert_file_contains "prove command uses the authority bridge" \

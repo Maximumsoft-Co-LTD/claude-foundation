@@ -55,6 +55,10 @@ assert_file_contains "the workflow documents where a retired change goes" \
   "$WF" ".foundation/recovery/abandoned/"
 assert_file_contains "the workflow documents that stops carry their exits" \
   "$WF" "## Terminal stops"
+assert_file_contains "the workflow makes deterministic recovery agent-owned" \
+  "$WF" '`automaticRecovery` is performed'
+assert_file_contains "the workflow keeps routine commands away from users" \
+  "$WF" "never asks the user to run a safe authorized operation"
 assert_file_contains "change offers retiring rather than deciding it" \
   "$ROOT/.claude/commands/change.md" "never retire one unasked"
 assert_file_contains "the orchestrator treats a blocked stop as a user decision" \

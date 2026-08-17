@@ -50,8 +50,8 @@ Product surface, installed into consumer projects:
 - `.claude/harness/protocol.json` - runtime and protocol version pins.
 - `.claude/harness/AGENT.md`, `EVIDENCE.md`, `README.md` - shipped agent
   contract, evidence-adapter reference, and runtime reference.
-- `.claude/harness/adapters/` - host adapter payloads; today the OpenCode
-  guard plugin that `install-opencode.sh` copies into `.opencode/plugins/`.
+- `.claude/harness/adapters/` - host adapter payloads: the OpenCode guard plugin
+  and Cursor's always-on human-guidance rule, copied by their installers.
 - `.claude/rules/fundamentals.md` - always-on skill router and canonical
   construction order.
 - `.claude/skills/` - procedures loaded only when their trigger fires; the

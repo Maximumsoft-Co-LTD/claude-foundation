@@ -17,6 +17,12 @@ claude-foundation land check <change>
 
 This validates that the proven projection is still landable: proof freshness, receipt validity, no dropped scenarios, no pending tasks, and a projection that actually ran.
 
+When a target advanced, this check marks the ordinary replay as automatic
+recovery. The agent syncs every moved writable sandbox, re-proves the rebased
+work, checks again, and continues. It tells you that the work was preserved; it
+does not ask you to start a new change or copy commands. Replay conflicts and
+authority choices still stop for judgment.
+
 ## Then archive
 
 ```bash

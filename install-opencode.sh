@@ -57,4 +57,4 @@ printf '✓ OpenCode adapter installed at %s\n' "$TARGET_PATH"
 printf '  commands: .opencode/commands/ (from .claude/commands/)\n'
 printf '  guards:   .opencode/plugins/foundation.js replays .claude/hooks/\n'
 printf '  skills + agent contract: read natively from .claude/skills/ and AGENTS.md\n'
-printf 'Next: /change <intent>\n'
+printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'

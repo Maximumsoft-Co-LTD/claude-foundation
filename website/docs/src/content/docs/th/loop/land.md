@@ -17,6 +17,11 @@ claude-foundation land check <change>
 
 ตรวจว่า projection ที่พิสูจน์แล้วยัง land ได้อยู่ — ความสดของ proof, ความถูกต้องของ receipt, ไม่มี scenario ที่หายไป, ไม่มี task ค้าง และมี projection ที่รันจริง
 
+เมื่อ target มี commit ใหม่ check นี้จะระบุ replay ปกติเป็น automatic recovery
+แล้ว Agent จะ sync ทุก writable sandbox ที่ขยับ, Prove งานบน base ใหม่, ตรวจซ้ำ
+และทำต่อ พร้อมบอกว่างานถูกเก็บไว้อย่างปลอดภัย โดยไม่ให้คุณเปิด Change ใหม่หรือ
+คัดลอกคำสั่งเอง ส่วน replay conflict และตัวเลือกด้าน authority ยังหยุดให้ตัดสินใจ
+
 ## แล้วค่อย archive
 
 ```bash

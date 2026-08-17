@@ -31,6 +31,7 @@ it copies anything, so running one directly is as safe as running the suite.
 |---|---|
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, model ceiling, and dispatch conflicts |
+| `harness/run-user-guidance-tests.sh` | Cross-surface human guidance: user-language summaries, automatic recovery, installer/hook recovery, and dashboard accessibility feedback |
 | `harness/run-packet-scaling-tests.sh` | 1,000-task and 500-claim progressive compaction under exact output limits |
 | `harness/run-archive-telemetry-tests.mjs` | Archive drains the bound transcript once, warns when sealing with no usage, and never blocks on telemetry |
 | `harness/run-telemetry-concurrency-tests.sh` | Concurrent context events, malformed legacy tolerance, and non-blocking telemetry |

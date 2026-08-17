@@ -5,6 +5,11 @@ description: Take one change from intent to landed, using the five commands in o
 
 This walks one small change end to end. You talk to your coding agent in ordinary language; the agent runs the commands. Nothing here requires you to memorise CLI syntax.
 
+The agent matches your language, leads with the outcome, performs safe recovery
+within the authority you already gave, and reports what it changed and checked.
+It asks only for a consequential decision. Protocol JSON, hashes, receipts, and
+provider codes stay out of the conversation unless you request diagnostics.
+
 ## 0. Check the project is ready
 
 ```bash
@@ -48,6 +53,11 @@ Evidence can come back `pass`, `fail`, `inconclusive`, or `error`. Anything othe
 ```
 
 Land is an explicit boundary, and it is the only step that touches your real working tree. It re-checks proof freshness, applies only the proven sandbox while preserving unrelated edits, syncs specs, audits the evidence, archives the change, and cleans up isolation.
+
+If the target branch advanced after Prove, the agent replays the same sandbox
+onto the new base, re-proves it, and resumes Land. You do not restart Change or
+run recovery commands by hand. A replay conflict remains visible and requires
+judgment rather than being merged silently.
 
 :::caution
 Land never commits, pushes, or opens a PR on its own. Those need separate authorization from you.

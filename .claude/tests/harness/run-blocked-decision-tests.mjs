@@ -27,9 +27,20 @@ const valid = {
 
 const envelope = blockedDecisionValue("demo-change", "example-code", valid);
 assert.equal(envelope.status, "BLOCKED");
+assert.equal(envelope.userActionRequired, true);
 assert.equal(envelope.code, "example-code");
 assert.equal(envelope.changeId, "demo-change");
 assert.equal(envelope.decision.recommended, "fix");
+
+const automatic = blockedDecisionValue("demo-change", "automatic-example", {
+  ...valid, automaticRecovery: "fix"
+});
+assert.equal(automatic.userActionRequired, false);
+
+assert.throws(() => blockedDecisionValue("c", "missing-decision"),
+  /requires a kind and a summary/);
+assert.throws(() => blockedDecisionValue("c", "null-decision", null),
+  /requires a kind and a summary/);
 
 assert.throws(() => blockedDecisionValue("c", "one-option", {
   ...valid, options: [valid.options[0]]
@@ -95,4 +106,4 @@ for (const path of harnessSources(HARNESS))
 assert.deepEqual([...found].sort(), [...REGISTERED].sort(),
   "every terminal stop must be registered with its exits");
 
-console.log(`blocked decisions: ALL PASS (14/14 assertions, ${found.size} registered stops)`);
+console.log(`blocked decisions: ALL PASS (16/16 assertions, ${found.size} registered stops)`);

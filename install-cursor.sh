@@ -49,6 +49,8 @@ cp "$SOURCE_PATH/.claude/commands/"*.md "$TARGET_PATH/.cursor/commands/"
   printf -- '---\ndescription: Foundation always-on skill router\nalwaysApply: true\n---\n\n'
   cat "$SOURCE_PATH/.claude/rules/fundamentals.md"
 } > "$TARGET_PATH/.cursor/rules/fundamentals.mdc"
+cp "$SOURCE_PATH/.claude/harness/adapters/cursor-human-guidance.mdc" \
+  "$TARGET_PATH/.cursor/rules/foundation-human-guidance.mdc"
 
 # Remove exact lifecycle files written by older Cursor adapters.
 for old in \
@@ -60,4 +62,4 @@ for old in \
 done
 
 printf '✓ Cursor adapter installed at %s\n' "$TARGET_PATH"
-printf 'Next: /change <intent>\n'
+printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'

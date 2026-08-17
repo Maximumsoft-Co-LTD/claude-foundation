@@ -115,4 +115,4 @@ if ! command -v codex >/dev/null 2>&1; then
 else
   printf '  reviewer setup: codex login status\n'
 fi
-printf 'Next: /change <intent>\n'
+printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
