@@ -1,5 +1,5 @@
 {
-  "runtime": "3.2.31",
+  "runtime": "3.2.32",
   "runtimeApi": "21",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
