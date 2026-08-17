@@ -16,6 +16,12 @@ assert_file_contains "prove command uses the authority bridge" \
   "$ROOT/.claude/commands/prove.md" "authority request"
 assert_file_contains "prove command forbids raw readiness output" \
   "$ROOT/.claude/commands/prove.md" "Never expose raw readiness JSON"
+assert_file_contains "change command requires canonical spec comparison" \
+  "$ROOT/.claude/commands/change.md" 'Do not default to `ADDED`'
+assert_file_contains "change command defines complete modified deltas" \
+  "$ROOT/.claude/commands/change.md" "copy the complete requirement and every existing scenario"
+assert_file_contains "change command requires removal migration consequence" \
+  "$ROOT/.claude/commands/change.md" '`**Migration:**` or `**Compatibility:**`'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM

@@ -315,6 +315,7 @@ printf '%s\n' \
   '## REMOVED Requirements' '' \
   '### Requirement: The choice is remembered' '' \
   'The system SHALL remember the choice.' '' \
+  '**Migration:** Existing stored choices continue to work under the renamed requirement.' '' \
   '## ADDED Requirements' '' \
   '### Requirement: The choice is remembered across four values' '' \
   'The system SHALL remember the choice.' '' \
@@ -327,6 +328,56 @@ declared_removal="$({ node .claude/harness/foundation.mjs validate \
   scenario-rename-guard; } 2>&1 || true)"
 assert_not_contains "a declared removal clears the scenario guard" \
   "$declared_removal" "spec delta drops"
+assert_cmd_zero "rename expressed as removed plus added validates before Build" \
+  node .claude/harness/foundation.mjs validate scenario-rename-guard
+
+# Existing capabilities also select operations from requirement identity. These
+# checks belong before Build rather than in the post-archive sync oracle.
+printf '%s\n' \
+  '## ADDED Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' '' \
+  '#### Scenario: A choice survives a reload' '' \
+  '- **WHEN** the page reloads' '- **THEN** the choice is kept' \
+  > openspec/changes/scenario-rename-guard/specs/appearance/spec.md
+assert_cmd_fails_with "ADDED cannot redeclare an existing requirement" \
+  "canonical spec already declares it" \
+  node .claude/harness/foundation.mjs validate scenario-rename-guard
+printf '%s\n' \
+  '## MODIFIED Requirements' '' \
+  '### Requirement: A requirement that does not exist' '' \
+  'The system SHALL not guess its identity.' '' \
+  '#### Scenario: An absent target is requested' '' \
+  '- **WHEN** validation runs' '- **THEN** it refuses the delta' \
+  > openspec/changes/scenario-rename-guard/specs/appearance/spec.md
+assert_cmd_fails_with "MODIFIED must target an existing requirement" \
+  "targets a requirement the canonical spec does not declare" \
+  node .claude/harness/foundation.mjs validate scenario-rename-guard
+printf '%s\n' \
+  '## REMOVED Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' \
+  > openspec/changes/scenario-rename-guard/specs/appearance/spec.md
+assert_cmd_fails_with "REMOVED requires a migration consequence" \
+  "must state a non-empty '**Migration:**'" \
+  node .claude/harness/foundation.mjs validate scenario-rename-guard
+printf '%s\n' \
+  '## MODIFIED Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' '' \
+  '#### Scenario: A choice survives a reload' '' \
+  '- **WHEN** the page reloads' '- **THEN** the choice is kept' '' \
+  '#### Scenario: A value that is not one of the three is discarded' '' \
+  '- **WHEN** an unknown value is stored' '- **THEN** it is discarded' '' \
+  '## ADDED Requirements' '' \
+  '### Requirement: The choice is remembered' '' \
+  'The system SHALL remember the choice.' '' \
+  '#### Scenario: A choice survives a reload' '' \
+  '- **WHEN** the page reloads' '- **THEN** the choice is kept' \
+  > openspec/changes/scenario-rename-guard/specs/appearance/spec.md
+assert_cmd_fails_with "one requirement name cannot carry two operations" \
+  "same requirement is declared in multiple operations" \
+  node .claude/harness/foundation.mjs validate scenario-rename-guard
 
 # A capability with no canonical spec has nothing to modify or remove.
 # OpenSpec used to reveal this only during archive, after implementation and

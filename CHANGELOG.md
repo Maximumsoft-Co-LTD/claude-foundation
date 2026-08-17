@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Spec-delta operations are selected and refused before Build.** The Change
+  agent now compares each requirement with its canonical specification before
+  choosing `ADDED`, `MODIFIED`, or `REMOVED`; structured drafts render only the
+  selected non-empty sections and support complete multi-scenario changes.
+  Validation rejects additions that already exist, modifications or removals
+  with no canonical target, ambiguous operations, incomplete modified scenario
+  lists, and removals without a migration or compatibility consequence. Legacy
+  drafts remain additive with an actionable migration warning, and pre-Build
+  validation and post-archive verification now share one parser.
+
 ## [3.2.29] - 2026-08-17
 
 ### Changed

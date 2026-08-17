@@ -166,8 +166,8 @@ printf '%s\n' \
   '"risks":[{"risk":"Bad draft","mitigation":"Validate required fields","owner":"test"}],' \
   '"tasks":[{"id":"T001","outcome":"Implement drafting","kind":"implementation","paths":["app.txt"],"verify":"test -f app.txt"}],' \
   '"claims":[{"id":"draft-outcome","scenario":"Draft materializes","impact":"low","capabilities":["test"]}],' \
-  '"specs":[{"name":"drafting","requirement":"Materialize a draft","description":"The runtime SHALL materialize one draft.",' \
-  '"scenario":"Valid draft","when":"a valid draft is supplied","then":"all agreement artifacts are populated"}]}' \
+  '"specs":[{"name":"drafting","operation":"added","requirement":"Materialize a draft","description":"The runtime SHALL materialize one draft.",' \
+  '"scenarios":[{"name":"Valid draft","when":"a valid draft is supplied","then":"all agreement artifacts are populated"}]}]}' \
   > foundation-draft.json
 assert_cmd_zero "structured draft scaffolds a complete agreement" \
   node .claude/harness/foundation.mjs new "Drafted change" --draft foundation-draft.json
@@ -177,6 +177,12 @@ assert_cmd_zero "drafted agreement validates without a second ledger" \
   node .claude/harness/foundation.mjs validate drafted-change
 assert_file_contains "draft task remains in tasks.md" \
   openspec/changes/drafted-change/tasks.md "**T001**"
+assert_file_contains "operation-aware draft emits its selected section" \
+  openspec/changes/drafted-change/specs/drafting/spec.md "## ADDED Requirements"
+assert_file_not_contains "operation-aware draft omits empty modified sections" \
+  openspec/changes/drafted-change/specs/drafting/spec.md "## MODIFIED Requirements"
+assert_file_not_contains "operation-aware draft omits empty removed sections" \
+  openspec/changes/drafted-change/specs/drafting/spec.md "## REMOVED Requirements"
 assert_contains "validate names the phase that follows agreement" \
   "$(node .claude/harness/foundation.mjs validate drafted-change)" \
   "next: /build drafted-change"
@@ -197,8 +203,10 @@ printf '%s\n' \
   '"specs":[{"name":"gating","requirement":"State gate origin","description":"The runtime SHALL name the claim that requires acceptance.",' \
   '"scenario":"Declared capability","when":"a claim declares acceptance","then":"validate names that claim"}]}' \
   > foundation-gated-draft.json
-node .claude/harness/foundation.mjs new "Human gated change" \
-  --draft foundation-gated-draft.json >/dev/null
+legacy_draft_output="$(node .claude/harness/foundation.mjs new "Human gated change" \
+  --draft foundation-gated-draft.json 2>&1)"
+assert_contains "legacy draft operation remains compatible with an actionable warning" \
+  "$legacy_draft_output" "legacy draft specs without operation are treated as added"
 node .claude/harness/foundation.mjs resolve human-gated-change \
   --impact low --coupling isolated --acceptance-not-required >/dev/null
 gated_first="$({ node .claude/harness/foundation.mjs validate human-gated-change; } 2>&1)"
