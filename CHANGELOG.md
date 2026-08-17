@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.31] - 2026-08-17
+
 ### Added
 
 - **Configured AI review now has one auditable main-session fallback.** Projects
@@ -2453,7 +2455,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.30...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.31...HEAD
+[3.2.31]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.30...v3.2.31
 [3.2.30]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.29...v3.2.30
 [3.2.29]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.28...v3.2.29
 [3.2.28]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.2.27...v3.2.28
