@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hosts can resolve canonical workflow instructions from the installed release.**
+  `claude-foundation host instruction` publishes protocol-1 JSON for all eight
+  workflow commands without project discovery, renders arguments opaquely,
+  rejects unsupported commands and protocols with stable machine codes, and
+  ships deterministic source-layout, installer, and Homebrew coverage.
+
 ## [3.2.31] - 2026-08-17
 
 ### Added

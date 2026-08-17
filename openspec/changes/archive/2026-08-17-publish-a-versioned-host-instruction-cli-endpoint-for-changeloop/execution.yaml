@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["env", "FOUNDATION_HOST_INSTRUCTION_REPORT=.foundation/test-results/host-instruction.json", "node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-host-instruction-tests.mjs"],
+      "report": ".foundation/test-results/host-instruction.json",
+      "minimum": 12,
+      "reportFormat": "json",
+      "criticalCases": ["all-eight", "opaque-arguments", "unknown-command", "outside-project", "packaged-layout"]
+    }
+  },
+  "services": {}
+}

@@ -29,6 +29,7 @@ it copies anything, so running one directly is as safe as running the suite.
 
 | Suite | Contract |
 |---|---|
+| `harness/run-host-instruction-tests.mjs` | Protocol-1 package-owned host instructions, opaque arguments, stable failures, project independence, and packaged layout |
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, model ceiling, and dispatch conflicts |
 | `harness/run-user-guidance-tests.sh` | Cross-surface human guidance: user-language summaries, automatic recovery, installer/hook recovery, and dashboard accessibility feedback |

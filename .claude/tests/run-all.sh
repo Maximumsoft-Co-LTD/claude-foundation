@@ -31,6 +31,7 @@ harness contracts (evidence proof)|sh "$HERE/harness/run-harness-tests.sh" evide
 change loop seams|sh "$HERE/harness/run-changeloop-seam-tests.sh"
 feedback review|sh "$HERE/harness/run-feedback-review-tests.sh"
 installer smoke|sh "$HERE/harness/run-installer-tests.sh"
+host instruction contract|node --test "$HERE/harness/run-host-instruction-tests.mjs"
 harness contracts (sandbox land)|sh "$HERE/harness/run-harness-tests.sh" sandbox-land
 harness contracts (change policy)|sh "$HERE/harness/run-harness-tests.sh" change-policy
 harness contracts (topology planning)|sh "$HERE/harness/run-harness-tests.sh" multi-repository planning-diagnostics

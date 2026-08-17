@@ -153,7 +153,9 @@ if (mode === "params") {
   // provider code rather than called by the runtime, and its contract is
   // documented; keeping the list explicit is what makes an *accidental* orphan
   // visible instead of blending into the same silence.
-  const standalone = new Set(["reliability/bounded-retry.mjs", "version.mjs"]);
+  const standalone = new Set([
+    "core/host-instruction.mjs", "reliability/bounded-retry.mjs", "version.mjs"
+  ]);
   const imported = new Set();
   const collect = (source) => {
     for (const match of source.matchAll(/from\s+"([^"]+\.mjs)"/g)) imported.add(match[1]);

@@ -39,6 +39,15 @@ fi
 cli_help_all="$(bash "$ROOT/cli.sh" help --all)"
 assert_contains "full CLI help retains compatibility diagnostics" \
   "$cli_help_all" 'proof execute <change>'
+assert_contains "full CLI help publishes the host instruction endpoint" \
+  "$cli_help_all" 'host instruction <command>'
+host_instruction_tmp="$TMP/host-instruction-outside-project"
+mkdir -p "$host_instruction_tmp"
+host_instruction="$(cd "$host_instruction_tmp" && bash "$ROOT/cli.sh" host instruction changes)"
+assert_contains "host instruction succeeds without project discovery" \
+  "$host_instruction" '"command":"changes"'
+assert_contains "host instruction reports protocol 1" \
+  "$host_instruction" '"protocol":1'
 mkdir -p "$TMP/unrelated-git/package"
 git -C "$TMP/unrelated-git" init -q
 cp "$ROOT/cli.sh" "$ROOT/VERSION" "$TMP/unrelated-git/package/"

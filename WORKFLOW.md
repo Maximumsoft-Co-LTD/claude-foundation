@@ -675,6 +675,22 @@ corroborated by code, tests, or accepted contracts may be promoted.
 
 ## Native CLI
 
+Host integrations can resolve the canonical workflow instruction owned by the
+installed release without locating or reading a Foundation project:
+
+```bash
+claude-foundation host instruction <command> --protocol 1 --format json --arguments <text>
+```
+
+Protocol 1 supports `investigate`, `change`, `build`, `prove`, `land`,
+`changes`, `feature`, and `dev`. It returns the command, description, rendered
+instruction, argument mode, protocol, and Foundation version as JSON. Argument
+text is opaque; `changes` accepts none. Unsupported protocols, unknown commands,
+unexpected arguments, and unavailable package instructions fail closed with a
+stable JSON error code. The endpoint is additive and ships before a host adopts
+it; a host that cannot obtain protocol 1 must request a compatible Foundation
+release instead of reading project command files or using a bundled copy.
+
 `claude-foundation` is the stable public control surface. It searches upward
 from the working directory, or from `--project <path>`, and forwards to the
 runtime installed in that project so schemas and runtime behavior stay aligned.

@@ -155,7 +155,7 @@ esac
 # `describe` before the per-command argument checks below, which otherwise
 # reject it as an unexpected argument for every zero-argument command.
 case "${1:-}" in
-  ""|help|--help|-h|version|--version|-v|describe) : ;;
+  ""|help|--help|-h|version|--version|-v|describe|host) : ;;
   *)
     for arg in "$@"; do
       [ "$arg" = "--help" ] || continue
@@ -176,6 +176,21 @@ case "${1:-}" in
     [ "$#" -le 2 ] || fail "help accepts only --all"
     [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && fail "help accepts only --all"
     usage "${2:-}"; exit 0 ;;
+  host)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    case "$sub" in
+      instruction)
+        command -v node >/dev/null 2>&1 || fail "Node.js is required to resolve host instructions"
+        if [ "${1:-}" = "--help" ] && [ "$#" -eq 1 ]; then
+          printf '%s\n' \
+            'claude-foundation host instruction <command> [--protocol 1] [--format json] [--arguments <text>]' \
+            'Return a package-owned Foundation workflow instruction as protocol-1 JSON.'
+          exit 0
+        fi
+        exec node "$SCRIPT_DIR/.claude/harness/runtime/core/host-instruction.mjs" "$@" ;;
+      *) fail "host requires 'instruction'" ;;
+    esac ;;
   init)
     # Explicit alias for the installer. `--host` picks the adapter (every
     # adapter layers over install.sh); the rest of the surface

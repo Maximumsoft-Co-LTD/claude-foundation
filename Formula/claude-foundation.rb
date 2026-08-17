@@ -56,6 +56,10 @@ class ClaudeFoundation < Formula
     assert_match "change start", help
     assert_match version.to_s, shell_output("#{bin}/claude-foundation version")
 
+    instruction = JSON.parse(shell_output("#{bin}/claude-foundation host instruction changes"))
+    assert_equal 1, instruction.fetch("protocol")
+    assert_equal "changes", instruction.fetch("command")
+
     project = testpath/"project"
     project.mkpath
     system bin/"claude-foundation", "init", project, "--yes"

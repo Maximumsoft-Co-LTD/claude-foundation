@@ -1,0 +1,131 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "mixed",
+    "reference": "conversation-2026-08-17-option-4",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-17T15:19:37Z",
+    "decisions": [
+      {
+        "id": "host-api",
+        "question": "How should Changeloop obtain Foundation workflow instructions?",
+        "answer": "Publish a versioned host-instruction endpoint from the installed claude-foundation CLI.",
+        "source": "user-batch"
+      },
+      {
+        "id": "source-owner",
+        "question": "Which installation owns the returned instruction?",
+        "answer": "The installed Foundation package owns it; the endpoint does not inspect a target project.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "failure-contract",
+        "question": "How do incompatible or invalid requests fail?",
+        "answer": "Return non-zero with a versioned JSON error and stable machine code; never fall back to another instruction source.",
+        "source": "recommended-default"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["public-compatibility", "process-boundary", "untrusted-input"],
+    "rationale": "The endpoint is a new published CLI contract consumed across releases and accepts untrusted command and argument values."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "cli.sh is the installed public command router.",
+    "paths": [{ "repository": "root", "path": "cli.sh" }]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "commands.json is the public registry and cli.sh owns the actual argv grammar.",
+    "contracts": [{ "repository": "root", "path": ".claude/harness/commands.json" }]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "A new package-only route becomes available after installation without changing project runtime state.",
+    "activatedPaths": [{ "repository": "root", "path": "cli.sh" }],
+    "failureSemanticChanges": ["Hosts depending on protocol 1 receive a typed incompatibility failure from older CLI releases."]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "A separately released host invokes the installed CLI synchronously and requires the response for its next model request.",
+    "rows": [{
+      "id": "host-instruction",
+      "owner": "claude-foundation maintainers",
+      "producer": "installed claude-foundation CLI",
+      "consumer": "host integration such as Changeloop",
+      "contract": "host instruction protocol 1 JSON",
+      "delivery": "synchronous local process request-response",
+      "timeoutRetry": "consumer-owned bounded timeout and retry policy",
+      "idempotency": "read-only lookup with no side effects",
+      "ordering": "independent request per host command invocation",
+      "consistency": "response matches the installed package release",
+      "rollout": "producer release precedes consumer activation",
+      "rollback": "consumer disables integration or restores its previous version"
+    }]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Consumers need stable diagnostics at the local process boundary.",
+    "rows": [{
+      "interactionId": "host-instruction",
+      "correlation": "command name and requested protocol",
+      "structuredEvents": "JSON success or JSON error with stable code",
+      "sli": "valid protocol responses divided by valid allow-listed requests",
+      "alert": "consumer surfaces interactive failures; no background service alert",
+      "runbook": "check claude-foundation version and upgrade or reinstall a compatible package",
+      "operatorQuestion": "which command, protocol, and stable error code failed?"
+    }]
+  },
+  "readSet": [
+    { "repository": "root", "path": "CLAUDE.md", "role": "requirement", "mode": "full", "sha256": "9959a0080a2e7e78824836b996ab019d775b9b1254448cb1be999c3792f83a8e" },
+    { "repository": "root", "path": "WORKFLOW.md", "role": "runtime-path", "mode": "targeted", "sha256": "6e2917834362279e435e13ce08fea65d0ade5ad66a0f202b4f71a2df38b15348" },
+    { "repository": "root", "path": ".claude/harness/runtime/README.md", "role": "architecture", "mode": "full", "sha256": "12f08a8cdba65ea9205dd824a97f6e10ba9d3ab5ea8e23f302ebbc3f4b3071be" },
+    { "repository": "root", "path": "cli.sh", "role": "production-path", "mode": "full", "sha256": "6ce9080f3e03226698d3c9d683cb18fbeecf72c954b5b202d99cf2b200a5f3dd" },
+    { "repository": "root", "path": ".claude/harness/runtime/core/cli-router.mjs", "role": "composition-root", "mode": "full", "sha256": "3a8f33ca22baba66bae7b9e1db063324073ebf8676801f7697c9af9e3984eb8e" },
+    { "repository": "root", "path": ".claude/harness/commands.json", "role": "test-topology", "mode": "full", "sha256": "ce87eab7ab6be8aa10f5fa06508675877ed9bfa931a9894803c76d9c043f3645" },
+    { "repository": "root", "path": ".claude/harness/protocol.json", "role": "contract", "mode": "full", "sha256": "397f08bbbdcefbc428015bb8684bd2ab4ada054859125b3879e037f82079b579" },
+    { "repository": "root", "path": ".claude/harness/runtime/core/command-registry.mjs", "role": "production-path", "mode": "full", "sha256": "45dea2a084230ddf1462ad3f4febb31ac2126831d2e65a4f7f3d8fdd1c714a93" },
+    { "repository": "root", "path": ".claude/commands/change.md", "role": "dependency-source", "mode": "full", "sha256": "8439982dce0020e2e0a7ba142ac6a4713014a406730a2201fb48a90f02a658a3" },
+    { "repository": "root", "path": ".claude/tests/README.md", "role": "test-topology", "mode": "full", "sha256": "5ecdd17b0d56cccb91265b5c55069c08f129fbd4f8cdd94eac90448e59e5818c" },
+    { "repository": "root", "path": "Formula/claude-foundation.rb", "role": "production-path", "mode": "full", "sha256": "9c4ad2aeb25b0461e35a9bc0823dafd324bad3d7af012d959d3553016547c0e9" }
+  ],
+  "claims": [
+    {
+      "id": "host-instruction-contract",
+      "productionPath": [{ "repository": "root", "path": "cli.sh" }],
+      "failurePaths": [{ "repository": "root", "path": "cli.sh", "failure": "protocol or argument parsing rejects a valid request or evaluates argument syntax" }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "host-instruction-fails-closed",
+      "productionPath": [{ "repository": "root", "path": ".claude/harness/runtime/core/command-registry.mjs" }],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/core/command-registry.mjs", "failure": "unknown command or unavailable package instruction" }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "host-instruction-project-independent",
+      "productionPath": [{ "repository": "root", "path": "cli.sh" }],
+      "failurePaths": [{ "repository": "root", "path": "cli.sh", "failure": "route calls project discovery before serving the package instruction" }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    { "id": "all-eight", "claimIds": ["host-instruction-contract"], "oracle": "contract-oracle" },
+    { "id": "opaque-arguments", "claimIds": ["host-instruction-contract"], "oracle": "contract-oracle" },
+    { "id": "unknown-command", "claimIds": ["host-instruction-fails-closed"], "oracle": "failure-path" },
+    { "id": "outside-project", "claimIds": ["host-instruction-project-independent"], "oracle": "production-entry" },
+    { "id": "packaged-layout", "claimIds": ["host-instruction-project-independent"], "oracle": "real-wire" }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    { "fact": "cli.sh resolves most workflow commands through a project runtime, but package-only commands are routed before project discovery.", "command": "sed -n '1,230p' cli.sh" },
+    { "fact": "Homebrew installs cli.sh and the complete .claude tree together under libexec.", "command": "grep -n 'libexec.install' Formula/claude-foundation.rb" },
+    { "fact": "The existing command registry reads host-command metadata from shipped Markdown but exposes no instruction body contract.", "command": "grep -n 'loopCommands\\|describeCommand' .claude/harness/runtime/core/command-registry.mjs" }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "host-instruction-contract",
+      "scenario": "Protocol 1 returns the installed release's canonical instruction and metadata for all eight workflow commands while preserving opaque arguments.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "host-instruction-fails-closed",
+      "scenario": "Unsupported protocol, unknown command, invalid argument use, and unavailable package source return stable machine-readable errors without arbitrary file access.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "host-instruction-project-independent",
+      "scenario": "The packaged CLI resolves instructions outside a Foundation project and its public registry, router, and Homebrew-style layout remain consistent.",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ],
+  "invariants": [
+    "Only the eight allow-listed command names can select an instruction source.",
+    "The endpoint never resolves a target project or reads its command files.",
+    "Argument text is JSON-encoded and never evaluated as shell syntax."
+  ]
+}
