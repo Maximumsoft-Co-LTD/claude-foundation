@@ -520,6 +520,7 @@ const handoffRuntime = createHandoffRuntime({
   readJson,
   writeJson,
   stableHash,
+  defaultOwner: () => foundationPolicy().workflow.handoffDefaultOwner,
   now,
   fail: die
 });

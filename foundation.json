@@ -50,6 +50,7 @@
     "independence": "self",
     "diversity": "single-model",
     "defaultReviewer": "claude-opus",
+    "fallbackReviewer": "main-session",
     "reviewers": {
       "codex-sol": {
         "adapter": "codex-cli",
@@ -76,6 +77,7 @@
   "workflow": {
     "grounding": "required",
     "reviewCircuit": "full-delta",
-    "reviewPolicy": "risk-tiered"
+    "reviewPolicy": "risk-tiered",
+    "handoffDefaultOwner": "devops-team"
   }
 }

@@ -106,7 +106,7 @@ export function createSpecDeltaValidator({ root, activeChangePath, walk, fail })
             detail: `'${operation} Requirements' targets a requirement the canonical spec does not declare; use '## ADDED Requirements'`
           });
         if (operation === "REMOVED" &&
-            !/^\*\*(?:Migration|Compatibility)\*\*:\s*\S/im.test(requirement.body))
+            !/^\*\*(?:Migration|Compatibility)(?::\*\*|\*\*:)[ \t]*\S/im.test(requirement.body))
           findings.push({
             kind: "removal-migration-missing", capability,
             requirement: requirement.name,

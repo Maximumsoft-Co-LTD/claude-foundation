@@ -261,6 +261,9 @@ elif command -v jq >/dev/null 2>&1; then
     .workflow.reviewPolicy //= $src[0].workflow.reviewPolicy |
     .review //= {} |
     .review.defaultReviewer //= $src[0].review.defaultReviewer |
+    if .review.fallbackReviewer == null and .review.independence == "self"
+      then .review.fallbackReviewer = $src[0].review.fallbackReviewer
+      else . end |
     .review.reviewers //= {} |
     .review.reviewers = ($src[0].review.reviewers + .review.reviewers)
   ' "$TARGET_PATH/foundation.json" > "$tmp"

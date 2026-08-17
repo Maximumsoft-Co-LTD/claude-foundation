@@ -8,8 +8,10 @@ Build history. Run `proof advance`; it executes once, routes review before
 acceptance, reuses `authority request`, and never polls. Send each `handoff packet` once;
 continue without asking for cloud credentials.
 
-Review is fresh independent work: full, then one changed delta. Infrastructure
-gets one retry. Final in-contract findings close only from
+Review is fresh independent work: full, then one changed delta. When configured
+reviewer infrastructure fails and policy names `main-session`, review the returned
+bounded packet in this calling session, fill the pre-attributed response template,
+and record it; do not rerun the failed adapter. Final in-contract findings close only from
 their current claim/critical-case receipts—never AI round three or a generic
 redesign/split/pause question. Reopen one Decision Sheet only for changed
 behavior, compatibility, security, data, or rollout.

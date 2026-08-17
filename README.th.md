@@ -644,13 +644,19 @@ Review อิสระเป็นคนละจุดและแบ่งต�
 งาน medium ใช้ full review หนึ่งรอบ และหลังแก้รวมหนึ่ง batch จึงใช้ fresh-session
 delta ได้อีกหนึ่งรอบเพื่อปิด finding IDs เดิม งาน high ถาม material risk ใน
 Decision Sheet ต้นทางและใช้ full/delta circuit แบบมีเพดาน โดยไม่มี human approval
-บังคับและไม่มี AI รอบสาม ค่าเริ่มต้นใช้ Codex GPT-5.6 Sol ใน session ใหม่แบบ
-read-only/ephemeral และมี Claude Code Opus แบบ read-only/non-persistent ให้เลือก
+บังคับและไม่มี AI รอบสาม ค่าเริ่มต้นใช้ Claude Code Opus ใน session ใหม่แบบ
+read-only/non-persistent ถ้าเกิด infrastructure `error` เช่น CLI, auth, timeout
+หรือ output schema พัง `fallbackReviewer: "main-session"` จะเก็บ attempt ที่พัง
+resolve provenance ของ host จาก subject ที่ session ตรงกันหรือ telemetry,
+reserve fallback dispatch แล้วส่ง bounded review
+packet พร้อม response template ที่เติม metadata แล้วกลับมาให้ agent session หลัก
+เส้นทาง self-review นี้ต้องใช้ `independence: "self"` และผล review แบบ `fail`
+หรือ `inconclusive` จะไม่ fallback
 ทีมที่ใช้ Codex ล้วนหรือ Claude Code ล้วนตั้ง reviewer ให้ตรงและ commit
 `diversity: "single-model"` โดยยังต้องใช้ reviewer identity และ session ใหม่
-ถ้า reviewer infrastructure ล้มเหลวจะ retry ได้หนึ่งครั้ง เมื่อใช้รอบ review ครบแล้วจะไม่ถาม redesign/split/pause: defect ใน contract เข้า deterministic repair closure, ความขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch อีกครั้ง และถ้าขาดสิทธิ์จะสร้าง external handoff
+ถ้า reviewer infrastructure ล้มเหลวจะ handback มาที่ main session ได้หนึ่งครั้ง เมื่อใช้รอบ review ครบแล้วจะไม่ถาม redesign/split/pause: defect ใน contract เข้า deterministic repair closure, ความขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch อีกครั้ง และถ้าขาดสิทธิ์จะสร้าง external handoff
 
-Build และ Prove ไม่รอ operator เพียงเพราะ developer ไม่มีสิทธิ์ cloud; `handoff packet` ส่ง operation ไปยัง owner ที่ระบุ Land จะรอเฉพาะงาน pre-Land หรือ activation-coupled; งาน post-Land ที่มี ticket และพิสูจน์ว่ายังไม่ activate สามารถ Land ได้
+Build และ Prove ไม่รอ operator เพียงเพราะ developer ไม่มีสิทธิ์ cloud; `handoff packet` ส่ง operation ไปยัง owner ที่ระบุ หรือใช้ `workflow.handoffDefaultOwner` (`devops-team`) เมื่อไม่ระบุ Land จะรอเฉพาะงาน pre-Land หรือ activation-coupled; งาน post-Land ที่มี ticket และพิสูจน์ว่ายังไม่ activate สามารถ Land ได้
 
 ตัว Land เองตรวจที่หลักฐาน ไม่ใช่ที่ความยินยอม agent ถูกสั่งให้อธิบายผลกระทบ
 และเสนอให้ตรวจดู ไปต่อ หรือหยุดก่อน ส่วนคำสั่งต่อเนื่อง (`land record`,

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Configured AI review now has one auditable main-session fallback.** Projects
+  can set `review.fallbackReviewer` to `main-session`. An infrastructure error
+  completes and preserves the primary attempt before returning the exact
+  full/delta packet and a pre-attributed response template to the calling agent;
+  matching host/subject provenance reserves the fallback attempt automatically,
+  while incomplete provenance fails closed instead of being guessed;
+  delivered `fail` and `inconclusive` verdicts never trigger fallback.
+- **External operations now inherit a configured team owner.** Operations that
+  omit `owner` use `workflow.handoffDefaultOwner` (`devops-team` by default),
+  keeping DevOps handoffs routable without forcing intake to invent a person's
+  name. Explicit owners continue to override the project default.
+
+### Fixed
+
+- **Removal consequences accept the documented Markdown spelling.** Pre-Build
+  validation now recognizes both `**Migration:** value` and
+  `**Migration**: value` (and their compatibility equivalents), so a valid
+  remove-plus-add rename no longer fails the migration guard.
+
 ## [3.2.30] - 2026-08-17
 
 ### Fixed

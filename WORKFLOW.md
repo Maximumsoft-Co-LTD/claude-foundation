@@ -451,6 +451,15 @@ live only in the committed policy file; neither is a command flag. The shipped
 `codex-sol` as the default, and also ships `claude-opus`. Codex-only teams select
 `codex-sol`; Claude-Code-only teams select `claude-opus`; either team commits
 only the `single-model` diversity waiver while keeping independence required.
+Set `review.fallbackReviewer` to `main-session` to hand the exact bounded packet
+back to the calling agent after the primary records an infrastructure `error`.
+The failed attempt remains in the review hash chain. Foundation binds the
+ambient host session to matching implementation provenance, current-session
+telemetry, or explicit `--main-session-*` values, reserves the fallback attempt, and pre-fills the
+response provenance; it refuses the handback rather than guessing missing
+identity/model metadata.
+This explicit self-review fallback requires `review.independence: "self"`.
+`fail` and `inconclusive` are delivered verdicts and never trigger fallback.
 Both adapters create a separate read-only, non-persistent session; the Claude
 adapter also removes the parent Claude Code nesting marker before launch.
 Whichever way the file reads, the receipt records what was observed, not what
@@ -471,7 +480,9 @@ Workspace edits stale prior review.
 unresolved `pre-land` or `activation-coupled` operation, but permits an accepted
 tracked `post-land` operation only when a declared claim proves the merged
 artifact remains safe before activation. Operator records carry names, tickets,
-and evidence references—never credentials.
+and evidence references—never credentials. An operation without `owner` inherits
+`foundation.json > workflow.handoffDefaultOwner` (`devops-team` by default), so
+the workflow asks for a specific owner only when that team route cannot proceed.
 
 Human acceptance is separate from review. New standard changes keep this choice
 `undecided` until `/change` explicitly records whether subjective product or

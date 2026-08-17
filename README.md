@@ -689,19 +689,27 @@ full AI review. Medium risk gets one full review and, only after one correction
 batch, one fresh-session delta that must close the original finding IDs. High
 risk asks material decisions during intake and permits the same bounded
 full/delta route—never a third AI and never a mandatory human approval gate.
-The default reviewer is Claude Code Opus in a read-only ephemeral run; the
-shipped alternative is Codex GPT-5.6 Sol. The default `independence: "self"`
+The default reviewer is Claude Code Opus in a read-only ephemeral run. If it
+returns an infrastructure `error` (for example missing CLI, auth, timeout, or
+malformed output), `fallbackReviewer: "main-session"` preserves that failed
+attempt, resolves the calling host provenance from matching subject data or
+session telemetry, reserves the fallback dispatch,
+and hands back the exact bounded packet plus a prefilled response template.
+It never falls back after a review verdict such as `fail` or `inconclusive`.
+Because this is explicitly self-review, it requires `independence: "self"`.
+The default `independence: "self"`
 and `diversity: "single-model"` policy supports a single-model, single-identity
 installation. Projects that require separation of duties can commit
 `independence: "required"`; teams with both providers can also require
-cross-provider review with `diversity: "required"`. Reviewer infrastructure receives one bounded retry. After the
+cross-provider review with `diversity: "required"`. Reviewer infrastructure receives one bounded main-session handback. After the
 delivered review route is complete, Foundation refuses another open review:
 in-contract findings follow deterministic repair closure, a genuine contract
 contradiction reopens one batched Decision Sheet, and missing authority becomes
 an external handoff rather than another interview.
 
 Build and Prove do not wait for an operator merely because a developer lacks
-cloud access. `handoff packet` sends the exact operation to its named owner.
+cloud access. `handoff packet` sends the exact operation to its owner; operations
+without one use `workflow.handoffDefaultOwner` (`devops-team` by default).
 Land waits only for pre-Land or activation-coupled work; an accepted tracked
 post-Land operation may remain when the merged artifact is proven dark until
 activation.

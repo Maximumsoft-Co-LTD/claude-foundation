@@ -9,9 +9,16 @@ delivery safe before activation and auditable through Land.
 Foundation SHALL separate repository implementation tasks from operations that
 require authority unavailable to the developer, including cloud IAM, secret
 writes, Terraform apply, cluster changes, deployment, restart, and production
-verification. Each external operation SHALL declare a stable ID, owner,
-environment, timing, activation safety, required evidence, runbook, rollback,
+verification. Each external operation SHALL declare a stable ID and MAY override
+the configured default team owner. The normalized operation SHALL always have an
+owner, environment, timing, activation safety, required evidence, runbook, rollback,
 and related claims without containing secret values.
+
+#### Scenario: No specific operator team is supplied
+
+- **WHEN** an external operation omits `owner`
+- **THEN** Foundation assigns `workflow.handoffDefaultOwner` without asking the
+  user for a person's name
 
 #### Scenario: Developer cannot write an AWS secret
 
