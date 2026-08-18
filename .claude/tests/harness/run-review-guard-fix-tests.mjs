@@ -25,6 +25,10 @@ const cases = [
   {
     id: "CASE-VALIDATE-SPEC-LINT",
     command: ["node", ".claude/tests/harness/run-guard-fix-cli-tests.mjs"]
+  },
+  {
+    id: "CASE-GROUNDING-PORTABILITY",
+    command: ["node", ".claude/harness/tests/sandbox-grounding-portability.test.mjs"]
   }
 ];
 

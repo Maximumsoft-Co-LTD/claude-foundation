@@ -842,6 +842,32 @@ missing_repositories="$($F validate "$C" 2>&1 || true)"
 assert_contains "a deleted repositories.yaml is named at validate" \
   "$missing_repositories" "missing change artifacts: repositories.yaml"
 
+# Cheap agreement gaps are one preflight result rather than four serial
+# validate/refuse/edit cycles. Deeper semantic checks still run only after the
+# packet is structurally ready, so they never dereference missing artifacts.
+$F new "aggregate validation preflight" --rapid > /dev/null
+AGGREGATE_CHANGE=aggregate-validation-preflight
+rm "openspec/changes/$AGGREGATE_CHANGE/proposal.md" \
+  "openspec/changes/$AGGREGATE_CHANGE/repositories.yaml"
+node -e '
+  const fs = require("node:fs");
+  const path = `.foundation/runtime/${process.argv[1]}.json`;
+  const state = JSON.parse(fs.readFileSync(path, "utf8"));
+  state.impact = null;
+  state.coupling = null;
+  state.acceptance = { decision: "undecided", required: null };
+  fs.writeFileSync(path, JSON.stringify(state, null, 2) + "\n");
+' "$AGGREGATE_CHANGE"
+preflight="$($F validate "$AGGREGATE_CHANGE" 2>&1 || true)"
+assert_contains "validate aggregates missing artifacts" \
+  "$preflight" "missing change artifacts: proposal.md, repositories.yaml"
+assert_contains "validate aggregates unresolved impact" \
+  "$preflight" "resolve impact for '$AGGREGATE_CHANGE'"
+assert_contains "validate aggregates unresolved coupling" \
+  "$preflight" "resolve coupling for '$AGGREGATE_CHANGE'"
+assert_contains "validate aggregates unresolved acceptance" \
+  "$preflight" "acceptance decision is unresolved for '$AGGREGATE_CHANGE'"
+
 # --- Size is a declaration the budget actually reads. ------------------------
 # `--size` was stored verbatim with no enum, and the budget never looked at it
 # even though WORKFLOW.md says size is "for budget and slicing only".

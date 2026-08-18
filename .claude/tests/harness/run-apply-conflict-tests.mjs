@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync
+  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync,
+  writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -78,7 +79,7 @@ function editedLine(fixture, file, lineNumber, replacement) {
 }
 
 // A rapid change with a worktree sandbox whose named file gets `content`.
-function provenEdit(fixture, title, id, file, content) {
+function provenEdit(fixture, title, id, file, content, prepare = () => {}) {
   cli(fixture, "new", title, "--rapid");
   cli(fixture, "resolve", id, "--impact", "low", "--coupling", "isolated");
   cli(fixture, "sandbox", "create", id);
@@ -86,6 +87,7 @@ function provenEdit(fixture, title, id, file, content) {
     join(fixture.root, ".foundation", "runtime", `${id}.json`), "utf8"));
   assert.equal(runtime.workspace.mode, "worktree", "fixture expects a worktree sandbox");
   writeFileSync(join(runtime.workspace.path, file), content);
+  prepare(join(runtime.workspace.path, file));
   const ledger = join(runtime.workspace.path, "openspec", "changes", id, "tasks.md");
   writeFileSync(ledger, readFileSync(ledger, "utf8").replaceAll("- [ ]", "- [x]"));
   cli(fixture, "receipt", id, "test", "pass",
@@ -95,6 +97,7 @@ function provenEdit(fixture, title, id, file, content) {
     "--source", "harness-test", "--artifact", file);
   const proved = cli(fixture, "prove", id);
   assert.equal(proved.status, 0, proved.stderr);
+  return runtime;
 }
 
 test("a second land over the same file refuses instead of overwriting", () => {
@@ -126,4 +129,38 @@ test("a land over a different file still passes beside uncommitted work", () => 
   assert.equal(third.status, 0, third.stderr);
   assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), "first edit\n");
   assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"), "lib edit\n");
+});
+
+test("a byte-identical pre-applied file is accepted without weakening conflict guards", () => {
+  const fixture = project();
+  const desired = editedLine(fixture, "app.txt", 8, "already applied");
+  provenEdit(fixture, "Pre-applied probe", "pre-applied-probe", "app.txt", desired);
+  // Simulate a recovery or manual reconciliation that reached the exact
+  // proven bytes before the archive transaction was recorded.
+  writeFileSync(join(fixture.root, "app.txt"), desired);
+  const applied = cli(fixture, "sandbox", "apply", "pre-applied-probe");
+  assert.equal(applied.status, 0, applied.stderr);
+  const state = JSON.parse(readFileSync(join(fixture.root,
+    ".foundation", "runtime", "pre-applied-probe.json"), "utf8"));
+  const journal = JSON.parse(readFileSync(join(fixture.root, ".foundation",
+    "transactions", "pre-applied-probe", state.workspace.apply.transactionId,
+    "journal.json"), "utf8"));
+  assert(journal.entries.some((entry) => entry.path === "app.txt" &&
+    entry.before === entry.after),
+  "the already-equal file remains a no-op projection journal entry");
+  rmSync(join(fixture.root, "app.txt"));
+  const resumed = cli(fixture, "sandbox", "apply", "pre-applied-probe");
+  assert.notEqual(resumed.status, 0);
+  assert.match(resumed.stderr, /projection-mismatch:app\.txt/,
+    "recovery must detect divergence of a pre-applied path");
+});
+
+test("a mode-only executable change is applied", () => {
+  const fixture = project();
+  const content = readFileSync(join(fixture.root, "app.txt"), "utf8");
+  provenEdit(fixture, "Executable probe", "executable-probe", "app.txt", content,
+    (path) => chmodSync(path, 0o755));
+  const archived = cli(fixture, "archive", "executable-probe");
+  assert.equal(archived.status, 0, archived.stderr);
+  assert.equal(statSync(join(fixture.root, "app.txt")).mode & 0o777, 0o755);
 });

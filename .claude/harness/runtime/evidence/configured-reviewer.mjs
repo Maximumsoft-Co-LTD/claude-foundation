@@ -303,13 +303,40 @@ export function createConfiguredReviewerRuntime({
   }
 
   function runClaude(config, changeId, workspace, packet, forbiddenSessionIds) {
-    const requestedSession = uuid();
     const environment = {
       ...process.env, FOUNDATION_CHANGE_ID: changeId
     };
     // Claude Code rejects nested launches when its host marker is inherited.
     // The reviewer is an intentionally separate headless process/session.
     delete environment.CLAUDECODE;
+    const handshakeSession = uuid();
+    const handshake = spawn(config.executable, [
+      "-p", "--output-format", "json",
+      "--model", config.modelId,
+      "--effort", config.reasoningEffort,
+      "--permission-mode", "plan",
+      "--tools", CLAUDE_READ_ONLY_TOOLS,
+      "--safe-mode", "--no-session-persistence",
+      "--session-id", handshakeSession,
+      "Reply exactly OK."
+    ], {
+      cwd: workspace, encoding: "utf8",
+      timeout: Number(config.handshakeTimeoutMs || 30_000),
+      maxBuffer: 4 * 1024 * 1024,
+      env: environment
+    });
+    const handshakeEnvelope = parseJson(handshake.stdout);
+    const observedHandshakeSession = text(handshakeEnvelope?.session_id);
+    if (handshake.error || handshake.status !== 0 ||
+        handshakeEnvelope?.is_error === true ||
+        !observedHandshakeSession || observedHandshakeSession !== handshakeSession)
+      return persist(config, changeId, workspace, {
+        status: "error", sessionId: observedHandshakeSession || null,
+        summary: observedHandshakeSession && observedHandshakeSession !== handshakeSession
+          ? "Claude Code reviewer session handshake did not return the exact fresh session ID; full review was not started"
+          : `Claude Code reviewer session handshake failed before full review: ${diagnostic(handshake)}`
+      });
+    const requestedSession = uuid();
     const args = [
       "-p", "--output-format", "json",
       "--json-schema", JSON.stringify(REVIEW_SCHEMA),

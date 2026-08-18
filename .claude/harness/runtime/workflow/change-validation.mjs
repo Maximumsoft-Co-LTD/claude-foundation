@@ -553,15 +553,19 @@ export function createChangeValidationRuntime({
     if (state.status === "archived") fail(`change '${id}' is already archived`);
     const dir = source === "active" ? activeChangePath(id, state) : changePath(id);
     const missing = changeArtifactGaps(state, dir);
-    if (missing.length) fail(`missing change artifacts: ${missing.join(", ")}`);
+    const preflight = [];
+    if (missing.length)
+      preflight.push(`missing change artifacts: ${missing.join(", ")}`);
+    if (!["low", "medium", "high"].includes(state.impact || ""))
+      preflight.push(`resolve impact for '${id}'`);
+    if (!["isolated", "coupled"].includes(state.coupling || ""))
+      preflight.push(`resolve coupling for '${id}'`);
+    if (state.acceptance?.decision === "undecided")
+      preflight.push(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
+    if (preflight.length)
+      fail(`change validation preflight failed:\n  - ${preflight.join("\n  - ")}`);
     assertNoScaffolds(state, dir);
     const grounding = groundingValue(id, state, dir);
-    if (!["low", "medium", "high"].includes(state.impact || ""))
-      fail(`resolve impact for '${id}'`);
-    if (!["isolated", "coupled"].includes(state.coupling || ""))
-      fail(`resolve coupling for '${id}'`);
-    if (state.acceptance?.decision === "undecided")
-      fail(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
     assertNewCapabilitiesAreAdditive(id, dir);
     assertExistingCapabilityOperations(id, dir);
     assertNoDroppedScenarios(id, dir);

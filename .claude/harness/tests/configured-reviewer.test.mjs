@@ -29,6 +29,14 @@ if (args[0] === "--help") {
   process.exit(0);
 }
 const sessionId = args[args.indexOf("--session-id") + 1];
+if (!args.includes("--json-schema")) {
+  process.stdout.write(JSON.stringify({
+    type: "result", subtype: "success", is_error: false,
+    session_id: process.env.FAKE_CLAUDE_HANDSHAKE_SESSION || sessionId,
+    result: "OK"
+  }));
+  process.exit(0);
+}
 const schema = JSON.parse(args[args.indexOf("--json-schema") + 1]);
 fs.writeFileSync(path.join(process.cwd(), "claude-capture.json"), JSON.stringify({
   args, cwd: process.cwd(), changeId: process.env.FOUNDATION_CHANGE_ID,
@@ -95,6 +103,18 @@ try {
   assert.deepEqual(capture.schemaRequired,
     ["status", "summary", "findings", "verifiedFindingIds"]);
 
+  const beforeHandshakeFailure = readFileSync(join(workspace,
+    "claude-capture.json"), "utf8");
+  process.env.FAKE_CLAUDE_HANDSHAKE_SESSION = "wrong-session";
+  const handshakeFailed = runtime.runReview({
+    changeId: "claude-handshake-failure", workspace, packet: {}
+  });
+  delete process.env.FAKE_CLAUDE_HANDSHAKE_SESSION;
+  assert.equal(handshakeFailed.status, "error");
+  assert.match(handshakeFailed.summary, /handshake.*full review was not started/);
+  assert.equal(readFileSync(join(workspace, "claude-capture.json"), "utf8"),
+    beforeHandshakeFailure, "a failed handshake must not start the full review");
+
   process.env.FAKE_CLAUDE_SESSION = "implementation-session";
   const reused = runtime.runReview({
     changeId: "claude-same-session", workspace, packet: {},
@@ -122,6 +142,7 @@ try {
     changeId: "claude-duplicate-ids", workspace, packet: {}
   });
   delete process.env.FAKE_CLAUDE_DUPLICATE;
+  delete process.env.FAKE_CLAUDE_HANDSHAKE_SESSION;
   assert.equal(duplicated.status, "error");
   assert.match(duplicated.summary, /outside the required schema/);
   // Normalization-equivalent duplicate finding IDs ("F2" vs " F2") would trim

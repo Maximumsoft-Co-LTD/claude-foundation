@@ -374,6 +374,7 @@ test("copy apply entries never cross into a selected child repository", () => {
     } : state.workspace.baseline,
     safeRootPath: (path) => join(root, path),
     pathIdentity: (path) => path,
+    pathMode: () => 0o644,
     currentChangeRelativePath: (id) => `openspec/changes/${id}`,
     changePath: (id) => join(root, "openspec", "changes", id)
   });

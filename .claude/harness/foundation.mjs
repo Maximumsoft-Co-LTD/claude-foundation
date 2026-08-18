@@ -1185,6 +1185,7 @@ const {
 });
 const {
   pathIdentity,
+  pathMode,
   safeRootPath,
   copyPath,
   transactionRoot: applyTransactionRoot,
@@ -1395,6 +1396,7 @@ const applyRuntime = createApplyRuntime({
   changePath,
   safeRootPath,
   pathIdentity,
+  pathMode,
   directoryHash,
   applyTransactionRoot,
   copyPath,
