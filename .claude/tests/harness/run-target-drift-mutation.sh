@@ -64,7 +64,7 @@ const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /if \(state\.workspace\.mode !== "worktree"\) return null;/,
+  /if \(!candidates\.length\) return null;/,
   "return null; // FOUNDATION-INJECTED-FAULT: replay and its report removed");
 if (mutated === source) { console.error("replay fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);

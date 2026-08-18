@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Graph engineering now carries repository scope from planning through
+  proof and Land.** Providers can declare every repository required by a test,
+  receive a scoped repository manifest, and produce receipts bound to the full
+  repository set. Read-only and Git-backed external dependencies run in
+  isolated worktrees, refresh safely when their targets move, rerun setup after
+  refresh, and fail closed on mutation or drift instead of producing incomplete
+  evidence.
+
 ## [3.2.32] - 2026-08-17
 
 ### Added

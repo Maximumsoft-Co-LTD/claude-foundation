@@ -43,6 +43,7 @@ export function createAgentPlanner({
   claimsForProvider = null,
   requiredProviders = null,
   providerConfig = null,
+  providerRepositories = null,
   resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
   recordInstructionManifest, modelForTask, showPacket, fail
@@ -242,6 +243,9 @@ export function createAgentPlanner({
         id: provider,
         capability: providerCapability(provider, config),
         repository: config.repository || null,
+        repositories: providerRepositories
+          ? providerRepositories(id, provider, config).map((repository) => repository.id)
+          : config.repositories || [],
         dependsOn: config.dependsOn || [],
         resources: config.resources || [],
         claims: claimsForProvider ? claimsForProvider(id, provider).map((claim) => claim.id) : null,

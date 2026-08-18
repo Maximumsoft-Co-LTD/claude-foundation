@@ -95,6 +95,27 @@ test("cross-repo: independent web and mobile nodes share the API predecessor", (
   assert.ok(graph.nodes.some((node) => node.id === "land:mobile"));
 });
 
+test("cross-repo: a spanning provider gates writable repositories but creates no read Land node", () => {
+  const value = fixture({
+    ...fixture(),
+    repositories: [
+      ...fixture().repositories,
+      { id: "contracts", mode: "read", dependsOn: [] }
+    ],
+    providers: [{
+      id: "integration", capability: "test", repository: "api",
+      repositories: ["api", "web", "mobile", "contracts"], resources: ["suite"]
+    }]
+  });
+  const graph = compileExecutionGraph(value);
+  const provider = graph.nodes.find((node) => node.id === "provider:integration");
+  assert.deepEqual(provider.repositories, ["api", "contracts", "mobile", "web"]);
+  assert.ok(graph.edges.some((edge) => edge.id === "provider:integration->land:api"));
+  assert.ok(graph.edges.some((edge) => edge.id === "provider:integration->land:web"));
+  assert.ok(graph.edges.some((edge) => edge.id === "provider:integration->land:mobile"));
+  assert.ok(!graph.nodes.some((node) => node.id === "land:contracts"));
+});
+
 test("failure: dependent closure preserves an independent branch", () => {
   const graph = compileExecutionGraph(fixture({
     ...fixture(),
@@ -197,8 +218,8 @@ import * as awaitImportFs from "node:fs";
 
 test("upgrade: graph state is derived and requires no authored graph file", () => {
   const graph = compileExecutionGraph(fixture());
-  assert.equal(graph.version, 1);
-  assert.match(graph.revision, /^graph-v1-/);
+  assert.equal(graph.version, 2);
+  assert.match(graph.revision, /^graph-v2-/);
 });
 
 test("land: target drift invalidates a prepared remote wave", () => {

@@ -1,6 +1,6 @@
 import { findCyclePath } from "./graph.mjs";
 
-export const EXECUTION_GRAPH_VERSION = 1;
+export const EXECUTION_GRAPH_VERSION = 2;
 export const NODE_DATA_SCHEMA = Object.freeze({ name: "foundation.node-data", version: 1 });
 
 function sorted(values) {
@@ -32,6 +32,7 @@ function node(value) {
     id: String(value.id),
     kind: String(value.kind),
     repository: value.repository || null,
+    repositories: sorted(value.repositories),
     required: value.required !== false,
     dependsOn: sorted(value.dependsOn),
     paths: sorted(value.paths),
@@ -95,6 +96,7 @@ export function compileExecutionGraph({
     return node({
       id: `provider:${provider.id}`, kind: "provider",
       repository: provider.repository || null, required: provider.required !== false,
+      repositories: provider.repositories || [],
       dependsOn: [
         ...(provider.dependsOn || []).map((id) => `provider:${id}`),
         ...taskDependencies
@@ -111,7 +113,9 @@ export function compileExecutionGraph({
       id: `land:${repository.id}`, kind: "land", repository: repository.id,
       dependsOn: [
         ...requiredProviders.filter((provider) =>
-          !provider.repository || provider.repository === repository.id).map((provider) => provider.id),
+          (!provider.repositories.length && !provider.repository) ||
+          provider.repositories.includes(repository.id) ||
+          provider.repository === repository.id).map((provider) => provider.id),
         ...(repository.dependsOn || []).map((id) => `land:${id}`)
       ],
       resources: [`land:${repository.id}`], lifecycle: "land"

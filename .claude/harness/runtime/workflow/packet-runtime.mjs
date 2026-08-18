@@ -7,6 +7,7 @@ export function createPacketRuntime({
   evidence, taskBlocks, taskMetadata, repositoryById, claimsForProvider,
   relevantSnapshot, snapshotPath, singleRelevantSnapshot, requiredProviders,
   receiptValidity, providerConfig, adapterResources, stableHash, compactStrings,
+  providerRepositories,
   modelForTask, compactList, fileDigest, directoryHash, ensureBudgetState,
   budgetDecision, scopedReviewClaims, relevantHash, providerCapability,
   receiptPath, contractFingerprint, reviewPolicy, resolvedAcceptance,
@@ -65,11 +66,12 @@ export function createPacketRuntime({
       return {
         provider, adapter: config?.adapter || "external",
         repository: config?.repository || null,
+        repositories: providerRepositories(id, provider, config)
+          .map((row) => row.id),
         resources: config ? adapterResources(provider, config) : [],
         validity: check.validity, status: check.status || check.receipt?.status || null
       };
-    }).filter((provider) => !repository ||
-      !provider.repository || provider.repository === repository.id)
+    }).filter((provider) => !repository || provider.repositories.includes(repository.id))
       .filter((provider) => {
         const covered = claimsForProvider(id, provider.provider).map((claim) => claim.id);
         return covered.length === 0 || covered.some((claim) => claimIds.has(claim));

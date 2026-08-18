@@ -14,7 +14,7 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
-**Version 3.2.32** — runtime API 21, provider protocol 8 receipt ที่บันทึกด้วย
+**Version 3.2.32** — runtime API 23, provider protocol 10 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร
@@ -560,6 +560,13 @@ ID และความหมายไม่เปลี่ยน และ inv
 `openspec/repositories.yaml` ประกาศ topology ถาวรของ project ส่วน
 `repositories.yaml` ภายใน change เลือกเฉพาะ repository ที่ change นั้นอ่านหรือ
 เขียนได้ ถ้าไม่มี selection จะยังทำงานแบบ repository เดียวชื่อ `root`
+
+Repository ที่จำเป็นเฉพาะตอน integration test ให้เลือกด้วย `mode: read`
+ระบบจะสร้าง detached worktree ที่ล็อก commit ให้ read dependency, รวม content
+ไว้ใน proof แต่ไม่สร้าง Land node ให้ Provider ที่รันจาก repo หนึ่งแต่ต้องใช้
+หลาย repo ระบุ cwd ด้วย `repository` และระบุ dependency ทั้งหมดด้วย
+`repositories`; command จะได้รับ path ผ่าน `FOUNDATION_REPOSITORIES_FILE` และ
+ระบบจะปฏิเสธ tracked write ที่เกิดใน read-only worktree
 
 ใส่ annotation ใน multi-repository task เพื่อให้ authority และ dependency ชัด:
 

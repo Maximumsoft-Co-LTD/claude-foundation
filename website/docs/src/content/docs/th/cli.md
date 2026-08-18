@@ -105,7 +105,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | Pin | v3.2.32 |
 |---|---|
 | runtime | 3.2.32 |
-| runtime API | 22 |
+| runtime API | 23 |
 | provider protocol | 8 |
 | evidence schema | 1, 2 |
 | packet schema | 6 |
@@ -115,5 +115,5 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | authority protocol | 2 |
 
 :::note
-provider protocol 8 หมายความว่า receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันถูกรันจริงหรือแค่ถูกกล่าวอ้าง จึงเชื่อไม่ได้ว่าถูกรัน
+provider protocol 10 หมายความว่า receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันถูกรันจริงหรือแค่ถูกกล่าวอ้าง จึงเชื่อไม่ได้ว่าถูกรัน
 :::

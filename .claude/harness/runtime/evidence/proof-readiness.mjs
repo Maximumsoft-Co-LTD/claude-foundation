@@ -13,6 +13,12 @@ export function createProofReadinessRuntime({
   selectedRepositories,
   providerCapability,
   providerConfig,
+  providerRepositories = (id, provider, config = providerConfig(id, provider)) =>
+    config?.repository
+      ? selectedRepositories(id).filter((repository) => repository.id === config.repository)
+      : selectedRepositories(id),
+  requiredProviders = (id) => Object.keys(evidence(id).providers || {}),
+  git = () => ({ status: 0, stdout: "", stderr: "" }),
   advisoryCapabilities,
   evidenceDetectionValue,
   validate,
@@ -33,6 +39,33 @@ export function createProofReadinessRuntime({
   saveRuntime,
   fail
 }) {
+  function repositoryInfrastructureIssues(id) {
+    const state = loadRuntime(id);
+    const issues = [];
+    for (const provider of requiredProviders(id)) {
+      const config = providerConfig(id, provider) || {};
+      for (const repository of providerRepositories(id, provider, config)) {
+        const runtime = state.repositories?.[repository.id] ||
+          (repository.id === "root" ? state.workspace : null) || {};
+        if (!existsSync(repository.workspacePath)) {
+          issues.push(`provider '${provider}' repository '${repository.id}' workspace is missing`);
+          continue;
+        }
+        if (repository.mode === "read" && runtime.mode === "reference")
+          issues.push(`provider '${provider}' repository '${repository.id}' is a live reference, not an isolated workspace`);
+        if (runtime.setup?.status === "failed")
+          issues.push(`provider '${provider}' repository '${repository.id}' setup failed`);
+        if (repository.mode === "read" && runtime.mode === "worktree") {
+          const changed = git(["status", "--porcelain"], repository.workspacePath);
+          if (changed.status !== 0 || changed.stdout.trim())
+            issues.push(`provider '${provider}' read-only repository '${repository.id}' changed: ${
+              changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
+        }
+      }
+    }
+    return [...new Set(issues)];
+  }
+
   function topologyIssues(id) {
     const contract = evidence(id);
     const providers = contract.providers || {};
@@ -378,6 +411,7 @@ export function createProofReadinessRuntime({
     if (stage === "prove") issues.push(...changedSurfaceIssues(id, surfaceFixits));
     const hash = relevantHash(id);
     const { unconfigured, unavailable } = executionNodes(id, hash);
+    const repositoryIssues = stage === "prove" ? repositoryInfrastructureIssues(id) : [];
     const pending = pendingTasks(id);
     const plan = agentPlanValue?.(id) || null;
     const pendingNodeIds = pending.map((task) => `task:${task.id}`).filter((nodeId) =>
@@ -397,7 +431,7 @@ export function createProofReadinessRuntime({
     const status = pending.length ? "NEEDS_CODE_CHANGE"
       : issues.length ? "CONFIGURATION_ERROR"
         : leases.length || repositoryConflicts.length ? "BLOCKED_BY_ACTIVE_WORK"
-          : unavailable.length ? "INFRASTRUCTURE_ERROR"
+          : unavailable.length || repositoryIssues.length ? "INFRASTRUCTURE_ERROR"
           : unconfigured.length ? "NEEDS_USER_DECISION" : "READY";
     return {
       version: 1,
@@ -413,6 +447,7 @@ export function createProofReadinessRuntime({
       },
       externalProviders: unconfigured,
       unavailableProviders: unavailable,
+      repositoryIssues,
       activeLeases: leases.map((lease) => ({
         taskId: lease.taskId, owner: lease.owner, expiresAt: lease.expiresAt || null
       })),

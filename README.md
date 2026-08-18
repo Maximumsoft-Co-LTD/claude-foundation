@@ -15,7 +15,7 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
-**Version 3.2.32** — runtime API 21, provider protocol 8. Receipts recorded by
+**Version 3.2.32** — runtime API 23, provider protocol 10. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 
 ## How the AI and harness divide responsibility
@@ -573,6 +573,13 @@ proof affected by the revision.
 `repositories.yaml` inside a change selects only the repositories that change
 may read or write. A missing selection remains compatible with a single `root`
 repository.
+
+Select repositories needed only by integration evidence with `mode: read`.
+Git-backed read dependencies receive pinned detached worktrees and are hashed
+into proof, but never receive Land nodes. An executable provider may set one
+`repository` as its cwd and list every dependency in `repositories`; Foundation
+passes their paths through `FOUNDATION_REPOSITORIES_FILE` and rejects tracked
+writes to read-only worktrees.
 
 Annotate multi-repository tasks so authority and dependencies remain explicit:
 

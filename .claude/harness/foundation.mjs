@@ -90,7 +90,7 @@ import {
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 
 const VERSION = "3.2.32";
-const RUNTIME_API_VERSION = "22";
+const RUNTIME_API_VERSION = "23";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -101,7 +101,7 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
     "is a mixture of two revisions. Reinstall it with 'claude-foundation init <project>'.");
   process.exit(1);
 }
-const PROVIDER_PROTOCOL_VERSION = "9";
+const PROVIDER_PROTOCOL_VERSION = "10";
 const ADAPTER_PROTOCOL_VERSION = "5";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "7";
@@ -564,6 +564,7 @@ const {
   providerConfig,
   providerClaims,
   providerRepository,
+  providerRepositories,
   providerWorkspace,
   providerWorkspaceHash,
   providerInputIdentity,
@@ -702,6 +703,7 @@ const receiptRuntime = createReceiptRuntime({
   claimsForProvider,
   providerWorkspaceHash,
   providerRepository,
+  providerRepositories,
   rejectPrototypeEvidenceInputs,
   durableArtifact,
   providerInputIdentity,
@@ -749,6 +751,7 @@ const adapterRuntime = createAdapterRuntime({
   resultAdapterResources,
   loadRuntime,
   providerRepository,
+  providerRepositories,
   repositoryById,
   fileDigest,
   pathInside,
@@ -817,6 +820,7 @@ const packetRuntime = createPacketRuntime({
   requiredProviders,
   receiptValidity,
   providerConfig,
+  providerRepositories,
   adapterResources,
   stableHash,
   compactStrings,
@@ -933,6 +937,7 @@ const {
   claimsForProvider,
   requiredProviders,
   providerConfig,
+  providerRepositories,
   resourcesConflict,
   relevantHash,
   contractFingerprint,
@@ -999,6 +1004,9 @@ const {
   selectedRepositories,
   providerCapability,
   providerConfig,
+  providerRepositories,
+  requiredProviders,
+  git,
   advisoryCapabilities,
   evidenceDetectionValue,
   validate,
@@ -1257,6 +1265,8 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
   },
   legacyExecutionPolicy: () =>
     foundationPolicy().workflow?.reviewCircuit === "legacy",
+  selectedRepositories,
+  git,
   now,
   fail: die
 });

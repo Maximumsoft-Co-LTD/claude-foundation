@@ -9,8 +9,21 @@ export function createProofRuntime({
   protocolDescriptor, contractFingerprint, executionFingerprint, proofPath,
   writeJson, readJson, pathInside, validateArtifact, instructionProvenance,
   agentPlanValue = null, savedAgentPlan = null, taskResult = null,
-  taskPacketWasPrecompleted = null, legacyExecutionPolicy = null, now, fail
+  taskPacketWasPrecompleted = null, legacyExecutionPolicy = null,
+  selectedRepositories = () => [], git = null, now, fail
 }) {
+  function assertReadRepositoriesUnchanged(id, state) {
+    if (!git) return;
+    for (const repository of selectedRepositories(id, state)) {
+      if (repository.mode !== "read" || state.repositories?.[repository.id]?.mode !== "worktree")
+        continue;
+      const changed = git(["status", "--porcelain"], repository.workspacePath);
+      if (changed.status !== 0 || changed.stdout.trim())
+        fail(`read-only repository '${repository.id}' changed inside its sandbox: ${
+          changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
+    }
+  }
+
   function pathCovered(path, scopes) {
     return (scopes || []).some((scope) => {
       const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
@@ -100,6 +113,7 @@ export function createProofRuntime({
     validate(id, "active", { quiet: true });
     const surfaceIssues = changedSurfaceIssues(id);
     if (surfaceIssues.length) fail(`changed-surface authority failed: ${surfaceIssues.join("; ")}`);
+    assertReadRepositoriesUnchanged(id, stateBefore);
     const leases = activeChangeLeases(id);
     if (leases.length)
       fail(`active agent leases block proof: ${leases.map((lease) => lease.taskId).join(", ")}`);
@@ -142,6 +156,7 @@ export function createProofRuntime({
       return {
         provider: row.provider,
         repositoryId: row.receipt?.repositoryId || null,
+        repositoryIds: row.receipt?.repositoryIds || [],
         path: relative(root, destination).replaceAll("\\", "/"),
         sha256: fileDigest(destination),
         size: statSync(destination).size
@@ -154,7 +169,8 @@ export function createProofRuntime({
       ? taskNodeProof(id, node, graph, stateBefore, runRoot)
       : {
           nodeId: node.id, lifecycle: node.lifecycle, status: "pass",
-          source: "provider-receipt", claims: node.claims
+          source: "provider-receipt", claims: node.claims,
+          repositories: node.repositories || (node.repository ? [node.repository] : [])
         });
     const proofEdges = (graph?.edges || []).filter((edge) =>
       proofNodes.some((node) => node.id === edge.to));

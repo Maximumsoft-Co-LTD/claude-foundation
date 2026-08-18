@@ -91,7 +91,7 @@ export function createLandRuntime({
   receiptPath,
   handoffReadiness,
   verifyAppliedProjection,
-  selectedRepositories,
+  selectedRepositories = () => [],
   repositoryById,
   git,
   gitHead,
@@ -163,6 +163,20 @@ export function createLandRuntime({
         multiRepository: Object.keys(state.repositories || {}).length > 1,
         action: "Landing"
       }));
+    for (const repository of selectedRepositories(id, state)) {
+      if (repository.mode !== "read") continue;
+      const runtime = state.repositories?.[repository.id] || {};
+      if (runtime.mode !== "worktree")
+        fail(`read-only dependency '${repository.id}' is not isolated; recreate the sandbox before Land`);
+      const dirty = git(["status", "--porcelain"], runtime.path);
+      if (dirty.status !== 0 || dirty.stdout.trim())
+        fail(`read-only dependency '${repository.id}' changed inside its sandbox: ${
+          dirty.stdout.trim() || dirty.stderr.trim() || "git status failed"}`);
+      const targetHead = gitHead(repository.path);
+      if (targetHead !== runtime.baseHead)
+        fail(`read-only dependency '${repository.id}' moved after sandbox creation (${
+          String(runtime.baseHead || "").slice(0, 8)} -> ${String(targetHead || "").slice(0, 8)}); run sandbox sync and prove again`);
+    }
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
     if (!proof || proof.status !== "pass") fail(`change '${id}' has no passing proof`);
     const audit = proofAudit(id, true);
@@ -319,7 +333,16 @@ export function createLandRuntime({
         repositoryCommitLanded(repository, commit);
       const sandboxGitlink = rootGitlink(state.workspace?.path || root, repository);
       const targetGitlink = rootGitlink(root, repository);
-      let status = repository.mode === "read" ? "read-only" :
+      const targetHead = gitHead(repository.path);
+      const sandboxHead = gitHead(runtime.path || repository.workspacePath);
+      const readDirty = repository.mode === "read" && runtime.mode === "worktree"
+        ? git(["status", "--porcelain"], runtime.path).stdout.trim() : "";
+      let status = repository.mode === "read"
+        ? runtime.mode !== "worktree" ? "read-not-isolated"
+          : readDirty ? "read-sandbox-dirty"
+            : targetHead !== (runtime.baseHead || repository.baseHead)
+              ? "read-dependency-drift" : "read-only"
+        :
         repository.id === "root" ? "control-plane-last" :
         !runtime.path ? "sandbox-missing" :
         !commit ? "awaiting-explicit-commit" :
@@ -338,8 +361,8 @@ export function createLandRuntime({
         targetPath: repository.path,
         sandboxPath: runtime.path || repository.workspacePath,
         baseHead: runtime.baseHead || repository.baseHead,
-        targetHead: gitHead(repository.path),
-        sandboxHead: gitHead(runtime.path || repository.workspacePath),
+        targetHead,
+        sandboxHead,
         commit,
         ci: runtime.land?.ci || null,
         rootGitlink: sandboxGitlink,

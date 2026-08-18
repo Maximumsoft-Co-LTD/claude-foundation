@@ -2,13 +2,14 @@
 # A superproject fixture proves that topology discovery, worktree fan-out,
 # repository packets, model routing, and receipt invalidation share one
 # composite control-plane identity without invalidating unrelated repo proof.
-for child in api app; do
+for child in api app contracts external; do
   mkdir -p "$TMP/$child"
   cd "$TMP/$child"
   git init -q
   git config user.name "Foundation Test"
   git config user.email "foundation@example.invalid"
   printf '%s\n' "$child-before" > "$child.txt"
+  if [ "$child" = contracts ]; then printf '.deps/\n' > .gitignore; fi
   git add .
   git commit -qm "$child fixture"
 done
@@ -35,18 +36,27 @@ git config user.name "Foundation Test"
 git config user.email "foundation@example.invalid"
 git -c protocol.file.allow=always submodule add -q "$TMP/api" api
 git -c protocol.file.allow=always submodule add -q "$TMP/app" app
+git -c protocol.file.allow=always submodule add -q "$TMP/contracts" contracts
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"contracts","path":"contracts","setupCommand":"mkdir -p .deps && printf ready > .deps/ready"},' \
+  '  {"id":"external","type":"external","path":"../external","mode":"read","allowOutsideRoot":true}' \
+  ']}' > openspec/repositories.yaml
 git add .
 git commit -qm "multi fixture"
 repos="$(node .claude/harness/foundation.mjs repos)"
 assert_contains "repository topology discovers API submodule" "$repos" "api	submodule	api"
 assert_contains "repository topology discovers app submodule" "$repos" "app	submodule	app"
+assert_contains "repository topology discovers contracts submodule" "$repos" "contracts"
 node .claude/harness/foundation.mjs new 'Cross repository profile' >/dev/null
 node .claude/harness/foundation.mjs resolve cross-repository-profile \
   --impact medium --coupling coupled --acceptance-not-required >/dev/null
 printf '%s\n' \
   '{"version":1,"repositories":[' \
   '  {"id":"api","mode":"write","dependsOn":[]},' \
-  '  {"id":"app","mode":"write","dependsOn":["api"]}' \
+  '  {"id":"app","mode":"write","dependsOn":["api"]},' \
+  '  {"id":"contracts","mode":"read","dependsOn":[]},' \
+  '  {"id":"external","mode":"read","dependsOn":[]}' \
   ']}' > openspec/changes/cross-repository-profile/repositories.yaml
 printf '%s\n' \
   '# Tasks' \
@@ -64,6 +74,8 @@ printf '%s\n' \
 printf '%s\n' \
   '{"version":1,"providers":{' \
   ' "api-static":{"capability":"static-analysis","adapter":"external","repository":"api"},' \
+  ' "manifest-probe":{"capability":"static-analysis","adapter":"command","repository":"api","repositories":["api","contracts","external"],"command":["sh","-c","cat \"$FOUNDATION_REPOSITORIES_FILE\""]},' \
+  ' "manifest-probe-app":{"capability":"static-analysis","adapter":"command","repository":"api","repositories":["api","app"],"command":["sh","-c","cat \"$FOUNDATION_REPOSITORIES_FILE\""]},' \
   ' "cross-repo-contract":{"adapter":"contract-digest","contract":{"api":"contract.json","app":"contract.json"}},' \
   ' "review":{"adapter":"external"}' \
   '},"services":{}}' > openspec/changes/cross-repository-profile/execution.yaml
@@ -75,6 +87,37 @@ assert_file_exists "API worktree created" \
   .foundation/repository-sandboxes/cross-repository-profile/api/api.txt
 assert_file_exists "app worktree created" \
   .foundation/repository-sandboxes/cross-repository-profile/app/app.txt
+assert_file_exists "read-only contracts worktree created" \
+  .foundation/repository-sandboxes/cross-repository-profile/contracts/contracts.txt
+assert_file_exists "read-only contracts setup ran in its isolated worktree" \
+  .foundation/repository-sandboxes/cross-repository-profile/contracts/.deps/ready
+assert_file_exists "Git-backed external repository receives an isolated worktree" \
+  .foundation/repository-sandboxes/cross-repository-profile/external/external.txt
+assert_eq "contracts sandbox records read access" "read" \
+  "$(jq -r '.repositories.contracts.access' .foundation/runtime/cross-repository-profile.json)"
+printf 'unauthorized read dependency edit\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/contracts/contracts.txt
+read_dependency_output="$(node .claude/harness/foundation.mjs proof-readiness \
+  cross-repository-profile 2>&1 || true)"
+assert_contains "read-only repository mutation blocks readiness" \
+  "$read_dependency_output" "read-only repository 'contracts' changed"
+git -C .foundation/repository-sandboxes/cross-repository-profile/contracts \
+  restore contracts.txt
+printf 'contracts-after\n' > contracts/contracts.txt
+git -C contracts add contracts.txt
+git -C contracts -c user.name="Foundation Test" \
+  -c user.email="foundation@example.invalid" commit -qm "refresh contracts fixture"
+assert_cmd_zero "sandbox sync refreshes a moved read-only dependency" \
+  node .claude/harness/foundation.mjs sandbox sync cross-repository-profile
+assert_contains "read-only worktree uses the refreshed dependency content" \
+  "$(cat .foundation/repository-sandboxes/cross-repository-profile/contracts/contracts.txt)" \
+  "contracts-after"
+assert_file_exists "read-only setup reruns after dependency refresh" \
+  .foundation/repository-sandboxes/cross-repository-profile/contracts/.deps/ready
+assert_eq "read-only worktree records the refreshed target head" \
+  "$(git -C contracts rev-parse HEAD)" \
+  "$(jq -r '.repositories.contracts.baseHead' \
+    .foundation/runtime/cross-repository-profile.json)"
 printf 'unauthorized\n' > \
   .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
 surface_output="$(node .claude/harness/foundation.mjs proof-preflight \
@@ -242,6 +285,24 @@ node .claude/harness/foundation.mjs proof-collect cross-repository-profile >/dev
 assert_cmd_zero "an agreeing cross-repository contract is verified by digest" \
   jq -e '.status == "pass" and (.observed | test("contract digest .* agrees"))' \
   .foundation/receipts/cross-repository-profile/cross-repo-contract.json
+assert_cmd_zero "spanning provider receives both writable and read-only repository paths" \
+  jq -e '.status == "pass" and .repositoryId == "api" and
+    .repositoryIds == ["api", "contracts", "external"]' \
+  .foundation/receipts/cross-repository-profile/manifest-probe.json
+assert_cmd_zero "a second spanning provider receives its distinct repository set" \
+  jq -e '.status == "pass" and .repositoryIds == ["api", "app"]' \
+  .foundation/receipts/cross-repository-profile/manifest-probe-app.json
+assert_cmd_zero "command dedup does not cross repository manifest scopes" \
+  sh -c 'test "$(jq -r .commandExecutionId \
+    .foundation/receipts/cross-repository-profile/manifest-probe.json)" != \
+    "$(jq -r .commandExecutionId \
+    .foundation/receipts/cross-repository-profile/manifest-probe-app.json)"'
+repository_manifest="$(ls -1 \
+  .foundation/logs/cross-repository-profile/*-manifest-probe-repositories.json | tail -1)"
+assert_cmd_zero "provider repository manifest records read-only access" \
+  jq -e '.repositories.api.access == "write" and
+    .repositories.contracts.access == "read" and
+    .repositories.external.access == "read"' "$repository_manifest"
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
   api-static pass --observed "API static fixture passed" \
   --source harness-test --artifact api.txt >/dev/null
@@ -367,4 +428,69 @@ printf '%s\n' \
 assert_cmd_fails_with "invalid repository setupCommand is rejected" \
   "setupCommand must be a non-empty string" \
   node .claude/harness/foundation.mjs repos
+
+# A dirty control tree selects copy mode, but child repository worktrees still
+# have to refresh when a read dependency moves.
+mkdir -p "$TMP/copy-read-child"
+cd "$TMP/copy-read-child"
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+printf 'dependency-before\n' > dependency.txt
+git add .
+git commit -qm "copy read dependency fixture"
+mkdir -p "$TMP/copy-read/.claude/harness" "$TMP/copy-read/openspec" \
+  "$TMP/copy-read/.foundation"
+install_harness_fixture "$ROOT" "$TMP/copy-read"
+cp "$ROOT/.claude/harness/commands.json" "$TMP/copy-read/.claude/harness/"
+cp -R "$ROOT/openspec/schemas" "$TMP/copy-read/openspec/"
+cp "$ROOT/openspec/config.yaml" "$TMP/copy-read/openspec/"
+cp "$ROOT/.foundation/.gitignore" "$TMP/copy-read/.foundation/"
+cp "$ROOT/foundation.json" "$TMP/copy-read/"
+jq '.workflow.grounding = "optional" |
+    .workflow.reviewPolicy = "legacy" |
+    .workflow.reviewCircuit = "legacy"' \
+  "$TMP/copy-read/foundation.json" > "$TMP/copy-read-foundation.json"
+mv "$TMP/copy-read-foundation.json" "$TMP/copy-read/foundation.json"
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"dependency","type":"external","path":"../copy-read-child","mode":"read","allowOutsideRoot":true}' \
+  ']}' > "$TMP/copy-read/openspec/repositories.yaml"
+cd "$TMP/copy-read"
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+printf 'control-before\n' > control.txt
+git add .
+git commit -qm "copy root fixture"
+node .claude/harness/foundation.mjs new 'Copy root read refresh' >/dev/null
+node .claude/harness/foundation.mjs resolve copy-root-read-refresh \
+  --impact low --coupling isolated --acceptance-not-required >/dev/null
+printf '%s\n' \
+  '{"version":1,"repositories":[' \
+  '  {"id":"root","mode":"write","dependsOn":[]},' \
+  '  {"id":"dependency","mode":"read","dependsOn":[]}' \
+  ']}' > openspec/changes/copy-root-read-refresh/repositories.yaml
+printf '%s\n' '# Tasks' '' \
+  '- [x] **T001** Inventory control [repo:root] [kind:inventory] [paths:control.txt]' \
+  > openspec/changes/copy-root-read-refresh/tasks.md
+printf 'control-dirty\n' > control.txt
+assert_cmd_zero "dirty control tree creates copy root with read child worktree" \
+  node .claude/harness/foundation.mjs sandbox create copy-root-read-refresh --all
+assert_eq "dirty control sandbox uses copy mode" "copy" \
+  "$(jq -r '.workspace.mode' .foundation/runtime/copy-root-read-refresh.json)"
+printf 'dependency-after\n' > "$TMP/copy-read-child/dependency.txt"
+git -C "$TMP/copy-read-child" add dependency.txt
+git -C "$TMP/copy-read-child" -c user.name="Foundation Test" \
+  -c user.email="foundation@example.invalid" commit -qm "move copy read dependency"
+if copy_sync_output="$(node .claude/harness/foundation.mjs sandbox sync \
+  copy-root-read-refresh 2>&1)"; then
+  pass "copy-root sync refreshes a moved child read worktree"
+else
+  printf '%s\n' "$copy_sync_output"
+  fail "copy-root sync refreshes a moved child read worktree"
+fi
+assert_contains "copy-root child worktree reaches the new dependency commit" \
+  "$(cat .foundation/repository-sandboxes/copy-root-read-refresh/dependency/dependency.txt)" \
+  "dependency-after"
 cd "$TMP/multi-project"

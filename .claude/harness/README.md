@@ -179,7 +179,12 @@ rather than pretending packages are independently landable remotes.
 Per-change `repositories.yaml` selects access
 and dependency scope. The runtime creates child worktrees under
 `.foundation/repository-sandboxes/`, hashes them into one composite snapshot,
-and scopes provider commands and receipts with `repository`.
+and scopes provider commands and receipts with `repository`. Read-selected Git
+repositories also receive detached worktrees: they participate in proof but
+cannot contribute a Land commit. A provider that executes from one repository
+but needs several declares `repository` as its cwd and `repositories` as its
+complete dependency set. Its command receives
+`FOUNDATION_REPOSITORIES_FILE`, a JSON manifest containing those isolated paths.
 
 `tasks.md` stays the only implementation ledger. Permission-bound operations
 live in `handoffs.yaml` and durable state under `.foundation/handoffs/`.

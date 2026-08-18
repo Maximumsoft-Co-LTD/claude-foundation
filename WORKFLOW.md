@@ -120,6 +120,12 @@ Failure blocks only the dependent graph closure; independent completed nodes
 and valid receipts remain reusable. Aggregate proof still covers every locked
 required node and edge, and multi-remote Land revalidates its preparation
 snapshot immediately before each mutation wave.
+Providers may distinguish their execution cwd (`repository`) from the complete
+repository set they consume (`repositories`). Git-backed `mode: read`
+dependencies are pinned in detached worktrees, included in provider and
+aggregate proof identity, exposed through `FOUNDATION_REPOSITORIES_FILE`, and
+must remain unchanged. They never produce Land nodes; target drift requires
+sandbox sync and fresh proof.
 Load one primary construction skill per task; add only the security and
 observability cross-cutting skills whose triggers apply.
 
