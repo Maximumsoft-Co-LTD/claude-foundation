@@ -173,6 +173,14 @@ diagnostics.
 
 ## Repository and model execution
 
+For multi-repository work, resolve contracts in this order: project topology →
+change read/write selection → task ownership/dependencies → sandbox creation →
+provider repository scope → proof readiness → Land order. Do not begin with
+provider wiring or worker assignment; both consume the earlier scopes and must
+not invent missing repositories. The user confirms write scope and external
+commit decisions. The agent owns manifests, runtime commands, recovery, and a
+plain-language report of what was read, written, proven, and still waiting.
+
 The committed `openspec/repositories.yaml` describes root, submodule, Git, and
 external nodes. A monorepo remains one Git repository and uses task path scopes
 rather than pretending packages are independently landable remotes.

@@ -41,6 +41,17 @@ packet คือการส่งต่องานแบบมีขอบเ�
 
 agent แก้ได้เฉพาะ path ที่ sandbox อนุญาต ซึ่งมาจากขอบเขตการเขียนใน `repositories.yaml` ของ change นั้น — change ที่ประกาศว่าแตะรีโปเดียวจะเขียนข้ามไปอีกรีโปเงียบ ๆ ไม่ได้
 
+งานหลาย repository ให้สร้าง workspace ที่เลือกทั้งหมดพร้อมกัน:
+
+```bash
+claude-foundation sandbox create <change> --all
+```
+
+repository แบบ write คือเป้าหมาย Build ส่วน read และ external เป็น input ที่ล็อก
+commit และไม่มี Land node ถ้า target ขยับระหว่าง Build ให้ใช้ `sandbox sync`
+ห้ามคัดลอกไฟล์ข้าม checkout ก่อนแบ่งงานให้ worker ให้อ่านลำดับในคู่มือ
+[Workflow หลาย Repository](/docs/th/multi-repository/)
+
 ## งานคู่ขนาน
 
 สำหรับงานหลายรีโป

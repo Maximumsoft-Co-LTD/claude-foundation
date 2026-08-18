@@ -9,6 +9,19 @@ Foundation's workflow is five commands, one of them optional:
 Investigate? → Change → Build → Prove → Land
 ```
 
+## Recommended reading order
+
+For a first change, read the [Quickstart](/docs/quickstart/) and run the
+single-repository path before opening the reference pages below. Configure
+[`foundation.json`](/docs/foundation-config/) only when the project needs a
+different model, reviewer, setup command, or policy.
+
+If one test or change needs several repositories, read the
+[multi-repository workflow](/docs/multi-repository/) next. Understand it before
+assigning parallel workers or wiring cross-repository evidence. Read the
+Evidence section when defining claims/providers or diagnosing stale receipts;
+users do not need protocol details to operate the loop.
+
 ## Why this shape
 
 An earlier design encoded quality as a long sequence of agent roles and phases — PM, lead, engineer, QA, retro. That preserved quality, but the orchestration itself came to dominate cost and latency. Every handoff meant re-establishing context that a previous persona already had.

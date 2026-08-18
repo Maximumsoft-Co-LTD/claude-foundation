@@ -30,6 +30,13 @@ Three savings compound:
 
 A provider may declare workspace-relative `inputs`, so its receipt can be rebound when *those* files are unchanged even if unrelated workspace files moved.
 
+For multi-repository evidence, `repository` selects the command's working
+directory and `repositories` declares every repository the command reads. The
+command resolves isolated paths from `FOUNDATION_REPOSITORIES_FILE`; it must not
+assume sibling checkouts. The repository set is part of execution and receipt
+identity. Configure this only after topology and change scope are correct; the
+[multi-repository workflow](/docs/multi-repository/) shows the full order.
+
 ## Four outcomes, not two
 
 Evidence returns `pass`, `fail`, `inconclusive`, or `error`. Everything except `pass` blocks landing.

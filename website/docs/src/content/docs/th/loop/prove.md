@@ -30,6 +30,13 @@ receipt ผูกกับโค้ด ข้อตกลง claim การต�
 
 provider ประกาศ `inputs` แบบอิงพาธใน workspace ได้ receipt ของมันจึงผูกใหม่ได้เมื่อ *ไฟล์เหล่านั้น* ไม่เปลี่ยน แม้ไฟล์อื่นที่ไม่เกี่ยวใน workspace จะขยับ
 
+evidence หลาย repository ใช้ `repository` เลือก working directory ของ command
+และใช้ `repositories` ประกาศทุก repository ที่ command อ่าน command ต้อง resolve
+path ที่แยกพื้นที่แล้วจาก `FOUNDATION_REPOSITORIES_FILE` ห้ามสมมติว่ามี sibling
+checkout ชุด repository เป็นส่วนหนึ่งของ identity ทั้ง execution และ receipt
+ให้ตั้งค่าส่วนนี้หลัง topology และ scope ของ change ถูกต้องแล้ว ตามลำดับเต็มใน
+[Workflow หลาย Repository](/docs/th/multi-repository/)
+
 ## ผลลัพธ์มีสี่แบบ ไม่ใช่สอง
 
 หลักฐานคืนค่าเป็น `pass`, `fail`, `inconclusive` หรือ `error` ทุกอย่างที่ไม่ใช่ `pass` บล็อกการ land

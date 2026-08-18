@@ -557,6 +557,11 @@ ID และความหมายไม่เปลี่ยน และ inv
 
 ## การใช้หลาย Repository
 
+ถ้าเพิ่งตั้งค่าครั้งแรก ให้อ่าน
+[Workflow หลาย Repository](https://claude-foundation.dev/docs/th/multi-repository/)
+ตามลำดับก่อนต่อ provider หรือแบ่ง worker ขนาน ส่วนเนื้อหาด้านล่างเป็นฉบับอ้างอิง
+ย่อสำหรับผู้ที่คุ้นเคยแล้ว
+
 `openspec/repositories.yaml` ประกาศ topology ถาวรของ project ส่วน
 `repositories.yaml` ภายใน change เลือกเฉพาะ repository ที่ change นั้นอ่านหรือ
 เขียนได้ ถ้าไม่มี selection จะยังทำงานแบบ repository เดียวชื่อ `root`

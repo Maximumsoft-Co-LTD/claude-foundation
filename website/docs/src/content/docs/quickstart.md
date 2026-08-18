@@ -10,6 +10,14 @@ within the authority you already gave, and reports what it changed and checked.
 It asks only for a consequential decision. Protocol JSON, hashes, receipts, and
 provider codes stay out of the conversation unless you request diagnostics.
 
+:::note[Single or multiple repositories?]
+Follow this page as written for one repository. If implementation or evidence
+needs several Git repositories, read the
+[multi-repository workflow](/docs/multi-repository/) before step 1. The five
+commands stay the same; repository scope and sandbox creation gain one setup
+layer.
+:::
+
 ## 0. Check the project is ready
 
 ```bash

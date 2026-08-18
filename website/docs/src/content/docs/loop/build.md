@@ -41,6 +41,17 @@ Packet budgets are enforced: 8 KiB for a task packet, 8 KiB for review, 12 KiB p
 
 The agent may edit only allowed sandbox paths. Which paths those are comes from the change's `repositories.yaml` write scope — a change that declared it touches one repository cannot quietly write to another.
 
+For multi-repository work, create all selected workspaces together:
+
+```bash
+claude-foundation sandbox create <change> --all
+```
+
+Write repositories are Build targets. Read and external repositories are pinned
+inputs and never receive Land nodes. If a target moves during Build, use
+`sandbox sync`; do not copy files between checkouts. See the ordered
+[multi-repository workflow](/docs/multi-repository/) before assigning workers.
+
 ## Parallel work
 
 For multi-repository work:

@@ -10,6 +10,13 @@ Agent จะใช้ภาษาของคุณ เริ่มจากผ�
 ส่วน JSON, hash, receipt และ provider code จะไม่หลุดเข้าบทสนทนาจนกว่าคุณจะขอ
 ข้อมูลวิเคราะห์
 
+:::note[Repository เดียวหรือหลายตัว?]
+ถ้าใช้ repository เดียวให้ทำตามหน้านี้ได้เลย ถ้า implementation หรือ evidence
+ต้องใช้หลาย Git repository ให้อ่าน
+[Workflow หลาย Repository](/docs/th/multi-repository/) ก่อนขั้น 1 คำสั่งห้าขั้น
+ยังเหมือนเดิม แต่เพิ่มชั้นตั้งค่า scope และ sandbox ของ repository
+:::
+
 ## 0. เช็คก่อนว่าโปรเจกต์พร้อม
 
 ```bash

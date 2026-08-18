@@ -9,6 +9,19 @@ workflow ของ Foundation คือห้าคำสั่ง โดยม�
 Investigate? → Change → Build → Prove → Land
 ```
 
+## ลำดับอ่านที่แนะนำ
+
+ถ้านี่คือ change แรก ให้อ่าน [เริ่มใช้งาน](/docs/th/quickstart/) และลองเส้นทาง
+repository เดียวก่อนเปิดหน้าอ้างอิงด้านล่าง ตั้งค่า
+[`foundation.json`](/docs/th/foundation-config/) เฉพาะเมื่อโปรเจกต์ต้องเปลี่ยน
+model, reviewer, setup command หรือ policy
+
+ถ้า test หรือ change หนึ่งต้องใช้หลาย repository ให้อ่าน
+[Workflow หลาย Repository](/docs/th/multi-repository/) เป็นลำดับถัดไป ต้องเข้าใจ
+ส่วนนี้ก่อนแบ่ง worker ขนานหรือต่อ evidence ข้าม repository ส่วนหมวด Evidence
+อ่านเมื่อต้องประกาศ claim/provider หรือวิเคราะห์ receipt ที่ stale ผู้ใช้ไม่ต้องรู้
+protocol ภายในเพื่อใช้งาน loop
+
 ## ทำไมต้องเป็นรูปนี้
 
 ดีไซน์รุ่นก่อนเข้ารหัสคุณภาพเป็นลำดับ role และ phase ยาว ๆ — PM, lead, engineer, QA, retro มันรักษาคุณภาพได้จริง แต่ตัว orchestration เองกลับกลืนต้นทุนและเวลาไปเสียเอง เพราะทุกครั้งที่ส่งไม้ผลัดคือการสร้าง context ที่ persona ก่อนหน้ามีอยู่แล้วขึ้นมาใหม่

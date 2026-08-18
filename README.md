@@ -569,6 +569,11 @@ proof affected by the revision.
 
 ## Multiple repositories
 
+New to this setup? Follow the ordered
+[multi-repository workflow](https://claude-foundation.dev/docs/multi-repository/)
+before wiring providers or assigning parallel workers. The reference below
+summarizes the same contract for experienced operators.
+
 `openspec/repositories.yaml` declares the durable project topology. The
 `repositories.yaml` inside a change selects only the repositories that change
 may read or write. A missing selection remains compatible with a single `root`

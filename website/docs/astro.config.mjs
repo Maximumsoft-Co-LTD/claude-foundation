@@ -69,6 +69,7 @@ export default defineConfig({
             { slug: "quickstart", label: "Quickstart", translations: { th: "เริ่มใช้งาน" } },
             { slug: "artifacts", label: "What Foundation writes", translations: { th: "Foundation เขียนอะไรบ้าง" } },
             { slug: "foundation-config", label: "Configure foundation.json", translations: { th: "ตั้งค่า foundation.json" } },
+            { slug: "multi-repository", label: "Multi-repository workflow", translations: { th: "Workflow หลาย Repository" } },
           ],
         },
         {

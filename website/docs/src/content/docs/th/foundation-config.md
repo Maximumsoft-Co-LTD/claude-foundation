@@ -237,7 +237,9 @@ Foundation จะเก็บ workspace และรายงานวิธี�
 ไม่ครบ
 
 โปรเจกต์หลาย repository ให้เก็บ root setup ไว้ที่นี่ และใส่ setup เฉพาะ repo
-ใน `openspec/repositories.yaml`
+ใน `openspec/repositories.yaml` topology, scope ของ change, scope ของ provider
+และลำดับ Land เป็นคนละ contract ให้ตั้งค่าตามลำดับในคู่มือ
+[Workflow หลาย Repository](/docs/th/multi-repository/)
 
 ## `workflow`: ใช้ control circuit รุ่นปัจจุบัน
 

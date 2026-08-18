@@ -243,7 +243,9 @@ failure keeps the workspace and reports recovery instead of continuing with a
 half-prepared sandbox.
 
 For a multi-repository project, keep the root setup here and place repository-
-specific setup commands in `openspec/repositories.yaml`.
+specific setup commands in `openspec/repositories.yaml`. Repository topology,
+change scope, provider scope, and landing order are separate contracts; configure
+them in that order in the [multi-repository workflow](/docs/multi-repository/).
 
 ## `workflow`: keep the modern control circuit enabled
 
