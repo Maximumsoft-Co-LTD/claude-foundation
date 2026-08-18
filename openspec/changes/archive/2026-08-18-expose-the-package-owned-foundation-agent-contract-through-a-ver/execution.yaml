@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "capability": "test",
+      "adapter": "test-discovery",
+      "command": ["env", "FOUNDATION_HOST_INSTRUCTION_REPORT=.foundation/test-results/host-agent-contract.json", "node", "--test", "--test-reporter=tap", ".claude/tests/harness/run-host-instruction-tests.mjs"],
+      "report": ".foundation/test-results/host-agent-contract.json",
+      "reportFormat": "json",
+      "minimum": 22,
+      "timeoutMs": 300000,
+      "criticalCases": ["agent-contract-source", "agent-contract-failure", "agent-contract-packaged", "existing-host-instruction"]
+    },
+    "compatibility": {
+      "capability": "compatibility",
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-installer-tests.sh"],
+      "timeoutMs": 300000
+    }
+  },
+  "services": {}
+}

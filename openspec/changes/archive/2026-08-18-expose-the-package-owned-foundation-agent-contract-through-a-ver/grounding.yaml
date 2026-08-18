@@ -1,0 +1,145 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-18-option-2-foundation-owned-agent-contract",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-18T09:12:00.000Z",
+    "decisions": [
+      {
+        "id": "agent-contract-source",
+        "question": "Which component owns and serves the Changeloop Foundation system context?",
+        "answer": "claude-foundation owns AGENT.md and serves it through a dedicated versioned host agent-contract endpoint; Changeloop remains a thin client.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["public-cli-contract", "package-owned-file-read"],
+    "rationale": "The endpoint is additive and read-only but is a published machine contract consumed independently by Changeloop and must remain valid in installed package layouts."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "cli.sh is the public host entrypoint and routes package-owned endpoints before project discovery.",
+    "paths": [{
+      "repository": "root",
+      "path": "cli.sh"
+    }]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The existing host instruction schema and host contract suite establish the adjacent JSON wire boundary that the new resource extends additively.",
+    "contracts": [{
+      "repository": "root",
+      "path": ".claude/tests/harness/run-host-instruction-tests.mjs"
+    }]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "A new public host subcommand activates a package-owned read path without changing existing routes.",
+    "activatedPaths": [{
+      "repository": "root",
+      "path": "cli.sh"
+    }],
+    "failureSemanticChanges": []
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "The CLI reads its own installed package synchronously; no service interaction is introduced.",
+    "rows": []
+  },
+  "observability": {
+    "status": "not-applicable",
+    "sourceReason": "The endpoint reports stable JSON failures directly and adds no operated runtime or telemetry boundary.",
+    "rows": []
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": ".claude/harness/AGENT.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "3153d099907a856ee390a6c4c3424bdc58ab5d5191a3decea94dce840d18ffcc"
+    },
+    {
+      "repository": "root",
+      "path": "cli.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "3be9a817718f6f4d47916d7d41b08b7fab92431ef92695288c30baad05d135ac"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/host-instruction.mjs",
+      "role": "architecture",
+      "mode": "full",
+      "sha256": "5e2363c9ca50b791591e8c8a3087b0a3f1e383bd4143a57a81dae2355ff8eb38"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/contracts/host-instruction.schema.json",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "428f73e93d1b33f740db36f8137e500d7730fda436ad2d018beaecd29a07dd0e"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-host-instruction-tests.mjs",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "754f69cb7aea37596239ec0cf0acdadda32c1ade57b7f23ce8e30d1e03566c1a"
+    },
+    {
+      "repository": "root",
+      "path": "package.json",
+      "role": "dependency-source",
+      "mode": "full",
+      "sha256": "3a71726a8bdd8e6b8f265377ec6453a73d604ca96f4c52a67f057134ea387e13"
+    }
+  ],
+  "claims": [
+    {
+      "id": "host-agent-contract-response",
+      "productionPath": [{
+        "repository": "root",
+        "path": "cli.sh"
+      }],
+      "failurePaths": [{
+        "repository": "root",
+        "path": "cli.sh",
+        "failure": "unsupported protocol, invalid flags, missing AGENT.md, or incomplete package version"
+      }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "host-agent-contract-compatibility",
+      "productionPath": [{
+        "repository": "root",
+        "path": "cli.sh"
+      }],
+      "failurePaths": [{
+        "repository": "root",
+        "path": ".claude/harness/runtime/core/host-instruction.mjs",
+        "failure": "the new resource changes existing command allow-list, response fields, argument handling, or packaged resolution"
+      }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    { "id": "agent-contract-source", "claimIds": ["host-agent-contract-response"], "oracle": "contract-oracle" },
+    { "id": "agent-contract-failure", "claimIds": ["host-agent-contract-response"], "oracle": "failure-path" },
+    { "id": "agent-contract-packaged", "claimIds": ["host-agent-contract-response"], "oracle": "real-wire" },
+    { "id": "existing-host-instruction", "claimIds": ["host-agent-contract-compatibility"], "oracle": "contract-oracle" }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "The host instruction endpoint already resolves package-owned content before project discovery and publishes stable protocol-1 JSON failures.",
+      "command": "node --test .claude/tests/harness/run-host-instruction-tests.mjs"
+    }
+  ]
+}

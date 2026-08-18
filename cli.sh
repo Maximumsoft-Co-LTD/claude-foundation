@@ -180,6 +180,15 @@ case "${1:-}" in
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
     case "$sub" in
+      agent-contract)
+        command -v node >/dev/null 2>&1 || fail "Node.js is required to resolve the host agent contract"
+        if [ "${1:-}" = "--help" ] && [ "$#" -eq 1 ]; then
+          printf '%s\n' \
+            'claude-foundation host agent-contract [--protocol 1] [--format json]' \
+            'Return the package-owned Foundation agent contract as protocol-1 JSON.'
+          exit 0
+        fi
+        exec node "$SCRIPT_DIR/.claude/harness/runtime/core/host-agent-contract.mjs" "$@" ;;
       instruction)
         command -v node >/dev/null 2>&1 || fail "Node.js is required to resolve host instructions"
         if [ "${1:-}" = "--help" ] && [ "$#" -eq 1 ]; then
@@ -189,7 +198,7 @@ case "${1:-}" in
           exit 0
         fi
         exec node "$SCRIPT_DIR/.claude/harness/runtime/core/host-instruction.mjs" "$@" ;;
-      *) fail "host requires 'instruction'" ;;
+      *) fail "host requires 'agent-contract' or 'instruction'" ;;
     esac ;;
   init)
     # Explicit alias for the installer. `--host` picks the adapter (every

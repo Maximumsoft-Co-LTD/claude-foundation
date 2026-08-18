@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "host-agent-contract-response",
+      "scenario": "The package-owned agent contract is returned through protocol-1 JSON outside a Foundation project and in packaged layouts, with stable validation failures",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "host-agent-contract-compatibility",
+      "scenario": "Adding the agent-contract resource leaves every existing host-instruction command and installer behavior compatible",
+      "impact": "medium",
+      "capabilities": ["test", "compatibility"]
+    }
+  ]
+}

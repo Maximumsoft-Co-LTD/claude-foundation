@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,9 @@ import { after, test } from "node:test";
 import {
   HOST_COMMANDS, HostInstructionError, resolveHostInstruction
 } from "../../harness/runtime/core/host-instruction.mjs";
+import {
+  HostAgentContractError, resolveHostAgentContract
+} from "../../harness/runtime/core/host-agent-contract.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
@@ -16,7 +19,9 @@ const reportPath = process.env.FOUNDATION_HOST_INSTRUCTION_REPORT || null;
 const criticalCases = new Map([
   ["all-eight", "missing"], ["opaque-arguments", "missing"],
   ["unknown-command", "missing"], ["outside-project", "missing"],
-  ["packaged-layout", "missing"]
+  ["packaged-layout", "missing"], ["existing-host-instruction", "missing"],
+  ["agent-contract-source", "missing"],
+  ["agent-contract-failure", "missing"], ["agent-contract-packaged", "missing"]
 ]);
 let resolvedCommands = 0;
 
@@ -24,13 +29,20 @@ after(() => {
   if (!reportPath) return;
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, `${JSON.stringify({
-    numTotalTests: 17,
+    numTotalTests: 22,
     criticalCases: [...criticalCases].map(([id, status]) => ({ id, status }))
   })}\n`);
 });
 
 function invoke(args, cwd = ROOT, cli = CLI) {
   const result = spawnSync("bash", [cli, "host", "instruction", ...args], {
+    cwd, encoding: "utf8"
+  });
+  return { ...result, json: result.stdout.trim() ? JSON.parse(result.stdout) : null };
+}
+
+function invokeAgentContract(args = [], cwd = ROOT, cli = CLI) {
+  const result = spawnSync("bash", [cli, "host", "agent-contract", ...args], {
     cwd, encoding: "utf8"
   });
   return { ...result, json: result.stdout.trim() ? JSON.parse(result.stdout) : null };
@@ -49,7 +61,10 @@ for (const command of HOST_COMMANDS) {
     assert.equal(result.json.foundationVersion.length > 0, true);
     assert.equal(result.json.instruction.includes("$ARGUMENTS"), false);
     resolvedCommands += 1;
-    if (resolvedCommands === HOST_COMMANDS.length) criticalCases.set("all-eight", "passed");
+    if (resolvedCommands === HOST_COMMANDS.length) {
+      criticalCases.set("all-eight", "passed");
+      criticalCases.set("existing-host-instruction", "passed");
+    }
   });
 }
 
@@ -114,6 +129,50 @@ test("outside-project: endpoint does not perform project discovery", () => {
   }
 });
 
+test("agent-contract-source: endpoint returns the exact package-owned contract", () => {
+  const result = invokeAgentContract();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.protocol, 1);
+  assert.equal(result.json.contract,
+    readFileSync(join(ROOT, ".claude/harness/AGENT.md"), "utf8"));
+  assert.equal(result.json.foundationVersion,
+    readFileSync(join(ROOT, "VERSION"), "utf8").trim());
+  criticalCases.set("agent-contract-source", "passed");
+});
+
+test("agent-contract-failure: invalid protocol and flags return stable errors", () => {
+  const unsupported = invokeAgentContract(["--protocol", "2"]);
+  assert.notEqual(unsupported.status, 0);
+  assert.equal(unsupported.json.error.code, "unsupported_protocol");
+  const invalid = invokeAgentContract(["unexpected"]);
+  assert.notEqual(invalid.status, 0);
+  assert.equal(invalid.json.error.code, "invalid_host_request");
+  criticalCases.set("agent-contract-failure", "passed");
+});
+
+test("agent contract reports unavailable package content", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "foundation-host-agent-missing-"));
+  try {
+    writeFileSync(join(fixture, "VERSION"), "1.0.0\n");
+    assert.throws(() => resolveHostAgentContract({ packageRoot: fixture }),
+      (error) => error instanceof HostAgentContractError &&
+        error.code === "contract_unavailable");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("agent contract endpoint runs outside a project", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "foundation-host-agent-outside-"));
+  try {
+    const result = invokeAgentContract([], fixture);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.json.contract, /Foundation agent contract/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("packaged-layout: a Homebrew-style libexec owns every dependency", () => {
   const fixture = mkdtempSync(join(tmpdir(), "foundation-host-libexec-"));
   const libexec = join(fixture, "libexec");
@@ -123,6 +182,8 @@ test("packaged-layout: a Homebrew-style libexec owns every dependency", () => {
     cpSync(join(ROOT, "VERSION"), join(libexec, "VERSION"));
     cpSync(join(ROOT, ".claude", "commands"), join(libexec, ".claude", "commands"),
       { recursive: true });
+    cpSync(join(ROOT, ".claude", "harness", "AGENT.md"),
+      join(libexec, ".claude", "harness", "AGENT.md"));
     cpSync(join(ROOT, ".claude", "harness", "runtime", "core"),
       join(libexec, ".claude", "harness", "runtime", "core"), { recursive: true });
     const result = invoke(["changes"], fixture, join(libexec, "cli.sh"));
@@ -132,6 +193,11 @@ test("packaged-layout: a Homebrew-style libexec owns every dependency", () => {
     assert.deepEqual({ protocol: result.json.protocol, command: result.json.command },
       { protocol: 1, command: "changes" });
     criticalCases.set("packaged-layout", "passed");
+    const agentContract = invokeAgentContract([], fixture, join(libexec, "cli.sh"));
+    assert.equal(agentContract.status, 0, agentContract.stderr);
+    assert.equal(agentContract.json.contract,
+      readFileSync(join(ROOT, ".claude/harness/AGENT.md"), "utf8"));
+    criticalCases.set("agent-contract-packaged", "passed");
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -152,6 +218,19 @@ test("host instruction answers --help without project discovery", () => {
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /host instruction <command>/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("host agent-contract answers --help without project discovery", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "foundation-host-agent-help-"));
+  try {
+    const result = spawnSync("bash", [CLI, "host", "agent-contract", "--help"], {
+      cwd: fixture, encoding: "utf8"
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /host agent-contract/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

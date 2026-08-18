@@ -8,6 +8,7 @@
   "proofProtocol": "7",
   "packetSchema": "7",
   "agentPlanSchema": "4",
+  "agentContractProtocol": "1",
   "contextEventSchema": "2",
   "reviewProtocol": "3",
   "acceptanceProtocol": "2",

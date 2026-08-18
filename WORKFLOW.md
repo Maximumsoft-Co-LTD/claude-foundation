@@ -708,6 +708,20 @@ stable JSON error code. The endpoint is additive and ships before a host adopts
 it; a host that cannot obtain protocol 1 must request a compatible Foundation
 release instead of reading project command files or using a bundled copy.
 
+Hosts can resolve the portable agent contract from the same installed release:
+
+```bash
+claude-foundation host agent-contract --protocol 1 --format json
+```
+
+Agent-contract protocol 1 returns the exact package-owned
+`.claude/harness/AGENT.md` text, protocol, and Foundation version as JSON. It
+does not perform project discovery or return a filesystem path. Unsupported
+protocols or formats, invalid flags, and unavailable or incomplete package
+content fail closed with a stable JSON error code. This resource is separate
+from `host instruction`; adding it does not change command instruction
+responses or argument handling.
+
 `claude-foundation` is the stable public control surface. It searches upward
 from the working directory, or from `--project <path>`, and forwards to the
 runtime installed in that project so schemas and runtime behavior stay aligned.
