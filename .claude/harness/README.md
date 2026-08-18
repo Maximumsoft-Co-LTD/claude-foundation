@@ -146,6 +146,13 @@ claude-foundation doctor --stage prove --change <change>
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
 | `handoff record <change> ...` | Records accepted/completed/rejected with actor and evidence references | Resuming Land without turning operator work into a developer task |
 
+If the whole project directory moves, rerunning `sandbox create <change>` can
+rebind a recorded sandbox to the canonical `.foundation/sandboxes/<change>` in
+the new project location. Recovery requires the old path to be absent, the
+change marker and harness layout to match, and any recorded Git metadata to
+remain valid. A moved worktree with a broken Git pointer is refused and must be
+recreated.
+
 `--unattended` is a presence-only security flag. Valued and duplicate forms are
 rejected before telemetry or workspace mutation. The host first calls `sandbox
 challenge`, signs the canonical challenge with an Ed25519 key installed in a

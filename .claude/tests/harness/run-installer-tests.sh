@@ -327,7 +327,7 @@ printf '%s\n' \
   '"specs":[{"name":"atomic","requirement":"Atomic start","description":"The runtime SHALL start an isolated Build.",' \
   '"scenario":"Valid draft","when":"a valid rapid draft is supplied","then":"an isolated Build packet is returned"}],' \
   '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
-  '"report":"test-results/atomic.json","minimum":1,"timeoutMs":120000}},"services":{}}}' \
+  '"report":"test-results/atomic.json","inputs":["atomic-test.sh"],"minimum":1,"timeoutMs":120000}},"services":{}}}' \
   > "$TARGET/.foundation/atomic-draft.json"
 atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-draft.json)"
@@ -371,7 +371,7 @@ printf '%s\n' \
   '"specs":[{"name":"payment-migration","requirement":"Exact compatible migration","description":"The system SHALL preserve payment values.",' \
   '"scenario":"Mixed-version migration","when":"a decimal amount is migrated","then":"exact cents and the legacy amount remain"}],' \
   '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
-  '"report":"test-results/atomic.json","minimum":1,"timeoutMs":120000}},"services":{}}}' \
+  '"report":"test-results/atomic.json","inputs":["atomic-test.sh"],"minimum":1,"timeoutMs":120000}},"services":{}}}' \
   > "$TARGET/.foundation/atomic-migration-draft.json"
 standard_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-migration-draft.json)"

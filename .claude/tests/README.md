@@ -47,6 +47,7 @@ it copies anything, so running one directly is as safe as running the suite.
 | `harness/run-apply-conflict-tests.mjs` | Worktree apply refuses to overwrite uncommitted target edits, while accepting files already at the exact proven bytes |
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
 | `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
+| `harness/run-reliability-gap-tests.sh` | Provider command inputs, exact copy projections, relocated sandbox recovery, runtime API guidance, and Claude fresh-session provenance stay fail-closed |
 | `harness/run-target-drift-mutation.sh` | Removing the worktree replay or the `land check` target stop is detected by the suite above |
 | `harness/run-evidence-binding-mutation.sh` | Folding the change packet back into the code hash, or dropping review's exemption from that omission, is detected by the evidence-proof contract slice and the feedback-review suite; `run-all.sh` vouches for baselines its pool already ran green (`FOUNDATION_PREPROVEN_SUITES`), a standalone run proves them itself |
 | `harness/run-branch-warning-tests.mjs` | Default-branch visibility at Land (warn, never block) and the doctor escalation for the unwired branch guard |

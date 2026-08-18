@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-reliability-gap-tests.sh"],
+      "minimum": 5,
+      "reportFormat": "json",
+      "report": ".foundation/test-results/reliability-gaps.json",
+      "env": {"FOUNDATION_RESULT_REPORT": ".foundation/test-results/reliability-gaps.json"},
+      "resources": ["foundation-test-suite"],
+      "criticalCases": ["CASE-INPUT-BINDING","CASE-COPY-PREALIGNED","CASE-RELOCATION-REBIND","CASE-API-CONSISTENCY","CASE-CLAUDE-SESSION"],
+      "inputs": [".claude/harness/**", ".claude/tests/harness/**", ".claude/tests/lib/**"]
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/run-all.sh"],
+      "timeoutMs": 600000,
+      "resources": ["foundation-test-suite"],
+      "inputs": [".claude/**", "openspec/schemas/**", "install.sh", "cli.sh"]
+    },
+    "review": {"adapter":"external"}
+  },
+  "services": {}
+}

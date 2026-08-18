@@ -53,6 +53,15 @@ function text(value) {
   return String(value || "").trim();
 }
 
+export function claudeResultEnvelope(stdout) {
+  const parsed = parseJson(stdout);
+  if (!Array.isArray(parsed)) return parsed;
+  const result = [...parsed].reverse().find((event) => event?.type === "result") || null;
+  const session = result?.session_id || parsed.find((event) =>
+    event?.type === "system" && event?.subtype === "init")?.session_id || null;
+  return result ? { ...result, session_id: session } : session ? { session_id: session } : null;
+}
+
 function diagnostic(result) {
   return text(result?.stderr || result?.error?.message) ||
     `process exited with status ${result?.status ?? "unknown"}`;
@@ -325,7 +334,7 @@ export function createConfiguredReviewerRuntime({
       maxBuffer: 4 * 1024 * 1024,
       env: environment
     });
-    const handshakeEnvelope = parseJson(handshake.stdout);
+    const handshakeEnvelope = claudeResultEnvelope(handshake.stdout);
     const observedHandshakeSession = text(handshakeEnvelope?.session_id);
     if (handshake.error || handshake.status !== 0 ||
         handshakeEnvelope?.is_error === true ||
@@ -354,7 +363,7 @@ export function createConfiguredReviewerRuntime({
       maxBuffer: 64 * 1024 * 1024,
       env: environment
     });
-    const envelope = parseJson(result.stdout);
+    const envelope = claudeResultEnvelope(result.stdout);
     const sessionId = text(envelope?.session_id);
     if (result.error || result.status !== 0 || envelope?.is_error === true ||
         envelope?.subtype && envelope.subtype !== "success")

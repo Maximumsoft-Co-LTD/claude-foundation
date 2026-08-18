@@ -803,10 +803,12 @@ try {
     /High\s+asks material risk decisions in the initial Decision Sheet/i);
   assert.match(feature, /never dispatch a\s+third AI/i);
   const agentContract = readFileSync(join(root, ".claude/harness/AGENT.md"), "utf8");
+  const runtimeApi = readJson(join(root, ".claude/harness/protocol.json")).runtimeApi;
   assert.match(agentContract, /Before developer work, verify Foundation/i);
-  assert.match(agentContract, /runtime API `22`/);
+  assert.match(agentContract, new RegExp("runtime API `" + runtimeApi + "`"));
   const developerSetup = readFileSync(
     join(root, ".claude/harness/DEVELOPER-SETUP.md"), "utf8");
+  assert.match(developerSetup, new RegExp("runtime API\\s+is `" + runtimeApi + "`"));
   assert.match(developerSetup, /scripts\/install-foundation-runtime\.mjs/);
   assert.match(developerSetup, /Node\.js 20\.19 or later/);
   const policy = readJson(join(root, "foundation.json"));

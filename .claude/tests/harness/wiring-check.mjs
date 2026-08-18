@@ -154,7 +154,8 @@ if (mode === "params") {
   // documented; keeping the list explicit is what makes an *accidental* orphan
   // visible instead of blending into the same silence.
   const standalone = new Set([
-    "core/host-instruction.mjs", "reliability/bounded-retry.mjs", "version.mjs"
+    "core/host-agent-contract.mjs", "core/host-instruction.mjs",
+    "reliability/bounded-retry.mjs", "version.mjs"
   ]);
   const imported = new Set();
   const collect = (source) => {

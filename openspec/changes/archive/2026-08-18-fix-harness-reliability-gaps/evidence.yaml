@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {"id":"provider-input-coverage","scenario":"Executable provider scripts are content-bound and stale receipts are not reused","impact":"high","capabilities":["test","compatibility","review"]},
+    {"id":"copy-land-reconciliation","scenario":"Copy-mode Land accepts exact desired content and blocks divergent content","impact":"high","capabilities":["test","compatibility","review"]},
+    {"id":"sandbox-relocation","scenario":"A moved project can safely rebind its matching canonical sandbox","impact":"high","capabilities":["test","compatibility","review"]},
+    {"id":"runtime-api-consistency","scenario":"Shipped instructions and executable runtime pins name one API version","impact":"medium","capabilities":["test","compatibility","review"]},
+    {"id":"review-session-regression","scenario":"Claude review retains exact fresh-session provenance","impact":"high","capabilities":["test","compatibility","review"]},
+    {"id":"harness-compatibility","scenario":"The complete deterministic harness suite remains green","impact":"high","capabilities":["compatibility","review"]}
+  ]
+}

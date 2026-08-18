@@ -230,6 +230,13 @@ claim about what the command reads: name too little and a real code edit reuses
 evidence that never saw it. `proof plan` prints each provider's binding, and
 reuse is logged to `.foundation/logs/<change>/reuse.jsonl`.
 
+For an executable provider, every existing workspace-relative input file named
+directly by its command must be covered by `inputs` or by the change's declared
+surface. The configured `report` is an output and is excluded from this check.
+`evidence doctor` refuses incomplete wiring and names the uncovered file. This
+prevents a changed helper script from reusing evidence earned by its older
+bytes; add the script to `inputs` when it is part of the provider.
+
 A receipt records how it was produced. Receipts the harness executed carry
 `execution: "harness"` and their command log; everything recorded by hand is
 `execution: "manual"` and must include `--observed`, `--source` or `--reviewer`,

@@ -554,6 +554,8 @@ const evidenceContract = createEvidenceContract({
   policyCapabilities,
   foundationPolicy,
   handoffContract,
+  git,
+  declaredSurfaceMatcher,
   die
 });
 const {
@@ -1075,6 +1077,7 @@ const sandboxRuntime = createSandboxRuntime({
   taskBlocks,
   proofPath,
   relevantHash,
+  now,
   fail: die
 });
 const {

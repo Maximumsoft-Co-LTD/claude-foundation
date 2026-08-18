@@ -1,0 +1,103 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "mixed",
+    "reference": "user-20260818-fix-harness-source",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-18T09:08:18Z",
+    "decisions": [
+      {"id":"D001","question":"Where should the defects be fixed?","answer":"In the claude-foundation upstream source repository, not the consumer lab","source":"user-batch"},
+      {"id":"D002","question":"How should executable provider inputs be protected?","answer":"Require explicit coverage and bootstrap safe deterministic inputs without broad untracked hashing","source":"recommended-default"},
+      {"id":"D003","question":"How should relocated sandboxes recover?","answer":"Rebind only the identity-checked canonical sandbox under the current root","source":"recommended-default"}
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["evidence-integrity","land-data-loss-prevention","path-resolution","public-runtime-contract"],
+    "rationale": "The change controls whether receipts are reused, whether Land may overwrite a path, and which relocated workspace is trusted."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "Consumer commands enter through the shipped composition root and runtime modules.",
+    "paths": [{"repository":"root","path":".claude/harness/foundation.mjs"}]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "Deterministic harness tests drive the same public CLI and configured reviewer process contracts used by consumers.",
+    "contracts": [
+      {"repository":"root","path":".claude/harness/tests/configured-reviewer.test.mjs"}
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "Managed harness files activate when installed into a consumer project.",
+    "activatedPaths": [
+      {"repository":"root","path":".claude/harness/foundation.mjs"},
+      {"repository":"root","path":".claude/harness/AGENT.md"},
+      {"repository":"root","path":".claude/harness/DEVELOPER-SETUP.md"}
+    ],
+    "failureSemanticChanges": ["unsafe provider wiring fails validation","matching relocated sandbox becomes recoverable","divergent Land target remains blocked"]
+  },
+  "serviceInteractions": {
+    "status":"applicable",
+    "sourceReason":"Executable evidence and configured review launch bounded local child processes whose input identity is part of this change.",
+    "rows":[{
+      "id":"provider-child-process",
+      "owner":"Foundation runtime",
+      "producer":"proof execution scheduler",
+      "consumer":"project-owned provider command or configured reviewer CLI",
+      "contract":"validated command configuration, declared inputs, environment names, workspace identity, and structured result",
+      "delivery":"local child process with bounded stdout/stderr and copied evidence artifacts",
+      "timeoutRetry":"provider timeout plus existing bounded proof/reviewer retry policy",
+      "idempotency":"provider fingerprint, input identity, workspace identity, proof run, and review request/session identity",
+      "ordering":"resource-safe proof graph and authority request lifecycle",
+      "consistency":"receipt validation rechecks provider fingerprint, input identity, and artifact digests",
+      "rollout":"new validation applies to newly validated executable provider wiring; existing complete receipts remain readable",
+      "rollback":"restore the prior runtime bundle and revalidate provider wiring"
+    }]
+  },
+  "observability": {"status":"applicable","sourceReason":"Recovery and validation failures must name the path and corrective action.","rows":[{
+    "interactionId":"provider-child-process",
+    "correlation":"change ID, provider ID, provider fingerprint, workspace identity, and named path",
+    "structuredEvents":"validation blocker, receipt invalidation/reuse, sandbox rebind accepted/rejected, and Land conflict",
+    "sli":"no passing receipt survives a covered input change and no rebind/apply accepts mismatched content",
+    "alert":"CLI fails closed naming the uncovered, divergent, missing, or mismatched path",
+    "runbook":"correct provider inputs, restore the canonical sandbox, or reconcile the divergent target and resume the same lifecycle command",
+    "operatorQuestion":"Only a non-canonical workspace choice or intentional withdrawal of evidence requires an operator decision"
+  }]},
+  "readSet": [
+    {"repository":"root","path":"openspec/changes/fix-harness-reliability-gaps/proposal.md","role":"requirement","mode":"full","sha256":"970e9f17a9e9c3e1e3305aa297a7a57ef9149a34468284fa2b91c51e77111a95"},
+    {"repository":"root","path":".claude/harness/runtime/README.md","role":"architecture","mode":"full","sha256":"12f08a8cdba65ea9205dd824a97f6e10ba9d3ab5ea8e23f302ebbc3f4b3071be"},
+    {"repository":"root","path":".claude/harness/protocol.json","role":"contract","mode":"full","sha256":"15925a91d6ed10fd0f172a268126fce88cb7a886ad9458f5f9bf09d2b092f644"},
+    {"repository":"root","path":".claude/harness/runtime/composition/bootstrap.mjs","role":"composition-root","mode":"targeted","sha256":"e34abb7972c76ce5d5569dfd4aecf64b6e1e8b27e6a77d6daeb3f356b1f8a6c4"},
+    {"repository":"root","path":"package-lock.json","role":"dependency-source","mode":"full","sha256":"d90cc926a2e12012505788fa75ec314e6d530e1e1c139585cb9c5ab2a5d73c50"},
+    {"repository":"root","path":".claude/harness/foundation.mjs","role":"production-path","mode":"targeted","sha256":"284bd96cb90466469e5a467249265ea53896a59e20a758d9133702487974b912"},
+    {"repository":"root","path":".claude/harness/runtime/evidence/evidence-contract.mjs","role":"production-path","mode":"targeted","sha256":"f295795c75c6b7dc8c42f2432d14fb8a072994c64eb863641834390eb9192ca7"},
+    {"repository":"root","path":".claude/harness/runtime/evidence/configured-reviewer.mjs","role":"production-path","mode":"targeted","sha256":"1af7c2d1e7bcc29e3f873ec1706fa3c4affb272db15e5e2e356468d7e48fe3f8"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/apply-runtime.mjs","role":"production-path","mode":"targeted","sha256":"ddc19b4828a047d3cdde839f3e45ced1f2532bab88d34665680cdd39dc6664e3"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/sandbox-runtime.mjs","role":"production-path","mode":"targeted","sha256":"e010be4b6752428efbbf0cdaa5139c4ac3b767a4eefc0e1d1dab857fcab8fe8a"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/change-validation.mjs","role":"production-path","mode":"targeted","sha256":"57f0906b55ad0e1e953759dd9e714840389596c587944f63835a81e400eab92f"},
+    {"repository":"root","path":".claude/harness/AGENT.md","role":"production-path","mode":"targeted","sha256":"d4f65d299cdfe574d471810c4835767dfc1075f19f54e87d0dd96d7534e4e859"},
+    {"repository":"root","path":".claude/harness/DEVELOPER-SETUP.md","role":"production-path","mode":"targeted","sha256":"9761b16cf13de7316991ab19c8dec7fa4514a7239211c596253c005d6ce99fc3"},
+    {"repository":"root","path":".claude/harness/tests/configured-reviewer.test.mjs","role":"test-topology","mode":"targeted","sha256":"629b2716848251dc79c218586487c1fd357498d215c60fcf4c768b5bc77eccbe"},
+    {"repository":"root","path":".claude/tests/run-all.sh","role":"test-topology","mode":"targeted","sha256":"f692ccc25bfdb7d19d771e1265a9b3bf41214d26f31b2a41156d3d850dcae275"}
+  ],
+  "claims": [
+    {"id":"provider-input-coverage","productionPath":[{"repository":"root","path":".claude/harness/runtime/evidence/evidence-contract.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/change-validation.mjs","failure":"command names an uncovered untracked workspace file"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"copy-land-reconciliation","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/apply-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/apply-runtime.mjs","failure":"target differs from both baseline and desired sandbox identity or mode"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"sandbox-relocation","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/sandbox-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/sandbox-runtime.mjs","failure":"canonical candidate is absent or identity/layout validation fails"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"runtime-api-consistency","productionPath":[{"repository":"root","path":".claude/harness/AGENT.md"},{"repository":"root","path":".claude/harness/DEVELOPER-SETUP.md"}],"failurePaths":[{"repository":"root","path":".claude/harness/AGENT.md","failure":"instruction value differs from executable runtime pins"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"review-session-regression","productionPath":[{"repository":"root","path":".claude/harness/runtime/evidence/configured-reviewer.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/tests/configured-reviewer.test.mjs","failure":"fresh-session handshake or exact-session enforcement regresses"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"harness-compatibility","productionPath":[{"repository":"root","path":".claude/harness/foundation.mjs"}],"failurePaths":[{"repository":"root","path":".claude/tests/run-all.sh","failure":"any deterministic shipped harness suite fails"}],"evidenceClass":["review"],"testDoubleGap":"none"}
+  ],
+  "criticalCases": [
+    {"id":"CASE-INPUT-BINDING","claimIds":["provider-input-coverage"],"oracle":"failure-path"},
+    {"id":"CASE-COPY-PREALIGNED","claimIds":["copy-land-reconciliation"],"oracle":"production-entry"},
+    {"id":"CASE-RELOCATION-REBIND","claimIds":["sandbox-relocation"],"oracle":"failure-path"},
+    {"id":"CASE-API-CONSISTENCY","claimIds":["runtime-api-consistency"],"oracle":"contract-oracle"},
+    {"id":"CASE-CLAUDE-SESSION","claimIds":["review-session-regression"],"oracle":"real-wire"}
+  ],
+  "mutants": [],
+  "derivedFacts": []
+}

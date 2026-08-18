@@ -922,7 +922,8 @@ export function createChangeValidationRuntime({
       providerCapability,
       knownProviders,
       commandExists,
-      stableHash
+      stableHash,
+      declaredSurface: state.declaredSurface || []
     });
   }
 

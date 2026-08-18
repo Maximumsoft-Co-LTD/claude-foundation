@@ -6,7 +6,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { REVIEW_SCHEMA, createConfiguredReviewerRuntime } from
+import { REVIEW_SCHEMA, claudeResultEnvelope, createConfiguredReviewerRuntime } from
   "../runtime/evidence/configured-reviewer.mjs";
 import { createRuntimeEnvironment } from
   "../runtime/core/runtime-environment.mjs";
@@ -28,13 +28,16 @@ if (args[0] === "--help") {
   process.stdout.write("--print --output-format --json-schema --model --effort --permission-mode --tools --safe-mode --session-id --no-session-persistence");
   process.exit(0);
 }
+const emit = (value) => process.stdout.write(JSON.stringify([{
+  type: "system", subtype: "init", session_id: value.session_id
+}, value]));
 const sessionId = args[args.indexOf("--session-id") + 1];
 if (!args.includes("--json-schema")) {
-  process.stdout.write(JSON.stringify({
+  emit({
     type: "result", subtype: "success", is_error: false,
     session_id: process.env.FAKE_CLAUDE_HANDSHAKE_SESSION || sessionId,
     result: "OK"
-  }));
+  });
   process.exit(0);
 }
 const schema = JSON.parse(args[args.indexOf("--json-schema") + 1]);
@@ -52,11 +55,11 @@ const review = process.env.FAKE_CLAUDE_INVALID === "1"
           { id: " F2", severity: "minor", path: "a.mjs", line: 2, message: "two", claimIds: ["c"], verificationCaseIds: ["v"] }
         ] }
       : { status: "pass", summary: "same-family fresh review passed", findings: [], verifiedFindingIds: [] };
-process.stdout.write(JSON.stringify({
+emit({
   type: "result", subtype: "success", is_error: false,
   session_id: process.env.FAKE_CLAUDE_SESSION || sessionId,
   structured_output: review
-}));
+});
 `);
 chmodSync(executable, 0o755);
 
@@ -79,6 +82,9 @@ const runtime = createConfiguredReviewerRuntime({
 });
 
 try {
+  assert.equal(claudeResultEnvelope(JSON.stringify({
+    type: "result", session_id: "legacy-object"
+  })).session_id, "legacy-object");
   process.env.CLAUDECODE = "1";
   const result = runtime.runReview({
     changeId: "claude-only", workspace,

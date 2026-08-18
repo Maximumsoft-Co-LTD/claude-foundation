@@ -167,10 +167,14 @@ export function createApplyRuntime({
     if (state.workspace.mode === "copy") {
       const baseline = state.workspace.baseline || {};
       const target = workspaceManifest(root, id, true);
+      const sandbox = workspaceManifest(sandboxPath, id, true);
       codePaths = copyCodePaths(id, state);
-      for (const path of codePaths)
-        if ((target[path] ?? null) !== (baseline[path] ?? null))
+      for (const path of codePaths) {
+        if ((target[path] ?? null) !== (baseline[path] ?? null) &&
+            ((target[path] ?? null) !== (sandbox[path] ?? null) ||
+             pathMode(join(root, path)) !== pathMode(join(sandboxPath, path))))
           fail(`isolated-copy conflict at '${path}'`);
+      }
     } else if (state.workspace.mode === "worktree") {
       assertTargetHeadUnmoved(id, state);
       codePaths = gitApplyInputs(id, sandboxPath);

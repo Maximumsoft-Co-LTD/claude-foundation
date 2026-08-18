@@ -114,7 +114,7 @@ export function createSandboxRuntime({
   gitBuffer, porcelainStatusRecords,
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
-  executionFingerprint, taskBlocks, proofPath, relevantHash, fail,
+  executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
   markBlocked = () => {}
 }) {
   function sandboxRoot(id) {
@@ -348,6 +348,43 @@ export function createSandboxRuntime({
     }
   }
 
+  function rebindRelocatedSandbox(id, state) {
+    const workspace = state.workspace || {};
+    if (!["worktree", "copy"].includes(workspace.mode) ||
+        !workspace.path || existsSync(workspace.path)) return false;
+    const canonicalSandboxRoot = canonicalPath(join(root, ".foundation", "sandboxes"));
+    const candidate = canonicalPath(sandboxRoot(id));
+    if (!directoryExists(candidate) || candidate === canonicalPath(workspace.path)) return false;
+    if (relative(canonicalSandboxRoot, candidate).replaceAll("\\", "/") !== id)
+      fail(`cannot rebind relocated sandbox '${candidate}': candidate escapes the canonical sandbox directory; recreate the sandbox`);
+    const packet = join(candidate, "openspec", "changes", id);
+    const marker = join(packet, ".openspec.yaml");
+    const expectedMarker = workspace.packetSnapshot?.[".openspec.yaml"];
+    if (!directoryExists(packet) || !expectedMarker || !existsSync(marker) ||
+        fileDigest(marker) !== expectedMarker)
+      fail(`cannot rebind relocated sandbox '${candidate}': change identity does not match '${id}'`);
+    const requiredLayout = [
+      join(candidate, ".claude", "harness", "foundation.mjs"),
+      join(candidate, "openspec", "config.yaml")
+    ];
+    if (requiredLayout.some((path) => !existsSync(path)))
+      fail(`cannot rebind relocated sandbox '${candidate}': sandbox layout is incomplete; recreate the sandbox`);
+    if (workspace.mode === "worktree" && !gitMetadataPresent(candidate))
+      fail(`cannot rebind relocated sandbox '${candidate}': recorded worktree metadata is not valid at the new project location; recreate the sandbox`);
+    if (workspace.mode === "copy" && workspace.git === "carried" &&
+        !gitMetadataPresent(candidate))
+      fail(`cannot rebind relocated sandbox '${candidate}': recorded copied Git metadata is not valid at the new project location; recreate the sandbox`);
+    const relocatedFrom = canonicalPath(workspace.path);
+    workspace.path = candidate;
+    workspace.relocatedFrom = relocatedFrom;
+    workspace.reboundAt = now();
+    state.workspace = workspace;
+    saveRuntime(state);
+    clearSnapshotCache(id);
+    console.log(`REBOUND ${id}\n  workspace: ${candidate}`);
+    return true;
+  }
+
   // A commit read, not executed.
   //
   // Isolation inspection is the diagnostic someone reaches for when the
@@ -462,6 +499,7 @@ export function createSandboxRuntime({
   function createSingle(id) {
     const state = loadRuntime(id);
     if (state.status === "archived") fail(`change '${id}' is already archived`);
+    if (rebindRelocatedSandbox(id, state)) return;
     if (["worktree", "copy"].includes(state.workspace?.mode) && existsSync(state.workspace.path))
       fail(`sandbox already exists: ${state.workspace.path}`);
     const groundingPath = join(changePath(id), "grounding.yaml");

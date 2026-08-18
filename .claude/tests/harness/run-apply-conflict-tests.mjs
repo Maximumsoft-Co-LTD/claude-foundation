@@ -100,6 +100,27 @@ function provenEdit(fixture, title, id, file, content, prepare = () => {}) {
   return runtime;
 }
 
+function provenCopyEdit(fixture, title, id, file, content) {
+  cli(fixture, "new", title, "--rapid");
+  cli(fixture, "resolve", id, "--impact", "low", "--coupling", "isolated");
+  writeFileSync(join(fixture.root, "other-change.txt"), "uncommitted concurrent work\n");
+  cli(fixture, "sandbox", "create", id);
+  const runtime = JSON.parse(readFileSync(
+    join(fixture.root, ".foundation", "runtime", `${id}.json`), "utf8"));
+  assert.equal(runtime.workspace.mode, "copy", "dirty fixture expects an isolated copy");
+  writeFileSync(join(runtime.workspace.path, file), content);
+  const ledger = join(runtime.workspace.path, "openspec", "changes", id, "tasks.md");
+  writeFileSync(ledger, readFileSync(ledger, "utf8").replaceAll("- [ ]", "- [x]"));
+  cli(fixture, "receipt", id, "test", "pass",
+    "--observed", "fixture test evidence", "--source", "harness-test", "--artifact", file);
+  cli(fixture, "receipt", id, "discovery", "pass",
+    "--discovered", "1", "--minimum", "1", "--observed", "1 test discovered",
+    "--source", "harness-test", "--artifact", file);
+  const proved = cli(fixture, "prove", id);
+  assert.equal(proved.status, 0, proved.stderr);
+  return runtime;
+}
+
 test("a second land over the same file refuses instead of overwriting", () => {
   const fixture = project();
   // Both sandboxes branch from the same clean base before anything lands, and
@@ -153,6 +174,17 @@ test("a byte-identical pre-applied file is accepted without weakening conflict g
   assert.notEqual(resumed.status, 0);
   assert.match(resumed.stderr, /projection-mismatch:app\.txt/,
     "recovery must detect divergence of a pre-applied path");
+});
+
+test("an isolated copy accepts a target that already equals its desired bytes", () => {
+  const fixture = project();
+  const desired = editedLine(fixture, "app.txt", 9, "copy already applied");
+  provenCopyEdit(fixture, "Copy pre-applied probe", "copy-pre-applied-probe",
+    "app.txt", desired);
+  writeFileSync(join(fixture.root, "app.txt"), desired);
+  const applied = cli(fixture, "sandbox", "apply", "copy-pre-applied-probe");
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), desired);
 });
 
 test("a mode-only executable change is applied", () => {

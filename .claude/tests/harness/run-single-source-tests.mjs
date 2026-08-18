@@ -87,7 +87,11 @@ const pins = {
   "runtime/version.mjs RUNTIME_MODULE_API":
     read(".claude/harness/runtime/version.mjs").match(/RUNTIME_MODULE_API\s*=\s*"(\d+)"/)?.[1],
   "protocol.json runtimeApi":
-    JSON.parse(read(".claude/harness/protocol.json")).runtimeApi
+    JSON.parse(read(".claude/harness/protocol.json")).runtimeApi,
+  "AGENT.md runtime API guidance":
+    read(".claude/harness/AGENT.md").match(/runtime API `(\d+)`/)?.[1],
+  "DEVELOPER-SETUP.md runtime API guidance":
+    read(".claude/harness/DEVELOPER-SETUP.md").match(/runtime API\s+is `(\d+)`/)?.[1]
 };
 
 for (const [name, value] of Object.entries(pins))
