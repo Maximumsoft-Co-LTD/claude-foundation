@@ -223,6 +223,13 @@ export function createSandboxRuntime({
     // sandbox would operate on directories outside it.
     if (carriesGit)
       rmSync(join(path, ".git", "worktrees"), { recursive: true, force: true });
+    const carriedPreexisting = {};
+    for (const rel of Object.keys(state.workspace?.preexisting || {})) {
+      const copied = join(path, rel);
+      try {
+        if (existsSync(copied)) carriedPreexisting[rel] = fileDigest(copied);
+      } catch {}
+    }
     state.workspace = {
       // What the tree already carried at `change new` is still not this
       // change's surface once a sandbox exists; replacing the workspace record
@@ -235,6 +242,12 @@ export function createSandboxRuntime({
       baseHead: carriesGit ? gitHead(root) : null,
       git: carriesGit ? "carried" : "absent",
       baseline: workspaceManifest(root, id, true),
+      // Snapshot the bytes that actually reached the copy. A dirty target file
+      // can still be growing while the sandbox command is being redirected to
+      // it; comparing only with the earlier control-tree digest makes that
+      // carried file look like a write performed inside the sandbox.
+      sandboxBaseline: workspaceManifest(path, id, true),
+      sandboxPreexisting: carriedPreexisting,
       changeSourceHash: directoryHash(changePath(id)),
       packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
     };

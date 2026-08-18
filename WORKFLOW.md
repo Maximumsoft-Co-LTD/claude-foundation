@@ -99,7 +99,14 @@ claude-foundation packet <change> --task <task-id> [--pretty]
 ```
 
 The plan permits parallel workers only across independent repositories and
-resources. The full plan is persisted while stdout stays below 4 KiB; workers
+resources. It compiles the task, provider, repository, and Land declarations
+into one derived graph; OpenSpec and `tasks.md` remain authoritative. Versioned
+edge schemas are checked before dispatch. Scoped path, contract, and resource
+leases are acquired all-or-none and carry a fencing generation, so a late
+worker result cannot advance after takeover. Actual worktree writes, rather
+than worker-reported paths alone, must remain inside the granted scope.
+
+The full plan is persisted while stdout stays below 4 KiB; workers
 receive only an 8 KiB task packet. A one-repository change with at most two
 ordinary tasks stays with one agent. It routes mechanical inventory to the configured Haiku/fast tier,
 normal implementation to Sonnet/standard, and architecture, security,
@@ -109,6 +116,10 @@ configuration.
 Resume planning considers completed tasks as satisfied dependencies and returns
 `proof-ready` when no implementation remains. Dispatch is denied when a task
 claims behavior outside its repository authority or has no evidence provider.
+Failure blocks only the dependent graph closure; independent completed nodes
+and valid receipts remain reusable. Aggregate proof still covers every locked
+required node and edge, and multi-remote Land revalidates its preparation
+snapshot immediately before each mutation wave.
 Load one primary construction skill per task; add only the security and
 observability cross-cutting skills whose triggers apply.
 

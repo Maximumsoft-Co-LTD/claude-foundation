@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { dependentClosure } from "../core/graph-execution.mjs";
 
 export function createProofReadinessRuntime({
   markBlocked = () => {},
@@ -24,6 +25,7 @@ export function createProofReadinessRuntime({
   }),
   activeChangeLeases,
   activeRepositoryConflicts,
+  agentPlanValue = null,
   changePath,
   proofPath,
   readJson,
@@ -88,18 +90,25 @@ export function createProofReadinessRuntime({
   // return stays as-is — proof-runtime consumes it verbatim.
   function changedSurfaceIssues(id, details = null) {
     const state = loadRuntime(id);
-    if (!state.repositories || Object.keys(state.repositories).length <= 1) return [];
     const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
       .map(taskMetadata);
+    const generatedReports = Object.keys(evidence(id).providers || {}).map((provider) => {
+      const config = providerConfig(id, provider) || {};
+      return { repository: config.repository || "root", path: config.report || null };
+    }).filter((row) => row.path);
     const issues = [];
     const surface = canonicalChangedSurface(id, state);
     for (const repository of selectedRepositories(id, state)) {
       if (repository.mode !== "write") continue;
       const allowed = tasks.filter((task) => task.repository === repository.id)
         .flatMap((task) => task.paths);
+      const repositoryWide = tasks.some((task) => task.repository === repository.id &&
+        (!(task.paths || []).length || task.paths.includes("*")));
       const changed = surface.filter((row) => row.repositoryId === repository.id)
         .map((row) => row.path);
-      const outside = changed.filter((path) => !allowed.some((scope) => {
+      const outside = repositoryWide ? [] : changed.filter((path) =>
+        !generatedReports.some((report) => report.repository === repository.id &&
+          report.path === path) && !allowed.some((scope) => {
         const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
         return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
       }));
@@ -370,6 +379,12 @@ export function createProofReadinessRuntime({
     const hash = relevantHash(id);
     const { unconfigured, unavailable } = executionNodes(id, hash);
     const pending = pendingTasks(id);
+    const plan = agentPlanValue?.(id) || null;
+    const pendingNodeIds = pending.map((task) => `task:${task.id}`).filter((nodeId) =>
+      plan?.graph?.nodes?.some((node) => node.id === nodeId));
+    const blockedNodes = plan?.graph ? dependentClosure(plan.graph, pendingNodeIds) : [];
+    const completedTaskNodes = (plan?.graph?.nodes || []).filter((node) =>
+      node.kind === "task" && !pendingNodeIds.includes(node.id)).map((node) => node.id);
     const externalOperations = handoffReadiness(id);
     const leases = stage === "prove" ? activeChangeLeases(id) : [];
     // The cross-change guard reached dispatch and lease acquisition but never
@@ -402,6 +417,16 @@ export function createProofReadinessRuntime({
         taskId: lease.taskId, owner: lease.owner, expiresAt: lease.expiresAt || null
       })),
       repositoryConflicts,
+      graph: plan?.graph ? {
+        version: plan.graph.version,
+        revision: plan.graph.revision,
+        identity: plan.graph.identity,
+        nodeCount: plan.graph.nodes.length,
+        edgeCount: plan.graph.edges.length,
+        pendingNodes: pendingNodeIds,
+        affectedNodes: blockedNodes,
+        preservedNodes: completedTaskNodes.filter((node) => !blockedNodes.includes(node))
+      } : null,
       issues,
       // Reported, never counted into `status`: these are the capabilities the
       // policy inferred from the diff and the project never wired. They are the

@@ -18,10 +18,10 @@ const packet = mkdtempSync(join(tmpdir(), "proof-fixit-"));
 mkdirSync(packet, { recursive: true });
 writeFileSync(join(packet, "tasks.md"), "- [ ] **T001** work [repo:api] [paths:api/src/**]\n");
 
-function runtimeWith({ changed }) {
+function runtimeWith({ changed, repositories = { root: {}, api: {} } }) {
   return createProofReadinessRuntime({
     evidence: () => ({ providers: {} }),
-    loadRuntime: () => ({ repositories: { root: {}, api: {} } }),
+    loadRuntime: () => ({ repositories }),
     taskBlocks: () => [{ id: "T001" }],
     activeChangePath: () => packet,
     taskMetadata: () => ({ repository: "api", paths: ["api/src/**"] }),
@@ -69,6 +69,15 @@ test("a fully declared surface stays silent and collects nothing", () => {
   const details = [];
   assert.deepEqual(runtime.changedSurfaceIssues("fixit-change", details), []);
   assert.deepEqual(details, []);
+});
+
+test("a single-repository change still rejects writes outside task scope", () => {
+  const runtime = runtimeWith({
+    repositories: { api: {} },
+    changed: [{ repositoryId: "api", path: "api/test/rogue.spec.js" }]
+  });
+  assert.match(runtime.changedSurfaceIssues("fixit-change")[0],
+    /changed outside task paths: api\/test\/rogue\.spec\.js/);
 });
 
 test("configuration recovery leads with a paste-ready annotation", () => {

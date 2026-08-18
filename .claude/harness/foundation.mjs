@@ -90,7 +90,7 @@ import {
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 
 const VERSION = "3.2.32";
-const RUNTIME_API_VERSION = "21";
+const RUNTIME_API_VERSION = "22";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -103,9 +103,9 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
 }
 const PROVIDER_PROTOCOL_VERSION = "9";
 const ADAPTER_PROTOCOL_VERSION = "5";
-const PROOF_PROTOCOL_VERSION = "6";
-const PACKET_SCHEMA_VERSION = "6";
-const AGENT_PLAN_SCHEMA_VERSION = "3";
+const PROOF_PROTOCOL_VERSION = "7";
+const PACKET_SCHEMA_VERSION = "7";
+const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const REVIEW_PROTOCOL_VERSION = "3";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
@@ -801,6 +801,7 @@ const packetRuntime = createPacketRuntime({
   ROOT,
   PACKET_SCHEMA_VERSION,
   REVIEW_PACKET_SCHEMA_VERSION,
+  leasesRoot: LEASES,
   loadRuntime,
   readJson,
   activeChangePath,
@@ -928,6 +929,10 @@ const {
   taskMetadata,
   activeChangePath,
   evidence,
+  providerCapability,
+  claimsForProvider,
+  requiredProviders,
+  providerConfig,
   resourcesConflict,
   relevantHash,
   contractFingerprint,
@@ -957,6 +962,16 @@ const {
   readJson,
   writeJson,
   now,
+  observedTaskSurface: (id, task) => {
+    const state = loadRuntime(id);
+    const repository = repositoryById(id, task.repository || "root", state);
+    return canonicalChangedSurface(id, state)
+      .filter((row) => row.repositoryId === repository.id)
+      .map((row) => {
+        const path = join(repository.workspacePath, row.path);
+        return { path: row.path, identity: existsSync(path) ? fileDigest(path) : "deleted" };
+      });
+  },
   fail: die
 });
 const {
@@ -993,6 +1008,7 @@ const {
   handoffReadiness,
   activeChangeLeases,
   activeRepositoryConflicts,
+  agentPlanValue,
   changePath,
   proofPath,
   readJson,
@@ -1227,6 +1243,20 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
       manifestDigest: manifest.manifestDigest
     } : null;
   },
+  agentPlanValue,
+  savedAgentPlan: (id) => readJson(join(PLANS, `${id}.json`), {}),
+  taskResult: (id, taskId) => {
+    const path = join(LEASES, "results", id, `${taskId}.json`);
+    return existsSync(path) ? { path, value: readJson(path, null) } : null;
+  },
+  taskPacketWasPrecompleted: (id) => {
+    const state = loadRuntime(id);
+    const expected = state.workspace?.packetSnapshot?.["tasks.md"] || null;
+    const path = join(activeChangePath(id), "tasks.md");
+    return Boolean(expected && existsSync(path) && fileDigest(path) === expected);
+  },
+  legacyExecutionPolicy: () =>
+    foundationPolicy().workflow?.reviewCircuit === "legacy",
   now,
   fail: die
 });
@@ -1337,6 +1367,8 @@ const {
   git,
   gitHead,
   ciEvidenceProtocolVersion: CI_EVIDENCE_PROTOCOL_VERSION,
+  stableHash,
+  agentPlanValue,
   now,
   blockWithDecision,
   fail: die

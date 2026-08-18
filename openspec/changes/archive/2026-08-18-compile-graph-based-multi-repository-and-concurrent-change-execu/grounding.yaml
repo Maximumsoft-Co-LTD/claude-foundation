@@ -1,0 +1,181 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "mixed",
+    "reference": "user conversation on 2026-08-17: Graph Engineering, multi-repository single-change execution, failure containment, Prove/Land behavior, and unchanged lifecycle UX",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-17T16:31:18Z",
+    "decisions": [
+      {
+        "id": "D1-derived-graph",
+        "question": "Is the graph authored or derived?",
+        "answer": "Derive and version the graph from OpenSpec, repositories, tasks, evidence, execution, and Land declarations; keep those artifacts authoritative.",
+        "source": "user-batch"
+      },
+      {
+        "id": "D2-user-experience",
+        "question": "Does Graph Engineering change the normal user workflow?",
+        "answer": "No. Preserve /change, /build, /prove, and /land; graph inspection is optional progressive disclosure and ordinary small changes remain single-agent.",
+        "source": "user-batch"
+      },
+      {
+        "id": "D3-failure-policy",
+        "question": "Can one failed required task bypass Prove or Land?",
+        "answer": "No. Preserve fail-closed aggregate proof and Land; contain retry and invalidation to the affected dependency closure while preserving unrelated work and evidence.",
+        "source": "user-batch"
+      },
+      {
+        "id": "D4-concurrency",
+        "question": "How can multiple changes write one repository concurrently?",
+        "answer": "Use atomic hierarchical path, contract, and shared-resource leases; missing or ambiguous scope falls back to an exclusive repository lock.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D5-multi-repository-land",
+        "question": "How does Land handle one change spanning multiple remotes?",
+        "answer": "Require a complete preparation snapshot, then advance compatibility-safe waves through the existing resumable saga; never claim cross-remote atomicity.",
+        "source": "user-batch"
+      },
+      {
+        "id": "D6-acceptance",
+        "question": "Is subjective human acceptance required?",
+        "answer": "No. Observable CLI, concurrency, identity, proof, and Land behavior is covered by deterministic tests plus required independent review.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "D7-spec-review-safety",
+        "question": "Which safety gaps identified by the post-validation contract review are required before Build?",
+        "answer": "Require producer-consumer schema compatibility, atomic multi-key fenced leases, observed-worktree scope enforcement, per-wave Land revalidation, explicit Investigate UX compatibility, and current-target integration with the active multi-repository identity change.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["concurrency-control", "lease-fencing", "write-authority", "public-protocol", "cross-repository-contract", "proof-integrity", "multi-remote-land"],
+    "rationale": "A false conflict decision can allow colliding writers, stale edge acceptance can reuse invalid work, and an incorrect aggregate or preparation gate can authorize a partial or unproven Land. Negative concurrency, identity, proof, and Land cases plus full compatibility and independent review are required."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "The public CLI routes Build, Prove, and Land into the planning, packet, evidence, lease, and Land runtimes that will compile and advance the graph.",
+    "paths": [
+      {"repository":"root","path":".claude/harness/foundation.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/core/cli-router.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/evidence/proof-readiness.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/workflow/land-runtime.mjs"}
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "commands.json is the authoritative serialized host/runtime contract; protocol.json is a generated compatibility pin updated from the runtime schema during Build.",
+    "contracts": [
+      {"repository":"root","path":".claude/harness/commands.json"}
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "The change activates cross-change scoped concurrency and a new prepare-all Land gate on existing lifecycle paths.",
+    "activatedPaths": [
+      {"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/workflow/lease-runtime.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/workflow/land-runtime.mjs"}
+    ],
+    "failureSemanticChanges": [
+      "Disjoint active changes in one repository may become dispatchable instead of being blocked at repository granularity.",
+      "A node failure blocks only dependent graph nodes while aggregate proof and Land remain blocked.",
+      "Multi-remote Land refuses before mutation until every required repository is prepared."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "Coupled graph execution crosses repository and native-host worker boundaries through bounded local packets even though it adds no operated network service.",
+    "rows": [
+      {
+        "id": "graph-node-handoff",
+        "owner": "Foundation runtime",
+        "producer": "compiled graph planner",
+        "consumer": "native host worker and downstream graph nodes",
+        "contract": "versioned digest-bound node input and result envelope",
+        "delivery": "bounded local task packet and atomic runtime result record",
+        "timeoutRetry": "45-minute renewable lease with bounded repair retry and explicit takeover",
+        "idempotency": "graph revision, node ID, owner, lease fencing generation, execution attempt, plan digest, and workspace identity",
+        "ordering": "declared dependency edges and resource-safe ready waves",
+        "consistency": "authoritative artifacts are recompiled before accepting a result or aggregate proof",
+        "rollout": "existing changes compile additively; small changes retain single-agent routing",
+        "rollback": "disable scoped cross-change dispatch, rebuild derived graph state, and retain authoritative artifacts and receipts"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Operators need compact graph state to diagnose concurrency, failure propagation, preservation, and Land waves.",
+    "rows": [
+      {
+        "interactionId": "graph-node-handoff",
+        "correlation": "change ID, graph revision, node ID, plan digest, and workspace hash",
+        "structuredEvents": "compiled, ready, leased, running, passed, failed, blocked, stale, cancelled, and wave transition records",
+        "sli": "every accepted transition binds to one current graph revision and node authority",
+        "alert": "CLI fails closed and names the mismatched graph, node, edge, or conflict key",
+        "runbook": "recompile derived graph state and resume the existing /build, /prove, or /land command",
+        "operatorQuestion": "Only a locked contract contradiction, live lease takeover, or partial remote-wave disposition requires an operator decision"
+      }
+    ]
+  },
+  "readSet": [
+    {"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs","role":"production-path","mode":"full","sha256":"478c7c5c5a9159fa65633259df51600b4b48ff431a7fff697751e9437df1794b"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/repository-topology.mjs","role":"production-path","mode":"full","sha256":"180fc99d6b6a73526f3d0f376a7b4de929042eab9edb8eab285f070b3ef7609f"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/repository-snapshot.mjs","role":"production-path","mode":"full","sha256":"6484cc41a01415d19d2740d02560d5e4d7f68ab5604010e066c3d804bff29512"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/lease-runtime.mjs","role":"runtime-path","mode":"full","sha256":"3566e0227dd7b9d564e192caa3b4e9446e0906a71fedfc4762f7d60ce16ad8be"},
+    {"repository":"root","path":".claude/harness/runtime/evidence/provider-scheduler.mjs","role":"production-path","mode":"full","sha256":"802d4d2a9eb655ab51bac5ad96aff0386cd4b2d4b689419f35bf8e96ea7e98c6"},
+    {"repository":"root","path":".claude/harness/runtime/evidence/proof-readiness.mjs","role":"production-path","mode":"targeted","sha256":"0f1187abbf7c2b0c4e2c714d22eb74cb362a826cf6c1e5ead6c4f4d309202535"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/land-runtime.mjs","role":"production-path","mode":"targeted","sha256":"f0cdb4279d8d0406f0122fde2350f15b04eebcdc6dfe60d44aea031777f69da7"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/packet-runtime.mjs","role":"production-path","mode":"targeted","sha256":"17e3109b86f2971dd6e85a06fdd1bbe8261dee67eedcc24b56cb39b2253992de"},
+    {"repository":"root","path":".claude/harness/runtime/core/cli-router.mjs","role":"production-path","mode":"targeted","sha256":"3a8f33ca22baba66bae7b9e1db063324073ebf8676801f7697c9af9e3984eb8e"},
+    {"repository":"root","path":".claude/harness/runtime/core/graph.mjs","role":"runtime-path","mode":"full","sha256":"a161970929c565c1d37309f6aeaf58507b8828b0b9c63439e7b8afd5eef7d80c"},
+    {"repository":"root","path":".claude/harness/foundation.mjs","role":"composition-root","mode":"targeted","sha256":"029810caf23129f437ac61b80bd6cd97a0810f2b19a9df69b0a811fe057b0915"},
+    {"repository":"root","path":".claude/harness/foundation.mjs","role":"production-path","mode":"targeted","sha256":"029810caf23129f437ac61b80bd6cd97a0810f2b19a9df69b0a811fe057b0915"},
+    {"repository":"root","path":".claude/harness/runtime/README.md","role":"architecture","mode":"full","sha256":"12f08a8cdba65ea9205dd824a97f6e10ba9d3ab5ea8e23f302ebbc3f4b3071be"},
+    {"repository":"root","path":".claude/harness/commands.json","role":"contract","mode":"full","sha256":"9123c4bee72e7809b8ee93a720222c8090e44812779f7dd28aff0d6ebf2dcdb3"},
+    {"repository":"root","path":".claude/harness/protocol.json","role":"production-path","mode":"full","sha256":"048b2a1470c2ded14cd4cf08c889015e4336ee86d9b53f1ce7c11b1ceb0510ae"},
+    {"repository":"root","path":".claude/tests/run-all.sh","role":"test-topology","mode":"targeted","sha256":"3693375923b39c19c83a27c99e04063e49ccafb60079cf77148b98e88e81aa23"},
+    {"repository":"root","path":"WORKFLOW.md","role":"requirement","mode":"targeted","sha256":"7810b3574b74abac6610d080d07df2308643a47c8aab3146e4454f46a6f6f0ad"},
+    {"repository":"root","path":"README.md","role":"requirement","mode":"targeted","sha256":"fbe75ccc87a0767d1c92011e0d8940fdd0d7cc01c90b0f79b48dd9a0b147ef71"},
+    {"repository":"root","path":"openspec/specs/change/spec.md","role":"requirement","mode":"full","sha256":"6882ba2bac0738d8fcfebb6d2fb0e213fed65aa9b9fb940681dfdb647f6e3bb1"},
+    {"repository":"root","path":"openspec/specs/prove/spec.md","role":"requirement","mode":"full","sha256":"5984aff76945396693a9066df0b9cbc6ce5857aec0286764125fcbe20a1c9dc2"},
+    {"repository":"root","path":"openspec/specs/land/spec.md","role":"requirement","mode":"full","sha256":"cbb6fdae52e4cb025e70be80ece45ab3e322ddc1453a1440e2818657bb6baa0e"}
+  ],
+  "claims": [
+    {"id":"derived-graph-contract","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/core/graph.mjs","failure":"unknown dependency or concrete cycle refuses compilation"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"typed-edge-authority","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/packet-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/lease-runtime.mjs","failure":"stale graph, plan, workspace, path, resource, or claim identity refuses result acceptance"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"producer-consumer-contract-compatibility","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/core/graph.mjs","failure":"incompatible producer output and consumer input schema versions block dispatch"}],"evidenceClass":["test","integration","cross-repo-contract","review"],"testDoubleGap":"none"},
+    {"id":"multi-repository-graph","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/repository-topology.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs","failure":"required predecessor or shared contract keeps join node blocked"}],"evidenceClass":["test","integration","review"],"testDoubleGap":"none"},
+    {"id":"scoped-concurrent-changes","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/lease-runtime.mjs","failure":"overlap, ambiguous scope, or atomic acquisition race refuses the contender"}],"evidenceClass":["test","integration","review"],"testDoubleGap":"none"},
+    {"id":"actual-write-authority","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/repository-snapshot.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/packet-runtime.mjs","failure":"observed worktree delta outside the complete granted scope rejects result and proof"}],"evidenceClass":["test","integration","review"],"testDoubleGap":"none"},
+    {"id":"failure-contained-repair","productionPath":[{"repository":"root","path":".claude/harness/runtime/evidence/provider-scheduler.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/evidence/proof-readiness.mjs","failure":"failed or stale required node blocks dependents and aggregate proof"}],"evidenceClass":["test","integration","review"],"testDoubleGap":"none"},
+    {"id":"aggregate-proof-gate","productionPath":[{"repository":"root","path":".claude/harness/runtime/evidence/proof-readiness.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/land-runtime.mjs","failure":"missing, stale, failed, or downgraded required graph coverage refuses Land"}],"evidenceClass":["test","integration","review"],"testDoubleGap":"none"},
+    {"id":"prepared-resumable-land","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/land-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/workflow/land-runtime.mjs","failure":"incomplete preparation performs no remote mutation; partial wave blocks archive and requires disposition"}],"evidenceClass":["test","integration","review"],"testDoubleGap":"none"},
+    {"id":"lifecycle-ux-compatibility","productionPath":[{"repository":"root","path":".claude/harness/runtime/core/cli-router.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/evidence/proof-readiness.mjs","failure":"complex failure output remains bounded and names failed, affected, preserved, and next lifecycle action"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"active-change-additive-upgrade","productionPath":[{"repository":"root","path":".claude/harness/runtime/workflow/agent-planning.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/core/graph.mjs","failure":"legacy active artifacts that cannot compile remain untouched and fail with an upgrade diagnostic"}],"evidenceClass":["test","review"],"testDoubleGap":"none"}
+  ],
+  "criticalCases": [
+    {"id":"CASE-GRAPH-IDENTITY","claimIds":["derived-graph-contract"],"oracle":"contract-oracle"},
+    {"id":"CASE-EDGE-AUTHORITY","claimIds":["typed-edge-authority"],"oracle":"failure-path"},
+    {"id":"CASE-CONTRACT-COMPATIBILITY","claimIds":["producer-consumer-contract-compatibility"],"oracle":"failure-path"},
+    {"id":"CASE-SCOPED-CONCURRENCY","claimIds":["scoped-concurrent-changes","multi-repository-graph"],"oracle":"failure-path"},
+    {"id":"CASE-ACTUAL-WRITE-AUTHORITY","claimIds":["actual-write-authority"],"oracle":"failure-path"},
+    {"id":"CASE-FAILURE-CONTAINMENT","claimIds":["failure-contained-repair"],"oracle":"failure-path"},
+    {"id":"CASE-AGGREGATE-PROOF","claimIds":["aggregate-proof-gate"],"oracle":"failure-path"},
+    {"id":"CASE-LAND-PREPARE","claimIds":["prepared-resumable-land"],"oracle":"failure-path"},
+    {"id":"CASE-UX-COMPATIBILITY","claimIds":["lifecycle-ux-compatibility"],"oracle":"production-entry"},
+    {"id":"CASE-ACTIVE-UPGRADE","claimIds":["active-change-additive-upgrade"],"oracle":"contract-oracle"}
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {"fact":"task, evidence, and repository graphs exist today as separate schedulers/models","command":"grep -n \"findCyclePath\\|dependsOn\\|groups\" .claude/harness/runtime/workflow/agent-planning.mjs .claude/harness/runtime/evidence/provider-scheduler.mjs .claude/harness/runtime/workflow/repository-topology.mjs"},
+    {"fact":"active change conflicts are currently detected at writable repository ID granularity","command":"sed -n '76,110p' .claude/harness/runtime/workflow/agent-planning.mjs"},
+    {"fact":"task concurrency already distinguishes disjoint declared paths inside one change","command":"sed -n '43,69p' .claude/harness/runtime/workflow/agent-planning.mjs"},
+    {"fact":"multi-remote Land is already an ordered resumable saga with cycle detection","command":"sed -n '249,339p' .claude/harness/runtime/workflow/land-runtime.mjs"}
+  ]
+}

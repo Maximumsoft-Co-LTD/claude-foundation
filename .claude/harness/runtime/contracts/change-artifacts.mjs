@@ -45,6 +45,8 @@ export function taskMetadata(task) {
     paths: list("paths"),
     resources: list("resources"),
     claims: list("claims"),
+    inputSchema: list("input-schema")[0] || null,
+    outputSchema: list("output-schema")[0] || null,
     text: value.replace(/\s+/g, " ").trim().slice(0, 1000)
   };
 }

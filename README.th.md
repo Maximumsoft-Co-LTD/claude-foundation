@@ -574,6 +574,15 @@ commit และ CI state ที่ระบุชัด ไม่อ้าง�
 `claude-foundation land resume <change-id>` เพื่อตรวจและเดินลำดับต่อ และดู protocol เต็มใน
 [WORKFLOW.md](WORKFLOW.md)
 
+ระหว่าง Build ระบบจะ compile repository, task, evidence provider และ Land
+declaration เป็น execution graph แบบ deterministic โดยผู้ใช้ไม่ต้องเขียน graph
+เพิ่มเอง งานข้าม repository เชื่อมกันด้วย producer/consumer contract ที่มี version
+และ consumer จะไม่ถูก dispatch หาก schema ไม่เข้ากัน หลาย active change ทำงานใน
+repository เดียวกันได้เฉพาะเมื่อ path, contract และ shared resource ที่ประกาศไว้
+ไม่ทับกันอย่างพิสูจน์ได้ หาก scope ไม่ชัดจะกลับไป lock ทั้ง repository ตามเดิม
+เมื่อบาง branch ล้ม Prove จะรักษางานอิสระที่เสร็จแล้ว แต่ Land ยังต้องมี aggregate
+graph proof ที่ fresh และตรวจสถานะใหม่ก่อน mutation ของทุก remote wave
+
 ## Foundation จำกัด Scope ของ Agent และ Skill อย่างไร
 
 Foundation ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่

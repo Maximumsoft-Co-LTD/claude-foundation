@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["node", ".claude/tests/harness/run-graph-execution-tests.mjs"],
+      "minimum": 12,
+      "resources": ["foundation-test-suite"],
+      "reportFormat": "json",
+      "report": ".foundation/test-results/graph-execution.json",
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/graph-execution.json"
+      },
+      "criticalCases": [
+        "CASE-GRAPH-IDENTITY",
+        "CASE-EDGE-AUTHORITY",
+        "CASE-CONTRACT-COMPATIBILITY",
+        "CASE-SCOPED-CONCURRENCY",
+        "CASE-ACTUAL-WRITE-AUTHORITY",
+        "CASE-FAILURE-CONTAINMENT",
+        "CASE-AGGREGATE-PROOF",
+        "CASE-LAND-PREPARE",
+        "CASE-UX-COMPATIBILITY",
+        "CASE-ACTIVE-UPGRADE"
+      ],
+      "inputs": [
+        ".claude/harness/runtime/contracts/**",
+        ".claude/harness/runtime/core/**",
+        ".claude/harness/runtime/workflow/**",
+        ".claude/harness/runtime/evidence/**",
+        ".claude/harness/foundation.mjs",
+        ".claude/harness/commands.json",
+        ".claude/tests/harness/run-graph-execution-tests.mjs",
+        ".claude/harness/tests/**"
+      ]
+    },
+    "integration": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/harness/run-harness-tests.sh"],
+      "resources": ["foundation-test-suite"],
+      "timeoutMs": 600000
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/run-all.sh"],
+      "resources": ["foundation-test-suite"],
+      "timeoutMs": 900000
+    },
+    "state-identity": {
+      "adapter": "command",
+      "command": ["node", ".claude/tests/harness/run-graph-execution-tests.mjs", "--identity-only"],
+      "resources": ["foundation-test-suite"]
+    },
+    "cross-repo-contract": {
+      "adapter": "command",
+      "command": ["node", ".claude/tests/harness/run-graph-execution-tests.mjs", "--cross-repo-only"],
+      "resources": ["foundation-test-suite"]
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

@@ -201,6 +201,9 @@ try {
   }));
   assert.equal(state.reviewHistory.aiAttempts, 1,
     "aborting after dispatch must not refund an attempt");
+  assert.equal(attemptStore.reviewAttemptByDigest("change-a",
+    state.reviewHistory.chainHead).resultStatus, "error",
+  "aborting a dispatched request must durably finalize the attempt as infrastructure error");
 
   const secondRequest = quiet(() => authority.requestAuthority("change-a", { type: "review" }));
   assert.throws(() => quiet(() => authority.dispatchAuthority("change-a", {
@@ -534,8 +537,8 @@ try {
   "authority must pass the implementation session to the reviewer adapter as forbidden");
 
   const attempts = readdirSync(join(fixture, "evidence", "change-a", "review-attempts"));
-  assert.equal(attempts.length, 5,
-    "three dispatch journals plus two immutable completion journals are durable");
+  assert.equal(attempts.length, 6,
+    "three dispatch journals plus three immutable completion journals are durable");
 
   const protocol = createReviewProtocol({ stableHash, fail });
   const reviewAttempt = attemptStore.reviewAttemptByDigest(
@@ -792,7 +795,8 @@ try {
   const grill = readFileSync(join(root, ".claude/skills/grill-task-gu/SKILL.md"), "utf8");
   assert.match(grill, /Present one Decision[\s\S]*?every material choice/i);
   assert.match(grill, /Assignee and date are non-blocking unless `--schedule`/i);
-  const feature = readFileSync(join(root, ".claude/commands/feature.md"), "utf8");
+  const feature = readFileSync(join(root,
+    ".claude/skills/feature/references/workflow.md"), "utf8");
   assert.match(feature, /Low risk uses one full AI\s+review/i);
   assert.match(feature, /Medium permits one correction[\s\S]*one fresh-session delta closure/i);
   assert.match(feature,
@@ -800,7 +804,7 @@ try {
   assert.match(feature, /never dispatch a\s+third AI/i);
   const agentContract = readFileSync(join(root, ".claude/harness/AGENT.md"), "utf8");
   assert.match(agentContract, /Before developer work, verify Foundation/i);
-  assert.match(agentContract, /runtime API `21`/);
+  assert.match(agentContract, /runtime API `22`/);
   const developerSetup = readFileSync(
     join(root, ".claude/harness/DEVELOPER-SETUP.md"), "utf8");
   assert.match(developerSetup, /scripts\/install-foundation-runtime\.mjs/);

@@ -18,16 +18,16 @@ done
 assert_eq "skill frontmatter includes name and description" "0" "$missing"
 
 assert_file_contains "Build contract requires isolation" "$ROOT/.claude/commands/build.md" "Edit only allowed sandbox paths"
-assert_file_contains "Prove contract rejects fabricated evidence" "$ROOT/.claude/commands/prove.md" "Never substitute self-review for a required reviewer"
+assert_file_contains "Prove contract rejects fabricated evidence" "$ROOT/.claude/skills/prove/references/workflow.md" "Never substitute self-review for a required reviewer"
 # The ban above is on faking a reviewer the policy demanded, not on the
 # supported solo configuration. Prove used to forbid self-review flatly while
 # the runtime accepted it under `review.independence: "self"`, so a project with
 # one session had a reviewer gate with no reachable end state. Both halves are
 # asserted: the fabrication ban, and the waiver that keeps it from being a trap.
-assert_file_contains "Prove contract names the independence waiver" "$ROOT/.claude/commands/prove.md" 'review.independence: "self"'
-assert_file_contains "Prove contract relays the harness route out of a blocker" "$ROOT/.claude/commands/prove.md" "Relay every blocker with the route"
-assert_file_contains "Prove contract wires a missing adapter before asking a person" "$ROOT/.claude/commands/prove.md" 'evidence init --write'
-assert_file_contains "Change contract settles the reviewer before Build" "$ROOT/.claude/commands/change.md" "settle the reviewer now"
+assert_file_contains "Prove contract names the independence waiver" "$ROOT/.claude/skills/prove/references/workflow.md" 'review.independence: "self"'
+assert_file_contains "Prove contract relays the harness route out of a blocker" "$ROOT/.claude/skills/prove/references/workflow.md" "Relay every blocker with the route"
+assert_file_contains "Prove contract wires a missing adapter before asking a person" "$ROOT/.claude/skills/prove/references/workflow.md" 'evidence init --write'
+assert_file_contains "Change contract settles the reviewer before Build" "$ROOT/.claude/skills/change/references/workflow.md" "settle the reviewer now"
 assert_file_contains "Land contract requires explicit authority" "$ROOT/.claude/commands/land.md" "Land **\$ARGUMENTS** explicitly"
 assert_file_contains "Land keeps commit authority separate" "$ROOT/.claude/commands/land.md" "without separate authority"
 assert_file_contains "Land performs deterministic recovery before asking" "$ROOT/.claude/commands/land.md" 'Execute returned'

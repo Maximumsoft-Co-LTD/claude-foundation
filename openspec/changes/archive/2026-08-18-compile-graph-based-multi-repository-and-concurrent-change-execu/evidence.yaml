@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "derived-graph-contract",
+      "scenario": "Valid existing change artifacts compile deterministically to graph contract v1, while changed authoritative inputs change graph identity and unknown or cyclic references are refused",
+      "impact": "high",
+      "capabilities": ["test", "compatibility", "review"]
+    },
+    {
+      "id": "typed-edge-authority",
+      "scenario": "Node results advance only when graph, plan, contract, workspace, active lease fencing generation, execution attempt, repository, scope, claim, and schema identities all match",
+      "impact": "high",
+      "capabilities": ["test", "state-identity", "review"]
+    },
+    {
+      "id": "producer-consumer-contract-compatibility",
+      "scenario": "Consumers are not dispatched across incompatible versioned producer-output and consumer-input schemas, and a contract change invalidates only its transitive consumers",
+      "impact": "high",
+      "capabilities": ["test", "integration", "cross-repo-contract", "review"]
+    },
+    {
+      "id": "multi-repository-graph",
+      "scenario": "One change fans independent repository tasks out in parallel and joins them only at their declared contract and integration dependencies",
+      "impact": "high",
+      "capabilities": ["test", "integration", "cross-repo-contract", "review"]
+    },
+    {
+      "id": "scoped-concurrent-changes",
+      "scenario": "Changes with disjoint scopes acquire canonically ordered keys atomically, while partial acquisition rolls back, overlap is explained, and takeover fences prior workers",
+      "impact": "high",
+      "capabilities": ["test", "integration", "review"]
+    },
+    {
+      "id": "actual-write-authority",
+      "scenario": "Observed repository deltas outside a node's complete granted scope reject its result and proof even when the worker reports only allowed paths",
+      "impact": "high",
+      "capabilities": ["test", "integration", "state-identity", "review"]
+    },
+    {
+      "id": "failure-contained-repair",
+      "scenario": "A failed node blocks its dependents, preserves independent completed work and evidence, and reruns only its affected closure through a bounded repair packet",
+      "impact": "high",
+      "capabilities": ["test", "integration", "state-identity", "review"]
+    },
+    {
+      "id": "aggregate-proof-gate",
+      "scenario": "Node proof remains diagnostic and a fresh aggregate graph proof covering every locked required node and edge is the only authority accepted by Land",
+      "impact": "high",
+      "capabilities": ["test", "integration", "state-identity", "review"]
+    },
+    {
+      "id": "prepared-resumable-land",
+      "scenario": "Multi-remote Land mutates nothing until every required repository is prepared, revalidates identities before every wave mutation, and resumes without claiming atomic rollback",
+      "impact": "high",
+      "capabilities": ["test", "integration", "compatibility", "state-identity", "review"]
+    },
+    {
+      "id": "lifecycle-ux-compatibility",
+      "scenario": "Existing Investigate, Change, Build, Prove, and Land commands remain the normal interface, small changes remain single-agent, and complex failures add compact graph diagnostics",
+      "impact": "medium",
+      "capabilities": ["test", "compatibility", "review"]
+    },
+    {
+      "id": "active-change-additive-upgrade",
+      "scenario": "Existing active changes without persisted graph state compile graph contract v1 additively from their authoritative artifacts without rewriting or invalidating those artifacts",
+      "impact": "high",
+      "capabilities": ["test", "compatibility", "review"]
+    }
+  ]
+}

@@ -587,6 +587,16 @@ explicit child commits and CI state; it does not claim atomicity across remotes.
 Use `claude-foundation land resume <change-id>` to inspect and advance the order. See
 [WORKFLOW.md](WORKFLOW.md) for the full control-plane protocol.
 
+Build compiles the repository, task, evidence-provider, and Land declarations
+into a deterministic execution graph; users do not author another graph file.
+Versioned producer/consumer contracts join repository work, and incompatible
+schemas block consumers before dispatch. Separate active changes may build in
+the same repository only when their declared path, contract, and shared-resource
+scopes are provably disjoint. Ambiguous scope remains repository-exclusive.
+Prove preserves completed independent branches after a failure, but Land still
+requires fresh aggregate graph proof and revalidates every remote wave before
+mutation.
+
 ## How Foundation scopes agents and skills
 
 Foundation supplies a small, task-scoped packet to the native agent host; it is

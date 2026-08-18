@@ -12,7 +12,7 @@ README_TH="$ROOT/README.th.md"
 AGENT="$ROOT/.claude/harness/AGENT.md"
 ORCH="$ROOT/.claude/orchestrator.md"
 COMMANDS="$ROOT/.claude/harness/commands.json"
-PROVE="$ROOT/.claude/commands/prove.md"
+PROVE="$ROOT/.claude/skills/prove/references/workflow.md"
 
 ver="$(tr -d ' \t\n\r' < "$ROOT/VERSION")"
 assert_file_contains "VERSION is reflected in the workflow" "$WF" "Version $ver"
@@ -60,7 +60,7 @@ assert_file_contains "the workflow makes deterministic recovery agent-owned" \
 assert_file_contains "the workflow keeps routine commands away from users" \
   "$WF" "never asks the user to run a safe authorized operation"
 assert_file_contains "change offers retiring rather than deciding it" \
-  "$ROOT/.claude/commands/change.md" "never retire one unasked"
+  "$ROOT/.claude/skills/change/references/workflow.md" "never retire one unasked"
 assert_file_contains "the orchestrator treats a blocked stop as a user decision" \
   "$ORCH" "including one a blocked operation"
 

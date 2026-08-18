@@ -13,15 +13,15 @@ assert_file_contains "agent contract executes deterministic recovery" \
 assert_file_contains "agent contract forbids pass-biased decisions" \
   "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
 assert_file_contains "prove command uses the authority bridge" \
-  "$ROOT/.claude/commands/prove.md" "authority request"
+  "$ROOT/.claude/skills/prove/references/workflow.md" "authority request"
 assert_file_contains "prove command forbids raw readiness output" \
-  "$ROOT/.claude/commands/prove.md" "Never expose raw readiness JSON"
+  "$ROOT/.claude/skills/prove/references/workflow.md" "Never expose raw readiness JSON"
 assert_file_contains "change command requires canonical spec comparison" \
-  "$ROOT/.claude/commands/change.md" 'Do not default to `ADDED`'
+  "$ROOT/.claude/skills/change/references/workflow.md" 'Do not default to `ADDED`'
 assert_file_contains "change command defines complete modified deltas" \
-  "$ROOT/.claude/commands/change.md" "copy the complete requirement and every existing scenario"
+  "$ROOT/.claude/skills/change/references/workflow.md" "copy the complete requirement and every existing scenario"
 assert_file_contains "change command requires removal migration consequence" \
-  "$ROOT/.claude/commands/change.md" '`**Migration:**` or `**Compatibility:**`'
+  "$ROOT/.claude/skills/change/references/workflow.md" '`**Migration:**` or `**Compatibility:**`'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -53,7 +53,7 @@ printf '%s\n' \
   > "$CHANGE/tasks.md"
 
 plan="$(node "$RUNTIME" agent-plan agent-contract)"
-if printf '%s' "$plan" | jq -e '.version == 3 and .taskCount == 1' >/dev/null; then
+if printf '%s' "$plan" | jq -e '.version == 4 and .taskCount == 1' >/dev/null; then
   pass "agent plan is JSON-only and accepts completed dependencies"
 else
   fail "agent plan is JSON-only and accepts completed dependencies"
@@ -63,7 +63,7 @@ assert_eq "mixed-risk single session selects deep model" "deep" \
 
 task_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
 if printf '%s' "$task_packet" | jq -e \
-  '.version == 6 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
+  '.version == 7 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
   >/dev/null; then
   pass "task packet is JSON with claim and provider authority"
 else

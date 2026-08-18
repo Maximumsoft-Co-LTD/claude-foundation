@@ -127,7 +127,7 @@ assert_file_contains "normal investigate limits writes to its note" \
 assert_file_contains "compare mode scopes writes to prototypes" \
   "$ROOT/.claude/commands/investigate.md" 'write only inside the prototype directory'
 assert_file_contains "prove owns fresh independent review" \
-  "$ROOT/.claude/commands/prove.md" 'fresh independent'
+  "$ROOT/.claude/skills/prove/references/workflow.md" 'fresh independent'
 assert_file_contains "dev command forbids direct implementation bypass" \
   "$ROOT/.claude/commands/dev.md" \
   "Foundation runtime state is a failed"
@@ -141,10 +141,10 @@ assert_file_contains "dev routes every fresh intent through complete Change inta
   "$ROOT/.claude/commands/dev.md" \
   'For all fresh work use `/change`'
 assert_file_contains "change command selects rapid before creation" \
-  "$ROOT/.claude/commands/change.md" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
   "classify before creating it"
 assert_file_contains "change command omits empty security flag" \
-  "$ROOT/.claude/commands/change.md" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
   'Omit `--security` when there are no triggers'
 assert_file_contains "build command names sandbox transition" \
   "$ROOT/.claude/commands/build.md" \

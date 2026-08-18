@@ -244,6 +244,7 @@ export function createChangeLifecycle({
       groundingRequired: workflowPolicy().workflow.grounding === "required",
       groundingVersion: workflowPolicy().workflow.grounding === "required" ? 2 : null,
       externalOperationsVersion: 1,
+      graphExecutionVersion: 1,
       revision: 0, contractRevision: 0, executionRevision: 0,
       impact: schema === "foundation-rapid" ? "low" : null,
       coupling: schema === "foundation-rapid" ? "isolated" : null,
