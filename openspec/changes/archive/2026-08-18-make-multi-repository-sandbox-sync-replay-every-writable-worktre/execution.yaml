@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-target-drift-tests.sh"],
+      "minimum": 2,
+      "resources": ["foundation-test-suite"],
+      "reportFormat": "json",
+      "report": ".foundation/test-results/target-drift.json",
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/target-drift.json"
+      },
+      "criticalCases": [
+        "CASE-MULTI-REPLAY-CLEAN",
+        "CASE-MULTI-REPLAY-CONFLICT",
+        "CASE-CONTENT-STABLE-HASH"
+      ],
+      "inputs": [
+        ".claude/harness/runtime/workflow/sandbox-runtime.mjs",
+        ".claude/harness/runtime/workflow/repository-snapshot.mjs",
+        ".claude/tests/harness/run-target-drift-tests.sh"
+      ]
+    },
+    "compatibility": {
+      "adapter": "command",
+      "command": ["sh", ".claude/tests/run-all.sh"],
+      "timeoutMs": 600000,
+      "resources": ["foundation-test-suite"]
+    },
+    "review": { "adapter": "external" }
+  },
+  "services": {}
+}

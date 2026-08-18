@@ -1,0 +1,173 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "mixed",
+    "reference": "user:2026-08-17:harness-only-feedback-scope",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-17T00:00:00+07:00",
+    "decisions": [
+      {
+        "id": "scope-harness-only",
+        "question": "Which findings from the two consumer reports are in scope?",
+        "answer": "Only defects implemented by the Foundation harness; exclude product code, agent-tool routing, and rtk.",
+        "source": "user-batch"
+      },
+      {
+        "id": "preserve-land-safety",
+        "question": "May content-stable evidence weaken target-head Land safety?",
+        "answer": "No; keep explicit target-head guards and remove only redundant commit identity from content hashes.",
+        "source": "recommended-default"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["multi-repository-state", "evidence-identity", "recovery"],
+    "rationale": "The change mutates multiple Git worktrees and changes the hash bound into proof and review receipts."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "Installed CLI routes sandbox sync and evidence hashing through the shipped runtime.",
+    "paths": [
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs"},
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/repository-snapshot.mjs"}
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The deterministic harness fixtures create real Git repositories and worktrees.",
+    "contracts": [
+      {"repository": "root", "path": ".claude/tests/harness/run-target-drift-tests.sh"},
+      {"repository": "root", "path": ".claude/tests/harness/contracts/multi-repository.sh"}
+    ]
+  },
+  "activationSemantics": {
+    "status": "not-applicable",
+    "sourceReason": "This changes existing sandbox sync and hash behavior; no dormant production path is activated.",
+    "activatedPaths": [],
+    "failureSemanticChanges": [
+      "A multi-repository target movement that previously required abandon/reopen becomes recoverable through sandbox sync.",
+      "A repository-qualified replay conflict leaves every live sandbox unchanged."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "Foundation coordinates multiple independent Git repositories through child-process worktree commands.",
+    "rows": [
+      {
+        "id": "multi-repository-git-replay",
+        "owner": "Foundation workflow owner",
+        "producer": "sandbox runtime",
+        "consumer": "Git repositories and worktree registry",
+        "contract": "binary diff from recorded base replayed with git apply --3way onto current target head",
+        "delivery": "synchronous child-process preparation for every moved writable repository before live replacement",
+        "timeoutRetry": "Git failure stops sync; operator repairs the named repository and reruns sandbox sync",
+        "idempotency": "a repository whose target head equals its recorded base is a no-op",
+        "ordering": "prepare all repository replays before replacing any live sandbox",
+        "consistency": "ordinary replay conflicts leave every live sandbox and recorded base unchanged",
+        "rollout": "protocol-bumped install followed by one explicit re-prove for active multi-repository changes",
+        "rollback": "restore the prior runtime and use abandon/reopen without treating stale evidence as valid"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "CLI output is the operator recovery surface.",
+    "rows": [
+      {
+        "interactionId": "multi-repository-git-replay",
+        "correlation": "changeId, repositoryId, recorded base, and current target head",
+        "structuredEvents": "sandbox sync replay and repository-qualified conflict output",
+        "sli": "every clean moved repository advances in one sync and every ordinary conflict preserves all live sandboxes",
+        "alert": "CONFLICT <repository>:<path> or Git staging/replacement infrastructure failure",
+        "runbook": "merge the target version in the named repository sandbox and rerun sandbox sync; for replacement failure retain the named staging worktree and patch",
+        "operatorQuestion": "Did every moved repository replay, or which exact repository and path still conflicts?"
+      }
+    ]
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "openspec/changes/make-multi-repository-sandbox-sync-replay-every-writable-worktre/proposal.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "4853ec7e7b6882d5b8a03b6685eab966cc1728d218dbebb837e1321ce9614c77"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "25c15e2e0e6deb11198edda3b19feeb643f83b4ac0ce053ea47c72fcf7c9513d"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/foundation.mjs",
+      "role": "composition-root",
+      "mode": "targeted",
+      "sha256": "5412a099b6d30543501142d7afa81c36671d131cd7f8690aeade11601e72fe1f"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/repository-snapshot.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "f8775f274a159bc7897fcc35a908f24f72f411ff1f897e4654bf84a90461b9d9"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/land-runtime.mjs",
+      "role": "production-path",
+      "mode": "targeted",
+      "sha256": "380c1bfcea1c979d45f65058a6cb5658d0bbef51b1b4c26f47bfd3c5fb12ae07"
+    },
+    {
+      "repository": "root",
+      "path": "docs/reports/target-drift-during-build-plan.md",
+      "role": "architecture",
+      "mode": "full",
+      "sha256": "57b23387a5688c13e8664eafe1431dd45b2969f4b10b286dbfafeb32235e4b65"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-target-drift-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "35326315d0eeece3703976d7626bd9cfddb5f945fff5f7577295da73c0993d75"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/contracts/multi-repository.sh",
+      "role": "contract",
+      "mode": "targeted",
+      "sha256": "13955f4f9e414e348340207e50bf0d657741ccf7354f6a20575f7490c481838e"
+    }
+  ],
+  "claims": [
+    {
+      "id": "multi-repository-replay",
+      "productionPath": [{"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs"}],
+      "failurePaths": [{"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs", "failure": "a later repository replay conflicts after earlier replays prepared"}],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "content-stable-evidence",
+      "productionPath": [{"repository": "root", "path": ".claude/harness/runtime/workflow/repository-snapshot.mjs"}],
+      "failurePaths": [{"repository": "root", "path": ".claude/harness/runtime/workflow/land-runtime.mjs", "failure": "target moves without sandbox synchronization"}],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {"id": "CASE-MULTI-REPLAY-CLEAN", "claimIds": ["multi-repository-replay"], "oracle": "real-wire"},
+    {"id": "CASE-MULTI-REPLAY-CONFLICT", "claimIds": ["multi-repository-replay"], "oracle": "failure-path"},
+    {"id": "CASE-CONTENT-STABLE-HASH", "claimIds": ["content-stable-evidence"], "oracle": "contract-oracle"}
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {"fact": "Single-repository replay already uses temporary worktree preparation and three-way git apply.", "command": "sed -n '573,660p' .claude/harness/runtime/workflow/sandbox-runtime.mjs"},
+    {"fact": "Land already compares current target head with recorded base outside the composite hash.", "command": "sed -n '145,165p' .claude/harness/runtime/workflow/land-runtime.mjs"}
+  ]
+}
