@@ -1,0 +1,7 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** Define one canonical host guard-capability artifact and make every adapter installer plus the hook documentation consume or verify the same live, partial, or unavailable coverage [claims:truthful-host-guard-capability] [repo:root] [kind:contract] [paths:.claude/harness/adapters/host-capabilities.json,.claude/harness/adapters/install-support.sh,.claude/hooks/README.md,install-codex.sh,install-cursor.sh,install-opencode.sh] — verify: `sh .claude/tests/docs/run-doc-consistency.sh`
+- [x] **T002** Record exact per-host Foundation ownership under the dedicated adapter-manifest namespace and remove retired adapter artifacts on upgrade without touching user-owned files [claims:owned-adapter-upgrade-cleanup] [repo:root] [kind:implementation] [paths:install-codex.sh,install-cursor.sh,install-opencode.sh,.claude/harness/adapters/install-support.sh,.foundation/adapter-manifests] [depends:T001] — verify: `sh .claude/tests/harness/run-installer-tests.sh`
+- [x] **T003** Add upgrade and capability regressions for command removal, user-file preservation, every supported host coverage row, and the distinction between native dispatch and live mutation guards [claims:truthful-host-guard-capability,owned-adapter-upgrade-cleanup] [repo:root] [kind:tests] [paths:.claude/tests/harness/run-installer-tests.sh,.claude/tests/harness/run-host-adapter-tests.sh,.claude/tests/docs/run-doc-consistency.sh] [depends:T001,T002] — verify: `sh .claude/tests/harness/run-host-adapter-tests.sh`

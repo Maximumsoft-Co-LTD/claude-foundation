@@ -13,6 +13,8 @@ AGENT="$ROOT/.claude/harness/AGENT.md"
 ORCH="$ROOT/.claude/orchestrator.md"
 COMMANDS="$ROOT/.claude/harness/commands.json"
 PROVE="$ROOT/.claude/skills/prove/references/workflow.md"
+HOST_CAPABILITIES="$ROOT/.claude/harness/adapters/host-capabilities.json"
+HOOKS_README="$ROOT/.claude/hooks/README.md"
 
 ver="$(tr -d ' \t\n\r' < "$ROOT/VERSION")"
 assert_file_contains "VERSION is reflected in the workflow" "$WF" "Version $ver"
@@ -38,6 +40,43 @@ assert_file_contains "English README keeps harness metadata internal" \
   "$README" "Users never need to construct receipt commands"
 assert_file_contains "Thai README keeps harness metadata internal" \
   "$README_TH" "ผู้ใช้ไม่ต้องประกอบ receipt command"
+
+assert_file_contains "hook documentation names the canonical host capability contract" \
+  "$HOOKS_README" '.claude/harness/adapters/host-capabilities.json'
+assert_file_contains "hook documentation separates native dispatch" \
+  "$HOOKS_README" 'Native dispatch'
+assert_cmd_zero "host capability contract covers every supported host truthfully" \
+  node -e '
+    const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const expected = ["claude-code", "opencode", "cursor", "codex"];
+    const keys = Object.keys(c.hosts || {}).sort();
+    const guards = c.hosts || {};
+    const ok = c.version === 1 && JSON.stringify(keys) === JSON.stringify(expected.sort()) &&
+      expected.every((host) => guards[host].nativeDispatch === "available" &&
+        guards[host].finalEnforcement === "Land gates") &&
+      guards["claude-code"].liveMutationGuards.coverage === "full" &&
+      guards.opencode.liveMutationGuards.coverage === "partial" &&
+      guards.opencode.liveMutationGuards.sessionDigest === "unavailable" &&
+      guards.cursor.liveMutationGuards.coverage === "unavailable" &&
+      guards.codex.liveMutationGuards.coverage === "unavailable";
+    process.exit(ok ? 0 : 1);
+  ' "$HOST_CAPABILITIES"
+assert_cmd_zero "host wiring table matches the canonical capability rows" \
+  node -e '
+    const fs = require("fs");
+    const [contractPath, docsPath] = process.argv.slice(1);
+    const hosts = JSON.parse(fs.readFileSync(contractPath, "utf8")).hosts;
+    const docs = fs.readFileSync(docsPath, "utf8");
+    const labels = {"claude-code":"Claude Code", opencode:"OpenCode", cursor:"Cursor", codex:"Codex CLI"};
+    const ok = Object.entries(hosts).every(([id, row]) => {
+      const line = docs.split(/\r?\n/).find((candidate) => candidate.startsWith(`| ${labels[id]} |`));
+      const guards = row.liveMutationGuards;
+      const detail = `${guards.coverage}: phase ${guards.phase}; secrets ${guards.secrets}; ` +
+        `lint ${guards.lint}; session digest ${guards.sessionDigest}`;
+      return line && line.includes(`| ${row.nativeDispatch} |`) && line.includes(detail);
+    });
+    process.exit(ok ? 0 : 1);
+  ' "$HOST_CAPABILITIES" "$HOOKS_README"
 
 assert_cmd_zero "command registry has unique public names" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \

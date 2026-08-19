@@ -58,6 +58,19 @@ args=("$TARGET_PATH" "--source" "$SOURCE_PATH")
 bash "$SOURCE_PATH/install.sh" "${args[@]}"
 [ "$DRY_RUN" = no ] || exit 0
 
+# shellcheck source=.claude/harness/adapters/install-support.sh
+. "$SOURCE_PATH/.claude/harness/adapters/install-support.sh"
+CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
+adapter_scope_root() {
+  case "$1" in
+    project) printf '%s\n' "$TARGET_PATH" ;;
+    codex-home) printf '%s\n' "$CODEX_ROOT" ;;
+    *) return 1 ;;
+  esac
+}
+adapter_legacy_owned() { return 1; }
+adapter_manifest_init codex "$TARGET_PATH"
+
 mkdir -p "$TARGET_PATH/.agents/skills" "$TARGET_PATH/.codex"
 for src in "$TARGET_PATH/.claude/skills/"*/SKILL.md; do
   [ -e "$src" ] || continue
@@ -65,42 +78,59 @@ for src in "$TARGET_PATH/.claude/skills/"*/SKILL.md; do
   dst="$TARGET_PATH/.agents/skills/$name"
   expected="../../.claude/skills/$name"
   if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$expected" ]; then
+    adapter_manifest_record project ".agents/skills/$name"
     continue
   fi
-  if [ -e "$dst" ] || [ -L "$dst" ]; then
+  if ! adapter_manifest_may_write project ".agents/skills/$name" "$dst"; then
     printf '⚠ keeping existing Codex skill: %s\n' "$dst" >&2
     continue
   fi
+  adapter_manifest_prepare_replacement "$dst"
   ln -s "$expected" "$dst"
+  adapter_manifest_record project ".agents/skills/$name"
 done
 for pair in "foundation-rules:../.claude/rules" "hooks:../.claude/hooks"; do
   name="${pair%%:*}"
   expected="${pair#*:}"
   dst="$TARGET_PATH/.codex/$name"
   if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$expected" ]; then
+    adapter_manifest_record project ".codex/$name"
     continue
   fi
-  if [ -e "$dst" ] || [ -L "$dst" ]; then
+  if ! adapter_manifest_may_write project ".codex/$name" "$dst"; then
     printf '⚠ keeping existing Codex compatibility path: %s\n' "$dst" >&2
     continue
   fi
+  adapter_manifest_prepare_replacement "$dst"
   ln -s "$expected" "$dst"
+  adapter_manifest_record project ".codex/$name"
 done
 
-PROMPTS_DIR="${CODEX_HOME:-$HOME/.codex}/prompts"
+PROMPTS_DIR="$CODEX_ROOT/prompts"
 mkdir -p "$PROMPTS_DIR"
+if [ "$ADAPTER_MANIFEST_MIGRATING" = yes ]; then
+  for dst in "$PROMPTS_DIR/"*.md; do
+    [ -f "$dst" ] || continue
+    grep -qF "$PROMPT_MARKER" "$dst" || continue
+    adapter_manifest_seed_prior codex-home "prompts/$(basename "$dst")"
+  done
+fi
 for src in "$SOURCE_PATH/.claude/commands/"*.md; do
   name="$(basename "$src")"
   dst="$PROMPTS_DIR/$name"
+  rel="prompts/$name"
   # The prompt directory is user-global and shared with hand-written prompts.
   # Only files carrying the Foundation marker are ours to refresh; a same-named
   # user prompt is kept and reported rather than clobbered.
   if [ -e "$dst" ] && ! grep -qF "$PROMPT_MARKER" "$dst"; then
     printf '⚠ keeping existing user prompt: %s\n' "$dst" >&2
+    adapter_manifest_relinquish codex-home "$rel"
     continue
   fi
   { cat "$src"; printf '\n%s\n' "$PROMPT_MARKER"; } > "$dst"
+  adapter_manifest_record codex-home "$rel"
 done
+adapter_manifest_finish
 
 printf '✓ Codex adapter installed at %s\n' "$TARGET_PATH"
 printf '  prompts:        %s (user-global; bodies target the current project)\n' "$PROMPTS_DIR"
@@ -109,6 +139,8 @@ printf '  skills:         %s (symlinked to .claude/skills)\n' "$TARGET_PATH/.age
 printf '  rules/hooks:    %s (compatibility symlinks)\n' "$TARGET_PATH/.codex"
 printf '  guards:         Codex has no tool hooks; live guards are inert here.\n'
 printf '                  Land gates still enforce; opt in to no-direct-main-commit.sh for git.\n'
+adapter_capability_summary \
+  "$SOURCE_PATH/.claude/harness/adapters/host-capabilities.json" codex
 printf '  telemetry:      claude-foundation telemetry import --format codex\n'
 if ! command -v codex >/dev/null 2>&1; then
   printf '  reviewer setup: npm install -g @openai/codex && codex login\n'

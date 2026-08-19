@@ -1,0 +1,335 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-plan-rebase",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T08:10:54Z",
+    "decisions": [
+      {
+        "id": "preserve-host-support",
+        "question": "Should hosts without live hook APIs be rejected or supported with explicit capability limits?",
+        "answer": "Preserve supported hosts, report prevention limits truthfully, and retain Land as final enforcement.",
+        "source": "user-batch"
+      },
+      {
+        "id": "ownership-based-cleanup",
+        "question": "How may an adapter remove stale artifacts safely?",
+        "answer": "Delete only exact paths previously recorded as Foundation-owned.",
+        "source": "user-batch"
+      },
+      {
+        "id": "post-dispatch-scope",
+        "question": "How should the host-adapter plan change after native dispatch became canonical?",
+        "answer": "Keep native dispatch as a separate solved capability, preserve the live-guard distinction, and constrain adapter ownership state to .foundation/adapter-manifests/.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "host-enforcement",
+      "installer-deletion",
+      "public-adapter-contract"
+    ],
+    "rationale": "The change touches host-enforcement, public adapter behavior, and installer deletion; final Land gates remain intact and deletion stays bounded to recorded ownership."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "The host-specific installers create the adapter surfaces users invoke.",
+    "paths": [
+      {
+        "repository": "root",
+        "path": "install-codex.sh"
+      },
+      {
+        "repository": "root",
+        "path": "install-cursor.sh"
+      },
+      {
+        "repository": "root",
+        "path": "install-opencode.sh"
+      }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "Installed host command directories, global Codex prompts, and hook adapters are the real user-facing wires.",
+    "contracts": [
+      {
+        "repository": "root",
+        "path": ".claude/hooks/README.md"
+      }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "Ownership cleanup activates only during a host adapter install or upgrade.",
+    "activatedPaths": [
+      {
+        "repository": "root",
+        "path": "install-codex.sh"
+      },
+      {
+        "repository": "root",
+        "path": "install-cursor.sh"
+      },
+      {
+        "repository": "root",
+        "path": "install-opencode.sh"
+      }
+    ],
+    "failureSemanticChanges": [
+      "A retired Foundation-owned adapter artifact is removed instead of remaining callable after upgrade."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "The Foundation installer publishes command and guard artifacts consumed by four independent native hosts.",
+    "rows": [
+      {
+        "id": "host-adapter-upgrade",
+        "owner": "Foundation adapter installer",
+        "producer": "versioned Foundation package",
+        "consumer": "Claude Code, OpenCode, Cursor, or Codex host",
+        "contract": "owned adapter artifact manifest plus canonical guard-capability result",
+        "delivery": "local adapter install or upgrade",
+        "timeoutRetry": "synchronous installer failure followed by idempotent rerun",
+        "idempotency": "exact owned paths and current package source",
+        "ordering": "shared Foundation install completes before host adapter projection",
+        "consistency": "manifest and installed owned artifacts converge in one installer run",
+        "rollout": "add ownership metadata before enabling retired-artifact cleanup",
+        "rollback": "restore the installer backup or reinstall the prior Foundation package"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Installer and capability output are the operator-visible diagnostics for upgrade convergence and guard coverage.",
+    "rows": [
+      {
+        "interactionId": "host-adapter-upgrade",
+        "correlation": "target project, host adapter, and ownership manifest version",
+        "structuredEvents": "installer output naming installed, preserved, and retired owned artifacts",
+        "sli": "every adapter upgrade converges owned artifacts without altering unowned paths",
+        "alert": "installer exits non-zero on an unsafe or malformed ownership entry",
+        "runbook": "inspect the adapter manifest and rerun the same host installer after correcting only the invalid owned entry",
+        "operatorQuestion": "No routine operator decision; ambiguous ownership is preserved rather than deleted"
+      }
+    ]
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "openspec/changes/align-host-adapter-capabilities-and-upgrades/proposal.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "dd90e46910f547068c5be0b6a40ed592eca42c08903fca63d799990281ddd741"
+    },
+    {
+      "repository": "root",
+      "path": "install.sh",
+      "role": "composition-root",
+      "mode": "full",
+      "sha256": "0ef805f442dec7ee1367d8b0dff530532b00a1b2a5d890d8671060d97d8e0978"
+    },
+    {
+      "repository": "root",
+      "path": "CLAUDE.md",
+      "role": "architecture",
+      "mode": "full",
+      "sha256": "9959a0080a2e7e78824836b996ab019d775b9b1254448cb1be999c3792f83a8e"
+    },
+    {
+      "repository": "root",
+      "path": "install-codex.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "05bcab424bbccdc06e83eedcf3428a5365cf1a256fdf2bf294752e0e10bb0611"
+    },
+    {
+      "repository": "root",
+      "path": "install-cursor.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "c40db22a77a4f4def475964394e9ad885f9b518fb2a51a696660db222b345199"
+    },
+    {
+      "repository": "root",
+      "path": "install-opencode.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "a07d2851f74da2dc69ad5473425f341056e5f5a070380611bf799cbf80f4ea85"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/hooks/README.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "91e3bd493996d0ec6dd8ef4006f63d8dff063963e5fea7607edd948e95ec87ff"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-installer-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "1efd8ff41774ac1a595a628bb80a59ecd9945ae59ccdf28b3dcb419015b143aa"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/adapters/host-capabilities.json",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "5192d807d6ceaede3f35ee0701bc2c59e17ed785e0cf645b16e29133510b8b59"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/adapters/install-support.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "a9c0b37b0198ede1fc13b1b562ed7705f8af96d210e959cc9be0fdee842716a2"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/docs/run-doc-consistency.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "34d7a076c16fc109563a5cb1aeff885e94ded9c313fef7bd2e9582479840c5bf"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-host-adapter-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "e293f73b82a3275dec376456357bea52803688c69f1bce7569c67439f38ff3d3"
+    },
+    {
+      "repository": "root",
+      "path": "package.json",
+      "role": "dependency-source",
+      "mode": "full",
+      "sha256": "3a71726a8bdd8e6b8f265377ec6453a73d604ca96f4c52a67f057134ea387e13"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/specs/change/spec.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "7d566282575a93b8f6ad19d6bd21eac91b2f1e2b7111cb89c300b635b3b0d5a9"
+    }
+  ],
+  "claims": [
+    {
+      "id": "truthful-host-guard-capability",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/adapters/host-capabilities.json"
+        },
+        {
+          "repository": "root",
+          "path": ".claude/harness/adapters/install-support.sh"
+        },
+        {
+          "repository": "root",
+          "path": "install-opencode.sh"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/adapters/host-capabilities.json",
+          "failure": "native dispatch and live mutation guard coverage are conflated or overstated"
+        },
+        {
+          "repository": "root",
+          "path": "install-opencode.sh",
+          "failure": "installed wiring and reported host coverage diverge"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "owned-adapter-upgrade-cleanup",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/adapters/install-support.sh"
+        },
+        {
+          "repository": "root",
+          "path": "install-codex.sh"
+        },
+        {
+          "repository": "root",
+          "path": "install-cursor.sh"
+        },
+        {
+          "repository": "root",
+          "path": "install-opencode.sh"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/adapters/install-support.sh",
+          "failure": "a manifest entry escapes its host-specific ownership allowlist"
+        },
+        {
+          "repository": "root",
+          "path": "install-codex.sh",
+          "failure": "retired owned artifacts remain or unowned artifacts are deleted"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "host-capability-matrix",
+      "claimIds": [
+        "truthful-host-guard-capability"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "retired-owned-command",
+      "claimIds": [
+        "owned-adapter-upgrade-cleanup"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "preserve-user-command",
+      "claimIds": [
+        "owned-adapter-upgrade-cleanup"
+      ],
+      "oracle": "failure-path"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "Native host dispatch is now canonical and does not provide tool-hook APIs to hosts that lack them.",
+      "command": "git show --stat --oneline c19fbc3"
+    },
+    {
+      "fact": "The main installer already removes retired files only when its prior manifest claimed them.",
+      "command": "sed -n '140,225p' install.sh"
+    },
+    {
+      "fact": "Cursor and Codex expose no live tool hooks, while OpenCode exposes partial hook coverage.",
+      "command": "sed -n '35,45p' .claude/hooks/README.md"
+    }
+  ]
+}

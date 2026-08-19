@@ -501,7 +501,14 @@ assert_contains "a torn harness install is refused at load" \
   "$torn" "mixture of two revisions"
 
 CURSOR_TARGET="$TMP/cursor-project"
-mkdir -p "$CURSOR_TARGET"
+mkdir -p "$CURSOR_TARGET/.cursor/commands" "$CURSOR_TARGET/.cursor/rules"
+# Model the first upgrade after manifests ship: these exact paths were written
+# unconditionally by the legacy adapter, while the neighboring file was not.
+printf 'legacy orchestrator\n' > "$CURSOR_TARGET/.cursor/orchestrator.md"
+printf 'legacy change command\n' > "$CURSOR_TARGET/.cursor/commands/change.md"
+printf 'legacy fundamentals\n' > "$CURSOR_TARGET/.cursor/rules/fundamentals.mdc"
+printf 'legacy guidance\n' > "$CURSOR_TARGET/.cursor/rules/foundation-human-guidance.mdc"
+printf 'preexisting user command\n' > "$CURSOR_TARGET/.cursor/commands/preexisting-user.md"
 assert_cmd_zero "cursor adapter installs" \
   bash "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes
 assert_file_exists "cursor change command installed" "$CURSOR_TARGET/.cursor/commands/change.md"
@@ -522,9 +529,49 @@ assert_file_contains "cursor human guidance is always applied" \
   "$CURSOR_TARGET/.cursor/rules/foundation-human-guidance.mdc" "alwaysApply: true"
 assert_file_contains "cursor human guidance keeps routine recovery agent-owned" \
   "$CURSOR_TARGET/.cursor/rules/foundation-human-guidance.mdc" "never hand the user commands"
+assert_file_exists "cursor adapter records exact ownership" \
+  "$CURSOR_TARGET/.foundation/adapter-manifests/cursor.txt"
+assert_file_contains "cursor first manifest upgrade refreshes legacy-owned paths" \
+  "$CURSOR_TARGET/.cursor/commands/change.md" "Create or update"
+assert_file_contains "cursor first manifest upgrade preserves unrelated user paths" \
+  "$CURSOR_TARGET/.cursor/commands/preexisting-user.md" "preexisting user command"
+printf 'user-owned project file\n' > "$CURSOR_TARGET/user-owned.txt"
+cp "$CURSOR_TARGET/.foundation/adapter-manifests/cursor.txt" \
+  "$TMP/cursor-manifest-backup.txt"
+printf 'project\tuser-owned.txt\n' >> \
+  "$CURSOR_TARGET/.foundation/adapter-manifests/cursor.txt"
+printf 'must survive rejected manifest\n' > "$CURSOR_TARGET/.cursor/commands/change.md"
+if bash "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes \
+    >/dev/null 2>&1; then
+  fail "cursor adapter refuses ownership outside its adapter roots"
+else
+  pass "cursor adapter refuses ownership outside its adapter roots"
+fi
+assert_file_contains "a refused adapter manifest deletes nothing user-owned" \
+  "$CURSOR_TARGET/user-owned.txt" "user-owned project file"
+assert_file_contains "adapter manifest is validated before managed writes" \
+  "$CURSOR_TARGET/.cursor/commands/change.md" "must survive rejected manifest"
+cp "$TMP/cursor-manifest-backup.txt" \
+  "$CURSOR_TARGET/.foundation/adapter-manifests/cursor.txt"
+printf 'retired Foundation command\n' > "$CURSOR_TARGET/.cursor/commands/retired-foundation.md"
+printf 'user command\n' > "$CURSOR_TARGET/.cursor/commands/user-command.md"
+printf 'project\t.cursor/commands/retired-foundation.md\n' >> \
+  "$CURSOR_TARGET/.foundation/adapter-manifests/cursor.txt"
+cursor_upgrade="$(bash "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes)"
+assert_contains "cursor adapter reports native dispatch separately" \
+  "$cursor_upgrade" "native dispatch available"
+assert_contains "cursor adapter reports unavailable live guards" \
+  "$cursor_upgrade" "live mutation guards unavailable"
+assert_file_absent "cursor removes a retired owned command" \
+  "$CURSOR_TARGET/.cursor/commands/retired-foundation.md"
+assert_file_contains "cursor preserves an unowned user command" \
+  "$CURSOR_TARGET/.cursor/commands/user-command.md" "user command"
 
 OPENCODE_TARGET="$TMP/opencode-project"
-mkdir -p "$OPENCODE_TARGET"
+mkdir -p "$OPENCODE_TARGET/.opencode/commands" "$OPENCODE_TARGET/.opencode/plugins"
+printf 'legacy change command\n' > "$OPENCODE_TARGET/.opencode/commands/change.md"
+printf 'legacy plugin\n' > "$OPENCODE_TARGET/.opencode/plugins/foundation.js"
+printf 'preexisting user command\n' > "$OPENCODE_TARGET/.opencode/commands/preexisting-user.md"
 assert_cmd_zero "opencode adapter installs" \
   bash "$ROOT/install-opencode.sh" "$OPENCODE_TARGET" --source "$ROOT" --yes
 assert_file_exists "opencode change command installed" \
@@ -533,6 +580,27 @@ assert_file_exists "opencode guard plugin installed" \
   "$OPENCODE_TARGET/.opencode/plugins/foundation.js"
 assert_file_exists "shared runtime installed for opencode" \
   "$OPENCODE_TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "opencode adapter records exact ownership" \
+  "$OPENCODE_TARGET/.foundation/adapter-manifests/opencode.txt"
+assert_file_contains "opencode first manifest upgrade refreshes legacy-owned commands" \
+  "$OPENCODE_TARGET/.opencode/commands/change.md" "Create or update"
+assert_file_contains "opencode first manifest upgrade refreshes legacy guard wiring" \
+  "$OPENCODE_TARGET/.opencode/plugins/foundation.js" "FoundationGuard"
+assert_file_contains "opencode first manifest upgrade preserves unrelated user paths" \
+  "$OPENCODE_TARGET/.opencode/commands/preexisting-user.md" "preexisting user command"
+printf 'retired Foundation command\n' > "$OPENCODE_TARGET/.opencode/commands/retired-foundation.md"
+printf 'user command\n' > "$OPENCODE_TARGET/.opencode/commands/user-command.md"
+printf 'project\t.opencode/commands/retired-foundation.md\n' >> \
+  "$OPENCODE_TARGET/.foundation/adapter-manifests/opencode.txt"
+opencode_upgrade="$(bash "$ROOT/install-opencode.sh" "$OPENCODE_TARGET" --source "$ROOT" --yes)"
+assert_contains "opencode adapter reports native dispatch separately" \
+  "$opencode_upgrade" "native dispatch available"
+assert_contains "opencode adapter reports partial live guards" \
+  "$opencode_upgrade" "live mutation guards partial"
+assert_file_absent "opencode removes a retired owned command" \
+  "$OPENCODE_TARGET/.opencode/commands/retired-foundation.md"
+assert_file_contains "opencode preserves an unowned user command" \
+  "$OPENCODE_TARGET/.opencode/commands/user-command.md" "user command"
 
 # The plugin is an envelope over the shipped hooks, so drive it the way
 # OpenCode does — import, build the hook set, fire tool.execute.before — and
@@ -578,6 +646,8 @@ assert_file_contains "portable AGENTS pointer serves codex" \
   "$CODEX_TARGET/AGENTS.md" "claude-foundation:portable-agent:start"
 assert_file_exists "shared runtime installed for codex" \
   "$CODEX_TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "codex adapter records exact ownership" \
+  "$CODEX_TARGET/.foundation/adapter-manifests/codex.txt"
 assert_eq "codex feature skill links to the canonical Claude skill" \
   "../../.claude/skills/feature" \
   "$(readlink "$CODEX_TARGET/.agents/skills/feature")"
@@ -587,6 +657,21 @@ assert_eq "codex behavioral rules remain a canonical compatibility link" \
 assert_eq "codex guard scripts remain readable but inert through one link" \
   "../.claude/hooks" \
   "$(readlink "$CODEX_TARGET/.codex/hooks")"
+rm -f "$CODEX_TARGET/.codex/hooks"
+mkdir -p "$CODEX_TARGET/.codex/hooks"
+printf 'user directory content\n' > "$CODEX_TARGET/.codex/hooks/keep.txt"
+if env CODEX_HOME="$CODEX_HOME_FIXTURE" \
+    bash "$ROOT/install-codex.sh" "$CODEX_TARGET" --source "$ROOT" --yes \
+    >/dev/null 2>"$TMP/codex-directory-refusal.txt"; then
+  fail "codex refuses to replace an owned file path that became a directory"
+else
+  pass "codex refuses to replace an owned file path that became a directory"
+fi
+assert_file_contains "codex directory refusal preserves nested user content" \
+  "$CODEX_TARGET/.codex/hooks/keep.txt" "user directory content"
+assert_file_contains "codex directory refusal explains recovery" \
+  "$TMP/codex-directory-refusal.txt" "move it before reinstalling"
+rm -rf "$CODEX_TARGET/.codex/hooks"
 # The prompt directory is user-global and shared; a same-named prompt without
 # the Foundation marker belongs to the user and must survive a re-install.
 printf 'my own build prompt\n' > "$CODEX_HOME_FIXTURE/prompts/build.md"
@@ -597,6 +682,19 @@ assert_file_contains "codex adapter keeps the user prompt" \
   "$CODEX_HOME_FIXTURE/prompts/build.md" "my own build prompt"
 assert_file_contains "codex adapter still refreshes its own prompts" \
   "$CODEX_HOME_FIXTURE/prompts/prove.md" "claude-foundation:prompt"
+printf 'retired Foundation prompt\n' > "$CODEX_HOME_FIXTURE/prompts/retired-foundation.md"
+printf 'codex-home\tprompts/retired-foundation.md\n' >> \
+  "$CODEX_TARGET/.foundation/adapter-manifests/codex.txt"
+codex_upgrade="$(env CODEX_HOME="$CODEX_HOME_FIXTURE" \
+  bash "$ROOT/install-codex.sh" "$CODEX_TARGET" --source "$ROOT" --yes)"
+assert_contains "codex adapter reports native dispatch separately" \
+  "$codex_upgrade" "native dispatch available"
+assert_contains "codex adapter reports unavailable live guards" \
+  "$codex_upgrade" "live mutation guards unavailable"
+assert_file_absent "codex removes a retired owned prompt" \
+  "$CODEX_HOME_FIXTURE/prompts/retired-foundation.md"
+assert_file_contains "codex preserves the unowned user prompt" \
+  "$CODEX_HOME_FIXTURE/prompts/build.md" "my own build prompt"
 
 # `init --host` is the routed spelling of the adapter installers — the only
 # spelling a Homebrew install has, since the adapters live in libexec there.

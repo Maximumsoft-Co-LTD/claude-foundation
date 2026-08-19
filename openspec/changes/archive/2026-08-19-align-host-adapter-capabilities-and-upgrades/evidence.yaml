@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "truthful-host-guard-capability",
+      "scenario": "Every supported host reports the same canonical live, partial, or unavailable guard coverage as its installed wiring",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "owned-adapter-upgrade-cleanup",
+      "scenario": "An adapter upgrade removes retired Foundation-owned commands and prompts while preserving user-owned files",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    }
+  ]
+}

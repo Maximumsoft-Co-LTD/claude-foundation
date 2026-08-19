@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-host-adapter-tests.sh"],
+      "timeoutMs": 600000,
+      "resources": [
+        "foundation-test-suite"
+      ],
+      "criticalCases": [
+        "host-capability-matrix",
+        "retired-owned-command",
+        "preserve-user-command"
+      ],
+      "minimum": 3,
+      "reportFormat": "json",
+      "report": ".foundation/test-results/host-adapters.json",
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/host-adapters.json"
+      },
+      "inputs": [
+        ".claude/harness/adapters/host-capabilities.json",
+        ".claude/harness/adapters/install-support.sh",
+        ".claude/hooks/README.md",
+        ".claude/tests/docs/run-doc-consistency.sh",
+        ".claude/tests/harness/run-host-adapter-tests.sh",
+        ".claude/tests/harness/run-installer-tests.sh",
+        "install-codex.sh",
+        "install-cursor.sh",
+        "install-opencode.sh"
+      ]
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

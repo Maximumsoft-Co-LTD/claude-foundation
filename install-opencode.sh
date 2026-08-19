@@ -48,13 +48,49 @@ args=("$TARGET_PATH" "--source" "$SOURCE_PATH")
 bash "$SOURCE_PATH/install.sh" "${args[@]}"
 [ "$DRY_RUN" = no ] || exit 0
 
+# shellcheck source=.claude/harness/adapters/install-support.sh
+. "$SOURCE_PATH/.claude/harness/adapters/install-support.sh"
+adapter_scope_root() {
+  [ "$1" = project ] || return 1
+  printf '%s\n' "$TARGET_PATH"
+}
+adapter_legacy_owned() {
+  [ "$1" = project ] || return 1
+  case "$2" in
+    .opencode/commands/*|.opencode/plugins/foundation.js) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+adapter_manifest_init opencode "$TARGET_PATH"
+adapter_manifest_seed_prior project ".opencode/commands/prototype.md"
+adapter_manifest_seed_prior project ".opencode/commands/review.md"
+
+install_adapter_file() {
+  src="$1"
+  rel="$2"
+  dst="$TARGET_PATH/$rel"
+  if ! adapter_manifest_may_write project "$rel" "$dst"; then
+    printf '⚠ keeping existing user-owned OpenCode artifact: %s\n' "$dst" >&2
+    return 0
+  fi
+  mkdir -p "$(dirname "$dst")"
+  adapter_manifest_prepare_file "$dst"
+  cp "$src" "$dst"
+  adapter_manifest_record project "$rel"
+}
+
 mkdir -p "$TARGET_PATH/.opencode/commands" "$TARGET_PATH/.opencode/plugins"
-cp "$SOURCE_PATH/.claude/commands/"*.md "$TARGET_PATH/.opencode/commands/"
-cp "$SOURCE_PATH/.claude/harness/adapters/opencode-plugin.js" \
-  "$TARGET_PATH/.opencode/plugins/foundation.js"
+for src in "$SOURCE_PATH/.claude/commands/"*.md; do
+  install_adapter_file "$src" ".opencode/commands/$(basename "$src")"
+done
+install_adapter_file "$SOURCE_PATH/.claude/harness/adapters/opencode-plugin.js" \
+  ".opencode/plugins/foundation.js"
+adapter_manifest_finish
 
 printf '✓ OpenCode adapter installed at %s\n' "$TARGET_PATH"
 printf '  commands: .opencode/commands/ (from .claude/commands/)\n'
 printf '  guards:   .opencode/plugins/foundation.js replays .claude/hooks/\n'
 printf '  skills + agent contract: read natively from .claude/skills/ and AGENTS.md\n'
+adapter_capability_summary \
+  "$SOURCE_PATH/.claude/harness/adapters/host-capabilities.json" opencode
 printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
