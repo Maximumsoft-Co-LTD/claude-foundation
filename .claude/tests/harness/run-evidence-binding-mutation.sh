@@ -18,13 +18,14 @@ set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-CONTRACT="$ROOT/.claude/harness/runtime/evidence/evidence-contract.mjs"
-STATE="$ROOT/.claude/harness/runtime/core/state-runtime.mjs"
 WORK="$(mktemp -d)"
+SOURCE="$WORK/source"
+. "$ROOT/.claude/tests/lib/mutation-fixture.sh"
+create_mutation_fixture "$ROOT" "$SOURCE"
+CONTRACT="$SOURCE/.claude/harness/runtime/evidence/evidence-contract.mjs"
+STATE="$SOURCE/.claude/harness/runtime/core/state-runtime.mjs"
 
 restore() {
-  [ -f "$WORK/evidence-contract.mjs" ] && cp "$WORK/evidence-contract.mjs" "$CONTRACT"
-  [ -f "$WORK/state-runtime.mjs" ] && cp "$WORK/state-runtime.mjs" "$STATE"
   rm -rf "$WORK"
 }
 # HUP and PIPE as well as the usual two: a mutation script that dies without
@@ -32,14 +33,13 @@ restore() {
 # next thing anyone runs fails for a reason that is not theirs. Piping a full
 # `run-all.sh` into `head` is enough to do it.
 
-# Serialized against every other in-place mutation of this checkout, and
-# refused outright on a tree that still carries one. Two runs overlapping
-# restores one run's injected fault as the other's "clean" source.
-. "$ROOT/.claude/tests/lib/mutation-lock.sh"
-acquire_mutation_lock "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
-trap 'restore; release_mutation_lock' EXIT
+trap 'restore' EXIT
 trap 'exit 130' HUP INT PIPE TERM
-assert_no_injected_fault "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
+if grep -rl "FOUNDATION-INJECTED-FAULT" "$SOURCE/.claude/harness" 2>/dev/null | grep -q .; then
+  echo "FAIL: source fixture already carries an injected fault"
+  echo "FOUNDATION_MUTATION_RESULT=not-applied"
+  exit 1
+fi
 
 cp "$CONTRACT" "$WORK/evidence-contract.mjs"
 cp "$STATE" "$WORK/state-runtime.mjs"
@@ -48,7 +48,7 @@ cp "$STATE" "$WORK/state-runtime.mjs"
 # outcome this script cannot interpret, and swallowing the output turned it into
 # a bare "not-applied" with nothing to act on.
 suite_passes() {
-  ( cd "$ROOT" && "$@" > "$WORK/suite.log" 2>&1 )
+  ( cd "$SOURCE" && "$@" > "$WORK/suite.log" 2>&1 )
 }
 
 report_baseline() {

@@ -20,19 +20,12 @@ gate, so affected execution cannot silently weaken Land evidence.
 
 Suites run concurrently — each builds its own fixture under `mktemp -d`, so
 nothing orders them — and their output is buffered and replayed in table order,
-so a parallel run reads and diffs exactly like a serial one. The mutation suites
-are the exception, marked `!` in the `run-all.sh` table: each corrupts a file
-under `.claude/harness/` and restores it, so anything running beside one reads a
-source that is briefly wrong. They run alone, after everything else. Set
-`FOUNDATION_TEST_JOBS=1` to force fully serial execution when bisecting.
-
-That lane orders one run. A *second* run in the same checkout — another session,
-or a script invoked directly — is a different hazard: whichever mutation suite
-starts second saves the first one's injected fault as its "clean" copy and
-restores that fault permanently. `lib/mutation-lock.sh` serializes them across
-runs and refuses to start on a tree that still carries a
-`FOUNDATION-INJECTED-FAULT` marker. Every mutation suite takes the lock before
-it copies anything, so running one directly is as safe as running the suite.
+so a parallel run reads and diffs exactly like a serial one. Mutation suites use
+`lib/mutation-fixture.sh` to copy the runtime and detector into private source
+trees before injecting faults. They therefore run in the same pool without
+exposing the checkout or another suite to a mutant, and interrupted or
+overlapping runs remove only their temporary trees. Set `FOUNDATION_TEST_JOBS=1`
+to force fully serial execution when bisecting.
 
 ## Current suites
 
@@ -58,10 +51,10 @@ it copies anything, so running one directly is as safe as running the suite.
 | `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
 | `harness/run-reliability-gap-tests.sh` | Provider command inputs, exact copy projections, relocated sandbox recovery, runtime API guidance, and Claude fresh-session provenance stay fail-closed |
 | `harness/run-target-drift-mutation.sh` | Removing the worktree replay or the `land check` target stop is detected by the suite above |
-| `harness/run-evidence-binding-mutation.sh` | Folding the change packet back into the code hash, or dropping review's exemption from that omission, is detected by the evidence-proof contract slice and the feedback-review suite; `run-all.sh` vouches for baselines its pool already ran green (`FOUNDATION_PREPROVEN_SUITES`), a standalone run proves them itself |
+| `harness/run-evidence-binding-mutation.sh` | Folding the change packet back into the code hash, or dropping review's exemption from that omission, is detected by the land-surface and feedback-review suites; a full `run-all.sh` schedules those detector baselines in the same gate and avoids repeating them, while a standalone mutation run proves them itself |
 | `harness/run-branch-warning-tests.mjs` | Default-branch visibility at Land (warn, never block) and the doctor escalation for the unwired branch guard |
 | `harness/run-upgrade-compat-tests.sh` | Legacy-default migration, custom-policy preservation, and partial-policy deep merge |
-| `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases. No arguments runs all five slices in one shared fixture process in the original assertion order; slice-name arguments select independent slices, which is how `run-all.sh` runs them as four parallel rows (multi-repository and planning-diagnostics stay together — the latter reads the former's `cross-repository-profile` state) |
+| `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases. No arguments runs all five slices in one shared fixture process in the original assertion order; slice-name arguments select independent slices. `run-all.sh` divides evidence/proof into eleven balanced rows; multi-repository and planning-diagnostics stay together because the latter reads the former's `cross-repository-profile` state |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |
 | `harness/run-stale-recovery-tests.mjs` | Stale proof and stale authority refusals carry the recovery order and the resuming command |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |

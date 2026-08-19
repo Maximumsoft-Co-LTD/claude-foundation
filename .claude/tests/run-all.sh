@@ -5,10 +5,8 @@
 # and touches nothing in this repository, so nothing orders them — running them
 # one at a time spent most of the wall clock with the machine idle.
 #
-# The exception is marked `!` in the table below. A mutation suite deliberately
-# corrupts a file under `.claude/harness/` and restores it, so anything running
-# beside it reads a source that is briefly wrong and fails for a reason that has
-# nothing to do with it. Those run alone, after the rest.
+# Mutation suites inject faults only into private source fixtures. They can run
+# in the shared pool without exposing another suite—or the checkout—to a mutant.
 #
 # Output is buffered per suite and replayed in table order, so a parallel run
 # reads exactly like a serial one and stays diffable. `FOUNDATION_TEST_JOBS`
@@ -37,10 +35,20 @@ fi
 # follows the same table, so the printed report order matches.
 suites() {
   cat <<'TABLE'
-harness contracts (evidence proof a1)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a1
-harness contracts (evidence proof a2)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2
-harness contracts (evidence proof b)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-b
-harness contracts (evidence proof c)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c
+evidence binding mutation|sh "$HERE/harness/run-evidence-binding-mutation.sh"
+target drift mutation|sh "$HERE/harness/run-target-drift-mutation.sh"
+land surface mutation|sh "$HERE/harness/run-land-surface-mutation.sh"
+harness contracts (evidence recovery)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2-recovery
+harness contracts (evidence telemetry)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c-telemetry
+harness contracts (evidence execution)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-b-execution
+harness contracts (evidence lifecycle)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a1-core
+harness contracts (evidence review)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2-review
+harness contracts (evidence binding)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-b-binding
+harness contracts (evidence CI)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a1-ci
+harness contracts (evidence browser)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c-browser
+harness contracts (evidence cache)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2-cache
+harness contracts (evidence waiver)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c-waive
+harness contracts (evidence service)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-b-service
 change loop seams|sh "$HERE/harness/run-changeloop-seam-tests.sh"
 feedback review|sh "$HERE/harness/run-feedback-review-tests.sh"
 installer smoke|sh "$HERE/harness/run-installer-tests.sh"
@@ -97,9 +105,6 @@ model tier drift|node "$HERE/harness/run-model-drift-tests.mjs"
 model tier drift join|node "$HERE/harness/run-model-drift-join-tests.mjs"
 model drift land gate|node "$HERE/harness/run-drift-gate-tests.mjs"
 spec sync verification|node "$HERE/harness/run-spec-sync-verify-tests.mjs"
-!land surface mutation|sh "$HERE/harness/run-land-surface-mutation.sh"
-!target drift mutation|sh "$HERE/harness/run-target-drift-mutation.sh"
-!evidence binding mutation|sh "$HERE/harness/run-evidence-binding-mutation.sh"
 TABLE
 }
 
@@ -149,23 +154,26 @@ if [ "${1:-}" = "--suite" ]; then
   else
     ( eval "${line#*|}" ) > "$work/$index.out" 2>&1 &
     child=$!
-    cleanup_suite() {
-      kill_tree "$child"
-      wait "$child" 2>/dev/null || true
-    }
-    trap 'cleanup_suite; exit 130' HUP INT TERM
     timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}"
-    deadline=$((started + timeout))
-    while kill -0 "$child" 2>/dev/null; do
-      if [ "$(date +%s)" -ge "$deadline" ]; then
+    (
+      sleep "$timeout"
+      if kill -0 "$child" 2>/dev/null; then
         printf 'suite exceeded %ss and was terminated\n' "$timeout" >> "$work/$index.out"
         echo timeout > "$work/$index.timeout"
         kill_tree "$child"
-        break
       fi
-      sleep 1
-    done
+    ) &
+    watchdog=$!
+    cleanup_suite() {
+      kill_tree "$child"
+      kill_tree "$watchdog"
+      wait "$child" 2>/dev/null || true
+      wait "$watchdog" 2>/dev/null || true
+    }
+    trap 'cleanup_suite; exit 130' HUP INT TERM
     if wait "$child"; then result=0; else result=1; fi
+    kill_tree "$watchdog"
+    wait "$watchdog" 2>/dev/null || true
   fi
   echo $(( $(date +%s) - started )) > "$work/$index.duration"
   echo "$result" > "$work/$index.status"
@@ -176,12 +184,21 @@ pool_size() {
   [ -n "${FOUNDATION_TEST_JOBS:-}" ] && { echo "$FOUNDATION_TEST_JOBS"; return; }
   cores="$( { nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null; } | head -1 )"
   case "$cores" in "" | *[!0-9]*) cores=4 ;; esac
-  [ "$cores" -gt 12 ] && cores=12
-  [ "$cores" -lt 1 ] && cores=1
-  echo "$cores"
+  # These suites spend substantial time in short-lived Node/git children and
+  # filesystem waits. Two workers per logical core keeps those gaps filled;
+  # the cap prevents an unusually large host from flooding its process table.
+  jobs=$((cores * 2))
+  [ "$jobs" -gt 24 ] && jobs=24
+  [ "$jobs" -lt 1 ] && jobs=1
+  echo "$jobs"
 }
 
 WORK="$(mktemp -d)"
+# Repeated CLI assertions load the same ESM graph from one fixture path. Newer
+# Node releases reuse its compiled bytecode here; older supported releases
+# safely ignore the environment variable.
+NODE_COMPILE_CACHE="$WORK/node-compile-cache"
+export NODE_COMPILE_CACHE
 pool_pid=""
 monitor_pid=""
 cleanup() {
@@ -223,6 +240,14 @@ while [ "$index" -le "$TOTAL" ]; do
 done
 SELECTED_TOTAL="$(printf '%s\n' $selected | wc -l | tr -d ' ')"
 
+# Full runs already schedule both detector baselines in this same gate. The
+# private mutation fixture cannot affect them, so the mutation row may avoid
+# repeating their work; a standalone mutation invocation still proves both.
+if [ "$selection_mode" = "full" ]; then
+  FOUNDATION_PREPROVEN_SUITES="feedback-review land-surface"
+  export FOUNDATION_PREPROVEN_SUITES
+fi
+
 printf '%s\n' $shared | xargs -P "$JOBS" -I@ sh "$0" --suite @ "$WORK" &
 pool_pid=$!
 (
@@ -252,25 +277,6 @@ wait "$pool_pid"
 pool_pid=""
 wait "$monitor_pid" 2>/dev/null || true
 monitor_pid=""
-
-# The mutation suites prove their detector suites pass before injecting a
-# fault. The pool just ran those detectors against the same unmutated tree in
-# hermetic fixtures, so re-running them as baselines only repeats work. Vouch
-# for each detector row that passed; a mutation script skips its baseline when
-# its detector's token is present and runs it in full when invoked standalone.
-vouch() {
-  _vouch_index=1
-  while [ "$_vouch_index" -le "$TOTAL" ]; do
-    if [ "$(label_of "$(nth "$_vouch_index")")" = "$1" ] &&
-       [ "$(cat "$WORK/$_vouch_index.status" 2>/dev/null || echo 1)" -eq 0 ]; then
-      FOUNDATION_PREPROVEN_SUITES="${FOUNDATION_PREPROVEN_SUITES:+$FOUNDATION_PREPROVEN_SUITES }$2"
-    fi
-    _vouch_index=$((_vouch_index + 1))
-  done
-}
-vouch 'feedback review' feedback-review
-vouch 'land surface' land-surface
-export FOUNDATION_PREPROVEN_SUITES="${FOUNDATION_PREPROVEN_SUITES:-}"
 
 for index in $alone; do sh "$0" --suite "$index" "$WORK"; done
 

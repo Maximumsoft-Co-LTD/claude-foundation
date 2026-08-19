@@ -11,10 +11,17 @@ const ALWAYS = [
 ];
 
 const EVIDENCE = [
-  "harness contracts (evidence proof a1)",
-  "harness contracts (evidence proof a2)",
-  "harness contracts (evidence proof b)",
-  "harness contracts (evidence proof c)",
+  "harness contracts (evidence recovery)",
+  "harness contracts (evidence telemetry)",
+  "harness contracts (evidence execution)",
+  "harness contracts (evidence lifecycle)",
+  "harness contracts (evidence review)",
+  "harness contracts (evidence binding)",
+  "harness contracts (evidence CI)",
+  "harness contracts (evidence browser)",
+  "harness contracts (evidence cache)",
+  "harness contracts (evidence waiver)",
+  "harness contracts (evidence service)",
   "proof loop end to end",
   "bounded review repair closure"
 ];
@@ -45,7 +52,7 @@ const RULES = [
     [...REVIEW, "proof loop end to end"]],
   [/packet-runtime|packet-scaling/, [
     "packet scaling", "bounded review repair closure",
-    "harness contracts (evidence proof a2)"
+    "harness contracts (evidence review)"
   ]],
   [/repository-snapshot|state-runtime|workspace-surface/, [
     ...EVIDENCE, ...LAND, "land surface mutation", "target drift mutation",
@@ -60,7 +67,7 @@ const RULES = [
   ]],
   [/runtime\/workflow\/(?:change|security)|change-policy|change-validation/, [
     "harness contracts (change policy)", "change loop seams",
-    "user guidance contracts", "harness contracts (evidence proof a1)"
+    "user guidance contracts", "harness contracts (evidence lifecycle)"
   ]],
   [/runtime\/observability\//, [
     "telemetry concurrency", "telemetry truth", "archive telemetry"

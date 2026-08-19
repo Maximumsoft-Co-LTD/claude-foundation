@@ -17,33 +17,32 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 SUITE=".claude/tests/harness/run-target-drift-tests.sh"
-REPLAY="$ROOT/.claude/harness/runtime/workflow/sandbox-runtime.mjs"
-LANDABLE="$ROOT/.claude/harness/runtime/workflow/land-runtime.mjs"
-SNAPSHOT="$ROOT/.claude/harness/runtime/workflow/repository-snapshot.mjs"
 WORK="$(mktemp -d)"
+SOURCE="$WORK/source"
+. "$ROOT/.claude/tests/lib/mutation-fixture.sh"
+create_mutation_fixture "$ROOT" "$SOURCE"
+REPLAY="$SOURCE/.claude/harness/runtime/workflow/sandbox-runtime.mjs"
+LANDABLE="$SOURCE/.claude/harness/runtime/workflow/land-runtime.mjs"
+SNAPSHOT="$SOURCE/.claude/harness/runtime/workflow/repository-snapshot.mjs"
 
 restore() {
-  [ -f "$WORK/sandbox-runtime.mjs" ] && cp "$WORK/sandbox-runtime.mjs" "$REPLAY"
-  [ -f "$WORK/land-runtime.mjs" ] && cp "$WORK/land-runtime.mjs" "$LANDABLE"
-  [ -f "$WORK/repository-snapshot.mjs" ] && cp "$WORK/repository-snapshot.mjs" "$SNAPSHOT"
   rm -rf "$WORK"
 }
 
-# Serialized against every other in-place mutation of this checkout, and
-# refused outright on a tree that still carries one. Two runs overlapping
-# restores one run's injected fault as the other's "clean" source.
-. "$ROOT/.claude/tests/lib/mutation-lock.sh"
-acquire_mutation_lock "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
-trap 'restore; release_mutation_lock' EXIT
+trap 'restore' EXIT
 trap 'exit 130' HUP INT PIPE TERM
-assert_no_injected_fault "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
+if grep -rl "FOUNDATION-INJECTED-FAULT" "$SOURCE/.claude/harness" 2>/dev/null | grep -q .; then
+  echo "FAIL: source fixture already carries an injected fault"
+  echo "FOUNDATION_MUTATION_RESULT=not-applied"
+  exit 1
+fi
 
 cp "$REPLAY" "$WORK/sandbox-runtime.mjs"
 cp "$LANDABLE" "$WORK/land-runtime.mjs"
 cp "$SNAPSHOT" "$WORK/repository-snapshot.mjs"
 
 suite_passes() {
-  ( cd "$ROOT" && sh "$SUITE" >/dev/null 2>&1 )
+  ( cd "$SOURCE" && sh "$SUITE" >/dev/null 2>&1 )
 }
 
 if ! suite_passes; then

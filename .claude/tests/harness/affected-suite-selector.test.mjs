@@ -7,10 +7,17 @@ const labels = [
   "architecture boundaries", "single-source tables", "dashboard contracts",
   "configured reviewer adapters", "feedback review",
   "bounded review repair closure", "external operation handoff",
-  "harness contracts (evidence proof a1)",
-  "harness contracts (evidence proof a2)",
-  "harness contracts (evidence proof b)",
-  "harness contracts (evidence proof c)", "proof loop end to end",
+  "harness contracts (evidence recovery)",
+  "harness contracts (evidence telemetry)",
+  "harness contracts (evidence execution)",
+  "harness contracts (evidence lifecycle)",
+  "harness contracts (evidence review)",
+  "harness contracts (evidence binding)",
+  "harness contracts (evidence CI)",
+  "harness contracts (evidence browser)",
+  "harness contracts (evidence cache)",
+  "harness contracts (evidence waiver)",
+  "harness contracts (evidence service)", "proof loop end to end",
   "risk-tiered review contract", "review guard reconciliation",
   "land surface", "land surface mutation", "target drift mutation",
   "evidence binding mutation", "harness contracts (sandbox land)",
@@ -33,7 +40,7 @@ test("state identity edits include proof, land, and mutation detectors", () => {
     ".claude/harness/runtime/core/state-runtime.mjs"
   ], labels);
   for (const expected of [
-    "harness contracts (evidence proof a1)", "land surface",
+    "harness contracts (evidence lifecycle)", "land surface",
     "land surface mutation", "target drift mutation", "evidence binding mutation"
   ]) assert.ok(selected.includes(expected), expected);
 });

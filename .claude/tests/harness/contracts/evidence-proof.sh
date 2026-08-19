@@ -4,8 +4,14 @@
 # creating the ordinary durable receipt used by proof.
 evidence_proof_shard="${FOUNDATION_EVIDENCE_PROOF_SHARD:-all}"
 
-if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = a ] ||
-   [ "$evidence_proof_shard" = a1 ]; then
+shard_selected() {
+  for candidate in "$@"; do
+    [ "$evidence_proof_shard" = "$candidate" ] && return 0
+  done
+  return 1
+}
+
+if shard_selected all a a1 a1-ci; then
 node .claude/harness/foundation.mjs new 'Verify signed CI evidence' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve verify-signed-ci-evidence \
   --impact low --coupling isolated >/dev/null
@@ -103,6 +109,10 @@ assert_cmd_zero "evidence v1 upgrades explicitly" \
   node .claude/harness/foundation.mjs evidence-upgrade legacy-evidence
 assert_eq "evidence upgrade writes v2" "2" \
   "$(jq -r '.version' openspec/changes/legacy-evidence/evidence.yaml)"
+
+fi
+
+if shard_selected all a a1 a1-core; then
 
 output="$(node .claude/harness/foundation.mjs new 'Profile owner update')"
 assert_contains "creates standard change" "$output" "CREATED profile-owner-update"
@@ -286,12 +296,10 @@ fi
 # Project-owned evidence must be collectible before an external review receipt
 # exists. Final proof remains blocked until review, then reuses the collected
 # receipt instead of executing the provider again.
-if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = a ] ||
-   [ "$evidence_proof_shard" = a2 ]; then
 # The latter half also checks cache reuse and artifact auditing against this
 # change. A standalone a2 shard creates only the prerequisite state; the full
 # unsplit contract already created it immediately above.
-if [ "$evidence_proof_shard" = a2 ]; then
+if shard_selected a2 a2-cache; then
   node .claude/harness/foundation.mjs new 'Executable evidence' --rapid >/dev/null
   node .claude/harness/foundation.mjs resolve executable-evidence \
     --impact low --coupling isolated >/dev/null
@@ -317,6 +325,8 @@ if [ "$evidence_proof_shard" = a2 ]; then
   rm openspec/changes/executable-evidence/tasks.md.bak
   node .claude/harness/foundation.mjs proof-execute executable-evidence >/dev/null
 fi
+
+if shard_selected all a a2 a2-review; then
 node .claude/harness/foundation.mjs new 'Collect before review' >/dev/null
 node .claude/harness/foundation.mjs resolve collect-before-review \
   --impact medium --coupling coupled --acceptance-not-required >/dev/null
@@ -425,8 +435,11 @@ assert_cmd_zero "final proof reuses evidence collected before review" \
 assert_eq "final proof does not rerun collected provider" "1" \
   "$(tr -d '\n' < .foundation/collect-count.txt)"
 
+fi
+
 # An executable provider that is configured but unavailable must expose safe,
 # structured recovery choices instead of leaving the operator at a dead end.
+if shard_selected all a a2 a2-recovery; then
 node .claude/harness/foundation.mjs new 'Unavailable provider recovery' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve unavailable-provider-recovery \
   --impact low --coupling isolated >/dev/null
@@ -576,6 +589,9 @@ assert_contains "active work recovery tells the host to wait or release" \
 assert_contains "active work recovery preserves lease identity" \
   "$configuration_readiness" '"taskId": "T001"'
 
+fi
+
+if shard_selected all a a2 a2-cache; then
 assert_cmd_zero "atomic proof run reuses valid receipts and audits" \
   node .claude/harness/foundation.mjs proof-run executable-evidence
 assert_eq "receipt cache avoids a second command" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
@@ -634,7 +650,7 @@ fi
 # A provider that declares no inputs binds the whole workspace *minus* the
 # change packet. Editing the packet after proving used to expire every receipt
 # in the change and charge a full provider re-run for a note in design.md.
-if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = b ]; then
+if shard_selected all b b-binding; then
 node .claude/harness/foundation.mjs new 'Packet edit reuse' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve packet-edit-reuse \
   --impact low --coupling isolated >/dev/null
@@ -695,8 +711,11 @@ assert_contains "the refusal names the route out" \
   "$legacy_protocol_prove" "claude-foundation proof run packet-edit-reuse"
 cp "$TMP/current-protocol-receipt.json" .foundation/receipts/packet-edit-reuse/test.json
 
+fi
+
 # Discovery accepts only an actual non-negative integer. JavaScript-coercible
 # values are unknown evidence, while a numeric zero is a real empty suite.
+if shard_selected all b b-execution; then
 node .claude/harness/foundation.mjs new 'Numeric report semantics' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve numeric-report-semantics \
   --impact low --coupling isolated >/dev/null
@@ -819,8 +838,11 @@ else
   pass "separate provider commands receive distinct execution identities"
 fi
 
+fi
+
 # A harness-owned service requires application identity and is shared with the
 # provider without leaving a process behind.
+if shard_selected all b b-service; then
 node .claude/harness/foundation.mjs new 'Service evidence' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve service-evidence \
   --impact low --coupling isolated >/dev/null
@@ -862,7 +884,7 @@ fi
 
 # The Playwright adapter requires structured claim annotations. A deterministic
 # fake reporter pins parsing without downloading browser binaries in unit CI.
-if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = c ]; then
+if shard_selected all c c-browser; then
 node .claude/harness/foundation.mjs new 'Browser adapter' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve browser-adapter \
   --impact low --coupling isolated >/dev/null
@@ -913,6 +935,9 @@ fi
 assert_file_contains "missing browser claim is inconclusive, not guessed pass" \
   .foundation/receipts/browser-adapter/browser.json '"status": "inconclusive"'
 
+fi
+
+if shard_selected all c c-telemetry; then
 output="$(node .claude/harness/foundation.mjs new 'Tiny copy edit' --rapid)"
 assert_contains "creates rapid change" "$output" "foundation-rapid"
 node .claude/harness/foundation.mjs resolve tiny-copy-edit --impact low --coupling isolated --security auth >/dev/null
@@ -1107,11 +1132,14 @@ else
   rm -f foundation.json
 fi
 
+fi
+
 # A gate that executed and failed has a recorded exit: `change waive` withdraws
 # the capability on an explicit host-recorded user decision, the receipts
 # already earned stay valid, and the proof record carries the waiver. It is
 # never a force-land — proof still has to end "pass", just over the reduced
 # required set — and review/acceptance keep their own documented routes.
+if shard_selected all c c-waive; then
 node .claude/harness/foundation.mjs new 'Waivable gate' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve waivable-gate \
   --impact low --coupling isolated >/dev/null
@@ -1136,11 +1164,12 @@ printf '%s\n' \
   '}' > openspec/changes/waivable-gate/evidence.yaml
 sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/waivable-gate/tasks.md
 rm openspec/changes/waivable-gate/tasks.md.bak
-# The browser-adapter block above leaves its activeProofRun behind by design;
-# to the cross-change executing guard that reads as live work against this
-# same repository, so clear it the way the cleared-run precedent above does.
-jq 'del(.activeProofRun)' .foundation/runtime/browser-adapter.json > "$TMP/waive-clear-run.json"
-cp "$TMP/waive-clear-run.json" .foundation/runtime/browser-adapter.json
+# The aggregate c/all lane ran the browser block above, which deliberately
+# leaves activeProofRun behind. A standalone c-waive shard has no such state.
+if [ -f .foundation/runtime/browser-adapter.json ]; then
+  jq 'del(.activeProofRun)' .foundation/runtime/browser-adapter.json > "$TMP/waive-clear-run.json"
+  cp "$TMP/waive-clear-run.json" .foundation/runtime/browser-adapter.json
+fi
 node .claude/harness/foundation.mjs proof-execute waivable-gate >/dev/null 2>&1 || true
 assert_eq "the failing provider recorded a fail receipt" "fail" \
   "$(jq -r '.status' .foundation/receipts/waivable-gate/static-analysis.json)"

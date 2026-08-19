@@ -42,7 +42,11 @@ printf 'initial\n' > "$TMP/project/app.txt"
 if [ "$#" -eq 1 ] && { [ "$1" = "evidence-proof" ] ||
    [ "$1" = "evidence-proof-a" ] || [ "$1" = "evidence-proof-a1" ] ||
    [ "$1" = "evidence-proof-a2" ] || [ "$1" = "evidence-proof-b" ] ||
-   [ "$1" = "evidence-proof-c" ]; }; then
+   [ "$1" = "evidence-proof-c" ] ||
+   [ "${1#evidence-proof-a1-}" != "$1" ] ||
+   [ "${1#evidence-proof-a2-}" != "$1" ] ||
+   [ "${1#evidence-proof-b-}" != "$1" ] ||
+   [ "${1#evidence-proof-c-}" != "$1" ]; }; then
   git init -q "$TMP/project"
   git -C "$TMP/project" add .
   git -C "$TMP/project" \
@@ -86,13 +90,13 @@ assert_contains "test wiring names the structured report field" "$providers" \
 slices="${*:-change-policy evidence-proof sandbox-land multi-repository planning-diagnostics}"
 for slice in $slices; do
   case "$slice" in
-    change-policy|evidence-proof|evidence-proof-a|evidence-proof-a1|evidence-proof-a2|evidence-proof-b|evidence-proof-c|sandbox-land|multi-repository|planning-diagnostics) ;;
+    change-policy|evidence-proof|evidence-proof-a|evidence-proof-a1|evidence-proof-a1-ci|evidence-proof-a1-core|evidence-proof-a2|evidence-proof-a2-review|evidence-proof-a2-recovery|evidence-proof-a2-cache|evidence-proof-b|evidence-proof-b-binding|evidence-proof-b-execution|evidence-proof-b-service|evidence-proof-c|evidence-proof-c-browser|evidence-proof-c-telemetry|evidence-proof-c-waive|sandbox-land|multi-repository|planning-diagnostics) ;;
     *) echo "unknown contract slice: $slice" >&2; exit 2 ;;
   esac
 done
 for slice in $slices; do
   case "$slice" in
-    evidence-proof-a|evidence-proof-a1|evidence-proof-a2|evidence-proof-b|evidence-proof-c)
+    evidence-proof-a|evidence-proof-a1|evidence-proof-a1-ci|evidence-proof-a1-core|evidence-proof-a2|evidence-proof-a2-review|evidence-proof-a2-recovery|evidence-proof-a2-cache|evidence-proof-b|evidence-proof-b-binding|evidence-proof-b-execution|evidence-proof-b-service|evidence-proof-c|evidence-proof-c-browser|evidence-proof-c-telemetry|evidence-proof-c-waive)
       FOUNDATION_EVIDENCE_PROOF_SHARD="${slice#evidence-proof-}"
       export FOUNDATION_EVIDENCE_PROOF_SHARD
       . "$HERE/contracts/evidence-proof.sh"

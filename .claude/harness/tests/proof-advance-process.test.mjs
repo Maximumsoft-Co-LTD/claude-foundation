@@ -189,11 +189,20 @@ async function parentTest() {
       token: "dead-owner",
       acquiredAt: "2026-08-14T00:00:00.000Z"
     });
+    rmSync(join(root, "provider-release"), { force: true });
     const recoveryA = child(root, { PROOF_ADVANCE_HOLD: "1" });
     const recoveryB = child(root, { PROOF_ADVANCE_HOLD: "1" });
-    const recovered = await Promise.all([
-      completion(recoveryA), completion(recoveryB)
+    const recoveryAPromise = completion(recoveryA);
+    const recoveryBPromise = completion(recoveryB);
+    const firstRecovery = await Promise.race([
+      recoveryAPromise.then((result) => ({ index: 0, result })),
+      recoveryBPromise.then((result) => ({ index: 1, result }))
     ]);
+    assert.equal(firstRecovery.result.status, 0, firstRecovery.result.stderr);
+    assert.equal(JSON.parse(firstRecovery.result.stdout).status, "IN_PROGRESS",
+      "the non-owner must return while the elected stale-lock recoverer is held");
+    writeFileSync(join(root, "provider-release"), "release\n");
+    const recovered = await Promise.all([recoveryAPromise, recoveryBPromise]);
     recovered.forEach((result) => assert.equal(result.status, 0, result.stderr));
     assert.deepEqual(recovered.map((result) => JSON.parse(result.stdout).status).sort(),
       ["IN_PROGRESS", "PASS"],
