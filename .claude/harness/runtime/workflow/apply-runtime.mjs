@@ -32,6 +32,7 @@ export function createApplyRuntime({
   stableHash,
   syncClaudeTelemetry,
   modelUsageRecorded,
+  telemetryReadiness = null,
   saveApplyJournal,
   transactionJournalPath,
   verifyAppliedProjection,
@@ -586,6 +587,24 @@ export function createApplyRuntime({
     // change. An absent transcript already returns imported 0; anything that
     // throws degrades to the same, because telemetry never costs an archive.
     try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
+    const telemetry = telemetryReadiness?.(id) || null;
+    state.land = {
+      ...(state.land || {}),
+      telemetry: telemetry ? {
+        classification: telemetry.classification,
+        reason: telemetry.reason,
+        correlatedHosts: telemetry.correlatedHosts
+      } : null,
+      updatedAt: now()
+    };
+    saveRuntime(state);
+    if (telemetry && !["measured", "no-usage"].includes(telemetry.classification)) {
+      console.error(telemetry.classification === "not-ingested"
+        ? "WARNING: no model usage was imported for this change; cost and token columns stay empty — telemetry not-ingested"
+        : `WARNING: telemetry ${telemetry.classification}; cost and token columns may stay empty`);
+      for (const action of telemetry.recoveryActions || [])
+        console.error(`  recovery: ${action.command}`);
+    }
     const preArchiveWorkspaceHash = readiness.hash;
     // 'openspec archive' moves the change out of openspec/changes and rewrites
     // openspec/specs in one step, so the delta and the pre-merge spec text can
@@ -633,7 +652,7 @@ export function createApplyRuntime({
       console.error("WARNING: OpenSpec reported success but the archived change directory was not found");
     if (["failed", "refused"].includes(state.workspace.cleanup.status))
       console.error(`WARNING: sandbox cleanup ${state.workspace.cleanup.status}: ${state.workspace.cleanup.reason}`);
-    if (!modelUsageRecorded(id))
+    if (!telemetry && !modelUsageRecorded(id))
       console.error(`WARNING: no model usage was imported for this change; cost and token columns stay empty — claude-foundation telemetry sync ${id} [transcript.jsonl]`);
     console.log(cli.stdout.trim());
     console.log(`ARCHIVED ${id}`);

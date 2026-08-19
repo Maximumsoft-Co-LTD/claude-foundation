@@ -219,8 +219,10 @@ JOBS="$(pool_size)"
 
 selected_labels=""
 if [ "$selection_mode" = "affected" ]; then
-  suite_labels="$(suites | while IFS='|' read -r label _command; do label_of "$label"; printf '\n'; done)"
+  suite_registry="$(suites)"
+  suite_labels="$(printf '%s\n' "$suite_registry" | while IFS='|' read -r label _command; do label_of "$label"; printf '\n'; done)"
   selected_labels="$(FOUNDATION_SUITE_LABELS="$suite_labels" \
+    FOUNDATION_SUITE_REGISTRY="$suite_registry" \
     node "$HERE/affected-suite-selector.mjs" "$ROOT")"
 fi
 

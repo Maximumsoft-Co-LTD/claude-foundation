@@ -90,6 +90,7 @@ export function createLandRuntime({
   fileDigest,
   receiptPath,
   handoffReadiness,
+  telemetryReadiness = null,
   verifyAppliedProjection,
   selectedRepositories = () => [],
   repositoryById,
@@ -247,11 +248,15 @@ export function createLandRuntime({
     const tracked = externalOperations.operations
       .filter((row) => row.landDisposition === "tracked-post-land")
       .map((row) => `${row.id} (${row.owner}: ${row.reference})`);
+    const telemetry = telemetryReadiness?.(id) || null;
+    const telemetryRecovery = telemetry?.recoveryActions?.[0]?.command || null;
     console.log(`LAND READY ${id}\n  workspace: ${hash}${
       tracked.length ? `\n  tracked post-Land handoff: ${tracked.join(", ")}` : ""}${
       waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: claude-foundation land ${
-      multiRepository ? "resume" : "archive"} ${id}`);
-    return { archived: false, state, hash, externalOperations };
+      multiRepository ? "resume" : "archive"} ${id}${telemetry
+        ? `\n  telemetry: ${telemetry.classification}${telemetryRecovery
+          ? `; recovery: ${telemetryRecovery}` : ""}` : ""}`);
+    return { archived: false, state, hash, externalOperations, telemetry };
   }
 
   // The explicit half of the split. Recovery replays or reverses filesystem

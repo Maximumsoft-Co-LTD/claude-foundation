@@ -95,14 +95,38 @@ function addKnown(target, labels, known) {
   for (const label of labels) if (known.has(label)) target.add(label);
 }
 
-export function selectAffectedSuites(files, suiteLabels) {
+export function suiteRunnerLabels(registry = "") {
+  const result = new Map();
+  for (const row of String(registry).split("\n")) {
+    const separator = row.indexOf("|");
+    if (separator < 1) continue;
+    const label = row.slice(0, separator).replace(/^!/, "");
+    const command = row.slice(separator + 1);
+    for (const match of command.matchAll(/\$(HERE|ROOT)\/([^"'\s]+\.(?:mjs|sh))/g)) {
+      const file = match[1] === "HERE"
+        ? `.claude/tests/${match[2]}` : match[2];
+      const labels = result.get(file) || [];
+      if (!labels.includes(label)) labels.push(label);
+      result.set(file, labels);
+    }
+  }
+  return result;
+}
+
+export function selectAffectedSuites(files, suiteLabels, registry = "") {
   const known = new Set(suiteLabels);
   const selected = new Set();
   const reasons = new Map();
+  const runnerLabels = suiteRunnerLabels(registry);
   addKnown(selected, ALWAYS, known);
   for (const label of selected) reasons.set(label, ["always-on safety contract"]);
 
   for (const file of [...new Set(files)].sort()) {
+    for (const label of runnerLabels.get(file) || []) {
+      if (!known.has(label)) continue;
+      selected.add(label);
+      reasons.set(label, [...(reasons.get(label) || []), `${file} is its registered runner`]);
+    }
     if (CROSS_CUTTING.test(file)) {
       for (const label of known) {
         selected.add(label);
@@ -112,10 +136,8 @@ export function selectAffectedSuites(files, suiteLabels) {
       }
       continue;
     }
-    let matched = false;
     for (const [pattern, labels] of RULES) {
       if (!pattern.test(file)) continue;
-      matched = true;
       for (const label of labels) {
         if (!known.has(label)) continue;
         selected.add(label);
@@ -127,7 +149,7 @@ export function selectAffectedSuites(files, suiteLabels) {
     // A changed suite must always select itself even before a domain rule is
     // added. Match its runner basename against the label-normalized command
     // metadata supplied by run-all.
-    if (!matched && file.startsWith(".claude/tests/")) {
+    if (file.startsWith(".claude/tests/")) {
       const stem = file.split("/").at(-1)
         .replace(/^run-/, "").replace(/-tests?(?:\.mjs|\.sh)$/, "")
         .replaceAll("-", " ");
@@ -165,7 +187,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const files = process.env.FOUNDATION_CHANGED_FILES
     ? process.env.FOUNDATION_CHANGED_FILES.split("\n").filter(Boolean)
     : changedFiles(root, process.env.FOUNDATION_TEST_BASE || null);
-  const result = selectAffectedSuites(files, labels);
+  const result = selectAffectedSuites(files, labels,
+    process.env.FOUNDATION_SUITE_REGISTRY || "");
   if (!files.length) console.error("affected tests: no changed files");
   else console.error(`affected tests: ${files.length} changed file(s) selected ${result.selected.length}/${labels.length} suite(s)`);
   for (const label of result.selected) console.log(label);

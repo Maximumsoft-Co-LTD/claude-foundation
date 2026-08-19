@@ -13,6 +13,9 @@ import {
 import {
   createTelemetryRuntime
 } from "../../harness/runtime/observability/telemetry-runtime.mjs";
+import {
+  packetOverflowSummary
+} from "../../harness/runtime/workflow/packet-runtime.mjs";
 
 const jsonLines = (path) => {
   try {
@@ -63,6 +66,7 @@ test("correlated Codex usage remains unavailable with supported recovery", () =>
     sessionId: "thread-123", telemetryHost: "codex"
   }], "change-id");
   assert.equal(value.status, "unavailable");
+  assert.equal(value.classification, "not-ingested");
   assert.equal(value.reason, "correlation-without-usage-events");
   assert.deepEqual(value.correlatedHosts, ["codex"]);
   assert(value.recoveryActions.some((action) =>
@@ -76,15 +80,58 @@ test("missing host context names generic supported recovery", () => {
   assert(value.recoveryActions.some((action) => action.type === "import-generic-events"));
 });
 
-test("measured events require no recovery", () => {
+test("request-only events expose missing usage without inventing totals", () => {
   const value = usageAvailability([
     { source: "codex", agentId: "orchestrator" },
     { agentId: "worker-without-host-provenance" }
   ], [], "change-id");
   assert.equal(value.status, "measured");
-  assert.equal(value.reason, null);
+  assert.equal(value.classification, "correlation-missing");
+  assert.equal(value.reason, "correlation-missing");
   assert.deepEqual(value.correlatedHosts, ["codex"]);
-  assert.deepEqual(value.recoveryActions, []);
+  assert.match(value.recoveryActions[0].command, /--format codex/);
+});
+
+test("Cursor imports retain measured generic-host attribution", () => {
+  const value = usageAvailability([
+    { source: "cursor", inputTokens: 42 }
+  ]);
+  assert.equal(value.status, "measured");
+  assert.equal(value.classification, "measured");
+  assert.deepEqual(value.correlatedHosts, ["generic-host"]);
+});
+
+test("explicit zero usage is distinguished from missing usage", () => {
+  const value = usageAvailability([
+    { source: "generic", inputTokens: 0, outputTokens: 0, cost: 0 }
+  ]);
+  assert.equal(value.classification, "no-usage");
+  assert.equal(value.reason, null);
+});
+
+test("unsupported event sources retain an actionable classification", () => {
+  const value = usageAvailability([
+    { source: "future-editor", inputTokens: 12 }
+  ], [], "change-id");
+  assert.equal(value.classification, "source-unsupported");
+  assert.equal(value.reason, "source-unsupported");
+  assert.match(value.recoveryActions[0].command, /--format generic/);
+});
+
+test("oversized review display stays valid and names durable persistence", () => {
+  const value = packetOverflowSummary({
+    packetType: "review",
+    changeId: "wide-review",
+    packetDigest: "digest-1",
+    references: { tasks: { path: "tasks.md" } }
+  }, 12_000, 8_192, [{ field: "changedSurface", bytes: 9_000 }]);
+  assert.equal(value.packetValidity, "valid");
+  assert.equal(value.display.status, "truncated");
+  assert.equal(value.display.bytes, 12_000);
+  assert.equal(value.durableAuthorityRequest.status, "not-requested");
+  assert.equal(value.durableAuthorityRequest.next,
+    "claude-foundation authority request wide-review --type review");
+  assert.deepEqual(value.references, { tasks: { path: "tasks.md" } });
 });
 
 test("phase context records Codex provenance without creating usage", () => {

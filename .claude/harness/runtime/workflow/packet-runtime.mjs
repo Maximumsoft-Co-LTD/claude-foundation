@@ -21,6 +21,23 @@ export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   return value;
 }
 
+export function packetOverflowSummary(value, bytes, limit, largestFields = []) {
+  return {
+    version: 1,
+    packetType: value.packetType,
+    changeId: value.changeId,
+    packetDigest: value.packetDigest,
+    packetValidity: "valid",
+    display: { status: "truncated", bytes, limit, largestFields },
+    durableAuthorityRequest: {
+      status: "not-requested",
+      next: `claude-foundation authority request ${value.changeId} --type review`,
+      note: "The display budget does not invalidate the packet. The authority request persists the complete bounded packet."
+    },
+    references: value.references || null
+  };
+}
+
 export function createPacketRuntime({
   ROOT, PACKET_SCHEMA_VERSION, REVIEW_PACKET_SCHEMA_VERSION, leasesRoot = null, loadRuntime,
   foundationVersion, installedCliVersion,
@@ -484,6 +501,20 @@ export function createPacketRuntime({
       const fields = Object.entries(value).map(([field, fieldValue]) => ({
         field, bytes: Buffer.byteLength(JSON.stringify(fieldValue))
       })).sort((left, right) => right.bytes - left.bytes).slice(0, 5);
+      if (value.packetType === "review") {
+        const summary = packetOverflowSummary(value, bytes, limit, fields);
+        const summaryEncoded = serializedJson(summary, Boolean(flags.pretty));
+        console.error(`WARNING: review packet display truncated at ${limit} bytes; ` +
+          `the ${bytes}-byte packet remains valid and can be persisted with: ${
+            summary.durableAuthorityRequest.next}`);
+        recordContextMetric(id, "packet-review-display", Buffer.byteLength(summaryEncoded), {
+          originalBytes: bytes,
+          limit,
+          displayStatus: "truncated"
+        });
+        process.stdout.write(summaryEncoded);
+        return summary;
+      }
       die(`${value.packetType} packet exceeds ${limit} bytes (${bytes}); largest fields: ${
         fields.map((entry) => `${entry.field}=${entry.bytes}`).join(", ")
       }; narrow the task or inspect referenced artifacts`);

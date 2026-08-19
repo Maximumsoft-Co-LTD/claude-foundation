@@ -95,7 +95,8 @@ export function createReceiptRuntime({
       return `${capability} is bound to the whole workspace by design`;
     const declared = Array.isArray(config?.inputs) ? config.inputs : null;
     return declared
-      ? `declared inputs: ${declared.join(", ")}`
+      ? `declared inputs: ${declared.join(", ")}${validity === "reusable-inputs"
+        ? "; unchanged inputs will be rebound without re-execution" : ""}`
       : "whole-workspace binding; declare inputs to narrow it";
   }
 

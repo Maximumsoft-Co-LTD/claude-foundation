@@ -56,8 +56,17 @@ export function createReceiptValidity({
       return { provider, validity: "provider-version-stale", status: value.status };
     if (receiptPrototypeEvidence(id, provider, value))
       return { provider, validity: "prototype-evidence", status: value.status };
-    if (value.contractFingerprint !== contractFingerprint(id))
-      return { provider, validity: "contract-stale", status: value.status };
+    const expectedContractFingerprint = contractFingerprint(id);
+    if (value.contractFingerprint !== expectedContractFingerprint)
+      return {
+        provider, validity: "contract-stale", status: value.status,
+        invalidation: {
+          reason: "contract-changed",
+          from: value.contractFingerprint || null,
+          to: expectedContractFingerprint,
+          reusable: false
+        }
+      };
     const config = providerConfig(id, provider);
     const expectedWorkspaceHash = providerWorkspaceHash(id, provider, hash);
     const expectedInputs = providerInputIdentity(
@@ -68,7 +77,16 @@ export function createReceiptValidity({
           value.inputIdentity?.mode === "declared" &&
           value.inputIdentity.fingerprint === expectedInputs.fingerprint)
         reusableInputs = true;
-      else return { provider, validity: "stale", status: value.status };
+      else return {
+        provider, validity: "stale", status: value.status,
+        invalidation: {
+          reason: "workspace-content-changed",
+          fromWorkspaceHash: value.workspaceHash || null,
+          toWorkspaceHash: expectedWorkspaceHash,
+          inputMode: expectedInputs.mode,
+          reusable: false
+        }
+      };
     }
     const capability = providerCapability(provider, config);
     if (capability === "review") {
@@ -166,9 +184,26 @@ export function createReceiptValidity({
         project: value.project || null
       });
     if (value.providerFingerprint !== expectedFingerprint)
-      return { provider, validity: "provider-fingerprint-stale", status: value.status };
+      return {
+        provider, validity: "provider-fingerprint-stale", status: value.status,
+        invalidation: {
+          reason: "provider-configuration-changed",
+          from: value.providerFingerprint || null,
+          to: expectedFingerprint,
+          reusable: false
+        }
+      };
     if (value.inputIdentity?.fingerprint !== expectedInputs.fingerprint)
-      return { provider, validity: "provider-inputs-stale", status: value.status };
+      return {
+        provider, validity: "provider-inputs-stale", status: value.status,
+        invalidation: {
+          reason: "provider-inputs-changed",
+          from: value.inputIdentity?.fingerprint || null,
+          to: expectedInputs.fingerprint,
+          inputMode: expectedInputs.mode,
+          reusable: false
+        }
+      };
     if (value.status !== "pass") return { provider, validity: value.status };
     const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
     const covered = new Set(value.claims || []);
@@ -197,7 +232,13 @@ export function createReceiptValidity({
     return reusableInputs
       ? {
         provider, validity: "reusable-inputs", status: value.status,
-        receipt: value, expectedWorkspaceHash, expectedInputs
+        receipt: value, expectedWorkspaceHash, expectedInputs,
+        reuse: {
+          reason: "declared-inputs-unchanged",
+          fromWorkspaceHash: value.workspaceHash,
+          toWorkspaceHash: expectedWorkspaceHash,
+          inputFingerprint: expectedInputs.fingerprint
+        }
       }
       : { provider, validity: "valid", receipt: value };
   }

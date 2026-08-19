@@ -18,6 +18,7 @@ import {
   normalizeTelemetryRow,
   runtimeSessionId
 } from "./telemetry.mjs";
+import { usageAvailability } from "./metrics-runtime.mjs";
 
 export function createTelemetryRuntime({
   root,
@@ -245,7 +246,8 @@ export function createTelemetryRuntime({
       taskId: flags.task || null,
       workspaceHash: snapshot.workspaceHash || null,
       workspaceSnapshotId: snapshot.snapshotId || snapshot.id || null,
-      changeId: id
+      changeId: id,
+      source: "host-execution-contract"
     };
     if (!event.requestId) fail("event requires --request for unique telemetry identity");
     const path = join(logs, id, "events.jsonl");
@@ -298,6 +300,14 @@ export function createTelemetryRuntime({
     const path = join(logs, id, "events.jsonl");
     try { return existsSync(path) && statSync(path).size > 0; }
     catch { return false; }
+  }
+
+  function telemetryReadiness(id) {
+    return usageAvailability(
+      readJsonLinesTolerant(join(logs, id, "events.jsonl")),
+      readJsonLinesTolerant(join(logs, id, "phase-context.jsonl")),
+      id
+    );
   }
 
   function bindClaudeSession(id, operationId, options = {}) {
@@ -503,6 +513,7 @@ export function createTelemetryRuntime({
     claudeHostContext,
     importTelemetry,
     modelUsageRecorded,
+    telemetryReadiness,
     prepareClaudeTelemetry,
     recordContextMetric,
     recordEvent,

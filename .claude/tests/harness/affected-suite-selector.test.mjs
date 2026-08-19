@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectAffectedSuites } from "../affected-suite-selector.mjs";
+import {
+  selectAffectedSuites, suiteRunnerLabels
+} from "../affected-suite-selector.mjs";
 
 const labels = [
   "runtime syntax", "run-all process control", "composition-root wiring",
@@ -50,4 +52,40 @@ test("cross-cutting protocol edits expand to the full supplied suite set", () =>
     ".claude/harness/protocol.json"
   ], labels);
   assert.deepEqual(new Set(selected), new Set(labels));
+});
+
+test("the registry selects a suite whose label differs from its runner", () => {
+  const registry = [
+    'actionable validation and telemetry|sh "$HERE/harness/run-actionable-validation-telemetry-tests.sh"',
+    'proof service lifecycle|node "$HERE/harness/run-service-session-tests.mjs"'
+  ].join("\n");
+  const { selected, reasons } = selectAffectedSuites([
+    ".claude/tests/harness/run-actionable-validation-telemetry-tests.sh"
+  ], [...labels, "actionable validation and telemetry", "proof service lifecycle"], registry);
+  assert.ok(selected.includes("actionable validation and telemetry"));
+  assert.equal(selected.includes("proof service lifecycle"), false);
+  assert.match(reasons.get("actionable validation and telemetry")[0], /registered runner/);
+});
+
+test("a shared registered runner selects every suite that invokes it", () => {
+  const registry = [
+    'harness contracts (sandbox land)|sh "$HERE/harness/run-harness-tests.sh" sandbox-land',
+    'harness contracts (change policy)|sh "$HERE/harness/run-harness-tests.sh" change-policy',
+    'configured reviewer adapters|node "$ROOT/.claude/harness/tests/configured-reviewer.test.mjs"'
+  ].join("\n");
+  const mapped = suiteRunnerLabels(registry);
+  assert.deepEqual(mapped.get(".claude/tests/harness/run-harness-tests.sh"), [
+    "harness contracts (sandbox land)", "harness contracts (change policy)"
+  ]);
+  assert.deepEqual(mapped.get(".claude/harness/tests/configured-reviewer.test.mjs"), [
+    "configured reviewer adapters"
+  ]);
+});
+
+test("domain matches do not suppress runner stem self-selection", () => {
+  const selfLabel = "authority runtime regression";
+  const { selected } = selectAffectedSuites([
+    ".claude/tests/harness/run-authority-runtime-regression-tests.mjs"
+  ], [...labels, selfLabel]);
+  assert.ok(selected.includes(selfLabel));
 });

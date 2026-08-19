@@ -3,23 +3,60 @@ import { join } from "node:path";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
 
 export function usageAvailability(events = [], phaseContextRows = [], changeId = "<change>") {
-  if (events.length) return {
-    status: "measured",
-    reason: null,
-    correlatedHosts: [...new Set(events.map((event) => {
+  if (events.length) {
+    const correlatedHosts = [...new Set(events.map((event) => {
       const source = String(event.source || "").toLowerCase();
       if (source === "codex") return "codex";
       if (source === "claude" || source === "claude-transcript") return "claude-code";
-      if (source === "generic" || source === "otel") return "generic-host";
+      if (source === "generic" || source === "otel" || source === "cursor")
+        return "generic-host";
       if (source !== "host-execution-contract") return null;
       const host = String(event.agentId || "").toLowerCase();
       if (host.includes("codex")) return "codex";
       if (host.includes("claude")) return "claude-code";
       return "generic-host";
     })
-      .filter(Boolean))].sort(),
-    recoveryActions: []
-  };
+      .filter(Boolean))].sort();
+    const usageFields = [
+      "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
+      "cacheTokens", "cost"
+    ];
+    const observedValues = events.flatMap((event) => usageFields
+      .map((field) => event[field])
+      .filter((value) => value !== null && value !== undefined &&
+        Number.isFinite(Number(value))));
+    const classification = !correlatedHosts.length ? "source-unsupported"
+      : !observedValues.length ? "correlation-missing"
+        : observedValues.every((value) => Number(value) === 0) ? "no-usage"
+          : "measured";
+    const recoveryActions = [];
+    if (classification === "correlation-missing") {
+      if (correlatedHosts.includes("codex")) recoveryActions.push({
+        type: "import-codex-events",
+        command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format codex`
+      });
+      if (correlatedHosts.includes("claude-code")) recoveryActions.push({
+        type: "sync-claude-transcript",
+        command: `claude-foundation telemetry sync ${changeId} [transcript.jsonl]`
+      });
+      if (correlatedHosts.includes("generic-host")) recoveryActions.push({
+        type: "import-generic-events",
+        command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
+      });
+    }
+    if (classification === "source-unsupported") recoveryActions.push({
+      type: "import-generic-events",
+      command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
+    });
+    return {
+      status: "measured",
+      classification,
+      reason: classification === "measured" || classification === "no-usage"
+        ? null : classification,
+      correlatedHosts,
+      recoveryActions
+    };
+  }
   const correlatedHosts = [...new Set(phaseContextRows
     .filter((row) => row.sessionId)
     .map((row) => row.telemetryHost || "unknown"))].sort();
@@ -42,6 +79,7 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
   });
   return {
     status: "unavailable",
+    classification: "not-ingested",
     reason: correlatedHosts.length
       ? "correlation-without-usage-events" : "host-telemetry-not-ingested",
     correlatedHosts,
