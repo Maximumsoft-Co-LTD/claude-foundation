@@ -1,7 +1,9 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveUpdateAdvisory, updateBoundary } from "./update-advisory.mjs";
+import {
+  resolveUpdateAdvisory, updateBoundary, updateNotificationDirective
+} from "./update-advisory.mjs";
 
 export const HOST_INSTRUCTION_PROTOCOL = 1;
 export const HOST_COMMANDS = Object.freeze([
@@ -91,7 +93,11 @@ export async function resolveHostInstructionWithUpdate(command, options = {}) {
     ttlMs: options.ttlMs,
     refresh: options.refreshUpdate === true
   });
-  return { ...instruction, update: { ...update, trigger } };
+  return {
+    ...instruction,
+    update: { ...update, trigger },
+    notification: updateNotificationDirective(update, trigger, options)
+  };
 }
 
 export function parseHostInstructionArguments(argv) {

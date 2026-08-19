@@ -109,15 +109,16 @@ the harness never applies an update without user authority. Set
 
 ### Agent update policy
 
-Load this policy only when an instruction or packet has non-empty
-`update.actions`. At the first such Investigate or Change boundary in a session,
-tell the user an update is available and translate the supplied status and
-actions into the user's language. If Investigate already produced that notice,
-suppress the duplicate notice at Change. Immediately before every Build entry,
-remind the user once, including when Build is the first phase entered. The
-notice and reminder never block work, and the agent must not run an update
-action unless the user requests it. Do not surface an automatic update notice
-during Prove or Land.
+Load this policy only when an instruction or packet has
+`notification.surface: true`. Translate the supplied status and actions
+into the user's language. The harness owns the phase timing and session-level
+duplicate decision; `FOUNDATION_SESSION_ID` lets host adapters persist that
+decision across Investigate and Change processes. A Build directive is a
+reminder immediately before that Build entry, including when Build is the first
+phase entered. The notice and reminder never block work, and the agent must not
+run an update action unless the user requests it. Do not surface an automatic
+update notice during Prove or Land, and do not override a false `surface`
+decision.
 
 Check both the project and one change's executable evidence:
 

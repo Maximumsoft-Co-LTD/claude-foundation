@@ -14,7 +14,8 @@ Harness output is a machine handoff: translate in the user's language. Run
 authorized `automaticRecovery`; never ask the user to run a safe action you can.
 Otherwise use AskUserQuestion, plain text otherwise; never present only the option that makes the workflow pass.
 
-For non-empty `update.actions`, load the agent update policy in `README.md`.
+For `notification.surface: true`, load `README.md`; false is the
+harness-owned suppression decision.
 
 Settle production, wire, activation, proof, and authority once. Build/Prove fix
 in-contract defects, recover providers, and hand off missing permission. Ask

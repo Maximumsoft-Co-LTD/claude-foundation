@@ -10,7 +10,9 @@ import { delimiter, join } from "node:path";
 
 import { routeRuntimeCommand } from "../../harness/runtime/core/cli-router.mjs";
 import { createFlagParser } from "../../harness/runtime/core/cli-flags.mjs";
-import { assertOpenSpecStrictValid } from "../../harness/runtime/workflow/change-validation.mjs";
+import {
+  assertOpenSpecStrictValid, groundingTaskOverlapFindings
+} from "../../harness/runtime/workflow/change-validation.mjs";
 
 const fail = (message) => { throw new Error(message); };
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail });
@@ -100,6 +102,41 @@ exit ${validateExit}
   } finally {
     process.env.PATH = priorPath;
   }
+}
+
+// --- immutable grounding sources cannot also be implementation targets ---
+{
+  const findings = groundingTaskOverlapFindings([
+    { repository: "root", path: ".claude/harness/AGENT.md", role: "requirement" },
+    { repository: "root", path: ".claude/harness/README.md", role: "architecture" },
+    { repository: "root", path: "src/runtime.mjs", role: "production-path" }
+  ], [
+    {
+      id: "T001",
+      done: false,
+      text: "T001 update agent surfaces [kind:implementation] " +
+        "[paths:.claude/harness/AGENT.md,.claude/harness/**]"
+    }
+  ]);
+  assert.deepEqual(findings.map((row) => row.path), [
+    ".claude/harness/AGENT.md", ".claude/harness/README.md"
+  ]);
+  assert.equal(findings.some((row) => row.path === "src/runtime.mjs"), false,
+    "writable grounding roles must not conflict with implementation paths");
+  const wildcard = groundingTaskOverlapFindings([
+    {
+      repository: "root",
+      path: ".claude/harness/runtime/workflow/authority-runtime.mjs",
+      role: "architecture"
+    }
+  ], [{
+    id: "T002",
+    done: false,
+    text: "T002 edit authority [kind:implementation] " +
+      "[paths:.claude/harness/runtime/workflow/authority*.mjs]"
+  }]);
+  assert.equal(wildcard.length, 1,
+    "interior file wildcards must not bypass immutable grounding overlap checks");
 }
 
 console.log("guard-fix CLI seams: all cases passed");

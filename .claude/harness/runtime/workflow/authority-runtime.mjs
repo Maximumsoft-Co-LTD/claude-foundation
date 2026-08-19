@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { acquireProcessLock } from "../core/process-lock.mjs";
+import { acquireProcessLock, isProcessAlive } from "../core/process-lock.mjs";
 
 export function createAuthorityRuntime({
   root,
@@ -588,7 +588,7 @@ export function createAuthorityRuntime({
     if (aiSubject && reviewSettings.independence !== "self" &&
         subjectActor.toLowerCase() === configured.identity.toLowerCase())
       fail(`configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`);
-    const requestEntry = authorityStore.list(id)
+    let requestEntry = authorityStore.list(id)
       .find((row) => row.value.requestId === requestId);
     if (!requestEntry) fail(`unknown authority request '${requestId}'`);
     if (requestEntry.value.mainSessionFallback) {
@@ -649,8 +649,43 @@ export function createAuthorityRuntime({
       console.log(JSON.stringify(handback, null, 2));
       return handback;
     }
-    if (requestEntry.value.status === "dispatched")
-      fail(`configured review dispatch '${requestId}' is indeterminate; do not rerun it automatically. Abort it with a reason, then request the next bounded route or pause`);
+    if (requestEntry.value.status === "dispatched") {
+      const controller = requestEntry.value.configuredController;
+      if (!controller)
+        fail(`configured review dispatch '${requestId}' is indeterminate; do not rerun it automatically. Abort it with a reason, then request the next bounded route or pause`);
+      if (isProcessAlive(Number(controller.pid)))
+        fail(`configured review dispatch '${requestId}' is still running in controller PID ${controller.pid}`);
+      const attemptDigest = requestEntry.value.dispatch?.attemptDigest;
+      const attempt = attemptDigest ? reviewAttemptByDigest(id, attemptDigest) : null;
+      if (attempt?.status === "dispatched")
+        completeReviewAttempt(id, attemptDigest, {
+          reviewerSessionId: "",
+          resultStatus: "error",
+          findings: [],
+          verifiedFindingIds: []
+        });
+      const currentEntry = authorityStore.list(id)
+        .find((row) => row.value.requestId === requestId);
+      const {
+        dispatch: _orphanedDispatch,
+        configuredController: _orphanedController,
+        ...reopenable
+      } = currentEntry.value;
+      authorityStore.replace(currentEntry, {
+        ...reopenable,
+        status: "requested",
+        orphanedControllers: [
+          ...(currentEntry.value.orphanedControllers || []),
+          {
+            ...controller,
+            recoveredAt: now(),
+            result: "infrastructure-error"
+          }
+        ]
+      });
+      requestEntry = authorityStore.list(id)
+        .find((row) => row.value.requestId === requestId);
+    }
     const state = loadRuntime(id);
     const history = state.reviewHistory || {
       aiAttempts: 0, totalAttempts: 0, chainHead: null
@@ -674,6 +709,17 @@ export function createAuthorityRuntime({
       "reviewer-model": configured.modelId,
       "reviewer-session-deferred": true
     });
+    const controllerEntry = authorityStore.list(id)
+      .find((row) => row.value.requestId === requestId);
+    authorityStore.replace(controllerEntry, {
+      ...controllerEntry.value,
+      configuredController: {
+        version: 1,
+        pid: process.pid,
+        reviewer: configured.identity,
+        startedAt: now()
+      }
+    });
     const report = runConfiguredReview({
       changeId: id,
       reviewer: reviewerName,
@@ -693,7 +739,11 @@ export function createAuthorityRuntime({
         });
       const failedEntry = authorityStore.list(id)
         .find((row) => row.value.requestId === requestId);
-      const { dispatch: _failedDispatch, ...retryableRequest } = failedEntry.value;
+      const {
+        dispatch: _failedDispatch,
+        configuredController: _failedController,
+        ...retryableRequest
+      } = failedEntry.value;
       const mainSession = mainSessionProvenance(id, flags, aiSubject ? {
         identity: subjectActor,
         sessionId: subjectSession,
@@ -813,8 +863,12 @@ export function createAuthorityRuntime({
       });
     const dispatchedEntry = authorityStore.list(id)
       .find((row) => row.value.requestId === requestId);
+    const {
+      configuredController: _completedController,
+      ...completedRequest
+    } = dispatchedEntry.value;
     const finalizedRequest = {
-      ...dispatchedEntry.value,
+      ...completedRequest,
       dispatch: {
         ...dispatchedEntry.value.dispatch,
         attemptDigest: completed.digest,

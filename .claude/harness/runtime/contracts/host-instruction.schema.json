@@ -17,7 +17,8 @@
         "instruction": { "type": "string", "minLength": 1 },
         "argumentMode": { "enum": ["required", "none"] },
         "foundationVersion": { "type": "string", "minLength": 1 },
-        "update": { "$ref": "#/$defs/update" }
+        "update": { "$ref": "#/$defs/update" },
+        "notification": { "$ref": "#/$defs/updateNotification" }
       },
       "additionalProperties": true
     },
@@ -55,6 +56,19 @@
           }
         },
         "trigger": { "enum": ["investigate", "change", "build"] }
+      },
+      "additionalProperties": false
+    },
+    "updateNotification": {
+      "type": "object",
+      "required": ["surface", "kind", "timing", "dedupeKey", "blocking", "reason"],
+      "properties": {
+        "surface": { "type": "boolean" },
+        "kind": { "enum": ["update-available", "update-reminder"] },
+        "timing": { "enum": ["phase-entry", "before-build"] },
+        "dedupeKey": { "type": ["string", "null"] },
+        "blocking": { "const": false },
+        "reason": { "type": ["string", "null"] }
       },
       "additionalProperties": false
     },

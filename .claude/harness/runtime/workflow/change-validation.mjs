@@ -31,6 +31,75 @@ export function assertOpenSpecStrictValid(id, dir, fail) {
   }
 }
 
+function normalizedScope(path) {
+  return String(path || "").replace(/^\.\//, "")
+    .replace(/\/\*\*?$/, "").replace(/\/$/, "");
+}
+
+function escapeRegex(value) {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+
+function globMatchesPath(scope, path) {
+  const raw = String(scope || "").replace(/^\.\//, "").replace(/\/$/, "");
+  let pattern = "";
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (character === "*") {
+      if (raw[index + 1] === "*") {
+        pattern += ".*";
+        index += 1;
+      } else pattern += "[^/]*";
+    } else if (character === "?") pattern += "[^/]";
+    else pattern += escapeRegex(character);
+  }
+  return new RegExp(`^${pattern}$`).test(path);
+}
+
+function scopeCouldTouchPath(scope, path) {
+  const raw = String(scope || "").replace(/^\.\//, "").replace(/\/$/, "");
+  if (raw === "*") return true;
+  if (/[*?]/.test(raw)) {
+    if (globMatchesPath(raw, path)) return true;
+    const prefix = raw.slice(0, raw.search(/[*?]/)).replace(/\/$/, "");
+    return Boolean(prefix && (prefix === path || prefix.startsWith(`${path}/`)));
+  }
+  const normalized = normalizedScope(raw);
+  return path === normalized || path.startsWith(`${normalized}/`) ||
+    normalized.startsWith(`${path}/`);
+}
+
+export function groundingTaskOverlapFindings(readSet = [], tasks = []) {
+  const immutableRoles = new Set([
+    "requirement", "backlog", "architecture", "contract",
+    "dependency-source", "history"
+  ]);
+  const findings = [];
+  for (const source of readSet) {
+    if (!immutableRoles.has(source?.role)) continue;
+    const sourceRepo = source.repository || "root";
+    const sourcePath = normalizedScope(source.path);
+    if (!sourcePath) continue;
+    for (const task of tasks.map(taskMetadata)) {
+      if (!["implementation", "migration"].includes(task.kind) ||
+          task.repository !== sourceRepo) continue;
+      for (const declared of task.paths) {
+        if (scopeCouldTouchPath(declared, sourcePath)) {
+          findings.push({
+            taskId: task.id,
+            repository: sourceRepo,
+            path: source.path,
+            role: source.role,
+            taskPath: declared
+          });
+          break;
+        }
+      }
+    }
+  }
+  return findings;
+}
+
 export function createChangeValidationRuntime({
   markBlocked = () => {},
   root,
@@ -181,7 +250,7 @@ export function createChangeValidationRuntime({
       fail(`change artifacts still contain scaffold or unresolved content: ${findings.join("; ")}`);
   }
 
-  function groundingValue(id, state, dir) {
+  function groundingValue(id, state, dir, parsedTasks = []) {
     if (!state.groundingRequired) return null;
     const groundingPath = join(dir, "grounding.yaml");
     let value;
@@ -400,6 +469,12 @@ export function createChangeValidationRuntime({
           fileDigest(absolute) !== String(source.sha256).toLowerCase())
         fail(`${label}.sha256 does not match the baseline file`);
     }
+    const overlap = groundingTaskOverlapFindings(value.readSet, parsedTasks);
+    if (overlap.length)
+      fail(`${id}/grounding.yaml immutable readSet overlaps implementation task paths:\n  - ${
+        overlap.map((row) => `${row.taskId}: ${row.repository}/${row.path} ` +
+          `(${row.role}) overlaps [paths:${row.taskPath}]`).join("\n  - ")
+      }\nFiles the change will edit must use role production-path or runtime-path; keep immutable decision sources outside writable task scopes.`);
     if (!value.readSet.some((source) => ["requirement", "backlog"].includes(source.role)))
       fail(`${id}/grounding.yaml must read a requirement or backlog source`);
 
@@ -574,7 +649,9 @@ export function createChangeValidationRuntime({
     if (preflight.length)
       fail(`change validation preflight failed:\n  - ${preflight.join("\n  - ")}`);
     assertNoScaffolds(state, dir);
-    const grounding = groundingValue(id, state, dir);
+    const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
+    const parsedTasks = taskBlocks(tasks);
+    const grounding = groundingValue(id, state, dir, parsedTasks);
     assertNewCapabilitiesAreAdditive(id, dir);
     assertExistingCapabilityOperations(id, dir);
     assertNoDroppedScenarios(id, dir);
@@ -586,8 +663,6 @@ export function createChangeValidationRuntime({
     if (!options.quiet && state.schema !== "foundation-rapid")
       assertOpenSpecStrictValid(id, dir, fail);
 
-    const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
-    const parsedTasks = taskBlocks(tasks);
     const taskIds = parsedTasks.map((task) => task.id).filter(Boolean);
     if (parsedTasks.length && taskIds.length !== parsedTasks.length)
       fail("every implementation task requires a stable ID such as T001");

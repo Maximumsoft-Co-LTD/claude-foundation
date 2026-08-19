@@ -4,8 +4,10 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { acquireProcessLock } from "./process-lock.mjs";
 
 export const UPDATE_CACHE_VERSION = 1;
+export const UPDATE_NOTIFICATION_STATE_VERSION = 1;
 export const UPDATE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const UPDATE_CHECK_TIMEOUT_MS = 1200;
 export const LATEST_RELEASE_URL =
@@ -20,6 +22,11 @@ const DEFAULT_PACKAGE_ROOT = resolve(HERE, "../../../..");
 export function defaultUpdateCachePath(env = process.env) {
   const cacheRoot = env.XDG_CACHE_HOME || join(homedir(), ".cache");
   return join(cacheRoot, "claude-foundation", "update-status.json");
+}
+
+export function defaultUpdateNotificationStatePath(env = process.env) {
+  const cacheRoot = env.XDG_CACHE_HOME || join(homedir(), ".cache");
+  return join(cacheRoot, "claude-foundation", "update-notifications.json");
 }
 
 export function stableVersion(value) {
@@ -93,10 +100,13 @@ export function advisoryFromVersions({
   const latest = latestVersion === null ? null : stableVersion(latestVersion);
   let status = "unknown";
   if (installed && latest) {
+    const cliAhead = compareVersions(installed, latest) > 0;
     const cliBehind = compareVersions(installed, latest) < 0;
     const projectBehind = Boolean(project && compareVersions(project, installed) < 0);
     const projectLatestBehind = Boolean(project && compareVersions(project, latest) < 0);
-    if (cliBehind && projectLatestBehind) status = "both-outdated";
+    if (cliAhead && projectBehind) status = "project-refresh-required";
+    else if (cliAhead) status = "head-installation";
+    else if (cliBehind && projectLatestBehind) status = "both-outdated";
     else if (cliBehind) status = "cli-update-available";
     else if (projectBehind) status = "project-refresh-required";
     else status = "current";
@@ -139,8 +149,8 @@ export function cachedUpdateAdvisory(options = {}) {
   if (!cache) return advisoryFromVersions({
     installedVersion, projectVersion, reason: "cache-unavailable"
   });
-  const fresh = now - Date.parse(cache.checkedAt) <=
-    (options.ttlMs ?? UPDATE_CACHE_TTL_MS);
+  const age = now - Date.parse(cache.checkedAt);
+  const fresh = age >= 0 && age <= (options.ttlMs ?? UPDATE_CACHE_TTL_MS);
   return advisoryFromVersions({
     installedVersion,
     projectVersion,
@@ -150,6 +160,76 @@ export function cachedUpdateAdvisory(options = {}) {
     source: "cache",
     reason: fresh ? null : "cache-expired"
   });
+}
+
+function readNotificationState(path) {
+  try {
+    if (!existsSync(path)) return null;
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    return value?.version === UPDATE_NOTIFICATION_STATE_VERSION &&
+      value.sessions && typeof value.sessions === "object" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function updateNotificationDirective(advisory, trigger, options = {}) {
+  const actionable = Array.isArray(advisory?.actions) && advisory.actions.length > 0;
+  const sessionId = String(options.sessionId ||
+    options.env?.FOUNDATION_SESSION_ID || process.env.FOUNDATION_SESSION_ID || "").trim();
+  const version = stableVersion(advisory?.latestVersion) || null;
+  const kind = trigger === "build" ? "update-reminder" : "update-available";
+  const directive = {
+    surface: actionable,
+    kind,
+    timing: trigger === "build" ? "before-build" : "phase-entry",
+    dedupeKey: version ? `foundation-update:${version}` : null,
+    blocking: false,
+    reason: actionable ? null : "no-update-action"
+  };
+  if (!actionable || trigger === "build") return directive;
+  if (!sessionId) return { ...directive, reason: "session-unavailable" };
+
+  const path = options.notificationStatePath ||
+    defaultUpdateNotificationStatePath(options.env || process.env);
+  let lock;
+  try {
+    const deadline = Date.now() + Number(options.notificationLockTimeoutMs ?? 250);
+    do {
+      lock = acquireProcessLock(`${path}.lock`);
+      if (lock.acquired) break;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    } while (Date.now() < deadline);
+    if (!lock?.acquired)
+      return { ...directive, surface: false, reason: "notification-state-busy" };
+
+    const state = readNotificationState(path) || {
+      version: UPDATE_NOTIFICATION_STATE_VERSION,
+      sessions: {}
+    };
+    const previous = state.sessions[sessionId];
+    if (previous?.dedupeKey === directive.dedupeKey)
+      return { ...directive, surface: false, reason: "already-notified-in-session" };
+
+    const sessions = Object.fromEntries(Object.entries({
+      ...state.sessions,
+      [sessionId]: {
+        dedupeKey: directive.dedupeKey,
+        trigger,
+        notifiedAt: new Date(options.now ?? Date.now()).toISOString()
+      }
+    }).sort(([, left], [, right]) => String(right?.notifiedAt || "")
+      .localeCompare(String(left?.notifiedAt || ""))).slice(0, 100));
+    writeUpdateCache(path, {
+      version: UPDATE_NOTIFICATION_STATE_VERSION,
+      sessions
+    });
+    return directive;
+  } catch {
+    return { ...directive, reason: "notification-state-unavailable" };
+  } finally {
+    lock?.release();
+  }
 }
 
 async function fetchLatestVersion(fetchImpl, timeoutMs) {

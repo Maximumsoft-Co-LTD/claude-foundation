@@ -357,6 +357,46 @@ try {
   assert.equal(completedCodex.reviewerSessionId, "actual-codex-thread",
     "configured review completion binds the real thread.started session");
 
+  state = { version: 2, changeId: "change-orphan", reviewHistory: null };
+  const orphanRequest = quiet(() => authority.requestAuthority(
+    "change-orphan", { type: "review" }));
+  quiet(() => authority.dispatchAuthority("change-orphan", {
+    request: orphanRequest.requestId,
+    scope: "full",
+    "reviewer-type": "ai",
+    "reviewer-identity": "codex-sol",
+    "reviewer-provider-family": "openai",
+    "reviewer-model-family": "gpt-5.6",
+    "reviewer-model": "gpt-5.6-sol",
+    "reviewer-session-deferred": true
+  }));
+  const orphanEntry = authorityStore.list("change-orphan")
+    .find((row) => row.value.requestId === orphanRequest.requestId);
+  authorityStore.replace(orphanEntry, {
+    ...orphanEntry.value,
+    configuredController: {
+      version: 1,
+      pid: 2147483647,
+      reviewer: "codex-sol",
+      startedAt: now()
+    }
+  });
+  quiet(() => authority.runAuthorityReviewer("change-orphan", {
+    request: orphanRequest.requestId,
+    "subject-actor": "human-implementer"
+  }));
+  const orphanAttempts = attemptStore.reviewAttempts(
+    "change-orphan", state.reviewHistory);
+  assert.deepEqual(orphanAttempts.map((attempt) => attempt.resultStatus),
+    ["error", "pass"],
+  "a dead configured controller must become an infrastructure error before retry");
+  const recoveredAuthority = authorityStore.list("change-orphan")
+    .find((row) => row.value.requestId === orphanRequest.requestId).value;
+  assert.equal(recoveredAuthority.status, "completed");
+  assert.equal(recoveredAuthority.orphanedControllers.length, 1);
+  assert.equal(recoveredAuthority.orphanedControllers[0].result,
+    "infrastructure-error");
+
   state = { version: 2, changeId: "change-fallback", reviewHistory: null };
   reviewSettings = {
     ...reviewSettings, independence: "self", diversity: "single-model",

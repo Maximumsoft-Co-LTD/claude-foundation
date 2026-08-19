@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import {
+  mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
   advisoryFromVersions, cachedUpdateAdvisory, compareVersions,
-  readUpdateCache, resolveUpdateAdvisory, stableVersion, writeUpdateCache
+  readUpdateCache, resolveUpdateAdvisory, stableVersion,
+  updateNotificationDirective, writeUpdateCache
 } from "../../harness/runtime/core/update-advisory.mjs";
 import { resolveHostInstructionWithUpdate } from
   "../../harness/runtime/core/host-instruction.mjs";
@@ -17,6 +20,8 @@ import { attachPhaseUpdateAdvisory } from
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
 const NOW = Date.parse("2026-08-19T12:00:00.000Z");
+const UPDATE_ADVISORY_URL = pathToFileURL(join(ROOT, ".claude", "harness", "runtime",
+  "core", "update-advisory.mjs")).href;
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "foundation-update-advisory-"));
@@ -69,6 +74,22 @@ test("older CLI and project report both outdated", () => {
   assert.equal(value.actions.length, 2);
 });
 
+test("an installed version newer than the stable release reports a head installation", () => {
+  const value = advisoryFromVersions({
+    installedVersion: "3.3.3", latestVersion: "3.3.2"
+  });
+  assert.equal(value.status, "head-installation");
+  assert.deepEqual(value.actions, []);
+});
+
+test("a head installation still reports an older project runtime", () => {
+  const value = advisoryFromVersions({
+    installedVersion: "3.3.3", projectVersion: "3.3.2", latestVersion: "3.3.2"
+  });
+  assert.equal(value.status, "project-refresh-required");
+  assert.deepEqual(value.actions.map((action) => action.type), ["refresh-project"]);
+});
+
 test("fresh user cache prevents a network request", async () => {
   const item = fixture();
   try {
@@ -107,6 +128,26 @@ test("stale cache refreshes once and writes only the validated tag", async () =>
     assert.equal(value.source, "remote");
     assert.equal(readUpdateCache(item.cachePath).latestVersion, "3.3.2");
     assert.deepEqual(readdirSync(dirname(item.cachePath)), ["update-status.json"]);
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
+test("a future-dated cache is not fresh and triggers a bounded refresh", async () => {
+  const item = fixture();
+  try {
+    cached(item.cachePath, "3.3.2", "2099-01-01T00:00:00.000Z");
+    let requests = 0;
+    const value = await resolveUpdateAdvisory({
+      installedVersion: "3.3.1", cachePath: item.cachePath, now: NOW,
+      fetchImpl: async () => {
+        requests += 1;
+        return { ok: true, async json() { return { tag_name: "v3.3.3" }; } };
+      }
+    });
+    assert.equal(requests, 1);
+    assert.equal(value.source, "remote");
+    assert.equal(value.latestVersion, "3.3.3");
   } finally {
     rmSync(item.directory, { recursive: true, force: true });
   }
@@ -159,6 +200,9 @@ test("Investigate and Change host instructions carry boundary advisories", async
     });
     assert.equal(value.update.trigger, command);
     assert.equal(value.update.blocking, false);
+    assert.equal("notification" in value.update, false,
+      "protocol-v1's closed update object must remain backward compatible");
+    assert.equal(value.notification.blocking, false);
   }
 });
 
@@ -175,12 +219,12 @@ test("non-selected host phases carry no automatic advisory", async () => {
 test("shipped agent policy notifies once and reminds before Build", () => {
   const contract = readFileSync(join(ROOT, ".claude", "harness", "AGENT.md"), "utf8");
   const policy = readFileSync(join(ROOT, ".claude", "harness", "README.md"), "utf8");
-  assert.match(contract, /For non-empty `update\.actions`, load the agent update policy/);
-  assert.match(policy, /first such Investigate or Change boundary/);
-  assert.match(policy, /suppress the duplicate notice at Change/);
-  assert.match(policy, /Immediately before every Build entry,\s+remind the user once/);
-  assert.match(policy, /must not run an update\s+action unless the user requests it/);
-  assert.match(policy, /Do not surface an automatic update notice\s+during Prove or Land/);
+  assert.match(contract, /For `notification\.surface: true`, load `README\.md`/);
+  assert.match(policy, /harness owns the phase timing and session-level/);
+  assert.match(policy, /do not override a false `surface`/);
+  assert.match(policy, /reminder immediately before that Build entry/);
+  assert.match(policy, /must not\s+run an update\s+action unless the user requests it/);
+  assert.match(policy, /Do not surface an automatic\s+update notice\s+during Prove or Land/);
 });
 
 test("Change reuses the fresh cache created at Investigate", async () => {
@@ -202,6 +246,121 @@ test("Change reuses the fresh cache created at Investigate", async () => {
   }
 });
 
+test("Investigate and Change use durable session deduplication", async () => {
+  const item = fixture();
+  try {
+    cached(item.cachePath, "3.3.3");
+    const options = {
+      packageRoot: ROOT,
+      arguments: "demo",
+      cachePath: item.cachePath,
+      notificationStatePath: join(item.directory, "notifications.json"),
+      sessionId: "session-1",
+      now: NOW
+    };
+    const investigate = await resolveHostInstructionWithUpdate("investigate", options);
+    const change = await resolveHostInstructionWithUpdate("change", options);
+    assert.equal(investigate.notification.surface, true);
+    assert.equal(investigate.notification.kind, "update-available");
+    assert.equal(change.notification.surface, false);
+    assert.equal(change.notification.reason, "already-notified-in-session");
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
+test("notification-state filesystem failures remain non-blocking", () => {
+  const item = fixture();
+  try {
+    const regularFile = join(item.directory, "not-a-directory");
+    writeFileSync(regularFile, "file\n");
+    const value = updateNotificationDirective({
+      latestVersion: "3.3.3",
+      actions: [{ type: "upgrade-cli", command: "upgrade" }]
+    }, "investigate", {
+      sessionId: "session-fail-open",
+      notificationStatePath: join(regularFile, "state.json")
+    });
+    assert.equal(value.surface, true);
+    assert.equal(value.blocking, false);
+    assert.equal(value.reason, "notification-state-unavailable");
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
+test("a live notification-state writer suppresses rather than duplicates", () => {
+  const item = fixture();
+  try {
+    const statePath = join(item.directory, "busy-notifications.json");
+    writeFileSync(`${statePath}.lock`, JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      token: "live-writer",
+      acquiredAt: new Date(NOW).toISOString()
+    }));
+    const value = updateNotificationDirective({
+      latestVersion: "3.3.3",
+      actions: [{ type: "upgrade-cli", command: "upgrade" }]
+    }, "change", {
+      sessionId: "busy-session",
+      notificationStatePath: statePath,
+      notificationLockTimeoutMs: 0
+    });
+    assert.equal(value.surface, false);
+    assert.equal(value.reason, "notification-state-busy");
+    assert.equal(value.blocking, false);
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
+async function notificationWorker(statePath, sessionId) {
+  const source = `
+    import { updateNotificationDirective } from ${JSON.stringify(UPDATE_ADVISORY_URL)};
+    const value = updateNotificationDirective({
+      latestVersion: "3.3.3",
+      actions: [{ type: "upgrade-cli", command: "upgrade" }]
+    }, "investigate", {
+      sessionId: process.argv[2],
+      notificationStatePath: process.argv[3],
+      notificationLockTimeoutMs: 2000
+    });
+    process.stdout.write(JSON.stringify(value));
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source,
+    ROOT, sessionId, statePath], { encoding: "utf8" });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const code = await new Promise((resolve) => child.on("exit", resolve));
+  assert.equal(code, 0, stderr);
+  return JSON.parse(stdout);
+}
+
+test("notification deduplication is serialized across processes", async () => {
+  const item = fixture();
+  try {
+    const statePath = join(item.directory, "shared-notifications.json");
+    const sameSession = await Promise.all(Array.from({ length: 8 }, () =>
+      notificationWorker(statePath, "shared-session")));
+    assert.equal(sameSession.filter((value) => value.surface).length, 1);
+    assert.equal(sameSession.filter((value) =>
+      value.reason === "already-notified-in-session").length, 7);
+
+    const separatePath = join(item.directory, "separate-notifications.json");
+    const sessions = Array.from({ length: 8 }, (_, index) => `session-${index}`);
+    const separate = await Promise.all(sessions.map((session) =>
+      notificationWorker(separatePath, session)));
+    assert.equal(separate.every((value) => value.surface), true);
+    const state = JSON.parse(readFileSync(separatePath, "utf8"));
+    assert.deepEqual(Object.keys(state.sessions).sort(), sessions.sort());
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
 test("Build packet advisory leaves the deterministic digest unchanged", () => {
   const item = fixture();
   try {
@@ -214,6 +373,8 @@ test("Build packet advisory leaves the deterministic digest unchanged", () => {
     assert.equal(packet.packetDigest, "deterministic-digest");
     assert.equal(packet.update.trigger, "build");
     assert.equal(packet.update.status, "project-refresh-required");
+    assert.equal(packet.notification.surface, true);
+    assert.equal(packet.notification.timing, "before-build");
   } finally {
     rmSync(item.directory, { recursive: true, force: true });
   }

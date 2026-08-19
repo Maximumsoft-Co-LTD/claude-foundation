@@ -13,11 +13,11 @@ assert_file_contains "agent contract executes deterministic recovery" \
 assert_file_contains "agent contract forbids pass-biased decisions" \
   "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
 assert_file_contains "agent contract selectively loads update policy" \
-  "$ROOT/.claude/harness/AGENT.md" 'For non-empty `update.actions`, load the agent update policy'
+  "$ROOT/.claude/harness/AGENT.md" 'For `notification.surface: true`, load `README.md`'
 assert_file_contains "update policy suppresses the duplicate Change notice" \
-  "$ROOT/.claude/harness/README.md" "suppress the duplicate notice at Change"
+  "$ROOT/.claude/harness/README.md" "harness owns the phase timing and session-level"
 assert_file_contains "update policy reminds before every Build entry" \
-  "$ROOT/.claude/harness/README.md" "Immediately before every Build entry"
+  "$ROOT/.claude/harness/README.md" "reminder immediately before that Build entry"
 assert_file_contains "update policy keeps later phases quiet" \
   "$ROOT/.claude/harness/README.md" "during Prove or Land"
 assert_file_contains "prove command uses the authority bridge" \

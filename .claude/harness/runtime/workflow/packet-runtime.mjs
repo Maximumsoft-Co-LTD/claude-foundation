@@ -1,19 +1,23 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { cachedUpdateAdvisory } from "../core/update-advisory.mjs";
+import {
+  cachedUpdateAdvisory, updateNotificationDirective
+} from "../core/update-advisory.mjs";
 
 export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   if (!["change", "build"].includes(phase)) return value;
-  value.update = {
-    ...cachedUpdateAdvisory({
+  const advisory = cachedUpdateAdvisory({
       installedVersion: options.installedCliVersion || options.foundationVersion,
       projectVersion: options.foundationVersion,
       cachePath: options.cachePath,
       env: options.env,
       now: options.now
-    }),
+    });
+  value.update = {
+    ...advisory,
     trigger: phase
   };
+  value.notification = updateNotificationDirective(advisory, phase, options);
   return value;
 }
 
