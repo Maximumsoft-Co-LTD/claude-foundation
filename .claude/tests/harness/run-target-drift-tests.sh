@@ -22,6 +22,15 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
 F="node .claude/harness/foundation.mjs"
 
+# Keep fixture commits independent of runner- or repository-level Git config.
+# GitHub-hosted runners do not guarantee an author identity, and multi-repo
+# scenarios create commits across several temporary repositories.
+GIT_AUTHOR_NAME="Foundation Test"
+GIT_AUTHOR_EMAIL="foundation@example.invalid"
+GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+
 assert_not_eq() {
   label="$1"
   left="$2"
