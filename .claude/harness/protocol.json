@@ -3,7 +3,7 @@
   "runtimeApi": "24",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
-  "providerProtocol": "11",
+  "providerProtocol": "12",
   "adapterProtocol": "5",
   "proofProtocol": "7",
   "packetSchema": "7",

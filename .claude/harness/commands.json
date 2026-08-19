@@ -116,7 +116,7 @@
     {
       "name": "proof collect",
       "usage": "proof collect <change>",
-      "audience": "agent",
+      "audience": "conditional",
       "kind": "write",
       "idempotent": false,
       "description": "Collect executable evidence before an external boundary."
@@ -132,7 +132,7 @@
     {
       "name": "proof run",
       "usage": "proof run <change>",
-      "audience": "agent",
+      "audience": "conditional",
       "kind": "write",
       "idempotent": false,
       "description": "Run readiness, providers, finalization, and audit atomically."
@@ -144,6 +144,14 @@
       "kind": "read",
       "idempotent": true,
       "description": "Validate that the proven projection remains landable."
+    },
+    {
+      "name": "land advance",
+      "usage": "land advance <change>",
+      "audience": "agent",
+      "kind": "write",
+      "idempotent": true,
+      "description": "Advance the resumable Land saga and archive when every repository is ready."
     },
     {
       "name": "handoff status",
@@ -681,6 +689,7 @@
     "handoff-packet",
     "handoff-record",
     "land-check",
+    "land-advance",
     "land-recover",
     "land-plan",
     "land-record",

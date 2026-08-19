@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import {
-  appendFileSync, existsSync, mkdirSync
+  appendFileSync, existsSync, lstatSync, mkdirSync
 } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,7 +102,7 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
     "is a mixture of two revisions. Reinstall it with 'claude-foundation init <project>'.");
   process.exit(1);
 }
-const PROVIDER_PROTOCOL_VERSION = "11";
+const PROVIDER_PROTOCOL_VERSION = "12";
 const ADAPTER_PROTOCOL_VERSION = "5";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "7";
@@ -552,6 +552,7 @@ const evidenceContract = createEvidenceContract({
   relevantSnapshot,
   singleRelevantSnapshot,
   fileDigest,
+  filesystemEntryIdentity,
   stableHash,
   policyCapabilities,
   foundationPolicy,
@@ -980,7 +981,11 @@ const {
       .filter((row) => row.repositoryId === repository.id)
       .map((row) => {
         const path = join(repository.workspacePath, row.path);
-        return { path: row.path, identity: existsSync(path) ? fileDigest(path) : "deleted" };
+        return {
+          path: row.path,
+          identity: lstatSync(path, { throwIfNoEntry: false })
+            ? filesystemEntryIdentity(path) : "deleted"
+        };
       });
   },
   fail: die
@@ -1081,6 +1086,7 @@ const sandboxRuntime = createSandboxRuntime({
   gitBuffer,
   porcelainStatusRecords,
   selectedRepositories,
+  repositoryCatalog,
   cleanupRepositorySandboxes,
   cleanupAppliedSandbox,
   clearSnapshotCache,
@@ -1454,6 +1460,21 @@ const {
   applySandbox,
   archive
 } = applyRuntime;
+function advanceLand(id) {
+  const state = loadRuntime(id);
+  const multiRepository = state.repositories &&
+    Object.keys(state.repositories).length > 1;
+  if (!multiRepository) {
+    landCheck(id);
+    archive(id);
+    return;
+  }
+  resumeLand(id);
+  const refreshed = loadRuntime(id);
+  if (refreshed.status === "building") return;
+  const plan = landPlanValue(id);
+  if (plan.readyToArchive) archive(id);
+}
 const abandonRuntime = createAbandonRuntime({
   root: ROOT,
   paths: {
@@ -1510,7 +1531,7 @@ const namedChange = (value) =>
   typeof value === "string" && !value.startsWith("-") ? value : null;
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
   ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "receipt", "run-provider", "prove",
-    "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
+    "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
 operationStatusAtStart = operationChangeId
   ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
 
@@ -1586,6 +1607,7 @@ await routeRuntimeCommand(command, values, {
   runProvider: guardedRunProvider,
   prove,
   landCheck,
+  advanceLand,
   recoverLand,
   showLandPlan,
   recordRepositoryLand,

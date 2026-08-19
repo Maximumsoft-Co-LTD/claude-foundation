@@ -13,7 +13,7 @@ export async function routeRuntimeCommand(command, values, api) {
     initializeEvidence, showEvidenceDoctor, recordVerifiedCi, requestAuthority,
     dispatchAuthority, runAuthorityReviewer, abortAuthority, resetInfrastructureAuthority, showAuthorityStatus, recordAuthority,
     upgradeEvidence, recordReceipt,
-    runProvider, prove, landCheck, recoverLand, showLandPlan, recordRepositoryLand,
+    runProvider, prove, landCheck, advanceLand, recoverLand, showLandPlan, recordRepositoryLand,
     stageRootPointers, resumeLand, createAttestationChallenge,
     showHandoffStatus, showHandoffPacket, recordHandoff,
     showSandboxInspection, createSandbox, syncSandbox, applySandbox, archive,
@@ -306,6 +306,7 @@ export async function routeRuntimeCommand(command, values, api) {
       recordHandoff(rest[0], flags); break;
     }
     case "land-check": landCheck(values[0]); break;
+    case "land-advance": advanceLand(values[0]); break;
     case "land-recover": {
       const { flags, rest } = parseStrictCommandFlags(values, "land recover", {
         value: ["decision-ref", "resolution"]

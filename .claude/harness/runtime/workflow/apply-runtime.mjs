@@ -69,6 +69,9 @@ export function createApplyRuntime({
 
   function copyCodePaths(id, state) {
     const baseline = state.workspace.baseline || {};
+    if (state.workspace?.mode === "copy" && Object.values(baseline)
+      .some((identity) => /^[0-9a-f]{64}$/i.test(String(identity))))
+      fail(`copy sandbox '${id}' uses the legacy content-only identity format; recreate the sandbox and prove once before Land so executable modes and symlinks are bound safely`);
     const sandbox = workspaceManifest(state.workspace.path, id, true);
     const nested = nestedRepositoryPathMatcher(nestedRepositoryPaths(id, state));
     return [...new Set([...Object.keys(baseline), ...Object.keys(sandbox)])]
@@ -104,6 +107,12 @@ export function createApplyRuntime({
       pathIdentity(join(root, path)) !== pathIdentity(join(sandboxPath, path)) ||
       pathMode(join(root, path)) !== pathMode(join(sandboxPath, path)));
     if (!pending.length) return names;
+    const directoryPaths = pending.filter((path) =>
+      [join(root, path), join(sandboxPath, path)].some((candidate) =>
+        lstatSync(candidate, { throwIfNoEntry: false })?.isDirectory()));
+    if (directoryPaths.length)
+      fail(`apply encountered nested repository or directory path(s): ${
+        directoryPaths.join(", ")}; register nested repositories in openspec/repositories.yaml before creating the sandbox`);
     // gitBuffer, not git: a UTF-8 decode of the binary diff corrupts non-UTF-8
     // content and makes `apply --check` report phantom conflicts.
     const diff = gitBuffer(["diff", "--binary", sandboxBase(state), "--", ...pending], sandboxPath);

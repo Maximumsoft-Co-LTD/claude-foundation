@@ -370,10 +370,14 @@ export function createConfiguredReviewerRuntime({
         status: "error", sessionId,
         summary: "Configured reviewer reused an implementation session; independence requires a fresh session"
       });
-    if (!sessionId || sessionId !== requestedSession)
+    // Claude Code versions may allocate a fresh actual session even when a
+    // caller supplied --session-id. Provenance must record what the process
+    // actually emitted; freshness is enforced by no-session-persistence and
+    // the forbidden-session check above, not by string equality with our hint.
+    if (!sessionId)
       return persist(config, changeId, workspace, {
-        status: "error", sessionId: sessionId || null,
-        summary: "Claude Code reviewer did not return the exact fresh session ID assigned to the dispatch"
+        status: "error", sessionId: null,
+        summary: "Claude Code reviewer did not return an actual fresh session ID"
       });
     const review = envelope?.structured_output ||
       (typeof envelope?.result === "object" ? envelope.result : parseJson(envelope?.result));

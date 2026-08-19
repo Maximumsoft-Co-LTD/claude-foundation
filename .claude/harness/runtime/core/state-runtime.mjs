@@ -144,7 +144,12 @@ export function createStateRuntime({
   function filesystemEntryIdentity(path) {
     const stat = lstatSync(path);
     if (stat.isSymbolicLink()) return `symlink:${readlinkSync(path)}`;
-    if (stat.isFile()) return fileDigest(path);
+    // Content alone is not a complete executable identity. In particular a
+    // chmod-only edit changes what a provider can execute and what Land must
+    // project. Keep only the portable executable bit rather than the complete
+    // host mode, whose group/owner bits vary across filesystems.
+    if (stat.isFile())
+      return `file:${stat.mode & 0o111 ? "executable" : "regular"}:${fileDigest(path)}`;
     return `unsupported:${stat.mode}`;
   }
 
@@ -281,7 +286,8 @@ export function createStateRuntime({
     return result.status === 0 ? result.stdout.trim() : null;
   }
 
-  function singleRelevantSnapshot(id, workspaceOverride = null, force = false) {
+  function singleRelevantSnapshot(id, workspaceOverride = null, force = false,
+      ignoredPaths = []) {
     const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
     const workspace = canonicalPath(workspaceOverride || state.workspace?.path || root);
     // A recorded workspace that no longer exists used to surface as a raw
@@ -295,7 +301,11 @@ export function createStateRuntime({
       error.code = "FOUNDATION_WORKSPACE_MISSING";
       throw error;
     }
-    const cacheKey = `${id}\0${workspace}\0${Number(state.contractRevision || state.revision || 0)}`;
+    const contractRevision = Number(state.contractRevision ?? state.revision ?? 0);
+    const ignored = new Set(ignoredPaths.map((value) =>
+      String(value).replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "")));
+    const cacheKey = `${id}\0${workspace}\0${contractRevision}\0${
+      [...ignored].sort().join("\0")}`;
     if (!force && snapshotCache.has(cacheKey)) return snapshotCache.get(cacheKey);
     const hash = createHash("sha256");
     // The same walk, folded twice. `hash` is every path the change surface
@@ -339,6 +349,8 @@ export function createStateRuntime({
     // that guessed would drop content instead of noise.
     let gitAware = false;
     function allowed(rel, tracked = false) {
+      if ([...ignored].some((prefix) => rel === prefix || rel.startsWith(`${prefix}/`)))
+        return false;
       if (isExcludedPath(rel, { excluded: excludedWorkspaceDirs, tracked }))
         return false;
       // Untracked and undeclared is somebody else's file sitting in the tree.
@@ -382,11 +394,13 @@ export function createStateRuntime({
         .filter((rel) => allowed(rel, indexed.has(rel))).sort();
       for (const rel of paths) {
         const path = join(workspace, rel);
-        const contentIdentity = dirty.has(rel)
-          ? (indexed.get(rel)?.mode === "160000"
-            ? `gitlink:${indexed.get(rel).oid}`
-            : (existsSync(path) ? filesystemEntryIdentity(path) : "deleted"))
-          : indexed.get(rel)?.oid;
+        const entryExists = Boolean(lstatSync(path, { throwIfNoEntry: false }));
+        const contentIdentity = indexed.get(rel)?.mode === "160000"
+          ? `gitlink:${indexed.get(rel).oid}`
+          // Always bind normal paths to the same worktree identity. Switching
+          // from a raw filesystem digest while dirty to a Git blob OID after
+          // commit made byte-identical commits invalidate every receipt.
+          : (entryExists ? filesystemEntryIdentity(path) : "deleted");
         files.push([rel, path]);
         fold(rel, contentIdentity || "missing");
       }
@@ -397,21 +411,20 @@ export function createStateRuntime({
       files.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
       for (const [rel, path] of files) fold(rel, filesystemEntryIdentity(path));
     }
-    const revisionMarker = `foundation-contract-revision:${
-      Number(state.contractRevision || state.revision || 0)}`;
+    const revisionMarker = `foundation-contract-revision:${contractRevision}`;
     hash.update(revisionMarker);
     codeHash.update(revisionMarker);
     reviewHash.update(revisionMarker);
     const workspaceHash = hash.digest("hex");
     const value = {
-      version: 1,
+      version: 2,
       id: `snapshot-${workspaceHash.slice(0, 20)}`,
       changeId: id,
       workspace,
       workspaceHash,
       codeHash: codeHash.digest("hex"),
       reviewHash: reviewHash.digest("hex"),
-      revision: Number(state.contractRevision || state.revision || 0),
+      revision: contractRevision,
       fileCount: files.length,
       createdAt: now()
     };

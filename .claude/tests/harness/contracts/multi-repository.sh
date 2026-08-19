@@ -39,6 +39,8 @@ git -c protocol.file.allow=always submodule add -q "$TMP/app" app
 git -c protocol.file.allow=always submodule add -q "$TMP/contracts" contracts
 printf '%s\n' \
   '{"version":1,"repositories":[' \
+  '  {"id":"api","path":"api"},' \
+  '  {"id":"app","path":"app"},' \
   '  {"id":"contracts","path":"contracts","setupCommand":"mkdir -p .deps && printf ready > .deps/ready"},' \
   '  {"id":"external","type":"external","path":"../external","mode":"read","allowOutsideRoot":true}' \
   ']}' > openspec/repositories.yaml
@@ -351,16 +353,12 @@ app_record="$({ node .claude/harness/foundation.mjs land-record cross-repository
   && pass "explicit app commit is bound to Land" \
   || fail "explicit app commit is bound to Land"
 assert_not_contains "a feature branch stays silent at record" "$app_record" "WARNING"
-resume_stage="$(node .claude/harness/foundation.mjs land-resume \
+resume_stage="$(node .claude/harness/foundation.mjs land-advance \
   cross-repository-profile)"
-assert_contains "Land resume stages eligible root gitlinks transactionally" \
+assert_contains "Land advance stages eligible root gitlinks transactionally" \
   "$resume_stage" "ROOT POINTERS STAGED"
-if node .claude/harness/foundation.mjs land-check \
-  cross-repository-profile >/dev/null 2>&1; then
-  fail "root pointer staging invalidates composite proof"
-else
-  pass "root pointer staging invalidates composite proof"
-fi
+assert_cmd_zero "root pointer staging preserves content-bound composite proof" \
+  node .claude/harness/foundation.mjs land-check cross-repository-profile
 node .claude/harness/foundation.mjs proof-collect cross-repository-profile >/dev/null 2>&1 || true
 node .claude/harness/foundation.mjs receipt cross-repository-profile \
   compatibility pass --observed "contract change is backward compatible" \

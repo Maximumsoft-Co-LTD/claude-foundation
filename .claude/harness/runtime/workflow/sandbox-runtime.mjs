@@ -113,6 +113,7 @@ export function createSandboxRuntime({
   canonicalPath, workspaceManifest, directoryHash, fileDigest, changePath, gitHead, git,
   gitBuffer, porcelainStatusRecords,
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
+  repositoryCatalog,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
   markBlocked = () => {}
@@ -609,6 +610,20 @@ export function createSandboxRuntime({
         fail(`unattended sandbox creation requires a trusted host-owned security attestation; detected virtualization alone is insufficient: ${preflight.reasons.join("; ")}`);
     }
     const initial = loadRuntime(id);
+    const topology = repositoryCatalog();
+    if (topology.drift.length)
+      fail(`sandbox preflight found unregistered submodule(s): ${
+        topology.drift.map((repository) => repository.path).join(", ")}\n  register the complete set in openspec/repositories.yaml, select the repositories for '${id}', validate once, then create the sandbox`);
+    const targetStatus = git([
+      "status", "--porcelain=v1", "-z", "--untracked-files=all"
+    ], root);
+    const unownedInvestigations = targetStatus.status === 0
+      ? porcelainStatusRecords(targetStatus.stdout).filter((row) =>
+        row.status === "??" && row.path.startsWith("openspec/investigations/"))
+      : [];
+    if (unownedInvestigations.length)
+      fail(`sandbox preflight found untracked investigation note(s): ${
+        unownedInvestigations.map((row) => row.path).join(", ")}\n  commit the investigation record in the control repository before Build so sandbox apply cannot race another writer at archive`);
     const repositories = selectedRepositories(id, initial);
     if (repositories.length === 1 && repositories[0].id === "root" && !flags.all) {
       createSingle(id);

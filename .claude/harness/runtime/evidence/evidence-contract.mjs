@@ -105,6 +105,7 @@ export function createEvidenceContract({
   activeChangePath, readJson, repositoryById, selectedRepositories, providerCapability,
   canonicalPath, loadRuntime, relevantHash,
   relevantSnapshot, singleRelevantSnapshot, fileDigest, stableHash,
+  filesystemEntryIdentity,
   policyCapabilities, foundationPolicy, handoffContract, git, declaredSurfaceMatcher, die
 }) {
   function rawExecution(id, dir = activeChangePath(id)) {
@@ -587,10 +588,13 @@ export function createEvidenceContract({
           collect(path, base, scopePatterns, label);
           continue;
         }
-        if (!entry.isFile()) continue;
+        if (!entry.isFile() && !entry.isSymbolicLink()) continue;
         const rel = relative(base, path).replaceAll("\\", "/");
         if (scopePatterns.some((pattern) => inputPatternMatches(rel, pattern)))
-          files.push({ path: label ? `${label}:${rel}` : rel, sha256: fileDigest(path) });
+          files.push({
+            path: label ? `${label}:${rel}` : rel,
+            identity: filesystemEntryIdentity(path)
+          });
       }
     };
     for (const [base, scopePatterns] of roots) {

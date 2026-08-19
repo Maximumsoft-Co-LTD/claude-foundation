@@ -66,6 +66,7 @@ export const PHASE_BY_COMMAND = {
   "handoff-record": "land",
 
   "land-check": "land",
+  "land-advance": "land",
   "land-recover": "land",
   "land-plan": "land",
   "land-record": "land",

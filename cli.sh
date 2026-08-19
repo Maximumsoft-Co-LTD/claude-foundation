@@ -73,7 +73,7 @@ run_runtime() {
     new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra) phase="prove" ;;
-    handoff-status|handoff-packet|handoff-record|land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
+    handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
@@ -419,8 +419,9 @@ case "${1:-}" in
   land)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "land ${sub:-<check|recover|plan|record|pointers|resume|archive>}" "${1:-}"
+    need_arg "land ${sub:-<advance|check|recover|plan|record|pointers|resume|archive>}" "${1:-}"
     case "$sub" in
+      advance) run_runtime write land-advance "$@" ;;
       check) run_runtime read land-check "$@" ;;
       recover) run_runtime write land-recover "$@" ;;
       plan) run_runtime write land-plan "$@" ;;
@@ -428,7 +429,7 @@ case "${1:-}" in
       pointers) run_runtime write land-pointers "$@" ;;
       resume) run_runtime write land-resume "$@" ;;
       archive) run_runtime write archive "$@" ;;
-      *) fail "land requires 'check', 'recover', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
+      *) fail "land requires 'advance', 'check', 'recover', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
     esac ;;
   migrate)
     shift

@@ -10,8 +10,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync,
-  rmSync, symlinkSync, writeFileSync
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync,
+  rmSync, symlinkSync, unlinkSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -224,6 +224,58 @@ try {
     "a committed fixture under an excluded name belongs in the apply manifest"));
   check(() => assert.ok(!("coverage/lcov.info" in manifest),
     "untracked build output stays out of the apply manifest"));
+
+  const modeFixture = join(project, "mode-fixture.sh");
+  writeFileSync(modeFixture, "#!/bin/sh\nexit 0\n");
+  chmodSync(modeFixture, 0o644);
+  const regularIdentity = stateRuntime.filesystemEntryIdentity(modeFixture);
+  chmodSync(modeFixture, 0o755);
+  const executableIdentity = stateRuntime.filesystemEntryIdentity(modeFixture);
+  check(() => assert.notEqual(regularIdentity, executableIdentity,
+    "a chmod-only edit changes the canonical workspace identity"));
+  check(() => assert.match(executableIdentity, /^file:executable:/,
+    "canonical identity records portable executable authority"));
+
+  const stablePath = join(project, "stable-identity.txt");
+  writeFileSync(stablePath, "before\n");
+  git(["add", "stable-identity.txt"]);
+  git(["commit", "-qm", "stable identity base"]);
+  stateRuntime.saveRuntime({
+    id: "hash-stability", status: "building", revision: 0, contractRevision: 0,
+    workspace: { mode: "worktree", path: project }
+  });
+  const beforeRevision = stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true).workspaceHash;
+  const lifecycleOnly = stateRuntime.loadRuntime("hash-stability");
+  lifecycleOnly.revision = 1;
+  stateRuntime.saveRuntime(lifecycleOnly);
+  check(() => assert.equal(stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true).workspaceHash, beforeRevision,
+  "lifecycle revision does not replace an explicit zero contract revision"));
+  writeFileSync(stablePath, "after\n");
+  const dirtyIdentityHash = stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true).workspaceHash;
+  git(["add", "stable-identity.txt"]);
+  git(["commit", "-qm", "stable identity committed"]);
+  check(() => assert.equal(stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true).workspaceHash, dirtyIdentityHash,
+  "committing byte-identical worktree content does not move the workspace hash"));
+
+  const danglingPath = join(project, "dangling-link");
+  symlinkSync("missing-target-a", danglingPath);
+  git(["add", "dangling-link"]);
+  git(["commit", "-qm", "dangling link base"]);
+  const danglingA = stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true).workspaceHash;
+  unlinkSync(danglingPath);
+  symlinkSync("missing-target-b", danglingPath);
+  const danglingB = stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true).workspaceHash;
+  check(() => assert.notEqual(danglingA, danglingB,
+    "retargeting a tracked dangling symlink changes the workspace hash"));
+  check(() => assert.match(stateRuntime.filesystemEntryIdentity(danglingPath),
+    /^symlink:missing-target-b$/,
+  "a dangling symlink is an identity-bearing path, not a deletion"));
 
   // A recorded workspace that no longer exists must surface as an instruction,
   // not as a raw ENOENT from the directory walk.

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Land has one resumable orchestration command.** `land advance` checks the
+  current state, resumes multi-repository landing, stages root pointers when
+  needed, and archives once every repository is ready.
+
+### Changed
+
+- **Proof keeps one canonical filesystem identity before and after commit.**
+  Workspace, evidence, and lease inputs now bind file executability and symlink
+  targets without invalidating byte-identical receipts merely because changes
+  were committed.
+- **Proof collection and execution are conditional host surfaces.** Agents can
+  use the atomic proof path instead of repeatedly invoking internal collection
+  and provider commands.
+
+### Fixed
+
+- **Reviewer recovery accepts the fresh session Claude actually reports.** A
+  provider-created session remains isolated from implementation sessions
+  without requiring it to echo the dispatch hint verbatim.
+- **Repository topology errors fail early with actionable guidance.** Sandbox
+  preflight reports unregistered submodules and uncommitted investigation
+  records, while apply reports directory paths as topology errors instead of
+  leaking raw `EISDIR` failures.
+- **Multi-repository proof no longer double-binds child repositories.** Child
+  content is hashed by its repository snapshot rather than again as a root
+  gitlink, so staging delivery pointers does not expire otherwise valid proof.
+- **Dangling symlinks remain identity-bearing inputs.** Retargeting a dangling
+  symlink changes workspace and lease identity instead of collapsing to a
+  deletion marker.
+
 ## [3.3.1] - 2026-08-19
 
 ### Added

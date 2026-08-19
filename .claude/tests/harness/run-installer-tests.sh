@@ -159,14 +159,15 @@ assert_file_exists "command registry installed" "$TARGET/.claude/harness/command
 assert_cmd_zero "command registry has one unique entry per public name" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$TARGET/.claude/harness/commands.json"
-assert_eq "agent command surface is bounded" "21" \
+assert_eq "agent command surface is bounded" "20" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 22 includes the bounded proof controller, explicit authority
+# 24 includes the bounded proof controller and its two internal execution
+# commands, explicit authority
 # dispatch/abort/configured-reviewer/reset-infra routes, and the operator-owned
 # handoff record. Keep this count intentional so a newly exposed recovery
 # command cannot appear silently.
-assert_eq "conditional recovery surface is bounded" "22" \
+assert_eq "conditional recovery surface is bounded" "24" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \

@@ -131,6 +131,17 @@ try {
   assert.equal(reused.status, "error");
   assert.match(reused.summary, /reused an implementation session/);
 
+  process.env.FAKE_CLAUDE_SESSION = "22222222-2222-4222-8222-222222222222";
+  const freshActual = runtime.runReview({
+    changeId: "claude-fresh-actual-session", workspace, packet: {},
+    forbiddenSessionIds: ["implementation-session"]
+  });
+  delete process.env.FAKE_CLAUDE_SESSION;
+  assert.equal(freshActual.status, "pass");
+  assert.equal(freshActual.reviewer.sessionId,
+    "22222222-2222-4222-8222-222222222222",
+    "record the fresh session Claude actually emitted instead of rejecting it");
+
   process.env.FAKE_CLAUDE_INVALID = "1";
   const invalid = runtime.runReview({
     changeId: "claude-invalid-output", workspace, packet: {}

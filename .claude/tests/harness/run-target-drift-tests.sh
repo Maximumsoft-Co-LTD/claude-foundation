@@ -74,6 +74,11 @@ setup_multi_project() {
     git -C "$project" -c protocol.file.allow=always submodule add -q \
       "$TMP/$1-$child" "$child"
   done
+  printf '%s\n' \
+    '{"version":1,"repositories":[' \
+    '  {"id":"api","path":"api"},' \
+    '  {"id":"app","path":"app"}' \
+    ']}' > "$project/openspec/repositories.yaml"
   git -C "$project" add -A
   git -C "$project" commit -qm "add child repositories"
   cd "$project"
