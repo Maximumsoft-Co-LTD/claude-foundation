@@ -1,8 +1,25 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { cachedUpdateAdvisory } from "../core/update-advisory.mjs";
+
+export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
+  if (!["change", "build"].includes(phase)) return value;
+  value.update = {
+    ...cachedUpdateAdvisory({
+      installedVersion: options.installedCliVersion || options.foundationVersion,
+      projectVersion: options.foundationVersion,
+      cachePath: options.cachePath,
+      env: options.env,
+      now: options.now
+    }),
+    trigger: phase
+  };
+  return value;
+}
 
 export function createPacketRuntime({
   ROOT, PACKET_SCHEMA_VERSION, REVIEW_PACKET_SCHEMA_VERSION, leasesRoot = null, loadRuntime,
+  foundationVersion, installedCliVersion,
   readJson, activeChangePath, canonicalChangedSurface,
   evidence, taskBlocks, taskMetadata, repositoryById, claimsForProvider,
   relevantSnapshot, snapshotPath, singleRelevantSnapshot, requiredProviders,
@@ -453,6 +470,9 @@ export function createPacketRuntime({
     delete value.packetDigest;
     value.packetDigest = stableHash(value);
     if (!manifest && priorDigest) value.packetDigest = priorDigest;
+    attachPhaseUpdateAdvisory(value, flags.phase, {
+      installedCliVersion, foundationVersion
+    });
     const encoded = serializedJson(value, Boolean(flags.pretty));
     const bytes = Buffer.byteLength(encoded);
     const limit = Number(foundationPolicy().execution.packetBytes[value.packetType]);

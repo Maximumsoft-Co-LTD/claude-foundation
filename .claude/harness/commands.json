@@ -402,6 +402,14 @@
       "description": "Print the installed package version."
     },
     {
+      "name": "update check",
+      "usage": "update check [--refresh] [--json]",
+      "audience": "admin",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Inspect the cached latest stable release advisory without applying an update."
+    },
+    {
       "name": "help",
       "usage": "help [--all]",
       "audience": "admin",

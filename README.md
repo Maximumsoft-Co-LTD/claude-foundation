@@ -824,12 +824,21 @@ requirements remain intact.
 
 ```bash
 claude-foundation version
+claude-foundation update check
 claude-foundation runtime version
 sh .claude/tests/run-all.sh
 
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
 ```
+
+Foundation checks the latest stable release only when an agent enters
+Investigate or Change, and immediately before Build. Results are shared in a
+24-hour user cache; Prove and Land never perform an automatic check. An update
+advisory does not block work or alter proof identity, and Foundation never
+applies the update without user authority. Set `FOUNDATION_UPDATE_CHECK=0` to
+disable release discovery, or use `update check --refresh --json` for an
+explicit machine-readable refresh.
 
 Preview a source installation without writing:
 

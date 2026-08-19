@@ -1,7 +1,6 @@
 # Foundation agent contract
 
-Use `investigate → change → build → prove → land`. OpenSpec owns intent,
-`tasks.md` implementation, `handoffs.yaml` external work, `.foundation/` state.
+Use the lifecycle and ownership defined in `.claude/orchestrator.md`.
 
 Before developer work, verify Foundation 3.3.2/runtime API `24`; run both
 doctors. On failure relay
@@ -15,10 +14,11 @@ Harness output is a machine handoff: translate in the user's language. Run
 authorized `automaticRecovery`; never ask the user to run a safe action you can.
 Otherwise use AskUserQuestion, plain text otherwise; never present only the option that makes the workflow pass.
 
+For non-empty `update.actions`, load the agent update policy in `README.md`.
+
 Settle production, wire, activation, proof, and authority once. Build/Prove fix
 in-contract defects, recover providers, and hand off missing permission. Ask
 again only for a locked material change.
 
-Land requires authority; never fabricate evidence or delivery.
-Follow `.claude/rules/fundamentals.md` for conduct and skill routing, then
-`.claude/orchestrator.md`.
+Land authority and evidence rules live in `.claude/orchestrator.md`.
+Follow `.claude/rules/fundamentals.md` for conduct and skill routing.

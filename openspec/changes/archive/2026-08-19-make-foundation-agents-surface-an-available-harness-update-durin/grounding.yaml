@@ -1,0 +1,257 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-phase-bound-update-advisory",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T00:00:00+07:00",
+    "decisions": [
+      {
+        "id": "update-check-boundaries",
+        "question": "At which lifecycle boundaries should the harness check and surface update availability?",
+        "answer": "At Investigate entry, during Change entry, and immediately before Build; not during Prove or Land.",
+        "source": "user-batch"
+      },
+      {
+        "id": "update-authority",
+        "question": "Should the harness automatically apply an available update?",
+        "answer": "No. It advises the agent and user without blocking or mutating the installation.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "public-compatibility",
+      "external-network",
+      "cross-phase-context"
+    ],
+    "rationale": "The change adds optional public host JSON, consumes a remote release boundary, and propagates transient state across selected phases without changing proof semantics."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "Installed hosts enter through cli.sh host instruction and project phases enter through the runtime packet path.",
+    "paths": [
+      {"repository": "root", "path": "cli.sh"},
+      {"repository": "root", "path": ".claude/harness/runtime/core/host-instruction.mjs"},
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/packet-runtime.mjs"}
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The latest stable version crosses the GitHub Releases HTTPS boundary and is persisted in a shared cache.",
+    "contracts": [
+      {"repository": "root", "path": ".claude/harness/protocol.json"}
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "Installing the release activates advisory fields for supported host instructions and Change/Build packets.",
+    "activatedPaths": [
+      {"repository": "root", "path": ".claude/harness/runtime/core/host-instruction.mjs"},
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/packet-runtime.mjs"}
+    ],
+    "failureSemanticChanges": [
+      "Remote/cache failures become non-blocking unknown or stale advisories rather than command failures"
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "GitHub Releases is an optional read-only dependency for freshness.",
+    "rows": [
+      {
+        "id": "github-release-advisory",
+        "owner": "Foundation release maintainers",
+        "producer": "GitHub Releases latest endpoint",
+        "consumer": "installed Foundation update resolver",
+        "contract": "fixed repository endpoint with a validated stable vMAJOR.MINOR.PATCH tag",
+        "delivery": "bounded HTTPS read no more than once per 24-hour user cache window",
+        "timeoutRetry": "short timeout; retry only at a later eligible boundary after cache expiry",
+        "idempotency": "latest stable tag plus cache timestamp",
+        "ordering": "optional refresh before advisory projection; phase work continues on failure",
+        "consistency": "a fresh cache is reused across projects; a valid stale cache remains advisory-only",
+        "rollout": "ship the resolver before enabling the three host/runtime boundary projections",
+        "rollback": "remove advisory projection and discard the user cache without touching project state"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Explicit update check output must distinguish freshness and reason without adding lifecycle telemetry.",
+    "rows": [
+      {
+        "interactionId": "github-release-advisory",
+        "correlation": "installed version, project version when available, latest cached version, and checkedAt",
+        "structuredEvents": "update check JSON and optional selected-boundary update object",
+        "sli": "fresh or valid-stale advisory resolutions divided by eligible boundary checks",
+        "alert": "none; this is a local non-blocking advisory",
+        "runbook": "run claude-foundation update check --refresh and inspect installation method or network access",
+        "operatorQuestion": "was the result current, stale, unknown, disabled, or a project-runtime mismatch?"
+      }
+    ]
+  },
+    "readSet": [
+      {
+        "repository": "root",
+        "path": ".claude/harness/foundation.mjs",
+        "role": "composition-root",
+        "mode": "full",
+        "sha256": "c56280e21134d0c5d2e701933da1be1cd28df1eee2711de6d4ab795c8e57f022"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/composition/bootstrap.mjs",
+        "role": "architecture",
+        "mode": "full",
+        "sha256": "e34abb7972c76ce5d5569dfd4aecf64b6e1e8b27e6a77d6daeb3f356b1f8a6c4"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/protocol.json",
+        "role": "contract",
+        "mode": "full",
+        "sha256": "d6ad43534b20034a6cfed01a9a8966f5d1b0fde365500d5d30d06ad7b8c51850"
+      },
+    {
+      "repository": "root",
+      "path": "openspec/specs/host-instruction-api/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "5baee36cee1dc0389273acf10f3ecc2ca8c7788cd466cfdb074c28e29cddf069"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/specs/agent-contract/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "19139e1b1fbfcdca0bce2681886dbf9c6a31298b9afdbb3b2e29cd9960c3e7c3"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/host-instruction.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "5e2363c9ca50b791591e8c8a3087b0a3f1e383bd4143a57a81dae2355ff8eb38"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/packet-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "bab920b86696e7bdfb058485d5b99f71ed6d5fb22d73786cded66c9fc8fa7b3e"
+    },
+    {
+      "repository": "root",
+      "path": "cli.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "ccee4233d9c340a361f913f653070f236c569efe4fd1b1810baf4412871f68f1"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/AGENT.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "0cacd25c9490508ae4f5163cd635c0f43624ad02f004bcf02990c98c65907f19"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-host-instruction-tests.mjs",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "d0eebf61203c61ef2ca953d7d039e795340e8dfad5ce018a18a8783b1a0070a1"
+    }
+  ],
+  "claims": [
+    {
+      "id": "phase-bound-update-awareness",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/host-instruction.mjs"
+        },
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/packet-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/host-instruction.mjs",
+          "failure": "stale or absent cache with remote timeout"
+        }
+      ],
+      "evidenceClass": [
+        "test"
+      ],
+        "testDoubleGap": "none"
+    },
+    {
+      "id": "cached-offline-advisory",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/host-instruction.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": "cli.sh",
+          "failure": "malformed cache, rate limit, timeout, offline, and opt-out"
+        }
+      ],
+      "evidenceClass": [
+        "test"
+      ],
+        "testDoubleGap": "none"
+    },
+    {
+      "id": "advisory-compatibility",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/host-instruction.mjs"
+        },
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/packet-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/packet-runtime.mjs",
+          "failure": "transient advisory accidentally enters deterministic packet digest"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {"id":"investigate-refresh","claimIds":["phase-bound-update-awareness"],"oracle":"real-wire"},
+    {"id":"change-cache-reuse","claimIds":["phase-bound-update-awareness","cached-offline-advisory"],"oracle":"contract-oracle"},
+    {"id":"build-reminder","claimIds":["phase-bound-update-awareness"],"oracle":"contract-oracle"},
+    {"id":"later-phase-quiet","claimIds":["phase-bound-update-awareness"],"oracle":"contract-oracle"},
+    {"id":"offline-nonblocking","claimIds":["cached-offline-advisory"],"oracle":"failure-path"},
+    {"id":"identity-stable","claimIds":["advisory-compatibility"],"oracle":"contract-oracle"}
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "The host instruction protocol explicitly permits additive optional response fields.",
+      "command": "sed -n '1,90p' openspec/specs/host-instruction-api/spec.md"
+    },
+    {
+      "fact": "The installed package and copied project harness have independently observable versions.",
+      "command": "grep -nE 'VERSION|RUNTIME_API_VERSION' cli.sh .claude/harness/foundation.mjs"
+    }
+  ]
+}

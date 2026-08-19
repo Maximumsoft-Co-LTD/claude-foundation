@@ -770,12 +770,20 @@ lease, external evidence, infrastructure failure และงาน deterministi
 
 ```bash
 claude-foundation version
+claude-foundation update check
 claude-foundation runtime version
 sh .claude/tests/run-all.sh
 
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
 ```
+
+Foundation จะตรวจ stable release ล่าสุดเฉพาะตอน agent เริ่ม Investigate,
+เข้า Change และก่อน Build โดยทุก project ใช้ user cache อายุ 24 ชั่วโมงร่วมกัน
+Prove และ Land จะไม่ตรวจอัตโนมัติ Advisory ไม่ block งาน ไม่เปลี่ยน proof
+identity และ Foundation จะไม่อัปเดตให้เองหาก user ยังไม่อนุญาต ตั้ง
+`FOUNDATION_UPDATE_CHECK=0` เพื่อปิด release discovery หรือใช้
+`update check --refresh --json` เมื่อต้องการ refresh แบบ machine-readable
 
 Preview source installation โดยไม่เขียนไฟล์:
 

@@ -27,6 +27,7 @@ Playwright, linters, or security scanners produce evidence.
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/state-runtime.mjs` | Runtime state, paths, hashing, snapshots, workspace manifests, and Git helpers |
 | Core | `runtime/core/trust.mjs` | Canonical JSON and Ed25519 verification shared by trust protocols |
+| Core | `runtime/core/update-advisory.mjs` | Phase-bound stable-release discovery, shared cache, and version comparison |
 | Core | `runtime/core/workspace-policy.mjs` | Canonical workspace and sandbox-copy exclusion policy |
 | Evidence | `runtime/evidence/artifact-store.mjs` | Durable evidence artifacts, containment, digest validation, and prototype rejection |
 | Evidence | `runtime/evidence/attestation.mjs` | Host-boundary inspection and signed unattended authority |
@@ -96,7 +97,27 @@ Check a project before starting:
 
 ```bash
 claude-foundation doctor --stage change
+claude-foundation update check
 ```
+
+Update discovery runs only at Investigate entry, Change entry, and Build
+preflight. A 24-hour user cache is shared by every project; unavailable release
+metadata becomes a stale or unknown non-blocking advisory. Prove and Land do
+not check. Advisory data is excluded from deterministic evidence identity, and
+the harness never applies an update without user authority. Set
+`FOUNDATION_UPDATE_CHECK=0` to disable discovery.
+
+### Agent update policy
+
+Load this policy only when an instruction or packet has non-empty
+`update.actions`. At the first such Investigate or Change boundary in a session,
+tell the user an update is available and translate the supplied status and
+actions into the user's language. If Investigate already produced that notice,
+suppress the duplicate notice at Change. Immediately before every Build entry,
+remind the user once, including when Build is the first phase entered. The
+notice and reminder never block work, and the agent must not run an update
+action unless the user requests it. Do not surface an automatic update notice
+during Prove or Land.
 
 Check both the project and one change's executable evidence:
 

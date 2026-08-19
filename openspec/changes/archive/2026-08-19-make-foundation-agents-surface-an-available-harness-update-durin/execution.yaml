@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        ".claude/tests/harness/run-update-advisory-tests.sh"
+      ],
+      "report": ".foundation/test-results/update-advisory.json",
+      "reportFormat": "json",
+      "minimum": 12,
+      "timeoutMs": 300000,
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/update-advisory.json"
+      },
+      "criticalCases": [
+        "investigate-refresh",
+        "change-cache-reuse",
+        "build-reminder",
+        "later-phase-quiet",
+        "offline-nonblocking",
+        "identity-stable"
+      ]
+    },
+    "compatibility": {
+      "capability": "compatibility",
+      "adapter": "command",
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        ".claude/tests/harness/run-host-instruction-tests.mjs"
+      ],
+      "reportFormat": "tap",
+      "minimum": 22,
+      "env": {"FOUNDATION_UPDATE_CHECK": "0"},
+      "timeoutMs": 300000
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

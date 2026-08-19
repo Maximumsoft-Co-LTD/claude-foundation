@@ -21,6 +21,14 @@ PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'claude-foundation: warning: %s\n' "$*" >&2; }
 
+installed_version() {
+  if [ -f "$SCRIPT_DIR/VERSION" ]; then
+    tr -d '[:space:]' < "$SCRIPT_DIR/VERSION"
+  else
+    printf 'unknown\n'
+  fi
+}
+
 find_project_root() {
   local cursor="$PROJECT_START"
   [ -d "$cursor" ] || cursor="$(dirname "$cursor")"
@@ -77,7 +85,8 @@ run_runtime() {
   esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
-  FOUNDATION_TELEMETRY="$telemetry" FOUNDATION_PUBLIC_OPERATION="$phase" exec node "$runtime" "$@"
+  FOUNDATION_TELEMETRY="$telemetry" FOUNDATION_PUBLIC_OPERATION="$phase" \
+    FOUNDATION_INSTALLED_CLI_VERSION="$(installed_version)" exec node "$runtime" "$@"
 }
 
 need_arg() {
@@ -155,7 +164,7 @@ esac
 # `describe` before the per-command argument checks below, which otherwise
 # reject it as an unexpected argument for every zero-argument command.
 case "${1:-}" in
-  ""|help|--help|-h|version|--version|-v|describe|host) : ;;
+  ""|help|--help|-h|version|--version|-v|describe|host|update) : ;;
   *)
     for arg in "$@"; do
       [ "$arg" = "--help" ] || continue
@@ -225,6 +234,17 @@ case "${1:-}" in
       *) fail "unknown host '$host'; expected claude, cursor, opencode, or codex" ;;
     esac
     exec bash "$SCRIPT_DIR/$installer" ${init_args[@]+"${init_args[@]}"} --source "$SCRIPT_DIR" ;;
+  update)
+    shift
+    [ "${1:-}" = "check" ] || fail "update requires 'check'"
+    if [ "${2:-}" = "--help" ] && [ "$#" -eq 2 ]; then
+      printf '%s\n' \
+        'claude-foundation update check [--refresh] [--json]' \
+        'Inspect the latest stable release advisory without applying an update.'
+      exit 0
+    fi
+    command -v node >/dev/null 2>&1 || fail "Node.js is required to check for updates"
+    exec node "$SCRIPT_DIR/.claude/harness/runtime/core/update-advisory.mjs" "$@" ;;
   providers)
     shift; [ "$#" -eq 0 ] || fail "providers takes no arguments"
     run_runtime read providers ;;

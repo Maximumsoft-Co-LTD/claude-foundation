@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231e6b52'/%3E%3Cpath d='M17 34h10l5-17 7 30 5-13h5' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <title>Update Awareness Round · Foundation harness</title>
+  <style>
+    :root{--bg:#f4f6f2;--panel:#fff;--ink:#17221d;--muted:#647168;--line:#dbe2dc;--brand:#1e6b52;--brand2:#a7d8c5;--pass:#137a52;--pass-bg:#e5f6ee;--warn:#946216;--warn-bg:#fff3d8;--stop:#a63b37;--stop-bg:#fde9e7;--blue:#275d8c;--blue-bg:#e8f1f9;--shadow:0 12px 35px rgba(30,55,44,.08)}
+    @media(prefers-color-scheme:dark){:root{--bg:#101512;--panel:#171e1a;--ink:#edf3ef;--muted:#a6b3aa;--line:#2d3932;--brand:#73c7a7;--brand2:#285a47;--pass:#7ed7b1;--pass-bg:#173c2d;--warn:#f0c36b;--warn-bg:#3d3018;--stop:#f19b96;--stop-bg:#482321;--blue:#8fc4ef;--blue-bg:#183148;--shadow:none}}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;line-height:1.55}main{max-width:1480px;margin:auto;padding:36px 28px 64px}.hero{padding:36px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(135deg,var(--panel),color-mix(in srgb,var(--brand2) 18%,var(--panel)));box-shadow:var(--shadow)}.eyebrow{font-size:.78rem;letter-spacing:.13em;text-transform:uppercase;color:var(--brand);font-weight:800}.hero h1{font-size:clamp(2rem,5vw,4.3rem);line-height:1.03;letter-spacing:-.045em;margin:.4rem 0 1rem;max-width:930px}.lede{font-size:1.08rem;max-width:900px;color:var(--muted)}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.chip,.tag{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:.78rem;font-weight:750;background:var(--panel)}.pass{color:var(--pass);background:var(--pass-bg);border-color:color-mix(in srgb,var(--pass) 30%,var(--line))}.warn{color:var(--warn);background:var(--warn-bg)}.stop{color:var(--stop);background:var(--stop-bg)}.info{color:var(--blue);background:var(--blue-bg)}section{margin-top:34px}h2{font-size:1.4rem;letter-spacing:-.02em;margin:0 0 14px}h3{font-size:1rem;margin:0 0 8px}.sub{color:var(--muted);font-size:.88rem}.grid{display:grid;gap:12px}.kpis{grid-template-columns:repeat(5,minmax(0,1fr))}.cards3{grid-template-columns:repeat(3,minmax(0,1fr))}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:17px;min-width:0}.kpi .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800}.kpi .value{font-size:1.65rem;font-weight:850;letter-spacing:-.035em;margin:5px 0}.kpi .sub{font-size:.77rem}.bar{height:10px;border-radius:99px;background:var(--line);overflow:hidden}.bar>i{display:block;height:100%;background:var(--brand);border-radius:inherit}.phase-stack{display:flex;height:26px;border-radius:9px;overflow:hidden;border:1px solid var(--line);margin:14px 0}.phase-stack span{min-width:2px}.phase-change{background:#55a88a}.phase-build{background:#5999c5}.phase-prove{background:#8e75be}.phase-land{background:#d39a4b}.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:.82rem}.dot{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel)}table{width:100%;border-collapse:collapse;font-size:.87rem;min-width:820px}th,td{padding:12px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{font-size:.73rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:color-mix(in srgb,var(--panel) 87%,var(--bg));position:sticky;top:0}tr:last-child td{border-bottom:0}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82em;overflow-wrap:anywhere}.source{margin-top:9px;color:var(--muted);font-size:.72rem}.callout{border-left:4px solid var(--brand);padding-left:14px}.finding{border-left-color:var(--stop)}ol.clean{margin:0;padding-left:20px}.muted{color:var(--muted)}footer{margin-top:42px;border-top:1px solid var(--line);padding-top:20px;color:var(--muted);font-size:.82rem}.mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.nowrap{white-space:nowrap}
+    @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){main{padding:18px 14px 42px}.hero{padding:24px}.kpis,.cards3{grid-template-columns:1fr 1fr}.hero h1{font-size:2.25rem}}@media(max-width:480px){.kpis,.cards3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div class="eyebrow">Foundation harness · รายงานรอบงาน</div>
+    <h1>Update Awareness Round</h1>
+    <p class="lede">รอบนี้เพิ่มสัญญาณแจ้งเตือนเมื่อ Foundation รุ่นใหม่พร้อมใช้ เฉพาะจังหวะ Investigate, Change และก่อน Build โดยใช้แคช 24 ชั่วโมงและไม่รบกวน Prove/Land งานจบด้วย proof <code>pass</code> ก่อนปิดงานและเก็บเข้าคลัง (land/archive) สำเร็จ</p>
+    <div class="chips">
+      <span class="chip pass">PASS · archived</span>
+      <span class="chip">foundation-standard</span>
+      <span class="chip">high impact · coupled</span>
+      <span class="chip mono">make-foundation-agents-surface-an-available-harness-update-durin</span>
+      <span class="chip">เก็บเข้าคลัง 19 ส.ค. 2026</span>
+      <span class="chip info">รอบถัดไป: ไม่มี active change</span>
+      <span class="chip">อัปเดตรายงาน 19 ส.ค. 2026</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="kpi-title">
+    <h2 id="kpi-title">ภาพรวมรอบงาน</h2>
+    <div class="grid kpis">
+      <article class="card kpi"><div class="label">คุณภาพ · Quality</div><div class="value">4/4 PASS</div><div class="sub">compatibility, discovery, review, test · 3 claims ครบ</div></article>
+      <article class="card kpi"><div class="label">บั๊ก · Bug</div><div class="value">1 → 1</div><div class="sub">major finding ปิดแล้ว · มี improvement risk เปิด 6 รายการ</div></article>
+      <article class="card kpi"><div class="label">เวลา · Time</div><div class="value">3:07:56</div><div class="sub">span รวมช่วงรอคน/ระบบ 12:29:53Z → 15:37:49Z</div></article>
+      <article class="card kpi"><div class="label">เวลาทำงาน · Speed</div><div class="value">25:32.7</div><div class="sub">busy 13.6% · ช้าที่สุด authority-run 20:08.1</div></article>
+      <article class="card kpi"><div class="label">โทเคน · Token</div><div class="value">ไม่มีข้อมูล</div><div class="sub">requests/output/cache-write ไม่ถูก import · reviewer: gpt-5.6-sol</div></article>
+      <article class="card kpi"><div class="label">ค่าใช้จ่าย · Cost</div><div class="value">ไม่มีข้อมูล</div><div class="sub"><code>command-observed; model usage requires host telemetry ingestion</code></div></article>
+      <article class="card kpi"><div class="label">การคุมงาน · Harness</div><div class="value">35 / 69</div><div class="sub">คำสั่งถูก block / คำสั่งทั้งหมด ก่อนแก้เงื่อนไขจนผ่าน</div></article>
+      <article class="card kpi"><div class="label">โค้ด · Code</div><div class="value">ไม่มี commit</div><div class="sub">รอบนี้ Land โดยไม่ commit จึงไม่มี commit stat ที่เชื่อถือได้</div></article>
+      <article class="card kpi"><div class="label">สัญญา · Docs</div><div class="value">+3 · ~1</div><div class="sub">OpenSpec requirements เพิ่ม 3 แก้ 1 ลบ 0</div></article>
+      <article class="card kpi"><div class="label">สุขภาพรวม · Well</div><div class="value">แข็งแรง</div><div class="sub">5/5 tasks · proof pass · archived · ไม่มี active change</div></article>
+    </div>
+    <div class="source">ที่มา: <code>.foundation/runtime/&lt;id&gt;.json</code>, <code>.foundation/receipts/&lt;id&gt;/</code>, <code>.foundation/logs/&lt;id&gt;/operations.jsonl</code>, archived <code>tasks.md</code></div>
+  </section>
+
+  <section aria-labelledby="timeline-title">
+    <h2 id="timeline-title">เส้นเวลาและสัดส่วนเฟส</h2>
+    <p class="sub">จัดสรรเวลาแบบไม่ทับซ้อน: ทุกช่วงนับให้เฟสของคำสั่งล่าสุด ณ ขณะนั้น ทำให้ผลรวมเท่ากับ span 3:07:56 พอดี ช่วงเงียบที่ยาวที่สุดคือ 2:08:40 หลัง <code>authority-run</code> ก่อน <code>authority-run</code> ถัดไป</p>
+    <div class="phase-stack" title="Change 3.1% · Build 7.6% · Prove 89.1% · Land 0.2%">
+      <span class="phase-change" style="width:3.142%"></span><span class="phase-build" style="width:7.600%"></span><span class="phase-prove" style="width:89.106%"></span><span class="phase-land" style="width:.152%"></span>
+    </div>
+    <div class="legend"><span><i class="dot phase-change"></i>Change 5:54.4 · 3.1%</span><span><i class="dot phase-build"></i>Build 14:17.0 · 7.6%</span><span><i class="dot phase-prove"></i>Prove 2:47:27.5 · 89.1%</span><span><i class="dot phase-land"></i>Land 0:17.1 · 0.2%</span></div>
+    <div class="table-wrap" style="margin-top:14px"><table>
+      <thead><tr><th>เฟส</th><th class="num">คำสั่ง</th><th class="num">Block</th><th class="num">Busy</th><th class="num">Requests</th><th class="num">Output</th><th class="num">Cache write/read</th><th class="num">Cost</th></tr></thead>
+      <tbody>
+        <tr><td>Change</td><td class="num">31</td><td class="num">21</td><td class="num">0:17.0</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td>Build</td><td class="num">12</td><td class="num">2</td><td class="num">0:12.1</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td>Prove</td><td class="num">24</td><td class="num">12</td><td class="num">24:46.6</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td>Land</td><td class="num">2</td><td class="num">0</td><td class="num">0:16.9</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td><strong>รวม</strong></td><td class="num"><strong>69</strong></td><td class="num"><strong>35</strong></td><td class="num"><strong>25:32.7</strong></td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+      </tbody>
+    </table></div>
+    <div class="card" style="margin-top:12px"><div class="sub">Busy share ของ span · 13.6%</div><div class="bar" style="margin-top:8px"><i style="width:13.592%"></i></div></div>
+    <div class="source">ที่มา: <code>.foundation/logs/&lt;id&gt;/operations.jsonl</code> · measurement: <code>command-observed; model usage requires host telemetry ingestion</code></div>
+  </section>
+
+  <section aria-labelledby="guards-title">
+    <h2 id="guards-title">จังหวะที่ Harness เข้าแทรกแซง</h2>
+    <p class="sub">“Block” คือ guard หยุดการข้ามเงื่อนไข ไม่ใช่ผลล้มเหลวสุดท้าย รายการติดกันของ operation เดียวกันถูกรวมเป็นเรื่องเดียว</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>กลุ่ม</th><th class="num">ครั้ง</th><th>สิ่งที่หยุด</th><th>ความเสี่ยงที่ป้องกัน</th><th>สิ่งที่ทำให้ผ่าน</th></tr></thead>
+      <tbody>
+        <tr><td><code>change:start + validate</code></td><td class="num">21</td><td>12:29–12:34Z และ 15:31Z</td><td>สัญญา Change ที่ยังไม่ครบ/grounding ไม่ตรง baseline</td><td>เติม contract, เปิด grounding revision แบบ audited และ validate ใหม่</td></tr>
+        <tr><td><code>proof-readiness + proof-advance</code></td><td class="num">7</td><td>12:45–12:47Z และ 15:21–15:32Z</td><td>พิสูจน์บน surface ที่ประกาศไม่ครบ, policy ที่ reviewer พบว่ายังขาด, และ proof ที่ยังไม่สด</td><td>เพิ่ม agent policy/test, ประกาศ test path, sync และเก็บ receipt ใหม่</td></tr>
+        <tr><td><code>authority-*</code></td><td class="num">5</td><td>15:18–15:21Z</td><td>การปิดงานโดยไม่มี review response ที่ผูกกับ workspace</td><td>กู้ reviewer infrastructure และใช้ <code>codex-sol</code> จนได้ full finding + delta closure</td></tr>
+        <tr><td><code>sandbox</code></td><td class="num">2</td><td>12:45Z และ 12:47Z</td><td>workspace แยกไม่ตรง contract/proof ปัจจุบัน</td><td>sync revision ก่อน apply</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid cards3" style="margin-top:14px">
+      <article class="card callout"><h3>จุดที่คุมได้ดีที่สุด</h3><p>Review guard ไม่ยอมรับเพียง advisory fields แต่ตรวจถึงพฤติกรรม agent จริง จึงพบ F001 ก่อน Land และบังคับให้มี policy “แจ้งครั้งแรก + เตือนก่อน Build” พร้อม deterministic coverage</p></article>
+      <article class="card callout finding"><h3>สิ่งที่ test แรกยังไม่จับ</h3><p>test provider รอบแรกยืนยัน trigger และ field แต่ยังไม่ยืนยันว่าตัว agent จะสื่อสารกับผู้ใช้ Review จึงเป็นชั้นที่พบช่องว่างนี้ภายหลัง</p></article>
+      <article class="card callout"><h3>ราคาที่จ่าย</h3><p>ต้องเปิด grounding 2 ครั้ง, ผ่าน review 4 รอบ และเก็บ proof ใหม่หลัง correction; span จึงยาว 3:07:56 แม้ busy time มี 25:32.7</p></article>
+    </div>
+    <div class="source">ที่มา: <code>operations.jsonl</code>, <code>.foundation/evidence/&lt;id&gt;/review-attempts/</code>, runtime <code>groundingReopens</code></div>
+  </section>
+
+  <section aria-labelledby="slow-title">
+    <h2 id="slow-title">อะไรใช้เวลามากที่สุด</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Operation</th><th>เฟส</th><th class="num">เวลา</th><th>ผล</th><th>สาเหตุที่อ่านได้จากหลักฐาน</th></tr></thead>
+      <tbody>
+        <tr><td><code>authority-run</code></td><td>Prove</td><td class="num">20:08.1</td><td><span class="tag pass">completed</span></td><td>configured AI review รอบแรก</td></tr>
+        <tr><td><code>authority-run</code></td><td>Prove</td><td class="num">2:04.8</td><td><span class="tag pass">completed</span></td><td>review execution/recovery ก่อนพบ F001</td></tr>
+        <tr><td><code>authority-run</code></td><td>Prove</td><td class="num">0:51.5</td><td><span class="tag pass">completed</span></td><td>delta review ปิด F001</td></tr>
+        <tr><td><code>proof-advance</code></td><td>Prove</td><td class="num">0:21.9</td><td><span class="tag pass">completed</span></td><td>เก็บ compatibility/test และสร้าง review request</td></tr>
+        <tr><td><code>archive</code></td><td>Land</td><td class="num">0:12.9</td><td><span class="tag pass">completed</span></td><td>sync spec, archive change และ cleanup</td></tr>
+      </tbody>
+    </table></div>
+    <div class="source">ที่มา: durationMs ใน <code>.foundation/logs/&lt;id&gt;/operations.jsonl</code></div>
+  </section>
+
+  <section aria-labelledby="gates-title">
+    <h2 id="gates-title">ตาราง Gate และใบรับรอง</h2>
+    <p class="sub">receipt คือใบรับรองผลที่ผูกกับ contract/workspace แต่ละ provider ด้านล่างมีสถานะตามไฟล์จริง</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Provider</th><th>สถานะ</th><th class="num">Claims</th><th class="num">เวลา</th><th>Observed verbatim · คำอธิบาย</th></tr></thead>
+      <tbody>
+        <tr><td><code>compatibility</code></td><td><span class="tag pass">pass</span></td><td class="num">3</td><td class="num">2.006s</td><td><code>exit 0; 2006ms; readiness observed; critical cases not declared</code><br><span class="muted">protocol-1 และ identity compatibility ผ่าน</span></td></tr>
+        <tr><td><code>discovery</code></td><td><span class="tag pass">pass</span></td><td class="num">3</td><td class="num">—</td><td><code>18 discovered; minimum 12</code><br><span class="muted">ค้นพบ 18 cases สูงกว่า floor 12</span></td></tr>
+        <tr><td><code>test</code></td><td><span class="tag pass">pass</span></td><td class="num">3</td><td class="num">0.227s</td><td><code>exit 0; 227ms; readiness observed; critical cases investigate-refresh=passed, change-cache-reuse=passed, build-reminder=passed, later-phase-quiet=passed, offline-nonblocking=passed, identity-stable=passed</code></td></tr>
+        <tr><td><code>review</code></td><td><span class="tag pass">pass</span></td><td class="num">1</td><td class="num">—</td><td><code>F001 is closed: the shipped agent contract now loads a phase-specific update policy that requires a single Investigate/Change notice, duplicate suppression, a pre-Build reminder, non-blocking behavior, no automatic update, and silence during Prove/Land. Scoped contract tests deterministically assert these requirements.</code></td></tr>
+        <tr><td><strong>proof</strong></td><td><span class="tag pass">pass</span></td><td class="num">3</td><td class="num">—</td><td><code>proof-1787153676341</code> · รวม providers ทั้ง 4 และปิดรอบด้วย workspace hash ที่พิสูจน์แล้ว</td></tr>
+      </tbody>
+    </table></div>
+    <div class="source">ที่มา: <code>.foundation/receipts/&lt;id&gt;/{compatibility,discovery,test,review,proof}.json</code></div>
+  </section>
+
+  <section aria-labelledby="tasks-title">
+    <h2 id="tasks-title">งานที่ส่งมอบ</h2>
+    <div class="grid cards3">
+      <article class="card kpi"><div class="label">รอบที่จบ</div><div class="value">5 / 5</div><div class="sub">tasks เสร็จครบ ไม่มี scope ค้าง</div></article>
+      <article class="card kpi"><div class="label">รอบถัดไป</div><div class="value">ไม่มี</div><div class="sub"><code>No active changes.</code></div></article>
+      <article class="card kpi"><div class="label">สถานะ</div><div class="value">archived</div><div class="sub">เก็บเข้าคลังวันที่ 2026-08-19</div></article>
+    </div>
+    <ol>
+      <li>สร้าง SemVer resolver, แคช atomic 24 ชั่วโมง, timeout/offline fallback และ opt-out</li>
+      <li>เพิ่ม <code>update check</code> และสะพานส่ง installed CLI version</li>
+      <li>แนบ advisory เฉพาะ Investigate, Change และก่อน Build โดยไม่เปลี่ยน deterministic digest</li>
+      <li>เพิ่ม agent policy แบบ selective load: แจ้งครั้งเดียวและเตือนก่อน Build โดยไม่ auto-update</li>
+      <li>เพิ่ม test ครอบคลุม phase, cache, offline, compatibility, identity และ agent behavior</li>
+    </ol>
+    <div class="source">ที่มา: archived <code>proposal.md</code> และ <code>tasks.md</code></div>
+  </section>
+
+  <section aria-labelledby="bugs-title">
+    <h2 id="bugs-title">ข้อบกพร่องที่พบระหว่างรอบ</h2>
+    <article class="card callout finding">
+      <div class="chips" style="margin-top:0"><span class="tag stop">F001 · major</span><span class="tag pass">fixed</span><span class="tag">open 0</span></div>
+      <h3 style="margin-top:12px">Advisory มีข้อมูล แต่ agent policy ยังไม่รับรองการแจ้งผู้ใช้</h3>
+      <p>Review รอบ 3 พบว่า T004 ถูกติ๊กเสร็จทั้งที่ contract ยังไม่กำหนด “แจ้งครั้งแรกที่ Investigate/Change, suppress ซ้ำที่ Change, เตือนก่อน Build” และ test ตรวจเพียง field ผลกระทบที่วัดได้คือ proof ถูกปฏิเสธ 1 รอบ, ต้องแก้ 6 paths ใน delta scope และ review รอบ 4 ยืนยัน <code>verifiedIds: ["F001"]</code> โดย <code>unresolvedBlockers: 0</code></p>
+      <div class="source">ที่มา: review attempt 0003/0004 และ <code>review.json</code></div>
+    </article>
+    <h3 style="margin-top:18px">ทะเบียนบั๊กและความเสี่ยงที่ปรับปรุงต่อได้</h3>
+    <p class="sub">F001 คือ defect ที่ review ยืนยันโดยตรง ส่วนรายการที่เหลือเป็นข้อสังเกตหรือความเสี่ยงเชิงออกแบบจากหลักฐานรอบนี้และ source ปัจจุบัน จึงไม่ถูกรวมเป็น failed claim</p>
+    <div class="table-wrap" style="margin-top:12px"><table>
+      <thead><tr><th>ระดับ</th><th>รายการ</th><th>สถานะ</th><th>หลักฐาน/ผลกระทบ</th><th>แนวทางแก้</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag stop">P1</span></td><td><strong>Agent behavior ไม่ครบตาม T004 (F001)</strong></td><td><span class="tag pass">fixed</span></td><td>review รอบ 3 พบ policy และ test ยังไม่รับรอง notice/reminder; บังคับ re-proof และ delta review</td><td>เพิ่ม selective policy ใน <code>AGENT.md</code>/<code>README.md</code> และ deterministic assertions</td></tr>
+        <tr><td><span class="tag stop">P1</span></td><td><strong><code>authority-run</code> เคยค้างที่ dispatched/controller</strong></td><td><span class="tag warn">open</span></td><td>มี dispatched/completed review records หลายคู่และ authority operations ถูก block 5 ครั้งก่อน closure</td><td>ตรวจ PID/lease ก่อนคืน <code>IN_PROGRESS</code>, auto-classify process loss เป็น infrastructure error และให้ reset กู้ได้</td></tr>
+        <tr><td><span class="tag stop">P1</span></td><td><strong>Grounding อ้างไฟล์ที่ change ต้องแก้เป็น immutable requirement</strong></td><td><span class="tag pass">fixed in round</span></td><td>runtime บันทึก grounding reopen ครั้งที่ 2 หลัง proof พบ hash mismatch ของ <code>AGENT.md</code></td><td>เปลี่ยน role เป็น <code>production-path</code>; ระยะยาวให้ validator ตรวจ readSet/task-path overlap ตั้งแต่ Change</td></tr>
+        <tr><td><span class="tag stop">P1</span></td><td><strong>Duplicate notice ยังพึ่งความจำของ agent</strong></td><td><span class="tag warn">open risk</span></td><td>contract บอก suppress ที่ Change แต่ไม่มี persisted notification state ใน runtime/receipt</td><td>เก็บ <code>lastNotifiedVersion</code> และ phase ระดับ session/user cache โดยไม่รวมใน proof identity</td></tr>
+        <tr><td><span class="tag warn">P2</span></td><td><strong>Validator รายงานแบบ fail-fast</strong></td><td><span class="tag warn">open</span></td><td><code>change:validate</code> ถูก block 20 ครั้งใน <code>operations.jsonl</code></td><td>รวม contract, grounding, task-surface และ provider errors เป็น batch เดียว</td></tr>
+        <tr><td><span class="tag warn">P2</span></td><td><strong>Cache timestamp จากอนาคตอาจถูกนับว่าสด</strong></td><td><span class="tag warn">open risk</span></td><td><code>update-advisory.mjs</code> ตรวจเพียง <code>now - checkedAt &lt;= ttl</code> โดยไม่บังคับอายุเป็นค่าบวก</td><td>ใช้เงื่อนไข <code>age &gt;= 0 &amp;&amp; age &lt;= ttl</code> และเพิ่ม clock-skew test</td></tr>
+        <tr><td><span class="tag">P3</span></td><td><strong>Schema มี <code>head-installation</code> ที่ resolver ไม่คืน</strong></td><td><span class="tag warn">open risk</span></td><td>enum อยู่ใน <code>host-instruction.schema.json</code> แต่ไม่มีเส้นทางสถานะใน resolver/test</td><td>implement พร้อม test หรือเอา enum ออกจนกว่าจะมี semantics ชัดเจน</td></tr>
+        <tr><td><span class="tag">P3</span></td><td><strong>ไม่มี host telemetry</strong></td><td><span class="tag warn">open</span></td><td><code>usedRequests</code>, <code>usedTokens</code>, cost เป็น <code>null</code>; measurement คือ <code>unavailable-until-external-events</code></td><td>sync/import telemetry ก่อน Land หรือให้ Land เสนอคำสั่งพร้อมรัน</td></tr>
+      </tbody>
+    </table></div>
+    <div class="source">ที่มา: <code>review.json</code>, review attempts 0001–0004, <code>operations.jsonl</code>, runtime <code>groundingReopens</code>, <code>update-advisory.mjs</code>, <code>host-instruction.schema.json</code></div>
+  </section>
+
+  <section aria-labelledby="risk-title">
+    <h2 id="risk-title">ความเสี่ยง ข้อยกเว้น และ authority</h2>
+    <div class="grid cards3">
+      <article class="card"><h3>Review waivers</h3><p>receipt บันทึก <code>diversityWaived: true</code> และ <code>independenceWaived: true</code> ตาม project policy แม้ผลรอบสุดท้ายบันทึก <code>independent: true</code> และ <code>diverse: true</code></p></article>
+      <article class="card"><h3>Acceptance</h3><p><code>decision: "not-required"</code> และ <code>required: false</code> ไม่มี human acceptance gate เพิ่มเติม</p></article>
+      <article class="card"><h3>Attestation</h3><p>ไม่มีไฟล์ attestation สำหรับรอบนี้ การ Build ใช้ session เดิมและพื้นที่แยกตาม workflow ปกติ</p></article>
+    </div>
+    <div class="source">ที่มา: <code>review.json.review.policy</code>, runtime <code>acceptance</code>, <code>.foundation/attestations/</code></div>
+  </section>
+
+  <section aria-labelledby="improve-title">
+    <h2 id="improve-title">ข้อเสนอปรับปรุงรอบถัดไป</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="num">#</th><th>ข้อสังเกต</th><th>ข้อเสนอ</th><th>แหล่งอ้างอิง</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Reviewer controller เคยค้างทั้งที่ process ไม่อยู่แล้ว</td><td>เพิ่ม lease/PID liveness, automatic infrastructure-error transition และ recoverable reset</td><td><code>operations.jsonl</code>: authority block 5 ครั้ง; review attempts มี dispatched/completed หลายคู่</td></tr>
+        <tr><td class="num">2</td><td>Grounding source ซ้อนกับ production target</td><td>validator ตรวจ immutable readSet เทียบ task paths และชี้ role ที่ถูกต้องก่อน Build</td><td>runtime <code>groundingReopens[1]</code> · decision ref ลงท้าย <code>F001</code></td></tr>
+        <tr><td class="num">3</td><td>Duplicate notification ยังไม่มี durable session marker</td><td>เพิ่ม advisory-notification marker นอก deterministic identity</td><td>archived agent-contract requirement เทียบกับ runtime state ที่ไม่มี marker</td></tr>
+        <tr><td class="num">4</td><td>20 validation blocks เกิดก่อน contract ลงตัว</td><td>รวม missing/invalid fields เป็น batch เดียว เพื่อลดรอบแก้ทีละเงื่อนไข</td><td><code>operations.jsonl</code> · <code>change:validate = 20 blocked</code></td></tr>
+        <tr><td class="num">5</td><td>Test แรกยืนยัน advisory field แต่ไม่ยืนยัน agent communication</td><td>ทุก agent-facing field ใหม่ต้องมี runtime-output test และ communication-policy test</td><td>F001 ใน review attempt 0003; ปิดใน attempt 0004</td></tr>
+        <tr><td class="num">6</td><td>Fresh-cache logic ไม่ป้องกัน clock skew จาก timestamp ในอนาคต</td><td>ตรวจ <code>age &gt;= 0</code> และเพิ่ม future-clock fixture</td><td><code>.claude/harness/runtime/core/update-advisory.mjs</code> fresh calculation</td></tr>
+        <tr><td class="num">7</td><td>Schema มีสถานะที่ไม่มี producer</td><td>ทำ semantics ของ <code>head-installation</code> ให้ครบหรือถอดออกจาก enum</td><td><code>host-instruction.schema.json</code> เทียบกับ resolver tests</td></tr>
+        <tr><td class="num">8</td><td>ไม่มี token/cost telemetry ทั้งรอบ</td><td>import host telemetry ก่อน Land เพื่อให้ requests, model usage และ cost KPI วัดได้จริง</td><td><code>budget.measurement: unavailable-until-external-events</code></td></tr>
+        <tr><td class="num">9</td><td>ไม่มี commit สำหรับวัด code volume</td><td>หากต้องการเปรียบเทียบขนาดรอบงาน ให้สร้าง commit ที่ผูกกับ Land authority ใน workflow ที่อนุญาต</td><td><code>git log</code> ไม่มี commit ของ change นี้</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    <p>รายงานนี้เป็น read-only projection จาก <code>.foundation/</code> และ <code>openspec/</code> ณ วันที่ 19 สิงหาคม 2026 ไม่แก้ harness state และไม่สร้างสถานะคู่ขนาน</p>
+    <p><strong>รวม:</strong> 69 commands · requests ไม่มีข้อมูล · model usage ไม่มีข้อมูล (<code>actualModel: null</code>); reviewer ที่บันทึกคือ <code>gpt-5.6-sol</code> · ไม่มี active round</p>
+  </footer>
+</main>
+</body>
+</html>

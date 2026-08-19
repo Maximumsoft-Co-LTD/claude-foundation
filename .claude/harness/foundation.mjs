@@ -810,6 +810,8 @@ const packetRuntime = createPacketRuntime({
   ROOT,
   PACKET_SCHEMA_VERSION,
   REVIEW_PACKET_SCHEMA_VERSION,
+  foundationVersion: VERSION,
+  installedCliVersion: process.env.FOUNDATION_INSTALLED_CLI_VERSION || VERSION,
   leasesRoot: LEASES,
   loadRuntime,
   readJson,

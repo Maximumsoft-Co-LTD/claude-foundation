@@ -1,8 +1,5 @@
-# host-instruction-api Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change publish-a-versioned-host-instruction-cli-endpoint-for-changeloop. Update Purpose after archive.
-## Requirements
 ### Requirement: Installed Foundation exposes canonical host instructions
 
 The system SHALL expose a versioned, read-only CLI contract that returns the
@@ -32,26 +29,4 @@ remain unchanged.
 
 - **WHEN** a protocol-1 producer adds the optional update response field
 - **THEN** existing tolerant consumers can continue using the required fields
-
-### Requirement: Host-instruction failures are machine-readable
-
-The system SHALL reject unsupported protocols, unknown commands, invalid
-argument use, and unavailable package instructions with a non-zero exit and a
-JSON error carrying a stable machine code.
-
-#### Scenario: Unknown command cannot select a file
-
-- **WHEN** a caller supplies a command name outside the eight-command allow-list
-- **THEN** the CLI returns `unknown_host_command`
-- **AND** performs no caller-controlled filesystem lookup
-
-#### Scenario: No-argument command rejects arguments
-
-- **WHEN** `changes` receives a non-empty argument value
-- **THEN** the CLI returns `unexpected_arguments`
-
-#### Scenario: Unsupported protocol fails explicitly
-
-- **WHEN** a caller requests a protocol version the installed CLI does not support
-- **THEN** the CLI returns `unsupported_protocol` without returning an instruction
 
