@@ -58,6 +58,34 @@ assert_eq "capture: an unanswered question is kept, not dropped" "null" \
 assert_eq "capture: 4 exchanges recorded despite 1 being unanswered" "4" \
   "$(printf '%s' "$bank" | jq -r '.exchanges | length')"
 
+# The instruction contract uses two different interaction shapes without
+# creating two lifecycles: pre-lifecycle brainstorming advances a dependency
+# frontier in rounds, while feature intake collapses every represented branch
+# into one finalized Decision Sheet. This fixture pins that boundary separately
+# from wording-sensitive live model behavior.
+F="$FIX/decision-frontier-bank.json"
+assert_file_exists "frontier: contract fixture present" "$F"
+assert_cmd_zero "frontier: fixture is valid JSON" jq -e . "$F"
+assert_cmd_zero "frontier: source-owned facts are never user questions" \
+  jq -e '[.facts[] | select(.asked == true)] | length == 0' "$F"
+assert_cmd_zero "frontier: every prerequisite exists and precedes its dependent decision" \
+  jq -e '. as $root |
+    [.decisions[].prerequisites[]] as $required |
+    ($required | length) > 0 and
+    ([$required[] as $id | [$root.decisions[] | select(.id == $id)] | length]
+      | all(. == 1)) and
+    ([.decisions[] as $decision | $decision.prerequisites[] as $id |
+      (($root.decisions[] | select(.id == $id) | .call_seq) < $decision.call_seq)]
+      | length == ($required | length) and all)' "$F"
+assert_cmd_zero "frontier: feature intake retains one finalized approval call" \
+  jq -e '.finalizedSheet.approvalCalls == 1 and
+    .finalizedSheet.includesDependencies and
+    .finalizedSheet.includesConditionalEffects' "$F"
+assert_cmd_zero "frontier: compact agreement lands in the existing packet only" \
+  jq -e '.handoff.compactAgreementReused and
+    .handoff.durableTarget == "grounding.yaml" and
+    (.handoff.parallelLedger | not)' "$F"
+
 # A transcript with no real call must say so rather than emit an empty bank that
 # would replay as "the interview asked nothing".
 printf '{"type":"assistant","requestId":"r","message":{"content":[{"type":"text","text":"AskUserQuestion is mentioned here"}]}}\n' > "$TMPROOT/nocall.jsonl"

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        ".claude/tests/harness/run-changeloop-seam-tap.sh",
+        "--json"
+      ],
+      "minimum": 324,
+      "reportFormat": "json",
+      "timeoutMs": 300000,
+      "resources": [
+        "foundation-test-suite"
+      ],
+      "criticalCases": [
+        "frontier-prerequisite-order",
+        "frontier-source-owned-fact",
+        "feature-single-finalized-sheet",
+        "change-reuses-agreement"
+      ]
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "prerequisite-aware-frontier",
+      "scenario": "A dependent decision waits for its prerequisite",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "single-finalized-sheet",
+      "scenario": "Feature intake retains dependencies in one finalized sheet",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "agreement-reuse",
+      "scenario": "A prior compact agreement reaches change intake",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "source-owned-facts",
+      "scenario": "A repository fact is discoverable",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    }
+  ]
+}

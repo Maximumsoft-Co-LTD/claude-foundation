@@ -1,0 +1,268 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-decision-frontier-integration",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T00:00:00.000+07:00",
+    "decisions": [
+      {
+        "id": "existing-workflow-capability",
+        "question": "Where should grill-with-docs concepts enter the Foundation workflow?",
+        "answer": "Integrate decision-frontier discovery into existing brainstorming, feature, and change skills; add no phase or command.",
+        "source": "user-batch"
+      },
+      {
+        "id": "openspec-remains-authoritative",
+        "question": "How should the new discovery behavior preserve OpenSpec consistency?",
+        "answer": "Keep the tree private, persist only existing OpenSpec artifacts, retain one finalized Decision Sheet, and never create CONTEXT.md or a parallel ledger.",
+        "source": "user-batch"
+      },
+      {
+        "id": "parallel-safe-first-slice",
+        "question": "Can this work proceed beside the active dispatch change?",
+        "answer": "Implement only the disjoint Decision Frontier change now and defer domain-language/schema work that overlaps shared documentation and contract tests.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "agent-instruction-contract",
+      "human-decision-flow"
+    ],
+    "rationale": "The change has no runtime mutation but its shipped instruction wire controls how consequential user decisions are sequenced, locked, and reused; the deterministic review route therefore requires high-tier treatment."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "The shipped skills are the agent-facing production entry points for pre-lifecycle discovery and feature/change intake.",
+    "paths": [
+      {
+        "repository": "root",
+        "path": ".claude/skills/brainstorming/SKILL.md"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/skills/grill-task-gu/SKILL.md"
+      }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The installed skill and workflow Markdown is the real instruction wire consumed by supported hosts; this change keeps its command and runtime protocol unchanged.",
+    "contracts": [
+      {
+        "repository": "root",
+        "path": ".claude/skills/feature/references/workflow.md"
+      }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "The behavior becomes active when a consumer installs the updated shipped skills and starts a new discovery or feature/change intake.",
+    "activatedPaths": [
+      {
+        "repository": "root",
+        "path": ".claude/skills/brainstorming/SKILL.md"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/skills/grill-task-gu/SKILL.md"
+      }
+    ],
+    "failureSemanticChanges": [
+      "A dependent user decision is deferred or represented conditionally instead of being asked before its prerequisite is settled.",
+      "A prior compact agreement is reused rather than reopened as a routine second interview."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "No runtime service, process, broker, or external API boundary changes.",
+    "rows": []
+  },
+  "observability": {
+    "status": "not-applicable",
+    "sourceReason": "No operated runtime failure surface or telemetry contract changes.",
+    "rows": []
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "openspec/specs/change/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "6882ba2bac0738d8fcfebb6d2fb0e213fed65aa9b9fb940681dfdb647f6e3bb1"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/brainstorming/SKILL.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "cbb3b5c9d3f3b143e40c41859054617a5bfef4a0bbb1169cdb5adf9da4932752"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/grill-task-gu/SKILL.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "a78c48135e76b4bc2e8bd1273fff7887c77efbf4bc83828ca586ca6d79457546"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/feature/references/workflow.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "87fe39ae9b78eef566472d9209ea2bcfa1de69235ed43075e18266da01486317"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/change/references/workflow.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "237e2e0fcc7c07d3fb18c4a37f4b0941b983fd290a4599ba2adef17cc95df38b"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/interview/run-interview-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "3b829719253bbc34e861f685f76e6154a93f33415c40077e01a4b563e11629fa"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-context-budget-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "bedc2dbd5a4aaa4dd4fc303afbba51844682e2628b52e17a165a573634b45538"
+    }
+  ],
+  "claims": [
+    {
+      "id": "prerequisite-aware-frontier",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/brainstorming/SKILL.md"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/grill-task-gu/SKILL.md",
+          "failure": "a source-owned fact is asked or a dependent decision is presented without its prerequisite or conditional consequence"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+        "testDoubleGap": "none"
+    },
+      {
+        "id": "single-finalized-sheet",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/grill-task-gu/SKILL.md"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/feature/references/workflow.md",
+          "failure": "feature intake opens a multi-round approval loop or omits dependent effects from the finalized sheet"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+        "testDoubleGap": "none"
+      },
+      {
+        "id": "source-owned-facts",
+        "productionPath": [
+          {
+            "repository": "root",
+            "path": ".claude/skills/brainstorming/SKILL.md"
+          }
+        ],
+        "failurePaths": [
+          {
+            "repository": "root",
+            "path": ".claude/skills/grill-task-gu/SKILL.md",
+            "failure": "a specification, code, test, or sandbox fact is delegated to the user instead of resolved and grounded from source"
+          }
+        ],
+        "evidenceClass": [
+          "test",
+          "review"
+        ],
+        "testDoubleGap": "none"
+      },
+      {
+        "id": "agreement-reuse",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/change/references/workflow.md"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/change/references/workflow.md",
+          "failure": "change intake re-asks an answer already locked by a compact agreement or writes a parallel ledger"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "frontier-prerequisite-order",
+      "claimIds": [
+        "prerequisite-aware-frontier"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "frontier-source-owned-fact",
+      "claimIds": [
+        "source-owned-facts"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "feature-single-finalized-sheet",
+      "claimIds": [
+        "single-finalized-sheet"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "change-reuses-agreement",
+      "claimIds": [
+        "agreement-reuse"
+      ],
+      "oracle": "contract-oracle"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "Brainstorming already batches prerequisite-ready material decisions and refuses source-discoverable questions.",
+      "command": "sh .claude/tests/harness/run-context-budget-tests.sh"
+    },
+    {
+      "fact": "The interview capture format preserves call_seq, so deterministic tests can distinguish frontier rounds.",
+      "command": "sh .claude/tests/interview/run-interview-tests.sh"
+    }
+  ]
+}

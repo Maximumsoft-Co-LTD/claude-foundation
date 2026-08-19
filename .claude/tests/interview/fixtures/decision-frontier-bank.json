@@ -1,0 +1,32 @@
+{
+  "source": "decision-frontier-contract-fixture",
+  "facts": [
+    {
+      "id": "current-storage",
+      "source": "src/history-store.js",
+      "asked": false
+    }
+  ],
+  "decisions": [
+    {
+      "id": "history-scope",
+      "prerequisites": [],
+      "call_seq": 1
+    },
+    {
+      "id": "retention-policy",
+      "prerequisites": ["history-scope"],
+      "call_seq": 2
+    }
+  ],
+  "finalizedSheet": {
+    "approvalCalls": 1,
+    "includesDependencies": true,
+    "includesConditionalEffects": true
+  },
+  "handoff": {
+    "compactAgreementReused": true,
+    "durableTarget": "grounding.yaml",
+    "parallelLedger": false
+  }
+}

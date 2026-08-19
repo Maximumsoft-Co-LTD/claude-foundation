@@ -1,10 +1,13 @@
 # Change workflow
 
-Read requirements, locked decisions, architecture/contracts, production path,
-tests, dependencies, and repository facts first. Challenge production entry,
-real wire, activation, negative oracles, and environment authority. Ask every
-material choice in one Decision Sheet and hash reads in `grounding.yaml`.
-Only a real contradiction permits one batched `--reopen-grounding`.
+Read any compact brainstorming agreement, approved Decision Sheet, requirements,
+locked decisions, architecture/contracts, production path, tests, dependencies,
+and repository facts first. Reuse settled answers without asking them again.
+Challenge production entry, real wire, activation, negative oracles, and
+environment authority. If no finalized sheet exists, ask every unresolved
+material choice in one Decision Sheet. Always hash reads in `grounding.yaml`.
+Create no decision-tree or interview ledger. Only a real contradiction permits
+one batched `--reopen-grounding`.
 
 Before writing each spec delta, read the canonical
 `openspec/specs/<capability>/spec.md` when it exists and select the operation

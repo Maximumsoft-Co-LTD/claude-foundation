@@ -9,6 +9,11 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
+mode="${1:-tap}"
+case "$mode" in
+  tap|--json) ;;
+  *) echo "usage: $0 [--json]" >&2; exit 2 ;;
+esac
 
 report="$(mktemp)"
 trap 'rm -f "$report"' EXIT HUP INT TERM
@@ -18,7 +23,8 @@ for suite in \
   "$HERE/run-changeloop-seam-tests.sh" \
   "$ROOT/.claude/tests/hooks/run-phase-mutation-guard-tests.sh" \
   "$HERE/run-workspace-surface-tests.mjs" \
-  "$HERE/run-context-budget-tests.sh"
+  "$HERE/run-context-budget-tests.sh" \
+  "$ROOT/.claude/tests/interview/run-interview-tests.sh"
 do
   # Node suites carry change-loop evidence too; only the interpreter differs.
   case "$suite" in
@@ -29,6 +35,19 @@ done
 
 count="$(grep -c '^\(PASS\|FAIL\): ' "$report" 2>/dev/null || true)"
 [ -n "$count" ] || count=0
+
+if [ "$mode" = "--json" ]; then
+  critical="$(sed -n \
+    -e 's/^PASS: \[\([^]]*\)\].*/\1\tpassed/p' \
+    -e 's/^FAIL: \[\([^]]*\)\].*/\1\tfailed/p' "$report" |
+    jq -Rn '[inputs | select(length > 0) | split("\t") |
+      {id: .[0], status: .[1]}]')"
+  jq -n --argjson total "$count" --argjson critical "$critical" \
+    '{totalTests: $total, criticalCases: $critical}'
+  grep '^FAIL: ' "$report" >&2 || true
+  [ "$count" -gt 0 ] || exit 1
+  exit "$status"
+fi
 
 printf 'TAP version 13\n'
 printf '1..%s\n' "$count"

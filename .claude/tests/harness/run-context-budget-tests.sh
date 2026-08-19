@@ -58,6 +58,11 @@ assert_file_exists "module design reference ships" \
   "$ROOT/.claude/skills/programming-fundamentals/references/module-design.md"
 assert_file_contains "brainstorming resolves facts instead of asking them" \
   "$ROOT/.claude/skills/brainstorming/SKILL.md" 'Never ask what you can find'
+assert_file_contains "brainstorming models a private dependency tree" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" 'private dependency tree'
+assert_file_contains "brainstorming does not persist a parallel tree" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'artifact or lifecycle state'
 assert_file_contains "brainstorming batches settled decisions into rounds" \
   "$ROOT/.claude/skills/brainstorming/SKILL.md" 'Ask in rounds, not one at a time'
 assert_file_contains "brainstorming keeps the material-change question filter" \
@@ -75,6 +80,41 @@ assert_file_contains "brainstorming closes only when every decision is asked and
 assert_file_contains "brainstorming records each answer in the agreement" \
   "$ROOT/.claude/skills/brainstorming/SKILL.md" \
   'each asked question with its chosen answer'
+assert_file_contains "[frontier-prerequisite-order] brainstorming asks only prerequisite-ready decisions" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'prerequisites are already settled'
+assert_file_contains "brainstorming hands settled answers forward without re-asking" \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  'without asking them again'
+assert_file_contains "feature intake delegates discovery to grill-task-gu" \
+  "$ROOT/.claude/skills/feature/references/workflow.md" \
+  'Invoke `grill-task-gu`'
+assert_file_contains "[frontier-source-owned-fact] grill-task-gu resolves discoverable facts from sources" \
+  "$ROOT/.claude/skills/grill-task-gu/SKILL.md" \
+  'Discoverable facts come from sources'
+assert_file_contains "grill-task-gu models unresolved choices privately" \
+  "$ROOT/.claude/skills/grill-task-gu/SKILL.md" \
+  'private dependency tree'
+assert_file_contains "grill-task-gu keeps conditional effects in the same sheet" \
+  "$ROOT/.claude/skills/grill-task-gu/SKILL.md" \
+  'show the prerequisite and every conditional effect in this same'
+assert_file_contains "grill-task-gu forbids later decision rounds" \
+  "$ROOT/.claude/skills/grill-task-gu/SKILL.md" \
+  'do not defer it to a later question round'
+assert_cmd_zero "[feature-single-finalized-sheet] feature delegates to the grill workflow that forbids a second approval" \
+  sh -c 'grep -F '\''Invoke `grill-task-gu`'\'' "$1" >/dev/null &&
+    grep -F '\''do not ask a second approval question'\'' "$2" >/dev/null' \
+  sh "$ROOT/.claude/skills/feature/references/workflow.md" \
+  "$ROOT/.claude/skills/grill-task-gu/SKILL.md"
+assert_file_contains "[change-reuses-agreement] change intake reuses settled answers" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Reuse settled answers without asking them again'
+assert_file_contains "change intake always hashes grounding reads after sheet reuse" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Always hash reads in `grounding.yaml`'
+assert_file_contains "change intake creates no parallel interview ledger" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Create no decision-tree or interview ledger'
 assert_file_contains "fundamentals records decision answers in the change packet" \
   "$ROOT/.claude/rules/fundamentals.md" \
   'record the answers in the change packet'
