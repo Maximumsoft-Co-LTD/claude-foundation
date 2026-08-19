@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Native hosts can resolve and dispatch the Foundation agent contract.** The
+  CLI now exposes a versioned, package-owned agent contract and a bounded
+  dispatch decision for leased task groups, while host capability metadata and
+  adapter output make each integration's dispatch and guard coverage explicit.
+- **Change discovery preserves more of the reasoning behind the work.** Change
+  packets capture domain language, durable tradeoffs, and unresolved decision
+  frontiers, and the multi-repository workflow is documented from selection
+  through proof and Land in both documentation locales.
+- **Review status exposes its effective assurance posture.** Runtime inspection
+  distinguishes configured requirements from active independence or model-
+  diversity waivers and reports the consequences of each waiver directly.
+
+### Changed
+
+- **Host adapters manage only recorded surfaces.** Cursor, OpenCode, and Codex
+  installations keep ownership manifests, retire previously recorded files,
+  preserve unrelated user artifacts, and converge their supported command,
+  rule, prompt, skill, and hook surfaces.
+- **The full test gate is faster and supports affected-suite selection.** Suites
+  run in isolated parallel workers with bounded process cleanup, private
+  mutation fixtures, incremental selection, and deterministic buffered output.
+
+### Fixed
+
+- **Sandbox and apply recovery fail closed without discarding valid work.** Root
+  sync inputs are checked against the target checkout, grounding sources must
+  be portable to the sandbox base, relocated sandboxes can be safely rebound,
+  and apply journals preserve file modes while accepting exact pre-applied
+  paths.
+- **Proof and review recovery are bounded and freshness-aware.** Review receipts
+  bind to semantic review inputs, invalid or empty reviewer envelopes fail
+  closed, rejected reviews return a finite repair batch, and repeated attempts
+  without subject progress stop instead of consuming another review round.
+- **First-time Cursor and OpenCode installs preserve ambiguous retired command
+  names.** User-authored `prototype.md` and `review.md` files are no longer
+  treated as Foundation-owned without an ownership manifest.
+
 ## [3.3.0] - 2026-08-18
 
 ### Added

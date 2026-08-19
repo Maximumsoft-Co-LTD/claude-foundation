@@ -62,8 +62,6 @@ adapter_legacy_owned() {
   esac
 }
 adapter_manifest_init opencode "$TARGET_PATH"
-adapter_manifest_seed_prior project ".opencode/commands/prototype.md"
-adapter_manifest_seed_prior project ".opencode/commands/review.md"
 
 install_adapter_file() {
   src="$1"

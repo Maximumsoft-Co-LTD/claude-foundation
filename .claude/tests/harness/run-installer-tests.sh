@@ -509,6 +509,8 @@ printf 'legacy change command\n' > "$CURSOR_TARGET/.cursor/commands/change.md"
 printf 'legacy fundamentals\n' > "$CURSOR_TARGET/.cursor/rules/fundamentals.mdc"
 printf 'legacy guidance\n' > "$CURSOR_TARGET/.cursor/rules/foundation-human-guidance.mdc"
 printf 'preexisting user command\n' > "$CURSOR_TARGET/.cursor/commands/preexisting-user.md"
+printf 'user-owned prototype command\n' > "$CURSOR_TARGET/.cursor/commands/prototype.md"
+printf 'user-owned review command\n' > "$CURSOR_TARGET/.cursor/commands/review.md"
 assert_cmd_zero "cursor adapter installs" \
   bash "$ROOT/install-cursor.sh" "$CURSOR_TARGET" --source "$ROOT" --yes
 assert_file_exists "cursor change command installed" "$CURSOR_TARGET/.cursor/commands/change.md"
@@ -516,10 +518,10 @@ assert_file_contains "cursor change command accepts explicit prototype handoff" 
   "$CURSOR_TARGET/.cursor/commands/change.md" "--prototype-selection <path>"
 assert_file_contains "cursor investigate command owns bounded comparison" \
   "$CURSOR_TARGET/.cursor/commands/investigate.md" "--compare"
-assert_file_absent "cursor prototype command is retired" \
-  "$CURSOR_TARGET/.cursor/commands/prototype.md"
-assert_file_absent "cursor review command is proof-internal" \
-  "$CURSOR_TARGET/.cursor/commands/review.md"
+assert_file_contains "cursor preserves an unowned prototype command during migration" \
+  "$CURSOR_TARGET/.cursor/commands/prototype.md" "user-owned prototype command"
+assert_file_contains "cursor preserves an unowned review command during migration" \
+  "$CURSOR_TARGET/.cursor/commands/review.md" "user-owned review command"
 assert_file_exists "cursor orchestrator installed" "$CURSOR_TARGET/.cursor/orchestrator.md"
 assert_file_exists "shared runtime installed for cursor" "$CURSOR_TARGET/.claude/harness/foundation.mjs"
 # A bare .md→.mdc rename ships the always-on router as an agent-requested rule.
@@ -572,6 +574,8 @@ mkdir -p "$OPENCODE_TARGET/.opencode/commands" "$OPENCODE_TARGET/.opencode/plugi
 printf 'legacy change command\n' > "$OPENCODE_TARGET/.opencode/commands/change.md"
 printf 'legacy plugin\n' > "$OPENCODE_TARGET/.opencode/plugins/foundation.js"
 printf 'preexisting user command\n' > "$OPENCODE_TARGET/.opencode/commands/preexisting-user.md"
+printf 'user-owned prototype command\n' > "$OPENCODE_TARGET/.opencode/commands/prototype.md"
+printf 'user-owned review command\n' > "$OPENCODE_TARGET/.opencode/commands/review.md"
 assert_cmd_zero "opencode adapter installs" \
   bash "$ROOT/install-opencode.sh" "$OPENCODE_TARGET" --source "$ROOT" --yes
 assert_file_exists "opencode change command installed" \
@@ -588,6 +592,10 @@ assert_file_contains "opencode first manifest upgrade refreshes legacy guard wir
   "$OPENCODE_TARGET/.opencode/plugins/foundation.js" "FoundationGuard"
 assert_file_contains "opencode first manifest upgrade preserves unrelated user paths" \
   "$OPENCODE_TARGET/.opencode/commands/preexisting-user.md" "preexisting user command"
+assert_file_contains "opencode preserves an unowned prototype command during migration" \
+  "$OPENCODE_TARGET/.opencode/commands/prototype.md" "user-owned prototype command"
+assert_file_contains "opencode preserves an unowned review command during migration" \
+  "$OPENCODE_TARGET/.opencode/commands/review.md" "user-owned review command"
 printf 'retired Foundation command\n' > "$OPENCODE_TARGET/.opencode/commands/retired-foundation.md"
 printf 'user command\n' > "$OPENCODE_TARGET/.opencode/commands/user-command.md"
 printf 'project\t.opencode/commands/retired-foundation.md\n' >> \

@@ -55,7 +55,6 @@ adapter_legacy_owned() {
 }
 adapter_manifest_init cursor "$TARGET_PATH"
 for retired in \
-  .cursor/commands/prototype.md .cursor/commands/review.md \
   .cursor/agents/pm.md .cursor/agents/lead.md .cursor/agents/engineer.md \
   .cursor/agents/qa.md .cursor/agents/retro.md .cursor/agents/uxui.md \
   .cursor/agents/team-best-practice-researcher.md \
