@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "root-source-validation",
+      "scenario": "Sandbox sync validates a refreshed root packet against target repository inputs before replaying the sandbox",
+      "impact": "medium",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "multi-repository-source-selection",
+      "scenario": "Root and active validation each use repositories.yaml and repository paths from their own source tree without weakening dependency checks",
+      "impact": "medium",
+      "capabilities": ["test", "review"]
+    }
+  ]
+}

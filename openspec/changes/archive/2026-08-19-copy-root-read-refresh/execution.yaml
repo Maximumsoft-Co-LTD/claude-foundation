@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-root-source-validation-tests.sh"],
+      "timeoutMs": 600000,
+      "resources": ["foundation-test-suite"],
+      "reportFormat": "json",
+      "report": ".foundation/test-results/root-source-validation.json",
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/root-source-validation.json"
+      },
+      "minimum": 3,
+      "inputs": [
+        ".claude/harness/runtime/workflow/change-validation.mjs",
+        ".claude/harness/runtime/workflow/repository-topology.mjs",
+        ".claude/harness/tests/grounding-policy.test.mjs",
+        ".claude/harness/tests/repository-topology.test.mjs",
+        ".claude/tests/harness/run-root-source-validation-tests.sh",
+        ".claude/tests/harness/run-target-drift-tests.sh"
+      ],
+      "criticalCases": ["root-read-refresh", "active-selection-preserved", "multi-repository-target-selection"]
+    },
+    "review": { "adapter": "external" }
+  },
+  "services": {}
+}

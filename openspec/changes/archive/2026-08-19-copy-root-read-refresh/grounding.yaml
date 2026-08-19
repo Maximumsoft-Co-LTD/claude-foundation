@@ -1,0 +1,130 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-start-root-read-refresh",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T08:20:51Z",
+    "decisions": [
+      {
+        "id": "validate-source-tree",
+        "question": "Should sync weaken validation or make validation read the same source tree as its packet?",
+        "answer": "Keep all grounding validation and make repository selection explicitly source-aware so root validation reads target inputs while active validation stays isolated.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["sandbox-replay", "multi-repository-selection", "grounding-integrity"],
+    "rationale": "The fix changes which workspace supplies grounding validation inputs during sandbox replay; an error could weaken isolation or strand multi-repository work even though external authority and Land projection remain unchanged."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "sandbox-runtime.mjs invokes root-source validation before replaying target movement.",
+    "paths": [
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs"}
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The sandbox specification and sandbox sync command define the observable recovery contract.",
+    "contracts": [
+      {"repository": "root", "path": "openspec/specs/sandbox/spec.md"}
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "The corrected selection activates only when validation explicitly targets the root packet during sandbox sync.",
+    "activatedPaths": [
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs"},
+      {"repository": "root", "path": ".claude/harness/runtime/workflow/change-validation.mjs"}
+    ],
+    "failureSemanticChanges": [
+      "A refreshed root grounding digest is compared with target bytes and can proceed to replay instead of being rejected against stale sandbox bytes."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "Coupled validation coordinates the root control repository with one or more isolated repository workspaces.",
+    "rows": [
+      {
+        "id": "validation-source-selection",
+        "owner": "Foundation change validation runtime",
+        "producer": "root or active change packet",
+        "consumer": "repository topology and grounding validator",
+        "contract": "packet directory, repositories.yaml, and repository workspace paths identify one source tree",
+        "delivery": "in-process synchronous validation before sandbox replay",
+        "timeoutRetry": "validation fails closed; rerunning sync repeats the same deterministic selection",
+        "idempotency": "change id, packet directory, repository selection, and read-set digests",
+        "ordering": "validate the root packet, then replay target movement, then project the packet into the sandbox",
+        "consistency": "all validation inputs come from the source named by the validation call",
+        "rollout": "backward-compatible optional selection context used first by sandbox sync",
+        "rollback": "revert topology and validation wiring together; persisted runtime state is unchanged"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Sync success, grounding mismatch, and target-conflict output distinguish validation from replay failures.",
+    "rows": [
+      {
+        "interactionId": "validation-source-selection",
+        "correlation": "change id, validation source, repository id, and workspace path",
+        "structuredEvents": "existing sandbox sync result and deterministic validation refusal",
+        "sli": "a root digest matching target bytes never fails solely because the active sandbox carries older bytes",
+        "alert": "target-drift regression reports a root read-set mismatch before replay",
+        "runbook": "inspect root and active packet selection, repair a genuine digest mismatch, then rerun sandbox sync",
+        "operatorQuestion": "Only a real target/sandbox content conflict needs explicit resolution"
+      }
+    ]
+  },
+  "readSet": [
+    {"repository": "root", "path": "openspec/changes/copy-root-read-refresh/proposal.md", "role": "requirement", "mode": "full", "sha256": "09114d764f481aa5bcd754da0a82e431a051c9353e0101c385e0600645730d26"},
+    {"repository": "root", "path": "CLAUDE.md", "role": "architecture", "mode": "full", "sha256": "9959a0080a2e7e78824836b996ab019d775b9b1254448cb1be999c3792f83a8e"},
+    {"repository": "root", "path": ".claude/harness/foundation.mjs", "role": "composition-root", "mode": "full", "sha256": "83768f5a1e32fc660e09548abc49a2bb38075a0d93a9a30df25b93453da850b1"},
+    {"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "e010be4b6752428efbbf0cdaa5139c4ac3b767a4eefc0e1d1dab857fcab8fe8a"},
+    {"repository": "root", "path": ".claude/harness/runtime/workflow/change-validation.mjs", "role": "production-path", "mode": "full", "sha256": "57f0906b55ad0e1e953759dd9e714840389596c587944f63835a81e400eab92f"},
+    {"repository": "root", "path": ".claude/harness/runtime/workflow/repository-topology.mjs", "role": "production-path", "mode": "full", "sha256": "180fc99d6b6a73526f3d0f376a7b4de929042eab9edb8eab285f070b3ef7609f"},
+    {"repository": "root", "path": ".claude/tests/harness/run-target-drift-tests.sh", "role": "test-topology", "mode": "full", "sha256": "26ee13615e5334adb2242b6c276e900f72320526cde1fcbadc25e1e56d26350b"},
+    {"repository": "root", "path": "openspec/specs/sandbox/spec.md", "role": "contract", "mode": "full", "sha256": "75886ef729203c326c99b369e92cff2e9d8546d6ab0fa7d5686e1dee1b7f5ff2"},
+    {"repository": "root", "path": "package.json", "role": "dependency-source", "mode": "full", "sha256": "3a71726a8bdd8e6b8f265377ec6453a73d604ca96f4c52a67f057134ea387e13"}
+  ],
+  "claims": [
+    {
+      "id": "root-source-validation",
+      "productionPath": [
+        {"repository": "root", "path": ".claude/harness/runtime/workflow/sandbox-runtime.mjs"},
+        {"repository": "root", "path": ".claude/harness/runtime/workflow/change-validation.mjs"}
+      ],
+      "failurePaths": [
+        {"repository": "root", "path": ".claude/harness/runtime/workflow/change-validation.mjs", "failure": "root packet validation resolves immutable inputs through the stale active workspace"}
+      ],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "multi-repository-source-selection",
+      "productionPath": [
+        {"repository": "root", "path": ".claude/harness/runtime/workflow/repository-topology.mjs"}
+      ],
+      "failurePaths": [
+        {"repository": "root", "path": ".claude/harness/runtime/workflow/repository-topology.mjs", "failure": "selection reads repositories.yaml or workspace paths from a different source tree"}
+      ],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {"id": "root-read-refresh", "claimIds": ["root-source-validation"], "oracle": "failure-path"},
+    {"id": "active-selection-preserved", "claimIds": ["root-source-validation"], "oracle": "contract-oracle"},
+    {"id": "multi-repository-target-selection", "claimIds": ["multi-repository-source-selection"], "oracle": "real-wire"}
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {"fact": "sandbox sync validates the root packet before rebaseWorktree executes.", "command": "sed -n '880,930p' .claude/harness/runtime/workflow/sandbox-runtime.mjs"},
+    {"fact": "repository selection currently reads repositories.yaml through activeChangePath and workspace paths from runtime sandbox state.", "command": "sed -n '90,145p' .claude/harness/runtime/workflow/repository-topology.mjs"},
+    {"fact": "The failure reproduces on both open changes after HEAD moved: sandbox sync refuses current root hashes against their pre-move sandboxes.", "command": "claude-foundation sandbox sync align-host-adapter-capabilities-and-upgrades"}
+  ]
+}

@@ -77,6 +77,14 @@ export function createChangeValidationRuntime({
     newCapabilityOperationFindings
   } = createSpecDeltaValidator({ root, activeChangePath, walk, fail });
 
+  function validationRepositories(id, state, dir) {
+    const rootSource = resolve(dir) === resolve(changePath(id));
+    return selectedRepositories(id, state, fail, {
+      changeDir: dir,
+      useTargetPaths: rootSource
+    });
+  }
+
   function traceabilityAuditValue(id) {
     const state = loadRuntime(id);
     const dir = activeChangePath(id, state);
@@ -257,7 +265,7 @@ export function createChangeValidationRuntime({
       const riskClasses = new Set((risk.classes || [])
         .map((entry) => String(entry).toLowerCase()));
       const semantics = `${state.intent || ""} ${[...riskClasses].join(" ")}`.toLowerCase();
-      const selected = selectedRepositories(id, state);
+      const selected = validationRepositories(id, state, dir);
       const mandatoryService = state.coupling === "coupled" || selected.length > 1 ||
         ["cross-repo-contract", "integration", "live", "queue", "resilience"]
           .some((capability) => v2Capabilities.has(capability)) ||
@@ -362,7 +370,7 @@ export function createChangeValidationRuntime({
       }
     }
 
-    const repositories = new Map(selectedRepositories(id, state)
+    const repositories = new Map(validationRepositories(id, state, dir)
       .map((repository) => [repository.id, repository]));
     const roles = new Set([
       "requirement", "backlog", "architecture", "contract", "composition-root",
@@ -596,7 +604,7 @@ export function createChangeValidationRuntime({
 
     const claims = evidence(id, dir).claims;
     const claimById = new Map(claims.map((claim) => [claim.id, claim]));
-    const selectedRepositoryIds = new Set(selectedRepositories(id, state)
+    const selectedRepositoryIds = new Set(validationRepositories(id, state, dir)
       .map((repository) => repository.id));
     for (const claim of claims) {
       if (!["low", "medium", "high"].includes(claim.impact || ""))
@@ -676,7 +684,7 @@ export function createChangeValidationRuntime({
         fail(`task '${task.id}' references claim(s) outside repository '${metadata.repository}': ${outOfScopeClaims.join(", ")}`);
     }
 
-    const selected = selectedRepositories(id, state);
+    const selected = validationRepositories(id, state, dir);
     if (selected.length > 1) {
       const unscopedTasks = parsedTasks.filter((task) =>
         !/\[repo:[a-z0-9-]+\]/i.test(task.text));
