@@ -1,0 +1,7 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** Derive one effective review-assurance posture from normalized policy and expose it through doctor plus change validation without changing readiness semantics [claims:review-waiver-posture-visible,review-assurance-output-truthful] [repo:root] [kind:implementation] [paths:.claude/harness/foundation.mjs,.claude/harness/runtime/core/runtime-environment.mjs,.claude/harness/runtime/core/diagnostics-runtime.mjs,.claude/harness/runtime/workflow/change-validation.mjs] — verify: `node --test .claude/harness/tests/workflow-policy.test.mjs && sh .claude/tests/harness/run-harness-tests.sh change-policy`
+- [x] **T002** Document the difference between risk-tiered routing and committed assurance waivers without changing project defaults [claims:review-waiver-posture-visible] [repo:root] [kind:docs] [paths:README.md,README.th.md,.claude/harness/EVIDENCE.md] [depends:T001] — verify: `sh .claude/tests/docs/run-doc-consistency.sh`
+- [x] **T003** Add deterministic human and JSON contracts for self, single-model, required, and mixed review postures at both decision points [claims:review-waiver-posture-visible,review-assurance-output-truthful] [repo:root] [kind:tests] [paths:.claude/harness/tests/workflow-policy.test.mjs,.claude/tests/harness/contracts/change-policy.sh,.claude/tests/docs/run-doc-consistency.sh,.claude/tests/harness/run-review-assurance-tests.sh] [depends:T001,T002] — verify: `sh .claude/tests/harness/run-review-assurance-tests.sh`

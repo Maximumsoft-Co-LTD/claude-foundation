@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "review-waiver-posture-visible",
+      "scenario": "Doctor and change validation name committed self-review and single-model waivers before Prove without changing readiness",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "review-assurance-output-truthful",
+      "scenario": "Human and JSON output derive the same independence and diversity posture as review receipt policy",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    }
+  ]
+}

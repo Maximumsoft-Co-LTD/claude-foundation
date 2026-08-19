@@ -651,13 +651,16 @@ task and review packets, 12 KiB repository packets, and a 16 KiB global packet;
 tokens and 100/200 requests. These are ceilings, not targets—ordinary small
 changes normally stay with one agent.
 
-The shipped policy permits self-review and treats model diversity as preferred,
-so a single Claude Code installation works without Codex or a distinct reviewer
-identity. Review receipts explicitly record both waivers. The configured
-reviewer remains Claude Code Opus at high reasoning effort in a read-only,
-ephemeral run, with Codex GPT-5.6 Sol available as the alternate reviewer. Teams
-that need separation of duties can commit `independence: "required"`; teams with
-both providers can additionally commit `diversity: "required"`.
+The shipped `foundation.json` commits `independence: "self"` and
+`diversity: "single-model"`. These are explicit assurance waivers: review may
+share the implementer's identity or session and may use the same model family.
+`doctor` and `change validate` name both waivers and their consequences; review
+receipts record them too. Risk-tiered routing decides how many review rounds a
+change receives, but does not restore reviewer independence or model diversity.
+The configured reviewer is Claude Code Opus at high reasoning effort in a
+read-only, ephemeral run, with Codex GPT-5.6 Sol available as the alternate.
+Commit `independence: "required"` for separation of duties and
+`diversity: "required"` for cross-family review.
 
 See [Configure `foundation.json`](https://claude-foundation.dev/docs/foundation-config/)
 for every field, validation range, and ready-to-use review profile.
@@ -712,7 +715,7 @@ claude-foundation change resolve <change-id> \
   --acceptance-required --acceptance-reason "<why a person must judge this>"
 ```
 
-Independent review is a separate boundary and is risk-tiered. Low risk gets one
+Review routing is a separate boundary and is risk-tiered. Low risk gets one
 full AI review. Medium risk gets one full review and, only after one correction
 batch, one fresh-session delta that must close the original finding IDs. High
 risk asks material decisions during intake and permits the same bounded

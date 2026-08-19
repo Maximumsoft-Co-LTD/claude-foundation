@@ -271,6 +271,24 @@ assert_file_contains "the English README documents acceptance" \
   "$README" "--acceptance-required"
 assert_file_contains "the Thai README documents acceptance" \
   "$README_TH" "--acceptance-required"
+assert_file_contains "the English README names the seeded independence waiver" \
+  "$README" 'independence: "self"'
+assert_file_contains "the English README names the seeded diversity waiver" \
+  "$README" 'diversity: "single-model"'
+assert_file_contains "the English README separates risk routing from assurance" \
+  "$README" "does not restore reviewer independence or model diversity"
+assert_file_contains "the Thai README names the seeded independence waiver" \
+  "$README_TH" 'independence: "self"'
+assert_file_contains "the Thai README names the seeded diversity waiver" \
+  "$README_TH" 'diversity: "single-model"'
+assert_file_contains "the Thai README separates risk routing from assurance" \
+  "$README_TH" \
+  "ไม่ได้ทำให้ reviewer กลับมาเป็นอิสระหรือทำให้เกิด model diversity"
+assert_file_contains "the evidence contract names the selected reviewer" \
+  "$ROOT/.claude/harness/EVIDENCE.md" "Claude Code Opus is the selected reviewer"
+assert_file_contains "the evidence contract separates routing from assurance" \
+  "$ROOT/.claude/harness/EVIDENCE.md" \
+  "risk-tiered routing does not restore either assurance axis"
 
 assert_file_contains "the artifacts page names the sole ledger" \
   "$ARTIFACTS" "sole implementation ledger"

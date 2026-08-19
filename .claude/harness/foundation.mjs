@@ -218,7 +218,8 @@ const {
   protocolDescriptor,
   commandExists,
   playwrightAvailability,
-  foundationPolicy
+  foundationPolicy,
+  reviewAssurancePosture
 } = createRuntimeEnvironment({
   root: ROOT,
   // During Foundation's own Build, state remains pinned to the control root
@@ -636,6 +637,7 @@ const changeValidationRuntime = createChangeValidationRuntime({
   providerConfig,
   resolvedAcceptance,
   reviewPolicy,
+  reviewAssurancePosture,
   policyCapabilities,
   policyCapabilityTrigger,
   changedSurfaceResolvable,
@@ -1173,6 +1175,7 @@ const {
   protocolDescriptor,
   repositoryCatalog,
   foundationPolicy,
+  reviewAssurancePosture,
   isolationInspection,
   openSpecCliStatus,
   loadRuntime,

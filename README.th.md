@@ -618,6 +618,14 @@ model family พร้อมกำหนด execution budget งาน inventory
 implementation ปกติใช้ standard และ architecture, security, migration หรือ
 independent review ใช้ deep โดยงาน risk สูงลดลงเป็น fast ไม่ได้
 
+`foundation.json` ที่มากับระบบ commit `independence: "self"` และ
+`diversity: "single-model"` ไว้ชัดเจน ทั้งสองค่าเป็น assurance waiver:
+review อาจใช้ identity หรือ session เดียวกับผู้แก้ และอาจใช้ model family เดียวกัน
+`doctor` กับ `change validate` จะแสดงชื่อ waiver พร้อมผลที่ตามมา และ review receipt
+จะบันทึกไว้ด้วย การแบ่งรอบ review ตามระดับความเสี่ยงกำหนดจำนวนรอบเท่านั้น ไม่ได้ทำให้ reviewer กลับมาเป็นอิสระหรือทำให้เกิด model diversity หากต้องการ separation
+of duties ให้ commit `independence: "required"`; หากต้องการ cross-family review
+ให้ commit `diversity: "required"`
+
 ## อะไรเป็น Source of Truth
 
 | ข้อมูล | Source of truth |
@@ -667,7 +675,7 @@ claude-foundation change resolve <change-id> \
   --acceptance-required --acceptance-reason "<ทำไมต้องให้คนตัดสิน>"
 ```
 
-Review อิสระเป็นคนละจุดและแบ่งตามความเสี่ยง งาน low ใช้ AI full review หนึ่งรอบ
+การ route review เป็นคนละจุดและแบ่งตามความเสี่ยง งาน low ใช้ AI full review หนึ่งรอบ
 งาน medium ใช้ full review หนึ่งรอบ และหลังแก้รวมหนึ่ง batch จึงใช้ fresh-session
 delta ได้อีกหนึ่งรอบเพื่อปิด finding IDs เดิม งาน high ถาม material risk ใน
 Decision Sheet ต้นทางและใช้ full/delta circuit แบบมีเพดาน โดยไม่มี human approval

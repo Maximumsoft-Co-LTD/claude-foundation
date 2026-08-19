@@ -64,6 +64,58 @@ unsupported_flag="$(node .claude/harness/foundation.mjs authority-record x \
 assert_contains "a rejected flag names the supported surface" "$unsupported_flag" \
   'supported: --request <value>, --response <value>'
 
+write_review_assurance_policy() {
+  printf '%s\n' \
+    '{"version":1,"review":{' \
+    "\"independence\":\"$1\",\"diversity\":\"$2\"" \
+    '}}' > foundation.json
+}
+
+write_review_assurance_policy self single-model
+seeded_doctor="$(node .claude/harness/foundation.mjs doctor --stage change || true)"
+assert_contains "doctor names the committed independence waiver" \
+  "$seeded_doctor" "reviewer-independence"
+assert_contains "doctor states that review may be non-independent" \
+  "$seeded_doctor" "review may be non-independent"
+assert_contains "doctor names the committed model-diversity waiver" \
+  "$seeded_doctor" "model-diversity"
+assert_contains "doctor states that review may use the same model family" \
+  "$seeded_doctor" "same model family"
+node .claude/harness/foundation.mjs doctor --stage change --json > \
+  "$TMP/seeded-review-assurance.json" || true
+assert_cmd_zero "doctor JSON binds both seeded waiver axes" \
+  jq -e '.checks[] | select(.name == "review-assurance") |
+    .posture.independence.waived == true and
+    .posture.diversity.waived == true and
+    .posture.waivers == ["reviewer-independence","model-diversity"]' \
+  "$TMP/seeded-review-assurance.json"
+
+write_review_assurance_policy required required
+required_doctor="$(node .claude/harness/foundation.mjs doctor --stage change || true)"
+assert_contains "doctor reports required independent review" \
+  "$required_doctor" "independent reviewer required"
+assert_contains "doctor reports required cross-family review" \
+  "$required_doctor" "cross-family model diversity required"
+assert_contains "required posture carries no waiver advisory" \
+  "$required_doctor" "no committed assurance waivers"
+
+write_review_assurance_policy self required
+node .claude/harness/foundation.mjs doctor --stage change --json > \
+  "$TMP/independence-only-waiver.json" || true
+assert_cmd_zero "doctor JSON names only the independence waiver" \
+  jq -e '.checks[] | select(.name == "review-assurance") |
+    .posture.waivers == ["reviewer-independence"] and
+    .posture.diversity.required == true' "$TMP/independence-only-waiver.json"
+
+write_review_assurance_policy required single-model
+node .claude/harness/foundation.mjs doctor --stage change --json > \
+  "$TMP/diversity-only-waiver.json" || true
+assert_cmd_zero "doctor JSON names only the diversity waiver" \
+  jq -e '.checks[] | select(.name == "review-assurance") |
+    .posture.waivers == ["model-diversity"] and
+    .posture.independence.required == true' "$TMP/diversity-only-waiver.json"
+rm -f foundation.json
+
 # Evidence bootstrap detects repository-owned commands without executing them,
 # previews changes by default, and writes only explicit high-confidence wiring.
 node .claude/harness/foundation.mjs new 'Bootstrap evidence providers' --rapid >/dev/null
@@ -427,6 +479,55 @@ printf '%s\n' \
   '' \
   '- [ ] **T001** Confine the apply projection — `.claude/harness/runtime/workflow/land-runtime.mjs` — verify: `node --test suite.mjs` [claims:land-surface-paths-validate-outcome] [paths:.claude/harness/runtime/workflow/land-runtime.mjs]' \
   > openspec/changes/land-surface-paths-validate/tasks.md
+preferred_validate="$({ node .claude/harness/foundation.mjs validate \
+  land-surface-paths-validate; } 2>&1)"
+assert_contains "required-no-waiver: low-risk change reports preferred diversity" \
+  "$preferred_validate" "cross-family model diversity preferred"
+assert_not_contains "required-no-waiver: preferred diversity is not reported as a waiver" \
+  "$preferred_validate" "model-diversity"
+node .claude/harness/foundation.mjs resolve land-surface-paths-validate \
+  --impact high --coupling isolated --security authentication \
+  --acceptance-not-required >/dev/null
+required_validate="$({ node .claude/harness/foundation.mjs validate \
+  land-surface-paths-validate; } 2>&1)"
+assert_contains "required-no-waiver: change validation reports required independent review" \
+  "$required_validate" "independent reviewer required"
+assert_contains "required-no-waiver: change validation reports required cross-family review" \
+  "$required_validate" "cross-family model diversity required"
+
+write_review_assurance_policy self single-model
+seeded_validate="$({ node .claude/harness/foundation.mjs validate \
+  land-surface-paths-validate; } 2>&1)"
+assert_contains "seeded-both-waivers: change validation names the independence waiver" \
+  "$seeded_validate" "reviewer-independence"
+assert_contains "change validation states the independence consequence" \
+  "$seeded_validate" "review may be non-independent"
+assert_contains "seeded-both-waivers: change validation names the diversity waiver" \
+  "$seeded_validate" "model-diversity"
+assert_contains "change validation states the diversity consequence" \
+  "$seeded_validate" "review may use the same model family"
+
+write_review_assurance_policy self required
+independence_validate="$({ node .claude/harness/foundation.mjs validate \
+  land-surface-paths-validate; } 2>&1)"
+assert_contains "single-property-waiver: change validation reports the independence-only waiver" \
+  "$independence_validate" "reviewer-independence"
+assert_not_contains "independence-only validation does not invent a diversity waiver" \
+  "$independence_validate" "model-diversity"
+assert_contains "independence-only validation keeps diversity required" \
+  "$independence_validate" "cross-family model diversity required"
+
+write_review_assurance_policy required single-model
+diversity_validate="$({ node .claude/harness/foundation.mjs validate \
+  land-surface-paths-validate; } 2>&1)"
+assert_contains "single-property-waiver: change validation reports the diversity-only waiver" \
+  "$diversity_validate" "model-diversity"
+assert_not_contains "diversity-only validation does not invent an independence waiver" \
+  "$diversity_validate" "reviewer-independence"
+assert_contains "diversity-only validation keeps independence required" \
+  "$diversity_validate" "independent reviewer required"
+rm -f foundation.json
+
 assert_cmd_zero "a task declaring the land runtime path is not a lifecycle gate" \
   node .claude/harness/foundation.mjs validate land-surface-paths-validate
 printf '%s\n' \

@@ -45,6 +45,7 @@ export function createChangeValidationRuntime({
   providerConfig,
   resolvedAcceptance,
   reviewPolicy,
+  reviewAssurancePosture = () => null,
   policyCapabilities,
   policyCapabilityTrigger,
   changedSurfaceResolvable,
@@ -769,8 +770,12 @@ export function createChangeValidationRuntime({
     // Guarded for the same reason as `advisoryCapabilities`: `reviewPolicy`
     // reads the changed surface, which a multi-repository change cannot resolve
     // until its sandboxes exist. A hint must never be able to fail validate.
+    let assurance = null;
     if (!options.quiet && changedSurfaceResolvable(id, state)) {
       const policy = reviewPolicy(id, state, evidence(id, dir));
+      assurance = reviewAssurancePosture(policy);
+      if (assurance)
+        console.error(`NOTE: review assurance posture: ${assurance.summary}`);
       if (policy.required && !policy.independenceWaived) {
         console.error("NOTE: this change requires review evidence; an independent reviewer must exist by Prove");
         console.error("  one-family project: select codex-sol or claude-opus and set review.diversity='single-model'; the reviewer still uses a distinct identity and fresh session");
@@ -778,6 +783,7 @@ export function createChangeValidationRuntime({
     }
     if (!options.quiet)
       console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
+    return { version: 1, changeId: id, reviewAssurance: assurance };
   }
 
   function requiredProviders(id) {

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        ".claude/tests/harness/run-review-assurance-tests.sh"
+      ],
+      "report": ".foundation/test-results/review-assurance.json",
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/review-assurance.json"
+      },
+      "minimumTests": 3,
+      "inputs": [
+        ".claude/harness/tests/workflow-policy.test.mjs",
+        ".claude/tests/harness/contracts/change-policy.sh",
+        ".claude/tests/docs/run-doc-consistency.sh",
+        ".claude/tests/harness/run-review-assurance-tests.sh"
+      ],
+      "timeoutMs": 600000,
+      "resources": [
+        "foundation-test-suite"
+      ],
+      "criticalCases": [
+        "seeded-both-waivers",
+        "required-no-waiver",
+        "single-property-waiver"
+      ]
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

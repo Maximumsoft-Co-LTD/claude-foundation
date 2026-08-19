@@ -1,0 +1,280 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-plan-rebase",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T08:10:54Z",
+    "decisions": [
+      {
+        "id": "visibility-not-default-migration",
+        "question": "Should this change alter the seeded review defaults or first expose their effective assurance?",
+        "answer": "Expose the current committed waivers before Prove and leave any default-policy migration to a separate compatibility decision.",
+        "source": "user-batch"
+      },
+      {
+        "id": "diagnostic-decision-points",
+        "question": "Should review-assurance visibility expand the models command or stay at workflow decision points?",
+        "answer": "Keep models limited to model tiers and expose waiver consequences through doctor and change validation.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "review-trust-boundary",
+      "operator-diagnostics"
+    ],
+    "rationale": "The change touches the review trust boundary and operator interpretation of assurance, while deliberately leaving evidence validity, fingerprints, and reviewer authority unchanged."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "doctor and change validation are the public decision points for effective review assurance.",
+    "paths": [
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+      }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "Human and JSON CLI output are the operator-facing contracts.",
+    "contracts": [
+      {
+        "repository": "root",
+        "path": "openspec/specs/review-policy/spec.md"
+      }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "The advisory appears whenever doctor or change validation reads a committed waiver; it does not activate a dormant execution path.",
+    "activatedPaths": [
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+      }
+    ],
+    "failureSemanticChanges": [
+      "Operators see an explicit reduced-assurance posture instead of inferring full separation from the risk-tiered label."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "The change affects local policy diagnostics and no external service.",
+    "rows": []
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "Doctor JSON is itself the stable diagnostic surface consumed by operators and automation.",
+    "rows": [
+      {
+        "interactionId": "local",
+        "correlation": "project root and normalized review policy",
+        "structuredEvents": "doctor JSON checks and change-validation guidance",
+        "sli": "diagnostic waiver fields equal the policy used to fingerprint review evidence",
+        "alert": "contract tests fail when human and JSON posture diverge",
+        "runbook": "inspect foundation.json review.independence and review.diversity, then rerun doctor",
+        "operatorQuestion": "Changing the committed waiver remains an explicit project policy decision outside this change"
+      }
+    ]
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "foundation.json",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "0c73c4f7882e8b1910c073bd0ed8acd1bbb71766a29b6a398e6f3f7236b4ca99"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/specs/review-policy/spec.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "fec6778189c1fe18f62306180633daaf3f6b6bb3bbd599b6927f714ee99422e5"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "9b1ae0df236d9f6acc6d97eade6b3882078ab82b014bb1d6860cfbf8c82a677d"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/runtime-environment.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "0c49e1ffc36714e6ee211ca9a60f14fd543f4fdbca48a16d8236d5f0769991c9"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/change-validation.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "948e3fcf6bbf959f1dcdfaa89dc221463addf451fc02d980909965beb8b64a04"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/foundation.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "5f58ece7eda11f41626d871a18d28f6d76c248addd1facfdb0d4a1e6e530a570"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/tests/workflow-policy.test.mjs",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "a8fa2f68178838e3ecc5c30be0ac697e07b48c8977435c206a11d0a3c95d70e2"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/contracts/change-policy.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "3914a3a61a9df2324265ae48788e1d03134e33f7c20e4b0786fdc7cc8ffe67c4"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/docs/run-doc-consistency.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "539d50f0c865e6f6ae4dfcff385754009a147fbb598d9ba086b47e500ccac78e"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-review-assurance-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "24f9d54e45582b722241005e806f082f17211cb87c3bdf9f3f116e3b0b5cf9b9"
+    },
+    {
+      "repository": "root",
+      "path": "package.json",
+      "role": "dependency-source",
+      "mode": "full",
+      "sha256": "3a71726a8bdd8e6b8f265377ec6453a73d604ca96f4c52a67f057134ea387e13"
+    },
+    {
+      "repository": "root",
+      "path": "README.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "f5932a8c526bfe8e74bcc235543ac728ae92581aab1d52753ded8111bda8e542"
+    },
+    {
+      "repository": "root",
+      "path": "README.th.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "95fce71d11455c1fd55af16494aa33320072215565c45f1d66045c8255d3da43"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/EVIDENCE.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "f149459d90323aad722b9d659d62a152de07e2d06a705234e6cb2f291bdb1ad7"
+    }
+  ],
+  "claims": [
+    {
+      "id": "review-waiver-posture-visible",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs"
+        },
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": "foundation.json",
+          "failure": "a committed waiver is omitted or presented as required separation"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "review-assurance-output-truthful",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/runtime-environment.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs",
+          "failure": "human and JSON output disagree with normalized review policy"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "seeded-both-waivers",
+      "claimIds": [
+        "review-waiver-posture-visible",
+        "review-assurance-output-truthful"
+      ],
+      "oracle": "real-wire"
+    },
+    {
+      "id": "required-no-waiver",
+      "claimIds": [
+        "review-assurance-output-truthful"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "single-property-waiver",
+      "claimIds": [
+        "review-assurance-output-truthful"
+      ],
+      "oracle": "contract-oracle"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "Current change validation explains required independent review only when independence is not waived, leaving the seeded waiver path without an equivalent consequence before Prove.",
+      "command": "sed -n '755,775p' .claude/harness/runtime/workflow/change-validation.mjs"
+    },
+    {
+      "fact": "The seeded policy commits self-review and single-model waivers while using the risk-tiered route.",
+      "command": "jq '{review,reviewPolicy:.workflow.reviewPolicy}' foundation.json"
+    },
+    {
+      "fact": "The canonical review policy already requires receipts to record waiver truthfully.",
+      "command": "sed -n '1,65p' openspec/specs/review-policy/spec.md"
+    }
+  ]
+}
