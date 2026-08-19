@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "capability": "test",
+      "adapter": "test-discovery",
+      "command": ["env", "FOUNDATION_RESULT_REPORT=.foundation/test-results/agent-dispatch.json", "node", ".claude/tests/harness/run-agent-dispatch-tests.mjs"],
+      "report": ".foundation/test-results/agent-dispatch.json",
+      "reportFormat": "json",
+      "minimum": 23,
+      "timeoutMs": 300000,
+      "resources": ["foundation-test-suite"],
+      "criticalCases": [
+        "dispatch-parallel-bound",
+        "dispatch-live-wait",
+        "dispatch-acquire-before-packet",
+        "dispatch-command-single-source"
+      ]
+    },
+    "compatibility": {
+      "capability": "compatibility",
+      "adapter": "command",
+      "command": ["node", "--test", ".claude/tests/harness/run-single-source-tests.mjs"],
+      "timeoutMs": 300000,
+      "resources": ["foundation-test-suite"]
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

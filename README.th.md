@@ -14,7 +14,7 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
-**Version 3.3.0** — runtime API 23, provider protocol 10 receipt ที่บันทึกด้วย
+**Version 3.3.0** — runtime API 24, provider protocol 10 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร
@@ -594,6 +594,12 @@ repository เดียวกันได้เฉพาะเมื่อ path,
 ไม่ทับกันอย่างพิสูจน์ได้ หาก scope ไม่ชัดจะกลับไป lock ทั้ง repository ตามเดิม
 เมื่อบาง branch ล้ม Prove จะรักษางานอิสระที่เสร็จแล้ว แต่ Land ยังต้องมี aggregate
 graph proof ที่ fresh และตรวจสถานะใหม่ก่อน mutation ของทุก remote wave
+
+ระหว่าง Build คำสั่ง `agents dispatch` จะแปลง graph ปัจจุบันและ live lease เป็น
+native-host action เพียงหนึ่งรายการ งานเล็กหรืองานที่ coupling กันยังอยู่ใน
+parent session ส่วนงานอิสระจะคืน bounded spawn group โดย host ต้อง acquire lease
+และสร้าง task packet ใหม่ก่อน spawn Foundation ไม่เรียกโมเดลเอง และจะคืน `wait`
+แทนการสร้าง worker ซ้ำเมื่อ host restart ขณะที่ lease เดิมยังไม่หมดอายุ
 
 ## Foundation จำกัด Scope ของ Agent และ Skill อย่างไร
 

@@ -95,6 +95,7 @@ For a selected multi-repository topology:
 claude-foundation repos <change>
 claude-foundation sandbox create <change> --all
 claude-foundation agents plan <change> [--group <n>] [--pretty]
+claude-foundation agents dispatch <change> [--pretty]
 claude-foundation packet <change> --task <task-id> [--pretty]
 ```
 
@@ -105,6 +106,14 @@ edge schemas are checked before dispatch. Scoped path, contract, and resource
 leases are acquired all-or-none and carry a fencing generation, so a late
 worker result cannot advance after takeover. Actual worktree writes, rather
 than worker-reported paths alone, must remain inside the granted scope.
+
+The host drives Build by repeatedly calling `agents dispatch`. A
+`run-in-session` action preserves the main-session path. For `spawn-group`, the
+host acquires the returned leases, regenerates each leased packet, spawns the
+native workers without replaying the parent transcript, waits for the complete
+group, releases observed results, and calls dispatch again. An unexpired lease
+returns `wait`; the harness does not infer that another host's worker died and
+does not invoke a model itself.
 
 The full plan is persisted while stdout stays below 4 KiB; workers
 receive only an 8 KiB task packet. A one-repository change with at most two

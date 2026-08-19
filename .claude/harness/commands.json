@@ -194,6 +194,14 @@
       "description": "Plan dispatch only for independently verifiable parallel work."
     },
     {
+      "name": "agents dispatch",
+      "usage": "agents dispatch <change> [--pretty]",
+      "audience": "host",
+      "kind": "write",
+      "idempotent": true,
+      "description": "Return the next graph- and lease-bound native-host Build action without invoking a model."
+    },
+    {
       "name": "evidence detect",
       "usage": "evidence detect <change>",
       "audience": "conditional",
@@ -636,6 +644,7 @@
     "repos",
     "models",
     "agent-plan",
+    "agent-dispatch",
     "agent-task",
     "agent-acquire",
     "agent-release",

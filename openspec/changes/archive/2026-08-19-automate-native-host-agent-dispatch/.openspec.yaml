@@ -1,0 +1,4 @@
+schema: foundation-standard
+created: 2026-08-19
+goal: Make parallel Build execution automatic, context-bounded, resumable, and
+  host-portable while preserving single-agent quality.

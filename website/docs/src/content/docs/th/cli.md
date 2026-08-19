@@ -105,7 +105,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | Pin | v3.3.0 |
 |---|---|
 | runtime | 3.3.0 |
-| runtime API | 23 |
+| runtime API | 24 |
 | provider protocol | 8 |
 | evidence schema | 1, 2 |
 | packet schema | 6 |

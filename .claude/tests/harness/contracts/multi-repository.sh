@@ -159,6 +159,13 @@ if [ "$(printf '%s' "$agent_plan" | wc -c | tr -d ' ')" -le 4096 ]; then
 else
   fail "agent plan summary stays within 4 KiB"
 fi
+dispatch_plan="$(node .claude/harness/foundation.mjs agent-dispatch cross-repository-profile)"
+assert_contains "native-host dispatch offers the independent group" \
+  "$dispatch_plan" '"action":"spawn-group"'
+assert_contains "native-host dispatch excludes the parent transcript" \
+  "$dispatch_plan" '"parentTranscript":"excluded"'
+assert_contains "native-host dispatch requires lease before packet" \
+  "$dispatch_plan" '"acquireBeforePacket":true'
 agent_task="$(node .claude/harness/foundation.mjs agent-task \
   cross-repository-profile T001)"
 assert_contains "inventory task packet routes to Haiku tier" \
@@ -179,6 +186,11 @@ assert_contains "contract task packet routes to Opus tier" \
 assert_cmd_zero "task resource lease is acquired atomically" \
   node .claude/harness/foundation.mjs agent-acquire \
   cross-repository-profile T001 --owner agent-a
+live_dispatch="$(node .claude/harness/foundation.mjs agent-dispatch cross-repository-profile)"
+assert_contains "native-host dispatch waits instead of duplicating a live worker" \
+  "$live_dispatch" '"action":"wait"'
+assert_contains "native-host dispatch preserves the live worker owner" \
+  "$live_dispatch" '"owner":"agent-a"'
 if node .claude/harness/foundation.mjs agent-acquire \
   cross-repository-profile T001 --owner agent-b >/dev/null 2>&1; then
   fail "task resource lease blocks a competing agent"

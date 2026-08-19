@@ -73,6 +73,8 @@ for (const command of publicCommands)
       new RegExp(`(?:^|\\s)(?:[\\w.-]+\\|)*${token}(?:\\|[\\w.-]+)*\\)`, "m").test(cli) ||
         cli.includes(`"${token}"`),
       `commands.json advertises '${command.name}' but cli.sh has no route for '${token}'`));
+check(() => assert.match(cli, /^\s*dispatch\)/m,
+  "commands.json advertises host command 'agents dispatch' but cli.sh has no dispatch route"));
 
 // --- the four runtime-API pins ----------------------------------------------
 

@@ -1,0 +1,155 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-automatic-parallel-host-dispatch",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T00:00:00.000+07:00",
+    "decisions": [
+      {
+        "id": "host-owns-native-spawn",
+        "question": "Should the harness invoke models or should the native host spawn workers?",
+        "answer": "The harness returns deterministic bounded dispatch authority; the authenticated native host performs spawn, wait, cancellation, and context ownership.",
+        "source": "user-batch"
+      },
+      {
+        "id": "bounded-worker-context",
+        "question": "What context should a spawned worker receive?",
+        "answer": "A worker receives the fresh leased task packet and repository state, not the complete parent conversation transcript.",
+        "source": "user-batch"
+      },
+      {
+        "id": "quality-first-rollout",
+        "question": "How should parallel execution trade speed against quality?",
+        "answer": "Preserve single-agent execution for coupled work, bound parallel groups with the existing policy, and retain aggregate proof as the quality gate.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["concurrency", "public-cli-contract", "host-worker-authority"],
+    "rationale": "The command is read-only and additive, but a wrong dispatch action can duplicate live writers or give a worker stale authority."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "cli.sh routes the public agents command and foundation.mjs composes the runtime decision.",
+    "paths": [
+      { "repository": "root", "path": "cli.sh" },
+      { "repository": "root", "path": ".claude/harness/foundation.mjs" }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "commands.json and cli-router.mjs define the machine-visible command surface consumed by native hosts.",
+    "contracts": [
+      { "repository": "root", "path": ".claude/harness/commands.json" },
+      { "repository": "root", "path": ".claude/harness/runtime/core/cli-router.mjs" }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "The new route is additive and becomes active only when a host calls agents dispatch or follows the updated Build instruction.",
+    "activatedPaths": [
+      { "repository": "root", "path": "cli.sh" },
+      { "repository": "root", "path": ".claude/commands/build.md" }
+    ],
+    "failureSemanticChanges": [
+      "A live task lease now yields an explicit wait action instead of leaving duplicate-spawn avoidance to host interpretation."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "The harness does not invoke a model, but its dispatch contract coordinates a native host parent with independently running worker sessions.",
+    "rows": [
+      {
+        "id": "native-host-worker",
+        "owner": "authenticated native host",
+        "producer": "Foundation agents dispatch decision",
+        "consumer": "native host worker primitive",
+        "contract": "graph-bound acquire command, leased task packet, and matching release command",
+        "delivery": "host-native spawn and join; no model child process is launched by Foundation",
+        "timeoutRetry": "lease expiry and explicit host recovery; no automatic live-lease takeover",
+        "idempotency": "current plan identity plus active task lease and fencing generation",
+        "ordering": "planner dependency groups and all-or-none scoped leases",
+        "consistency": "actual workspace writes and lease authority are revalidated on release",
+        "rollout": "additive host command consumed by updated Build instructions",
+        "rollback": "return to agents plan and manual host orchestration while retaining existing leases and results"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "The returned action exposes active owner, task, attempt, and expiry; existing operation telemetry records the Build command.",
+    "rows": [
+      {
+        "interactionId": "native-host-worker",
+        "correlation": "change ID, graph revision, plan digest, task ID, owner, lease ID, fencing generation, and execution attempt",
+        "structuredEvents": "dispatch action JSON plus existing lease acquisition and release records",
+        "sli": "no spawn-group is returned while an unexpired task lease exists and no returned group exceeds maxParallelAgents",
+        "alert": "the CLI fails closed with blocked reasons or returns wait with the live owner and expiry",
+        "runbook": "wait for the named worker, release an expired lease through existing recovery, then call agents dispatch again",
+        "operatorQuestion": "Only takeover of a still-live foreign lease requires an explicit operator decision"
+      }
+    ]
+  },
+  "readSet": [
+    { "repository": "root", "path": "openspec/changes/automate-native-host-agent-dispatch/proposal.md", "role": "requirement", "mode": "full", "sha256": "500fbd9dfdc860cc46017c50cb76e2fc00edabf1cfb2d5ce1fd1ab0493f92c4c" },
+    { "repository": "root", "path": ".claude/harness/AGENT.md", "role": "runtime-path", "mode": "full", "sha256": "6ef1bca9ca3d53f07caa361053640f73f28cf23ad2e7bbba86dc4909de2d6bf7" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/agent-planning.mjs", "role": "production-path", "mode": "full", "sha256": "4cb35fe4f6b661367a3cbd101559bda6b46ac4760e130ff006cde6ab48f51da3" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/lease-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "3d22071ab5795bf6e1707ddde695a46729808b4a040b11fd15e1fdf4c02a91c6" },
+    { "repository": "root", "path": ".claude/harness/runtime/workflow/packet-runtime.mjs", "role": "production-path", "mode": "full", "sha256": "bab920b86696e7bdfb058485d5b99f71ed6d5fb22d73786cded66c9fc8fa7b3e" },
+    { "repository": "root", "path": ".claude/harness/runtime/core/cli-router.mjs", "role": "contract", "mode": "full", "sha256": "c9daa8e8b454639066b8a3cde6914ce28949e7fb6c1868142e09dde10c8505b0" },
+    { "repository": "root", "path": ".claude/harness/runtime/core/lifecycle-phase.mjs", "role": "runtime-path", "mode": "full", "sha256": "baea7b2e93ae5eaa0a9d84d83fe42071fe01d581a7f96281760d14645ea78411" },
+    { "repository": "root", "path": ".claude/harness/foundation.mjs", "role": "runtime-path", "mode": "full", "sha256": "83768f5a1e32fc660e09548abc49a2bb38075a0d93a9a30df25b93453da850b1" },
+    { "repository": "root", "path": "cli.sh", "role": "production-path", "mode": "full", "sha256": "508ae8e07502a4a938ef7111975f3e2fc7f9f7c6da49dcc4585a1b95a25243de" },
+    { "repository": "root", "path": ".claude/commands/build.md", "role": "production-path", "mode": "full", "sha256": "e4bed13eb6d8a84d5bc8728b49b695266475bf67ed8aadf484d491f3aa147929" },
+    { "repository": "root", "path": ".claude/harness/commands.json", "role": "contract", "mode": "full", "sha256": "421d3558df0f721edb84ae996cab2626f53118345f4dd5afb8bb54538093de9c" },
+    { "repository": "root", "path": "foundation.json", "role": "contract", "mode": "full", "sha256": "0c73c4f7882e8b1910c073bd0ed8acd1bbb71766a29b6a398e6f3f7236b4ca99" },
+    { "repository": "root", "path": ".claude/harness/runtime/composition/bootstrap.mjs", "role": "composition-root", "mode": "full", "sha256": "e34abb7972c76ce5d5569dfd4aecf64b6e1e8b27e6a77d6daeb3f356b1f8a6c4" },
+    { "repository": "root", "path": ".claude/harness/tests/execution-graph.test.mjs", "role": "test-topology", "mode": "full", "sha256": "5b201e627b703aa20a8e7f1dcdfbb3126fe3e9822368e007b5b9d27dd551b9b0" },
+    { "repository": "root", "path": "package.json", "role": "dependency-source", "mode": "full", "sha256": "3a71726a8bdd8e6b8f265377ec6453a73d604ca96f4c52a67f057134ea387e13" },
+    { "repository": "root", "path": ".claude/harness/runtime/core/graph-execution.mjs", "role": "architecture", "mode": "full", "sha256": "a57fc754c1d88c76607d422f712378f5768e43d777ca0ca71f751cd299a0d7ca" }
+  ],
+  "claims": [
+    {
+      "id": "deterministic-host-dispatch",
+      "productionPath": [{ "repository": "root", "path": ".claude/harness/runtime/workflow/agent-planning.mjs" }],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/workflow/agent-planning.mjs", "failure": "plan action, group selection, or concurrency ceiling is wrong" }],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "live-worker-resume",
+      "productionPath": [{ "repository": "root", "path": ".claude/harness/runtime/workflow/agent-planning.mjs" }],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/workflow/lease-runtime.mjs", "failure": "an unexpired worker is omitted or a second group is offered" }],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "bounded-worker-context",
+      "productionPath": [{ "repository": "root", "path": ".claude/commands/build.md" }],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/workflow/packet-runtime.mjs", "failure": "packet is generated before lease or parent transcript replay is requested" }],
+      "evidenceClass": ["test", "review"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "dispatch-cli-compatibility",
+      "productionPath": [{ "repository": "root", "path": "cli.sh" }],
+      "failurePaths": [{ "repository": "root", "path": ".claude/harness/runtime/core/lifecycle-phase.mjs", "failure": "CLI, runtime registry, phase attribution, or protocol pin drifts" }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    { "id": "dispatch-parallel-bound", "claimIds": ["deterministic-host-dispatch"], "oracle": "contract-oracle" },
+    { "id": "dispatch-live-wait", "claimIds": ["live-worker-resume"], "oracle": "failure-path" },
+    { "id": "dispatch-acquire-before-packet", "claimIds": ["bounded-worker-context"], "oracle": "contract-oracle" },
+    { "id": "dispatch-command-single-source", "claimIds": ["dispatch-cli-compatibility"], "oracle": "real-wire" }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    { "fact": "The current planner already emits dependency/resource-safe groups and maxParallelAgents.", "command": "node --test .claude/harness/tests/execution-graph.test.mjs" }
+  ]
+}

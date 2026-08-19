@@ -16,6 +16,7 @@ function fixture(options = {}) {
   let finalizations = 0;
   let blocked = 0;
   let closures = 0;
+  const closureWorkspaceHashes = [];
   let proof = null;
   const requests = [...(options.requests || [])];
   const now = () => "2026-08-14T00:00:00.000Z";
@@ -101,8 +102,9 @@ function fixture(options = {}) {
     providerWorkspaceHash: (_id, provider, fallback) =>
       options.providerHashes?.[provider] || fallback,
     deliveredAiAttempts: () => options.deliveredAiAttempts || [],
-    recordDeterministicReviewClosure: () => {
+    recordDeterministicReviewClosure: (_id, _provider, closureWorkspaceHash) => {
       closures += 1;
+      closureWorkspaceHashes.push(closureWorkspaceHash);
       const result = options.closureResult || null;
       if (result?.closed) phase = "ready";
       return result;
@@ -137,6 +139,7 @@ function fixture(options = {}) {
       phase = "review";
     },
     counters: () => ({ executions, finalizations, blocked, closures }),
+    closureWorkspaceHashes: () => [...closureWorkspaceHashes],
     state: () => state
   };
 }
@@ -414,6 +417,7 @@ assert.equal(failedProvider.counters().executions, 0,
 process.exitCode = 0;
 const finalDeltaClosure = fixture({
   executionNeeded: false,
+  providerHashes: { review: "review-provider-workspace" },
   deliveredAiAttempts: [
     { resultStatus: "pass" },
     { resultStatus: "fail" }
@@ -428,6 +432,9 @@ const closedDeltaResult = await quiet(() =>
   finalDeltaClosure.runtime.proofAdvance("change-a"));
 assert.equal(closedDeltaResult.status, "PASS");
 assert.equal(finalDeltaClosure.counters().closures, 1);
+assert.deepEqual(finalDeltaClosure.closureWorkspaceHashes(),
+  ["review-provider-workspace"],
+  "deterministic closure must bind the review provider hash, not the global workspace hash");
 assert.equal(finalDeltaClosure.requests.length, 0,
   "current critical-case evidence closes the final AI delta without a third review request");
 

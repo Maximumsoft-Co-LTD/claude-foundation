@@ -38,6 +38,7 @@ import {
 import { createProcessRuntime } from "./runtime/core/process-runtime.mjs";
 import { createInstructionRecorder } from "./runtime/core/instruction-recorder.mjs";
 import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
+import { createAgentDispatchRuntime } from "./runtime/workflow/agent-dispatch.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
 import {
@@ -90,7 +91,7 @@ import {
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 
 const VERSION = "3.3.0";
-const RUNTIME_API_VERSION = "23";
+const RUNTIME_API_VERSION = "24";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -983,6 +984,16 @@ const {
   fail: die
 });
 const {
+  showDispatch: showAgentDispatch
+} = createAgentDispatchRuntime({
+  agentPlanValue,
+  activeChangeLeases,
+  stableHash,
+  policy: foundationPolicy,
+  serializedJson,
+  fail: die
+});
+const {
   activeWorkRecovery,
   changedSurfaceIssues,
   codeChangeRecovery,
@@ -1495,7 +1506,7 @@ operationName = command || null;
 const namedChange = (value) =>
   typeof value === "string" && !value.startsWith("-") ? value : null;
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
-  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
 operationStatusAtStart = operationChangeId
   ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
@@ -1532,6 +1543,7 @@ await routeRuntimeCommand(command, values, {
   showRepositories,
   foundationPolicy,
   showAgentPlan,
+  showAgentDispatch,
   showAgentTask,
   acquireAgentLease,
   releaseAgentLease,

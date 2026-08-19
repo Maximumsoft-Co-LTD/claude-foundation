@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "deterministic-host-dispatch",
+      "scenario": "Dispatch returns one graph-bound action for single, parallel, blocked, and complete Build states",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "live-worker-resume",
+      "scenario": "An unexpired task lease returns wait and cannot produce a duplicate spawn recommendation",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "bounded-worker-context",
+      "scenario": "Every spawned worker is instructed to acquire authority and consume only its regenerated task packet",
+      "impact": "high",
+      "capabilities": ["test", "review"]
+    },
+    {
+      "id": "dispatch-cli-compatibility",
+      "scenario": "The additive agents dispatch command is routed consistently through CLI, runtime, telemetry phase, help, and installers",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

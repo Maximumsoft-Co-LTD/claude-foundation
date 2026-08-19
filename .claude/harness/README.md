@@ -112,6 +112,7 @@ claude-foundation doctor --stage prove --change <change>
 | `repos [change]` | Shows discovered topology, drift, and change selection | Setting up or diagnosing multi-repo work |
 | `models` | Shows portable model-tier mappings | Reviewing cost/quality routing |
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
+| `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Driving the resumable Build loop |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
@@ -212,6 +213,14 @@ summary, or one group selected with `--group`. `packet --task` emits only the
 chosen task's claims, files, providers, and model. A small one-repository change
 recommends one agent. The plan is advice and bounded authority for the native
 host; the harness does not invoke a model itself.
+
+`agents dispatch` derives the next host action from that plan plus current task
+leases. It returns `run-in-session`, `spawn-group`, `wait`, `blocked`, or
+`build-complete`. A live lease always returns `wait`, so a restarted host does
+not duplicate a worker it cannot prove abandoned. For a spawn group, the host
+acquires each lease, regenerates the now-leased task packet, and gives the
+native worker only that packet and repository state. Foundation still never
+starts a model process itself.
 
 JSON output is compact by default and `--pretty` is inspection-only. Plan
 schema 4 compiles a deterministic task/provider/repository/Land graph, resumes dependencies satisfied by completed tasks, reports

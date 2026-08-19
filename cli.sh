@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=23
+EXPECTED_RUNTIME_API=24
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -71,7 +71,7 @@ run_runtime() {
   local phase=""
   case "${1:-}" in
     new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
-    sandbox|agent-plan|agent-acquire|agent-release) phase="build" ;;
+    sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra) phase="prove" ;;
     handoff-status|handoff-packet|handoff-record|land-check|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
@@ -242,6 +242,9 @@ case "${1:-}" in
       plan)
         need_arg "agents plan" "${1:-}"
         run_runtime write agent-plan "$@" ;;
+      dispatch)
+        need_arg "agents dispatch" "${1:-}"
+        run_runtime write agent-dispatch "$@" ;;
       task)
         [ "$#" -ge 2 ] || fail "agents task requires <change> <task>"
         warn "'agents task' is deprecated; use 'packet <change> --task <task>'"
@@ -253,7 +256,7 @@ case "${1:-}" in
       release)
         [ "$#" -ge 3 ] || fail "agents release requires <change> <task> --owner <agent-id>"
         run_runtime write agent-release "$@" ;;
-      *) fail "agents requires 'plan', 'task', 'acquire', or 'release'" ;;
+      *) fail "agents requires 'plan', 'dispatch', 'task', 'acquire', or 'release'" ;;
     esac ;;
   doctor)
     shift

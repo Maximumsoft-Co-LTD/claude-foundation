@@ -747,7 +747,8 @@ export function createProofExecutionRuntime({
     if (delivered.length >= 2 && delivered.at(-1)?.resultStatus === "fail" &&
         boundedReviewProviders.length) {
       const closures = boundedReviewProviders.map((provider) =>
-        recordDeterministicReviewClosure(id, provider, readiness.workspaceHash))
+        recordDeterministicReviewClosure(id, provider,
+          currentProviderHash(id, provider, readiness.workspaceHash)))
         .filter(Boolean);
       const blockedClosures = closures.filter((row) => !row.closed);
       if (blockedClosures.length) {

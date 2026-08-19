@@ -493,6 +493,7 @@ Commands:
   repos [change]
   models
   agent-plan <change> [--group <n>] [--full] [--pretty]
+  agent-dispatch <change> [--pretty]
   agent-task <change> <task> [--pretty]
   agent-acquire <change> <task> --owner <agent-id>
   agent-release <change> <task> --owner <agent-id> [--force] [--decision-ref <ref>]

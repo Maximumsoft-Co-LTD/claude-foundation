@@ -15,7 +15,7 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
-**Version 3.3.0** — runtime API 23, provider protocol 10. Receipts recorded by
+**Version 3.3.0** — runtime API 24, provider protocol 10. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 
 ## How the AI and harness divide responsibility
@@ -608,6 +608,12 @@ scopes are provably disjoint. Ambiguous scope remains repository-exclusive.
 Prove preserves completed independent branches after a failure, but Land still
 requires fresh aggregate graph proof and revalidates every remote wave before
 mutation.
+
+During Build, `agents dispatch` turns the current graph and live leases into one
+native-host action. Small or coupled work stays in the parent session;
+independent work returns a bounded spawn group. The host acquires each lease and
+regenerates the task packet before spawning, while Foundation remains model-free
+and returns `wait` rather than duplicating a live worker after a host restart.
 
 ## How Foundation scopes agents and skills
 
