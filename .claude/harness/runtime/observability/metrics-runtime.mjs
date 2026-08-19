@@ -2,6 +2,53 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
 
+export function usageAvailability(events = [], phaseContextRows = [], changeId = "<change>") {
+  if (events.length) return {
+    status: "measured",
+    reason: null,
+    correlatedHosts: [...new Set(events.map((event) => {
+      const source = String(event.source || "").toLowerCase();
+      if (source === "codex") return "codex";
+      if (source === "claude" || source === "claude-transcript") return "claude-code";
+      if (source === "generic" || source === "otel") return "generic-host";
+      if (source !== "host-execution-contract") return null;
+      const host = String(event.agentId || "").toLowerCase();
+      if (host.includes("codex")) return "codex";
+      if (host.includes("claude")) return "claude-code";
+      return "generic-host";
+    })
+      .filter(Boolean))].sort(),
+    recoveryActions: []
+  };
+  const correlatedHosts = [...new Set(phaseContextRows
+    .filter((row) => row.sessionId)
+    .map((row) => row.telemetryHost || "unknown"))].sort();
+  const recoveryActions = [];
+  if (correlatedHosts.includes("codex")) recoveryActions.push({
+    type: "import-codex-events",
+    command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format codex`
+  });
+  if (correlatedHosts.includes("claude-code")) recoveryActions.push({
+    type: "sync-claude-transcript",
+    command: `claude-foundation telemetry sync ${changeId} [transcript.jsonl]`
+  });
+  recoveryActions.push({
+    type: "import-host-execution",
+    command: `claude-foundation telemetry host-import ${changeId} <result.json>`
+  });
+  if (!correlatedHosts.includes("codex")) recoveryActions.push({
+    type: "import-generic-events",
+    command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
+  });
+  return {
+    status: "unavailable",
+    reason: correlatedHosts.length
+      ? "correlation-without-usage-events" : "host-telemetry-not-ingested",
+    correlatedHosts,
+    recoveryActions
+  };
+}
+
 export function createMetricsRuntime({
   logs,
   receipts,
@@ -318,6 +365,7 @@ export function createMetricsRuntime({
       // known, but they cannot establish how many model requests occurred.
       requests: events.length ? events.length : null,
       usageMeasurement: events.length ? "host-events" : "unavailable",
+      usageAvailability: usageAvailability(events, phaseContextRows, id),
       inputTokens: sumKnown(events, "inputTokens"),
       outputTokens: sumKnown(events, "outputTokens"),
       cacheCreationTokens: sumKnown(events, "cacheCreationTokens"),

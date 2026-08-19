@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", ".claude/tests/harness/run-actionable-validation-telemetry-tests.sh"],
+      "report": ".foundation/test-results/actionable-validation-telemetry.json",
+      "reportFormat": "json",
+      "minimum": 6,
+      "timeoutMs": 300000,
+      "env": {"FOUNDATION_RESULT_REPORT": ".foundation/test-results/actionable-validation-telemetry.json"},
+      "criticalCases": ["claim-errors-together", "task-errors-together", "codex-unavailable", "uncorrelated-unavailable", "measured-usage-compatible"]
+    },
+    "review": {"adapter": "external"}
+  },
+  "services": {}
+}

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23206069'/%3E%3Cpath d='M14 33h11l5-16 7 30 5-14h8' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <title>Actionable Validation &amp; Telemetry · Foundation</title>
+  <style>
+    :root{--bg:#f3f5f1;--panel:#fff;--ink:#17211d;--muted:#68736d;--line:#dbe1dc;--brand:#206069;--brand2:#dcecee;--pass:#147650;--pass-bg:#e4f5ec;--warn:#8d5c11;--warn-bg:#fff2d4;--stop:#a33d39;--stop-bg:#fde9e7;--blue:#2d5f91;--blue-bg:#e8f1fa;--shadow:0 12px 36px rgba(26,55,48,.08)}
+    @media(prefers-color-scheme:dark){:root{--bg:#0f1513;--panel:#171e1b;--ink:#edf3ef;--muted:#a6b2ab;--line:#2c3832;--brand:#83cbd2;--brand2:#19343a;--pass:#7bd4ab;--pass-bg:#173b2c;--warn:#efc46d;--warn-bg:#3b2f18;--stop:#f19b96;--stop-bg:#482321;--blue:#91c4ef;--blue-bg:#183148;--shadow:none}}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;line-height:1.56}main{max-width:1480px;margin:auto;padding:36px 28px 64px}.hero{padding:38px;border:1px solid var(--line);border-radius:25px;background:linear-gradient(135deg,var(--panel),color-mix(in srgb,var(--brand2) 52%,var(--panel)));box-shadow:var(--shadow)}.eyebrow{font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brand);font-weight:850}.hero h1{font-size:clamp(2rem,5vw,4.4rem);line-height:1.02;letter-spacing:-.05em;margin:.45rem 0 1rem;max-width:1050px}.lede{font-size:1.08rem;max-width:930px;color:var(--muted)}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.chip,.tag{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:.77rem;font-weight:780;background:var(--panel)}.pass{color:var(--pass);background:var(--pass-bg);border-color:color-mix(in srgb,var(--pass) 28%,var(--line))}.warn{color:var(--warn);background:var(--warn-bg)}.stop{color:var(--stop);background:var(--stop-bg)}.info{color:var(--blue);background:var(--blue-bg)}section{margin-top:34px}h2{font-size:1.42rem;letter-spacing:-.025em;margin:0 0 14px}h3{font-size:1rem;margin:0 0 8px}.sub,.source{color:var(--muted);font-size:.86rem}.source{margin-top:10px}.grid{display:grid;gap:12px}.kpis{grid-template-columns:repeat(5,minmax(0,1fr))}.cards3{grid-template-columns:repeat(3,minmax(0,1fr))}.cards2{grid-template-columns:repeat(2,minmax(0,1fr))}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:17px;min-width:0}.kpi .label{font-size:.72rem;text-transform:uppercase;letter-spacing:.075em;color:var(--muted);font-weight:850}.kpi .value{font-size:1.62rem;font-weight:880;letter-spacing:-.04em;margin:5px 0}.kpi .sub{line-height:1.35}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:var(--panel)}table{width:100%;border-collapse:collapse;min-width:860px;font-size:.87rem}th,td{padding:12px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{font-size:.72rem;text-transform:uppercase;letter-spacing:.055em;color:var(--muted);background:color-mix(in srgb,var(--panel) 84%,var(--brand2));position:sticky;top:0}tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;overflow-wrap:anywhere}.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;height:66px}.phase{border-radius:13px;padding:10px;color:#fff;display:flex;flex-direction:column;justify-content:space-between;min-width:0}.phase span{font-size:.71rem;opacity:.9}.phase strong{font-size:.92rem}.change{background:#476d82}.build{background:#327069}.prove{background:#5a4b84}.land{background:#2c7754}.bar{height:10px;border-radius:99px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--brand);border-radius:inherit}.callout{border-left:4px solid var(--brand)}.finding{border-left-color:var(--warn)}.open{border-left-color:var(--stop)}ol{padding-left:1.4rem}li+li{margin-top:7px}.file{max-width:440px;overflow-wrap:anywhere}.muted{color:var(--muted)}footer{margin-top:38px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.82rem;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+    @media(max-width:1050px){.kpis{grid-template-columns:repeat(3,1fr)}.cards3{grid-template-columns:1fr}.timeline{grid-template-columns:1fr 1fr;height:auto}.phase{min-height:64px}}
+    @media(max-width:650px){main{padding:18px 14px 40px}.hero{padding:24px}.kpis,.cards2{grid-template-columns:1fr 1fr}.timeline{grid-template-columns:1fr}.hero h1{font-size:2.35rem}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div class="eyebrow">Foundation harness · รายงานรอบงาน</div>
+    <h1>Actionable Validation &amp; Telemetry</h1>
+    <p class="lede">รอบนี้ทำให้ validation รายงานข้อผิดพลาดอิสระหลายข้อพร้อมกัน และทำให้สถานะ usage ที่วัดไม่ได้บอกเหตุผลพร้อมเส้นทางกู้คืนที่รองรับจริง งานจบด้วย full review ที่พบข้อบกพร่อง, การแก้ไข, delta review ยืนยัน closure, proof ผ่าน และปิดงาน/เก็บเข้าคลัง (Land/archive) สำเร็จ</p>
+    <div class="chips">
+      <span class="chip pass">PASS · archived</span>
+      <span class="chip">aggregate-semantic-validation-failures-and-make-unavailable-host</span>
+      <span class="chip">foundation-standard · medium</span>
+      <span class="chip">เก็บเข้าคลัง 2026-08-20</span>
+      <span class="chip info">รอบถัดไป: ไม่มี active change</span>
+      <span class="chip">อัปเดตรายงาน 2026-08-20 00:26 +07</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="kpi-title">
+    <h2 id="kpi-title">ภาพรวมที่อ่านจบในหนึ่งนาที</h2>
+    <div class="grid kpis">
+      <article class="card kpi"><div class="label">คุณภาพ · Quality</div><div class="value">4 / 4</div><div class="sub">gates ผ่านครบ; claims 2/2</div></article>
+      <article class="card kpi"><div class="label">บั๊ก · Bug</div><div class="value">6 → 2</div><div class="sub">พบ 6 · แก้ 4 · minor เปิด 2</div></article>
+      <article class="card kpi"><div class="label">เวลา · Time</div><div class="value">23:01.8</div><div class="sub">span 23:39:11–00:02:13 +07 รวมช่วงรอ</div></article>
+      <article class="card kpi"><div class="label">ความเร็ว · Speed</div><div class="value">8:55.7</div><div class="sub">busy 38.8% · ช้าที่สุด review 5:23.0</div></article>
+      <article class="card kpi"><div class="label">โทเคน · Token</div><div class="value">ไม่มีข้อมูล</div><div class="sub">requests/tokens = null · reviewer: claude-opus</div></article>
+      <article class="card kpi"><div class="label">ต้นทุน · Cost</div><div class="value">ไม่มีข้อมูล</div><div class="sub"><code>unavailable-until-external-events</code></div></article>
+      <article class="card kpi"><div class="label">Harness</div><div class="value">10 / 37</div><div class="sub">commands ถูก guard หยุดก่อนเสี่ยง</div></article>
+      <article class="card kpi"><div class="label">โค้ด · Code</div><div class="value">+279 / −43</div><div class="sub">prod +116/−43 · test +163/−0</div></article>
+      <article class="card kpi"><div class="label">เอกสาร · Docs</div><div class="value">+50 / −0</div><div class="sub">canonical OpenSpec 2 capabilities</div></article>
+      <article class="card kpi"><div class="label">สุขภาพรวม · Well</div><div class="value">ผ่าน + debt</div><div class="sub">proof ผ่าน; minor non-blocking 2 ข้อ</div></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="timeline-title">
+    <h2 id="timeline-title">เส้นเวลาและการใช้เวลาแต่ละเฟส</h2>
+    <p class="sub">การแบ่ง wall-clock ไม่ซ้อนกัน: ทุกช่วงตั้งแต่คำสั่งหนึ่งเริ่มจนคำสั่งถัดไปเริ่ม ถูกนับให้เฟสของคำสั่งล่าสุด ดังนั้นเวลาทั้งสี่เฟสบวกกันเท่ากับ span 23:01.8 พอดี</p>
+    <div class="timeline" aria-label="phase attribution">
+      <div class="phase change" style="flex:27.34"><strong>Change · 6:17.8</strong><span>27.34%</span></div>
+      <div class="phase build" style="flex:15.05"><strong>Build · 3:28.0</strong><span>15.05%</span></div>
+      <div class="phase prove" style="flex:54.96"><strong>Prove · 12:39.4</strong><span>54.96%</span></div>
+      <div class="phase land" style="flex:2.65"><strong>Land · 0:36.6</strong><span>2.65%</span></div>
+    </div>
+    <div class="table-wrap" style="margin-top:14px"><table>
+      <thead><tr><th>เฟส</th><th class="num">คำสั่ง</th><th class="num">ถูกหยุด</th><th class="num">Busy</th><th class="num">Requests</th><th class="num">Output</th><th class="num">Cache write/read</th><th class="num">Cost</th></tr></thead>
+      <tbody>
+        <tr><td>Change</td><td class="num">15</td><td class="num">3</td><td class="num">0:11.6</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td>Build</td><td class="num">5</td><td class="num">1</td><td class="num">0:04.1</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td>Prove</td><td class="num">12</td><td class="num">4</td><td class="num">8:23.7</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td>Land</td><td class="num">5</td><td class="num">2</td><td class="num">0:16.2</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+        <tr><td><strong>รวม</strong></td><td class="num"><strong>37</strong></td><td class="num"><strong>10</strong></td><td class="num"><strong>8:55.7</strong></td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td><td class="num muted">ไม่มีข้อมูล</td></tr>
+      </tbody>
+    </table></div>
+    <div class="card" style="margin-top:12px"><div class="sub">Busy share ของ span · 38.8%</div><div class="bar" style="margin-top:8px"><i style="width:38.76%"></i></div><p class="sub">ช่วงเงียบยาวที่สุด 2:42.7 หลัง <code>change:new</code>—เป็นช่วงทำสัญญา/grounding ก่อน <code>resolve</code> และรวมอยู่ใน span</p></div>
+    <div class="source">ที่มา: <code>.foundation/logs/&lt;id&gt;/operations.jsonl</code> · measurement: <code>command-observed; model usage requires host telemetry ingestion</code></div>
+  </section>
+
+  <section aria-labelledby="guards-title">
+    <h2 id="guards-title">จังหวะที่ Harness เข้าแทรกแซง</h2>
+    <p class="sub">“ถูกหยุด” หมายถึง guard ป้องกันการเดินต่อบนสถานะไม่ครบ ไม่ใช่ผลล้มเหลวสุดท้าย รายการด้านล่างรวมเหตุการณ์ใกล้กันเป็นเรื่องเดียว</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>กลุ่ม</th><th class="num">ครั้ง</th><th>เวลา UTC</th><th>ความเสี่ยงที่ป้องกัน</th><th>สิ่งที่ทำให้ผ่าน</th></tr></thead>
+      <tbody>
+        <tr><td><code>validate / resolve</code></td><td class="num">3</td><td>16:41:54–16:47:00</td><td>contract และ grounding ที่ยังไม่ครบหรือ revision ยังไม่ถูกล็อก</td><td>เติม decision batch, grounding read set และ resolve revision ใหม่</td></tr>
+        <tr><td><code>proof-readiness</code></td><td class="num">3</td><td>16:46:16–16:47:10</td><td>เริ่มพิสูจน์ก่อน prerequisites และ changed surface พร้อม</td><td>แก้ grounding/declared paths แล้ว validate ใหม่</td></tr>
+        <tr><td><code>proof-collect</code></td><td class="num">1</td><td>16:57:36</td><td>เก็บหลักฐานโดยมี <code>.claude/tests/README.md</code> และ <code>run-all.sh</code> อยู่นอก task paths</td><td>ประกาศสองไฟล์ใน T002 แล้วเก็บ receipts ใหม่</td></tr>
+        <tr><td><code>archive / sandbox / land-check</code></td><td class="num">3</td><td>17:01:11–17:01:49</td><td>apply contract ที่แก้หลัง sync และใช้ proof ที่ถูก invalidate หลัง sync</td><td><code>sandbox sync</code> revision 3, re-proof จาก receipts เดิม แล้ว Land ใหม่</td></tr>
+      </tbody>
+    </table></div>
+    <div class="grid cards3" style="margin-top:14px">
+      <article class="card callout"><h3>จุดที่คุมได้ดีที่สุด</h3><p>Full review ไม่ยอมให้ test ที่ผ่านเฉพาะบาง host environment และ suite ที่หายจาก authoritative <code>run-all.sh</code> ผ่าน Land จึงบังคับให้ปิด F1/F2 ก่อน proof รอบสุดท้าย</p></article>
+      <article class="card callout open"><h3>สิ่งที่ยังไม่จับใน focused loop</h3><p><code>--affected</code> ยังเลือก suite ใหม่ไม่ได้เพราะ label มีคำว่า “and” และ Cursor source ยังไม่ถูก map ใน <code>correlatedHosts</code>; full gate จับเป็น minor หลัง correction</p></article>
+      <article class="card callout finding"><h3>ราคาที่จ่าย</h3><p>ต้อง review 2 รอบ รวม reviewer busy 7:52.8, เก็บ proof ใหม่หลังแก้ surface และ re-proof อีกครั้งหลัง sandbox sync แม้ workspace content hash ไม่เปลี่ยน</p></article>
+    </div>
+    <div class="source">ที่มา: <code>operations.jsonl</code>, <code>review-attempts/0001-59eb…</code>, <code>review-attempts/0002-bad169…</code></div>
+  </section>
+
+  <section aria-labelledby="slow-title">
+    <h2 id="slow-title">อะไรใช้เวลามากที่สุด</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Operation</th><th>เฟส</th><th class="num">เวลา</th><th>ผล</th><th>สาเหตุจากหลักฐาน</th></tr></thead>
+      <tbody>
+        <tr><td><code>authority-run</code></td><td>Prove</td><td class="num">5:23.0</td><td><span class="tag pass">completed / review fail</span></td><td>full-scope reviewer พบ 2 major + 2 minor</td></tr>
+        <tr><td><code>authority-run</code></td><td>Prove</td><td class="num">2:29.8</td><td><span class="tag pass">completed / review pass</span></td><td>delta reviewer ยืนยัน F1/F2 และพบ minor ใหม่ 2 ข้อ</td></tr>
+        <tr><td><code>archive</code></td><td>Land</td><td class="num">0:07.5</td><td><span class="tag pass">completed</span></td><td>apply projection, sync canonical specs, archive และ cleanup</td></tr>
+        <tr><td><code>proof-collect</code></td><td>Prove</td><td class="num">0:06.6</td><td><span class="tag pass">completed</span></td><td>เก็บ test/discovery receipts หลัง correction</td></tr>
+        <tr><td><code>proof-run</code></td><td>Prove</td><td class="num">0:06.3</td><td><span class="tag pass">completed</span></td><td>รวม discovery, review และ test เป็น proof</td></tr>
+        <tr><td><code>proof-run</code></td><td>Prove</td><td class="num">0:06.2</td><td><span class="tag pass">completed</span></td><td>re-proof หลัง sandbox sync invalidate สถานะเดิม</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="volume-title">
+    <h2 id="volume-title">ปริมาณโค้ดและเอกสารที่ลงจริง</h2>
+    <p class="sub">รอบนี้ยังไม่มี commit จึงวัดจาก landed worktree projection: tracked files ใช้ <code>git diff --numstat</code> และไฟล์สร้างใหม่ใช้จำนวนบรรทัดจริง ไม่อ้างว่าเป็น commit volume</p>
+    <div class="grid cards3">
+      <article class="card kpi"><div class="label">รวม code + test</div><div class="value">+279 / −43</div><div class="sub">7 files</div></article>
+      <article class="card kpi"><div class="label">Production</div><div class="value">+116 / −43</div><div class="sub">validation + observability · 3 files</div></article>
+      <article class="card kpi"><div class="label">Test + registry</div><div class="value">+163 / −0</div><div class="sub">suite + runner + README · 4 files</div></article>
+    </div>
+    <div class="table-wrap" style="margin-top:14px"><table>
+      <thead><tr><th>ไฟล์</th><th>ประเภท</th><th class="num">เพิ่ม</th><th class="num">ลบ</th></tr></thead>
+      <tbody>
+        <tr><td class="file"><code>.claude/harness/runtime/observability/metrics-runtime.mjs</code></td><td>prod</td><td class="num">48</td><td class="num">0</td></tr>
+        <tr><td class="file"><code>.claude/harness/runtime/observability/telemetry-runtime.mjs</code></td><td>prod</td><td class="num">7</td><td class="num">0</td></tr>
+        <tr><td class="file"><code>.claude/harness/runtime/workflow/change-validation.mjs</code></td><td>prod</td><td class="num">61</td><td class="num">43</td></tr>
+        <tr><td class="file"><code>.claude/tests/harness/run-actionable-validation-telemetry-tests.mjs</code></td><td>test · new</td><td class="num">133</td><td class="num">0</td></tr>
+        <tr><td class="file"><code>.claude/tests/harness/run-actionable-validation-telemetry-tests.sh</code></td><td>test · new</td><td class="num">28</td><td class="num">0</td></tr>
+        <tr><td class="file"><code>.claude/tests/run-all.sh</code></td><td>test registry</td><td class="num">1</td><td class="num">0</td></tr>
+        <tr><td class="file"><code>.claude/tests/README.md</code></td><td>test docs</td><td class="num">1</td><td class="num">0</td></tr>
+      </tbody>
+    </table></div>
+    <h3 style="margin-top:18px">OpenSpec / docs volume</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>รายการ</th><th class="num">ไฟล์</th><th class="num">เพิ่ม</th><th class="num">ลบ</th><th>หมายเหตุ</th></tr></thead>
+      <tbody>
+        <tr><td>Canonical capability specs</td><td class="num">2</td><td class="num">50</td><td class="num">0</td><td><code>change-validation</code> และ <code>runtime-observability</code></td></tr>
+        <tr><td>Archived change packet</td><td class="num">11</td><td class="num">450 lines</td><td class="num">—</td><td>proposal, design, tasks, evidence, grounding และ spec deltas; เป็น archive artifact ไม่ใช่ production code</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="gates-title">
+    <h2 id="gates-title">ตาราง Gate และใบรับรอง</h2>
+    <p class="sub">receipt คือใบรับรองผลที่ผูกกับ contract/workspace สถานะด้านล่างถอดจากไฟล์จริง; review รอบแรกที่ fail ไม่ถูกกลบด้วยผลรอบสุดท้าย</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Provider</th><th>สถานะ</th><th class="num">Claims</th><th class="num">เวลา</th><th>Observed verbatim · คำอธิบาย</th></tr></thead>
+      <tbody>
+        <tr><td><code>discovery</code></td><td><span class="tag pass">pass</span></td><td class="num">2</td><td class="num">—</td><td><code>6 discovered; minimum 6</code><br><span class="muted">พบครบ 6 cases ตาม floor</span></td></tr>
+        <tr><td><code>test</code></td><td><span class="tag pass">pass</span></td><td class="num">2</td><td class="num">0.160s</td><td><code>exit 0; 160ms; readiness observed; critical cases claim-errors-together=passed, task-errors-together=passed, codex-unavailable=passed, uncorrelated-unavailable=passed, measured-usage-compatible=passed</code></td></tr>
+        <tr><td><code>review · round 1</code></td><td><span class="tag stop">fail</span></td><td class="num">2</td><td class="num">5:23.0</td><td><code>resultStatus: "fail"</code> · พบ F1/F2 ระดับ major และ F3/F4 ระดับ minor จึงยังปิดงานไม่ได้</td></tr>
+        <tr><td><code>review · round 2</code></td><td><span class="tag pass">pass</span></td><td class="num">2</td><td class="num">2:29.8</td><td><code>Both unresolved majors are closed by current deterministic evidence.</code><br><span class="muted">ยืนยัน major เดิมปิดครบ; รายงาน minor ใหม่ D1/D2 แบบ non-blocking</span></td></tr>
+        <tr><td><strong>proof</strong></td><td><span class="tag pass">pass</span></td><td class="num">2</td><td class="num">0:06.2</td><td><code>proof-1787158916944</code> · providers: <code>discovery, review, test</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="source">ที่มา: <code>.foundation/receipts/&lt;id&gt;/{discovery,test,review,proof}.json</code> และ <code>.foundation/evidence/&lt;id&gt;/review-attempts/</code></div>
+  </section>
+
+  <section aria-labelledby="tasks-title">
+    <h2 id="tasks-title">งานที่ส่งมอบ</h2>
+    <div class="grid cards3">
+      <article class="card kpi"><div class="label">รอบที่จบ</div><div class="value">3 / 3</div><div class="sub">tasks เสร็จครบ</div></article>
+      <article class="card kpi"><div class="label">รอบถัดไป</div><div class="value">ไม่มี</div><div class="sub"><code>No active changes.</code></div></article>
+      <article class="card kpi"><div class="label">สถานะ</div><div class="value">archived</div><div class="sub">revision 3 · sandbox cleaned</div></article>
+    </div>
+    <ol>
+      <li>รวม claim/task semantic diagnostics ภายใน dependency-safe validation layer โดยยัง fail-closed เมื่อ prerequisites ไม่ถูกต้อง</li>
+      <li>บันทึก host correlation แบบ bounded และแสดง usage availability พร้อม recovery routes โดยไม่สร้าง request/token/cost เทียม</li>
+      <li>เพิ่ม spec deltas และ sync เข้า canonical <code>change-validation</code> กับ <code>runtime-observability</code></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="bugs-title">
+    <h2 id="bugs-title">ข้อบกพร่องที่พบระหว่างรอบ</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID / ระดับ</th><th>ปัญหา</th><th>สถานะ</th><th>ผลที่วัดได้ในรอบ</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag stop">F1 · major</span></td><td>Codex provenance test ไม่ล้าง Claude session/transcript environment</td><td><span class="tag pass">fixed</span></td><td>บังคับแก้ test isolation และรันซ้ำด้วย Claude env จำลอง; delta review ยืนยัน closure</td></tr>
+        <tr><td><span class="tag stop">F2 · major</span></td><td>suite ใหม่ไม่อยู่ใน authoritative <code>run-all.sh</code>/README</td><td><span class="tag pass">fixed</span></td><td>เพิ่ม registry แล้ว full gate ผ่าน <strong>72/72 suites</strong></td></tr>
+        <tr><td><span class="tag warn">F3 · minor</span></td><td><code>correlatedHosts</code> ใช้ agent identity ปน host vocabulary</td><td><span class="tag pass">fixed</span></td><td>จำกัด fallback ให้ host-execution contract และเพิ่ม measured-host assertion</td></tr>
+        <tr><td><span class="tag warn">F4 · minor</span></td><td>T003 ประกาศ canonical spec paths แทน change-delta paths</td><td><span class="tag pass">fixed</span></td><td>แก้ task ledger; surface validation ผ่าน</td></tr>
+        <tr><td><span class="tag warn">D1 · minor</span></td><td>label “actionable validation and telemetry” ไม่ match selector stem ของ <code>--affected</code></td><td><span class="tag warn">open · non-blocking</span></td><td>full run ยังครอบคลุม แต่ edit/repair loop อาจไม่เลือก suite นี้อัตโนมัติ</td></tr>
+        <tr><td><span class="tag warn">D2 · minor</span></td><td>Cursor import source ถูกกรองออกจาก measured <code>correlatedHosts</code></td><td><span class="tag warn">open · non-blocking</span></td><td>usage ยัง measured ถูกต้อง แต่ host attribution อาจเป็น <code>[]</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="source">ที่มา: review attempts 0001/0002 และ final <code>review.json.review.findings</code></div>
+  </section>
+
+  <section aria-labelledby="risk-title">
+    <h2 id="risk-title">ความเสี่ยง ข้อยกเว้น และ authority</h2>
+    <div class="grid cards3">
+      <article class="card"><h3>Review assurance</h3><p>policy บันทึก <code>independence: "self"</code> และ <code>independenceWaived: true</code>; อย่างไรก็ดี receipt รอบสุดท้ายบันทึก <code>independent: true</code>, <code>diverse: true</code> เพราะผู้ลงมือเป็น Codex และ reviewer เป็น <code>claude-opus</code></p></article>
+      <article class="card"><h3>Acceptance</h3><p><code>decision: "not-required"</code> และ <code>required: false</code> จึงไม่มี human acceptance gate เพิ่มเติมสำหรับสอง claims นี้</p></article>
+      <article class="card"><h3>Attestation / branch</h3><p>ไม่มี attestation ของรอบนี้; Land บน <code>main</code> มี branch-first advisory แต่ project policy ไม่ได้บล็อก และไม่มี commit/push/release เกิดขึ้น</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="improve-title">
+    <h2 id="improve-title">ข้อเสนอปรับปรุงรอบถัดไป</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="num">#</th><th>ข้อสังเกต</th><th>ข้อเสนอ</th><th>แหล่งอ้างอิง</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><code>--affected</code> พลาด suite เพราะ label มีคำว่า “and”</td><td>เปลี่ยน label เป็น <code>actionable validation telemetry</code> หรือเพิ่ม suite ใน observability/change-validation RULES และเพิ่ม selector regression</td><td><code>D1-affected-selection-label-stem-mismatch</code></td></tr>
+        <tr><td class="num">2</td><td>Cursor usage measured แต่ host attribution หาย</td><td>map <code>cursor</code> เป็น <code>generic-host</code> (หรือ vocabulary เฉพาะที่ตกลง) และเพิ่ม test import format ครบทุกค่า</td><td><code>D2-cursor-source-dropped-from-correlated-hosts</code></td></tr>
+        <tr><td class="num">3</td><td>การแก้ contract ทั้ง root และ sandbox ทำให้ Land ต้อง sync/re-proof</td><td>ใช้ <code>sandbox sync</code> ทันทีหลัง intentional contract revision และหลีกเลี่ยงแก้สองสำเนาด้วยมือ</td><td><code>archive</code>, <code>sandbox</code>, <code>land-check</code> blocked 3 ครั้ง</td></tr>
+        <tr><td class="num">4</td><td>review packet แสดงทาง stdout เกิน 8 KB แต่ authority request ใช้ได้</td><td>ทำ error guidance ให้ชัดว่า display budget ไม่ได้บล็อก durable authority request หรือเพิ่ม compact review summary</td><td><code>execution.packetBytes.review: 8192</code>; authority request รอบนี้สำเร็จ</td></tr>
+        <tr><td class="num">5</td><td>model usage และ cost ของ session ยังเป็น null</td><td>ใช้ recovery actions ที่เพิ่มในรอบนี้: Codex/generic import, Claude sync หรือ host-result import ก่อนทำรายงานต้นทุน</td><td><code>budget.measurement: "unavailable-until-external-events"</code></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    <span>รายงานนี้เป็น read-only projection จาก <code>.foundation/</code> และ <code>openspec/</code>; ไม่ใช่แหล่งสถานะคู่ขนานและไม่ได้แก้ harness state</span>
+    <span>รวม 37 commands · 10 blocked · requests/tokens/cost ไม่มีข้อมูล · reviewer model <code>claude-opus</code> · active round ไม่มี</span>
+  </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "semantic-validation-aggregation",
+      "scenario": "Independent claim and task semantic defects are returned together within their dependency-safe validation layer",
+      "impact": "medium",
+      "capabilities": ["test"]
+    },
+    {
+      "id": "actionable-usage-unavailability",
+      "scenario": "Metrics with no host events preserve null usage and identify the unavailability reason plus supported recovery routes",
+      "impact": "medium",
+      "capabilities": ["test"]
+    }
+  ]
+}

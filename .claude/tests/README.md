@@ -39,6 +39,7 @@ to force fully serial execution when bisecting.
 | `harness/run-archive-telemetry-tests.mjs` | Archive drains the bound transcript once, warns when sealing with no usage, and never blocks on telemetry |
 | `harness/run-telemetry-concurrency-tests.sh` | Concurrent context events, malformed legacy tolerance, and non-blocking telemetry |
 | `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
+| `harness/run-actionable-validation-telemetry-tests.sh` | Dependency-safe semantic diagnostic aggregation, truthful host-usage availability, and supported recovery routes |
 | `harness/run-v33-policy-tests.mjs` | Risk-tier review routing, named critical-case and mutation-v2 oracles, and the pinned read-only ephemeral Codex reviewer invocation |
 | `harness/run-risk-tiered-review-tests.mjs` | End-to-end Grounding v2, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
 | `harness/run-review-guard-fix-tests.mjs` | Receipt-guard reconciliation (overwrite/human/error), reviewer-schema portability and session handshake, infra-retry reset, `sandbox apply --refresh` routing, validate-time OpenSpec strict lint, and grounding readSet portability |

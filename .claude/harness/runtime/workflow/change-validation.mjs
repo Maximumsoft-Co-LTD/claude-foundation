@@ -100,6 +100,63 @@ export function groundingTaskOverlapFindings(readSet = [], tasks = []) {
   return findings;
 }
 
+export function claimContractIssues(claims = [], selectedRepositoryIds = new Set()) {
+  return claims.flatMap((claim) => {
+    const issues = [];
+    if (!["low", "medium", "high"].includes(claim.impact || ""))
+      issues.push(`claim '${claim.id}' requires impact low|medium|high`);
+    if (claim.repositories !== undefined &&
+        (!Array.isArray(claim.repositories) || claim.repositories.length === 0 ||
+         claim.repositories.some((repository) => !selectedRepositoryIds.has(repository))))
+      issues.push(`claim '${claim.id}' repositories must reference selected repositories`);
+    if ((claim.repositories || []).length > 1 &&
+        !claim.capabilities.includes("cross-repo-contract"))
+      issues.push(`claim '${claim.id}' spans repositories and requires cross-repo-contract`);
+    return issues;
+  });
+}
+
+export function taskContractIssues(tasks = [], claims = [],
+  selectedRepositoryIds = new Set(), multiRepository = false) {
+  const claimById = new Map(claims.map((claim) => [claim.id, claim]));
+  const issues = [];
+  for (const task of tasks) {
+    const metadata = taskMetadata(task);
+    if (metadata.claims.length > 50)
+      issues.push(`task '${task.id}' references more than 50 claims`);
+    const unknownClaims = metadata.claims.filter((claim) => !claimById.has(claim));
+    if (unknownClaims.length)
+      issues.push(`task '${task.id}' references unknown claim(s): ${unknownClaims.join(", ")}`);
+    const outOfScopeClaims = metadata.claims.filter((claimId) => {
+      const repositories = claimById.get(claimId)?.repositories || [];
+      return repositories.length > 0 && !repositories.includes(metadata.repository);
+    });
+    if (outOfScopeClaims.length)
+      issues.push(`task '${task.id}' references claim(s) outside repository '${metadata.repository}': ${outOfScopeClaims.join(", ")}`);
+  }
+  if (!multiRepository) return issues;
+  const unscopedTasks = tasks.filter((task) =>
+    !/\[repo:[a-z0-9-]+\]/i.test(task.text));
+  if (unscopedTasks.length)
+    issues.push(`multi-repository tasks require [repo:<id>] scope (${unscopedTasks.map((task) => task.id).join(", ")})`);
+  for (const task of tasks) {
+    const metadata = taskMetadata(task);
+    if (metadata.repository && !selectedRepositoryIds.has(metadata.repository))
+      issues.push(`task '${task.id}' references unselected repository '${metadata.repository}'`);
+    if (metadata.paths.some((path) =>
+      isAbsolute(path) || path === ".." || path.startsWith("../") || path.includes("/../")))
+      issues.push(`task '${task.id}' contains an unsafe path scope`);
+    if (["implementation", "migration"].includes(metadata.kind) && metadata.paths.length === 0)
+      issues.push(`multi-repository task '${task.id}' requires [paths:<repo-relative-paths>]`);
+  }
+  return issues;
+}
+
+function failValidationLayer(fail, name, issues) {
+  if (issues.length)
+    fail(`${name} validation failed:\n  - ${issues.join("\n  - ")}`);
+}
+
 export function createChangeValidationRuntime({
   markBlocked = () => {},
   root,
@@ -682,17 +739,8 @@ export function createChangeValidationRuntime({
     const claimById = new Map(claims.map((claim) => [claim.id, claim]));
     const selectedRepositoryIds = new Set(validationRepositories(id, state, dir)
       .map((repository) => repository.id));
-    for (const claim of claims) {
-      if (!["low", "medium", "high"].includes(claim.impact || ""))
-        fail(`claim '${claim.id}' requires impact low|medium|high`);
-      if (claim.repositories !== undefined &&
-          (!Array.isArray(claim.repositories) || claim.repositories.length === 0 ||
-           claim.repositories.some((repository) => !selectedRepositoryIds.has(repository))))
-        fail(`claim '${claim.id}' repositories must reference selected repositories`);
-      if ((claim.repositories || []).length > 1 &&
-          !claim.capabilities.includes("cross-repo-contract"))
-        fail(`claim '${claim.id}' spans repositories and requires cross-repo-contract`);
-    }
+    failValidationLayer(fail, "claim contract",
+      claimContractIssues(claims, selectedRepositoryIds));
     handoffContract(id, {
       state,
       claimIds: new Set(claimById.keys()),
@@ -745,39 +793,9 @@ export function createChangeValidationRuntime({
       };
     }
 
-    for (const task of parsedTasks) {
-      const metadata = taskMetadata(task);
-      if (metadata.claims.length > 50)
-        fail(`task '${task.id}' references more than 50 claims`);
-      const unknownClaims = metadata.claims.filter((claim) => !claimById.has(claim));
-      if (unknownClaims.length)
-        fail(`task '${task.id}' references unknown claim(s): ${unknownClaims.join(", ")}`);
-      const outOfScopeClaims = metadata.claims.filter((claimId) => {
-        const repositories = claimById.get(claimId)?.repositories || [];
-        return repositories.length > 0 && !repositories.includes(metadata.repository);
-      });
-      if (outOfScopeClaims.length)
-        fail(`task '${task.id}' references claim(s) outside repository '${metadata.repository}': ${outOfScopeClaims.join(", ")}`);
-    }
-
     const selected = validationRepositories(id, state, dir);
-    if (selected.length > 1) {
-      const unscopedTasks = parsedTasks.filter((task) =>
-        !/\[repo:[a-z0-9-]+\]/i.test(task.text));
-      if (unscopedTasks.length)
-        fail(`multi-repository tasks require [repo:<id>] scope (${unscopedTasks.map((task) => task.id).join(", ")})`);
-      for (const task of parsedTasks) {
-        const metadata = taskMetadata(task);
-        const repository = metadata.repository;
-        if (repository && !selectedRepositoryIds.has(repository))
-          fail(`task '${task.id}' references unselected repository '${repository}'`);
-        if (metadata.paths.some((path) =>
-          isAbsolute(path) || path === ".." || path.startsWith("../") || path.includes("/../")))
-          fail(`task '${task.id}' contains an unsafe path scope`);
-        if (["implementation", "migration"].includes(metadata.kind) && metadata.paths.length === 0)
-          fail(`multi-repository task '${task.id}' requires [paths:<repo-relative-paths>]`);
-      }
-    }
+    failValidationLayer(fail, "task contract", taskContractIssues(
+      parsedTasks, claims, selectedRepositoryIds, selected.length > 1));
 
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];

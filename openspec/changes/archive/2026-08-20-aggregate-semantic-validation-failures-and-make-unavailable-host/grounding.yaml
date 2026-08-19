@@ -1,0 +1,108 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-fix-harness-report-findings",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T23:40:00+07:00",
+    "decisions": [
+      {
+        "id": "validation-aggregation-boundary",
+        "question": "How far should semantic validation aggregation continue?",
+        "answer": "Aggregate independent errors within claim and task dependency layers, but stop before checks whose prerequisites are invalid.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "unavailable-telemetry-truth",
+        "question": "How should the harness handle hosts that expose correlation but no usage events?",
+        "answer": "Keep usage unmeasured and add a structured reason plus only package-supported recovery actions; never estimate usage.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "medium",
+    "classes": ["runtime-observability", "validation-contract"],
+    "rationale": "The change adds an optional metrics field and changes validation error batching without changing pass/fail criteria or numeric usage semantics."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "The public change validate and metrics commands enter through these runtime modules.",
+    "paths": [
+      {"repository":"root","path":".claude/harness/runtime/workflow/change-validation.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs"},
+      {"repository":"root","path":".claude/harness/runtime/observability/telemetry-runtime.mjs"}
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "Recovery guidance must remain aligned with the existing host-execution import contract even though no new transport is added.",
+    "contracts": [{"repository":"root","path":".claude/harness/runtime/observability/host-execution-contract.mjs"}]
+  },
+  "activationSemantics": {
+    "status": "not-applicable",
+    "sourceReason": "Installing the changed runtime directly replaces the prior local validation and metrics projection behavior.",
+    "activatedPaths": [],
+    "failureSemanticChanges": ["Independent semantic defects are batched within a layer while invalid prerequisites still stop later checks."]
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "No service, queue, or external runtime interaction changes.",
+    "rows": []
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "The change makes an existing local telemetry blind spot actionable.",
+    "rows": [{
+      "interactionId": "local",
+      "correlation": "change ID and recorded phase session identity",
+      "structuredEvents": "metrics usageAvailability projection derived from existing phase and event ledgers",
+      "sli": "changes with either measured host events or a specific unavailable reason divided by changes with lifecycle operations",
+      "alert": "none; local non-blocking diagnostic",
+      "runbook": "follow a recovery action emitted by metrics when the host provides an export or execution result",
+      "operatorQuestion": "why is usage unavailable and which supported import can recover it?"
+    }]
+  },
+  "readSet": [
+    {"repository":"root","path":"openspec/specs/change-validation/spec.md","role":"requirement","mode":"full","sha256":"da82b2fba786973908083a4f4f284646a59936997e4485261704b2de29d4b227"},
+    {"repository":"root","path":"openspec/specs/runtime-observability/spec.md","role":"requirement","mode":"full","sha256":"55dcff11b3ae7c53c4e3e5d1db690c65dbdf6e50532783d702f0099af94f6f32"},
+    {"repository":"root","path":".claude/harness/runtime/observability/host-execution-contract.mjs","role":"contract","mode":"full","sha256":"82a10daf0755ccb469be26aa1c1c5b765636ffe748a3c9cb52fe5d122b593be9"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/change-validation.mjs","role":"production-path","mode":"full","sha256":"7e92221f544c270851fe8bb70dd88d31919f8aca42df35fa0f9ec30e4b8f369b"},
+    {"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs","role":"production-path","mode":"full","sha256":"08b4a79928733e3411fda1cd61d646c6d2b191a21df2599b0f63a8a01721d2c7"},
+    {"repository":"root","path":".claude/harness/runtime/observability/telemetry-runtime.mjs","role":"production-path","mode":"full","sha256":"0e749fa98418c70623e6c0dee027f68625d1e81deb8af7f541e25c078e752571"},
+    {"repository":"root","path":".claude/tests/harness/run-changeloop-seam-tests.sh","role":"test-topology","mode":"full","sha256":"17bac04ab67e3d242c270fb1f8c270c34ec77c10d607e2224cf4607f0b57a519"},
+    {"repository":"root","path":".claude/tests/harness/run-telemetry-truth-tests.mjs","role":"test-topology","mode":"full","sha256":"70d474fdba3ce1151b5ec8345a5fbe70eb0b7eed24b5bcc920547e64e2c1db48"}
+  ],
+  "claims": [
+    {
+      "id": "semantic-validation-aggregation",
+      "productionPath": [{"repository":"root","path":".claude/harness/runtime/workflow/change-validation.mjs"}],
+      "failurePaths": [{"repository":"root","path":".claude/harness/runtime/workflow/change-validation.mjs","failure":"multiple independent claim or task defects previously stopped at the first failure"}],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "actionable-usage-unavailability",
+      "productionPath": [
+        {"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs"},
+        {"repository":"root","path":".claude/harness/runtime/observability/telemetry-runtime.mjs"}
+      ],
+      "failurePaths": [{"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs","failure":"no host event produces null usage with no reason or recovery route"}],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {"id":"claim-errors-together","claimIds":["semantic-validation-aggregation"],"oracle":"failure-path"},
+    {"id":"task-errors-together","claimIds":["semantic-validation-aggregation"],"oracle":"failure-path"},
+    {"id":"codex-unavailable","claimIds":["actionable-usage-unavailability"],"oracle":"failure-path"},
+    {"id":"uncorrelated-unavailable","claimIds":["actionable-usage-unavailability"],"oracle":"failure-path"},
+    {"id":"measured-usage-compatible","claimIds":["actionable-usage-unavailability"],"oracle":"contract-oracle"}
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {"fact":"Codex installation currently exposes manual telemetry import guidance rather than a live usage hook.","command":"grep -n 'telemetry:' install-codex.sh"},
+    {"fact":"Metrics already preserve absent host events as null usage and unavailable measurement.","command":"grep -n 'usageMeasurement' .claude/harness/runtime/observability/metrics-runtime.mjs"}
+  ]
+}

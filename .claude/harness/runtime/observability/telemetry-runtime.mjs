@@ -160,6 +160,11 @@ export function createTelemetryRuntime({
       const prior = readJsonLinesTolerant(path).at(-1) || null;
       const host = claudeHostContext();
       const sessionId = host?.sessionId || runtimeSessionId();
+      const telemetryHost = host ? "claude-code"
+        : process.env.CODEX_THREAD_ID ? "codex"
+          : sessionId ? "generic-host" : "unknown";
+      const telemetryMode = host ? "automatic-transcript"
+        : sessionId ? "explicit-import" : "unavailable";
       const recommendedTier = {
         change: "deep",
         build: "standard",
@@ -175,6 +180,8 @@ export function createTelemetryRuntime({
         changeId: id,
         phase,
         sessionId,
+        telemetryHost,
+        telemetryMode,
         contextMode,
         recommendedModelTier: recommendedTier,
         actualModel: process.env.FOUNDATION_MODEL_ID || null,
