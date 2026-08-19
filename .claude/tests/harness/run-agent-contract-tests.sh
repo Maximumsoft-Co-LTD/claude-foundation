@@ -12,6 +12,20 @@ assert_file_contains "agent contract executes deterministic recovery" \
   "$ROOT/.claude/harness/AGENT.md" 'authorized `automaticRecovery`'
 assert_file_contains "agent contract forbids pass-biased decisions" \
   "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
+assert_file_contains "build treats spawn groups as concurrent authority" \
+  "$ROOT/.claude/commands/build.md" 'Treat `spawn-group` as concurrent authority'
+assert_file_contains "build forbids serializing a spawn group in the parent" \
+  "$ROOT/.claude/commands/build.md" 'serialize that group in the parent'
+assert_file_contains "dispatch spawns the leased group before waiting" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" \
+  'Spawn every successfully leased worker before waiting for any worker'
+assert_file_contains "dispatch makes the parent the join owner" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" \
+  'the parent is the orchestrator and join owner'
+assert_file_contains "dispatch keeps workers away from the task ledger" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" 'It must not edit'
+assert_file_contains "dispatch keeps worker reports non-authoritative" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" 'report is not evidence'
 assert_file_contains "agent contract selectively loads update policy" \
   "$ROOT/.claude/harness/AGENT.md" 'For `notification.surface: true`, load `README.md`'
 assert_file_contains "update policy suppresses the duplicate Change notice" \
