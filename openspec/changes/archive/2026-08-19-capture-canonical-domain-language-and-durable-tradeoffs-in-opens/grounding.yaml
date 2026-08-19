@@ -1,0 +1,297 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-08-19-openspec-domain-language-integration",
+    "mode": "single-batch",
+    "lockedAt": "2026-08-19T12:45:00.000+07:00",
+    "decisions": [
+      {
+        "id": "openspec-domain-language-owner",
+        "question": "Where should domain language from grill-with-docs be persisted?",
+        "answer": "Persist canonical project terms in the existing standard OpenSpec design.md; create no CONTEXT.md, glossary artifact, ADR directory, or parallel lifecycle.",
+        "source": "user-batch"
+      },
+      {
+        "id": "durable-decision-threshold",
+        "question": "Which decisions deserve durable rationale?",
+        "answer": "Use the existing Decisions section only when the choice is hard to reverse, surprising without context, and the result of a meaningful tradeoff.",
+        "source": "user-batch"
+      },
+      {
+        "id": "compatibility-boundary",
+        "question": "How should schema integration affect existing and rapid changes?",
+        "answer": "Generate the additive section for new standard packets and upgrades, keep existing packets valid, and leave foundation-rapid without design.md.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "agent-instruction-contract",
+      "openspec-template-contract",
+      "human-decision-flow"
+    ],
+    "rationale": "The change is additive and backward compatible but affects the shipped decision contract and the standard packet template, so deterministic proof and independent review are required."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "Brainstorming and grill-task-gu are the shipped entry points that resolve language before change materialization.",
+    "paths": [
+      {
+        "repository": "root",
+        "path": ".claude/skills/brainstorming/SKILL.md"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/skills/grill-task-gu/SKILL.md"
+      }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The standard schema declaration is the stable wire that selects design.md; the template and lifecycle materializer implement its content.",
+    "contracts": [
+      {
+        "repository": "root",
+        "path": "openspec/schemas/foundation-standard/schema.yaml"
+      }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "The behavior activates on the next new standard change, schema upgrade, or feature/change intake after installation.",
+    "activatedPaths": [
+      {
+        "repository": "root",
+        "path": "openspec/schemas/foundation-standard/templates/design.md"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/change-lifecycle.mjs"
+      }
+    ],
+    "failureSemanticChanges": [
+      "A new standard design now offers a canonical place for project-specific language.",
+      "A qualifying durable tradeoff is recorded in the existing design rather than a new ADR ledger."
+    ]
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "No service or external API boundary changes.",
+    "rows": []
+  },
+  "observability": {
+    "status": "not-applicable",
+    "sourceReason": "No operated runtime failure surface or telemetry contract changes.",
+    "rows": []
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "openspec/specs/change/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "4a5883df43ab8bff35e72260bdde71f90f33aae99018b453a14706f6252566c6"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/brainstorming/SKILL.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "b14a47a2e2b98ad216610c58c716b897d8e2adefe0040422ae5d1949b0e0afc6"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/grill-task-gu/SKILL.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "3b920f34f5f4eb49b52da36150b76c7ce873e953865546b7e1addd50707dcd66"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/skills/change/references/workflow.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "37a51959aa88ea5a1cf4cff81376585e0c1d9be30efee20710b7ef551cacdfb1"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/schemas/foundation-standard/schema.yaml",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "9eb85b89f7a2e5f874ef8e17513181f22c7b9c9fbff1d53a597162bc1671e6cb"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/schemas/foundation-standard/templates/design.md",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "44832fcda0c979975820d88746a88296b5d8e4801c91ba0e32c822754ab02464"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/schemas/foundation-rapid/schema.yaml",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "5bcd4a6ff676051884e51bdb6a293c8b9518704a090bd2e4a9360ad42d99faae"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+      "role": "runtime-path",
+      "mode": "full",
+      "sha256": "66faea1fc58dc225aeecd867f282991762acdebf0fe5c4ab63cdb9a2e1314dcb"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/change-validation.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "57f0906b55ad0e1e953759dd9e714840389596c587944f63835a81e400eab92f"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/run-context-budget-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "64f151564b9b029081c3cb6fa4220e297ba5f9cbc46310ed8ec6f0d5fe341857"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/harness/contracts/evidence-proof.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "a43b26e4396e47bcd8ddd2d5eafd2403be0bf4ada9cac1eb56ead1feb26c1a89"
+    }
+  ],
+  "claims": [
+    {
+      "id": "standard-design-domain-language",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": "openspec/schemas/foundation-standard/templates/design.md"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+          "failure": "direct standard draft or rapid-to-standard upgrade omits the domain-language section"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "source-checked-canonical-terms",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/grill-task-gu/SKILL.md"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/brainstorming/SKILL.md",
+          "failure": "ambiguous project terminology is accepted or delegated without checking specifications and code"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "qualified-durable-decisions",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/skills/change/references/workflow.md"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": "openspec/schemas/foundation-standard/templates/design.md",
+          "failure": "routine reversible choices create ADR files or qualifying tradeoffs lose their rationale and rejected alternative"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "packet-compatibility-no-parallel-ledger",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": "openspec/schemas/foundation-rapid/schema.yaml",
+          "failure": "rapid gains design.md or existing standard packets are rejected for lacking the additive section"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "standard-domain-language-section",
+      "claimIds": [
+        "standard-design-domain-language"
+      ],
+      "oracle": "real-wire"
+    },
+    {
+      "id": "source-checked-domain-term",
+      "claimIds": [
+        "source-checked-canonical-terms"
+      ],
+      "oracle": "production-entry"
+    },
+    {
+      "id": "qualified-durable-decision",
+      "claimIds": [
+        "qualified-durable-decisions"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "rapid-existing-packet-compatibility",
+      "claimIds": [
+        "packet-compatibility-no-parallel-ledger"
+      ],
+      "oracle": "failure-path"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "foundation-standard owns design.md while foundation-rapid intentionally omits it.",
+      "command": "sh .claude/tests/harness/contracts/evidence-proof.sh"
+    },
+    {
+      "fact": "Existing standard packet validation does not require fixed design section headings.",
+      "command": "sh .claude/tests/harness/contracts/evidence-proof.sh"
+    }
+  ]
+}

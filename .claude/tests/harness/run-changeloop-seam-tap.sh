@@ -21,6 +21,7 @@ trap 'rm -f "$report"' EXIT HUP INT TERM
 status=0
 for suite in \
   "$HERE/run-changeloop-seam-tests.sh" \
+  "$HERE/contracts/evidence-proof.sh" \
   "$ROOT/.claude/tests/hooks/run-phase-mutation-guard-tests.sh" \
   "$HERE/run-workspace-surface-tests.mjs" \
   "$HERE/run-context-budget-tests.sh" \

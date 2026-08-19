@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        ".claude/tests/harness/run-changeloop-seam-tap.sh",
+        "--json"
+      ],
+      "minimum": 379,
+      "reportFormat": "json",
+      "timeoutMs": 300000,
+      "resources": [
+        "foundation-test-suite"
+      ],
+      "criticalCases": [
+        "standard-domain-language-section",
+        "source-checked-domain-term",
+        "qualified-durable-decision",
+        "rapid-existing-packet-compatibility"
+      ]
+    },
+    "compatibility": {
+      "capability": "compatibility",
+      "adapter": "command",
+      "command": [
+        "sh",
+        ".claude/tests/harness/contracts/evidence-proof.sh"
+      ],
+      "timeoutMs": 300000
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

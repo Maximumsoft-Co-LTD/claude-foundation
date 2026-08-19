@@ -2,6 +2,16 @@
 # A CI system can return a signed, workspace-bound evidence envelope. The
 # harness verifies trust, identity, run provenance, and artifact digests before
 # creating the ordinary durable receipt used by proof.
+# This file is normally sourced by run-harness-tests.sh. Direct execution is a
+# supported focused entry point for evidence providers and selects the schema
+# compatibility shard rather than running a fragment without its test environment.
+case "${0##*/}" in
+  evidence-proof.sh)
+    evidence_contract_dir="$(cd "$(dirname "$0")" && pwd)"
+    exec sh "$evidence_contract_dir/../run-harness-tests.sh" evidence-proof-a2-recovery
+    ;;
+esac
+
 evidence_proof_shard="${FOUNDATION_EVIDENCE_PROOF_SHARD:-all}"
 
 shard_selected() {
@@ -118,6 +128,8 @@ output="$(node .claude/harness/foundation.mjs new 'Profile owner update')"
 assert_contains "creates standard change" "$output" "CREATED profile-owner-update"
 assert_file_exists "runtime state created" ".foundation/runtime/profile-owner-update.json"
 assert_file_exists "delta spec created" "openspec/changes/profile-owner-update/specs/change/spec.md"
+assert_file_contains "new standard design includes domain language" \
+  "openspec/changes/profile-owner-update/design.md" "## Domain language"
 node .claude/harness/foundation.mjs resolve profile-owner-update \
   --impact medium --coupling isolated >/dev/null
 assert_cmd_fails_with "standard change stops for an explicit acceptance decision" \
@@ -479,6 +491,11 @@ assert_contains "reconfiguration preserves the declared claim contract" \
 # Security triggers are semantic, so they match words rather than substrings:
 # "accessibility" is not "access", and a passkey is a trust boundary.
 node .claude/harness/foundation.mjs new 'Improve keyboard accessibility of the nav bar' --rapid >/dev/null
+if [ ! -e openspec/changes/improve-keyboard-accessibility-of-the-nav-bar/design.md ]; then
+  pass "rapid change still omits design.md"
+else
+  fail "rapid change unexpectedly gained design.md"
+fi
 accessibility_resolved="$(node .claude/harness/foundation.mjs resolve \
   improve-keyboard-accessibility-of-the-nav-bar --impact low --coupling isolated)"
 assert_contains "an accessibility change triggers no security review" \
@@ -496,8 +513,55 @@ assert_contains "a schema upgrade is announced" \
   "$passkey_resolved" "upgraded from foundation-rapid"
 assert_file_exists "a schema upgrade instantiates design.md" \
   openspec/changes/let-users-sign-in-with-a-passkey/design.md
+node .claude/harness/foundation.mjs new 'Domain compatibility fixture' >/dev/null
+node .claude/harness/foundation.mjs resolve domain-compatibility-fixture \
+  --impact medium --coupling isolated --acceptance-not-required >/dev/null
+mkdir -p .foundation
+jq -n '{
+  why: "Keep project terms explicit.",
+  currentState: "The term is implicit.",
+  compatibility: "No public compatibility impact.",
+  domainLanguage: [{term:"Order", meaning:"A confirmed purchase request", avoid:"Transaction"}],
+  changes: ["Record the canonical term."],
+  nonGoals: ["No parallel glossary."],
+  decisions: [{choice:"Use Order", why:"Matches source", rejected:"Transaction"}],
+  risks: [{risk:"Term drift", mitigation:"Validate the design", owner:"test"}],
+  tasks: [{id:"T001", outcome:"Record language", kind:"contract", paths:["app.txt"], verify:"test -f app.txt"}],
+  claims: [{id:"domain-draft", scenario:"Draft language renders", impact:"low", capabilities:["test"]}],
+  specs: [{name:"domain-draft", operation:"added", requirement:"Render domain language", description:"The runtime SHALL render canonical terms.", scenarios:[{name:"Supplied term", when:"a draft carries a term", then:"the design records it"}]}]
+}' > .foundation/domain-language-draft.json
+node .claude/harness/foundation.mjs new 'Draft domain language' \
+  --draft .foundation/domain-language-draft.json >/dev/null
+jq 'del(.domainLanguage)' .foundation/domain-language-draft.json \
+  > .foundation/domain-language-default-draft.json
+node .claude/harness/foundation.mjs new 'Draft domain default' \
+  --draft .foundation/domain-language-default-draft.json >/dev/null
+assert_cmd_zero "[standard-domain-language-section] template, upgrade, and direct drafts enforce and render domain language" \
+  sh -c 'for path in "$1" "$2" "$3" "$4"; do
+      grep -F "## Domain language" "$path" >/dev/null || exit 1
+    done
+    grep -F "| Order | A confirmed purchase request | Transaction |" "$3" >/dev/null &&
+    grep -F "| \`none\` | This change introduces no project-specific term. | \`none\` |" "$4" >/dev/null &&
+    grep -F "<replace-with-project-specific-term-or-none>" "$5" >/dev/null &&
+    grep -F "<replace-with-tight-domain-meaning>" "$5" >/dev/null &&
+    grep -F "<replace-with-ambiguous-alias-or-none>" "$5" >/dev/null' sh \
+  openspec/changes/domain-compatibility-fixture/design.md \
+  openspec/changes/let-users-sign-in-with-a-passkey/design.md \
+  openspec/changes/draft-domain-language/design.md \
+  openspec/changes/draft-domain-default/design.md \
+  openspec/schemas/foundation-standard/templates/design.md
 assert_file_exists "a schema upgrade instantiates the spec delta" \
   openspec/changes/let-users-sign-in-with-a-passkey/specs/change/spec.md
+compat_design="openspec/changes/domain-compatibility-fixture/design.md"
+compat_tmp="${compat_design}.without-domain"
+awk 'BEGIN { skip = 0 }
+  /^## Domain language$/ { skip = 1; next }
+  /^## Decisions$/ { skip = 0 }
+  !skip { print }' "$compat_design" > "$compat_tmp"
+mv "$compat_tmp" "$compat_design"
+assert_cmd_zero "[rapid-existing-packet-compatibility] rapid omits design and an existing standard packet without the additive section validates" \
+  sh -c 'test ! -e "$1" && node .claude/harness/foundation.mjs validate domain-compatibility-fixture >/dev/null' sh \
+  openspec/changes/improve-keyboard-accessibility-of-the-nav-bar/design.md
 
 # `changes` is how a stuck project is diagnosed, so one unreadable state file
 # must not hide every other change, and abandon must still be able to exit.

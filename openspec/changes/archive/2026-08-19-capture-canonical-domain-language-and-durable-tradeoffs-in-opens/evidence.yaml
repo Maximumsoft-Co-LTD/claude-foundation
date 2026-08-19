@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "standard-design-domain-language",
+      "scenario": "A standard packet receives canonical domain language",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "compatibility",
+        "review"
+      ]
+    },
+    {
+      "id": "source-checked-canonical-terms",
+      "scenario": "A fuzzy project term is resolved against source",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "qualified-durable-decisions",
+      "scenario": "A durable tradeoff reaches the existing Decisions section",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "packet-compatibility-no-parallel-ledger",
+      "scenario": "Rapid and existing packets keep their lifecycle contract",
+      "impact": "medium",
+      "capabilities": [
+        "test",
+        "compatibility",
+        "review"
+      ]
+    }
+  ]
+}

@@ -86,6 +86,13 @@ assert_file_contains "[frontier-prerequisite-order] brainstorming asks only prer
 assert_file_contains "brainstorming hands settled answers forward without re-asking" \
   "$ROOT/.claude/skills/brainstorming/SKILL.md" \
   'without asking them again'
+assert_cmd_zero "[source-checked-domain-term] discovery checks project terms against source and keeps semantic choices" \
+  sh -c 'grep -F '\''fuzzy or conflicting'\'' "$1" >/dev/null &&
+    grep -F '\''specifications and code'\'' "$1" >/dev/null &&
+    grep -F '\''only a remaining semantic'\'' "$2" >/dev/null &&
+    grep -F '\''specifications'\'' "$2" >/dev/null' sh \
+  "$ROOT/.claude/skills/brainstorming/SKILL.md" \
+  "$ROOT/.claude/skills/grill-task-gu/SKILL.md"
 assert_file_contains "feature intake delegates discovery to grill-task-gu" \
   "$ROOT/.claude/skills/feature/references/workflow.md" \
   'Invoke `grill-task-gu`'
@@ -115,6 +122,22 @@ assert_file_contains "change intake always hashes grounding reads after sheet re
 assert_file_contains "change intake creates no parallel interview ledger" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Create no decision-tree or interview ledger'
+assert_cmd_zero "[qualified-durable-decision] template and change intake share the three-part durability threshold" \
+  sh -c 'for path do
+    grep -F '\''hard to reverse, surprising without context'\'' "$path" >/dev/null || exit 1
+    grep -F '\''meaningful alternatives'\'' "$path" >/dev/null || exit 1
+  done' sh \
+  "$ROOT/openspec/schemas/foundation-standard/templates/design.md" \
+  "$ROOT/.claude/skills/change/references/workflow.md"
+assert_file_contains "change intake forbids parallel domain and ADR artifacts" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Never create `CONTEXT.md`, a glossary artifact, or an ADR store'
+assert_cmd_zero "atomic draft template emits domain language input" \
+  sh -c 'node "$1" start --template | jq -e '\''
+    .domainLanguage[0].term == "replace-with-project-specific-term" and
+    .domainLanguage[0].meaning == "replace-with-tight-domain-meaning" and
+    .domainLanguage[0].avoid == "replace-with-ambiguous-alias-or-none"'\'' >/dev/null' \
+  sh "$ROOT/.claude/harness/foundation.mjs"
 assert_file_contains "fundamentals records decision answers in the change packet" \
   "$ROOT/.claude/rules/fundamentals.md" \
   'record the answers in the change packet'
