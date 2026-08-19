@@ -70,7 +70,11 @@ function processFixture(root) {
     runExecutionDag: async (_id, nodes) => {
       appendFileSync(executionLog, `${process.pid}\n`);
       writeFileSync(startedPath, `${process.pid}\n`);
-      if (process.env.PROOF_ADVANCE_HOLD === "1") await delay(500);
+      if (process.env.PROOF_ADVANCE_HOLD === "1") {
+        const releasePath = join(root, "provider-release");
+        const deadline = Date.now() + 5_000;
+        while (!existsSync(releasePath) && Date.now() < deadline) await delay(10);
+      }
       writeJson(worldPath, { ...world(), testValid: true });
       return nodes.map((node) => ({ provider: node.provider, status: "pass" }));
     },
@@ -158,6 +162,7 @@ async function parentTest() {
     assert.equal(concurrent.status, 0, concurrent.stderr);
     const concurrentOutcome = JSON.parse(concurrent.stdout);
     assert.equal(concurrentOutcome.status, "IN_PROGRESS");
+    writeFileSync(join(root, "provider-release"), "release\n");
     const firstResult = await firstDone;
     assert.equal(firstResult.status, 0, firstResult.stderr);
     assert.equal(JSON.parse(firstResult.stdout).status, "PASS");

@@ -37,7 +37,8 @@ restore() {
 # restores one run's injected fault as the other's "clean" source.
 . "$ROOT/.claude/tests/lib/mutation-lock.sh"
 acquire_mutation_lock "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
-trap 'restore; release_mutation_lock' EXIT HUP INT PIPE TERM
+trap 'restore; release_mutation_lock' EXIT
+trap 'exit 130' HUP INT PIPE TERM
 assert_no_injected_fault "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
 
 cp "$CONTRACT" "$WORK/evidence-contract.mjs"
@@ -47,7 +48,7 @@ cp "$STATE" "$WORK/state-runtime.mjs"
 # outcome this script cannot interpret, and swallowing the output turned it into
 # a bare "not-applied" with nothing to act on.
 suite_passes() {
-  ( cd "$ROOT" && sh "$@" > "$WORK/suite.log" 2>&1 )
+  ( cd "$ROOT" && "$@" > "$WORK/suite.log" 2>&1 )
 }
 
 report_baseline() {
@@ -57,11 +58,10 @@ report_baseline() {
   exit 1
 }
 
-# A kill targets the slice that owns the detecting assertions, not the whole
-# aggregate runner: the packet-omission assertions live in the evidence-proof
-# contract slice, and a mutated run only has to reach them.
-CODE_SUITE=".claude/tests/harness/run-harness-tests.sh"
-CODE_SLICE="evidence-proof"
+# The focused surface suite pins the same code-vs-packet hash boundary in about
+# a second. Running the 218-assertion evidence contract for this single fault
+# dominated run-all's critical path while adding no mutation sensitivity.
+CODE_SUITE=".claude/tests/harness/run-land-surface-tests.mjs"
 REVIEW_SUITE=".claude/tests/harness/run-feedback-review-tests.sh"
 
 # `run-all.sh` vouches for detector rows its pool already ran green against
@@ -75,15 +75,15 @@ preproven() {
   esac
 }
 
-if preproven evidence-proof; then
-  echo "PASS: evidence-proof baseline vouched by the pooled run"
+if preproven land-surface; then
+  echo "PASS: land-surface baseline vouched by the pooled run"
 else
-  suite_passes "$CODE_SUITE" "$CODE_SLICE" || report_baseline "$CODE_SUITE $CODE_SLICE"
+  suite_passes node --test "$CODE_SUITE" || report_baseline "$CODE_SUITE"
 fi
 if preproven feedback-review; then
   echo "PASS: feedback-review baseline vouched by the pooled run"
 else
-  suite_passes "$REVIEW_SUITE" || report_baseline "$REVIEW_SUITE"
+  suite_passes sh "$REVIEW_SUITE" || report_baseline "$REVIEW_SUITE"
 fi
 echo "PASS: baseline suites pass before mutation"
 
@@ -103,7 +103,7 @@ const mutated = source.replace(
 if (mutated === source) { console.error("packet-omission fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
-if suite_passes "$CODE_SUITE" "$CODE_SLICE"; then
+if suite_passes node --test "$CODE_SUITE"; then
   echo "FAIL: folding the packet back into the code hash went undetected"
 else
   echo "PASS: folding the packet back into the code hash is detected"
@@ -111,24 +111,24 @@ else
 fi
 cp "$WORK/state-runtime.mjs" "$STATE"
 
-# Fault 2: review and acceptance lose their exemption and bind the code hash
-# like everything else. Proof gets cheaper and evidence gets weaker — a review
-# receipt would outlive an edit to the packet the reviewer read.
+# Fault 2: review loses its semantic subject hash and binds the code hash like
+# executable evidence. A review receipt would then outlive an edit to the
+# proposal or specification the reviewer read.
 total=$((total + 1))
 node - "$CONTRACT" <<'MUTATE'
 const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /return \["review", "acceptance"\]\s*\n\s*\.includes\(providerCapability\(provider, providerConfig\(id, provider\)\)\);/,
-  "return false; // FOUNDATION-INJECTED-FAULT: review binds the code half too");
+  /const field = capability === "review" \? "reviewHash"/,
+  'const field = capability === "review" ? "codeHash" /* FOUNDATION-INJECTED-FAULT */');
 if (mutated === source) { console.error("review-exemption fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
-if suite_passes "$REVIEW_SUITE"; then
-  echo "FAIL: removing the review binding exemption went undetected"
+if suite_passes sh "$REVIEW_SUITE"; then
+  echo "FAIL: replacing the review subject hash with the code hash went undetected"
 else
-  echo "PASS: removing the review binding exemption is detected"
+  echo "PASS: replacing the review subject hash with the code hash is detected"
   killed=$((killed + 1))
 fi
 cp "$WORK/evidence-contract.mjs" "$CONTRACT"

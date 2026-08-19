@@ -33,6 +33,23 @@ cp -R "$ROOT/openspec/schemas" "$TMP/project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
 printf 'initial\n' > "$TMP/project/app.txt"
 
+# Evidence contracts exercise receipt binding, execution, and proof lifecycle;
+# they do not exercise the no-git fallback (that has dedicated surface and
+# sandbox coverage). Give this slice the same indexed baseline a real project
+# has. Without it every lifecycle command must byte-hash the copied harness
+# again, and the growing fixture turns 163 small CLI assertions into a
+# multi-minute serial tail in run-all.
+if [ "$#" -eq 1 ] && { [ "$1" = "evidence-proof" ] ||
+   [ "$1" = "evidence-proof-a" ] || [ "$1" = "evidence-proof-a1" ] ||
+   [ "$1" = "evidence-proof-a2" ] || [ "$1" = "evidence-proof-b" ] ||
+   [ "$1" = "evidence-proof-c" ]; }; then
+  git init -q "$TMP/project"
+  git -C "$TMP/project" add .
+  git -C "$TMP/project" \
+    -c user.name='Foundation Tests' -c user.email='foundation@example.invalid' \
+    commit -qm 'fixture baseline'
+fi
+
 cd "$TMP/project"
 
 # The contracts below attribute telemetry to run ids they choose themselves.
@@ -69,12 +86,20 @@ assert_contains "test wiring names the structured report field" "$providers" \
 slices="${*:-change-policy evidence-proof sandbox-land multi-repository planning-diagnostics}"
 for slice in $slices; do
   case "$slice" in
-    change-policy|evidence-proof|sandbox-land|multi-repository|planning-diagnostics) ;;
+    change-policy|evidence-proof|evidence-proof-a|evidence-proof-a1|evidence-proof-a2|evidence-proof-b|evidence-proof-c|sandbox-land|multi-repository|planning-diagnostics) ;;
     *) echo "unknown contract slice: $slice" >&2; exit 2 ;;
   esac
 done
 for slice in $slices; do
-  . "$HERE/contracts/$slice.sh"
+  case "$slice" in
+    evidence-proof-a|evidence-proof-a1|evidence-proof-a2|evidence-proof-b|evidence-proof-c)
+      FOUNDATION_EVIDENCE_PROOF_SHARD="${slice#evidence-proof-}"
+      export FOUNDATION_EVIDENCE_PROOF_SHARD
+      . "$HERE/contracts/evidence-proof.sh"
+      unset FOUNDATION_EVIDENCE_PROOF_SHARD
+      ;;
+    *) . "$HERE/contracts/$slice.sh" ;;
+  esac
 done
 
 # The summary lives here, not in the last slice, so a partial selection still

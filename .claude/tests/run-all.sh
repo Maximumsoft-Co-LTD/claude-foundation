@@ -18,6 +18,16 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
+selection_mode="full"
+list_mode=0
+if [ "${1:-}" = "--affected" ]; then
+  selection_mode="affected"
+  shift
+elif [ "${1:-}" = "--list" ]; then
+  list_mode=1
+  shift
+fi
+
 # label|command — `!` prefixes a label that must run with the repository to
 # itself. Commands are expanded by the child with $HERE and $ROOT in scope.
 #
@@ -27,7 +37,10 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # follows the same table, so the printed report order matches.
 suites() {
   cat <<'TABLE'
-harness contracts (evidence proof)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof
+harness contracts (evidence proof a1)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a1
+harness contracts (evidence proof a2)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2
+harness contracts (evidence proof b)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-b
+harness contracts (evidence proof c)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c
 change loop seams|sh "$HERE/harness/run-changeloop-seam-tests.sh"
 feedback review|sh "$HERE/harness/run-feedback-review-tests.sh"
 installer smoke|sh "$HERE/harness/run-installer-tests.sh"
@@ -50,6 +63,8 @@ packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"
 upgrade compatibility|sh "$HERE/harness/run-upgrade-compat-tests.sh"
 dashboard contracts|npm --prefix "$ROOT/dashboard" test
 runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
+run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
+affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"
 architecture boundaries|node "$HERE/harness/run-architecture-tests.mjs"
 single-source tables|node "$HERE/harness/run-single-source-tests.mjs"
@@ -92,15 +107,68 @@ nth() { suites | sed -n "${1}p"; }
 label_of() { _l="${1%%|*}"; printf '%s' "${_l#!}"; }
 exclusive() { case "$1" in !*) return 0 ;; *) return 1 ;; esac; }
 
+if [ "$list_mode" -eq 1 ]; then
+  suites | while IFS='|' read -r label _command; do
+    label_of "$label"
+    printf '\n'
+  done
+  exit 0
+fi
+
+# Recursively stop descendants before their parent. macOS has no `setsid`, so
+# signalling only the wrapper PID leaves node/npm grandchildren running and
+# can strand an in-place mutation after a timeout or interrupted run.
+kill_tree() {
+  kill -0 "$1" 2>/dev/null || return 0
+  for _tree_child in $(pgrep -P "$1" 2>/dev/null || true); do
+    kill_tree "$_tree_child"
+  done
+  kill -TERM "$1" 2>/dev/null || true
+}
+
+if [ "${1:-}" = "--kill-tree" ]; then
+  [ -n "${2:-}" ] || { echo "--kill-tree requires a PID" >&2; exit 2; }
+  kill_tree "$2"
+  exit 0
+fi
+
 # One suite, into its own buffer. Re-entered as a child so the pool below can be
 # a plain `xargs -P`; nothing else calls this form.
 if [ "${1:-}" = "--suite" ]; then
   index="$2"; work="$3"
+  runner_pid_file="$work/$index.runner-pid"
+  echo "$$" > "$runner_pid_file"
+  trap 'rm -f "$runner_pid_file"' EXIT
   line="$(nth "$index")"
-  if eval "${line#*|}" > "$work/$index.out" 2>&1
-  then echo 0 > "$work/$index.status"
-  else echo 1 > "$work/$index.status"
+  started="$(date +%s)"
+  echo "$started" > "$work/$index.started"
+  if exclusive "$line"; then
+    # Mutation suites own their cleanup traps. Keep them in the foreground so
+    # HUP/INT/TERM reaches the mutator itself and it can restore source bytes.
+    if eval "${line#*|}" > "$work/$index.out" 2>&1; then result=0; else result=1; fi
+  else
+    ( eval "${line#*|}" ) > "$work/$index.out" 2>&1 &
+    child=$!
+    cleanup_suite() {
+      kill_tree "$child"
+      wait "$child" 2>/dev/null || true
+    }
+    trap 'cleanup_suite; exit 130' HUP INT TERM
+    timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}"
+    deadline=$((started + timeout))
+    while kill -0 "$child" 2>/dev/null; do
+      if [ "$(date +%s)" -ge "$deadline" ]; then
+        printf 'suite exceeded %ss and was terminated\n' "$timeout" >> "$work/$index.out"
+        echo timeout > "$work/$index.timeout"
+        kill_tree "$child"
+        break
+      fi
+      sleep 1
+    done
+    if wait "$child"; then result=0; else result=1; fi
   fi
+  echo $(( $(date +%s) - started )) > "$work/$index.duration"
+  echo "$result" > "$work/$index.status"
   exit 0
 fi
 
@@ -114,19 +182,76 @@ pool_size() {
 }
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+pool_pid=""
+monitor_pid=""
+cleanup() {
+  [ -n "$monitor_pid" ] && kill_tree "$monitor_pid"
+  [ -n "$pool_pid" ] && kill_tree "$pool_pid"
+  for runner_file in "$WORK"/*.runner-pid; do
+    [ -f "$runner_file" ] || continue
+    kill_tree "$(cat "$runner_file")"
+  done
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 TOTAL="$(suites | wc -l | tr -d ' ')"
 JOBS="$(pool_size)"
 
+selected_labels=""
+if [ "$selection_mode" = "affected" ]; then
+  suite_labels="$(suites | while IFS='|' read -r label _command; do label_of "$label"; printf '\n'; done)"
+  selected_labels="$(FOUNDATION_SUITE_LABELS="$suite_labels" \
+    node "$HERE/affected-suite-selector.mjs" "$ROOT")"
+fi
+
 shared=""
 alone=""
+selected=""
 index=1
 while [ "$index" -le "$TOTAL" ]; do
-  if exclusive "$(nth "$index")"; then alone="$alone $index"; else shared="$shared $index"; fi
+  line="$(nth "$index")"
+  label="$(label_of "$line")"
+  if [ "$selection_mode" = "affected" ] &&
+     ! printf '%s\n' "$selected_labels" | grep -qFx -- "$label"; then
+    index=$((index + 1))
+    continue
+  fi
+  selected="$selected $index"
+  if exclusive "$line"; then alone="$alone $index"; else shared="$shared $index"; fi
   index=$((index + 1))
 done
+SELECTED_TOTAL="$(printf '%s\n' $selected | wc -l | tr -d ' ')"
 
-printf '%s\n' $shared | xargs -P "$JOBS" -I@ sh "$0" --suite @ "$WORK"
+printf '%s\n' $shared | xargs -P "$JOBS" -I@ sh "$0" --suite @ "$WORK" &
+pool_pid=$!
+(
+  monitor_ticks=0
+  while kill -0 "$pool_pid" 2>/dev/null; do
+    sleep 1
+    kill -0 "$pool_pid" 2>/dev/null || exit 0
+    monitor_ticks=$((monitor_ticks + 1))
+    [ "$monitor_ticks" -lt 15 ] || monitor_ticks=0
+    [ "$monitor_ticks" -eq 0 ] || continue
+    completed="$(find "$WORK" -name '*.status' -type f 2>/dev/null | wc -l | tr -d ' ')"
+    running=""
+    for started_file in "$WORK"/*.started; do
+      [ -f "$started_file" ] || continue
+      running_index="${started_file##*/}"
+      running_index="${running_index%.started}"
+      [ -f "$WORK/$running_index.status" ] ||
+        running="${running}${running:+, }$(label_of "$(nth "$running_index")")"
+    done
+    printf '… foundation tests: %s/%s shared suites complete%s\n' \
+      "$completed" "$(printf '%s\n' $shared | wc -l | tr -d ' ')" \
+      "${running:+; running: $running}" >&2
+  done
+) &
+monitor_pid=$!
+wait "$pool_pid"
+pool_pid=""
+wait "$monitor_pid" 2>/dev/null || true
+monitor_pid=""
 
 # The mutation suites prove their detector suites pass before injecting a
 # fault. The pool just ran those detectors against the same unmutated tree in
@@ -143,28 +268,27 @@ vouch() {
     _vouch_index=$((_vouch_index + 1))
   done
 }
-vouch 'harness contracts (evidence proof)' evidence-proof
 vouch 'feedback review' feedback-review
+vouch 'land surface' land-surface
 export FOUNDATION_PREPROVEN_SUITES="${FOUNDATION_PREPROVEN_SUITES:-}"
 
 for index in $alone; do sh "$0" --suite "$index" "$WORK"; done
 
 # Replayed in table order: a parallel run has to read like a serial one.
 failed=0
-index=1
-while [ "$index" -le "$TOTAL" ]; do
+for index in $selected; do
   label="$(label_of "$(nth "$index")")"
-  printf '▶ %s\n' "$label"
+  duration="$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')"
+  printf '▶ %s (%ss)\n' "$label" "$duration"
   [ -f "$WORK/$index.out" ] && cat "$WORK/$index.out"
   if [ "$(cat "$WORK/$index.status" 2>/dev/null || echo 1)" -eq 0 ]
   then printf '✓ %s\n\n' "$label"
   else printf '✗ %s\n\n' "$label" >&2; failed=1
   fi
-  index=$((index + 1))
 done
 
 if [ "$failed" -eq 0 ]; then
-  echo "foundation tests: ALL SUITES PASS ($TOTAL suites, ${JOBS}-way)"
+  echo "foundation tests: ALL SUITES PASS ($SELECTED_TOTAL suites, ${JOBS}-way${selection_mode:+, $selection_mode})"
   exit 0
 fi
 echo "foundation tests: SOME SUITES FAILED" >&2

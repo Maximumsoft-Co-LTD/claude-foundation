@@ -9,6 +9,15 @@ sh .claude/tests/run-all.sh
 
 The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
+For an edit/repair loop, `run-all.sh --affected` selects the suites that own
+the changed files plus their proof, review, Land, and mutation dependencies.
+The selector reads staged, unstaged, and untracked paths; set
+`FOUNDATION_TEST_BASE=<ref>` to include committed changes since a branch point.
+It is deliberately conservative: changes to the composition root, protocol,
+runtime version, CLI router, workspace policy, or shared test libraries expand
+to the full suite set. Plain `run-all.sh` remains the authoritative final/CI
+gate, so affected execution cannot silently weaken Land evidence.
+
 Suites run concurrently — each builds its own fixture under `mktemp -d`, so
 nothing orders them — and their output is buffered and replayed in table order,
 so a parallel run reads and diffs exactly like a serial one. The mutation suites

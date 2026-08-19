@@ -2,6 +2,10 @@
 # A CI system can return a signed, workspace-bound evidence envelope. The
 # harness verifies trust, identity, run provenance, and artifact digests before
 # creating the ordinary durable receipt used by proof.
+evidence_proof_shard="${FOUNDATION_EVIDENCE_PROOF_SHARD:-all}"
+
+if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = a ] ||
+   [ "$evidence_proof_shard" = a1 ]; then
 node .claude/harness/foundation.mjs new 'Verify signed CI evidence' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve verify-signed-ci-evidence \
   --impact low --coupling isolated >/dev/null
@@ -277,13 +281,54 @@ assert_file_exists "DAG emits static receipt" \
   .foundation/receipts/executable-evidence/static-analysis.json
 readiness="$(node .claude/harness/foundation.mjs proof-readiness executable-evidence)"
 assert_contains "proof readiness returns a typed ready state" "$readiness" '"status": "READY"'
+fi
 
 # Project-owned evidence must be collectible before an external review receipt
 # exists. Final proof remains blocked until review, then reuses the collected
 # receipt instead of executing the provider again.
+if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = a ] ||
+   [ "$evidence_proof_shard" = a2 ]; then
+# The latter half also checks cache reuse and artifact auditing against this
+# change. A standalone a2 shard creates only the prerequisite state; the full
+# unsplit contract already created it immediately above.
+if [ "$evidence_proof_shard" = a2 ]; then
+  node .claude/harness/foundation.mjs new 'Executable evidence' --rapid >/dev/null
+  node .claude/harness/foundation.mjs resolve executable-evidence \
+    --impact low --coupling isolated >/dev/null
+  printf '%s\n' '#!/usr/bin/env sh' \
+    'count=0' \
+    '[ ! -f .foundation/provider-count.txt ] || count="$(cat .foundation/provider-count.txt)"' \
+    'count=$((count + 1))' \
+    'printf "%s\\n" "$count" > .foundation/provider-count.txt' \
+    'printf "%s\\n" "{\"numTotalTests\":4}"' > provider-fixture.sh
+  chmod +x provider-fixture.sh
+  printf '%s\n' \
+    '{' \
+    '  "version": 2,' \
+    '  "providers": {' \
+    '    "test": {"adapter":"test-discovery","command":["sh","provider-fixture.sh"],"minimum":4,"inputs":["provider-fixture.sh"]},' \
+    '    "static-analysis": {"adapter":"command","command":["sh","provider-fixture.sh"],"inputs":["provider-fixture.sh"]}' \
+    '  },' \
+    '  "claims": [' \
+    '    {"id":"executable-outcome","scenario":"Configured evidence passes","impact":"low","capabilities":["test","static-analysis"]}' \
+    '  ]' \
+    '}' > openspec/changes/executable-evidence/evidence.yaml
+  sed -i.bak 's/- \[ \]/- [x]/g' openspec/changes/executable-evidence/tasks.md
+  rm openspec/changes/executable-evidence/tasks.md.bak
+  node .claude/harness/foundation.mjs proof-execute executable-evidence >/dev/null
+fi
 node .claude/harness/foundation.mjs new 'Collect before review' >/dev/null
 node .claude/harness/foundation.mjs resolve collect-before-review \
   --impact medium --coupling coupled --acceptance-not-required >/dev/null
+# Make this change's review subject explicit. The former gitless fixture
+# accidentally treated an edit left by an earlier scenario as this change's
+# code; an indexed fixture correctly records that edit as pre-existing.
+printf 'collect-before-review implementation\n' > app.txt
+sed -i.bak \
+  -e '/T001/s/\[paths:<glob>\]/[paths:app.txt]/' \
+  -e '/T002/s/\[paths:<glob>\]/[paths:collect-fixture.sh]/' \
+  openspec/changes/collect-before-review/tasks.md
+rm openspec/changes/collect-before-review/tasks.md.bak
 printf '%s\n' '#!/usr/bin/env sh' \
   'count=0' \
   '[ ! -f .foundation/collect-count.txt ] || count="$(cat .foundation/collect-count.txt)"' \
@@ -584,10 +629,12 @@ assert_eq "behavioral contract no longer carries provider commands" "false" \
   "$(jq 'has("providers")' openspec/changes/executable-evidence/evidence.yaml)"
 assert_eq "execution file receives migrated provider commands" "test-discovery" \
   "$(jq -r '.providers.test.adapter' openspec/changes/executable-evidence/execution.yaml)"
+fi
 
 # A provider that declares no inputs binds the whole workspace *minus* the
 # change packet. Editing the packet after proving used to expire every receipt
 # in the change and charge a full provider re-run for a note in design.md.
+if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = b ]; then
 node .claude/harness/foundation.mjs new 'Packet edit reuse' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve packet-edit-reuse \
   --impact low --coupling isolated >/dev/null
@@ -811,9 +858,11 @@ else
 fi
 assert_file_contains "service log is bound into proof manifest" \
   .foundation/receipts/service-evidence/proof.json '"type": "service-log"'
+fi
 
 # The Playwright adapter requires structured claim annotations. A deterministic
 # fake reporter pins parsing without downloading browser binaries in unit CI.
+if [ "$evidence_proof_shard" = all ] || [ "$evidence_proof_shard" = c ]; then
 node .claude/harness/foundation.mjs new 'Browser adapter' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve browser-adapter \
   --impact low --coupling isolated >/dev/null
@@ -1140,3 +1189,4 @@ assert_cmd_zero "the waiver revokes on the same authority" \
     --capability static-analysis --revoke --decision-ref fixture://user/restore-static
 assert_cmd_fails_with "a revoked waiver blocks finalize again" "static-analysis" \
   node .claude/harness/foundation.mjs prove waivable-gate
+fi

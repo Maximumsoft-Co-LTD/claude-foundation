@@ -28,7 +28,8 @@ restore() {
 # restores one run's injected fault as the other's "clean" source.
 . "$ROOT/.claude/tests/lib/mutation-lock.sh"
 acquire_mutation_lock "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
-trap 'restore; release_mutation_lock' EXIT INT TERM
+trap 'restore; release_mutation_lock' EXIT
+trap 'exit 130' HUP INT PIPE TERM
 assert_no_injected_fault "$ROOT" || { echo "FOUNDATION_MUTATION_RESULT=not-applied"; exit 1; }
 
 cp "$SURFACE" "$WORK/state-runtime.mjs"

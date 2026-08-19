@@ -515,7 +515,9 @@ export function createEvidenceContract({
   }
 
   function providerWorkspaceHash(id, provider, fallback = null) {
-    const field = packetBoundCapability(id, provider) ? "workspaceHash" : "codeHash";
+    const capability = providerCapability(provider, providerConfig(id, provider));
+    const field = capability === "review" ? "reviewHash"
+      : packetBoundCapability(id, provider) ? "workspaceHash" : "codeHash";
     const config = providerConfig(id, provider);
     const explicitlyScoped = Boolean(config?.repository || config?.repositories ||
       config?.adapter === "contract-digest");

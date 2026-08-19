@@ -98,6 +98,8 @@ function fixture(options = {}) {
     providerConfig: (_id, provider) => ({
       adapter: provider === "test" ? "command" : "external"
     }),
+    providerWorkspaceHash: (_id, provider, fallback) =>
+      options.providerHashes?.[provider] || fallback,
     deliveredAiAttempts: () => options.deliveredAiAttempts || [],
     recordDeterministicReviewClosure: () => {
       closures += 1;
@@ -258,8 +260,48 @@ const rejected = fixture({
 const rejectedResult = await quiet(() => rejected.runtime.proofAdvance("change-a"));
 assert.equal(rejectedResult.status, "ACTION_REQUIRED");
 assert.equal(rejectedResult.stage, "review-rejected");
+assert.equal(rejectedResult.cursor.stage, "review-rejected");
+assert.deepEqual(rejectedResult.cursor.requestIds, ["review-rejected"]);
 assert.equal(rejected.requests.length, 1,
   "a rejected unchanged review must not create a doomed follow-up request");
+const rejectedAgain = await quiet(() => rejected.runtime.proofAdvance("change-a"));
+assert.equal(rejectedAgain.status, "REPAIR_NOT_PROGRESSING");
+assert.deepEqual(rejectedAgain.next, [],
+  "an unchanged rejected review terminates instead of emitting Build forever");
+
+const failedReceipt = fixture({
+  receiptOverrides: { review: "fail" },
+  deliveredAiAttempts: [{
+    digest: "attempt-failed", attempt: 1, workspaceHash: "review-subject-a",
+    resultStatus: "fail", findings: [{
+      id: "F-BLOCK", severity: "major", path: "src/app.mjs", line: 1,
+      message: "repair this", claimIds: ["claim-a"],
+      verificationCaseIds: ["CASE-A"]
+    }]
+  }],
+  providerHashes: { review: "review-subject-a" }
+});
+const failedReceiptResult = await quiet(() =>
+  failedReceipt.runtime.proofAdvance("change-a"));
+assert.equal(failedReceiptResult.route, "AUTO_REPAIR");
+assert.deepEqual(failedReceiptResult.repairBatch.findingIds, ["F-BLOCK"],
+  "a real failed review receipt reaches the bounded repair route");
+const failedReceiptAgain = await quiet(() =>
+  failedReceipt.runtime.proofAdvance("change-a"));
+assert.equal(failedReceiptAgain.status, "REPAIR_NOT_PROGRESSING",
+  "a repeated failed receipt terminates against the stable review subject");
+
+const subjectRequest = fixture({
+  requests: [{
+    requestId: "review-subject-request", type: "review", provider: "review",
+    status: "rejected", workspaceHash: "review-subject-a"
+  }],
+  providerHashes: { review: "review-subject-a" }
+});
+const subjectRequestResult = await quiet(() =>
+  subjectRequest.runtime.proofAdvance("change-a"));
+assert.equal(subjectRequestResult.stage, "review-rejected",
+  "proof matches unscoped authority requests in the review-hash domain");
 
 const blocked = fixture({ phase: "blocked" });
 const blockedResult = await quiet(() => blocked.runtime.proofAdvance("change-a"));

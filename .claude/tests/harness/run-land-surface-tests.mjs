@@ -114,6 +114,33 @@ test("a file the change declares is surface even before it is tracked", () => {
     "a declared new file must bind the evidence it was proven against");
 });
 
+test("review identity ignores progress and handoff tracking but binds semantics", () => {
+  const { root, id, state } = workspace({ declaredSurface: ["src/**"] });
+  const changeRel = `openspec/changes/${id}`;
+  const before = state.singleRelevantSnapshot(id, root, true);
+  assert.notEqual(before.workspaceHash, before.codeHash,
+    "executable evidence excludes the active change packet");
+  write(root, `${changeRel}/tasks.md`,
+    "# Tasks\n\n- [x] **T001** Work — verify: `true`\n");
+  write(root, `${changeRel}/handoffs.yaml`, "version: 1\noperations: []\n");
+  const progress = state.singleRelevantSnapshot(id, root, true);
+  assert.notEqual(progress.workspaceHash, before.workspaceHash);
+  assert.equal(progress.reviewHash, before.reviewHash,
+    "controller progress and delivery tracking do not invalidate review");
+  write(root, `${changeRel}/tasks.md`,
+    "# Tasks\n\n- [x] **T001** Changed scope — verify: `true` [paths:src/**]\n");
+  const taskSemantics = state.singleRelevantSnapshot(id, root, true);
+  assert.notEqual(taskSemantics.reviewHash, progress.reviewHash,
+    "task instructions and scope remain part of review identity");
+  write(root, `${changeRel}/proposal.md`, "# Changed semantic intent\n");
+  const semantic = state.singleRelevantSnapshot(id, root, true);
+  assert.notEqual(semantic.reviewHash, taskSemantics.reviewHash,
+    "semantic contract changes still invalidate review");
+  write(root, "src/app.mjs", "export const app = 2;\n");
+  assert.notEqual(state.singleRelevantSnapshot(id, root, true).reviewHash,
+    semantic.reviewHash, "reviewed code bytes still invalidate review");
+});
+
 test("the manifest and the snapshot react to the same paths", () => {
   const { root, id, state } = workspace({ declaredSurface: ["src/**"] });
   const baseFiles = state.singleRelevantSnapshot(id, root, true).fileCount;

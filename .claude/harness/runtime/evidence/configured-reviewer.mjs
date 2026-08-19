@@ -54,12 +54,21 @@ function text(value) {
 }
 
 export function claudeResultEnvelope(stdout) {
-  const parsed = parseJson(stdout);
-  if (!Array.isArray(parsed)) return parsed;
-  const result = [...parsed].reverse().find((event) => event?.type === "result") || null;
-  const session = result?.session_id || parsed.find((event) =>
-    event?.type === "system" && event?.subtype === "init")?.session_id || null;
-  return result ? { ...result, session_id: session } : session ? { session_id: session } : null;
+  const source = String(stdout || "").trim();
+  if (!source) return null;
+  const parsed = parseJson(source);
+  const events = Array.isArray(parsed) ? parsed
+    : parsed && typeof parsed === "object" ? [parsed]
+      : source.split(/\r?\n/).filter(Boolean).map(parseJson);
+  if (!events.length || events.some((event) => !event || typeof event !== "object"))
+    return null;
+  const result = [...events].reverse().find((event) => event.type === "result") || null;
+  if (!result) return { envelopeError: "missing-result" };
+  const sessions = [...new Set(events.map((event) => text(event.session_id)).filter(Boolean))];
+  if (sessions.length > 1)
+    return { ...result, session_id: text(result.session_id) || null,
+      envelopeError: "conflicting-session-ids" };
+  return { ...result, session_id: sessions[0] || null };
 }
 
 function diagnostic(result) {
@@ -262,8 +271,14 @@ export function createConfiguredReviewerRuntime({
       });
     const blockers = review.findings.filter((finding) =>
       ["blocker", "major"].includes(finding.severity));
+    if (review.status === "fail" && review.findings.length === 0)
+      return persist(config, changeId, workspace, {
+        status: "error", sessionId,
+        summary: `${config.adapter} reviewer returned fail without a blocker or major finding`
+      });
     return persist(config, changeId, workspace, {
-      status: blockers.length ? "fail" : review.status,
+      status: blockers.length ? "fail"
+        : review.status === "inconclusive" ? "inconclusive" : "pass",
       summary: review.summary,
       findings: review.findings,
       verifiedFindingIds: review.verifiedFindingIds,
@@ -318,33 +333,6 @@ export function createConfiguredReviewerRuntime({
     // Claude Code rejects nested launches when its host marker is inherited.
     // The reviewer is an intentionally separate headless process/session.
     delete environment.CLAUDECODE;
-    const handshakeSession = uuid();
-    const handshake = spawn(config.executable, [
-      "-p", "--output-format", "json",
-      "--model", config.modelId,
-      "--effort", config.reasoningEffort,
-      "--permission-mode", "plan",
-      "--tools", CLAUDE_READ_ONLY_TOOLS,
-      "--safe-mode", "--no-session-persistence",
-      "--session-id", handshakeSession,
-      "Reply exactly OK."
-    ], {
-      cwd: workspace, encoding: "utf8",
-      timeout: Number(config.handshakeTimeoutMs || 30_000),
-      maxBuffer: 4 * 1024 * 1024,
-      env: environment
-    });
-    const handshakeEnvelope = claudeResultEnvelope(handshake.stdout);
-    const observedHandshakeSession = text(handshakeEnvelope?.session_id);
-    if (handshake.error || handshake.status !== 0 ||
-        handshakeEnvelope?.is_error === true ||
-        !observedHandshakeSession || observedHandshakeSession !== handshakeSession)
-      return persist(config, changeId, workspace, {
-        status: "error", sessionId: observedHandshakeSession || null,
-        summary: observedHandshakeSession && observedHandshakeSession !== handshakeSession
-          ? "Claude Code reviewer session handshake did not return the exact fresh session ID; full review was not started"
-          : `Claude Code reviewer session handshake failed before full review: ${diagnostic(handshake)}`
-      });
     const requestedSession = uuid();
     const args = [
       "-p", "--output-format", "json",
@@ -365,6 +353,11 @@ export function createConfiguredReviewerRuntime({
     });
     const envelope = claudeResultEnvelope(result.stdout);
     const sessionId = text(envelope?.session_id);
+    if (envelope?.envelopeError)
+      return persist(config, changeId, workspace, {
+        status: "error", sessionId: sessionId || null,
+        summary: `Claude Code reviewer returned an invalid event envelope (${envelope.envelopeError})`
+      });
     if (result.error || result.status !== 0 || envelope?.is_error === true ||
         envelope?.subtype && envelope.subtype !== "success")
       return persist(config, changeId, workspace, {

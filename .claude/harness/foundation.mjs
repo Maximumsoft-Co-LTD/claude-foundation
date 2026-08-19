@@ -101,13 +101,13 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
     "is a mixture of two revisions. Reinstall it with 'claude-foundation init <project>'.");
   process.exit(1);
 }
-const PROVIDER_PROTOCOL_VERSION = "10";
+const PROVIDER_PROTOCOL_VERSION = "11";
 const ADAPTER_PROTOCOL_VERSION = "5";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "7";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
-const REVIEW_PROTOCOL_VERSION = "3";
+const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const REVIEW_PACKET_SCHEMA_VERSION = "4";
 const ATTESTATION_PROTOCOL_VERSION = "1";
@@ -840,6 +840,7 @@ const packetRuntime = createPacketRuntime({
   reviewPolicy,
   resolvedAcceptance,
   handoffReadiness,
+  deliveredAiAttempts,
   serializedJson,
   foundationPolicy,
   recordContextMetric,

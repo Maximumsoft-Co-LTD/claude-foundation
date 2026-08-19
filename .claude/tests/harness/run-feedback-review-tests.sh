@@ -556,10 +556,10 @@ cp "$TMP/legacy-review.json" \
 legacy_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
 assert_contains "legacy review receipt is specifically stale" \
   "$legacy_plan" "review: review-version-stale"
-assert_eq "provider protocol carries repository-set evidence" "10" \
+assert_eq "provider protocol carries review subject identity" "11" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
-  jq -e '.reviewProtocol == "3" and .acceptanceProtocol == "2" and .reviewPacketSchema == "4" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
+  jq -e '.reviewProtocol == "4" and .acceptanceProtocol == "2" and .reviewPacketSchema == "4" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
     .claude/harness/protocol.json
 
 node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null
