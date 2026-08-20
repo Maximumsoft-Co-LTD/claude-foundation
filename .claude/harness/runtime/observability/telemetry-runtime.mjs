@@ -13,6 +13,7 @@ import {
   statSync
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { measuredNumber } from "../core/measured-number.mjs";
 import {
   normalizeClaudeUserTransition,
   normalizeTelemetryRow,
@@ -84,17 +85,18 @@ export function createTelemetryRuntime({
         for (const entry of entries.slice(0, 500)) {
           const path = join(dir, entry);
           const row = readJson(path, {});
-          if (row.kind && Number.isFinite(Number(row.bytes))) {
+          const bytes = measuredNumber(row.bytes);
+          if (row.kind && bytes !== null) {
             rollup.count += 1;
-            rollup.totalBytes += Number(row.bytes);
+            rollup.totalBytes += bytes;
             const summary = rollup.byKind[row.kind] ||= {
               count: 0,
               totalBytes: 0,
               maxBytes: 0
             };
             summary.count += 1;
-            summary.totalBytes += Number(row.bytes);
-            summary.maxBytes = Math.max(summary.maxBytes, Number(row.bytes));
+            summary.totalBytes += bytes;
+            summary.maxBytes = Math.max(summary.maxBytes, bytes);
           }
           rmSync(path, { force: true });
         }
@@ -116,6 +118,58 @@ export function createTelemetryRuntime({
 
   function sourceKey(path) {
     return createHash("sha256").update(path).digest("hex").slice(0, 24);
+  }
+
+  const CURSOR_ANCHOR_BYTES = 4096;
+
+  function cursorIdentity(path, offset) {
+    const metadata = statSync(path);
+    const boundedOffset = Math.max(0, Math.min(Number(offset) || 0, metadata.size));
+    const anchorStart = Math.max(0, boundedOffset - CURSOR_ANCHOR_BYTES);
+    const buffer = Buffer.alloc(boundedOffset - anchorStart);
+    if (buffer.length) {
+      const descriptor = openSync(path, "r");
+      try {
+        let consumed = 0;
+        while (consumed < buffer.length) {
+          const count = readSync(
+            descriptor, buffer, consumed, buffer.length - consumed, anchorStart + consumed);
+          if (count === 0) break;
+          consumed += count;
+        }
+        if (consumed !== buffer.length)
+          throw new Error(`Claude transcript changed while its cursor was inspected`);
+      } finally {
+        closeSync(descriptor);
+      }
+    }
+    return {
+      device: String(metadata.dev),
+      inode: String(metadata.ino),
+      anchorStart,
+      anchorHash: createHash("sha256").update(buffer).digest("hex")
+    };
+  }
+
+  function sourceCursor(path, offset) {
+    return { path, offset, ...cursorIdentity(path, offset) };
+  }
+
+  function sourceReadOffset(path, source) {
+    const size = statSync(path).size;
+    const offset = Number(source.offset || 0);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > size) return 0;
+    // A legacy cursor cannot prove that the path still names the file it read.
+    // Re-scan it once from the start; request/transition deduplication prevents
+    // duplicate events, and the successful read upgrades it with an identity.
+    if (source.device === undefined || source.inode === undefined ||
+        source.anchorStart === undefined || !source.anchorHash)
+      return 0;
+    const current = cursorIdentity(path, offset);
+    return current.device === String(source.device) &&
+      current.inode === String(source.inode) &&
+      current.anchorStart === Number(source.anchorStart) &&
+      current.anchorHash === source.anchorHash ? offset : 0;
   }
 
   // The session bound works; the project bound did not exist. A transcript is
@@ -208,16 +262,16 @@ export function createTelemetryRuntime({
       flags.task = taskId;
     }
     for (const field of ["input", "output", "cache", "cache-create", "cost", "duration"])
-      if (flags[field] !== undefined && !Number.isFinite(Number(flags[field])))
+      if (flags[field] !== undefined && measuredNumber(flags[field]) === null)
         fail(`event --${field} must be numeric`);
     const snapshot = state.activeProofRun || readJson(snapshotPath(id), {});
     // `--cache` is the read. Without a separate write input, `cacheCreationTokens`
     // was hardcoded null and the budget derived cache-write as
     // `cacheTokens - cacheReadTokens` — structurally zero for every event
     // recorded through this path, so cache-write spend was unbillable.
-    const cacheReadTokens = flags.cache === undefined ? null : Number(flags.cache);
+    const cacheReadTokens = measuredNumber(flags.cache);
     const cacheCreationTokens = flags["cache-create"] === undefined
-      ? null : Number(flags["cache-create"]);
+      ? null : measuredNumber(flags["cache-create"]);
     const cacheTokens = [cacheReadTokens, cacheCreationTokens]
       .some((value) => value !== null)
       ? [cacheReadTokens, cacheCreationTokens]
@@ -234,13 +288,13 @@ export function createTelemetryRuntime({
       requestId: flags.request || null,
       parentRequestId: flags.parent || null,
       timestamp: now(),
-      inputTokens: flags.input === undefined ? null : Number(flags.input),
-      outputTokens: flags.output === undefined ? null : Number(flags.output),
+      inputTokens: measuredNumber(flags.input),
+      outputTokens: measuredNumber(flags.output),
       cacheCreationTokens,
       cacheReadTokens,
       cacheTokens,
-      cost: flags.cost === undefined ? null : Number(flags.cost),
-      durationMs: flags.duration === undefined ? null : Number(flags.duration),
+      cost: measuredNumber(flags.cost),
+      durationMs: measuredNumber(flags.duration),
       tool: flags.tool || null,
       repositoryId: flags.repo || null,
       taskId: flags.task || null,
@@ -324,10 +378,8 @@ export function createTelemetryRuntime({
         sources: {}
       };
       for (const path of collectClaudeSources(context.transcriptPath)) {
-        session.sources[sourceKey(path)] = {
-          path,
-          offset: options.fromStart ? 0 : statSync(path).size
-        };
+        session.sources[sourceKey(path)] = sourceCursor(
+          path, options.fromStart ? 0 : statSync(path).size);
       }
       cursors.sessions[context.sessionId] = session;
     } else {
@@ -357,7 +409,8 @@ export function createTelemetryRuntime({
       try {
         return JSON.parse(line);
       } catch (error) {
-        fail(`invalid Claude transcript record in ${basename(path)} (${error.message})`);
+        throw new Error(
+          `invalid Claude transcript record in ${basename(path)} (${error.message})`);
       }
     });
     return { rows, nextOffset: start + newline + 1 };
@@ -432,7 +485,18 @@ export function createTelemetryRuntime({
     for (const path of collectClaudeSources(context.transcriptPath)) {
       const key = sourceKey(path);
       const source = session.sources[key] || { path, offset: 0 };
-      const chunk = readCompleteJsonLines(path, Number(source.offset || 0));
+      let chunk;
+      let nextSource;
+      try {
+        const offset = sourceReadOffset(path, source);
+        chunk = readCompleteJsonLines(path, offset);
+        nextSource = sourceCursor(path, chunk.nextOffset);
+      } catch (error) {
+        if (!options.quiet) fail(error.message);
+        console.error(
+          `WARNING: skipped unreadable Claude transcript ${basename(path)}: ${error.message}`);
+        continue;
+      }
       const isSubagent = path !== context.transcriptPath;
       const rows = chunk.rows.filter(belongsToThisProject);
       imported += appendTelemetryRows(id, rows, "claude", {
@@ -445,7 +509,7 @@ export function createTelemetryRuntime({
         snapshot
       });
       scanned += chunk.rows.length;
-      session.sources[key] = { path, offset: chunk.nextOffset };
+      session.sources[key] = nextSource;
     }
     session.updatedAt = now();
     saveClaudeCursors(id, cursors);

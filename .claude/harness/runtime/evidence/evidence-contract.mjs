@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
 import { classifyReviewRisk } from "./review-routing.mjs";
 
@@ -273,7 +274,7 @@ export function createEvidenceContract({
           die(`provider '${provider}' test-discovery requires a configured discoveryProvider`);
       }
       if (config.timeoutMs !== undefined &&
-          (!Number.isFinite(Number(config.timeoutMs)) || Number(config.timeoutMs) <= 0))
+          (measuredNumber(config.timeoutMs) === null || measuredNumber(config.timeoutMs) <= 0))
         die(`provider '${provider}' timeoutMs must be a positive number`);
       if (config.resources !== undefined &&
           (!Array.isArray(config.resources) ||

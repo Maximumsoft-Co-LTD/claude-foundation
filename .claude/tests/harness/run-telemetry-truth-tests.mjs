@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { measuredNumber } from "../../harness/runtime/core/measured-number.mjs";
 import { createMetricsRuntime } from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
   normalizeTelemetryRow,
@@ -89,6 +90,135 @@ test("a real event reporting numeric zero remains measured", () => {
   assert.equal(state.budget.window.usedTokens, 0);
   assert.equal(decision.measured, true);
   assert.equal(decision.limiter, "requests");
+});
+
+test("measured numbers reject JavaScript coercion values", () => {
+  assert.equal(measuredNumber(0), 0);
+  assert.equal(measuredNumber(" 42 "), 42);
+  assert.equal(measuredNumber("0"), 0);
+  for (const value of [
+    null, undefined, "", "  ", true, false, [], [7], {}, NaN, Infinity, -2.5, "-1"
+  ])
+    assert.equal(measuredNumber(value), null, `expected ${String(value)} to be unknown`);
+});
+
+test("telemetry normalization keeps junk unknown and normalizes numeric strings", () => {
+  const junk = normalizeTelemetryRow("change", {
+    requestId: "junk", inputTokens: "", outputTokens: true,
+    cacheCreationTokens: [], cacheReadTokens: [7], cacheTokens: {},
+    cost: false, durationMs: [10]
+  }, "generic");
+  for (const field of [
+    "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
+    "cacheTokens", "cost", "durationMs"
+  ]) assert.equal(junk[field], null, `${field} must remain unknown`);
+
+  const measured = normalizeTelemetryRow("change", {
+    requestId: "numeric-strings", inputTokens: "4", outputTokens: "2.5",
+    cacheCreationTokens: "1", cacheReadTokens: "3", cost: "0.25", durationMs: "9"
+  }, "generic");
+  assert.deepEqual({
+    inputTokens: measured.inputTokens,
+    outputTokens: measured.outputTokens,
+    cacheCreationTokens: measured.cacheCreationTokens,
+    cacheReadTokens: measured.cacheReadTokens,
+    cacheTokens: measured.cacheTokens,
+    cost: measured.cost,
+    durationMs: measured.durationMs
+  }, {
+    inputTokens: 4, outputTokens: 2.5, cacheCreationTokens: 1,
+    cacheReadTokens: 3, cacheTokens: 4, cost: 0.25, durationMs: 9
+  });
+
+  const negative = normalizeTelemetryRow("change", {
+    requestId: "negative", inputTokens: -100, outputTokens: "-2",
+    cacheCreationTokens: -1, cacheReadTokens: -3, cacheTokens: -4,
+    cost: -0.5, durationMs: -9
+  }, "generic");
+  for (const field of [
+    "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
+    "cacheTokens", "cost", "durationMs"
+  ]) assert.equal(negative[field], null, `${field} must reject negative quantities`);
+});
+
+test("budget accounting ignores junk usage instead of inventing spend", () => {
+  const runtime = createBudgetRuntime({ policy, now: () => "2026-08-12T00:00:00.000Z" });
+  assert.equal(runtime.eventTokenCount({
+    inputTokens: "", outputTokens: true, cacheCreationTokens: []
+  }), null);
+  assert.equal(runtime.eventTokenCount({
+    inputTokens: "5", outputTokens: "2", cacheCreationTokens: "1"
+  }), 8);
+  assert.equal(runtime.eventTokenCount({
+    inputTokens: -100, outputTokens: 5, cacheCreationTokens: 0
+  }), 5);
+  assert.equal(runtime.eventTokenCount({
+    inputTokens: 10, outputTokens: 5, cacheTokens: 2, cacheReadTokens: 20
+  }), 15);
+  assert.equal(runtime.knownNumber(false), false);
+  assert.equal(runtime.knownNumber([7]), false);
+});
+
+test("metrics totals, groups, phases, and carry-in ignore junk values", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-strict-metrics-"));
+  const logs = join(root, "logs");
+  const id = "strict-metrics";
+  mkdirSync(join(logs, id), { recursive: true });
+  writeFileSync(join(logs, id, "operations.jsonl"), "");
+  writeFileSync(join(logs, id, "events.jsonl"), [
+    {
+      source: "generic", requestId: "junk", operationId: "build", modelId: "model-a",
+      inputTokens: "", outputTokens: true, cacheCreationTokens: [],
+      cacheReadTokens: [7], cacheTokens: {}, cost: false,
+      timestamp: "2026-08-12T00:00:00.000Z"
+    },
+    {
+      source: "generic", requestId: "valid", operationId: "build", modelId: "model-a",
+      inputTokens: "4", outputTokens: "2", cacheCreationTokens: "1",
+      cacheReadTokens: "3", cacheTokens: "4", cost: "0.5",
+      timestamp: "2026-08-12T00:00:01.000Z"
+    }
+  ].map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(logs, id, "context.jsonl"), [
+    { kind: "junk-blank", bytes: "" },
+    { kind: "junk-boolean", bytes: true },
+    { kind: "junk-array", bytes: [7] },
+    { kind: "junk-negative", bytes: -10 }
+  ].map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(logs, id, "context-rollup.json"), JSON.stringify({
+    count: true,
+    totalBytes: [99],
+    byKind: { archivedJunk: { count: 1, totalBytes: false, maxBytes: [] } }
+  }));
+  const budgetRuntime = createBudgetRuntime({ policy, now: () => "2026-08-12T00:00:00.000Z" });
+  const state = {
+    id, schema: "foundation-standard", impact: "medium",
+    budget: budgetRuntime.initialBudget("foundation-standard", id)
+  };
+  let rendered;
+  createMetricsRuntime({
+    logs,
+    receipts: join(root, "receipts"),
+    readJson: json,
+    readJsonLines: jsonLines,
+    readJsonLinesTolerant: jsonLines,
+    loadRuntime: () => structuredClone(state),
+    ensureBudgetState: budgetRuntime.ensureBudgetState,
+    budgetDecision: budgetRuntime.budgetDecision,
+    output: (value) => { rendered = JSON.parse(value); }
+  }).showMetrics(id);
+  assert.equal(rendered.inputTokens, 4);
+  assert.equal(rendered.outputTokens, 2);
+  assert.equal(rendered.cacheTokens, 4);
+  assert.equal(rendered.cost, 0.5);
+  assert.equal(rendered.byModel["model-a"].inputTokens, 4);
+  assert.equal(rendered.phases.build.inputTokens, 4);
+  assert.equal(rendered.phases.build.contextCarryInTokens, 3);
+  assert.equal(rendered.usageAvailability.classification, "partial-measurement");
+  assert.equal(rendered.context.totalBytes, null);
+  assert.equal(rendered.context.retainedEvents, 0);
+  assert.equal(rendered.context.archivedEvents, null);
+  assert.deepEqual(rendered.context.byKind, {});
 });
 
 test("an explicit nonzero window is not erased while host totals are unavailable", () => {

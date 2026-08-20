@@ -126,6 +126,29 @@ test("one complete event cannot hide another request-only event", () => {
   assert.match(value.recoveryActions[0].command, /--format codex/);
 });
 
+test("junk usage fields stay missing rather than becoming measurements", () => {
+  for (const junk of ["", "  ", true, false, [], [7], {}, -1, "-2"]) {
+    const value = usageAvailability([
+      { source: "generic", inputTokens: junk, outputTokens: junk }
+    ], [], "change-id");
+    assert.equal(value.classification, "correlation-missing",
+      `${JSON.stringify(junk)} was treated as usage`);
+  }
+});
+
+test("numeric strings are measured but do not weaken event completeness", () => {
+  assert.equal(usageAvailability([
+    { source: "generic", inputTokens: "0", outputTokens: "0" }
+  ]).classification, "no-usage");
+  assert.equal(usageAvailability([
+    { source: "generic", inputTokens: "4", outputTokens: "2" }
+  ]).classification, "measured");
+  assert.equal(usageAvailability([
+    { source: "generic", inputTokens: "4", outputTokens: "2" },
+    { source: "generic", inputTokens: "", outputTokens: "" }
+  ]).classification, "partial-measurement");
+});
+
 test("unsupported event sources retain an actionable classification", () => {
   const value = usageAvailability([
     { source: "future-editor", inputTokens: 12 }

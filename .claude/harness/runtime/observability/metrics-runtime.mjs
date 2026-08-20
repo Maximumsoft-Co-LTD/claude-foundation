@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { measuredNumber } from "../core/measured-number.mjs";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
 
 export function usageAvailability(events = [], phaseContextRows = [], changeId = "<change>") {
@@ -21,8 +22,7 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
       "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
       "cacheTokens", "cost"
     ];
-    const finite = (value) => value !== null && value !== undefined &&
-      Number.isFinite(Number(value));
+    const finite = (value) => measuredNumber(value) !== null;
     const observedValues = events.flatMap((event) => usageFields
       .map((field) => event[field]).filter(finite));
     const completeEvents = events.filter((event) =>
@@ -31,10 +31,10 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
       : !observedValues.length ? "correlation-missing"
         : completeEvents.length !== events.length ? "partial-measurement"
           : completeEvents.every((event) =>
-            Number(event.inputTokens) === 0 && Number(event.outputTokens) === 0 &&
+            measuredNumber(event.inputTokens) === 0 && measuredNumber(event.outputTokens) === 0 &&
             usageFields.filter((field) => !["inputTokens", "outputTokens"].includes(field))
               .filter((field) => finite(event[field]))
-              .every((field) => Number(event[field]) === 0)) ? "no-usage"
+              .every((field) => measuredNumber(event[field]) === 0)) ? "no-usage"
             : "measured";
     const recoveryActions = [];
     if (["correlation-missing", "partial-measurement"].includes(classification)) {
@@ -122,7 +122,7 @@ export function createMetricsRuntime({
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
         const row = readJson(join(dir, entry.name), {});
-        if (row.kind && Number.isFinite(Number(row.bytes))) rows.push(row);
+        if (row.kind && measuredNumber(row.bytes) !== null) rows.push(row);
       }
     const rollup = readJson(join(logs, id, "context-rollup.json"), {
       count: 0, totalBytes: 0, byKind: {}
@@ -131,9 +131,9 @@ export function createMetricsRuntime({
   }
 
   function sumKnown(rows, field) {
-    const values = rows.map((row) => row[field]).filter((value) =>
-      value !== null && value !== undefined && Number.isFinite(Number(value)));
-    return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
+    const values = rows.map((row) => measuredNumber(row[field]))
+      .filter((value) => value !== null);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
   }
 
   function groupUsage(events, field) {
@@ -146,10 +146,10 @@ export function createMetricsRuntime({
       };
       const row = result[key];
       row.requests += 1;
-      for (const metric of ["inputTokens", "outputTokens", "cacheTokens", "cost"])
-        if (event[metric] !== null && event[metric] !== undefined &&
-            Number.isFinite(Number(event[metric])))
-          row[metric] = Number(row[metric] || 0) + Number(event[metric]);
+      for (const metric of ["inputTokens", "outputTokens", "cacheTokens", "cost"]) {
+        const value = measuredNumber(event[metric]);
+        if (value !== null) row[metric] = Number(row[metric] || 0) + value;
+      }
     }
     return result;
   }
@@ -157,8 +157,10 @@ export function createMetricsRuntime({
   function contextSummary(contextRows, contextRollup) {
     const contextByKind = {};
     for (const row of contextRows) {
+      const bytes = measuredNumber(row.bytes);
+      if (!row.kind || bytes === null) continue;
       contextByKind[row.kind] ||= [];
-      contextByKind[row.kind].push(Number(row.bytes || 0));
+      contextByKind[row.kind].push(bytes);
     }
     const context = Object.fromEntries(Object.entries(contextByKind)
       .map(([kind, values]) => {
@@ -175,13 +177,20 @@ export function createMetricsRuntime({
         }];
       }));
     for (const [kind, archived] of Object.entries(contextRollup.byKind || {})) {
+      const archivedCount = measuredNumber(archived.count);
+      const archivedTotalBytes = measuredNumber(archived.totalBytes);
+      const archivedMaxBytes = measuredNumber(archived.maxBytes);
+      // A rollup row is one aggregate measurement. If any component is junk,
+      // skip the row instead of mixing a trustworthy count with invented bytes.
+      if ([archivedCount, archivedTotalBytes, archivedMaxBytes]
+        .some((value) => value === null)) continue;
       const summary = context[kind] ||= {
         count: 0, totalBytes: 0, medianBytes: null, p95Bytes: null, maxBytes: 0
       };
-      summary.count += Number(archived.count || 0);
-      summary.totalBytes += Number(archived.totalBytes || 0);
-      summary.maxBytes = Math.max(summary.maxBytes || 0, Number(archived.maxBytes || 0));
-      summary.archivedCount = Number(archived.count || 0);
+      summary.count += archivedCount;
+      summary.totalBytes += archivedTotalBytes;
+      summary.maxBytes = Math.max(summary.maxBytes || 0, archivedMaxBytes);
+      summary.archivedCount = archivedCount;
     }
     return context;
   }
@@ -224,17 +233,16 @@ export function createMetricsRuntime({
       const phase = phaseEntry(name);
       phase.requests += 1;
       for (const field of
-        ["inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens"])
-        if (event[field] !== null && event[field] !== undefined &&
-            Number.isFinite(Number(event[field])))
-          phase[field] = Number(phase[field] || 0) + Number(event[field]);
+        ["inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens"]) {
+        const value = measuredNumber(event[field]);
+        if (value !== null) phase[field] = Number(phase[field] || 0) + value;
+      }
       // `Number(null)` is 0 and 0 is finite, so an unknown cache read latched
       // this to a measured zero — and the `=== null` guard then stopped any
       // real value from ever correcting it.
-      if (phase.contextCarryInTokens === null &&
-          event.cacheReadTokens !== null && event.cacheReadTokens !== undefined &&
-          Number.isFinite(Number(event.cacheReadTokens)))
-        phase.contextCarryInTokens = Number(event.cacheReadTokens);
+      const carryIn = measuredNumber(event.cacheReadTokens);
+      if (phase.contextCarryInTokens === null && carryIn !== null)
+        phase.contextCarryInTokens = carryIn;
       if (!phaseFirstEvent.has(name))
         phaseFirstEvent.set(name, { at: Date.parse(event.timestamp), session: event.sessionId });
     }
@@ -256,7 +264,7 @@ export function createMetricsRuntime({
       // compared against the budget window at all, which is why "what did build
       // cost against prove" had no answer.
       const spend = [phase.inputTokens, phase.outputTokens, phase.cacheCreationTokens]
-        .filter((value) => value !== null && Number.isFinite(Number(value)));
+        .filter((value) => measuredNumber(value) !== null);
       phase.spendTokens = spend.length
         ? spend.reduce((sum, value) => sum + Number(value), 0) : null;
     }
@@ -281,9 +289,10 @@ export function createMetricsRuntime({
           commandExecutionId: receipt.commandExecutionId || receipt.executionId || null
         };
         const commandExecutionId = receipt.commandExecutionId || receipt.executionId;
-        if (commandExecutionId && Number.isFinite(Number(receipt.durationMs)))
+        const durationMs = measuredNumber(receipt.durationMs);
+        if (commandExecutionId && durationMs !== null)
           executions.set(commandExecutionId,
-            Math.max(executions.get(commandExecutionId) || 0, Number(receipt.durationMs)));
+            Math.max(executions.get(commandExecutionId) || 0, durationMs));
       }
     const tokenTotal = ["inputTokens", "outputTokens", "cacheTokens"]
       .map((field) => sumKnown(events, field))
@@ -298,10 +307,16 @@ export function createMetricsRuntime({
     const totalCost = sumKnown(events, "cost");
     const orchestratorCost = sumKnown(orchestratorEvents, "cost");
     const context = contextSummary(contextRows, contextRollup);
-    const currentContextBytes = contextRows.reduce(
-      (sum, row) => sum + Number(row.bytes || 0), 0);
-    const contextBytes = contextRows.length || Number(contextRollup.count || 0)
-      ? currentContextBytes + Number(contextRollup.totalBytes || 0) : null;
+    const currentContextValues = contextRows.map((row) => measuredNumber(row.bytes))
+      .filter((value) => value !== null);
+    const currentContextBytes = currentContextValues.reduce((sum, value) => sum + value, 0);
+    const archivedContextCount = measuredNumber(contextRollup.count);
+    const archivedContextBytes = measuredNumber(contextRollup.totalBytes);
+    const hasArchivedContext = archivedContextCount !== null && archivedContextCount > 0;
+    const contextBytes = hasArchivedContext && archivedContextBytes === null
+      ? null
+      : currentContextValues.length || hasArchivedContext
+        ? currentContextBytes + (archivedContextBytes || 0) : null;
     // `exec` rows time an external command (a build, an install), not a
     // harness operation, so they get their own bucket instead of inflating
     // operation time. They still count toward wall time below.
@@ -443,8 +458,8 @@ export function createMetricsRuntime({
           "tool-results", "conversation-history"
         ],
         byKind: context,
-        retainedEvents: contextRows.length,
-        archivedEvents: Number(contextRollup.count || 0),
+        retainedEvents: currentContextValues.length,
+        archivedEvents: archivedContextCount,
         phaseTransitions: phaseContextRows,
         modes: contextModes,
         carryover: {

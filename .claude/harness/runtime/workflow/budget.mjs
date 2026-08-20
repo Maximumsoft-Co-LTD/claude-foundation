@@ -1,3 +1,5 @@
+import { measuredNumber } from "../core/measured-number.mjs";
+
 export function createBudgetRuntime({ policy, now }) {
   // Spend is new work: what the model read fresh, wrote, and cached for later.
   // Cache reads are excluded on purpose. Every turn re-reads the whole
@@ -8,13 +10,15 @@ export function createBudgetRuntime({ policy, now }) {
     // `Number(null)` is 0 and 0 is finite, so an event that explicitly reports
     // "unknown" as null used to derive a cache write of 0 and then a total of
     // 0 — a measured zero where nothing was measured. Unknown is never zero.
-    const known = (value) =>
-      value !== null && value !== undefined && Number.isFinite(Number(value));
-    const cacheWrite = event.cacheCreationTokens ?? (
-      known(event.cacheTokens) && known(event.cacheReadTokens)
-        ? Number(event.cacheTokens) - Number(event.cacheReadTokens) : null);
-    const values = [event.inputTokens, event.outputTokens, cacheWrite].filter(known);
-    return values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null;
+    const cacheCreation = measuredNumber(event.cacheCreationTokens);
+    const cacheTotal = measuredNumber(event.cacheTokens);
+    const cacheRead = measuredNumber(event.cacheReadTokens);
+    const derivedCacheWrite = cacheTotal !== null && cacheRead !== null
+      ? cacheTotal - cacheRead : null;
+    const cacheWrite = cacheCreation ?? measuredNumber(derivedCacheWrite);
+    const values = [event.inputTokens, event.outputTokens, cacheWrite]
+      .map(measuredNumber).filter((value) => value !== null);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
   }
 
   // Size scales the request lane for the same reason impact does: requests bind
@@ -83,7 +87,7 @@ export function createBudgetRuntime({ policy, now }) {
   }
 
   function knownNumber(value) {
-    return value !== null && value !== undefined && Number.isFinite(Number(value));
+    return measuredNumber(value) !== null;
   }
 
   function ensureBudgetState(state) {

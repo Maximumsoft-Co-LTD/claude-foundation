@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { relative } from "node:path";
+import { measuredNumber } from "../core/measured-number.mjs";
 
 export function createJsonlReader({ root, fail }) {
   function readJsonLines(path) {
@@ -28,9 +29,8 @@ export function createJsonlReader({ root, fail }) {
 }
 
 function nullableSum(...values) {
-  const known = values.filter((value) =>
-    value !== null && value !== undefined && Number.isFinite(Number(value)));
-  return known.length ? known.reduce((sum, value) => sum + Number(value), 0) : null;
+  const known = values.map(measuredNumber).filter((value) => value !== null);
+  return known.length ? known.reduce((sum, value) => sum + value, 0) : null;
 }
 
 export function runtimeSessionId(env = process.env) {
@@ -55,12 +55,13 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
     : format === "otel" ? (row.requestId || row.traceId || row.trace_id || row.spanId || row.span_id)
     : (row.requestId || row.request_id || row.id || row.uuid);
   if (!requestId) return null;
-  const cacheCreationTokens = row.cacheCreationTokens ??
-    usage.cache_creation_input_tokens ?? null;
-  const cacheReadTokens = row.cacheReadTokens ??
+  const cacheCreationTokens = measuredNumber(row.cacheCreationTokens ??
+    usage.cache_creation_input_tokens ?? null);
+  const cacheReadTokens = measuredNumber(row.cacheReadTokens ??
     usage.cache_read_input_tokens ?? usage.cache_tokens ??
-    (format === "claude" ? null : row.cacheTokens) ?? null;
-  const cacheTokens = row.cacheTokens ?? nullableSum(cacheCreationTokens, cacheReadTokens);
+    (format === "claude" ? null : row.cacheTokens) ?? null);
+  const explicitCacheTokens = measuredNumber(row.cacheTokens);
+  const cacheTokens = explicitCacheTokens ?? nullableSum(cacheCreationTokens, cacheReadTokens);
   const snapshot = context.snapshot || {};
   return {
     version: 2,
@@ -76,13 +77,15 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
     sessionId: row.sessionId || row.session_id || context.sessionId || null,
     parentRequestId: row.parentRequestId || row.parent_request_id || null,
     timestamp: row.timestamp || row.created_at || timestamp || new Date().toISOString(),
-    inputTokens: row.inputTokens ?? usage.inputTokens ?? usage.input_tokens ?? usage.input ?? null,
-    outputTokens: row.outputTokens ?? usage.outputTokens ?? usage.output_tokens ?? usage.output ?? null,
+    inputTokens: measuredNumber(
+      row.inputTokens ?? usage.inputTokens ?? usage.input_tokens ?? usage.input ?? null),
+    outputTokens: measuredNumber(
+      row.outputTokens ?? usage.outputTokens ?? usage.output_tokens ?? usage.output ?? null),
     cacheCreationTokens,
     cacheReadTokens,
     cacheTokens,
-    cost: row.cost ?? row.cost_usd ?? usage.cost_usd ?? null,
-    durationMs: row.durationMs ?? row.duration_ms ?? null,
+    cost: measuredNumber(row.cost ?? row.cost_usd ?? usage.cost_usd ?? null),
+    durationMs: measuredNumber(row.durationMs ?? row.duration_ms ?? null),
     tool: row.tool || null,
     repositoryId: row.repositoryId || row.repository_id || row.repository || null,
     taskId: row.taskId || row.task_id || row.task || null,
