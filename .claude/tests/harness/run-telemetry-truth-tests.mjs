@@ -7,6 +7,7 @@ import test from "node:test";
 import { measuredNumber } from "../../harness/runtime/core/measured-number.mjs";
 import { createMetricsRuntime } from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
+  normalizeClaudeUserTransition,
   normalizeTelemetryRow,
   runtimeSessionId
 } from "../../harness/runtime/observability/telemetry.mjs";
@@ -96,10 +97,30 @@ test("measured numbers reject JavaScript coercion values", () => {
   assert.equal(measuredNumber(0), 0);
   assert.equal(measuredNumber(" 42 "), 42);
   assert.equal(measuredNumber("0"), 0);
+  // `-0 >= 0` holds, so without normalization the sign bit would survive.
+  assert.ok(Object.is(measuredNumber(-0), 0));
+  assert.ok(Object.is(measuredNumber("-0"), 0));
   for (const value of [
     null, undefined, "", "  ", true, false, [], [7], {}, NaN, Infinity, -2.5, "-1"
   ])
     assert.equal(measuredNumber(value), null, `expected ${String(value)} to be unknown`);
+});
+
+test("a user row without its own timestamp keeps one transition across a rescan", () => {
+  const row = { type: "user", uuid: "row-1", sessionId: "session-a" };
+  const context = { sessionId: "session-a", sourcePath: "/transcript.jsonl" };
+  const first = normalizeClaudeUserTransition(
+    "change", row, context, "2026-08-12T00:00:00.000Z");
+  const rescan = normalizeClaudeUserTransition(
+    "change", row, context, "2026-08-12T00:05:00.000Z");
+  assert.equal(first.transitionId, rescan.transitionId,
+    "the import-time clock fallback must not mint a new transition identity");
+  assert.equal(first.timestamp, "2026-08-12T00:00:00.000Z",
+    "the fallback still populates the stored timestamp");
+  const timestamped = normalizeClaudeUserTransition("change",
+    { ...row, timestamp: "2026-08-12T00:00:00.000Z" }, context, null);
+  assert.notEqual(timestamped.transitionId, first.transitionId,
+    "rows with real timestamps keep their content-derived identity");
 });
 
 test("telemetry normalization keeps junk unknown and normalizes numeric strings", () => {

@@ -106,6 +106,23 @@ actual_bytes="$(printf '%s\n' "$task_packet" | wc -c | tr -d ' ')"
 assert_eq "context metric equals emitted task packet bytes" "$actual_bytes" \
   "$(jq -r '.bytes' "$recorded")"
 
+# A corrupted or partially written lease file parses to an empty object; it
+# must not grant leased authority without its fencing identity.
+mkdir -p .foundation/leases/tasks/agent-contract
+printf '{ "partial-write' > .foundation/leases/tasks/agent-contract/T002.json
+corrupt_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
+assert_eq "corrupt lease file yields unleased authority" "unleased" \
+  "$(printf '%s' "$corrupt_packet" | jq -r '.executionAuthority.status')"
+printf '%s\n' \
+  '{"leaseId":"lease-T002","fencingGeneration":1,"executionAttempt":1}' \
+  > .foundation/leases/tasks/agent-contract/T002.json
+leased_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
+assert_eq "intact lease file keeps leased authority" "leased" \
+  "$(printf '%s' "$leased_packet" | jq -r '.executionAuthority.status')"
+assert_eq "leased packet carries its fencing identity" "lease-T002" \
+  "$(printf '%s' "$leased_packet" | jq -r '.executionAuthority.leaseId')"
+rm -f .foundation/leases/tasks/agent-contract/T002.json
+
 printf '%s\n' \
   '# Tasks' '' \
   '- [ ] **T002** Bad authority [kind:security] [claims:not-declared]' \

@@ -75,13 +75,30 @@ export function createTelemetryRuntime({
         }
         if (lock === null) return;
         const rollupPath = join(logs, id, "context-rollup.json");
-        const rollup = readJson(rollupPath, {
+        // A re-read rollup is external input: a non-numeric counter would
+        // concatenate or NaN-poison every later drain, and a missing byKind
+        // threw before any file was folded in, so the drain failed on every
+        // retry while pending events accumulated past the threshold forever.
+        // Rebuild from measured components; a junk byKind row restarts from
+        // the fresh measurements, matching the skip rule metrics-runtime
+        // applies when it reads the rollup back.
+        const loaded = readJson(rollupPath, {});
+        const rollup = {
           version: 1,
           changeId: id,
-          count: 0,
-          totalBytes: 0,
+          count: measuredNumber(loaded.count) ?? 0,
+          totalBytes: measuredNumber(loaded.totalBytes) ?? 0,
           byKind: {}
-        });
+        };
+        const archivedKinds = loaded.byKind && typeof loaded.byKind === "object"
+          ? Object.entries(loaded.byKind) : [];
+        for (const [kind, archived] of archivedKinds) {
+          const count = measuredNumber(archived?.count);
+          const totalBytes = measuredNumber(archived?.totalBytes);
+          const maxBytes = measuredNumber(archived?.maxBytes);
+          if ([count, totalBytes, maxBytes].some((value) => value === null)) continue;
+          rollup.byKind[kind] = { count, totalBytes, maxBytes };
+        }
         for (const entry of entries.slice(0, 500)) {
           const path = join(dir, entry);
           const row = readJson(path, {});

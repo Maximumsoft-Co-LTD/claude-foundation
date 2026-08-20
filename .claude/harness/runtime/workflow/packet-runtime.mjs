@@ -230,7 +230,12 @@ export function createPacketRuntime({
       ...(selectedTask ? (() => {
         const leasePath = leasesRoot
           ? join(leasesRoot, "tasks", id, `${selectedTask.id}.json`) : null;
-        const lease = leasePath && existsSync(leasePath) ? readJson(leasePath, {}) : null;
+        const leaseValue = leasePath && existsSync(leasePath)
+          ? readJson(leasePath, {}) : null;
+        // A corrupted or partially written lease file must not grant leased
+        // authority without its fencing identity; send the worker back to
+        // acquire instead.
+        const lease = leaseValue && leaseValue.leaseId ? leaseValue : null;
         return {
           workerContract: {
             version: 1,

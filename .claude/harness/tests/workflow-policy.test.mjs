@@ -438,7 +438,23 @@ try {
   };
   const fallbackRequest = quiet(() => authority.requestAuthority(
     "change-fallback", { type: "review" }));
-  const priorCodexThread = process.env.CODEX_THREAD_ID;
+  const hostProvenanceKeys = [
+    "FOUNDATION_CLAUDE_SESSION_ID", "FOUNDATION_SESSION_ID", "CODEX_THREAD_ID",
+    "FOUNDATION_MAIN_SESSION_ID", "FOUNDATION_MAIN_IDENTITY",
+    "FOUNDATION_MAIN_PROVIDER_FAMILY", "FOUNDATION_MAIN_MODEL_FAMILY",
+    "FOUNDATION_MODEL_ID"
+  ];
+  const priorHostProvenance = Object.fromEntries(hostProvenanceKeys.map((key) =>
+    [key, process.env[key]]));
+  const restoreHostProvenance = () => {
+    for (const key of hostProvenanceKeys) {
+      if (priorHostProvenance[key] === undefined) delete process.env[key];
+      else process.env[key] = priorHostProvenance[key];
+    }
+  };
+  // A calling host (for example Claude Code) may export its own session
+  // provenance; clear it so the codex-host fallback scenario stays ambient.
+  for (const key of hostProvenanceKeys) delete process.env[key];
   process.env.CODEX_THREAD_ID = "main-session-thread";
   const handback = quiet(() => authority.runAuthorityReviewer("change-fallback", {
     request: fallbackRequest.requestId,
@@ -448,8 +464,7 @@ try {
     "subject-model-family": "gpt-5.6",
     "subject-model": "gpt-5.6-sol"
   }));
-  if (priorCodexThread === undefined) delete process.env.CODEX_THREAD_ID;
-  else process.env.CODEX_THREAD_ID = priorCodexThread;
+  restoreHostProvenance();
   const fallbackAttempts = attemptStore.reviewAttempts("change-fallback",
     state.reviewHistory);
   assert.equal(fallbackAttempts.filter((attempt) =>
@@ -523,14 +538,6 @@ try {
     "pass", "the main-session response must cross the real authority receipt gate");
 
   state = { version: 2, changeId: "change-fallback-missing", reviewHistory: null };
-  const hostProvenanceKeys = [
-    "FOUNDATION_CLAUDE_SESSION_ID", "FOUNDATION_SESSION_ID", "CODEX_THREAD_ID",
-    "FOUNDATION_MAIN_SESSION_ID", "FOUNDATION_MAIN_IDENTITY",
-    "FOUNDATION_MAIN_PROVIDER_FAMILY", "FOUNDATION_MAIN_MODEL_FAMILY",
-    "FOUNDATION_MODEL_ID"
-  ];
-  const priorHostProvenance = Object.fromEntries(hostProvenanceKeys.map((key) =>
-    [key, process.env[key]]));
   for (const key of hostProvenanceKeys) delete process.env[key];
   const missingRequest = quiet(() => authority.requestAuthority(
     "change-fallback-missing", { type: "review" }));
@@ -539,10 +546,6 @@ try {
       request: missingRequest.requestId,
       "subject-actor": "human-implementer"
     }));
-  for (const key of hostProvenanceKeys) {
-    if (priorHostProvenance[key] === undefined) delete process.env[key];
-    else process.env[key] = priorHostProvenance[key];
-  }
   assert.equal(missingHandback.status,
     "main-session-provenance-unavailable");
   assert(missingHandback.missing.includes("sessionId"));
@@ -567,9 +570,7 @@ try {
       request: missingRequest.requestId,
       "subject-actor": "human-implementer"
     }));
-  if (priorHostProvenance.CODEX_THREAD_ID === undefined)
-    delete process.env.CODEX_THREAD_ID;
-  else process.env.CODEX_THREAD_ID = priorHostProvenance.CODEX_THREAD_ID;
+  restoreHostProvenance();
   assert.equal(resumedHandback.status, "needs-main-session-review");
   assert.equal(resumedHandback.reviewer.identity, "telemetry-main-agent");
   assert.equal(resumedHandback.reviewer.sessionId, "recovered-main-session");

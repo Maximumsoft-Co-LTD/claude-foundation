@@ -109,12 +109,15 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
 export function normalizeClaudeUserTransition(id, row, context = {}, timestamp = null) {
   const message = row.message && typeof row.message === "object" ? row.message : {};
   if (row.type !== "user" && message.role !== "user") return null;
-  const at = row.timestamp || row.created_at || timestamp;
+  const rowAt = row.timestamp || row.created_at || null;
+  const at = rowAt || timestamp;
   if (!at || !Number.isFinite(Date.parse(at))) return null;
   const sessionId = row.sessionId || row.session_id || context.sessionId || null;
   const sourcePathHash = context.sourcePath
     ? createHash("sha256").update(context.sourcePath).digest("hex") : null;
-  const identity = [id, sessionId, row.uuid || row.id || "", at, sourcePathHash]
+  // Identity may use only row content: the import-time fallback differs per
+  // sync, so including it would re-mint the transition on every cursor rescan.
+  const identity = [id, sessionId, row.uuid || row.id || "", rowAt ?? "", sourcePathHash]
     .map((value) => value ?? "").join("\0");
   return {
     version: 1,

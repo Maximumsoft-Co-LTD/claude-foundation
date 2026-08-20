@@ -33,12 +33,13 @@ to force fully serial execution when bisecting.
 |---|---|
 | `harness/run-host-instruction-tests.mjs` | Protocol-1 package-owned host instructions and agent contract, opaque arguments, stable failures, project independence, and packaged layout |
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
-| `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, model ceiling, and dispatch conflicts |
+| `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, corrupt-lease fallback, model ceiling, and dispatch conflicts |
 | `harness/run-user-guidance-tests.sh` | Cross-surface human guidance: user-language summaries, automatic recovery, installer/hook recovery, and dashboard accessibility feedback |
 | `harness/run-packet-scaling-tests.sh` | 1,000-task and 500-claim progressive compaction under exact output limits |
 | `harness/run-archive-telemetry-tests.mjs` | Archive drains the bound transcript once, warns when sealing with no usage, and never blocks on telemetry |
 | `harness/run-telemetry-concurrency-tests.sh` | Concurrent context events, malformed legacy tolerance, and non-blocking telemetry |
 | `harness/run-telemetry-truth-tests.mjs` | Unknown-versus-zero usage semantics, Codex correlation, and truthful budget measurement |
+| `harness/run-context-rollup-drain-tests.mjs` | Context-event drain: junk-row exclusion with file removal, byKind aggregation, idempotent re-drain, additive merge, and corrupt-rollup recovery |
 | `harness/run-actionable-validation-telemetry-tests.sh` | Dependency-safe semantic diagnostic aggregation, truthful host-usage availability, and supported recovery routes |
 | `harness/run-v33-policy-tests.mjs` | Risk-tier review routing, named critical-case and mutation-v2 oracles, and the pinned read-only ephemeral Codex reviewer invocation |
 | `harness/run-risk-tiered-review-tests.mjs` | End-to-end Grounding v2, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
