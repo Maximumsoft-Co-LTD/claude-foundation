@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The harness surfaces available updates without blocking work.** A new
+  `update check` command inspects the cached latest-stable advisory, host
+  instructions carry the advisory to agents, and advisory refresh and recovery
+  are bounded so a stale or unreachable release feed cannot stall the
+  workflow.
+- **A full-loop e2e scenario exercises the change loop end to end.** A scripted
+  investigate → change → build → prove → land run over a small fixture project
+  documents and pins the whole lifecycle for the loop runner.
+
+### Changed
+
+- **Build dispatch requires concurrent spawn groups.** Independent task groups
+  are dispatched as one concurrent spawn group instead of sequential
+  single-agent sends, and the agent contract tests pin the wording.
+- **Land never edits product or packet files, and headless Prove keeps its
+  dispatch alive.** Land instructions forbid post-review edits that would
+  expire the reviewed state at archive time, and a non-interactive Prove
+  session must not end its reply while a review dispatch or background task is
+  still pending.
+
+### Fixed
+
+- **Land no longer dead-ends after the AI review waves are exhausted.** Proof
+  advance now prescribes the external recording template once the AI route is
+  spent instead of a command the wave cap refuses, and a sync that changed no
+  contract text no longer expires an otherwise valid review receipt.
+- **Telemetry drain, lease authority, and rescan identity fail safe.** A
+  corrupt context rollup no longer crashes or poisons later drains, a
+  corrupted lease file no longer grants leased authority without its fencing
+  identity, and cursor rescans no longer mint duplicate user transitions.
+- **Telemetry measures truthfully and transcripts recover.** Measured numbers,
+  budget accounting, and archive telemetry report real values, and transcript
+  recovery no longer loses events during drain.
+- **Validation failures and lifecycle diagnostics are actionable.** Change
+  validation reports what to fix instead of a bare failure, unavailable-host
+  telemetry is recorded, receipt-validity and dispatch diagnostics name the
+  offending input, and the affected-suite selector tracks the new suites.
+
 ## [3.3.2] - 2026-08-19
 
 ### Added
