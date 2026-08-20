@@ -301,7 +301,12 @@ export function createStateRuntime({
       error.code = "FOUNDATION_WORKSPACE_MISSING";
       throw error;
     }
-    const contractRevision = Number(state.contractRevision ?? state.revision ?? 0);
+    // `state.revision` counts sandbox syncs and must not feed the marker: a
+    // sync that changed no contract text would shift every snapshot hash and
+    // expire the review receipt — which, unlike code-bound receipts, has no
+    // declared-inputs rebind and whose re-dispatch the wave cap refuses.
+    // `contractRevision` is bumped by sync exactly when the contract changed.
+    const contractRevision = Number(state.contractRevision ?? 0);
     const ignored = new Set(ignoredPaths.map((value) =>
       String(value).replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "")));
     const cacheKey = `${id}\0${workspace}\0${contractRevision}\0${

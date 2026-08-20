@@ -6,7 +6,9 @@ export function createRepositorySnapshot({
 }) {
   function relevantSnapshot(id, workspaceOverride = null, force = false) {
     const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
-    const contractRevision = Number(state.contractRevision ?? state.revision ?? 0);
+    // Mirrors state-runtime: sync-counting `state.revision` must not shift
+    // snapshot identity; only a real contract edit (contractRevision) may.
+    const contractRevision = Number(state.contractRevision ?? 0);
     if (workspaceOverride || !state.repositories ||
         Object.keys(state.repositories).length === 0)
       return singleRelevantSnapshot(id, workspaceOverride, force);

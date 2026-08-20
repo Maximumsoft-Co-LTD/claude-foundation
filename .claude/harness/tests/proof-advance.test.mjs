@@ -531,6 +531,33 @@ try {
   rmSync(receiptFixture, { recursive: true, force: true });
 }
 
+// A review wait must never prescribe a command the wave cap will refuse: with
+// every allotted AI wave delivered, `authority run` is guaranteed to block, so
+// the wait must route to the external recording template instead.
+{
+  const capped = fixture({
+    deliveredAiAttempts: [
+      { digest: "wave-1", resultStatus: "fail" },
+      { digest: "wave-2", resultStatus: "pass" }
+    ]
+  });
+  const wait = await quiet(() => capped.runtime.proofAdvance("change-a"));
+  assert.equal(wait.status, "WAITING_EXTERNAL");
+  assert.equal(wait.stage, "review");
+  const command = wait.next?.[0]?.command || "";
+  assert.match(command, /authority status .* --template/,
+    "an exhausted AI review route prescribes the external recording template");
+  assert.doesNotMatch(command, /authority run/,
+    "an exhausted AI review route must not prescribe a blocked authority run");
+}
+{
+  const open = fixture();
+  const wait = await quiet(() => open.runtime.proofAdvance("change-a"));
+  assert.equal(wait.status, "WAITING_EXTERNAL");
+  assert.match(wait.next?.[0]?.command || "", /authority run/,
+    "an unexhausted AI review route still prescribes authority run");
+}
+
 process.exitCode = 0;
 
 console.log("proof advance tests: PASS");

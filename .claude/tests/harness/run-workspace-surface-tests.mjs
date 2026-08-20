@@ -252,6 +252,32 @@ try {
   check(() => assert.equal(stateRuntime.singleRelevantSnapshot(
     "hash-stability", null, true).workspaceHash, beforeRevision,
   "lifecycle revision does not replace an explicit zero contract revision"));
+  // The Land deadlock trigger: a change whose contract was never edited has no
+  // contractRevision, and every sandbox sync bumps revision. That bump must
+  // not shift snapshot identity — the review receipt it would expire has no
+  // declared-inputs rebind and its re-dispatch is refused by the wave cap.
+  const unsetContract = stateRuntime.loadRuntime("hash-stability");
+  delete unsetContract.contractRevision;
+  unsetContract.revision = 7;
+  stateRuntime.saveRuntime(unsetContract);
+  const unsetSnapshot = stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true);
+  check(() => assert.equal(unsetSnapshot.workspaceHash, beforeRevision,
+    "a sync-only revision bump with no contract edit keeps the workspace hash"));
+  const beforeReviewHash = unsetSnapshot.reviewHash;
+  const contractEdited = stateRuntime.loadRuntime("hash-stability");
+  contractEdited.contractRevision = 1;
+  stateRuntime.saveRuntime(contractEdited);
+  const editedSnapshot = stateRuntime.singleRelevantSnapshot(
+    "hash-stability", null, true);
+  check(() => assert.notEqual(editedSnapshot.workspaceHash, beforeRevision,
+    "a real contract revision still expires the workspace hash"));
+  check(() => assert.notEqual(editedSnapshot.reviewHash, beforeReviewHash,
+    "a real contract revision still expires the review hash"));
+  const resetContract = stateRuntime.loadRuntime("hash-stability");
+  resetContract.contractRevision = 0;
+  resetContract.revision = 0;
+  stateRuntime.saveRuntime(resetContract);
   writeFileSync(stablePath, "after\n");
   const dirtyIdentityHash = stateRuntime.singleRelevantSnapshot(
     "hash-stability", null, true).workspaceHash;

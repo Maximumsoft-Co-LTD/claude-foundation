@@ -484,13 +484,20 @@ export function createProofExecutionRuntime({
   }
 
   function authorityNext(id, stage, requests) {
+    // `authority run` dispatches an AI wave, and the wave cap refuses it once
+    // every allotted wave is delivered — prescribing it then hands the agent a
+    // command guaranteed to block. Route the exhausted case to the external
+    // recording template (a human verdict) instead.
+    const aiExhausted = stage === "review" &&
+      deliveredAiAttempts(id).length >=
+        Number(reviewPolicy(id).maxAiAttempts ?? 2);
     return requests.map((request) => ({
       requestId: request.requestId,
       provider: request.provider,
       command: stage === "review" && request.status === "requested" &&
-          request.mainSessionFallback
+          !aiExhausted && request.mainSessionFallback
         ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor ${request.mainSessionFallback.subject?.identity || "<implementer>"} --main-session-model-family <family> --main-session-model <model>`
-        : stage === "review" && request.status === "requested"
+        : stage === "review" && request.status === "requested" && !aiExhausted
           ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor <implementer> [AI subject provenance options]`
         : `claude-foundation authority status ${id} --request ${request.requestId} --template`
     }));

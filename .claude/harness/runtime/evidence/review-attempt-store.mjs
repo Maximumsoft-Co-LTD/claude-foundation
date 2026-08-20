@@ -138,9 +138,12 @@ export function createReviewAttemptStore({
     // No reset while any AI attempt is still dispatched: acknowledging the
     // completed errors beside a live dispatch would reopen capacity for a
     // further dispatch and strand the live attempt off the chain head.
-    if (reviewAttempts(id, history).some((attempt) =>
-      attempt.reviewerType === "ai" && attempt.status === "dispatched"))
-      fail("an AI review attempt is still dispatched; complete or abort it before resetting infrastructure retries");
+    const liveDispatch = reviewAttempts(id, history).find((attempt) =>
+      attempt.reviewerType === "ai" && attempt.status === "dispatched");
+    if (liveDispatch)
+      fail("an AI review attempt is still dispatched; complete or abort it before resetting infrastructure retries. " +
+        `Find the open request with 'claude-foundation authority status ${id}', ` +
+        `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
     // Completed infrastructure errors only. Anything else is not an
     // infrastructure outcome the bounded recovery circuit consumed.
     const attempts = infrastructureAiAttempts(id, history).filter((attempt) =>
