@@ -39,6 +39,12 @@ const quiet = (fn) => {
   console.log = () => {};
   try { return fn(); } finally { console.log = prior; }
 };
+const captureLog = (fn) => {
+  const prior = console.log;
+  const rows = [];
+  console.log = (value) => { rows.push(String(value)); };
+  try { return { result: fn(), rows }; } finally { console.log = prior; }
+};
 
 try {
   const bothWaived = reviewAssurancePosture({
@@ -138,6 +144,7 @@ try {
       };
       return {
         version: 1,
+        ...(packetMode === "large" ? { payload: "x".repeat(20_000) } : {}),
         claims: [{ id: "claim-a", scenario: "review the changed behavior" }],
         decisions: { proposal },
         contractArtifacts: { "proposal.md": proposal },
@@ -227,6 +234,26 @@ try {
   }));
   assert.equal(state.reviewHistory?.totalAttempts || 0, 0,
     "cancelling an undispatched request must not consume an attempt");
+
+  packetMode = "large";
+  workspaceHash = "workspace-large-packet";
+  const largeRequestOutput = captureLog(() =>
+    authority.requestAuthority("change-a", { type: "review" }));
+  const largeAcknowledgement = JSON.parse(largeRequestOutput.rows[0]);
+  assert.equal(largeAcknowledgement.packet.status, "persisted");
+  assert.equal(largeAcknowledgement.packet.display, "truncated");
+  assert.ok(Buffer.byteLength(largeRequestOutput.rows[0]) < 8192,
+    "authority request acknowledgement must honor the display budget");
+  assert.match(largeAcknowledgement.next, /authority status/);
+  const durableLargeRequest = authorityStore.list("change-a")
+    .find((entry) => entry.value.requestId === largeRequestOutput.result.requestId)?.value;
+  assert.equal(durableLargeRequest.packet.payload.length, 20_000,
+    "compact acknowledgement must not truncate the durable authority packet");
+  quiet(() => authority.abortAuthority("change-a", {
+    request: largeRequestOutput.result.requestId, reason: "compact display regression complete"
+  }));
+  packetMode = "code";
+  workspaceHash = "workspace-a";
 
   const firstRequest = quiet(() => authority.requestAuthority("change-a", { type: "review" }));
   const first = quiet(() => authority.dispatchAuthority("change-a", {

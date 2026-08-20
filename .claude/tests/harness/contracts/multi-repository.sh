@@ -188,6 +188,17 @@ assert_contains "contract task packet routes to Opus tier" \
 assert_cmd_zero "task resource lease is acquired atomically" \
   node .claude/harness/foundation.mjs agent-acquire \
   cross-repository-profile T001 --owner agent-a
+leased_task_packet="$(node .claude/harness/foundation.mjs agent-task \
+  cross-repository-profile T001)"
+assert_cmd_zero "leased task packet carries worker boundaries and current authority" \
+  sh -c 'printf "%s" "$1" | jq -e '\''
+    .version == 8 and
+    .executionAuthority.status == "leased" and
+    .workerContract.role == "leased-task-worker" and
+    (.workerContract.mustNot | index("edit-task-ledger")) != null and
+    (.workerContract.mustNot | index("dispatch-successors")) != null and
+    .workerContract.resultAuthority == "observed-workspace-writes-and-lease-authority"'\'' \
+    >/dev/null' sh "$leased_task_packet"
 live_dispatch="$(node .claude/harness/foundation.mjs agent-dispatch cross-repository-profile)"
 assert_contains "native-host dispatch waits instead of duplicating a live worker" \
   "$live_dispatch" '"action":"wait"'

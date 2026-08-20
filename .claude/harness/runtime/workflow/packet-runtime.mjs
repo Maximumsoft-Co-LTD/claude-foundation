@@ -232,6 +232,23 @@ export function createPacketRuntime({
           ? join(leasesRoot, "tasks", id, `${selectedTask.id}.json`) : null;
         const lease = leasePath && existsSync(leasePath) ? readJson(leasePath, {}) : null;
         return {
+          workerContract: {
+            version: 1,
+            role: "leased-task-worker",
+            must: [
+              "implement-only-the-leased-task",
+              "edit-only-authorized-paths",
+              "run-focused-checks",
+              "report-summary-checks-and-blockers"
+            ],
+            mustNot: [
+              "edit-task-ledger",
+              "dispatch-successors",
+              "claim-peer-results"
+            ],
+            parentOwns: ["group-join", "task-ledger", "successor-dispatch"],
+            resultAuthority: "observed-workspace-writes-and-lease-authority"
+          },
           executionAuthority: lease ? {
             status: "leased",
             graphRevision: lease.graphRevision,

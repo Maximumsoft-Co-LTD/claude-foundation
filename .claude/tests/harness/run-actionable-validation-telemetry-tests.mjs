@@ -94,7 +94,7 @@ test("request-only events expose missing usage without inventing totals", () => 
 
 test("Cursor imports retain measured generic-host attribution", () => {
   const value = usageAvailability([
-    { source: "cursor", inputTokens: 42 }
+    { source: "cursor", inputTokens: 42, outputTokens: 7 }
   ]);
   assert.equal(value.status, "measured");
   assert.equal(value.classification, "measured");
@@ -107,6 +107,23 @@ test("explicit zero usage is distinguished from missing usage", () => {
   ]);
   assert.equal(value.classification, "no-usage");
   assert.equal(value.reason, null);
+});
+
+test("a zero cost without token totals is partial rather than no usage", () => {
+  const value = usageAvailability([
+    { source: "generic", cost: 0 }
+  ], [], "change-id");
+  assert.equal(value.classification, "partial-measurement");
+  assert.match(value.recoveryActions[0].command, /--format generic/);
+});
+
+test("one complete event cannot hide another request-only event", () => {
+  const value = usageAvailability([
+    { source: "codex", inputTokens: 10, outputTokens: 4 },
+    { source: "codex", inputTokens: null, outputTokens: null }
+  ], [], "change-id");
+  assert.equal(value.classification, "partial-measurement");
+  assert.match(value.recoveryActions[0].command, /--format codex/);
 });
 
 test("unsupported event sources retain an actionable classification", () => {

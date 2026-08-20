@@ -1,4 +1,4 @@
-export const AGENT_DISPATCH_SCHEMA_VERSION = 1;
+export const AGENT_DISPATCH_SCHEMA_VERSION = 2;
 
 function taskById(plan, id) {
   return plan.tasks.find((task) => task.id === id);
@@ -112,7 +112,13 @@ export function createAgentDispatchRuntime({
       contextPolicy: {
         source: "leased-task-packet",
         parentTranscript: "excluded",
-        acquireBeforePacket: true
+        acquireBeforePacket: true,
+        capacity: {
+          source: "host-available-native-worker-slots",
+          upperBound: plan.maxParallelAgents,
+          selectInReturnedOrder: true,
+          acquireOnlyImmediatelySpawnable: true
+        }
       },
       nextCommand: command(`agents dispatch ${id}`)
     };

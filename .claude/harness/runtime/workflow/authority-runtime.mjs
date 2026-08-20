@@ -3,6 +3,32 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { acquireProcessLock, isProcessAlive } from "../core/process-lock.mjs";
 
+export function authorityRequestDisplayValue(request, limit = 8192) {
+  const packetBytes = Buffer.byteLength(JSON.stringify(request.packet || null));
+  if (request.type !== "review" || packetBytes <= limit) return request;
+  return {
+    version: request.version,
+    requestId: request.requestId,
+    changeId: request.changeId,
+    type: request.type,
+    provider: request.provider,
+    status: request.status,
+    workspaceHash: request.workspaceHash,
+    claimIds: request.claimIds,
+    packetDigest: request.packetDigest,
+    packet: {
+      status: "persisted",
+      display: "truncated",
+      bytes: packetBytes,
+      limit
+    },
+    requestedAt: request.requestedAt,
+    expiresAt: request.expiresAt,
+    next: `claude-foundation authority status ${request.changeId} --request ${
+      request.requestId}`
+  };
+}
+
 export function createAuthorityRuntime({
   root,
   protocolVersion,
@@ -157,7 +183,10 @@ export function createAuthorityRuntime({
       entry.value.workspaceHash === workspaceHash &&
       ["requested", "dispatched", "pending"].includes(entry.value.status));
     if (existing) {
-      if (!options.quiet) console.log(JSON.stringify(existing.value, null, 2));
+      if (!options.quiet) console.log(JSON.stringify(authorityRequestDisplayValue(
+        existing.value,
+        Number(foundationPolicy().execution?.packetBytes?.review || 8192)
+      ), null, 2));
       return existing.value;
     }
     const packet = authorityPacket(id, type);
@@ -174,7 +203,10 @@ export function createAuthorityRuntime({
       }
     };
     authorityStore.writeRequest(id, request);
-    if (!options.quiet) console.log(JSON.stringify(request, null, 2));
+    if (!options.quiet) console.log(JSON.stringify(authorityRequestDisplayValue(
+      request,
+      Number(foundationPolicy().execution?.packetBytes?.review || 8192)
+    ), null, 2));
     return request;
   }
 

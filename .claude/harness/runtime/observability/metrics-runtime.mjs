@@ -21,16 +21,23 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
       "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
       "cacheTokens", "cost"
     ];
+    const finite = (value) => value !== null && value !== undefined &&
+      Number.isFinite(Number(value));
     const observedValues = events.flatMap((event) => usageFields
-      .map((field) => event[field])
-      .filter((value) => value !== null && value !== undefined &&
-        Number.isFinite(Number(value))));
+      .map((field) => event[field]).filter(finite));
+    const completeEvents = events.filter((event) =>
+      finite(event.inputTokens) && finite(event.outputTokens));
     const classification = !correlatedHosts.length ? "source-unsupported"
       : !observedValues.length ? "correlation-missing"
-        : observedValues.every((value) => Number(value) === 0) ? "no-usage"
-          : "measured";
+        : completeEvents.length !== events.length ? "partial-measurement"
+          : completeEvents.every((event) =>
+            Number(event.inputTokens) === 0 && Number(event.outputTokens) === 0 &&
+            usageFields.filter((field) => !["inputTokens", "outputTokens"].includes(field))
+              .filter((field) => finite(event[field]))
+              .every((field) => Number(event[field]) === 0)) ? "no-usage"
+            : "measured";
     const recoveryActions = [];
-    if (classification === "correlation-missing") {
+    if (["correlation-missing", "partial-measurement"].includes(classification)) {
       if (correlatedHosts.includes("codex")) recoveryActions.push({
         type: "import-codex-events",
         command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format codex`

@@ -132,6 +132,9 @@ test("archive drains the bound transcript into the change's events", () => {
   }) + "\n");
   const output = cli(fixture, env, "archive", "telemetry-probe");
   assert.match(output, /ARCHIVED telemetry-probe/);
+  assert.match(output, /telemetry: measured/);
+  assert.doesNotMatch(output, /telemetry: not-ingested/,
+    "archive printed readiness before its final transcript drain");
   const events = join(fixture.root, ".foundation", "logs", "telemetry-probe", "events.jsonl");
   assert.ok(existsSync(events) && statSync(events).size > 0,
     "archive imported no telemetry rows");

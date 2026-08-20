@@ -555,6 +555,11 @@ export function createApplyRuntime({
       console.log(`ARCHIVED ${id}\n  recovered: interrupted archive transaction`);
       return;
     }
+    // Drain before the first readiness report so archive cannot print
+    // `telemetry: not-ingested` and then ingest the missing rows moments later.
+    // Telemetry stays advisory: an absent or unreadable transcript never gates
+    // Land.
+    try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
     let readiness = landCheck(id);
     if (readiness.archived) return;
     assertMultiRepositoryArchiveReady(id, readiness.state);
@@ -583,10 +588,6 @@ export function createApplyRuntime({
     const state = loadRuntime(id);
     const pending = pendingTasks(id);
     if (pending.length) fail(`${pending.length} implementation task(s) remain unchecked`);
-    // One quiet telemetry drain while usage is still attributable to an active
-    // change. An absent transcript already returns imported 0; anything that
-    // throws degrades to the same, because telemetry never costs an archive.
-    try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
     const telemetry = telemetryReadiness?.(id) || null;
     state.land = {
       ...(state.land || {}),

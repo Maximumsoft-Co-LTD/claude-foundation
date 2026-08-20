@@ -18,14 +18,17 @@ assert_file_contains "build forbids serializing a spawn group in the parent" \
   "$ROOT/.claude/commands/build.md" 'serialize that group in the parent'
 assert_file_contains "dispatch spawns the leased group before waiting" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
-  'Spawn every successfully leased worker before waiting for any worker'
+  'successfully leased worker before waiting for any worker'
 assert_file_contains "dispatch makes the parent the join owner" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'the parent is the orchestrator and join owner'
 assert_file_contains "dispatch keeps workers away from the task ledger" \
-  "$ROOT/.claude/commands/references/build-dispatch.md" 'It must not edit'
+  "$ROOT/.claude/harness/runtime/workflow/packet-runtime.mjs" 'edit-task-ledger'
 assert_file_contains "dispatch keeps worker reports non-authoritative" \
   "$ROOT/.claude/commands/references/build-dispatch.md" 'report is not evidence'
+assert_file_contains "dispatch acquires only immediately spawnable workers" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" \
+  'Never acquire a lease that cannot be spawned immediately'
 assert_file_contains "agent contract selectively loads update policy" \
   "$ROOT/.claude/harness/AGENT.md" 'For `notification.surface: true`, load `README.md`'
 assert_file_contains "update policy suppresses the duplicate Change notice" \
@@ -85,11 +88,17 @@ assert_eq "mixed-risk single session selects deep model" "deep" \
 
 task_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
 if printf '%s' "$task_packet" | jq -e \
-  '.version == 7 and .packetType == "task" and (.claims | length) > 0 and (.providers | length) > 0' \
+  '.version == 8 and .packetType == "task" and
+    (.claims | length) > 0 and (.providers | length) > 0 and
+    .workerContract.role == "leased-task-worker" and
+    (.workerContract.mustNot | index("edit-task-ledger")) != null and
+    (.workerContract.mustNot | index("dispatch-successors")) != null and
+    (.workerContract.mustNot | index("claim-peer-results")) != null and
+    .workerContract.resultAuthority == "observed-workspace-writes-and-lease-authority"' \
   >/dev/null; then
-  pass "task packet is JSON with claim and provider authority"
+  pass "task packet carries claim, provider, and worker authority"
 else
-  fail "task packet is JSON with claim and provider authority"
+  fail "task packet carries claim, provider, and worker authority"
 fi
 recorded="$(find .foundation/logs/agent-contract/context-events \
   -type f -name '*.json' -print | sort | tail -1)"

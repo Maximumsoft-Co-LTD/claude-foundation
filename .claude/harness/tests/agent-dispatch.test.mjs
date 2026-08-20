@@ -51,6 +51,12 @@ test("parallel decision is bounded and requires acquire before packet", () => {
   assert.equal(value.workerCount, 2);
   assert.equal(value.contextPolicy.acquireBeforePacket, true);
   assert.equal(value.contextPolicy.parentTranscript, "excluded");
+  assert.deepEqual(value.contextPolicy.capacity, {
+    source: "host-available-native-worker-slots",
+    upperBound: 2,
+    selectInReturnedOrder: true,
+    acquireOnlyImmediatelySpawnable: true
+  });
   for (const worker of value.workers) {
     assert.match(worker.acquireCommand, /^claude-foundation agents acquire /);
     assert.match(worker.packetCommand, /^claude-foundation packet .* --task T/);
