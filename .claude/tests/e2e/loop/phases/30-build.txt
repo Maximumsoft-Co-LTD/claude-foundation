@@ -1,0 +1,3 @@
+/build {{CHANGE_ID}}
+
+Follow the dispatch protocol exactly and edit only allowed sandbox paths. Do not ask clarifying questions; when an option arises, take the default consistent with the agreed change. Stop after proof readiness passes and report the build status.

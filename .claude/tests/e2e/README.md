@@ -16,6 +16,36 @@ different risk angles. Its output is a diagnostic report and candidate patches,
 not release evidence. Every reported defect still needs a deterministic
 reproduction in the main test harness.
 
+## Full-loop scenario (`loop/run-loop.sh`)
+
+`loop/` holds the OpenSpec-native counterpart to the retired runner: one
+simulated user takes a small consumer project (`loop/fixture/`, a pricing
+module with a documented-vs-implemented boundary bug) through
+`/investigate → /change → /build → /prove → /land`, one headless `claude -p`
+session per phase, so cross-session state persistence is exercised too. The
+sandbox is produced by the real consumer path (`install.sh <target> --yes`).
+
+The model's prose is never the verdict. Between phases the runner asserts
+deterministic lifecycle state: the investigation note exists and nothing else
+was written; exactly one change exists and `changes` lists it; `proof
+readiness` then `land check` exit 0; root `src/` stays untouched until Land;
+after Land the change is archived, the suite is green, and `loop/accept.mjs`
+(a content-bound acceptance check the run never sees) passes against the
+landed code.
+
+```sh
+sh .claude/tests/e2e/loop/run-loop.sh          # dry-run plan (default, free)
+sh .claude/tests/e2e/loop/run-loop.sh --run    # live; costs tokens
+sh .claude/tests/e2e/loop/run-loop.sh --run --keep                 # keep sandbox
+sh .claude/tests/e2e/loop/run-loop.sh --run --sandbox DIR --from 30  # resume
+```
+
+Env: `CLAUDE_LOOP_MODEL` (default sonnet), `CLAUDE_LOOP_TIMEOUT` (2400 s per
+phase), `CLAUDE_LOOP_BUDGET_USD` (10 per phase). A broken deterministic assert
+is FAIL (exit 1); a claude process failure — timeout, budget, stall — is
+INCONCLUSIVE (exit 0) and stops the chain. Same evidence boundary as above:
+diagnostic smoke, not release evidence.
+
 ## Parallel `/dev` diagnostic harness
 
 Use this method when a change spans multiple runtime seams and benefits from

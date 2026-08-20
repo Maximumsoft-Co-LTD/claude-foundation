@@ -1,0 +1,5 @@
+/prove {{CHANGE_ID}}
+
+Collect the agreed deterministic evidence honestly. If any evidence fails, report the failure exactly as it happened — never fabricate, weaken, or bypass a gate. Do not ask clarifying questions.
+
+This is a headless session: it terminates the moment you produce your final reply, killing any still-running background work. Therefore never end your reply while a review dispatch, authority run, or any background task is pending — stay in-session and wait for it to finish, polling as needed. Stop only when proof is finalized or genuinely blocked, and state clearly which of the two it is.

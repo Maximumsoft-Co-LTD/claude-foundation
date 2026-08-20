@@ -1,0 +1,8 @@
+{
+  "name": "loop-fixture-shop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

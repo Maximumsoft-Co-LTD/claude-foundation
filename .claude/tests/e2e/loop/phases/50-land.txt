@@ -1,0 +1,3 @@
+/land {{CHANGE_ID}}
+
+You have the user's explicit authority to land and archive this proven change now. Do not commit, push, or open a pull request — applying to the working tree and archiving the change is the full scope. Do not ask clarifying questions. Report what was applied and where the change was archived.
