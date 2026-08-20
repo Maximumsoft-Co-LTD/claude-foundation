@@ -1,15 +1,69 @@
-/tmp
-/target/
-/.changeloop/*.db
-/.changeloop/*.db-shm
-/.changeloop/*.db-wal
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local environment and secrets (keep shareable templates)
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Logs, process files, and temporary work
+*.log
+*.pid
+*.pid.lock
+*.seed
+*.tmp
+*.temp
+/tmp/
+/.tmp-profile-bin/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node.js dependencies, build output, and test artifacts
 **/node_modules/
 **/test-results/
 **/coverage/
+**/playwright-report/
+**/.nyc_output/
+**/.cache/
 
-# Python bytecode (skill scripts under .claude/skills/*/scripts/)
+# Rust build output
+/target/
+
+# Python caches and virtual environments (skill scripts live under
+# .claude/skills/*/scripts/)
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local agent/tool state
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+/.hyperresearch/
+/.serena/
+
+# SQLite runtime artifacts
+/.changeloop/*.db
+/.changeloop/*.db-shm
+/.changeloop/*.db-wal
+dashboard/data/*.db
+dashboard/data/*.db-shm
+dashboard/data/*.db-wal
+
+# Root documentation is an allow-list; website/docs is a separate tree.
 /docs/*
 !/docs/roadmap.md
 !/docs/threat-model.md
@@ -32,15 +86,7 @@ __pycache__/
 # (The `/docs/*` rules above are anchored to the repo root and do not apply here.)
 website/docs/dist/
 website/docs/.astro/
-
-# Serena MCP server (per-project config/cache/memories, auto-generated)
-.serena/
 solar-system/
-
-# SQLite runtime artifacts (db + WAL + shared-memory)
-dashboard/data/*.db
-dashboard/data/*.db-shm
-dashboard/data/*.db-wal
 
 # Externally cloned scratch. It carries its own .git, so committing it would
 # record a gitlink to a repository with no configured URL — broken for anyone
