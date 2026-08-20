@@ -5,6 +5,12 @@ Run `proof advance`; it executes once, routes review before acceptance, reuses
 `authority request`, and never polls. Send each `handoff packet` once; continue
 without asking for cloud credentials.
 
+A review dispatch or `authority run` dies with the session: in a
+non-interactive run your final reply terminates the process, kills the
+in-flight dispatch, and burns an infrastructure retry. Never end the reply
+while a dispatch or background task is pending — stay in-session and wait for
+it to complete or fail.
+
 Review is fresh independent work: full, then one changed delta. When configured
 reviewer infrastructure fails and policy names `main-session`, review the
 returned bounded packet in this calling session, fill the pre-attributed

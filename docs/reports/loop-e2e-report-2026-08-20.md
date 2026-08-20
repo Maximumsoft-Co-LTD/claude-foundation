@@ -34,34 +34,55 @@ attempt (review wave 1 surfaced a real issue, wave 2 passed cleanly).
 Candidate product fix: the prove workflow reference should state this for
 non-interactive sessions.
 
-## Finding 2 — Land-time re-prove deadlocks on the review wave cap
+## Finding 2 — proof advance prescribes a command the wave cap refuses
 
-After Prove passed, `/land` applied the change; applying (product files +
-packet bookkeeping) moves the workspace hash, so `land advance` demands one
-fresh prove. The fresh `proof advance` then *itself creates a review request
-and prescribes the exact command* `authority run <change> --request <id>`,
-which the authority layer refuses:
+After Prove passed, the land-phase agent created a new product file during
+Land (`scripts/run-tests-with-report.mjs`, relocating the test runner out of
+`test/` at 16:12 — after both review waves). That legitimately moved the
+workspace past its reviewed state, so `land advance` demanded a fresh prove.
+The defect is what happened next: `proof advance` *itself created a review
+request and prescribed the exact command* `authority run <change> --request
+<id>` — which the authority layer then refuses:
 
 ```
 BLOCKED: REVIEW_ROUTE_COMPLETE: 2/2 delivered AI review wave(s) are complete.
 ```
 
-The proof layer demands evidence the authority layer refuses to produce —
-with `foundation.json` already at `review.independence: "self"` and
-`diversity: "single-model"` (the shipped defaults). Every default-config
-consumer whose change consumed both review waves during Prove hits this wall
-at Land: the only exits are a human-recorded review or leaving the change
-un-archived. The land-phase agent diagnosed the same dead end and refused to
-fabricate, which is the guard working as designed — but the route contradiction
-between `proof advance` (creates request, prescribes `authority run`) and
-`authority run` (`REVIEW_ROUTE_COMPLETE`) looks like a genuine defect.
-Deterministic CLI reproduction (no model involved): sandbox sync → proof
-advance → run the prescribed authority command.
+The runtime's two subsystems contradict each other: the proof layer demands a
+step the authority layer will never execute, and a headless agent following
+the prescribed route loops into a wall. The land agent diagnosed the dead end
+and refused to fabricate — the guard held — but the honest exit (record an
+external/human review via the template) was never the prescribed command.
+Deterministic CLI reproduction (no model involved): with two delivered waves,
+sandbox sync → proof advance → run the prescribed authority command.
 
-Candidate directions: bind review receipts to the reviewed content fingerprint
-rather than the full workspace hash (bookkeeping writes should not invalidate
-a delivered verdict), or exempt Land's apply-induced hash move from re-review
-when the product delta is byte-identical to the reviewed delta.
+Two contributing causes, one per layer: the land agent edited product code
+during Land (an instruction gap — Land applies, it does not implement), and a
+latent hash-fragility where a sync-only `state.revision` bump could feed the
+snapshot revision marker when `contractRevision` is unset, expiring a review
+receipt that has no declared-inputs rebind.
+
+## Fixes applied (2026-08-20, follow-up session)
+
+- `proof-execution-runtime.mjs` — `authorityNext` now checks delivered AI
+  waves against `reviewPolicy.maxAiAttempts`; when the route is exhausted it
+  prescribes `authority status --request <id> --template` (the external
+  recording route) instead of a blocked `authority run`. Verified live against
+  the deadlocked sandbox: the prescribed command is now executable.
+  Regression: `proof-advance.test.mjs` (exhausted → template, open → run).
+- `state-runtime.mjs` / `repository-snapshot.mjs` — the snapshot revision
+  marker no longer falls back from `contractRevision` to the sync-counting
+  `state.revision`; only a real contract edit shifts snapshot identity.
+  Regression: `run-workspace-surface-tests.mjs` (sync-only bump keeps hashes;
+  real contract revision still expires workspace and review hashes).
+- `review-attempt-store.mjs` — the reset-infra guard for a live dispatch now
+  names the lookup (`authority status`) and the abort command instead of the
+  bare "complete or abort it".
+- `.claude/commands/land.md` — Land now states explicitly: never edit product
+  code or the packet during Land; route new work to `handoffs.yaml` or a
+  follow-up change.
+- `.claude/skills/prove/references/workflow.md` — Finding 1's rule shipped:
+  never end the reply while a dispatch or background task is pending.
 
 ## Runner defect fixed during the run
 
