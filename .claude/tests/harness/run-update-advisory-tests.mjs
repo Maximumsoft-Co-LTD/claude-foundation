@@ -249,7 +249,10 @@ test("Change reuses the fresh cache created at Investigate", async () => {
 test("Investigate and Change use durable session deduplication", async () => {
   const item = fixture();
   try {
-    cached(item.cachePath, "3.3.3");
+    // A synthetic future version, not the current release: pinning the then-
+    // latest tag made this test rot the moment that tag shipped — equal
+    // versions stop being an update and the notification never surfaces.
+    cached(item.cachePath, "99.0.0");
     const options = {
       packageRoot: ROOT,
       arguments: "demo",
