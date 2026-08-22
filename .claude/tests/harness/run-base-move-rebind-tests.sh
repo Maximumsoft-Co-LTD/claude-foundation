@@ -78,6 +78,10 @@ $F resolve "$C" --impact low --coupling isolated --acceptance-required \
 $F sandbox create "$C" > /dev/null
 printf 'export function add(a,b){return a+b;}\nexport function sub(a,b){return a-b;}\n' \
   > ".foundation/sandboxes/$C/src/calc.js"
+# An untracked new file is the regression that motivated the canonical staged
+# diff: replay's add -A plus apply --3way flip such a file to staged, and an
+# identity split by tracked status expired the verdict over the flip alone.
+printf 'export const brandNew = true;\n' > ".foundation/sandboxes/$C/src/new-file.js"
 assert_cmd_zero "named human acceptance records" record_acceptance "$C"
 receipt=".foundation/receipts/$C/acceptance.json"
 assert_cmd_zero "the receipt carries a diff identity" \

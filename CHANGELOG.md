@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Diff identity no longer depends on git index state.** The change's diff
+  identity is now computed from a canonical staged diff (a throwaway
+  `GIT_INDEX_FILE`, everything `add -A`'d, `diff --cached` against the base),
+  with the diff drivers pinned. Previously a file the change created as
+  untracked was folded as a raw digest while the same file staged by replay
+  flowed through patch text, so a clean sync expired the verdict over a
+  representation flip with no content behind it — resurfacing the forced
+  re-review v3.4.0 removed for any change that adds files. Verdicts stamped
+  under v3.4.0 read as stale once and re-prove normally; the machine-level
+  `diff.algorithm`/prefix configuration can no longer expire verdicts either.
+
 ## [3.4.0] - 2026-08-22
 
 ### Added

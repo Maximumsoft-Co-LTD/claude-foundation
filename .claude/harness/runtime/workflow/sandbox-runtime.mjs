@@ -761,11 +761,17 @@ export function createSandboxRuntime({
   // guarded separately by baseHead equality at Land. Null means "no identity"
   // and every caller treats it as not-rebindable.
   //
-  // No `git add -A` here, unlike replay: an identity read must not mutate the
-  // sandbox index — flipping a stray undeclared file from untracked to
-  // tracked would move the very snapshot hashes this identity exists to
-  // outlive. New files the change created are folded in from the untracked
-  // listing instead.
+  // One canonical representation, staged into a throwaway index. Splitting
+  // "tracked changes as patch text" from "untracked files as raw digests"
+  // made identity a function of index state, and sync changes index state:
+  // replay's `add -A` plus `apply --3way` turn a file that was untracked at
+  // verdict time into a staged one afterwards, expiring the verdict over a
+  // representation flip with no content behind it. Staging everything into a
+  // temporary GIT_INDEX_FILE folds new, edited, and deleted files through the
+  // same `diff --cached` patch regardless of what the real index says — and
+  // never mutates it, so no snapshot hash moves as a side effect of reading.
+  // The diff drivers are pinned because patch text is the identity: a
+  // machine-level `diff.algorithm` or prefix tweak must not expire verdicts.
   function changeDiffIdentity(id, state = loadRuntime(id)) {
     const rows = [];
     for (const candidate of replayCandidates(state)) {
@@ -778,23 +784,33 @@ export function createSandboxRuntime({
           .map((entry) => entry.relativePath)
         : [];
       const pathspec = sandboxCodePathspec(id, nested);
-      const diff = gitBuffer(
-        ["diff", "--binary", record.baseHead, "--", ...pathspec], record.path);
-      if (diff.status !== 0) return null;
-      const untracked = git(["ls-files", "-z", "--others", "--exclude-standard",
-        "--", ...pathspec], record.path);
-      if (untracked.status !== 0) return null;
-      const digest = createHash("sha256");
-      digest.update(normalizedDiffDigest(diff.stdout));
-      for (const rel of untracked.stdout.split("\0").filter(Boolean).sort()) {
-        digest.update(`\0untracked\0${rel}\0`);
-        digest.update(String(fileDigest(join(record.path, rel)) || "missing"));
+      // Beside the worktree, like `.rebase`, never inside it: a scratch index
+      // that lived in the tree would stage itself.
+      const indexFile = `${record.path}.diff-identity-index`;
+      const env = { ...process.env, GIT_INDEX_FILE: indexFile };
+      try {
+        rmSync(indexFile, { force: true });
+        const staged = spawnSync("git", ["-c", "core.quotepath=false", "add", "-A"],
+          { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        if (staged.status !== 0) return null;
+        // No encoding: binary patch bytes, same rationale as gitBuffer.
+        const diff = spawnSync("git", [
+          "-c", "diff.algorithm=myers", "-c", "core.quotepath=false",
+          "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+          "-c", "diff.renames=true",
+          "diff", "--binary", "--cached", record.baseHead, "--", ...pathspec
+        ], { cwd: record.path, env, maxBuffer: 64 * 1024 * 1024 });
+        if (diff.status !== 0) return null;
+        rows.push(`${repository}\0${normalizedDiffDigest(diff.stdout)}`);
+      } finally {
+        rmSync(indexFile, { force: true });
       }
-      rows.push(`${repository}\0${digest.digest("hex")}`);
     }
     if (!rows.length) return null;
     const digest = createHash("sha256");
-    digest.update("foundation-diff-identity:1\0");
+    // :2 — the representation changed (canonical staged diff); a verdict
+    // stamped under :1 must read as stale, never as accidentally equal.
+    digest.update("foundation-diff-identity:2\0");
     for (const row of rows.sort()) {
       digest.update(row);
       digest.update("\0");
