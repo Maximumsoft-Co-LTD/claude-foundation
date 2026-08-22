@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Review and acceptance verdicts survive a moved base.** Receipts now carry
+  the change's diff identity (the normalized replay patch) and a packet review
+  hash (a snapshot digest covering only the packet's review-relevant content).
+  When a sandbox sync replays the change cleanly onto a control plane that
+  moved — the common "another change landed first" shape — `proof run` /
+  `proof advance` rebind the verdict to the new workspace hash instead of
+  expiring it, and no AI review wave is consumed. The rebind is an overlay
+  beside the original binding; the review attempt chain is never rewritten.
+- **`authority reset-base-move <change> --decision-ref <ref>`.** When a replay
+  genuinely alters the change's diff, the expired passing review attempt can
+  be released from the two-wave budget under a recorded user decision — keyed
+  to the sync movement, one release per base move. A change can no longer be
+  bricked at the wave cap by commits it never made, which previously forced
+  abandoning it and redoing the whole flow.
+- **Sync journals base moves.** `sandbox sync` records each rebased movement's
+  pre/post diff identity in runtime state, so base-move accounting and
+  recovery guidance are deterministic. Recovery messages at Land, proof
+  validity, and the wave-cap stop now name the rebind and release routes.
+  Runtime API pins move 24 → 25.
+
 ### Fixed
 
 - **Task annotations keep bracketed values intact.** A `[paths:]` entry
