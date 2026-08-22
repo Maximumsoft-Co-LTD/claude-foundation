@@ -185,7 +185,7 @@ export function createLandRuntime({
     clearSnapshotCache(id);
     const hash = relevantHash(id, null, true);
     if (proof.workspaceHash !== hash)
-      fail(`proof is stale (${proof.workspaceHash.slice(0, 8)} != ${hash.slice(0, 8)}) — the workspace changed after Prove; finish contract and code edits first, sync, then run one fresh prove: claude-foundation proof run ${id}`);
+      fail(`proof is stale (${proof.workspaceHash.slice(0, 8)} != ${hash.slice(0, 8)}) — the workspace changed after Prove; finish contract and code edits first, sync, then run one fresh prove: claude-foundation proof run ${id}. When only the base moved and the change's diff is unchanged, that run rebinds the review verdict instead of dispatching a new one`);
     const graph = agentPlanValue?.(id)?.graph || null;
     if (graph) {
       const aggregate = proof.aggregateGraphProof;

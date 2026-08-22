@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=24
+EXPECTED_RUNTIME_API=25
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -80,7 +80,7 @@ run_runtime() {
   case "${1:-}" in
     new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra) phase="prove" ;;
+    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move) phase="prove" ;;
     handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
@@ -414,7 +414,8 @@ case "${1:-}" in
       status) run_runtime read authority-status "$@" ;;
       record) run_runtime write authority-record "$@" ;;
       reset-infra) run_runtime write authority-reset-infra "$@" ;;
-      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', 'record', or 'reset-infra'" ;;
+      reset-base-move) run_runtime write authority-reset-base-move "$@" ;;
+      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', 'record', 'reset-infra', or 'reset-base-move'" ;;
     esac ;;
   handoff)
     shift

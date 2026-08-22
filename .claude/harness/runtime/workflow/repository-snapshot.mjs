@@ -72,6 +72,9 @@ export function createRepositorySnapshot({
       workspaceHash,
       codeHash: composite("codeHash"),
       reviewHash: composite("reviewHash"),
+      // Control-only: the packet lives in the control repository, so its
+      // review-relevant content needs no composition across children.
+      packetReviewHash: control.packetReviewHash,
       revision: contractRevision,
       fileCount: control.fileCount,
       control,

@@ -91,7 +91,7 @@ import {
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 
 const VERSION = "3.3.3";
-const RUNTIME_API_VERSION = "24";
+const RUNTIME_API_VERSION = "25";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -333,7 +333,8 @@ const {
   reviewAttempts,
   deliveredAiAttempts,
   infrastructureAiAttempts,
-  acknowledgeInfrastructureAttempts
+  acknowledgeInfrastructureAttempts,
+  acknowledgeBaseMoveAttempts
 } = createReviewAttemptStore({
   receiptsRoot: RECEIPTS,
   evidenceVault: EVIDENCE_VAULT,
@@ -623,7 +624,11 @@ const { receiptValidity } = createReceiptValidity({
   providerWorkspaceHash,
   providerInputIdentity,
   validateArtifact,
-  relevantHash
+  relevantHash,
+  relevantSnapshot,
+  // Late-bound: the sandbox runtime is composed after evidence, and receipt
+  // validity only consults diff identity at command time, long after both.
+  changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state)
 });
 const changeValidationRuntime = createChangeValidationRuntime({
   markBlocked,
@@ -717,6 +722,9 @@ const receiptRuntime = createReceiptRuntime({
   contractFingerprint,
   executionFingerprint,
   stableHash,
+  relevantSnapshot,
+  // Late-bound for the same composition-order reason as receipt validity.
+  changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state),
   adapterFingerprint,
   environmentDescriptor,
   reviewPolicy,
@@ -741,6 +749,7 @@ const receiptRuntime = createReceiptRuntime({
 const {
   proofPlan,
   rebindReusableReceipt,
+  rebindDiffBoundReceipt,
   recordReceipt,
   recordDeterministicReviewClosure
 } = receiptRuntime;
@@ -867,6 +876,7 @@ const {
   runAuthorityReviewer,
   abortAuthority,
   resetInfrastructureAuthority,
+  resetBaseMoveAuthority,
   authorityStatusValue,
   showAuthorityStatus,
   recordAuthority,
@@ -905,6 +915,7 @@ const {
   reviewerStatus,
   runConfiguredReview,
   acknowledgeInfrastructureAttempts,
+  acknowledgeBaseMoveAttempts,
   writeJson,
   receiptPath,
   recordReceipt,
@@ -1315,6 +1326,7 @@ const {
   requiredProviders,
   receiptValidity,
   rebindReusableReceipt,
+  rebindDiffBoundReceipt,
   executionNodes,
   collectableExecutionNodes,
   startRequiredServices,
@@ -1353,6 +1365,8 @@ const guardedAbortAuthority = guardPublicProofMutation(
   "authority abort", abortAuthority);
 const guardedResetInfrastructureAuthority = guardPublicProofMutation(
   "authority reset-infra", resetInfrastructureAuthority);
+const guardedResetBaseMoveAuthority = guardPublicProofMutation(
+  "authority reset-base-move", resetBaseMoveAuthority);
 const guardedRecordAuthority = guardPublicProofMutation(
   "authority record", recordAuthority);
 const guardedRecordReceipt = guardPublicProofMutation(
@@ -1535,7 +1549,7 @@ operationName = command || null;
 const namedChange = (value) =>
   typeof value === "string" && !value.startsWith("-") ? value : null;
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
-  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
 operationStatusAtStart = operationChangeId
   ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
@@ -1605,6 +1619,7 @@ await routeRuntimeCommand(command, values, {
   runAuthorityReviewer: guardedRunAuthorityReviewer,
   abortAuthority: guardedAbortAuthority,
   resetInfrastructureAuthority: guardedResetInfrastructureAuthority,
+  resetBaseMoveAuthority: guardedResetBaseMoveAuthority,
   showAuthorityStatus,
   recordAuthority: guardedRecordAuthority,
   upgradeEvidence,

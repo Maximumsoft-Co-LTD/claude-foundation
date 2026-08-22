@@ -167,7 +167,7 @@ assert_eq "agent command surface is bounded" "20" \
 # dispatch/abort/configured-reviewer/reset-infra routes, and the operator-owned
 # handoff record. Keep this count intentional so a newly exposed recovery
 # command cannot appear silently.
-assert_eq "conditional recovery surface is bounded" "24" \
+assert_eq "conditional recovery surface is bounded" "25" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \

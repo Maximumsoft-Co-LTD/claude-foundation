@@ -73,6 +73,7 @@ export function createAuthorityRuntime({
   reviewerStatus,
   runConfiguredReview,
   acknowledgeInfrastructureAttempts,
+  acknowledgeBaseMoveAttempts,
   writeJson,
   fail
 }) {
@@ -1223,6 +1224,24 @@ export function createAuthorityRuntime({
     });
   }
 
+  // A moved base whose replay altered the change's diff expires a delivered
+  // passing verdict through no fault of the work. This route releases exactly
+  // that attempt from the wave budget, on a recorded user decision, so the
+  // fresh review the move forces cannot brick the change at the cap. No
+  // reviewer diagnosis here — nothing is broken; only the accounting moves.
+  function resetBaseMoveAuthority(id, flags = {}) {
+    return withAuthorityLock(id, () => {
+      validate(id, "active", { quiet: true });
+      const decisionRef = String(flags["decision-ref"] || "").trim();
+      if (!decisionRef) fail("authority reset-base-move requires --decision-ref <ref>");
+      const result = acknowledgeBaseMoveAttempts(id, decisionRef);
+      console.log(`AUTHORITY ${id}: base-move review release\n  movement: ${
+        result.movementKey}\n  released: ${result.digests.length} attempt(s)\n  decision: ${
+        decisionRef}\n  next: request and dispatch the AI review again`);
+      return result;
+    });
+  }
+
   return {
     authorityProvider,
     authorityPacket,
@@ -1231,6 +1250,7 @@ export function createAuthorityRuntime({
     runAuthorityReviewer,
     abortAuthority,
     resetInfrastructureAuthority,
+    resetBaseMoveAuthority,
     unrecordedDeliveredAiResponse,
     authorityStatusValue,
     showAuthorityStatus,

@@ -541,7 +541,7 @@ packet_edit_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-
 assert_contains "a packet edit expires a review receipt" \
   "$packet_edit_plan" "review: stale"
 assert_contains "the stale review names its whole-workspace binding" \
-  "$packet_edit_plan" "review is bound to the whole workspace by design"
+  "$packet_edit_plan" "review is bound to the change's diff and packet"
 cp "$TMP/review-packet-before" "$review_packet"
 assert_contains "restoring the packet restores the review receipt" \
   "$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)" \

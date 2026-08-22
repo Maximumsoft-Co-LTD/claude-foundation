@@ -3,7 +3,8 @@ import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
 
 export function createProofExecutionRuntime({
   proofReadinessValue, relevantSnapshot, loadRuntime, saveRuntime, now,
-  requiredProviders, receiptValidity, rebindReusableReceipt, executionNodes,
+  requiredProviders, receiptValidity, rebindReusableReceipt,
+  rebindDiffBoundReceipt, executionNodes,
   collectableExecutionNodes, startRequiredServices, runExecutionDag,
   durableArtifact, pendingTasks, proofPreflight, prove, proofAudit,
   readJson, writeJson = () => {}, proofPath, proofAdvancePath = () => null,
@@ -200,6 +201,8 @@ export function createProofExecutionRuntime({
       const row = receiptValidity(id, provider, snapshot.workspaceHash);
       if (row.validity === "reusable-inputs")
         rebindReusableReceipt(id, row, snapshot, proofRunId);
+      else if (row.validity === "reusable-diff")
+        rebindDiffBoundReceipt(id, row, snapshot, proofRunId);
     }
     let sessions = [];
     try {
@@ -277,6 +280,8 @@ export function createProofExecutionRuntime({
       const row = receiptValidity(id, provider, snapshot.workspaceHash);
       if (row.validity === "reusable-inputs")
         rebindReusableReceipt(id, row, snapshot, proofRunId);
+      else if (row.validity === "reusable-diff")
+        rebindDiffBoundReceipt(id, row, snapshot, proofRunId);
     }
     let sessions = [];
     try {
@@ -468,7 +473,7 @@ export function createProofExecutionRuntime({
         ...receiptValidity(id, provider, readiness.workspaceHash)
       };
     }).filter((row) => {
-      if (["valid", "reusable-inputs"].includes(row.validity)) return false;
+      if (["valid", "reusable-inputs", "reusable-diff"].includes(row.validity)) return false;
       const automatic = row.adapter === "external"
         ? externalRetryStates : executableRetryStates;
       return !automatic.has(row.validity);
@@ -642,11 +647,12 @@ export function createProofExecutionRuntime({
     const snapshot = forcedSnapshot || relevantSnapshot(id, null, true);
     const reusable = requiredProviders(id)
       .map((provider) => receiptValidity(id, provider, snapshot.workspaceHash))
-      .filter((row) => row.validity === "reusable-inputs");
+      .filter((row) => ["reusable-inputs", "reusable-diff"].includes(row.validity));
     if (reusable.length) {
       const reuseRunId = `advance-reuse-${Date.now()}`;
       for (const row of reusable)
-        rebindReusableReceipt(id, row, snapshot, reuseRunId);
+        (row.validity === "reusable-inputs"
+          ? rebindReusableReceipt : rebindDiffBoundReceipt)(id, row, snapshot, reuseRunId);
       readiness = proofReadinessValue(id, "prove");
       authorityRequests = readiness.status === "NEEDS_USER_DECISION"
         ? statusRequests(id) : [];

@@ -77,6 +77,9 @@ export function createReceiptRuntime({
     return repository ? [repository] : [];
   },
   providerInputIdentity, contractFingerprint, executionFingerprint, stableHash,
+  // Null identity means "not rebindable", so a composition that does not wire
+  // these degrades to the pre-rebind behavior instead of failing to record.
+  relevantSnapshot = () => null, changeDiffIdentity = () => null,
   adapterFingerprint, environmentDescriptor, reviewPolicy, subjectProvenance,
   reviewProvenanceResult, readJson, flagValues, reviewHistoryState,
   reserveReviewAttempt, reviewAttemptByDigest, reviewAttemptIsValid,
@@ -92,7 +95,8 @@ export function createReceiptRuntime({
     const config = providerConfig(id, provider);
     const capability = providerCapability(provider, config);
     if (["review", "acceptance"].includes(capability))
-      return `${capability} is bound to the whole workspace by design`;
+      return `${capability} is bound to the change's diff and packet; ` +
+        "a clean replay onto a moved base rebinds it without a new verdict";
     const declared = Array.isArray(config?.inputs) ? config.inputs : null;
     return declared
       ? `declared inputs: ${declared.join(", ")}${validity === "reusable-inputs"
@@ -151,6 +155,42 @@ export function createReceiptRuntime({
     })}\n`);
   }
   
+  // The review/acceptance twin of the rebind above, shaped by a constraint
+  // executable receipts do not have: the review attempt chain digests the
+  // original `workspaceHash`, so the rebind is an overlay beside it —
+  // `rebind.boundWorkspaceHash` — never a rewrite. Validity accepts either
+  // hash; the chain keeps verifying against the original.
+  function rebindDiffBoundReceipt(id, row, snapshot, proofRunId) {
+    const prior = row.receipt;
+    const rebound = {
+      ...prior,
+      rebind: {
+        ...prior.rebind,
+        boundWorkspaceHash: row.expectedWorkspaceHash,
+        boundSnapshotId: snapshot.id,
+        boundAt: now(),
+        reboundFrom: {
+          workspaceHash: prior.rebind?.boundWorkspaceHash || prior.workspaceHash,
+          proofRunId: prior.proofRunId || null
+        }
+      },
+      proofRunId
+    };
+    writeJson(receiptPath(id, row.provider), rebound);
+    const logPath = join(LOGS, id, "reuse.jsonl");
+    mkdirSync(dirname(logPath), { recursive: true });
+    appendFileSync(logPath, `${JSON.stringify({
+      version: 1,
+      changeId: id,
+      provider: row.provider,
+      reason: "diff-identity-unchanged",
+      fromWorkspaceHash: prior.rebind?.boundWorkspaceHash || prior.workspaceHash,
+      toWorkspaceHash: row.expectedWorkspaceHash,
+      diffIdentity: prior.rebind?.diffIdentity || null,
+      timestamp: now()
+    })}\n`);
+  }
+
   function unresolvableReference(id, provider, reference) {
     if (REFERENCE_URI.test(reference)) return null;
     const workspace = providerWorkspace(id, provider);
@@ -295,6 +335,16 @@ export function createReceiptRuntime({
         }),
       workspaceHash, workspaceSnapshotId: state.activeProofRun?.snapshotId || null,
       inputIdentity,
+      // A review or acceptance verdict covers the change's diff plus the
+      // packet its giver read — not every tracked byte of the workspace.
+      // Stamped at creation so a clean replay onto a moved base can rebind
+      // the receipt instead of expiring it. A null identity (copy sandbox)
+      // is "not rebindable", never "matches anything".
+      rebind: ["review", "acceptance"].includes(capability) ? {
+        mode: "diff",
+        diffIdentity: changeDiffIdentity(id, state),
+        packetReviewHash: relevantSnapshot(id)?.packetReviewHash || null
+      } : undefined,
       claims: requestedClaims,
       status, observed, provenance: {
         source: provenanceSource || null,
@@ -695,6 +745,7 @@ export function createReceiptRuntime({
   return {
     proofPlan,
     rebindReusableReceipt,
+    rebindDiffBoundReceipt,
     recordReceipt,
     recordDeterministicReviewClosure
   };

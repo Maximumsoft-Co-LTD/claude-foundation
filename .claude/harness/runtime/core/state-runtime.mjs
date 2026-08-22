@@ -325,17 +325,25 @@ export function createStateRuntime({
     // accepting a post-Land handoff must not summon a fresh reviewer for code
     // and requirements they already inspected.
     const reviewHash = createHash("sha256");
+    // The packet half of review identity on its own. A review verdict covers
+    // the diff plus the packet the reviewer read; binding it to reviewHash
+    // (every tracked byte) expires it on upstream commits the change never
+    // touched. Paired with the sandbox diff identity, this is the narrow
+    // binding that lets an unchanged verdict survive a moved base.
+    const packetReviewHash = createHash("sha256");
     const files = [];
     const declared = declaredSurfaceMatcher(id, state);
     const reviewVolatile = new Set(["execution.yaml", "handoffs.yaml"]);
     function fold(rel, contentIdentity) {
-      for (const digest of [hash, codeHash, reviewHash]) {
+      for (const digest of [hash, codeHash, reviewHash, packetReviewHash]) {
         if (digest === codeHash && isChangePacketPath(rel, id)) continue;
-        if (digest === reviewHash && isChangePacketPath(rel, id) &&
+        if (digest === packetReviewHash && !isChangePacketPath(rel, id)) continue;
+        if ((digest === reviewHash || digest === packetReviewHash) &&
+            isChangePacketPath(rel, id) &&
             reviewVolatile.has(rel.slice(currentChangeRelativePath(id).length + 1)))
           continue;
         let identity = contentIdentity;
-        if (digest === reviewHash &&
+        if ((digest === reviewHash || digest === packetReviewHash) &&
             rel === `${currentChangeRelativePath(id)}/tasks.md`) {
           const path = join(workspace, rel);
           if (existsSync(path)) {
@@ -420,6 +428,7 @@ export function createStateRuntime({
     hash.update(revisionMarker);
     codeHash.update(revisionMarker);
     reviewHash.update(revisionMarker);
+    packetReviewHash.update(revisionMarker);
     const workspaceHash = hash.digest("hex");
     const value = {
       version: 2,
@@ -429,6 +438,7 @@ export function createStateRuntime({
       workspaceHash,
       codeHash: codeHash.digest("hex"),
       reviewHash: reviewHash.digest("hex"),
+      packetReviewHash: packetReviewHash.digest("hex"),
       revision: contractRevision,
       fileCount: files.length,
       createdAt: now()

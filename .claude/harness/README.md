@@ -478,6 +478,16 @@ required artifact is copied into the evidence vault and bound by SHA-256 and
 byte size. Proofs bind receipt digests, contract and execution fingerprints,
 the workspace snapshot, environment descriptor, and protocol versions.
 
+Review and acceptance receipts additionally carry the change's diff identity
+and the packet review hash. When a sandbox sync replays the change onto a
+moved base without altering either — the common shape of "another change
+landed first" — `proof run` / `proof advance` rebind the verdict to the new
+workspace hash instead of expiring it, and no review wave is consumed. A
+replay that does alter the diff expires the verdict as before; if that
+expiry would exhaust the AI review wave cap, `authority reset-base-move
+<change> --decision-ref <ref>` releases exactly the expired passing attempt
+from the count under a recorded user decision.
+
 Use metrics to inspect the actual cost of a run:
 
 ```bash

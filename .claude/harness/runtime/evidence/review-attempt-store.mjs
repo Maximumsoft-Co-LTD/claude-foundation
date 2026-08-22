@@ -103,8 +103,14 @@ export function createReviewAttemptStore({
   }
 
   function deliveredAiAttempts(id, history = reviewHistoryState(id)) {
+    // Attempts released by `authority reset-base-move` stay in the immutable
+    // chain but no longer consume the wave budget: their verdict expired
+    // because a moved base altered the change's diff in replay, not because
+    // the work needed another quality round.
+    const baseMoveAcknowledged = new Set(history.baseMoveAcknowledged || []);
     return reviewAttempts(id, history).filter((attempt) =>
-      attempt.reviewerType === "ai" && (
+      attempt.reviewerType === "ai" &&
+      !baseMoveAcknowledged.has(attempt.digest) && (
         attempt.status === "completed" &&
           ["pass", "fail", "inconclusive"].includes(attempt.resultStatus) ||
         attempt.version === 1 &&
@@ -115,8 +121,13 @@ export function createReviewAttemptStore({
   function infrastructureAiAttempts(id, history = reviewHistoryState(id)) {
     const delivered = new Set(deliveredAiAttempts(id, history).map((attempt) => attempt.digest));
     // Attempts acknowledged by `authority reset-infra` stay in the immutable
-    // chain but no longer consume the bounded infrastructure recovery.
-    const acknowledged = new Set(history.infraAcknowledged || []);
+    // chain but no longer consume the bounded infrastructure recovery. A
+    // base-move release must not leak its delivered attempt into this set —
+    // it was delivered, not an infrastructure outcome.
+    const acknowledged = new Set([
+      ...(history.infraAcknowledged || []),
+      ...(history.baseMoveAcknowledged || [])
+    ]);
     return reviewAttempts(id, history).filter((attempt) =>
       attempt.reviewerType === "ai" && !delivered.has(attempt.digest) &&
       !acknowledged.has(attempt.digest));
@@ -164,12 +175,70 @@ export function createReviewAttemptStore({
     return { changeId: id, decisionRef: reference, digests };
   }
 
+  // The wave cap bounds verdict-quality review rounds. A verdict expired by a
+  // moved base whose replay altered the change's diff is not a quality round —
+  // the author changed nothing — so the user may, on record, release exactly
+  // that attempt from the count. Keyed by the sync movement so one base move
+  // releases at most one attempt, and gated on the recorded identities
+  // actually differing: when they match, the receipt rebinds on 'proof run'
+  // and there is nothing to release.
+  function acknowledgeBaseMoveAttempts(id, decisionRef) {
+    const reference = String(decisionRef || "").trim();
+    if (!reference) fail("authority reset-base-move requires --decision-ref <host-user-decision>");
+    const state = loadRuntime(id);
+    const history = reviewHistoryState(id, state);
+    if (history.chainHead && !reviewHistoryChainValid(id, history))
+      fail("authority reset-base-move requires a valid review attempt history");
+    const move = state.lastBaseMove;
+    if (!move) fail("no sandbox sync base move is recorded for this change");
+    if (move.preDiffIdentity && move.preDiffIdentity === move.postDiffIdentity)
+      fail("the last base move left the change's diff unchanged; the review receipt rebinds on 'claude-foundation proof run' and no reset is needed");
+    if ((history.baseMoveResets || []).some((row) => row.movementKey === move.movementKey))
+      fail("this base move already released a review attempt");
+    if ((history.baseMoveResets || []).some((row) => row.decisionRef === reference))
+      fail("--decision-ref was already used for a base-move reset on this change");
+    const liveDispatch = reviewAttempts(id, history).find((attempt) =>
+      attempt.reviewerType === "ai" && attempt.status === "dispatched");
+    if (liveDispatch)
+      fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset. " +
+        `Find the open request with 'claude-foundation authority status ${id}', ` +
+        `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
+    const moveAt = String(move.at || "");
+    // Only a delivered passing verdict that predates the move: the base move
+    // can only have expired a verdict that existed and passed. Releasing a
+    // fail would convert the quality budget into a retry budget.
+    const candidates = deliveredAiAttempts(id, history).filter((attempt) =>
+      (attempt.resultStatus === "pass" ||
+        attempt.version === 1 && attempt.status === "pass") &&
+      String(attempt.timestamp || "") < moveAt);
+    const attempt = candidates[candidates.length - 1];
+    if (!attempt)
+      fail("no delivered passing AI review attempt predates the recorded base move");
+    state.reviewHistory = {
+      ...history,
+      baseMoveAcknowledged: [...new Set([
+        ...(history.baseMoveAcknowledged || []), attempt.digest
+      ])],
+      baseMoveResets: [...(history.baseMoveResets || []), {
+        decisionRef: reference, movementKey: move.movementKey,
+        digests: [attempt.digest], at: now()
+      }]
+    };
+    saveRuntime(state);
+    return {
+      changeId: id, decisionRef: reference,
+      movementKey: move.movementKey, digests: [attempt.digest]
+    };
+  }
+
   function blockAiExhausted(id, history, maxAiAttempts = 2) {
     const delivered = deliveredAiAttempts(id, history).length;
     fail(`REVIEW_ROUTE_COMPLETE: ${delivered}/${maxAiAttempts} delivered AI review wave(s) are complete. ` +
       "Do not ask the user to choose redesign/split/pause and do not dispatch another open-ended AI review. " +
       "Continue when proof is satisfied; otherwise route a remaining item as AUTO_REPAIR inside the locked contract, " +
-      "CONTRACT_DECISION_REQUIRED only for changed behavior/security/data/rollout, or EXTERNAL_WAIT for missing authority.");
+      "CONTRACT_DECISION_REQUIRED only for changed behavior/security/data/rollout, or EXTERNAL_WAIT for missing authority. " +
+      "If the passing verdict expired because a sandbox sync replayed the change onto a moved base, that is not a quality round: " +
+      `ask the user to authorize 'claude-foundation authority reset-base-move ${id} --decision-ref <ref>' and dispatch the review again.`);
   }
 
   function assertReviewDispatchAllowed(id, reviewerType, maxAiAttempts = 2,
@@ -466,6 +535,7 @@ export function createReviewAttemptStore({
     reviewAttempts,
     deliveredAiAttempts,
     infrastructureAiAttempts,
-    acknowledgeInfrastructureAttempts
+    acknowledgeInfrastructureAttempts,
+    acknowledgeBaseMoveAttempts
   };
 }

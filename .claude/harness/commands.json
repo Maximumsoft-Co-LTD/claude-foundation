@@ -298,6 +298,14 @@
       "description": "Acknowledge consumed reviewer infrastructure retries after the provider diagnosis passes, restoring AI review dispatch under an explicit host-recorded user decision."
     },
     {
+      "name": "authority reset-base-move",
+      "usage": "authority reset-base-move <change> --decision-ref <ref>",
+      "audience": "conditional",
+      "kind": "authority",
+      "idempotent": false,
+      "description": "Release the one delivered passing AI review attempt a sandbox-sync base move expired from the wave budget, under an explicit host-recorded user decision, so the forced fresh review does not exhaust the cap."
+    },
+    {
       "name": "authority record",
       "usage": "authority record <change> --request <id> --response <file>",
       "audience": "conditional",
@@ -690,6 +698,7 @@
     "authority-status",
     "authority-record",
     "authority-reset-infra",
+    "authority-reset-base-move",
     "receipt",
     "run-provider",
     "prove",

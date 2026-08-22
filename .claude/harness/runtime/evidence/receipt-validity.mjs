@@ -13,7 +13,8 @@ const VALIDITY_RECOVERY = {
   // the gate itself is wrong, so all three honest exits are stated. There is
   // deliberately no route that lands a failing proof.
   fail: (id, provider) => `provider '${provider}' executed and failed. Fix the cause and re-run: claude-foundation proof run ${id}. If the gate itself is wrong, rewire it in openspec/changes/${id}/execution.yaml. If the user decides to land without it, withdraw it on record: claude-foundation change waive ${id} --capability <capability> --reason <why> --decision-ref <ref>`,
-  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them`,
+  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them, and a review or acceptance verdict rebinds automatically when the change's diff and packet are unchanged on the moved base`,
+  "reusable-diff": (id) => `the change's diff and packet are unchanged on the moved base, so the verdict rebinds without a new review; run: claude-foundation proof run ${id}`,
   "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation proof run ${id}`,
   "contract-stale": (id) => `evidence.yaml changed after this receipt; re-run: claude-foundation proof run ${id}`,
   "provider-fingerprint-stale": (id) => `the provider's execution.yaml wiring changed; re-run: claude-foundation proof run ${id}`,
@@ -46,7 +47,8 @@ export function createReceiptValidity({
   providerCapability, reviewProvenanceResult, reviewPolicy,
   reviewAttemptByDigest, reviewAttemptIsValid, resolvedAcceptance,
   claimsForProvider, stableHash, adapterFingerprint, providerWorkspaceHash,
-  providerInputIdentity, validateArtifact, relevantHash
+  providerInputIdentity, validateArtifact, relevantHash, relevantSnapshot,
+  changeDiffIdentity
 }) {
   function receiptValidity(id, provider, hash = relevantHash(id)) {
     const path = receiptPath(id, provider);
@@ -68,15 +70,37 @@ export function createReceiptValidity({
         }
       };
     const config = providerConfig(id, provider);
+    const capability = providerCapability(provider, config);
     const expectedWorkspaceHash = providerWorkspaceHash(id, provider, hash);
     const expectedInputs = providerInputIdentity(
       id, provider, config, expectedWorkspaceHash);
     let reusableInputs = false;
-    if (value.workspaceHash !== expectedWorkspaceHash) {
+    let reusableDiff = false;
+    // A durable diff rebind pins the exact workspace content it sanctioned,
+    // so matching it is as strong as matching the original hash. The rebind
+    // lives beside `workspaceHash`, never in its place: the review attempt
+    // chain digests the original hash, and rewriting it would corrupt the
+    // very history that proves the verdict happened.
+    const reboundCurrent = ["review", "acceptance"].includes(capability) &&
+      Boolean(value.rebind?.boundWorkspaceHash) &&
+      value.rebind.boundWorkspaceHash === expectedWorkspaceHash;
+    if (value.workspaceHash !== expectedWorkspaceHash && !reboundCurrent) {
       if (expectedInputs.mode === "declared" &&
           value.inputIdentity?.mode === "declared" &&
           value.inputIdentity.fingerprint === expectedInputs.fingerprint)
         reusableInputs = true;
+      // A review or acceptance verdict binds the change's diff plus the
+      // packet its giver read. When both survive a moved base byte-for-byte
+      // — the common shape of "another change landed first" — the verdict is
+      // rebindable, not stale. Null identities never match: a receipt or a
+      // workspace without one stays on the expiring path.
+      else if (["review", "acceptance"].includes(capability) &&
+          value.rebind?.mode === "diff" &&
+          value.rebind.diffIdentity &&
+          value.rebind.diffIdentity === changeDiffIdentity(id) &&
+          value.rebind.packetReviewHash &&
+          value.rebind.packetReviewHash === relevantSnapshot(id)?.packetReviewHash)
+        reusableDiff = true;
       else return {
         provider, validity: "stale", status: value.status,
         invalidation: {
@@ -88,7 +112,6 @@ export function createReceiptValidity({
         }
       };
     }
-    const capability = providerCapability(provider, config);
     if (capability === "review") {
       if (String(value.reviewProtocolVersion || "") !== reviewProtocolVersion)
         return { provider, validity: "review-version-stale", status: value.status };
@@ -193,7 +216,11 @@ export function createReceiptValidity({
           reusable: false
         }
       };
-    if (value.inputIdentity?.fingerprint !== expectedInputs.fingerprint)
+    // A diff-rebindable receipt's global input fingerprint derives from the
+    // very workspace hash the rebind refreshes; judging it here would expire
+    // exactly the receipt the branch above just found reusable or rebound.
+    if (!reusableDiff && !reboundCurrent &&
+        value.inputIdentity?.fingerprint !== expectedInputs.fingerprint)
       return {
         provider, validity: "provider-inputs-stale", status: value.status,
         invalidation: {
@@ -228,7 +255,18 @@ export function createReceiptValidity({
     // and proof advance first rebind the unchanged declared inputs to the new
     // workspace hash, then recompute validity before finalize. Treating it as
     // valid here would let Land accept the old receipt without that durable,
-    // content-bound rebind.
+    // content-bound rebind. `reusable-diff` is the review/acceptance twin of
+    // the same contract.
+    if (reusableDiff) return {
+      provider, validity: "reusable-diff", status: value.status,
+      receipt: value, expectedWorkspaceHash, expectedInputs,
+      reuse: {
+        reason: "diff-identity-unchanged",
+        fromWorkspaceHash: value.workspaceHash,
+        toWorkspaceHash: expectedWorkspaceHash,
+        diffIdentity: value.rebind.diffIdentity
+      }
+    };
     return reusableInputs
       ? {
         provider, validity: "reusable-inputs", status: value.status,

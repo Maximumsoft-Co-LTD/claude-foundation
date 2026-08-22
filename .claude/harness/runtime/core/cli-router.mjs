@@ -11,7 +11,7 @@ export async function routeRuntimeCommand(command, values, api) {
     proofRun, proofCollect,
     proofPreflight, proofExecute, proofAudit, proofFinalize, showEvidenceDetection,
     initializeEvidence, showEvidenceDoctor, recordVerifiedCi, requestAuthority,
-    dispatchAuthority, runAuthorityReviewer, abortAuthority, resetInfrastructureAuthority, showAuthorityStatus, recordAuthority,
+    dispatchAuthority, runAuthorityReviewer, abortAuthority, resetInfrastructureAuthority, resetBaseMoveAuthority, showAuthorityStatus, recordAuthority,
     upgradeEvidence, recordReceipt,
     runProvider, prove, landCheck, advanceLand, recoverLand, showLandPlan, recordRepositoryLand,
     stageRootPointers, resumeLand, createAttestationChallenge,
@@ -268,6 +268,13 @@ export async function routeRuntimeCommand(command, values, api) {
       });
       if (rest.length !== 1) die("authority reset-infra requires exactly one change");
       await resetInfrastructureAuthority(rest[0], flags); break;
+    }
+    case "authority-reset-base-move": {
+      const { flags, rest } = parseStrictCommandFlags(values, "authority reset-base-move", {
+        value: ["decision-ref"]
+      });
+      if (rest.length !== 1) die("authority reset-base-move requires exactly one change");
+      await resetBaseMoveAuthority(rest[0], flags); break;
     }
     case "authority-record": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority record", {

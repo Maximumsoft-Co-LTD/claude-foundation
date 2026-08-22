@@ -23,7 +23,7 @@ Before the first Foundation packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
 2. Verify `claude-foundation version` is `3.3.3` and the repository runtime API
-   is `24`.
+   is `25`.
 3. If the pinned source is absent, clone tag `v3.3.3` from
    `Maximumsoft-Co-LTD/claude-foundation` into
    `~/.local/share/claude-foundation/3.3.3`.
