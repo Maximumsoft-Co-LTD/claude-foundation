@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, readdirSync,
-  readFileSync, realpathSync, rmSync, statSync, writeFileSync
+  readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync
 } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -826,8 +826,33 @@ export function createSandboxRuntime({
     return { movement, record, targetPath, staging, patch, discardStaging };
   }
 
+  // `worktree remove --force` destroys everything the checkout accumulated
+  // beyond tracked content — node_modules, dist, build caches that take long
+  // to rebuild. A land-time replay wiped a workspace's installed artifacts
+  // exactly this way, forcing a full rebuild plus an extra review round to
+  // prove the wipe was environmental rather than a regression. Carry ignored
+  // artifacts into the replacement worktree instead: they are ignored, so
+  // they cannot alter any tracked state the replay verified.
+  function carryIgnoredArtifacts(sourcePath, stagingPath) {
+    const listed = git(["ls-files", "-z", "--others", "--ignored",
+      "--exclude-standard", "--directory"], sourcePath);
+    if (listed.status !== 0) return;
+    for (const entry of listed.stdout.split("\0").filter(Boolean)) {
+      const to = join(stagingPath, entry);
+      if (existsSync(to)) continue;
+      try {
+        mkdirSync(dirname(to), { recursive: true });
+        renameSync(join(sourcePath, entry), to);
+      } catch {
+        // Best effort: an artifact that cannot move (cross-device link,
+        // permissions) falls back to the previous behavior of rebuilding it.
+      }
+    }
+  }
+
   function commitReplay(id, state, prepared) {
     const { movement, record, targetPath, staging, patch } = prepared;
+    carryIgnoredArtifacts(record.path, staging);
     const removed = git(["worktree", "remove", "--force", record.path], targetPath);
     if (removed.status !== 0)
       fail(`cannot replace the '${movement.repository}' sandbox worktree: ${

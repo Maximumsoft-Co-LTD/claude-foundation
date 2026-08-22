@@ -146,7 +146,23 @@ export function createProofReadinessRuntime({
         return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
       }));
       if (outside.length) {
-        issues.push(`repository '${repository.id}' changed outside task paths: ${outside.join(", ")}`);
+        // Work landing in the root workspace while every implementation task
+        // targets a child repository is almost always a misplaced sandbox:
+        // `.foundation/sandboxes/<id>` (root workspace) sits next to
+        // `.foundation/repository-sandboxes/<id>/<repo>` (per-repository
+        // workspaces) and agents have written into the wrong one. Name that
+        // exit instead of leaving only a path list.
+        const childTaskIds = [...new Set(tasks
+          .filter((task) => task.repository !== "root").map((task) => task.repository))];
+        const misplacedHint = repository.id === "root" && childTaskIds.length &&
+          !tasks.some((task) => task.repository === "root")
+          ? `; all implementation tasks target ${childTaskIds.map((repo) =>
+            `'${repo}'`).join(", ")} — if this work belongs there, move it into ` +
+            ".foundation/repository-sandboxes/<change>/<repository> (the root " +
+            "workspace under .foundation/sandboxes/ is a different checkout)"
+          : "";
+        issues.push(`repository '${repository.id}' changed outside task paths: ${
+          outside.join(", ")}${misplacedHint}`);
         details?.push({ repositoryId: repository.id, paths: outside });
       }
     }

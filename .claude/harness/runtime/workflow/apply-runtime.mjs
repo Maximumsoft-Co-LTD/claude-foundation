@@ -11,6 +11,17 @@ import {
   nestedRepositoryPathMatcher, sandboxCodePathspec
 } from "../core/workspace-surface.mjs";
 
+// Whether an empty root diff is an acceptable apply outcome rather than an
+// error: true when the change selected any non-root repository, because the
+// child apply path is then the delivery vehicle and the root may legitimately
+// carry nothing — including when exactly one child repository holds the entire
+// diff. Requiring a second repository here forced a manual apply for
+// single-child changes.
+export function emptyRootDiffPermitted(state) {
+  return Object.keys(state?.repositories || {})
+    .some((repositoryId) => repositoryId !== "root");
+}
+
 export function createApplyRuntime({
   root,
   transactions,
@@ -119,7 +130,7 @@ export function createApplyRuntime({
     const diff = gitBuffer(["diff", "--binary", sandboxBase(state), "--", ...pending], sandboxPath);
     if (diff.status !== 0) fail("cannot inspect sandbox diff");
     if (!diff.stdout.length) {
-      if (state.repositories && Object.keys(state.repositories).length > 1) return [];
+      if (emptyRootDiffPermitted(state)) return [];
       fail("sandbox has no applicable diff");
     }
     const check = spawnSync("git", ["apply", "--check", "--whitespace=nowarn", "-"], {

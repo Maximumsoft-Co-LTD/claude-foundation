@@ -15,6 +15,8 @@ import { providerEvidencePolicy, providerReceiptWriterConflicts } from
 import { createCodexReviewerRuntime } from "../../harness/runtime/evidence/codex-reviewer.mjs";
 import { createRuntimeEnvironment } from "../../harness/runtime/core/runtime-environment.mjs";
 import { createChangeLifecycle } from "../../harness/runtime/workflow/change-lifecycle.mjs";
+import { taskBlocks, taskMetadata } from "../../harness/runtime/contracts/change-artifacts.mjs";
+import { emptyRootDiffPermitted } from "../../harness/runtime/workflow/apply-runtime.mjs";
 
 function pass(label) { process.stdout.write(`PASS: ${label}\n`); }
 
@@ -285,6 +287,56 @@ process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: "thread
   delete process.env.FAKE_CODEX_AUTH_FAIL;
   delete process.env.FAKE_CODEX_RUN_FAIL;
   rmSync(fixture, { recursive: true, force: true });
+}
+
+// Bracketed annotation values must survive brackets inside the value: a
+// Next.js dynamic route in `[paths:]` was truncated at the first `]`
+// (`app/[tenant]/passes/**` → `app/[tenant`) and blocked a change from
+// proving until the operator shipped outside the harness.
+{
+  const [block] = taskBlocks(
+    "- [ ] **T003** Serve /passes via flag [kind:implementation] " +
+    "[paths:app/[tenant]/passes/**,components/landing/Navbar.tsx] [depends:T001]\n");
+  const metadata = taskMetadata(block);
+  assert.deepEqual(metadata.paths,
+    ["app/[tenant]/passes/**", "components/landing/Navbar.tsx"]);
+  assert.equal(metadata.kind, "implementation");
+  assert.deepEqual(metadata.dependsOn, ["T001"]);
+  const [plain] = taskBlocks("- [ ] **T001** Flag primitive [paths:lib/featureFlags.ts]\n");
+  assert.deepEqual(taskMetadata(plain).paths, ["lib/featureFlags.ts"]);
+  const [unbalanced] = taskBlocks("- [ ] **T002** Broken [paths:app/[tenant/page.tsx\n");
+  assert.deepEqual(taskMetadata(unbalanced).paths, []);
+  pass("task annotations keep bracketed path values intact");
+}
+
+// A change whose entire diff lives in one selected child repository has an
+// legitimately empty root diff; demanding a second repository forced manual
+// applies for single-child changes.
+assert.equal(emptyRootDiffPermitted({ repositories: { "repos-shinonsen-web": {} } }), true);
+assert.equal(emptyRootDiffPermitted({
+  repositories: { root: {}, "repos-shinonsen-web": {} } }), true);
+assert.equal(emptyRootDiffPermitted({ repositories: { root: {} } }), false);
+assert.equal(emptyRootDiffPermitted({}), false);
+pass("empty root diff is accepted whenever a child repository carries the change");
+
+// Declared provider commands name locally-installed binaries the way package
+// scripts do; without the workspace `node_modules/.bin` on PATH they die with
+// `command not found` even though the tool is installed.
+{
+  const binFixture = mkdtempSync(join(tmpdir(), "foundation-v33-localbin-"));
+  try {
+    const localBin = join(binFixture, "node_modules", ".bin");
+    mkdirSync(localBin, { recursive: true });
+    const withBin = providerExecutionEnvironment({ PATH: "/bin" }, {}, binFixture);
+    assert(withBin.PATH.startsWith(localBin));
+    assert(withBin.PATH.endsWith("/bin"));
+    const withoutBin = providerExecutionEnvironment(
+      { PATH: "/bin" }, {}, join(binFixture, "absent"));
+    assert.equal(withoutBin.PATH, "/bin");
+    pass("provider execution prepends an existing workspace node_modules/.bin to PATH");
+  } finally {
+    rmSync(binFixture, { recursive: true, force: true });
+  }
 }
 
 process.stdout.write("Foundation v3.3 policy tests: PASS\n");

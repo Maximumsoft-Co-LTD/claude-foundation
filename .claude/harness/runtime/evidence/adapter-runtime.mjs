@@ -2,7 +2,7 @@ import {
   existsSync, mkdirSync, readFileSync, statSync, writeFileSync
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // The receipt vocabulary, ordered. An adapter that runs more than one provider
 // has to report the worst thing that happened — not the last one in the array,
@@ -94,12 +94,26 @@ export function mutationReceiptClassification(protocol, legacyResult, configured
     ? "behavioral-kill" : legacyResult || configured;
 }
 
-export function providerExecutionEnvironment(base, additions = {}) {
+export function providerExecutionEnvironment(base, additions = {}, workspacePath = null) {
   const environment = { ...base, ...additions };
   // The harness may itself be pinned to a control root while executing a
   // candidate sandbox. Provider commands must discover from their own cwd;
   // leaking this pin redirects nested fixture CLIs back into the outer project.
   delete environment.CLAUDE_FOUNDATION_PROJECT;
+  // Declared commands routinely name locally-installed binaries (`eslint`,
+  // `vitest`, `tsc`) the way package scripts do. npm puts the workspace's
+  // `node_modules/.bin` on PATH before running a script; a provider command
+  // executed without that entry dies with `command not found` even though the
+  // tool is installed. Prepend it only when it exists so non-Node workspaces
+  // see an unchanged PATH.
+  if (workspacePath) {
+    const localBin = join(workspacePath, "node_modules", ".bin");
+    if (existsSync(localBin)) {
+      const key = Object.keys(environment).find((name) => name.toUpperCase() === "PATH") || "PATH";
+      environment[key] = environment[key]
+        ? `${localBin}${delimiter}${environment[key]}` : localBin;
+    }
+  }
   return environment;
 }
 
@@ -181,10 +195,11 @@ export function createAdapterRuntime({
     // Same 64 MB ceiling as the git helper: the default 1 MB maxBuffer kills a
     // verbose green suite with ENOBUFS and records the run as an infrastructure
     // error.
+    const workspace = providerWorkspace(id, provider);
     const result = spawnSync(command, commandArgs, {
-      cwd: providerWorkspace(id, provider), encoding: "utf8",
+      cwd: workspace, encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
-      env: providerExecutionEnvironment(process.env, { FOUNDATION_CHANGE_ID: id })
+      env: providerExecutionEnvironment(process.env, { FOUNDATION_CHANGE_ID: id }, workspace)
     });
     const logDir = join(LOGS, id);
     mkdirSync(logDir, { recursive: true });
@@ -333,7 +348,7 @@ export function createAdapterRuntime({
         FOUNDATION_PROOF_RUN_ID: proofRunId,
         FOUNDATION_COMMAND_EXECUTION_ID: commandExecutionId,
         FOUNDATION_EXECUTION_ID: commandExecutionId
-      });
+      }, cwd);
       commandCache.set(dedupKey, {
         commandExecutionId,
         result: runCommand(built.command, built.args, {

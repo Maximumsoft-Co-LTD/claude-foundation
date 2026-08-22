@@ -524,7 +524,15 @@ export function createChangeValidationRuntime({
       // *baseline* hashes from being rewritten afterward.
       if ((firstLock || immutableRoles.has(source.role)) &&
           fileDigest(absolute) !== String(source.sha256).toLowerCase())
-        fail(`${label}.sha256 does not match the baseline file`);
+        // A mismatch here is either genuine drift in a decision source or a
+        // mis-roled file the change legitimately edits. Name both exits: a
+        // bare failure repeatedly sent operators through full grounding
+        // reopens when the fix was to re-role one row.
+        fail(`${label}.sha256 does not match the baseline file. ` +
+          `If '${sourcePath}' is intentionally edited by this change, its role ` +
+          `must be production-path or runtime-path (immutable roles pin decision ` +
+          `sources); re-role the row and refresh its sha256. If the edit is ` +
+          `unintended drift, restore the file to its baseline.`);
     }
     const overlap = groundingTaskOverlapFindings(value.readSet, parsedTasks);
     if (overlap.length)

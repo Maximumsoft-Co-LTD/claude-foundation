@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Task annotations keep bracketed values intact.** A `[paths:]` entry
+  containing brackets — a Next.js dynamic route such as
+  `app/[tenant]/passes/**` — is no longer truncated at the first `]`, which
+  had blocked an entire change from proving and pushed its delivery outside
+  the harness.
+- **A change carried entirely by one child repository lands without a manual
+  apply.** An empty root diff is accepted whenever any non-root repository is
+  selected, instead of demanding a second repository before tolerating it.
+- **Sandbox replays keep installed build artifacts.** Replacing a worktree
+  during sync carries its gitignored artifacts (`node_modules`, `dist`,
+  caches) into the replacement instead of destroying them and forcing a full
+  rebuild mid-Land.
+- **Declared provider commands resolve locally-installed tools.** Provider
+  execution prepends the workspace's `node_modules/.bin` to `PATH` the way
+  package scripts do, so a declared `eslint`/`vitest`/`tsc` command no longer
+  dies with `command not found`.
+- **Grounding and scope diagnostics name their exits.** An immutable grounding
+  source whose hash drifted explains re-roling versus restoring, and
+  root-workspace changes on a change whose tasks all target child
+  repositories point at the likely misplaced sandbox directory.
+
 ## [3.3.3] - 2026-08-20
 
 ### Added
