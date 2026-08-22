@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A tracked-but-ignored file no longer expires verdicts on a moved base.**
+  The diff-identity scratch index is now seeded from the base commit
+  (`read-tree`) before staging. From an empty index, `add -A` skipped a
+  committed file that a later `.gitignore` rule covers, turning it into a
+  phantom deletion whose patch text was the base's own content — so an
+  upstream edit to a file the change never touched still expired its review
+  and acceptance receipts. The scratch index is also per-process now, so an
+  unlocked `proof plan` racing a sync can no longer corrupt the identity
+  read. The identity marker moves to `:3`; verdicts stamped under v3.4.1
+  read as stale once and re-prove normally.
+
 ## [3.4.1] - 2026-08-22
 
 ### Fixed

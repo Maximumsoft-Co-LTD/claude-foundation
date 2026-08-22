@@ -70,6 +70,14 @@ record_acceptance() {
 
 # --- A clean base move rebinds the verdict instead of expiring it. -----------
 setup_project rebind-clean
+# A tracked-but-ignored file (committed, later gitignored, never untracked)
+# pinned the base-seeded scratch index: from an empty index `add -A` skipped
+# it, its phantom deletion carried the base's content, and an upstream edit
+# to it expired verdicts the change never earned expiring.
+printf 'tracked config v1\n' > src/config.gen.js
+git add -A && git commit -qm "tracked generated config" > /dev/null
+printf 'src/config.gen.js\n' > .gitignore
+git add .gitignore && git commit -qm "ignore the generated config" > /dev/null
 $F new "verdict survives a clean base move" --rapid > /dev/null
 C=verdict-survives-a-clean-base-move
 $F resolve "$C" --impact low --coupling isolated --acceptance-required \
@@ -92,6 +100,7 @@ plan="$($F proof-plan "$C")"
 assert_contains "the fresh verdict is valid" "$plan" "acceptance: valid"
 
 printf 'landed by another change\n' > src/other.js
+printf 'tracked config v2 (upstream regenerated)\n' > src/config.gen.js
 git add -A && git commit -qm "another change landed" > /dev/null
 sync_out="$($F sandbox sync "$C")"
 assert_contains "the target move replays cleanly" "$sync_out" "rebased: "

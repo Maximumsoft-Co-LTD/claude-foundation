@@ -785,11 +785,25 @@ export function createSandboxRuntime({
         : [];
       const pathspec = sandboxCodePathspec(id, nested);
       // Beside the worktree, like `.rebase`, never inside it: a scratch index
-      // that lived in the tree would stage itself.
-      const indexFile = `${record.path}.diff-identity-index`;
+      // that lived in the tree would stage itself. Per-process, because
+      // `proof plan` takes no lock and can compute identity while a sync is
+      // computing its own — two writers on one scratch index read back as a
+      // corrupted diff.
+      const indexFile = `${record.path}.diff-identity-index.${process.pid}`;
       const env = { ...process.env, GIT_INDEX_FILE: indexFile };
       try {
         rmSync(indexFile, { force: true });
+        // Seeded from the base, not empty: from an empty index `add -A`
+        // skips a tracked-but-ignored file (ignore rules apply to paths the
+        // index does not know), which turned such a file into a phantom
+        // deletion whose patch text was the *base's* content — so an
+        // upstream edit to a file the change never touched moved the
+        // identity. With the base read in first, `add -A` updates the entry
+        // like any tracked file, and a file the change really deleted still
+        // registers: present in the seed, absent from the worktree.
+        const seeded = spawnSync("git", ["read-tree", record.baseHead],
+          { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        if (seeded.status !== 0) return null;
         const staged = spawnSync("git", ["-c", "core.quotepath=false", "add", "-A"],
           { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
         if (staged.status !== 0) return null;
@@ -808,9 +822,10 @@ export function createSandboxRuntime({
     }
     if (!rows.length) return null;
     const digest = createHash("sha256");
-    // :2 — the representation changed (canonical staged diff); a verdict
-    // stamped under :1 must read as stale, never as accidentally equal.
-    digest.update("foundation-diff-identity:2\0");
+    // :3 — the representation changed again (base-seeded index); a verdict
+    // stamped under an earlier form must read as stale, never as
+    // accidentally equal.
+    digest.update("foundation-diff-identity:3\0");
     for (const row of rows.sort()) {
       digest.update(row);
       digest.update("\0");
