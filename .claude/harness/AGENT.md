@@ -1,9 +1,9 @@
 # Foundation agent contract
 
-Use the lifecycle and ownership defined in `.claude/orchestrator.md`.
+Use the lifecycle and ownership in `.claude/orchestrator.md`.
 
 Before developer work, verify Foundation 3.4.2/runtime API `25`; run both
-doctors. On failure relay
+doctors. Only a failing doctor blocks: relay
 `.claude/harness/DEVELOPER-SETUP.md`; never improvise installation.
 Single-family: select reviewer plus `single-model`; retain distinct identity/session.
 

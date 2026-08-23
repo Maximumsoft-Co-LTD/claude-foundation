@@ -922,7 +922,12 @@ try {
   const developerSetup = readFileSync(
     join(root, ".claude/harness/DEVELOPER-SETUP.md"), "utf8");
   assert.match(developerSetup, new RegExp("runtime API\\s+is `" + runtimeApi + "`"));
-  assert.match(developerSetup, /scripts\/install-foundation-runtime\.mjs/);
+  // The remedy the agent contract relays has to be a command that exists.
+  // `scripts/install-foundation-runtime.mjs` was named here for four releases
+  // and has never existed in the repository, so a version-mismatched machine
+  // was handed a dead end.
+  assert.match(developerSetup, /`claude-foundation init <project-path>`/);
+  assert.doesNotMatch(developerSetup, /install-foundation-runtime/);
   assert.match(developerSetup, /Node\.js 20\.19 or later/);
   const policy = readJson(join(root, "foundation.json"));
   assert.equal(policy.workflow.grounding, "required");
