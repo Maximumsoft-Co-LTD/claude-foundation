@@ -32,9 +32,9 @@ Before the first Foundation packet on a developer machine:
    `Maximumsoft-Co-LTD/claude-foundation` into
    `~/.local/share/claude-foundation/3.4.2`.
 4. Install or refresh the runtime inside the project with
-   `claude-foundation init <project-path>`. From a source checkout the
-   equivalent entrypoint is `bash install.sh <project-path> --yes`, run from
-   that checkout.
+   `claude-foundation init <project-path>`. The equivalent entrypoint inside a
+   source checkout is `bash /path/to/claude-foundation/install.sh
+   <project-path> --yes`.
 5. Add `~/.local/bin` to `PATH`, then run
    `claude-foundation doctor --stage change`.
 6. Install and authenticate the reviewer CLI your project selects:

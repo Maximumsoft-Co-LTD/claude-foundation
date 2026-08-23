@@ -183,7 +183,9 @@ export function createProofReadinessRuntime({
   // That asymmetry is deliberate — this must not block a change whose evidence
   // would otherwise have passed. For the same reason only an explicit `no
   // match` (git grep exit 1) counts; any other exit means the search itself did
-  // not answer, and an unanswered search is not a defect.
+  // not answer, and an unanswered search is not a defect. A copy-mode sandbox
+  // created from a project that carries no git leaves the guard inert rather
+  // than guessing — the same trade, taken knowingly.
   function criticalCaseIssues(id) {
     // Keyed by case ID, not by provider: `test-discovery` runs one command
     // for two providers off one config, so a per-provider loop reports a
