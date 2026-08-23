@@ -61,7 +61,7 @@ if [ "$MODE" = "dry" ]; then
     case "$ph" in
       10-*) echo "    check: investigations note exists · no change created · src/ untouched" ;;
       20-*) echo "    check: exactly one openspec/changes/<id> · \`changes\` lists it · src/ untouched" ;;
-      30-*) echo "    check: \`proof readiness <id>\` exits 0 · src/ untouched (sandbox-only edits)" ;;
+      30-*) echo "    check: no pending task, no code/contract blocker · src/ untouched (sandbox-only edits)" ;;
       40-*) echo "    check: \`land check <id>\` exits 0 · src/ untouched" ;;
       50-*) echo "    check: change archived · npm test green at root · accept.mjs green" ;;
     esac
@@ -181,8 +181,17 @@ for ph in $PHASE_LIST; do
       progress "20 ok — change $CHANGE_ID agreed, src clean"
       ;;
     30)
-      fcli proof-readiness "$CHANGE_ID" > "$RESULTS/30.readiness.txt" 2>&1 \
-        || fail_hard "30: proof readiness failed (see $RESULTS/30.readiness.txt)"
+      # `proof readiness` exits non-zero for every state that is not READY, and
+      # a complete Build legitimately lands on NEEDS_USER_DECISION whenever the
+      # project's committed profile requires an independent reviewer. That
+      # boundary belongs to phase 40, not to Build, so an rc check here failed
+      # the loop on correct behaviour and this runner never once reached Land.
+      # Assert what Build actually owns instead: no task left pending and no
+      # code or contract work outstanding.
+      fcli proof-readiness "$CHANGE_ID" > "$RESULTS/30.readiness.txt" 2>&1
+      node -e 'const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const p=(v.pendingTasks||[]).length;if(["NEEDS_CODE_CHANGE","CONFIGURATION_ERROR"].includes(v.status)||p){console.error(v.status+"; "+p+" pending task(s)");process.exit(1)}' \
+        "$RESULTS/30.readiness.txt" \
+        || fail_hard "30: build left work outstanding (see $RESULTS/30.readiness.txt)"
       src_clean || fail_hard "30: /build escaped the sandbox and edited root product code"
       progress "30 ok — build ready for prove, root src clean"
       ;;
