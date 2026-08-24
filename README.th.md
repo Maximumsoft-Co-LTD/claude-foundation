@@ -14,7 +14,7 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
-**Version 3.4.2** — runtime API 24, provider protocol 10 receipt ที่บันทึกด้วย
+**Version 3.4.3** — runtime API 24, provider protocol 10 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร

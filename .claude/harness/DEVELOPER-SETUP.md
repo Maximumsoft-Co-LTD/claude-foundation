@@ -1,6 +1,6 @@
 # Developer setup
 
-Foundation v3.4.2 front-loads material decisions so Build and Prove can run to a
+Foundation v3.4.3 front-loads material decisions so Build and Prove can run to a
 bounded conclusion without repeatedly interviewing the developer. The shipped
 workflow adds:
 
@@ -22,15 +22,15 @@ workflow adds:
 Before the first Foundation packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
-2. Verify `claude-foundation version` is `3.4.2` and the repository runtime API
+2. Verify `claude-foundation version` is `3.4.3` and the repository runtime API
    is `25`. A delta between the two is advisory while both doctors still pass:
    the CLI forwards to the runtime installed in the project, so an older CLI
    prints `warning: project runtime API … differs from CLI API …` and keeps
    working. Only a doctor that exits non-zero is a blocked machine.
 3. When the CLI itself is behind, upgrade it: `brew upgrade claude-foundation`.
-   If instead the pinned source is absent, clone tag `v3.4.2` from
+   If instead the pinned source is absent, clone tag `v3.4.3` from
    `Maximumsoft-Co-LTD/claude-foundation` into
-   `~/.local/share/claude-foundation/3.4.2`.
+   `~/.local/share/claude-foundation/3.4.3`.
 4. Install or refresh the runtime inside the project with
    `claude-foundation init <project-path>`. The equivalent entrypoint inside a
    source checkout is `bash /path/to/claude-foundation/install.sh
