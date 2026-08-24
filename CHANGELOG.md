@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A CLI one release behind the project no longer stops the loop, and the
+  setup remedy it relays now exists.** `doctor` treats a CLI/project runtime
+  API delta as advisory — it warns and exits 0, because the CLI forwards to the
+  runtime installed in the project — but the agent contract read as a hard stop
+  on the version comparison itself, and relayed a `DEVELOPER-SETUP.md` whose
+  step 4 named `scripts/install-foundation-runtime.mjs`, a script that has
+  never existed in this repository. On a machine whose Homebrew CLI trailed a
+  source install by one release, three of four `/change` sessions created no
+  change and handed the developer that dead end. The contract now blocks only
+  on a doctor that exits non-zero, and the document names `brew upgrade
+  claude-foundation` and `claude-foundation init <project-path>`.
+
+- **Build no longer hands Prove a critical case the workspace cannot satisfy.**
+  A declared critical case is matched against test titles only after the suite
+  runs, so a Build that wrote `criticalCases` into `execution.yaml` and never
+  tagged the covering test produced a change that read as finished — no pending
+  tasks, every automated provider wired, readiness summarising "automated
+  evidence is ready" — and then failed evidence collection on `test:fail` every
+  time it was proven. `proof readiness` now searches each provider's workspace
+  for the declared ID and blocks at Prove with the tag to add. The check is
+  deliberately one-directional: only a search that explicitly finds nothing
+  counts, so a present ID that still fails at run time, a case satisfied in one
+  of several repositories, and a workspace that cannot answer at all are never
+  turned into blockers.
+
+- **A change-id arity error names the argument instead of describing project
+  state.** All twenty-six of them read "requires exactly one change", so a
+  project with exactly one active change running `claude-foundation evidence
+  doctor` was told it did not have one.
+
+### Changed
+
+- **The repository's own full-loop e2e now completes.** Its phase-30 assert
+  required `proof readiness` to exit 0 immediately after `/build`, which a
+  complete Build never does when the project's committed profile requires an
+  independent reviewer — that boundary belongs to Prove. The runner had never
+  once reached Land. It now asserts what Build owns (no pending task, no code
+  or contract blocker) and passes all five phases end to end.
+
 ## [3.4.2] - 2026-08-22
 
 ### Fixed
