@@ -50,6 +50,15 @@ async function route(command, values, overrides) {
       applySandbox: () => fail("must not route")
     }), /exactly one change/,
     "extra positionals still die");
+
+  // The arity errors are about the argument, not about lifecycle state. Worded
+  // as "requires exactly one change" they read as a precondition the project
+  // has already met, so a run with exactly one active change was told it did
+  // not have one. Every one of them has to name the id it is missing.
+  await assert.rejects(
+    route("evidence-doctor", [], { showEvidenceDoctor: () => fail("must not route") }),
+    /requires exactly one change id/,
+    "an arity error names the argument, not a project state");
 }
 
 // --- authority reset-infra routing ---

@@ -27,8 +27,10 @@ sandbox is produced by the real consumer path (`install.sh <target> --yes`).
 
 The model's prose is never the verdict. Between phases the runner asserts
 deterministic lifecycle state: the investigation note exists and nothing else
-was written; exactly one change exists and `changes` lists it; `proof
-readiness` then `land check` exit 0; root `src/` stays untouched until Land;
+was written; exactly one change exists and `changes` lists it; Build leaves no
+pending task and no code or contract blocker in `proof readiness` (the review
+boundary it hands to Prove is not a Build failure); `land check` exits 0 after
+Prove; root `src/` stays untouched until Land;
 after Land the change is archived, the suite is green, and `loop/accept.mjs`
 (a content-bound acceptance check the run never sees) passes against the
 landed code.

@@ -47,6 +47,7 @@ to force fully serial execution when bisecting.
 | `harness/run-risk-tiered-review-mutation.mjs` | Mutation-v2 rejects a mutant killed by any case other than its declared killer |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
 | `harness/run-proof-fixit-tests.mjs` | Changed-surface blocker recovery renders undeclared paths as a paste-ready `[paths:]` annotation |
+| `harness/run-critical-case-readiness-tests.mjs` | A declared critical case no file carries blocks at Prove instead of reporting the change ready, without inventing a blocker across repositories or when the search cannot answer |
 | `harness/run-service-session-tests.mjs` | Proof services stop in reverse order, stop idempotently, and are reclaimed on termination signals |
 | `harness/run-apply-conflict-tests.mjs` | Worktree apply refuses to overwrite uncommitted target edits, while accepting files already at the exact proven bytes |
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |

@@ -54,14 +54,14 @@ export async function routeRuntimeCommand(command, values, api) {
           "acceptance-reason", "acceptance-claims", "decision-ref", "reopen-reason"
         ]
       });
-      if (rest.length !== 1) die("change resolve requires exactly one change");
+      if (rest.length !== 1) die("change resolve requires exactly one change id");
       resolveChange(rest[0], flags); break;
     }
     case "abandon": {
       const { flags, rest } = parseStrictCommandFlags(values, "change abandon", {
         value: ["reason", "decision-ref", "applied"]
       });
-      if (rest.length !== 1) die("change abandon requires exactly one change");
+      if (rest.length !== 1) die("change abandon requires exactly one change id");
       abandonChange(rest[0], flags); break;
     }
     case "waive": {
@@ -69,7 +69,7 @@ export async function routeRuntimeCommand(command, values, api) {
         boolean: ["revoke"],
         value: ["capability", "reason", "decision-ref"]
       });
-      if (rest.length !== 1) die("change waive requires exactly one change");
+      if (rest.length !== 1) die("change waive requires exactly one change id");
       waiveGate(rest[0], flags); break;
     }
     case "describe":
@@ -90,7 +90,7 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "agents dispatch", {
         boolean: ["pretty"]
       });
-      if (rest.length !== 1) die("agents dispatch requires exactly one change");
+      if (rest.length !== 1) die("agents dispatch requires exactly one change id");
       showAgentDispatch(rest[0], flags); break;
     }
     case "agent-task": {
@@ -150,7 +150,7 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "budget continue", {
         value: ["reason", "run", "decision-ref"]
       });
-      if (rest.length !== 1) die("budget continue requires exactly one change");
+      if (rest.length !== 1) die("budget continue requires exactly one change id");
       continueBudget(rest[0], flags); break;
     }
     case "doctor": {
@@ -166,7 +166,7 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "change audit", {
         boolean: ["json"]
       });
-      if (rest.length !== 1) die("change audit requires exactly one change");
+      if (rest.length !== 1) die("change audit requires exactly one change id");
       showTraceabilityAudit(rest[0], flags); break;
     }
     // With a provider, the hash *that provider's* receipt binds — which is what
@@ -181,7 +181,7 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "proof advance", {
         boolean: ["retry-indeterminate"], value: ["decision-ref"]
       });
-      if (rest.length !== 1) die("proof advance requires exactly one change");
+      if (rest.length !== 1) die("proof advance requires exactly one change id");
       await proofAdvance(rest[0], flags); break;
     }
     case "proof-run": await proofRun(values[0]); break;
@@ -196,20 +196,20 @@ export async function routeRuntimeCommand(command, values, api) {
     case "evidence-detect": {
       const { flags, rest } = parseStrictCommandFlags(values, "evidence detect");
       if (Object.keys(flags).length || rest.length !== 1)
-        die("evidence detect requires exactly one change");
+        die("evidence detect requires exactly one change id");
       showEvidenceDetection(rest[0]); break;
     }
     case "evidence-init": {
       const { flags, rest } = parseStrictCommandFlags(values, "evidence init", {
         boolean: ["write"]
       });
-      if (rest.length !== 1) die("evidence init requires exactly one change");
+      if (rest.length !== 1) die("evidence init requires exactly one change id");
       initializeEvidence(rest[0], flags); break;
     }
     case "evidence-doctor": {
       const { flags, rest } = parseStrictCommandFlags(values, "evidence doctor");
       if (Object.keys(flags).length || rest.length !== 1)
-        die("evidence doctor requires exactly one change");
+        die("evidence doctor requires exactly one change id");
       showEvidenceDoctor(rest[0]); break;
     }
     case "evidence-verify-ci": {
@@ -221,7 +221,7 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "authority request", {
         value: ["type", "repo"]
       });
-      if (rest.length !== 1) die("authority request requires exactly one change");
+      if (rest.length !== 1) die("authority request requires exactly one change id");
       await requestAuthority(rest[0], flags); break;
     }
     case "authority-dispatch": {
@@ -232,7 +232,7 @@ export async function routeRuntimeCommand(command, values, api) {
           "reviewer-model-family", "reviewer-model", "reviewer-session"
         ]
       });
-      if (rest.length !== 1) die("authority dispatch requires exactly one change");
+      if (rest.length !== 1) die("authority dispatch requires exactly one change id");
       await dispatchAuthority(rest[0], flags); break;
     }
     case "authority-run": {
@@ -245,42 +245,42 @@ export async function routeRuntimeCommand(command, values, api) {
           "main-session-model"
         ]
       });
-      if (rest.length !== 1) die("authority run requires exactly one change");
+      if (rest.length !== 1) die("authority run requires exactly one change id");
       await runAuthorityReviewer(rest[0], flags); break;
     }
     case "authority-abort": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority abort", {
         value: ["request", "reason"]
       });
-      if (rest.length !== 1) die("authority abort requires exactly one change");
+      if (rest.length !== 1) die("authority abort requires exactly one change id");
       await abortAuthority(rest[0], flags); break;
     }
     case "authority-status": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority status", {
         value: ["request"], boolean: ["template"]
       });
-      if (rest.length !== 1) die("authority status requires exactly one change");
+      if (rest.length !== 1) die("authority status requires exactly one change id");
       await showAuthorityStatus(rest[0], flags); break;
     }
     case "authority-reset-infra": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority reset-infra", {
         value: ["decision-ref", "reviewer"]
       });
-      if (rest.length !== 1) die("authority reset-infra requires exactly one change");
+      if (rest.length !== 1) die("authority reset-infra requires exactly one change id");
       await resetInfrastructureAuthority(rest[0], flags); break;
     }
     case "authority-reset-base-move": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority reset-base-move", {
         value: ["decision-ref"]
       });
-      if (rest.length !== 1) die("authority reset-base-move requires exactly one change");
+      if (rest.length !== 1) die("authority reset-base-move requires exactly one change id");
       await resetBaseMoveAuthority(rest[0], flags); break;
     }
     case "authority-record": {
       const { flags, rest } = parseStrictCommandFlags(values, "authority record", {
         value: ["request", "response"]
       });
-      if (rest.length !== 1) die("authority record requires exactly one change");
+      if (rest.length !== 1) die("authority record requires exactly one change id");
       await recordAuthority(rest[0], flags); break;
     }
     case "evidence-upgrade": upgradeEvidence(values[0]); break;
@@ -295,21 +295,21 @@ export async function routeRuntimeCommand(command, values, api) {
     case "handoff-status": {
       const { flags, rest } = parseStrictCommandFlags(values, "handoff status");
       if (Object.keys(flags).length || rest.length !== 1)
-        die("handoff status requires exactly one change");
+        die("handoff status requires exactly one change id");
       showHandoffStatus(rest[0]); break;
     }
     case "handoff-packet": {
       const { flags, rest } = parseStrictCommandFlags(values, "handoff packet", {
         value: ["id"]
       });
-      if (rest.length !== 1) die("handoff packet requires exactly one change");
+      if (rest.length !== 1) die("handoff packet requires exactly one change id");
       showHandoffPacket(rest[0], flags); break;
     }
     case "handoff-record": {
       const { flags, rest } = parseStrictCommandFlags(values, "handoff record", {
         value: ["id", "status", "actor", "reference", "evidence", "reason"]
       });
-      if (rest.length !== 1) die("handoff record requires exactly one change");
+      if (rest.length !== 1) die("handoff record requires exactly one change id");
       recordHandoff(rest[0], flags); break;
     }
     case "land-check": landCheck(values[0]); break;
@@ -338,7 +338,7 @@ export async function routeRuntimeCommand(command, values, api) {
       if (values[0] === "challenge") {
         const { flags, rest } = parseStrictCommandFlags(values.slice(1), "sandbox challenge");
         if (Object.keys(flags).length || rest.length !== 1)
-          die("sandbox challenge requires exactly one change");
+          die("sandbox challenge requires exactly one change id");
         createAttestationChallenge(rest[0]);
       }
       else if (values[0] === "inspect") {
@@ -347,7 +347,7 @@ export async function routeRuntimeCommand(command, values, api) {
             boolean: ["json", "unattended"], value: ["attestation"]
           }
         );
-        if (rest.length !== 1) die("sandbox inspect requires exactly one change");
+        if (rest.length !== 1) die("sandbox inspect requires exactly one change id");
         showSandboxInspection(rest[0], flags);
       }
       else if (values[0] === "create") {
@@ -356,13 +356,13 @@ export async function routeRuntimeCommand(command, values, api) {
             boolean: ["all", "unattended"], value: ["attestation"]
           }
         );
-        if (rest.length !== 1) die("sandbox create requires exactly one change");
+        if (rest.length !== 1) die("sandbox create requires exactly one change id");
         createSandbox(rest[0], flags);
       }
       else if (values[0] === "sync") {
         const { flags, rest } = parseStrictCommandFlags(
           values.slice(1), "sandbox sync", { value: ["resolve"] });
-        if (rest.length !== 1) die("sandbox sync requires exactly one change");
+        if (rest.length !== 1) die("sandbox sync requires exactly one change id");
         syncSandbox(rest[0], flags);
       }
       else if (values[0] === "apply") {
@@ -373,7 +373,7 @@ export async function routeRuntimeCommand(command, values, api) {
         const { flags, rest } = parseStrictCommandFlags(
           values.slice(1), "sandbox apply", { boolean: ["refresh"] });
         if (rest.length !== 1)
-          die("sandbox apply requires exactly one change");
+          die("sandbox apply requires exactly one change id");
         applySandbox(rest[0], flags);
       }
       else die("sandbox requires challenge|inspect|create|sync|apply <change>");

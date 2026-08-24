@@ -169,6 +169,71 @@ export function createProofReadinessRuntime({
     return issues;
   }
 
+  // A declared critical case is only matched after the suite runs, against the
+  // titles in the report (`criticalCaseResult`). So a Build that declares an ID
+  // in execution.yaml and never tags the covering test hands Prove a change
+  // that looks ready — `pendingTasks` empty, every automated provider wired —
+  // and then fails evidence collection on `test:fail` every single time. The
+  // gap is Build-scope work, so it has to surface before the handoff, not after
+  // it.
+  //
+  // The check is a necessary condition, never a sufficient one: the ID must
+  // appear literally somewhere in the workspace for the title match to be
+  // possible at all, but a present ID can still fail or be skipped at run time.
+  // That asymmetry is deliberate — this must not block a change whose evidence
+  // would otherwise have passed. For the same reason only an explicit `no
+  // match` (git grep exit 1) counts; any other exit means the search itself did
+  // not answer, and an unanswered search is not a defect. A copy-mode sandbox
+  // created from a project that carries no git leaves the guard inert rather
+  // than guessing — the same trade, taken knowingly.
+  function criticalCaseIssues(id) {
+    // Keyed by case ID, not by provider: `test-discovery` runs one command
+    // for two providers off one config, so a per-provider loop reports a
+    // single missing tag twice under two provider names.
+    const declared = new Map();
+    for (const provider of requiredProviders(id)) {
+      const config = providerConfig(id, provider) || {};
+      if (!(config.criticalCases || []).length) continue;
+      // A provider without an explicit `repository` runs against every
+      // selected repository, and its tests live in exactly one of them.
+      // Requiring the ID in all of them would invent a blocker on every
+      // multi-repository change.
+      const repositories = providerRepositories(id, provider, config)
+        .filter((repository) => existsSync(repository.workspacePath));
+      if (!repositories.length) continue;
+      for (const caseId of config.criticalCases) {
+        const entry = declared.get(caseId) ||
+          { providers: new Set(), repositories: new Map() };
+        entry.providers.add(provider);
+        for (const repository of repositories)
+          entry.repositories.set(repository.id, repository);
+        declared.set(caseId, entry);
+      }
+    }
+    const issues = [];
+    for (const [caseId, entry] of declared) {
+      const repositories = [...entry.repositories.values()];
+      const searches = repositories.map((repository) => git([
+        // `--untracked`: Build's new test file is not committed in the
+        // sandbox yet, and it is the file most likely to carry the tag.
+        "grep", "--untracked", "-I", "-l", "-F", "-e", caseId, "--", ".",
+        // The change packet declares the ID: `execution.yaml` and
+        // `grounding.yaml` both name it, so searching it would match every
+        // declared case against its own declaration and never find a gap.
+        // `.foundation` holds nested workspaces carrying the same packet.
+        ":(exclude)openspec/changes", ":(exclude).foundation"
+      ], repository.workspacePath));
+      if (searches.some((found) => found.status === 0)) continue;
+      if (!searches.every((found) => found.status === 1)) continue;
+      issues.push(`critical case '${caseId}' declared by provider ${
+        [...entry.providers].map((provider) => `'${provider}'`).join(", ")
+      } appears in no file under ${
+        repositories.map((repository) => `'${repository.id}'`).join(", ")
+      }: tag the covering test title with [${caseId}] so the receipt can bind it`);
+    }
+    return issues;
+  }
+
   // An unconfigured provider is not always a person-shaped problem: when the
   // project already owns a safe command for that capability, the fix is a write
   // to execution.yaml, not a wait for a human. Detection knows which providers
@@ -425,6 +490,7 @@ export function createProofReadinessRuntime({
     const issues = topologyIssues(id);
     const surfaceFixits = [];
     if (stage === "prove") issues.push(...changedSurfaceIssues(id, surfaceFixits));
+    if (stage === "prove") issues.push(...criticalCaseIssues(id));
     const hash = relevantHash(id);
     const { unconfigured, unavailable } = executionNodes(id, hash);
     const repositoryIssues = stage === "prove" ? repositoryInfrastructureIssues(id) : [];
@@ -595,6 +661,7 @@ export function createProofReadinessRuntime({
     activeWorkRecovery,
     changedSurfaceIssues,
     codeChangeRecovery,
+    criticalCaseIssues,
     configurationRecovery,
     externalEvidenceRecovery,
     proofPreflight,
