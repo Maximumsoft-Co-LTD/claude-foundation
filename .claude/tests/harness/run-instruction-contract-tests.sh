@@ -28,6 +28,10 @@ assert_file_contains "Prove contract names the independence waiver" "$ROOT/.clau
 assert_file_contains "Prove contract relays the harness route out of a blocker" "$ROOT/.claude/skills/prove/references/workflow.md" "Relay every blocker with the route"
 assert_file_contains "Prove contract wires a missing adapter before asking a person" "$ROOT/.claude/skills/prove/references/workflow.md" 'evidence init --write'
 assert_file_contains "Change contract settles the reviewer before Build" "$ROOT/.claude/skills/change/references/workflow.md" "settle the reviewer now"
+assert_file_contains "Change contract assesses every NFR category" "$ROOT/.claude/skills/change/references/workflow.md" 'complete every `grounding.yaml > nfrAssessment`'
+assert_file_contains "Change contract forbids invented NFR targets" "$ROOT/.claude/skills/change/references/workflow.md" "invented targets are forbidden"
+assert_file_contains "Change contract requires stable durable decision identity" "$ROOT/.claude/skills/change/references/workflow.md" 'stable `DEC-*` ID'
+assert_file_contains "Brainstorming carries runtime NFR applicability" "$ROOT/.claude/skills/brainstorming/SKILL.md" "performance, capacity, availability"
 assert_file_contains "Land contract requires explicit authority" "$ROOT/.claude/commands/land.md" "Land **\$ARGUMENTS** explicitly"
 assert_file_contains "Land keeps commit authority separate" "$ROOT/.claude/commands/land.md" "without separate authority"
 assert_file_contains "Land performs deterministic recovery before asking" "$ROOT/.claude/commands/land.md" 'Execute returned'

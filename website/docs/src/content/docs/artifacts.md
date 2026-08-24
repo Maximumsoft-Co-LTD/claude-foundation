@@ -86,10 +86,11 @@ what a reviewer reads.
 | `proposal.md` | Why the change exists, what observably changes, impact, and non-goals | both |
 | `tasks.md` | The sole implementation ledger — the only place work is tracked | both |
 | `evidence.yaml` | The stable behavioral contract: claim IDs, scenarios, capabilities | both |
+| `grounding.yaml` | Locked decisions, read-set hashes, production/failure paths, and the sourced eight-category NFR assessment | both when grounding is required |
 | `execution.yaml` | Replaceable wiring: provider commands, services, readiness | both |
 | `repositories.yaml` | Repository topology and write modes | both |
 | `.openspec.yaml` | Which assurance profile governs the packet | both |
-| `design.md` | Load-bearing decisions, rejected alternatives, compatibility, risks | standard |
+| `design.md` | Stable `DEC-*` decisions, rationale, rejected alternatives, consequences, supersession, compatibility, risks | standard |
 | `specs/**/spec.md` | Requirement deltas — `ADDED`, `MODIFIED`, `REMOVED` | standard |
 
 A `foundation-rapid` packet omits `design.md` and the spec deltas. The moment

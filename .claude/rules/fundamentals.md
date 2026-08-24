@@ -15,6 +15,8 @@ procedure; do not preload them.
   smallest new implementation.
 - Keep every changed line traceable to the request. Do not bundle cleanup.
 - Define a checkable outcome and continue until it is met.
+- For a new standard change, assess every NFR category; applicable targets must
+  trace through claims, task ownership, capable providers, and receipts.
 - Code/tests outrank specs; specs outrank investigation notes. Resolve conflicts.
 - Choose the faster of equally safe paths. Never cut security, error/data-loss
   handling, accessibility, evidence, regression contracts, or Land guards.

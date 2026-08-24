@@ -379,10 +379,10 @@ openspec/changes/<change-id>/
 | `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
 | `proposal.md` | Why change, what changes, and what is excluded? | Prevents scope and impact from being implicit |
 | `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
-| `design.md` | Which technical decisions constrain implementation and rollback? | Records only load-bearing current-state facts, compatibility, migration, risks, and rejected alternatives |
+| `design.md` | Which technical decisions constrain implementation and rollback? | Records load-bearing facts plus stable `DEC-*` decisions with status, rationale, rejected alternatives, consequences, and supersession |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
 | `evidence.yaml` | Which behavioral claims must be proven? | Separates the proof obligation from whichever tool happens to run it |
-| `grounding.yaml` | Which facts were read and which material decisions were settled up front? | Locks one complete Decision Sheet and the production/failure paths behind each claim |
+| `grounding.yaml` | Which facts, material decisions, and NFR categories were settled up front? | Locks one Decision Sheet, production/failure paths, and a sourced eight-category NFR assessment whose applicable targets trace to claims, tasks, and providers |
 | `execution.yaml` | How does this project produce the evidence? | Wires commands, reports, services, timeouts, and readiness checks |
 | `repositories.yaml` | Which repositories may this change read or write? | Bounds agent authority and establishes dependency order |
 | `handoffs.yaml` | Which permission-bound operations belong to an external owner? | Keeps AWS, secret, Terraform, deploy, restart, and environment work out of the developer task ledger without losing activation safety |

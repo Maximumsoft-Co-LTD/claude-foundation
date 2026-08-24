@@ -4,6 +4,22 @@ import {
 import { join, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
 
+export function renderDraftDecisions(decisions) {
+  if (!Array.isArray(decisions))
+    throw new Error("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
+  if (!decisions.length) return "`none`";
+  return decisions.map((decision, index) => {
+    const decisionId = decision.id || `DEC-${String(index + 1).padStart(3, "0")}`;
+    return `- **Decision ID:** ${decisionId}\n` +
+      `  - **Status:** ${decision.status || "accepted"}\n` +
+      `  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why}\n` +
+      `  - **Rejected:** ${decision.rejected || "none"}\n` +
+      `  - **Consequences:** ${decision.consequences || "No consequence beyond the bounded change"}\n` +
+      `  - **Supersedes:** ${decision.supersedes || "none"}\n` +
+      `  - **Superseded by:** ${decision.supersededBy || "none"}`;
+  }).join("\n");
+}
+
 export function createChangeLifecycle({
   root,
   policy,
@@ -131,9 +147,7 @@ export function createChangeLifecycle({
         `# Design\n\n## Current state\n\n${draft.currentState}\n\n` +
         `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
         `${domainRows}\n\n## Decisions\n\n` +
-        draft.decisions.map((decision) =>
-          `- **Decision:** ${decision.choice}\n  - **Why:** ${decision.why}\n` +
-          `  - **Rejected:** ${decision.rejected || "none"}`).join("\n") +
+        renderDraftDecisions(draft.decisions) +
         `\n\n## Compatibility and migration\n\n${draft.compatibility}\n\n## Risks\n\n` +
         `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n` +
         draft.risks.map((risk) =>
@@ -257,6 +271,8 @@ export function createChangeLifecycle({
       version: 2, id, intent, schema, status: "change", ambiguity: "clear",
       groundingRequired: workflowPolicy().workflow.grounding === "required",
       groundingVersion: workflowPolicy().workflow.grounding === "required" ? 2 : null,
+      nfrAssessmentRequired: schema === "foundation-standard",
+      decisionMetadataRequired: schema === "foundation-standard",
       externalOperationsVersion: 1,
       graphExecutionVersion: 1,
       revision: 0, contractRevision: 0, executionRevision: 0,
@@ -375,6 +391,15 @@ export function createChangeLifecycle({
           sourceReason: "The isolated draft creates no operated runtime boundary",
           rows: []
         },
+        nfrAssessment: Object.fromEntries([
+          "performance", "capacity", "availability", "securityPrivacy",
+          "accessibility", "operability", "compatibility", "recoverability"
+        ].map((category) => [category, {
+          status: "not-applicable",
+          sourceReason: `The isolated draft has no discovered ${category} requirement`,
+          target: "none",
+          claimIds: []
+        }])),
         readSet: [{
           repository: "root",
           path: "replace-with-relevant-file",
@@ -514,6 +539,8 @@ export function createChangeLifecycle({
       state.schema = "foundation-standard";
       state.upgradedFrom = "foundation-rapid";
       state.groundingRequired = workflowPolicy().workflow.grounding === "required";
+      state.nfrAssessmentRequired = true;
+      state.decisionMetadataRequired = true;
       upgraded = true;
       // The rapid packet has no design.md and no specs/, which the standard
       // schema requires. Leaving them absent made `validate` refuse a change
@@ -567,6 +594,18 @@ export function createChangeLifecycle({
     if (workflowPolicy().workflow.grounding === "required" &&
         (!draft.grounding || draft.grounding.version !== 2))
       fail("start draft requires grounding.version 2 after the initial Decision Sheet");
+    if (!rapid && workflowPolicy().workflow.grounding === "required") {
+      const categories = [
+        "performance", "capacity", "availability", "securityPrivacy",
+        "accessibility", "operability", "compatibility", "recoverability"
+      ];
+      const missing = categories.filter((category) =>
+        !draft.grounding?.nfrAssessment?.[category]);
+      if (missing.length)
+        fail(`standard start draft requires every grounding.nfrAssessment category before creation: ${missing.join(", ")}`);
+    }
+    if (!rapid && !Array.isArray(draft.decisions))
+      fail("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
     const id = createChange(draft.intent, { rapid, draft: draftPath, id: draft.id });
     resolveChange(id, {
       impact,

@@ -362,10 +362,10 @@ openspec/changes/<change-id>/
 | `.openspec.yaml` | ใช้ `foundation-standard` หรือ `foundation-rapid` | เลือก artifact workflow ของ change |
 | `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption |
 | `specs/<area>/spec.md` | Observable behavior ใดถูกเพิ่ม แก้ หรือลบ | ให้ Prove มี requirement และ `WHEN`/`THEN` scenario ที่คงที่ และให้ Land merge delta เข้า current specs |
-| `design.md` | Technical decision ใดบังคับวิธี implement และ rollback | เก็บเฉพาะ current-state fact, compatibility, migration, risk และ rejected alternative ที่สำคัญ |
+| `design.md` | Technical decision ใดบังคับวิธี implement และ rollback | เก็บ fact ที่จำเป็นและมติ `DEC-*` พร้อม status, เหตุผล, rejected alternative, consequence และ supersession |
 | `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
 | `evidence.yaml` | Behavioral claim ใดต้องพิสูจน์ | แยก proof obligation ออกจาก tool ที่นำมารัน |
-| `grounding.yaml` | อ่านข้อเท็จจริงใดและล็อกมติอะไรตั้งแต่ต้น | ผูก Decision Sheet รอบเดียวกับ production/failure path ของแต่ละ claim |
+| `grounding.yaml` | อ่านข้อเท็จจริงใด ล็อกมติและ NFR หมวดใดตั้งแต่ต้น | ผูก Decision Sheet, production/failure path และ NFR assessment 8 หมวด โดย target ที่ applicable ต้อง trace ถึง claim, task และ provider |
 | `execution.yaml` | Project จะสร้าง evidence อย่างไร | Wire command, report, service, timeout และ readiness check |
 | `repositories.yaml` | Change อ่านหรือเขียน repository ใดได้ | จำกัดอำนาจของ agent และกำหนด dependency order |
 | `handoffs.yaml` | Operation ใดต้องส่งต่อเจ้าของสิทธิ์ | ย้าย AWS, secret, Terraform, deploy, restart และงาน environment ออกจาก task ของ developer โดยยังคุม activation safety |

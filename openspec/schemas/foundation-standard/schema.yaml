@@ -19,7 +19,7 @@ artifacts:
     generates: design.md
     description: Load-bearing technical decisions and rollback
     template: design.md
-    instruction: Record only decisions needed to implement safely in the existing system.
+    instruction: Record only durable decisions needed to implement safely, with stable ID, rationale, rejected alternative, consequences, and supersession metadata.
     requires: [proposal, specs]
   - id: tasks
     generates: tasks.md
@@ -37,7 +37,7 @@ artifacts:
     generates: grounding.yaml
     description: Locked single-batch decisions, complete read set, and claim-to-production evidence map
     template: grounding.yaml
-    instruction: Record discovery and every locked material choice/default before Build.
+    instruction: Record discovery, every locked material choice/default, and a sourced risk-triggered NFR assessment before Build.
     requires: [proposal, specs, evidence]
   - id: repositories
     generates: repositories.yaml

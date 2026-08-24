@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Standard changes now treat non-functional requirements as a validated
+  evidence contract.** Every new standard packet assesses performance,
+  capacity, availability, security/privacy, accessibility, operability,
+  compatibility, and recoverability. Applicable rows must name an observable
+  target, evidence claims, an implementation or migration task owner, and a
+  capable provider from the merged evidence/execution configuration;
+  performance and capacity require numeric thresholds, while security/privacy
+  requires a negative-path or privacy-control claim. Existing packets remain
+  compatible, and a rapid packet acquires the stricter contract only when it
+  upgrades to standard.
+
+- **Durable OpenSpec decisions now have navigable ADR-grade metadata without a
+  parallel ADR store.** Standard `design.md` decisions carry stable `DEC-*`
+  IDs, status, rationale, rejected alternatives, consequences, and reciprocal
+  supersession links. Validation rejects mixed legacy entries, duplicate or
+  malformed IDs, dangling local references, self-reference, one-sided local
+  links, and superseded records without a replacement. A standard atomic draft
+  with no qualifying decision renders an explicit `none` instead of failing
+  after creation.
+
+### Security
+
+- **Configured reviewer prompts now mark the bounded packet as JSON data, not
+  instructions.** Commands, role claims, and policy overrides embedded in
+  claim text or repository content are explicitly untrusted, while the
+  reviewer still receives the content-bound packet and structured-output
+  schema. An adversarial regression test pins the authority ordering.
+
 ## [3.4.3] - 2026-08-24
 
 ### Fixed

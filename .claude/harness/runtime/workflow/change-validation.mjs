@@ -157,6 +157,95 @@ function failValidationLayer(fail, name, issues) {
     fail(`${name} validation failed:\n  - ${issues.join("\n  - ")}`);
 }
 
+export const NFR_CATEGORY_CAPABILITIES = Object.freeze({
+  performance: ["performance"],
+  capacity: ["performance", "resilience"],
+  availability: ["resilience"],
+  securityPrivacy: ["security-static"],
+  accessibility: ["accessibility"],
+  operability: ["observability"],
+  compatibility: ["compatibility", "cross-repo-contract"],
+  recoverability: ["resilience", "data-migration", "deployment"]
+});
+
+export function durableDecisionMetadataIssues(content) {
+  const rawSection = String(content || "").match(
+    /^## Decisions\s*$([\s\S]*?)(?=^## Compatibility and migration\s*$)/m
+  )?.[1]?.trim();
+  if (!rawSection) return ["design.md requires a Decisions section"];
+  const section = rawSection.replace(/<!--[\s\S]*?-->/g, "").trim();
+  if (/^`?none`?[.!]?$/i.test(section)) return [];
+  if (/^- \*\*Decision:\*\*/m.test(section))
+    return ["every durable decision requires Decision ID metadata; legacy Decision entries are not allowed"];
+  const starts = [...section.matchAll(/^- \*\*Decision ID:\*\*\s*(\S.*?)\s*$/gm)];
+  if (!starts.length)
+    return ["each durable decision requires a stable Decision ID or the section must be `none`"];
+  const issues = [];
+  const ids = new Set();
+  const decisions = [];
+  const fields = [
+    "Status", "Decision", "Why", "Rejected", "Consequences",
+    "Supersedes", "Superseded by"
+  ];
+  if (starts[0].index !== 0)
+    issues.push("Decisions contains content outside a Decision ID block");
+  for (const [index, start] of starts.entries()) {
+    const end = starts[index + 1]?.index ?? section.length;
+    const block = section.slice(start.index, end);
+    const id = start[1].trim();
+    const label = `decision '${id}'`;
+    if (!/^DEC-[A-Z0-9][A-Z0-9-]*$/i.test(id))
+      issues.push(`${label} ID must match DEC-<stable-id>`);
+    if (ids.has(id.toUpperCase())) issues.push(`${label} is duplicated`);
+    ids.add(id.toUpperCase());
+    const values = Object.fromEntries(fields.map((field) => [field,
+      block.match(new RegExp(`^\\s+- \\*\\*${field}:\\*\\*\\s*(.+?)\\s*$`, "mi"))?.[1]?.trim()
+    ]));
+    const allowedLine = new RegExp(
+      `^(?:- \\*\\*Decision ID:\\*\\*|\\s+- \\*\\*(?:${fields.join("|")}):\\*\\*)`
+    );
+    if (block.split("\n").some((line) => line.trim() && !allowedLine.test(line)))
+      issues.push(`${label} contains content outside its metadata fields`);
+    for (const field of fields)
+      if (!values[field]) issues.push(`${label} requires ${field}`);
+    if (values.Status && !["accepted", "superseded"].includes(values.Status.toLowerCase()))
+      issues.push(`${label} Status must be accepted|superseded`);
+    decisions.push({ id: id.toUpperCase(), label, values });
+  }
+  const byId = new Map(decisions.map((decision) => [decision.id, decision]));
+  const reference = /^(?:[a-z0-9][a-z0-9._-]*#)?DEC-[A-Z0-9][A-Z0-9-]*$/i;
+  const localReference = (value) => !value.includes("#") ? value.toUpperCase() : null;
+  for (const decision of decisions) {
+    const status = decision.values.Status?.toLowerCase();
+    const supersedes = decision.values.Supersedes || "";
+    const supersededBy = decision.values["Superseded by"] || "";
+    for (const [field, value] of [["Supersedes", supersedes], ["Superseded by", supersededBy]]) {
+      if (/^none$/i.test(value)) continue;
+      if (!reference.test(value)) {
+        issues.push(`${decision.label} ${field} must be none, DEC-<id>, or <change>#DEC-<id>`);
+        continue;
+      }
+      const local = localReference(value);
+      if (local === decision.id) issues.push(`${decision.label} ${field} cannot reference itself`);
+      if (local && !byId.has(local)) issues.push(`${decision.label} ${field} references unknown local decision '${value}'`);
+    }
+    if (status === "superseded" && /^none$/i.test(supersededBy))
+      issues.push(`${decision.label} with superseded status must name its replacement`);
+    if (status === "accepted" && !/^none$/i.test(supersededBy))
+      issues.push(`${decision.label} naming Superseded by must have superseded status`);
+    const supersedesLocal = !/^none$/i.test(supersedes) ? localReference(supersedes) : null;
+    if (supersedesLocal && byId.has(supersedesLocal) &&
+        byId.get(supersedesLocal).values["Superseded by"]?.toUpperCase() !== decision.id)
+      issues.push(`${decision.label} Supersedes '${supersedes}' requires a reciprocal Superseded by link`);
+    const supersededByLocal = !/^none$/i.test(supersededBy)
+      ? localReference(supersededBy) : null;
+    if (supersededByLocal && byId.has(supersededByLocal) &&
+        byId.get(supersededByLocal).values.Supersedes?.toUpperCase() !== decision.id)
+      issues.push(`${decision.label} Superseded by '${supersededBy}' requires a reciprocal Supersedes link`);
+  }
+  return issues;
+}
+
 export function createChangeValidationRuntime({
   markBlocked = () => {},
   root,
@@ -277,7 +366,7 @@ export function createChangeValidationRuntime({
     ["replace-with marker", /replace-with/i],
     ["unresolved clarification", /\[NEEDS CLARIFICATION(?::[^\]]*)?\]/i],
     ["unresolved TODO/TBD", /\b(?:TODO|TBD)\b/],
-    ["template angle marker", /<(?:Problem|Observable|Only load-bearing|choice|constraint|meaningful alternative|Public contracts|risk|mitigation|provider|name|existing name|stable scenario name|every existing stable scenario name|action or event|complete modified observable behavior|behavior being retired|replacement, compatibility consequence|Explicitly excluded|code, API|semantic boundary|path or surface|focused check)[^>]*>/i],
+    ["template angle marker", /<(?:Problem|Observable|Only load-bearing|choice|constraint|meaningful alternative|operational, compatibility|Public contracts|risk|mitigation|provider|name|existing name|stable scenario name|every existing stable scenario name|action or event|complete modified observable behavior|behavior being retired|replacement, compatibility consequence|Explicitly excluded|code, API|semantic boundary|path or surface|focused check)[^>]*>/i],
     ["template removal comment", /<!--[\s\S]*?(?:delete (?:this section )?when unused|include the complete modified requirement|name removed behavior|use only when the canonical spec)[\s\S]*?-->/i]
   ];
 
@@ -403,6 +492,90 @@ export function createChangeValidationRuntime({
       const mandatoryActivation = [...riskClasses].some((entry) =>
         ["legacy", "activation", "cutover"].some((token) => entry.includes(token))) ||
         /\b(activat|cutover|enable existing|wire existing|turn on)\w*\b/.test(semantics);
+      if (state.nfrAssessmentRequired) {
+        const assessment = value.nfrAssessment;
+        if (!assessment || typeof assessment !== "object" || Array.isArray(assessment))
+          fail(`${id}/grounding.yaml nfrAssessment is required for this change`);
+        const categoryNames = Object.keys(NFR_CATEGORY_CAPABILITIES);
+        const unknownCategories = Object.keys(assessment)
+          .filter((name) => !categoryNames.includes(name));
+        if (unknownCategories.length)
+          fail(`${id}/grounding.yaml nfrAssessment has unknown categories: ${unknownCategories.join(", ")}`);
+        const requiredCategories = new Set();
+        const requireWhen = (category, capabilities) => {
+          if (capabilities.some((capability) => v2Capabilities.has(capability)))
+            requiredCategories.add(category);
+        };
+        requireWhen("performance", ["performance"]);
+        requireWhen("availability", ["resilience"]);
+        requireWhen("securityPrivacy", ["security-static"]);
+        requireWhen("accessibility", ["accessibility"]);
+        requireWhen("operability", ["observability"]);
+        requireWhen("compatibility", ["compatibility", "cross-repo-contract"]);
+        requireWhen("recoverability", ["data-migration", "deployment"]);
+        if ((state.securityTriggers || []).length) requiredCategories.add("securityPrivacy");
+        if (mandatoryService) {
+          requiredCategories.add("availability");
+          requiredCategories.add("operability");
+          requiredCategories.add("recoverability");
+        }
+        if (v2Capabilities.has("data-migration")) {
+          requiredCategories.add("compatibility");
+          requiredCategories.add("recoverability");
+        }
+        if (/\b(performance|latency|throughput)\b/.test(semantics))
+          requiredCategories.add("performance");
+        if (/\b(capacity|scalability|scale)\b/.test(semantics))
+          requiredCategories.add("capacity");
+        if (/\b(availability|uptime|reliability)\b/.test(semantics))
+          requiredCategories.add("availability");
+
+        const claimById = new Map(v2Contract.claims.map((claim) => [claim.id, claim]));
+        const taskClaimIds = new Set(parsedTasks.map(taskMetadata)
+          .filter((task) => ["implementation", "migration"].includes(task.kind))
+          .flatMap((task) => task.claims));
+        const configuredCapabilities = new Set(Object.entries(v2Contract.providers || {})
+          .map(([provider, config]) => providerCapability(provider, config))
+          .filter(Boolean));
+        for (const category of categoryNames) {
+          const row = assessment[category];
+          const label = `${id}/grounding.yaml nfrAssessment.${category}`;
+          if (!row || !["applicable", "not-applicable"].includes(row.status))
+            fail(`${label}.status must be applicable|not-applicable`);
+          if (!String(row.sourceReason || "").trim())
+            fail(`${label}.sourceReason is required`);
+          if (!Array.isArray(row.claimIds)) fail(`${label}.claimIds must be an array`);
+          if (requiredCategories.has(category) && row.status !== "applicable")
+            fail(`${label} is required by the declared risk or evidence capability`);
+          if (row.status === "not-applicable") {
+            if (row.claimIds.length) fail(`${label}.claimIds must be empty when not applicable`);
+            continue;
+          }
+          const target = String(row.target || "").trim();
+          if (!target || /^none$/i.test(target)) fail(`${label}.target is required when applicable`);
+          if (["performance", "capacity"].includes(category) && !/\d/.test(target))
+            fail(`${label}.target must contain a measurable numeric threshold`);
+          if (row.claimIds.length === 0)
+            fail(`${label}.claimIds must be non-empty when applicable`);
+          const allowedCapabilities = NFR_CATEGORY_CAPABILITIES[category];
+          for (const claimId of row.claimIds) {
+            const claim = claimById.get(claimId);
+            if (!claim) fail(`${label} references unknown claim '${claimId}'`);
+            if (!allowedCapabilities.some((capability) =>
+              (claim.capabilities || []).includes(capability)))
+              fail(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}`);
+            if (!taskClaimIds.has(claimId))
+              fail(`${label} claim '${claimId}' has no implementation task owner`);
+          }
+          if (!allowedCapabilities.some((capability) => configuredCapabilities.has(capability)))
+            fail(`${label} has no configured capable evidence provider`);
+          if (category === "securityPrivacy" && !row.claimIds.some((claimId) => {
+            const claim = claimById.get(claimId);
+            return /(?:cannot|denied|reject|unauthor|forbid|invalid|isolation|privacy|redact)/i
+              .test(`${claim?.id || ""} ${claim?.scenario || ""}`);
+          })) fail(`${label} requires an observable negative-path or privacy-control claim`);
+        }
+      }
       if (value.productionEntry.status !== "applicable")
         fail(`${id}/grounding.yaml productionEntry cannot be N/A for an implementation claim`);
       if (mandatoryWire && value.realWire.status !== "applicable")
@@ -714,6 +887,11 @@ export function createChangeValidationRuntime({
     if (preflight.length)
       fail(`change validation preflight failed:\n  - ${preflight.join("\n  - ")}`);
     assertNoScaffolds(state, dir);
+    if (state.decisionMetadataRequired) {
+      const design = readFileSync(join(dir, "design.md"), "utf8");
+      failValidationLayer(fail, "durable decision metadata",
+        durableDecisionMetadataIssues(design));
+    }
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);
     const grounding = groundingValue(id, state, dir, parsedTasks);
@@ -804,7 +982,6 @@ export function createChangeValidationRuntime({
     const selected = validationRepositories(id, state, dir);
     failValidationLayer(fail, "task contract", taskContractIssues(
       parsedTasks, claims, selectedRepositoryIds, selected.length > 1));
-
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
     // Case-insensitive and `xs`-aware: this compared against the literal "S",

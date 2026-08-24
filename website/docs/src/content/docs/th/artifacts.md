@@ -85,10 +85,11 @@ design บันทึกเฉพาะการตัดสินใจที�
 | `proposal.md` | ทำไมต้องมี change นี้ อะไรเปลี่ยนแบบที่สังเกตได้ impact และสิ่งที่ไม่ทำ | ทั้งคู่ |
 | `tasks.md` | ledger เดียวของการ implement — ที่เดียวที่ติดตามงาน | ทั้งคู่ |
 | `evidence.yaml` | สัญญาเชิงพฤติกรรมที่คงที่ — claim ID, scenario, capability | ทั้งคู่ |
+| `grounding.yaml` | มติที่ล็อกแล้ว hash ของ read set, production/failure path และ NFR assessment 8 หมวด | ทั้งคู่เมื่อบังคับ grounding |
 | `execution.yaml` | การต่อสายที่เปลี่ยนได้ — คำสั่ง provider, service, readiness | ทั้งคู่ |
 | `repositories.yaml` | โครงสร้าง repository และโหมดการเขียน | ทั้งคู่ |
 | `.openspec.yaml` | assurance profile ที่ควบคุม packet นี้ | ทั้งคู่ |
-| `design.md` | การตัดสินใจที่สำคัญ ทางเลือกที่ปฏิเสธ compatibility และความเสี่ยง | standard |
+| `design.md` | มติ `DEC-*` เหตุผล ทางเลือกที่ปฏิเสธ consequence, supersession, compatibility และความเสี่ยง | standard |
 | `specs/**/spec.md` | delta ของ requirement — `ADDED`, `MODIFIED`, `REMOVED` | standard |
 
 packet แบบ `foundation-rapid` จะไม่มี `design.md` กับ spec delta ทันทีที่ impact

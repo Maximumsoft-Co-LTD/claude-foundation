@@ -13,9 +13,18 @@ For a standard change, source-check project-specific terms from the agreement
 and write only resolved canonical terms, meanings, and avoided aliases under
 `design.md` Domain language; use `none` when the change introduces none. Record
 a durable Decision only when it is hard to reverse, surprising without context,
-and chosen among meaningful alternatives. Keep choice, why, and rejected option
-together. Never create `CONTEXT.md`, a glossary artifact, or an ADR store; never
-add `design.md` to a rapid packet by hand.
+and chosen among meaningful alternatives. Give it a stable `DEC-*` ID, status,
+choice, why, rejected option, consequences, and supersession reference.
+Never create `CONTEXT.md`, a glossary artifact, or an ADR store; never add
+`design.md` to a rapid packet by hand.
+
+For every new standard packet, complete every `grounding.yaml > nfrAssessment`
+row. Assessment is mandatory; invented targets are forbidden. Mark an irrelevant
+category `not-applicable` with a source-grounded reason. An applicable category
+needs an observable target, claim IDs, task ownership, and a configured capable
+provider. Performance and capacity targets require a numeric threshold. Security
+needs a negative-path or privacy-control claim. Carry unresolved material targets
+through the one Decision Sheet rather than guessing them.
 
 Before writing each spec delta, read the canonical
 `openspec/specs/<capability>/spec.md` when it exists and select the operation

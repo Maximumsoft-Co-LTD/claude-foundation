@@ -5,7 +5,10 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { createChangeValidationRuntime } from "../runtime/workflow/change-validation.mjs";
+import {
+  createChangeValidationRuntime, durableDecisionMetadataIssues
+} from "../runtime/workflow/change-validation.mjs";
+import { renderDraftDecisions } from "../runtime/workflow/change-lifecycle.mjs";
 
 const fixture = mkdtempSync(join(tmpdir(), "foundation-grounding-policy-"));
 const packet = join(fixture, "change");
@@ -24,6 +27,8 @@ const state = { id: "change-a", groundingRequired: true, status: "change",
 let contract = {
   claims: [{ id: "claim-a", impact: "medium", capabilities: ["test", "review"] }]
 };
+let executionProviders = { test: { capability: "test", criticalCases: ["CASE-WIRE"] } };
+let evidenceProviders = {};
 const valid = () => ({
   version: 1,
   decisionBatch: {
@@ -56,12 +61,14 @@ try {
     walk: () => {},
     loadRuntime: () => state,
     saveRuntime: () => {},
-    evidence: () => contract,
+    evidence: () => ({
+      ...contract, providers: { ...evidenceProviders, ...executionProviders }
+    }),
     selectedRepositories: (...args) => {
       repositorySelections.push(args);
       return [{ id: "root", workspacePath: fixture }];
     },
-    providerCapability: () => null,
+    providerCapability: (provider, config) => config?.capability || provider,
     providerConfig: () => null,
     resolvedAcceptance: () => ({ required: false, claimIds: [] }),
     reviewPolicy: () => ({ required: false, tier: state.groundingVersion === 2 ? "high" : "low" }),
@@ -69,9 +76,7 @@ try {
     policyCapabilityTrigger: () => null,
     changedSurfaceResolvable: () => false,
     forecastCapabilities: () => ({ capabilities: [] }),
-    rawExecution: () => state.groundingVersion === 2 ? ({ providers: {
-      test: { criticalCases: ["CASE-WIRE"] }
-    } }) : ({ providers: {} }),
+    rawExecution: () => ({ providers: executionProviders }),
     commandExists: () => true,
     stableHash,
     fileDigest: digest,
@@ -224,6 +229,77 @@ try {
   assert.throws(() => runtime.groundingValue("change-a", state, packet),
     /does not resolve inside repository/,
     "real-wire references must resolve inside a selected repository");
+
+  state.nfrAssessmentRequired = true;
+  state.intent = "Keep p95 response latency below the approved performance budget";
+  state.coupling = "isolated";
+  contract = { claims: [{
+    id: "claim-a", scenario: "p95 latency stays below 250 ms",
+    impact: "medium", capabilities: ["test", "review", "performance"]
+  }] };
+  executionProviders = {
+    test: { capability: "test", criticalCases: ["CASE-WIRE"] }
+  };
+  evidenceProviders = { performance: { capability: "performance" } };
+  const nfr = v2();
+  nfr.risk = { tier: "high", classes: ["performance"], rationale: "runtime latency budget" };
+  nfr.realWire = { status: "not-applicable", sourceReason: "local function", contracts: [] };
+  nfr.activationSemantics = {
+    status: "not-applicable", sourceReason: "no dormant path",
+    activatedPaths: [], failureSemanticChanges: []
+  };
+  nfr.serviceInteractions = {
+    status: "not-applicable", sourceReason: "single process", rows: []
+  };
+  nfr.observability = {
+    status: "not-applicable", sourceReason: "no operated boundary", rows: []
+  };
+  nfr.claims[0].evidenceClass = ["test", "review"];
+  nfr.nfrAssessment = Object.fromEntries(Object.keys({
+    performance: 1, capacity: 1, availability: 1, securityPrivacy: 1,
+    accessibility: 1, operability: 1, compatibility: 1, recoverability: 1
+  }).map((category) => [category, {
+    status: category === "performance" ? "applicable" : "not-applicable",
+    sourceReason: category === "performance" ? "approved latency budget" : `no ${category} risk`,
+    target: category === "performance" ? "p95 <= 250 ms at 100 rps" : "none",
+    claimIds: category === "performance" ? ["claim-a"] : []
+  }]));
+  const ownedTask = [{
+    id: "T001", done: false,
+    text: "Implement the latency budget [claims:claim-a] [paths:production.mjs]"
+  }];
+  writeGrounding(nfr);
+  assert.equal(runtime.groundingValue("change-a", state, packet, ownedTask)
+    .value.nfrAssessment.performance.status, "applicable");
+  const missingTarget = structuredClone(nfr);
+  missingTarget.nfrAssessment.performance.target = "none";
+  writeGrounding(missingTarget);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet, ownedTask),
+    /performance.target is required/,
+    "applicable NFRs require an observable target");
+  writeGrounding(nfr);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet, []),
+    /no implementation task owner/,
+    "applicable NFR claims require task ownership");
+  const docsOnlyTask = [{
+    id: "T002", done: false,
+    text: "Document the latency budget [kind:mechanical-docs] [claims:claim-a]"
+  }];
+  assert.throws(() => runtime.groundingValue("change-a", state, packet, docsOnlyTask),
+    /no implementation task owner/,
+    "non-implementation tasks cannot own an applicable NFR claim");
+
+  assert.deepEqual(durableDecisionMetadataIssues(`## Decisions\n\n- **Decision ID:** DEC-001\n  - **Status:** accepted\n  - **Decision:** Use bounded packets\n  - **Why:** Avoid transcript contamination\n  - **Rejected:** Parent transcript inheritance\n  - **Consequences:** Workers must regenerate packets\n  - **Supersedes:** none\n  - **Superseded by:** none\n\n## Compatibility and migration\n\nnone\n`), []);
+  assert.match(durableDecisionMetadataIssues(`## Decisions\n\n- **Decision:** missing identity\n\n## Compatibility and migration\n`)[0], /Decision ID metadata/);
+  assert.match(durableDecisionMetadataIssues(`## Decisions\n\n- **Decision:** legacy entry\n  - **Why:** old format\n\n- **Decision ID:** DEC-001\n  - **Status:** accepted\n  - **Decision:** Valid entry\n  - **Why:** grounded\n  - **Rejected:** none\n  - **Consequences:** bounded\n  - **Supersedes:** none\n  - **Superseded by:** none\n\n## Compatibility and migration\n`)[0], /legacy Decision entries/,
+  "a valid decision cannot hide an unidentified legacy entry");
+  const dangling = durableDecisionMetadataIssues(`## Decisions\n\n- **Decision ID:** DEC-001\n  - **Status:** superseded\n  - **Decision:** Old choice\n  - **Why:** historical\n  - **Rejected:** none\n  - **Consequences:** replaced\n  - **Supersedes:** none\n  - **Superseded by:** arbitrary prose\n\n## Compatibility and migration\n`);
+  assert.ok(dangling.some((issue) => /must be none, DEC-<id>/.test(issue)),
+    "supersession references use a stable navigable syntax");
+  const reciprocal = durableDecisionMetadataIssues(`## Decisions\n\n- **Decision ID:** DEC-001\n  - **Status:** superseded\n  - **Decision:** Old choice\n  - **Why:** historical\n  - **Rejected:** none\n  - **Consequences:** replaced\n  - **Supersedes:** none\n  - **Superseded by:** DEC-002\n- **Decision ID:** DEC-002\n  - **Status:** accepted\n  - **Decision:** New choice\n  - **Why:** new evidence\n  - **Rejected:** old choice\n  - **Consequences:** migration\n  - **Supersedes:** DEC-001\n  - **Superseded by:** none\n\n## Compatibility and migration\n`);
+  assert.deepEqual(reciprocal, [], "local supersession links are reciprocal");
+  assert.equal(renderDraftDecisions([]), "`none`",
+    "a standard atomic draft with no durable decision renders an explicit none section");
   console.log("grounding policy tests: PASS");
 } finally {
   rmSync(fixture, { recursive: true, force: true });
