@@ -7,8 +7,11 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  assertOpenSpecCli, createLandRuntime, openSpecCliStatus, openSpecVersionStatus
+  assertOpenSpecCli, createLandRuntime, openSpecCliStatus, openSpecVersionStatus,
+  riskRequiresCi, signedCiProvider
 } from "../../harness/runtime/workflow/land-runtime.mjs";
+import { telemetryLandIssue } from
+  "../../harness/runtime/workflow/apply-runtime.mjs";
 
 let assertions = 0;
 function check(actual, expected, message) {
@@ -32,6 +35,35 @@ check(openSpecVersionStatus("1.7").level, "error", "a partial version is not a v
 check(openSpecVersionStatus("1.8.0").version, "1.8.0", "the reported version is the parsed one");
 check(openSpecVersionStatus("openspec/1.7.0 (darwin-arm64)").version, "1.7.0",
   "the first semver in decorated output is used");
+check(riskRequiresCi({ riskBasedCiRequired: true, impact: "high" }), true,
+  "high-impact changes require CI");
+check(riskRequiresCi({ riskBasedCiRequired: true,
+  evidenceCapabilities: ["compatibility"] }), true,
+  "compatibility changes require CI");
+check(riskRequiresCi({ riskBasedCiRequired: true,
+  repositories: { root: {}, api: {} } }), true,
+  "multi-repository changes require CI");
+check(riskRequiresCi({ riskBasedCiRequired: true, impact: "low",
+  repositories: { root: {} } }), false,
+  "isolated low-risk changes retain optional CI");
+check(riskRequiresCi({ impact: "high" }), false,
+  "legacy changes retain their recorded CI policy");
+check(signedCiProvider(["test", "deployment"], (provider) => provider,
+  (provider) => provider === "deployment"
+    ? { provenance: { source: "signed-ci:trusted" } }
+    : { provenance: { source: "harness-test" } }), "deployment",
+"risk CI recognizes only signed CI receipt provenance");
+check(signedCiProvider(["test"], (provider) => provider,
+  () => ({ provenance: { source: "self-reported" } })), null,
+"self-reported evidence cannot satisfy risk CI");
+check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
+  classification: "not-ingested",
+  recoveryActions: [{ command: "telemetry import change events.jsonl" }]
+}), "Land requires measured model usage, but telemetry is 'not-ingested'. Recover with: telemetry import change events.jsonl",
+"measured-usage policy blocks Land with its recovery command");
+check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
+  classification: "measured", recoveryActions: []
+}), null, "measured telemetry satisfies the Land policy");
 
 // The loose-match regression: a warning line mentioning the pinned version must
 // not vouch for a CLI that reports a different one.

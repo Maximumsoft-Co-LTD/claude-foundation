@@ -21,7 +21,12 @@ const DEFAULT_POLICY = {
     "concurrency", "public-compatibility", "cross-repository-conflict",
     "evidence-anomaly", "two-failed-attempts"
   ],
-  review: { diversity: "required", independence: "required", reviewers: {} },
+  review: {
+    diversity: "required", independence: "required", reviewers: {},
+    fallbackReviewers: [], infraFailureThreshold: 1
+  },
+  telemetry: { requireUsage: false },
+  land: { riskBasedCi: false },
   sandbox: { setupCommand: null, setupTimeoutMs: 600000 },
   workflow: {
     grounding: "optional",
@@ -132,6 +137,8 @@ export function createRuntimeEnvironment({
           ...(configured.review?.reviewers || {})
         }
       },
+      telemetry: { ...DEFAULT_POLICY.telemetry, ...(configured.telemetry || {}) },
+      land: { ...DEFAULT_POLICY.land, ...(configured.land || {}) },
       sandbox: { ...DEFAULT_POLICY.sandbox, ...(configured.sandbox || {}) },
       workflow: { ...DEFAULT_POLICY.workflow, ...(configured.workflow || {}) }
     };
@@ -202,12 +209,40 @@ export function createRuntimeEnvironment({
     if (policy.review.defaultReviewer &&
         !policy.review.reviewers[policy.review.defaultReviewer])
       fail("foundation.json review.defaultReviewer must name a configured reviewer");
-    if (policy.review.fallbackReviewer !== undefined &&
-        policy.review.fallbackReviewer !== "main-session")
+    const legacyFallback = policy.review.fallbackReviewer;
+    if (legacyFallback !== undefined && legacyFallback !== null &&
+        legacyFallback !== "main-session")
       fail("foundation.json review.fallbackReviewer must be main-session");
-    if (policy.review.fallbackReviewer === "main-session" &&
+    if (legacyFallback && configured.review?.fallbackReviewers !== undefined)
+      fail("foundation.json review must use fallbackReviewer or fallbackReviewers, not both");
+    const fallbackReviewers = configured.review?.fallbackReviewers !== undefined
+      ? policy.review.fallbackReviewers
+      : legacyFallback ? [legacyFallback] : [];
+    if (!Array.isArray(fallbackReviewers) || fallbackReviewers.some((name) =>
+      typeof name !== "string" || !name.trim()))
+      fail("foundation.json review.fallbackReviewers must be an array of reviewer names");
+    if (new Set(fallbackReviewers).size !== fallbackReviewers.length)
+      fail("foundation.json review.fallbackReviewers must not contain duplicates");
+    for (const name of fallbackReviewers)
+      if (name !== "main-session" && !policy.review.reviewers[name])
+        fail(`foundation.json review.fallbackReviewers names unknown reviewer '${name}'`);
+    if (fallbackReviewers.includes(policy.review.defaultReviewer))
+      fail("foundation.json review.fallbackReviewers must not repeat review.defaultReviewer");
+    const infraFailureThreshold = Number(policy.review.infraFailureThreshold);
+    if (!Number.isInteger(infraFailureThreshold) || infraFailureThreshold < 1 ||
+        infraFailureThreshold > 5)
+      fail("foundation.json review.infraFailureThreshold must be 1..5");
+    if (fallbackReviewers.includes("main-session") &&
         policy.review.independence !== "self")
-      fail("foundation.json review.fallbackReviewer main-session requires review.independence self");
+      fail("foundation.json review.fallbackReviewers main-session requires review.independence self");
+    policy.review.fallbackReviewers = fallbackReviewers;
+    policy.review.fallbackReviewer = fallbackReviewers.includes("main-session")
+      ? "main-session" : undefined;
+    policy.review.infraFailureThreshold = infraFailureThreshold;
+    if (typeof policy.telemetry.requireUsage !== "boolean")
+      fail("foundation.json telemetry.requireUsage must be boolean");
+    if (typeof policy.land.riskBasedCi !== "boolean")
+      fail("foundation.json land.riskBasedCi must be boolean");
     for (const [name, reviewer] of Object.entries(policy.review.reviewers)) {
       if (!["codex-cli", "claude-cli"].includes(reviewer.adapter))
         fail(`foundation.json review.reviewers.${name}.adapter must be codex-cli|claude-cli`);

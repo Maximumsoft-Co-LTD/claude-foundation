@@ -681,11 +681,10 @@ delta ได้อีกหนึ่งรอบเพื่อปิด finding
 Decision Sheet ต้นทางและใช้ full/delta circuit แบบมีเพดาน โดยไม่มี human approval
 บังคับและไม่มี AI รอบสาม ค่าเริ่มต้นใช้ Claude Code Opus ใน session ใหม่แบบ
 read-only/non-persistent ถ้าเกิด infrastructure `error` เช่น CLI, auth, timeout
-หรือ output schema พัง `fallbackReviewer: "main-session"` จะเก็บ attempt ที่พัง
-resolve provenance ของ host จาก subject ที่ session ตรงกันหรือ telemetry,
-reserve fallback dispatch แล้วส่ง bounded review
-packet พร้อม response template ที่เติม metadata แล้วกลับมาให้ agent session หลัก
-เส้นทาง self-review นี้ต้องใช้ `independence: "self"` และผล review แบบ `fail`
+หรือ output schema พัง `infraFailureThreshold` จะจำกัดจำนวนครั้งต่อ reviewer และ
+`fallbackReviewers` จะสลับ configured reviewer อัตโนมัติก่อนใช้ `main-session`
+เป็นทางสุดท้าย ทุก attempt ที่พังยังอยู่ใน review chain และคง full/delta scope เดิม
+การใส่ `main-session` ต้องใช้ `independence: "self"` และผล review แบบ `fail`
 หรือ `inconclusive` จะไม่ fallback
 ทีมที่ใช้ Codex ล้วนหรือ Claude Code ล้วนตั้ง reviewer ให้ตรงและ commit
 `diversity: "single-model"` โดยยังต้องใช้ reviewer identity และ session ใหม่

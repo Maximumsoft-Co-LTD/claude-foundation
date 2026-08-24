@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { validityRecovery } from "./receipt-validity.mjs";
 import { singleAgentExecutionEligible } from "../core/graph-execution.mjs";
@@ -159,6 +159,25 @@ export function createProofRuntime({
         size: statSync(destination).size
       };
     });
+    const requiredProviderNames = new Set(checks.map((row) => row.provider));
+    const receiptDirectory = dirname(receiptPath(id, "__provider__"));
+    const currentContractFingerprint = contractFingerprint(id);
+    const excludedReceipts = existsSync(receiptDirectory)
+      ? readdirSync(receiptDirectory).filter((name) => name.endsWith(".json") &&
+        name !== "proof.json" && !requiredProviderNames.has(name.slice(0, -5)))
+        .map((name) => {
+          const provider = name.slice(0, -5);
+          const receipt = readJson(join(receiptDirectory, name), {});
+          return {
+            provider,
+            status: receipt.status || "unknown",
+            validity: receipt.contractFingerprint !== currentContractFingerprint
+              ? "contract-stale" : "not-required",
+            contractFingerprint: receipt.contractFingerprint || null,
+            currentContractFingerprint
+          };
+        }).sort((left, right) => left.provider.localeCompare(right.provider))
+      : [];
     const graph = agentPlanValue?.(id)?.graph || null;
     const proofNodes = (graph?.nodes || []).filter((node) =>
       node.required && node.lifecycle !== "land");
@@ -201,6 +220,7 @@ export function createProofRuntime({
       providers: checks.map((row) => row.provider),
       advisories: advisoryCapabilities?.(id) || [],
       receipts: receiptEntries,
+      excludedReceipts,
       // The execute path carries service logs on activeProofRun; the collect →
       // record-external-receipts → finalize path cleared activeProofRun long
       // before this runs, so its logs arrive via collectedServiceArtifacts.
@@ -222,7 +242,9 @@ export function createProofRuntime({
     delete state.collectedServiceArtifacts;
     saveRuntime(state);
     if (!options.quiet)
-      console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}\n  next: /land ${id}`);
+      console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}` +
+        `${excludedReceipts.length ? `\n  excluded receipts: ${excludedReceipts.map((row) =>
+          `${row.provider}:${row.validity}`).join(", ")}` : ""}\n  next: /land ${id}`);
   }
 
   function audit(id, quiet = false) {

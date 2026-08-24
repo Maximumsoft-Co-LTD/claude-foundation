@@ -247,9 +247,16 @@ export function createAuthorityRuntime({
     const promotesLow = routing.tier === "low" && deliveredSnapshot.length >= 1 &&
       request.workspaceHash !== deliveredSnapshot.at(-1).workspaceHash;
     const maxAiAttempts = promotesLow ? 2 : Number(routing.maxAiAttempts || 2);
+    const reviewSettings = foundationPolicy().review || {};
+    const configuredFallbacks = (Array.isArray(reviewSettings.fallbackReviewers)
+      ? reviewSettings.fallbackReviewers
+      : reviewSettings.fallbackReviewer ? [reviewSettings.fallbackReviewer] : [])
+      .filter((name) => name !== "main-session");
+    const maxInfrastructureRetries = Math.max(1,
+      (1 + configuredFallbacks.length) * Number(reviewSettings.infraFailureThreshold || 1));
     // The route-aware cap still wins over malformed scope/base details.
     const history = assertReviewDispatchAllowed(
-      id, reviewerType, maxAiAttempts);
+      id, reviewerType, maxAiAttempts, maxInfrastructureRetries);
     const deliveredAi = deliveredAiAttempts(id, history);
     if (unrecordedDeliveredAiResponse(id, history, request.provider))
       fail("a completed AI response has no matching recorded receipt; repair that authority record or pause instead of dispatching another reviewer");
@@ -419,7 +426,8 @@ export function createAuthorityRuntime({
         digest: scopeDigest
       },
       packetDigest: packet.packetDigest,
-      maxAiAttempts
+      maxAiAttempts,
+      maxInfrastructureRetries
     });
     const updated = {
       ...request,
@@ -592,11 +600,28 @@ export function createAuthorityRuntime({
     };
   }
 
+  function configuredReviewerRoute(settings, request, explicitReviewer = null,
+    automaticReviewer = null) {
+    if (explicitReviewer) return explicitReviewer;
+    if (automaticReviewer) return automaticReviewer;
+    const threshold = Number(settings.infraFailureThreshold || 1);
+    const fallbacks = Array.isArray(settings.fallbackReviewers)
+      ? settings.fallbackReviewers
+      : settings.fallbackReviewer ? [settings.fallbackReviewer] : [];
+    const configured = [settings.defaultReviewer,
+      ...fallbacks.filter((name) => name !== "main-session")].filter(Boolean);
+    const attempts = request.fallbackAttempts || [];
+    for (const reviewer of configured) {
+      const failures = attempts.filter((attempt) =>
+        attempt.reviewer === reviewer).length;
+      if (failures < threshold) return reviewer;
+    }
+    return fallbacks.includes("main-session") ? "main-session" : null;
+  }
+
   function runAuthorityReviewerUnlocked(id, flags = {}) {
     const requestId = String(flags.request || "");
     if (!requestId) fail("authority run requires --request <id>");
-    const reviewerName = String(flags.reviewer || "").trim() ||
-      foundationPolicy().review.defaultReviewer;
     const subjectActor = String(flags["subject-actor"] || "").trim();
     if (!subjectActor) fail("authority run requires --subject-actor");
     const subjectSession = String(flags["subject-session"] || "").trim() || null;
@@ -609,9 +634,20 @@ export function createAuthorityRuntime({
       .some((value) => !value))
       fail("AI implementation provenance requires subject session, provider family, model family, and model");
     const reviewSettings = foundationPolicy().review || {};
+    let requestEntry = authorityStore.list(id)
+      .find((row) => row.value.requestId === requestId);
+    if (!requestEntry) fail(`unknown authority request '${requestId}'`);
+    const reviewerName = configuredReviewerRoute(reviewSettings, requestEntry.value,
+      String(flags.reviewer || "").trim() || null,
+      String(flags["automatic-reviewer"] || "").trim() || null);
     if (!reviewerName)
-      fail("authority run requires --reviewer or review.defaultReviewer");
-    const configured = reviewerConfig(reviewerName);
+      fail("configured reviewer infrastructure retries are exhausted; configure a fallback reviewer or pause");
+    if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback)
+      fail("main-session fallback was selected without a recorded configured reviewer failure");
+    const configured = reviewerName === "main-session"
+      ? { identity: requestEntry.value.fallbackAttempts?.at(-1)?.reviewer || "configured-reviewer",
+        providerFamily: "", modelFamily: "" }
+      : reviewerConfig(reviewerName);
     const configuredProvider = String(configured.providerFamily).toLowerCase();
     const configuredFamily = String(configured.modelFamily).toLowerCase();
     const sameFamily = aiSubject && subjectProvider === configuredProvider &&
@@ -621,9 +657,6 @@ export function createAuthorityRuntime({
     if (aiSubject && reviewSettings.independence !== "self" &&
         subjectActor.toLowerCase() === configured.identity.toLowerCase())
       fail(`configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`);
-    let requestEntry = authorityStore.list(id)
-      .find((row) => row.value.requestId === requestId);
-    if (!requestEntry) fail(`unknown authority request '${requestId}'`);
     if (requestEntry.value.mainSessionFallback) {
       const fallback = requestEntry.value.mainSessionFallback;
       if (fallback.status !== "provenance-unavailable")
@@ -763,8 +796,7 @@ export function createAuthorityRuntime({
         ...(scope === "delta" ? [deliveredAi.at(-1)?.reviewerSessionId] : [])
       ].filter(Boolean)
     });
-    if (report.status === "error" &&
-        reviewSettings.fallbackReviewer === "main-session") {
+    if (report.status === "error") {
       const failed = completeReviewAttempt(id,
         dispatched.dispatch.attemptDigest, {
           reviewerSessionId: String(report.reviewer?.sessionId || "").trim(),
@@ -777,14 +809,7 @@ export function createAuthorityRuntime({
         configuredController: _failedController,
         ...retryableRequest
       } = failedEntry.value;
-      const mainSession = mainSessionProvenance(id, flags, aiSubject ? {
-        identity: subjectActor,
-        sessionId: subjectSession,
-        providerFamily: subjectProvider,
-        modelFamily: subjectFamily,
-        modelId: subjectModel
-      } : {});
-      authorityStore.replace(failedEntry, {
+      const failedRequest = {
         ...retryableRequest,
         status: "requested",
         fallbackAttempts: [
@@ -795,7 +820,42 @@ export function createAuthorityRuntime({
             reportReference: report.reportReference,
             summary: report.summary
           }
-        ],
+        ]
+      };
+      authorityStore.replace(failedEntry, failedRequest);
+      const nextReviewer = configuredReviewerRoute(reviewSettings, failedRequest);
+      if (nextReviewer && nextReviewer !== "main-session") {
+        const nextFlags = {
+          ...flags,
+          reviewer: undefined,
+          "automatic-reviewer": nextReviewer
+        };
+        return runAuthorityReviewerUnlocked(id, nextFlags);
+      }
+      if (!nextReviewer) {
+        const exhausted = {
+          status: "configured-reviewer-infrastructure-exhausted",
+          changeId: id,
+          requestId,
+          failedReviewer: configured.identity,
+          infrastructureError: report.summary,
+          attempts: failedRequest.fallbackAttempts,
+          action: "Configure review.fallbackReviewers, repair reviewer infrastructure, or pause."
+        };
+        console.log(JSON.stringify(exhausted, null, 2));
+        return exhausted;
+      }
+      const mainSession = mainSessionProvenance(id, flags, aiSubject ? {
+        identity: subjectActor,
+        sessionId: subjectSession,
+        providerFamily: subjectProvider,
+        modelFamily: subjectFamily,
+        modelId: subjectModel
+      } : {});
+      const refreshedEntry = authorityStore.list(id)
+        .find((row) => row.value.requestId === requestId);
+      authorityStore.replace(refreshedEntry, {
+        ...refreshedEntry.value,
         mainSessionFallback: {
           status: mainSession.missing.length
             ? "provenance-unavailable" : "dispatching",

@@ -68,6 +68,24 @@ export function assertOpenSpecCli(root, fail) {
   return status;
 }
 
+export function riskRequiresCi(state) {
+  if (state?.riskBasedCiRequired !== true) return false;
+  const capabilities = new Set(state?.evidenceCapabilities || []);
+  const repositories = Object.values(state?.repositories || {});
+  return state?.impact === "high" || repositories.length > 1 ||
+    [
+      "compatibility", "cross-repo-contract", "data-migration", "deployment",
+      "security-static"
+    ].some((capability) => capabilities.has(capability));
+}
+
+export function signedCiProvider(providers, receiptPath, readJson) {
+  return providers.find((provider) => {
+    const receipt = readJson(receiptPath(provider), {});
+    return String(receipt.provenance?.source || "").startsWith("signed-ci:");
+  }) || null;
+}
+
 export function createLandRuntime({
   root,
   transactions,
@@ -213,6 +231,15 @@ export function createLandRuntime({
       const manifestEntry = (proof.receipts || []).find((entry) => entry.provider === provider);
       if (!manifestEntry || fileDigest(receiptPath(id, provider)) !== manifestEntry.sha256)
         fail(`${provider} live receipt differs from the proven receipt manifest`);
+    }
+    const repositoryRows = Object.values(state.repositories || {});
+    if (riskRequiresCi(state) && repositoryRows.length <= 1) {
+      const ciProvider = signedCiProvider(requiredProviders(id),
+        (provider) => receiptPath(id, provider), readJson);
+      if (!ciProvider)
+        fail(`risk policy requires signed CI evidence before Land. Configure an external ` +
+          `provider with ci.issuer and ci.publicKey, then run: claude-foundation evidence ` +
+          `verify-ci ${id} <provider> <signed.json>`);
     }
     const externalOperations = handoffReadiness(id);
     if (externalOperations.blocking.length) {
@@ -558,14 +585,17 @@ export function createLandRuntime({
       if (ci && ci !== verified.status)
         fail(`--ci ${ci} contradicts the signed CI attestation (${verified.status})`);
     }
-    if (Boolean(flags["ci-required"]) && ciProvenance.kind !== "signed-ci")
+    const ciRequired = Boolean(flags["ci-required"]) || riskRequiresCi(state);
+    if (ciRequired && ciProvenance.kind !== "signed-ci")
       fail(`repository '${repositoryId}' requires CI evidence; pass --ci-attestation <signed.json>. ` +
-        "A self-reported --ci is not evidence when CI is required.");
+        "A self-reported --ci is not evidence when CI is required by flag or risk policy.");
     state.repositories[repositoryId].land = {
       commit: normalizedCommit,
       ci: envelopePath ? "pass" : ci,
       ciProvenance,
-      ciRequired: Boolean(flags["ci-required"]),
+      ciRequired,
+      ciRequirement: Boolean(flags["ci-required"]) ? "explicit" :
+        ciRequired ? "risk-policy" : "optional",
       recordedAt: now(),
       authority: { kind: "host-user-decision", reference: decisionRef },
       // Machine state is gitignored, so for a `type: "git"` sibling nothing

@@ -6,7 +6,8 @@ import {
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  createChangeValidationRuntime, durableDecisionMetadataIssues
+  createChangeValidationRuntime, durableDecisionMetadataIssues,
+  semanticInvariantIssues
 } from "../runtime/workflow/change-validation.mjs";
 import { renderDraftDecisions } from "../runtime/workflow/change-lifecycle.mjs";
 
@@ -298,6 +299,16 @@ try {
     "supersession references use a stable navigable syntax");
   const reciprocal = durableDecisionMetadataIssues(`## Decisions\n\n- **Decision ID:** DEC-001\n  - **Status:** superseded\n  - **Decision:** Old choice\n  - **Why:** historical\n  - **Rejected:** none\n  - **Consequences:** replaced\n  - **Supersedes:** none\n  - **Superseded by:** DEC-002\n- **Decision ID:** DEC-002\n  - **Status:** accepted\n  - **Decision:** New choice\n  - **Why:** new evidence\n  - **Rejected:** old choice\n  - **Consequences:** migration\n  - **Supersedes:** DEC-001\n  - **Superseded by:** none\n\n## Compatibility and migration\n`);
   assert.deepEqual(reciprocal, [], "local supersession links are reciprocal");
+  assert.deepEqual(semanticInvariantIssues([{
+    id: "INV-API-SCOPE", statement: "API and UI use the same scope",
+    decisionIds: ["DEC-001"], claimIds: ["claim-a"],
+    specScenarios: ["API scope parity"]
+  }], { claims: [{ id: "claim-a", capabilities: ["compatibility"] }] },
+  new Set(["DEC-001"]), new Set(["API scope parity"]), { required: true }), []);
+  assert.match(semanticInvariantIssues([], { claims: [{
+    id: "claim-a", capabilities: ["compatibility"]
+  }] }, new Set(), new Set(), { required: true })[0],
+  /compatibility claim 'claim-a'/);
   assert.equal(renderDraftDecisions([]), "`none`",
     "a standard atomic draft with no durable decision renders an explicit none section");
   console.log("grounding policy tests: PASS");

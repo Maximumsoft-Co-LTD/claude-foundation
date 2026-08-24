@@ -273,6 +273,9 @@ export function createChangeLifecycle({
       groundingVersion: workflowPolicy().workflow.grounding === "required" ? 2 : null,
       nfrAssessmentRequired: schema === "foundation-standard",
       decisionMetadataRequired: schema === "foundation-standard",
+      semanticInvariantsRequired: schema === "foundation-standard",
+      riskBasedCiRequired: schema === "foundation-standard" &&
+        workflowPolicy().land?.riskBasedCi === true,
       externalOperationsVersion: 1,
       graphExecutionVersion: 1,
       revision: 0, contractRevision: 0, executionRevision: 0,
@@ -541,6 +544,8 @@ export function createChangeLifecycle({
       state.groundingRequired = workflowPolicy().workflow.grounding === "required";
       state.nfrAssessmentRequired = true;
       state.decisionMetadataRequired = true;
+      state.semanticInvariantsRequired = true;
+      state.riskBasedCiRequired = workflowPolicy().land?.riskBasedCi === true;
       upgraded = true;
       // The rapid packet has no design.md and no specs/, which the standard
       // schema requires. Leaving them absent made `validate` refuse a change

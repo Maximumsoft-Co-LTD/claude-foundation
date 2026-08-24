@@ -42,10 +42,11 @@ Before the first Foundation packet on a developer machine:
    - Claude Code: `npm install -g @anthropic-ai/claude-code && claude auth login`
 7. Set the committed `foundation.json` review profile once. A Codex-only team
    uses `defaultReviewer: "codex-sol"`; a Claude-Code-only team uses
-   `defaultReviewer: "claude-opus"`. Set `fallbackReviewer: "main-session"` to
-   return the bounded packet to the calling agent after an infrastructure
-   error, never after `fail` or `inconclusive`; this explicit self-review route
-   requires `independence: "self"`. Foundation automatically reuses complete AI
+   `defaultReviewer: "claude-opus"`. Set `fallbackReviewers` to configured
+   reviewer names followed optionally by `"main-session"`, and set
+   `infraFailureThreshold` to bound infrastructure retries per reviewer. The
+   route never runs after `fail` or `inconclusive`; `main-session` is explicit
+   self-review and requires `independence: "self"`. Foundation automatically reuses complete AI
    subject provenance only when its session matches the ambient host; otherwise
    the caller supplies the `--main-session-*` provenance fields. When coding and review use the same
    provider/model family, also set `diversity: "single-model"`, but keep

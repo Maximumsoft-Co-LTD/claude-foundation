@@ -168,6 +168,47 @@ export const NFR_CATEGORY_CAPABILITIES = Object.freeze({
   recoverability: ["resilience", "data-migration", "deployment"]
 });
 
+export function semanticInvariantIssues(invariants, contract, decisionIds,
+  specScenarios, { required = false } = {}) {
+  const rows = Array.isArray(invariants) ? invariants : [];
+  const issues = [];
+  if (required && !Array.isArray(invariants))
+    return ["grounding.yaml semanticInvariants must be an array"];
+  const claims = new Map((contract?.claims || []).map((claim) => [claim.id, claim]));
+  const scenarioNames = new Set([...specScenarios].map((name) => name.toLowerCase()));
+  const invariantIds = new Set();
+  const boundClaims = new Set();
+  for (const [index, row] of rows.entries()) {
+    const label = `semanticInvariants[${index}]`;
+    const id = String(row?.id || "").trim();
+    if (!/^INV-[A-Z0-9][A-Z0-9-]*$/i.test(id))
+      issues.push(`${label}.id must match INV-<stable-id>`);
+    if (invariantIds.has(id.toUpperCase())) issues.push(`${label}.id '${id}' is duplicated`);
+    invariantIds.add(id.toUpperCase());
+    if (!String(row?.statement || "").trim()) issues.push(`${label}.statement is required`);
+    for (const field of ["decisionIds", "claimIds", "specScenarios"])
+      if (!Array.isArray(row?.[field]) || row[field].length === 0)
+        issues.push(`${label}.${field} must be a non-empty array`);
+    for (const decisionId of row?.decisionIds || [])
+      if (!decisionIds.has(decisionId))
+        issues.push(`${label} references unknown decision '${decisionId}'`);
+    for (const claimId of row?.claimIds || []) {
+      boundClaims.add(claimId);
+      if (!claims.has(claimId)) issues.push(`${label} references unknown claim '${claimId}'`);
+    }
+    for (const scenario of row?.specScenarios || [])
+      if (!scenarioNames.has(String(scenario).toLowerCase()))
+        issues.push(`${label} references unknown spec scenario '${scenario}'`);
+  }
+  const compatibilityClaims = [...claims.values()].filter((claim) =>
+    (claim.capabilities || []).some((capability) =>
+      ["compatibility", "cross-repo-contract"].includes(capability)));
+  for (const claim of compatibilityClaims)
+    if (!boundClaims.has(claim.id))
+      issues.push(`compatibility claim '${claim.id}' requires a semantic invariant binding`);
+  return issues;
+}
+
 export function durableDecisionMetadataIssues(content) {
   const rawSection = String(content || "").match(
     /^## Decisions\s*$([\s\S]*?)(?=^## Compatibility and migration\s*$)/m
@@ -437,6 +478,19 @@ export function createChangeValidationRuntime({
         if (!String(row[field] || "").trim()) fail(`${label}.${field} is required`);
       if (decisionIds.has(row.id)) fail(`${label}.id is duplicated`);
       decisionIds.add(row.id);
+    }
+
+    if (state.semanticInvariantsRequired) {
+      const specScenarios = new Set();
+      walk(join(dir, "specs"), (path) => {
+        if (!path.endsWith(".md")) return;
+        const content = readFileSync(path, "utf8");
+        for (const match of content.matchAll(/^#### Scenario:\s*(.+?)\s*$/gm))
+          specScenarios.add(match[1].trim());
+      });
+      failValidationLayer(fail, "semantic invariant", semanticInvariantIssues(
+        value.semanticInvariants, evidence(id, dir), decisionIds, specScenarios,
+        { required: true }));
     }
 
     if (!Array.isArray(value.readSet) || value.readSet.length === 0)
@@ -887,10 +941,11 @@ export function createChangeValidationRuntime({
     if (preflight.length)
       fail(`change validation preflight failed:\n  - ${preflight.join("\n  - ")}`);
     assertNoScaffolds(state, dir);
+    const contractDiagnostics = [];
     if (state.decisionMetadataRequired) {
       const design = readFileSync(join(dir, "design.md"), "utf8");
-      failValidationLayer(fail, "durable decision metadata",
-        durableDecisionMetadataIssues(design));
+      contractDiagnostics.push(...durableDecisionMetadataIssues(design)
+        .map((issue) => `design: ${issue}`));
     }
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);
@@ -925,8 +980,13 @@ export function createChangeValidationRuntime({
     const claimById = new Map(claims.map((claim) => [claim.id, claim]));
     const selectedRepositoryIds = new Set(validationRepositories(id, state, dir)
       .map((repository) => repository.id));
-    failValidationLayer(fail, "claim contract",
-      claimContractIssues(claims, selectedRepositoryIds));
+    contractDiagnostics.push(...claimContractIssues(claims, selectedRepositoryIds)
+      .map((issue) => `claims: ${issue}`));
+    const selected = validationRepositories(id, state, dir);
+    contractDiagnostics.push(...taskContractIssues(
+      parsedTasks, claims, selectedRepositoryIds, selected.length > 1)
+      .map((issue) => `tasks: ${issue}`));
+    failValidationLayer(fail, "cross-artifact contract", contractDiagnostics);
     handoffContract(id, {
       state,
       claimIds: new Set(claimById.keys()),
@@ -979,9 +1039,6 @@ export function createChangeValidationRuntime({
       };
     }
 
-    const selected = validationRepositories(id, state, dir);
-    failValidationLayer(fail, "task contract", taskContractIssues(
-      parsedTasks, claims, selectedRepositoryIds, selected.length > 1));
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
     // Case-insensitive and `xs`-aware: this compared against the literal "S",

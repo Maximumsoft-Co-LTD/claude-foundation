@@ -50,7 +50,8 @@
     "independence": "self",
     "diversity": "single-model",
     "defaultReviewer": "claude-opus",
-    "fallbackReviewer": "main-session",
+    "fallbackReviewers": ["codex-sol", "main-session"],
+    "infraFailureThreshold": 2,
     "reviewers": {
       "codex-sol": {
         "adapter": "codex-cli",
@@ -73,6 +74,12 @@
         "ephemeral": true
       }
     }
+  },
+  "telemetry": {
+    "requireUsage": true
+  },
+  "land": {
+    "riskBasedCi": true
   },
   "workflow": {
     "grounding": "required",

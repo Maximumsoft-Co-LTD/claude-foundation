@@ -194,7 +194,10 @@ try {
       workflow: { reviewCircuit: "full-delta" },
       review: reviewSettings
     }),
-    reviewerConfig: () => ({
+    reviewerConfig: (name) => name === "claude-opus" ? ({
+      identity: "claude-opus", providerFamily: "anthropic",
+      modelFamily: "claude", modelId: "opus"
+    }) : ({
       identity: "codex-sol", providerFamily: "openai",
       modelFamily: "gpt-5.6", modelId: "gpt-5.6-sol"
     }),
@@ -424,9 +427,37 @@ try {
   assert.equal(recoveredAuthority.orphanedControllers[0].result,
     "infrastructure-error");
 
+  state = { version: 2, changeId: "change-named-fallback", reviewHistory: null };
+  reviewSettings = {
+    defaultReviewer: "claude-opus", fallbackReviewers: ["codex-sol"],
+    infraFailureThreshold: 2, independence: "self", diversity: "single-model"
+  };
+  configuredReviewResults = {
+    "claude-opus": {
+      status: "error", summary: "Claude reviewer unavailable", findings: [],
+      verifiedFindingIds: [], reportReference: "claude-error.json",
+      reviewer: { sessionId: null }
+    }
+  };
+  const namedFallbackRequest = quiet(() => authority.requestAuthority(
+    "change-named-fallback", { type: "review" }));
+  const namedFallbackResult = quiet(() => authority.runAuthorityReviewer(
+    "change-named-fallback", {
+      request: namedFallbackRequest.requestId,
+      "subject-actor": "human-implementer"
+    }));
+  assert.equal(namedFallbackResult.status, "pass");
+  const namedFallbackAttempts = attemptStore.reviewAttempts(
+    "change-named-fallback", state.reviewHistory);
+  assert.deepEqual(namedFallbackAttempts.map((attempt) =>
+    [attempt.reviewerIdentity, attempt.resultStatus]), [
+    ["claude-opus", "error"], ["claude-opus", "error"],
+    ["codex-sol", "pass"]
+  ], "two infrastructure failures switch to the configured diverse reviewer");
+
   state = { version: 2, changeId: "change-fallback", reviewHistory: null };
   reviewSettings = {
-    ...reviewSettings, independence: "self", diversity: "single-model",
+    defaultReviewer: "codex-sol", independence: "self", diversity: "single-model",
     fallbackReviewer: "main-session"
   };
   configuredReviewResults = {
@@ -933,7 +964,10 @@ try {
   assert.equal(policy.workflow.grounding, "required");
   assert.equal(policy.workflow.reviewCircuit, "full-delta");
   assert.equal(policy.workflow.reviewPolicy, "risk-tiered");
-  assert.equal(policy.review.fallbackReviewer, "main-session");
+  assert.deepEqual(policy.review.fallbackReviewers, ["codex-sol", "main-session"]);
+  assert.equal(policy.review.infraFailureThreshold, 2);
+  assert.equal(policy.telemetry.requireUsage, true);
+  assert.equal(policy.land.riskBasedCi, true);
   console.log("workflow policy tests: PASS");
 } finally {
   rmSync(fixture, { recursive: true, force: true });

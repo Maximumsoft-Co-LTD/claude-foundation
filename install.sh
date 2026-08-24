@@ -261,11 +261,16 @@ elif command -v jq >/dev/null 2>&1; then
     .workflow.reviewPolicy //= $src[0].workflow.reviewPolicy |
     .review //= {} |
     .review.defaultReviewer //= $src[0].review.defaultReviewer |
-    if .review.fallbackReviewer == null and .review.independence == "self"
-      then .review.fallbackReviewer = $src[0].review.fallbackReviewer
-      else . end |
+    .review.fallbackReviewers //= (
+      if .review.fallbackReviewer == "main-session" then ["main-session"]
+      elif .review.independence == "self" then $src[0].review.fallbackReviewers
+      else [] end) |
+    .review.infraFailureThreshold //= $src[0].review.infraFailureThreshold |
+    del(.review.fallbackReviewer) |
     .review.reviewers //= {} |
-    .review.reviewers = ($src[0].review.reviewers + .review.reviewers)
+    .review.reviewers = ($src[0].review.reviewers + .review.reviewers) |
+    .telemetry = ($src[0].telemetry + (.telemetry // {})) |
+    .land = ($src[0].land + (.land // {}))
   ' "$TARGET_PATH/foundation.json" > "$tmp"
   mv "$tmp" "$TARGET_PATH/foundation.json"
   printf '✓ installed risk-tiered workflow and configured reviewer defaults; existing explicit review waivers were preserved\n'

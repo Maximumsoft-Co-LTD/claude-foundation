@@ -721,13 +721,14 @@ batch, one fresh-session delta that must close the original finding IDs. High
 risk asks material decisions during intake and permits the same bounded
 full/delta route—never a third AI and never a mandatory human approval gate.
 The default reviewer is Claude Code Opus in a read-only ephemeral run. If it
-returns an infrastructure `error` (for example missing CLI, auth, timeout, or
-malformed output), `fallbackReviewer: "main-session"` preserves that failed
-attempt, resolves the calling host provenance from matching subject data or
-session telemetry, reserves the fallback dispatch,
-and hands back the exact bounded packet plus a prefilled response template.
+returns infrastructure `error` results (for example missing CLI, auth, timeout,
+or malformed output), `infraFailureThreshold` bounds retries per reviewer and
+`fallbackReviewers` routes automatically through configured reviewers before an
+optional final `main-session` handback. Every failed attempt remains in the
+review chain and the full/delta scope is preserved.
 It never falls back after a review verdict such as `fail` or `inconclusive`.
-Because this is explicitly self-review, it requires `independence: "self"`.
+Because `main-session` is explicitly self-review, including it requires
+`independence: "self"`.
 The default `independence: "self"`
 and `diversity: "single-model"` policy supports a single-model, single-identity
 installation. Projects that require separation of duties can commit

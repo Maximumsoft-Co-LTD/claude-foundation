@@ -22,6 +22,15 @@ export function emptyRootDiffPermitted(state) {
     .some((repositoryId) => repositoryId !== "root");
 }
 
+export function telemetryLandIssue(policy, telemetry) {
+  if (!policy?.telemetry?.requireUsage || !telemetry ||
+      ["measured", "no-usage"].includes(telemetry.classification)) return null;
+  const recovery = (telemetry.recoveryActions || [])
+    .map((action) => action.command).join("; ") || "import host usage events";
+  return `Land requires measured model usage, but telemetry is '${
+    telemetry.classification}'. Recover with: ${recovery}`;
+}
+
 export function createApplyRuntime({
   root,
   transactions,
@@ -44,6 +53,7 @@ export function createApplyRuntime({
   syncClaudeTelemetry,
   modelUsageRecorded,
   telemetryReadiness = null,
+  foundationPolicy = () => ({ telemetry: { requireUsage: false } }),
   saveApplyJournal,
   transactionJournalPath,
   verifyAppliedProjection,
@@ -616,6 +626,8 @@ export function createApplyRuntime({
         : `WARNING: telemetry ${telemetry.classification}; cost and token columns may stay empty`);
       for (const action of telemetry.recoveryActions || [])
         console.error(`  recovery: ${action.command}`);
+      const telemetryIssue = telemetryLandIssue(foundationPolicy(), telemetry);
+      if (telemetryIssue) fail(telemetryIssue);
     }
     const preArchiveWorkspaceHash = readiness.hash;
     // 'openspec archive' moves the change out of openspec/changes and rewrites

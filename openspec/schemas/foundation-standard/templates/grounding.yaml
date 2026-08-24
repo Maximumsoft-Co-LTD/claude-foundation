@@ -65,6 +65,7 @@
     "compatibility": { "status": "replace-with-applicable-or-not-applicable", "sourceReason": "replace-with-source-reason", "target": "replace-with-observable-target-or-none", "claimIds": [] },
     "recoverability": { "status": "replace-with-applicable-or-not-applicable", "sourceReason": "replace-with-source-reason", "target": "replace-with-observable-target-or-none", "claimIds": [] }
   },
+  "semanticInvariants": [],
   "readSet": [
     {
       "repository": "root",

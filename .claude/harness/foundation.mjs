@@ -1448,6 +1448,7 @@ const applyRuntime = createApplyRuntime({
   syncClaudeTelemetry,
   modelUsageRecorded,
   telemetryReadiness,
+  foundationPolicy,
   saveApplyJournal,
   transactionJournalPath,
   verifyAppliedProjection,

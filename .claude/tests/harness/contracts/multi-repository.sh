@@ -26,7 +26,9 @@ cp "$ROOT/foundation.json" "$TMP/multi-project/"
 # compatibility case fabricate a Decision Sheet.
 jq '.workflow.grounding = "optional" |
     .workflow.reviewPolicy = "legacy" |
-    .workflow.reviewCircuit = "legacy"' \
+    .workflow.reviewCircuit = "legacy" |
+    .land.riskBasedCi = false |
+    .telemetry.requireUsage = false' \
   "$TMP/multi-project/foundation.json" > "$TMP/multi-foundation.json"
 mv "$TMP/multi-foundation.json" "$TMP/multi-project/foundation.json"
 cp "$ROOT/.foundation/.gitignore" "$TMP/multi-project/.foundation/"
