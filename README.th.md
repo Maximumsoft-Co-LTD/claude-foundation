@@ -14,7 +14,7 @@ Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
 
-**Version 3.4.4** — runtime API 24, provider protocol 10 receipt ที่บันทึกด้วย
+**Version 3.4.4** — runtime API 26, provider protocol 12 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร
@@ -597,16 +597,19 @@ graph proof ที่ fresh และตรวจสถานะใหม่ก�
 
 ระหว่าง Build คำสั่ง `agents dispatch` จะแปลง graph ปัจจุบันและ live lease เป็น
 native-host action เพียงหนึ่งรายการ งานเล็กหรืองานที่ coupling กันยังอยู่ใน
-parent session ส่วนงานอิสระจะคืน bounded spawn group โดย host ต้อง acquire lease
-และสร้าง task packet ใหม่ก่อน spawn Foundation ไม่เรียกโมเดลเอง และจะคืน `wait`
-แทนการสร้าง worker ซ้ำเมื่อ host restart ขณะที่ lease เดิมยังไม่หมดอายุ
+parent session รวมถึง frontier ที่เลือกได้เพียง task เดียว ส่วน bounded spawn
+group จะเกิดเมื่อ frontier มี task อิสระที่เลือกได้พร้อมกันหลายงานเท่านั้น
+งาน singleton ที่อยู่ในแผนยังต้อง acquire lease และสร้าง task packet ใหม่ก่อนรัน
+ใน parent Foundation ไม่เรียกโมเดลเอง และจะคืน `wait` แทนการสร้าง executor ซ้ำ
+เมื่อ host restart ขณะที่ lease เดิมยังไม่หมดอายุ
 
 ## Foundation จำกัด Scope ของ Agent และ Skill อย่างไร
 
 Foundation ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่
 resident orchestrator ที่คัดลอก conversation ทั้งหมดให้ worker ทุกตัว Change
-repository เดียวที่มี task ปกติไม่เกินสองงานมักใช้ agent เดียว Worker หลายตัวมี
-ประโยชน์เฉพาะเมื่องาน, repository access, dependency และ evidence แยกจากกันได้ชัด
+repository เดียวที่ไม่มี shared external authority จะใช้ agent เดียวโดยไม่ขึ้นกับ
+จำนวน task Worker หลายตัวมีประโยชน์เฉพาะเมื่องาน, repository access, dependency
+และ evidence แยกจากกันได้ชัด
 
 Agent จะโหลด construction skill หลักหนึ่งตัวตาม layer ที่แก้ และเพิ่ม security
 หรือ observability guidance เฉพาะเมื่อ change ข้าม boundary เหล่านั้น งานที่ต้อง

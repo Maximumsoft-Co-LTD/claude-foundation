@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Build no longer spawns a worker when the current graph frontier selects
+  only one task.** Planned singleton work now runs in the parent session under
+  the same lease, fencing, scoped packet, observed-write validation, and result
+  authority used by spawned workers. Parallel frontiers still return bounded
+  spawn groups, while serial dependency chains avoid repeated worker startup
+  and join latency.
+
 ## [3.4.4] - 2026-08-24
 
 ### Added

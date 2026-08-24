@@ -62,7 +62,7 @@ claude-foundation sandbox create <change> --all
 claude-foundation agents plan <change>
 ```
 
-แผนจะอนุญาตให้มี worker คู่ขนาน **เฉพาะ** ข้ามรีโปและ resource ที่เป็นอิสระต่อกันจริง ๆ change รีโปเดียวที่มี task ธรรมดาไม่เกินสองอันจะอยู่กับ agent ตัวเดียว เพราะการทำคู่ขนานที่สุดท้ายต้องมารอคิว resource ร่วมกันแพงกว่าที่ประหยัดได้
+แผนจะอนุญาตให้มี worker คู่ขนาน **เฉพาะ** ข้ามรีโปและ resource ที่เป็นอิสระต่อกันจริง ๆ frontier ที่เลือกได้หนึ่ง task จะรันใน parent ภายใต้ task lease โดยไม่ spawn worker เมื่อไม่มีทางลด wall time ได้ ส่วน change รีโปเดียวที่ไม่มี shared external authority จะอยู่กับ agent ตัวเดียวโดยไม่ขึ้นกับจำนวน task
 
 worker ได้รับแค่ `packet --task <task-id>` ส่วน host เป็นเจ้าของ lease ของ resource
 

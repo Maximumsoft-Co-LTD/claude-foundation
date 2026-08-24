@@ -237,10 +237,13 @@ recommends one agent. The plan is advice and bounded authority for the native
 host; the harness does not invoke a model itself.
 
 `agents dispatch` derives the next host action from that plan plus current task
-leases. It returns `run-in-session`, `spawn-group`, `wait`, `blocked`, or
-`build-complete`. A live lease always returns `wait`, so a restarted host does
-not duplicate a worker it cannot prove abandoned. For a spawn group, the host
-acquires each lease, regenerates the now-leased task packet, and gives the
+leases. It returns `run-in-session`, `run-leased-in-session`, `spawn-group`,
+`wait`, `blocked`, or `build-complete`. A planned frontier with only one
+runnable task stays in the parent session under the same lease, fencing, and
+observed-result authority used by a worker, avoiding a spawn with no possible
+parallel speedup. A live lease always returns `wait`, so a restarted host does
+not duplicate an executor it cannot prove abandoned. For a spawn group, the
+host acquires each lease, regenerates the now-leased task packet, and gives the
 native worker only that packet and repository state. Foundation still never
 starts a model process itself.
 

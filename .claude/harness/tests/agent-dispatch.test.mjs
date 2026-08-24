@@ -72,6 +72,34 @@ test("owner suggestions are stable for the same graph task", () => {
     second.workers.map((worker) => worker.owner));
 });
 
+test("a singleton planned frontier stays in the current session under a lease", () => {
+  const dispatch = runtime(plan({
+    groups: [["T001"]],
+    tasks: [task("T001", "api")]
+  }));
+  const first = dispatch.dispatchValue("dispatch-change");
+  const second = dispatch.dispatchValue("dispatch-change");
+
+  assert.equal(first.version, 3);
+  assert.equal(first.action, "run-leased-in-session");
+  assert.equal(first.task.taskId, "T001");
+  assert.equal(first.task.repository, "api");
+  assert.deepEqual(first.task.model, { tier: "standard", family: "sonnet" });
+  assert.equal(first.task.owner, second.task.owner);
+  assert.match(first.task.acquireCommand,
+    /^claude-foundation agents acquire dispatch-change T001 --owner /);
+  assert.match(first.task.packetCommand,
+    /^claude-foundation packet dispatch-change --task T001$/);
+  assert.match(first.task.releaseCommand,
+    /^claude-foundation agents release dispatch-change T001 --owner /);
+  assert.deepEqual(first.contextPolicy, {
+    source: "leased-task-packet",
+    parentTranscript: "retained",
+    acquireBeforePacket: true
+  });
+  assert.equal("workers" in first, false);
+});
+
 test("a live lease returns wait and never another spawn group", () => {
   const value = runtime(plan(), [{
     taskId: "T001",

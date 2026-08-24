@@ -15,7 +15,7 @@ Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
 
-**Version 3.4.4** — runtime API 25, provider protocol 10. Receipts recorded by
+**Version 3.4.4** — runtime API 26, provider protocol 12. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 
 ## How the AI and harness divide responsibility
@@ -610,18 +610,21 @@ requires fresh aggregate graph proof and revalidates every remote wave before
 mutation.
 
 During Build, `agents dispatch` turns the current graph and live leases into one
-native-host action. Small or coupled work stays in the parent session;
-independent work returns a bounded spawn group. The host acquires each lease and
-regenerates the task packet before spawning, while Foundation remains model-free
-and returns `wait` rather than duplicating a live worker after a host restart.
+native-host action. Small, coupled, or singleton-frontier work stays in the
+parent session; only a frontier with multiple selected independent tasks returns
+a bounded spawn group. Planned singleton work still acquires a task lease and
+regenerates its packet before running inline, while Foundation remains
+model-free and returns `wait` rather than duplicating a live executor after a
+host restart.
 
 ## How Foundation scopes agents and skills
 
 Foundation supplies a small, task-scoped packet to the native agent host; it is
 not a resident orchestrator that copies the entire conversation into every
-worker. A single-repository change with at most two ordinary tasks normally
-stays with one agent. Independent workers are useful only when their tasks,
-repository access, dependencies, and evidence can be separated cleanly.
+worker. A single-repository change without shared external authority stays with
+one agent regardless of task count. Independent workers are useful only when
+their tasks, repository access, dependencies, and evidence can be separated
+cleanly.
 
 The agent loads one primary construction skill for the layer being changed and
 adds security or observability guidance only when the change crosses those

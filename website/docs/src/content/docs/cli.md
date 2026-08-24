@@ -105,15 +105,15 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.4.4 |
 |---|---|
 | runtime | 3.4.4 |
-| runtime API | 25 |
-| provider protocol | 8 |
+| runtime API | 26 |
+| provider protocol | 12 |
 | evidence schema | 1, 2 |
-| packet schema | 6 |
-| review protocol | 3 |
+| packet schema | 8 |
+| review protocol | 4 |
 | acceptance protocol | 2 |
 | attestation protocol | 1 |
 | authority protocol | 2 |
 
 :::note
-Provider protocol 8 means receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven. An old receipt cannot say whether it was executed or merely asserted, so it cannot be trusted to have been executed.
+Provider protocol 12 means receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven. An old receipt cannot say whether it was executed or merely asserted, so it cannot be trusted to have been executed.
 :::

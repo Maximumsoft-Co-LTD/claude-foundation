@@ -3,6 +3,13 @@
 The native host owns spawning, cancellation, leases, and the task ledger.
 Foundation only returns the next bounded action.
 
+For `run-leased-in-session`, acquire the returned task lease, regenerate its
+`packet --task`, and implement that packet in the parent session. Release the
+matching lease after focused checks, then mark only an accepted success
+complete in `tasks.md` and dispatch again. This action deliberately keeps a
+singleton runnable frontier out of a new worker while preserving the same
+fencing, observed-write, and result authority as spawned work.
+
 For `spawn-group`, the parent is the orchestrator and join owner. Before
 acquiring, determine the native worker slots currently available and select
 that many workers, in returned order, without exceeding `maxParallelAgents`.

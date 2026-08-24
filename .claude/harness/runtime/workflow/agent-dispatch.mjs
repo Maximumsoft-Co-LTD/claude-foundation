@@ -1,4 +1,4 @@
-export const AGENT_DISPATCH_SCHEMA_VERSION = 2;
+export const AGENT_DISPATCH_SCHEMA_VERSION = 3;
 
 function taskById(plan, id) {
   return plan.tasks.find((task) => task.id === id);
@@ -6,6 +6,23 @@ function taskById(plan, id) {
 
 function command(value) {
   return `claude-foundation ${value}`;
+}
+
+function leasedTask(changeId, plan, task, stableHash) {
+  const owner = `dispatch-${task.id.toLowerCase()}-${stableHash({
+    changeId,
+    graphRevision: plan.graphRevision,
+    taskId: task.id
+  }).slice(0, 12)}`;
+  return {
+    taskId: task.id,
+    repository: task.repository,
+    model: task.model,
+    owner,
+    acquireCommand: command(`agents acquire ${changeId} ${task.id} --owner ${owner}`),
+    packetCommand: command(`packet ${changeId} --task ${task.id}`),
+    releaseCommand: command(`agents release ${changeId} ${task.id} --owner ${owner}`)
+  };
 }
 
 export function createAgentDispatchRuntime({
@@ -86,22 +103,20 @@ export function createAgentDispatchRuntime({
       .map((taskId) => taskById(plan, taskId))
       .filter(Boolean);
     if (!selected.length) fail(`change '${id}' has no dispatchable task group`);
-    const workers = selected.map((task) => {
-      const owner = `dispatch-${task.id.toLowerCase()}-${stableHash({
-        changeId: id,
-        graphRevision: plan.graphRevision,
-        taskId: task.id
-      }).slice(0, 12)}`;
-      return {
-        taskId: task.id,
-        repository: task.repository,
-        model: task.model,
-        owner,
-        acquireCommand: command(`agents acquire ${id} ${task.id} --owner ${owner}`),
-        packetCommand: command(`packet ${id} --task ${task.id}`),
-        releaseCommand: command(`agents release ${id} ${task.id} --owner ${owner}`)
-      };
-    });
+    if (selected.length === 1) return {
+      ...base,
+      action: "run-leased-in-session",
+      reason: "only one task is selected; keep execution in the current session",
+      task: leasedTask(id, plan, selected[0], stableHash),
+      contextPolicy: {
+        source: "leased-task-packet",
+        parentTranscript: "retained",
+        acquireBeforePacket: true
+      },
+      nextCommand: command(`agents dispatch ${id}`)
+    };
+
+    const workers = selected.map((task) => leasedTask(id, plan, task, stableHash));
     return {
       ...base,
       action: "spawn-group",

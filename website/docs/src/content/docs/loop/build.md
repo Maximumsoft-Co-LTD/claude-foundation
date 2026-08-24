@@ -62,7 +62,7 @@ claude-foundation sandbox create <change> --all
 claude-foundation agents plan <change>
 ```
 
-The plan permits parallel workers **only** across genuinely independent repositories and resources. A one-repository change with at most two ordinary tasks stays with a single agent — parallelism that has to serialize on a shared resource costs more than it saves.
+The plan permits parallel workers **only** across genuinely independent repositories and resources. A frontier with one selected task runs in the parent under a task lease; it does not spawn a worker when no parallel speedup is possible. A one-repository change without shared external authority stays with a single agent regardless of task count.
 
 Workers receive only `packet --task <task-id>`. The host owns resource leases:
 

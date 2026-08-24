@@ -108,16 +108,18 @@ worker result cannot advance after takeover. Actual worktree writes, rather
 than worker-reported paths alone, must remain inside the granted scope.
 
 The host drives Build by repeatedly calling `agents dispatch`. A
-`run-in-session` action preserves the main-session path. For `spawn-group`, the
-host acquires the returned leases, regenerates each leased packet, spawns the
-native workers without replaying the parent transcript, waits for the complete
-group, releases observed results, and calls dispatch again. An unexpired lease
-returns `wait`; the harness does not infer that another host's worker died and
-does not invoke a model itself.
+`run-in-session` action preserves the main-session path. A
+`run-leased-in-session` action keeps a singleton runnable frontier in that
+session while acquiring and releasing its task authority. For `spawn-group`,
+the host acquires the returned leases, regenerates each leased packet, spawns
+the native workers without replaying the parent transcript, waits for the
+complete group, releases observed results, and calls dispatch again. An
+unexpired lease returns `wait`; the harness does not infer that another host's
+worker died and does not invoke a model itself.
 
 The full plan is persisted while stdout stays below 4 KiB; workers
-receive only an 8 KiB task packet. A one-repository change with at most two
-ordinary tasks stays with one agent. It routes mechanical inventory to the configured Haiku/fast tier,
+receive only an 8 KiB task packet. A one-repository change without shared
+external authority stays with one agent regardless of task count. It routes mechanical inventory to the configured Haiku/fast tier,
 normal implementation to Sonnet/standard, and architecture, security,
 migration, or independent review to Opus/deep. Exact model versions remain host
 configuration.

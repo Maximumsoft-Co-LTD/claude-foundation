@@ -14,6 +14,11 @@ assert_file_contains "agent contract forbids pass-biased decisions" \
   "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
 assert_file_contains "build treats spawn groups as concurrent authority" \
   "$ROOT/.claude/commands/build.md" 'Treat `spawn-group` as concurrent authority'
+assert_file_contains "build handles singleton frontiers in the parent under lease" \
+  "$ROOT/.claude/commands/build.md" '`run-leased-in-session`'
+assert_file_contains "dispatch preserves lease authority for singleton frontiers" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" \
+  'singleton runnable frontier out of a new worker'
 assert_file_contains "build forbids serializing a spawn group in the parent" \
   "$ROOT/.claude/commands/build.md" 'serialize that group in the parent'
 assert_file_contains "dispatch spawns the leased group before waiting" \
