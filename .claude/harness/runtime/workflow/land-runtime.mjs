@@ -542,7 +542,7 @@ export function createLandRuntime({
     return true;
   }
 
-  function recordRepositoryLand(id, flags) {
+  function repositoryLandRequest(id, flags) {
     const repositoryId = flags.repo;
     const commit = flags.commit;
     if (!repositoryId || !commit)
@@ -557,63 +557,87 @@ export function createLandRuntime({
       fail(`repository '${repositoryId}' is not a writable child repository`);
     const runtime = state.repositories?.[repositoryId];
     if (!runtime?.path) fail(`repository '${repositoryId}' has no sandbox`);
+    return { repositoryId, commit, decisionRef, state, repository, runtime };
+  }
+
+  function resolvedRepositoryCommit(repositoryId, commit, runtime) {
     const resolved = git(["rev-parse", `${commit}^{commit}`], runtime.path);
     if (resolved.status !== 0)
       fail(`commit '${commit}' is not available in repository '${repositoryId}'`);
     const normalizedCommit = resolved.stdout.trim();
-    const sandboxHead = gitHead(runtime.path);
-    if (sandboxHead !== normalizedCommit)
+    if (gitHead(runtime.path) !== normalizedCommit)
       fail(`repository '${repositoryId}' sandbox HEAD must equal the recorded commit`);
     const dirty = git(["status", "--porcelain"], runtime.path);
     if (dirty.status !== 0 || dirty.stdout.trim())
       fail(`repository '${repositoryId}' sandbox must be clean before recording Land`);
-    defaultBranchWarning(`repository '${repositoryId}' target`,
-      targetBranch(runtime.targetPath));
+    return normalizedCommit;
+  }
+
+  function repositoryCiEvidence(id, repositoryId, normalizedCommit, flags, state) {
     const ci = flags.ci || null;
     if (ci && !["pass", "fail", "pending"].includes(ci))
       fail("land record --ci must be pass|fail|pending");
-    // `--ci pass` is the operator's word for it. The harness already knows how
-    // to verify a signed CI envelope bound to this commit; when one is
-    // supplied, that verdict replaces the assertion, and `--ci-required`
-    // refuses the assertion outright.
     const envelopePath = String(flags["ci-attestation"] || "").trim();
-    let ciProvenance = { kind: "self-reported", reference: null };
+    let provenance = { kind: "self-reported", reference: null };
     if (envelopePath) {
       const verified = verifySignedCiAttestation(id, repositoryId, normalizedCommit, envelopePath);
       if (!verified.valid) fail(`CI attestation rejected: ${verified.reason}`);
-      ciProvenance = { kind: "signed-ci", issuer: verified.issuer, reference: verified.runUrl };
+      provenance = { kind: "signed-ci", issuer: verified.issuer, reference: verified.runUrl };
       if (ci && ci !== verified.status)
         fail(`--ci ${ci} contradicts the signed CI attestation (${verified.status})`);
     }
-    const ciRequired = Boolean(flags["ci-required"]) || riskRequiresCi(state);
-    if (ciRequired && ciProvenance.kind !== "signed-ci")
+    const required = Boolean(flags["ci-required"]) || riskRequiresCi(state);
+    if (required && provenance.kind !== "signed-ci")
       fail(`repository '${repositoryId}' requires CI evidence; pass --ci-attestation <signed.json>. ` +
         "A self-reported --ci is not evidence when CI is required by flag or risk policy.");
-    state.repositories[repositoryId].land = {
+    return { ci, envelopePath, provenance, required };
+  }
+
+  function repositoryLandValue(repository, normalizedCommit, decisionRef, flags, ciEvidence) {
+    const { ci, envelopePath, provenance, required } = ciEvidence;
+    return {
       commit: normalizedCommit,
       ci: envelopePath ? "pass" : ci,
-      ciProvenance,
-      ciRequired,
+      ciProvenance: provenance,
+      ciRequired: required,
       ciRequirement: Boolean(flags["ci-required"]) ? "explicit" :
-        ciRequired ? "risk-policy" : "optional",
+        required ? "risk-policy" : "optional",
       recordedAt: now(),
       authority: { kind: "host-user-decision", reference: decisionRef },
-      // Machine state is gitignored, so for a `type: "git"` sibling nothing
-      // versioned in the root records which commit this change landed against.
-      // Say so rather than let `child-landed` imply a durable binding.
       binding: repository.type === "submodule" ? "root-gitlink" : "runtime-state-only"
     };
+  }
+
+  function persistRepositoryLand(id, state) {
     saveRuntime(state);
     persistLandPreparation(id, state,
       existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null,
       agentPlanValue?.(id)?.graph || null,
       relevantHash(id));
+  }
+
+  function reportRepositoryLand(id, repositoryId, repository, land) {
     if (repository.type !== "submodule")
       console.error(
         `WARNING: '${repositoryId}' is a ${repository.type} repository, so nothing versioned in the ` +
         "root records this commit; the binding lives only in gitignored runtime state");
-    console.log(`LAND RECORDED ${id}/${repositoryId}\n  commit: ${normalizedCommit}\n  ci: ${
-      state.repositories[repositoryId].land.ci || "unknown"} (${ciProvenance.kind})`);
+    console.log(`LAND RECORDED ${id}/${repositoryId}\n  commit: ${land.commit}\n  ci: ${
+      land.ci || "unknown"} (${land.ciProvenance.kind})`);
+  }
+
+  function recordRepositoryLand(id, flags) {
+    const {
+      repositoryId, commit, decisionRef, state, repository, runtime
+    } = repositoryLandRequest(id, flags);
+    const normalizedCommit = resolvedRepositoryCommit(repositoryId, commit, runtime);
+    defaultBranchWarning(`repository '${repositoryId}' target`,
+      targetBranch(runtime.targetPath));
+    const ciEvidence = repositoryCiEvidence(id, repositoryId, normalizedCommit, flags, state);
+    const land = repositoryLandValue(
+      repository, normalizedCommit, decisionRef, flags, ciEvidence);
+    state.repositories[repositoryId].land = land;
+    persistRepositoryLand(id, state);
+    reportRepositoryLand(id, repositoryId, repository, land);
   }
 
   function stageRootPointers(id) {
