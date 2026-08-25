@@ -12,6 +12,7 @@ const priorError = console.error;
 console.error = (message) => { warnings += `${message}\n`; };
 const baseDraft = () => ({
   version: 1,
+  intent: "Load one atomic draft",
   why: "A bounded reason",
   currentState: "The current state",
   compatibility: "Backward compatible",
@@ -27,7 +28,12 @@ const baseDraft = () => ({
     scenarios: [{ name: "Valid", when: "a draft is loaded", then: "it is accepted" }]
   }],
   domainLanguage: [{ term: "Draft", meaning: "Atomic input", avoid: "Prompt chain" }],
-  externalOperations: []
+  externalOperations: [],
+  acceptance: { required: false, reason: null, claimIds: [] },
+  impact: "low",
+  coupling: "isolated",
+  securityTriggers: [],
+  execution: { version: 1, providers: { test: { adapter: "test" } } }
 });
 const writeDraft = (value) => {
   writeFileSync(draftPath, `${JSON.stringify(value, null, 2)}\n`);
@@ -53,6 +59,11 @@ const rejected = (mutate, pattern) => {
   const draft = baseDraft();
   mutate(draft);
   assert.throws(() => lifecycle.loadDraft(writeDraft(draft)), pattern);
+};
+const startRejected = (mutate, pattern) => {
+  const draft = baseDraft();
+  mutate(draft);
+  assert.throws(() => lifecycle.startAtomic(writeDraft(draft)), pattern);
 };
 
 try {
@@ -133,6 +144,52 @@ try {
   removed.specs[0].migration = "Remove callers first";
   assert.equal(lifecycle.loadDraft(writeDraft(removed)).specs[0].migration,
     "Remove callers first");
+
+  startRejected((draft) => { draft.version = 2; }, /start draft requires version 1/);
+  startRejected((draft) => { draft.intent = " "; }, /non-empty 'intent'/);
+  startRejected((draft) => { delete draft.acceptance; }, /acceptance.required true\|false/);
+  startRejected((draft) => { draft.acceptance.required = "false"; }, /acceptance.required true\|false/);
+  startRejected((draft) => { draft.acceptance = { required: true }; }, /acceptance.reason/);
+  startRejected((draft) => { draft.acceptance.reason = "not allowed"; },
+    /acceptance.reason and acceptance.claimIds require/);
+  startRejected((draft) => { draft.acceptance.claimIds = ["claim-1"]; },
+    /acceptance.reason and acceptance.claimIds require/);
+  startRejected((draft) => { draft.impact = "critical"; }, /impact must be low\|medium\|high/);
+  startRejected((draft) => { draft.coupling = "shared"; }, /coupling must be isolated\|coupled/);
+  startRejected((draft) => { draft.securityTriggers = {}; }, /array of non-empty strings/);
+  startRejected((draft) => { draft.securityTriggers = [""]; }, /array of non-empty strings/);
+  startRejected((draft) => { delete draft.execution; }, /executable evidence wiring/);
+  startRejected((draft) => { draft.execution.version = 2; }, /executable evidence wiring/);
+  startRejected((draft) => { delete draft.execution.providers; }, /executable evidence wiring/);
+  startRejected((draft) => { draft.execution.providers = {}; }, /executable evidence wiring/);
+
+  for (const mutate of [
+    () => {},
+    (draft) => { delete draft.impact; },
+    (draft) => { delete draft.coupling; },
+    (draft) => { delete draft.securityTriggers; },
+    (draft) => { draft.impact = "medium"; },
+    (draft) => { draft.coupling = "coupled"; },
+    (draft) => { draft.securityTriggers = ["none"]; },
+    (draft) => { draft.securityTriggers = ["authentication"]; },
+    (draft) => { draft.reviewRequired = true; },
+    (draft) => { draft.acceptance = { required: true, reason: "User decision", claimIds: [] }; },
+    (draft) => { draft.size = "M"; }
+  ]) startRejected(mutate, /change already exists/);
+
+  grounding = "required";
+  startRejected((draft) => { draft.grounding = { version: 2 }; draft.impact = "medium"; },
+    /every grounding.nfrAssessment category/);
+  const categories = [
+    "performance", "capacity", "availability", "securityPrivacy",
+    "accessibility", "operability", "compatibility", "recoverability"
+  ];
+  startRejected((draft) => {
+    draft.impact = "medium";
+    draft.grounding = { version: 2, nfrAssessment: Object.fromEntries(categories.map((key) =>
+      [key, { status: "not-applicable" }])) };
+  }, /change already exists/);
+  grounding = "optional";
 
   const valid = baseDraft();
   assert.deepEqual(lifecycle.loadDraft(writeDraft(valid)), valid);

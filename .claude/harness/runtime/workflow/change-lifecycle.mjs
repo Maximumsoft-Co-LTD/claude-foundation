@@ -584,13 +584,12 @@ export function createChangeLifecycle({
     console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
   }
 
-  function startAtomic(draftPath) {
-    const draft = loadDraft(draftPath);
+  function validateStartIdentity(draft) {
     if (draft.version !== 1) fail("start draft requires version 1");
     if (!String(draft.intent || "").trim()) fail("start draft requires non-empty 'intent'");
-    const impact = draft.impact || "low";
-    const coupling = draft.coupling || "isolated";
-    const securityTriggers = draft.securityTriggers || [];
+  }
+
+  function validateStartAcceptance(draft) {
     if (!draft.acceptance || typeof draft.acceptance.required !== "boolean")
       fail("start draft requires acceptance.required true|false from an explicit user-facing decision");
     // Validated here, with everything else, rather than inside resolveChange:
@@ -605,6 +604,12 @@ export function createChangeLifecycle({
         (String(draft.acceptance.reason || "").trim() ||
          (draft.acceptance.claimIds || []).length))
       fail("start draft acceptance.reason and acceptance.claimIds require acceptance.required true");
+  }
+
+  function startClassification(draft) {
+    const impact = draft.impact || "low";
+    const coupling = draft.coupling || "isolated";
+    const securityTriggers = draft.securityTriggers || [];
     if (!["low", "medium", "high"].includes(impact))
       fail("start draft impact must be low|medium|high");
     if (!["isolated", "coupled"].includes(coupling))
@@ -612,12 +617,22 @@ export function createChangeLifecycle({
     if (!Array.isArray(securityTriggers) ||
         securityTriggers.some((trigger) => typeof trigger !== "string" || !trigger.trim()))
       fail("start draft securityTriggers must be an array of non-empty strings");
+    return { impact, coupling, securityTriggers };
+  }
+
+  function validateStartExecution(draft) {
     if (!draft.execution || draft.execution.version !== 1 ||
         !draft.execution.providers || Object.keys(draft.execution.providers).length === 0)
       fail("start draft requires executable evidence wiring");
-    const rapid = impact === "low" && coupling === "isolated" &&
+  }
+
+  function rapidStart(draft, { impact, coupling, securityTriggers }) {
+    return impact === "low" && coupling === "isolated" &&
       securityTriggers.filter((trigger) => trigger.toLowerCase() !== "none").length === 0 &&
       !draft.reviewRequired && !draft.acceptance?.required;
+  }
+
+  function validateStartGrounding(draft, rapid) {
     if (workflowPolicy().workflow.grounding === "required" &&
         (!draft.grounding || draft.grounding.version !== 2))
       fail("start draft requires grounding.version 2 after the initial Decision Sheet");
@@ -633,8 +648,11 @@ export function createChangeLifecycle({
     }
     if (!rapid && !Array.isArray(draft.decisions))
       fail("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
-    const id = createChange(draft.intent, { rapid, draft: draftPath, id: draft.id });
-    resolveChange(id, {
+  }
+
+  function startResolutionFlags(draft, classification, rapid) {
+    const { impact, coupling, securityTriggers } = classification;
+    return {
       impact,
       coupling,
       size: String(draft.size || (rapid ? "xs" : "s")).toLowerCase(),
@@ -644,7 +662,20 @@ export function createChangeLifecycle({
       "acceptance-not-required": !draft.acceptance?.required,
       "acceptance-reason": draft.acceptance?.reason || undefined,
       "acceptance-claims": (draft.acceptance?.claimIds || []).join(",") || undefined
-    });
+    };
+  }
+
+  function startAtomic(draftPath) {
+    const draft = loadDraft(draftPath);
+    validateStartIdentity(draft);
+    validateStartAcceptance(draft);
+    const classification = startClassification(draft);
+    validateStartExecution(draft);
+    const rapid = rapidStart(draft, classification);
+    validateStartGrounding(draft, rapid);
+    const resolutionFlags = startResolutionFlags(draft, classification, rapid);
+    const id = createChange(draft.intent, { rapid, draft: draftPath, id: draft.id });
+    resolveChange(id, resolutionFlags);
     materializeDraft(id, draft);
     validate(id, "root", { quiet: true });
     createSandbox(id);
