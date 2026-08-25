@@ -44,6 +44,12 @@ function catalogMutants(catalog, suiteId) {
   return catalog.mutants.filter((mutant) => mutant.suite === suiteId);
 }
 
+export function diagnosticTail(output) {
+  const lines = output.trim().split("\n");
+  const diagnostics = lines.filter((line) => /^(FAIL|BLOCKED|WARN):/.test(line));
+  return [...new Set([...diagnostics, ...lines.slice(-20)])];
+}
+
 export function validMutationV2(report, declared, exitCode = 0) {
   const mutants = report?.mutants || [];
   return exitCode === 0 && mutants.length > 0 && mutants.every((mutant) =>
@@ -78,7 +84,7 @@ function runSuite(suite, reportDir, timeoutMs, catalog) {
       timedOut: result.error?.code === "ETIMEDOUT",
       result: valid ? "killed" : "invalid",
       mutants,
-      outputTail: output.trim().split("\n").slice(-20)
+      outputTail: diagnosticTail(output)
     };
   }
   const classified = classifyLegacyResult(result.status, output);
@@ -96,7 +102,7 @@ function runSuite(suite, reportDir, timeoutMs, catalog) {
     timedOut: result.error?.code === "ETIMEDOUT",
     ...classified,
     mutants,
-    outputTail: output.trim().split("\n").slice(-20)
+    outputTail: diagnosticTail(output)
   };
 }
 

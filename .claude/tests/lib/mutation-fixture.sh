@@ -16,4 +16,7 @@ create_mutation_fixture() {
     "$mutation_fixture_root/openspec/schemas"
   cp "$mutation_source_root/openspec/config.yaml" \
     "$mutation_fixture_root/openspec/config.yaml"
+  if [ -d "$mutation_source_root/node_modules" ]; then
+    ln -s "$mutation_source_root/node_modules" "$mutation_fixture_root/node_modules"
+  fi
 }

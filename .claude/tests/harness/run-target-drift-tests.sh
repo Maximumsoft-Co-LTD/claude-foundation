@@ -17,6 +17,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 
+if [ -d "$ROOT/node_modules/.bin" ]; then
+  PATH="$ROOT/node_modules/.bin:$PATH"
+  export PATH
+fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 

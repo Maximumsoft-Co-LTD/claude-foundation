@@ -48,13 +48,10 @@ suite_passes() {
 }
 
 if ! suite_passes; then
-  echo "WARN: target-drift baseline failed once; retrying before mutation"
-  if ! suite_passes; then
-    echo "FAIL: the suite does not pass before any mutation is applied"
-    tail -80 "$WORK/suite.log"
-    echo "FOUNDATION_MUTATION_RESULT=not-applied"
-    exit 1
-  fi
+  echo "FAIL: the suite does not pass before any mutation is applied"
+  tail -80 "$WORK/suite.log"
+  echo "FOUNDATION_MUTATION_RESULT=not-applied"
+  exit 1
 fi
 echo "PASS: baseline suite passes before mutation"
 
