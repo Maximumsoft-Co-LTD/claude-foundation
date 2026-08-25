@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A reusable 20-session Claude diagnostic runner now exercises independent
+  harness boundaries in disposable source snapshots.** It captures per-session
+  JSON, stderr, timestamps, status, and candidate patches; bounds concurrency,
+  budget, and timeout; provisions the historical tag needed by upgrade tests;
+  and aggregates model verdicts conservatively for independent reproduction.
+
+### Fixed
+
+- **Lease takeover is fenced by the acquired lease identity, including across
+  forced crash recovery.** A late executor sharing the host's stable owner can
+  no longer release its successor's lease: `agents release` accepts the packet's
+  `--lease-id`, forced recovery retains a task-local tombstone, tombstones reject
+  stale results before reacquisition, and the next attempt preserves monotonic
+  fencing. Empty task path scopes are also interpreted consistently as
+  whole-tree authority during result, observed-write, and proof validation.
+
+- **Review receipts can no longer promote a failed reviewer result to pass.**
+  Receipt status must match the completed review attempt, and repair-closure
+  receipts must be explicitly passing before they can satisfy authority.
+
+- **Phase metrics now charge derived cache-write tokens consistently with the
+  budget window.** Hosts that report cache total plus cache reads no longer show
+  understated per-phase spend.
+
+- **Dashboard evidence status is bound to the receipt digests certified by the
+  proof.** Changed, new, or missing non-excluded receipts make an old proof
+  partial, while a live failed provider remains failing instead of being masked
+  by stale `proof.json` state.
+
+- **The secrets hook permits credential-shaped words in searches structurally
+  limited to documentation/template files.** Unscoped content searches remain
+  blocked, while safe `*.md`, `.example`, `.sample`, `.template`, `.dist`, and
+  public-key searches no longer trigger a false exfiltration warning.
+
 ## [3.4.5] - 2026-08-24
 
 ### Fixed
