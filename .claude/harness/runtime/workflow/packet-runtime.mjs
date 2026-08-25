@@ -541,8 +541,7 @@ export function createPacketRuntime({
     return { ...packet, packetDigest: stableHash(packet) };
   }
 
-  
-  function showPacket(id, flags = {}) {
+  function validatePacketRequest(id, flags) {
     if (flags.phase === "review" && flags.task)
       die("review packet does not accept --task; use its scoped references");
     if (flags.phase === "build") {
@@ -550,9 +549,14 @@ export function createPacketRuntime({
       if (!["worktree", "copy"].includes(state.workspace?.mode))
         die(`build packet requires an isolated workspace; run claude-foundation sandbox create ${id}`);
     }
-    const value = flags.phase === "review"
-      ? reviewPacketValue(id)
-      : packetValue(id, flags.repo || null, flags.task || null);
+  }
+
+  function packetForRequest(id, flags) {
+    return flags.phase === "review"
+      ? reviewPacketValue(id) : packetValue(id, flags.repo || null, flags.task || null);
+  }
+
+  function addPacketInstruction(id, flags, value) {
     const instructionPhase = flags.phase === "review" ? "prove" : flags.phase || "build";
     const taskModel = Array.isArray(value.tasks) ? value.tasks[0]?.model?.tier || null : null;
     const manifest = recordInstructionManifest?.(id, instructionPhase, {
@@ -564,14 +568,34 @@ export function createPacketRuntime({
       manifestDigest: manifest.manifestDigest,
       requestedModel: manifest.execution?.requestedModel || null
     };
+    return manifest;
+  }
+
+  function addPacketGraphIdentity(flags, value) {
     if (flags.planDigest) value.planDigest = flags.planDigest;
     if (flags.graphRevision) value.graphRevision = flags.graphRevision;
     if (flags.graphIdentity) value.graphIdentity = flags.graphIdentity;
     if (flags.graphNode) value.graphNode = flags.graphNode;
+  }
+
+  function refreshPacketDigest(value, manifest) {
     const priorDigest = value.packetDigest;
     delete value.packetDigest;
     value.packetDigest = stableHash(value);
     if (!manifest && priorDigest) value.packetDigest = priorDigest;
+  }
+
+  function packetContextDetails(value, flags) {
+    return {
+      repositoryId: value.repository?.id || null,
+      taskId: flags.task || null,
+      claims: Array.isArray(value.claims) ? value.claims.length : value.claims.count,
+      providers: Array.isArray(value.providers) ? value.providers.length :
+        Array.isArray(value.evidence) ? value.evidence.length : value.providers?.count || 0
+    };
+  }
+
+  function writePacketDisplay(id, flags, value) {
     attachPhaseUpdateAdvisory(value, flags.phase, {
       installedCliVersion, foundationVersion
     });
@@ -600,14 +624,18 @@ export function createPacketRuntime({
         fields.map((entry) => `${entry.field}=${entry.bytes}`).join(", ")
       }; narrow the task or inspect referenced artifacts`);
     }
-    recordContextMetric(id, `packet-${value.packetType}`, bytes, {
-      repositoryId: value.repository?.id || null,
-      taskId: flags.task || null,
-      claims: Array.isArray(value.claims) ? value.claims.length : value.claims.count,
-      providers: Array.isArray(value.providers) ? value.providers.length :
-        Array.isArray(value.evidence) ? value.evidence.length : value.providers?.count || 0
-    });
+    recordContextMetric(id, `packet-${value.packetType}`, bytes, packetContextDetails(value, flags));
     process.stdout.write(encoded);
+  }
+
+  function showPacket(id, suppliedFlags) {
+    const flags = Object.assign({}, suppliedFlags);
+    validatePacketRequest(id, flags);
+    const value = packetForRequest(id, flags);
+    const manifest = addPacketInstruction(id, flags, value);
+    addPacketGraphIdentity(flags, value);
+    refreshPacketDigest(value, manifest);
+    return writePacketDisplay(id, flags, value);
   }
   
 

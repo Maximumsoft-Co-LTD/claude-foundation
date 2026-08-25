@@ -62,6 +62,17 @@ let surface = [
 ];
 let attempts = [];
 let compositeHash = "composite-hash";
+let instructionManifest = null;
+const packetLimits = {
+  global: 1_000_000, repository: 1_000_000, task: 1_000_000, review: 1_000_000
+};
+const contextMetrics = [];
+const priorStdoutWrite = process.stdout.write.bind(process.stdout);
+let stdout = "";
+process.stdout.write = (chunk) => {
+  stdout += String(chunk);
+  return true;
+};
 const receiptHashes = [];
 const configs = {
   "root-provider": { adapter: "command", repository: "root" },
@@ -109,10 +120,9 @@ const runtime = createPacketRuntime({
   contractFingerprint: () => "fingerprint", reviewPolicy: () => ({}),
   resolvedAcceptance: () => ({}), handoffReadiness: () => ({ status: "ready" }),
   deliveredAiAttempts: () => attempts, serializedJson: JSON.stringify,
-  foundationPolicy: () => ({ execution: { packetBytes: {
-    global: 1_000_000, repository: 1_000_000, task: 1_000_000, review: 1_000_000
-  } } }),
-  recordContextMetric: () => {}, recordInstructionManifest: () => null,
+  foundationPolicy: () => ({ execution: { packetBytes: packetLimits } }),
+  recordContextMetric: (...args) => contextMetrics.push(args),
+  recordInstructionManifest: () => instructionManifest,
   fail: (message) => { throw new Error(message); }
 });
 
@@ -196,6 +206,76 @@ try {
   writeFileSync(leasePath, JSON.stringify({ graphRevision: 1 }));
   assert.equal(runtime.packetValue("packet-test", null, "T1").executionAuthority.status, "unleased");
 
+  state.workspace.mode = "worktree";
+  stdout = "";
+  assert.equal(runtime.showPacket("packet-test"), undefined);
+  assert.equal(JSON.parse(stdout).packetType, "global");
+  assert.equal(contextMetrics.at(-1)[1], "packet-global");
+  assert.equal(contextMetrics.at(-1)[3].repositoryId, null);
+
+  const savedContract = contract;
+  const savedProviders = providers;
+  contract = {
+    claims: Array.from({ length: 41 }, (_, index) => ({
+      id: `bulk-${index}`, scenario: `scenario ${index}`, capabilities: ["test"]
+    })),
+    invariants: []
+  };
+  providers = Array.from({ length: 31 }, (_, index) => `bulk-provider-${index}`);
+  stdout = "";
+  runtime.showPacket("packet-test");
+  assert.equal(contextMetrics.at(-1)[3].claims, 41);
+  assert.equal(contextMetrics.at(-1)[3].providers, 31);
+  contract = savedContract;
+  providers = savedProviders;
+
+  delete state.workspace.mode;
+  assert.throws(() => runtime.showPacket("packet-test", { phase: "build" }),
+    /requires an isolated workspace/);
+  state.workspace.mode = "copy";
+  instructionManifest = {
+    schemaVersion: 1, manifestDigest: "manifest-digest",
+    execution: { requestedModel: "standard" }
+  };
+  stdout = "";
+  runtime.showPacket("packet-test", {
+    phase: "build", task: "T1", pretty: true,
+    planDigest: "plan-digest", graphRevision: 2,
+    graphIdentity: "graph-identity", graphNode: "T1"
+  });
+  const shownTask = JSON.parse(stdout);
+  assert.equal(shownTask.instructionProvenance.manifestDigest, "manifest-digest");
+  assert.equal(shownTask.planDigest, "plan-digest");
+  assert.equal(shownTask.graphRevision, 2);
+  assert.equal(shownTask.graphIdentity, "graph-identity");
+  assert.equal(shownTask.graphNode, "T1");
+  assert.equal(contextMetrics.at(-1)[3].taskId, "T1");
+  instructionManifest = null;
+
+  assert.throws(() => runtime.showPacket("packet-test", { phase: "review", task: "T1" }),
+    /does not accept --task/);
+  stdout = "";
+  runtime.showPacket("packet-test", { phase: "review" });
+  assert.equal(JSON.parse(stdout).packetType, "review");
+  assert.equal(contextMetrics.at(-1)[1], "packet-review");
+
+  const priorConsoleError = console.error;
+  let warning = "";
+  console.error = (message) => { warning += String(message); };
+  packetLimits.review = 1;
+  stdout = "";
+  const summary = runtime.showPacket("packet-test", { phase: "review", pretty: true });
+  assert.equal(summary.display.status, "truncated");
+  assert.equal(JSON.parse(stdout).display.status, "truncated");
+  assert.match(warning, /review packet display truncated/);
+  assert.equal(contextMetrics.at(-1)[1], "packet-review-display");
+  packetLimits.review = 1_000_000;
+  console.error = priorConsoleError;
+
+  packetLimits.global = 1;
+  assert.throws(() => runtime.showPacket("packet-test"), /packet exceeds 1 bytes/);
+  packetLimits.global = 1_000_000;
+
   attempts = [{
     resultStatus: "fail", attempt: 2, digest: "review-digest", workspaceHash: "repo-hash",
     findings: [
@@ -236,7 +316,8 @@ try {
   providers = ["uncovered"];
   assert.throws(() => runtime.packetValue("packet-test", null, "T1"), /no provider coverage/);
 
-  console.log("packet value tests: PASS");
+  priorStdoutWrite("packet value tests: PASS\n");
 } finally {
+  process.stdout.write = priorStdoutWrite;
   rmSync(root, { recursive: true, force: true });
 }
