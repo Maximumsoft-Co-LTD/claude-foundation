@@ -437,12 +437,10 @@ export function createChangeValidationRuntime({
       fail(`change artifacts still contain scaffold or unresolved content: ${findings.join("; ")}`);
   }
 
-  function groundingValue(id, state, dir, parsedTasks = []) {
-    if (!state.groundingRequired) return null;
-    const groundingPath = join(dir, "grounding.yaml");
+  function readGroundingDocument(id, state, dir) {
     let value;
     try {
-      value = JSON.parse(readFileSync(groundingPath, "utf8"));
+      value = JSON.parse(readFileSync(join(dir, "grounding.yaml"), "utf8"));
     } catch {
       fail(`${id}/grounding.yaml must be JSON-compatible YAML`);
     }
@@ -450,13 +448,15 @@ export function createChangeValidationRuntime({
       fail(`${id}/grounding.yaml requires version 1 or 2`);
     if (Number(state.groundingVersion || 1) >= 2 && value.version !== 2)
       fail(`${id}/grounding.yaml requires version 2 for this change; migrate all newly material decisions in one Decision Sheet`);
-    const groundingDigest = stableHash(value);
-    if (state.groundingDigest && state.groundingDigest !== groundingDigest)
+    const digest = stableHash(value);
+    if (state.groundingDigest && state.groundingDigest !== digest)
       fail(`${id}/grounding.yaml changed after its decision batch was locked; ` +
         `use change resolve ${id} --reopen-grounding --decision-ref <ref> ` +
         "--reopen-reason <reason> for one batched revision, or retire and replace the change");
-    const firstLock = !state.groundingDigest;
-    const decision = value.decisionBatch || {};
+    return { value, digest, firstLock: !state.groundingDigest };
+  }
+
+  function validateGroundingDecision(id, decision) {
     if (decision.status !== "locked")
       fail(`${id}/grounding.yaml decisionBatch.status must be locked`);
     if (!["prd", "backlog", "user-batch", "recommended-default", "mixed"].includes(decision.source))
@@ -469,263 +469,287 @@ export function createChangeValidationRuntime({
       fail(`${id}/grounding.yaml decisionBatch.lockedAt must be an ISO-8601 timestamp`);
     if (!Array.isArray(decision.decisions) || decision.decisions.length === 0)
       fail(`${id}/grounding.yaml decisionBatch.decisions must record every locked choice/default`);
-    const decisionIds = new Set();
+    const ids = new Set();
     for (const [index, row] of decision.decisions.entries()) {
       const label = `${id}/grounding.yaml decisionBatch.decisions[${index}]`;
       if (!["prd", "backlog", "user-batch", "recommended-default"].includes(row.source))
         fail(`${label}.source must be prd|backlog|user-batch|recommended-default`);
       for (const field of ["id", "question", "answer"])
         if (!String(row[field] || "").trim()) fail(`${label}.${field} is required`);
-      if (decisionIds.has(row.id)) fail(`${label}.id is duplicated`);
-      decisionIds.add(row.id);
+      if (ids.has(row.id)) fail(`${label}.id is duplicated`);
+      ids.add(row.id);
     }
+    return ids;
+  }
 
-    if (state.semanticInvariantsRequired) {
-      const specScenarios = new Set();
-      walk(join(dir, "specs"), (path) => {
-        if (!path.endsWith(".md")) return;
-        const content = readFileSync(path, "utf8");
-        for (const match of content.matchAll(/^#### Scenario:\s*(.+?)\s*$/gm))
-          specScenarios.add(match[1].trim());
-      });
-      failValidationLayer(fail, "semantic invariant", semanticInvariantIssues(
-        value.semanticInvariants, evidence(id, dir), decisionIds, specScenarios,
-        { required: true }));
+  function validateGroundingSemanticInvariants(id, state, dir, value, decisionIds) {
+    if (!state.semanticInvariantsRequired) return;
+    const specScenarios = new Set();
+    walk(join(dir, "specs"), (path) => {
+      if (!path.endsWith(".md")) return;
+      const content = readFileSync(path, "utf8");
+      for (const match of content.matchAll(/^#### Scenario:\s*(.+?)\s*$/gm))
+        specScenarios.add(match[1].trim());
+    });
+    failValidationLayer(fail, "semantic invariant", semanticInvariantIssues(
+      value.semanticInvariants, evidence(id, dir), decisionIds, specScenarios,
+      { required: true }));
+  }
+
+  function validateConditionalGroundingSection(id, name, row, listName) {
+    const label = `${id}/grounding.yaml ${name}`;
+    if (!["applicable", "not-applicable"].includes(row?.status))
+      fail(`${label}.status must be applicable|not-applicable`);
+    if (!String(row?.sourceReason || "").trim())
+      fail(`${label}.sourceReason is required even when the section is N/A`);
+    if (!Array.isArray(row?.[listName])) fail(`${label}.${listName} must be an array`);
+    if (row.status === "applicable" && row[listName].length === 0)
+      fail(`${label}.${listName} must be non-empty when applicable`);
+  }
+
+  function groundingV2Context(id, state, dir, value) {
+    const risk = value.risk || {};
+    if (!["low", "medium", "high"].includes(risk.tier))
+      fail(`${id}/grounding.yaml risk.tier must be low|medium|high`);
+    if (!Array.isArray(risk.classes) || risk.classes.length === 0 ||
+        risk.classes.some((entry) => !String(entry || "").trim()))
+      fail(`${id}/grounding.yaml risk.classes must be a non-empty string array`);
+    if (!String(risk.rationale || "").trim())
+      fail(`${id}/grounding.yaml risk.rationale is required`);
+    const contract = evidence(id, dir);
+    const routedTier = reviewPolicy(id, state, contract).tier;
+    const rank = { low: 0, medium: 1, high: 2 };
+    if (rank[risk.tier] < rank[routedTier])
+      fail(`${id}/grounding.yaml risk.tier '${risk.tier}' understates the deterministic review tier '${routedTier}'`);
+    validateConditionalGroundingSection(id, "productionEntry", value.productionEntry, "paths");
+    validateConditionalGroundingSection(id, "realWire", value.realWire, "contracts");
+    validateConditionalGroundingSection(
+      id, "activationSemantics", value.activationSemantics, "activatedPaths");
+    if (!Array.isArray(value.activationSemantics?.failureSemanticChanges))
+      fail(`${id}/grounding.yaml activationSemantics.failureSemanticChanges must be an array`);
+    validateConditionalGroundingSection(
+      id, "serviceInteractions", value.serviceInteractions, "rows");
+    validateConditionalGroundingSection(id, "observability", value.observability, "rows");
+    const capabilities = new Set(contract.claims
+      .flatMap((claim) => claim.capabilities || []));
+    const riskClasses = new Set(risk.classes
+      .map((entry) => String(entry).toLowerCase()));
+    const semantics = `${state.intent || ""} ${[...riskClasses].join(" ")}`.toLowerCase();
+    const selected = validationRepositories(id, state, dir);
+    const mandatoryService = state.coupling === "coupled" || selected.length > 1 ||
+      ["cross-repo-contract", "integration", "live", "queue", "resilience"]
+        .some((capability) => capabilities.has(capability)) ||
+      /\b(queue|broker|rabbit|kafka|event|callback|consumer|producer)\w*\b/.test(semantics);
+    const mandatoryWire = mandatoryService ||
+      ["compatibility", "browser"].some((capability) => capabilities.has(capability)) ||
+      /\b(wire|contract|http|api|json|message|payload)\w*\b/.test(semantics);
+    const mandatoryActivation = [...riskClasses].some((entry) =>
+      ["legacy", "activation", "cutover"].some((token) => entry.includes(token))) ||
+      /\b(activat|cutover|enable existing|wire existing|turn on)\w*\b/.test(semantics);
+    return {
+      risk, contract, capabilities, riskClasses, semantics, selected,
+      mandatoryService, mandatoryWire, mandatoryActivation
+    };
+  }
+
+  function requiredNfrCategories(state, v2) {
+    const required = new Set();
+    const requireWhen = (category, capabilities) => {
+      if (capabilities.some((capability) => v2.capabilities.has(capability)))
+        required.add(category);
+    };
+    requireWhen("performance", ["performance"]);
+    requireWhen("availability", ["resilience"]);
+    requireWhen("securityPrivacy", ["security-static"]);
+    requireWhen("accessibility", ["accessibility"]);
+    requireWhen("operability", ["observability"]);
+    requireWhen("compatibility", ["compatibility", "cross-repo-contract"]);
+    requireWhen("recoverability", ["data-migration", "deployment"]);
+    if ((state.securityTriggers || []).length) required.add("securityPrivacy");
+    if (v2.mandatoryService)
+      ["availability", "operability", "recoverability"].forEach((name) => required.add(name));
+    if (v2.capabilities.has("data-migration"))
+      ["compatibility", "recoverability"].forEach((name) => required.add(name));
+    if (/\b(performance|latency|throughput)\b/.test(v2.semantics)) required.add("performance");
+    if (/\b(capacity|scalability|scale)\b/.test(v2.semantics)) required.add("capacity");
+    if (/\b(availability|uptime|reliability)\b/.test(v2.semantics)) required.add("availability");
+    return required;
+  }
+
+  function validateApplicableNfrClaim(label, category, row, context) {
+    const allowedCapabilities = NFR_CATEGORY_CAPABILITIES[category];
+    for (const claimId of row.claimIds) {
+      const claim = context.claimById.get(claimId);
+      if (!claim) fail(`${label} references unknown claim '${claimId}'`);
+      if (!allowedCapabilities.some((capability) =>
+        (claim.capabilities || []).includes(capability)))
+        fail(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}`);
+      if (!context.taskClaimIds.has(claimId))
+        fail(`${label} claim '${claimId}' has no implementation task owner`);
     }
+    if (!allowedCapabilities.some((capability) =>
+      context.configuredCapabilities.has(capability)))
+      fail(`${label} has no configured capable evidence provider`);
+    if (category === "securityPrivacy" && !row.claimIds.some((claimId) => {
+      const claim = context.claimById.get(claimId);
+      return /(?:cannot|denied|reject|unauthor|forbid|invalid|isolation|privacy|redact)/i
+        .test(`${claim?.id || ""} ${claim?.scenario || ""}`);
+    })) fail(`${label} requires an observable negative-path or privacy-control claim`);
+  }
 
-    if (!Array.isArray(value.readSet) || value.readSet.length === 0)
-      fail(`${id}/grounding.yaml readSet must be non-empty`);
-
-    if (value.version === 2) {
-      const risk = value.risk || {};
-      if (!["low", "medium", "high"].includes(risk.tier))
-        fail(`${id}/grounding.yaml risk.tier must be low|medium|high`);
-      if (!Array.isArray(risk.classes) || risk.classes.length === 0 ||
-          risk.classes.some((entry) => !String(entry || "").trim()))
-        fail(`${id}/grounding.yaml risk.classes must be a non-empty string array`);
-      if (!String(risk.rationale || "").trim())
-        fail(`${id}/grounding.yaml risk.rationale is required`);
-      const routedTier = reviewPolicy(id, state, evidence(id, dir)).tier;
-      const rank = { low: 0, medium: 1, high: 2 };
-      if (rank[risk.tier] < rank[routedTier])
-        fail(`${id}/grounding.yaml risk.tier '${risk.tier}' understates the deterministic review tier '${routedTier}'`);
-
-      const conditional = (name, valueRow, listName) => {
-        const label = `${id}/grounding.yaml ${name}`;
-        if (!["applicable", "not-applicable"].includes(valueRow?.status))
-          fail(`${label}.status must be applicable|not-applicable`);
-        if (!String(valueRow?.sourceReason || "").trim())
-          fail(`${label}.sourceReason is required even when the section is N/A`);
-        if (!Array.isArray(valueRow?.[listName]))
-          fail(`${label}.${listName} must be an array`);
-        if (valueRow.status === "applicable" && valueRow[listName].length === 0)
-          fail(`${label}.${listName} must be non-empty when applicable`);
-      };
-      conditional("productionEntry", value.productionEntry, "paths");
-      conditional("realWire", value.realWire, "contracts");
-      conditional("activationSemantics", value.activationSemantics, "activatedPaths");
-      if (!Array.isArray(value.activationSemantics?.failureSemanticChanges))
-        fail(`${id}/grounding.yaml activationSemantics.failureSemanticChanges must be an array`);
-      conditional("serviceInteractions", value.serviceInteractions, "rows");
-      conditional("observability", value.observability, "rows");
-
-      const v2Contract = evidence(id, dir);
-      const v2Capabilities = new Set(v2Contract.claims
-        .flatMap((claim) => claim.capabilities || []));
-      const riskClasses = new Set((risk.classes || [])
-        .map((entry) => String(entry).toLowerCase()));
-      const semantics = `${state.intent || ""} ${[...riskClasses].join(" ")}`.toLowerCase();
-      const selected = validationRepositories(id, state, dir);
-      const mandatoryService = state.coupling === "coupled" || selected.length > 1 ||
-        ["cross-repo-contract", "integration", "live", "queue", "resilience"]
-          .some((capability) => v2Capabilities.has(capability)) ||
-        /\b(queue|broker|rabbit|kafka|event|callback|consumer|producer)\w*\b/.test(semantics);
-      const mandatoryWire = mandatoryService ||
-        ["compatibility", "browser"].some((capability) => v2Capabilities.has(capability)) ||
-        /\b(wire|contract|http|api|json|message|payload)\w*\b/.test(semantics);
-      const mandatoryActivation = [...riskClasses].some((entry) =>
-        ["legacy", "activation", "cutover"].some((token) => entry.includes(token))) ||
-        /\b(activat|cutover|enable existing|wire existing|turn on)\w*\b/.test(semantics);
-      if (state.nfrAssessmentRequired) {
-        const assessment = value.nfrAssessment;
-        if (!assessment || typeof assessment !== "object" || Array.isArray(assessment))
-          fail(`${id}/grounding.yaml nfrAssessment is required for this change`);
-        const categoryNames = Object.keys(NFR_CATEGORY_CAPABILITIES);
-        const unknownCategories = Object.keys(assessment)
-          .filter((name) => !categoryNames.includes(name));
-        if (unknownCategories.length)
-          fail(`${id}/grounding.yaml nfrAssessment has unknown categories: ${unknownCategories.join(", ")}`);
-        const requiredCategories = new Set();
-        const requireWhen = (category, capabilities) => {
-          if (capabilities.some((capability) => v2Capabilities.has(capability)))
-            requiredCategories.add(category);
-        };
-        requireWhen("performance", ["performance"]);
-        requireWhen("availability", ["resilience"]);
-        requireWhen("securityPrivacy", ["security-static"]);
-        requireWhen("accessibility", ["accessibility"]);
-        requireWhen("operability", ["observability"]);
-        requireWhen("compatibility", ["compatibility", "cross-repo-contract"]);
-        requireWhen("recoverability", ["data-migration", "deployment"]);
-        if ((state.securityTriggers || []).length) requiredCategories.add("securityPrivacy");
-        if (mandatoryService) {
-          requiredCategories.add("availability");
-          requiredCategories.add("operability");
-          requiredCategories.add("recoverability");
-        }
-        if (v2Capabilities.has("data-migration")) {
-          requiredCategories.add("compatibility");
-          requiredCategories.add("recoverability");
-        }
-        if (/\b(performance|latency|throughput)\b/.test(semantics))
-          requiredCategories.add("performance");
-        if (/\b(capacity|scalability|scale)\b/.test(semantics))
-          requiredCategories.add("capacity");
-        if (/\b(availability|uptime|reliability)\b/.test(semantics))
-          requiredCategories.add("availability");
-
-        const claimById = new Map(v2Contract.claims.map((claim) => [claim.id, claim]));
-        const taskClaimIds = new Set(parsedTasks.map(taskMetadata)
-          .filter((task) => ["implementation", "migration"].includes(task.kind))
-          .flatMap((task) => task.claims));
-        const configuredCapabilities = new Set(Object.entries(v2Contract.providers || {})
-          .map(([provider, config]) => providerCapability(provider, config))
-          .filter(Boolean));
-        for (const category of categoryNames) {
-          const row = assessment[category];
-          const label = `${id}/grounding.yaml nfrAssessment.${category}`;
-          if (!row || !["applicable", "not-applicable"].includes(row.status))
-            fail(`${label}.status must be applicable|not-applicable`);
-          if (!String(row.sourceReason || "").trim())
-            fail(`${label}.sourceReason is required`);
-          if (!Array.isArray(row.claimIds)) fail(`${label}.claimIds must be an array`);
-          if (requiredCategories.has(category) && row.status !== "applicable")
-            fail(`${label} is required by the declared risk or evidence capability`);
-          if (row.status === "not-applicable") {
-            if (row.claimIds.length) fail(`${label}.claimIds must be empty when not applicable`);
-            continue;
-          }
-          const target = String(row.target || "").trim();
-          if (!target || /^none$/i.test(target)) fail(`${label}.target is required when applicable`);
-          if (["performance", "capacity"].includes(category) && !/\d/.test(target))
-            fail(`${label}.target must contain a measurable numeric threshold`);
-          if (row.claimIds.length === 0)
-            fail(`${label}.claimIds must be non-empty when applicable`);
-          const allowedCapabilities = NFR_CATEGORY_CAPABILITIES[category];
-          for (const claimId of row.claimIds) {
-            const claim = claimById.get(claimId);
-            if (!claim) fail(`${label} references unknown claim '${claimId}'`);
-            if (!allowedCapabilities.some((capability) =>
-              (claim.capabilities || []).includes(capability)))
-              fail(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}`);
-            if (!taskClaimIds.has(claimId))
-              fail(`${label} claim '${claimId}' has no implementation task owner`);
-          }
-          if (!allowedCapabilities.some((capability) => configuredCapabilities.has(capability)))
-            fail(`${label} has no configured capable evidence provider`);
-          if (category === "securityPrivacy" && !row.claimIds.some((claimId) => {
-            const claim = claimById.get(claimId);
-            return /(?:cannot|denied|reject|unauthor|forbid|invalid|isolation|privacy|redact)/i
-              .test(`${claim?.id || ""} ${claim?.scenario || ""}`);
-          })) fail(`${label} requires an observable negative-path or privacy-control claim`);
-        }
-      }
-      if (value.productionEntry.status !== "applicable")
-        fail(`${id}/grounding.yaml productionEntry cannot be N/A for an implementation claim`);
-      if (mandatoryWire && value.realWire.status !== "applicable")
-        fail(`${id}/grounding.yaml realWire is required by the declared contract/integration risk`);
-      if (mandatoryActivation && value.activationSemantics.status !== "applicable")
-        fail(`${id}/grounding.yaml activationSemantics is required when existing behavior is activated or cut over`);
-      if (mandatoryService && value.serviceInteractions.status !== "applicable")
-        fail(`${id}/grounding.yaml serviceInteractions is required by the declared cross-service/queue surface`);
-      if (mandatoryService && value.observability.status !== "applicable")
-        fail(`${id}/grounding.yaml observability is required for every declared service interaction`);
-
-      const v2Repositories = new Map(selected.map((repository) =>
-        [repository.id, repository]));
-      const resolveRows = (name, rows, allowedRoles) => {
-        for (const [index, source] of rows.entries()) {
-          const label = `${id}/grounding.yaml ${name}[${index}]`;
-          const repository = v2Repositories.get(source?.repository || "root");
-          const sourcePath = String(source?.path || "");
-          if (!repository) fail(`${label} references an unselected repository`);
-          if (!sourcePath || isAbsolute(sourcePath))
-            fail(`${label}.path must be repository-relative`);
-          const absolute = resolve(repository.workspacePath, sourcePath);
-          if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
-            fail(`${label}.path does not resolve inside repository '${repository.id}'`);
-          if (!value.readSet.some((row) =>
-            (row.repository || "root") === repository.id && row.path === sourcePath &&
-            allowedRoles.includes(row.role)))
-            fail(`${label} must appear in readSet with role ${allowedRoles.join("|")}`);
-        }
-      };
-      resolveRows("productionEntry.paths", value.productionEntry.paths || [],
-        ["production-path", "runtime-path"]);
-      resolveRows("realWire.contracts", value.realWire.contracts || [],
-        ["contract", "test-topology"]);
-      resolveRows("activationSemantics.activatedPaths",
-        value.activationSemantics.activatedPaths || [],
-        ["production-path", "runtime-path"]);
-
-      const interactionIds = new Set();
-      for (const [index, row] of (value.serviceInteractions?.rows || []).entries()) {
-        const label = `${id}/grounding.yaml serviceInteractions.rows[${index}]`;
-        for (const field of [
-          "id", "owner", "producer", "consumer", "contract", "delivery",
-          "timeoutRetry", "idempotency", "ordering", "consistency",
-          "rollout", "rollback"
-        ])
-          if (!String(row?.[field] || "").trim()) fail(`${label}.${field} is required`);
-        if (interactionIds.has(row.id)) fail(`${label}.id is duplicated`);
-        interactionIds.add(row.id);
-      }
-      const observedInteractions = new Set();
-      for (const [index, row] of (value.observability?.rows || []).entries()) {
-        const label = `${id}/grounding.yaml observability.rows[${index}]`;
-        for (const field of [
-          "interactionId", "correlation", "structuredEvents", "sli",
-          "alert", "runbook", "operatorQuestion"
-        ])
-          if (!String(row?.[field] || "").trim()) fail(`${label}.${field} is required`);
-        if (row.interactionId !== "local" && !interactionIds.has(row.interactionId))
-          fail(`${label}.interactionId does not reference a service interaction`);
-        observedInteractions.add(row.interactionId);
-      }
-      if (value.serviceInteractions?.status === "applicable")
-        for (const interactionId of interactionIds)
-          if (!observedInteractions.has(interactionId))
-            fail(`${id}/grounding.yaml observability must cover interaction '${interactionId}'`);
-      if (!Array.isArray(value.criticalCases) || !Array.isArray(value.mutants))
-        fail(`${id}/grounding.yaml criticalCases and mutants must be arrays`);
-      const criticalIds = new Set();
-      for (const [index, row] of value.criticalCases.entries()) {
-        const label = `${id}/grounding.yaml criticalCases[${index}]`;
-        if (!String(row?.id || "").trim() || criticalIds.has(row.id))
-          fail(`${label}.id must be non-empty and unique`);
-        if (!Array.isArray(row.claimIds) || row.claimIds.length === 0)
-          fail(`${label}.claimIds must be non-empty`);
-        if (!["production-entry", "real-wire", "contract-oracle", "failure-path"]
-          .includes(row.oracle))
-          fail(`${label}.oracle is invalid`);
-        criticalIds.add(row.id);
-      }
-      const mutantIds = new Set();
-      for (const [index, row] of value.mutants.entries()) {
-        const label = `${id}/grounding.yaml mutants[${index}]`;
-        if (!String(row?.id || "").trim() || mutantIds.has(row.id))
-          fail(`${label}.id must be non-empty and unique`);
-        if (!Array.isArray(row.claimIds) || row.claimIds.length === 0 ||
-            !String(row.class || "").trim())
-          fail(`${label} requires claimIds and class`);
-        if (!criticalIds.has(row.killerCaseId))
-          fail(`${label}.killerCaseId must name a critical case`);
-        mutantIds.add(row.id);
-      }
+  function validateNfrCategory(id, category, row, context) {
+    const label = `${id}/grounding.yaml nfrAssessment.${category}`;
+    if (!row || !["applicable", "not-applicable"].includes(row.status))
+      fail(`${label}.status must be applicable|not-applicable`);
+    if (!String(row.sourceReason || "").trim()) fail(`${label}.sourceReason is required`);
+    if (!Array.isArray(row.claimIds)) fail(`${label}.claimIds must be an array`);
+    if (context.required.has(category) && row.status !== "applicable")
+      fail(`${label} is required by the declared risk or evidence capability`);
+    if (row.status === "not-applicable") {
+      if (row.claimIds.length) fail(`${label}.claimIds must be empty when not applicable`);
+      return;
     }
+    const target = String(row.target || "").trim();
+    if (!target || /^none$/i.test(target)) fail(`${label}.target is required when applicable`);
+    if (["performance", "capacity"].includes(category) && !/\d/.test(target))
+      fail(`${label}.target must contain a measurable numeric threshold`);
+    if (row.claimIds.length === 0) fail(`${label}.claimIds must be non-empty when applicable`);
+    validateApplicableNfrClaim(label, category, row, context);
+  }
 
-    const repositories = new Map(validationRepositories(id, state, dir)
-      .map((repository) => [repository.id, repository]));
+  function validateNfrAssessment(id, state, value, parsedTasks, v2) {
+    if (!state.nfrAssessmentRequired) return;
+    const assessment = value.nfrAssessment;
+    if (!assessment || typeof assessment !== "object" || Array.isArray(assessment))
+      fail(`${id}/grounding.yaml nfrAssessment is required for this change`);
+    const categoryNames = Object.keys(NFR_CATEGORY_CAPABILITIES);
+    const unknown = Object.keys(assessment).filter((name) => !categoryNames.includes(name));
+    if (unknown.length)
+      fail(`${id}/grounding.yaml nfrAssessment has unknown categories: ${unknown.join(", ")}`);
+    const context = {
+      required: requiredNfrCategories(state, v2),
+      claimById: new Map(v2.contract.claims.map((claim) => [claim.id, claim])),
+      taskClaimIds: new Set(parsedTasks.map(taskMetadata)
+        .filter((task) => ["implementation", "migration"].includes(task.kind))
+        .flatMap((task) => task.claims)),
+      configuredCapabilities: new Set(Object.entries(v2.contract.providers || {})
+        .map(([provider, config]) => providerCapability(provider, config)).filter(Boolean))
+    };
+    for (const category of categoryNames)
+      validateNfrCategory(id, category, assessment[category], context);
+  }
+
+  function validateRequiredV2Sections(id, value, v2) {
+    if (value.productionEntry.status !== "applicable")
+      fail(`${id}/grounding.yaml productionEntry cannot be N/A for an implementation claim`);
+    if (v2.mandatoryWire && value.realWire.status !== "applicable")
+      fail(`${id}/grounding.yaml realWire is required by the declared contract/integration risk`);
+    if (v2.mandatoryActivation && value.activationSemantics.status !== "applicable")
+      fail(`${id}/grounding.yaml activationSemantics is required when existing behavior is activated or cut over`);
+    if (v2.mandatoryService && value.serviceInteractions.status !== "applicable")
+      fail(`${id}/grounding.yaml serviceInteractions is required by the declared cross-service/queue surface`);
+    if (v2.mandatoryService && value.observability.status !== "applicable")
+      fail(`${id}/grounding.yaml observability is required for every declared service interaction`);
+  }
+
+  function validateGroundingSourceRows(id, value, selected) {
+    const repositories = new Map(selected.map((repository) => [repository.id, repository]));
+    const validateRows = (name, rows, allowedRoles) => {
+      for (const [index, source] of rows.entries()) {
+        const label = `${id}/grounding.yaml ${name}[${index}]`;
+        const repository = repositories.get(source?.repository || "root");
+        const sourcePath = String(source?.path || "");
+        if (!repository) fail(`${label} references an unselected repository`);
+        if (!sourcePath || isAbsolute(sourcePath))
+          fail(`${label}.path must be repository-relative`);
+        const absolute = resolve(repository.workspacePath, sourcePath);
+        if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
+          fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+        if (!value.readSet.some((row) =>
+          (row.repository || "root") === repository.id && row.path === sourcePath &&
+          allowedRoles.includes(row.role)))
+          fail(`${label} must appear in readSet with role ${allowedRoles.join("|")}`);
+      }
+    };
+    validateRows("productionEntry.paths", value.productionEntry.paths,
+      ["production-path", "runtime-path"]);
+    validateRows("realWire.contracts", value.realWire.contracts,
+      ["contract", "test-topology"]);
+    validateRows("activationSemantics.activatedPaths",
+      value.activationSemantics.activatedPaths, ["production-path", "runtime-path"]);
+  }
+
+  function requiredInteractionFields(row, fields, label) {
+    for (const field of fields)
+      if (!String(row?.[field] || "").trim()) fail(`${label}.${field} is required`);
+  }
+
+  function validateServiceInteractionRows(id, value) {
+    const interactionIds = new Set();
+    for (const [index, row] of (value.serviceInteractions?.rows || []).entries()) {
+      const label = `${id}/grounding.yaml serviceInteractions.rows[${index}]`;
+      requiredInteractionFields(row, [
+        "id", "owner", "producer", "consumer", "contract", "delivery",
+        "timeoutRetry", "idempotency", "ordering", "consistency", "rollout", "rollback"
+      ], label);
+      if (interactionIds.has(row.id)) fail(`${label}.id is duplicated`);
+      interactionIds.add(row.id);
+    }
+    const observed = new Set();
+    for (const [index, row] of (value.observability?.rows || []).entries()) {
+      const label = `${id}/grounding.yaml observability.rows[${index}]`;
+      requiredInteractionFields(row, [
+        "interactionId", "correlation", "structuredEvents", "sli",
+        "alert", "runbook", "operatorQuestion"
+      ], label);
+      if (row.interactionId !== "local" && !interactionIds.has(row.interactionId))
+        fail(`${label}.interactionId does not reference a service interaction`);
+      observed.add(row.interactionId);
+    }
+    if (value.serviceInteractions?.status === "applicable")
+      for (const interactionId of interactionIds)
+        if (!observed.has(interactionId))
+          fail(`${id}/grounding.yaml observability must cover interaction '${interactionId}'`);
+  }
+
+  function validateGroundingCriticalCases(id, rows) {
+    const criticalIds = new Set();
+    for (const [index, row] of rows.entries()) {
+      const label = `${id}/grounding.yaml criticalCases[${index}]`;
+      if (!String(row?.id || "").trim() || criticalIds.has(row.id))
+        fail(`${label}.id must be non-empty and unique`);
+      if (!Array.isArray(row.claimIds) || row.claimIds.length === 0)
+        fail(`${label}.claimIds must be non-empty`);
+      if (!["production-entry", "real-wire", "contract-oracle", "failure-path"].includes(row.oracle))
+        fail(`${label}.oracle is invalid`);
+      criticalIds.add(row.id);
+    }
+    return criticalIds;
+  }
+
+  function validateGroundingMutants(id, rows, criticalIds) {
+    const mutantIds = new Set();
+    for (const [index, row] of rows.entries()) {
+      const label = `${id}/grounding.yaml mutants[${index}]`;
+      if (!String(row?.id || "").trim() || mutantIds.has(row.id))
+        fail(`${label}.id must be non-empty and unique`);
+      if (!Array.isArray(row.claimIds) || row.claimIds.length === 0 ||
+          !String(row.class || "").trim())
+        fail(`${label} requires claimIds and class`);
+      if (!criticalIds.has(row.killerCaseId))
+        fail(`${label}.killerCaseId must name a critical case`);
+      mutantIds.add(row.id);
+    }
+  }
+
+  function validateCriticalCasesAndMutants(id, value) {
+    if (!Array.isArray(value.criticalCases) || !Array.isArray(value.mutants))
+      fail(`${id}/grounding.yaml criticalCases and mutants must be arrays`);
+    const criticalIds = validateGroundingCriticalCases(id, value.criticalCases);
+    validateGroundingMutants(id, value.mutants, criticalIds);
+  }
+
+  function validateGroundingReadSet(id, value, repositories, firstLock) {
     const roles = new Set([
       "requirement", "backlog", "architecture", "contract", "composition-root",
       "runtime-path", "production-path", "test-topology", "dependency-source", "history"
@@ -738,29 +762,27 @@ export function createChangeValidationRuntime({
       const repository = repositories.get(source.repository || "root");
       if (!repository) fail(`${label} references an unselected repository`);
       if (!roles.has(source.role)) fail(`${label}.role is invalid`);
-      if (!["full", "targeted"].includes(source.mode)) fail(`${label}.mode must be full|targeted`);
+      if (!["full", "targeted"].includes(source.mode))
+        fail(`${label}.mode must be full|targeted`);
       const sourcePath = String(source.path || "");
-      if (!sourcePath || isAbsolute(sourcePath)) fail(`${label}.path must be repository-relative`);
+      if (!sourcePath || isAbsolute(sourcePath))
+        fail(`${label}.path must be repository-relative`);
       const absolute = resolve(repository.workspacePath, sourcePath);
       if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
         fail(`${label}.path does not resolve inside repository '${repository.id}'`);
       if (!/^[a-f0-9]{64}$/i.test(String(source.sha256 || "")))
         fail(`${label}.sha256 must be a SHA-256 hex digest`);
-      // Check the real source while locking. Production sources are expected to
-      // change in Build; the immutable groundingDigest below keeps their
-      // *baseline* hashes from being rewritten afterward.
       if ((firstLock || immutableRoles.has(source.role)) &&
           fileDigest(absolute) !== String(source.sha256).toLowerCase())
-        // A mismatch here is either genuine drift in a decision source or a
-        // mis-roled file the change legitimately edits. Name both exits: a
-        // bare failure repeatedly sent operators through full grounding
-        // reopens when the fix was to re-role one row.
         fail(`${label}.sha256 does not match the baseline file. ` +
           `If '${sourcePath}' is intentionally edited by this change, its role ` +
-          `must be production-path or runtime-path (immutable roles pin decision ` +
-          `sources); re-role the row and refresh its sha256. If the edit is ` +
-          `unintended drift, restore the file to its baseline.`);
+          "must be production-path or runtime-path (immutable roles pin decision " +
+          "sources); re-role the row and refresh its sha256. If the edit is " +
+          "unintended drift, restore the file to its baseline.");
     }
+  }
+
+  function validateGroundingTaskOverlap(id, value, parsedTasks) {
     const overlap = groundingTaskOverlapFindings(value.readSet, parsedTasks);
     if (overlap.length)
       fail(`${id}/grounding.yaml immutable readSet overlaps implementation task paths:\n  - ${
@@ -769,30 +791,80 @@ export function createChangeValidationRuntime({
       }\nFiles the change will edit must use role production-path or runtime-path; keep immutable decision sources outside writable task scopes.`);
     if (!value.readSet.some((source) => ["requirement", "backlog"].includes(source.role)))
       fail(`${id}/grounding.yaml must read a requirement or backlog source`);
+  }
 
-    const contract = evidence(id, dir);
-    const readRoles = new Set(value.readSet.map((source) => source.role));
+  function validateGroundingReadRoles(id, state, contract, readSet) {
+    const roles = new Set(readSet.map((source) => source.role));
     if (state.coupling === "coupled")
       for (const role of ["architecture", "contract", "composition-root"])
-        if (!readRoles.has(role))
+        if (!roles.has(role))
           fail(`${id}/grounding.yaml coupled work requires a ${role} readSet entry`);
-    const claimCapabilities = new Set(contract.claims.flatMap((claim) => claim.capabilities || []));
+    const capabilities = new Set(contract.claims.flatMap((claim) => claim.capabilities || []));
     if (["test", "integration", "live", "mutation", "browser"].some((capability) =>
-      claimCapabilities.has(capability)) && !readRoles.has("test-topology"))
+      capabilities.has(capability)) && !roles.has("test-topology"))
       fail(`${id}/grounding.yaml test-backed claims require a test-topology readSet entry`);
-    if (((state.securityTriggers || []).length > 0 ||
-        ["security", "security-static"].some((capability) => claimCapabilities.has(capability))) &&
-        !readRoles.has("dependency-source"))
+    const securityWork = (state.securityTriggers || []).length > 0 ||
+      ["security", "security-static"].some((capability) => capabilities.has(capability));
+    if (securityWork && !roles.has("dependency-source"))
       fail(`${id}/grounding.yaml security work requires a dependency-source readSet entry`);
+  }
+
+  function validateGroundingPath(id, label, row, repositories, value, role, failureRequired) {
+    const repository = repositories.get(row?.repository || "root");
+    const sourcePath = String(row?.path || "");
+    if (!repository) fail(`${label} references an unselected repository`);
+    if (!sourcePath || isAbsolute(sourcePath))
+      fail(`${label}.path must be repository-relative`);
+    const absolute = resolve(repository.workspacePath, sourcePath);
+    if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
+      fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+    if (failureRequired && !String(row?.failure || "").trim())
+      fail(`${label}.failure is required`);
+    const included = value.readSet.some((source) =>
+      (source.repository || "root") === repository.id && source.path === sourcePath &&
+      (!role || source.role === role));
+    if (!included)
+      fail(role
+        ? `${label} must appear in readSet with role ${role} and a baseline digest`
+        : `${label} must appear in readSet with a baseline digest`);
+  }
+
+  function validateGroundingClaimEvidence(label, claim, evidenceClaim) {
+    const classes = new Set([
+      "static", "unit", "test", "integration", "live", "mutation", "security",
+      "review", "acceptance", "browser", "deployment", "cross-repo-contract"
+    ]);
+    if (!Array.isArray(claim.evidenceClass) || claim.evidenceClass.length === 0 ||
+        claim.evidenceClass.some((entry) => !String(entry || "").trim()))
+      fail(`${label}.evidenceClass must be a non-empty string array`);
+    if (claim.evidenceClass.some((entry) => !classes.has(entry)))
+      fail(`${label}.evidenceClass contains an unsupported class`);
+    if (!String(claim.testDoubleGap || "").trim())
+      fail(`${label}.testDoubleGap must be none or describe the gap`);
+    if (claim.testDoubleGap !== "none" &&
+        !claim.evidenceClass.some((entry) => ["integration", "live"].includes(entry)))
+      fail(`${label} declares a test-double gap without integration or live evidence`);
+    const capabilities = new Set(evidenceClaim?.capabilities || []);
+    const aliases = {
+      static: ["static-analysis", "security-static"], unit: ["test"], test: ["test"],
+      integration: ["integration"], live: ["live"], mutation: ["mutation"],
+      security: ["security", "security-static"], review: ["review"],
+      acceptance: ["acceptance"], browser: ["browser"], deployment: ["deployment"],
+      "cross-repo-contract": ["compatibility", "integration"]
+    };
+    for (const evidenceClass of claim.evidenceClass)
+      if (!aliases[evidenceClass].some((capability) => capabilities.has(capability)))
+        fail(`${label}.evidenceClass '${evidenceClass}' is not declared by evidence.yaml for claim '${claim.id}'`);
+    if (evidenceClaim?.impact === "high" && !claim.evidenceClass.some((entry) =>
+      ["integration", "live", "security", "review"].includes(entry)))
+      fail(`${label} maps a high-impact claim only to low-fidelity evidence`);
+  }
+
+  function validateGroundingClaims(id, value, contract, repositories) {
     const claimIds = new Set(contract.claims.map((claim) => claim.id));
     if (!Array.isArray(value.claims) || value.claims.length !== claimIds.size)
       fail(`${id}/grounding.yaml must map every evidence claim exactly once`);
     const seen = new Set();
-    const evidenceClasses = new Set([
-      "static", "unit", "test", "integration", "live", "mutation",
-      "security", "review", "acceptance", "browser", "deployment",
-      "cross-repo-contract"
-    ]);
     for (const [index, claim] of value.claims.entries()) {
       const label = `${id}/grounding.yaml claims[${index}]`;
       if (!claimIds.has(claim.id)) fail(`${label}.id references an unknown evidence claim`);
@@ -800,127 +872,115 @@ export function createChangeValidationRuntime({
       seen.add(claim.id);
       if (!Array.isArray(claim.productionPath) || claim.productionPath.length === 0)
         fail(`${label}.productionPath must be a non-empty array`);
-      for (const [pathIndex, production] of claim.productionPath.entries()) {
-        const pathLabel = `${label}.productionPath[${pathIndex}]`;
-        const repository = repositories.get(production?.repository || "root");
-        const sourcePath = String(production?.path || "");
-        if (!repository) fail(`${pathLabel} references an unselected repository`);
-        if (!sourcePath || isAbsolute(sourcePath))
-          fail(`${pathLabel}.path must be repository-relative`);
-        const absolute = resolve(repository.workspacePath, sourcePath);
-        if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
-          fail(`${pathLabel}.path does not resolve inside repository '${repository.id}'`);
-        if (!value.readSet.some((source) =>
-          (source.repository || "root") === repository.id &&
-          source.path === sourcePath && source.role === "production-path"))
-          fail(`${pathLabel} must appear in readSet with role production-path and a baseline digest`);
-      }
+      for (const [pathIndex, row] of claim.productionPath.entries())
+        validateGroundingPath(id, `${label}.productionPath[${pathIndex}]`, row,
+          repositories, value, "production-path", false);
       if (!Array.isArray(claim.failurePaths) || claim.failurePaths.length === 0)
         fail(`${label}.failurePaths must be a non-empty array`);
-      for (const [failureIndex, failurePath] of claim.failurePaths.entries()) {
-        const failureLabel = `${label}.failurePaths[${failureIndex}]`;
-        const repository = repositories.get(failurePath?.repository || "root");
-        const sourcePath = String(failurePath?.path || "");
-        if (!repository) fail(`${failureLabel} references an unselected repository`);
-        if (!sourcePath || isAbsolute(sourcePath))
-          fail(`${failureLabel}.path must be repository-relative`);
-        const absolute = resolve(repository.workspacePath, sourcePath);
-        if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
-          fail(`${failureLabel}.path does not resolve inside repository '${repository.id}'`);
-        if (!String(failurePath?.failure || "").trim())
-          fail(`${failureLabel}.failure is required`);
-        if (!value.readSet.some((source) =>
-          (source.repository || "root") === repository.id && source.path === sourcePath))
-          fail(`${failureLabel} must appear in readSet with a baseline digest`);
-      }
-      if (!Array.isArray(claim.evidenceClass) || claim.evidenceClass.length === 0 ||
-          claim.evidenceClass.some((entry) => !String(entry || "").trim()))
-        fail(`${label}.evidenceClass must be a non-empty string array`);
-      if (claim.evidenceClass.some((entry) => !evidenceClasses.has(entry)))
-        fail(`${label}.evidenceClass contains an unsupported class`);
-      if (!String(claim.testDoubleGap || "").trim())
-        fail(`${label}.testDoubleGap must be none or describe the gap`);
-      if (claim.testDoubleGap !== "none" &&
-          !claim.evidenceClass.some((entry) => ["integration", "live"].includes(entry)))
-        fail(`${label} declares a test-double gap without integration or live evidence`);
+      for (const [pathIndex, row] of claim.failurePaths.entries())
+        validateGroundingPath(id, `${label}.failurePaths[${pathIndex}]`, row,
+          repositories, value, null, true);
       const evidenceClaim = contract.claims.find((entry) => entry.id === claim.id);
-      const capabilities = new Set(evidenceClaim?.capabilities || []);
-      const capabilityAliases = {
-        static: ["static-analysis", "security-static"],
-        unit: ["test"],
-        test: ["test"],
-        integration: ["integration"],
-        live: ["live"],
-        mutation: ["mutation"],
-        security: ["security", "security-static"],
-        review: ["review"],
-        acceptance: ["acceptance"],
-        browser: ["browser"],
-        deployment: ["deployment"],
-        "cross-repo-contract": ["compatibility", "integration"]
-      };
-      for (const evidenceClass of claim.evidenceClass)
-        if (!capabilityAliases[evidenceClass].some((capability) => capabilities.has(capability)))
-          fail(`${label}.evidenceClass '${evidenceClass}' is not declared by evidence.yaml for claim '${claim.id}'`);
-      if (evidenceClaim?.impact === "high" &&
-          !claim.evidenceClass.some((entry) =>
-            ["integration", "live", "security", "review"].includes(entry)))
-        fail(`${label} maps a high-impact claim only to low-fidelity evidence`);
+      validateGroundingClaimEvidence(label, claim, evidenceClaim);
     }
+    return claimIds;
+  }
 
-    if (value.version === 2) {
-      const materialTestClaims = contract.claims.filter((claim) =>
-        claim.impact !== "low" &&
-        (claim.capabilities || []).some((capability) =>
-          ["test", "integration", "live", "browser"].includes(capability)));
-      const criticalCoverage = new Set((value.criticalCases || [])
-        .flatMap((row) => row.claimIds || []));
-      for (const claim of materialTestClaims)
-        if (!criticalCoverage.has(claim.id))
-          fail(`${id}/grounding.yaml material test claim '${claim.id}' requires a stable criticalCases row`);
-      for (const [index, row] of (value.criticalCases || []).entries())
-        for (const claimId of row.claimIds || [])
-          if (!claimIds.has(claimId))
-            fail(`${id}/grounding.yaml criticalCases[${index}] references unknown claim '${claimId}'`);
-      const mutationClaims = contract.claims.filter((claim) =>
-        (claim.capabilities || []).includes("mutation"));
-      const mutationCoverage = new Set((value.mutants || [])
-        .flatMap((row) => row.claimIds || []));
-      for (const claim of mutationClaims)
-        if (!mutationCoverage.has(claim.id))
-          fail(`${id}/grounding.yaml mutation claim '${claim.id}' requires a named mutant and killer case`);
-      for (const [index, row] of (value.mutants || []).entries())
-        for (const claimId of row.claimIds || [])
-          if (!claimIds.has(claimId))
-            fail(`${id}/grounding.yaml mutants[${index}] references unknown claim '${claimId}'`);
-      const executionProviders = Object.values(rawExecution(id, dir).providers || {});
-      const configuredCriticalCases = new Set(executionProviders
-        .flatMap((provider) => provider.criticalCases || []));
-      for (const row of value.criticalCases || [])
-        if (!configuredCriticalCases.has(row.id))
-          fail(`${id}/execution.yaml must bind critical case '${row.id}' in a provider.criticalCases list`);
-      const mutationProviders = executionProviders.filter((provider) =>
-        provider.resultProtocol === "foundation-mutation-v2");
-      const configuredMutants = new Set(mutationProviders
-        .flatMap((provider) => provider.requiredMutants || []));
-      for (const row of value.mutants || [])
-        if (!configuredMutants.has(row.id))
-          fail(`${id}/execution.yaml must bind mutant '${row.id}' in a foundation-mutation-v2 provider.requiredMutants list`);
-        else {
-          const provider = mutationProviders.find((candidate) =>
-            (candidate.requiredMutants || []).includes(row.id));
-          if (provider?.mutantKillers?.[row.id] !== row.killerCaseId)
-            fail(`${id}/execution.yaml mutantKillers.${row.id} must equal grounding killerCaseId '${row.killerCaseId}'`);
-          if (!(provider?.criticalCases || []).includes(row.killerCaseId))
-            fail(`${id}/execution.yaml mutation provider must require killer critical case '${row.killerCaseId}'`);
-        }
+  function validateV2ClaimCoverage(id, value, contract, claimIds) {
+    const material = contract.claims.filter((claim) => claim.impact !== "low" &&
+      (claim.capabilities || []).some((capability) =>
+        ["test", "integration", "live", "browser"].includes(capability)));
+    const criticalCoverage = new Set(value.criticalCases.flatMap((row) => row.claimIds));
+    for (const claim of material)
+      if (!criticalCoverage.has(claim.id))
+        fail(`${id}/grounding.yaml material test claim '${claim.id}' requires a stable criticalCases row`);
+    for (const [index, row] of value.criticalCases.entries())
+      for (const claimId of row.claimIds)
+        if (!claimIds.has(claimId))
+          fail(`${id}/grounding.yaml criticalCases[${index}] references unknown claim '${claimId}'`);
+    const mutationClaims = contract.claims.filter((claim) =>
+      (claim.capabilities || []).includes("mutation"));
+    const mutationCoverage = new Set(value.mutants.flatMap((row) => row.claimIds));
+    for (const claim of mutationClaims)
+      if (!mutationCoverage.has(claim.id))
+        fail(`${id}/grounding.yaml mutation claim '${claim.id}' requires a named mutant and killer case`);
+    for (const [index, row] of value.mutants.entries())
+      for (const claimId of row.claimIds)
+        if (!claimIds.has(claimId))
+          fail(`${id}/grounding.yaml mutants[${index}] references unknown claim '${claimId}'`);
+  }
+
+  function validateV2ExecutionBindings(id, dir, value) {
+    const providers = Object.values(rawExecution(id, dir).providers || {});
+    const configuredCases = new Set(providers.flatMap((provider) => provider.criticalCases || []));
+    for (const row of value.criticalCases || [])
+      if (!configuredCases.has(row.id))
+        fail(`${id}/execution.yaml must bind critical case '${row.id}' in a provider.criticalCases list`);
+    const mutationProviders = providers.filter((provider) =>
+      provider.resultProtocol === "foundation-mutation-v2");
+    const configuredMutants = new Set(mutationProviders
+      .flatMap((provider) => provider.requiredMutants || []));
+    for (const row of value.mutants || []) {
+      if (!configuredMutants.has(row.id)) {
+        fail(`${id}/execution.yaml must bind mutant '${row.id}' in a foundation-mutation-v2 provider.requiredMutants list`);
+        continue;
+      }
+      const provider = mutationProviders.find((candidate) =>
+        (candidate.requiredMutants || []).includes(row.id));
+      if (provider?.mutantKillers?.[row.id] !== row.killerCaseId)
+        fail(`${id}/execution.yaml mutantKillers.${row.id} must equal grounding killerCaseId '${row.killerCaseId}'`);
+      if (!(provider?.criticalCases || []).includes(row.killerCaseId))
+        fail(`${id}/execution.yaml mutation provider must require killer critical case '${row.killerCaseId}'`);
     }
+  }
 
+  function validateDerivedGroundingFacts(id, value) {
     if (!Array.isArray(value.derivedFacts || []))
       fail(`${id}/grounding.yaml derivedFacts must be an array`);
     for (const [index, fact] of (value.derivedFacts || []).entries())
       if (!String(fact.fact || "").trim() || !String(fact.command || "").trim())
         fail(`${id}/grounding.yaml derivedFacts[${index}] requires fact and command`);
+  }
+
+  function groundingValue(id, state, dir, parsedTasks = []) {
+    if (!state.groundingRequired) return null;
+    const grounding = readGroundingDocument(id, state, dir);
+    const { value, digest: groundingDigest, firstLock } = grounding;
+    const decision = value.decisionBatch || {};
+    const decisionIds = validateGroundingDecision(id, decision);
+    validateGroundingSemanticInvariants(id, state, dir, value, decisionIds);
+
+    if (!Array.isArray(value.readSet) || value.readSet.length === 0)
+      fail(`${id}/grounding.yaml readSet must be non-empty`);
+
+    if (value.version === 2) {
+      const v2 = groundingV2Context(id, state, dir, value);
+      const {
+        risk, contract: v2Contract, capabilities: v2Capabilities,
+        semantics, selected, mandatoryService, mandatoryWire, mandatoryActivation
+      } = v2;
+      validateNfrAssessment(id, state, value, parsedTasks, v2);
+      validateRequiredV2Sections(id, value, v2);
+      validateGroundingSourceRows(id, value, selected);
+      validateServiceInteractionRows(id, value);
+      validateCriticalCasesAndMutants(id, value);
+    }
+
+    const repositories = new Map(validationRepositories(id, state, dir)
+      .map((repository) => [repository.id, repository]));
+    validateGroundingReadSet(id, value, repositories, firstLock);
+    validateGroundingTaskOverlap(id, value, parsedTasks);
+
+    const contract = evidence(id, dir);
+    validateGroundingReadRoles(id, state, contract, value.readSet);
+    const claimIds = validateGroundingClaims(id, value, contract, repositories);
+
+    if (value.version === 2) {
+      validateV2ClaimCoverage(id, value, contract, claimIds);
+      validateV2ExecutionBindings(id, dir, value);
+    }
+
+    validateDerivedGroundingFacts(id, value);
     return { value, digest: groundingDigest, firstLock, lockedAt: decision.lockedAt };
   }
 

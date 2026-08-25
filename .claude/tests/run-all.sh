@@ -79,6 +79,7 @@ runtime environment policy|node --test "$HERE/harness/run-runtime-environment-po
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
+grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"

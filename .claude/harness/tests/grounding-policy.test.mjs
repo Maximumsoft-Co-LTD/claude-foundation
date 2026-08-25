@@ -14,11 +14,14 @@ import { renderDraftDecisions } from "../runtime/workflow/change-lifecycle.mjs";
 const fixture = mkdtempSync(join(tmpdir(), "foundation-grounding-policy-"));
 const packet = join(fixture, "change");
 mkdirSync(packet, { recursive: true });
+mkdirSync(join(fixture, "specs"), { recursive: true });
 writeFileSync(join(fixture, "requirement.md"), "approved requirement\n");
 writeFileSync(join(fixture, "production.mjs"), "export const behavior = true;\n");
 writeFileSync(join(fixture, "production.test.mjs"), "// test topology\n");
 writeFileSync(join(fixture, "wire.json"), "{}\n");
 writeFileSync(join(fixture, "activation.mjs"), "export const enabled = true;\n");
+writeFileSync(join(fixture, "specs", "behavior.md"),
+  "#### Scenario: Stable behavior\n");
 const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const stableHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail = (message) => { throw new Error(message); };
@@ -59,7 +62,7 @@ try {
     root: fixture,
     activeChangePath: () => packet,
     changePath: () => packet,
-    walk: () => {},
+    walk: (_dir, visit) => visit(join(fixture, "specs", "behavior.md")),
     loadRuntime: () => state,
     saveRuntime: () => {},
     evidence: () => ({
@@ -94,6 +97,65 @@ try {
     changeDir: packet,
     useTargetPaths: true
   }, "root validation selects repositories from the root packet and target tree");
+
+  state.semanticInvariantsRequired = true;
+  const semanticGrounding = valid();
+  semanticGrounding.semanticInvariants = [{
+    id: "INV-STABLE", statement: "Behavior remains stable", decisionIds: ["d1"],
+    claimIds: ["claim-a"], specScenarios: ["Stable behavior"]
+  }];
+  writeGrounding(semanticGrounding);
+  assert.equal(runtime.groundingValue("change-a", state, packet)
+    .value.semanticInvariants[0].id, "INV-STABLE");
+  state.semanticInvariantsRequired = false;
+
+  const expectFailure = (value, expected, tasks = []) => {
+    writeGrounding(value);
+    assert.throws(() => runtime.groundingValue("change-a", state, packet, tasks), expected);
+  };
+  const invalidV1 = [
+    [(value) => { value.version = 3; }, /requires version 1 or 2/],
+    [(value) => { value.decisionBatch.status = "open"; }, /status must be locked/],
+    [(value) => { value.decisionBatch.source = "guess"; }, /decisionBatch.source/],
+    [(value) => { value.decisionBatch.reference = ""; }, /reference is required/],
+    [(value) => { value.decisionBatch.mode = "rolling"; }, /decisionBatch.mode/],
+    [(value) => { value.decisionBatch.lockedAt = "not-a-date"; }, /ISO-8601/],
+    [(value) => { value.decisionBatch.decisions = []; }, /must record every locked/],
+    [(value) => { value.decisionBatch.decisions[0].source = "mixed"; }, /decisions\[0\].source/],
+    [(value) => { value.decisionBatch.decisions[0].question = ""; }, /question is required/],
+    [(value) => { value.decisionBatch.decisions.push({
+      ...value.decisionBatch.decisions[0]
+    }); }, /id is duplicated/],
+    [(value) => { value.readSet = []; }, /readSet must be non-empty/],
+    [(value) => { value.readSet[0].repository = "other"; }, /unselected repository/],
+    [(value) => { value.readSet[0].role = "unknown"; }, /role is invalid/],
+    [(value) => { value.readSet[0].mode = "partial"; }, /mode must be full\|targeted/],
+    [(value) => { value.readSet[0].path = "/absolute"; }, /repository-relative/],
+    [(value) => { value.readSet[0].sha256 = "bad"; }, /SHA-256/],
+    [(value) => { value.readSet[0].role = "history"; }, /must read a requirement or backlog/],
+    [(value) => { value.claims = []; }, /map every evidence claim exactly once/],
+    [(value) => { value.claims[0].id = "unknown"; }, /unknown evidence claim/],
+    [(value) => { value.claims[0].productionPath = []; }, /productionPath must be/],
+    [(value) => { value.claims[0].failurePaths = []; }, /failurePaths must be/],
+    [(value) => { value.claims[0].failurePaths[0].failure = ""; }, /failure is required/],
+    [(value) => { value.claims[0].evidenceClass = []; }, /evidenceClass must be/],
+    [(value) => { value.claims[0].evidenceClass = ["unknown"]; }, /unsupported class/],
+    [(value) => { value.claims[0].testDoubleGap = ""; }, /testDoubleGap/],
+    [(value) => {
+      value.claims[0].testDoubleGap = "unit double";
+      value.claims[0].evidenceClass = ["test", "review"];
+    }, /without integration or live evidence/],
+    [(value) => { value.claims[0].evidenceClass = ["static"]; }, /is not declared by evidence.yaml/],
+    [(value) => { value.derivedFacts = {}; }, /derivedFacts must be an array/],
+    [(value) => { value.derivedFacts = [{ fact: "", command: "" }]; }, /requires fact and command/]
+  ];
+  for (const [mutate, expected] of invalidV1) {
+    const value = valid();
+    mutate(value);
+    expectFailure(value, expected);
+  }
+  writeFileSync(join(packet, "grounding.yaml"), "not-json\n");
+  assert.throws(() => runtime.groundingValue("change-a", state, packet), /JSON-compatible/);
 
   const sandboxPacket = join(fixture, "sandbox-change");
   mkdirSync(sandboxPacket, { recursive: true });
@@ -209,6 +271,51 @@ try {
     "a missing Grounding v2 read set fails with a typed validation message");
   writeGrounding(v2());
   assert.equal(runtime.groundingValue("change-a", state, packet).value.version, 2);
+  const invalidV2 = [
+    [(value) => { value.risk.tier = "extreme"; }, /risk.tier/],
+    [(value) => { value.risk.classes = []; }, /risk.classes/],
+    [(value) => { value.risk.rationale = ""; }, /risk.rationale/],
+    [(value) => { value.productionEntry.status = "unknown"; }, /productionEntry.status/],
+    [(value) => { value.productionEntry.sourceReason = ""; }, /productionEntry.sourceReason/],
+    [(value) => { value.productionEntry.paths = null; }, /productionEntry.paths must be an array/],
+    [(value) => { value.productionEntry.paths = []; }, /must be non-empty when applicable/],
+    [(value) => { value.activationSemantics.failureSemanticChanges = null; }, /failureSemanticChanges/],
+    [(value) => { value.productionEntry.status = "not-applicable"; value.productionEntry.paths = []; }, /productionEntry cannot be N\/A/],
+    [(value) => { value.realWire.status = "not-applicable"; value.realWire.contracts = []; }, /realWire is required/],
+    [(value) => { value.activationSemantics.status = "not-applicable"; value.activationSemantics.activatedPaths = []; }, /activationSemantics is required/],
+    [(value) => { value.observability.status = "not-applicable"; value.observability.rows = []; }, /observability is required/],
+    [(value) => { value.productionEntry.paths[0].repository = "other"; }, /unselected repository/],
+    [(value) => { value.realWire.contracts[0].path = "/wire.json"; }, /repository-relative/],
+    [(value) => { value.activationSemantics.activatedPaths[0].path = "missing.mjs"; }, /does not resolve/],
+    [(value) => { value.readSet = value.readSet.filter((row) => row.path !== "wire.json"); }, /must appear in readSet with role/],
+    [(value) => { value.serviceInteractions.rows[0].owner = ""; }, /owner is required/],
+    [(value) => { value.serviceInteractions.rows.push({ ...value.serviceInteractions.rows[0] }); }, /id is duplicated/],
+    [(value) => { value.observability.rows[0].interactionId = "missing"; }, /does not reference/],
+    [(value) => { value.observability.rows = []; }, /observability.rows must be non-empty/],
+    [(value) => { value.criticalCases = null; }, /criticalCases and mutants must be arrays/],
+    [(value) => { value.criticalCases[0].id = ""; }, /id must be non-empty and unique/],
+    [(value) => { value.criticalCases[0].claimIds = []; }, /claimIds must be non-empty/],
+    [(value) => { value.criticalCases[0].oracle = "guess"; }, /oracle is invalid/],
+    [(value) => { value.mutants = [{ id: "", claimIds: ["claim-a"], class: "x", killerCaseId: "CASE-WIRE" }]; }, /mutants\[0\].id/],
+    [(value) => { value.mutants = [{ id: "M1", claimIds: [], class: "", killerCaseId: "CASE-WIRE" }]; }, /requires claimIds and class/],
+    [(value) => { value.mutants = [{ id: "M1", claimIds: ["claim-a"], class: "x", killerCaseId: "missing" }]; }, /killerCaseId/],
+    [(value) => { value.criticalCases = []; }, /material test claim/],
+    [(value) => { value.criticalCases.push({
+      ...value.criticalCases[0], id: "CASE-UNKNOWN", claimIds: ["unknown"]
+    }); }, /references unknown claim/]
+  ];
+  for (const [mutate, expected] of invalidV2) {
+    const value = v2();
+    mutate(value);
+    expectFailure(value, expected);
+  }
+  const missingProductionSource = v2();
+  missingProductionSource.readSet = missingProductionSource.readSet
+    .filter((row) => row.path !== "production.mjs");
+  expectFailure(missingProductionSource, /productionEntry.paths\[0\] must appear in readSet/);
+  const unselectedWireSource = v2();
+  unselectedWireSource.realWire.contracts[0].repository = "other";
+  expectFailure(unselectedWireSource, /realWire.contracts\[0\] references an unselected/);
   contract.claims[0].capabilities.push("deployment");
   const deploymentEvidence = v2();
   deploymentEvidence.claims[0].evidenceClass.push("deployment");
@@ -230,6 +337,47 @@ try {
   assert.throws(() => runtime.groundingValue("change-a", state, packet),
     /does not resolve inside repository/,
     "real-wire references must resolve inside a selected repository");
+
+  contract.claims[0].capabilities.push("mutation");
+  executionProviders = {
+    test: { capability: "test", criticalCases: ["CASE-WIRE"] },
+    mutationEmpty: {
+      capability: "mutation", resultProtocol: "foundation-mutation-v2"
+    },
+    mutation: {
+      capability: "mutation", resultProtocol: "foundation-mutation-v2",
+      criticalCases: ["CASE-WIRE"], requiredMutants: ["M1"],
+      mutantKillers: { M1: "CASE-WIRE" }
+    }
+  };
+  const mutationGrounding = v2();
+  mutationGrounding.claims[0].evidenceClass.push("mutation");
+  mutationGrounding.mutants = [{
+    id: "M1", claimIds: ["claim-a"], class: "polarity", killerCaseId: "CASE-WIRE"
+  }];
+  writeGrounding(mutationGrounding);
+  assert.equal(runtime.groundingValue("change-a", state, packet).value.mutants[0].id, "M1");
+  const missingMutationCoverage = structuredClone(mutationGrounding);
+  missingMutationCoverage.mutants = [];
+  expectFailure(missingMutationCoverage, /mutation claim 'claim-a' requires a named mutant/);
+  const unknownMutantClaim = structuredClone(mutationGrounding);
+  unknownMutantClaim.mutants.push({
+    id: "M2", claimIds: ["missing"], class: "boundary", killerCaseId: "CASE-WIRE"
+  });
+  expectFailure(unknownMutantClaim, /mutants\[1\] references unknown claim/);
+  executionProviders.mutation.requiredMutants = [];
+  expectFailure(mutationGrounding, /must bind mutant 'M1'/);
+  executionProviders.mutation.requiredMutants = ["M1"];
+  executionProviders.mutation.mutantKillers.M1 = "OTHER";
+  expectFailure(mutationGrounding, /mutantKillers.M1 must equal/);
+  executionProviders.mutation.mutantKillers.M1 = "CASE-WIRE";
+  delete executionProviders.mutation.criticalCases;
+  expectFailure(mutationGrounding, /mutation provider must require killer critical case/);
+  executionProviders = { test: { capability: "test", criticalCases: [] } };
+  contract.claims[0].capabilities = contract.claims[0].capabilities
+    .filter((capability) => capability !== "mutation");
+  const unboundCriticalCase = v2();
+  expectFailure(unboundCriticalCase, /must bind critical case 'CASE-WIRE'/);
 
   state.nfrAssessmentRequired = true;
   state.intent = "Keep p95 response latency below the approved performance budget";
@@ -272,6 +420,29 @@ try {
   writeGrounding(nfr);
   assert.equal(runtime.groundingValue("change-a", state, packet, ownedTask)
     .value.nfrAssessment.performance.status, "applicable");
+  const invalidNfr = [
+    [(value) => { value.nfrAssessment = null; }, /nfrAssessment is required/],
+    [(value) => { value.nfrAssessment.unknown = {}; }, /unknown categories/],
+    [(value) => { delete value.nfrAssessment.performance; }, /performance.status/],
+    [(value) => { value.nfrAssessment.performance.status = "unknown"; }, /performance.status/],
+    [(value) => { value.nfrAssessment.performance.sourceReason = ""; }, /sourceReason is required/],
+    [(value) => { value.nfrAssessment.performance.claimIds = null; }, /claimIds must be an array/],
+    [(value) => {
+      value.nfrAssessment.performance.status = "not-applicable";
+      value.nfrAssessment.performance.claimIds = [];
+    }, /performance is required/],
+    [(value) => { value.nfrAssessment.accessibility.claimIds = ["claim-a"]; },
+      /claimIds must be empty/],
+    [(value) => { value.nfrAssessment.performance.target = "fast"; }, /numeric threshold/],
+    [(value) => { value.nfrAssessment.performance.claimIds = []; }, /claimIds must be non-empty/],
+    [(value) => { value.nfrAssessment.performance.claimIds = ["missing"]; },
+      /references unknown claim/]
+  ];
+  for (const [mutate, expected] of invalidNfr) {
+    const value = structuredClone(nfr);
+    mutate(value);
+    expectFailure(value, expected, ownedTask);
+  }
   const missingTarget = structuredClone(nfr);
   missingTarget.nfrAssessment.performance.target = "none";
   writeGrounding(missingTarget);
@@ -289,6 +460,54 @@ try {
   assert.throws(() => runtime.groundingValue("change-a", state, packet, docsOnlyTask),
     /no implementation task owner/,
     "non-implementation tasks cannot own an applicable NFR claim");
+
+  contract.claims[0].capabilities = ["test", "review"];
+  expectFailure(nfr, /must declare one of: performance/, ownedTask);
+  contract.claims[0].capabilities.push("performance");
+  evidenceProviders = {};
+  expectFailure(nfr, /no configured capable evidence provider/, ownedTask);
+
+  state.intent = "Performance latency capacity scalability availability uptime reliability";
+  state.coupling = "coupled";
+  state.securityTriggers = ["authentication-boundary"];
+  contract = { claims: [{
+    id: "claim-a", scenario: "unauthorized access is denied below threshold 99",
+    impact: "medium",
+    capabilities: [
+      "test", "integration", "review", "performance", "resilience",
+      "security-static", "accessibility", "observability", "compatibility",
+      "cross-repo-contract", "data-migration", "deployment"
+    ]
+  }] };
+  executionProviders = {
+    test: { capability: "test", criticalCases: ["CASE-WIRE"] }
+  };
+  evidenceProviders = Object.fromEntries([
+    "performance", "resilience", "security-static", "accessibility", "observability",
+    "compatibility", "cross-repo-contract", "data-migration", "deployment"
+  ].map((capability) => [capability, { capability }]));
+  const allNfr = v2();
+  allNfr.readSet.push({
+    repository: "root", path: "requirement.md", role: "dependency-source", mode: "full",
+    sha256: digest(join(fixture, "requirement.md"))
+  });
+  for (const role of ["architecture", "composition-root"])
+    allNfr.readSet.push({
+      repository: "root", path: "requirement.md", role, mode: "full",
+      sha256: digest(join(fixture, "requirement.md"))
+    });
+  allNfr.derivedFacts = [{ fact: "all NFR providers are configured", command: "verify-nfr" }];
+  allNfr.nfrAssessment = Object.fromEntries(Object.keys({
+    performance: 1, capacity: 1, availability: 1, securityPrivacy: 1,
+    accessibility: 1, operability: 1, compatibility: 1, recoverability: 1
+  }).map((category) => [category, {
+    status: "applicable", sourceReason: `${category} is material`,
+    target: `${category} threshold 99`, claimIds: ["claim-a"]
+  }]));
+  writeGrounding(allNfr);
+  assert.equal(runtime.groundingValue("change-a", state, packet, ownedTask)
+    .value.nfrAssessment.securityPrivacy.status, "applicable",
+  "all NFR categories accept capable evidence, ownership, targets, and a security negative path");
 
   assert.deepEqual(durableDecisionMetadataIssues(`## Decisions\n\n- **Decision ID:** DEC-001\n  - **Status:** accepted\n  - **Decision:** Use bounded packets\n  - **Why:** Avoid transcript contamination\n  - **Rejected:** Parent transcript inheritance\n  - **Consequences:** Workers must regenerate packets\n  - **Supersedes:** none\n  - **Superseded by:** none\n\n## Compatibility and migration\n\nnone\n`), []);
   assert.match(durableDecisionMetadataIssues(`## Decisions\n\n- **Decision:** missing identity\n\n## Compatibility and migration\n`)[0], /Decision ID metadata/);
