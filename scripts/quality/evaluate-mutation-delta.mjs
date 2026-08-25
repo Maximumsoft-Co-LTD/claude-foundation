@@ -26,9 +26,12 @@ export function evaluateMutationDelta(currentReport, baseline, policy, compariso
   if (policy.mutation.automated.rejectScoreRegression && current.score + 0.005 < comparisonBaseline.score) {
     reasons.push(`mutation score regressed from ${comparisonBaseline.score.toFixed(2)}% to ${current.score.toFixed(2)}%`);
   }
+  const currentDetected = current.counts.killed + current.counts.timeout;
+  const baselineDetected = baseline.counts.killed + baseline.counts.timeout;
   if (policy.mutation.automated.requireBaselineSnapshot &&
-    (Math.abs(current.score - baseline.score) >= 0.005 ||
-      Object.entries(current.counts).some(([key, value]) => value !== baseline.counts[key]))) {
+    (Math.abs(current.score - baseline.score) >= 0.005 || currentDetected !== baselineDetected ||
+      current.counts.survived !== baseline.counts.survived ||
+      current.counts.noCoverage !== baseline.counts.noCoverage)) {
     reasons.push("versioned mutation baseline does not match the normalized current report");
   }
   return {

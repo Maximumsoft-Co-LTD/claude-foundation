@@ -32,3 +32,13 @@ test("mutation ratchet requires the versioned snapshot to advance with improveme
   assert.equal(result.status, "fail");
   assert.match(result.reasons.join(" "), /baseline does not match/);
 });
+
+test("mutation snapshot treats killed and timeout as equivalent detections", () => {
+  const result = evaluateMutationDelta(report(["Killed", "Timeout", "Survived"]), {
+    counts: { killed: 2, timeout: 0, survived: 1, noCoverage: 0 }, score: 66.67
+  }, { mutation: { automated: {
+    mode: "enforce", rejectNewNoCoverage: true, rejectScoreRegression: true,
+    requireBaselineSnapshot: true
+  } } });
+  assert.equal(result.status, "pass");
+});
