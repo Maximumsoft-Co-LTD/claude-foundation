@@ -199,19 +199,7 @@ export function createReceiptRuntime({
     return reference;
   }
 
-  // `options` is deliberately not reachable from the command line: only a call
-  // site inside this process — one that actually ran a command — may declare
-  // an execution. Everything arriving over the CLI is a manual assertion and
-  // owes the evidence floor below.
-  function recordReceipt(id, provider, status, flags = {}, options = {}) {
-    const harnessExecuted = options.executed === true;
-    const configured = providerConfig(id, provider);
-    const capability = providerCapability(provider, configured);
-    if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
-    if (!["pass", "fail", "inconclusive", "error"].includes(status)) die(`invalid receipt status '${status}'`);
-    const state = loadRuntime(id);
-    if (capability === "acceptance" && !resolvedAcceptance(id, state, evidence(id)).required)
-      die("acceptance evidence is not declared for this change");
+  function receiptClaims(id, provider, flags) {
     const allClaims = evidence(id).claims.map((claim) => claim.id);
     const allowedClaims = claimsForProvider(id, provider).map((claim) => claim.id);
     const requestedClaims = String(
@@ -219,349 +207,464 @@ export function createReceiptRuntime({
     ).split(",").filter(Boolean);
     if (requestedClaims.length === 0) die(`provider '${provider}' has no declared claims`);
     const unknownClaims = requestedClaims.filter((claim) => !allClaims.includes(claim));
-    if (unknownClaims.length) die(`receipt references unknown claim(s): ${unknownClaims.join(", ")}`);
+    if (unknownClaims.length)
+      die(`receipt references unknown claim(s): ${unknownClaims.join(", ")}`);
     const forbiddenClaims = requestedClaims.filter((claim) => !allowedClaims.includes(claim));
     if (forbiddenClaims.length)
       die(`provider '${provider}' is not declared for claim(s): ${forbiddenClaims.join(", ")}`);
-    const config = flags.config || configured;
-    const legacyForeground = flags.foreground || null;
-    const foregroundRequired = flags["foreground-required"] !== undefined
-      ? flags["foreground-required"] === "yes"
-      : legacyForeground === "required";
-    const foregroundAvailable = flags["foreground-available"] !== undefined
+    return requestedClaims;
+  }
+
+  function receiptForeground(flags) {
+    const legacy = flags.foreground || null;
+    const required = flags["foreground-required"] !== undefined
+      ? flags["foreground-required"] === "yes" : legacy === "required";
+    const available = flags["foreground-available"] !== undefined
       ? flags["foreground-available"] === "yes"
-      : legacyForeground === "available" || legacyForeground === "not-required";
-    if (legacyForeground) console.error("WARNING: --foreground is deprecated; use --foreground-required and --foreground-available");
-    const command = flags.command || null;
-    const providerVersion = String(flags.version || config?.version || "1");
+      : legacy === "available" || legacy === "not-required";
+    if (legacy)
+      console.error("WARNING: --foreground is deprecated; use --foreground-required and --foreground-available");
+    return { required, available };
+  }
+
+  function validateReceiptAdapter(provider, status, flags, configured, harnessExecuted) {
+    if (harnessExecuted) return;
+    if (typeof flags.adapter === "string" && EXECUTING_ADAPTERS.has(flags.adapter))
+      die(`--adapter ${flags.adapter} names an adapter the harness executes; ` +
+        "a hand-recorded receipt cannot claim it. Run 'proof run <change>' instead");
+    if (status === "pass" && EXECUTING_ADAPTERS.has(String(configured?.adapter || "")))
+      die(`provider '${provider}' is configured for adapter '${configured.adapter}'; ` +
+        "a passing receipt for it must come from an execution — run 'proof run <change>'");
+  }
+
+  function receiptTarget(id, provider, status) {
+    const configured = providerConfig(id, provider);
+    const capability = providerCapability(provider, configured);
+    if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
+    if (!["pass", "fail", "inconclusive", "error"].includes(status))
+      die(`invalid receipt status '${status}'`);
+    const state = loadRuntime(id);
+    if (capability === "acceptance" && !resolvedAcceptance(id, state, evidence(id)).required)
+      die("acceptance evidence is not declared for this change");
+    return { configured, capability, state };
+  }
+
+  function receiptExecutionContext(id, provider, status, flags, options) {
+    const harnessExecuted = options.executed === true;
+    const { configured, capability, state } = receiptTarget(id, provider, status);
+    const config = flags.config || configured;
+    const foreground = receiptForeground(flags);
     const adapter = flags.adapter || config?.adapter || "external";
-    if (!harnessExecuted) {
-      if (typeof flags.adapter === "string" && EXECUTING_ADAPTERS.has(flags.adapter))
-        die(`--adapter ${flags.adapter} names an adapter the harness executes; ` +
-          "a hand-recorded receipt cannot claim it. Run 'proof run <change>' instead");
-      if (status === "pass" && EXECUTING_ADAPTERS.has(String(configured?.adapter || "")))
-        die(`provider '${provider}' is configured for adapter '${configured.adapter}'; ` +
-          "a passing receipt for it must come from an execution — run 'proof run <change>'");
-    }
-    const inputMode = flags["input-mode"] || config?.inputMode || null;
+    validateReceiptAdapter(provider, status, flags, configured, harnessExecuted);
     const proofRunId = flags.proofRunId || state.activeProofRun?.id ||
       `manual-${Date.now()}-${process.pid}`;
-    // Through `providerWorkspaceHash`, not around it: the active run records
-    // one hash for the whole run, and a provider scoped to a repository — or
-    // bound to the code half — expects its own. Taking the run's value first
-    // wrote a receipt that was stale the moment it existed.
-    const workspaceHash = flags.workspaceHash ||
-      providerWorkspaceHash(id, provider, state.activeProofRun?.workspaceHash);
-    const repository = providerRepository(id, provider, config);
+    return {
+      harnessExecuted, configured, capability, state, config, adapter,
+      requestedClaims: receiptClaims(id, provider, flags),
+      command: flags.command || null,
+      providerVersion: String(flags.version || config?.version || "1"),
+      inputMode: flags["input-mode"] || config?.inputMode || null,
+      foregroundRequired: foreground.required, foregroundAvailable: foreground.available,
+      proofRunId,
+      workspaceHash: flags.workspaceHash ||
+        providerWorkspaceHash(id, provider, state.activeProofRun?.workspaceHash),
+      repository: providerRepository(id, provider, config)
+    };
+  }
+
+  function receiptArtifactFlags(flags) {
     const artifactFlags = [
       ...(Array.isArray(flags.artifact) ? flags.artifact : []),
       ...(Array.isArray(flags.artifacts) ? flags.artifacts : []),
-      ...(flags.log ? [{
-        path: flags.log, type: "command-log", required: true
-      }] : [])
+      ...(flags.log ? [{ path: flags.log, type: "command-log", required: true }] : [])
     ].flatMap((artifact) => typeof artifact === "string"
       ? artifact.split(",").filter(Boolean).map((path) => ({
         path, type: "external-evidence", required: true
-      }))
-      : [artifact]);
-    const uniqueArtifactFlags = [...new Map(artifactFlags.map((artifact) => [
+      })) : [artifact]);
+    return [...new Map(artifactFlags.map((artifact) => [
       `${artifact.type || "artifact"}:${artifact.path}`, artifact
     ])).values()];
-    const references = (Array.isArray(flags.reference) ? flags.reference : [])
-      .flatMap((value) => String(value).split(","))
-      .map((value) => value.trim()).filter(Boolean);
-    rejectPrototypeEvidenceInputs(id, provider, uniqueArtifactFlags, references);
-    const unresolvable = references
-      .map((reference) => unresolvableReference(id, provider, reference))
-      .filter(Boolean);
-    if (unresolvable.length)
-      die("a reference must be a URI or a path that exists; these resolve to " +
-        `nothing: ${unresolvable.join(", ")}`);
-    const artifacts = uniqueArtifactFlags
-      .map((artifact) => durableArtifact(id, provider, proofRunId, artifact));
-    const observed = String(flags.observed || "").trim();
-    let provenanceSource = String(
-      flags.source || flags.reviewer || flags.provenance ||
+  }
+
+  function receiptProvenance(flags, capability) {
+    let source = String(flags.source || flags.reviewer || flags.provenance ||
       (flags.command ? `command:${Array.isArray(flags.command)
-        ? flags.command.join(" ") : flags.command}` : "")
-    ).trim();
-    if (!provenanceSource && capability === "review" && flags["reviewer-identity"])
-      provenanceSource = `reviewer:${String(flags["reviewer-identity"]).trim()}`;
-    if (!provenanceSource && capability === "acceptance" && flags.acceptor)
-      provenanceSource = `human:${String(flags.acceptor).trim()}`;
-    // Report every missing requirement at once. Revealing them one per failure
-    // costs a round trip each, and the person who gave the verdict is waiting.
-    if (!harnessExecuted && status === "pass") {
+        ? flags.command.join(" ") : flags.command}` : "")).trim();
+    if (!source && capability === "review" && flags["reviewer-identity"])
+      source = `reviewer:${String(flags["reviewer-identity"]).trim()}`;
+    if (!source && capability === "acceptance" && flags.acceptor)
+      source = `human:${String(flags.acceptor).trim()}`;
+    return source;
+  }
+
+  function validateReceiptEvidence(provider, status, context, row) {
+    if (!context.harnessExecuted && status === "pass") {
       const missing = [];
-      if (!observed)
+      if (!row.observed)
         missing.push("observed — flag --observed, or evidence.observed in the response file");
-      if (!provenanceSource)
+      if (!row.provenanceSource)
         missing.push("source — flag --source or --reviewer, or evidence.source in the response file");
-      if (artifacts.length === 0 && references.length === 0)
+      if (row.artifacts.length === 0 && row.references.length === 0)
         missing.push("artifact or reference — flag --artifact or --reference, " +
           "or evidence.artifact[] / evidence.reference[] in the response file");
       if (missing.length)
         die(`passing external receipt '${provider}' is missing:\n  ${missing.join("\n  ")}`);
     }
-    if (harnessExecuted && status === "pass" &&
-        !artifacts.some((artifact) => artifact.type === "command-log"))
+    if (context.harnessExecuted && status === "pass" &&
+        !row.artifacts.some((artifact) => artifact.type === "command-log"))
       die(`executed receipt '${provider}' must carry its command log`);
-    const inputIdentity = providerInputIdentity(
-      id, provider, config, workspaceHash
-    );
-    if (status === "pass" && inputIdentity.mode === "declared" &&
-        inputIdentity.files.length === 0)
-      die(`passing receipt '${provider}' declared inputs but matched no files`);
-    const receipt = {
-      version: 7, changeId: id, provider, providerVersion, adapter,
-      // Who produced this: an execution the harness performed, or an assertion
-      // somebody made. `adapter` cannot answer that — the caller supplies it.
-      execution: harnessExecuted ? "harness" : "manual",
-      repositoryId: repository?.id || null,
-      repositoryIds: providerRepositories(id, provider, config).map((row) => row.id),
+  }
+
+  function receiptEvidence(id, provider, status, flags, context) {
+    const uniqueArtifactFlags = receiptArtifactFlags(flags);
+    const references = (Array.isArray(flags.reference) ? flags.reference : [])
+      .flatMap((value) => String(value).split(","))
+      .map((value) => value.trim()).filter(Boolean);
+    rejectPrototypeEvidenceInputs(id, provider, uniqueArtifactFlags, references);
+    const unresolvable = references
+      .map((reference) => unresolvableReference(id, provider, reference)).filter(Boolean);
+    if (unresolvable.length)
+      die("a reference must be a URI or a path that exists; these resolve to " +
+        `nothing: ${unresolvable.join(", ")}`);
+    const artifacts = uniqueArtifactFlags
+      .map((artifact) => durableArtifact(id, provider, context.proofRunId, artifact));
+    const row = {
+      artifacts, references, observed: String(flags.observed || "").trim(),
+      provenanceSource: receiptProvenance(flags, context.capability)
+    };
+    validateReceiptEvidence(provider, status, context, row);
+    return row;
+  }
+
+  function receiptProviderFingerprint(id, provider, flags, context) {
+    if (context.config) return adapterFingerprint(id, provider, context.config);
+    return stableHash({
       adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
       providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
-      contractFingerprint: contractFingerprint(id),
-      executionFingerprint: executionFingerprint(id),
-      providerFingerprint: config
-        ? adapterFingerprint(id, provider, config)
-        : stableHash({
-          adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
-          providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
-          provider, adapter, adapterVersion: providerVersion,
-          command, claims: requestedClaims,
-          environment: flags.environment || null, inputMode,
-          project: flags.project || null
-        }),
-      workspaceHash, workspaceSnapshotId: state.activeProofRun?.snapshotId || null,
-      inputIdentity,
-      // A review or acceptance verdict covers the change's diff plus the
-      // packet its giver read — not every tracked byte of the workspace.
-      // Stamped at creation so a clean replay onto a moved base can rebind
-      // the receipt instead of expiring it. A null identity (copy sandbox)
-      // is "not rebindable", never "matches anything".
-      rebind: ["review", "acceptance"].includes(capability) ? {
-        mode: "diff",
-        diffIdentity: changeDiffIdentity(id, state),
-        packetReviewHash: relevantSnapshot(id)?.packetReviewHash || null
-      } : undefined,
-      claims: requestedClaims,
-      status, observed, provenance: {
-        source: provenanceSource || null,
-        recordedBy: String(flags["recorded-by"] || "").trim() || null
-      }, references, capability: {
-        inputMode,
-        foregroundRequired, foregroundAvailable
-      },
-      command,
-      log: artifacts.find((artifact) => artifact.type === "command-log")?.path ||
-        flags.log || null,
-      artifacts,
-      environment: config ? environmentDescriptor(config, id) : (flags.environment || null),
-      project: flags.project || config?.project || null,
-      proofRunId,
-      commandExecutionId: flags.commandExecutionId || flags.executionId || null,
-      executionId: flags.commandExecutionId || flags.executionId || null,
+      provider, adapter: context.adapter, adapterVersion: context.providerVersion,
+      command: context.command, claims: context.requestedClaims,
+      environment: flags.environment || null, inputMode: context.inputMode,
+      project: flags.project || null
+    });
+  }
+
+  function receiptRebind(id, context) {
+    if (!["review", "acceptance"].includes(context.capability)) return undefined;
+    return {
+      mode: "diff", diffIdentity: changeDiffIdentity(id, context.state),
+      packetReviewHash: relevantSnapshot(id)?.packetReviewHash || null
+    };
+  }
+
+  function receiptTimingAndExecution(flags, context) {
+    const executionId = flags.commandExecutionId || flags.executionId || null;
+    return {
+      proofRunId: context.proofRunId, commandExecutionId: executionId, executionId,
       durationMs: flags.durationMs === undefined ? null : Number(flags.durationMs),
       startedAt: flags.started || now(), finishedAt: now()
     };
-    if (capability === "review") {
-      // Internal callers may grandfather a request created before the dispatch
-      // protocol existed. CLI flags cannot select this option, so a new review
-      // cannot downgrade itself to the legacy reserve-on-record behavior.
-      const reviewCircuit = options.reviewCircuit ||
-        foundationPolicy().workflow.reviewCircuit;
-      const policy = reviewPolicy(id);
-      const reviewerType = String(flags["reviewer-type"] ||
-        (flags.reviewer ? "human" : "")).toLowerCase();
-      const deterministicClosure = options.repairClosure || null;
-      if (!['ai', 'human'].includes(reviewerType) &&
-          !(reviewerType === "deterministic" && deterministicClosure))
-        die("review receipt requires --reviewer-type ai|human");
-      const reviewerIdentity = String(
-        flags["reviewer-identity"] || flags.reviewer || ""
-      ).trim();
-      if (!reviewerIdentity) die("review receipt requires --reviewer-identity");
-      const reviewer = {
-        type: reviewerType,
-        identity: reviewerIdentity,
-        providerFamily: String(flags["reviewer-provider-family"] || "").trim().toLowerCase() || null,
-        modelFamily: String(flags["reviewer-model-family"] || "").trim().toLowerCase() || null,
-        modelId: String(flags["reviewer-model"] || "").trim() || null,
-        sessionId: String(flags["reviewer-session"] || "").trim() || null
-      };
-      const subjects = subjectProvenance(flags);
-      const infrastructureError = status === "error";
-      if (reviewerType === "ai" && [
-        reviewer.providerFamily, reviewer.modelFamily, reviewer.modelId
-      ].some((value) => !value))
-        die("AI review requires reviewer provider/model family and model ID");
-      if (reviewerType === "ai" && !reviewer.sessionId && !infrastructureError)
-        die("AI review requires the actual reviewer session unless the recorded status is an infrastructure error");
-      if (!subjects.length)
-        die("review requires implementation provenance: --subject-actor on " +
-          "'evidence record', or a \"subject-actor\" field under \"evidence\" in " +
-          "the response file when recording through 'authority record', which " +
-          "takes no provenance flags of its own");
-      const provenance = reviewProvenanceResult({ reviewer, subjects }, {
-        allowMissingAiSession: infrastructureError
-      });
-      if (!provenance.complete)
-        die("review requires complete structured reviewer and subject provenance");
-      const { independent, diverse } = provenance;
-      // `independent` stays the observed fact and is persisted as one below; the
-      // policy only decides whether that fact blocks. Folding the waiver into
-      // the predicate would make a self-review's own receipt claim an
-      // independence it did not have, which is the record a later reader needs
-      // most.
-      if (!infrastructureError && !independent && policy.independence !== "self")
-        die("reviewer must use an identity and session independent of implementation");
-      if (status === "pass" && policy.diversity === "required" && !diverse)
-        die("review policy requires a different provider/model family or a human reviewer");
-      // A passing review asserts there is nothing left to resolve, so the count
-      // has to be stated rather than defaulted. `Number(undefined || 0)` is 0,
-      // which made "nobody counted" and "counted zero" identical on the one
-      // gate whose job is to stop an unresolved blocker from reaching Land.
-      if (status === "pass" && flags["unresolved-blockers"] === undefined)
-        die("passing review requires --unresolved-blockers; state the count " +
-          "explicitly rather than leaving it unstated");
-      const blockers = Number(flags["unresolved-blockers"] || 0);
-      const verified = Number(flags["verified-findings"] || 0);
-      if (![blockers, verified].every((value) => Number.isInteger(value) && value >= 0))
-        die("review finding counts must be non-negative integers");
-      if (status === "pass" && blockers > 0)
-        die("passing review cannot contain unresolved blockers");
-      const findingRows = Array.isArray(flags.findings) ? flags.findings.map((finding) => ({
-        id: String(finding?.id || "").trim(),
-        severity: String(finding?.severity || "").toLowerCase(),
-        path: String(finding?.path || ""),
-        line: finding?.line === null || finding?.line === undefined
-          ? null : Number(finding.line),
-        message: String(finding?.message || "").trim(),
-        claimIds: [...new Set((finding?.claimIds || []).map((value) =>
-          String(value).trim()).filter(Boolean))].sort(),
-        verificationCaseIds: [...new Set((finding?.verificationCaseIds || [])
-          .map((value) => String(value).trim()).filter(Boolean))].sort()
-      })) : [];
-      if (findingRows.some((finding) => !finding.id || !finding.message ||
-          !["blocker", "major", "minor"].includes(finding.severity)) ||
-          new Set(findingRows.map((finding) => finding.id)).size !== findingRows.length)
-        die("review findings must have unique IDs, blocker|major|minor severity, and messages");
-      const unresolvedIds = findingRows.filter((finding) =>
-        ["blocker", "major"].includes(finding.severity)).map((finding) => finding.id).sort();
-      const verifiedFindingIds = [...new Set((Array.isArray(flags.verifiedFindingIds)
-        ? flags.verifiedFindingIds : []).map((value) => String(value).trim())
-        .filter(Boolean))].sort();
-      const prior = existsSync(receiptPath(id, provider))
-        ? readJson(receiptPath(id, provider), {}) : null;
-      const scopePaths = [...new Set(flagValues(flags, "scope-path"))].sort();
-      const history = reviewHistoryState(id);
-      const dispatched = reviewCircuit === "full-delta"
-        ? reviewAttemptByDigest(id, String(flags["review-attempt"] || ""))
-        : null;
-      if (reviewCircuit === "full-delta" && !dispatched)
-        die("review evidence requires an authority dispatch attempt; run 'authority dispatch' before recording it");
-      const nextAttempt = dispatched?.attempt || Number(history.totalAttempts || 0) + 1;
-      const scopeMode = dispatched?.scope?.mode ||
-        (nextAttempt === 1 || scopePaths.length === 0 ? "full" : "changed");
-      const baseAttemptDigest = dispatched?.scope?.baseAttemptDigest || null;
-      if ((findingRows.length > 0 || verifiedFindingIds.length > 0 ||
-          scopeMode === "delta") &&
-          (blockers !== unresolvedIds.length || verified !== verifiedFindingIds.length))
-        die("review finding counts must equal the supplied finding and verifiedFindingIds rows");
-      if (scopeMode === "delta" && reviewerType === "ai" && scopePaths.length === 0)
-        die("AI delta review requires at least one scope-path in the response evidence");
-      receipt.reviewProtocolVersion = REVIEW_PROTOCOL_VERSION;
-      receipt.review = {
-        round: nextAttempt,
-        requestId: dispatched?.requestId || null,
-        reviewer,
-        subjects,
-        policy: { ...policy, independent, diverse },
-        scope: {
-          mode: scopeMode,
-          baseAttemptDigest,
-          paths: scopePaths,
-          dispatchDigest: dispatched?.scope?.digest || null,
-          digest: stableHash({ priorWorkspaceHash: prior?.workspaceHash || null, workspaceHash, paths: scopePaths })
-        },
-        packetDigest: dispatched?.packetDigest || null,
-        findings: {
-          verified,
-          unresolvedBlockers: blockers,
-          reference: references[0] || null,
-          items: findingRows,
-          verifiedIds: verifiedFindingIds,
-          unresolvedIds
-        },
-        supersedes: prior ? {
-          receiptSha256: stableHash(prior),
-          workspaceHash: prior.workspaceHash || null,
-          finishedAt: prior.finishedAt || null,
-          round: Number(prior?.review?.round || 0) || null
-        } : null
-      };
-      if (deterministicClosure) receipt.review.repairClosure = deterministicClosure;
-      const attempt = dispatched || reserveReviewAttempt(id, reviewerType, {
-        workspaceHash, status, reviewBinding: reviewReceiptBinding(receipt)
-      });
-      receipt.review.attemptDigest = attempt.digest;
-      if (!reviewAttemptIsValid(receipt, attempt))
-        die("review evidence does not match its dispatched reviewer, workspace, request, or scope");
+  }
+
+  function receiptLog(flags, artifacts) {
+    return artifacts.find((artifact) => artifact.type === "command-log")?.path ||
+      flags.log || null;
+  }
+
+  function baseReceipt(id, provider, status, flags, context, suppliedEvidence) {
+    const { config, workspaceHash, requestedClaims } = context;
+    const inputIdentity = providerInputIdentity(id, provider, config, workspaceHash);
+    if (status === "pass" && inputIdentity.mode === "declared" && inputIdentity.files.length === 0)
+      die(`passing receipt '${provider}' declared inputs but matched no files`);
+    return {
+      version: 7, changeId: id, provider, providerVersion: context.providerVersion,
+      adapter: context.adapter, execution: context.harnessExecuted ? "harness" : "manual",
+      repositoryId: context.repository?.id || null,
+      repositoryIds: providerRepositories(id, provider, config).map((row) => row.id),
+      adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
+      providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
+      contractFingerprint: contractFingerprint(id), executionFingerprint: executionFingerprint(id),
+      providerFingerprint: receiptProviderFingerprint(id, provider, flags, context),
+      workspaceHash, workspaceSnapshotId: context.state.activeProofRun?.snapshotId || null,
+      inputIdentity,
+      rebind: receiptRebind(id, context),
+      claims: requestedClaims, status, observed: suppliedEvidence.observed,
+      provenance: {
+        source: suppliedEvidence.provenanceSource || null,
+        recordedBy: String(flags["recorded-by"] || "").trim() || null
+      },
+      references: suppliedEvidence.references,
+      capability: {
+        inputMode: context.inputMode,
+        foregroundRequired: context.foregroundRequired,
+        foregroundAvailable: context.foregroundAvailable
+      },
+      command: context.command,
+      log: receiptLog(flags, suppliedEvidence.artifacts),
+      artifacts: suppliedEvidence.artifacts,
+      environment: config ? environmentDescriptor(config, id) : (flags.environment || null),
+      project: flags.project || config?.project || null,
+      ...receiptTimingAndExecution(flags, context)
+    };
+  }
+
+  function normalizedReviewer(flags) {
+    const reviewerType = String(flags["reviewer-type"] ||
+      (flags.reviewer ? "human" : "")).toLowerCase();
+    const reviewerIdentity = String(flags["reviewer-identity"] || flags.reviewer || "").trim();
+    return {
+      type: reviewerType, identity: reviewerIdentity,
+      providerFamily: String(flags["reviewer-provider-family"] || "").trim().toLowerCase() || null,
+      modelFamily: String(flags["reviewer-model-family"] || "").trim().toLowerCase() || null,
+      modelId: String(flags["reviewer-model"] || "").trim() || null,
+      sessionId: String(flags["reviewer-session"] || "").trim() || null
+    };
+  }
+
+  function validateReviewProvenance(status, reviewer, subjects, policy) {
+    const infrastructureError = status === "error";
+    if (reviewer.type === "ai" && [
+      reviewer.providerFamily, reviewer.modelFamily, reviewer.modelId
+    ].some((value) => !value))
+      die("AI review requires reviewer provider/model family and model ID");
+    if (reviewer.type === "ai" && !reviewer.sessionId && !infrastructureError)
+      die("AI review requires the actual reviewer session unless the recorded status is an infrastructure error");
+    if (!subjects.length)
+      die("review requires implementation provenance: --subject-actor on " +
+        "'evidence record', or a \"subject-actor\" field under \"evidence\" in " +
+        "the response file when recording through 'authority record', which " +
+        "takes no provenance flags of its own");
+    const provenance = reviewProvenanceResult({ reviewer, subjects }, {
+      allowMissingAiSession: infrastructureError
+    });
+    if (!provenance.complete)
+      die("review requires complete structured reviewer and subject provenance");
+    if (!infrastructureError && !provenance.independent && policy.independence !== "self")
+      die("reviewer must use an identity and session independent of implementation");
+    if (status === "pass" && policy.diversity === "required" && !provenance.diverse)
+      die("review policy requires a different provider/model family or a human reviewer");
+    return provenance;
+  }
+
+  function reviewIdentity(id, status, flags, options) {
+    const reviewCircuit = options.reviewCircuit || foundationPolicy().workflow.reviewCircuit;
+    const policy = reviewPolicy(id);
+    const reviewer = normalizedReviewer(flags);
+    const reviewerType = reviewer.type;
+    const deterministicClosure = options.repairClosure || null;
+    if (!["ai", "human"].includes(reviewerType) &&
+        !(reviewerType === "deterministic" && deterministicClosure))
+      die("review receipt requires --reviewer-type ai|human");
+    if (!reviewer.identity) die("review receipt requires --reviewer-identity");
+    const subjects = subjectProvenance(flags);
+    const provenance = validateReviewProvenance(status, reviewer, subjects, policy);
+    return {
+      reviewCircuit, policy, reviewerType, deterministicClosure, reviewer, subjects,
+      independent: provenance.independent, diverse: provenance.diverse
+    };
+  }
+
+  function normalizedReviewFinding(finding) {
+    return {
+      id: String(finding?.id || "").trim(),
+      severity: String(finding?.severity || "").toLowerCase(),
+      path: String(finding?.path || ""),
+      line: finding?.line === null || finding?.line === undefined
+        ? null : Number(finding.line),
+      message: String(finding?.message || "").trim(),
+      claimIds: [...new Set((finding?.claimIds || []).map((value) =>
+        String(value).trim()).filter(Boolean))].sort(),
+      verificationCaseIds: [...new Set((finding?.verificationCaseIds || [])
+        .map((value) => String(value).trim()).filter(Boolean))].sort()
+    };
+  }
+
+  function reviewFindings(status, flags) {
+    if (status === "pass" && flags["unresolved-blockers"] === undefined)
+      die("passing review requires --unresolved-blockers; state the count " +
+        "explicitly rather than leaving it unstated");
+    const blockers = Number(flags["unresolved-blockers"] || 0);
+    const verified = Number(flags["verified-findings"] || 0);
+    if (![blockers, verified].every((value) => Number.isInteger(value) && value >= 0))
+      die("review finding counts must be non-negative integers");
+    if (status === "pass" && blockers > 0)
+      die("passing review cannot contain unresolved blockers");
+    const findingRows = Array.isArray(flags.findings)
+      ? flags.findings.map(normalizedReviewFinding) : [];
+    if (findingRows.some((finding) => !finding.id || !finding.message ||
+        !["blocker", "major", "minor"].includes(finding.severity)) ||
+        new Set(findingRows.map((finding) => finding.id)).size !== findingRows.length)
+      die("review findings must have unique IDs, blocker|major|minor severity, and messages");
+    const unresolvedIds = findingRows.filter((finding) =>
+      ["blocker", "major"].includes(finding.severity)).map((finding) => finding.id).sort();
+    const suppliedIds = Array.isArray(flags.verifiedFindingIds) ? flags.verifiedFindingIds : [];
+    const verifiedFindingIds = [...new Set(suppliedIds.map((value) =>
+      String(value).trim()).filter(Boolean))].sort();
+    return { blockers, verified, findingRows, unresolvedIds, verifiedFindingIds };
+  }
+
+  function dispatchedReviewScope(id, flags, identity) {
+    const history = reviewHistoryState(id);
+    const dispatched = identity.reviewCircuit === "full-delta"
+      ? reviewAttemptByDigest(id, String(flags["review-attempt"] || "")) : null;
+    if (identity.reviewCircuit === "full-delta" && !dispatched)
+      die("review evidence requires an authority dispatch attempt; run 'authority dispatch' before recording it");
+    return { history, dispatched };
+  }
+
+  function validateReviewScopeCounts(scopeMode, scopePaths, identity, findings) {
+    const suppliedRows = findings.findingRows.length > 0 ||
+      findings.verifiedFindingIds.length > 0 || scopeMode === "delta";
+    const mismatchedCounts = findings.blockers !== findings.unresolvedIds.length ||
+      findings.verified !== findings.verifiedFindingIds.length;
+    if (suppliedRows && mismatchedCounts)
+      die("review finding counts must equal the supplied finding and verifiedFindingIds rows");
+    if (scopeMode === "delta" && identity.reviewerType === "ai" && scopePaths.length === 0)
+      die("AI delta review requires at least one scope-path in the response evidence");
+  }
+
+  function reviewScope(id, provider, flags, identity, findings) {
+    const prior = existsSync(receiptPath(id, provider))
+      ? readJson(receiptPath(id, provider), {}) : null;
+    const scopePaths = [...new Set(flagValues(flags, "scope-path"))].sort();
+    const { history, dispatched } = dispatchedReviewScope(id, flags, identity);
+    const nextAttempt = dispatched?.attempt || Number(history.totalAttempts || 0) + 1;
+    const scopeMode = dispatched?.scope?.mode ||
+      (nextAttempt === 1 || scopePaths.length === 0 ? "full" : "changed");
+    validateReviewScopeCounts(scopeMode, scopePaths, identity, findings);
+    return {
+      prior, scopePaths, dispatched, nextAttempt, scopeMode,
+      baseAttemptDigest: dispatched?.scope?.baseAttemptDigest || null
+    };
+  }
+
+  function priorReviewBinding(prior) {
+    if (!prior) return null;
+    return {
+      receiptSha256: stableHash(prior), workspaceHash: prior.workspaceHash || null,
+      finishedAt: prior.finishedAt || null,
+      round: Number(prior?.review?.round || 0) || null
+    };
+  }
+
+  function reviewScopeBinding(scope, workspaceHash) {
+    return {
+      mode: scope.scopeMode, baseAttemptDigest: scope.baseAttemptDigest,
+      paths: scope.scopePaths, dispatchDigest: scope.dispatched?.scope?.digest || null,
+      digest: stableHash({
+        priorWorkspaceHash: scope.prior?.workspaceHash || null,
+        workspaceHash, paths: scope.scopePaths
+      })
+    };
+  }
+
+  function applyReviewReceipt(id, provider, status, flags, options, receipt, references) {
+    const identity = reviewIdentity(id, status, flags, options);
+    const findings = reviewFindings(status, flags);
+    const scope = reviewScope(id, provider, flags, identity, findings);
+    receipt.reviewProtocolVersion = REVIEW_PROTOCOL_VERSION;
+    receipt.review = {
+      round: scope.nextAttempt, requestId: scope.dispatched?.requestId || null,
+      reviewer: identity.reviewer, subjects: identity.subjects,
+      policy: {
+        ...identity.policy, independent: identity.independent, diverse: identity.diverse
+      },
+      scope: reviewScopeBinding(scope, receipt.workspaceHash),
+      packetDigest: scope.dispatched?.packetDigest || null,
+      findings: {
+        verified: findings.verified, unresolvedBlockers: findings.blockers,
+        reference: references[0] || null, items: findings.findingRows,
+        verifiedIds: findings.verifiedFindingIds, unresolvedIds: findings.unresolvedIds
+      },
+      supersedes: priorReviewBinding(scope.prior)
+    };
+    if (identity.deterministicClosure)
+      receipt.review.repairClosure = identity.deterministicClosure;
+    const attempt = scope.dispatched || reserveReviewAttempt(id, identity.reviewerType, {
+      workspaceHash: receipt.workspaceHash, status, reviewBinding: reviewReceiptBinding(receipt)
+    });
+    receipt.review.attemptDigest = attempt.digest;
+    if (!reviewAttemptIsValid(receipt, attempt))
+      die("review evidence does not match its dispatched reviewer, workspace, request, or scope");
+  }
+
+  function applyAcceptanceReceipt(id, status, flags, receipt, context) {
+    const acceptor = String(flags.acceptor || "").trim();
+    const criteria = flagValues(flags, "criterion").map((value) => String(value).trim());
+    const decision = String(flags.decision || "").trim().toLowerCase();
+    if (status === "pass") {
+      const missing = [];
+      if (!acceptor)
+        missing.push("acceptor — flag --acceptor, or evidence.acceptor in the response file");
+      if (decision !== "accept")
+        missing.push("decision 'accept' — flag --decision accept, " +
+          "or evidence.decision in the response file");
+      if (criteria.length === 0 || criteria.some((criterion) => !criterion))
+        missing.push("at least one non-empty criterion — flag --criterion (repeatable), " +
+          "or evidence.criterion[] in the response file");
+      else if (new Set(criteria).size !== criteria.length)
+        missing.push("criteria must be unique — flag --criterion (repeatable), " +
+          "or evidence.criterion[] in the response file");
+      if (!receipt.observed)
+        missing.push("observed — flag --observed, or evidence.observed in the response file");
+      if (missing.length) die(`passing acceptance is missing:\n  ${missing.join("\n  ")}`);
     }
-    if (capability === "acceptance") {
-      const acceptor = String(flags.acceptor || "").trim();
-      const criteria = flagValues(flags, "criterion").map((value) => String(value).trim());
-      const decision = String(flags.decision || "").trim().toLowerCase();
-      if (status === "pass") {
-        const missing = [];
-        if (!acceptor)
-          missing.push("acceptor — flag --acceptor, or evidence.acceptor in the response file");
-        if (decision !== "accept")
-          missing.push("decision 'accept' — flag --decision accept, " +
-            "or evidence.decision in the response file");
-        if (criteria.length === 0 || criteria.some((criterion) => !criterion))
-          missing.push("at least one non-empty criterion — flag --criterion (repeatable), " +
-            "or evidence.criterion[] in the response file");
-        else if (new Set(criteria).size !== criteria.length)
-          missing.push("criteria must be unique — flag --criterion (repeatable), " +
-            "or evidence.criterion[] in the response file");
-        if (!observed)
-          missing.push("observed — flag --observed, or evidence.observed in the response file");
-        if (missing.length)
-          die(`passing acceptance is missing:\n  ${missing.join("\n  ")}`);
-      }
-      provenanceSource ||= acceptor ? `human:${acceptor}` : "";
-      receipt.provenance.source = provenanceSource || null;
-      receipt.acceptanceProtocolVersion = ACCEPTANCE_PROTOCOL_VERSION;
-      receipt.acceptance = {
-        actor: { type: "human", identity: acceptor || null },
-        decision: decision || null,
-        criteria,
-        reason: resolvedAcceptance(id, state, evidence(id)).reason,
-        subjectWorkspaceHash: workspaceHash
-      };
-    }
-    if (capability === "browser" && status === "pass" && receipt.capability.foregroundRequired &&
-        !receipt.capability.foregroundAvailable) die("browser cannot pass when required foreground input is unavailable");
-    if (capability === "browser" && status === "pass" &&
-        !INPUT_MODES.has(receipt.capability.inputMode))
+    receipt.provenance.source ||= acceptor ? `human:${acceptor}` : null;
+    receipt.acceptanceProtocolVersion = ACCEPTANCE_PROTOCOL_VERSION;
+    receipt.acceptance = {
+      actor: { type: "human", identity: acceptor || null }, decision: decision || null,
+      criteria, reason: resolvedAcceptance(id, context.state, evidence(id)).reason,
+      subjectWorkspaceHash: context.workspaceHash
+    };
+  }
+
+  function validateBrowserReceipt(status, receipt) {
+    if (status !== "pass") return;
+    if (receipt.capability.foregroundRequired && !receipt.capability.foregroundAvailable)
+      die("browser cannot pass when required foreground input is unavailable");
+    if (!INPUT_MODES.has(receipt.capability.inputMode))
       die("passing browser receipt requires --input-mode browser-automation|dom-event|os-input|both");
-    if (capability === "browser" && status === "pass" &&
-        ["os-input", "both"].includes(receipt.capability.inputMode) &&
+    const needsForeground = ["os-input", "both"].includes(receipt.capability.inputMode);
+    if (needsForeground &&
         (!receipt.capability.foregroundRequired || !receipt.capability.foregroundAvailable))
       die("passing OS-input browser receipt requires foreground-required=yes and foreground-available=yes");
-    if (capability === "discovery" && status === "pass") {
-      const discovered = Number(flags.discovered);
-      const minimum = Number(flags.minimum);
-      if (!Number.isFinite(discovered) || !Number.isFinite(minimum) || minimum <= 0 || discovered < minimum)
-        die("passing discovery receipt requires --discovered N --minimum N with discovered >= minimum > 0");
-      receipt.discovery = { discovered, minimum };
-    }
-    if (capability === "mutation" && status === "pass" &&
+  }
+
+  function applyDiscoveryReceipt(status, flags, receipt) {
+    if (status !== "pass") return;
+    const discovered = Number(flags.discovered);
+    const minimum = Number(flags.minimum);
+    if (!Number.isFinite(discovered) || !Number.isFinite(minimum) ||
+        minimum <= 0 || discovered < minimum)
+      die("passing discovery receipt requires --discovered N --minimum N with discovered >= minimum > 0");
+    receipt.discovery = { discovered, minimum };
+  }
+
+  function applyMutationReceipt(status, flags, receipt) {
+    if (status === "pass" &&
         !["behavioral-kill", "test-failure"].includes(flags.classification))
       die("passing mutation receipt requires --classification behavioral-kill|test-failure; crash is not a kill");
-    if (capability === "mutation") receipt.classification = flags.classification || null;
+    receipt.classification = flags.classification || null;
+  }
+
+  function applyCapabilityReceipt(id, provider, status, flags, options, receipt, context) {
+    if (context.capability === "review")
+      applyReviewReceipt(id, provider, status, flags, options, receipt, receipt.references);
+    if (context.capability === "acceptance")
+      applyAcceptanceReceipt(id, status, flags, receipt, context);
+    if (context.capability === "browser") validateBrowserReceipt(status, receipt);
+    if (context.capability === "discovery") applyDiscoveryReceipt(status, flags, receipt);
+    if (context.capability === "mutation") applyMutationReceipt(status, flags, receipt);
+  }
+
+  // `options` is deliberately not reachable from the command line: only a call
+  // site inside this process — one that actually ran a command — may declare
+  // an execution. Everything arriving over the CLI is a manual assertion and
+  // owes the evidence floor below.
+  function recordReceipt(id, provider, status, flags = {}, options = {}) {
+    const context = receiptExecutionContext(id, provider, status, flags, options);
+    const suppliedEvidence = receiptEvidence(id, provider, status, flags, context);
+    const receipt = baseReceipt(id, provider, status, flags, context, suppliedEvidence);
+    applyCapabilityReceipt(id, provider, status, flags, options, receipt, context);
     writeJson(receiptPath(id, provider), receipt);
     if (!options.quiet) console.log(`RECEIPT ${id}/${provider}: ${status}`);
   }

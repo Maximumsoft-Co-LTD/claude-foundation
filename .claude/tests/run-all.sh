@@ -76,6 +76,7 @@ dashboard contracts|npm --prefix "$ROOT/dashboard" test
 quality tooling|node --test "$ROOT"/scripts/quality/test/*.test.mjs && node "$ROOT/scripts/quality/validate-config.mjs" && node "$ROOT/scripts/quality/validate-exceptions.mjs" && bash "$ROOT/scripts/quality/check-static-surfaces.sh"
 runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
 runtime environment policy|node --test "$HERE/harness/run-runtime-environment-policy-tests.mjs"
+receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"
