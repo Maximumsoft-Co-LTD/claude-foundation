@@ -104,6 +104,7 @@ try {
   let lastConfiguredReviewArgs = null;
   let configuredReviewResults = {};
   let configuredReviewCalls = 0;
+  let providerRepository = null;
   const attemptStore = createReviewAttemptStore({
     receiptsRoot: join(fixture, "receipts"),
     evidenceVault: join(fixture, "evidence"),
@@ -133,7 +134,8 @@ try {
     authorityStore,
     requiredProviders: () => ["review"],
     providerCapability: () => "review",
-    providerConfig: () => ({ capability: "review", adapter: "external" }),
+    providerConfig: () => ({ capability: "review", adapter: "external",
+      ...(providerRepository ? { repository: providerRepository } : {}) }),
     reviewPacketValue: () => {
       packetSequence += 1;
       const proposal = {
@@ -142,16 +144,34 @@ try {
         relativePath: "proposal.md",
         sha256: packetMode === "contract" ? `proposal-${packetSequence}` : "proposal-stable"
       };
+      const groundingArtifact = {
+        relativePath: "grounding.yaml", sha256: `grounding-${packetSequence}`
+      };
+      const evidenceArtifact = {
+        relativePath: "evidence.yaml", sha256: `evidence-${packetSequence}`
+      };
       return {
         version: 1,
         ...(packetMode === "large" ? { payload: "x".repeat(20_000) } : {}),
         claims: [{ id: "claim-a", scenario: "review the changed behavior" }],
-        decisions: { proposal },
-        contractArtifacts: { "proposal.md": proposal },
+        decisions: packetMode === "sparse" ? null : { proposal, empty: null },
+        contractArtifacts: packetMode === "sparse" ? null : {
+          "proposal.md": proposal,
+          ...(packetMode === "grounding" ? {
+            "grounding.yaml": groundingArtifact,
+            "evidence.yaml": evidenceArtifact
+          } : {})
+        },
         grounding: { decisionBatch: { status: "locked" } },
-        references: {},
+        references: packetMode === "sparse" ? null : packetMode === "grounding"
+          ? { grounding: groundingArtifact, empty: null } : {},
         changedSurface: {
-          manifest: [
+          manifest: packetMode === "sparse" ? [
+            { repositoryId: "root", path: "app.txt", kind: "code",
+              identity: `app-${packetSequence}` },
+            { repositoryId: "root", path: "extra.txt", kind: "code",
+              identity: `extra-${packetSequence}` }
+          ] : [
             {
               repositoryId: "root", path: "app.txt", relativePath: "app.txt",
               workspacePath: fixture, kind: "code",
@@ -161,9 +181,20 @@ try {
               repositoryId: "root", path: "openspec/changes/change-a/proposal.md",
               relativePath: "proposal.md", workspacePath: fixture,
               kind: "contract-artifact", identity: proposal.sha256
-            }
+            },
+            ...(packetMode === "grounding" ? [{
+              repositoryId: "root", path: "openspec/changes/change-a/grounding.yaml",
+              relativePath: "grounding.yaml", workspacePath: fixture,
+              kind: "contract-artifact", identity: groundingArtifact.sha256
+            }, {
+              repositoryId: "root", path: "openspec/changes/change-a/evidence.yaml",
+              relativePath: "evidence.yaml", workspacePath: fixture,
+              kind: "contract-artifact", identity: evidenceArtifact.sha256
+            }] : [])
           ],
-          inspection: [{ repositoryId: "root", workspacePath: fixture, baseHead: "head", paths: ["app.txt"] }]
+          inspection: packetMode === "sparse" ? [] : [{
+            repositoryId: "root", workspacePath: fixture, baseHead: "head", paths: ["app.txt"]
+          }]
         }
       };
     },
@@ -251,6 +282,48 @@ try {
     request: requestedOnly.requestId, "subject-actor": "human"
   })), /infrastructure retries are exhausted/);
   reviewSettings = savedReviewSettings;
+  assert.throws(() => quiet(() => authority.dispatchAuthority("change-a", {})),
+    /requires --request/);
+  assert.throws(() => quiet(() => authority.dispatchAuthority("change-a", {
+    request: "missing"
+  })), /unknown authority request/);
+  const requestedEntry = authorityStore.list("change-a")
+    .find((row) => row.value.requestId === requestedOnly.requestId);
+  const originalRequested = requestedEntry.value;
+  const dispatchRejected = (overrides, flags, pattern) => {
+    authorityStore.replace(requestedEntry, { ...originalRequested, ...overrides });
+    assert.throws(() => quiet(() => authority.dispatchAuthority("change-a", {
+      request: requestedOnly.requestId, ...flags
+    })), pattern);
+    authorityStore.replace(requestedEntry, originalRequested);
+  };
+  dispatchRejected({ type: "acceptance" }, {}, /reserves review authority only/);
+  dispatchRejected({ reviewCircuit: "legacy" }, {}, /predates the full-delta circuit/);
+  dispatchRejected({ status: "completed" }, {}, /is completed/);
+  dispatchRejected({ workspaceHash: "stale" }, {}, /is stale/);
+  dispatchRejected({ expiresAt: "2000-01-01T00:00:00.000Z" }, {}, /is expired/);
+  dispatchRejected({ packetDigest: "mismatch" }, {}, /packet no longer matches/);
+  dispatchRejected({}, {}, /reviewer-type ai\|human/);
+  const baseAiFlags = {
+    "reviewer-type": "ai", scope: "full",
+    "reviewer-provider-family": "openai", "reviewer-model-family": "gpt-5.6",
+    "reviewer-model": "gpt-5.6-sol", "reviewer-session": "review-input-session"
+  };
+  dispatchRejected({}, baseAiFlags, /requires --reviewer-identity/);
+  dispatchRejected({}, { ...baseAiFlags, "reviewer-identity": "codex-sol",
+    "reviewer-provider-family": undefined }, /provider\/model family and model ID/);
+  dispatchRejected({}, { ...baseAiFlags, "reviewer-identity": "codex-sol",
+    "reviewer-session": undefined }, /requires reviewer session/);
+  providerRepository = "root";
+  dispatchRejected({}, { ...baseAiFlags, "reviewer-identity": "codex-sol" },
+    /composite unscoped review provider/);
+  providerRepository = null;
+  dispatchRejected({}, { ...baseAiFlags, "reviewer-identity": "codex-sol",
+    scope: undefined }, /scope full\|delta/);
+  dispatchRejected({}, { ...baseAiFlags, "reviewer-identity": "codex-sol",
+    scope: "invalid" }, /scope full\|delta/);
+  dispatchRejected({}, { ...baseAiFlags, "reviewer-identity": "codex-sol",
+    scope: "delta" }, /requires --base-attempt/);
   assert.equal(state.reviewHistory?.totalAttempts || 0, 0,
     "requesting review must not consume an attempt");
   quiet(() => authority.abortAuthority("change-a", {
@@ -290,6 +363,10 @@ try {
     "reviewer-model": "claude-opus",
     "reviewer-session": "review-session-one"
   }));
+  assert.equal(quiet(() => authority.dispatchAuthority("change-a", {
+    request: firstRequest.requestId
+  })).dispatch.attemptDigest, first.dispatch.attemptDigest,
+  "redispatching an already dispatched request is idempotent");
   assert.equal(state.reviewHistory.aiAttempts, 1,
     "the first AI dispatch must consume an attempt immediately");
   quiet(() => authority.abortAuthority("change-a", {
@@ -1028,6 +1105,78 @@ try {
     repositoryId: "root", workspacePath: fixture, baseHead: "head", paths: ["proposal.md"]
   }, "a contract-only external-copy delta must be self-locating");
 
+  state = { version: 2, changeId: "change-sparse", reviewHistory: null };
+  packetMode = "sparse";
+  packetSequence = 0;
+  const sparseFirstRequest = quiet(() => authority.requestAuthority(
+    "change-sparse", { type: "review" }));
+  const sparseFirst = quiet(() => authority.dispatchAuthority("change-sparse", {
+    request: sparseFirstRequest.requestId, scope: "full", "reviewer-type": "ai",
+    "reviewer-identity": "sparse-one", "reviewer-provider-family": "openai",
+    "reviewer-model-family": "gpt", "reviewer-model": "gpt-5.6",
+    "reviewer-session": "sparse-one-session"
+  }));
+  const sparseCompleted = attemptStore.completeReviewAttempt("change-sparse",
+    sparseFirst.dispatch.attemptDigest, {
+      reviewerSessionId: "sparse-one-session", resultStatus: "fail",
+      findings: [{ id: "F-SPARSE", severity: "major", path: "app.txt",
+        message: "sparse correction" }], verifiedFindingIds: []
+    });
+  writeJson(join(fixture, "change-sparse-receipt.json"), {
+    status: "fail", review: { attemptDigest: sparseCompleted.digest }
+  });
+  quiet(() => authority.abortAuthority("change-sparse", {
+    request: sparseFirstRequest.requestId, reason: "apply sparse correction"
+  }));
+  const sparseSecondRequest = quiet(() => authority.requestAuthority(
+    "change-sparse", { type: "review" }));
+  const sparseSecond = quiet(() => authority.dispatchAuthority("change-sparse", {
+    request: sparseSecondRequest.requestId, scope: "delta",
+    "base-attempt": sparseCompleted.digest, "reviewer-type": "ai",
+    "reviewer-identity": "sparse-two", "reviewer-provider-family": "google",
+    "reviewer-model-family": "gemini", "reviewer-model": "gemini-pro",
+    "reviewer-session": "sparse-two-session"
+  }));
+  assert.deepEqual(sparseSecond.packet.changedSurface.inspection, [{
+    repositoryId: "root", workspacePath: null, baseHead: null,
+    paths: ["app.txt", "extra.txt"]
+  }]);
+
+  state = { version: 2, changeId: "change-grounding", reviewHistory: null };
+  packetMode = "grounding";
+  packetSequence = 0;
+  const groundingFirstRequest = quiet(() => authority.requestAuthority(
+    "change-grounding", { type: "review" }));
+  const groundingFirst = quiet(() => authority.dispatchAuthority("change-grounding", {
+    request: groundingFirstRequest.requestId, scope: "full", "reviewer-type": "ai",
+    "reviewer-identity": "grounding-one", "reviewer-provider-family": "openai",
+    "reviewer-model-family": "gpt", "reviewer-model": "gpt-5.6",
+    "reviewer-session": "grounding-one-session"
+  }));
+  const groundingCompleted = attemptStore.completeReviewAttempt("change-grounding",
+    groundingFirst.dispatch.attemptDigest, {
+      reviewerSessionId: "grounding-one-session", resultStatus: "fail",
+      findings: [{ id: "F-GROUNDING", severity: "major", path: "grounding.yaml",
+        message: "grounding correction" }], verifiedFindingIds: []
+    });
+  writeJson(join(fixture, "change-grounding-receipt.json"), {
+    status: "fail", review: { attemptDigest: groundingCompleted.digest }
+  });
+  quiet(() => authority.abortAuthority("change-grounding", {
+    request: groundingFirstRequest.requestId, reason: "apply grounding correction"
+  }));
+  const groundingSecondRequest = quiet(() => authority.requestAuthority(
+    "change-grounding", { type: "review" }));
+  const groundingSecond = quiet(() => authority.dispatchAuthority("change-grounding", {
+    request: groundingSecondRequest.requestId, scope: "delta",
+    "base-attempt": groundingCompleted.digest, "reviewer-type": "ai",
+    "reviewer-identity": "grounding-two", "reviewer-provider-family": "google",
+    "reviewer-model-family": "gemini", "reviewer-model": "gemini-pro",
+    "reviewer-session": "grounding-two-session"
+  }));
+  assert.equal(groundingSecond.packet.grounding.decisionBatch.status, "locked");
+  assert(Array.isArray(groundingSecond.packet.claims));
+
   state = { version: 2, changeId: "change-low", reviewHistory: null };
   riskTier = "low";
   packetMode = "code";
@@ -1139,6 +1288,34 @@ try {
   }));
   assert.equal(humanDispatch.dispatch.reviewer.type, "human",
     "a named human remains an explicit reviewer option without becoming a mandatory approval gate");
+
+  state = { version: 2, changeId: "change-high-human-closure", reviewHistory: null };
+  const highDelivered = attemptStore.dispatchReviewAttempt("change-high-human-closure", {
+    reviewerType: "ai", reviewerIdentity: "first-ai",
+    reviewerProviderFamily: "openai", reviewerModelFamily: "gpt",
+    reviewerModelId: "gpt-5.6", reviewerSessionId: "first-ai-session",
+    requestId: "first-ai-request", workspaceHash,
+    scope: { mode: "full", paths: ["root/app.txt"], digest: "first-scope" },
+    packetDigest: "first-packet", maxAiAttempts: 2
+  });
+  const highDeliveredCompletion = attemptStore.completeReviewAttempt(
+    "change-high-human-closure", highDelivered.digest, {
+      reviewerSessionId: "first-ai-session", resultStatus: "fail",
+      findings: [{ id: "F-HIGH", severity: "blocker", path: "app.txt",
+        message: "human closure required" }],
+      verifiedFindingIds: []
+    });
+  writeJson(join(fixture, "change-high-human-closure-receipt.json"), {
+    status: "fail", review: { attemptDigest: highDeliveredCompletion.digest }
+  });
+  const highHumanRequest = quiet(() => authority.requestAuthority(
+    "change-high-human-closure", { type: "review" }));
+  const highHumanClosure = quiet(() => authority.dispatchAuthority(
+    "change-high-human-closure", {
+      request: highHumanRequest.requestId, scope: "full", "reviewer-type": "human",
+      "reviewer-identity": "security-owner"
+    }));
+  assert.deepEqual(highHumanClosure.packet.closureFindings.ids, ["F-HIGH"]);
 
   state = { version: 2, changeId: "change-review-error", reviewHistory: null };
   const failedAttempt = attemptStore.dispatchReviewAttempt("change-review-error", {

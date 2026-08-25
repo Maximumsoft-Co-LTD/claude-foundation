@@ -215,7 +215,7 @@ export function createAuthorityRuntime({
     return withAuthorityLock(id, () => requestAuthorityUnlocked(id, flags, options));
   }
 
-  function dispatchAuthorityUnlocked(id, flags = {}) {
+  function dispatchRequestContext(id, flags) {
     const requestId = String(flags.request || "");
     if (!requestId) fail("authority dispatch requires --request <id>");
     const entry = authorityStore.list(id)
@@ -224,7 +224,7 @@ export function createAuthorityRuntime({
     const request = entry.value;
     if (request.status === "dispatched") {
       console.log(JSON.stringify(request, null, 2));
-      return request;
+      return { handled: true, value: request };
     }
     if (request.type !== "review")
       fail("authority dispatch currently reserves review authority only");
@@ -241,6 +241,14 @@ export function createAuthorityRuntime({
     const reviewerType = String(flags["reviewer-type"] || "").toLowerCase();
     if (!["ai", "human"].includes(reviewerType))
       fail("authority dispatch requires --reviewer-type ai|human");
+    return { handled: false, entry, request, requestId, reviewerType };
+  }
+
+  function dispatchAuthorityUnlocked(id, flags = {}) {
+    const context = dispatchRequestContext(id, flags);
+    if (context.handled) return context.value;
+    const { entry, request, requestId, reviewerType } = context;
+    function dispatchRouting() {
     const routing = reviewPolicy(id);
     const historySnapshot = reviewHistoryState(id);
     const deliveredSnapshot = deliveredAiAttempts(id, historySnapshot);
@@ -270,6 +278,11 @@ export function createAuthorityRuntime({
         promotionReason: "post-review-correction"
       };
     }
+    return { routing, deliveredAi, maxAiAttempts, maxInfrastructureRetries };
+    }
+    const { routing, deliveredAi, maxAiAttempts,
+      maxInfrastructureRetries } = dispatchRouting();
+    function dispatchReviewer() {
     const reviewerIdentity = String(flags["reviewer-identity"] || "").trim();
     if (!reviewerIdentity)
       fail("authority dispatch requires --reviewer-identity");
@@ -284,6 +297,7 @@ export function createAuthorityRuntime({
       fail("AI dispatch requires reviewer provider/model family and model ID");
     if (reviewerType === "ai" && !reviewerSessionId && !sessionDeferred)
       fail("AI dispatch requires reviewer session unless a configured reviewer defers it to the actual thread.started event");
+    function validateDispatchReviewerRoute() {
     if (reviewerType === "ai" && deliveredAi.length > 0) {
       const priorAi = deliveredAi.at(-1);
       if (priorAi?.reviewerType === "ai" &&
@@ -292,6 +306,14 @@ export function createAuthorityRuntime({
     }
     if (reviewerType === "ai" && providerConfig(id, request.provider)?.repository)
       fail("AI full-delta review requires one composite unscoped review provider; reconfigure the provider or split the change");
+    }
+    validateDispatchReviewerRoute();
+    return { reviewerIdentity, reviewerProviderFamily, reviewerModelFamily,
+      reviewerModelId, reviewerSessionId, sessionDeferred };
+    }
+    const { reviewerIdentity, reviewerProviderFamily, reviewerModelFamily,
+      reviewerModelId, reviewerSessionId, sessionDeferred } = dispatchReviewer();
+    function dispatchScope() {
     const scopeMode = String(flags.scope || "").toLowerCase();
     if (!["full", "delta"].includes(scopeMode))
       fail("authority dispatch requires --scope full|delta");
@@ -301,6 +323,7 @@ export function createAuthorityRuntime({
     let scopeRows = currentManifest;
     let baseWorkspaceHash = null;
     let baseAttempt = null;
+    function resolveDeltaScope() {
     if (scopeMode === "delta") {
       baseAttempt = reviewAttemptByDigest(id, baseAttemptDigest);
       if (!baseAttempt || baseAttempt.reviewerType !== "ai")
@@ -329,6 +352,8 @@ export function createAuthorityRuntime({
         fail("AI delta review has no files changed since the first AI dispatch; do not spend the second review round");
       baseWorkspaceHash = baseAttempt.workspaceHash;
     }
+    }
+    resolveDeltaScope();
     const scopePaths = scopeRows.map((row) => `${row.repositoryId}/${row.path}`);
     const scopeDigest = stableHash({
       mode: scopeMode,
@@ -337,6 +362,12 @@ export function createAuthorityRuntime({
       workspaceHash: request.workspaceHash,
       rows: scopeRows
     });
+    return { scopeMode, baseAttemptDigest, baseWorkspaceHash, baseAttempt,
+      scopeRows, scopePaths, scopeDigest };
+    }
+    const { scopeMode, baseAttemptDigest, baseWorkspaceHash, baseAttempt,
+      scopeRows, scopePaths, scopeDigest } = dispatchScope();
+    function dispatchPacket() {
     const packet = JSON.parse(JSON.stringify(request.packet));
     packet.reviewScope = {
       mode: scopeMode,
@@ -346,6 +377,7 @@ export function createAuthorityRuntime({
       paths: scopePaths,
       digest: scopeDigest
     };
+    function applyHighRiskHumanClosure() {
     if (routing.tier === "high" && reviewerType === "human" && deliveredAi.length) {
       const baseAttempt = deliveredAi.at(-1);
       const closureFindings = (baseAttempt.findings || []).filter((finding) =>
@@ -356,7 +388,11 @@ export function createAuthorityRuntime({
         findings: closureFindings
       };
     }
+    }
+    applyHighRiskHumanClosure();
+    function applyDeltaPacket() {
     if (scopeMode === "delta") {
+      function deltaInspection() {
       const fullInspection = new Map((request.packet?.changedSurface?.inspection || [])
         .map((entry) => [entry.repositoryId, entry]));
       const inspection = [...scopeRows.reduce((groups, row) => {
@@ -370,6 +406,9 @@ export function createAuthorityRuntime({
         groups.get(key).paths.push(row.relativePath || row.path);
         return groups;
       }, new Map()).values()];
+      return inspection;
+      }
+      const inspection = deltaInspection();
       packet.changedSurface = {
         paths: scopePaths,
         digest: stableHash(scopePaths),
@@ -388,27 +427,46 @@ export function createAuthorityRuntime({
         ids: closureFindings.map((finding) => finding.id).sort(),
         findings: closureFindings
       };
+      function applyDeltaContractProjection() {
       const changedContractNames = new Set(scopeRows
         .filter((row) => row.kind === "contract-artifact")
         .map((row) => row.relativePath));
-      packet.contractArtifacts = Object.fromEntries(Object.entries(
-        request.packet?.contractArtifacts || {}).filter(([name]) =>
-        changedContractNames.has(name)));
-      packet.decisions = Object.fromEntries(Object.entries(
-        request.packet?.decisions || {}).filter(([, artifact]) =>
-        artifact && changedContractNames.has(artifact.relativePath)));
+      function artifactName(name) { return name; }
+      function artifactRelativePath(_name, artifact) {
+        return artifact?.relativePath || null;
+      }
+      function selectedDeltaArtifacts(artifacts, pathFor) {
+        return Object.fromEntries(Object.entries(artifacts).filter(([name, artifact]) =>
+          changedContractNames.has(pathFor(name, artifact))));
+      }
+      function artifactCollection(value) {
+        return value && typeof value === "object" ? value : {};
+      }
+      packet.contractArtifacts = selectedDeltaArtifacts(
+        artifactCollection(request.packet?.contractArtifacts), artifactName);
+      packet.decisions = selectedDeltaArtifacts(
+        artifactCollection(request.packet?.decisions), artifactRelativePath);
+      packet.references = selectedDeltaArtifacts(
+        artifactCollection(request.packet?.references), artifactRelativePath);
+      function applyDeltaGroundingAndClaims() {
       packet.grounding = changedContractNames.has("grounding.yaml")
         ? request.packet.grounding : null;
-      packet.references = Object.fromEntries(Object.entries(
-        request.packet?.references || {}).filter(([, artifact]) =>
-        artifact && changedContractNames.has(artifact.relativePath)));
       if (!changedContractNames.has("evidence.yaml")) packet.claims = {
         reuseFromAttempt: baseAttemptDigest,
         digest: stableHash(request.packet?.claims || [])
       };
+      }
+      applyDeltaGroundingAndClaims();
+      }
+      applyDeltaContractProjection();
     }
+    }
+    applyDeltaPacket();
     delete packet.packetDigest;
     packet.packetDigest = canonicalPacketDigest(packet);
+    return packet;
+    }
+    const packet = dispatchPacket();
     const attempt = dispatchReviewAttempt(id, {
       requestId,
       workspaceHash: request.workspaceHash,
