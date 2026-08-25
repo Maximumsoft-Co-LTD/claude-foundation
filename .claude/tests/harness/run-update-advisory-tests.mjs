@@ -337,7 +337,7 @@ async function notificationWorker(statePath, sessionId) {
   let stderr = "";
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const code = await new Promise((resolve) => child.on("exit", resolve));
+  const code = await new Promise((resolve) => child.on("close", resolve));
   assert.equal(code, 0, stderr);
   return JSON.parse(stdout);
 }
