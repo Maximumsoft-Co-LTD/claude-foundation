@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { ROOT, isMain, parseArgs, readJson, repoPath, writeJson } from "./lib.mjs";
+import { ROOT, assertSafeGitRef, isMain, parseArgs, readJson, repoPath, writeJson } from "./lib.mjs";
 
 export function mutationCounts(report) {
   const mutants = Object.values(report.files || {}).flatMap((file) => file.mutants || []);
@@ -55,7 +55,7 @@ async function main() {
   let comparisonBaseline = baseline;
   let comparisonBootstrap = false;
   if (args["base-ref"]) {
-    if (!/^[A-Za-z0-9_./-]+$/.test(args["base-ref"])) throw new Error(`unsafe base ref: ${args["base-ref"]}`);
+    assertSafeGitRef(args["base-ref"]);
     const baselinePath = args.baseline || "quality/baselines/dashboard-mutation-v1.json";
     try {
       comparisonBaseline = JSON.parse(execFileSync("git", ["show", `${args["base-ref"]}:${baselinePath}`], {

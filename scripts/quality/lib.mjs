@@ -38,6 +38,13 @@ export function matchesAny(path, globs) {
   return globs.some((glob) => globToRegExp(glob).test(path));
 }
 
+export function assertSafeGitRef(value) {
+  if (!/^(?!-)[A-Za-z0-9_./-]+(?:[\^~][0-9]*)*$/.test(value)) {
+    throw new Error(`unsafe base ref: ${value}`);
+  }
+  return value;
+}
+
 export function parseArgs(argv) {
   const result = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {

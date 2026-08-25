@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { ROOT, isMain, parseArgs, repoPath } from "./lib.mjs";
+import { ROOT, assertSafeGitRef, isMain, parseArgs, repoPath } from "./lib.mjs";
 
 function run(command, args, cwd, options = {}) {
   const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: "inherit", ...options });
@@ -10,8 +10,9 @@ function run(command, args, cwd, options = {}) {
 }
 
 export function resolveBaseCommit(baseRef) {
-  if (!/^[A-Za-z0-9_./-]+$/.test(baseRef)) throw new Error(`unsafe base ref: ${baseRef}`);
-  return execFileSync("git", ["merge-base", baseRef, "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+  return execFileSync("git", ["merge-base", assertSafeGitRef(baseRef), "HEAD"], {
+    cwd: ROOT, encoding: "utf8"
+  }).trim();
 }
 
 function changedSince(commit, paths) {
