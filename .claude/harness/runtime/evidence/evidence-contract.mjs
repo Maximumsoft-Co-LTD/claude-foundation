@@ -171,10 +171,8 @@ export function createEvidenceContract({
       ].includes(capability)));
     return scoped.length ? scoped : claims;
   }
-  
-  function evidence(id, dir = activeChangePath(id)) {
-    const path = join(dir, "evidence.yaml");
-    const value = readJson(path);
+
+  function validateEvidenceClaims(id, value) {
     if (![1, 2].includes(value.version) || !Array.isArray(value.claims) || value.claims.length === 0)
       die(`${id}/evidence.yaml must contain at least one claim`);
     if (value.version === 2 && (value.providers === null ||
@@ -182,250 +180,300 @@ export function createEvidenceContract({
       die(`${id}/evidence.yaml providers must be an object`);
     const ids = new Set();
     for (const claim of value.claims) {
-      if (!claim.id || ids.has(claim.id)) die(`evidence claim IDs must be non-empty and unique`);
+      if (!claim.id || ids.has(claim.id))
+        die("evidence claim IDs must be non-empty and unique");
       ids.add(claim.id);
       if (!claim.scenario || !Array.isArray(claim.capabilities) || claim.capabilities.length === 0)
         die(`claim '${claim.id}' needs scenario and capabilities`);
-      for (const provider of claim.capabilities)
-        if (!PROVIDERS.has(provider)) die(`claim '${claim.id}' uses unknown provider '${provider}'`);
+      for (const capability of claim.capabilities)
+        if (!PROVIDERS.has(capability))
+          die(`claim '${claim.id}' uses unknown provider '${capability}'`);
     }
+  }
+
+  function validateProviderIdentity(id, provider, config) {
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(provider))
+      die(`invalid provider instance id '${provider}'`);
+    if (!config || typeof config !== "object" || Array.isArray(config))
+      die(`provider '${provider}' configuration must be an object`);
+    const capability = providerCapability(provider, config);
+    if (!capability || !PROVIDERS.has(capability))
+      die(`provider '${provider}' requires a known capability`);
+    if (!ADAPTERS.has(config.adapter))
+      die(`provider '${provider}' uses unknown adapter '${config.adapter || ""}'`);
+    if (config.repository !== undefined) repositoryById(id, config.repository);
+    return capability;
+  }
+
+  function validateProviderRepositories(id, provider, config) {
+    if (config.repositories === undefined) return;
+    if (!Array.isArray(config.repositories) || config.repositories.length === 0 ||
+        config.repositories.some((repository) =>
+          typeof repository !== "string" || !repository.trim()) ||
+        new Set(config.repositories).size !== config.repositories.length)
+      die(`provider '${provider}' repositories must be a non-empty array of unique repository IDs`);
+    for (const repository of config.repositories) repositoryById(id, repository);
+    if (config.repository && !config.repositories.includes(config.repository))
+      die(`provider '${provider}' cwd repository '${config.repository}' must appear in repositories`);
+  }
+
+  function validateProviderCommand(provider, config) {
+    if (!["external", "contract-digest"].includes(config.adapter) &&
+        (!Array.isArray(config.command) || config.command.length === 0 ||
+         config.command.some((part) => typeof part !== "string" || !part)))
+      die(`provider '${provider}' adapter '${config.adapter}' requires a non-empty command array`);
+  }
+
+  function validateContractDigest(id, provider, config) {
+    if (config.adapter !== "contract-digest") return;
+    const sides = config.contract;
+    if (!sides || typeof sides !== "object" || Array.isArray(sides) ||
+        Object.keys(sides).length < 2)
+      die(`provider '${provider}' contract-digest requires "contract" mapping at least two repository ids to a file path`);
+    for (const [repository, path] of Object.entries(sides)) {
+      if (typeof path !== "string" || !path.trim())
+        die(`provider '${provider}' contract-digest path for '${repository}' must be a non-empty string`);
+      repositoryById(id, repository);
+    }
+    if (config.repository !== undefined)
+      die(`provider '${provider}' contract-digest spans repositories and cannot declare a single 'repository'`);
+    if (config.repositories !== undefined) {
+      const contractRepositories = Object.keys(sides).sort();
+      const declaredRepositories = [...config.repositories].sort();
+      if (JSON.stringify(contractRepositories) !== JSON.stringify(declaredRepositories))
+        die(`provider '${provider}' repositories must exactly match its contract repositories`);
+    }
+  }
+
+  function warnProviderReportSurface(provider, config) {
+    if (typeof config.report !== "string" || !config.report.trim() ||
+        isExcludedPath(config.report.replaceAll("\\", "/"),
+          { excluded: EXCLUDED_WORKSPACE_DIRS })) return;
+    console.error(`WARNING: provider '${provider}' writes its report to ${config.report}, inside the hashed workspace surface; its own output will expire the receipt it produces. Write it under one of: ${
+      [...EXCLUDED_WORKSPACE_DIRS].filter((dir) => !dir.startsWith(".")).join(", ")}`);
+  }
+
+  function validateDiscoveryProvider(provider, config, capability, configuredProviders) {
+    if (config.adapter !== "test-discovery") return;
+    if (!["test", "discovery"].includes(capability))
+      die("test-discovery adapter requires capability 'test' or 'discovery'");
+    if (capability !== "test" || provider === "test") return;
+    const discoveryProvider = config.discoveryProvider;
+    if (!discoveryProvider || !configuredProviders[discoveryProvider] ||
+        providerCapability(discoveryProvider, configuredProviders[discoveryProvider]) !== "discovery")
+      die(`provider '${provider}' test-discovery requires a configured discoveryProvider`);
+  }
+
+  function validateProviderResourceLimits(provider, config) {
+    if (config.timeoutMs !== undefined &&
+        (measuredNumber(config.timeoutMs) === null || measuredNumber(config.timeoutMs) <= 0))
+      die(`provider '${provider}' timeoutMs must be a positive number`);
+    if (config.resources !== undefined &&
+        (!Array.isArray(config.resources) ||
+         config.resources.some((item) => typeof item !== "string" || !item)))
+      die(`provider '${provider}' resources must be an array of strings`);
+  }
+
+  function validateProviderInputs(id, provider, config, capability) {
+    if (config.inputs !== undefined &&
+        (!Array.isArray(config.inputs) || config.inputs.length === 0 ||
+         config.inputs.some((item) => typeof item !== "string" || !item ||
+           isAbsolute(item) || item.split(/[\\/]/).includes(".."))))
+      die(`provider '${provider}' inputs must be non-empty workspace-relative paths`);
+    if (config.inputs !== undefined) {
+      const scopedRepositories = new Set(config.repositories ||
+        (config.adapter === "contract-digest" ? Object.keys(config.contract || {}) :
+          config.repository ? [config.repository] : selectedRepositories(id).map((row) => row.id)));
+      for (const input of config.inputs) {
+        const scoped = input.match(/^([a-z0-9][a-z0-9._-]*):(.*)$/i);
+        if (scoped && !scopedRepositories.has(scoped[1]))
+          die(`provider '${provider}' input '${input}' references repository outside its repository scope`);
+      }
+    }
+    if (["review", "acceptance"].includes(capability) && config.inputs !== undefined)
+      die(`${capability} capability cannot declare reusable inputs; it is bound to the full workspace`);
+  }
+
+  function validateCommandWorkspaceInputs(id, provider, config) {
+    if (["external", "contract-digest"].includes(config.adapter)) return;
+    const repositoryId = config.repository || "root";
+    const repository = selectedRepositories(id).find((row) => row.id === repositoryId);
+    const workspace = canonicalPath(repository?.workspacePath || repository?.path || ROOT);
+    const declared = declaredSurfaceMatcher(id, loadRuntime(id));
+    const uncovered = uncoveredCommandWorkspaceFiles({
+      config, workspace, repositoryId, declared,
+      tracked: (rel) => git(["ls-files", "--error-unmatch", "--", rel], workspace).status === 0
+    });
+    if (uncovered.length)
+      die(`provider '${provider}' command names untracked workspace file(s) outside its inputs and declared surface: ${
+        uncovered.join(", ")}; add provider inputs or declare the paths in the change surface`);
+  }
+
+  function validateMutationProtocol(provider, config, capability) {
+    if (config.resultProtocol !== "foundation-mutation-v2") return;
+    if (capability !== "mutation")
+      die(`provider '${provider}' foundation-mutation-v2 requires capability 'mutation'`);
+    if (!Array.isArray(config.requiredMutants) || config.requiredMutants.length === 0 ||
+        config.requiredMutants.some((item) => typeof item !== "string" || !item.trim()) ||
+        new Set(config.requiredMutants).size !== config.requiredMutants.length)
+      die(`provider '${provider}' foundation-mutation-v2 requires unique requiredMutants IDs`);
+    if (!config.mutantKillers || typeof config.mutantKillers !== "object" ||
+        Array.isArray(config.mutantKillers) ||
+        config.requiredMutants.some((id) => !String(config.mutantKillers[id] || "").trim()) ||
+        Object.keys(config.mutantKillers).some((id) => !config.requiredMutants.includes(id)))
+      die(`provider '${provider}' foundation-mutation-v2 requires one mutantKillers mapping per required mutant`);
+  }
+
+  function validateProviderProtocols(provider, config, capability) {
+    if (config.reportFormat !== undefined && !["json", "tap", "auto"].includes(config.reportFormat))
+      die(`provider '${provider}' reportFormat must be json|tap|auto`);
+    if (config.resultProtocol !== undefined &&
+        !["foundation-mutation-v1", "foundation-mutation-v2"].includes(config.resultProtocol))
+      die(`provider '${provider}' resultProtocol must be foundation-mutation-v1|foundation-mutation-v2`);
+    if (config.criticalCases !== undefined &&
+        (!Array.isArray(config.criticalCases) ||
+         config.criticalCases.some((item) => typeof item !== "string" || !item.trim())))
+      die(`provider '${provider}' criticalCases must be an array of non-empty IDs`);
+    if (config.criticalCases?.length && ["external", "contract-digest"].includes(config.adapter))
+      die(`provider '${provider}' adapter '${config.adapter}' cannot execute criticalCases; use a structured command adapter`);
+    validateMutationProtocol(provider, config, capability);
+  }
+
+  function validateProviderRelationships(provider, config, configuredProviders, executionValue) {
+    if (config.dependsOn !== undefined &&
+        (!Array.isArray(config.dependsOn) || config.dependsOn.some((item) =>
+          !configuredProviders[item] && !PROVIDERS.has(item))))
+      die(`provider '${provider}' dependsOn contains an unknown provider`);
+    if (config.dependsOn?.includes(provider))
+      die(`provider '${provider}' cannot depend on itself`);
+    if (config.outputs !== undefined &&
+        (!Array.isArray(config.outputs) || config.outputs.some((item) =>
+          !configuredProviders[item] && !PROVIDERS.has(item))))
+      die(`provider '${provider}' outputs contains an unknown provider`);
+    if (config.service !== undefined &&
+        (!executionValue.services || !executionValue.services[config.service]))
+      die(`provider '${provider}' references unknown service '${config.service}'`);
+  }
+
+  function validateProviderEnvironment(provider, config) {
+    if (config.env !== undefined &&
+        (!config.env || typeof config.env !== "object" || Array.isArray(config.env) ||
+         Object.values(config.env).some((value) =>
+           !["string", "number", "boolean"].includes(typeof value))))
+      die(`provider '${provider}' env must be an object of scalar values`);
+    if (config.envFrom !== undefined &&
+        (!Array.isArray(config.envFrom) || config.envFrom.some((value) =>
+          typeof value !== "string" || !/^[A-Z][A-Z0-9_]*$/.test(value))))
+      die(`provider '${provider}' envFrom must contain environment variable names`);
+    const secretKey = Object.keys(config.env || {}).find((key) =>
+      /(SECRET|TOKEN|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY)/i.test(key));
+    if (secretKey)
+      die(`provider '${provider}' must use envFrom for secret-like key '${secretKey}'`);
+    if (config.report !== undefined &&
+        (typeof config.report !== "string" || isAbsolute(config.report) ||
+         resolve(ROOT, config.report) === ROOT ||
+         !resolve(ROOT, config.report).startsWith(`${ROOT}/`)))
+      die(`provider '${provider}' report must be a workspace-relative path`);
+  }
+
+  function validateProviderReadiness(provider, config) {
+    if (config.readiness === undefined) return;
+    if (!config.readiness || typeof config.readiness !== "object" ||
+        typeof config.readiness.url !== "string")
+      die(`provider '${provider}' readiness requires a URL`);
+    try { new URL(config.readiness.url); }
+    catch { die(`provider '${provider}' readiness URL is invalid`); }
+    if (config.readiness.expectStatus !== undefined &&
+        (!Number.isInteger(Number(config.readiness.expectStatus)) ||
+         Number(config.readiness.expectStatus) < 100 ||
+         Number(config.readiness.expectStatus) > 599))
+      die(`provider '${provider}' readiness expectStatus must be an HTTP status`);
+    if (config.readiness.expectBody !== undefined &&
+        typeof config.readiness.expectBody !== "string")
+      die(`provider '${provider}' readiness expectBody must be a string`);
+    if (config.readiness.expectHeader !== undefined &&
+        (!config.readiness.expectHeader ||
+         typeof config.readiness.expectHeader !== "object" ||
+         Array.isArray(config.readiness.expectHeader)))
+      die(`provider '${provider}' readiness expectHeader must be an object`);
+  }
+
+  function validateProviderCi(provider, config) {
+    if (config.ci === undefined) return;
+    if (config.adapter !== "external" || !config.ci || typeof config.ci !== "object" ||
+        typeof config.ci.issuer !== "string" || !config.ci.issuer.trim() ||
+        typeof config.ci.publicKey !== "string" || !config.ci.publicKey.includes("PUBLIC KEY"))
+      die(`provider '${provider}' ci verification requires external adapter, issuer, and publicKey`);
+  }
+
+  function validateCapabilityConfiguration(provider, config, capability) {
+    if (config.adapter === "playwright" && config.inputMode &&
+        !INPUT_MODES.has(config.inputMode))
+      die(`provider '${provider}' has invalid inputMode '${config.inputMode}'`);
+    const defaultInputMode = config.adapter === "playwright" ? "browser-automation" : "";
+    if (capability === "browser" && config.adapter !== "external" &&
+        !INPUT_MODES.has(config.inputMode || defaultInputMode))
+      die("configured browser provider requires a valid inputMode");
+    if (capability === "mutation" && config.adapter !== "external" &&
+        config.resultProtocol !== "foundation-mutation-v2" &&
+        !["behavioral-kill", "test-failure"].includes(config.classification))
+      die("configured mutation provider requires classification behavioral-kill|test-failure");
+    if (capability === "review" && config.adapter !== "external")
+      die("review capability requires an external provider");
+    if (capability === "acceptance" && config.adapter !== "external")
+      die("acceptance capability requires an external human provider");
+    validateProviderCi(provider, config);
+  }
+
+  function validateProviderClaimCoverage(provider, config, capability, claims) {
+    const declaredForProvider = (capability === "review"
+      ? scopedReviewClaims(claims)
+      : claims.filter((claim) => claim.capabilities.includes(capability) ||
+        (capability === "discovery" && claim.capabilities.includes("test"))))
+      .map((claim) => claim.id);
+    if (config.claims === undefined || config.claims === "declared") return;
+    if (!Array.isArray(config.claims))
+      die(`provider '${provider}' claims must be an array or 'declared'`);
+    const forbidden = config.claims.filter((claim) => !declaredForProvider.includes(claim));
+    if (forbidden.length)
+      die(`provider '${provider}' config references undeclared claim(s): ${forbidden.join(", ")}`);
+    const missing = declaredForProvider.filter((claim) => !config.claims.includes(claim));
+    if (missing.length)
+      die(`provider '${provider}' config must cover every declared claim: ${missing.join(", ")}`);
+  }
+
+  function validateConfiguredProvider(id, provider, config, context) {
+    const capability = validateProviderIdentity(id, provider, config);
+    validateProviderRepositories(id, provider, config);
+    validateProviderCommand(provider, config);
+    validateContractDigest(id, provider, config);
+    warnProviderReportSurface(provider, config);
+    validateDiscoveryProvider(provider, config, capability, context.configuredProviders);
+    validateProviderResourceLimits(provider, config);
+    validateProviderInputs(id, provider, config, capability);
+    validateCommandWorkspaceInputs(id, provider, config);
+    validateProviderProtocols(provider, config, capability);
+    validateProviderRelationships(provider, config, context.configuredProviders,
+      context.executionValue);
+    validateProviderEnvironment(provider, config);
+    validateProviderReadiness(provider, config);
+    validateCapabilityConfiguration(provider, config, capability);
+    validateProviderClaimCoverage(provider, config, capability, context.claims);
+  }
+  
+  function evidence(id, dir = activeChangePath(id)) {
+    const path = join(dir, "evidence.yaml");
+    const value = readJson(path);
+    validateEvidenceClaims(id, value);
     const executionValue = rawExecution(id, dir);
     const configuredProviders = {
       ...(value.providers || {}),
       ...(executionValue.providers || {})
     };
     for (const [provider, config] of Object.entries(configuredProviders)) {
-      if (!/^[a-z0-9][a-z0-9._-]*$/.test(provider))
-        die(`invalid provider instance id '${provider}'`);
-      if (!config || typeof config !== "object" || Array.isArray(config))
-        die(`provider '${provider}' configuration must be an object`);
-      const capability = providerCapability(provider, config);
-      if (!capability || !PROVIDERS.has(capability))
-        die(`provider '${provider}' requires a known capability`);
-      if (!ADAPTERS.has(config.adapter))
-        die(`provider '${provider}' uses unknown adapter '${config.adapter || ""}'`);
-      if (config.repository !== undefined)
-        repositoryById(id, config.repository);
-      if (config.repositories !== undefined) {
-        if (!Array.isArray(config.repositories) || config.repositories.length === 0 ||
-            config.repositories.some((repository) =>
-              typeof repository !== "string" || !repository.trim()) ||
-            new Set(config.repositories).size !== config.repositories.length)
-          die(`provider '${provider}' repositories must be a non-empty array of unique repository IDs`);
-        for (const repository of config.repositories) repositoryById(id, repository);
-        if (config.repository && !config.repositories.includes(config.repository))
-          die(`provider '${provider}' cwd repository '${config.repository}' must appear in repositories`);
-      }
-      if (!["external", "contract-digest"].includes(config.adapter) &&
-          (!Array.isArray(config.command) || config.command.length === 0 ||
-           config.command.some((part) => typeof part !== "string" || !part)))
-        die(`provider '${provider}' adapter '${config.adapter}' requires a non-empty command array`);
-      if (config.adapter === "contract-digest") {
-        // Two sides minimum: a "shared" contract with one participant proves
-        // nothing about agreement.
-        const sides = config.contract;
-        if (!sides || typeof sides !== "object" || Array.isArray(sides) ||
-            Object.keys(sides).length < 2)
-          die(`provider '${provider}' contract-digest requires "contract" mapping at least two repository ids to a file path`);
-        for (const [repository, path] of Object.entries(sides)) {
-          if (typeof path !== "string" || !path.trim())
-            die(`provider '${provider}' contract-digest path for '${repository}' must be a non-empty string`);
-          repositoryById(id, repository);
-        }
-        if (config.repository !== undefined)
-          die(`provider '${provider}' contract-digest spans repositories and cannot declare a single 'repository'`);
-        if (config.repositories !== undefined) {
-          const contractRepositories = Object.keys(sides).sort();
-          const declaredRepositories = [...config.repositories].sort();
-          if (JSON.stringify(contractRepositories) !== JSON.stringify(declaredRepositories))
-            die(`provider '${provider}' repositories must exactly match its contract repositories`);
-        }
-      }
-      // A report written inside the hashed surface expires the receipt it was
-      // written to justify: the workspace hash is taken before providers run
-      // and again at finalization, so the provider's own output makes every
-      // receipt in the run stale — the run passes, then reports itself void.
-      // A warning rather than a refusal, because a deterministic report that
-      // is already committed reproduces byte-for-byte and leaves the hash
-      // alone; that project is odd, not broken.
-      if (typeof config.report === "string" && config.report.trim() &&
-          !isExcludedPath(config.report.replaceAll("\\", "/"),
-            { excluded: EXCLUDED_WORKSPACE_DIRS }))
-        console.error(`WARNING: provider '${provider}' writes its report to ${config.report}, inside the hashed workspace surface; its own output will expire the receipt it produces. Write it under one of: ${
-          [...EXCLUDED_WORKSPACE_DIRS].filter((dir) => !dir.startsWith(".")).join(", ")}`);
-      // A discovery provider may declare this adapter too. It does not run on
-      // its own — the test provider that names it writes both receipts in one
-      // execution — but it has to be *configurable* so that a change with test
-      // claims in two repositories can scope discovery per repository. Refusing
-      // it here left multi-repository test evidence unprovable: the only other
-      // adapters pass validation and then fail at execution, because none of
-      // them can produce a discovered count.
-      if (config.adapter === "test-discovery" && !["test", "discovery"].includes(capability))
-        die("test-discovery adapter requires capability 'test' or 'discovery'");
-      // Only the *test* half owes this reference. The discovery half is the
-      // thing being referred to, and demanding it name a discovery provider of
-      // its own asked it to point at itself.
-      if (config.adapter === "test-discovery" && capability === "test" && provider !== "test") {
-        if (!config.discoveryProvider ||
-            !configuredProviders[config.discoveryProvider] ||
-            providerCapability(
-              config.discoveryProvider, configuredProviders[config.discoveryProvider]
-            ) !== "discovery")
-          die(`provider '${provider}' test-discovery requires a configured discoveryProvider`);
-      }
-      if (config.timeoutMs !== undefined &&
-          (measuredNumber(config.timeoutMs) === null || measuredNumber(config.timeoutMs) <= 0))
-        die(`provider '${provider}' timeoutMs must be a positive number`);
-      if (config.resources !== undefined &&
-          (!Array.isArray(config.resources) ||
-           config.resources.some((item) => typeof item !== "string" || !item)))
-        die(`provider '${provider}' resources must be an array of strings`);
-      if (config.inputs !== undefined &&
-          (!Array.isArray(config.inputs) || config.inputs.length === 0 ||
-           config.inputs.some((item) => typeof item !== "string" || !item ||
-             isAbsolute(item) || item.split(/[\\/]/).includes(".."))))
-        die(`provider '${provider}' inputs must be non-empty workspace-relative paths`);
-      if (config.inputs !== undefined) {
-        const scopedRepositories = new Set(config.repositories ||
-          (config.adapter === "contract-digest" ? Object.keys(config.contract || {}) :
-            config.repository ? [config.repository] : selectedRepositories(id).map((row) => row.id)));
-        for (const input of config.inputs) {
-          const scoped = input.match(/^([a-z0-9][a-z0-9._-]*):(.*)$/i);
-          if (scoped && !scopedRepositories.has(scoped[1]))
-            die(`provider '${provider}' input '${input}' references repository outside its repository scope`);
-        }
-      }
-      if (["review", "acceptance"].includes(capability) && config.inputs !== undefined)
-        die(`${capability} capability cannot declare reusable inputs; it is bound to the full workspace`);
-      if (!["external", "contract-digest"].includes(config.adapter)) {
-        const repositoryId = config.repository || "root";
-        const repository = selectedRepositories(id).find((row) => row.id === repositoryId);
-        const workspace = canonicalPath(repository?.workspacePath || repository?.path || ROOT);
-        const declared = declaredSurfaceMatcher(id, loadRuntime(id));
-        const uncovered = uncoveredCommandWorkspaceFiles({
-          config,
-          workspace,
-          repositoryId,
-          declared,
-          tracked: (rel) => git(["ls-files", "--error-unmatch", "--", rel], workspace).status === 0
-        });
-        if (uncovered.length)
-          die(`provider '${provider}' command names untracked workspace file(s) outside its inputs and declared surface: ${
-            uncovered.join(", ")}; add provider inputs or declare the paths in the change surface`);
-      }
-      if (config.reportFormat !== undefined &&
-          !["json", "tap", "auto"].includes(config.reportFormat))
-        die(`provider '${provider}' reportFormat must be json|tap|auto`);
-      if (config.resultProtocol !== undefined &&
-          !["foundation-mutation-v1", "foundation-mutation-v2"].includes(config.resultProtocol))
-        die(`provider '${provider}' resultProtocol must be foundation-mutation-v1|foundation-mutation-v2`);
-      if (config.criticalCases !== undefined &&
-          (!Array.isArray(config.criticalCases) ||
-           config.criticalCases.some((item) => typeof item !== "string" || !item.trim())))
-        die(`provider '${provider}' criticalCases must be an array of non-empty IDs`);
-      if (config.criticalCases?.length &&
-          ["external", "contract-digest"].includes(config.adapter))
-        die(`provider '${provider}' adapter '${config.adapter}' cannot execute criticalCases; use a structured command adapter`);
-      if (config.resultProtocol === "foundation-mutation-v2") {
-        if (capability !== "mutation")
-          die(`provider '${provider}' foundation-mutation-v2 requires capability 'mutation'`);
-        if (!Array.isArray(config.requiredMutants) || config.requiredMutants.length === 0 ||
-            config.requiredMutants.some((item) => typeof item !== "string" || !item.trim()) ||
-            new Set(config.requiredMutants).size !== config.requiredMutants.length)
-          die(`provider '${provider}' foundation-mutation-v2 requires unique requiredMutants IDs`);
-        if (!config.mutantKillers || typeof config.mutantKillers !== "object" ||
-            Array.isArray(config.mutantKillers) ||
-            config.requiredMutants.some((id) => !String(config.mutantKillers[id] || "").trim()) ||
-            Object.keys(config.mutantKillers).some((id) => !config.requiredMutants.includes(id)))
-          die(`provider '${provider}' foundation-mutation-v2 requires one mutantKillers mapping per required mutant`);
-      }
-      if (config.dependsOn !== undefined &&
-          (!Array.isArray(config.dependsOn) ||
-           config.dependsOn.some((item) =>
-             !configuredProviders[item] && !PROVIDERS.has(item))))
-        die(`provider '${provider}' dependsOn contains an unknown provider`);
-      if (config.dependsOn?.includes(provider))
-        die(`provider '${provider}' cannot depend on itself`);
-      if (config.outputs !== undefined &&
-          (!Array.isArray(config.outputs) ||
-           config.outputs.some((item) =>
-             !configuredProviders[item] && !PROVIDERS.has(item))))
-        die(`provider '${provider}' outputs contains an unknown provider`);
-      if (config.service !== undefined &&
-          (!executionValue.services || !executionValue.services[config.service]))
-        die(`provider '${provider}' references unknown service '${config.service}'`);
-      if (config.env !== undefined &&
-          (!config.env || typeof config.env !== "object" || Array.isArray(config.env) ||
-           Object.values(config.env).some((value) => !["string", "number", "boolean"].includes(typeof value))))
-        die(`provider '${provider}' env must be an object of scalar values`);
-      if (config.envFrom !== undefined &&
-          (!Array.isArray(config.envFrom) ||
-           config.envFrom.some((value) => typeof value !== "string" || !/^[A-Z][A-Z0-9_]*$/.test(value))))
-        die(`provider '${provider}' envFrom must contain environment variable names`);
-      const secretKey = Object.keys(config.env || {}).find((key) =>
-        /(SECRET|TOKEN|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY)/i.test(key));
-      if (secretKey)
-        die(`provider '${provider}' must use envFrom for secret-like key '${secretKey}'`);
-      if (config.report !== undefined &&
-          (typeof config.report !== "string" || isAbsolute(config.report) ||
-           resolve(ROOT, config.report) === ROOT ||
-           !resolve(ROOT, config.report).startsWith(`${ROOT}/`)))
-        die(`provider '${provider}' report must be a workspace-relative path`);
-      if (config.readiness !== undefined) {
-        if (!config.readiness || typeof config.readiness !== "object" ||
-            typeof config.readiness.url !== "string")
-          die(`provider '${provider}' readiness requires a URL`);
-        try { new URL(config.readiness.url); }
-        catch { die(`provider '${provider}' readiness URL is invalid`); }
-        if (config.readiness.expectStatus !== undefined &&
-            (!Number.isInteger(Number(config.readiness.expectStatus)) ||
-             Number(config.readiness.expectStatus) < 100 ||
-             Number(config.readiness.expectStatus) > 599))
-          die(`provider '${provider}' readiness expectStatus must be an HTTP status`);
-        if (config.readiness.expectBody !== undefined &&
-            typeof config.readiness.expectBody !== "string")
-          die(`provider '${provider}' readiness expectBody must be a string`);
-        if (config.readiness.expectHeader !== undefined &&
-            (!config.readiness.expectHeader ||
-             typeof config.readiness.expectHeader !== "object" ||
-             Array.isArray(config.readiness.expectHeader)))
-          die(`provider '${provider}' readiness expectHeader must be an object`);
-      }
-      if (config.adapter === "playwright" && config.inputMode &&
-          !INPUT_MODES.has(config.inputMode))
-        die(`provider '${provider}' has invalid inputMode '${config.inputMode}'`);
-      if (capability === "browser" && config.adapter !== "external" &&
-          !INPUT_MODES.has(config.inputMode || (config.adapter === "playwright" ? "browser-automation" : "")))
-        die("configured browser provider requires a valid inputMode");
-      if (capability === "mutation" && config.adapter !== "external" &&
-          config.resultProtocol !== "foundation-mutation-v2" &&
-          !["behavioral-kill", "test-failure"].includes(config.classification))
-        die("configured mutation provider requires classification behavioral-kill|test-failure");
-      if (capability === "review" && config.adapter !== "external")
-        die("review capability requires an external provider");
-      if (capability === "acceptance" && config.adapter !== "external")
-        die("acceptance capability requires an external human provider");
-      if (config.ci !== undefined &&
-          (config.adapter !== "external" || !config.ci || typeof config.ci !== "object" ||
-           typeof config.ci.issuer !== "string" || !config.ci.issuer.trim() ||
-           typeof config.ci.publicKey !== "string" || !config.ci.publicKey.includes("PUBLIC KEY")))
-        die(`provider '${provider}' ci verification requires external adapter, issuer, and publicKey`);
-      const declaredForProvider = (capability === "review"
-        ? scopedReviewClaims(value.claims)
-        : value.claims.filter((claim) =>
-        claim.capabilities.includes(capability) ||
-        (capability === "discovery" && claim.capabilities.includes("test"))))
-        .map((claim) => claim.id);
-      if (config.claims !== undefined && config.claims !== "declared") {
-        if (!Array.isArray(config.claims))
-          die(`provider '${provider}' claims must be an array or 'declared'`);
-        const forbidden = config.claims.filter((claim) => !declaredForProvider.includes(claim));
-        if (forbidden.length)
-          die(`provider '${provider}' config references undeclared claim(s): ${forbidden.join(", ")}`);
-        const missing = declaredForProvider.filter((claim) => !config.claims.includes(claim));
-        if (missing.length)
-          die(`provider '${provider}' config must cover every declared claim: ${missing.join(", ")}`);
-      }
+      validateConfiguredProvider(id, provider, config, {
+        configuredProviders, executionValue, claims: value.claims
+      });
     }
     const writerConflict = providerReceiptWriterConflicts(
       configuredProviders, providerCapability)[0];
