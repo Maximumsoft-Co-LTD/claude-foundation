@@ -453,8 +453,7 @@ export function createChangeLifecycle({
     };
   }
 
-  function resolveChange(id, flags) {
-    const state = loadRuntime(id);
+  function applyGroundingReopen(state, flags) {
     if (flags["reopen-grounding"]) {
       const decisionRef = String(flags["decision-ref"] || "").trim();
       const reason = String(flags["reopen-reason"] || "").trim();
@@ -479,6 +478,9 @@ export function createChangeLifecycle({
       state.contractRevision = Number(state.contractRevision || 0) + 1;
     } else if (flags["decision-ref"] || flags["reopen-reason"])
       fail("--decision-ref and --reopen-reason require --reopen-grounding");
+  }
+
+  function applyResolveAttributes(state, flags) {
     // The only consumer gates on strict equality with "unclear", so an
     // unvalidated value silently defeats the /investigate blocker it feeds.
     if (flags.ambiguity && !["clear", "unclear"].includes(flags.ambiguity))
@@ -508,6 +510,9 @@ export function createChangeLifecycle({
       if (!globs.length) fail("--surface requires at least one path or glob");
       state.declaredSurface = [...new Set(globs)].sort();
     }
+  }
+
+  function applyResolveSecurity(state, flags) {
     const semanticText = `${state.intent} ${flags.security || ""}`.toLowerCase();
     // Word boundaries, not substrings. `includes("access")` fired on
     // "accessibility" and `includes("migration")` on "migration guide", so
@@ -533,6 +538,9 @@ export function createChangeLifecycle({
     state.reviewRequired = state.impact === "high" ||
       (state.coupling === "coupled" && state.impact !== "low") ||
       state.securityTriggers.length > 0 || Boolean(flags.review);
+  }
+
+  function applyResolveAcceptance(state, flags) {
     if (flags["acceptance-required"] && flags["acceptance-not-required"])
       fail("resolve cannot combine --acceptance-required and --acceptance-not-required");
     if ((flags["acceptance-reason"] || flags["acceptance-claims"]) &&
@@ -557,7 +565,9 @@ export function createChangeLifecycle({
         version: 2, decision: "not-required", required: false,
         reason: null, claimIds: [], declaredAt: now()
       };
-    let upgraded = false;
+  }
+
+  function upgradeResolvedSchema(id, state) {
     if (state.schema === "foundation-rapid" &&
         (state.impact !== "low" || state.coupling !== "isolated" || state.reviewRequired ||
          state.acceptance?.required)) {
@@ -568,20 +578,34 @@ export function createChangeLifecycle({
       state.decisionMetadataRequired = true;
       state.semanticInvariantsRequired = true;
       state.riskBasedCiRequired = workflowPolicy().land?.riskBasedCi === true;
-      upgraded = true;
       // The rapid packet has no design.md and no specs/, which the standard
       // schema requires. Leaving them absent made `validate` refuse a change
       // whose only listed next command was `validate` — a dead end that had to
       // be guessed out of. Instantiate them here, with the upgrade.
       materializeStandardArtifacts(id, state.intent);
+      return true;
     }
-    saveRuntime(state);
+    return false;
+  }
+
+  function printResolution(id, state, upgraded) {
     // The surface line appears only when one was declared, so a change that
     // never used the flag keeps producing the output it produced before it
     // existed.
     const surfaceLine = state.declaredSurface?.length
       ? `\n  surface: ${state.declaredSurface.join(", ")}` : "";
     console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
+  }
+
+  function resolveChange(id, flags) {
+    const state = loadRuntime(id);
+    applyGroundingReopen(state, flags);
+    applyResolveAttributes(state, flags);
+    applyResolveSecurity(state, flags);
+    applyResolveAcceptance(state, flags);
+    const upgraded = upgradeResolvedSchema(id, state);
+    saveRuntime(state);
+    printResolution(id, state, upgraded);
   }
 
   function validateStartIdentity(draft) {
