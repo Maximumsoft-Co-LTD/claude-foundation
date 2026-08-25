@@ -119,12 +119,8 @@ export function createRuntimeEnvironment({
     return { packageOwned, binary, binaryAvailable: existsSync(binary), config };
   }
 
-  function foundationPolicy() {
-    const path = policyPath;
-    const configured = existsSync(path) ? readJson(path) : {};
-    if (configured.version !== undefined && configured.version !== 1)
-      fail("foundation.json requires version 1");
-    const policy = {
+  function mergePolicy(configured) {
+    return {
       ...DEFAULT_POLICY, ...configured,
       execution: { ...DEFAULT_POLICY.execution, ...(configured.execution || {}) },
       models: Object.fromEntries(["fast", "standard", "deep"].map((tier) => [
@@ -142,6 +138,9 @@ export function createRuntimeEnvironment({
       sandbox: { ...DEFAULT_POLICY.sandbox, ...(configured.sandbox || {}) },
       workflow: { ...DEFAULT_POLICY.workflow, ...(configured.workflow || {}) }
     };
+  }
+
+  function normalizeExecutionPolicy(policy) {
     if (typeof policy.execution.packetBytes === "number") {
       policy.execution.legacyNumericPacketBytes = policy.execution.packetBytes;
       policy.execution.packetBytes = {
@@ -164,6 +163,9 @@ export function createRuntimeEnvironment({
       ...DEFAULT_POLICY.execution.requestBudgets,
       ...(policy.execution.requestBudgets || {})
     };
+  }
+
+  function validatePacketPolicy(policy) {
     for (const type of ["task", "review", "repository", "global"]) {
       const bytes = Number(policy.execution.packetBytes?.[type]);
       if (!Number.isInteger(bytes) || bytes < 2048 || bytes > 65536)
@@ -172,6 +174,9 @@ export function createRuntimeEnvironment({
     const summaryBytes = Number(policy.execution.planSummaryBytes);
     if (!Number.isInteger(summaryBytes) || summaryBytes < 1024 || summaryBytes > 16384)
       fail("foundation.json execution.planSummaryBytes must be 1024..16384");
+  }
+
+  function validateBudgetPolicy(policy) {
     for (const type of ["rapid", "standard"]) {
       const tokens = Number(policy.execution.tokenBudgets[type]);
       if (!Number.isInteger(tokens) || tokens < 10000 || tokens > 100000000)
@@ -180,16 +185,24 @@ export function createRuntimeEnvironment({
       if (!Number.isInteger(requests) || requests < 10 || requests > 100000)
         fail(`foundation.json execution.requestBudgets.${type} must be 10..100000`);
     }
+  }
+
+  function validateExecutionLimits(policy) {
     const parallel = Number(policy.execution.maxParallelAgents);
     if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
       fail("foundation.json execution.maxParallelAgents must be an integer from 1 to 16");
     const leaseMinutes = Number(policy.execution.leaseMinutes);
     if (!Number.isFinite(leaseMinutes) || leaseMinutes < 1 || leaseMinutes > 1440)
       fail("foundation.json execution.leaseMinutes must be from 1 to 1440");
-    if (!["required", "single-model"].includes(policy.review.diversity))
-      fail("foundation.json review.diversity must be required|single-model");
-    if (!["required", "self"].includes(policy.review.independence))
-      fail("foundation.json review.independence must be required|self");
+  }
+
+  function validateExecutionPolicy(policy) {
+    validatePacketPolicy(policy);
+    validateBudgetPolicy(policy);
+    validateExecutionLimits(policy);
+  }
+
+  function validateWorkflowPolicy(policy) {
     const setupCommand = policy.sandbox.setupCommand;
     if (setupCommand !== null && setupCommand !== undefined &&
         (typeof setupCommand !== "string" || setupCommand.trim() === ""))
@@ -206,18 +219,21 @@ export function createRuntimeEnvironment({
     if (typeof policy.workflow.handoffDefaultOwner !== "string" ||
         !policy.workflow.handoffDefaultOwner.trim())
       fail("foundation.json workflow.handoffDefaultOwner must be a non-empty team name");
-    if (policy.review.defaultReviewer &&
-        !policy.review.reviewers[policy.review.defaultReviewer])
-      fail("foundation.json review.defaultReviewer must name a configured reviewer");
+  }
+
+  function configuredFallbackReviewers(policy, configured) {
     const legacyFallback = policy.review.fallbackReviewer;
     if (legacyFallback !== undefined && legacyFallback !== null &&
         legacyFallback !== "main-session")
       fail("foundation.json review.fallbackReviewer must be main-session");
     if (legacyFallback && configured.review?.fallbackReviewers !== undefined)
       fail("foundation.json review must use fallbackReviewer or fallbackReviewers, not both");
-    const fallbackReviewers = configured.review?.fallbackReviewers !== undefined
+    return configured.review?.fallbackReviewers !== undefined
       ? policy.review.fallbackReviewers
       : legacyFallback ? [legacyFallback] : [];
+  }
+
+  function validateFallbackReviewers(policy, fallbackReviewers) {
     if (!Array.isArray(fallbackReviewers) || fallbackReviewers.some((name) =>
       typeof name !== "string" || !name.trim()))
       fail("foundation.json review.fallbackReviewers must be an array of reviewer names");
@@ -235,31 +251,46 @@ export function createRuntimeEnvironment({
     if (fallbackReviewers.includes("main-session") &&
         policy.review.independence !== "self")
       fail("foundation.json review.fallbackReviewers main-session requires review.independence self");
+    return infraFailureThreshold;
+  }
+
+  function normalizeReviewFallbacks(policy, configured) {
+    if (policy.review.defaultReviewer &&
+        !policy.review.reviewers[policy.review.defaultReviewer])
+      fail("foundation.json review.defaultReviewer must name a configured reviewer");
+    const fallbackReviewers = configuredFallbackReviewers(policy, configured);
+    const infraFailureThreshold = validateFallbackReviewers(policy, fallbackReviewers);
     policy.review.fallbackReviewers = fallbackReviewers;
     policy.review.fallbackReviewer = fallbackReviewers.includes("main-session")
       ? "main-session" : undefined;
     policy.review.infraFailureThreshold = infraFailureThreshold;
-    if (typeof policy.telemetry.requireUsage !== "boolean")
-      fail("foundation.json telemetry.requireUsage must be boolean");
-    if (typeof policy.land.riskBasedCi !== "boolean")
-      fail("foundation.json land.riskBasedCi must be boolean");
-    for (const [name, reviewer] of Object.entries(policy.review.reviewers)) {
-      if (!["codex-cli", "claude-cli"].includes(reviewer.adapter))
-        fail(`foundation.json review.reviewers.${name}.adapter must be codex-cli|claude-cli`);
-      for (const field of [
-        "executable", "providerFamily", "modelFamily", "modelId",
-        "reasoningEffort", "sandbox"
-      ])
-        if (!String(reviewer[field] || "").trim())
-          fail(`foundation.json review.reviewers.${name}.${field} is required`);
-      const expectedProvider = reviewer.adapter === "codex-cli" ? "openai" : "anthropic";
-      if (String(reviewer.providerFamily).toLowerCase() !== expectedProvider)
-        fail(`foundation.json review.reviewers.${name}.providerFamily must be ${expectedProvider} for ${reviewer.adapter}`);
-      if (reviewer.reasoningEffort !== "high")
-        fail(`foundation.json review.reviewers.${name}.reasoningEffort must be high`);
-      if (reviewer.sandbox !== "read-only" || reviewer.ephemeral !== true)
-        fail(`foundation.json review.reviewers.${name} must use read-only sandbox and ephemeral true`);
-    }
+  }
+
+  function validateReviewer(name, reviewer) {
+    if (!["codex-cli", "claude-cli"].includes(reviewer.adapter))
+      fail(`foundation.json review.reviewers.${name}.adapter must be codex-cli|claude-cli`);
+    for (const field of [
+      "executable", "providerFamily", "modelFamily", "modelId",
+      "reasoningEffort", "sandbox"
+    ])
+      if (!String(reviewer[field] || "").trim())
+        fail(`foundation.json review.reviewers.${name}.${field} is required`);
+    const expectedProvider = reviewer.adapter === "codex-cli" ? "openai" : "anthropic";
+    if (String(reviewer.providerFamily).toLowerCase() !== expectedProvider)
+      fail(`foundation.json review.reviewers.${name}.providerFamily must be ${expectedProvider} for ${reviewer.adapter}`);
+    if (reviewer.reasoningEffort !== "high")
+      fail(`foundation.json review.reviewers.${name}.reasoningEffort must be high`);
+    if (reviewer.sandbox !== "read-only" || reviewer.ephemeral !== true)
+      fail(`foundation.json review.reviewers.${name} must use read-only sandbox and ephemeral true`);
+  }
+
+  function validateReviewPolicy(policy, configured) {
+    normalizeReviewFallbacks(policy, configured);
+    for (const [name, reviewer] of Object.entries(policy.review.reviewers))
+      validateReviewer(name, reviewer);
+  }
+
+  function validateModelPolicy(policy) {
     for (const tier of ["fast", "standard", "deep"])
       if (!policy.models[tier] || typeof policy.models[tier].family !== "string")
         fail(`foundation.json models.${tier}.family is required`);
@@ -271,6 +302,27 @@ export function createRuntimeEnvironment({
       if (tier === "deep" && fallback && fallback !== "deep")
         fail("deep model tier cannot downgrade when unavailable");
     }
+  }
+
+  function foundationPolicy() {
+    const path = policyPath;
+    const configured = existsSync(path) ? readJson(path) : {};
+    if (configured.version !== undefined && configured.version !== 1)
+      fail("foundation.json requires version 1");
+    const policy = mergePolicy(configured);
+    normalizeExecutionPolicy(policy);
+    validateExecutionPolicy(policy);
+    if (!["required", "single-model"].includes(policy.review.diversity))
+      fail("foundation.json review.diversity must be required|single-model");
+    if (!["required", "self"].includes(policy.review.independence))
+      fail("foundation.json review.independence must be required|self");
+    validateWorkflowPolicy(policy);
+    validateReviewPolicy(policy, configured);
+    if (typeof policy.telemetry.requireUsage !== "boolean")
+      fail("foundation.json telemetry.requireUsage must be boolean");
+    if (typeof policy.land.riskBasedCi !== "boolean")
+      fail("foundation.json land.riskBasedCi must be boolean");
+    validateModelPolicy(policy);
     return policy;
   }
 
