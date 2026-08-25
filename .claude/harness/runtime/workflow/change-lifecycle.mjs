@@ -53,11 +53,14 @@ export function createChangeLifecycle({
       .replaceAll("replace-with-stable-claim-id", `${slugify(title)}-outcome`);
   }
 
-  function loadDraft(draftPath) {
+  function draftSource(draftPath) {
     const source = resolve(root, draftPath);
     if (!pathInside(root, source) || !existsSync(source))
       fail("new --draft requires a JSON file inside the project");
-    const draft = readJson(source);
+    return readJson(source);
+  }
+
+  function validateDraftFields(draft) {
     const requiredStrings = ["why", "currentState", "compatibility"];
     for (const field of requiredStrings)
       if (!String(draft[field] || "").trim())
@@ -65,6 +68,9 @@ export function createChangeLifecycle({
     for (const field of ["changes", "nonGoals", "decisions", "risks", "tasks", "claims", "specs"])
       if (!Array.isArray(draft[field]) || draft[field].length === 0)
         fail(`draft requires a non-empty '${field}' array`);
+  }
+
+  function validateDraftDomainLanguage(draft) {
     if (draft.domainLanguage !== undefined) {
       if (!Array.isArray(draft.domainLanguage))
         fail("draft domainLanguage must be an array");
@@ -73,37 +79,53 @@ export function createChangeLifecycle({
           if (!String(term?.[field] || "").trim())
             fail(`draft domainLanguage[${index}].${field} is required`);
     }
+  }
+
+  function validateDraftPolicy(draft) {
     if (workflowPolicy().workflow.grounding === "required" &&
         draft.grounding?.version !== 2)
       fail("draft requires grounding.version 2 from the single Decision Sheet");
     if (draft.externalOperations !== undefined && !Array.isArray(draft.externalOperations))
       fail("draft externalOperations must be an array");
-    let warnedLegacySpecOperation = false;
-    for (const [index, spec] of draft.specs.entries()) {
-      const label = `draft specs[${index}]`;
-      for (const field of ["name", "requirement", "description"])
-        if (!String(spec?.[field] || "").trim()) fail(`${label}.${field} is required`);
-      const operation = String(spec.operation || "added").toLowerCase();
-      if (!spec.operation && !warnedLegacySpecOperation) {
-        console.error("WARNING: legacy draft specs without operation are treated as added; declare added|modified|removed after comparing the canonical spec");
-        warnedLegacySpecOperation = true;
-      }
-      if (!["added", "modified", "removed"].includes(operation))
-        fail(`${label}.operation must be added|modified|removed`);
-      const scenarios = Array.isArray(spec.scenarios)
-        ? spec.scenarios
-        : (spec.scenario || spec.when || spec.then)
-          ? [{ name: spec.scenario, when: spec.when, then: spec.then }]
-          : [];
-      if (operation !== "removed" && scenarios.length === 0)
-        fail(`${label}.scenarios must be non-empty for ${operation}`);
-      for (const [scenarioIndex, scenario] of scenarios.entries())
-        for (const field of ["name", "when", "then"])
-          if (!String(scenario?.[field] || "").trim())
-            fail(`${label}.scenarios[${scenarioIndex}].${field} is required`);
-      if (operation === "removed" && !String(spec.migration || "").trim())
-        fail(`${label}.migration is required for removed requirements`);
+  }
+
+  function validateDraftSpec(spec, index, warnedLegacyOperation) {
+    const label = `draft specs[${index}]`;
+    for (const field of ["name", "requirement", "description"])
+      if (!String(spec?.[field] || "").trim()) fail(`${label}.${field} is required`);
+    const operation = String(spec.operation || "added").toLowerCase();
+    let warned = warnedLegacyOperation;
+    if (!spec.operation && !warned) {
+      console.error("WARNING: legacy draft specs without operation are treated as added; declare added|modified|removed after comparing the canonical spec");
+      warned = true;
     }
+    if (!["added", "modified", "removed"].includes(operation))
+      fail(`${label}.operation must be added|modified|removed`);
+    const scenarios = normalizedDraftScenarios(spec);
+    if (operation !== "removed" && scenarios.length === 0)
+      fail(`${label}.scenarios must be non-empty for ${operation}`);
+    for (const [scenarioIndex, scenario] of scenarios.entries())
+      for (const field of ["name", "when", "then"])
+        if (!String(scenario?.[field] || "").trim())
+          fail(`${label}.scenarios[${scenarioIndex}].${field} is required`);
+    if (operation === "removed" && !String(spec.migration || "").trim())
+      fail(`${label}.migration is required for removed requirements`);
+    return warned;
+  }
+
+  function validateDraftSpecs(draft) {
+    let warnedLegacyOperation = false;
+    for (const [index, spec] of draft.specs.entries()) {
+      warnedLegacyOperation = validateDraftSpec(spec, index, warnedLegacyOperation);
+    }
+  }
+
+  function loadDraft(draftPath) {
+    const draft = draftSource(draftPath);
+    validateDraftFields(draft);
+    validateDraftDomainLanguage(draft);
+    validateDraftPolicy(draft);
+    validateDraftSpecs(draft);
     return draft;
   }
 

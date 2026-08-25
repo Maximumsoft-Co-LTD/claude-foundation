@@ -88,6 +88,7 @@ repository land record|node "$ROOT/.claude/harness/tests/repository-land-record.
 task node proof|node "$ROOT/.claude/harness/tests/task-node-proof.test.mjs"
 proof finalize|node "$ROOT/.claude/harness/tests/proof-finalize.test.mjs"
 proof audit|node "$ROOT/.claude/harness/tests/proof-audit.test.mjs"
+change draft loading|node "$ROOT/.claude/harness/tests/change-draft-loading.test.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"
