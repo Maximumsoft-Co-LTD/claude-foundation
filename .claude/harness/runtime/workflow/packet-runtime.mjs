@@ -55,12 +55,8 @@ export function createPacketRuntime({
   fail
 }) {
   const die = fail;
-  function packetValue(id, repositoryId = null, taskId = null) {
-    const state = loadRuntime(id);
-    const activePath = activeChangePath(id, state);
-    const contract = evidence(id, activePath);
-    const allTasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8"))
-      .map(taskMetadata);
+
+  function packetScope(id, state, allTasks, repositoryId, taskId) {
     const selectedTask = taskId
       ? allTasks.find((task) => task.id === String(taskId).toUpperCase())
       : null;
@@ -71,6 +67,10 @@ export function createPacketRuntime({
     if (selectedTask && repository && selectedTask.repository !== repository.id)
       die(`task '${selectedTask.id}' is not assigned to repository '${repository.id}'`);
     const packetType = selectedTask ? "task" : repository ? "repository" : "global";
+    return { selectedTask, repository, packetType };
+  }
+
+  function packetClaims(contract, selectedTask, repository) {
     const declaredClaimIds = new Set(contract.claims.map((claim) => claim.id));
     const unknownTaskClaims = (selectedTask?.claims || [])
       .filter((claim) => !declaredClaimIds.has(claim));
@@ -79,13 +79,252 @@ export function createPacketRuntime({
     const claims = contract.claims.filter((claim) => {
       if (selectedTask?.claims.length)
         return selectedTask.claims.includes(claim.id);
-      return !repository || !claim.repositories ||
-        claim.repositories.includes(repository.id);
+      return !repository || !claim.repositories || claim.repositories.includes(repository.id);
     });
     if (selectedTask && claims.length === 0 &&
         !["inventory", "logs", "mechanical-docs"].includes(selectedTask.kind))
       die(`task '${selectedTask.id}' has no claims in repository '${selectedTask.repository}'`);
+    return claims;
+  }
+
+  function packetProviders(id, repository, claims, compositeHash, workspaceHash) {
     const claimIds = new Set(claims.map((claim) => claim.id));
+    const rows = requiredProviders(id).map((provider) => {
+      const config = providerConfig(id, provider);
+      const check = receiptValidity(id, provider,
+        repository && !config?.repository ? compositeHash : workspaceHash);
+      return {
+        provider, adapter: config?.adapter || "external",
+        repository: config?.repository || null,
+        repositories: providerRepositories(id, provider, config).map((row) => row.id),
+        resources: config ? adapterResources(provider, config) : [],
+        validity: check.validity, status: check.status || check.receipt?.status || null
+      };
+    }).filter((provider) => !repository || provider.repositories.includes(repository.id))
+      .filter((provider) => {
+        const covered = claimsForProvider(id, provider.provider).map((claim) => claim.id);
+        return covered.length === 0 || covered.some((claim) => claimIds.has(claim));
+      });
+    return rows;
+  }
+
+  function scopedFileChanges(id, state, repository, selectedTask) {
+    const packetSurface = canonicalChangedSurface(id, state);
+    const multiRepository = new Set(packetSurface.map((row) => row.repositoryId)).size > 1;
+    let paths = packetSurface
+      .filter((row) => !repository || row.repositoryId === repository.id)
+      .map((row) => repository || !multiRepository
+        ? row.path : `${row.repositoryId}/${row.path}`);
+    if (selectedTask?.paths.length)
+      paths = paths.filter((path) => selectedTask.paths.some((scope) => {
+        const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
+        return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
+      }));
+    return paths;
+  }
+
+  function changedFilesValue(paths, packetType) {
+    const limit = packetType === "task" ? 50 : 100;
+    if (paths.length <= limit) return paths;
+    const groups = paths.reduce((counts, path) => {
+      const prefix = path.split("/").slice(0, 2).join("/");
+      counts[prefix] = (counts[prefix] || 0) + 1;
+      return counts;
+    }, {});
+    return {
+      count: paths.length,
+      digest: stableHash(paths),
+      groups: Object.entries(groups).sort(([left], [right]) => left.localeCompare(right))
+        .map(([prefix, count]) => ({ prefix, count }))
+    };
+  }
+
+  function packetTasks(id, allTasks, repository, selectedTask, packetType) {
+    const scopedTasks = allTasks.filter((task) =>
+      (!repository || task.repository === repository.id) &&
+      (!selectedTask || task.id === selectedTask.id));
+    const rows = scopedTasks.map((task) => ({
+      id: task.id, done: task.done, kind: task.kind,
+      dependsOn: task.dependsOn,
+      paths: compactStrings(task.paths, 20),
+      resources: compactStrings(task.resources, 20),
+      ...(packetType === "task" ? {
+        text: task.text, claims: task.claims, model: modelForTask(id, task)
+      } : {})
+    }));
+    if (packetType !== "global")
+      return { scopedTasks, payload: compactList(rows, packetType === "task" ? 1 : 40) };
+    const counts = scopedTasks.reduce((values, task) => {
+      values[task.repository] = (values[task.repository] || 0) + 1;
+      return values;
+    }, {});
+    return {
+      scopedTasks,
+      payload: {
+        count: scopedTasks.length,
+        pending: scopedTasks.filter((task) => !task.done).length,
+        completed: scopedTasks.filter((task) => task.done).length,
+        byRepository: Object.entries(counts)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([repositoryIdValue, count]) => ({ repository: repositoryIdValue, count })),
+        digest: stableHash(scopedTasks.map((task) => ({
+          id: task.id, done: task.done, repository: task.repository,
+          dependsOn: task.dependsOn
+        })))
+      }
+    };
+  }
+
+  function packetArtifactReferences(activePath) {
+    const references = {};
+    for (const name of [
+      "proposal.md", "design.md", "tasks.md", "evidence.yaml",
+      "execution.yaml", "repositories.yaml", "grounding.yaml", "handoffs.yaml"
+    ]) {
+      const path = join(activePath, name);
+      if (existsSync(path))
+        references[name] = {
+          path: relative(ROOT, path).replaceAll("\\", "/"),
+          sha256: fileDigest(path)
+        };
+    }
+    const specsPath = join(activePath, "specs");
+    if (existsSync(specsPath))
+      references.specs = {
+        path: relative(ROOT, specsPath).replaceAll("\\", "/"),
+        sha256: directoryHash(specsPath)
+      };
+    return references;
+  }
+
+  function packetClaimRows(claims, packetType) {
+    const rows = claims.map((claim) => ({
+      id: claim.id,
+      ...(packetType === "global"
+        ? { scenarioDigest: stableHash(String(claim.scenario)) }
+        : { scenario: String(claim.scenario).slice(0, packetType === "task" ? 500 : 240) }),
+      capabilities: compactStrings(claim.capabilities, 12),
+      repositories: claim.repositories ? compactStrings(claim.repositories, 12) : null
+    }));
+    const limit = packetType === "task" ? 20 : packetType === "repository" ? 25 : 40;
+    return compactList(rows, limit);
+  }
+
+  function taskExecutionContext(id, selectedTask) {
+    if (!selectedTask) return {};
+    const leasePath = leasesRoot
+      ? join(leasesRoot, "tasks", id, `${selectedTask.id}.json`) : null;
+    const leaseValue = leasePath && existsSync(leasePath) ? readJson(leasePath, {}) : null;
+    const lease = leaseValue && leaseValue.leaseId ? leaseValue : null;
+    const executionAuthority = lease ? {
+      status: "leased",
+      graphRevision: lease.graphRevision,
+      graphIdentity: lease.graphIdentity,
+      planDigest: lease.planDigest,
+      contractRevision: lease.contractRevision,
+      workspaceHash: lease.workspaceHash,
+      leaseId: lease.leaseId,
+      fencingGeneration: lease.fencingGeneration,
+      executionAttempt: lease.executionAttempt,
+      repository: lease.repository,
+      paths: lease.paths,
+      claimIds: lease.claimIds,
+      outputSchema: lease.outputSchema,
+      expiresAt: lease.expiresAt
+    } : {
+      status: "unleased",
+      instruction: "Acquire the host lease, then regenerate this task packet before execution."
+    };
+    return {
+      workerContract: {
+        version: 1,
+        role: "leased-task-worker",
+        must: [
+          "implement-only-the-leased-task",
+          "edit-only-authorized-paths",
+          "run-focused-checks",
+          "report-summary-checks-and-blockers"
+        ],
+        mustNot: [
+          "edit-task-ledger",
+          "dispatch-successors",
+          "claim-peer-results"
+        ],
+        parentOwns: ["group-join", "task-ledger", "successor-dispatch"],
+        resultAuthority: "observed-workspace-writes-and-lease-authority"
+      },
+      executionAuthority
+    };
+  }
+
+  function repairContext(id, repository, fileChanges) {
+    const latestReview = deliveredAiAttempts(id).at(-1) || null;
+    if (latestReview?.resultStatus !== "fail") return null;
+    const findings = (latestReview.findings || [])
+      .filter((finding) => ["blocker", "major"].includes(finding.severity))
+      .filter((finding) => !repository || !finding.path ||
+        finding.path.startsWith(`${repository.id}/`) || fileChanges.includes(finding.path))
+      .slice(0, 8).map((finding) => ({
+        id: finding.id,
+        severity: finding.severity,
+        path: finding.path || null,
+        line: finding.line ?? null,
+        message: String(finding.message || "").slice(0, 600),
+        claimIds: (finding.claimIds || []).slice(0, 12),
+        verificationCaseIds: (finding.verificationCaseIds || []).slice(0, 12)
+      }));
+    if (!findings.length) return null;
+    return {
+      version: 1,
+      kind: "review-findings",
+      attempt: latestReview.attempt,
+      attemptDigest: latestReview.digest,
+      workspaceHash: latestReview.workspaceHash,
+      findings,
+      findingDigest: stableHash(findings),
+      instruction: "Repair this bounded finding batch inside the current contract, then rerun only evidence bound to the affected paths. Do not request another open-ended review."
+    };
+  }
+
+  function packetMetadata(state, activePath, repository, compositeHash) {
+    return {
+      status: state.status,
+      revision: Number(state.revision || 0),
+      contractRevision: Number(state.contractRevision || 0),
+      executionRevision: Number(state.executionRevision || 0),
+      impact: state.impact,
+      coupling: state.coupling,
+      reviewRequired: Boolean(state.reviewRequired),
+      changePath: relative(ROOT, activePath) || ".",
+      repository: repository ? {
+        id: repository.id, type: repository.type, mode: repository.mode,
+        relativePath: repository.relativePath,
+        dependsOn: repository.dependsOn || []
+      } : null,
+      workspacePath: repository?.workspacePath || state.workspace?.path || ROOT,
+      compositeWorkspaceHash: compositeHash || null
+    };
+  }
+
+  function packetInvariants(contract, packetType) {
+    const values = Array.isArray(contract.invariants)
+      ? contract.invariants.map((value) => String(value)) : [];
+    return packetType === "global" ? {
+      count: values.length,
+      digest: stableHash(values),
+      reference: "evidence.yaml#invariants"
+    } : values.map((value) => value.slice(0, 300)).slice(0, 10);
+  }
+
+  function packetValue(id, repositoryId, taskId) {
+    const state = loadRuntime(id);
+    const activePath = activeChangePath(id, state);
+    const contract = evidence(id, activePath);
+    const allTasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8"))
+      .map(taskMetadata);
+    const { selectedTask, repository, packetType } =
+      packetScope(id, state, allTasks, repositoryId, taskId);
+    const claims = packetClaims(contract, selectedTask, repository);
     // One live composite for the whole packet, scoped or not: reading the
     // stored snapshot for display while receiptValidity recomputed its own
     // fresh composite per provider row showed the operator one hash and judged
@@ -95,216 +334,36 @@ export function createPacketRuntime({
     const hash = repository
       ? singleRelevantSnapshot(id, repository.workspacePath).workspaceHash
       : compositeSnapshot.workspaceHash;
-    const providerRows = requiredProviders(id).map((provider) => {
-      const config = providerConfig(id, provider);
-      // In a repository-scoped packet an unscoped provider's receipt is bound
-      // to the composite hash, not this repository's — validating it against
-      // the single-repo hash reported fresh global evidence as stale.
-      const check = receiptValidity(id, provider,
-        repository && !config?.repository ? compositeSnapshot.workspaceHash : hash);
-      return {
-        provider, adapter: config?.adapter || "external",
-        repository: config?.repository || null,
-        repositories: providerRepositories(id, provider, config)
-          .map((row) => row.id),
-        resources: config ? adapterResources(provider, config) : [],
-        validity: check.validity, status: check.status || check.receipt?.status || null
-      };
-    }).filter((provider) => !repository || provider.repositories.includes(repository.id))
-      .filter((provider) => {
-        const covered = claimsForProvider(id, provider.provider).map((claim) => claim.id);
-        return covered.length === 0 || covered.some((claim) => claimIds.has(claim));
-      });
+    const providerRows = packetProviders(
+      id, repository, claims, compositeSnapshot.workspaceHash, hash);
     if (selectedTask && claims.length > 0 && providerRows.length === 0)
       die(`task '${selectedTask.id}' has no provider coverage`);
-    const packetSurface = canonicalChangedSurface(id, state);
-    const multiRepositoryPacket = new Set(packetSurface.map((row) => row.repositoryId)).size > 1;
-    let fileChanges = packetSurface
-      .filter((row) => !repository || row.repositoryId === repository.id)
-      .map((row) => repository || !multiRepositoryPacket
-        ? row.path : `${row.repositoryId}/${row.path}`);
-    if (selectedTask?.paths.length)
-      fileChanges = fileChanges.filter((path) => selectedTask.paths.some((scope) => {
-        const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
-        return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
-      }));
-    const changedFileLimit = packetType === "task" ? 50 : 100;
-    const changedFileSummary = fileChanges.length <= changedFileLimit ? fileChanges : {
-      count: fileChanges.length,
-      digest: stableHash(fileChanges),
-      groups: Object.entries(fileChanges.reduce((groups, path) => {
-        const prefix = path.split("/").slice(0, 2).join("/");
-        groups[prefix] = (groups[prefix] || 0) + 1;
-        return groups;
-      }, {})).sort(([left], [right]) => left.localeCompare(right))
-        .map(([prefix, count]) => ({ prefix, count }))
-    };
-    const scopedTasks = allTasks.filter((task) =>
-      (!repository || task.repository === repository.id) &&
-      (!selectedTask || task.id === selectedTask.id));
-    const taskRows = scopedTasks.map((task) => ({
-      id: task.id, done: task.done, kind: task.kind,
-      dependsOn: task.dependsOn,
-      paths: compactStrings(task.paths, 20),
-      resources: compactStrings(task.resources, 20),
-      ...(packetType === "task" ? {
-        text: task.text, claims: task.claims, model: modelForTask(id, task)
-      } : {})
-    }));
-    const taskPayload = packetType === "global" ? {
-      count: scopedTasks.length,
-      pending: scopedTasks.filter((task) => !task.done).length,
-      completed: scopedTasks.filter((task) => task.done).length,
-      byRepository: Object.entries(scopedTasks.reduce((counts, task) => {
-        counts[task.repository] = (counts[task.repository] || 0) + 1;
-        return counts;
-      }, {})).sort(([left], [right]) => left.localeCompare(right))
-        .map(([repositoryIdValue, count]) => ({ repository: repositoryIdValue, count })),
-      digest: stableHash(scopedTasks.map((task) => ({
-        id: task.id, done: task.done, repository: task.repository,
-        dependsOn: task.dependsOn
-      })))
-    } : compactList(taskRows, packetType === "task" ? 1 : 40);
-    const artifactReferences = {};
-    for (const name of [
-      "proposal.md", "design.md", "tasks.md", "evidence.yaml",
-      "execution.yaml", "repositories.yaml", "grounding.yaml", "handoffs.yaml"
-    ]) {
-      const path = join(activePath, name);
-      if (existsSync(path))
-        artifactReferences[name] = {
-          path: relative(ROOT, path).replaceAll("\\", "/"),
-          sha256: fileDigest(path)
-        };
-    }
-    const specsPath = join(activePath, "specs");
-    if (existsSync(specsPath))
-      artifactReferences.specs = {
-        path: relative(ROOT, specsPath).replaceAll("\\", "/"),
-        sha256: directoryHash(specsPath)
-      };
-    const invariantValues = Array.isArray(contract.invariants)
-      ? contract.invariants.map((value) => String(value)) : [];
-    const claimRows = claims.map((claim) => ({
-      id: claim.id,
-      ...(packetType === "global"
-        ? { scenarioDigest: stableHash(String(claim.scenario)) }
-        : { scenario: String(claim.scenario)
-          .slice(0, packetType === "task" ? 500 : 240) }),
-      capabilities: compactStrings(claim.capabilities, 12),
-      repositories: claim.repositories
-        ? compactStrings(claim.repositories, 12) : null
-    }));
+    const fileChanges = scopedFileChanges(id, state, repository, selectedTask);
+    const changedFileSummary = changedFilesValue(fileChanges, packetType);
+    const { scopedTasks, payload: taskPayload } =
+      packetTasks(id, allTasks, repository, selectedTask, packetType);
+    const artifactReferences = packetArtifactReferences(activePath);
     const providers = compactList(providerRows, 30);
-    const claimPayload = compactList(
-      claimRows, packetType === "task" ? 20 : packetType === "repository" ? 25 : 40);
+    const claimPayload = packetClaimRows(claims, packetType);
     const packet = {
       version: Number(PACKET_SCHEMA_VERSION),
       packetType, changeId: id, intent: state.intent, schema: state.schema,
       controlProjectRoot: ROOT,
-      status: state.status, revision: Number(state.revision || 0),
-      contractRevision: Number(state.contractRevision || 0),
-      executionRevision: Number(state.executionRevision || 0),
-      impact: state.impact, coupling: state.coupling,
-      reviewRequired: Boolean(state.reviewRequired),
       externalOperations: handoffReadiness(id),
-      changePath: relative(ROOT, activePath) || ".",
-      repository: repository ? {
-        id: repository.id, type: repository.type, mode: repository.mode,
-        relativePath: repository.relativePath,
-        dependsOn: repository.dependsOn || []
-      } : null,
-      workspacePath: repository?.workspacePath || state.workspace?.path || ROOT,
+      ...packetMetadata(state, activePath, repository, compositeSnapshot.workspaceHash),
       workspaceHash: hash,
-      compositeWorkspaceHash: compositeSnapshot.workspaceHash || null,
       pendingTaskCount: scopedTasks.filter((task) => !task.done).length,
       tasks: taskPayload,
       claims: claimPayload,
       providers, changedFiles: changedFileSummary,
-      invariants: packetType === "global" ? {
-        count: invariantValues.length,
-        digest: stableHash(invariantValues),
-        reference: "evidence.yaml#invariants"
-      } : invariantValues.map((value) => value.slice(0, 300)).slice(0, 10),
+      invariants: packetInvariants(contract, packetType),
       references: artifactReferences,
-      ...(selectedTask ? (() => {
-        const leasePath = leasesRoot
-          ? join(leasesRoot, "tasks", id, `${selectedTask.id}.json`) : null;
-        const leaseValue = leasePath && existsSync(leasePath)
-          ? readJson(leasePath, {}) : null;
-        // A corrupted or partially written lease file must not grant leased
-        // authority without its fencing identity; send the worker back to
-        // acquire instead.
-        const lease = leaseValue && leaseValue.leaseId ? leaseValue : null;
-        return {
-          workerContract: {
-            version: 1,
-            role: "leased-task-worker",
-            must: [
-              "implement-only-the-leased-task",
-              "edit-only-authorized-paths",
-              "run-focused-checks",
-              "report-summary-checks-and-blockers"
-            ],
-            mustNot: [
-              "edit-task-ledger",
-              "dispatch-successors",
-              "claim-peer-results"
-            ],
-            parentOwns: ["group-join", "task-ledger", "successor-dispatch"],
-            resultAuthority: "observed-workspace-writes-and-lease-authority"
-          },
-          executionAuthority: lease ? {
-            status: "leased",
-            graphRevision: lease.graphRevision,
-            graphIdentity: lease.graphIdentity,
-            planDigest: lease.planDigest,
-            contractRevision: lease.contractRevision,
-            workspaceHash: lease.workspaceHash,
-            leaseId: lease.leaseId,
-            fencingGeneration: lease.fencingGeneration,
-            executionAttempt: lease.executionAttempt,
-            repository: lease.repository,
-            paths: lease.paths,
-            claimIds: lease.claimIds,
-            outputSchema: lease.outputSchema,
-            expiresAt: lease.expiresAt
-          } : {
-            status: "unleased",
-            instruction: `Acquire the host lease, then regenerate this task packet before execution.`
-          }
-        };
-      })() : {}),
+      ...taskExecutionContext(id, selectedTask),
       budget: ensureBudgetState(state),
       budgetDecision: budgetDecision(state)
     };
-    const latestReview = deliveredAiAttempts(id).at(-1) || null;
-    if (latestReview?.resultStatus === "fail") {
-      const findings = (latestReview.findings || [])
-        .filter((finding) => ["blocker", "major"].includes(finding.severity))
-        .filter((finding) => !repository ||
-          !finding.path || finding.path.startsWith(`${repository.id}/`) ||
-          fileChanges.includes(finding.path))
-        .slice(0, 8).map((finding) => ({
-          id: finding.id,
-          severity: finding.severity,
-          path: finding.path || null,
-          line: finding.line ?? null,
-          message: String(finding.message || "").slice(0, 600),
-          claimIds: (finding.claimIds || []).slice(0, 12),
-          verificationCaseIds: (finding.verificationCaseIds || []).slice(0, 12)
-        }));
-      if (findings.length) packet.repairContext = {
-        version: 1,
-        kind: "review-findings",
-        attempt: latestReview.attempt,
-        attemptDigest: latestReview.digest,
-        workspaceHash: latestReview.workspaceHash,
-        findings,
-        findingDigest: stableHash(findings),
-        instruction: "Repair this bounded finding batch inside the current contract, then rerun only evidence bound to the affected paths. Do not request another open-ended review."
-      };
-    }
+    const repairs = repairContext(id, repository, fileChanges);
+    if (repairs) packet.repairContext = repairs;
     return { ...packet, packetDigest: stableHash(packet) };
   }
   
