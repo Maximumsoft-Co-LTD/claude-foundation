@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "copy-sandbox-outcome",
+      "scenario": "Low-impact outcome being proven",
+      "impact": "low",
+      "capabilities": ["test"]
+    }
+  ]
+}

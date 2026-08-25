@@ -1020,15 +1020,15 @@ export function createSandboxRuntime({
     return movement;
   }
 
-  function sync(id, flags = {}) {
-    validate(id, "root", { quiet: true });
-    const state = loadRuntime(id);
+  function activeSandboxWorkspace(id, state) {
     const workspace = state.workspace;
     if (!workspace || !["worktree", "copy"].includes(workspace.mode) ||
         !workspace.path || !existsSync(workspace.path))
       fail(`change '${id}' has no active sandbox`);
-    const source = changePath(id);
-    const destination = join(workspace.path, "openspec", "changes", id);
+    return workspace;
+  }
+
+  function assertSandboxPacketPreserved(id, workspace, source, destination) {
     // The packet's source of truth is the target copy; the sandbox copy is a
     // projection this sync overwrites. `tasks.md` is exempt because its ticks
     // merge back below. Anything else edited only in the sandbox would vanish
@@ -1047,10 +1047,16 @@ export function createSandboxRuntime({
           lost.map((rel) => `'openspec/changes/${id}/${rel}'`).join(", ")
         }; the packet's source of truth is 'openspec/changes/${id}/' in the target - port the edit there (or remove it from the sandbox copy), then sync again`);
     }
+  }
+
+  function assertSandboxRepositoryScope(source, destination) {
     const priorRepositories = repositorySelectionIdsAt(destination);
     const nextRepositories = repositorySelectionIdsAt(source);
     if (JSON.stringify(priorRepositories) !== JSON.stringify(nextRepositories))
       fail("repository scope changed during Build; finish or split the current repository work before creating a topology revision");
+  }
+
+  function sandboxSyncInputs(id, source, destination) {
     const sourceTasks = readFileSync(join(source, "tasks.md"), "utf8");
     const sandboxTasks = existsSync(join(destination, "tasks.md"))
       ? readFileSync(join(destination, "tasks.md"), "utf8") : "";
@@ -1059,113 +1065,108 @@ export function createSandboxRuntime({
     const nextContract = contractFingerprint(id, source);
     const nextExecution = executionFingerprint(id, source);
     const mergedTasks = mergeTaskProgress(sourceTasks, sandboxTasks);
-    // Before the packet is written, because a successful replay rebuilds the
-    // worktree the packet is written into. Everything above reads the outgoing
-    // sandbox and has already been captured.
-    //
-    // The pre-replay diff identity is captured here for the same reason:
-    // whether the sync itself altered the change's diff is what base-move
-    // review accounting asks, and it is only observable across this boundary.
-    const preDiffIdentity = workspace.applied ? null : changeDiffIdentity(id, state);
-    const movement = workspace.applied ? null : rebaseWorktree(id, state);
+    return {
+      priorContract, priorExecution, nextContract, nextExecution, mergedTasks
+    };
+  }
+
+  function replaceSandboxPacket(id, state, source, destination, mergedTasks) {
     if (existsSync(destination)) rmSync(destination, { recursive: true });
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(source, destination, { recursive: true, ...VERBATIM_COPY });
     writeFileSync(join(destination, "tasks.md"), mergedTasks);
     state.workspace.packetSnapshot = packetManifest(destination);
-    // An isolated copy is a snapshot; the target keeps moving while it builds
-    // (another change lands, a hook rewrites a file). Every target move the
-    // sandbox did not also touch fast-forwards here, baseline included, so
-    // only genuinely double-edited paths reach the apply guard - and those are
-    // named now, at sync, not discovered at Land. `--resolve` is the explicit
-    // way out: it declares the sandbox copy already carries the merged result,
-    // so the baseline may advance without the harness guessing.
+  }
+
+  function reconcileCopyWorkspace(id, state, flags) {
+    const workspace = state.workspace;
+    if (workspace.mode !== "copy" || workspace.applied)
+      return { forwarded: 0, conflicts: [] };
+    const resolves = new Set(String(flags.resolve || "")
+      .split(",").map((entry) => entry.trim()).filter(Boolean));
+    const usedResolves = new Set();
+    const baseline = { ...(workspace.baseline || {}) };
+    const targetManifest = workspaceManifest(root, id, true);
+    const sandboxManifest = workspaceManifest(workspace.path, id, true);
+    const paths = [...new Set([
+      ...Object.keys(baseline), ...Object.keys(targetManifest),
+      ...Object.keys(sandboxManifest)
+    ])].sort();
     let forwarded = 0;
     const conflicts = [];
-    // Once projected, the baseline no longer describes the sandbox's relation
-    // to the target - the apply transaction journal does. Reconciling here
-    // would flag the change's own applied content as a conflict.
-    if (workspace.mode === "copy" && !workspace.applied) {
-      const resolves = new Set(String(flags.resolve || "")
-        .split(",").map((entry) => entry.trim()).filter(Boolean));
-      const usedResolves = new Set();
-      const baseline = { ...(workspace.baseline || {}) };
-      const targetManifest = workspaceManifest(root, id, true);
-      const sandboxManifest = workspaceManifest(workspace.path, id, true);
-      const paths = [...new Set([
-        ...Object.keys(baseline), ...Object.keys(targetManifest),
-        ...Object.keys(sandboxManifest)
-      ])].sort();
-      for (const rel of paths) {
-        const base = baseline[rel] ?? null;
-        const target = targetManifest[rel] ?? null;
-        const sandboxEntry = sandboxManifest[rel] ?? null;
-        const advance = () => {
-          if (target === null) delete baseline[rel]; else baseline[rel] = target;
-        };
-        if (target === base) continue;
-        if (sandboxEntry === target) { advance(); continue; }
-        if (sandboxEntry === base) {
-          const to = join(workspace.path, rel);
-          rmSync(to, { force: true });
-          if (target !== null) {
-            mkdirSync(dirname(to), { recursive: true });
-            cpSync(join(root, rel), to, VERBATIM_COPY);
-          }
-          advance();
-          forwarded += 1;
-          continue;
+    for (const rel of paths) {
+      const base = baseline[rel] ?? null;
+      const target = targetManifest[rel] ?? null;
+      const sandboxEntry = sandboxManifest[rel] ?? null;
+      const advance = () => {
+        if (target === null) delete baseline[rel]; else baseline[rel] = target;
+      };
+      if (target === base) continue;
+      if (sandboxEntry === target) { advance(); continue; }
+      if (sandboxEntry === base) {
+        const to = join(workspace.path, rel);
+        rmSync(to, { force: true });
+        if (target !== null) {
+          mkdirSync(dirname(to), { recursive: true });
+          cpSync(join(root, rel), to, VERBATIM_COPY);
         }
-        if (resolves.has(rel)) { usedResolves.add(rel); advance(); continue; }
-        conflicts.push(rel);
+        advance();
+        forwarded += 1;
+        continue;
       }
-      const unusedResolves = [...resolves].filter((rel) => !usedResolves.has(rel));
-      if (unusedResolves.length)
-        fail(`--resolve names ${unusedResolves.map((rel) => `'${rel}'`).join(", ")
-        }, which ${unusedResolves.length === 1 ? "is" : "are"} not in conflict; drop ${
-          unusedResolves.length === 1 ? "it" : "them"} and sync again`);
-      workspace.baseline = baseline;
+      if (resolves.has(rel)) { usedResolves.add(rel); advance(); continue; }
+      conflicts.push(rel);
     }
+    const unusedResolves = [...resolves].filter((rel) => !usedResolves.has(rel));
+    if (unusedResolves.length)
+      fail(`--resolve names ${unusedResolves.map((rel) => `'${rel}'`).join(", ")
+      }, which ${unusedResolves.length === 1 ? "is" : "are"} not in conflict; drop ${
+        unusedResolves.length === 1 ? "it" : "them"} and sync again`);
+    workspace.baseline = baseline;
+    return { forwarded, conflicts };
+  }
+
+  function updateSandboxSyncState(id, state, source, fingerprints) {
     state.workspace.changeSourceHash = directoryHash(source);
     delete state.workspace.recovery;
     state.status = "building";
     state.revision = Number(state.revision || 0) + 1;
-    if (priorContract !== nextContract) state.contractRevision = Number(state.contractRevision || 0) + 1;
-    if (priorExecution !== nextExecution) state.executionRevision = Number(state.executionRevision || 0) + 1;
+    if (fingerprints.priorContract !== fingerprints.nextContract)
+      state.contractRevision = Number(state.contractRevision || 0) + 1;
+    if (fingerprints.priorExecution !== fingerprints.nextExecution)
+      state.executionRevision = Number(state.executionRevision || 0) + 1;
     if (existsSync(proofPath(id))) rmSync(proofPath(id));
-    // The durable record of what this replay did to the change's own diff.
-    // Identical identities mean the moved base never touched the change's
-    // content — the fact that lets a review verdict rebind instead of
-    // expiring. Differing identities mean the 3-way merge altered the diff,
-    // and base-move review accounting reads this journal to tell that apart
-    // from an author edit. Keyed by destination heads so one movement can
-    // authorize at most one accounting reset.
-    if (movement?.rebased) {
-      const moved = movement.repositories.filter((entry) => entry.rebased);
-      state.lastBaseMove = {
-        at: now(),
-        movementKey: moved.map((entry) => `${entry.repository}:${entry.to}`)
-          .sort().join("|"),
-        preDiffIdentity,
-        postDiffIdentity: changeDiffIdentity(id, state),
-        repositories: moved.map(({ repository, from, to }) =>
-          ({ repository, from, to }))
-      };
-    }
-    clearSnapshotCache(id);
-    saveRuntime(state);
+  }
+
+  function recordSandboxBaseMove(id, state, movement, preDiffIdentity) {
+    if (!movement?.rebased) return;
+    const moved = movement.repositories.filter((entry) => entry.rebased);
+    state.lastBaseMove = {
+      at: now(),
+      movementKey: moved.map((entry) => `${entry.repository}:${entry.to}`)
+        .sort().join("|"),
+      preDiffIdentity,
+      postDiffIdentity: changeDiffIdentity(id, state),
+      repositories: moved.map(({ repository, from, to }) =>
+        ({ repository, from, to }))
+    };
+  }
+
+  function sandboxMovementLine(movement) {
     const shortHead = (value) => String(value || "").slice(0, 8);
-    // Stated whether or not it could be resolved. A target that moved and a
-    // sandbox that silently kept building against the old base is the failure
-    // this line exists to make impossible.
-    const movementLine = !movement ? ""
-      : !movement.multiRepository && movement.repositories.length === 1
-        ? movement.rebased
-          ? `\n  rebased: ${shortHead(movement.from)} -> ${shortHead(movement.to)} (sandbox commits flattened into the replayed diff)`
-          : `\n  target moved: ${shortHead(movement.repositories[0].from)} -> ${shortHead(movement.repositories[0].to)} (sandbox NOT rebased)`
-        : movement.repositories.map((repository) => repository.rebased
-          ? `\n  rebased ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox commits flattened into the replayed diff)`
-          : `\n  target moved ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox NOT rebased)`).join("");
+    if (!movement) return "";
+    if (!movement.multiRepository && movement.repositories.length === 1) {
+      return movement.rebased
+        ? `\n  rebased: ${shortHead(movement.from)} -> ${shortHead(movement.to)} (sandbox commits flattened into the replayed diff)`
+        : `\n  target moved: ${shortHead(movement.repositories[0].from)} -> ${shortHead(movement.repositories[0].to)} (sandbox NOT rebased)`;
+    }
+    return movement.repositories.map((repository) => repository.rebased
+      ? `\n  rebased ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox commits flattened into the replayed diff)`
+      : `\n  target moved ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox NOT rebased)`).join("");
+  }
+
+  function reportSandboxSync(id, state, movement, forwarded, conflicts) {
+    const movementLine = sandboxMovementLine(movement);
     console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}${
       movementLine}${
       forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
@@ -1176,6 +1177,50 @@ export function createSandboxRuntime({
       console.log(`CONFLICT ${movement.multiRepository ? `${conflict.repository}:` : ""}${conflict.path}: the sandbox diff no longer applies to the moved target; merge the target's version into the named repository sandbox worktree, then rerun sandbox sync. Land stays blocked until every repository sandbox replays onto its current commit.`);
     if (movement && !movement.rebased && !movement.conflicts.length)
       console.log(`TARGET MOVED ${id}: rerun 'claude-foundation sandbox sync ${id}' after repairing the named repository replay.`);
+  }
+
+  function sync(id, flags = {}) {
+    validate(id, "root", { quiet: true });
+    const state = loadRuntime(id);
+    const workspace = activeSandboxWorkspace(id, state);
+    const source = changePath(id);
+    const destination = join(workspace.path, "openspec", "changes", id);
+    assertSandboxPacketPreserved(id, workspace, source, destination);
+    assertSandboxRepositoryScope(source, destination);
+    const fingerprints = sandboxSyncInputs(id, source, destination);
+    // Before the packet is written, because a successful replay rebuilds the
+    // worktree the packet is written into. Everything above reads the outgoing
+    // sandbox and has already been captured.
+    //
+    // The pre-replay diff identity is captured here for the same reason:
+    // whether the sync itself altered the change's diff is what base-move
+    // review accounting asks, and it is only observable across this boundary.
+    const preDiffIdentity = workspace.applied ? null : changeDiffIdentity(id, state);
+    const movement = workspace.applied ? null : rebaseWorktree(id, state);
+    replaceSandboxPacket(id, state, source, destination, fingerprints.mergedTasks);
+    // An isolated copy is a snapshot; the target keeps moving while it builds
+    // (another change lands, a hook rewrites a file). Every target move the
+    // sandbox did not also touch fast-forwards here, baseline included, so
+    // only genuinely double-edited paths reach the apply guard - and those are
+    // named now, at sync, not discovered at Land. `--resolve` is the explicit
+    // way out: it declares the sandbox copy already carries the merged result,
+    // so the baseline may advance without the harness guessing.
+    const { forwarded, conflicts } = reconcileCopyWorkspace(id, state, flags);
+    updateSandboxSyncState(id, state, source, fingerprints);
+    // The durable record of what this replay did to the change's own diff.
+    // Identical identities mean the moved base never touched the change's
+    // content — the fact that lets a review verdict rebind instead of
+    // expiring. Differing identities mean the 3-way merge altered the diff,
+    // and base-move review accounting reads this journal to tell that apart
+    // from an author edit. Keyed by destination heads so one movement can
+    // authorize at most one accounting reset.
+    recordSandboxBaseMove(id, state, movement, preDiffIdentity);
+    clearSnapshotCache(id);
+    saveRuntime(state);
+    // Stated whether or not it could be resolved. A target that moved and a
+    // sandbox that silently kept building against the old base is the failure
+    // this line exists to make impossible.
+    reportSandboxSync(id, state, movement, forwarded, conflicts);
   }
 
   return {
