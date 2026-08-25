@@ -91,6 +91,7 @@ context rollup drain|node --test "$HERE/harness/run-context-rollup-drain-tests.m
 actionable validation and telemetry|sh "$HERE/harness/run-actionable-validation-telemetry-tests.sh"
 v3.3 review policy|node "$HERE/harness/run-v33-policy-tests.mjs"
 risk-tiered review contract|node "$HERE/harness/run-risk-tiered-review-tests.mjs"
+risk-tiered review protocol|node --test "$HERE/harness/run-review-protocol-tests.mjs"
 risk-tiered review mutation|node "$HERE/harness/run-risk-tiered-review-mutation.mjs"
 configured reviewer adapters|node "$ROOT/.claude/harness/tests/configured-reviewer.test.mjs"
 external operation handoff|node "$ROOT/.claude/harness/tests/handoff-policy.test.mjs"

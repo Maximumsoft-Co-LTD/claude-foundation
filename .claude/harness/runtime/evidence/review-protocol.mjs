@@ -82,65 +82,121 @@ export function createReviewProtocol({ stableHash, fail }) {
     }];
   }
 
-  function attemptIsValid(receipt, attempt) {
-    if (!attempt) return false;
+  function optionalEqual(left, right) {
+    return (left || null) === (right || null);
+  }
+
+  function sortedValuesEqual(left = [], right = []) {
+    return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+  }
+
+  function digestValuesEqual(left, right) {
+    return stableHash(left || []) === stableHash(right || []);
+  }
+
+  function validFindingCount(value) {
+    return Number.isInteger(value) && value >= 0;
+  }
+
+  function resultAllowsBlockers(status, unresolvedBlockers) {
+    if (status === "pass") return unresolvedBlockers === 0;
+    return true;
+  }
+
+  function commonAttemptContext(receipt, attempt) {
+    if (!attempt) return null;
     const findings = receipt.review?.findings || {};
     const scope = receipt.review?.scope || {};
     const scopePaths = Array.isArray(scope.paths) ? scope.paths : [];
+    const reviewer = receipt.review?.reviewer || {};
     const expectedScopeDigest = stableHash({
       priorWorkspaceHash: receipt.review?.supersedes?.workspaceHash || null,
       workspaceHash: receipt.workspaceHash,
       paths: scopePaths
     });
-    const reviewer = receipt.review?.reviewer || {};
-    const common = attempt.workspaceHash === receipt.workspaceHash &&
-      attempt.reviewerType === reviewer.type &&
-      Number(receipt.review?.round) === Number(attempt.attempt) &&
-      [findings.verified, findings.unresolvedBlockers]
-        .every((count) => Number.isInteger(count) && count >= 0) &&
-      !(receipt.status === "pass" && findings.unresolvedBlockers !== 0) &&
-      scope.digest === expectedScopeDigest;
-    if (!common) return false;
-    if (attempt.version === 2 || attempt.version === 3) {
-      const findingsMatch = attempt.version === 2 ||
-        stableHash(attempt.findings || []) === stableHash(findings.items || []) &&
-        stableHash([...(attempt.verifiedFindingIds || [])].sort()) ===
-          stableHash([...(findings.verifiedIds || [])].sort());
-      return (attempt.version === 2
-        ? attempt.status === "dispatched"
-        : attempt.status === "completed" && attempt.resultStatus === receipt.status) &&
-        attempt.requestId === receipt.review?.requestId &&
-        attempt.reviewerIdentity === reviewer.identity &&
-        (attempt.reviewerProviderFamily || null) === (reviewer.providerFamily || null) &&
-        (attempt.reviewerModelFamily || null) === (reviewer.modelFamily || null) &&
-        (attempt.reviewerModelId || null) === (reviewer.modelId || null) &&
-        (attempt.reviewerSessionId || null) === (reviewer.sessionId || null) &&
-        attempt.scope?.mode === scope.mode &&
-        (attempt.scope?.baseAttemptDigest || null) === (scope.baseAttemptDigest || null) &&
-        JSON.stringify([...(attempt.scope?.paths || [])].sort()) ===
-          JSON.stringify([...scopePaths].sort()) &&
-        attempt.scope?.digest === scope.dispatchDigest &&
-        attempt.packetDigest === receipt.review?.packetDigest && findingsMatch;
-    }
-    if (attempt.version === 4) {
-      const closure = receipt.review?.repairClosure || {};
-      return attempt.status === "completed" && attempt.resultStatus === "pass" &&
-        receipt.status === "pass" &&
-        attempt.requestId === receipt.review?.requestId &&
-        attempt.reviewerIdentity === reviewer.identity &&
-        attempt.scope?.mode === "repair-closure" &&
-        (attempt.scope?.baseAttemptDigest || null) ===
-          (scope.baseAttemptDigest || null) &&
-        JSON.stringify([...(attempt.scope?.paths || [])].sort()) ===
-          JSON.stringify([...scopePaths].sort()) &&
-        attempt.scope?.digest === scope.dispatchDigest &&
-        attempt.packetDigest === receipt.review?.packetDigest &&
-        attempt.sourceAttemptDigest === closure.sourceAttemptDigest &&
-        stableHash(attempt.evidenceBindings || []) ===
-          stableHash(closure.evidenceBindings || []) &&
-        stableHash(attempt.verifiedFindingIds || []) ===
-          stableHash(findings.verifiedIds || []);
-    }
+    const valid = [
+      attempt.workspaceHash === receipt.workspaceHash,
+      attempt.reviewerType === reviewer.type,
+      Number(receipt.review?.round) === Number(attempt.attempt),
+      validFindingCount(findings.verified),
+      validFindingCount(findings.unresolvedBlockers),
+      resultAllowsBlockers(receipt.status, findings.unresolvedBlockers),
+      scope.digest === expectedScopeDigest
+    ].every(Boolean);
+    return valid ? { findings, scope, scopePaths, reviewer } : null;
+  }
+
+  function version23FindingsMatch(attempt, findings) {
+    if (attempt.version === 2) return true;
+    return [
+      digestValuesEqual(attempt.findings, findings.items),
+      digestValuesEqual(
+        [...(attempt.verifiedFindingIds || [])].sort(),
+        [...(findings.verifiedIds || [])].sort())
+    ].every(Boolean);
+  }
+
+  function version23StatusMatches(attempt, receipt) {
+    if (attempt.version === 2) return attempt.status === "dispatched";
+    return attempt.status === "completed" && attempt.resultStatus === receipt.status;
+  }
+
+  function reviewerMatches(attempt, reviewer) {
+    return [
+      attempt.reviewerIdentity === reviewer.identity,
+      optionalEqual(attempt.reviewerProviderFamily, reviewer.providerFamily),
+      optionalEqual(attempt.reviewerModelFamily, reviewer.modelFamily),
+      optionalEqual(attempt.reviewerModelId, reviewer.modelId),
+      optionalEqual(attempt.reviewerSessionId, reviewer.sessionId)
+    ].every(Boolean);
+  }
+
+  function reviewScopeMatches(attempt, scope, scopePaths) {
+    return [
+      attempt.scope?.mode === scope.mode,
+      optionalEqual(attempt.scope?.baseAttemptDigest, scope.baseAttemptDigest),
+      sortedValuesEqual(attempt.scope?.paths, scopePaths),
+      attempt.scope?.digest === scope.dispatchDigest
+    ].every(Boolean);
+  }
+
+  function version23AttemptIsValid(receipt, attempt, context) {
+    return [
+      version23StatusMatches(attempt, receipt),
+      attempt.requestId === receipt.review?.requestId,
+      reviewerMatches(attempt, context.reviewer),
+      reviewScopeMatches(attempt, context.scope, context.scopePaths),
+      attempt.packetDigest === receipt.review?.packetDigest,
+      version23FindingsMatch(attempt, context.findings)
+    ].every(Boolean);
+  }
+
+  function repairClosureAttemptIsValid(receipt, attempt, context) {
+    const closure = receipt.review?.repairClosure || {};
+    return [
+      attempt.status === "completed",
+      attempt.resultStatus === "pass",
+      receipt.status === "pass",
+      attempt.requestId === receipt.review?.requestId,
+      attempt.reviewerIdentity === context.reviewer.identity,
+      attempt.scope?.mode === "repair-closure",
+      optionalEqual(attempt.scope?.baseAttemptDigest, context.scope.baseAttemptDigest),
+      sortedValuesEqual(attempt.scope?.paths, context.scopePaths),
+      attempt.scope?.digest === context.scope.dispatchDigest,
+      attempt.packetDigest === receipt.review?.packetDigest,
+      attempt.sourceAttemptDigest === closure.sourceAttemptDigest,
+      digestValuesEqual(attempt.evidenceBindings, closure.evidenceBindings),
+      digestValuesEqual(attempt.verifiedFindingIds, context.findings.verifiedIds)
+    ].every(Boolean);
+  }
+
+  function attemptIsValid(receipt, attempt) {
+    const context = commonAttemptContext(receipt, attempt);
+    if (!context) return false;
+    if (attempt.version === 2 || attempt.version === 3)
+      return version23AttemptIsValid(receipt, attempt, context);
+    if (attempt.version === 4)
+      return repairClosureAttemptIsValid(receipt, attempt, context);
     return attempt.version === 1 && attempt.reviewBinding === receiptBinding(receipt);
   }
 
