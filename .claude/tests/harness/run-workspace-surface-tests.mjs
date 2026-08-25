@@ -124,6 +124,12 @@ try {
   writeFileSync(join(project, ".gitignore"), ".foundation/sandboxes/\n");
   const git = (args) => execFileSync("git", args, { cwd: project, encoding: "utf8" });
   git(["init", "-q", "."]);
+  // A detached auto-maintenance process can repack loose objects while the
+  // sandbox copy is traversing `.git`, turning a valid source entry into an
+  // ENOENT between readdir and lstat. This fixture owns its short-lived repo;
+  // keep its object store stable for the copy contract it is testing.
+  git(["config", "gc.auto", "0"]);
+  git(["config", "maintenance.auto", "false"]);
   git(["config", "user.email", "t@t"]);
   git(["config", "user.name", "t"]);
   git(["add", "-A"]);
