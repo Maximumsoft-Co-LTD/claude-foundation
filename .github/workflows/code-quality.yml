@@ -129,6 +129,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: code-quality-${{ github.run_id }}
-          path: .foundation/test-results/quality/
+          path: |
+            .foundation/test-results/quality/
+            !.foundation/test-results/quality/**/tmp/**
           if-no-files-found: error
           retention-days: 30

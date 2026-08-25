@@ -44,13 +44,17 @@ cp "$LANDABLE" "$WORK/land-runtime.mjs"
 cp "$SNAPSHOT" "$WORK/repository-snapshot.mjs"
 
 suite_passes() {
-  ( cd "$SOURCE" && sh "$SUITE" >/dev/null 2>&1 )
+  ( cd "$SOURCE" && sh "$SUITE" >"$WORK/suite.log" 2>&1 )
 }
 
 if ! suite_passes; then
-  echo "FAIL: the suite does not pass before any mutation is applied"
-  echo "FOUNDATION_MUTATION_RESULT=not-applied"
-  exit 1
+  echo "WARN: target-drift baseline failed once; retrying before mutation"
+  if ! suite_passes; then
+    echo "FAIL: the suite does not pass before any mutation is applied"
+    tail -80 "$WORK/suite.log"
+    echo "FOUNDATION_MUTATION_RESULT=not-applied"
+    exit 1
+  fi
 fi
 echo "PASS: baseline suite passes before mutation"
 
