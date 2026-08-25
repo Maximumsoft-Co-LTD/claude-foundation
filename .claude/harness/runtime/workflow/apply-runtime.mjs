@@ -507,84 +507,73 @@ export function createApplyRuntime({
       fail(`${pending.length} implementation task(s) remain unchecked`);
   }
 
-  function archive(id) {
-    const initial = loadRuntime(id);
-    if (initial.status === "archived") {
-      const outstanding = outstandingSpecSync(initial);
-      if (outstanding.length) failSpecSync(outstanding);
-      if (initial.specSyncViolations) {
-        delete initial.specSyncViolations;
-        delete initial.specSyncInputs;
-        saveRuntime(initial);
-      }
-      const audit = proofAudit(id, true);
-      if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
-      let resumed = false;
-      if (initial.workspace &&
-          !["removed", "not-needed"].includes(initial.workspace.cleanup?.status)) {
-        initial.workspace.cleanup = cleanupAppliedSandbox(id, initial);
-        initial.land = {
-          ...(initial.land || {}),
-          status: initial.workspace.cleanup.status === "removed"
-            ? "sandbox-cleaned" : "archive-audited",
-          resumedAt: now()
-        };
-        resumed = true;
-      }
-      if (initial.workspace?.apply &&
-          initial.workspace.apply.cleanup?.status !== "committed") {
-        initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
-        resumed = true;
-      }
-      if (initial.repositories && !initial.repositoryCleanup) {
-        initial.repositoryCleanup = cleanupRepositorySandboxes(id, initial);
-        resumed = true;
-      }
-      if (resumed) saveRuntime(initial);
-      console.log(`ALREADY ARCHIVED ${id}\n  archived: ${initial.archivedAt || "unknown"}`);
-      return;
+  function resumeArchivedChange(id, state) {
+    const outstanding = outstandingSpecSync(state);
+    if (outstanding.length) failSpecSync(outstanding);
+    if (state.specSyncViolations) {
+      delete state.specSyncViolations;
+      delete state.specSyncInputs;
+      saveRuntime(state);
     }
-    const recoveredArchive = initial.status !== "archived" &&
-      !existsSync(changePath(id)) && archivedChangeRelativePath(id);
-    if (recoveredArchive) {
-      // Recovery cannot tell "succeeded then crashed" from "moved then failed",
-      // so it is not an exemption from the Land guards. Everything still
-      // checkable once the change directory has moved is checked here, before
-      // any state is written: a refusal has to leave the change recoverable.
-      assertRecoveredArchiveReady(id, initial, recoveredArchive);
-      initial.status = "archived";
-      initial.archivedAt ||= now();
-      initial.archivedChangePath = recoveredArchive;
-      initial.land = {
-        ...(initial.land || {}),
-        status: "archive-audited",
-        recoveredAt: now()
+    const audit = proofAudit(id, true);
+    if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
+    let resumed = false;
+    if (state.workspace &&
+        !["removed", "not-needed"].includes(state.workspace.cleanup?.status)) {
+      state.workspace.cleanup = cleanupAppliedSandbox(id, state);
+      state.land = {
+        ...(state.land || {}),
+        status: state.workspace.cleanup.status === "removed"
+          ? "sandbox-cleaned" : "archive-audited",
+        resumedAt: now()
       };
-      initial.workspace.cleanup = cleanupAppliedSandbox(id, initial);
-      if (initial.repositories)
-        initial.repositoryCleanup = cleanupRepositorySandboxes(id, initial);
-      if (initial.workspace.apply)
-        initial.workspace.apply.cleanup = cleanupApplyTransaction(initial);
-      delete initial.workspace.baseline;
-      saveRuntime(initial);
-      // The merge already ran and the pre-merge spec text died with the
-      // interrupted transaction, so spec sync cannot be checked here: without
-      // 'before', a removal and a preserved requirement are indistinguishable
-      // from a bad merge. Say so rather than let the silence read as verified.
-      console.error(
-        `WARNING: spec sync was not verified for ${id}; the interrupted archive left no pre-merge specs to compare against`);
-      console.log(`ARCHIVED ${id}\n  recovered: interrupted archive transaction`);
-      return;
+      resumed = true;
     }
-    // Drain before the first readiness report so archive cannot print
-    // `telemetry: not-ingested` and then ingest the missing rows moments later.
-    // Telemetry stays advisory: an absent or unreadable transcript never gates
-    // Land.
-    try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
-    let readiness = landCheck(id);
-    if (readiness.archived) return;
-    assertMultiRepositoryArchiveReady(id, readiness.state);
-    let journal = loadRuntime(id);
+    if (state.workspace?.apply &&
+        state.workspace.apply.cleanup?.status !== "committed") {
+      state.workspace.apply.cleanup = cleanupApplyTransaction(state);
+      resumed = true;
+    }
+    if (state.repositories && !state.repositoryCleanup) {
+      state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
+      resumed = true;
+    }
+    if (resumed) saveRuntime(state);
+    console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
+  }
+
+  function recoverInterruptedArchive(id, state, archivedPath) {
+    // Recovery cannot tell "succeeded then crashed" from "moved then failed",
+    // so it is not an exemption from the Land guards. Everything still
+    // checkable once the change directory has moved is checked here, before
+    // any state is written: a refusal has to leave the change recoverable.
+    assertRecoveredArchiveReady(id, state, archivedPath);
+    state.status = "archived";
+    state.archivedAt ||= now();
+    state.archivedChangePath = archivedPath;
+    state.land = {
+      ...(state.land || {}),
+      status: "archive-audited",
+      recoveredAt: now()
+    };
+    state.workspace.cleanup = cleanupAppliedSandbox(id, state);
+    if (state.repositories)
+      state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
+    if (state.workspace.apply)
+      state.workspace.apply.cleanup = cleanupApplyTransaction(state);
+    delete state.workspace.baseline;
+    saveRuntime(state);
+    // The merge already ran and the pre-merge spec text died with the
+    // interrupted transaction, so spec sync cannot be checked here: without
+    // 'before', a removal and a preserved requirement are indistinguishable
+    // from a bad merge. Say so rather than let the silence read as verified.
+    console.error(
+      `WARNING: spec sync was not verified for ${id}; the interrupted archive left no pre-merge specs to compare against`);
+    console.log(`ARCHIVED ${id}\n  recovered: interrupted archive transaction`);
+  }
+
+  function snapshotArchiveEvidence(id) {
+    const journal = loadRuntime(id);
     journal.land = {
       ...(journal.land || {}),
       status: "evidence-snapshotted",
@@ -592,23 +581,19 @@ export function createApplyRuntime({
       updatedAt: now()
     };
     saveRuntime(journal);
-    // Unconditional, including when the sandbox is already applied: work done
-    // after the first projection is proven and would otherwise archive as a
-    // success while the target still holds the earlier code. applySandbox
-    // returns early by itself when the projection is already current.
-    if (["worktree", "copy"].includes(readiness.state.workspace?.mode)) {
-      applySandbox(id, { controlPlane: true });
-      journal = loadRuntime(id);
-      journal.land = { ...(journal.land || {}), status: "code-applied", updatedAt: now() };
-      saveRuntime(journal);
-      readiness = landCheck(id);
-    }
-    // Re-read rather than reuse readiness.state: on the no-sandbox path that
-    // object predates the journal write above, and saving it below would
-    // silently erase land.proofRunId from the record.
-    const state = loadRuntime(id);
-    const pending = pendingTasks(id);
-    if (pending.length) fail(`${pending.length} implementation task(s) remain unchecked`);
+  }
+
+  function applyArchiveWorkspace(id, readiness) {
+    if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
+      return readiness;
+    applySandbox(id, { controlPlane: true });
+    const journal = loadRuntime(id);
+    journal.land = { ...journal.land, status: "code-applied", updatedAt: now() };
+    saveRuntime(journal);
+    return landCheck(id);
+  }
+
+  function recordArchiveTelemetry(id, state) {
     const telemetry = telemetryReadiness?.(id) || null;
     state.land = {
       ...(state.land || {}),
@@ -629,6 +614,10 @@ export function createApplyRuntime({
       const telemetryIssue = telemetryLandIssue(foundationPolicy(), telemetry);
       if (telemetryIssue) fail(telemetryIssue);
     }
+    return telemetry;
+  }
+
+  function runOpenSpecArchive(id, state, readiness) {
     const preArchiveWorkspaceHash = readiness.hash;
     // 'openspec archive' moves the change out of openspec/changes and rewrites
     // openspec/specs in one step, so the delta and the pre-merge spec text can
@@ -647,7 +636,7 @@ export function createApplyRuntime({
     // `workspace.cleanup?.status` and `repositoryCleanup` — never on this — so
     // reading it to work out where a Land stopped will give a confident wrong
     // answer. Named here because it reads exactly like a checkpoint.
-    state.land = { ...(state.land || {}), status: "specs-archived", updatedAt: now() };
+    state.land = { ...state.land, status: "specs-archived", updatedAt: now() };
     saveRuntime(state);
     // A merge that silently drops or rewrites a requirement still exits 0, and
     // openspec/specs is durable, so the exit code is not evidence.
@@ -660,9 +649,13 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    return cli;
+  }
+
+  function finalizeArchivedChange(id, state, telemetry, cli) {
     const audit = proofAudit(id, true);
     if (!audit.valid) fail(`post-archive proof audit failed: ${audit.reason}`);
-    state.land = { ...(state.land || {}), status: "archive-audited", updatedAt: now() };
+    state.land = { ...state.land, status: "archive-audited", updatedAt: now() };
     state.workspace.cleanup = cleanupAppliedSandbox(id, state);
     if (state.repositories)
       state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
@@ -680,6 +673,43 @@ export function createApplyRuntime({
       console.error(`WARNING: no model usage was imported for this change; cost and token columns stay empty — claude-foundation telemetry sync ${id} [transcript.jsonl]`);
     console.log(cli.stdout.trim());
     console.log(`ARCHIVED ${id}`);
+  }
+
+  function archive(id) {
+    const initial = loadRuntime(id);
+    if (initial.status === "archived") {
+      resumeArchivedChange(id, initial);
+      return;
+    }
+    const recoveredArchive = !existsSync(changePath(id)) &&
+      archivedChangeRelativePath(id);
+    if (recoveredArchive) {
+      recoverInterruptedArchive(id, initial, recoveredArchive);
+      return;
+    }
+    // Drain before the first readiness report so archive cannot print
+    // `telemetry: not-ingested` and then ingest the missing rows moments later.
+    // Telemetry stays advisory: an absent or unreadable transcript never gates
+    // Land.
+    try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
+    let readiness = landCheck(id);
+    if (readiness.archived) return;
+    assertMultiRepositoryArchiveReady(id, readiness.state);
+    snapshotArchiveEvidence(id);
+    // Unconditional, including when the sandbox is already applied: work done
+    // after the first projection is proven and would otherwise archive as a
+    // success while the target still holds the earlier code. applySandbox
+    // returns early by itself when the projection is already current.
+    readiness = applyArchiveWorkspace(id, readiness);
+    // Re-read rather than reuse readiness.state: on the no-sandbox path that
+    // object predates the journal write above, and saving it below would
+    // silently erase land.proofRunId from the record.
+    const state = loadRuntime(id);
+    const pending = pendingTasks(id);
+    if (pending.length) fail(`${pending.length} implementation task(s) remain unchecked`);
+    const telemetry = recordArchiveTelemetry(id, state);
+    const cli = runOpenSpecArchive(id, state, readiness);
+    finalizeArchivedChange(id, state, telemetry, cli);
   }
 
   return {
