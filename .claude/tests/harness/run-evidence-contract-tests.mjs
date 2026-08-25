@@ -23,7 +23,8 @@ function fixture(evidenceValue, executionValue = { version: 1, providers: {}, se
   const root = mkdtempSync(join(tmpdir(), "evidence-contract-unit-"));
   const changeDir = join(root, "changes", "change");
   mkdirSync(changeDir, { recursive: true });
-  writeFileSync(join(changeDir, "execution.yaml"), "fixture\n");
+  if (overrides.executionPresent !== false)
+    writeFileSync(join(changeDir, "execution.yaml"), "fixture\n");
   writeFileSync(join(root, "tracked-command.js"), "// fixture\n");
   const repositories = [
     { id: "root", path: root, workspacePath: root },
@@ -137,6 +138,63 @@ test("execution providers override evidence providers", () => {
   };
   const value = fixture(evidenceValue, execution).evidence("change");
   assert.equal(value.providers.external.report, undefined);
+});
+
+const executionWithService = (service) => ({
+  version: 1, providers: {}, services: { app: service }
+});
+const commandService = () => ({
+  command: ["npm", "start"],
+  readiness: { url: "https://localhost:3000/ready", expectBody: "ready" },
+  resources: ["network"], repository: "root", env: { MODE: "test" },
+  envFrom: ["CI_TOKEN"]
+});
+const staticService = () => ({
+  staticRoot: "public",
+  readiness: { url: "http://localhost:3000/ready", expectHeader: "x-ready" }
+});
+
+test("raw execution accepts command and static services and defaults missing files", () => {
+  assert.deepEqual(fixture(completeEvidence(), undefined, { executionPresent: false })
+    .rawExecution("change"), { version: 1, providers: {}, services: {} });
+  assert.equal(fixture(completeEvidence(), executionWithService(commandService()))
+    .rawExecution("change").services.app.repository, "root");
+  assert.equal(fixture(completeEvidence(), executionWithService(staticService()))
+    .rawExecution("change").services.app.staticRoot, "public");
+});
+
+test("raw execution service validation rejects malformed process contracts", () => {
+  const invalidDocuments = [
+    [{ version: 2, providers: {}, services: {} }, /requires version 1/],
+    [{ version: 1, providers: [] }, /providers object/],
+    [{ version: 1, providers: {}, services: [] }, /services must be an object/]
+  ];
+  for (const [execution, expected] of invalidDocuments)
+    assert.throws(() => fixture(completeEvidence(), execution).rawExecution("change"), expected);
+
+  const invalidServices = [
+    [null, /exactly one/],
+    [{ command: [], readiness: { url: "http://localhost", expectBody: "x" } }, /exactly one/],
+    [{ command: ["npm", ""], readiness: { url: "http://localhost", expectBody: "x" } }, /exactly one/],
+    [{ staticRoot: "/public", readiness: { url: "http://localhost", expectBody: "x" } }, /exactly one/],
+    [{ staticRoot: "../public", readiness: { url: "http://localhost", expectBody: "x" } }, /exactly one/],
+    [{ ...commandService(), staticRoot: "public" }, /exactly one/],
+    [{ command: ["npm", "start"] }, /readiness.url/],
+    [{ ...staticService(), readiness: { ...staticService().readiness, url: "https://localhost" } }, /must use http/],
+    [{ ...staticService(), readiness: { ...staticService().readiness, url: "not a url" } }, /must use http/],
+    [{ ...commandService(), readiness: { url: "http://localhost" } }, /expectBody or expectHeader/],
+    [{ ...commandService(), resources: "network" }, /resources must be an array/],
+    [{ ...commandService(), resources: [""] }, /resources must be an array/],
+    [{ ...commandService(), repository: "missing" }, /unknown repository/],
+    [{ ...commandService(), env: null }, /env must be an object/],
+    [{ ...commandService(), env: [] }, /env must be an object/],
+    [{ ...commandService(), env: { API_TOKEN: "secret" } }, /must use envFrom/],
+    [{ ...commandService(), envFrom: "CI_TOKEN" }, /envFrom must contain/],
+    [{ ...commandService(), envFrom: ["bad-name"] }, /envFrom must contain/]
+  ];
+  for (const [service, expected] of invalidServices)
+    assert.throws(() => fixture(completeEvidence(), executionWithService(service))
+      .rawExecution("change"), expected);
 });
 
 test("claim and provider validation preserve actionable failures", () => {

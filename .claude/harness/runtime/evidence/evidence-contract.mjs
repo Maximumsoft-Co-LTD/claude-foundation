@@ -109,6 +109,64 @@ export function createEvidenceContract({
   filesystemEntryIdentity,
   policyCapabilities, foundationPolicy, handoffContract, git, declaredSurfaceMatcher, die
 }) {
+  function executionServiceSource(id, name, service) {
+    const commandValid = Array.isArray(service?.command) &&
+      service.command.length &&
+      service.command.every((part) => typeof part === "string" && part);
+    const staticRootValid = typeof service?.staticRoot === "string" &&
+      service.staticRoot.trim() &&
+      !isAbsolute(service.staticRoot) &&
+      !service.staticRoot.split(/[\\/]+/).includes("..");
+    if (!service || (!commandValid && !staticRootValid) ||
+        (commandValid && staticRootValid))
+      die(`service '${name}' requires exactly one of command or workspace-relative staticRoot`);
+    return { staticRootValid };
+  }
+
+  function validateServiceReadiness(name, service, staticRootValid) {
+    if (!service.readiness?.url)
+      die(`service '${name}' requires readiness.url`);
+    if (staticRootValid) {
+      let protocol;
+      try { protocol = new URL(service.readiness.url).protocol; } catch {}
+      if (protocol !== "http:")
+        die(`service '${name}' staticRoot readiness.url must use http`);
+    }
+    if (!service.readiness.expectBody && !service.readiness.expectHeader)
+      die(`service '${name}' readiness requires expectBody or expectHeader identity`);
+  }
+
+  function validateServiceResources(name, service) {
+    if (service.resources !== undefined &&
+        (!Array.isArray(service.resources) ||
+         service.resources.some((item) => typeof item !== "string" || !item)))
+      die(`service '${name}' resources must be an array of strings`);
+  }
+
+  function validateServiceEnvironment(name, service) {
+    if (service.env !== undefined &&
+        (!service.env || typeof service.env !== "object" || Array.isArray(service.env)))
+      die(`service '${name}' env must be an object`);
+    const secretKey = Object.keys(service.env || {}).find((key) =>
+      /(SECRET|TOKEN|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY)/i.test(key));
+    if (secretKey)
+      die(`service '${name}' must use envFrom for secret-like key '${secretKey}'`);
+    if (service.envFrom !== undefined &&
+        (!Array.isArray(service.envFrom) ||
+         service.envFrom.some((value) => typeof value !== "string" ||
+           !/^[A-Z][A-Z0-9_]*$/.test(value))))
+      die(`service '${name}' envFrom must contain environment variable names`);
+  }
+
+  function validateExecutionService(id, name, service) {
+    const { staticRootValid } = executionServiceSource(id, name, service);
+    validateServiceReadiness(name, service, staticRootValid);
+    validateServiceResources(name, service);
+    if (service.repository !== undefined)
+      repositoryById(id, service.repository);
+    validateServiceEnvironment(name, service);
+  }
+
   function rawExecution(id, dir = activeChangePath(id)) {
     const path = join(dir, "execution.yaml");
     if (!existsSync(path)) return { version: 1, providers: {}, services: {} };
@@ -119,46 +177,8 @@ export function createEvidenceContract({
     if (value.services !== undefined &&
         (!value.services || typeof value.services !== "object" || Array.isArray(value.services)))
       die(`${id}/execution.yaml services must be an object`);
-    for (const [name, service] of Object.entries(value.services || {})) {
-      const commandValid = Array.isArray(service?.command) &&
-        service.command.length &&
-        service.command.every((part) => typeof part === "string" && part);
-      const staticRootValid = typeof service?.staticRoot === "string" &&
-        service.staticRoot.trim() &&
-        !isAbsolute(service.staticRoot) &&
-        !service.staticRoot.split(/[\\/]+/).includes("..");
-      if (!service || (!commandValid && !staticRootValid) ||
-          (commandValid && staticRootValid))
-        die(`service '${name}' requires exactly one of command or workspace-relative staticRoot`);
-      if (!service.readiness?.url)
-        die(`service '${name}' requires readiness.url`);
-      if (staticRootValid) {
-        let protocol;
-        try { protocol = new URL(service.readiness.url).protocol; } catch {}
-        if (protocol !== "http:")
-          die(`service '${name}' staticRoot readiness.url must use http`);
-      }
-      if (!service.readiness.expectBody && !service.readiness.expectHeader)
-        die(`service '${name}' readiness requires expectBody or expectHeader identity`);
-      if (service.resources !== undefined &&
-          (!Array.isArray(service.resources) ||
-           service.resources.some((item) => typeof item !== "string" || !item)))
-        die(`service '${name}' resources must be an array of strings`);
-      if (service.repository !== undefined)
-        repositoryById(id, service.repository);
-      if (service.env !== undefined &&
-          (!service.env || typeof service.env !== "object" || Array.isArray(service.env)))
-        die(`service '${name}' env must be an object`);
-      const secretKey = Object.keys(service.env || {}).find((key) =>
-        /(SECRET|TOKEN|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY)/i.test(key));
-      if (secretKey)
-        die(`service '${name}' must use envFrom for secret-like key '${secretKey}'`);
-      if (service.envFrom !== undefined &&
-          (!Array.isArray(service.envFrom) ||
-           service.envFrom.some((value) => typeof value !== "string" ||
-             !/^[A-Z][A-Z0-9_]*$/.test(value))))
-        die(`service '${name}' envFrom must contain environment variable names`);
-    }
+    for (const [name, service] of Object.entries(value.services || {}))
+      validateExecutionService(id, name, service);
     return { services: {}, ...value };
   }
   
