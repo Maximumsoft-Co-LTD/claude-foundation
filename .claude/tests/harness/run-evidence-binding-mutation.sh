@@ -21,7 +21,9 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 WORK="$(mktemp -d)"
 SOURCE="$WORK/source"
 . "$ROOT/.claude/tests/lib/mutation-fixture.sh"
+. "$ROOT/.claude/tests/lib/mutation-v2.sh"
 create_mutation_fixture "$ROOT" "$SOURCE"
+mutation_v2_begin "$WORK"
 CONTRACT="$SOURCE/.claude/harness/runtime/evidence/evidence-contract.mjs"
 STATE="$SOURCE/.claude/harness/runtime/core/state-runtime.mjs"
 
@@ -103,13 +105,23 @@ const mutated = source.replace(
 if (mutated === source) { console.error("packet-omission fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
-if suite_passes node --test "$CODE_SUITE"; then
+applied_1=false compiled_1=false killed_1=false
+mutation_applied_once "$STATE" && applied_1=true
+[ "$applied_1" != true ] || ! mutation_compiles "$STATE" || compiled_1=true
+if [ "$compiled_1" != true ]; then
+  echo "FAIL: packet binding mutant did not apply exactly once and compile"
+elif suite_passes node --test "$CODE_SUITE"; then
   echo "FAIL: folding the packet back into the code hash went undetected"
 else
   echo "PASS: folding the packet back into the code hash is detected"
+  killed_1=true
   killed=$((killed + 1))
 fi
 cp "$WORK/state-runtime.mjs" "$STATE"
+restored_1=false; cmp -s "$WORK/state-runtime.mjs" "$STATE" && restored_1=true
+result_1=survived killer_1=""; [ "$killed_1" != true ] || { result_1=killed; killer_1=CASE-LAND-SURFACE-SUITE; }
+mutation_v2_record "MUT-PACKET-REENTERS-CODE-HASH" ".claude/harness/runtime/core/state-runtime.mjs" \
+  "$applied_1" "$compiled_1" "$result_1" "CASE-LAND-SURFACE-SUITE" "$killer_1" "$restored_1"
 
 # Fault 2: review loses its semantic subject hash and binds the code hash like
 # executable evidence. A review receipt would then outlive an edit to the
@@ -125,13 +137,23 @@ const mutated = source.replace(
 if (mutated === source) { console.error("review-exemption fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
-if suite_passes sh "$REVIEW_SUITE"; then
+applied_2=false compiled_2=false killed_2=false
+mutation_applied_once "$CONTRACT" && applied_2=true
+[ "$applied_2" != true ] || ! mutation_compiles "$CONTRACT" || compiled_2=true
+if [ "$compiled_2" != true ]; then
+  echo "FAIL: review binding mutant did not apply exactly once and compile"
+elif suite_passes sh "$REVIEW_SUITE"; then
   echo "FAIL: replacing the review subject hash with the code hash went undetected"
 else
   echo "PASS: replacing the review subject hash with the code hash is detected"
+  killed_2=true
   killed=$((killed + 1))
 fi
 cp "$WORK/evidence-contract.mjs" "$CONTRACT"
+restored_2=false; cmp -s "$WORK/evidence-contract.mjs" "$CONTRACT" && restored_2=true
+result_2=survived killer_2=""; [ "$killed_2" != true ] || { result_2=killed; killer_2=CASE-FEEDBACK-REVIEW-SUITE; }
+mutation_v2_record "MUT-REVIEW-BINDS-CODE-HASH" ".claude/harness/runtime/evidence/evidence-contract.mjs" \
+  "$applied_2" "$compiled_2" "$result_2" "CASE-FEEDBACK-REVIEW-SUITE" "$killer_2" "$restored_2"
 
 if ! cmp -s "$WORK/state-runtime.mjs" "$STATE" ||
    ! cmp -s "$WORK/evidence-contract.mjs" "$CONTRACT"; then
@@ -142,6 +164,7 @@ fi
 echo "PASS: every mutated source is restored byte for byte"
 
 echo "evidence binding mutation: ${killed}/${total} fault(s) detected"
+mutation_v2_finish "$WORK"
 if [ "$killed" -eq "$total" ]; then
   echo "FOUNDATION_MUTATION_RESULT=behavioral-kill"
   exit 0

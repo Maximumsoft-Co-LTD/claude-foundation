@@ -44,7 +44,9 @@ writeFileSync(output, `${JSON.stringify({
   mutants: [{
     id: "MUT-KILLER-BINDING", applied, compiled,
     result: killed ? "killed" : "survived",
-    killedBy: killed ? "CASE-MUTANT-KILLER" : ""
+    expectedKiller: "CASE-MUTANT-KILLER",
+    killedBy: killed ? "CASE-MUTANT-KILLER" : "",
+    restored: true
   }]
 }, null, 2)}\n`);
 if (!applied || !compiled || !killed) process.exit(1);

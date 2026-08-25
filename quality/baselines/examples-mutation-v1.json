@@ -1,0 +1,8 @@
+{
+  "protocol": "foundation-mutation-baseline-v1",
+  "generatedAt": "2026-08-25T00:00:00.000Z",
+  "tool": "@stryker-mutator/core@9.6.1",
+  "scope": "examples-todolist",
+  "counts": { "killed": 141, "timeout": 0, "survived": 31, "noCoverage": 16 },
+  "score": 75.00
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "./schemas/quality-policy-v1.schema.json",
+  "version": 1,
+  "coverage": {
+    "kind": "branch-with-function-fallback",
+    "changedCodeFloors": {
+      "unit": 80,
+      "integration": 70,
+      "criticalJourneys": 50
+    }
+  },
+  "complexity": {
+    "variant": "classic",
+    "warning": 11,
+    "refactor": 21,
+    "maximumChanged": 30
+  },
+  "crap": {
+    "mode": "enforce",
+    "warning": 20,
+    "failure": 30,
+    "rejectRegression": true
+  },
+  "mutation": {
+    "automated": {
+      "mode": "enforce",
+      "rejectNewNoCoverage": true,
+      "rejectScoreRegression": true,
+      "requireBaselineSnapshot": true,
+      "candidateChangedCodeTarget": 70
+    },
+    "semantic": {
+      "requiredKillRate": 100,
+      "requireExpectedKiller": true,
+      "crashIsKill": false,
+      "compileFailureIsKill": false
+    }
+  },
+  "javascript": {
+    "include": [
+      ".claude/harness/foundation.mjs",
+      ".claude/harness/runtime/**/*.mjs",
+      ".claude/hooks/**/*.mjs",
+      "dashboard/*.js",
+      "dashboard/*.mjs",
+      "dashboard/public/*.js",
+      "website/*.js",
+      "website/demo/src/**/*.js",
+      "examples/todolist/src/**/*.js",
+      "examples/todolist-v2/app.js",
+      "examples/workflow-slides/src/**/*.js"
+    ],
+    "exclude": [
+      "**/node_modules/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/*.test.js",
+      "**/*.test.mjs",
+      "**/.stryker-tmp/**",
+      ".foundation/**",
+      "target/**"
+    ]
+  },
+  "exceptionMaximumDays": 90
+}

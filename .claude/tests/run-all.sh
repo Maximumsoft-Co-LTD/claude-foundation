@@ -38,6 +38,7 @@ suites() {
 evidence binding mutation|sh "$HERE/harness/run-evidence-binding-mutation.sh"
 target drift mutation|sh "$HERE/harness/run-target-drift-mutation.sh"
 land surface mutation|sh "$HERE/harness/run-land-surface-mutation.sh"
+shipping boundary mutation|node "$ROOT/scripts/quality/run-shipping-semantic-mutation.mjs"
 harness contracts (evidence recovery)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2-recovery
 harness contracts (evidence telemetry)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c-telemetry
 harness contracts (evidence execution)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-b-execution
@@ -72,6 +73,7 @@ branch warning|node --test "$HERE/harness/run-branch-warning-tests.mjs"
 packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"
 upgrade compatibility|sh "$HERE/harness/run-upgrade-compat-tests.sh"
 dashboard contracts|npm --prefix "$ROOT/dashboard" test
+quality tooling|node --test "$ROOT"/scripts/quality/test/*.test.mjs && node "$ROOT/scripts/quality/validate-config.mjs" && node "$ROOT/scripts/quality/validate-exceptions.mjs" && bash "$ROOT/scripts/quality/check-static-surfaces.sh"
 runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"

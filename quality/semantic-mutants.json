@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "mutants": [
+    { "id": "MUT-PACKET-REENTERS-CODE-HASH", "suite": "SEM-EVIDENCE-BINDING", "sourcePath": ".claude/harness/runtime/core/state-runtime.mjs", "expectedKiller": "CASE-LAND-SURFACE-SUITE" },
+    { "id": "MUT-REVIEW-BINDS-CODE-HASH", "suite": "SEM-EVIDENCE-BINDING", "sourcePath": ".claude/harness/runtime/evidence/evidence-contract.mjs", "expectedKiller": "CASE-FEEDBACK-REVIEW-SUITE" },
+    { "id": "MUT-TARGET-REPLAY-REMOVED", "suite": "SEM-TARGET-DRIFT", "sourcePath": ".claude/harness/runtime/workflow/sandbox-runtime.mjs", "expectedKiller": "CASE-TARGET-DRIFT-SUITE" },
+    { "id": "MUT-LAND-TARGET-GUARD-REMOVED", "suite": "SEM-TARGET-DRIFT", "sourcePath": ".claude/harness/runtime/workflow/land-runtime.mjs", "expectedKiller": "CASE-TARGET-DRIFT-SUITE" },
+    { "id": "MUT-CONTENT-IDENTITY-BINDS-HEAD", "suite": "SEM-TARGET-DRIFT", "sourcePath": ".claude/harness/runtime/workflow/repository-snapshot.mjs", "expectedKiller": "CASE-TARGET-DRIFT-SUITE" },
+    { "id": "MUT-UNDECLARED-SURFACE-ALLOWED", "suite": "SEM-LAND-SURFACE", "sourcePath": ".claude/harness/runtime/core/state-runtime.mjs", "expectedKiller": "CASE-LAND-SURFACE-SUITE" },
+    { "id": "MUT-UNDECLARED-DELETION-ALLOWED", "suite": "SEM-LAND-SURFACE", "sourcePath": ".claude/harness/runtime/workflow/apply-recovery.mjs", "expectedKiller": "CASE-LAND-SURFACE-SUITE" },
+    { "id": "MUT-KILLER-BINDING", "suite": "SEM-KILLER-BINDING", "sourcePath": ".claude/harness/runtime/evidence/adapter-runtime.mjs", "expectedKiller": "CASE-MUTANT-KILLER" },
+    { "id": "MUT-CLI-RUNTIME-API-DRIFT", "suite": "SEM-SHIPPING-CONTRACTS", "sourcePath": "cli.sh", "expectedKiller": "CASE-SINGLE-SOURCE-RUNTIME-API" },
+    { "id": "MUT-INSTALL-MANAGED-PATH-UNDECLARED", "suite": "SEM-SHIPPING-CONTRACTS", "sourcePath": "install.sh", "expectedKiller": "CASE-SINGLE-SOURCE-MANAGED" },
+    { "id": "MUT-PROTOCOL-RUNTIME-API-DRIFT", "suite": "SEM-SHIPPING-CONTRACTS", "sourcePath": ".claude/harness/protocol.json", "expectedKiller": "CASE-SINGLE-SOURCE-PROTOCOL" },
+    { "id": "MUT-REVIEW-SCHEMA-REQUIRED-WIDENED", "suite": "SEM-SHIPPING-CONTRACTS", "sourcePath": ".claude/harness/runtime/evidence/configured-reviewer.mjs", "expectedKiller": "CASE-REVIEW-SCHEMA-REQUIRED" }
+  ]
+}

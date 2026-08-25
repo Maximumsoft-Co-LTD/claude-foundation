@@ -53,6 +53,26 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Require fresh deterministic and mutation evidence
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null || brew install jq
+          npm ci
+          npm run quality:config
+          npm run quality:exceptions
+          npm run quality:static
+          sh .claude/tests/run-all.sh
+          npm run test:mutation:semantic
+          npm run test:mutation:dashboard
+          npm run quality:mutation:coverage:dashboard
+          npm run quality:mutation:normalize:dashboard
+          npm run quality:mutation:changed
+
       - name: Validate inputs + repo state
         run: |
           set -euo pipefail

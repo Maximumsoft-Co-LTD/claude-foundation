@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "semantic-mutants-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "mutants"],
+  "properties": {
+    "version": { "const": 1 },
+    "mutants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "suite", "sourcePath", "expectedKiller"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^MUT-[A-Z0-9-]+$" },
+          "suite": { "type": "string", "pattern": "^SEM-[A-Z0-9-]+$" },
+          "sourcePath": { "type": "string", "minLength": 1 },
+          "expectedKiller": { "type": "string", "pattern": "^CASE-[A-Z0-9-]+$" }
+        }
+      }
+    }
+  }
+}

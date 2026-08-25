@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "lanes": [
+    {
+      "id": "dashboard-unit",
+      "report": ".foundation/test-results/quality/coverage-dashboard/coverage-final.json",
+      "include": ["dashboard/*.js", "dashboard/*.mjs", "dashboard/public/*.js"],
+      "changedCodeFloor": 80,
+      "required": true
+    },
+    {
+      "id": "runtime-integration",
+      "report": ".foundation/test-results/quality/coverage-runtime/coverage-final.json",
+      "include": [".claude/harness/foundation.mjs", ".claude/harness/runtime/**/*.mjs", ".claude/hooks/**/*.mjs"],
+      "changedCodeFloor": 70,
+      "required": false
+    },
+    {
+      "id": "examples-unit",
+      "report": ".foundation/test-results/quality/coverage-examples/coverage-final.json",
+      "include": ["examples/**/*.js"],
+      "changedCodeFloor": 80,
+      "required": false
+    },
+    {
+      "id": "website-dom",
+      "report": ".foundation/test-results/quality/coverage-website/coverage-final.json",
+      "include": ["website/*.js", "website/demo/src/**/*.js"],
+      "changedCodeFloor": 80,
+      "required": false
+    }
+  ]
+}

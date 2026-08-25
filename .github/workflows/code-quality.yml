@@ -1,0 +1,134 @@
+name: code-quality
+
+on:
+  pull_request:
+    paths:
+      - ".claude/harness/**"
+      - ".claude/hooks/**"
+      - "dashboard/**"
+      - "website/**"
+      - "examples/**"
+      - "quality/**"
+      - "scripts/quality/**"
+      - "package.json"
+      - "package-lock.json"
+      - "stryker.dashboard.config.mjs"
+      - "stryker.runtime.config.mjs"
+      - "stryker.examples.config.mjs"
+      - "stryker.website.config.mjs"
+      - ".github/workflows/code-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".claude/harness/**"
+      - ".claude/hooks/**"
+      - "dashboard/**"
+      - "website/**"
+      - "examples/**"
+      - "quality/**"
+      - "scripts/quality/**"
+      - "package.json"
+      - "package-lock.json"
+      - "stryker.dashboard.config.mjs"
+      - "stryker.runtime.config.mjs"
+      - "stryker.examples.config.mjs"
+      - "stryker.website.config.mjs"
+      - ".github/workflows/code-quality.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node20-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: npm
+      - run: npm ci
+      - name: Verify minimum supported Node
+        run: |
+          npm run test:quality
+          npm run quality:config
+          npm run quality:complexity
+
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .foundation/quality-history
+          key: quality-history-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: quality-history-${{ github.ref }}-
+      - name: Verify quality tooling and exceptions
+        run: |
+          npm run test:quality
+          npm run quality:config
+          npm run quality:static
+          npm run quality:exceptions
+      - name: Collect dashboard coverage and CRAP inventory
+        run: |
+          npm run quality:coverage:dashboard
+          npm run quality:coverage:examples
+          npm run quality:coverage:website
+          npm run quality:coverage:runtime
+          npm run quality:complexity
+          npm run quality:crap
+          npm run quality:report:validate
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            npm run quality:base -- --base-ref "origin/${{ github.base_ref }}"
+            node scripts/quality/evaluate-changed-quality.mjs --base-ref "origin/${{ github.base_ref }}" --require-base --no-exit
+          else
+            npm run quality:base -- --base-ref HEAD^
+            node scripts/quality/evaluate-changed-quality.mjs --base-ref HEAD^ --require-base --no-exit
+          fi
+      - name: Enforce semantic and automated mutation ratchets
+        run: |
+          node scripts/quality/collect-semantic-mutation.mjs --no-exit
+          npm run test:mutation:dashboard
+          npm run quality:mutation:coverage:dashboard
+          npm run quality:mutation:normalize:dashboard
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            node scripts/quality/evaluate-mutation-delta.mjs --base-ref "origin/${{ github.base_ref }}" --no-exit
+          else
+            node scripts/quality/evaluate-mutation-delta.mjs --base-ref HEAD^ --no-exit
+          fi
+      - name: Record trend and render summary
+        run: |
+          npm run quality:trend
+          npm run quality:summary
+      - name: Enforce unified quality gate
+        run: npm run quality:enforce
+      - name: Publish job summary
+        if: always()
+        run: |
+          if [ -f .foundation/test-results/quality/summary.md ]; then
+            cat .foundation/test-results/quality/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-${{ github.run_id }}
+          path: .foundation/test-results/quality/
+          if-no-files-found: error
+          retention-days: 30

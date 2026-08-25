@@ -4,11 +4,54 @@
   "engines": {
     "node": ">=20.19.0"
   },
+  "overrides": {
+    "qs": "6.15.3"
+  },
   "devDependencies": {
-    "@fission-ai/openspec": "1.7.0"
+    "@fission-ai/openspec": "1.7.0",
+    "@stryker-mutator/core": "9.6.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "c8": "10.1.3",
+    "eslint": "9.39.2",
+    "espree": "10.4.0",
+    "happy-dom": "20.10.6"
   },
   "scripts": {
     "foundation": "node .claude/harness/foundation.mjs",
-    "test:harness": "sh .claude/tests/harness/run-harness-tests.sh"
+    "test:harness": "sh .claude/tests/harness/run-harness-tests.sh",
+    "test:quality": "node --test scripts/quality/test/*.test.mjs",
+    "quality:config": "node scripts/quality/validate-config.mjs",
+    "quality:static": "bash scripts/quality/check-static-surfaces.sh",
+    "quality:exceptions": "node scripts/quality/validate-exceptions.mjs",
+    "quality:complexity": "node scripts/quality/collect-complexity.mjs",
+    "quality:coverage:dashboard": "c8 --include='dashboard/*.js' --include='dashboard/*.mjs' --include='dashboard/public/*.js' --exclude='dashboard/test/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-dashboard node --test dashboard/test/*.test.js dashboard/test/*.test.mjs",
+    "quality:coverage:runtime": "c8 --include='.claude/harness/foundation.mjs' --include='.claude/harness/runtime/**/*.mjs' --include='.claude/hooks/**/*.mjs' --exclude='.claude/**/tests/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-runtime sh .claude/tests/run-all.sh",
+    "quality:coverage:examples": "c8 --include='examples/**/*.js' --exclude='examples/**/test/**' --exclude='examples/**/tests/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-examples node --test examples/todolist/test/*.test.mjs",
+    "quality:coverage:website": "c8 --include='website/*.js' --include='website/demo/src/**/*.js' --exclude='website/**/test/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-website node --test website/demo/test/*.test.mjs",
+    "quality:crap": "node scripts/quality/calculate-crap.mjs",
+    "quality:report:validate": "node scripts/quality/validate-quality-report.mjs",
+    "quality:base": "node scripts/quality/generate-quality-base.mjs",
+    "quality:changed": "node scripts/quality/evaluate-changed-quality.mjs",
+    "quality:mutation:changed": "node scripts/quality/evaluate-mutation-delta.mjs",
+    "quality:mutation:coverage:dashboard": "c8 --include='dashboard/sanitize.js' --include='dashboard/migrations.js' --include='dashboard/usage-scan.mjs' --reporter=json --report-dir=.foundation/test-results/quality/coverage-mutation-dashboard node --test dashboard/test/migrations.test.js dashboard/test/sanitize.test.js dashboard/test/usage-scan.test.mjs",
+    "quality:mutation:coverage:runtime": "c8 --include='.claude/harness/runtime/reliability/bounded-retry.mjs' --include='.claude/harness/runtime/core/measured-number.mjs' --include='.claude/harness/runtime/core/cli-flags.mjs' --reporter=json --report-dir=.foundation/test-results/quality/coverage-mutation-runtime node --test .claude/tests/harness/run-bounded-retry-tests.mjs .claude/tests/harness/run-telemetry-truth-tests.mjs .claude/tests/harness/run-guard-fix-cli-tests.mjs",
+    "quality:mutation:normalize:dashboard": "node scripts/quality/normalize-mutation-coverage.mjs --input .foundation/test-results/quality/mutation-automated.json --coverage .foundation/test-results/quality/coverage-mutation-dashboard/coverage-final.json",
+    "quality:mutation:normalize:runtime": "node scripts/quality/normalize-mutation-coverage.mjs --input .foundation/test-results/quality/mutation-runtime.json --coverage .foundation/test-results/quality/coverage-mutation-runtime/coverage-final.json",
+    "quality:mutation:normalize:examples": "node scripts/quality/normalize-mutation-coverage.mjs --input .foundation/test-results/quality/mutation-examples.json --coverage .foundation/test-results/quality/coverage-examples/coverage-final.json",
+    "quality:mutation:normalize:website": "node scripts/quality/normalize-mutation-coverage.mjs --input .foundation/test-results/quality/mutation-website.json --coverage .foundation/test-results/quality/coverage-website/coverage-final.json",
+    "quality:mutation:runtime": "node scripts/quality/evaluate-mutation-delta.mjs --input .foundation/test-results/quality/mutation-runtime.json --baseline quality/baselines/runtime-mutation-v1.json --output .foundation/test-results/quality/mutation-runtime-delta.json",
+    "quality:mutation:examples": "node scripts/quality/evaluate-mutation-delta.mjs --input .foundation/test-results/quality/mutation-examples.json --baseline quality/baselines/examples-mutation-v1.json --output .foundation/test-results/quality/mutation-examples-delta.json",
+    "quality:mutation:website": "node scripts/quality/evaluate-mutation-delta.mjs --input .foundation/test-results/quality/mutation-website.json --baseline quality/baselines/website-mutation-v1.json --output .foundation/test-results/quality/mutation-website-delta.json",
+    "quality:trend": "node scripts/quality/record-quality-trend.mjs",
+    "quality:summary": "node scripts/quality/render-quality-summary.mjs",
+    "quality:debt": "node scripts/quality/render-quality-debt.mjs",
+    "quality:enforce": "node scripts/quality/enforce-quality.mjs",
+    "quality:report:dashboard": "npm run quality:coverage:dashboard && npm run quality:complexity && npm run quality:crap && npm run quality:changed && npm run quality:summary",
+    "test:mutation:dashboard": "stryker run stryker.dashboard.config.mjs",
+    "test:mutation:runtime": "stryker run stryker.runtime.config.mjs",
+    "test:mutation:examples": "stryker run stryker.examples.config.mjs",
+    "test:mutation:website": "stryker run stryker.website.config.mjs",
+    "test:mutation:semantic": "node scripts/quality/collect-semantic-mutation.mjs"
   }
 }

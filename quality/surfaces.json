@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "surfaces": [
+    {
+      "id": "runtime",
+      "paths": [".claude/harness/foundation.mjs", ".claude/harness/runtime/**/*.mjs"],
+      "testCommand": "sh .claude/tests/run-all.sh",
+      "controls": ["coverage", "crap", "automated-mutation-selected", "semantic-mutation"],
+      "blocking": true
+    },
+    {
+      "id": "hooks",
+      "paths": [".claude/hooks/**/*.mjs", ".claude/hooks/**/*.sh"],
+      "testCommand": "sh .claude/tests/hooks/run-hook-tests.sh && sh .claude/tests/hooks/run-phase-mutation-guard-tests.sh",
+      "controls": ["coverage-js", "crap-js", "shell-contract", "semantic-mutation"],
+      "blocking": true
+    },
+    {
+      "id": "shipping",
+      "paths": ["cli.sh", "install*.sh", ".claude/harness/*.json", "openspec/schemas/**"],
+      "testCommand": "sh .claude/tests/harness/run-installer-tests.sh && node .claude/tests/harness/run-single-source-tests.mjs",
+      "controls": ["shell-syntax", "contract", "semantic-mutation"],
+      "blocking": true
+    },
+    {
+      "id": "dashboard",
+      "paths": ["dashboard/**/*.js", "dashboard/**/*.mjs", "dashboard/client.sh"],
+      "testCommand": "npm --prefix dashboard test",
+      "controls": ["coverage", "crap", "automated-mutation", "shell-contract"],
+      "blocking": true
+    },
+    {
+      "id": "website",
+      "paths": ["website/**/*.js", "website/**/*.mjs", "website/**/*.astro"],
+      "testCommand": "node --test website/demo/test/*.test.mjs && npm --prefix website/docs run build",
+      "controls": ["build", "dom-test", "coverage-pilot", "automated-mutation-pilot"],
+      "blocking": false
+    },
+    {
+      "id": "examples",
+      "paths": ["examples/**/*.js", "examples/**/*.mjs"],
+      "testCommand": "node --test examples/todolist/test/*.test.mjs && npm --prefix examples/todolist-v2 test",
+      "controls": ["owned-tests", "coverage-advisory", "crap-advisory", "automated-mutation-pilot"],
+      "blocking": false
+    },
+    {
+      "id": "release",
+      "paths": [".github/workflows/**", "Formula/**", "RELEASING.md", "VERSION", "CHANGELOG.md"],
+      "testCommand": "ruby -c Formula/claude-foundation.rb && sh .claude/tests/harness/run-upgrade-compat-tests.sh",
+      "controls": ["workflow-parse", "ruby-syntax", "packaging-contract", "semantic-shipping-contract"],
+      "blocking": true
+    },
+    {
+      "id": "instructions-and-docs",
+      "paths": [".claude/commands/**", ".claude/rules/**", ".claude/skills/**", "docs/**", "WORKFLOW.md"],
+      "testCommand": "sh .claude/tests/docs/run-doc-consistency.sh && sh .claude/tests/harness/run-instruction-contract-tests.sh",
+      "controls": ["consistency", "contract", "build"],
+      "blocking": true
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "quality-report-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "generatedAt", "repositoryCommit", "tools", "coverageLanes", "includedPaths", "excludedPaths", "coverageKind", "summary", "functions"],
+  "properties": {
+    "protocol": { "const": "foundation-quality-v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "repositoryCommit": { "type": ["string", "null"] },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "c8", "eslint"],
+      "properties": {
+        "node": { "type": "string" },
+        "c8": { "type": "string" },
+        "eslint": { "type": "string" }
+      }
+    },
+    "coverageLanes": { "type": "array", "items": { "type": "string" } },
+    "includedPaths": { "type": "array", "items": { "type": "string" } },
+    "excludedPaths": { "type": "array", "items": { "type": "string" } },
+    "coverageKind": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["functions", "pass", "warn", "fail", "unmapped"],
+      "properties": {
+        "functions": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 },
+        "warn": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "unmapped": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "name", "line", "cyclomatic", "coverageStatus", "coveragePercent", "crap", "status"],
+        "properties": {
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "cyclomatic": { "type": "integer", "minimum": 1 },
+          "coverageStatus": { "type": "string" },
+          "coveragePercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "crap": { "type": ["number", "null"], "minimum": 0 },
+          "status": { "enum": ["pass", "warn", "fail", "unmapped"] }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "quality-policy-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "coverage", "complexity", "crap", "mutation", "javascript", "exceptionMaximumDays"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "coverage": {
+      "type": "object",
+      "required": ["kind", "changedCodeFloors"],
+      "properties": {
+        "kind": { "const": "branch-with-function-fallback" },
+        "changedCodeFloors": {
+          "type": "object",
+          "required": ["unit", "integration", "criticalJourneys"],
+          "additionalProperties": false,
+          "properties": {
+            "unit": { "type": "number", "minimum": 0, "maximum": 100 },
+            "integration": { "type": "number", "minimum": 0, "maximum": 100 },
+            "criticalJourneys": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "complexity": {
+      "type": "object",
+      "required": ["variant", "warning", "refactor", "maximumChanged"],
+      "additionalProperties": false,
+      "properties": {
+        "variant": { "enum": ["classic", "modified"] },
+        "warning": { "type": "integer", "minimum": 1 },
+        "refactor": { "type": "integer", "minimum": 1 },
+        "maximumChanged": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "crap": {
+      "type": "object",
+      "required": ["mode", "warning", "failure", "rejectRegression"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["report-only", "enforce"] },
+        "warning": { "type": "number", "minimum": 0 },
+        "failure": { "type": "number", "minimum": 0 },
+        "rejectRegression": { "type": "boolean" }
+      }
+    },
+    "mutation": {
+      "type": "object",
+      "required": ["automated", "semantic"],
+      "additionalProperties": false,
+      "properties": {
+        "automated": {
+          "type": "object",
+          "required": ["mode", "rejectNewNoCoverage", "rejectScoreRegression", "requireBaselineSnapshot", "candidateChangedCodeTarget"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["report-only", "enforce"] },
+            "rejectNewNoCoverage": { "type": "boolean" },
+            "rejectScoreRegression": { "type": "boolean" },
+            "requireBaselineSnapshot": { "type": "boolean" },
+            "candidateChangedCodeTarget": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        },
+        "semantic": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredKillRate", "requireExpectedKiller", "crashIsKill", "compileFailureIsKill"],
+          "properties": {
+            "requiredKillRate": { "type": "number", "minimum": 0, "maximum": 100 },
+            "requireExpectedKiller": { "type": "boolean" },
+            "crashIsKill": { "const": false },
+            "compileFailureIsKill": { "const": false }
+          }
+        }
+      }
+    },
+    "javascript": {
+      "type": "object",
+      "required": ["include", "exclude"],
+      "additionalProperties": false,
+      "properties": {
+        "include": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "exclude": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "exceptionMaximumDays": { "type": "integer", "minimum": 1, "maximum": 365 }
+  }
+}

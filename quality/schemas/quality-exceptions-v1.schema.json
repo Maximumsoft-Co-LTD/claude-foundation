@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "quality-exceptions-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "exceptions"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "functionOrMutant", "metric", "reason", "risk", "compensatingEvidence", "owner", "approvedBy", "expires", "trackingIssue"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^QEX-[0-9]{4,}$" },
+          "path": { "type": "string", "minLength": 1 },
+          "functionOrMutant": { "type": "string", "minLength": 1 },
+          "metric": { "enum": ["crap", "complexity", "coverage", "mutation"] },
+          "reason": { "type": "string", "minLength": 10 },
+          "risk": { "type": "string", "minLength": 10 },
+          "compensatingEvidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+          "owner": { "type": "string", "minLength": 1 },
+          "approvedBy": { "type": "string", "minLength": 1 },
+          "expires": { "type": "string", "format": "date" },
+          "trackingIssue": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coverage-lanes-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "lanes"],
+  "properties": {
+    "version": { "const": 1 },
+    "lanes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "report", "include", "changedCodeFloor", "required"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "report": { "type": "string", "minLength": 1 },
+          "include": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "changedCodeFloor": { "type": "number", "minimum": 0, "maximum": 100 },
+          "required": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

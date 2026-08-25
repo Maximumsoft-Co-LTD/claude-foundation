@@ -34,6 +34,12 @@ pnpm-debug.log*
 **/playwright-report/
 **/.nyc_output/
 **/.cache/
+/.stryker-tmp-dashboard/
+/.stryker-tmp-runtime/
+/.stryker-tmp-examples/
+/.stryker-tmp-website/
+/reports/mutation/
+/.foundation/quality-history/
 
 # Rust build output
 /target/

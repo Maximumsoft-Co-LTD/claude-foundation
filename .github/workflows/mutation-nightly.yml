@@ -1,0 +1,149 @@
+name: mutation-nightly
+
+on:
+  schedule:
+    - cron: "17 19 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: mutation-nightly
+  cancel-in-progress: false
+
+jobs:
+  dashboard-automated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Run dashboard automated mutation pilot
+        run: |
+          npm run test:mutation:dashboard
+          npm run quality:mutation:coverage:dashboard
+          npm run quality:mutation:normalize:dashboard
+          npm run quality:mutation:changed
+      - name: Upload automated mutation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-mutation-${{ github.run_id }}
+          path: .foundation/test-results/quality/mutation-automated.json
+          if-no-files-found: error
+          retention-days: 30
+
+  runtime-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .foundation/quality-history
+          key: quality-history-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: quality-history-${{ github.ref }}-
+      - name: Ensure jq
+        run: command -v jq >/dev/null || { sudo apt-get update && sudo apt-get install -y jq; }
+      - name: Collect all coverage lanes
+        run: |
+          npm run quality:coverage:dashboard
+          npm run quality:coverage:examples
+          npm run quality:coverage:website
+          npm run quality:coverage:runtime
+      - name: Aggregate required semantic mutation evidence
+        run: npm run test:mutation:semantic
+      - name: Run selected runtime and example automated mutation shards
+        run: |
+          npm run test:mutation:runtime
+          npm run quality:mutation:coverage:runtime
+          npm run quality:mutation:normalize:runtime
+          npm run quality:mutation:runtime
+          npm run test:mutation:examples
+          npm run quality:mutation:normalize:examples
+          npm run quality:mutation:examples
+          npm run test:mutation:website
+          npm run quality:mutation:normalize:website
+          npm run quality:mutation:website
+      - name: Build full CRAP report
+        run: |
+          npm run quality:complexity
+          npm run quality:crap
+          npm run quality:report:validate
+          npm run quality:trend
+          npm run quality:summary
+      - name: Upload runtime quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-quality-${{ github.run_id }}
+          path: .foundation/test-results/quality/
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate-quality:
+    needs: [dashboard-automated, runtime-quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .foundation/quality-history
+          key: quality-history-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: quality-history-${{ github.ref }}-
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-quality-${{ github.run_id }}"
+          path: .foundation/test-results/quality
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: dashboard-mutation-${{ github.run_id }}
+          path: .foundation/test-results/quality
+      - name: Render unified trend and debt inventory
+        run: |
+          npm run quality:trend
+          npm run quality:summary
+          npm run quality:debt
+      - name: Open or update the deduplicated quality debt issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="[quality] Mutation and CRAP debt inventory"
+          number=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file .foundation/test-results/quality/debt.md
+          else
+            gh issue create --title "$title" --body-file .foundation/test-results/quality/debt.md
+          fi
+      - name: Upload unified quality evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregate-quality-${{ github.run_id }}
+          path: .foundation/test-results/quality/
+          if-no-files-found: error
+          retention-days: 30
