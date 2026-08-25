@@ -307,42 +307,36 @@ export function createAdapterRuntime({
     return { provider, status };
   }
 
-  async function executeAdapter(id, provider, config, proofRunId, commandCache) {
-    if (config.adapter === "contract-digest")
-      return executeContractDigest(id, provider, config, proofRunId);
-    const state = loadRuntime(id);
-    const repository = providerRepository(id, provider, config);
-    const cwd = repository?.workspacePath || state.workspace?.path || ROOT;
-    const repositoryManifest = providerRepositoryManifest(id, provider, config, proofRunId);
-    const repositoryExecutionScope = repositoryManifest.rows.map((row) => ({
-      id: row.id,
-      access: row.mode,
+  function repositoryExecutionRows(state, manifest) {
+    return manifest.rows.map((row) => ({
+      id: row.id, access: row.mode,
       baseHead: state.repositories?.[row.id]?.baseHead || row.baseHead || null
     }));
-    const built = configuredCommand(provider, config);
-    const envFrom = Object.fromEntries((config.envFrom || [])
+  }
+
+  function resolvedEnvironmentVariables(config) {
+    return Object.fromEntries((config.envFrom || [])
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]]));
-    const dedupKey = stableHash({
+  }
+
+  function adapterExecutionKey(cwd, built, repository, scope, config, envFrom) {
+    return stableHash({
       cwd, command: built.command, args: built.args,
-      repositoryId: repository?.id || "root",
-      repositories: repositoryExecutionScope,
-      env: config.env || {},
-      // Part of the receipt's envFingerprint, so it has to be part of the
-      // identity of the execution being reused. Omitting it let a deduped
-      // receipt name a variable absent from the process that actually ran.
-      envFrom: [...(config.envFrom || [])].sort(),
+      repositoryId: repository?.id || "root", repositories: scope,
+      env: config.env || {}, envFrom: [...(config.envFrom || [])].sort(),
       resolvedEnvFrom: Object.keys(envFrom).sort(),
-      timeoutMs: Number(config.timeoutMs || 120000),
-      readiness: config.readiness || null
+      timeoutMs: Number(config.timeoutMs || 120000), readiness: config.readiness || null
     });
+  }
+
+  function cachedAdapterExecution(id, proofRunId, context, config, commandCache) {
+    const { repository, repositoryManifest, cwd, built, envFrom, dedupKey } = context;
     if (!commandCache.has(dedupKey)) {
       const commandExecutionId = `command-${Date.now()}-${commandCache.size + 1}`;
       const executionEnv = providerExecutionEnvironment(process.env, {
-        ...envFrom,
-        ...(config.env || {}),
-        FOUNDATION_CHANGE_ID: id,
-        FOUNDATION_CONTROL_ROOT: ROOT,
+        ...envFrom, ...(config.env || {}),
+        FOUNDATION_CHANGE_ID: id, FOUNDATION_CONTROL_ROOT: ROOT,
         FOUNDATION_REPOSITORY_ID: repository?.id || "root",
         FOUNDATION_REPOSITORIES_FILE: repositoryManifest.path,
         FOUNDATION_PROOF_RUN_ID: proofRunId,
@@ -357,173 +351,260 @@ export function createAdapterRuntime({
         })
       });
     }
-    const cached = commandCache.get(dedupKey);
-    const result = await cached.result;
-    assertReadRepositoriesUnchanged(provider, repositoryManifest.rows);
-    const commandExecutionId = cached.commandExecutionId;
-    const logArtifact = executionLog(id, provider, commandExecutionId, result);
-    const artifacts = [logArtifact];
-    // A report left over from an earlier run is not evidence that this one
-    // produced anything. Reading it regardless let a stale file satisfy the
-    // discovery floor — the guard whose whole purpose is catching a suite that
-    // stopped running tests.
-    const configuredReport = config.report ? resolve(cwd, config.report) : null;
+    return commandCache.get(dedupKey);
+  }
+
+  function adapterExecutionContext(id, provider, config, proofRunId, commandCache) {
+    const state = loadRuntime(id);
+    const repository = providerRepository(id, provider, config);
+    const cwd = repository?.workspacePath || state.workspace?.path || ROOT;
+    const repositoryManifest = providerRepositoryManifest(id, provider, config, proofRunId);
+    const scope = repositoryExecutionRows(state, repositoryManifest);
+    const built = configuredCommand(provider, config);
+    const envFrom = resolvedEnvironmentVariables(config);
+    const context = {
+      state, repository, cwd, repositoryManifest, built, envFrom,
+      dedupKey: adapterExecutionKey(cwd, built, repository, scope, config, envFrom)
+    };
+    return {
+      ...context,
+      cached: cachedAdapterExecution(id, proofRunId, context, config, commandCache)
+    };
+  }
+
+  function freshConfiguredReport(config, cwd, result) {
+    const path = config.report ? resolve(cwd, config.report) : null;
     const runStartedMs = Date.parse(result.startedAt) || 0;
-    const reportIsFresh = Boolean(configuredReport) && existsSync(configuredReport) &&
-      statSync(configuredReport).mtimeMs >= runStartedMs - 1000;
-    if (configuredReport && existsSync(configuredReport) && !reportIsFresh)
+    const fresh = Boolean(path) && existsSync(path) &&
+      statSync(path).mtimeMs >= runStartedMs - 1000;
+    if (path && existsSync(path) && !fresh)
       console.error(
-        `WARNING: ignoring '${relative(ROOT, configuredReport)}': it predates this run, so it is not its output`);
-    if (reportIsFresh)
+        `WARNING: ignoring '${relative(ROOT, path)}': it predates this run, so it is not its output`);
+    return { path, fresh };
+  }
+
+  function parsedAdapterReport(config, configuredReport, result) {
+    const content = configuredReport.fresh
+      ? readFileSync(configuredReport.path, "utf8") : result.stdout;
+    const json = parseJsonOutput(content);
+    const tap = ["tap", "auto"].includes(config.reportFormat || "auto")
+      ? parseTapOutput(content) : null;
+    return json || tap;
+  }
+
+  function adapterEvidence(id, provider, config, execution) {
+    const logArtifact = executionLog(
+      id, provider, execution.commandExecutionId, execution.result);
+    const artifacts = [logArtifact];
+    const configuredReport = freshConfiguredReport(config, execution.cwd, execution.result);
+    if (configuredReport.fresh)
       artifacts.push({
-        path: relative(ROOT, configuredReport), type: "structured-report", required: true
+        path: relative(ROOT, configuredReport.path),
+        type: "structured-report", required: true
       });
-    const jsonReport = reportIsFresh
-      ? parseJsonOutput(readFileSync(configuredReport, "utf8"))
-      : parseJsonOutput(result.stdout);
-    const tapReport = ["tap", "auto"].includes(config.reportFormat || "auto")
-      ? parseTapOutput(
-        reportIsFresh ? readFileSync(configuredReport, "utf8") : result.stdout
-      )
-      : null;
-    const report = jsonReport || tapReport;
-    // A declared critical case is an executable gate for every structured
-    // command adapter, not merely metadata for test-discovery.  Keeping this
-    // result beside report parsing prevents a green exit code from hiding a
-    // skipped/missing production-path oracle.
-    const critical = criticalCaseResult(report, config.criticalCases || []);
-    const baseFlags = {
+    const report = parsedAdapterReport(config, configuredReport, execution.result);
+    return {
+      logArtifact, artifacts, report,
+      critical: criticalCaseResult(report, config.criticalCases || [])
+    };
+  }
+
+  function adapterBaseFlags(id, provider, config, proofRunId, execution, suppliedEvidence) {
+    const { state, built, result, commandExecutionId } = execution;
+    return {
       config, adapter: config.adapter, proofRunId, commandExecutionId,
       workspaceHash: providerWorkspaceHash(
-        id, provider, state.activeProofRun?.workspaceHash
-      ),
+        id, provider, state.activeProofRun?.workspaceHash),
       claims: providerClaims(id, provider, config).join(","),
       command: built.display, started: result.startedAt,
       observed: result.timedOut ? `timeout after ${result.durationMs}ms` :
         result.error ? result.error.message :
-        `exit ${result.status}; ${result.durationMs}ms; readiness ${result.readinessObserved ? "observed" : "not-observed"}`,
+        `exit ${result.status}; ${result.durationMs}ms; readiness ${
+          result.readinessObserved ? "observed" : "not-observed"}`,
       durationMs: result.durationMs,
-      log: logArtifact.path, artifacts,
+      log: suppliedEvidence.logArtifact.path, artifacts: suppliedEvidence.artifacts,
       environment: config.environment || null, project: config.project || null
     };
-  
-    // A provider that declares readiness is asserting the suite ran against
-    // something specific. Not observing it means the suite ran against
-    // whatever occupied the port — or against nothing — so it cannot pass,
-    // whichever adapter produced it.
-    const readinessMissed = Boolean(config.readiness?.url) && !result.readinessObserved;
+  }
 
-    if (config.adapter === "test-discovery") {
-      const testProvider = provider;
-      const discoveryProvider = config.discoveryProvider || "discovery";
-      const discoveryConfig = providerConfig(id, discoveryProvider) || config;
-      const testStatus = enforceCriticalCases(
-        result.timedOut || result.error || readinessMissed ? "error" :
-          result.status !== 0 ? "fail" : "pass", critical);
-      recordReceipt(id, testProvider, testStatus, {
-        ...baseFlags, claims: providerClaims(id, testProvider, config).join(","),
-        observed: `${baseFlags.observed}; critical cases ${critical.observations.length
-          ? critical.observations.map((row) => `${row.id}=${row.status}`).join(", ")
-          : "not declared"}`
-      }, { executed: true });
-      const discovered = numericReportValue(report, [
-        "numTotalTests", "totalTests", "tests", "testCount", "expected"
-      ]);
-      const minimum = Number(config.minimum || 1);
-      const discoveryStatus = result.timedOut || result.error || readinessMissed ? "error" :
-        discovered === null ? "inconclusive" :
-        discovered >= minimum ? "pass" : "fail";
-      recordReceipt(id, discoveryProvider, discoveryStatus, {
-        ...baseFlags, config: discoveryConfig,
-        claims: providerClaims(id, discoveryProvider, discoveryConfig).join(","),
-        // Not `?? 0`: this line runs precisely when the count could not be read,
-        // so a zero here would state "the suite found no tests" in the same
-        // receipt whose `observed` says the count was unavailable.
-        discovered, minimum,
-        observed: discovered === null ? "structured test count unavailable" :
-          `${discovered} discovered; minimum ${minimum}`
-      }, { executed: true });
-      return { provider, status: worstStatus(testStatus, discoveryStatus) };
+  function adapterInfrastructureFailed(result, readinessMissed) {
+    return Boolean(result.timedOut || result.error || readinessMissed);
+  }
+
+  function recordTestDiscoveryAdapter(id, provider, config, execution, evidenceRow,
+    baseFlags, readinessMissed) {
+    const { result } = execution;
+    const testProvider = provider;
+    const discoveryProvider = config.discoveryProvider || "discovery";
+    const discoveryConfig = providerConfig(id, discoveryProvider) || config;
+    const testBaseStatus = adapterInfrastructureFailed(result, readinessMissed)
+      ? "error" : result.status !== 0 ? "fail" : "pass";
+    const testStatus = enforceCriticalCases(testBaseStatus, evidenceRow.critical);
+    recordReceipt(id, testProvider, testStatus, {
+      ...baseFlags, claims: providerClaims(id, testProvider, config).join(","),
+      observed: `${baseFlags.observed}; critical cases ${
+        evidenceRow.critical.observations.length
+          ? evidenceRow.critical.observations.map((row) =>
+            `${row.id}=${row.status}`).join(", ") : "not declared"}`
+    }, { executed: true });
+    const discovered = numericReportValue(evidenceRow.report, [
+      "numTotalTests", "totalTests", "tests", "testCount", "expected"
+    ]);
+    const minimum = Number(config.minimum || 1);
+    const discoveryStatus = adapterInfrastructureFailed(result, readinessMissed)
+      ? "error" : discovered === null ? "inconclusive"
+        : discovered >= minimum ? "pass" : "fail";
+    recordReceipt(id, discoveryProvider, discoveryStatus, {
+      ...baseFlags, config: discoveryConfig,
+      claims: providerClaims(id, discoveryProvider, discoveryConfig).join(","),
+      discovered, minimum,
+      observed: discovered === null ? "structured test count unavailable" :
+        `${discovered} discovered; minimum ${minimum}`
+    }, { executed: true });
+    return { provider, status: worstStatus(testStatus, discoveryStatus) };
+  }
+
+  function playwrightAttachments(summary, cwd, artifacts) {
+    for (const attachment of summary?.attachments || []) {
+      const path = isAbsolute(attachment) ? attachment : resolve(cwd, attachment);
+      if (existsSync(path))
+        artifacts.push({
+          path: relative(ROOT, path), type: "playwright-attachment", required: false
+        });
     }
-  
-    if (config.adapter === "playwright") {
-      const summary = report ? playwrightReportSummary(report) : null;
-      for (const attachment of summary?.attachments || []) {
-        const attachmentPath = isAbsolute(attachment) ? attachment : resolve(cwd, attachment);
-        if (existsSync(attachmentPath))
-          artifacts.push({
-            path: relative(ROOT, attachmentPath),
-            type: "playwright-attachment", required: false
-          });
-      }
-      const outputs = [...new Set([provider, ...(config.outputs || [])])]
-        .filter((output) => requiredProviders(id).includes(output));
-      let aggregateStatus = "pass";
-      for (const output of outputs) {
-        const requiredClaims = providerClaims(id, output, config);
-        const missingClaims = summary
-          ? requiredClaims.filter((claim) => !summary.claims.includes(claim))
-          : requiredClaims;
-        const baseStatus = result.timedOut || result.error || readinessMissed ? "error" :
-          result.status !== 0 || (summary?.failed || 0) > 0 ? "fail" :
-          !summary || missingClaims.length ? "inconclusive" : "pass";
-        const status = enforceCriticalCases(baseStatus, critical);
-        aggregateStatus = worstStatus(aggregateStatus, status);
-        recordReceipt(id, output, status, {
-          ...baseFlags,
-          claims: requiredClaims.join(","),
-          "input-mode": providerCapability(output, providerConfig(id, output)) === "browser"
-            ? config.inputMode || "browser-automation" : config.inputMode || null,
-          "foreground-required": config.foregroundRequired ? "yes" : "no",
-          "foreground-available": config.foregroundAvailable ? "yes" : "no",
-          observed: summary
-            ? `${summary.tests} tests; ${summary.failed} failed; ${summary.skipped} skipped; covered claims ${requiredClaims.length - missingClaims.length}/${requiredClaims.length}; observed annotations ${summary.claims.length}` +
-              (missingClaims.length ? `; missing ${missingClaims.join(",")}` : "") +
-              (summary.skippedClaims.length
-                ? `; claimed only by skipped tests ${summary.skippedClaims.join(",")}` : "")
-            : "Playwright JSON report unavailable",
-          criticalCases: critical.observations
-        }, { executed: true });
-      }
-      return { provider, status: aggregateStatus };
+  }
+
+  function playwrightOutputStatus(result, summary, missingClaims, critical, readinessMissed) {
+    const base = adapterInfrastructureFailed(result, readinessMissed) ? "error" :
+      result.status !== 0 || (summary?.failed || 0) > 0 ? "fail" :
+        !summary || missingClaims.length ? "inconclusive" : "pass";
+    return enforceCriticalCases(base, critical);
+  }
+
+  function playwrightObservation(summary, requiredClaims, missingClaims) {
+    if (!summary) return "Playwright JSON report unavailable";
+    return `${summary.tests} tests; ${summary.failed} failed; ${summary.skipped} skipped; ` +
+      `covered claims ${requiredClaims.length - missingClaims.length}/${requiredClaims.length}; ` +
+      `observed annotations ${summary.claims.length}` +
+      (missingClaims.length ? `; missing ${missingClaims.join(",")}` : "") +
+      (summary.skippedClaims.length
+        ? `; claimed only by skipped tests ${summary.skippedClaims.join(",")}` : "");
+  }
+
+  function recordPlaywrightAdapter(id, provider, config, execution, evidenceRow,
+    baseFlags, readinessMissed) {
+    const summary = evidenceRow.report
+      ? playwrightReportSummary(evidenceRow.report) : null;
+    playwrightAttachments(summary, execution.cwd, evidenceRow.artifacts);
+    const outputs = [...new Set([provider, ...(config.outputs || [])])]
+      .filter((output) => requiredProviders(id).includes(output));
+    let aggregateStatus = "pass";
+    for (const output of outputs) {
+      const requiredClaims = providerClaims(id, output, config);
+      const missingClaims = summary
+        ? requiredClaims.filter((claim) => !summary.claims.includes(claim))
+        : requiredClaims;
+      const status = playwrightOutputStatus(
+        execution.result, summary, missingClaims, evidenceRow.critical, readinessMissed);
+      aggregateStatus = worstStatus(aggregateStatus, status);
+      const outputCapability = providerCapability(output, providerConfig(id, output));
+      recordReceipt(id, output, status, {
+        ...baseFlags, claims: requiredClaims.join(","),
+        "input-mode": outputCapability === "browser"
+          ? config.inputMode || "browser-automation" : config.inputMode || null,
+        "foreground-required": config.foregroundRequired ? "yes" : "no",
+        "foreground-available": config.foregroundAvailable ? "yes" : "no",
+        observed: playwrightObservation(summary, requiredClaims, missingClaims),
+        criticalCases: evidenceRow.critical.observations
+      }, { executed: true });
     }
-  
+    return { provider, status: aggregateStatus };
+  }
+
+  function adapterMutationResults(provider, config, result, report) {
     const capability = providerCapability(provider, config);
-    const mutationV2 = capability === "mutation" &&
+    const v2 = capability === "mutation" &&
         config.resultProtocol === "foundation-mutation-v2"
       ? mutationV2Result(report || parseJsonOutput(result.stdout) || {},
-        config.requiredMutants || [], config.mutantKillers || {})
-      : null;
-    const mutationResult = capability === "mutation" &&
+        config.requiredMutants || [], config.mutantKillers || {}) : null;
+    const legacy = capability === "mutation" &&
         config.resultProtocol === "foundation-mutation-v1"
       ? mutationProtocolResult(result.stdout) : null;
-    const baseStatus = result.timedOut || result.error || readinessMissed ? "error" :
-      capability === "mutation" && config.resultProtocol === "foundation-mutation-v2"
-        ? mutationV2.status
-        : capability === "mutation" && config.resultProtocol === "foundation-mutation-v1"
-        ? ["behavioral-kill", "test-failure"].includes(mutationResult)
-          ? "pass"
-          : ["crash", "timeout", "not-applied"].includes(mutationResult)
-            ? "error" : "fail"
-        : result.status === 0 ? "pass" : "fail";
-    const status = enforceCriticalCases(baseStatus, critical);
+    return { capability, v2, legacy };
+  }
+
+  function genericAdapterStatus(config, result, mutation, readinessMissed) {
+    if (adapterInfrastructureFailed(result, readinessMissed)) return "error";
+    if (mutation.capability !== "mutation") return result.status === 0 ? "pass" : "fail";
+    if (config.resultProtocol === "foundation-mutation-v2") return mutation.v2.status;
+    if (config.resultProtocol !== "foundation-mutation-v1")
+      return result.status === 0 ? "pass" : "fail";
+    if (["behavioral-kill", "test-failure"].includes(mutation.legacy)) return "pass";
+    return ["crash", "timeout", "not-applied"].includes(mutation.legacy) ? "error" : "fail";
+  }
+
+  function genericAdapterObservation(baseFlags, mutation, critical) {
+    if (mutation.v2)
+      return `mutation v2 ${mutation.v2.observations.map((row) =>
+        `${row.id}=${row.result}/applied:${row.applied}/compiled:${row.compiled}/killedBy:${
+          row.killedBy || "none"}`).join(", ")}; ${baseFlags.observed}`;
+    if (mutation.legacy)
+      return `mutation result ${mutation.legacy}; ${baseFlags.observed}`;
+    return `${baseFlags.observed}; critical cases ${critical.observations.length
+      ? critical.observations.map((row) => `${row.id}=${row.status}`).join(", ")
+      : "not declared"}`;
+  }
+
+  function recordGenericAdapter(id, provider, config, execution, evidenceRow,
+    baseFlags, readinessMissed) {
+    const mutation = adapterMutationResults(
+      provider, config, execution.result, evidenceRow.report);
+    const baseStatus = genericAdapterStatus(
+      config, execution.result, mutation, readinessMissed);
+    const status = enforceCriticalCases(baseStatus, evidenceRow.critical);
     recordReceipt(id, provider, status, {
       ...baseFlags,
       "input-mode": config.inputMode || null,
       "foreground-required": config.foregroundRequired ? "yes" : "no",
       "foreground-available": config.foregroundAvailable ? "yes" : "no",
       classification: mutationReceiptClassification(
-        config.resultProtocol, mutationResult, config.classification),
-      observed: mutationV2
-        ? `mutation v2 ${mutationV2.observations.map((row) =>
-          `${row.id}=${row.result}/applied:${row.applied}/compiled:${row.compiled}/killedBy:${row.killedBy || "none"}`).join(", ")}; ${baseFlags.observed}`
-        : mutationResult
-        ? `mutation result ${mutationResult}; ${baseFlags.observed}`
-        : `${baseFlags.observed}; critical cases ${critical.observations.length
-          ? critical.observations.map((row) => `${row.id}=${row.status}`).join(", ")
-          : "not declared"}`
+        config.resultProtocol, mutation.legacy, config.classification),
+      observed: genericAdapterObservation(baseFlags, mutation, evidenceRow.critical)
     }, { executed: true });
     return { provider, status };
+  }
+
+  async function executeAdapter(id, provider, config, proofRunId, commandCache) {
+    if (config.adapter === "contract-digest")
+      return executeContractDigest(id, provider, config, proofRunId);
+    const execution = adapterExecutionContext(
+      id, provider, config, proofRunId, commandCache);
+    execution.result = await execution.cached.result;
+    execution.commandExecutionId = execution.cached.commandExecutionId;
+    assertReadRepositoriesUnchanged(provider, execution.repositoryManifest.rows);
+    const evidenceRow = adapterEvidence(id, provider, config, execution);
+    const baseFlags = adapterBaseFlags(
+      id, provider, config, proofRunId, execution, evidenceRow);
+  
+    // A provider that declares readiness is asserting the suite ran against
+    // something specific. Not observing it means the suite ran against
+    // whatever occupied the port — or against nothing — so it cannot pass,
+    // whichever adapter produced it.
+    const readinessMissed = Boolean(config.readiness?.url) &&
+      !execution.result.readinessObserved;
+
+    if (config.adapter === "test-discovery") {
+      return recordTestDiscoveryAdapter(
+        id, provider, config, execution, evidenceRow, baseFlags, readinessMissed);
+    }
+  
+    if (config.adapter === "playwright") {
+      return recordPlaywrightAdapter(
+        id, provider, config, execution, evidenceRow, baseFlags, readinessMissed);
+    }
+  
+    return recordGenericAdapter(
+      id, provider, config, execution, evidenceRow, baseFlags, readinessMissed);
   }
 
   return {
