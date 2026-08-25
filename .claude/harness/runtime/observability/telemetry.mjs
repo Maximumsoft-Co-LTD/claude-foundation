@@ -37,69 +37,103 @@ export function runtimeSessionId(env = process.env) {
   return String(env.FOUNDATION_SESSION_ID || env.CODEX_THREAD_ID || "").trim() || null;
 }
 
+function firstTruthy(...values) {
+  const value = values.find(Boolean);
+  return value === undefined ? null : value;
+}
+
+function firstPresent(...values) {
+  const value = values.find((candidate) => candidate !== null && candidate !== undefined);
+  return value === undefined ? null : value;
+}
+
+function telemetryUsage(format, row, message, attributes) {
+  if (format === "claude") return message.usage;
+  if (format === "otel") return {
+    input_tokens: firstPresent(
+      attributes["gen_ai.usage.input_tokens"], attributes["llm.usage.input_tokens"]),
+    output_tokens: firstPresent(
+      attributes["gen_ai.usage.output_tokens"], attributes["llm.usage.output_tokens"]),
+    cache_tokens: attributes["gen_ai.usage.cache_read_tokens"]
+  };
+  return firstTruthy(row.usage, row.token_usage, {});
+}
+
+function telemetryRequestId(format, row, message) {
+  if (format === "claude")
+    return firstTruthy(row.requestId, row.request_id, message.id, row.uuid);
+  if (format === "otel")
+    return firstTruthy(row.requestId, row.traceId, row.trace_id, row.spanId, row.span_id);
+  return firstTruthy(row.requestId, row.request_id, row.id, row.uuid);
+}
+
+function telemetryCacheReadTokens(format, row, usage) {
+  return measuredNumber(firstPresent(
+    row.cacheReadTokens,
+    usage.cache_read_input_tokens,
+    usage.cache_tokens,
+    format === "claude" ? null : row.cacheTokens
+  ));
+}
+
+function sourcePathDigest(path) {
+  if (!path) return null;
+  return createHash("sha256").update(path).digest("hex");
+}
+
 export function normalizeTelemetryRow(id, row, format, context = {}, timestamp = null) {
   const message = row.message && typeof row.message === "object" ? row.message : {};
   const attributes = row.attributes && typeof row.attributes === "object" ? row.attributes : {};
   if (format === "claude" &&
       (row.type !== "assistant" || !message.usage || message.role !== "assistant"))
     return null;
-  const usage = format === "claude"
-    ? message.usage
-    : format === "otel" ? {
-      input_tokens: attributes["gen_ai.usage.input_tokens"] ?? attributes["llm.usage.input_tokens"],
-      output_tokens: attributes["gen_ai.usage.output_tokens"] ?? attributes["llm.usage.output_tokens"],
-      cache_tokens: attributes["gen_ai.usage.cache_read_tokens"]
-    } : (row.usage || row.token_usage || {});
-  const requestId = format === "claude"
-    ? (row.requestId || row.request_id || message.id || row.uuid)
-    : format === "otel" ? (row.requestId || row.traceId || row.trace_id || row.spanId || row.span_id)
-    : (row.requestId || row.request_id || row.id || row.uuid);
+  const usage = telemetryUsage(format, row, message, attributes);
+  const requestId = telemetryRequestId(format, row, message);
   if (!requestId) return null;
-  const cacheCreationTokens = measuredNumber(row.cacheCreationTokens ??
-    usage.cache_creation_input_tokens ?? null);
-  const cacheReadTokens = measuredNumber(row.cacheReadTokens ??
-    usage.cache_read_input_tokens ?? usage.cache_tokens ??
-    (format === "claude" ? null : row.cacheTokens) ?? null);
+  const cacheCreationTokens = measuredNumber(firstPresent(
+    row.cacheCreationTokens, usage.cache_creation_input_tokens));
+  const cacheReadTokens = telemetryCacheReadTokens(format, row, usage);
   const explicitCacheTokens = measuredNumber(row.cacheTokens);
   const cacheTokens = explicitCacheTokens ?? nullableSum(cacheCreationTokens, cacheReadTokens);
   const snapshot = context.snapshot || {};
   return {
     version: 2,
-    runId: row.runId || row.run_id || context.sessionId || id,
-    operationId: row.operationId || row.operation_id || row.phase ||
-      context.operationId || "unknown",
-    agentId: row.agentId || row.agent_id || row.agent ||
-      context.agentId || (format === "claude" ? "orchestrator" : null),
-    modelId: row.modelId || row.model_id || row.model || message.model ||
-      attributes["gen_ai.request.model"] || attributes["llm.request.model"] || null,
+    runId: firstTruthy(row.runId, row.run_id, context.sessionId, id),
+    operationId: firstTruthy(
+      row.operationId, row.operation_id, row.phase, context.operationId, "unknown"),
+    agentId: firstTruthy(
+      row.agentId, row.agent_id, row.agent, context.agentId,
+      format === "claude" ? "orchestrator" : null),
+    modelId: firstTruthy(
+      row.modelId, row.model_id, row.model, message.model,
+      attributes["gen_ai.request.model"], attributes["llm.request.model"]),
     requestId,
-    messageId: message.id || row.messageId || null,
-    sessionId: row.sessionId || row.session_id || context.sessionId || null,
-    parentRequestId: row.parentRequestId || row.parent_request_id || null,
-    timestamp: row.timestamp || row.created_at || timestamp || new Date().toISOString(),
+    messageId: firstTruthy(message.id, row.messageId),
+    sessionId: firstTruthy(row.sessionId, row.session_id, context.sessionId),
+    parentRequestId: firstTruthy(row.parentRequestId, row.parent_request_id),
+    timestamp: firstTruthy(row.timestamp, row.created_at, timestamp, new Date().toISOString()),
     inputTokens: measuredNumber(
-      row.inputTokens ?? usage.inputTokens ?? usage.input_tokens ?? usage.input ?? null),
+      firstPresent(row.inputTokens, usage.inputTokens, usage.input_tokens, usage.input)),
     outputTokens: measuredNumber(
-      row.outputTokens ?? usage.outputTokens ?? usage.output_tokens ?? usage.output ?? null),
+      firstPresent(row.outputTokens, usage.outputTokens, usage.output_tokens, usage.output)),
     cacheCreationTokens,
     cacheReadTokens,
     cacheTokens,
-    cost: measuredNumber(row.cost ?? row.cost_usd ?? usage.cost_usd ?? null),
-    durationMs: measuredNumber(row.durationMs ?? row.duration_ms ?? null),
-    tool: row.tool || null,
-    repositoryId: row.repositoryId || row.repository_id || row.repository || null,
-    taskId: row.taskId || row.task_id || row.task || null,
-    workspaceHash: row.workspaceHash || snapshot.workspaceHash || null,
-    workspaceSnapshotId: row.workspaceSnapshotId || snapshot.id || null,
+    cost: measuredNumber(firstPresent(row.cost, row.cost_usd, usage.cost_usd)),
+    durationMs: measuredNumber(firstPresent(row.durationMs, row.duration_ms)),
+    tool: firstTruthy(row.tool),
+    repositoryId: firstTruthy(row.repositoryId, row.repository_id, row.repository),
+    taskId: firstTruthy(row.taskId, row.task_id, row.task),
+    workspaceHash: firstTruthy(row.workspaceHash, snapshot.workspaceHash),
+    workspaceSnapshotId: firstTruthy(row.workspaceSnapshotId, snapshot.id),
     changeId: id,
     source: format === "claude" ? "claude-transcript" : format,
-    instructionManifestDigest: row.instructionManifestDigest || null,
-    attempt: row.attempt ?? null,
-    attemptStatus: row.attemptStatus || null,
-    fallbackReason: row.fallbackReason || null,
-    failureClass: row.failureClass || null,
-    sourcePathHash: context.sourcePath
-      ? createHash("sha256").update(context.sourcePath).digest("hex") : null
+    instructionManifestDigest: firstTruthy(row.instructionManifestDigest),
+    attempt: firstPresent(row.attempt),
+    attemptStatus: firstTruthy(row.attemptStatus),
+    fallbackReason: firstTruthy(row.fallbackReason),
+    failureClass: firstTruthy(row.failureClass),
+    sourcePathHash: sourcePathDigest(context.sourcePath)
   };
 }
 

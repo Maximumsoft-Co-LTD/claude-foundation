@@ -162,6 +162,76 @@ test("telemetry normalization keeps junk unknown and normalizes numeric strings"
   ]) assert.equal(negative[field], null, `${field} must reject negative quantities`);
 });
 
+test("telemetry normalization preserves every supported host format and fallback", () => {
+  assert.equal(normalizeTelemetryRow("change", {
+    type: "user", message: { role: "user", usage: {} }
+  }, "claude"), null, "non-assistant Claude rows are not token events");
+  assert.equal(normalizeTelemetryRow("change", {}, "generic"), null,
+    "rows without a durable request identity are ignored");
+
+  const claude = normalizeTelemetryRow("change", {
+    type: "assistant",
+    message: {
+      role: "assistant", id: "message-request", model: "claude-model",
+      usage: {
+        input_tokens: 7, output_tokens: 3,
+        cache_creation_input_tokens: 2, cache_read_input_tokens: 1
+      }
+    },
+    uuid: "row-uuid"
+  }, "claude", { sourcePath: "/tmp/transcript.jsonl" },
+  "2026-08-12T00:00:00.000Z");
+  assert.deepEqual({
+    requestId: claude.requestId, agentId: claude.agentId, modelId: claude.modelId,
+    inputTokens: claude.inputTokens, outputTokens: claude.outputTokens,
+    cacheTokens: claude.cacheTokens, source: claude.source
+  }, {
+    requestId: "message-request", agentId: "orchestrator", modelId: "claude-model",
+    inputTokens: 7, outputTokens: 3, cacheTokens: 3, source: "claude-transcript"
+  });
+  assert.match(claude.sourcePathHash, /^[a-f0-9]{64}$/);
+
+  const otel = normalizeTelemetryRow("change", {
+    trace_id: "trace-request",
+    attributes: {
+      "llm.usage.input_tokens": 11,
+      "llm.usage.output_tokens": 5,
+      "gen_ai.usage.cache_read_tokens": 4,
+      "llm.request.model": "otel-model"
+    }
+  }, "otel", { sessionId: "session", operationId: "operation", agentId: "agent" });
+  assert.deepEqual({
+    requestId: otel.requestId, inputTokens: otel.inputTokens,
+    outputTokens: otel.outputTokens, cacheReadTokens: otel.cacheReadTokens,
+    modelId: otel.modelId
+  }, {
+    requestId: "trace-request", inputTokens: 11, outputTokens: 5,
+    cacheReadTokens: 4, modelId: "otel-model"
+  });
+
+  const generic = normalizeTelemetryRow("change", {
+    run_id: "run", operation_id: "operation", agent_id: "agent",
+    model_id: "model", request_id: "request", session_id: "session",
+    parent_request_id: "parent", created_at: "2026-08-12T00:00:00.000Z",
+    token_usage: { input: 13, output: 8, cost_usd: 0.5 },
+    cacheTokens: 0, duration_ms: 21, repository_id: "repo", task_id: "task",
+    attempt: 0
+  }, "generic", { snapshot: { workspaceHash: "workspace", id: "snapshot" } });
+  assert.deepEqual({
+    runId: generic.runId, operationId: generic.operationId, agentId: generic.agentId,
+    inputTokens: generic.inputTokens, outputTokens: generic.outputTokens,
+    cacheTokens: generic.cacheTokens, cost: generic.cost, durationMs: generic.durationMs,
+    repositoryId: generic.repositoryId, taskId: generic.taskId,
+    workspaceHash: generic.workspaceHash, workspaceSnapshotId: generic.workspaceSnapshotId,
+    attempt: generic.attempt
+  }, {
+    runId: "run", operationId: "operation", agentId: "agent",
+    inputTokens: 13, outputTokens: 8, cacheTokens: 0, cost: 0.5, durationMs: 21,
+    repositoryId: "repo", taskId: "task", workspaceHash: "workspace",
+    workspaceSnapshotId: "snapshot", attempt: 0
+  });
+});
+
 test("budget accounting ignores junk usage instead of inventing spend", () => {
   const runtime = createBudgetRuntime({ policy, now: () => "2026-08-12T00:00:00.000Z" });
   assert.equal(runtime.eventTokenCount({
