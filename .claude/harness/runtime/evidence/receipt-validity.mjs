@@ -50,14 +50,14 @@ export function createReceiptValidity({
   providerInputIdentity, validateArtifact, relevantHash, relevantSnapshot,
   changeDiffIdentity
 }) {
-  function receiptValidity(id, provider, hash = relevantHash(id)) {
-    const path = receiptPath(id, provider);
-    if (!existsSync(path)) return { provider, validity: "missing" };
-    const value = readJson(path);
+  const invalidReceipt = (provider, validity, value) =>
+    ({ provider, validity, status: value.status });
+
+  function protocolValidity(id, provider, value) {
     if (String(value.providerProtocolVersion || "") !== providerProtocolVersion)
-      return { provider, validity: "provider-version-stale", status: value.status };
+      return invalidReceipt(provider, "provider-version-stale", value);
     if (receiptPrototypeEvidence(id, provider, value))
-      return { provider, validity: "prototype-evidence", status: value.status };
+      return invalidReceipt(provider, "prototype-evidence", value);
     const expectedContractFingerprint = contractFingerprint(id);
     if (value.contractFingerprint !== expectedContractFingerprint)
       return {
@@ -69,11 +69,20 @@ export function createReceiptValidity({
           reusable: false
         }
       };
+    return null;
+  }
+
+  function receiptContext(id, provider, hash, value) {
     const config = providerConfig(id, provider);
     const capability = providerCapability(provider, config);
     const expectedWorkspaceHash = providerWorkspaceHash(id, provider, hash);
     const expectedInputs = providerInputIdentity(
       id, provider, config, expectedWorkspaceHash);
+    return { id, provider, hash, value, config, capability, expectedWorkspaceHash, expectedInputs };
+  }
+
+  function workspaceReuse(context) {
+    const { id, provider, value, capability, expectedWorkspaceHash, expectedInputs } = context;
     let reusableInputs = false;
     let reusableDiff = false;
     // A durable diff rebind pins the exact workspace content it sanctioned,
@@ -101,98 +110,117 @@ export function createReceiptValidity({
           value.rebind.packetReviewHash &&
           value.rebind.packetReviewHash === relevantSnapshot(id)?.packetReviewHash)
         reusableDiff = true;
-      else return {
-        provider, validity: "stale", status: value.status,
-        invalidation: {
-          reason: "workspace-content-changed",
-          fromWorkspaceHash: value.workspaceHash || null,
-          toWorkspaceHash: expectedWorkspaceHash,
-          inputMode: expectedInputs.mode,
-          reusable: false
-        }
-      };
+      else return { result: {
+          provider, validity: "stale", status: value.status,
+          invalidation: {
+            reason: "workspace-content-changed",
+            fromWorkspaceHash: value.workspaceHash || null,
+            toWorkspaceHash: expectedWorkspaceHash,
+            inputMode: expectedInputs.mode,
+            reusable: false
+          }
+        } };
     }
-    if (capability === "review") {
-      if (String(value.reviewProtocolVersion || "") !== reviewProtocolVersion)
-        return { provider, validity: "review-version-stale", status: value.status };
-      const infrastructureError = value.status === "error";
-      const provenance = reviewProvenanceResult(value.review, {
-        allowMissingAiSession: infrastructureError
-      });
-      if (!provenance.complete ||
-          (!infrastructureError && !provenance.independent &&
-            reviewPolicy(id).independence !== "self"))
-        return { provider, validity: "review-not-independent", status: value.status };
-      const attemptDigest = String(value.review?.attemptDigest || "");
-      const attemptDir = join(evidenceVault, id, "review-attempts");
-      const attemptPath = attemptDigest && existsSync(attemptDir)
-        ? readdirSync(attemptDir).find((name) => name.includes(attemptDigest.slice(0, 12))) : null;
-      if (!attemptPath)
-        return { provider, validity: "review-attempt-history-missing", status: value.status };
-      const attempt = reviewAttemptByDigest(id, attemptDigest);
-      if (!reviewAttemptIsValid(value, attempt))
-        return { provider, validity: "review-attempt-history-invalid", status: value.status };
-      const repairClosure = value.review?.repairClosure;
-      if (repairClosure) {
-        const bindings = repairClosure.evidenceBindings;
-        const bindingValid = Array.isArray(bindings) && bindings.length > 0 &&
-          bindings.every((binding) => {
-            const boundProvider = String(binding?.provider || "");
-            const boundConfig = providerConfig(id, boundProvider);
-            const boundCapability = providerCapability(boundProvider, boundConfig);
-            const path = receiptPath(id, boundProvider);
-            if (!boundProvider || ["review", "acceptance"].includes(boundCapability) ||
-                !existsSync(path) ||
-                !(boundConfig?.criticalCases || []).includes(binding.caseId) ||
-                !claimsForProvider(id, boundProvider).some((claim) =>
-                  claim.id === binding.claimId)) return false;
-            const bound = readJson(path, {});
-            const expectedHash = providerWorkspaceHash(id, boundProvider, hash);
-            const expectedInputs = providerInputIdentity(
-              id, boundProvider, boundConfig, expectedHash);
-            return stableHash(bound) === binding.receiptDigest &&
-              bound.status === "pass" &&
-              bound.workspaceHash === expectedHash &&
-              bound.contractFingerprint === contractFingerprint(id) &&
-              String(bound.providerProtocolVersion || "") === providerProtocolVersion &&
-              String(bound.adapterProtocolVersion || "") === adapterProtocolVersion &&
-              bound.providerFingerprint === adapterFingerprint(id, boundProvider, boundConfig) &&
-              bound.inputIdentity?.fingerprint === expectedInputs.fingerprint &&
-              Array.isArray(bound.claims) && bound.claims.includes(binding.claimId) &&
-              (bound.artifacts || []).every((artifact) =>
-                artifact.required === false || validateArtifact(artifact)) &&
-              (bound.execution !== "harness" || (bound.artifacts || [])
-                .some((artifact) => artifact.type === "command-log"));
-          });
-        if (!bindingValid)
-          return { provider, validity: "review-repair-evidence-stale", status: value.status };
-      }
-      if (value.status === "pass" &&
-          reviewPolicy(id).diversity === "required" && !provenance.diverse)
-        return { provider, validity: "review-not-diverse", status: value.status };
-      if (value.status === "pass" &&
-          Number(value.review?.findings?.unresolvedBlockers || 0) > 0)
-        return { provider, validity: "review-blockers", status: value.status };
-    }
-    if (capability === "acceptance") {
-      if (String(value.acceptanceProtocolVersion || "") !== acceptanceProtocolVersion)
-        return { provider, validity: "acceptance-version-stale", status: value.status };
-      const currentAcceptance = resolvedAcceptance(id);
-      const criteria = value.acceptance?.criteria;
-      const actualClaims = Array.isArray(value.claims) ? [...value.claims].sort() : [];
-      const expectedClaims = claimsForProvider(id, provider).map((claim) => claim.id).sort();
-      if (value.acceptance?.actor?.type !== "human" ||
-          !String(value.acceptance?.actor?.identity || "").trim() ||
-          value.acceptance?.decision !== "accept" ||
-          !Array.isArray(criteria) || criteria.length === 0 ||
-          criteria.some((criterion) => !String(criterion).trim()) ||
-          new Set(criteria.map((criterion) => String(criterion).trim())).size !== criteria.length ||
-          stableHash(actualClaims) !== stableHash(expectedClaims) ||
-          value.acceptance?.subjectWorkspaceHash !== value.workspaceHash ||
-          value.acceptance?.reason !== currentAcceptance.reason)
-        return { provider, validity: "acceptance-invalid", status: value.status };
-    }
-    const expectedFingerprint = config
+    return { reusableInputs, reusableDiff, reboundCurrent };
+  }
+
+  function repairBindingContext(id, binding) {
+    const boundProvider = String(binding?.provider || "");
+    const boundConfig = providerConfig(id, boundProvider);
+    const boundCapability = providerCapability(boundProvider, boundConfig);
+    const path = receiptPath(id, boundProvider);
+    if (!boundProvider || ["review", "acceptance"].includes(boundCapability) ||
+        !existsSync(path) ||
+        !(boundConfig?.criticalCases || []).includes(binding.caseId) ||
+        !claimsForProvider(id, boundProvider).some((claim) =>
+          claim.id === binding.claimId)) return null;
+    return { boundProvider, boundConfig, bound: readJson(path, {}) };
+  }
+
+  function boundReceiptValid(id, binding, hash, context) {
+    const { boundProvider, boundConfig, bound } = context;
+    const expectedHash = providerWorkspaceHash(id, boundProvider, hash);
+    const expectedInputs = providerInputIdentity(
+      id, boundProvider, boundConfig, expectedHash);
+    return stableHash(bound) === binding.receiptDigest &&
+      bound.status === "pass" &&
+      bound.workspaceHash === expectedHash &&
+      bound.contractFingerprint === contractFingerprint(id) &&
+      String(bound.providerProtocolVersion || "") === providerProtocolVersion &&
+      String(bound.adapterProtocolVersion || "") === adapterProtocolVersion &&
+      bound.providerFingerprint === adapterFingerprint(id, boundProvider, boundConfig) &&
+      bound.inputIdentity?.fingerprint === expectedInputs.fingerprint &&
+      Array.isArray(bound.claims) && bound.claims.includes(binding.claimId) &&
+      (bound.artifacts || []).every((artifact) =>
+        artifact.required === false || validateArtifact(artifact)) &&
+      (bound.execution !== "harness" || (bound.artifacts || [])
+        .some((artifact) => artifact.type === "command-log"));
+  }
+
+  function repairBindingValid(id, binding, hash) {
+    const context = repairBindingContext(id, binding);
+    return Boolean(context) && boundReceiptValid(id, binding, hash, context);
+  }
+
+  function reviewValidity(context) {
+    const { id, provider, value, hash, capability } = context;
+    if (capability !== "review") return null;
+    if (String(value.reviewProtocolVersion || "") !== reviewProtocolVersion)
+      return invalidReceipt(provider, "review-version-stale", value);
+    const infrastructureError = value.status === "error";
+    const provenance = reviewProvenanceResult(value.review, {
+      allowMissingAiSession: infrastructureError
+    });
+    if (!provenance.complete ||
+        (!infrastructureError && !provenance.independent &&
+          reviewPolicy(id).independence !== "self"))
+      return invalidReceipt(provider, "review-not-independent", value);
+    const attemptDigest = String(value.review?.attemptDigest || "");
+    const attemptDir = join(evidenceVault, id, "review-attempts");
+    const attemptPath = attemptDigest && existsSync(attemptDir)
+      ? readdirSync(attemptDir).find((name) => name.includes(attemptDigest.slice(0, 12))) : null;
+    if (!attemptPath)
+      return invalidReceipt(provider, "review-attempt-history-missing", value);
+    if (!reviewAttemptIsValid(value, reviewAttemptByDigest(id, attemptDigest)))
+      return invalidReceipt(provider, "review-attempt-history-invalid", value);
+    const bindings = value.review?.repairClosure?.evidenceBindings;
+    if (value.review?.repairClosure && !(Array.isArray(bindings) && bindings.length > 0 &&
+        bindings.every((binding) => repairBindingValid(id, binding, hash))))
+      return invalidReceipt(provider, "review-repair-evidence-stale", value);
+    if (value.status === "pass" &&
+        reviewPolicy(id).diversity === "required" && !provenance.diverse)
+      return invalidReceipt(provider, "review-not-diverse", value);
+    if (value.status === "pass" &&
+        Number(value.review?.findings?.unresolvedBlockers || 0) > 0)
+      return invalidReceipt(provider, "review-blockers", value);
+    return null;
+  }
+
+  function acceptanceValidity(context) {
+    const { id, provider, value, capability } = context;
+    if (capability !== "acceptance") return null;
+    if (String(value.acceptanceProtocolVersion || "") !== acceptanceProtocolVersion)
+      return invalidReceipt(provider, "acceptance-version-stale", value);
+    const currentAcceptance = resolvedAcceptance(id);
+    const criteria = value.acceptance?.criteria;
+    const actualClaims = Array.isArray(value.claims) ? [...value.claims].sort() : [];
+    const expectedClaims = claimsForProvider(id, provider).map((claim) => claim.id).sort();
+    if (value.acceptance?.actor?.type !== "human" ||
+        !String(value.acceptance?.actor?.identity || "").trim() ||
+        value.acceptance?.decision !== "accept" ||
+        !Array.isArray(criteria) || criteria.length === 0 ||
+        criteria.some((criterion) => !String(criterion).trim()) ||
+        new Set(criteria.map((criterion) => String(criterion).trim())).size !== criteria.length ||
+        stableHash(actualClaims) !== stableHash(expectedClaims) ||
+        value.acceptance?.subjectWorkspaceHash !== value.workspaceHash ||
+        value.acceptance?.reason !== currentAcceptance.reason)
+      return invalidReceipt(provider, "acceptance-invalid", value);
+    return null;
+  }
+
+  function expectedProviderFingerprint(context) {
+    const { id, provider, value, config } = context;
+    return config
       ? adapterFingerprint(id, provider, config)
       : stableHash({
         adapterProtocolVersion: value.adapterProtocolVersion || adapterProtocolVersion,
@@ -206,6 +234,11 @@ export function createReceiptValidity({
         inputMode: value.capability?.inputMode || null,
         project: value.project || null
       });
+  }
+
+  function identityValidity(context, reuse) {
+    const { provider, value, expectedInputs } = context;
+    const expectedFingerprint = expectedProviderFingerprint(context);
     if (value.providerFingerprint !== expectedFingerprint)
       return {
         provider, validity: "provider-fingerprint-stale", status: value.status,
@@ -219,7 +252,7 @@ export function createReceiptValidity({
     // A diff-rebindable receipt's global input fingerprint derives from the
     // very workspace hash the rebind refreshes; judging it here would expire
     // exactly the receipt the branch above just found reusable or rebound.
-    if (!reusableDiff && !reboundCurrent &&
+    if (!reuse.reusableDiff && !reuse.reboundCurrent &&
         value.inputIdentity?.fingerprint !== expectedInputs.fingerprint)
       return {
         provider, validity: "provider-inputs-stale", status: value.status,
@@ -231,6 +264,11 @@ export function createReceiptValidity({
           reusable: false
         }
       };
+    return null;
+  }
+
+  function completionValidity(context) {
+    const { id, provider, value } = context;
     if (value.status !== "pass") return { provider, validity: value.status };
     const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
     const covered = new Set(value.claims || []);
@@ -240,24 +278,29 @@ export function createReceiptValidity({
       artifact.required !== false && !validateArtifact(artifact));
     if (invalidArtifacts.length)
       return { provider, validity: "invalid-artifacts", status: value.status };
-    if (value.status === "pass" && value.execution === "harness") {
+    if (value.execution === "harness") {
       if (!(value.artifacts || []).some((artifact) => artifact.type === "command-log"))
-        return { provider, validity: "execution-log-missing", status: value.status };
-    } else if (value.status === "pass") {
+        return invalidReceipt(provider, "execution-log-missing", value);
+    } else {
       if (!String(value.observed || "").trim())
-        return { provider, validity: "external-observation-missing", status: value.status };
+        return invalidReceipt(provider, "external-observation-missing", value);
       if (!String(value.provenance?.source || "").trim())
-        return { provider, validity: "external-provenance-missing", status: value.status };
+        return invalidReceipt(provider, "external-provenance-missing", value);
       if ((value.artifacts || []).length === 0 && (value.references || []).length === 0)
-        return { provider, validity: "external-evidence-missing", status: value.status };
+        return invalidReceipt(provider, "external-evidence-missing", value);
     }
+    return null;
+  }
+
+  function reusableValidity(context, reuse) {
+    const { provider, value, expectedWorkspaceHash, expectedInputs } = context;
     // This is intentionally transitional rather than "valid": proof execute
     // and proof advance first rebind the unchanged declared inputs to the new
     // workspace hash, then recompute validity before finalize. Treating it as
     // valid here would let Land accept the old receipt without that durable,
     // content-bound rebind. `reusable-diff` is the review/acceptance twin of
     // the same contract.
-    if (reusableDiff) return {
+    if (reuse.reusableDiff) return {
       provider, validity: "reusable-diff", status: value.status,
       receipt: value, expectedWorkspaceHash, expectedInputs,
       reuse: {
@@ -267,7 +310,7 @@ export function createReceiptValidity({
         diffIdentity: value.rebind.diffIdentity
       }
     };
-    return reusableInputs
+    return reuse.reusableInputs
       ? {
         provider, validity: "reusable-inputs", status: value.status,
         receipt: value, expectedWorkspaceHash, expectedInputs,
@@ -279,6 +322,24 @@ export function createReceiptValidity({
         }
       }
       : { provider, validity: "valid", receipt: value };
+  }
+
+  function receiptValidity(id, provider, hash = relevantHash(id)) {
+    const path = receiptPath(id, provider);
+    if (!existsSync(path)) return { provider, validity: "missing" };
+    const value = readJson(path);
+    const protocol = protocolValidity(id, provider, value);
+    if (protocol) return protocol;
+    const context = receiptContext(id, provider, hash, value);
+    const reuse = workspaceReuse(context);
+    if (reuse.result) return reuse.result;
+    const semantic = reviewValidity(context) || acceptanceValidity(context);
+    if (semantic) return semantic;
+    const identity = identityValidity(context, reuse);
+    if (identity) return identity;
+    const completion = completionValidity(context);
+    if (completion) return completion;
+    return reusableValidity(context, reuse);
   }
 
   return { receiptValidity };
