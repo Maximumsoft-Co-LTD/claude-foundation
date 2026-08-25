@@ -229,7 +229,28 @@ try {
     fail
   });
 
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-a", {})),
+    /requires --request/);
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-a", {
+    request: "missing"
+  })), /requires --subject-actor/);
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-a", {
+    request: "missing", "subject-actor": "agent", "subject-session": "session"
+  })), /AI implementation provenance requires/);
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-a", {
+    request: "missing", "subject-actor": "human"
+  })), /unknown authority request/);
+
   const requestedOnly = quiet(() => authority.requestAuthority("change-a", { type: "review" }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-a", {
+    request: requestedOnly.requestId, "subject-actor": "human", reviewer: "main-session"
+  })), /without a recorded configured reviewer failure/);
+  const savedReviewSettings = reviewSettings;
+  reviewSettings = {};
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-a", {
+    request: requestedOnly.requestId, "subject-actor": "human"
+  })), /infrastructure retries are exhausted/);
+  reviewSettings = savedReviewSettings;
   assert.equal(state.reviewHistory?.totalAttempts || 0, 0,
     "requesting review must not consume an attempt");
   quiet(() => authority.abortAuthority("change-a", {
@@ -427,6 +448,28 @@ try {
   assert.equal(recoveredAuthority.orphanedControllers[0].result,
     "infrastructure-error");
 
+  state = { version: 2, changeId: "change-indeterminate", reviewHistory: null };
+  const indeterminateRequest = quiet(() => authority.requestAuthority(
+    "change-indeterminate", { type: "review" }));
+  quiet(() => authority.dispatchAuthority("change-indeterminate", {
+    request: indeterminateRequest.requestId, scope: "full",
+    "reviewer-type": "ai", "reviewer-identity": "codex-sol",
+    "reviewer-provider-family": "openai", "reviewer-model-family": "gpt-5.6",
+    "reviewer-model": "gpt-5.6-sol", "reviewer-session-deferred": true
+  }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-indeterminate", { request: indeterminateRequest.requestId,
+      "subject-actor": "human" })), /is indeterminate/);
+  const indeterminateEntry = authorityStore.list("change-indeterminate")
+    .find((row) => row.value.requestId === indeterminateRequest.requestId);
+  authorityStore.replace(indeterminateEntry, {
+    ...indeterminateEntry.value,
+    configuredController: { pid: process.pid, reviewer: "codex-sol" }
+  });
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-indeterminate", { request: indeterminateRequest.requestId,
+      "subject-actor": "human" })), /is still running/);
+
   state = { version: 2, changeId: "change-named-fallback", reviewHistory: null };
   reviewSettings = {
     defaultReviewer: "claude-opus", fallbackReviewers: ["codex-sol"],
@@ -611,6 +654,69 @@ try {
   assert.equal(configuredReviewCalls, callsBeforeResume,
     "provenance recovery must not rerun the failed configured reviewer");
 
+  state = { version: 2, changeId: "change-fallback-delta", reviewHistory: null };
+  configuredReviewResults = { "codex-sol": {
+    status: "fail", summary: "first review finding", findings: [{
+      id: "F-FALLBACK", severity: "major", path: "app.txt", message: "fix"
+    }], verifiedFindingIds: [], reportReference: "first-fallback.json",
+    reviewer: { sessionId: "fallback-first-session" }
+  } };
+  const fallbackFirstRequest = quiet(() => authority.requestAuthority(
+    "change-fallback-delta", { type: "review" }));
+  quiet(() => authority.runAuthorityReviewer("change-fallback-delta", {
+    request: fallbackFirstRequest.requestId, "subject-actor": "human"
+  }));
+  configuredReviewResults = { "codex-sol": {
+    status: "error", summary: "reviewer unavailable", findings: [],
+    verifiedFindingIds: [], reportReference: "fallback-error.json",
+    reviewer: { sessionId: null }
+  } };
+  for (const key of hostProvenanceKeys) delete process.env[key];
+  const fallbackDeltaRequest = quiet(() => authority.requestAuthority(
+    "change-fallback-delta", { type: "review" }));
+  const fallbackDeltaBlocked = quiet(() => authority.runAuthorityReviewer(
+    "change-fallback-delta", { request: fallbackDeltaRequest.requestId,
+      "subject-actor": "human" }));
+  assert.equal(fallbackDeltaBlocked.status, "main-session-provenance-unavailable");
+  process.env.CODEX_THREAD_ID = "fallback-delta-main";
+  const fallbackDeltaEvents = join(fixture, ".foundation", "logs",
+    "change-fallback-delta", "events.jsonl");
+  mkdirSync(dirname(fallbackDeltaEvents), { recursive: true });
+  writeFileSync(fallbackDeltaEvents, `${JSON.stringify({
+    sessionId: "fallback-delta-main", agentId: "fallback-main",
+    modelId: "gpt-5.6-sol", source: "codex"
+  })}\n`);
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-fallback-delta", { request: fallbackDeltaRequest.requestId,
+      "subject-actor": "human" })), /claimRows\.map/);
+  restoreHostProvenance();
+
+  state = { version: 2, changeId: "change-fallback-defaults", reviewHistory: null };
+  const fallbackDefaultsRequest = quiet(() => authority.requestAuthority(
+    "change-fallback-defaults", { type: "review" }));
+  const fallbackDefaultsEntry = authorityStore.list("change-fallback-defaults")
+    .find((row) => row.value.requestId === fallbackDefaultsRequest.requestId);
+  authorityStore.replace(fallbackDefaultsEntry, {
+    ...fallbackDefaultsEntry.value,
+    fallbackAttempts: [],
+    mainSessionFallback: {
+      status: "provenance-unavailable", scope: "full", subject: {},
+      missingProvenance: ["identity"]
+    }
+  });
+  process.env.CODEX_THREAD_ID = "fallback-default-session";
+  const fallbackDefaults = quiet(() => authority.runAuthorityReviewer(
+    "change-fallback-defaults", {
+      request: fallbackDefaultsRequest.requestId, "subject-actor": "human",
+      "main-session-identity": "fallback-default-reviewer",
+      "main-session-provider-family": "openai",
+      "main-session-model-family": "gpt-5.6",
+      "main-session-model": "gpt-5.6-sol"
+    }));
+  restoreHostProvenance();
+  assert.equal(fallbackDefaults.status, "needs-main-session-review");
+  assert.equal(fallbackDefaults.failedReviewer, "codex-sol");
+
   state = { version: 2, changeId: "change-verdict", reviewHistory: null };
   configuredReviewResults = {
     "codex-sol": {
@@ -679,6 +785,98 @@ try {
   assert(lastConfiguredReviewArgs.forbiddenSessionIds.includes(
     "codex-coding-session"),
   "authority must pass the implementation session to the reviewer adapter as forbidden");
+
+  reviewSettings = {
+    defaultReviewer: "codex-sol", independence: "self", diversity: "single-model"
+  };
+  state = { version: 2, changeId: "change-no-session", reviewHistory: null };
+  configuredReviewSession = "";
+  const noSessionRequest = quiet(() => authority.requestAuthority(
+    "change-no-session", { type: "review" }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-no-session", { request: noSessionRequest.requestId,
+      "subject-actor": "human" })), /did not emit an actual session ID/);
+
+  state = { version: 2, changeId: "change-invalid-findings", reviewHistory: null };
+  configuredReviewResults = { "codex-sol": {
+    status: "fail", summary: "invalid findings", findings: [
+      { id: "DUP", severity: "major", path: "app.txt" },
+      { id: "DUP", severity: "major", path: "app.txt" }
+    ], verifiedFindingIds: [], reportReference: "invalid.json",
+    reviewer: { sessionId: "invalid-review-session" }
+  } };
+  const invalidFindingRequest = quiet(() => authority.requestAuthority(
+    "change-invalid-findings", { type: "review" }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-invalid-findings", { request: invalidFindingRequest.requestId,
+      "subject-actor": "human" })), /non-empty and unique/);
+  configuredReviewResults = {};
+  configuredReviewSession = "actual-codex-thread";
+
+  state = { version: 2, changeId: "change-delta-run", reviewHistory: null,
+    workspace: { path: fixture } };
+  configuredReviewResults = { "codex-sol": {
+    status: "fail", summary: "first round finding", findings: [{
+      id: "F-DELTA", severity: "major", path: "app.txt", line: 1,
+      message: "fix this path"
+    }], verifiedFindingIds: [], reportReference: "first.json",
+    reviewer: { sessionId: "review-full" }
+  } };
+  const deltaFullRequest = quiet(() => authority.requestAuthority(
+    "change-delta-run", { type: "review" }));
+  quiet(() => authority.runAuthorityReviewer("change-delta-run", {
+    request: deltaFullRequest.requestId, "subject-actor": "human"
+  }));
+  configuredReviewResults = { "codex-sol": {
+    status: "pass", summary: "finding closed", findings: [],
+    verifiedFindingIds: ["F-DELTA"], reportReference: "delta.json",
+    reviewer: { sessionId: "review-delta" }
+  } };
+  const deltaClosureRequest = quiet(() => authority.requestAuthority(
+    "change-delta-run", { type: "review" }));
+  quiet(() => authority.runAuthorityReviewer("change-delta-run", {
+    request: deltaClosureRequest.requestId, "subject-actor": "human"
+  }));
+  assert.equal(attemptStore.reviewAttemptByDigest("change-delta-run",
+    state.reviewHistory.chainHead).scope.mode, "delta");
+  const seedDeltaFinding = (id) => {
+    state = { version: 2, changeId: id, reviewHistory: null };
+    configuredReviewResults = { "codex-sol": {
+      status: "fail", summary: "first finding", findings: [{
+        id: "F-SCOPE", severity: "major", path: "app.txt", message: "fix"
+      }], verifiedFindingIds: [], reportReference: "first.json",
+      reviewer: { sessionId: `${id}-full` }
+    } };
+    const request = quiet(() => authority.requestAuthority(id, { type: "review" }));
+    quiet(() => authority.runAuthorityReviewer(id, {
+      request: request.requestId, "subject-actor": "human"
+    }));
+  };
+  seedDeltaFinding("change-delta-mismatch");
+  configuredReviewResults = { "codex-sol": {
+    status: "pass", summary: "wrong closure", findings: [],
+    verifiedFindingIds: [], reportReference: "wrong.json",
+    reviewer: { sessionId: "mismatch-delta" }
+  } };
+  const mismatchRequest = quiet(() => authority.requestAuthority(
+    "change-delta-mismatch", { type: "review" }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-delta-mismatch", { request: mismatchRequest.requestId,
+      "subject-actor": "human" })), /verify exactly/);
+
+  seedDeltaFinding("change-delta-outside");
+  configuredReviewResults = { "codex-sol": {
+    status: "fail", summary: "outside finding", findings: [{
+      id: "F-OUT", severity: "major", path: "outside.txt", message: "outside"
+    }], verifiedFindingIds: ["F-SCOPE"], reportReference: "outside.json",
+    reviewer: { sessionId: "outside-delta" }
+  } };
+  const outsideRequest = quiet(() => authority.requestAuthority(
+    "change-delta-outside", { type: "review" }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-delta-outside", { request: outsideRequest.requestId,
+      "subject-actor": "human" })), /outside the dispatched correction scope/);
+  configuredReviewResults = {};
 
   const attempts = readdirSync(join(fixture, "evidence", "change-a", "review-attempts"));
   assert.equal(attempts.length, 6,

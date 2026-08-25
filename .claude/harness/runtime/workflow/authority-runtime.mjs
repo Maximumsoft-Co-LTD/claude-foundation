@@ -619,7 +619,7 @@ export function createAuthorityRuntime({
     return fallbacks.includes("main-session") ? "main-session" : null;
   }
 
-  function runAuthorityReviewerUnlocked(id, flags = {}) {
+  function authorityRunSubject(flags) {
     const requestId = String(flags.request || "");
     if (!requestId) fail("authority run requires --request <id>");
     const subjectActor = String(flags["subject-actor"] || "").trim();
@@ -633,8 +633,15 @@ export function createAuthorityRuntime({
     if (aiSubject && [subjectSession, subjectProvider, subjectFamily, subjectModel]
       .some((value) => !value))
       fail("AI implementation provenance requires subject session, provider family, model family, and model");
+    return { requestId, subjectActor, subjectSession, subjectProvider,
+      subjectFamily, subjectModel, aiSubject };
+  }
+
+  function authorityRunReviewer(id, flags, subject) {
+    const { requestId, subjectActor, subjectProvider, subjectFamily,
+      aiSubject } = subject;
     const reviewSettings = foundationPolicy().review || {};
-    let requestEntry = authorityStore.list(id)
+    const requestEntry = authorityStore.list(id)
       .find((row) => row.value.requestId === requestId);
     if (!requestEntry) fail(`unknown authority request '${requestId}'`);
     const reviewerName = configuredReviewerRoute(reviewSettings, requestEntry.value,
@@ -657,7 +664,19 @@ export function createAuthorityRuntime({
     if (aiSubject && reviewSettings.independence !== "self" &&
         subjectActor.toLowerCase() === configured.identity.toLowerCase())
       fail(`configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`);
-    if (requestEntry.value.mainSessionFallback) {
+    return { reviewSettings, requestEntry, reviewerName, configured };
+  }
+
+  function runAuthorityReviewerUnlocked(id, flags = {}) {
+    const subject = authorityRunSubject(flags);
+    const { requestId, subjectActor, subjectSession, subjectProvider,
+      subjectFamily, subjectModel, aiSubject } = subject;
+    const reviewer = authorityRunReviewer(id, flags, subject);
+    const { reviewSettings, reviewerName, configured } = reviewer;
+    let { requestEntry } = reviewer;
+    function resumeMainSessionFallback() {
+      if (!requestEntry.value.mainSessionFallback)
+        return { handled: false, value: null };
       const fallback = requestEntry.value.mainSessionFallback;
       if (fallback.status !== "provenance-unavailable")
         fail(`configured reviewer already failed; complete the reserved main-session fallback with authority status/record instead of rerunning authority run`);
@@ -676,7 +695,7 @@ export function createAuthorityRuntime({
           action: "Expose the calling host session/model provenance and rerun authority run with --main-session-* fields; the failed reviewer will not run again."
         };
         console.log(JSON.stringify(blocked, null, 2));
-        return blocked;
+        return { handled: true, value: blocked };
       }
       const resumed = dispatchAuthorityUnlocked(id, {
         request: requestId,
@@ -713,9 +732,13 @@ export function createAuthorityRuntime({
           "configured reviewer infrastructure failed",
         mainSession, resumed, storedSubject);
       console.log(JSON.stringify(handback, null, 2));
-      return handback;
+      return { handled: true, value: handback };
     }
-    if (requestEntry.value.status === "dispatched") {
+    const resumedFallback = resumeMainSessionFallback();
+    if (resumedFallback.handled) return resumedFallback.value;
+    function recoverOrphanedController(entry) {
+      if (entry.value.status !== "dispatched") return entry;
+      requestEntry = entry;
       const controller = requestEntry.value.configuredController;
       if (!controller)
         fail(`configured review dispatch '${requestId}' is indeterminate; do not rerun it automatically. Abort it with a reason, then request the next bounded route or pause`);
@@ -749,9 +772,10 @@ export function createAuthorityRuntime({
           }
         ]
       });
-      requestEntry = authorityStore.list(id)
+      return authorityStore.list(id)
         .find((row) => row.value.requestId === requestId);
     }
+    requestEntry = recoverOrphanedController(requestEntry);
     const state = loadRuntime(id);
     const history = state.reviewHistory || {
       aiAttempts: 0, totalAttempts: 0, chainHead: null
@@ -796,7 +820,8 @@ export function createAuthorityRuntime({
         ...(scope === "delta" ? [deliveredAi.at(-1)?.reviewerSessionId] : [])
       ].filter(Boolean)
     });
-    if (report.status === "error") {
+    function handleConfiguredInfrastructureError() {
+      if (report.status !== "error") return { handled: false, value: null };
       const failed = completeReviewAttempt(id,
         dispatched.dispatch.attemptDigest, {
           reviewerSessionId: String(report.reviewer?.sessionId || "").trim(),
@@ -830,7 +855,8 @@ export function createAuthorityRuntime({
           reviewer: undefined,
           "automatic-reviewer": nextReviewer
         };
-        return runAuthorityReviewerUnlocked(id, nextFlags);
+        return { handled: true,
+          value: runAuthorityReviewerUnlocked(id, nextFlags) };
       }
       if (!nextReviewer) {
         const exhausted = {
@@ -843,7 +869,7 @@ export function createAuthorityRuntime({
           action: "Configure review.fallbackReviewers, repair reviewer infrastructure, or pause."
         };
         console.log(JSON.stringify(exhausted, null, 2));
-        return exhausted;
+        return { handled: true, value: exhausted };
       }
       const mainSession = mainSessionProvenance(id, flags, aiSubject ? {
         identity: subjectActor,
@@ -890,7 +916,7 @@ export function createAuthorityRuntime({
           action: "Expose the calling host session/model provenance and rerun authority run with --main-session-* fields; the failed reviewer will not run again."
         };
         console.log(JSON.stringify(blocked, null, 2));
-        return blocked;
+        return { handled: true, value: blocked };
       }
       const mainDispatched = dispatchAuthorityUnlocked(id, {
         request: requestId,
@@ -923,8 +949,11 @@ export function createAuthorityRuntime({
           modelId: subjectModel
         });
       console.log(JSON.stringify(handback, null, 2));
-      return handback;
+      return { handled: true, value: handback };
     }
+    const infrastructureResult = handleConfiguredInfrastructureError();
+    if (infrastructureResult.handled) return infrastructureResult.value;
+    function validateConfiguredReviewResult() {
     const reviewerSession = String(report.reviewer?.sessionId || "").trim();
     const infrastructureError = report.status === "error";
     if (!reviewerSession && !infrastructureError)
@@ -947,6 +976,9 @@ export function createAuthorityRuntime({
       if (outside.length)
         fail(`AI delta reviewer reported findings outside the dispatched correction scope: ${outside.map((finding) => finding.id).join(", ")}`);
     }
+    return { reviewerSession, infrastructureError };
+    }
+    const { reviewerSession, infrastructureError } = validateConfiguredReviewResult();
     const completed = completeReviewAttempt(id,
       dispatched.dispatch.attemptDigest, {
         reviewerSessionId: reviewerSession,
