@@ -23,6 +23,188 @@ async function route(command, values, overrides) {
   });
 }
 
+// --- complete command-registry dispatch coverage ---
+// Every registry entry is invoked through the public router. This makes a
+// command that is lost while decomposing the router fail as a contract defect,
+// and ensures a newly extracted handler is not accepted with zero coverage.
+{
+  const cases = [
+    ["new", ["intent"], "createChange"],
+    ["start", ["draft.json"], "startAtomic"],
+    ["resolve", ["change"], "resolveChange"],
+    ["abandon", ["change"], "abandonChange"],
+    ["waive", ["change"], "waiveGate"],
+    ["describe", ["change"], "describeCommand"],
+    ["changes", [], "showChanges"],
+    ["providers", [], "showProviders"],
+    ["repos", ["change"], "showRepositories"],
+    ["agent-plan", ["change"], "showAgentPlan"],
+    ["agent-dispatch", ["change"], "showAgentDispatch"],
+    ["agent-task", ["change", "task"], "showAgentTask"],
+    ["agent-acquire", ["change", "resource"], "acquireAgentLease"],
+    ["agent-release", ["change", "resource"], "releaseAgentLease"],
+    ["packet", ["change"], "showPacket"],
+    ["metrics", ["change"], "showMetrics"],
+    ["exec", ["change", "--", "true"], "execObserved"],
+    ["budget-continue", ["change"], "continueBudget"],
+    ["doctor", [], "doctor"],
+    ["validate", ["change"], "validate"],
+    ["audit-change", ["change"], "showTraceabilityAudit"],
+    ["proof-plan", ["change"], "proofPlan"],
+    ["proof-readiness", ["change"], "proofReadiness"],
+    ["proof-advance", ["change"], "proofAdvance"],
+    ["proof-run", ["change"], "proofRun"],
+    ["proof-collect", ["change"], "proofCollect"],
+    ["proof-preflight", ["change"], "proofPreflight"],
+    ["proof-execute", ["change"], "proofExecute"],
+    ["evidence-detect", ["change"], "showEvidenceDetection"],
+    ["evidence-init", ["change"], "initializeEvidence"],
+    ["evidence-doctor", ["change"], "showEvidenceDoctor"],
+    ["evidence-verify-ci", ["change", "provider", "ci"], "recordVerifiedCi"],
+    ["authority-request", ["change"], "requestAuthority"],
+    ["authority-dispatch", ["change"], "dispatchAuthority"],
+    ["authority-run", ["change"], "runAuthorityReviewer"],
+    ["authority-abort", ["change"], "abortAuthority"],
+    ["authority-status", ["change"], "showAuthorityStatus"],
+    ["authority-reset-infra", ["change"], "resetInfrastructureAuthority"],
+    ["authority-reset-base-move", ["change"], "resetBaseMoveAuthority"],
+    ["authority-record", ["change"], "recordAuthority"],
+    ["evidence-upgrade", ["change"], "upgradeEvidence"],
+    ["receipt", ["change", "provider", "pass"], "recordReceipt"],
+    ["run-provider", ["change", "provider"], "runProvider"],
+    ["prove", ["change"], "proofFinalize"],
+    ["handoff-status", ["change"], "showHandoffStatus"],
+    ["handoff-packet", ["change"], "showHandoffPacket"],
+    ["handoff-record", ["change"], "recordHandoff"],
+    ["land-check", ["change"], "landCheck"],
+    ["land-advance", ["change"], "advanceLand"],
+    ["land-recover", ["change"], "recoverLand"],
+    ["land-plan", ["change"], "showLandPlan"],
+    ["land-record", ["change"], "recordRepositoryLand"],
+    ["land-pointers", ["change"], "stageRootPointers"],
+    ["land-resume", ["change"], "resumeLand"],
+    ["archive", ["change"], "archive"],
+    ["event", ["change"], "recordEvent"],
+    ["telemetry-sync", ["change"], "syncClaudeTelemetry"],
+    ["telemetry-import", ["change", "source"], "importTelemetry"],
+    ["host-execution-import", ["change", "result.json"], "importHostExecution"],
+    ["migrate", ["change"], "migrate"]
+  ];
+  for (const [command, values, method] of cases) {
+    const calls = [];
+    const implementation = (...args) => {
+      calls.push(args);
+      if (method === "execObserved") return 0;
+    };
+    await route(command, values, { [method]: implementation });
+    assert.equal(calls.length, 1, `${command} must invoke ${method} exactly once`);
+  }
+
+  const policyCalls = [];
+  await route("models", [], {
+    foundationPolicy: () => { policyCalls.push(true); return { models: {} }; }
+  });
+  assert.equal(policyCalls.length, 1, "models must read foundation policy once");
+
+  const hashCalls = [];
+  await route("hash", ["change"], {
+    relevantHash: (id) => { hashCalls.push(id); return "hash"; }
+  });
+  assert.deepEqual(hashCalls, ["change"]);
+
+  const auditCalls = [];
+  await route("proof-audit", ["change"], {
+    proofAudit: (id) => { auditCalls.push(id); return { valid: true }; }
+  });
+  assert.deepEqual(auditCalls, ["change"]);
+
+  await route("api-version", [], { runtimeApiVersion: "1" });
+  await route("version", [], { version: "1.0.0" });
+
+  const sandboxCases = [
+    ["challenge", "createAttestationChallenge"],
+    ["inspect", "showSandboxInspection"],
+    ["create", "createSandbox"],
+    ["sync", "syncSandbox"]
+  ];
+  for (const [operation, method] of sandboxCases) {
+    const calls = [];
+    await route("sandbox", [operation, "change"], {
+      [method]: (...args) => calls.push(args)
+    });
+    assert.equal(calls.length, 1, `sandbox ${operation} must invoke ${method}`);
+  }
+  await assert.rejects(route("sandbox", ["unknown", "change"], {}),
+    /sandbox requires challenge\|inspect\|create\|sync\|apply/);
+
+  const packetCalls = [];
+  const packetApi = {
+    prepareClaudeTelemetry: (...args) => packetCalls.push(["prepare", ...args]),
+    recordPhaseContext: (...args) => packetCalls.push(["phase", ...args]),
+    showAgentTask: (...args) => packetCalls.push(["task", ...args]),
+    showPacket: (...args) => packetCalls.push(["packet", ...args])
+  };
+  await route("packet", ["change", "--phase", "build"], packetApi);
+  await route("packet", ["change", "--phase", "review"], packetApi);
+  await route("packet", ["change", "--task", "T001"], packetApi);
+  await route("packet", ["change", "--task", "T001", "--repo", "root"], packetApi);
+  assert(packetCalls.some(([kind]) => kind === "prepare"));
+  assert(packetCalls.some(([kind]) => kind === "task"));
+  assert(packetCalls.some(([kind]) => kind === "packet"));
+  await assert.rejects(route("packet", ["change", "--phase", "unknown"], packetApi),
+    /packet --phase must be/);
+
+  const execCalls = [];
+  const execApi = { execObserved: (...args) => { execCalls.push(args); return 0; } };
+  await route("exec", ["change"], execApi);
+  await route("exec", ["change", "--phase", "build", "--", "true"], execApi);
+  assert.equal(execCalls.length, 2);
+  await assert.rejects(route("exec", ["change", "--phase", "unknown"], execApi),
+    /exec --phase must be/);
+  await assert.rejects(route("exec", [], execApi), /exec requires a change id/);
+
+  const invalidArity = [
+    ["new", []], ["start", []], ["resolve", []], ["abandon", []],
+    ["waive", []], ["agent-dispatch", []], ["budget-continue", []],
+    ["doctor", ["unexpected"]], ["audit-change", []], ["proof-advance", []],
+    ["evidence-detect", []], ["evidence-init", []],
+    ["evidence-verify-ci", ["change", "provider"]],
+    ["authority-request", []], ["authority-dispatch", []],
+    ["authority-run", []], ["authority-abort", []], ["authority-status", []],
+    ["authority-reset-infra", []], ["authority-reset-base-move", []],
+    ["authority-record", []], ["handoff-status", []], ["handoff-packet", []],
+    ["handoff-record", []], ["host-execution-import", ["change"]]
+  ];
+  for (const [command, values] of invalidArity)
+    await assert.rejects(route(command, values, {}), /requires|unexpected/,
+      `${command} must reject invalid arity`);
+
+  const templates = [];
+  await route("start", ["--template"], {
+    rapidStartTemplate: () => { templates.push(true); return {}; }
+  });
+  assert.equal(templates.length, 1);
+  await route("describe", ["--json"], { describeCommand: () => {} });
+  await route("repos", [], { showRepositories: (value) => assert.equal(value, null) });
+  await route("hash", ["change", "provider"], {
+    providerWorkspaceHash: () => "provider-hash"
+  });
+  await assert.rejects(route("proof-audit", ["change"], {
+    proofAudit: () => ({ valid: false, reason: "invalid" })
+  }), /proof audit failed: invalid/);
+
+  const originalExit = process.exit;
+  try {
+    process.exit = (code) => { throw new Error(`exit:${code}`); };
+    await assert.rejects(route("not-a-command", [], { usage: () => {} }), /exit:1/);
+  } finally {
+    process.exit = originalExit;
+  }
+  const usageCalls = [];
+  await route(undefined, [], { usage: () => usageCalls.push(true) });
+  assert.equal(usageCalls.length, 1);
+}
+
 // --- sandbox apply routing ---
 {
   const applied = [];

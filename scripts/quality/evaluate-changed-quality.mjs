@@ -80,7 +80,9 @@ function gitDiff(baseRef) {
   if (baseRef) args.push(`${baseRef}...HEAD`);
   else args.push("HEAD");
   args.push("--");
-  return execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
+  return execFileSync("git", args, {
+    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024
+  });
 }
 
 async function main() {
