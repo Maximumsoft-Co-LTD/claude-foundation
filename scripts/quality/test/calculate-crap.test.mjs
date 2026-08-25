@@ -56,6 +56,29 @@ test("active coverage lanes synthesize zero for production files not loaded by t
   assert.equal(report.functions[0].coverageLane, "unit");
 });
 
+test("active lanes classify V8-omitted callbacks as zero coverage", () => {
+  const report = buildCrapReport({
+    complexity: { functions: [{
+      path: "src/a.mjs", name: "<anonymous@2:10>", line: 2, column: 10,
+      endLine: 2, endColumn: 25, cyclomatic: 2
+    }] },
+    coverageReports: [{
+      "/repo/src/a.mjs": { fnMap: {}, f: {}, branchMap: {}, b: {}, statementMap: {}, s: {} }
+    }],
+    coverageLanes: [{ id: "unit", active: true, include: ["src/**/*.mjs"], changedCodeFloor: 80 }],
+    policy: {
+      coverage: { kind: "branch-with-function-fallback" },
+      crap: { warning: 20, failure: 30 },
+      complexity: { maximumChanged: 30 }
+    },
+    root: "/repo"
+  });
+  assert.equal(report.functions[0].coverageStatus, "synthetic-zero-unreported-function");
+  assert.equal(report.functions[0].coveragePercent, 0);
+  assert.equal(report.functions[0].crap, 6);
+  assert.equal(report.summary.unmapped, 0);
+});
+
 test("nested Istanbul functions map to the smallest containing function", () => {
   const measured = coverageForFunction({
     fnMap: {

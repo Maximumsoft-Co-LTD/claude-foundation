@@ -125,11 +125,19 @@ export function buildCrapReport({ complexity, coverageReports, policy, coverageL
   const functions = complexity.functions.map((fn) => {
     const fileCoverage = coverage.get(fn.path);
     const activeLane = coverageLanes.find((lane) => lane.active && matchesAny(fn.path, lane.include));
-    const measured = fileCoverage
+    const observed = fileCoverage
       ? coverageForFunction(fileCoverage, fn)
       : activeLane
         ? { status: "synthetic-zero", percent: 0, branchTotal: 0, branchCovered: 0 }
       : { status: "missing-file-coverage", percent: null, branchTotal: 0, branchCovered: 0 };
+    // V8 omits function-map entries for some never-invoked callbacks even when
+    // their containing file was instrumented. Once the owning lane completed,
+    // absence from function, branch and statement maps is evidence of zero
+    // execution rather than unavailable evidence.
+    const measured = observed.status === "unmapped" && activeLane
+      ? { status: "synthetic-zero-unreported-function", percent: 0,
+        branchTotal: 0, branchCovered: 0 }
+      : observed;
     const score = measured.percent === null ? null : crapScore(fn.cyclomatic, measured.percent);
     const status = score === null ? "unmapped"
       : score >= policy.crap.failure || fn.cyclomatic > policy.complexity.maximumChanged ? "fail"
