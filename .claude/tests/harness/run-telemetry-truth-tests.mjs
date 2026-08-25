@@ -353,6 +353,152 @@ test("metrics totals, groups, phases, and carry-in ignore junk values", () => {
   assert.deepEqual(rendered.context.byKind, {});
 });
 
+test("metrics compose lifecycle, receipt, context, and human-wait timelines", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-complete-metrics-"));
+  const logs = join(root, "logs");
+  const receipts = join(root, "receipts");
+  const id = "complete-metrics";
+  mkdirSync(join(logs, id), { recursive: true });
+  mkdirSync(join(receipts, id, "ignored-dir"), { recursive: true });
+  const operations = [
+    {
+      operation: "authority-request", phase: "resolve", status: "completed", durationMs: 10,
+      startedAt: "2026-08-12T00:00:00.000Z", finishedAt: "2026-08-12T00:01:00.000Z"
+    },
+    {
+      operation: "build", status: "blocked", durationMs: 20,
+      startedAt: "2026-08-12T00:01:00.000Z", finishedAt: "2026-08-12T00:02:00.000Z"
+    },
+    {
+      status: "failed", durationMs: 30,
+      startedAt: "2026-08-12T00:02:00.000Z", finishedAt: "2026-08-12T00:03:00.000Z"
+    },
+    {
+      operation: "authority-record", phase: "resolve", status: "completed", durationMs: 5,
+      startedAt: "2026-08-12T00:06:00.000Z", finishedAt: "2026-08-12T00:06:05.000Z"
+    },
+    {
+      operation: "authority-request", phase: "resolve", status: "completed", durationMs: 1,
+      startedAt: "invalid", finishedAt: "invalid"
+    },
+    {
+      operation: "exec", status: "completed", durationMs: 40,
+      startedAt: "2026-08-12T00:06:05.000Z", finishedAt: "2026-08-12T00:07:00.000Z"
+    }
+  ];
+  writeFileSync(join(logs, id, "operations.jsonl"),
+    operations.map(JSON.stringify).join("\n") + "\n");
+  const events = [
+    {
+      source: "generic", requestId: "one", operationId: "build", agentId: "orchestrator",
+      sessionId: "session-a", inputTokens: 10, outputTokens: 5,
+      cacheCreationTokens: 2, cacheReadTokens: 3, cacheTokens: 5, cost: 1,
+      modelId: "model-a", repositoryId: "root", taskId: "T1", attempt: 0,
+      attemptStatus: "pass", instructionManifestDigest: "digest-a",
+      timestamp: "2026-08-12T00:03:00.000Z"
+    },
+    {
+      source: "generic", requestId: "two", operationId: "prove", agentId: "worker",
+      sessionId: "session-a", inputTokens: 4, outputTokens: 2,
+      cacheTokens: 4, cacheReadTokens: 1, cost: 0.5, fallbackReason: "retry",
+      attempt: 1, timestamp: "2026-08-12T00:04:00.000Z"
+    },
+    {
+      source: "generic", requestId: "three", agentId: "orchestrator",
+      sessionId: "session-a", inputTokens: 1, outputTokens: 1,
+      timestamp: "2026-08-12T00:05:00.000Z"
+    },
+    {
+      source: "generic", requestId: "four", operationId: "orchestrator",
+      inputTokens: 0, outputTokens: 0, timestamp: "invalid"
+    }
+  ];
+  writeFileSync(join(logs, id, "events.jsonl"),
+    events.map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(logs, id, "user-transitions.jsonl"), [
+    { sessionId: "session-a", timestamp: "2026-08-12T00:05:30.000Z" },
+    { sessionId: "session-a", timestamp: "2026-08-12T00:08:00.000Z" },
+    { sessionId: "missing", timestamp: "2026-08-12T00:09:00.000Z" },
+    { sessionId: "session-a", timestamp: "invalid" }
+  ].map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(logs, id, "phase-context.jsonl"), [
+    { phase: "build", contextMode: "fresh" },
+    { phase: "build", contextMode: "ignored-second" },
+    { phase: "missing", contextMode: "fresh" },
+    { contextMode: "unknown" }
+  ].map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(logs, id, "context.jsonl"), [
+    { kind: "packet", bytes: 100 }, { kind: "packet", bytes: 300 }
+  ].map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(logs, id, "context-rollup.json"), JSON.stringify({
+    count: 2, totalBytes: 50,
+    byKind: { packet: { count: 2, totalBytes: 50, maxBytes: 40 } }
+  }));
+  writeFileSync(join(logs, id, "reuse.jsonl"), [
+    { reason: "declared-inputs" }, { reason: "declared-inputs" }, {}
+  ].map(JSON.stringify).join("\n") + "\n");
+  writeFileSync(join(receipts, id, "proof.json"), "{}\n");
+  writeFileSync(join(receipts, id, "ignored.txt"), "ignored\n");
+  writeFileSync(join(receipts, id, "test.json"), JSON.stringify({
+    provider: "test", status: "pass", adapter: "command", durationMs: 50,
+    commandExecutionId: "exec-1", proofRunId: "proof-1"
+  }));
+  writeFileSync(join(receipts, id, "second.json"), JSON.stringify({
+    status: "pass", durationMs: 100, executionId: "exec-1"
+  }));
+  writeFileSync(join(receipts, id, "external.json"), JSON.stringify({
+    provider: "external", status: "pass", durationMs: "unknown"
+  }));
+
+  const budgetRuntime = createBudgetRuntime({
+    policy, now: () => "2026-08-12T00:00:00.000Z"
+  });
+  const state = {
+    id, schema: "foundation-standard", impact: "medium",
+    budget: budgetRuntime.initialBudget("foundation-standard", id)
+  };
+  let rendered;
+  const runtime = createMetricsRuntime({
+    logs, receipts, readJson: json, readJsonLines: jsonLines,
+    readJsonLinesTolerant: jsonLines, loadRuntime: () => structuredClone(state),
+    ensureBudgetState: budgetRuntime.ensureBudgetState,
+    budgetDecision: budgetRuntime.budgetDecision,
+    output: (value) => { rendered = JSON.parse(value); }
+  });
+  runtime.showMetrics(id);
+  assert.equal(rendered.phases.build.blocked, 1);
+  assert.equal(rendered.phases.unknown.failed, 1);
+  assert.equal(rendered.phases.prove.contextMode, "retained");
+  assert.equal(rendered.providers.test.commandExecutionId, "exec-1");
+  assert.equal(rendered.providers.second.adapter, "external");
+  assert.equal(rendered.evidenceExecutionTimeMs, 100);
+  assert.equal(rendered.externalExecutionTimeMs, 40);
+  assert.equal(rendered.context.totalBytes, 450);
+  assert.equal(rendered.context.byKind.packet.count, 4);
+  assert.ok(rendered.humanWaitMs > 0);
+  assert.ok(rendered.humanWaitSpans.some((span) => span.sources.includes("transcript")));
+  assert.equal(rendered.hostExecution.fallbacks, 1);
+  assert.deepEqual(rendered.evidenceReuse.byReason,
+    { "declared-inputs": 2, unknown: 1 });
+
+  const operationOnly = "operation-only";
+  mkdirSync(join(logs, operationOnly), { recursive: true });
+  writeFileSync(join(logs, operationOnly, "operations.jsonl"), JSON.stringify({
+    operation: "build", status: "completed", durationMs: 7,
+    startedAt: "2026-08-12T00:00:00.000Z", finishedAt: "2026-08-12T00:00:01.000Z"
+  }) + "\n");
+  runtime.showMetrics(operationOnly);
+  assert.equal(rendered.activeTimeMs, 7);
+
+  const evidenceOnly = "evidence-only";
+  mkdirSync(join(receipts, evidenceOnly), { recursive: true });
+  writeFileSync(join(receipts, evidenceOnly, "test.json"), JSON.stringify({
+    provider: "test", status: "pass", durationMs: 9, commandExecutionId: "exec-only"
+  }));
+  runtime.showMetrics(evidenceOnly);
+  assert.equal(rendered.activeTimeMs, 9);
+});
+
 test("an explicit nonzero window is not erased while host totals are unavailable", () => {
   const budgetRuntime = createBudgetRuntime({ policy, now: () => "2026-08-12T00:00:00.000Z" });
   const state = {

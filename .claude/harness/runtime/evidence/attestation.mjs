@@ -99,10 +99,11 @@ export function securityBoundaryInspection() {
   return { kind, status, evidence, hazards };
 }
 
-export function createHostAttestationRuntime({
-  root, attestations, protocolVersion, loadRuntime, changePath, directoryHash,
-  stableHash, readJson, writeJson, now, writeFileExclusive = writeFileSync
-}) {
+export function createHostAttestationRuntime(options) {
+  const {
+    root, attestations, protocolVersion, loadRuntime, changePath, directoryHash,
+    stableHash, readJson, writeJson, now, writeFileExclusive
+  } = Object.assign({ writeFileExclusive: writeFileSync }, options);
   const challengePath = (id) => join(attestations, "challenges", `${id}.json`);
 
   function createChallenge(id) {
