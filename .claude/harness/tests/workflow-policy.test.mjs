@@ -105,6 +105,7 @@ try {
   let configuredReviewResults = {};
   let configuredReviewCalls = 0;
   let providerRepository = null;
+  let receiptValidityResult = { validity: "valid" };
   const attemptStore = createReviewAttemptStore({
     receiptsRoot: join(fixture, "receipts"),
     evidenceVault: join(fixture, "evidence"),
@@ -249,7 +250,7 @@ try {
       join(fixture, `${id}-receipt.json`), {
         status, review: { attemptDigest: flags["review-attempt"] }
       }),
-    receiptValidity: () => ({ validity: "valid" }),
+    receiptValidity: () => receiptValidityResult,
     fileDigest: () => "digest",
     providerWorkspaceHash: () => workspaceHash,
     providerRepository: () => null,
@@ -954,6 +955,178 @@ try {
     "change-delta-outside", { request: outsideRequest.requestId,
       "subject-actor": "human" })), /outside the dispatched correction scope/);
   configuredReviewResults = {};
+
+  const stateBeforeRecordValidation = state;
+  state = { version: 2, changeId: "change-record-validation", reviewHistory: null };
+  workspaceHash = "workspace-record-validation";
+  reviewSettings = {
+    defaultReviewer: "codex-sol", independence: "self", diversity: "single-model"
+  };
+  const recordResponsePath = join(fixture, "record-validation-response.json");
+  writeJson(recordResponsePath, {});
+  assert.throws(() => quiet(() => authority.recordAuthority(
+    "change-record-validation", {})), /requires --request/);
+  assert.throws(() => quiet(() => authority.recordAuthority(
+    "change-record-validation", {
+      request: "missing", response: recordResponsePath
+    })), /unknown authority request/);
+  const recordRequest = quiet(() => authority.requestAuthority(
+    "change-record-validation", { type: "review" }));
+  const recordEntry = authorityStore.list("change-record-validation")
+    .find((row) => row.value.requestId === recordRequest.requestId);
+  const originalRecordRequest = recordEntry.value;
+  const recordRejected = (overrides, pattern, response = recordResponsePath) => {
+    authorityStore.replace(recordEntry, { ...originalRecordRequest, ...overrides });
+    assert.throws(() => quiet(() => authority.recordAuthority(
+      "change-record-validation", {
+        request: recordRequest.requestId, response
+      })), pattern);
+    authorityStore.replace(recordEntry, originalRecordRequest);
+  };
+  workspaceHash = "workspace-record-validation-changed";
+  recordRejected({}, /is stale/);
+  workspaceHash = "workspace-record-validation";
+  recordRejected({ status: "completed" }, /is completed/);
+  recordRejected({}, /must be dispatched/);
+  recordRejected({ reviewCircuit: "legacy" }, /response not found/,
+    join(fixture, "missing-record-response.json"));
+
+  quiet(() => authority.dispatchAuthority("change-record-validation", {
+    request: recordRequest.requestId, scope: "full", "reviewer-type": "ai",
+    "reviewer-identity": "record-reviewer",
+    "reviewer-provider-family": "openai", "reviewer-model-family": "gpt",
+    "reviewer-model": "gpt-record", "reviewer-session": "record-session"
+  }));
+  const recordTemplate = JSON.parse(captureLog(() => authority.showAuthorityStatus(
+    "change-record-validation", {
+      request: recordRequest.requestId, template: true
+    })).rows[0]);
+  const validRecordResponse = {
+    ...recordTemplate, status: "error", evidence: {
+      ...recordTemplate.evidence,
+      observed: "review infrastructure unavailable",
+      reference: ["record-error.json"],
+      "subject-actor": "human"
+    }
+  };
+  const responseRejected = (mutate, pattern) => {
+    const candidate = structuredClone(validRecordResponse);
+    mutate(candidate);
+    writeJson(recordResponsePath, candidate);
+    assert.throws(() => quiet(() => authority.recordAuthority(
+      "change-record-validation", {
+        request: recordRequest.requestId, response: recordResponsePath
+      })), pattern);
+  };
+  responseRejected((response) => { response.evidence.reviewer = "wrong"; },
+    /does not match its dispatched reviewer/);
+  responseRejected((response) => {
+    response.evidence["reviewer-identity"] = "record-reviewer";
+    response.evidence.reviewer = "ignored-fallback";
+    response.evidence["reviewer-type"] = "wrong";
+  }, /does not match its dispatched reviewer/);
+  responseRejected((response) => { response.evidence["scope-path"] = ["wrong.txt"]; },
+    /scope-path must exactly match/);
+  responseRejected((response) => {
+    response.evidence.findings = [
+      { severity: "major", path: "app.txt" },
+      { path: "note.txt" }
+    ];
+  }, /unresolved-blockers must equal/);
+  const dispatchedRecordEntry = authorityStore.list("change-record-validation")
+    .find((row) => row.value.requestId === recordRequest.requestId);
+  authorityStore.replace(dispatchedRecordEntry, {
+    ...dispatchedRecordEntry.value,
+    packet: {
+      ...dispatchedRecordEntry.value.packet,
+      closureFindings: { ids: ["F-INFRASTRUCTURE"] }
+    }
+  });
+  validRecordResponse.evidence.findings = "not-an-array";
+  validRecordResponse.evidence.verifiedFindingIds = "not-an-array";
+  writeJson(recordResponsePath, validRecordResponse);
+  quiet(() => authority.recordAuthority("change-record-validation", {
+    request: recordRequest.requestId, response: recordResponsePath
+  }));
+  const recordedError = authorityStore.list("change-record-validation")
+    .find((row) => row.value.requestId === recordRequest.requestId).value;
+  assert.equal(recordedError.status, "error");
+  assert.equal(recordedError.infrastructureError, true);
+
+  state = { version: 2, changeId: "change-record-human", reviewHistory: null };
+  workspaceHash = "workspace-record-human";
+  const recordHumanRequest = quiet(() => authority.requestAuthority(
+    "change-record-human", { type: "review" }));
+  quiet(() => authority.dispatchAuthority("change-record-human", {
+    request: recordHumanRequest.requestId, scope: "full", "reviewer-type": "human",
+    "reviewer-identity": "human-reviewer"
+  }));
+  const humanTemplate = JSON.parse(captureLog(() => authority.showAuthorityStatus(
+    "change-record-human", {
+      request: recordHumanRequest.requestId, template: true
+    })).rows[0]);
+  writeJson(recordResponsePath, {
+    ...humanTemplate, status: "error", evidence: {
+      ...humanTemplate.evidence, observed: "human reviewer became unavailable",
+      reference: ["human-error.json"], "subject-actor": "human"
+    }
+  });
+  quiet(() => authority.recordAuthority("change-record-human", {
+    request: recordHumanRequest.requestId, response: recordResponsePath
+  }));
+
+  state = { version: 2, changeId: "change-record-legacy", reviewHistory: null };
+  workspaceHash = "workspace-record-legacy";
+  const legacyRequest = quiet(() => authority.requestAuthority(
+    "change-record-legacy", { type: "review" }));
+  const legacyEntry = authorityStore.list("change-record-legacy")
+    .find((row) => row.value.requestId === legacyRequest.requestId);
+  authorityStore.replace(legacyEntry, {
+    ...legacyEntry.value, reviewCircuit: "legacy"
+  });
+  const legacyTemplate = JSON.parse(captureLog(() => authority.showAuthorityStatus(
+    "change-record-legacy", {
+      request: legacyRequest.requestId, template: true
+    })).rows[0]);
+  writeJson(recordResponsePath, {
+    ...legacyTemplate, status: "inconclusive", evidence: {
+      ...legacyTemplate.evidence, observed: "legacy review remained inconclusive",
+      reference: ["legacy-inconclusive.json"], reviewer: "legacy-reviewer",
+      "reviewer-type": "human", "subject-actor": "human"
+    }
+  });
+  quiet(() => authority.recordAuthority("change-record-legacy", {
+    request: legacyRequest.requestId, response: recordResponsePath
+  }));
+
+  state = { version: 2, changeId: "change-record-receipt", reviewHistory: null };
+  workspaceHash = "workspace-record-receipt";
+  configuredReviewResults = { "codex-sol": {
+    status: "pass", summary: "record receipt pass", findings: [],
+    verifiedFindingIds: [], reportReference: "record-pass.json",
+    reviewer: { sessionId: "record-pass-session" }
+  } };
+  const receiptRequest = quiet(() => authority.requestAuthority(
+    "change-record-receipt", { type: "review" }));
+  receiptValidityResult = { validity: "workspace-mismatch" };
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-record-receipt", {
+      request: receiptRequest.requestId, "subject-actor": "human"
+    })), /produced invalid evidence/);
+  assert.equal(existsSync(join(fixture, "change-record-receipt-receipt.json")),
+    false, "an invalid new receipt must be rolled back");
+  receiptValidityResult = { validity: "valid" };
+  quiet(() => authority.recordAuthority("change-record-receipt", {
+    request: receiptRequest.requestId,
+    response: join(fixture, ".foundation", "authority",
+      "change-record-receipt",
+      `${receiptRequest.requestId}-configured-review-response.json`)
+  }));
+  assert.equal(readJson(join(fixture, "change-record-receipt-receipt.json")).status,
+    "pass");
+  configuredReviewResults = {};
+  workspaceHash = "workspace-a";
+  state = stateBeforeRecordValidation;
 
   const attempts = readdirSync(join(fixture, "evidence", "change-a", "review-attempts"));
   assert.equal(attempts.length, 6,

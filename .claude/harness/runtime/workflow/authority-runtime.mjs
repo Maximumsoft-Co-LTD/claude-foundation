@@ -1197,7 +1197,7 @@ export function createAuthorityRuntime({
       ? responseTemplate(open[0]) : open.map(responseTemplate), null, 2));
   }
 
-  function recordAuthorityUnlocked(id, flags = {}) {
+  function recordAuthorityRequest(id, flags) {
     const requestId = String(flags.request || "");
     const responsePath = flags.response ? resolve(flags.response) : null;
     if (!requestId || !responsePath)
@@ -1215,86 +1215,117 @@ export function createAuthorityRuntime({
         request.status !== "dispatched")
       fail(`authority request '${requestId}' must be dispatched before its response is recorded`);
     if (!existsSync(responsePath)) fail(`authority response not found: ${flags.response}`);
-    const response = readJson(responsePath);
-    const validated = authorityStore.validateResponse(response, request, id);
-    if (!validated.valid) fail(validated.reason);
-    const evidenceFlags = validated.evidence;
-    if (request.type === "review" && request.dispatch) {
-      const reviewer = request.dispatch.reviewer;
-      const identity = String(evidenceFlags["reviewer-identity"] ||
-        evidenceFlags.reviewer || "").trim();
-      const comparisons = [
-        ["reviewer identity", identity, reviewer.identity],
-        ["reviewer type", String(evidenceFlags["reviewer-type"] || "").toLowerCase(), reviewer.type],
-        ["reviewer provider family", String(evidenceFlags["reviewer-provider-family"] || "").toLowerCase() || null, reviewer.providerFamily],
-        ["reviewer model family", String(evidenceFlags["reviewer-model-family"] || "").toLowerCase() || null, reviewer.modelFamily],
-        ["reviewer model", String(evidenceFlags["reviewer-model"] || "") || null, reviewer.modelId],
-        ["reviewer session", String(evidenceFlags["reviewer-session"] || "") || null, reviewer.sessionId]
-      ];
-      const mismatch = comparisons.filter(([, actual, expected]) => actual !== expected)
-        .map(([label, actual, expected]) => `${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-      if (mismatch.length)
-        fail(`authority response does not match its dispatched reviewer\n  ${mismatch.join("\n  ")}`);
-      const suppliedScope = [...new Set(evidenceFlags["scope-path"] || [])].sort();
-      const dispatchedScope = [...new Set(request.dispatch.scope.paths || [])].sort();
-      if (suppliedScope.length && JSON.stringify(suppliedScope) !== JSON.stringify(dispatchedScope))
-        fail("authority response scope-path must exactly match the paths in its dispatched delta packet");
-      evidenceFlags["scope-path"] = dispatchedScope;
-      const findings = Array.isArray(evidenceFlags.findings) ? evidenceFlags.findings : [];
-      const verifiedFindingIds = Array.isArray(evidenceFlags.verifiedFindingIds)
-        ? evidenceFlags.verifiedFindingIds : [];
-      const unresolved = findings.filter((finding) =>
-        ["blocker", "major"].includes(String(finding?.severity || "").toLowerCase()));
-      if (Number(evidenceFlags["unresolved-blockers"] || 0) !== unresolved.length)
-        fail("review unresolved-blockers must equal the blocker/major finding rows");
-      if (request.packet?.closureFindings && response.status !== "error") {
-        const expectedIds = [...(request.packet?.closureFindings?.ids || [])].sort();
-        const suppliedIds = [...new Set(verifiedFindingIds.map((value) =>
-          String(value).trim()).filter(Boolean))].sort();
-        if (JSON.stringify(expectedIds) !== JSON.stringify(suppliedIds))
-          fail("delta review verifiedFindingIds must exactly close the first-round finding IDs");
-        const outside = request.dispatch.scope.mode === "delta" ? findings.filter((finding) => {
-          const path = String(finding?.path || "").replace(/^\.\//, "");
-          return !path || !dispatchedScope.some((candidate) =>
-            candidate === path || candidate.endsWith(`/${path}`));
-        }) : [];
-        if (outside.length)
-          fail("delta review findings must stay inside the dispatched correction paths");
-      }
-      const attempt = reviewAttemptByDigest(id, request.dispatch.attemptDigest);
-      if (attempt?.status === "dispatched") {
-        const completed = completeReviewAttempt(id, attempt.digest, {
-          reviewerSessionId: reviewer.sessionId,
-          resultStatus: response.status,
-          findings,
-          verifiedFindingIds
-        });
-        request.dispatch = {
-          ...request.dispatch,
-          attemptDigest: completed.digest,
-          reviewer: { ...request.dispatch.reviewer, sessionId: completed.reviewerSessionId }
-        };
-        authorityStore.replace(entry, request);
-      }
-    }
-    // A configured reviewer/tool failure is infrastructure telemetry, not a
-    // delivered review verdict. Persist the completed error attempt and close
-    // this request, but do not overwrite an earlier full/delta receipt or
-    // manufacture a baseline receipt from an error. The bounded infrastructure
-    // retry therefore starts full when no delivered baseline exists and keeps
-    // a prior delivered baseline when a closure runner failed.
-    if (request.type === "review" && response.status === "error") {
-      authorityStore.replace(entry, {
-        ...request,
-        status: "error",
-        infrastructureError: true,
-        responseDigest: fileDigest(responsePath),
-        receiptDigest: null,
-        completedAt: now()
-      });
-      console.log(`AUTHORITY ${requestId}: infrastructure error\n  receipt: unchanged\n  next: repair the configured reviewer, run doctor --stage prove, then request the bounded retry`);
-      return;
-    }
+    return { requestId, responsePath, entry, request };
+  }
+
+  function validateDispatchedReviewResponse(request, response, evidenceFlags) {
+    if (request.type !== "review" || !request.dispatch) return null;
+    const reviewer = request.dispatch.reviewer;
+    validateDispatchedReviewerIdentity(reviewer, evidenceFlags);
+    const { findings, verifiedFindingIds, dispatchedScope } =
+      normalizeDispatchedReviewEvidence(request, evidenceFlags);
+    validateReviewFindingClosure(request, response, evidenceFlags, findings,
+      verifiedFindingIds, dispatchedScope);
+    return { reviewer, findings, verifiedFindingIds };
+  }
+
+  function validateDispatchedReviewerIdentity(reviewer, evidenceFlags) {
+    const identity = reviewEvidenceText(evidenceFlags["reviewer-identity"] ||
+      evidenceFlags.reviewer).trim();
+    const comparisons = [
+      ["reviewer identity", identity, reviewer.identity],
+      ["reviewer type", reviewEvidenceText(evidenceFlags["reviewer-type"]).toLowerCase(), reviewer.type],
+      ["reviewer provider family", nullableReviewEvidence(
+        evidenceFlags["reviewer-provider-family"], true), reviewer.providerFamily],
+      ["reviewer model family", nullableReviewEvidence(
+        evidenceFlags["reviewer-model-family"], true), reviewer.modelFamily],
+      ["reviewer model", nullableReviewEvidence(evidenceFlags["reviewer-model"]), reviewer.modelId],
+      ["reviewer session", nullableReviewEvidence(evidenceFlags["reviewer-session"]), reviewer.sessionId]
+    ];
+    const mismatch = comparisons.filter(([, actual, expected]) => actual !== expected)
+      .map(([label, actual, expected]) => `${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    if (mismatch.length)
+      fail(`authority response does not match its dispatched reviewer\n  ${mismatch.join("\n  ")}`);
+  }
+
+  function reviewEvidenceText(value) {
+    return String(value || "");
+  }
+
+  function nullableReviewEvidence(value, lowerCase = false) {
+    const text = lowerCase ? reviewEvidenceText(value).toLowerCase()
+      : reviewEvidenceText(value);
+    return text || null;
+  }
+
+  function normalizeDispatchedReviewEvidence(request, evidenceFlags) {
+    const suppliedScope = [...new Set(evidenceFlags["scope-path"] || [])].sort();
+    const dispatchedScope = [...new Set(request.dispatch.scope.paths || [])].sort();
+    if (suppliedScope.length && JSON.stringify(suppliedScope) !== JSON.stringify(dispatchedScope))
+      fail("authority response scope-path must exactly match the paths in its dispatched delta packet");
+    evidenceFlags["scope-path"] = dispatchedScope;
+    const findings = Array.isArray(evidenceFlags.findings) ? evidenceFlags.findings : [];
+    const verifiedFindingIds = Array.isArray(evidenceFlags.verifiedFindingIds)
+      ? evidenceFlags.verifiedFindingIds : [];
+    return { findings, verifiedFindingIds, dispatchedScope };
+  }
+
+  function validateReviewFindingClosure(request, response, evidenceFlags, findings,
+    verifiedFindingIds, dispatchedScope) {
+    const unresolved = findings.filter((finding) =>
+      ["blocker", "major"].includes(String(finding?.severity || "").toLowerCase()));
+    if (Number(evidenceFlags["unresolved-blockers"] || 0) !== unresolved.length)
+      fail("review unresolved-blockers must equal the blocker/major finding rows");
+    if (!request.packet?.closureFindings) return;
+    if (response.status === "error") return;
+    const expectedIds = [...(request.packet.closureFindings.ids || [])].sort();
+    const suppliedIds = [...new Set(verifiedFindingIds.map((value) =>
+      String(value).trim()).filter(Boolean))].sort();
+    if (JSON.stringify(expectedIds) !== JSON.stringify(suppliedIds))
+      fail("delta review verifiedFindingIds must exactly close the first-round finding IDs");
+    if (request.dispatch.scope.mode !== "delta") return;
+    const outside = findings.filter((finding) => {
+      const path = String(finding?.path || "").replace(/^\.\//, "");
+      return !path || !dispatchedScope.some((candidate) =>
+        candidate === path || candidate.endsWith(`/${path}`));
+    });
+    if (outside.length)
+      fail("delta review findings must stay inside the dispatched correction paths");
+  }
+
+  function completeDispatchedReview(id, entry, request, reviewResult) {
+    if (!reviewResult) return;
+    const attempt = reviewAttemptByDigest(id, request.dispatch.attemptDigest);
+    if (attempt?.status !== "dispatched") return;
+    const completed = completeReviewAttempt(id, attempt.digest, {
+      reviewerSessionId: reviewResult.reviewer.sessionId,
+      resultStatus: reviewResult.responseStatus,
+      findings: reviewResult.findings,
+      verifiedFindingIds: reviewResult.verifiedFindingIds
+    });
+    request.dispatch = {
+      ...request.dispatch,
+      attemptDigest: completed.digest,
+      reviewer: { ...request.dispatch.reviewer, sessionId: completed.reviewerSessionId }
+    };
+    authorityStore.replace(entry, request);
+  }
+
+  function recordAuthorityInfrastructureError(entry, request, requestId,
+    responsePath) {
+    authorityStore.replace(entry, {
+      ...request,
+      status: "error",
+      infrastructureError: true,
+      responseDigest: fileDigest(responsePath),
+      receiptDigest: null,
+      completedAt: now()
+    });
+    console.log(`AUTHORITY ${requestId}: infrastructure error\n  receipt: unchanged\n  next: repair the configured reviewer, run doctor --stage prove, then request the bounded retry`);
+  }
+
+  function recordAuthorityReceipt(id, entry, request, requestId, response,
+    responsePath, evidenceFlags) {
     const priorPath = receiptPath(id, request.provider);
     const prior = existsSync(priorPath) ? readFileSync(priorPath) : null;
     recordReceipt(id, request.provider, response.status, {
@@ -1312,6 +1343,31 @@ export function createAuthorityRuntime({
     const receiptDigest = fileDigest(priorPath);
     authorityStore.complete(entry, request, response, fileDigest(responsePath), receiptDigest);
     console.log(`AUTHORITY ${requestId}: ${response.status}\n  receipt: ${relative(root, priorPath)}`);
+  }
+
+  function recordAuthorityUnlocked(id, flags = {}) {
+    const { requestId, responsePath, entry, request } = recordAuthorityRequest(id, flags);
+    const response = readJson(responsePath);
+    const validated = authorityStore.validateResponse(response, request, id);
+    if (!validated.valid) fail(validated.reason);
+    const evidenceFlags = validated.evidence;
+    const reviewResult = validateDispatchedReviewResponse(request, response,
+      evidenceFlags);
+    completeDispatchedReview(id, entry, request, reviewResult && {
+      ...reviewResult, responseStatus: response.status
+    });
+    // A configured reviewer/tool failure is infrastructure telemetry, not a
+    // delivered review verdict. Persist the completed error attempt and close
+    // this request, but do not overwrite an earlier full/delta receipt or
+    // manufacture a baseline receipt from an error. The bounded infrastructure
+    // retry therefore starts full when no delivered baseline exists and keeps
+    // a prior delivered baseline when a closure runner failed.
+    if (request.type === "review" && response.status === "error") {
+      recordAuthorityInfrastructureError(entry, request, requestId, responsePath);
+      return;
+    }
+    recordAuthorityReceipt(id, entry, request, requestId, response, responsePath,
+      evidenceFlags);
   }
 
   function recordAuthority(id, flags = {}) {
