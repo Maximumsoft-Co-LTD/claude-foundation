@@ -174,6 +174,8 @@ export function createDiagnosticsRuntime({
     if (!["change", "build", "prove"].includes(stage))
       fail("doctor --stage must be change|build|prove");
 
+    function collectFoundationChecks() {
+    function collectUnattendedCheck() {
     if (flags.unattended) {
       if (!flags.change) fail("doctor --unattended requires --change <id>");
       const isolation = isolationInspection(flags.change, flags);
@@ -185,10 +187,13 @@ export function createDiagnosticsRuntime({
           : isolation.execution.reasons.join("; ")
       });
     }
+    }
+    collectUnattendedCheck();
 
     const nodeParts = process.versions.node.split(".").map(Number);
     const nodeOk = nodeParts[0] > 20 || (nodeParts[0] === 20 && nodeParts[1] >= 19);
     checks.push({ level: nodeOk ? "ok" : "error", name: "node", detail: process.versions.node });
+    function collectProtocolCheck() {
     const protocols = protocolDescriptor();
     const protocolOk = String(protocols.runtimeApi) === runtimeApiVersion &&
       String(protocols.providerProtocol) === providerProtocolVersion &&
@@ -210,6 +215,8 @@ export function createDiagnosticsRuntime({
         ? `runtime API ${runtimeApiVersion}; provider ${providerProtocolVersion}; proof ${proofProtocolVersion}; packet ${packetSchemaVersion}; review ${reviewProtocolVersion}/${reviewPacketSchemaVersion}; acceptance ${acceptanceProtocolVersion}; attestation ${attestationProtocolVersion}; authority ${authorityProtocolVersion}; signed-ci ${ciEvidenceProtocolVersion}; plan ${agentPlanSchemaVersion}; context ${contextEventSchemaVersion}`
         : "protocol.json is incompatible with foundation.mjs; reinstall Foundation"
     });
+    }
+    collectProtocolCheck();
 
     const catalog = repositoryCatalog();
     checks.push({
@@ -260,7 +267,10 @@ export function createDiagnosticsRuntime({
       name: "openspec",
       detail: openspec.detail
     });
+    }
+    collectFoundationChecks();
 
+    function collectChangeChecks() {
     const requestedChange = flags.change || null;
     const orphanRuntimes = orphanRuntimeChanges();
     checks.push({
@@ -284,6 +294,7 @@ export function createDiagnosticsRuntime({
       const workspace = state.workspace?.path || root;
       const contract = evidence(requestedChange);
       const selected = selectedRepositories(requestedChange, state);
+      function collectRepositoryChecks() {
       for (const repository of selected) {
         const available = existsSync(repository.path);
         const initialized = available && (
@@ -297,6 +308,9 @@ export function createDiagnosticsRuntime({
               : "not initialized as Git"
         });
       }
+      }
+      collectRepositoryChecks();
+      function collectProviderChecks() {
       // Keep the eager host inspection from the original diagnostics path.
       playwrightAvailability(workspace);
       for (const provider of requiredProviders(requestedChange)) {
@@ -352,6 +366,9 @@ export function createDiagnosticsRuntime({
           });
         }
       }
+      }
+      collectProviderChecks();
+      function collectTopologyAndApplyChecks() {
       for (const issue of topologyIssues(requestedChange))
         checks.push({
           level: stage === "prove" ? "error" : "warn",
@@ -373,6 +390,9 @@ export function createDiagnosticsRuntime({
             divergent.length ? "; Land will stop until this is resolved" : "; recovers on the next apply"}`
           : "no unresolved apply transaction"
       });
+      }
+      collectTopologyAndApplyChecks();
+      function collectPolicyChecks() {
       const policy = policyCapabilities(requestedChange);
       checks.push({
         level: "info",
@@ -422,8 +442,13 @@ export function createDiagnosticsRuntime({
           name: "evidence-schema",
           detail: "v1 manual-compatible; v2 enables executable adapters"
         });
+      }
+      collectPolicyChecks();
     }
+    }
+    collectChangeChecks();
 
+    function collectInstallationChecks() {
     for (const hook of ["protect-secrets.sh", "lint.sh"]) {
       const installed = existsSync(join(root, ".claude", "hooks", hook));
       checks.push({
@@ -453,6 +478,8 @@ export function createDiagnosticsRuntime({
       name: "no-direct-main",
       detail: directMainEnabled ? "enabled" : "disabled (opt-in policy)"
     });
+    }
+    collectInstallationChecks();
 
     if (flags.json) console.log(JSON.stringify({ version: 1, stage, checks }, null, 2));
     else for (const check of checks)
