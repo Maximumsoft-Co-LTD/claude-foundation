@@ -46,6 +46,7 @@
     "quality:trend": "node scripts/quality/record-quality-trend.mjs",
     "quality:summary": "node scripts/quality/render-quality-summary.mjs",
     "quality:debt": "node scripts/quality/render-quality-debt.mjs",
+    "quality:refactoring-plan": "node scripts/quality/render-refactoring-plan.mjs",
     "quality:enforce": "node scripts/quality/enforce-quality.mjs",
     "quality:report:dashboard": "npm run quality:coverage:dashboard && npm run quality:complexity && npm run quality:crap && npm run quality:changed && npm run quality:summary",
     "test:mutation:dashboard": "stryker run stryker.dashboard.config.mjs",
