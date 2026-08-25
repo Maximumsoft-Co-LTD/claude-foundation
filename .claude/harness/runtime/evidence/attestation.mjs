@@ -101,7 +101,7 @@ export function securityBoundaryInspection() {
 
 export function createHostAttestationRuntime({
   root, attestations, protocolVersion, loadRuntime, changePath, directoryHash,
-  stableHash, readJson, writeJson, now
+  stableHash, readJson, writeJson, now, writeFileExclusive = writeFileSync
 }) {
   const challengePath = (id) => join(attestations, "challenges", `${id}.json`);
 
@@ -171,59 +171,113 @@ export function createHostAttestationRuntime({
     return issuers;
   }
 
-  function validate(id, path, consume = false) {
-    if (!path) return { valid: false, reason: "trusted host attestation was not supplied" };
+  const invalidAttestation = (reason) => ({ valid: false, reason });
+
+  function attestationInput(id, path) {
+    if (!path)
+      return { result: invalidAttestation("trusted host attestation was not supplied") };
     const absolute = resolve(path);
-    if (!existsSync(absolute)) return { valid: false, reason: "attestation file is missing" };
+    if (!existsSync(absolute))
+      return { result: invalidAttestation("attestation file is missing") };
     const envelope = readJson(absolute, {});
-    const payload = envelope.payload;
-    const challenge = readJson(challengePath(id), {});
+    return {
+      envelope, payload: envelope.payload,
+      challenge: readJson(challengePath(id), {})
+    };
+  }
+
+  function envelopeValidity(context) {
+    const { envelope, payload } = context;
     if (String(envelope.version) !== protocolVersion || !payload ||
         typeof envelope.signature !== "string")
-      return { valid: false, reason: "attestation envelope is malformed" };
+      return invalidAttestation("attestation envelope is malformed");
+    return null;
+  }
+
+  function issuerValidity(context) {
+    const { envelope, payload } = context;
     const issuer = trustedHostIssuers()[payload.issuer];
-    if (!issuer) return { valid: false, reason: `issuer '${payload.issuer || "unknown"}' is not trusted` };
+    if (!issuer)
+      return { result: invalidAttestation(
+        `issuer '${payload.issuer || "unknown"}' is not trusted`) };
     if (!verifySignedPayload(payload, envelope.signature, issuer.publicKey))
-      return { valid: false, reason: "attestation signature is invalid" };
-    if (String(challenge.version) !== protocolVersion || String(payload.version) !== protocolVersion ||
+      return { result: invalidAttestation("attestation signature is invalid") };
+    return { issuer };
+  }
+
+  function challengeValidity(id, payload, challenge) {
+    if (String(challenge.version) !== protocolVersion ||
+        String(payload.version) !== protocolVersion ||
         payload.nonce !== challenge.nonce || payload.changeId !== id ||
-        payload.projectRoot !== root || payload.agreementHash !== directoryHash(changePath(id)) ||
+        payload.projectRoot !== root ||
+        payload.agreementHash !== directoryHash(changePath(id)) ||
         payload.agreementHash !== challenge.agreementHash)
-      return { valid: false, reason: "attestation does not match the current challenge, project, or agreement" };
+      return invalidAttestation(
+        "attestation does not match the current challenge, project, or agreement");
+    return null;
+  }
+
+  function lifetimeValidity(payload, challenge) {
     const issuedAt = Date.parse(payload.issuedAt || "");
     const expiresAt = Date.parse(payload.expiresAt || "");
     if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) ||
         issuedAt > Date.now() + 60_000 || expiresAt <= Date.now() ||
-        expiresAt - issuedAt > 15 * 60 * 1000 || expiresAt > Date.parse(challenge.expiresAt || ""))
-      return { valid: false, reason: "attestation lifetime is invalid or expired" };
+        expiresAt - issuedAt > 15 * 60 * 1000 ||
+        expiresAt > Date.parse(challenge.expiresAt || ""))
+      return invalidAttestation("attestation lifetime is invalid or expired");
+    return null;
+  }
+
+  function permissionValidity(payload, challenge) {
     const permissions = payload.permissions || {};
     const required = challenge.requiredPermissions || {};
-    const mismatched = Object.entries(required).filter(([key, value]) => permissions[key] !== value);
+    const mismatched = Object.entries(required)
+      .filter(([key, value]) => permissions[key] !== value);
     if (mismatched.length)
-      return { valid: false, reason: `attestation permission mismatch: ${mismatched.map(([key]) => key).join(", ")}` };
+      return invalidAttestation(
+        `attestation permission mismatch: ${mismatched.map(([key]) => key).join(", ")}`);
+    return { permissions };
+  }
+
+  function consumeAttestation(id, payload, issuer, consume) {
     const usedPath = join(attestations, "used", `${stableHash(payload.nonce)}.json`);
-    if (existsSync(usedPath)) return { valid: false, reason: "attestation nonce was already consumed" };
-    if (consume) {
-      // Exclusive create, not check-then-write: writeJson is temp+rename, so
-      // two concurrent unattended runs presenting the same attestation would
-      // both observe "not consumed" and both win. The replay window is not the
-      // only control this should have.
-      mkdirSync(dirname(usedPath), { recursive: true });
-      try {
-        writeFileSync(usedPath, `${JSON.stringify({
-          version: 1, changeId: id, issuer: payload.issuer,
-          nonceDigest: stableHash(payload.nonce), agreementHash: payload.agreementHash,
-          consumedAt: now(), trustRoot: issuer.trustRoot
-        }, null, 2)}\n`, { flag: "wx" });
-      } catch (error) {
-        if (error.code === "EEXIST")
-          return { valid: false, reason: "attestation nonce was already consumed" };
-        throw error;
-      }
+    if (existsSync(usedPath))
+      return invalidAttestation("attestation nonce was already consumed");
+    if (!consume) return null;
+    mkdirSync(dirname(usedPath), { recursive: true });
+    try {
+      writeFileExclusive(usedPath, `${JSON.stringify({
+        version: 1, changeId: id, issuer: payload.issuer,
+        nonceDigest: stableHash(payload.nonce), agreementHash: payload.agreementHash,
+        consumedAt: now(), trustRoot: issuer.trustRoot
+      }, null, 2)}\n`, { flag: "wx" });
+    } catch (error) {
+      if (error.code === "EEXIST")
+        return invalidAttestation("attestation nonce was already consumed");
+      throw error;
     }
+    return null;
+  }
+
+  function validate(id, path, consume = false) {
+    const input = attestationInput(id, path);
+    if (input.result) return input.result;
+    const envelopeIssue = envelopeValidity(input);
+    if (envelopeIssue) return envelopeIssue;
+    const trust = issuerValidity(input);
+    if (trust.result) return trust.result;
+    const challengeIssue = challengeValidity(id, input.payload, input.challenge);
+    if (challengeIssue) return challengeIssue;
+    const lifetimeIssue = lifetimeValidity(input.payload, input.challenge);
+    if (lifetimeIssue) return lifetimeIssue;
+    const permission = permissionValidity(input.payload, input.challenge);
+    if (permission.valid === false) return permission;
+    const consumptionIssue = consumeAttestation(id, input.payload, trust.issuer, consume);
+    if (consumptionIssue) return consumptionIssue;
     return {
-      valid: true, reason: "signed host attestation is valid", issuer: payload.issuer,
-      expiresAt: payload.expiresAt, permissions, trustRoot: issuer.trustRoot
+      valid: true, reason: "signed host attestation is valid", issuer: input.payload.issuer,
+      expiresAt: input.payload.expiresAt, permissions: permission.permissions,
+      trustRoot: trust.issuer.trustRoot
     };
   }
 
