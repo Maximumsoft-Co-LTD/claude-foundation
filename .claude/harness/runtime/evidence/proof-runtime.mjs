@@ -265,54 +265,72 @@ export function createProofRuntime({
     reportFinalizedProof(id, hash, proof, excludedReceipts, options);
   }
 
-  function audit(id, quiet = false) {
-    const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
+  function proofEnvelopeIssue(proof) {
     if (!proof || proof.status !== "pass") return { valid: false, reason: "missing-proof" };
     if (String(proof.proofProtocolVersion || "") !== protocolVersion)
       return { valid: false, reason: "proof-version-stale" };
     if (!Array.isArray(proof.receipts) || proof.receipts.length === 0)
       return { valid: false, reason: "missing-receipt-manifest" };
-    if (proof.aggregateGraphProof) {
-      const aggregate = proof.aggregateGraphProof;
-      if (aggregate.status !== "pass" || aggregate.graphIdentity !== proof.graphIdentity ||
-          aggregate.graphRevision !== proof.graphRevision ||
-          aggregate.workspaceHash !== proof.workspaceHash)
-        return { valid: false, reason: "aggregate-graph-proof-identity" };
-      if ((aggregate.requiredNodes || []).some((id) =>
-        !(aggregate.coveredNodes || []).includes(id)) ||
-          (aggregate.requiredEdges || []).some((id) =>
-            !(aggregate.coveredEdges || []).includes(id)))
-        return { valid: false, reason: "aggregate-graph-proof-incomplete" };
-      const nodeProofs = new Map((proof.nodeProofs || []).map((row) => [row.nodeId, row]));
-      if ((aggregate.requiredNodes || []).some((id) =>
-        nodeProofs.get(id)?.status !== "pass"))
-        return { valid: false, reason: "aggregate-node-proof-missing" };
-      for (const row of nodeProofs.values()) {
-        if (row.source !== "accepted-lease-result") continue;
-        const authority = row.resultAuthority || {};
-        const path = resolve(root, authority.path || "");
-        if (!pathInside(proofRunRoot(id, proof.proofRunId), path) ||
-            !existsSync(path) || !statSync(path).isFile() ||
-            fileDigest(path) !== authority.sha256 ||
-            statSync(path).size !== Number(authority.size))
-          return { valid: false, reason: `node-result-tampered:${row.nodeId || "unknown"}` };
-      }
+    return null;
+  }
+
+  function durableProofFileValid(id, proofRunId, entry) {
+    const path = resolve(root, entry.path || "");
+    return pathInside(proofRunRoot(id, proofRunId), path) &&
+      existsSync(path) && statSync(path).isFile() &&
+      fileDigest(path) === entry.sha256 && statSync(path).size === Number(entry.size);
+  }
+
+  function aggregateProofIssue(id, proof) {
+    const aggregate = proof.aggregateGraphProof;
+    if (!aggregate) return null;
+    if (aggregate.status !== "pass" || aggregate.graphIdentity !== proof.graphIdentity ||
+        aggregate.graphRevision !== proof.graphRevision ||
+        aggregate.workspaceHash !== proof.workspaceHash)
+      return { valid: false, reason: "aggregate-graph-proof-identity" };
+    if ((aggregate.requiredNodes || []).some((nodeId) =>
+      !(aggregate.coveredNodes || []).includes(nodeId)) ||
+        (aggregate.requiredEdges || []).some((edgeId) =>
+          !(aggregate.coveredEdges || []).includes(edgeId)))
+      return { valid: false, reason: "aggregate-graph-proof-incomplete" };
+    const nodeProofs = new Map((proof.nodeProofs || []).map((row) => [row.nodeId, row]));
+    if ((aggregate.requiredNodes || []).some((nodeId) =>
+      nodeProofs.get(nodeId)?.status !== "pass"))
+      return { valid: false, reason: "aggregate-node-proof-missing" };
+    for (const row of nodeProofs.values()) {
+      if (row.source !== "accepted-lease-result") continue;
+      if (!durableProofFileValid(id, proof.proofRunId, row.resultAuthority || {}))
+        return { valid: false, reason: `node-result-tampered:${row.nodeId || "unknown"}` };
     }
+    return null;
+  }
+
+  function receiptProofIssue(id, proof) {
     for (const entry of proof.receipts) {
-      const path = resolve(root, entry.path || "");
-      if (!pathInside(proofRunRoot(id, proof.proofRunId), path) ||
-          !existsSync(path) || !statSync(path).isFile() ||
-          fileDigest(path) !== entry.sha256 || statSync(path).size !== Number(entry.size))
+      if (!durableProofFileValid(id, proof.proofRunId, entry))
         return { valid: false, reason: `receipt-tampered:${entry.provider || "unknown"}` };
+      const path = resolve(root, entry.path || "");
       const receipt = readJson(path);
       const invalidArtifact = (receipt.artifacts || []).find((artifact) =>
         artifact.required !== false && !validateArtifact(artifact));
       if (invalidArtifact)
         return { valid: false, reason: `artifact-tampered:${entry.provider || "unknown"}` };
     }
+    return null;
+  }
+
+  function proofArtifactIssue(proof) {
     if ((proof.artifacts || []).some((artifact) =>
       artifact.required !== false && !validateArtifact(artifact)))
       return { valid: false, reason: "proof-artifact-tampered" };
+    return null;
+  }
+
+  function audit(id, quiet) {
+    const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
+    const issue = proofEnvelopeIssue(proof) || aggregateProofIssue(id, proof) ||
+      receiptProofIssue(id, proof) || proofArtifactIssue(proof);
+    if (issue) return issue;
     if (!quiet) console.log(`PROOF AUDIT ${id}: valid\n  run: ${proof.proofRunId}`);
     return { valid: true, proof };
   }
