@@ -187,6 +187,14 @@ test("authority: observed writes override an incomplete worker report", () => {
   assert.deepEqual(result.unexpectedWrites, ["src/web/undeclared.mjs"]);
 });
 
+test("authority: an undeclared path scope grants whole-tree write authority", () => {
+  const wholeTree = { ...authority, paths: [] };
+  const result = validateNodeResult(wholeTree, {
+    ...wholeTree, claimIds: ["api"], outputSchema: wholeTree.outputSchema
+  }, ["src/anywhere/index.mjs"]);
+  assert.equal(result.valid, true);
+});
+
 function json(path, fallback = {}) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
 }
@@ -224,13 +232,175 @@ test("lease: disjoint keys acquire atomically with increasing fencing", () => {
   const one = json(join(root, "tasks", "c", "T001.json"));
   const two = json(join(root, "tasks", "c", "T002.json"));
   assert.ok(one.fencingGeneration < two.fencingGeneration);
+  assert.equal(one.executionAttempt, 1);
+  assert.equal(two.executionAttempt, 1);
   assert.ok(existsSync(join(root, "tasks", "c", "T001.json")));
   assert.throws(() => runtime.acquire("c", "T003", { owner: "c" }), /conflicts with/);
   assert.equal(existsSync(join(root, "tasks", "c", "T003.json")), false);
+  runtime.release("c", "T002", { owner: "b" });
+  assert.equal(existsSync(join(root, "tasks", "c", "T002.json")), false,
+    "a first attempt stays generation-compatible even when the global fence is above one");
 });
 
 // Kept local to avoid a helper dependency in the shipped test fixture.
 import * as awaitImportFs from "node:fs";
+
+test("lease: a takeover under the same owner rejects the superseded generation's release, accepts the current one", () => {
+  const root = mkdtempSync(join(tmpdir(), "graph-lease-takeover-"));
+  const plan = {
+    dispatchable: true, planDigest: "p", graphRevision: "g", graphIdentity: "gi",
+    contractRevision: 1, workspaceHash: "w",
+    tasks: [{ id: "T001", dependsOn: [], leaseKeys: ["path:root:src"], paths: ["src/**"], claims: [], repository: "root" }],
+    graph: { nodes: [] }
+  };
+  const runtime = createLeaseRuntime({
+    leases: root, stableHash,
+    agentPlanValue: () => plan,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson: json,
+    writeJson: (path, value) => {
+      const { mkdirSync, writeFileSync } = awaitImportFs;
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => "2026-08-18T00:00:00.000Z",
+    fail: (message) => { throw new Error(message); }
+  });
+
+  // `owner` is stable per (changeId, graphRevision, taskId) — a redispatch
+  // after a restart recomputes the same string, so a takeover can happen
+  // under an unchanged owner name.
+  runtime.acquire("c", "T001", { owner: "dispatch-t001" });
+  const taskIndex = join(root, "tasks", "c", "T001.json");
+  const before = json(taskIndex);
+  const past = "2020-01-01T00:00:00.000Z";
+  awaitImportFs.writeFileSync(taskIndex, `${JSON.stringify({ ...before, expiresAt: past })}\n`);
+  for (const key of before.resources || []) {
+    const path = runtime.leasePath(key);
+    const descriptor = json(path);
+    awaitImportFs.writeFileSync(path, `${JSON.stringify({ ...descriptor, expiresAt: past })}\n`);
+  }
+
+  runtime.acquire("c", "T001", { owner: "dispatch-t001" });
+  const after = json(taskIndex);
+  assert.ok(after.fencingGeneration > before.fencingGeneration);
+  assert.notEqual(after.leaseId, before.leaseId);
+
+  assert.throws(() => runtime.release("c", "T001", {
+    owner: "dispatch-t001"
+  }), /lease id is required/);
+  assert.ok(existsSync(taskIndex), "a generation-less release must not clear a takeover");
+
+  // The straggler from the superseded generation presents the lease id it
+  // was actually granted; owner equality alone must not be enough.
+  assert.throws(() => runtime.release("c", "T001", {
+    owner: "dispatch-t001", "lease-id": before.leaseId
+  }), /stale lease result/);
+  assert.ok(existsSync(taskIndex), "the current generation's lease must survive a stale release");
+
+  runtime.release("c", "T001", { owner: "dispatch-t001", "lease-id": after.leaseId });
+  assert.equal(existsSync(taskIndex), false);
+});
+
+test("lease: force recovery preserves task-local fencing across reacquisition", () => {
+  const root = mkdtempSync(join(tmpdir(), "graph-lease-force-takeover-"));
+  const plan = {
+    dispatchable: true, planDigest: "p", graphRevision: "g", graphIdentity: "gi",
+    contractRevision: 1, workspaceHash: "w",
+    tasks: [{ id: "T001", dependsOn: [], leaseKeys: ["path:root:src"],
+      paths: ["src/**"], claims: [], repository: "root" }],
+    graph: { nodes: [] }
+  };
+  const runtime = createLeaseRuntime({
+    leases: root, stableHash,
+    agentPlanValue: () => plan,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson: json,
+    writeJson: (path, value) => {
+      const { mkdirSync, writeFileSync } = awaitImportFs;
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => "2026-08-18T00:00:00.000Z",
+    fail: (message) => { throw new Error(message); }
+  });
+
+  runtime.acquire("c", "T001", { owner: "dispatch-t001" });
+  const taskIndex = join(root, "tasks", "c", "T001.json");
+  const before = json(taskIndex);
+  runtime.release("c", "T001", {
+    owner: "recovery-host", force: true, "decision-ref": "fixture://takeover"
+  });
+  const tombstone = json(taskIndex);
+  assert.equal(tombstone.status, "taken-over");
+  assert.equal(tombstone.executionAttempt, 1);
+  assert.throws(() => runtime.release("c", "T001", { owner: "dispatch-t001" }),
+    /prior lease was taken over/);
+  assert.throws(() => runtime.release("c", "T001", {
+    owner: "dispatch-t001", "lease-id": before.leaseId
+  }), /prior lease was taken over/);
+  assert.equal(existsSync(taskIndex), true, "stale release must preserve the fencing tombstone");
+  assert.equal(existsSync(join(root, "results", "c", "T001.json")), false,
+    "a stale executor must not create an observed result after force recovery");
+
+  runtime.acquire("c", "T001", { owner: "dispatch-t001" });
+  const after = json(taskIndex);
+  assert.equal(after.executionAttempt, 2);
+  assert.notEqual(after.leaseId, before.leaseId);
+  assert.throws(() => runtime.release("c", "T001", { owner: "dispatch-t001" }),
+    /lease id is required/);
+  assert.throws(() => runtime.release("c", "T001", {
+    owner: "dispatch-t001", "lease-id": before.leaseId
+  }), /stale lease result/);
+  runtime.release("c", "T001", {
+    owner: "dispatch-t001", "lease-id": after.leaseId
+  });
+  assert.equal(existsSync(taskIndex), false);
+});
+
+function leaseRuntimeFixture(root, task, surfaces) {
+  let call = 0;
+  return createLeaseRuntime({
+    leases: root, stableHash,
+    agentPlanValue: () => ({
+      dispatchable: true, planDigest: "p", graphRevision: "g", graphIdentity: "gi",
+      contractRevision: 1, workspaceHash: "w", tasks: [task], graph: { nodes: [] }
+    }),
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson: json,
+    writeJson: (path, value) => {
+      const { mkdirSync, writeFileSync } = awaitImportFs;
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => "2026-08-18T00:00:00.000Z",
+    observedTaskSurface: () => surfaces[Math.min(call++, surfaces.length - 1)],
+    fail: (message) => { throw new Error(message); }
+  });
+}
+
+test("release: a write outside the granted path scope is not accepted", () => {
+  const root = mkdtempSync(join(tmpdir(), "graph-lease-authority-"));
+  const task = { id: "T001", dependsOn: [], leaseKeys: ["path:root:src/api"], paths: ["src/api/**"], claims: [], repository: "root" };
+  const runtime = leaseRuntimeFixture(root, task, [
+    [], [{ path: "src/web/undeclared.mjs", identity: "sha:1" }]
+  ]);
+  runtime.acquire("c", "T001", { owner: "a" });
+  assert.throws(() => runtime.release("c", "T001", { owner: "a" }),
+    /changed outside granted scope/);
+});
+
+test("release: an undeclared path scope grants whole-tree write authority", () => {
+  const root = mkdtempSync(join(tmpdir(), "graph-lease-authority-"));
+  const task = { id: "T001", dependsOn: [], leaseKeys: ["repo:root"], claims: [], repository: "root" };
+  const runtime = leaseRuntimeFixture(root, task, [
+    [], [{ path: "src/anywhere/index.mjs", identity: "sha:1" }]
+  ]);
+  runtime.acquire("c", "T001", { owner: "a" });
+  runtime.release("c", "T001", { owner: "a" });
+  const record = json(join(root, "results", "c", "T001.json"));
+  assert.deepEqual(record.observedWrites, ["src/anywhere/index.mjs"]);
+});
 
 test("upgrade: graph state is derived and requires no authored graph file", () => {
   const graph = compileExecutionGraph(fixture());

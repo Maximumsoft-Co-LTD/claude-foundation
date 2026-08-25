@@ -31,6 +31,9 @@ const criticalCases = [
   "dispatch-parallel-bound",
   "dispatch-singleton-leased-inline",
   "dispatch-live-wait",
+  "dispatch-live-restart-wait",
+  "dispatch-takeover-fencing",
+  "dispatch-path-scope",
   "dispatch-acquire-before-packet"
 ].map((id) => ({ id, status: nodeTestsPassed ? "passed" : "failed" }));
 criticalCases.push({
@@ -39,15 +42,17 @@ criticalCases.push({
 });
 const singleSourceTotal = Number(
   (singleSource.stdout || "").match(/ALL PASS \((\d+)\/\d+ assertions\)/)?.[1] || 0);
-const total = 25 + singleSourceTotal;
+const nodeTestTotal = Number(
+  (result.stdout || "").match(/(?:^|\n)[#ℹ]\s*tests\s+(\d+)/)?.[1] || 0);
+const total = nodeTestTotal + singleSourceTotal;
 const output = resolve(process.env.FOUNDATION_RESULT_REPORT ||
   ".foundation/test-results/agent-dispatch.json");
 mkdirSync(dirname(output), { recursive: true });
 writeFileSync(output, `${JSON.stringify({
   numTotalTests: total,
-  numPassedTests: (nodeTestsPassed ? 25 : 0) +
+  numPassedTests: (nodeTestsPassed ? nodeTestTotal : 0) +
     (singleSourcePassed ? singleSourceTotal : 0),
-  numFailedTests: (nodeTestsPassed ? 0 : 25) +
+  numFailedTests: (nodeTestsPassed ? 0 : nodeTestTotal || 1) +
     (singleSourcePassed ? 0 : singleSourceTotal || 1),
   criticalCases
 }, null, 2)}\n`);

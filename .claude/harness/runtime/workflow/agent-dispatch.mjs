@@ -21,7 +21,11 @@ function leasedTask(changeId, plan, task, stableHash) {
     owner,
     acquireCommand: command(`agents acquire ${changeId} ${task.id} --owner ${owner}`),
     packetCommand: command(`packet ${changeId} --task ${task.id}`),
-    releaseCommand: command(`agents release ${changeId} ${task.id} --owner ${owner}`)
+    // `--lease-id` must be the value `agents acquire` printed (also echoed as
+    // executionAuthority.leaseId in the task packet): owner alone cannot
+    // prove this call still speaks for the generation it was granted.
+    releaseCommand: command(`agents release ${changeId} ${task.id} --owner ${
+      owner} --lease-id '<lease-id-from-acquire>'`)
   };
 }
 

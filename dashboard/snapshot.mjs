@@ -4,6 +4,7 @@
 // Keep this module dependency-free: it ships with the Homebrew dashboard bundle.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -62,10 +63,17 @@ function receiptProjection(root, id) {
   const dir = join(root, ".foundation", "receipts", id);
   if (!existsSync(dir)) return { status: "missing", providers: [] };
   const providers = [];
-  let proofStatus = null;
+  const receiptDigests = new Map();
+  let proof = null;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    const value = readJson(join(dir, entry.name));
+    const path = join(dir, entry.name);
+    let raw;
+    let value;
+    try {
+      raw = readFileSync(path);
+      value = JSON.parse(raw.toString("utf8"));
+    } catch { continue; }
     if (!value || typeof value !== "object") continue;
     // proof.json is the manifest the receipts roll up into, not a provider —
     // the harness skips it here for the same reason. Listing it produced a
@@ -73,19 +81,35 @@ function receiptProjection(root, id) {
     // receipt set containing failures reported the same "partial" as an
     // all-green set still waiting for `prove`.
     if (entry.name === "proof.json") {
-      proofStatus = typeof value.status === "string" ? value.status : null;
+      proof = value;
       continue;
     }
+    const provider = entry.name.slice(0, -5);
+    receiptDigests.set(provider, createHash("sha256").update(raw).digest("hex"));
     providers.push({
-      provider: entry.name.slice(0, -5),
+      provider,
       status: typeof value.status === "string" ? value.status : "unknown"
     });
   }
   providers.sort((a, b) => a.provider.localeCompare(b.provider));
   const failing = providers.some((item) => ["fail", "error"].includes(item.status));
+  const provenReceipts = Array.isArray(proof?.receipts) ? proof.receipts : null;
+  const provenByProvider = new Map((provenReceipts || []).map((entry) =>
+    [entry?.provider, entry?.sha256]));
+  const excludedProviders = new Set((Array.isArray(proof?.excludedReceipts)
+    ? proof.excludedReceipts : []).map((entry) => entry?.provider));
+  const proofFresh = typeof proof?.status === "string" && provenReceipts !== null &&
+    provenReceipts.every((entry) => typeof entry?.provider === "string" &&
+      typeof entry?.sha256 === "string" && receiptDigests.get(entry.provider) === entry.sha256) &&
+    providers.every((entry) => provenByProvider.has(entry.provider) ||
+      excludedProviders.has(entry.provider));
+  // A proof is current only while every included receipt still has the digest
+  // the proof certified and every extra receipt was explicitly excluded by
+  // that proof. Any changed/new/missing receipt makes the projection partial;
+  // fail/error remains the stronger live signal.
   return {
-    status: proofStatus
-      || (failing ? "failing" : providers.length ? "partial" : "missing"),
+    status: failing ? "failing" : (proofFresh
+      ? proof.status : providers.length ? "partial" : "missing"),
     providers
   };
 }

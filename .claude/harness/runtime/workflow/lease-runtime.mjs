@@ -197,6 +197,21 @@ export function createLeaseRuntime({
     }
     const taskLease = readJson(index);
     const force = Boolean(flags.force);
+    if (!force && taskLease.status === "taken-over")
+      fail(`stale lease result for '${id}/${taskLease.taskId}': the prior lease was taken over; reacquire the task before releasing a result`);
+    // `owner` is derived from (changeId, graphRevision, taskId), not from an
+    // attempt or process id, so a redispatch after a host restart recomputes
+    // the identical owner string and can win a takeover under it. That makes
+    // owner equality alone useless for telling the current lease holder apart
+    // from a straggler whose generation already lost a takeover: a caller
+    // that names the lease it was actually granted is held to that specific
+    // generation even when the owner still matches the current holder.
+    const claimedLeaseId = String(flags["lease-id"] || "").trim();
+    if (!force && Number(taskLease.executionAttempt || 0) > 1 && !claimedLeaseId)
+      fail(`lease id is required to release taken-over task '${id}/${taskLease.taskId}'`);
+    if (!force && claimedLeaseId && claimedLeaseId !== taskLease.leaseId)
+      fail(`stale lease result for '${id}/${taskLease.taskId}': lease '${
+        claimedLeaseId}' no longer owns this task (current lease '${taskLease.leaseId}')`);
     const expired = Date.parse(taskLease.expiresAt || "") <= Date.now();
     // A crashed worker leaves a lease nobody can release, and readiness then
     // tells the user to release it. Takeover is allowed, but a lease that has
@@ -221,10 +236,10 @@ export function createLeaseRuntime({
       observedWrites = [...new Set([...baseline.keys(), ...current.keys()])]
         .filter((path) => baseline.get(path) !== current.get(path)).sort();
       const allowed = taskLease.paths || [];
-      const outside = observedWrites.filter((path) => !allowed.some((scope) => {
+      const outside = allowed.length ? observedWrites.filter((path) => !allowed.some((scope) => {
         const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
         return scope === "*" || path === prefix || path.startsWith(`${prefix}/`);
-      }));
+      })) : [];
       if (outside.length)
         fail(`task '${taskLease.taskId}' changed outside granted scope: ${outside.join(", ")}; result and proof were not accepted`);
     }
@@ -244,7 +259,17 @@ export function createLeaseRuntime({
       if (!force) writeJson(join(leases, "results", id, `${taskLease.taskId}.json`), {
         version: 1, ...taskLease, status: "observed", observedWrites, acceptedAt: now()
       });
-      rmSync(index);
+      // A forced recovery must retain the task-local attempt counter. The
+      // global fencing generation cannot answer whether this specific task
+      // was taken over, and deleting the index would reset the next acquire
+      // to attempt 1, letting a late same-owner executor release its successor
+      // without naming the lease generation it actually held.
+      if (force) writeJson(index, {
+        ...taskLease, status: "taken-over", resources: [],
+        executionAttempt: Math.max(1, Number(taskLease.executionAttempt || 0)),
+        expiresAt: now(), releasedAt: now()
+      });
+      else rmSync(index);
     });
     console.log(`LEASE RELEASED ${id}/${taskLease.taskId}${
       taskLease.owner === owner ? "" : `\n  taken over from: ${taskLease.owner}`}${

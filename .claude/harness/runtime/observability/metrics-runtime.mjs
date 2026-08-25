@@ -208,7 +208,8 @@ export function createMetricsRuntime({
     const phaseEntry = (name) => (phases[name] ||= {
       operations: 0, durationMs: 0, failed: 0, blocked: 0, requests: 0,
       inputTokens: null, outputTokens: null,
-      cacheCreationTokens: null, cacheReadTokens: null, spendTokens: null,
+      cacheCreationTokens: null, cacheReadTokens: null, cacheWriteTokens: null,
+      spendTokens: null,
       contextMode: null, contextCarryInTokens: null, contextCarryCostTokens: null,
       loggedContextMode: undefined
     });
@@ -237,6 +238,17 @@ export function createMetricsRuntime({
         const value = measuredNumber(event[field]);
         if (value !== null) phase[field] = Number(phase[field] || 0) + value;
       }
+      // The budget derives a cache write from cacheTokens - cacheReadTokens
+      // when a host reports only totals and no explicit creation field. Spend
+      // must derive it the same way, or a phase's cost silently drops that
+      // write instead of matching what the budget window actually charged.
+      const cacheTotal = measuredNumber(event.cacheTokens);
+      const cacheRead = measuredNumber(event.cacheReadTokens);
+      const derivedCacheWrite = cacheTotal !== null && cacheRead !== null
+        ? measuredNumber(cacheTotal - cacheRead) : null;
+      const cacheWrite = measuredNumber(event.cacheCreationTokens) ?? derivedCacheWrite;
+      if (cacheWrite !== null)
+        phase.cacheWriteTokens = Number(phase.cacheWriteTokens || 0) + cacheWrite;
       // `Number(null)` is 0 and 0 is finite, so an unknown cache read latched
       // this to a measured zero — and the `=== null` guard then stopped any
       // real value from ever correcting it.
@@ -263,7 +275,7 @@ export function createMetricsRuntime({
       // cache reads. Without that sum per phase the numbers here could not be
       // compared against the budget window at all, which is why "what did build
       // cost against prove" had no answer.
-      const spend = [phase.inputTokens, phase.outputTokens, phase.cacheCreationTokens]
+      const spend = [phase.inputTokens, phase.outputTokens, phase.cacheWriteTokens]
         .filter((value) => measuredNumber(value) !== null);
       phase.spendTokens = spend.length
         ? spend.reduce((sum, value) => sum + Number(value), 0) : null;

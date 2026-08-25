@@ -107,7 +107,8 @@ export function createReviewProtocol({ stableHash, fail }) {
         stableHash([...(attempt.verifiedFindingIds || [])].sort()) ===
           stableHash([...(findings.verifiedIds || [])].sort());
       return (attempt.version === 2
-        ? attempt.status === "dispatched" : attempt.status === "completed") &&
+        ? attempt.status === "dispatched"
+        : attempt.status === "completed" && attempt.resultStatus === receipt.status) &&
         attempt.requestId === receipt.review?.requestId &&
         attempt.reviewerIdentity === reviewer.identity &&
         (attempt.reviewerProviderFamily || null) === (reviewer.providerFamily || null) &&
@@ -124,6 +125,7 @@ export function createReviewProtocol({ stableHash, fail }) {
     if (attempt.version === 4) {
       const closure = receipt.review?.repairClosure || {};
       return attempt.status === "completed" && attempt.resultStatus === "pass" &&
+        receipt.status === "pass" &&
         attempt.requestId === receipt.review?.requestId &&
         attempt.reviewerIdentity === reviewer.identity &&
         attempt.scope?.mode === "repair-closure" &&

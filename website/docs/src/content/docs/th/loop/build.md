@@ -68,10 +68,10 @@ worker ได้รับแค่ `packet --task <task-id>` ส่วน host �
 
 ```bash
 claude-foundation agents acquire <change> <task> --owner <id>
-claude-foundation agents release <change> <task> --owner <id>
+claude-foundation agents release <change> <task> --owner <id> --lease-id <acquired-lease-id>
 ```
 
-ถ้า worker crash ขณะถือ lease อยู่ ให้ใช้ `agents release --force` เพื่อยึดคืน แต่ lease ที่ยังไม่หมดอายุต้องใส่ `--decision-ref` ด้วย เพราะ worker ที่ถืออยู่อาจยังทำงานอยู่จริง
+ใช้ `executionAuthority.leaseId` จาก task packet ที่ acquire แล้ว หลัง takeover runtime จะปฏิเสธการ release ที่ไม่มี generation id นี้ เพื่อไม่ให้ executor เก่าล้าง lease ของตัวถัดไป ถ้า worker crash ขณะถือ lease อยู่ ให้ใช้ `agents release --force` เพื่อยึดคืน แต่ lease ที่ยังไม่หมดอายุต้องใส่ `--decision-ref` ด้วย เพราะ worker ที่ถืออยู่อาจยังทำงานอยู่จริง
 
 ## ทำให้ลู่เข้า
 

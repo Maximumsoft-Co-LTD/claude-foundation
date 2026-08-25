@@ -237,7 +237,7 @@ export function conflictKeysOverlap(left, right) {
 }
 
 function pathMatches(path, scopes) {
-  if ((scopes || []).includes("*")) return true;
+  if (!(scopes || []).length || (scopes || []).includes("*")) return true;
   return (scopes || []).some((scope) => {
     const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
     return path === prefix || path.startsWith(`${prefix}/`);

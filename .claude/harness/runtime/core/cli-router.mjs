@@ -110,7 +110,7 @@ export async function routeRuntimeCommand(command, values, api) {
     }
     case "agent-release": {
       const { flags, rest } = parseStrictCommandFlags(values, "agents release", {
-        boolean: ["force"], value: ["owner", "decision-ref"]
+        boolean: ["force"], value: ["owner", "decision-ref", "lease-id"]
       });
       releaseAgentLease(rest[0], rest[1], flags); break;
     }

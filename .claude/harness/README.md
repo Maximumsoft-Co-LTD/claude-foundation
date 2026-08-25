@@ -247,6 +247,11 @@ host acquires each lease, regenerates the now-leased task packet, and gives the
 native worker only that packet and repository state. Foundation still never
 starts a model process itself.
 
+The host copies `executionAuthority.leaseId` from the acquired task packet into
+`agents release --lease-id`. After any takeover, a generation-less release is
+refused so a late executor with the same stable owner cannot clear the current
+lease.
+
 JSON output is compact by default and `--pretty` is inspection-only. Plan
 schema 4 compiles a deterministic task/provider/repository/Land graph, resumes dependencies satisfied by completed tasks, reports
 `proof-ready` after all tasks complete, and declares the deepest model required

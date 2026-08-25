@@ -180,6 +180,47 @@ test("budget accounting ignores junk usage instead of inventing spend", () => {
   assert.equal(runtime.knownNumber([7]), false);
 });
 
+test("a phase's spend derives cache-write the same way the budget window does", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-derived-cache-write-"));
+  const logs = join(root, "logs");
+  const id = "derived-cache-write";
+  mkdirSync(join(logs, id), { recursive: true });
+  writeFileSync(join(logs, id, "operations.jsonl"), "");
+  // This host reports only a cache total and a cache-read count, with no
+  // explicit creation field — the budget derives the write as their
+  // difference (cacheTokens - cacheReadTokens = 100), and the phase spend
+  // shown in `metrics show` must charge that same derived write rather than
+  // silently dropping it because no `cacheCreationTokens` field was present.
+  writeFileSync(join(logs, id, "events.jsonl"), JSON.stringify({
+    source: "generic", requestId: "derived", operationId: "build", modelId: "model-a",
+    inputTokens: 10, outputTokens: 5, cacheTokens: 120, cacheReadTokens: 20,
+    timestamp: "2026-08-12T00:00:00.000Z"
+  }) + "\n");
+  const budgetRuntime = createBudgetRuntime({ policy, now: () => "2026-08-12T00:00:00.000Z" });
+  const state = {
+    id, schema: "foundation-standard", impact: "medium",
+    budget: budgetRuntime.initialBudget("foundation-standard", id)
+  };
+  budgetRuntime.synchronizeBudgetUsage(state, [{
+    runId: id, inputTokens: 10, outputTokens: 5, cacheTokens: 120, cacheReadTokens: 20
+  }], id, "host-events:generic", 1);
+  assert.equal(state.budget.window.usedTokens, 115);
+  let rendered;
+  createMetricsRuntime({
+    logs,
+    receipts: join(root, "receipts"),
+    readJson: json,
+    readJsonLines: jsonLines,
+    readJsonLinesTolerant: jsonLines,
+    loadRuntime: () => structuredClone(state),
+    ensureBudgetState: budgetRuntime.ensureBudgetState,
+    budgetDecision: budgetRuntime.budgetDecision,
+    output: (value) => { rendered = JSON.parse(value); }
+  }).showMetrics(id);
+  assert.equal(rendered.phases.build.spendTokens, 115,
+    "phase spend must match the budget window it is compared against");
+});
+
 test("metrics totals, groups, phases, and carry-in ignore junk values", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-strict-metrics-"));
   const logs = join(root, "logs");

@@ -1,8 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import {
+  mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { createAgentDispatchRuntime } from "../runtime/workflow/agent-dispatch.mjs";
+import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
 import { routeRuntimeCommand } from "../runtime/core/cli-router.mjs";
+
+const NO_FALLBACK = Symbol("no-fallback");
+function readJson(path, fallback = NO_FALLBACK) {
+  try { return JSON.parse(readFileSync(path, "utf8")); }
+  catch (error) {
+    if (fallback !== NO_FALLBACK) return fallback;
+    throw error;
+  }
+}
+
+function writeJson(path, value) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.tmp-${process.pid}`;
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(temporary, path);
+}
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const task = (id, repository = "root") => ({
@@ -92,6 +114,7 @@ test("a singleton planned frontier stays in the current session under a lease", 
     /^claude-foundation packet dispatch-change --task T001$/);
   assert.match(first.task.releaseCommand,
     /^claude-foundation agents release dispatch-change T001 --owner /);
+  assert.match(first.task.releaseCommand, /--lease-id '<lease-id-from-acquire>'$/);
   assert.deepEqual(first.contextPolicy, {
     source: "leased-task-packet",
     parentTranscript: "retained",
@@ -113,6 +136,91 @@ test("a live lease returns wait and never another spawn group", () => {
   assert.equal(value.action, "wait");
   assert.equal(value.activeWorkers[0].owner, "worker-a");
   assert.equal("workers" in value, false);
+});
+
+function leaseRuntimeFixture(root, planValue) {
+  return createLeaseRuntime({
+    leases: root,
+    stableHash: hash,
+    agentPlanValue: () => planValue,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson,
+    writeJson,
+    now: () => new Date().toISOString(),
+    fail: (message) => { throw new Error(message); }
+  });
+}
+
+test("an unexpired on-disk lease survives a simulated host restart and forces wait, never a duplicate dispatch", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-dispatch-lease-"));
+  const changeId = "restart-change";
+  const planValue = plan({
+    maxParallelAgents: 3,
+    groups: [["T001", "T002"]],
+    tasks: [task("T001", "api"), task("T002", "app")]
+  });
+  planValue.tasks.forEach((entry) => { entry.dependsOn = []; entry.leaseKeys = [`path:root:${entry.id}`]; });
+
+  // A prior host session acquires T001's lease with plenty of time left.
+  const priorSession = leaseRuntimeFixture(root, planValue);
+  priorSession.acquire(changeId, "T001", { owner: "worker-a" });
+
+  // Simulate a host restart: a brand-new process constructs fresh runtime
+  // closures against the same on-disk lease directory, with no in-memory
+  // state carried over from the process that acquired the lease.
+  const restartedLeases = leaseRuntimeFixture(root, planValue);
+  const restartedDispatch = createAgentDispatchRuntime({
+    agentPlanValue: () => planValue,
+    activeChangeLeases: restartedLeases.active,
+    stableHash: hash,
+    policy: () => ({ execution: { planSummaryBytes: 4096 } }),
+    fail: (message) => { throw new Error(message); }
+  });
+
+  const value = restartedDispatch.dispatchValue(changeId);
+  assert.equal(value.action, "wait");
+  assert.equal(value.activeWorkers[0].taskId, "T001");
+  assert.equal(value.activeWorkers[0].owner, "worker-a");
+  assert.equal("workers" in value, false);
+  assert.equal("task" in value, false);
+
+  // Calling dispatch again post-restart must keep returning wait, never
+  // flip to a duplicate spawn-group or run-leased-in-session decision while
+  // the lease remains live.
+  const again = restartedDispatch.dispatchValue(changeId);
+  assert.equal(again.action, "wait");
+});
+
+test("boundary: once the lease expires, a restarted host stops waiting and dispatches normally", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-dispatch-lease-expiry-"));
+  const changeId = "expiry-change";
+  const planValue = plan({
+    maxParallelAgents: 3,
+    groups: [["T001"]],
+    tasks: [task("T001", "api")]
+  });
+  planValue.tasks.forEach((entry) => { entry.dependsOn = []; entry.leaseKeys = [`path:root:${entry.id}`]; });
+
+  const priorSession = leaseRuntimeFixture(root, planValue);
+  priorSession.acquire(changeId, "T001", { owner: "worker-a" });
+  const taskLeasePath = join(root, "tasks", changeId, "T001.json");
+  const resourceLeasePath = priorSession.leasePath("path:root:T001");
+  const expired = { ...readJson(taskLeasePath), expiresAt: "2000-01-01T00:00:00.000Z" };
+  writeJson(taskLeasePath, expired);
+  writeJson(resourceLeasePath, { ...readJson(resourceLeasePath), expiresAt: "2000-01-01T00:00:00.000Z" });
+
+  const restartedLeases = leaseRuntimeFixture(root, planValue);
+  const restartedDispatch = createAgentDispatchRuntime({
+    agentPlanValue: () => planValue,
+    activeChangeLeases: restartedLeases.active,
+    stableHash: hash,
+    policy: () => ({ execution: { planSummaryBytes: 4096 } }),
+    fail: (message) => { throw new Error(message); }
+  });
+
+  const value = restartedDispatch.dispatchValue(changeId);
+  assert.equal(value.action, "run-leased-in-session");
+  assert.equal(value.task.taskId, "T001");
 });
 
 test("single-agent and completed plans preserve the cheap path", () => {

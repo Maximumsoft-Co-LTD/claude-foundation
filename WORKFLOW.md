@@ -117,6 +117,10 @@ complete group, releases observed results, and calls dispatch again. An
 unexpired lease returns `wait`; the harness does not infer that another host's
 worker died and does not invoke a model itself.
 
+Release uses the acquired packet's `executionAuthority.leaseId`. After a
+takeover, the runtime refuses a generation-less release so a late executor
+cannot clear its successor's lease even when both derive the same stable owner.
+
 The full plan is persisted while stdout stays below 4 KiB; workers
 receive only an 8 KiB task packet. A one-repository change without shared
 external authority stays with one agent regardless of task count. It routes mechanical inventory to the configured Haiku/fast tier,

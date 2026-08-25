@@ -195,8 +195,10 @@ write_lease "$stale_expiry"
 assert_cmd_zero "an expired lease is force-released without ceremony" \
   node .claude/harness/foundation.mjs agent-release lease-fixture T1 \
     --owner other-worker --force
-assert_file_absent "a released lease leaves no index behind" \
-  .foundation/leases/tasks/lease-fixture/T1.json
+assert_file_contains "a force-released lease keeps a fencing tombstone" \
+  .foundation/leases/tasks/lease-fixture/T1.json '"status": "taken-over"'
+assert_file_contains "a legacy force release starts durable task-local fencing" \
+  .foundation/leases/tasks/lease-fixture/T1.json '"executionAttempt": 1'
 # Takeover is `release`'s, not `acquire`'s: acquire reads nothing but --owner.
 # Its flag spec was copied from release and swallowed both takeover flags in
 # silence, so a caller reaching for a takeover got a plain contended acquire and

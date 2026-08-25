@@ -736,6 +736,62 @@ try {
   assert.equal(protocol.attemptIsValid(receipt, reviewAttempt), false,
     "direct receipt recording cannot substitute arbitrary scope paths");
 
+  state = { version: 2, changeId: "change-status-forge", reviewHistory: null };
+  const forgeDispatch = attemptStore.dispatchReviewAttempt("change-status-forge", {
+    reviewerType: "ai", reviewerIdentity: "reviewer-forge",
+    reviewerProviderFamily: "openai", reviewerModelFamily: "gpt-5.6",
+    reviewerModelId: "gpt-5.6-sol", reviewerSessionId: "review-session-forge",
+    requestId: "request-forge", workspaceHash: "workspace-forge",
+    scope: { mode: "full", paths: [], digest: "scope-digest-forge" },
+    packetDigest: "packet-digest-forge", maxAiAttempts: 2
+  });
+  // A reviewer can genuinely fail (or error) with no itemized findings — a
+  // free-text "could not verify" verdict. `attemptIsValid` used to check only
+  // that the dispatch identity/scope/findings matched, never that the
+  // receipt's asserted status equalled what the reviewer actually delivered,
+  // so this exact dispatch digest could be replayed into a fabricated
+  // pass receipt with unresolvedBlockers forced to 0.
+  const forgeCompleted = attemptStore.completeReviewAttempt("change-status-forge",
+    forgeDispatch.digest, {
+      reviewerSessionId: "review-session-forge", resultStatus: "fail",
+      findings: [], verifiedFindingIds: []
+    });
+  const forgedReceipt = {
+    workspaceHash: forgeCompleted.workspaceHash,
+    status: "pass",
+    review: {
+      round: forgeCompleted.attempt,
+      requestId: forgeCompleted.requestId,
+      packetDigest: forgeCompleted.packetDigest,
+      reviewer: {
+        type: forgeCompleted.reviewerType,
+        identity: forgeCompleted.reviewerIdentity,
+        providerFamily: forgeCompleted.reviewerProviderFamily,
+        modelFamily: forgeCompleted.reviewerModelFamily,
+        modelId: forgeCompleted.reviewerModelId,
+        sessionId: forgeCompleted.reviewerSessionId
+      },
+      scope: {
+        mode: forgeCompleted.scope.mode,
+        baseAttemptDigest: forgeCompleted.scope.baseAttemptDigest || null,
+        paths: forgeCompleted.scope.paths,
+        dispatchDigest: forgeCompleted.scope.digest,
+        digest: stableHash({
+          priorWorkspaceHash: null,
+          workspaceHash: forgeCompleted.workspaceHash,
+          paths: forgeCompleted.scope.paths
+        })
+      },
+      findings: {
+        verified: 0, unresolvedBlockers: 0,
+        items: forgeCompleted.findings, verifiedIds: forgeCompleted.verifiedFindingIds
+      },
+      supersedes: null
+    }
+  };
+  assert.equal(protocol.attemptIsValid(forgedReceipt, forgeCompleted), false,
+    "a completed fail/error attempt cannot be replayed into a fabricated pass receipt");
+
   state = { version: 2, changeId: "change-b", reviewHistory: null };
   packetMode = "contract";
   packetSequence = 0;

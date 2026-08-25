@@ -29,6 +29,19 @@ if command -v jq >/dev/null 2>&1; then
     bash "$ROOT/.claude/hooks/protect-secrets.sh")"
   assert_eq "secret hook still exempts secret names inside prose strings" "" "$message"
 
+  # A content-mode Grep glob-scoped to "*.md" can never match a .env or
+  # credential file, so searching docs for mentions of example variable names
+  # like "password" or "API_KEY" is safe documentation work, not exfiltration.
+  docs_search="$(printf '%s' '{"tool_name":"Grep","tool_input":{"path":"docs","glob":"*.md","pattern":"password","output_mode":"content"}}' |
+    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  assert_eq "secret hook allows docs-scoped content search for credential-shaped words" "" "$docs_search"
+
+  # The same pattern with no glob (or a glob that can still hit real secret
+  # files) is a genuine repo-wide leak risk and must stay blocked.
+  unscoped_search="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"password","output_mode":"content"}}' |
+    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  assert_contains "secret hook still blocks unscoped content search for credential-shaped words" "$unscoped_search" '"decision": "block"'
+
   assert_cmd_zero "opt-in direct-main hook self-test" \
     bash "$ROOT/.claude/hooks/no-direct-main-commit.sh" --self-test
 else

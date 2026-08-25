@@ -26,7 +26,8 @@ export function createProofRuntime({
   }
 
   function pathCovered(path, scopes) {
-    return (scopes || []).some((scope) => {
+    if (!(scopes || []).length) return true;
+    return scopes.some((scope) => {
       const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
       return scope === "*" || path === prefix || path.startsWith(`${prefix}/`);
     });

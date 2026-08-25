@@ -502,11 +502,11 @@
     },
     {
       "name": "agents release",
-      "usage": "agents release <change> <task> --owner <id> [--force] [--decision-ref <ref>]",
+      "usage": "agents release <change> <task> --owner <id> [--lease-id <id>] [--force] [--decision-ref <ref>]",
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "description": "Release a host-managed resource lease; --force takes over another owner's lease, and one that has not expired also needs --decision-ref because a worker may still be running it."
+      "description": "Release a host-managed resource lease; after takeover, --lease-id must identify the acquired generation. --force takes over another owner's lease, and one that has not expired also needs --decision-ref because a worker may still be running it."
     },
     {
       "name": "telemetry sync",

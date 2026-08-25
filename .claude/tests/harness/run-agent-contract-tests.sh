@@ -16,6 +16,14 @@ assert_file_contains "build treats spawn groups as concurrent authority" \
   "$ROOT/.claude/commands/build.md" 'Treat `spawn-group` as concurrent authority'
 assert_file_contains "build handles singleton frontiers in the parent under lease" \
   "$ROOT/.claude/commands/build.md" '`run-leased-in-session`'
+assert_file_contains "build names the ordinary parent-session action" \
+  "$ROOT/.claude/commands/build.md" '`run-in-session`'
+assert_file_contains "build names the live-lease wait action" \
+  "$ROOT/.claude/commands/build.md" '`wait`'
+assert_file_contains "build names the blocked action" \
+  "$ROOT/.claude/commands/build.md" '`blocked`'
+assert_file_contains "build names the terminal completion action" \
+  "$ROOT/.claude/commands/build.md" '`build-complete`'
 assert_file_contains "dispatch preserves lease authority for singleton frontiers" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'singleton runnable frontier out of a new worker'

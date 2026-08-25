@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,4 +42,42 @@ test("snapshot never projects prompt or provider payload content", () => {
   const serialized = JSON.stringify(buildDashboardSnapshot(fixture()));
   assert.equal(serialized.includes("must-never-leave-the-machine"), false);
   assert.equal(serialized.includes("private provider output"), false);
+});
+
+test("a live failing provider outranks a stale passing proof.json", () => {
+  // `proof.json` is only ever written with status "pass", and only two code
+  // paths in the runtime ever delete it (evidence-contract upgrade, base-move
+  // sync) — an ordinary edit-then-reprove cycle that fails a provider check
+  // leaves a prior successful proof.json on disk untouched. The projection
+  // must not let that stale certificate outrank a provider that currently
+  // reports "fail".
+  const root = mkdtempSync(join(tmpdir(), "cf-dashboard-snapshot-"));
+  mkdirSync(join(root, ".foundation", "runtime"), { recursive: true });
+  mkdirSync(join(root, ".foundation", "receipts", "regressed-change"), { recursive: true });
+  writeFileSync(join(root, ".foundation", "runtime", "regressed-change.json"), JSON.stringify({
+    id: "regressed-change", schema: "foundation-standard", status: "building",
+    createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z"
+  }));
+  writeFileSync(join(root, ".foundation", "receipts", "regressed-change", "proof.json"),
+    JSON.stringify({ status: "pass" }));
+  writeFileSync(join(root, ".foundation", "receipts", "regressed-change", "tests.json"),
+    JSON.stringify({ status: "fail" }));
+  const snapshot = buildDashboardSnapshot(root);
+  assert.equal(snapshot.evidence["regressed-change"].status, "failing");
+});
+
+test("a changed non-failing receipt makes an old proof partial until re-proven", () => {
+  const root = fixture();
+  const dir = join(root, ".foundation", "receipts", "safe-change");
+  const receiptPath = join(dir, "test.json");
+  const original = JSON.stringify({ status: "pass", output: "private provider output" });
+  const originalDigest = createHash("sha256").update(original).digest("hex");
+  writeFileSync(join(dir, "proof.json"), JSON.stringify({
+    status: "pass", receipts: [{ provider: "test", sha256: originalDigest }],
+    excludedReceipts: []
+  }));
+  assert.equal(buildDashboardSnapshot(root).evidence["safe-change"].status, "pass");
+
+  writeFileSync(receiptPath, JSON.stringify({ status: "pass", output: "new run" }));
+  assert.equal(buildDashboardSnapshot(root).evidence["safe-change"].status, "partial");
 });

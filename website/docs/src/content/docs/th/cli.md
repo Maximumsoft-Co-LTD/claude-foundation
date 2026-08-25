@@ -85,7 +85,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change abandon <change> --reason <r> --decision-ref <ref>` | กัก change ที่พิสูจน์ไม่ได้ |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | ถอนการบังคับใช้ capability หนึ่งตัวหลัง provider ของมันรันแล้วล้มเหลว `--revoke` คืนข้อบังคับ |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | เปิดหน้าต่างทำงานต่อหนึ่งครั้งตามนโยบาย |
-| `agents release <change> <task> --owner <id> [--force]` | ปล่อย lease `--force` ยึดคืนจากเจ้าของที่ crash |
+| `agents release <change> <task> --owner <id> [--lease-id <id>] [--force]` | ปล่อย lease โดย generation ที่ถูก takeover ต้องใช้ lease id ที่ acquire มา และ `--force` ใช้ยึดคืนจากเจ้าของที่ crash |
 
 คำสั่งที่ต้องใส่ `--decision-ref` ต้องการ **การตัดสินใจของผู้ใช้ที่ host บันทึกไว้อย่างชัดเจน** runtime จะไม่รับดุลพินิจของ agent มาแทน
 

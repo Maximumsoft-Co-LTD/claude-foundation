@@ -68,10 +68,10 @@ Workers receive only `packet --task <task-id>`. The host owns resource leases:
 
 ```bash
 claude-foundation agents acquire <change> <task> --owner <id>
-claude-foundation agents release <change> <task> --owner <id>
+claude-foundation agents release <change> <task> --owner <id> --lease-id <acquired-lease-id>
 ```
 
-If a worker crashes holding a lease, `agents release --force` takes it over. A lease that has not yet expired also requires `--decision-ref`, because the worker holding it may still be running.
+Use the `executionAuthority.leaseId` from the acquired task packet. After a takeover, a release without that generation id is refused so a late executor cannot clear its successor's lease. If a worker crashes holding a lease, `agents release --force` takes it over. A lease that has not yet expired also requires `--decision-ref`, because the worker holding it may still be running.
 
 ## Converging
 

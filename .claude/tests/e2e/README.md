@@ -52,8 +52,26 @@ diagnostic smoke, not release evidence.
 
 Use this method when a change spans multiple runtime seams and benefits from
 independent E2E probes. A good set contains four or five scenarios with disjoint
-failure hypotheses. For example, the packet/dispatch/telemetry change tested on
-2026-08-20 used:
+failure hypotheses.
+
+For a deliberately broader audit, `diagnostic/run-claude-probes.sh` automates
+the same snapshot and evidence boundary with exactly 20 focused `claude -p`
+sessions. It defaults to a free dry run; live mode requires a clean source
+checkout and writes every sandbox, transcript, patch, timestamp, and aggregate
+summary under a new `/tmp/claude-foundation-20probe.*` directory:
+
+```sh
+bash .claude/tests/e2e/diagnostic/run-claude-probes.sh
+bash .claude/tests/e2e/diagnostic/run-claude-probes.sh --run --jobs 5
+```
+
+Its model verdicts are triage, never release evidence. Reproduce every proposed
+defect independently against the source checkout before changing production
+code. The runner also shallow-fetches the historical tags named by
+`CF_DIAGNOSTIC_TAGS` (default `v3.2.19`) into each content snapshot, because the
+upgrade-compatibility suite exercises that real prior release.
+
+For example, the packet/dispatch/telemetry change tested on 2026-08-20 used:
 
 1. capacity-aware spawn-group dispatch;
 2. leased-worker packet contracts and schema compatibility;
