@@ -90,6 +90,72 @@ export function recordRepairClosureAttemptOperation(context, id, details) {
   return attempt;
 }
 
+export function assertBaseMoveResetAllowed(history, move, reference, fail) {
+  if (!move) fail("no sandbox sync base move is recorded for this change");
+  if (move.preDiffIdentity && move.preDiffIdentity === move.postDiffIdentity)
+    fail("the last base move left the change's diff unchanged; the review receipt rebinds on 'claude-foundation proof run' and no reset is needed");
+  if ((history.baseMoveResets || []).some((row) =>
+    row.movementKey === move.movementKey))
+    fail("this base move already released a review attempt");
+  if ((history.baseMoveResets || []).some((row) => row.decisionRef === reference))
+    fail("--decision-ref was already used for a base-move reset on this change");
+}
+
+export function assertNoLiveBaseMoveReview(attempts, id, fail) {
+  const live = attempts.find((attempt) =>
+    attempt.reviewerType === "ai" && attempt.status === "dispatched");
+  if (live)
+    fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset. " +
+      `Find the open request with 'claude-foundation authority status ${id}', ` +
+      `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
+}
+
+export function baseMoveReleasedAttempt(attempts, move, fail) {
+  const moveAt = String(move.at || "");
+  const candidates = attempts.filter((attempt) =>
+    (attempt.resultStatus === "pass" ||
+      attempt.version === 1 && attempt.status === "pass") &&
+    String(attempt.timestamp || "") < moveAt);
+  const released = candidates.at(-1);
+  if (!released)
+    fail("no delivered passing AI review attempt predates the recorded base move");
+  return released;
+}
+
+export function acknowledgeBaseMoveAttemptsOperation(context, id, decisionRef) {
+  const reference = String(decisionRef || "").trim();
+  if (!reference)
+    context.fail("authority reset-base-move requires --decision-ref <host-user-decision>");
+  const state = context.loadRuntime(id);
+  const history = context.reviewHistoryState(id, state);
+  if (history.chainHead && !context.reviewHistoryChainValid(id, history))
+    context.fail("authority reset-base-move requires a valid review attempt history");
+  const move = state.lastBaseMove;
+  assertBaseMoveResetAllowed(history, move, reference, context.fail);
+  assertNoLiveBaseMoveReview(context.reviewAttempts(id, history), id, context.fail);
+  const attempt = baseMoveReleasedAttempt(
+    context.deliveredAiAttempts(id, history), move, context.fail);
+  state.reviewHistory = {
+    ...history,
+    baseMoveAcknowledged: [...new Set([
+      ...(history.baseMoveAcknowledged || []), attempt.digest
+    ])],
+    baseMoveResets: [...(history.baseMoveResets || []), {
+      decisionRef: reference,
+      movementKey: move.movementKey,
+      digests: [attempt.digest],
+      at: context.now()
+    }]
+  };
+  context.saveRuntime(state);
+  return {
+    changeId: id,
+    decisionRef: reference,
+    movementKey: move.movementKey,
+    digests: [attempt.digest]
+  };
+}
+
 export function createReviewAttemptStore({
   receiptsRoot,
   evidenceVault,
@@ -271,54 +337,10 @@ export function createReviewAttemptStore({
   // releases at most one attempt, and gated on the recorded identities
   // actually differing: when they match, the receipt rebinds on 'proof run'
   // and there is nothing to release.
-  function acknowledgeBaseMoveAttempts(id, decisionRef) {
-    const reference = String(decisionRef || "").trim();
-    if (!reference) fail("authority reset-base-move requires --decision-ref <host-user-decision>");
-    const state = loadRuntime(id);
-    const history = reviewHistoryState(id, state);
-    if (history.chainHead && !reviewHistoryChainValid(id, history))
-      fail("authority reset-base-move requires a valid review attempt history");
-    const move = state.lastBaseMove;
-    if (!move) fail("no sandbox sync base move is recorded for this change");
-    if (move.preDiffIdentity && move.preDiffIdentity === move.postDiffIdentity)
-      fail("the last base move left the change's diff unchanged; the review receipt rebinds on 'claude-foundation proof run' and no reset is needed");
-    if ((history.baseMoveResets || []).some((row) => row.movementKey === move.movementKey))
-      fail("this base move already released a review attempt");
-    if ((history.baseMoveResets || []).some((row) => row.decisionRef === reference))
-      fail("--decision-ref was already used for a base-move reset on this change");
-    const liveDispatch = reviewAttempts(id, history).find((attempt) =>
-      attempt.reviewerType === "ai" && attempt.status === "dispatched");
-    if (liveDispatch)
-      fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset. " +
-        `Find the open request with 'claude-foundation authority status ${id}', ` +
-        `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
-    const moveAt = String(move.at || "");
-    // Only a delivered passing verdict that predates the move: the base move
-    // can only have expired a verdict that existed and passed. Releasing a
-    // fail would convert the quality budget into a retry budget.
-    const candidates = deliveredAiAttempts(id, history).filter((attempt) =>
-      (attempt.resultStatus === "pass" ||
-        attempt.version === 1 && attempt.status === "pass") &&
-      String(attempt.timestamp || "") < moveAt);
-    const attempt = candidates[candidates.length - 1];
-    if (!attempt)
-      fail("no delivered passing AI review attempt predates the recorded base move");
-    state.reviewHistory = {
-      ...history,
-      baseMoveAcknowledged: [...new Set([
-        ...(history.baseMoveAcknowledged || []), attempt.digest
-      ])],
-      baseMoveResets: [...(history.baseMoveResets || []), {
-        decisionRef: reference, movementKey: move.movementKey,
-        digests: [attempt.digest], at: now()
-      }]
-    };
-    saveRuntime(state);
-    return {
-      changeId: id, decisionRef: reference,
-      movementKey: move.movementKey, digests: [attempt.digest]
-    };
-  }
+  const acknowledgeBaseMoveAttempts = acknowledgeBaseMoveAttemptsOperation.bind(null, {
+    loadRuntime, saveRuntime, now, fail,
+    reviewHistoryState, reviewHistoryChainValid, reviewAttempts, deliveredAiAttempts
+  });
 
   function blockAiExhausted(id, history, maxAiAttempts = 2) {
     const delivered = deliveredAiAttempts(id, history).length;
