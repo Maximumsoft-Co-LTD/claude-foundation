@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createReceiptRuntime } from "../../harness/runtime/evidence/receipt-runtime.mjs";
+import {
+  createReceiptRuntime, groundedRepairBinding, normalizedReviewFinding,
+  proofPlanOperation, receiptBindingNote
+} from "../../harness/runtime/evidence/receipt-runtime.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
@@ -119,6 +122,146 @@ test("records manual and harness-executed receipts with durable evidence", () =>
   });
   assert.equal(typeof unconfigured.recorded().providerFingerprint, "string");
   assert.deepEqual(unconfigured.recorded().environment, { os: "manual" });
+});
+
+test("explains receipt bindings and renders complete proof plans", () => {
+  const configs = {
+    review: { capability: "review" },
+    declared: { capability: "test", inputs: ["src/**", "test/**"] },
+    workspace: { capability: "test" }
+  };
+  const context = {
+    providerConfig: (_id, provider) => configs[provider],
+    providerCapability: (_provider, config) => config.capability
+  };
+  assert.equal(receiptBindingNote(context, "change", "review", "stale"),
+    "review is bound to the change's diff and packet; a clean replay onto a moved base " +
+    "rebinds it without a new verdict");
+  assert.equal(receiptBindingNote(context, "change", "declared", "stale"),
+    "declared inputs: src/**, test/**");
+  assert.equal(receiptBindingNote(context, "change", "declared", "reusable-inputs"),
+    "declared inputs: src/**, test/**; unchanged inputs will be rebound without re-execution");
+  assert.equal(receiptBindingNote(context, "change", "workspace", "stale"),
+    "whole-workspace binding; declare inputs to narrow it");
+  assert.equal(receiptBindingNote(context, "change", "review", "valid"), null);
+  assert.equal(receiptBindingNote(context, "change", "review", "missing"), null);
+
+  const calls = [];
+  proofPlanOperation({
+    ...context,
+    validate: (...args) => calls.push(["validate", ...args]),
+    relevantHash: () => "workspace-hash",
+    requiredProviders: () => ["review", "declared"],
+    receiptValidity: (_id, provider) => ({
+      provider, validity: provider === "review" ? "valid" : "reusable-inputs"
+    }),
+    advisoryCapabilities: () => [
+      { capability: "supply-chain", trigger: "lockfile" },
+      { capability: "accessibility" }
+    ],
+    log: (message) => calls.push(["log", message])
+  }, "change");
+  assert.deepEqual(calls[0], ["validate", "change", "active", { quiet: true }]);
+  assert.ok(calls.some((entry) => entry[1] === "  review: valid"));
+  assert.ok(calls.some((entry) => entry[1].includes("unchanged inputs will be rebound")));
+  assert.ok(calls.some((entry) => entry[1].includes("inferred from lockfile")));
+  assert.ok(calls.some((entry) => entry[1].includes("inferred from the changed surface")));
+});
+
+test("rebinds reusable and diff-bound receipts without rewriting review identity", () => {
+  const reusable = fixture();
+  reusable.runtime.rebindReusableReceipt("change", {
+    provider: "provider",
+    expectedWorkspaceHash: "workspace-next",
+    expectedInputs: { fingerprint: "inputs-next" },
+    receipt: {
+      workspaceHash: "workspace-prior", workspaceSnapshotId: "snapshot-prior",
+      proofRunId: "proof-prior", finishedAt: "finished-prior"
+    }
+  }, { id: "snapshot-next" }, "proof-next");
+  assert.deepEqual(reusable.recorded().reusedFrom, {
+    proofRunId: "proof-prior",
+    workspaceHash: "workspace-prior",
+    workspaceSnapshotId: "snapshot-prior",
+    receiptFinishedAt: "finished-prior"
+  });
+  assert.equal(reusable.recorded().workspaceSnapshotId, "snapshot-next");
+  assert.equal(reusable.recorded().inputIdentity.fingerprint, "inputs-next");
+
+  const firstReusable = fixture();
+  firstReusable.runtime.rebindReusableReceipt("change", {
+    provider: "provider", expectedWorkspaceHash: "workspace-next",
+    expectedInputs: { fingerprint: "inputs-next" },
+    receipt: { workspaceHash: "workspace-prior" }
+  }, { id: "snapshot-next" }, "proof-next");
+  assert.deepEqual(firstReusable.recorded().reusedFrom, {
+    proofRunId: null, workspaceHash: "workspace-prior",
+    workspaceSnapshotId: null, receiptFinishedAt: null
+  });
+
+  const diff = fixture();
+  diff.runtime.rebindDiffBoundReceipt("change", {
+    provider: "provider", expectedWorkspaceHash: "workspace-next",
+    receipt: {
+      workspaceHash: "workspace-original", proofRunId: "proof-prior",
+      rebind: { boundWorkspaceHash: "workspace-bound", diffIdentity: "diff-prior" }
+    }
+  }, { id: "snapshot-next" }, "proof-next");
+  assert.equal(diff.recorded().workspaceHash, "workspace-original");
+  assert.deepEqual(diff.recorded().rebind.reboundFrom, {
+    workspaceHash: "workspace-bound", proofRunId: "proof-prior"
+  });
+  assert.equal(diff.recorded().rebind.boundWorkspaceHash, "workspace-next");
+
+  const firstDiff = fixture();
+  firstDiff.runtime.rebindDiffBoundReceipt("change", {
+    provider: "provider", expectedWorkspaceHash: "workspace-next",
+    receipt: { workspaceHash: "workspace-original" }
+  }, { id: "snapshot-next" }, "proof-next");
+  assert.deepEqual(firstDiff.recorded().rebind.reboundFrom, {
+    workspaceHash: "workspace-original", proofRunId: null
+  });
+});
+
+test("normalizes review findings and derives only fully grounded repair bindings", () => {
+  assert.deepEqual(normalizedReviewFinding({
+    id: " F-2 ", severity: "MAJOR", path: "src/a.mjs", line: "7",
+    message: " fix ", claimIds: [" claim-b ", "claim-a", "claim-a", ""],
+    verificationCaseIds: [" case-b ", "case-a", "case-a", ""]
+  }), {
+    id: "F-2", severity: "major", path: "src/a.mjs", line: 7, message: "fix",
+    claimIds: ["claim-a", "claim-b"], verificationCaseIds: ["case-a", "case-b"]
+  });
+  assert.deepEqual(normalizedReviewFinding(), {
+    id: "", severity: "", path: "", line: null, message: "",
+    claimIds: [], verificationCaseIds: []
+  });
+  assert.equal(normalizedReviewFinding({ line: null }).line, null);
+
+  const grounding = {
+    version: 2,
+    claims: [
+      { id: "claim-b", productionPath: [{ repository: "repo", path: "src/a.mjs" }] },
+      { id: "claim-a", failurePaths: [{ path: "src/a.mjs" }] },
+      { productionPath: [{ path: "src/a.mjs" }] }
+    ],
+    criticalCases: [
+      { id: "case-b", claimIds: ["claim-b"] },
+      { id: "case-a", claimIds: ["claim-b"] },
+      { claimIds: ["claim-b"] }
+    ]
+  };
+  assert.equal(groundedRepairBinding(null, { path: "src/a.mjs" }), null);
+  assert.equal(groundedRepairBinding({ version: 1 }, { path: "src/a.mjs" }), null);
+  assert.equal(groundedRepairBinding(grounding, {}), null);
+  assert.deepEqual(groundedRepairBinding(grounding, { path: "./repo/src/a.mjs" }), {
+    claimIds: ["claim-b"], verificationCaseIds: ["case-a", "case-b"],
+    source: "grounding-v2-path"
+  });
+  assert.equal(groundedRepairBinding(grounding, { path: "missing.mjs" }), null);
+  assert.equal(groundedRepairBinding({ ...grounding, criticalCases: [] }, {
+    path: "repo/src/a.mjs"
+  }), null);
 });
 
 test("rejects invalid identity, claims, execution assertions, and evidence", () => {

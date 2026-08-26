@@ -37,6 +37,119 @@ export function groundedRepairBinding(grounding, finding) {
     ? { claimIds, verificationCaseIds, source: "grounding-v2-path" } : null;
 }
 
+export function receiptBindingNote(context, id, provider, validity) {
+  if (["missing", "valid"].includes(validity)) return null;
+  const config = context.providerConfig(id, provider);
+  const capability = context.providerCapability(provider, config);
+  if (["review", "acceptance"].includes(capability))
+    return `${capability} is bound to the change's diff and packet; ` +
+      "a clean replay onto a moved base rebinds it without a new verdict";
+  const declared = Array.isArray(config?.inputs) ? config.inputs : null;
+  return declared
+    ? `declared inputs: ${declared.join(", ")}${validity === "reusable-inputs"
+      ? "; unchanged inputs will be rebound without re-execution" : ""}`
+    : "whole-workspace binding; declare inputs to narrow it";
+}
+
+export function proofPlanOperation(context, id) {
+  context.validate(id, "active", { quiet: true });
+  const hash = context.relevantHash(id);
+  const rows = [];
+  for (const provider of context.requiredProviders(id))
+    rows.push(context.receiptValidity(id, provider, hash));
+  context.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
+  for (const row of rows) {
+    const note = receiptBindingNote(context, id, row.provider, row.validity);
+    context.log(`  ${row.provider}: ${row.validity}${note ? ` (${note})` : ""}`);
+  }
+  // A capability the policy inferred from the diff but nothing wired is not
+  // part of the plan — it cannot be executed and no receipt will satisfy it.
+  // It is still printed, because "the policy saw a lockfile change and this
+  // project has no supply-chain provider" is a fact the plan's reader needs,
+  // and the alternative was inventing an unsatisfiable row for it.
+  for (const advisory of context.advisoryCapabilities(id))
+    context.log(`  advisory ${advisory.capability}: not blocking (inferred from ${
+      advisory.trigger || "the changed surface"}; no provider wired)`);
+}
+
+export function rebindReusableReceiptOperation(context, id, row, snapshot, proofRunId) {
+  const prior = row.receipt;
+  const rebound = {
+    ...prior,
+    workspaceHash: row.expectedWorkspaceHash,
+    workspaceSnapshotId: snapshot.id,
+    inputIdentity: row.expectedInputs,
+    proofRunId,
+    reusedFrom: {
+      proofRunId: prior.proofRunId || null,
+      workspaceHash: prior.workspaceHash,
+      workspaceSnapshotId: prior.workspaceSnapshotId || null,
+      receiptFinishedAt: prior.finishedAt || null
+    },
+    startedAt: context.now(),
+    finishedAt: context.now()
+  };
+  context.writeJson(context.receiptPath(id, row.provider), rebound);
+  const logPath = join(context.LOGS, id, "reuse.jsonl");
+  mkdirSync(dirname(logPath), { recursive: true });
+  appendFileSync(logPath, `${JSON.stringify({
+    version: 1,
+    changeId: id,
+    provider: row.provider,
+    reason: "declared-inputs-unchanged",
+    fromWorkspaceHash: prior.workspaceHash,
+    toWorkspaceHash: row.expectedWorkspaceHash,
+    inputFingerprint: row.expectedInputs.fingerprint,
+    timestamp: context.now()
+  })}\n`);
+}
+
+export function rebindDiffBoundReceiptOperation(context, id, row, snapshot, proofRunId) {
+  const prior = row.receipt;
+  const rebound = {
+    ...prior,
+    rebind: {
+      ...prior.rebind,
+      boundWorkspaceHash: row.expectedWorkspaceHash,
+      boundSnapshotId: snapshot.id,
+      boundAt: context.now(),
+      reboundFrom: {
+        workspaceHash: prior.rebind?.boundWorkspaceHash || prior.workspaceHash,
+        proofRunId: prior.proofRunId || null
+      }
+    },
+    proofRunId
+  };
+  context.writeJson(context.receiptPath(id, row.provider), rebound);
+  const logPath = join(context.LOGS, id, "reuse.jsonl");
+  mkdirSync(dirname(logPath), { recursive: true });
+  appendFileSync(logPath, `${JSON.stringify({
+    version: 1,
+    changeId: id,
+    provider: row.provider,
+    reason: "diff-identity-unchanged",
+    fromWorkspaceHash: prior.rebind?.boundWorkspaceHash || prior.workspaceHash,
+    toWorkspaceHash: row.expectedWorkspaceHash,
+    diffIdentity: prior.rebind?.diffIdentity || null,
+    timestamp: context.now()
+  })}\n`);
+}
+
+export function normalizedReviewFinding(finding) {
+  return {
+    id: String(finding?.id || "").trim(),
+    severity: String(finding?.severity || "").toLowerCase(),
+    path: String(finding?.path || ""),
+    line: finding?.line === null || finding?.line === undefined
+      ? null : Number(finding.line),
+    message: String(finding?.message || "").trim(),
+    claimIds: [...new Set((finding?.claimIds || []).map((value) =>
+      String(value).trim()).filter(Boolean))].sort(),
+    verificationCaseIds: [...new Set((finding?.verificationCaseIds || [])
+      .map((value) => String(value).trim()).filter(Boolean))].sort()
+  };
+}
+
 export function repairClosureFindings(findings, resolveBinding = () => null) {
   return (findings || []).map((finding) => {
     const declaredClaims = [...new Set(finding.claimIds || [])].filter(Boolean).sort();
@@ -314,106 +427,14 @@ export function createReceiptRuntime({
   // the plan is where that is cheap to learn. `stale` alone told an operator to
   // pay again without saying that declaring `inputs` would have made the edit
   // free — a route the shipped reference mentioned in one sentence.
-  function bindingNote(id, provider, validity) {
-    if (["missing", "valid"].includes(validity)) return null;
-    const config = providerConfig(id, provider);
-    const capability = providerCapability(provider, config);
-    if (["review", "acceptance"].includes(capability))
-      return `${capability} is bound to the change's diff and packet; ` +
-        "a clean replay onto a moved base rebinds it without a new verdict";
-    const declared = Array.isArray(config?.inputs) ? config.inputs : null;
-    return declared
-      ? `declared inputs: ${declared.join(", ")}${validity === "reusable-inputs"
-        ? "; unchanged inputs will be rebound without re-execution" : ""}`
-      : "whole-workspace binding; declare inputs to narrow it";
-  }
-
-  function proofPlan(id) {
-    validate(id, "active", { quiet: true });
-    const hash = relevantHash(id);
-    const rows = requiredProviders(id).map((provider) => receiptValidity(id, provider, hash));
-    console.log(`PROOF PLAN ${id}\n  workspace: ${hash}`);
-    for (const row of rows) {
-      const note = bindingNote(id, row.provider, row.validity);
-      console.log(`  ${row.provider}: ${row.validity}${note ? ` (${note})` : ""}`);
-    }
-    // A capability the policy inferred from the diff but nothing wired is not
-    // part of the plan — it cannot be executed and no receipt will satisfy it.
-    // It is still printed, because "the policy saw a lockfile change and this
-    // project has no supply-chain provider" is a fact the plan's reader needs,
-    // and the alternative was inventing an unsatisfiable row for it.
-    for (const advisory of advisoryCapabilities(id))
-      console.log(`  advisory ${advisory.capability}: not blocking (inferred from ${
-        advisory.trigger || "the changed surface"}; no provider wired)`);
-  }
-  
-  function rebindReusableReceipt(id, row, snapshot, proofRunId) {
-    const prior = row.receipt;
-    const rebound = {
-      ...prior,
-      workspaceHash: row.expectedWorkspaceHash,
-      workspaceSnapshotId: snapshot.id,
-      inputIdentity: row.expectedInputs,
-      proofRunId,
-      reusedFrom: {
-        proofRunId: prior.proofRunId || null,
-        workspaceHash: prior.workspaceHash,
-        workspaceSnapshotId: prior.workspaceSnapshotId || null,
-        receiptFinishedAt: prior.finishedAt || null
-      },
-      startedAt: now(),
-      finishedAt: now()
-    };
-    writeJson(receiptPath(id, row.provider), rebound);
-    const logPath = join(LOGS, id, "reuse.jsonl");
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `${JSON.stringify({
-      version: 1,
-      changeId: id,
-      provider: row.provider,
-      reason: "declared-inputs-unchanged",
-      fromWorkspaceHash: prior.workspaceHash,
-      toWorkspaceHash: row.expectedWorkspaceHash,
-      inputFingerprint: row.expectedInputs.fingerprint,
-      timestamp: now()
-    })}\n`);
-  }
-  
-  // The review/acceptance twin of the rebind above, shaped by a constraint
-  // executable receipts do not have: the review attempt chain digests the
-  // original `workspaceHash`, so the rebind is an overlay beside it —
-  // `rebind.boundWorkspaceHash` — never a rewrite. Validity accepts either
-  // hash; the chain keeps verifying against the original.
-  function rebindDiffBoundReceipt(id, row, snapshot, proofRunId) {
-    const prior = row.receipt;
-    const rebound = {
-      ...prior,
-      rebind: {
-        ...prior.rebind,
-        boundWorkspaceHash: row.expectedWorkspaceHash,
-        boundSnapshotId: snapshot.id,
-        boundAt: now(),
-        reboundFrom: {
-          workspaceHash: prior.rebind?.boundWorkspaceHash || prior.workspaceHash,
-          proofRunId: prior.proofRunId || null
-        }
-      },
-      proofRunId
-    };
-    writeJson(receiptPath(id, row.provider), rebound);
-    const logPath = join(LOGS, id, "reuse.jsonl");
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `${JSON.stringify({
-      version: 1,
-      changeId: id,
-      provider: row.provider,
-      reason: "diff-identity-unchanged",
-      fromWorkspaceHash: prior.rebind?.boundWorkspaceHash || prior.workspaceHash,
-      toWorkspaceHash: row.expectedWorkspaceHash,
-      diffIdentity: prior.rebind?.diffIdentity || null,
-      timestamp: now()
-    })}\n`);
-  }
+  const operationContext = {
+    LOGS, providerConfig, providerCapability, validate, relevantHash,
+    requiredProviders, receiptValidity, advisoryCapabilities, log: console.log,
+    now, writeJson, receiptPath
+  };
+  const proofPlan = proofPlanOperation.bind(null, operationContext);
+  const rebindReusableReceipt = rebindReusableReceiptOperation.bind(null, operationContext);
+  const rebindDiffBoundReceipt = rebindDiffBoundReceiptOperation.bind(null, operationContext);
 
   function unresolvableReference(id, provider, reference) {
     if (REFERENCE_URI.test(reference)) return null;
@@ -684,21 +705,6 @@ export function createReceiptRuntime({
     return {
       reviewCircuit, policy, reviewerType, deterministicClosure, reviewer, subjects,
       independent: provenance.independent, diverse: provenance.diverse
-    };
-  }
-
-  function normalizedReviewFinding(finding) {
-    return {
-      id: String(finding?.id || "").trim(),
-      severity: String(finding?.severity || "").toLowerCase(),
-      path: String(finding?.path || ""),
-      line: finding?.line === null || finding?.line === undefined
-        ? null : Number(finding.line),
-      message: String(finding?.message || "").trim(),
-      claimIds: [...new Set((finding?.claimIds || []).map((value) =>
-        String(value).trim()).filter(Boolean))].sort(),
-      verificationCaseIds: [...new Set((finding?.verificationCaseIds || [])
-        .map((value) => String(value).trim()).filter(Boolean))].sort()
     };
   }
 
