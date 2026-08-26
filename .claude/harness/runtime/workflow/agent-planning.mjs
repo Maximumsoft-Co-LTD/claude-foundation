@@ -206,6 +206,22 @@ export function showAgentPlan(context, id, flags = {}) {
   else process.stdout.write(encoded);
 }
 
+export function showAgentTask(context, id, taskId, flags = {}) {
+  const plan = context.planValue(id);
+  if (!plan.dispatchable)
+    context.fail(`change '${id}' is not dispatchable: ${plan.blockingReasons.join("; ")}`);
+  const task = plan.tasks.find((candidate) =>
+    candidate.id === String(taskId || "").toUpperCase());
+  if (!task) context.fail(`unknown pending task '${taskId || ""}'`);
+  context.showPacket(id, {
+    repo: task.repository, task: task.id,
+    pretty: flags.pretty, planDigest: plan.planDigest,
+    graphRevision: plan.graphRevision,
+    graphIdentity: plan.graphIdentity,
+    graphNode: plan.graph.nodes.find((node) => node.id === `task:${task.id}`) || null
+  });
+}
+
 const PROOF_RUN_STALE_MS = 2 * 60 * 60 * 1000;
 
 export function runtimeEntryIsJsonFile(entry) {
@@ -501,21 +517,7 @@ export function createAgentPlanner({
     return { ...basePlan, planDigest: stableHash(basePlan), createdAt: now() };
   }
 
-  function showTask(id, taskId, flags = {}) {
-    const plan = planValue(id);
-    if (!plan.dispatchable)
-      fail(`change '${id}' is not dispatchable: ${plan.blockingReasons.join("; ")}`);
-    const task = plan.tasks.find((candidate) =>
-      candidate.id === String(taskId || "").toUpperCase());
-    if (!task) fail(`unknown pending task '${taskId || ""}'`);
-    showPacket(id, {
-      repo: task.repository, task: task.id,
-      pretty: flags.pretty, planDigest: plan.planDigest,
-      graphRevision: plan.graphRevision,
-      graphIdentity: plan.graphIdentity,
-      graphNode: plan.graph.nodes.find((node) => node.id === `task:${task.id}`) || null
-    });
-  }
+  const showTask = showAgentTask.bind(null, { planValue, showPacket, fail });
 
   const showPlan = showAgentPlan.bind(null, {
     root, plans, schemaVersion, policy, stableHash, readJson, writeJson,

@@ -14,6 +14,7 @@ import {
   persistedPlanOutput,
   propagateInvalidatedTasks,
   selectAgentPlanView,
+  showAgentTask,
   showAgentPlan,
   taskPlanIdentity
 } from "../runtime/workflow/agent-planning.mjs";
@@ -225,4 +226,36 @@ test("show agent plan enforces view-specific output limits after persistence", (
   const f = showFixture(t, { limit: 1 });
   assert.throws(() => showAgentPlan(f.context, "change"), /agent summary exceeds 1 bytes/);
   assert.ok(readFileSync(join(f.plans, "change.json"), "utf8").length > 1);
+});
+
+test("show agent task validates dispatch and projects the selected graph node", () => {
+  const calls = [];
+  const output = {
+    ...plan({ tasks: [task("T1"), task("T2")] }),
+    graph: { nodes: [{ id: "task:T1", kind: "task" }], edges: [] }
+  };
+  const context = {
+    planValue: () => output,
+    showPacket: (...args) => calls.push(args),
+    fail
+  };
+
+  output.dispatchable = false;
+  output.blockingReasons = ["scope is active", "decision required"];
+  assert.throws(() => showAgentTask(context, "change", "T1"),
+    /scope is active; decision required/);
+
+  output.dispatchable = true;
+  output.blockingReasons = [];
+  showAgentTask(context, "change", "t1", { pretty: true });
+  assert.deepEqual(calls[0], ["change", {
+    repo: "root", task: "T1", pretty: true,
+    planDigest: "digest", graphRevision: 2, graphIdentity: "graph",
+    graphNode: { id: "task:T1", kind: "task" }
+  }]);
+  showAgentTask(context, "change", "T2");
+  assert.equal(calls[1][1].graphNode, null);
+  assert.equal(calls[1][1].pretty, undefined);
+  assert.throws(() => showAgentTask(context, "change", "missing"), /unknown pending task/);
+  assert.throws(() => showAgentTask(context, "change", null), /unknown pending task ''/);
 });
