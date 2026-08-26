@@ -36,6 +36,167 @@ export function createModelRouter({ loadRuntime, policy, fail }) {
   return { modelForTask };
 }
 
+export function taskPlanIdentity(task) {
+  return {
+    repository: task.repository,
+    kind: task.kind,
+    dependsOn: task.dependsOn,
+    paths: task.paths,
+    resources: task.resources,
+    text: task.text
+  };
+}
+
+export function changedPlanRepositories(plan, prior) {
+  if (!prior) return [];
+  return Object.keys(plan.repositoryContractHashes).filter((repository) =>
+    prior.repositoryContractHashes?.[repository] !== plan.repositoryContractHashes[repository]);
+}
+
+export function invalidatedPlanTasks(plan, prior, stableHash) {
+  if (!prior) return new Set();
+  const changedRepositories = changedPlanRepositories(plan, prior);
+  const globalContractChanged = prior.contractFingerprint !== plan.contractFingerprint &&
+    changedRepositories.length === 0;
+  return new Set(plan.tasks.filter((task) => {
+    const old = prior.tasks?.find((candidate) => candidate.id === task.id);
+    return !old || globalContractChanged || changedRepositories.includes(task.repository) ||
+      stableHash(taskPlanIdentity(old)) !== stableHash(taskPlanIdentity(task));
+  }).map((task) => task.id));
+}
+
+export function propagateInvalidatedTasks(tasks, invalidated) {
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const task of tasks)
+      if (!invalidated.has(task.id) &&
+          task.dependsOn.some((dependency) => invalidated.has(dependency))) {
+        invalidated.add(task.id);
+        expanded = true;
+      }
+  }
+  return invalidated;
+}
+
+export function persistedPlanOutput(plan, prior, invalidated) {
+  return {
+    ...plan,
+    supersedesPlanDigest: prior?.planDigest || null,
+    invalidatedTasks: [...invalidated],
+    preservedTasks: prior
+      ? plan.tasks.filter((task) => !invalidated.has(task.id)).map((task) => task.id)
+      : []
+  };
+}
+
+export function agentPlanGroupView(output, id, rawGroup, fail) {
+  const group = Number(rawGroup);
+  if (!Number.isInteger(group) || group < 1 || group > output.groups.length)
+    fail(`agents plan --group must be 1..${output.groups.length}`);
+  const ids = output.groups[group - 1];
+  return {
+    version: 1, changeId: id, planDigest: output.planDigest, group,
+    tasks: output.tasks.filter((task) => ids.includes(task.id)).map((task) => ({
+      id: task.id, repository: task.repository, kind: task.kind,
+      model: task.model, dependsOn: task.dependsOn,
+      resources: task.resources, packetCommand: task.packetCommand
+    }))
+  };
+}
+
+export function agentPlanGroupSummaries(groups, stableHash) {
+  return groups.map((ids, index) => ({
+    group: index + 1,
+    taskCount: ids.length,
+    taskIds: ids.length <= 12 ? ids : null,
+    taskDigest: ids.length > 12 ? stableHash(ids) : null
+  }));
+}
+
+export function agentPlanNext(output, id) {
+  if (!output.dispatchable) return "resolve blockingReasons before dispatch";
+  if (output.recommendedExecution === "proof-ready")
+    return `claude-foundation proof readiness ${id}`;
+  if (output.recommendedExecution === "single-agent")
+    return `claude-foundation packet ${id} --task ${output.tasks[0].id}`;
+  return `claude-foundation agents plan ${id} --group 1`;
+}
+
+export function agentPlanSummaryView(context, id, path, output) {
+  const modelCounts = output.tasks.reduce((counts, task) => {
+    counts[task.model.family] = (counts[task.model.family] || 0) + 1;
+    return counts;
+  }, {});
+  const groupSummaries = agentPlanGroupSummaries(output.groups, context.stableHash);
+  return {
+    version: Number(context.schemaVersion),
+    changeId: id,
+    planDigest: output.planDigest,
+    graphRevision: output.graphRevision,
+    graphIdentity: output.graphIdentity,
+    graphNodes: output.graph.nodes.length,
+    graphEdges: output.graph.edges.length,
+    planPath: relative(context.root, path).replaceAll("\\", "/"),
+    dispatchable: output.dispatchable,
+    blockingReasons: context.compactStrings(output.blockingReasons, 10),
+    recommendedExecution: output.recommendedExecution,
+    sessionModel: output.sessionModel,
+    executionReason: output.executionReason,
+    repositoryCount: output.repositories.length,
+    repositories: context.compactStrings(
+      output.repositories.map((repository) => repository.id), 20),
+    taskCount: output.tasks.length,
+    modelCounts,
+    groupCount: groupSummaries.length,
+    groups: groupSummaries.length <= 20 ? groupSummaries : {
+      preview: groupSummaries.slice(0, 10),
+      count: groupSummaries.length,
+      digest: context.stableHash(groupSummaries)
+    },
+    invalidatedTasks: output.invalidatedTasks.length <= 20
+      ? output.invalidatedTasks
+      : { count: output.invalidatedTasks.length, digest: context.stableHash(output.invalidatedTasks) },
+    next: agentPlanNext(output, id)
+  };
+}
+
+export function selectAgentPlanView(context, id, path, output, flags = {}) {
+  if (flags.full) return { view: "full", visible: output };
+  if (flags.group !== undefined)
+    return {
+      view: "group",
+      visible: agentPlanGroupView(output, id, flags.group, context.fail)
+    };
+  return {
+    view: "summary",
+    visible: agentPlanSummaryView(context, id, path, output)
+  };
+}
+
+export function showAgentPlan(context, id, flags = {}) {
+  const plan = context.planValue(id);
+  const path = join(context.plans, `${id}.json`);
+  const prior = existsSync(path) ? context.readJson(path, {}) : null;
+  const invalidated = propagateInvalidatedTasks(
+    plan.tasks, invalidatedPlanTasks(plan, prior, context.stableHash));
+  const output = persistedPlanOutput(plan, prior, invalidated);
+  context.writeJson(path, output);
+  const { view, visible } = selectAgentPlanView(context, id, path, output, flags);
+  visible.version = Number(context.schemaVersion);
+  const encoded = context.serializedJson(visible, Boolean(flags.pretty));
+  const limit = view === "summary"
+    ? Number(context.policy().execution.planSummaryBytes)
+    : Number(context.policy().execution.packetBytes.repository);
+  if (Buffer.byteLength(encoded) > limit)
+    context.fail(`agent ${view} exceeds ${limit} bytes; inspect the persisted plan by digest`);
+  context.recordContextMetric(id, `agent-plan-${view}`, Buffer.byteLength(encoded), {
+    tasks: output.tasks.length, repositories: output.repositories.length
+  });
+  if (context.write) context.write(encoded);
+  else process.stdout.write(encoded);
+}
+
 export function createAgentPlanner({
   root, plans, runtime, schemaVersion, validate, loadRuntime, policy,
   selectedRepositories, safeSelectedRepositories, taskBlocks, taskMetadata,
@@ -310,127 +471,6 @@ export function createAgentPlanner({
     return { ...basePlan, planDigest: stableHash(basePlan), createdAt: now() };
   }
 
-  function showPlan(id, flags = {}) {
-    const plan = planValue(id);
-    const path = join(plans, `${id}.json`);
-    const prior = existsSync(path) ? readJson(path, {}) : null;
-    const changedRepositories = prior
-      ? Object.keys(plan.repositoryContractHashes).filter((repository) =>
-        prior.repositoryContractHashes?.[repository] !== plan.repositoryContractHashes[repository])
-      : [];
-    const globalContractChanged = Boolean(prior &&
-      prior.contractFingerprint !== plan.contractFingerprint && changedRepositories.length === 0);
-    const directlyInvalidated = new Set(prior
-      ? plan.tasks.filter((task) => {
-        const old = prior.tasks?.find((candidate) => candidate.id === task.id);
-        return !old || globalContractChanged || changedRepositories.includes(task.repository) ||
-          stableHash({
-            repository: old.repository, kind: old.kind, dependsOn: old.dependsOn,
-            paths: old.paths, resources: old.resources, text: old.text
-          }) !== stableHash({
-            repository: task.repository, kind: task.kind, dependsOn: task.dependsOn,
-            paths: task.paths, resources: task.resources, text: task.text
-          });
-      }).map((task) => task.id)
-      : []);
-    let expanded = true;
-    while (expanded) {
-      expanded = false;
-      for (const task of plan.tasks)
-        if (!directlyInvalidated.has(task.id) &&
-            task.dependsOn.some((dependency) => directlyInvalidated.has(dependency))) {
-          directlyInvalidated.add(task.id);
-          expanded = true;
-        }
-    }
-    const output = {
-      ...plan,
-      supersedesPlanDigest: prior?.planDigest || null,
-      invalidatedTasks: [...directlyInvalidated],
-      preservedTasks: prior
-        ? plan.tasks.filter((task) => !directlyInvalidated.has(task.id)).map((task) => task.id)
-        : []
-    };
-    writeJson(path, output);
-    let visible;
-    let view = "summary";
-    if (flags.full) {
-      visible = output;
-      view = "full";
-    } else if (flags.group !== undefined) {
-      const groupNumber = Number(flags.group);
-      if (!Number.isInteger(groupNumber) || groupNumber < 1 || groupNumber > output.groups.length)
-        fail(`agents plan --group must be 1..${output.groups.length}`);
-      const ids = output.groups[groupNumber - 1];
-      visible = {
-        version: 1, changeId: id, planDigest: output.planDigest, group: groupNumber,
-        tasks: output.tasks.filter((task) => ids.includes(task.id)).map((task) => ({
-          id: task.id, repository: task.repository, kind: task.kind,
-          model: task.model, dependsOn: task.dependsOn,
-          resources: task.resources, packetCommand: task.packetCommand
-        }))
-      };
-      view = "group";
-    } else {
-      const modelCounts = output.tasks.reduce((counts, task) => {
-        counts[task.model.family] = (counts[task.model.family] || 0) + 1;
-        return counts;
-      }, {});
-      const groupSummaries = output.groups.map((ids, index) => ({
-        group: index + 1,
-        taskCount: ids.length,
-        taskIds: ids.length <= 12 ? ids : null,
-        taskDigest: ids.length > 12 ? stableHash(ids) : null
-      }));
-      visible = {
-        version: Number(schemaVersion),
-        changeId: id,
-        planDigest: output.planDigest,
-        graphRevision: output.graphRevision,
-        graphIdentity: output.graphIdentity,
-        graphNodes: output.graph.nodes.length,
-        graphEdges: output.graph.edges.length,
-        planPath: relative(root, path).replaceAll("\\", "/"),
-        dispatchable: output.dispatchable,
-        blockingReasons: compactStrings(output.blockingReasons, 10),
-        recommendedExecution: output.recommendedExecution,
-        sessionModel: output.sessionModel,
-        executionReason: output.executionReason,
-        repositoryCount: output.repositories.length,
-        repositories: compactStrings(output.repositories.map((repository) => repository.id), 20),
-        taskCount: output.tasks.length,
-        modelCounts,
-        groupCount: groupSummaries.length,
-        groups: groupSummaries.length <= 20 ? groupSummaries : {
-          preview: groupSummaries.slice(0, 10),
-          count: groupSummaries.length,
-          digest: stableHash(groupSummaries)
-        },
-        invalidatedTasks: output.invalidatedTasks.length <= 20
-          ? output.invalidatedTasks
-          : { count: output.invalidatedTasks.length, digest: stableHash(output.invalidatedTasks) },
-        next: !output.dispatchable
-          ? "resolve blockingReasons before dispatch"
-          : output.recommendedExecution === "proof-ready"
-            ? `claude-foundation proof readiness ${id}`
-            : output.recommendedExecution === "single-agent"
-              ? `claude-foundation packet ${id} --task ${output.tasks[0].id}`
-              : `claude-foundation agents plan ${id} --group 1`
-      };
-    }
-    visible.version = Number(schemaVersion);
-    const encoded = serializedJson(visible, Boolean(flags.pretty));
-    const limit = view === "summary"
-      ? Number(policy().execution.planSummaryBytes)
-      : Number(policy().execution.packetBytes.repository);
-    if (Buffer.byteLength(encoded) > limit)
-      fail(`agent ${view} exceeds ${limit} bytes; inspect the persisted plan by digest`);
-    recordContextMetric(id, `agent-plan-${view}`, Buffer.byteLength(encoded), {
-      tasks: output.tasks.length, repositories: output.repositories.length
-    });
-    process.stdout.write(encoded);
-  }
-
   function showTask(id, taskId, flags = {}) {
     const plan = planValue(id);
     if (!plan.dispatchable)
@@ -446,6 +486,11 @@ export function createAgentPlanner({
       graphNode: plan.graph.nodes.find((node) => node.id === `task:${task.id}`) || null
     });
   }
+
+  const showPlan = showAgentPlan.bind(null, {
+    root, plans, schemaVersion, policy, stableHash, readJson, writeJson,
+    compactStrings, serializedJson, recordContextMetric, fail, planValue
+  });
 
   return { planValue, showPlan, showTask, activeRepositoryConflicts };
 }
