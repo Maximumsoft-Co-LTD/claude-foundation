@@ -58,6 +58,105 @@ export function applyLandJournalEntry(context, journal, entry, index) {
     throw new Error(`injected apply failure after ${journal.appliedPaths.length} path(s)`);
 }
 
+export function beginManualRecovery(context, journal, resolution, decisionRef) {
+  if (!decisionRef)
+    throw new Error("manual recovery requires a decision reference");
+  if (!["keep-current", "restore-backup"].includes(resolution))
+    throw new Error("manual recovery resolution must be keep-current|restore-backup");
+  journal.recovery = {
+    resolution,
+    decisionRef,
+    before: journal.entries.map((entry) => ({
+      path: entry.path,
+      identity: context.pathIdentity(context.safeRootPath(entry.path)),
+      mode: context.pathMode(context.safeRootPath(entry.path))
+    })),
+    startedAt: context.now()
+  };
+  if (resolution === "keep-current") {
+    journal.status = "settling-current";
+    context.save(journal);
+    return false;
+  }
+  journal.status = "recovering-backup";
+  journal.recoveredPaths ||= [];
+  context.save(journal);
+  return true;
+}
+
+export function pendingRecoveryEntries(context, journal) {
+  return [...journal.entries].reverse().filter((entry) =>
+    !context.matches(context.safeRootPath(entry.path), entry, "before"));
+}
+
+export function stageRecoveryBackups(context, journal, pending) {
+  for (const entry of pending) {
+    if (entry.before === null) continue;
+    const index = journal.entries.indexOf(entry);
+    const stage = join(context.transactionRoot(
+      journal.changeId, journal.transactionId), "recovery-stage", String(index));
+    if (context.exists(stage)) context.remove(stage, { recursive: true });
+    context.copyPath(join(context.transactionRoot(
+      journal.changeId, journal.transactionId), entry.backup), stage);
+    if (!context.matches(stage, entry, "before"))
+      throw new Error(`manual recovery backup verification failed at '${entry.path}'`);
+  }
+}
+
+export function replaceRecoveryEntry(context, journal, entry) {
+  const target = context.safeRootPath(entry.path);
+  if (!context.matches(target, entry, "before")) {
+    const index = journal.entries.indexOf(entry);
+    const transaction = context.transactionRoot(
+      journal.changeId, journal.transactionId);
+    const stage = join(transaction, "recovery-stage", String(index));
+    const displaced = join(transaction, "recovery-current", String(index));
+    context.makeDirectory(dirname(displaced), { recursive: true });
+    if (context.exists(displaced) && context.exists(target))
+      throw new Error(`manual recovery found two current copies at '${entry.path}'`);
+    if (!context.exists(displaced) && context.exists(target))
+      context.rename(target, displaced);
+    try {
+      if (entry.before !== null && !context.exists(target)) {
+        context.makeDirectory(dirname(target), { recursive: true });
+        context.rename(stage, target);
+      }
+    } catch (error) {
+      if (!context.exists(target) && context.exists(displaced))
+        context.rename(displaced, target);
+      throw error;
+    }
+  }
+  if (!context.matches(target, entry, "before"))
+    throw new Error(`manual recovery verification failed at '${entry.path}'`);
+  if (!journal.recoveredPaths.includes(entry.path))
+    journal.recoveredPaths.push(entry.path);
+  context.save(journal);
+}
+
+export function finishManualRecovery(context, journal) {
+  for (const name of ["recovery-current", "recovery-stage"]) {
+    const path = join(context.transactionRoot(
+      journal.changeId, journal.transactionId), name);
+    if (context.exists(path)) context.remove(path, { recursive: true });
+  }
+  journal.status = "rolled-back";
+  journal.inFlightPaths = [];
+  journal.rolledBackAt = context.now();
+  journal.recovery.settledAt = context.now();
+  context.save(journal);
+}
+
+export function settleLandJournalOperation(
+  context, journal, resolution, decisionRef
+) {
+  if (!beginManualRecovery(context, journal, resolution, decisionRef)) return;
+  const pending = pendingRecoveryEntries(context, journal);
+  stageRecoveryBackups(context, journal, pending);
+  for (const entry of pending) replaceRecoveryEntry(context, journal, entry);
+  finishManualRecovery(context, journal);
+}
+
 export function createLandJournal({
   root, transactions, fileDigest, directoryHash, pathInside, readJson, writeJson, now
 }) {
@@ -178,76 +277,11 @@ export function createLandJournal({
     }
   }
 
-  function settle(journal, resolution, decisionRef) {
-    if (!decisionRef) throw new Error("manual recovery requires a decision reference");
-    if (!["keep-current", "restore-backup"].includes(resolution))
-      throw new Error("manual recovery resolution must be keep-current|restore-backup");
-    journal.recovery = {
-      resolution,
-      decisionRef,
-      before: journal.entries.map((entry) => ({
-        path: entry.path,
-        identity: pathIdentity(safeRootPath(entry.path)),
-        mode: pathMode(safeRootPath(entry.path))
-      })),
-      startedAt: now()
-    };
-    if (resolution === "keep-current") {
-      journal.status = "settling-current";
-      save(journal);
-      return;
-    }
-    journal.status = "recovering-backup";
-    journal.recoveredPaths ||= [];
-    save(journal);
-    const pending = [...journal.entries].reverse().filter((entry) =>
-      !matches(safeRootPath(entry.path), entry, "before"));
-    for (const entry of pending) {
-      if (entry.before === null) continue;
-      const index = journal.entries.indexOf(entry);
-      const stage = join(transactionRoot(journal.changeId, journal.transactionId),
-        "recovery-stage", String(index));
-      if (existsSync(stage)) rmSync(stage, { recursive: true });
-      copyPath(join(transactionRoot(journal.changeId, journal.transactionId), entry.backup), stage);
-      if (!matches(stage, entry, "before"))
-        throw new Error(`manual recovery backup verification failed at '${entry.path}'`);
-    }
-    for (const entry of pending) {
-      const target = safeRootPath(entry.path);
-      if (!matches(target, entry, "before")) {
-        const index = journal.entries.indexOf(entry);
-        const transaction = transactionRoot(journal.changeId, journal.transactionId);
-        const stage = join(transaction, "recovery-stage", String(index));
-        const displaced = join(transaction, "recovery-current", String(index));
-        mkdirSync(dirname(displaced), { recursive: true });
-        if (existsSync(displaced) && existsSync(target))
-          throw new Error(`manual recovery found two current copies at '${entry.path}'`);
-        if (!existsSync(displaced) && existsSync(target)) renameSync(target, displaced);
-        try {
-          if (entry.before !== null && !existsSync(target)) {
-            mkdirSync(dirname(target), { recursive: true });
-            renameSync(stage, target);
-          }
-        } catch (error) {
-          if (!existsSync(target) && existsSync(displaced)) renameSync(displaced, target);
-          throw error;
-        }
-      }
-      if (!matches(target, entry, "before"))
-        throw new Error(`manual recovery verification failed at '${entry.path}'`);
-      if (!journal.recoveredPaths.includes(entry.path)) journal.recoveredPaths.push(entry.path);
-      save(journal);
-    }
-    for (const name of ["recovery-current", "recovery-stage"]) {
-      const path = join(transactionRoot(journal.changeId, journal.transactionId), name);
-      if (existsSync(path)) rmSync(path, { recursive: true });
-    }
-    journal.status = "rolled-back";
-    journal.inFlightPaths = [];
-    journal.rolledBackAt = now();
-    journal.recovery.settledAt = now();
-    save(journal);
-  }
+  const settle = settleLandJournalOperation.bind(null, {
+    safeRootPath, pathIdentity, pathMode, now, save, matches, transactionRoot,
+    exists: existsSync, remove: rmSync, copyPath,
+    makeDirectory: mkdirSync, rename: renameSync
+  });
 
   function verify(state) {
     const transactionId = state.workspace?.apply?.transactionId;

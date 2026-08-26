@@ -81,6 +81,7 @@ review dispatch helpers|node --test "$ROOT/.claude/harness/tests/review-dispatch
 agent repository conflicts|node --test "$ROOT/.claude/harness/tests/agent-repository-conflicts.test.mjs"
 lease acquisition helpers|node --test "$ROOT/.claude/harness/tests/lease-acquisition-helpers.test.mjs"
 required providers|node --test "$ROOT/.claude/harness/tests/required-providers.test.mjs"
+land journal recovery helpers|node --test "$ROOT/.claude/harness/tests/land-journal-recovery-helpers.test.mjs"
 repository head|node --test "$ROOT/.claude/harness/tests/repository-head.test.mjs"
 proof readiness value|node --test "$ROOT/.claude/harness/tests/proof-readiness-value.test.mjs"
 provider claim scope|node --test "$ROOT/.claude/harness/tests/provider-claim-scope.test.mjs"
