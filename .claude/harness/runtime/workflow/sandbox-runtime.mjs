@@ -18,7 +18,7 @@ import {
 // ones it then merged successfully — so mixing the two vocabularies names files
 // that are not in conflict at all. `git apply --3way` reports a genuine
 // conflict as `U <path>`, not in `git merge`'s vocabulary.
-function rejectedPaths(output) {
+export function rejectedPaths(output) {
   const text = String(output || "");
   const merged = new Set();
   for (const pattern of [
@@ -38,6 +38,103 @@ function rejectedPaths(output) {
   for (const pattern of patterns)
     for (const match of text.matchAll(pattern)) paths.add(match[1]);
   return [...paths].sort();
+}
+
+export function assertReadOnlyReplayClean(repository, record, git, fail) {
+  if (record.access !== "read") return;
+  const dirty = git(["status", "--porcelain"], record.path);
+  if (dirty.status !== 0 || dirty.stdout.trim())
+    fail(`read-only repository '${repository}' changed inside its sandbox: ${
+      dirty.stdout.trim() || dirty.stderr.trim() || "git status failed"}`);
+}
+
+export function replayContext({
+  id, state, candidate, gitHead, selectedRepositories
+}) {
+  const { repository, record, targetPath } = candidate;
+  const currentHead = targetPath ? gitHead(targetPath) : null;
+  if (!targetPath || !currentHead || !record.baseHead || currentHead === record.baseHead)
+    return null;
+  const nested = repository === "root"
+    ? selectedRepositories(id, state)
+      .filter((entry) => entry.type === "submodule")
+      .map((entry) => entry.relativePath)
+    : [];
+  return {
+    id, state, repository, record, targetPath, currentHead,
+    movement: {
+      repository, from: record.baseHead, to: currentHead,
+      rebased: false, conflicts: []
+    },
+    pathspec: sandboxCodePathspec(id, nested),
+    staging: `${record.path}.rebase`,
+    patch: `${record.path}.rebase.patch`
+  };
+}
+
+export function stageReplayWorkspace(context, { git, remove = rmSync, fail }) {
+  const { repository, record, targetPath, currentHead, staging } = context;
+  remove(staging, { recursive: true, force: true });
+  git(["worktree", "prune"], targetPath);
+  const staged = git(["worktree", "add", "--detach", staging, currentHead], targetPath);
+  if (staged.status !== 0) {
+    const kind = record.access === "read" ? "read-only worktree refresh" : "rebase worktree";
+    fail(`cannot stage the '${repository}' ${kind}: ${staged.stderr.trim()}`);
+  }
+}
+
+export function replayStagingCleanup(context, { git, remove = rmSync }, removePatch = true) {
+  return () => {
+    git(["worktree", "remove", "--force", context.staging], context.targetPath);
+    remove(context.staging, { recursive: true, force: true });
+    if (removePatch) remove(context.patch, { force: true });
+  };
+}
+
+export function preparedReplay(context, discardStaging) {
+  const { movement, record, targetPath, staging, patch } = context;
+  return { movement, record, targetPath, staging, patch, discardStaging };
+}
+
+export function prepareReadOnlyReplay(context, dependencies) {
+  stageReplayWorkspace(context, dependencies);
+  return preparedReplay(context, replayStagingCleanup(context, dependencies, false));
+}
+
+export function prepareWritableReplay(context, dependencies) {
+  const { git, gitBuffer, write = writeFileSync, fail } = dependencies;
+  const { repository, record, pathspec, patch, staging, movement } = context;
+  git(["add", "-A"], record.path);
+  const diff = gitBuffer(["diff", "--binary", record.baseHead, "--", ...pathspec],
+    record.path);
+  if (diff.status !== 0)
+    fail(`cannot read the '${repository}' sandbox diff to replay: ${
+      String(diff.stderr).trim()}`);
+  stageReplayWorkspace(context, dependencies);
+  const discardStaging = replayStagingCleanup(context, dependencies);
+  if (diff.stdout.length) {
+    write(patch, diff.stdout);
+    const replayed = git(
+      ["apply", "--3way", "--binary", "--whitespace=nowarn", patch], staging);
+    if (replayed.status !== 0) {
+      movement.conflicts = rejectedPaths(
+        `${replayed.stderr || ""}\n${replayed.stdout || ""}`);
+      if (!movement.conflicts.length) movement.conflicts.push(".");
+    }
+  }
+  return preparedReplay(context, discardStaging);
+}
+
+export function prepareWorktreeReplay(
+  options, id = options.id, state = options.state, candidate = options.candidate
+) {
+  const { git, gitHead, selectedRepositories, fail } = options;
+  assertReadOnlyReplayClean(candidate.repository, candidate.record, git, fail);
+  const context = replayContext({ id, state, candidate, gitHead, selectedRepositories });
+  if (!context) return null;
+  return candidate.record.access === "read"
+    ? prepareReadOnlyReplay(context, options)
+    : prepareWritableReplay(context, options);
 }
 
 // `cpSync` resolves symlinks by default: a relative link is rewritten as an
@@ -894,96 +991,9 @@ export function createSandboxRuntime({
     return digest.digest("hex");
   }
 
-  function prepareReplay(id, state, candidate) {
-    const { repository, record, targetPath } = candidate;
-    if (record.access === "read") {
-      const dirty = git(["status", "--porcelain"], record.path);
-      if (dirty.status !== 0 || dirty.stdout.trim())
-        fail(`read-only repository '${repository}' changed inside its sandbox: ${
-          dirty.stdout.trim() || dirty.stderr.trim() || "git status failed"}`);
-    }
-    const currentHead = targetPath ? gitHead(targetPath) : null;
-    if (!targetPath || !currentHead || !record.baseHead ||
-        currentHead === record.baseHead) return null;
-    const movement = {
-      repository, from: record.baseHead, to: currentHead,
-      rebased: false, conflicts: []
-    };
-    const nested = repository === "root"
-      ? selectedRepositories(id, state)
-        .filter((entry) => entry.type === "submodule")
-        .map((entry) => entry.relativePath)
-      : [];
-    const pathspec = sandboxCodePathspec(id, nested);
-    if (record.access === "read") {
-      const staging = `${record.path}.rebase`;
-      const patch = `${record.path}.rebase.patch`;
-      rmSync(staging, { recursive: true, force: true });
-      git(["worktree", "prune"], targetPath);
-      const staged = git(["worktree", "add", "--detach", staging, currentHead], targetPath);
-      if (staged.status !== 0)
-        fail(`cannot stage the '${repository}' read-only worktree refresh: ${staged.stderr.trim()}`);
-      const discardStaging = () => {
-        git(["worktree", "remove", "--force", staging], targetPath);
-        rmSync(staging, { recursive: true, force: true });
-      };
-      return { movement, record, targetPath, staging, patch, discardStaging };
-    }
-    // A real `add`, not the intent-to-add the apply path uses: the three-way
-    // fallback below needs the sandbox's blobs to exist in the object database
-    // before it can merge against them. Staging is invisible downstream —
-    // everything that reads this sandbox diffs the working tree against a
-    // commit, which ignores the index.
-    git(["add", "-A"], record.path);
-    // gitBuffer, not git: the binary diff is bytes, and a UTF-8 decode
-    // replaces invalid sequences with U+FFFD — corrupting the replayed patch
-    // and surfacing phantom conflicts on files nobody double-edited.
-    const diff = gitBuffer(["diff", "--binary", record.baseHead, "--", ...pathspec],
-      record.path);
-    if (diff.status !== 0)
-      fail(`cannot read the '${repository}' sandbox diff to replay: ${
-        String(diff.stderr).trim()}`);
-    // Verified in a throwaway worktree before the real one is touched: a
-    // rejected hunk has to leave the sandbox exactly as it was, because merging
-    // the target's version is only possible there.
-    const staging = `${record.path}.rebase`;
-    const patch = `${record.path}.rebase.patch`;
-    rmSync(staging, { recursive: true, force: true });
-    // A worktree directory removed out from under git stays registered, and
-    // `worktree add` then refuses the same path — dead-ending the retry.
-    git(["worktree", "prune"], targetPath);
-    const staged = git(["worktree", "add", "--detach", staging, currentHead], targetPath);
-    if (staged.status !== 0)
-      fail(`cannot stage the '${repository}' rebase worktree: ${staged.stderr.trim()}`);
-    const discardStaging = () => {
-      git(["worktree", "remove", "--force", staging], targetPath);
-      rmSync(staging, { recursive: true, force: true });
-      rmSync(patch, { force: true });
-    };
-    if (diff.stdout.length) {
-      // Written before it is used, and kept until the swap completes: it is the
-      // only copy of the sandbox's work between removing the old worktree and
-      // moving the new one into its place.
-      writeFileSync(patch, diff.stdout);
-      // Three-way, not a straight apply. A straight apply matches the base's
-      // context lines, so once the user merges the target's version into the
-      // sandbox to clear a conflict, the very diff carrying that merge stops
-      // applying — the fix would make the next sync fail for the same reason.
-      // A three-way merge is what actually resolves a moved base.
-      const replayed = git(
-        ["apply", "--3way", "--binary", "--whitespace=nowarn", patch], staging);
-      if (replayed.status !== 0) {
-        // Both streams: `git apply --3way` writes its conflict summary to
-        // stdout and its errors to stderr, and either one alone loses half the
-        // vocabulary that names the file.
-        movement.conflicts = rejectedPaths(
-          `${replayed.stderr || ""}\n${replayed.stdout || ""}`);
-        if (!movement.conflicts.length) movement.conflicts.push(".");
-        return { movement, record, targetPath, staging, patch, discardStaging };
-      }
-    }
-    return { movement, record, targetPath, staging, patch, discardStaging };
-  }
+  const prepareReplay = prepareWorktreeReplay.bind(null, {
+    git, gitBuffer, gitHead, selectedRepositories, fail
+  });
 
   // `worktree remove --force` destroys everything the checkout accumulated
   // beyond tracked content — node_modules, dist, build caches that take long

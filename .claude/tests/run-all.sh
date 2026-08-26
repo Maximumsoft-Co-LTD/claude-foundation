@@ -91,6 +91,7 @@ evidence bootstrap|node --test "$ROOT/.claude/harness/tests/evidence-bootstrap.t
 command registry|node --test "$ROOT/.claude/harness/tests/command-registry.test.mjs"
 process runtime|node --test "$ROOT/.claude/harness/tests/process-runtime.test.mjs"
 change policy surface|node --test "$ROOT/.claude/harness/tests/change-policy-surface.test.mjs"
+sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-replay-preparation.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
 grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 receipt validity|node "$ROOT/.claude/harness/tests/receipt-validity.test.mjs"
