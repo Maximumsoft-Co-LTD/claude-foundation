@@ -98,6 +98,46 @@ try {
     path: expected
   });
   assert.equal(existsSync(expected), false);
+
+  assert.deepEqual(cleanup.cleanupRepositorySandboxes("c", {}), {});
+  const repositoryRoot = join(root, ".foundation", "repository-sandboxes", "c");
+  const outside = join(root, "outside-repository-worktree");
+  const api = join(repositoryRoot, "api");
+  const failed = join(repositoryRoot, "failed");
+  mkdirSync(outside, { recursive: true });
+  mkdirSync(api, { recursive: true });
+  mkdirSync(failed, { recursive: true });
+  const repositories = {
+    root: { mode: "worktree", path: root, targetPath: root },
+    copy: { mode: "copy", path: outside, targetPath: root },
+    missing: { mode: "worktree", path: join(root, "missing"), targetPath: root },
+    outside: { mode: "worktree", path: outside, targetPath: root },
+    api: { mode: "worktree", path: api, targetPath: join(root, "api-source") }
+  };
+  calls.length = 0;
+  assert.deepEqual(cleanup.cleanupRepositorySandboxes("c", { repositories }), {
+    root: { status: "not-needed" },
+    copy: { status: "not-needed" },
+    missing: { status: "not-needed" },
+    outside: {
+      status: "refused",
+      reason: "repository sandbox path is outside the expected location"
+    },
+    api: { status: "removed" }
+  });
+  assert.deepEqual(calls, [
+    { args: ["worktree", "remove", "--force", api], cwd: join(root, "api-source") },
+    { args: ["worktree", "prune"], cwd: join(root, "api-source") }
+  ]);
+  const failingCleanup = createSandboxCleanup({
+    root, canonicalPath,
+    git: () => ({ status: 1, stderr: "repository locked\n" })
+  });
+  assert.deepEqual(failingCleanup.cleanupRepositorySandboxes("c", {
+    repositories: {
+      failed: { mode: "worktree", path: failed, targetPath: join(root, "failed-source") }
+    }
+  }), { failed: { status: "failed", reason: "repository locked" } });
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

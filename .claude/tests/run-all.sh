@@ -113,6 +113,7 @@ repository topology|node --test "$ROOT/.claude/harness/tests/repository-topology
 evidence bootstrap|node --test "$ROOT/.claude/harness/tests/evidence-bootstrap.test.mjs" "$ROOT/.claude/harness/tests/evidence-input-coverage.test.mjs"
 command registry|node --test "$ROOT/.claude/harness/tests/command-registry.test.mjs"
 process runtime|node --test "$ROOT/.claude/harness/tests/process-runtime.test.mjs"
+observed exec runtime|node --test "$ROOT/.claude/harness/tests/exec-runtime.test.mjs"
 change policy surface|node --test "$ROOT/.claude/harness/tests/change-policy-surface.test.mjs"
 sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-replay-preparation.test.mjs"
 evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.mjs"
