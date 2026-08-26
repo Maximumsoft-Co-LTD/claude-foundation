@@ -88,6 +88,7 @@ agent plan view|node --test "$ROOT/.claude/harness/tests/agent-plan-view.test.mj
 budget continuation|node --test "$ROOT/.claude/harness/tests/budget-continuation.test.mjs"
 repository topology|node --test "$ROOT/.claude/harness/tests/repository-topology.test.mjs"
 evidence bootstrap|node --test "$ROOT/.claude/harness/tests/evidence-bootstrap.test.mjs" "$ROOT/.claude/harness/tests/evidence-input-coverage.test.mjs"
+command registry|node --test "$ROOT/.claude/harness/tests/command-registry.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
 grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 receipt validity|node "$ROOT/.claude/harness/tests/receipt-validity.test.mjs"
