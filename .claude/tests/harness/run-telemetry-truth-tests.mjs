@@ -7,6 +7,7 @@ import test from "node:test";
 import { measuredNumber } from "../../harness/runtime/core/measured-number.mjs";
 import { createMetricsRuntime } from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
+  createJsonlReader,
   normalizeClaudeUserTransition,
   normalizeTelemetryRow,
   runtimeSessionId
@@ -36,6 +37,38 @@ const jsonLines = (path) => {
     return [];
   }
 };
+
+test("JSONL readers distinguish strict evidence from tolerant telemetry", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-jsonl-reader-"));
+  const missing = join(root, "missing.jsonl");
+  const valid = join(root, "valid.jsonl");
+  const corrupt = join(root, "corrupt.jsonl");
+  writeFileSync(valid, '{"id":1}\n\n{"id":2}\n');
+  writeFileSync(corrupt, '{"id":1}\nnot-json\n{"id":2}\n');
+  const reader = createJsonlReader({
+    root,
+    fail: (message) => { throw new Error(message); }
+  });
+  assert.deepEqual(reader.readJsonLines(missing), []);
+  assert.deepEqual(reader.readJsonLines(valid), [{ id: 1 }, { id: 2 }]);
+  assert.throws(() => reader.readJsonLines(corrupt), /invalid JSONL: corrupt\.jsonl/);
+  assert.deepEqual(reader.readJsonLinesTolerant(missing), []);
+  assert.deepEqual(reader.readJsonLinesTolerant(corrupt), [{ id: 1 }, { id: 2 }]);
+
+  const priorDebug = process.env.FOUNDATION_TELEMETRY_DEBUG;
+  const priorError = console.error;
+  const warnings = [];
+  process.env.FOUNDATION_TELEMETRY_DEBUG = "1";
+  console.error = (message) => warnings.push(message);
+  try {
+    assert.deepEqual(reader.readJsonLinesTolerant(corrupt), [{ id: 1 }, { id: 2 }]);
+  } finally {
+    console.error = priorError;
+    if (priorDebug === undefined) delete process.env.FOUNDATION_TELEMETRY_DEBUG;
+    else process.env.FOUNDATION_TELEMETRY_DEBUG = priorDebug;
+  }
+  assert.match(warnings[0], /skipped invalid telemetry row in corrupt\.jsonl/);
+});
 
 test("unobserved host usage remains unknown in budget and metrics", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-telemetry-truth-"));
@@ -121,6 +154,21 @@ test("a user row without its own timestamp keeps one transition across a rescan"
     { ...row, timestamp: "2026-08-12T00:00:00.000Z" }, context, null);
   assert.notEqual(timestamped.transitionId, first.transitionId,
     "rows with real timestamps keep their content-derived identity");
+
+  assert.equal(normalizeClaudeUserTransition("change", {
+    type: "assistant", message: { role: "assistant" }
+  }, context, "2026-08-12T00:00:00.000Z"), null);
+  assert.equal(normalizeClaudeUserTransition("change", {
+    type: "user", timestamp: "invalid"
+  }, context), null);
+  assert.equal(normalizeClaudeUserTransition("change", {
+    message: { role: "user" }, id: "message-role", created_at: "2026-08-12T00:01:00.000Z"
+  }, {}, null).sessionId, null);
+  const contextual = normalizeClaudeUserTransition("change", {
+    type: "user", id: "contextual"
+  }, { sessionId: "context-session" }, "2026-08-12T00:02:00.000Z");
+  assert.equal(contextual.sessionId, "context-session");
+  assert.equal(contextual.sourcePathHash, null);
 });
 
 test("telemetry normalization keeps junk unknown and normalizes numeric strings", () => {
