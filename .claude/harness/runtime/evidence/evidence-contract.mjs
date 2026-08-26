@@ -41,6 +41,104 @@ export function normalizedAcceptanceValue(state) {
   };
 }
 
+export function configuredProviderValue(providers, provider) {
+  if (providers[provider]) return providers[provider];
+  if (provider === "discovery" && providers.test?.adapter === "test-discovery")
+    return providers.test;
+  for (const config of Object.values(providers))
+    if (Array.isArray(config.outputs) && config.outputs.includes(provider))
+      return config;
+  return null;
+}
+
+export function providerClaimIdsValue(declared, provider, config, die) {
+  if (!config?.claims || config.claims === "declared") return declared;
+  if (!Array.isArray(config.claims))
+    die(`provider '${provider}' claims must be an array or 'declared'`);
+  const forbidden = config.claims.filter((claim) => !declared.includes(claim));
+  if (forbidden.length)
+    die(`provider '${provider}' config references undeclared claim(s): ${forbidden.join(", ")}`);
+  return config.claims;
+}
+
+export function providerRepositoryValue(repositoryById, id, config) {
+  const repositoryId = config?.repository || null;
+  if (!repositoryId) return null;
+  return repositoryById(id, repositoryId);
+}
+
+export function providerWorkspaceValue(canonicalPath, root, runtime, repository) {
+  return canonicalPath(repository?.workspacePath || runtime.workspace?.path || root);
+}
+
+export function resolvedAcceptanceValue(state, contract) {
+  const normalized = normalizedAcceptanceValue(state);
+  const declared = contract.claims.filter((claim) =>
+    claim.capabilities.includes("acceptance")).map((claim) => claim.id);
+  const claimIds = [...new Set([...normalized.claimIds, ...declared])].sort();
+  return {
+    ...normalized,
+    required: normalized.required || declared.length > 0,
+    claimIds,
+    scopeOrigin: normalized.scopeOrigin || (declared.length ? "claim-capability" : null)
+  };
+}
+
+export function executionFingerprintValue(stableHash, adapterProtocolVersion, contract) {
+  return stableHash({
+    adapterProtocolVersion,
+    providers: contract.providers || {},
+    services: contract.execution?.services || {}
+  });
+}
+
+export function providerConfigOperation({ evidence }, id, provider) {
+  return configuredProviderValue(evidence(id).providers || {}, provider);
+}
+
+export function providerClaimsOperation({
+  claimsForProvider,
+  providerConfig,
+  die
+}, id, provider, config = providerConfig(id, provider)) {
+  const declared = claimsForProvider(id, provider).map((claim) => claim.id);
+  return providerClaimIdsValue(declared, provider, config, die);
+}
+
+export function providerRepositoryOperation({
+  providerConfig,
+  repositoryById
+}, id, provider, config = providerConfig(id, provider)) {
+  return providerRepositoryValue(repositoryById, id, config);
+}
+
+export function providerWorkspaceOperation({
+  providerConfig,
+  providerRepository,
+  canonicalPath,
+  loadRuntime,
+  root
+}, id, provider, config = providerConfig(id, provider)) {
+  return providerWorkspaceValue(canonicalPath, root, loadRuntime(id),
+    providerRepository(id, provider, config));
+}
+
+export function resolvedAcceptanceOperation({
+  loadRuntime,
+  evidence
+}, id, state = loadRuntime(id), contract = evidence(id)) {
+  return resolvedAcceptanceValue(state, contract);
+}
+
+export function executionFingerprintOperation({
+  activeChangePath,
+  evidence,
+  stableHash,
+  adapterProtocolVersion
+}, id, dir = activeChangePath(id)) {
+  return executionFingerprintValue(stableHash, adapterProtocolVersion, evidence(id, dir));
+}
+
 export function environmentWorkspace({ root, repositoryById, loadRuntime }, config, id) {
   if (id && config?.repository)
     return repositoryById(id, config.repository).workspacePath;
@@ -833,16 +931,12 @@ export function createEvidenceContract({
     return { ...value, providers: configuredProviders, execution: executionValue };
   }
   
-  function providerConfig(id, provider) {
-    const providers = evidence(id).providers || {};
-    if (providers[provider]) return providers[provider];
-    if (provider === "discovery" && providers.test?.adapter === "test-discovery")
-      return providers.test;
-    for (const config of Object.values(providers))
-      if (Array.isArray(config.outputs) && config.outputs.includes(provider))
-        return config;
-    return null;
-  }
+  const providerConfig = providerConfigOperation.bind(null, { evidence });
+
+  const resolvedAcceptance = resolvedAcceptanceOperation.bind(null, {
+    loadRuntime,
+    evidence
+  });
 
   const claimsForProvider = claimsForProviderOperation.bind(null, {
     evidence,
@@ -854,21 +948,16 @@ export function createEvidenceContract({
     policyCapabilities
   });
   
-  function providerClaims(id, provider, config = providerConfig(id, provider)) {
-    const declared = claimsForProvider(id, provider).map((claim) => claim.id);
-    if (!config?.claims || config.claims === "declared") return declared;
-    if (!Array.isArray(config.claims)) die(`provider '${provider}' claims must be an array or 'declared'`);
-    const forbidden = config.claims.filter((claim) => !declared.includes(claim));
-    if (forbidden.length)
-      die(`provider '${provider}' config references undeclared claim(s): ${forbidden.join(", ")}`);
-    return config.claims;
-  }
+  const providerClaims = providerClaimsOperation.bind(null, {
+    claimsForProvider,
+    providerConfig,
+    die
+  });
   
-  function providerRepository(id, provider, config = providerConfig(id, provider)) {
-    const repositoryId = config?.repository || null;
-    if (!repositoryId) return null;
-    return repositoryById(id, repositoryId);
-  }
+  const providerRepository = providerRepositoryOperation.bind(null, {
+    providerConfig,
+    repositoryById
+  });
 
   function providerRepositories(id, provider, config = providerConfig(id, provider)) {
     return providerRepositoryIds(config,
@@ -876,10 +965,13 @@ export function createEvidenceContract({
       .map((repositoryId) => repositoryById(id, repositoryId));
   }
   
-  function providerWorkspace(id, provider, config = providerConfig(id, provider)) {
-    return canonicalPath(providerRepository(id, provider, config)?.workspacePath ||
-      loadRuntime(id).workspace?.path || ROOT);
-  }
+  const providerWorkspace = providerWorkspaceOperation.bind(null, {
+    providerConfig,
+    providerRepository,
+    canonicalPath,
+    loadRuntime,
+    root: ROOT
+  });
   
   // Which hash a provider's receipt is bound to, and therefore what expires it.
   //
@@ -952,19 +1044,6 @@ export function createEvidenceContract({
   
   const normalizedAcceptance = normalizedAcceptanceValue;
   
-  function resolvedAcceptance(id, state = loadRuntime(id), contract = evidence(id)) {
-    const normalized = normalizedAcceptance(state);
-    const declared = contract.claims.filter((claim) =>
-      claim.capabilities.includes("acceptance")).map((claim) => claim.id);
-    const claimIds = [...new Set([...normalized.claimIds, ...declared])].sort();
-    return {
-      ...normalized,
-      required: normalized.required || declared.length > 0,
-      claimIds,
-      scopeOrigin: normalized.scopeOrigin || (declared.length ? "claim-capability" : null)
-    };
-  }
-  
   function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
     const grounding = readJson(join(activeChangePath(id), "grounding.yaml"), {});
     const signals = collectReviewSignals(state, contract, policyCapabilities(id));
@@ -977,14 +1056,12 @@ export function createEvidenceContract({
     return assembleReviewPolicy({ state, signals, riskRoute, policy, riskTiered });
   }
   
-  function executionFingerprint(id, dir = activeChangePath(id)) {
-    const contract = evidence(id, dir);
-    return stableHash({
-      adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
-      providers: contract.providers || {},
-      services: contract.execution?.services || {}
-    });
-  }
+  const executionFingerprint = executionFingerprintOperation.bind(null, {
+    activeChangePath,
+    evidence,
+    stableHash,
+    adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION
+  });
 
   const adapterFingerprint = createAdapterFingerprint.bind(null, {
     adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
