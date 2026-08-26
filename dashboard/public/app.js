@@ -380,7 +380,7 @@ function renderRepoStats(stats, now) {
 
 // ── Presence + history (from SQLite via /api/presence and /api/history) ─────
 let lastPresence = null;
-let lastHistory = null;
+var lastHistory = null;
 
 function renderPresence(p) {
   const R = rangeInfo(Date.now());
@@ -571,13 +571,13 @@ function applyRange() {
   }
 }
 
-let selectedUsers = new Set(); // empty = whole team; multi-select via person/team/org chips
+var selectedUsers = new Set(); // empty = whole team; multi-select via person/team/org chips
 let filterGroups = new Map();  // 'org:<name>' / 'team:<tag>' -> Set of users (rebuilt each render)
-let lastRuns = [];
+var lastRuns = [];
 let lastUsage = [];
 let lastSessions = [];
 let lastTools = [];
-let lastWork = [];
+var lastWork = [];
 let lastRepoStats = [];
 let lastNow = 0;
 
@@ -681,72 +681,9 @@ function applyFilter() {
 // Points = completed /dev runs weighted by size tier (unknown size counts as S).
 // Commits/lines come from work rows (live 14d + /api/history beyond), MAX-merged
 // per (person, date) so two machines of one person don't double-count.
-const SIZE_POINTS = { XS: 1, S: 2, M: 5, L: 8 };
-function runPoints(r) { return SIZE_POINTS[String(r.size || '').toUpperCase()] || SIZE_POINTS.S; }
-function deltaCell(cur, prev) {
-  if (!prev && !cur) return '<span class="wl-flat">—</span>';
-  if (!prev) return '<span class="wl-up">new</span>';
-  const pct = Math.round(((cur - prev) / prev) * 100);
-  if (pct > 0) return `<span class="wl-up">▲ ${pct}%</span>`;
-  if (pct < 0) return `<span class="wl-down">▼ ${Math.abs(pct)}%</span>`;
-  return '<span class="wl-flat">=</span>';
-}
-function renderWorkload(now) {
-  const el = $('ins-workload');
-  if (!el) return;
-  const R = rangeInfo(now);
-  const span = R.toMsEx - R.fromMs;
-  const prevFromMs = R.fromMs - span;
-  const prevFromStr = localDateStr(prevFromMs);
-  const prevToStr = localDateStr(R.fromMs - 1);
-  const selected = (u) => !selectedUsers.size || selectedUsers.has(u);
-  const agg = new Map();
-  const row = (u) => {
-    if (!agg.has(u)) agg.set(u, { points: 0, prevPoints: 0, runs: 0, prevRuns: 0, commits: 0, prevCommits: 0, lines: 0, prevLines: 0 });
-    return agg.get(u);
-  };
-  for (const r of lastRuns) {
-    if (!r.done || !r.finished) continue;
-    const u = r.gitUser || 'unknown';
-    if (!selected(u)) continue;
-    const ms = r.finished * 1000;
-    if (ms >= R.fromMs && ms < R.toMsEx) { row(u).points += runPoints(r); row(u).runs++; }
-    else if (ms >= prevFromMs && ms < R.fromMs) { row(u).prevPoints += runPoints(r); row(u).prevRuns++; }
-  }
-  const wByKey = new Map();
-  const histWork = (lastHistory && Array.isArray(lastHistory.work)) ? lastHistory.work : [];
-  for (const w of [...lastWork, ...histWork]) {
-    const u = w.gitUser || 'unknown';
-    if (!selected(u) || !w.date) continue;
-    const k = `${u}|${w.date}`;
-    const m = wByKey.get(k) || { user: u, date: w.date, commits: 0, added: 0, deleted: 0 };
-    m.commits = Math.max(m.commits, w.commits || 0);
-    m.added = Math.max(m.added, w.added || 0);
-    m.deleted = Math.max(m.deleted, w.deleted || 0);
-    wByKey.set(k, m);
-  }
-  for (const m of wByKey.values()) {
-    if (m.date >= R.fromStr && m.date <= R.toStr) { row(m.user).commits += m.commits; row(m.user).lines += m.added + m.deleted; }
-    else if (m.date >= prevFromStr && m.date <= prevToStr) { row(m.user).prevCommits += m.commits; row(m.user).prevLines += m.added + m.deleted; }
-  }
-  const days = Math.round(span / DAY);
-  const sub = $('wl-sub');
-  if (sub) sub.textContent = `${R.fromStr} → ${R.toStr} vs previous ${days}d`;
-  const list = [...agg.entries()]
-    .filter(([, v]) => v.points || v.prevPoints || v.commits || v.prevCommits)
-    .sort((a, b) => b[1].points - a[1].points || b[1].commits - a[1].commits);
-  el.innerHTML = list.length ? `
-    <div class="ml-row ml-row--wl ml-row--head">
-      <span>person</span><span title="completed /dev runs weighted XS=1 S=2 M=5 L=8 (unknown → S)">points</span><span>Δ</span><span>runs</span><span>commits</span><span>Δ</span><span>lines ±</span><span>Δ</span>
-    </div>` + list.map(([u, v]) => `
-    <div class="ml-row ml-row--wl">
-      <span class="ml-model">${userDot(u)}${escapeHtml(u)}</span>
-      <span><b>${v.points}</b></span><span>${deltaCell(v.points, v.prevPoints)}</span>
-      <span>${v.runs}</span>
-      <span>${fmtTok(v.commits)}</span><span>${deltaCell(v.commits, v.prevCommits)}</span>
-      <span>${fmtTok(v.lines)}</span><span>${deltaCell(v.lines, v.prevLines)}</span>
-    </div>`).join('') : '<p class="empty empty--sm">no completed runs or commits in this window yet</p>';
-}
+const renderWorkload = FoundationWorkloadView.renderWorkload.bind(null, {
+  $, day: DAY, escapeHtml, fmtTok, localDateStr, rangeInfo, userDot
+});
 
 function render(data) {
   lastData = data;
