@@ -506,85 +506,10 @@ async function pollExtras() {
 // ── Usage (token + model) ───────────────────────────────────────────────────
 // Rows are per (machine, day, model) aggregates. "tokens" here = input + output
 // (the work the model actually did); cache create/read shown in the model table.
-// Build a column series across the range — daily up to ~5 weeks, weekly beyond.
-function dailySeries(R, valueByDate, fmt) {
-  const from = Date.parse(R.fromStr), to = Date.parse(R.toStr);
-  const span = Math.round((to - from) / DAY) + 1;
-  const step = span > 35 ? 7 : 1;
-  const cols = [];
-  for (let t = from; t <= to; t += step * DAY) {
-    let v = 0;
-    for (let k = 0; k < step; k++) v += valueByDate[new Date(t + k * DAY).toISOString().slice(0, 10)] || 0;
-    const d = new Date(t);
-    cols.push({ label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`, count: v, text: v ? fmt(v) : '' });
-  }
-  return cols;
-}
-
-function renderUsage(rows, sessions, tools, now, R) {
-  rows = Array.isArray(rows) ? rows : [];
-  R = R || rangeInfo(now);
-  $('usage-empty').hidden = rows.length > 0;
-  const tok = (u) => (u.input || 0) + (u.output || 0);
-
-  $('us-total').textContent = fmtTok(rows.reduce((s, u) => s + tok(u), 0));
-  $('us-week').textContent = fmtTok(rows.reduce((s, u) => s + (u.output || 0), 0));
-  $('us-cost').textContent = fmtUsd(rows.reduce((s, u) => s + estCost(u), 0));
-  $('us-models').textContent = new Set(rows.map((u) => u.model)).size;
-
-  const byProject = {};
-  for (const u of rows) { const p = u.project || 'unknown'; byProject[p] = (byProject[p] || 0) + tok(u); }
-  const projs = Object.entries(byProject).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const maxPr = Math.max(1, ...projs.map(([, n]) => n));
-  renderBars($('us-byproject'), projs.map(([p, n]) => barRow(p, n, maxPr, 'var(--marker)', fmtTok(n))));
-
-  const byTool = {};
-  for (const t of tools || []) byTool[t.tool] = (byTool[t.tool] || 0) + (t.count || 0);
-  const toolRows = Object.entries(byTool).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const maxT = Math.max(1, ...toolRows.map(([, n]) => n));
-  renderBars($('us-tools'), toolRows.map(([t, n]) => barRow(t, n, maxT, '#5c6470', fmtTok(n))));
-
-  const sessByDate = {};
-  for (const s of sessions || []) sessByDate[s.date] = (sessByDate[s.date] || 0) + (s.count || 0);
-  renderCols($('us-sessions'), dailySeries(R, sessByDate, String));
-
-  const byModel = {};
-  for (const u of rows) byModel[u.model] = (byModel[u.model] || 0) + tok(u);
-  const maxM = Math.max(1, ...Object.values(byModel));
-  renderBars($('us-bymodel'), Object.entries(byModel).sort((a, b) => b[1] - a[1])
-    .map(([m, n]) => barRow(shortModel(m), n, maxM, modelColor(m), fmtTok(n))));
-
-  const byPerson = {};
-  for (const u of rows) byPerson[u.gitUser || 'unknown'] = (byPerson[u.gitUser || 'unknown'] || 0) + tok(u);
-  const maxP = Math.max(1, ...Object.values(byPerson));
-  renderBars($('us-bypeople'), Object.entries(byPerson).sort((a, b) => b[1] - a[1]).slice(0, 8)
-    .map(([p, n]) => barRow(p, n, maxP, userColor(p), fmtTok(n))));
-
-  const tokByDate = {};
-  for (const u of rows) tokByDate[u.date] = (tokByDate[u.date] || 0) + tok(u);
-  renderCols($('us-daily'), dailySeries(R, tokByDate, fmtTok));
-
-  // One row per model: totals + cache traffic + when it was last used.
-  const models = {};
-  for (const u of rows) {
-    const m = models[u.model] || (models[u.model] = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, count: 0, last: '' });
-    m.input += u.input || 0; m.output += u.output || 0;
-    m.cacheCreate += u.cacheCreate || 0; m.cacheRead += u.cacheRead || 0;
-    m.count += u.count || 0;
-    if (u.date > m.last) m.last = u.date;
-  }
-  const list = Object.entries(models).sort((a, b) => (b[1].input + b[1].output) - (a[1].input + a[1].output));
-  $('us-modellist').innerHTML = list.length ? `
-    <div class="ml-row ml-row--head">
-      <span>model</span><span>msgs</span><span>input</span><span>output</span><span>cache write</span><span>cache read</span><span>est. cost</span><span>last used</span>
-    </div>` + list.map(([m, v]) => `
-    <div class="ml-row">
-      <span class="ml-model"><span class="ml-dot" style="background:${modelColor(m)}"></span>${escapeHtml(shortModel(m))}</span>
-      <span>${fmtTok(v.count)}</span><span>${fmtTok(v.input)}</span><span>${fmtTok(v.output)}</span>
-      <span>${fmtTok(v.cacheCreate)}</span><span>${fmtTok(v.cacheRead)}</span>
-      <span>${fmtUsd(estCost({ model: m, ...v }))}</span><span>${escapeHtml(v.last)}</span>
-    </div>`).join('') : '<p class="empty empty--sm">no data yet</p>';
-}
+const renderUsage = FoundationUsageView.renderUsage.bind(null, {
+  $, barRow, escapeHtml, estCost, fmtTok, fmtUsd, modelColor, rangeInfo,
+  renderBars, renderCols, shortModel, userColor
+});
 
 // ── /dev run stats (client-side, so we can filter by teammate) ──────────────
 const DAY = 86400000;
