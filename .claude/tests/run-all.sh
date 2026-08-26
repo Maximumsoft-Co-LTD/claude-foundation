@@ -140,6 +140,7 @@ risk-tiered review mutation|node "$HERE/harness/run-risk-tiered-review-mutation.
 configured reviewer adapters|node "$ROOT/.claude/harness/tests/configured-reviewer.test.mjs"
 external operation handoff|node "$ROOT/.claude/harness/tests/handoff-policy.test.mjs"
 bounded review repair closure|node "$ROOT/.claude/harness/tests/review-repair-closure.test.mjs"
+review repair attempt store|node --test "$ROOT/.claude/harness/tests/review-repair-attempt.test.mjs"
 review guard reconciliation|node "$HERE/harness/run-review-guard-fix-tests.mjs"
 current hook contracts|sh "$HERE/hooks/run-hook-tests.sh"
 phase mutation guard|sh "$HERE/hooks/run-phase-mutation-guard-tests.sh"

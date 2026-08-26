@@ -1,6 +1,95 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+export function matchingRepairClosure(current, details, stableHash) {
+  if (current?.reviewerType !== "deterministic") return null;
+  if (current.sourceAttemptDigest !== details.sourceAttemptDigest ||
+      current.workspaceHash !== details.workspaceHash ||
+      current.scope?.digest !== details.scopeDigest) return null;
+  return stableHash(current.evidenceBindings || []) ===
+    stableHash(details.evidenceBindings || []) ? current : null;
+}
+
+export function repairClosureSource(delivered, details, fail) {
+  const source = delivered.at(-1);
+  if (delivered.length < 2 || !source || source.digest !== details.sourceAttemptDigest ||
+      source.resultStatus !== "fail" || source.scope?.mode !== "delta")
+    fail("deterministic repair closure requires the failed final AI delta");
+  if (source.workspaceHash === details.workspaceHash)
+    fail("deterministic repair closure requires a changed workspace after the final finding batch");
+  return source;
+}
+
+export function repairClosureVerifiedFindingIds(source, details, fail) {
+  const verified = [...new Set(details.verifiedFindingIds || [])].sort();
+  const expected = source.findings.filter((finding) =>
+    ["blocker", "major"].includes(finding.severity)).map((finding) => finding.id).sort();
+  if (!expected.length || JSON.stringify(verified) !== JSON.stringify(expected))
+    fail("deterministic repair closure must close every blocker/major ID from the final AI delta");
+  return verified;
+}
+
+export function createRepairClosureAttempt(context, id, history, source,
+  details, verifiedFindingIds) {
+  const attempt = {
+    version: 4,
+    changeId: id,
+    attempt: Number(history.totalAttempts || 0) + 1,
+    reviewerType: "deterministic",
+    reviewerIdentity: "foundation-repair-closure",
+    reviewerProviderFamily: null,
+    reviewerModelFamily: null,
+    reviewerModelId: null,
+    reviewerSessionId: null,
+    requestId: `repair:${source.digest}`,
+    workspaceHash: details.workspaceHash,
+    scope: {
+      mode: "repair-closure",
+      baseAttemptDigest: source.digest,
+      paths: [...new Set(details.paths || [])].sort(),
+      digest: details.scopeDigest
+    },
+    packetDigest: source.packetDigest || null,
+    status: "completed",
+    resultStatus: "pass",
+    findings: [],
+    verifiedFindingIds,
+    sourceAttemptDigest: source.digest,
+    evidenceBindings: details.evidenceBindings,
+    priorChainHead: history.chainHead || null,
+    timestamp: context.now(),
+    completedAt: context.now()
+  };
+  attempt.digest = context.stableHash(attempt);
+  return attempt;
+}
+
+export function recordRepairClosureAttemptOperation(context, id, details) {
+  const state = context.loadRuntime(id);
+  const history = context.reviewHistoryState(id, state);
+  if (history.chainHead && !context.reviewHistoryChainValid(id, history))
+    context.fail("review repair closure requires a valid attempt history");
+  const current = context.reviewAttempts(id, history).at(-1);
+  const duplicate = matchingRepairClosure(current, details, context.stableHash);
+  if (duplicate) return duplicate;
+  const source = repairClosureSource(
+    context.deliveredAiAttempts(id, history), details, context.fail);
+  const verified = repairClosureVerifiedFindingIds(source, details, context.fail);
+  if (!Array.isArray(details.evidenceBindings) || !details.evidenceBindings.length)
+    context.fail("deterministic repair closure requires current evidence bindings");
+  const attempt = createRepairClosureAttempt(
+    context, id, history, source, details, verified);
+  context.writeJson(join(context.evidenceVault, id, "review-attempts",
+    `${String(attempt.attempt).padStart(4, "0")}-${attempt.digest.slice(0, 12)}.json`), attempt);
+  state.reviewHistory = {
+    ...history,
+    totalAttempts: attempt.attempt,
+    chainHead: attempt.digest
+  };
+  context.saveRuntime(state);
+  return attempt;
+}
+
 export function createReviewAttemptStore({
   receiptsRoot,
   evidenceVault,
@@ -453,75 +542,10 @@ export function createReviewAttemptStore({
     return completed;
   }
 
-  function recordRepairClosureAttempt(id, details) {
-    const state = loadRuntime(id);
-    const history = reviewHistoryState(id, state);
-    if (history.chainHead && !reviewHistoryChainValid(id, history))
-      fail("review repair closure requires a valid attempt history");
-    const attempts = reviewAttempts(id, history);
-    const current = attempts.at(-1);
-    if (current?.reviewerType === "deterministic" &&
-        current.sourceAttemptDigest === details.sourceAttemptDigest &&
-        current.workspaceHash === details.workspaceHash &&
-        current.scope?.digest === details.scopeDigest &&
-        stableHash(current.evidenceBindings || []) ===
-          stableHash(details.evidenceBindings || []))
-      return current;
-    const delivered = deliveredAiAttempts(id, history);
-    const source = delivered.at(-1);
-    if (delivered.length < 2 || !source || source.digest !== details.sourceAttemptDigest ||
-        source.resultStatus !== "fail" || source.scope?.mode !== "delta")
-      fail("deterministic repair closure requires the failed final AI delta");
-    if (source.workspaceHash === details.workspaceHash)
-      fail("deterministic repair closure requires a changed workspace after the final finding batch");
-    const verifiedFindingIds = [...new Set(details.verifiedFindingIds || [])].sort();
-    const expectedFindingIds = source.findings.filter((finding) =>
-      ["blocker", "major"].includes(finding.severity)).map((finding) => finding.id).sort();
-    if (!expectedFindingIds.length ||
-        JSON.stringify(verifiedFindingIds) !== JSON.stringify(expectedFindingIds))
-      fail("deterministic repair closure must close every blocker/major ID from the final AI delta");
-    if (!Array.isArray(details.evidenceBindings) || !details.evidenceBindings.length)
-      fail("deterministic repair closure requires current evidence bindings");
-    const attempt = {
-      version: 4,
-      changeId: id,
-      attempt: Number(history.totalAttempts || 0) + 1,
-      reviewerType: "deterministic",
-      reviewerIdentity: "foundation-repair-closure",
-      reviewerProviderFamily: null,
-      reviewerModelFamily: null,
-      reviewerModelId: null,
-      reviewerSessionId: null,
-      requestId: `repair:${source.digest}`,
-      workspaceHash: details.workspaceHash,
-      scope: {
-        mode: "repair-closure",
-        baseAttemptDigest: source.digest,
-        paths: [...new Set(details.paths || [])].sort(),
-        digest: details.scopeDigest
-      },
-      packetDigest: source.packetDigest || null,
-      status: "completed",
-      resultStatus: "pass",
-      findings: [],
-      verifiedFindingIds,
-      sourceAttemptDigest: source.digest,
-      evidenceBindings: details.evidenceBindings,
-      priorChainHead: history.chainHead || null,
-      timestamp: now(),
-      completedAt: now()
-    };
-    attempt.digest = stableHash(attempt);
-    writeJson(join(evidenceVault, id, "review-attempts",
-      `${String(attempt.attempt).padStart(4, "0")}-${attempt.digest.slice(0, 12)}.json`), attempt);
-    state.reviewHistory = {
-      ...history,
-      totalAttempts: attempt.attempt,
-      chainHead: attempt.digest
-    };
-    saveRuntime(state);
-    return attempt;
-  }
+  const recordRepairClosureAttempt = recordRepairClosureAttemptOperation.bind(null, {
+    evidenceVault, loadRuntime, saveRuntime, stableHash, writeJson, now, fail,
+    reviewHistoryState, reviewHistoryChainValid, reviewAttempts, deliveredAiAttempts
+  });
 
   return {
     reviewHistoryState,
