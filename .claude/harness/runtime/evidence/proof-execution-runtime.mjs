@@ -1,6 +1,26 @@
 import { acquireProcessLock } from "../core/process-lock.mjs";
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
 
+export function requestSummary(id, request) {
+  if (!request) return null;
+  const requestId = request.requestId || null;
+  return {
+    requestId,
+    type: request.type || null,
+    provider: request.provider || null,
+    status: request.status || null,
+    workspaceHash: request.workspaceHash || null,
+    expiresAt: request.expiresAt || null,
+    packetDigest: request.packetDigest || null,
+    attemptDigest: request.dispatch?.attemptDigest || null,
+    scopeMode: request.dispatch?.scope?.mode || null,
+    packetCommand: requestId
+      ? `claude-foundation authority status ${id} --request ${requestId}` : null,
+    statusCommand: requestId
+      ? `claude-foundation authority status ${id} --request ${requestId} --template` : null
+  };
+}
+
 export function createProofExecutionRuntime({
   proofReadinessValue, relevantSnapshot, loadRuntime, saveRuntime, now,
   requiredProviders, receiptValidity, rebindReusableReceipt,
@@ -46,26 +66,6 @@ export function createProofExecutionRuntime({
   function readAdvance(id) {
     const path = proofAdvancePath(id);
     return path ? readJson(path, {}) : (memoryAdvance.get(id) || {});
-  }
-
-  function requestSummary(id, request) {
-    if (!request) return null;
-    const requestId = request.requestId || null;
-    return {
-      requestId,
-      type: request.type || null,
-      provider: request.provider || null,
-      status: request.status || null,
-      workspaceHash: request.workspaceHash || null,
-      expiresAt: request.expiresAt || null,
-      packetDigest: request.packetDigest || null,
-      attemptDigest: request.dispatch?.attemptDigest || null,
-      scopeMode: request.dispatch?.scope?.mode || null,
-      packetCommand: requestId
-        ? `claude-foundation authority status ${id} --request ${requestId}` : null,
-      statusCommand: requestId
-        ? `claude-foundation authority status ${id} --request ${requestId} --template` : null
-    };
   }
 
   function writeAdvance(id, outcome) {
