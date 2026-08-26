@@ -122,6 +122,7 @@ change validation phases|node --test "$ROOT/.claude/harness/tests/change-validat
 semantic invariant validation|node --test "$ROOT/.claude/harness/tests/semantic-invariant-issues.test.mjs"
 waive gate|node --test "$ROOT/.claude/harness/tests/waive-gate.test.mjs"
 land check phases|node --test "$ROOT/.claude/harness/tests/land-check-phases.test.mjs"
+land repository plan|node --test "$ROOT/.claude/harness/tests/land-repository-plan.test.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"

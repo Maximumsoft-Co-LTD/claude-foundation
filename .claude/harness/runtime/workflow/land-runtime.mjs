@@ -236,6 +236,66 @@ export function stageRootPointersOperation(context, id) {
   log(`ROOT POINTERS STAGED ${id}\n  proof is stale; run /prove ${id}`);
 }
 
+export function readRepositoryLandStatus(repository, runtime, targetHead, readDirty) {
+  if (runtime.mode !== "worktree") return "read-not-isolated";
+  if (readDirty) return "read-sandbox-dirty";
+  if (targetHead !== (runtime.baseHead || repository.baseHead))
+    return "read-dependency-drift";
+  return "read-only";
+}
+
+export function writeRepositoryLandStatus(repository, runtime, commit, landed,
+  sandboxGitlink, targetGitlink) {
+  if (repository.id === "root") return "control-plane-last";
+  if (!runtime.path) return "sandbox-missing";
+  if (!commit) return "awaiting-explicit-commit";
+  if (!landed) return "awaiting-explicit-branch-land";
+  if (repository.type === "submodule" &&
+      (sandboxGitlink !== commit || targetGitlink !== commit))
+    return "awaiting-root-pointer";
+  return "child-landed";
+}
+
+export function ciRepositoryLandStatus(status, runtime) {
+  if (runtime.land?.ciRequired && runtime.land?.ci !== "pass") return "awaiting-ci";
+  if (runtime.land?.ci === "fail") return "ci-failed";
+  return status;
+}
+
+export function landRepositoryPlanRow(context, state, repository) {
+  const runtime = state.repositories?.[repository.id] || {};
+  const commit = runtime.land?.commit || null;
+  const landed = repository.id === "root"
+    ? false : context.repositoryCommitLanded(repository, commit);
+  const sandboxGitlink = context.rootGitlink(
+    state.workspace?.path || context.root, repository);
+  const targetGitlink = context.rootGitlink(context.root, repository);
+  const targetHead = context.gitHead(repository.path);
+  const sandboxHead = context.gitHead(runtime.path || repository.workspacePath);
+  const readDirty = repository.mode === "read" && runtime.mode === "worktree"
+    ? context.git(["status", "--porcelain"], runtime.path).stdout.trim() : "";
+  const baseStatus = repository.mode === "read"
+    ? readRepositoryLandStatus(repository, runtime, targetHead, readDirty)
+    : writeRepositoryLandStatus(repository, runtime, commit, landed,
+      sandboxGitlink, targetGitlink);
+  return {
+    id: repository.id,
+    type: repository.type,
+    mode: repository.mode,
+    dependsOn: repository.dependsOn || [],
+    targetPath: repository.path,
+    sandboxPath: runtime.path || repository.workspacePath,
+    baseHead: runtime.baseHead || repository.baseHead,
+    targetHead,
+    sandboxHead,
+    commit,
+    ci: runtime.land?.ci || null,
+    rootGitlink: sandboxGitlink,
+    targetRootGitlink: targetGitlink,
+    status: ciRepositoryLandStatus(baseStatus, runtime)
+  };
+}
+
 export function createLandRuntime({
   root,
   transactions,
@@ -511,50 +571,10 @@ export function createLandRuntime({
   function landPlanValue(id) {
     const state = loadRuntime(id);
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
-    const repositories = orderedRepositories(id, state).map((repository) => {
-      const runtime = state.repositories?.[repository.id] || {};
-      const commit = runtime.land?.commit || null;
-      const landed = repository.id === "root" ? false :
-        repositoryCommitLanded(repository, commit);
-      const sandboxGitlink = rootGitlink(state.workspace?.path || root, repository);
-      const targetGitlink = rootGitlink(root, repository);
-      const targetHead = gitHead(repository.path);
-      const sandboxHead = gitHead(runtime.path || repository.workspacePath);
-      const readDirty = repository.mode === "read" && runtime.mode === "worktree"
-        ? git(["status", "--porcelain"], runtime.path).stdout.trim() : "";
-      let status = repository.mode === "read"
-        ? runtime.mode !== "worktree" ? "read-not-isolated"
-          : readDirty ? "read-sandbox-dirty"
-            : targetHead !== (runtime.baseHead || repository.baseHead)
-              ? "read-dependency-drift" : "read-only"
-        :
-        repository.id === "root" ? "control-plane-last" :
-        !runtime.path ? "sandbox-missing" :
-        !commit ? "awaiting-explicit-commit" :
-        !landed ? "awaiting-explicit-branch-land" :
-        repository.type === "submodule" &&
-          (sandboxGitlink !== commit || targetGitlink !== commit)
-          ? "awaiting-root-pointer" : "child-landed";
-      if (runtime.land?.ci === "fail") status = "ci-failed";
-      if (runtime.land?.ciRequired && runtime.land?.ci !== "pass")
-        status = "awaiting-ci";
-      return {
-        id: repository.id,
-        type: repository.type,
-        mode: repository.mode,
-        dependsOn: repository.dependsOn || [],
-        targetPath: repository.path,
-        sandboxPath: runtime.path || repository.workspacePath,
-        baseHead: runtime.baseHead || repository.baseHead,
-        targetHead,
-        sandboxHead,
-        commit,
-        ci: runtime.land?.ci || null,
-        rootGitlink: sandboxGitlink,
-        targetRootGitlink: targetGitlink,
-        status
-      };
-    });
+    const repositories = orderedRepositories(id, state).map(
+      landRepositoryPlanRow.bind(null, {
+        root, git, gitHead, rootGitlink, repositoryCommitLanded
+      }, state));
     return {
       version: 1,
       changeId: id,
