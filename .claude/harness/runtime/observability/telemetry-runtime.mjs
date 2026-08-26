@@ -192,6 +192,29 @@ export const TELEMETRY_IMPORT_FORMATS = Object.freeze([
   "generic", "codex", "cursor", "otel", "claude"
 ]);
 
+export function validSourceOffset(source, size) {
+  const offset = Number(source?.offset || 0);
+  return Number.isSafeInteger(offset) && offset >= 0 && offset <= size ? offset : null;
+}
+
+export function sourceCursorIdentityComplete(source) {
+  return source?.device !== undefined && source?.inode !== undefined &&
+    source?.anchorStart !== undefined && Boolean(source?.anchorHash);
+}
+
+export function sourceCursorIdentityMatches(current, source) {
+  return current.device === String(source.device) &&
+    current.inode === String(source.inode) &&
+    current.anchorStart === Number(source.anchorStart) &&
+    current.anchorHash === source.anchorHash;
+}
+
+export function sourceReadOffsetOperation(context, path, source) {
+  const offset = validSourceOffset(source, context.stat(path).size);
+  if (offset === null || !sourceCursorIdentityComplete(source)) return 0;
+  return sourceCursorIdentityMatches(context.cursorIdentity(path, offset), source) ? offset : 0;
+}
+
 export function parseTelemetryImportRows({ fail, output = console }, source, text) {
   try {
     const parsed = JSON.parse(text);
@@ -444,22 +467,10 @@ export function createTelemetryRuntime({
     return { path, offset, ...cursorIdentity(path, offset) };
   }
 
-  function sourceReadOffset(path, source) {
-    const size = statSync(path).size;
-    const offset = Number(source.offset || 0);
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > size) return 0;
-    // A legacy cursor cannot prove that the path still names the file it read.
-    // Re-scan it once from the start; request/transition deduplication prevents
-    // duplicate events, and the successful read upgrades it with an identity.
-    if (source.device === undefined || source.inode === undefined ||
-        source.anchorStart === undefined || !source.anchorHash)
-      return 0;
-    const current = cursorIdentity(path, offset);
-    return current.device === String(source.device) &&
-      current.inode === String(source.inode) &&
-      current.anchorStart === Number(source.anchorStart) &&
-      current.anchorHash === source.anchorHash ? offset : 0;
-  }
+  const sourceReadOffset = sourceReadOffsetOperation.bind(null, {
+    stat: statSync,
+    cursorIdentity
+  });
 
   // The session bound works; the project bound did not exist. A transcript is
   // resolved purely from the environment, so a sibling agent working in a
