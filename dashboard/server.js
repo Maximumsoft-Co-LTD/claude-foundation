@@ -191,60 +191,113 @@ function changedDatasets(existing, nextHashes) {
   return Object.fromEntries(Object.keys(nextHashes).map((key) => [key, previous[key] !== nextHashes[key]]));
 }
 
-/** Write one heartbeat through to SQLite, skipping unchanged aggregate datasets. */
-function persistHeartbeat(a, now, changed) {
-  if (!db) return;
+function heartbeatFileCount(changes) {
+  return (changes || []).reduce((sum, change) =>
+    sum + (Array.isArray(change.files) ? change.files.length : 0), 0);
+}
+
+function persistHeartbeatAgent(stmts, a, now) {
+  stmts.insertBeat.run(now, a.agentId, a.gitUser, a.host, a.version, a.status,
+    (a.runs || []).length, (a.changes || []).length,
+    heartbeatFileCount(a.changes), (a.usage || []).length);
+  if (a.status === 'offline') {
+    stmts.deleteAgent.run(a.agentId);
+    return;
+  }
+  stmts.upsertAgent.run(a.agentId, a.gitUser, a.gitEmail || '', a.host, a.version, a.status,
+    a.firstSeen, a.lastSeen,
+    JSON.stringify({ sourceSchema: a.sourceSchema, foundationVersion: a.foundationVersion,
+      runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
+}
+
+function persistHeartbeatPresence(stmts, a, now) {
+  if (a.status === 'offline') return;
+  const minuteBucket = Math.floor(now / 60000);
+  const credit = stmts.insertPresenceMinute.run(minuteBucket, a.gitUser);
+  if (Number(credit.changes || 0) > 0)
+    stmts.upsertPresence.run(Math.floor(now / 3600000), a.gitUser);
+}
+
+function persistHeartbeatRuns(stmts, a, changed) {
+  for (const r of changed.runs ? (a.runs || []) : []) {
+    stmts.upsertRun.run(a.agentId, r.repo, r.id, a.gitUser, r.type, r.phase,
+      r.started, r.finished, r.done ? 1 : 0, JSON.stringify(r.art || {}),
+      r.owner || '', r.ownerEmail || '', r.size || '', r.repoId || '');
+  }
+}
+
+function persistHeartbeatUsage(stmts, a, changed) {
+  for (const u of changed.usage ? (a.usage || []) : []) {
+    stmts.upsertUsage.run(a.agentId, a.gitUser, u.date, u.model, u.project || '',
+      u.input, u.output, u.cacheCreate, u.cacheRead, u.count);
+  }
+}
+
+function persistHeartbeatSessions(stmts, a, changed) {
+  for (const s of changed.sessions ? (a.sessions || []) : [])
+    stmts.upsertSession.run(a.agentId, a.gitUser, s.date, s.count, s.seconds);
+}
+
+function heartbeatToolTotals(tools) {
+  const totals = new Map();
+  for (const tool of tools || [])
+    totals.set(tool.tool, (totals.get(tool.tool) || 0) + tool.count);
+  return totals;
+}
+
+function persistHeartbeatTools(stmts, a, now, changed) {
+  if (changed.tools) stmts.deleteToolsForAgent.run(a.agentId);
+  const totals = heartbeatToolTotals(changed.tools ? a.tools : []);
+  for (const [tool, count] of totals)
+    stmts.upsertTool.run(a.agentId, a.gitUser, tool, count, now);
+}
+
+function persistHeartbeatChanges(stmts, a, now, changed) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  for (const change of changed.changes ? (a.changes || []) : []) {
+    for (const commit of change.commits || [])
+      stmts.upsertCommits.run(change.repoId, commit.date, commit.n, a.agentId, now);
+    stmts.upsertFollowups.run(change.repoId, change.fuOpen, change.fuClosed, now);
+    for (const file of change.files || [])
+      stmts.upsertFileEdit.run(today, change.repoId, file.path, a.gitUser);
+  }
+}
+
+function persistHeartbeatWork(stmts, a, changed, rowsFor) {
+  const rows = changed.changes || changed.prs ? rowsFor(a) : [];
+  for (const row of rows)
+    stmts.upsertWork.run(a.agentId, a.gitUser, row.date, row.commits,
+      row.added, row.deleted, row.pushes, row.prs);
+}
+
+function persistHeartbeatOperation(context, a, now, changed) {
+  const { db, stmts } = context;
   try {
-    const filesN = (a.changes || []).reduce((s, c) => s + (Array.isArray(c.files) ? c.files.length : 0), 0);
     db.exec('BEGIN');
-    stmts.insertBeat.run(now, a.agentId, a.gitUser, a.host, a.version, a.status,
-      (a.runs || []).length, (a.changes || []).length, filesN, (a.usage || []).length);
-    if (a.status === 'offline') stmts.deleteAgent.run(a.agentId);
-    else stmts.upsertAgent.run(a.agentId, a.gitUser, a.gitEmail || '', a.host, a.version, a.status,
-      a.firstSeen, a.lastSeen,
-      JSON.stringify({ sourceSchema: a.sourceSchema, foundationVersion: a.foundationVersion,
-        runs: a.runs, changes: a.changes, usage: a.usage, sessions: a.sessions, tools: a.tools, prs: a.prs }));
-    // Presence is the union of a person's machines: the minute key prevents two
-    // agents with the same git identity from double-crediting the same minute.
-    const minuteBucket = Math.floor(now / 60000);
-    if (a.status !== 'offline') {
-      const credit = stmts.insertPresenceMinute.run(minuteBucket, a.gitUser);
-      if (Number(credit.changes || 0) > 0) stmts.upsertPresence.run(Math.floor(now / 3600000), a.gitUser);
-    }
-    for (const r of changed.runs ? (a.runs || []) : []) {
-      stmts.upsertRun.run(a.agentId, r.repo, r.id, a.gitUser, r.type, r.phase,
-        r.started, r.finished, r.done ? 1 : 0, JSON.stringify(r.art || {}),
-        r.owner || '', r.ownerEmail || '', r.size || '', r.repoId || '');
-    }
-    for (const u of changed.usage ? (a.usage || []) : []) {
-      stmts.upsertUsage.run(a.agentId, a.gitUser, u.date, u.model, u.project || '',
-        u.input, u.output, u.cacheCreate, u.cacheRead, u.count);
-    }
-    for (const s of changed.sessions ? (a.sessions || []) : []) {
-      stmts.upsertSession.run(a.agentId, a.gitUser, s.date, s.count, s.seconds);
-    }
-    if (changed.tools) stmts.deleteToolsForAgent.run(a.agentId);
-    const toolTotals = new Map();
-    for (const t of changed.tools ? (a.tools || []) : []) {
-      toolTotals.set(t.tool, (toolTotals.get(t.tool) || 0) + t.count);
-    }
-    for (const [tool, count] of toolTotals) {
-      stmts.upsertTool.run(a.agentId, a.gitUser, tool, count, now);
-    }
-    const today = new Date(now).toISOString().slice(0, 10);
-    for (const c of changed.changes ? (a.changes || []) : []) {
-      for (const cm of c.commits || []) stmts.upsertCommits.run(c.repoId, cm.date, cm.n, a.agentId, now);
-      stmts.upsertFollowups.run(c.repoId, c.fuOpen, c.fuClosed, now);
-      for (const f of c.files || []) stmts.upsertFileEdit.run(today, c.repoId, f.path, a.gitUser);
-    }
-    for (const w of (changed.changes || changed.prs) ? workRowsFor(a) : []) {
-      stmts.upsertWork.run(a.agentId, a.gitUser, w.date, w.commits, w.added, w.deleted, w.pushes, w.prs);
-    }
+    persistHeartbeatAgent(stmts, a, now);
+    persistHeartbeatPresence(stmts, a, now);
+    persistHeartbeatRuns(stmts, a, changed);
+    persistHeartbeatUsage(stmts, a, changed);
+    persistHeartbeatSessions(stmts, a, changed);
+    persistHeartbeatTools(stmts, a, now, changed);
+    persistHeartbeatChanges(stmts, a, now, changed);
+    persistHeartbeatWork(stmts, a, changed, context.workRowsFor);
     db.exec('COMMIT');
   } catch (err) {
     try { db.exec('ROLLBACK'); } catch { /* not in a tx */ }
-    console.warn(`sqlite write failed: ${err.message}`);
+    context.warn(`sqlite write failed: ${err.message}`);
   }
+}
+
+function persistHeartbeatIfAvailable(context, a, now, changed) {
+  if (!context.db) return;
+  persistHeartbeatOperation(context, a, now, changed);
+}
+
+/** Write one heartbeat through to SQLite, skipping unchanged aggregate datasets. */
+function persistHeartbeat(a, now, changed) {
+  persistHeartbeatIfAvailable(
+    { db, stmts, workRowsFor, warn: console.warn }, a, now, changed);
 }
 
 /**
@@ -980,5 +1033,9 @@ if (require.main === module) {
 
 module.exports = {
   server, startServer,
-  _internals: { agents, profiles, db, datasetHashes, changedDatasets, computeConflicts },
+  _internals: {
+    agents, profiles, db, datasetHashes, changedDatasets, computeConflicts,
+    heartbeatFileCount, heartbeatToolTotals, persistHeartbeatIfAvailable,
+    persistHeartbeatOperation
+  },
 };
