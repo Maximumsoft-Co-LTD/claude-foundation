@@ -316,6 +316,139 @@ export function syncClaudeTelemetryOperation(context, id, options = {}) {
   return totals;
 }
 
+export const CLAUDE_CURSOR_ANCHOR_BYTES = 4096;
+
+export function telemetrySha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function claudeCursorIdentityOperation(context, path, offset) {
+  const metadata = context.stat(path);
+  const boundedOffset = Math.max(0, Math.min(Number(offset) || 0, metadata.size));
+  const anchorStart = Math.max(0, boundedOffset - context.anchorBytes);
+  const buffer = Buffer.alloc(boundedOffset - anchorStart);
+  if (buffer.length) {
+    const descriptor = context.open(path, "r");
+    try {
+      let consumed = 0;
+      while (consumed < buffer.length) {
+        const count = context.read(
+          descriptor, buffer, consumed, buffer.length - consumed, anchorStart + consumed);
+        if (count === 0) break;
+        consumed += count;
+      }
+      if (consumed !== buffer.length)
+        throw new Error(`Claude transcript changed while its cursor was inspected`);
+    } finally {
+      context.close(descriptor);
+    }
+  }
+  return {
+    device: String(metadata.dev),
+    inode: String(metadata.ino),
+    anchorStart,
+    anchorHash: context.hash(buffer)
+  };
+}
+
+export const claudeCursorIdentity = claudeCursorIdentityOperation.bind(null, {
+  stat: statSync,
+  open: openSync,
+  read: readSync,
+  close: closeSync,
+  hash: telemetrySha256,
+  anchorBytes: CLAUDE_CURSOR_ANCHOR_BYTES
+});
+
+export function belongsToProjectValue(rootPath, row, canonicalPath) {
+  const cwd = row?.cwd || row?.workingDirectory || row?.projectPath;
+  if (typeof cwd !== "string" || !cwd) return true;
+  const inside = relative(canonicalPath(rootPath), canonicalPath(cwd));
+  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
+}
+
+export function belongsToProjectOperation({ rootPath, canonicalPath }, row) {
+  return belongsToProjectValue(rootPath(), row, canonicalPath);
+}
+
+export function collectClaudeSourcesOperation({
+  pathExists = existsSync,
+  readDirectory = readdirSync,
+  realpath = realpathSync
+}, transcriptPath) {
+  const sources = [transcriptPath];
+  const sessionArtifacts = join(dirname(transcriptPath),
+    basename(transcriptPath).replace(/\.jsonl$/, ""), "subagents");
+  function collect(path) {
+    if (!pathExists(path)) return;
+    for (const entry of readDirectory(path, { withFileTypes: true })) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) collect(child);
+      else if (entry.isFile() && entry.name.endsWith(".jsonl"))
+        sources.push(realpath(child));
+    }
+  }
+  collect(sessionArtifacts);
+  return [...new Set(sources)];
+}
+
+export function bindClaudeSessionOperation(context, id, operationId, options = {}) {
+  const host = context.claudeHostContext(options.source || null);
+  if (!host) return null;
+  const cursors = context.loadClaudeCursors(id);
+  let session = cursors.sessions[host.sessionId];
+  if (!session) {
+    session = {
+      sessionId: host.sessionId,
+      transcriptPath: host.transcriptPath,
+      operationId: operationId || "unknown",
+      boundAt: context.now(),
+      sources: {}
+    };
+    for (const path of context.collectClaudeSources(host.transcriptPath)) {
+      session.sources[context.sourceKey(path)] = context.sourceCursor(
+        path, options.fromStart ? 0 : context.stat(path).size);
+    }
+    cursors.sessions[host.sessionId] = session;
+  } else {
+    session.transcriptPath = host.transcriptPath;
+    if (operationId) session.operationId = operationId;
+  }
+  session.updatedAt = context.now();
+  context.saveClaudeCursors(id, cursors);
+  return { context: host, cursors, session };
+}
+
+export function readCompleteJsonLinesOperation({
+  stat = statSync,
+  open = openSync,
+  read = readSync,
+  close = closeSync
+}, path, offset) {
+  const size = stat(path).size;
+  const start = offset >= 0 && offset <= size ? offset : 0;
+  if (start === size) return { rows: [], nextOffset: start };
+  const buffer = Buffer.alloc(size - start);
+  const descriptor = open(path, "r");
+  try {
+    read(descriptor, buffer, 0, buffer.length, start);
+  } finally {
+    close(descriptor);
+  }
+  const newline = buffer.lastIndexOf(10);
+  if (newline < 0) return { rows: [], nextOffset: start };
+  const text = buffer.subarray(0, newline + 1).toString("utf8");
+  const rows = text.split("\n").filter(Boolean).map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch (error) {
+      throw new Error(
+        `invalid Claude transcript record in ${basename(path)} (${error.message})`);
+    }
+  });
+  return { rows, nextOffset: start + newline + 1 };
+}
+
 export function createTelemetryRuntime({
   root,
   logs,
@@ -432,36 +565,7 @@ export function createTelemetryRuntime({
     return createHash("sha256").update(path).digest("hex").slice(0, 24);
   }
 
-  const CURSOR_ANCHOR_BYTES = 4096;
-
-  function cursorIdentity(path, offset) {
-    const metadata = statSync(path);
-    const boundedOffset = Math.max(0, Math.min(Number(offset) || 0, metadata.size));
-    const anchorStart = Math.max(0, boundedOffset - CURSOR_ANCHOR_BYTES);
-    const buffer = Buffer.alloc(boundedOffset - anchorStart);
-    if (buffer.length) {
-      const descriptor = openSync(path, "r");
-      try {
-        let consumed = 0;
-        while (consumed < buffer.length) {
-          const count = readSync(
-            descriptor, buffer, consumed, buffer.length - consumed, anchorStart + consumed);
-          if (count === 0) break;
-          consumed += count;
-        }
-        if (consumed !== buffer.length)
-          throw new Error(`Claude transcript changed while its cursor was inspected`);
-      } finally {
-        closeSync(descriptor);
-      }
-    }
-    return {
-      device: String(metadata.dev),
-      inode: String(metadata.ino),
-      anchorStart,
-      anchorHash: createHash("sha256").update(buffer).digest("hex")
-    };
-  }
+  const cursorIdentity = claudeCursorIdentity;
 
   function sourceCursor(path, offset) {
     return { path, offset, ...cursorIdentity(path, offset) };
@@ -479,13 +583,6 @@ export function createTelemetryRuntime({
   // user's cost numbers. Rows that name a working directory must name one
   // inside this project; rows that name none are kept, since dropping them
   // would silently under-report rather than mis-attribute.
-  function belongsToThisProject(row) {
-    const cwd = row?.cwd || row?.workingDirectory || row?.projectPath;
-    if (typeof cwd !== "string" || !cwd) return true;
-    const inside = relative(canonicalRoot(), canonicalPathOrSelf(cwd));
-    return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
-  }
-
   function canonicalPathOrSelf(path) {
     try { return realpathSync(path); } catch { return resolve(path); }
   }
@@ -495,6 +592,11 @@ export function createTelemetryRuntime({
     canonicalRootCache ||= canonicalPathOrSelf(root);
     return canonicalRootCache;
   }
+
+  const belongsToThisProject = belongsToProjectOperation.bind(null, {
+    rootPath: canonicalRoot,
+    canonicalPath: canonicalPathOrSelf
+  });
 
   function claudeHostContext(sourceOverride = null) {
     const transcriptPath = sourceOverride || process.env.FOUNDATION_CLAUDE_TRANSCRIPT_PATH;
@@ -525,22 +627,7 @@ export function createTelemetryRuntime({
     }
   }
 
-  function collectClaudeSources(transcriptPath) {
-    const sources = [transcriptPath];
-    const sessionArtifacts = join(dirname(transcriptPath),
-      basename(transcriptPath).replace(/\.jsonl$/, ""), "subagents");
-    function collect(path) {
-      if (!existsSync(path)) return;
-      for (const entry of readdirSync(path, { withFileTypes: true })) {
-        const child = join(path, entry.name);
-        if (entry.isDirectory()) collect(child);
-        else if (entry.isFile() && entry.name.endsWith(".jsonl"))
-          sources.push(realpathSync(child));
-      }
-    }
-    collect(sessionArtifacts);
-    return [...new Set(sources)];
-  }
+  const collectClaudeSources = collectClaudeSourcesOperation.bind(null, {});
 
   function loadClaudeCursors(id) {
     return readJson(telemetryCursorPath(id), { version: 1, sessions: {} });
@@ -567,57 +654,18 @@ export function createTelemetryRuntime({
     );
   }
 
-  function bindClaudeSession(id, operationId, options = {}) {
-    const context = claudeHostContext(options.source || null);
-    if (!context) return null;
-    const cursors = loadClaudeCursors(id);
-    let session = cursors.sessions[context.sessionId];
-    if (!session) {
-      session = {
-        sessionId: context.sessionId,
-        transcriptPath: context.transcriptPath,
-        operationId: operationId || "unknown",
-        boundAt: now(),
-        sources: {}
-      };
-      for (const path of collectClaudeSources(context.transcriptPath)) {
-        session.sources[sourceKey(path)] = sourceCursor(
-          path, options.fromStart ? 0 : statSync(path).size);
-      }
-      cursors.sessions[context.sessionId] = session;
-    } else {
-      session.transcriptPath = context.transcriptPath;
-      if (operationId) session.operationId = operationId;
-    }
-    session.updatedAt = now();
-    saveClaudeCursors(id, cursors);
-    return { context, cursors, session };
-  }
+  const bindClaudeSession = bindClaudeSessionOperation.bind(null, {
+    claudeHostContext,
+    loadClaudeCursors,
+    collectClaudeSources,
+    sourceKey,
+    sourceCursor,
+    stat: statSync,
+    now,
+    saveClaudeCursors
+  });
 
-  function readCompleteJsonLines(path, offset) {
-    const size = statSync(path).size;
-    const start = offset >= 0 && offset <= size ? offset : 0;
-    if (start === size) return { rows: [], nextOffset: start };
-    const buffer = Buffer.alloc(size - start);
-    const descriptor = openSync(path, "r");
-    try {
-      readSync(descriptor, buffer, 0, buffer.length, start);
-    } finally {
-      closeSync(descriptor);
-    }
-    const newline = buffer.lastIndexOf(10);
-    if (newline < 0) return { rows: [], nextOffset: start };
-    const text = buffer.subarray(0, newline + 1).toString("utf8");
-    const rows = text.split("\n").filter(Boolean).map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch (error) {
-        throw new Error(
-          `invalid Claude transcript record in ${basename(path)} (${error.message})`);
-      }
-    });
-    return { rows, nextOffset: start + newline + 1 };
-  }
+  const readCompleteJsonLines = readCompleteJsonLinesOperation.bind(null, {});
 
   function appendTelemetryRows(id, rows, format, context = {}) {
     const target = join(logs, id, "events.jsonl");
