@@ -32,12 +32,32 @@ export function sortChangedSurface(rows) {
     left.repositoryId.localeCompare(right.repositoryId) || left.path.localeCompare(right.path));
 }
 
+export function unchangedManifestEntry(fileDigest, workspace, manifest, rel) {
+  if (!manifest || !Object.prototype.hasOwnProperty.call(manifest, rel))
+    return false;
+  const path = join(workspace, rel);
+  try {
+    return existsSync(path) && manifest[rel] === fileDigest(path);
+  } catch {
+    return false;
+  }
+}
+
+export function carriedInUnchanged(
+  fileDigest, workspace, preexisting, rel, state = null
+) {
+  const copied = state?.workspace?.sandboxPreexisting;
+  if (unchangedManifestEntry(fileDigest, workspace, copied, rel)) return true;
+  return unchangedManifestEntry(fileDigest, workspace, preexisting, rel);
+}
+
 export function createChangePolicy({
   root, excludedWorkspaceDirs, providers, gitHead, git, porcelainStatusRecords,
   workspaceManifest, loadRuntime, selectedRepositories, isCurrentChangePath,
   readJson, fileDigest, fail
 }) {
   const policyCache = new Map();
+  const carriedInUnchangedFor = carriedInUnchanged.bind(null, fileDigest);
 
   // Registered with state-runtime's clearSnapshotCache so a surface mutation
   // invalidates this cache too — it used to clear a dead Map of its own.
@@ -68,24 +88,6 @@ export function createChangePolicy({
       ])].filter((path) => baseline[path] !== current[path]).sort();
     }
     return [];
-  }
-
-  function carriedInUnchanged(workspace, preexisting, rel, state = null) {
-    const copied = state?.workspace?.sandboxPreexisting;
-    if (copied && Object.prototype.hasOwnProperty.call(copied, rel)) {
-      const path = join(workspace, rel);
-      try {
-        if (existsSync(path) && copied[rel] === fileDigest(path)) return true;
-      } catch {}
-    }
-    if (!preexisting || !Object.prototype.hasOwnProperty.call(preexisting, rel))
-      return false;
-    const path = join(workspace, rel);
-    try {
-      return existsSync(path) && preexisting[rel] === fileDigest(path);
-    } catch {
-      return false;
-    }
   }
 
   // `canonicalChangedSurface` calls `fail`, which exits the process rather than
@@ -130,11 +132,11 @@ export function createChangePolicy({
           committed.stdout.split("\0").filter(Boolean).forEach((path) => add(path, "committed"));
         }
         changedFilesInWorkspace(id, workspace, head)
-          .filter((path) => !carriedInUnchanged(workspace, preexisting, path, state))
+          .filter((path) => !carriedInUnchangedFor(workspace, preexisting, path, state))
           .forEach((path) => add(path, "dirty"));
       } else if (repository.id === "root") {
         changedFiles(id, state)
-          .filter((path) => !carriedInUnchanged(workspace, preexisting, path, state))
+          .filter((path) => !carriedInUnchangedFor(workspace, preexisting, path, state))
           .forEach((path) => add(path, "dirty"));
       }
       rows.push(...changedSurfaceRows(repository.id, sources));
