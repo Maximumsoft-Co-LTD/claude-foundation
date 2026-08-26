@@ -175,6 +175,67 @@ export function applySandboxOperation(context, id, options = {}) {
   executeApplyJournal({ ...context, id, journal });
 }
 
+export function sandboxDiffNamesOperation(context, id, sandboxPath, state,
+  paths = context.applyPathspec(id, state)) {
+  if (!paths.length) return [];
+  const names = context.git(["diff", "--name-only", "-z", context.sandboxBase(state), "--",
+    ...paths], sandboxPath);
+  if (names.status !== 0)
+    context.fail(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
+  return names.stdout.split("\0").filter(Boolean).sort();
+}
+
+export function gitApplyInputsOperation(context, id, sandboxPath) {
+  context.git(["add", "-N", "."], sandboxPath);
+  const state = context.loadRuntime(id);
+  const names = context.sandboxDiffNames(id, sandboxPath, state);
+  const pending = names.filter((path) =>
+    context.pathIdentity(join(context.root, path)) !==
+      context.pathIdentity(join(sandboxPath, path)) ||
+    context.pathMode(join(context.root, path)) !== context.pathMode(join(sandboxPath, path)));
+  if (!pending.length) return names;
+  const directoryPaths = pending.filter((path) =>
+    [join(context.root, path), join(sandboxPath, path)].some((candidate) =>
+      context.lstat(candidate, { throwIfNoEntry: false })?.isDirectory()));
+  if (directoryPaths.length)
+    context.fail(`apply encountered nested repository or directory path(s): ${
+      directoryPaths.join(", ")}; register nested repositories in openspec/repositories.yaml before creating the sandbox`);
+  const diff = context.gitBuffer([
+    "diff", "--binary", context.sandboxBase(state), "--", ...pending
+  ], sandboxPath);
+  if (diff.status !== 0) context.fail("cannot inspect sandbox diff");
+  if (!diff.stdout.length) {
+    if (emptyRootDiffPermitted(state)) return [];
+    context.fail("sandbox has no applicable diff");
+  }
+  const check = context.spawn("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
+    cwd: context.root, input: diff.stdout, encoding: "utf8"
+  });
+  if (check.status !== 0)
+    context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
+  const base = context.sandboxBase(state);
+  const workingBlob = (path) => {
+    const stats = context.lstat(path, { throwIfNoEntry: false });
+    if (!stats) return null;
+    return stats.isSymbolicLink()
+      ? Buffer.from(context.readlink(path)) : context.readFile(path);
+  };
+  const clobbered = pending.filter((path) => {
+    const target = workingBlob(join(context.root, path));
+    if (target === null) return false;
+    const sandboxContent = workingBlob(join(sandboxPath, path));
+    if (sandboxContent !== null && target.equals(sandboxContent)) return false;
+    const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
+    return shown.status !== 0 || !target.equals(shown.stdout);
+  });
+  if (clobbered.length) {
+    const listed = clobbered.slice(0, 10).join(", ") +
+      (clobbered.length > 10 ? ", ..." : "");
+    context.fail(`apply would overwrite uncommitted target edits at: ${listed} — commit or reconcile the landed work first, then sync the sandbox and prove again`);
+  }
+  return names;
+}
+
 export function createApplyRuntime({
   root,
   transactions,
@@ -252,77 +313,28 @@ export function createApplyRuntime({
     return state.workspace?.baseHead || "HEAD";
   }
 
-  function sandboxDiffNames(id, sandboxPath, state, paths = applyPathspec(id, state)) {
-    if (!paths.length) return [];
-    const names = git(["diff", "--name-only", "-z", sandboxBase(state), "--",
-      ...paths], sandboxPath);
-    if (names.status !== 0) fail(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
-    return names.stdout.split("\0").filter(Boolean).sort();
-  }
+  const sandboxDiffNames = sandboxDiffNamesOperation.bind(null, {
+    applyPathspec,
+    git,
+    sandboxBase,
+    fail
+  });
 
-  function gitApplyInputs(id, sandboxPath) {
-    git(["add", "-N", "."], sandboxPath);
-    const state = loadRuntime(id);
-    const names = sandboxDiffNames(id, sandboxPath, state);
-    // A previous recovery may already have copied a proven file into the
-    // target before the transaction was recorded. Treat an exact desired-byte
-    // match as already applied. Running `git apply --check` first rejects that
-    // harmless state as "patch does not apply" and forces a manual rewrite of
-    // an already-correct file.
-    const pending = names.filter((path) =>
-      pathIdentity(join(root, path)) !== pathIdentity(join(sandboxPath, path)) ||
-      pathMode(join(root, path)) !== pathMode(join(sandboxPath, path)));
-    if (!pending.length) return names;
-    const directoryPaths = pending.filter((path) =>
-      [join(root, path), join(sandboxPath, path)].some((candidate) =>
-        lstatSync(candidate, { throwIfNoEntry: false })?.isDirectory()));
-    if (directoryPaths.length)
-      fail(`apply encountered nested repository or directory path(s): ${
-        directoryPaths.join(", ")}; register nested repositories in openspec/repositories.yaml before creating the sandbox`);
-    // gitBuffer, not git: a UTF-8 decode of the binary diff corrupts non-UTF-8
-    // content and makes `apply --check` report phantom conflicts.
-    const diff = gitBuffer(["diff", "--binary", sandboxBase(state), "--", ...pending], sandboxPath);
-    if (diff.status !== 0) fail("cannot inspect sandbox diff");
-    if (!diff.stdout.length) {
-      if (emptyRootDiffPermitted(state)) return [];
-      fail("sandbox has no applicable diff");
-    }
-    const check = spawnSync("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
-      cwd: root, input: diff.stdout, encoding: "utf8"
-    });
-    if (check.status !== 0)
-      fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
-    // `apply --check` validates the patch textually, but application copies
-    // whole files — so a target file carrying uncommitted edits the sandbox
-    // never saw would be silently overwritten. Two changes landed sequentially
-    // over the same file lost the first one's work exactly this way. Refuse
-    // and name the paths, as the isolated-copy path already does.
-    const base = sandboxBase(state);
-    // Read like a git blob: a symlink's blob is its link target, not the
-    // linked file's content — following the link makes every unchanged
-    // symlink read as a conflict.
-    const workingBlob = (path) => {
-      const stats = lstatSync(path, { throwIfNoEntry: false });
-      if (!stats) return null;
-      return stats.isSymbolicLink() ? Buffer.from(readlinkSync(path)) : readFileSync(path);
-    };
-    const clobbered = pending.filter((path) => {
-      const target = workingBlob(join(root, path));
-      if (target === null) return false;
-      const sandboxContent = workingBlob(join(sandboxPath, path));
-      if (sandboxContent !== null && target.equals(sandboxContent)) return false;
-      const shown = gitBuffer(["show", `${base}:${path}`], root);
-      return shown.status !== 0 || !target.equals(shown.stdout);
-    });
-    if (clobbered.length) {
-      const listed = clobbered.slice(0, 10).join(", ") +
-        (clobbered.length > 10 ? ", ..." : "");
-      fail(`apply would overwrite uncommitted target edits at: ${listed} — commit or reconcile the landed work first, then sync the sandbox and prove again`);
-    }
-    // Return every changed path, including exact pre-applied paths. They become
-    // no-op journal entries so later recovery still verifies their presence.
-    return names;
-  }
+  const gitApplyInputs = gitApplyInputsOperation.bind(null, {
+    root,
+    git,
+    loadRuntime,
+    sandboxDiffNames,
+    pathIdentity,
+    pathMode,
+    lstat: lstatSync,
+    gitBuffer,
+    sandboxBase,
+    spawn: spawnSync,
+    readlink: readlinkSync,
+    readFile: readFileSync,
+    fail
+  });
 
   function assertTargetHeadUnmoved(id, state) {
     const currentHead = gitHead(root);

@@ -98,6 +98,7 @@ runtime environment policy|node --test "$HERE/harness/run-runtime-environment-po
 state runtime helpers|node --test "$ROOT/.claude/harness/tests/state-runtime-helpers.test.mjs"
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 artifact store|node --test "$ROOT/.claude/harness/tests/artifact-store.test.mjs"
+apply inputs|node --test "$ROOT/.claude/harness/tests/apply-inputs.test.mjs"
 evidence upgrade|node --test "$ROOT/.claude/harness/tests/evidence-upgrade.test.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
 evidence contract values|node --test "$ROOT/.claude/harness/tests/evidence-contract-values.test.mjs"
