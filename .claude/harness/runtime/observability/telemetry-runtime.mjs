@@ -146,6 +146,48 @@ export function activeTelemetryRunId(events, context, changeId) {
   return events.at(-1)?.runId || context.sessionId || changeId;
 }
 
+export function phaseTelemetryHost(host, sessionId, env = process.env) {
+  if (host) return "claude-code";
+  if (env.CODEX_THREAD_ID) return "codex";
+  return sessionId ? "generic-host" : "unknown";
+}
+
+export function phaseTelemetryMode(host, sessionId) {
+  if (host) return "automatic-transcript";
+  return sessionId ? "explicit-import" : "unavailable";
+}
+
+export function recommendedPhaseModelTier(phase) {
+  return { change: "deep", build: "standard", prove: "fast", land: "fast" }[phase] ||
+    "standard";
+}
+
+export function phaseContextMode(prior, sessionId) {
+  if (!sessionId) return "unavailable";
+  if (!prior?.sessionId) return "initial";
+  return prior.sessionId === sessionId ? "retained" : "fresh";
+}
+
+export function buildPhaseContextRow({
+  id, phase, prior, host, sessionId, env = process.env, timestamp
+}) {
+  return {
+    version: 1,
+    changeId: id,
+    phase,
+    sessionId,
+    telemetryHost: phaseTelemetryHost(host, sessionId, env),
+    telemetryMode: phaseTelemetryMode(host, sessionId),
+    contextMode: phaseContextMode(prior, sessionId),
+    recommendedModelTier: recommendedPhaseModelTier(phase),
+    actualModel: env.FOUNDATION_MODEL_ID || null,
+    trigger: env.FOUNDATION_PHASE_TRIGGER || null,
+    priorPhase: prior?.phase || null,
+    priorSessionId: prior?.sessionId || null,
+    timestamp
+  };
+}
+
 export function createTelemetryRuntime({
   root,
   logs,
@@ -357,36 +399,10 @@ export function createTelemetryRuntime({
       const prior = readJsonLinesTolerant(path).at(-1) || null;
       const host = claudeHostContext();
       const sessionId = host?.sessionId || runtimeSessionId();
-      const telemetryHost = host ? "claude-code"
-        : process.env.CODEX_THREAD_ID ? "codex"
-          : sessionId ? "generic-host" : "unknown";
-      const telemetryMode = host ? "automatic-transcript"
-        : sessionId ? "explicit-import" : "unavailable";
-      const recommendedTier = {
-        change: "deep",
-        build: "standard",
-        prove: "fast",
-        land: "fast"
-      }[phase] || "standard";
-      const contextMode = !sessionId ? "unavailable"
-        : !prior?.sessionId ? "initial"
-          : prior.sessionId === sessionId ? "retained" : "fresh";
       mkdirSync(dirname(path), { recursive: true });
-      appendFileSync(path, `${JSON.stringify({
-        version: 1,
-        changeId: id,
-        phase,
-        sessionId,
-        telemetryHost,
-        telemetryMode,
-        contextMode,
-        recommendedModelTier: recommendedTier,
-        actualModel: process.env.FOUNDATION_MODEL_ID || null,
-        trigger: process.env.FOUNDATION_PHASE_TRIGGER || null,
-        priorPhase: prior?.phase || null,
-        priorSessionId: prior?.sessionId || null,
-        timestamp: now()
-      })}\n`);
+      appendFileSync(path, `${JSON.stringify(buildPhaseContextRow({
+        id, phase, prior, host, sessionId, timestamp: now()
+      }))}\n`);
     } catch (error) {
       if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
         console.error(`WARNING: phase telemetry unavailable: ${error.message}`);
