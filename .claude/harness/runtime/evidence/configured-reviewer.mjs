@@ -86,22 +86,26 @@ function validStringList(value) {
     new Set(trimmed).size === trimmed.length;
 }
 
-function validReview(review) {
+export function validReviewFinding(finding, ids) {
+  if (!finding || typeof finding !== "object" || Array.isArray(finding) ||
+      !text(finding.id) || ids.has(text(finding.id)) ||
+      !["blocker", "major", "minor"].includes(finding.severity) ||
+      typeof finding.path !== "string" ||
+      !(finding.line === null || Number.isInteger(finding.line) && finding.line >= 1) ||
+      !text(finding.message) || !validStringList(finding.claimIds) ||
+      !validStringList(finding.verificationCaseIds)) return false;
+  ids.add(text(finding.id));
+  return true;
+}
+
+export function validReview(review) {
   if (!review || typeof review !== "object" || Array.isArray(review) ||
       !["pass", "fail", "inconclusive"].includes(review.status) ||
       !text(review.summary) || !Array.isArray(review.findings) ||
       !validStringList(review.verifiedFindingIds)) return false;
   const ids = new Set();
-  for (const finding of review.findings) {
-    if (!finding || typeof finding !== "object" || Array.isArray(finding) ||
-        !text(finding.id) || ids.has(text(finding.id)) ||
-        !["blocker", "major", "minor"].includes(finding.severity) ||
-        typeof finding.path !== "string" ||
-        !(finding.line === null || Number.isInteger(finding.line) && finding.line >= 1) ||
-        !text(finding.message) || !validStringList(finding.claimIds) ||
-        !validStringList(finding.verificationCaseIds)) return false;
-    ids.add(text(finding.id));
-  }
+  for (const finding of review.findings)
+    if (!validReviewFinding(finding, ids)) return false;
   return true;
 }
 

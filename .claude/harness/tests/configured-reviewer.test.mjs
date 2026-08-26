@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import {
   REVIEW_SCHEMA, claudeResultEnvelope, configuredReviewPrompt,
-  createConfiguredReviewerRuntime
+  createConfiguredReviewerRuntime, validReview, validReviewFinding
 } from
   "../runtime/evidence/configured-reviewer.mjs";
 import { createRuntimeEnvironment } from
@@ -81,6 +81,25 @@ const reviewer = {
   reasoningEffort: "high", sandbox: "read-only", ephemeral: true,
   timeoutMs: 10_000
 };
+const validFinding = {
+  id: "F1", severity: "major", path: "src/app.mjs", line: 1,
+  message: "finding", claimIds: ["C1"], verificationCaseIds: ["V1"]
+};
+assert.equal(validReviewFinding(validFinding, new Set()), true);
+assert.equal(validReview({
+  status: "fail", summary: "reviewed", findings: [validFinding],
+  verifiedFindingIds: []
+}), true);
+for (const invalid of [
+  null, [], { ...validFinding, id: "" }, { ...validFinding, severity: "info" },
+  { ...validFinding, path: null }, { ...validFinding, line: 0 },
+  { ...validFinding, line: 1.5 }, { ...validFinding, message: "" },
+  { ...validFinding, claimIds: [""] },
+  { ...validFinding, verificationCaseIds: ["V1", " V1"] }
+]) assert.equal(validReviewFinding(invalid, new Set()), false);
+assert.equal(validReviewFinding(validFinding, new Set(["F1"])), false);
+assert.equal(validReview({ status: "pass", summary: "", findings: [],
+  verifiedFindingIds: [] }), false);
 const policy = () => ({ review: {
   diversity: "single-model", independence: "required",
   defaultReviewer: "claude-opus", reviewers: { "claude-opus": reviewer }
