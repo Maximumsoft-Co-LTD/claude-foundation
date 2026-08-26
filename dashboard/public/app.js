@@ -382,63 +382,9 @@ function renderRepoStats(stats, now) {
 let lastPresence = null;
 var lastHistory = null;
 
-function renderPresence(p) {
-  const R = rangeInfo(Date.now());
-  const all = p && Array.isArray(p.buckets) ? p.buckets : [];
-  const buckets = all.filter((b) => {
-    const ms = b.hour * 3600000;
-    return ms >= R.fromMs && ms < R.toMsEx;
-  });
-  $('presence-empty').hidden = all.length > 0;
-  const heat = Array.from({ length: 7 }, () => new Array(24).fill(0)); // [dow][hour] minutes
-  const byUser = {}, byDay = {}, byHour = new Array(24).fill(0);
-  const today = new Date().toISOString().slice(0, 10);
-  let todayMin = 0;
-  for (const b of buckets) {
-    const d = new Date(b.hour * 3600000); // bucket → local time
-    heat[d.getDay()][d.getHours()] += b.minutes;
-    byHour[d.getHours()] += b.minutes;
-    byUser[b.user || 'unknown'] = (byUser[b.user || 'unknown'] || 0) + b.minutes;
-    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    byDay[dayKey] = (byDay[dayKey] || 0) + b.minutes;
-    if (dayKey === today) todayMin += b.minutes;
-  }
-  $('pr-people').textContent = Object.keys(byUser).length;
-  $('pr-hours').textContent = fmtHours(buckets.reduce((s, b) => s + b.minutes, 0));
-  const peak = byHour.indexOf(Math.max(...byHour));
-  $('pr-peak').textContent = byHour[peak] ? `${String(peak).padStart(2, '0')}:00` : '—';
-  $('pr-today').textContent = fmtHours(todayMin);
-
-  // Heatmap: rows Mon..Sun (start week on Monday), columns 0-23
-  const dows = [1, 2, 3, 4, 5, 6, 0];
-  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const maxCell = Math.max(1, ...heat.flat());
-  let html = '<div class="hm-grid"><span class="hm-corner"></span>';
-  for (let h = 0; h < 24; h++) html += `<span class="hm-collab">${h % 3 === 0 ? h : ''}</span>`;
-  for (const dow of dows) {
-    html += `<span class="hm-rowlab">${names[dow]}</span>`;
-    for (let h = 0; h < 24; h++) {
-      const v = heat[dow][h];
-      html += `<span class="hm-cell" style="opacity:${v ? (0.15 + 0.85 * (v / maxCell)).toFixed(2) : 0.04}" title="${names[dow]} ${h}:00 · ${Math.round(v)} min"></span>`;
-    }
-  }
-  html += '</div>';
-  $('pr-heatmap').innerHTML = html;
-
-  const people = Object.entries(byUser).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const maxP = Math.max(1, ...people.map(([, m]) => m));
-  renderBars($('pr-people-bars'), people.map(([u, m]) => barRow(u, m, maxP, userColor(u), fmtHours(m))));
-
-  const spanDays = Math.min(31, Math.max(1, Math.round((R.toMsEx - R.fromMs) / DAY)));
-  const cols = [];
-  for (let i = spanDays - 1; i >= 0; i--) {
-    const d = new Date(R.toMsEx - DAY / 2 - i * DAY); // midpoint keeps local-day keys stable
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const min = byDay[key] || 0;
-    cols.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, count: Math.round(min), text: min ? fmtHours(min) : '' });
-  }
-  renderCols($('pr-daily'), cols);
-}
+const renderPresence = FoundationPresenceView.renderPresence.bind(null, {
+  $, barRow, fmtHours, rangeInfo, renderBars, renderCols, userColor
+});
 
 function renderHistoryExtras(hist) {
   const usage = hist && Array.isArray(hist.usage) ? hist.usage : [];
