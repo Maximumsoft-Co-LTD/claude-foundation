@@ -117,6 +117,60 @@ export function providerExecutionEnvironment(base, additions = {}, workspacePath
   return environment;
 }
 
+export function runProviderRequest(context, id, provider, values) {
+  const configured = context.providerConfig(id, provider);
+  const capability = context.providerCapability(provider, configured);
+  if (!capability || !context.providers.has(capability))
+    context.die(`unknown provider '${provider}'`);
+  if (configured && configured.adapter !== "external")
+    context.die(`provider '${provider}' declares adapter '${configured.adapter}' and its own command; ` +
+      "run 'proof run <change>' so the declared command is what executes");
+  const split = values.indexOf("--");
+  if (split < 0 || split === values.length - 1)
+    context.die("run-provider requires '-- <command> [args...]'");
+  const { flags, rest } = context.parseFlags(values.slice(0, split));
+  if (rest.length)
+    context.die(`unexpected run-provider argument(s): ${rest.join(", ")}`);
+  if (!flags.claims)
+    context.die("run-provider requires --claims <a,b|declared> before '--'");
+  return {
+    flags,
+    command: values[split + 1],
+    commandArgs: values.slice(split + 2)
+  };
+}
+
+export function runProviderStatus(result) {
+  if (result.error || result.status === null) return "error";
+  return result.status === 0 ? "pass" : "fail";
+}
+
+export function runProviderOperation(context, id, provider, values) {
+  const request = runProviderRequest(context, id, provider, values);
+  const started = context.now();
+  const startedMs = context.dateNow();
+  const workspace = context.providerWorkspace(id, provider);
+  const result = context.spawn(request.command, request.commandArgs, {
+    cwd: workspace, encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    env: providerExecutionEnvironment(context.environment,
+      { FOUNDATION_CHANGE_ID: id }, workspace)
+  });
+  const logDir = join(context.logs, id);
+  context.mkdir(logDir, { recursive: true });
+  const logPath = join(logDir, `${provider}-${context.dateNow()}.log`);
+  context.write(logPath, `${result.stdout || ""}${result.stderr || ""}`);
+  context.recordReceipt(id, provider, runProviderStatus(result), {
+    ...request.flags,
+    started,
+    command: [request.command, ...request.commandArgs].join(" "),
+    log: relative(context.root, logPath),
+    observed: `exit ${result.status ?? "error"}`,
+    durationMs: context.dateNow() - startedMs
+  }, { executed: true });
+  if (result.status !== 0) context.exit(result.status || 1);
+}
+
 export function createAdapterRuntime({
   ROOT, LOGS, PROVIDERS,
   providerCapability, providerConfig, parseFlags, providerWorkspace,
@@ -173,51 +227,13 @@ export function createAdapterRuntime({
     }
   }
 
-  function runProvider(id, provider, values) {
-    const configured = providerConfig(id, provider);
-    const capability = providerCapability(provider, configured);
-    if (!capability || !PROVIDERS.has(capability)) die(`unknown provider '${provider}'`);
-    // The provider already declares what it runs. Letting an ad-hoc command
-    // stand in for it would produce a genuinely-executed receipt for something
-    // other than the declared evidence.
-    if (configured && configured.adapter !== "external")
-      die(`provider '${provider}' declares adapter '${configured.adapter}' and its own command; ` +
-        "run 'proof run <change>' so the declared command is what executes");
-    const split = values.indexOf("--");
-    if (split < 0 || split === values.length - 1) die("run-provider requires '-- <command> [args...]'");
-    const { flags, rest } = parseFlags(values.slice(0, split));
-    if (rest.length) die(`unexpected run-provider argument(s): ${rest.join(", ")}`);
-    if (!flags.claims) die("run-provider requires --claims <a,b|declared> before '--'");
-    const command = values[split + 1];
-    const commandArgs = values.slice(split + 2);
-    const started = now();
-    const startedMs = Date.now();
-    // Same 64 MB ceiling as the git helper: the default 1 MB maxBuffer kills a
-    // verbose green suite with ENOBUFS and records the run as an infrastructure
-    // error.
-    const workspace = providerWorkspace(id, provider);
-    const result = spawnSync(command, commandArgs, {
-      cwd: workspace, encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-      env: providerExecutionEnvironment(process.env, { FOUNDATION_CHANGE_ID: id }, workspace)
-    });
-    const logDir = join(LOGS, id);
-    mkdirSync(logDir, { recursive: true });
-    const logPath = join(logDir, `${provider}-${Date.now()}.log`);
-    writeFileSync(logPath, `${result.stdout || ""}${result.stderr || ""}`);
-    // A spawn failure (missing binary, signal death) is infrastructure, not a
-    // failing check: `error` steers recovery toward restoring the provider,
-    // where `fail` steers it toward changing code.
-    recordReceipt(id, provider,
-      result.error || result.status === null
-        ? "error" : result.status === 0 ? "pass" : "fail", {
-      ...flags,
-      started, command: [command, ...commandArgs].join(" "),
-      log: relative(ROOT, logPath), observed: `exit ${result.status ?? "error"}`,
-      durationMs: Date.now() - startedMs
-    }, { executed: true });
-    if (result.status !== 0) process.exit(result.status || 1);
-  }
+  const runProvider = runProviderOperation.bind(null, {
+    root: ROOT, logs: LOGS, providers: PROVIDERS,
+    providerCapability, providerConfig, parseFlags, providerWorkspace,
+    recordReceipt, now, die,
+    dateNow: Date.now, environment: process.env, spawn: spawnSync,
+    mkdir: mkdirSync, write: writeFileSync, exit: process.exit.bind(process)
+  });
   
   async function startRequiredServices(id, nodes, proofRunId) {
     const executionValue = evidence(id).execution;

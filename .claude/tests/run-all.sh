@@ -99,6 +99,7 @@ change draft materialization|node --test "$ROOT/.claude/harness/tests/change-dra
 land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 telemetry phase context|node --test "$ROOT/.claude/harness/tests/telemetry-phase-context.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
+run provider|node --test "$ROOT/.claude/harness/tests/run-provider.test.mjs"
 grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 receipt validity|node "$ROOT/.claude/harness/tests/receipt-validity.test.mjs"
 attestation validity|node "$ROOT/.claude/harness/tests/attestation-validity.test.mjs"
