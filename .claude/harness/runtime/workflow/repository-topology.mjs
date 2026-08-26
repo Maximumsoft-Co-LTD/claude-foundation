@@ -1,6 +1,64 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
+export function normalizedSelectionEntry(entry) {
+  return typeof entry === "string" ? { id: entry } : entry;
+}
+
+export function selectedRepository(catalogValue, id, entry, reportFailure) {
+  const repository = catalogValue.repositories.find((item) => item.id === entry.id);
+  if (!repository)
+    reportFailure(`${id}/repositories.yaml references unknown repository '${entry.id}'`);
+  return repository;
+}
+
+export function selectedRepositoryRow({
+  repository, entry, state, options, root, canonicalPath, gitHead
+}) {
+  const runtimeState = state.repositories?.[repository.id] || {};
+  return {
+    ...repository,
+    mode: entry.mode || repository.mode,
+    dependsOn: entry.dependsOn || repository.dependsOn || [],
+    baseHead: options.useTargetPaths
+      ? gitHead(repository.path)
+      : runtimeState.baseHead || gitHead(repository.path),
+    workspacePath: canonicalPath(options.useTargetPaths
+      ? repository.path
+      : runtimeState.path || (repository.id === "root"
+        ? state.workspace?.path || root : repository.path))
+  };
+}
+
+export function assertSelectedDependencies(rows, id, reportFailure) {
+  const selectedIds = new Set(rows.map((repository) => repository.id));
+  for (const repository of rows)
+    for (const dependency of repository.dependsOn)
+      if (!selectedIds.has(dependency))
+        reportFailure(`change '${id}' must select dependency '${dependency}' for repository '${repository.id}'`);
+}
+
+export function selectRepositories({
+  id, catalogValue, selection, state, options, root, canonicalPath, gitHead,
+  reportFailure
+}) {
+  const requested = selection?.repositories || [{ id: "root", mode: "write" }];
+  const rows = [];
+  const seen = new Set();
+  for (const value of requested) {
+    const entry = normalizedSelectionEntry(value);
+    const repository = selectedRepository(catalogValue, id, entry, reportFailure);
+    if (seen.has(repository.id))
+      reportFailure(`${id}/repositories.yaml repeats '${repository.id}'`);
+    seen.add(repository.id);
+    rows.push(selectedRepositoryRow({
+      repository, entry, state, options, root, canonicalPath, gitHead
+    }));
+  }
+  assertSelectedDependencies(rows, id, reportFailure);
+  return rows;
+}
+
 export function createRepositoryTopology({
   root, slugify, readJson, canonicalPath, pathInside, activeChangePath,
   loadRuntime, git, gitHead, fail
@@ -118,35 +176,10 @@ export function createRepositoryTopology({
     const catalogValue = catalog();
     const selection = changeSelectionAt(id,
       options.changeDir || activeChangePath(id), reportFailure);
-    const requested = selection?.repositories || [{ id: "root", mode: "write" }];
-    const rows = [];
-    const seen = new Set();
-    for (const entry of requested) {
-      const normalized = typeof entry === "string" ? { id: entry } : entry;
-      const repository = catalogValue.repositories.find((item) => item.id === normalized.id);
-      if (!repository) reportFailure(`${id}/repositories.yaml references unknown repository '${normalized.id}'`);
-      if (seen.has(repository.id)) reportFailure(`${id}/repositories.yaml repeats '${repository.id}'`);
-      seen.add(repository.id);
-      const runtimeState = state.repositories?.[repository.id] || {};
-      rows.push({
-        ...repository,
-        mode: normalized.mode || repository.mode,
-        dependsOn: normalized.dependsOn || repository.dependsOn || [],
-        baseHead: options.useTargetPaths
-          ? gitHead(repository.path)
-          : runtimeState.baseHead || gitHead(repository.path),
-        workspacePath: canonicalPath(options.useTargetPaths
-          ? repository.path
-          : runtimeState.path || (repository.id === "root"
-            ? state.workspace?.path || root : repository.path))
-      });
-    }
-    const selectedIds = new Set(rows.map((repository) => repository.id));
-    for (const repository of rows)
-      for (const dependency of repository.dependsOn)
-        if (!selectedIds.has(dependency))
-          reportFailure(`change '${id}' must select dependency '${dependency}' for repository '${repository.id}'`);
-    return rows;
+    return selectRepositories({
+      id, catalogValue, selection, state, options, root, canonicalPath, gitHead,
+      reportFailure
+    });
   }
 
   function byId(id, repositoryId, state = loadRuntime(id)) {
