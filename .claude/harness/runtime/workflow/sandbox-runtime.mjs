@@ -151,6 +151,116 @@ export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
     log(`TARGET MOVED ${id}: rerun 'claude-foundation sandbox sync ${id}' after repairing the named repository replay.`);
 }
 
+export function sandboxCreatePreflight(context, id, flags = {}) {
+  const {
+    hostAttestation, loadRuntime, repositoryCatalog, git, root,
+    porcelainStatusRecords, selectedRepositories, fail
+  } = context;
+  if (flags.unattended) {
+    const preflight = hostAttestation.preflight(id, flags, true);
+    if (!preflight.safeForUnattended)
+      fail(`unattended sandbox creation requires a trusted host-owned security attestation; detected virtualization alone is insufficient: ${preflight.reasons.join("; ")}`);
+  }
+  const initial = loadRuntime(id);
+  const topology = repositoryCatalog();
+  if (topology.drift.length)
+    fail(`sandbox preflight found unregistered submodule(s): ${
+      topology.drift.map((repository) => repository.path).join(", ")}\n  register the complete set in openspec/repositories.yaml, select the repositories for '${id}', validate once, then create the sandbox`);
+  const targetStatus = git([
+    "status", "--porcelain=v1", "-z", "--untracked-files=all"
+  ], root);
+  const unownedInvestigations = targetStatus.status === 0
+    ? porcelainStatusRecords(targetStatus.stdout).filter((row) =>
+      row.status === "??" && row.path.startsWith("openspec/investigations/"))
+    : [];
+  if (unownedInvestigations.length)
+    fail(`sandbox preflight found untracked investigation note(s): ${
+      unownedInvestigations.map((row) => row.path).join(", ")}\n  commit the investigation record in the control repository before Build so sandbox apply cannot race another writer at archive`);
+  return { initial, repositories: selectedRepositories(id, initial) };
+}
+
+export function isolateSelectedRepositories(context, id, state, repositories) {
+  const { root, gitHead, git, canonicalPath, fail } = context;
+  state.repositories = {};
+  try {
+    for (const repository of repositories) {
+      if (repository.id === "root") {
+        state.repositories.root = {
+          mode: state.workspace.mode, path: state.workspace.path, targetPath: root,
+          baseHead: state.workspace.baseHead || gitHead(root), access: repository.mode
+        };
+        continue;
+      }
+      const baseHead = gitHead(repository.path);
+      if (!baseHead)
+        throw new Error(`repository '${repository.id}' cannot be isolated because it is not an initialized Git repository`);
+      const requestedPath = join(root, ".foundation", "repository-sandboxes", id, repository.id);
+      if (existsSync(requestedPath))
+        throw new Error(`repository sandbox already exists: ${requestedPath}`);
+      mkdirSync(dirname(requestedPath), { recursive: true });
+      git(["worktree", "prune"], repository.path);
+      const result = git(["worktree", "add", "--detach", requestedPath, baseHead], repository.path);
+      if (result.status !== 0)
+        throw new Error(`cannot create sandbox for '${repository.id}': ${result.stderr.trim()}`);
+      const path = canonicalPath(requestedPath);
+      state.repositories[repository.id] = {
+        mode: "worktree", path, targetPath: repository.path,
+        baseHead, access: repository.mode, applied: false
+      };
+    }
+  } catch (error) {
+    context.cleanupRepositorySandboxes(id, state);
+    context.cleanupAppliedSandbox(id, state);
+    state.workspace = {
+      preexisting: state.workspace?.preexisting || {},
+      mode: "current", path: root, baseHead: gitHead(root)
+    };
+    delete state.repositories;
+    state.status = "change";
+    context.saveRuntime(state);
+    fail(`${error.message}; created sandboxes rolled back`);
+  }
+}
+
+export function setupSelectedRepositories(context, state, repositories) {
+  for (const repository of repositories) {
+    const record = state.repositories[repository.id];
+    if (!repository.setupCommand || !record || record.mode !== "worktree") continue;
+    context.runSetupCommand(record, repository.setupCommand,
+      context.policy().sandbox?.setupTimeoutMs, record.path, repository.id);
+    if (record.access !== "read") continue;
+    const changed = context.git(["status", "--porcelain"], record.path);
+    if (changed.status !== 0 || changed.stdout.trim()) {
+      record.setup.status = "failed";
+      record.setup.reason = "setup modified a read-only repository";
+      console.error(`WARNING: sandbox setup modified read-only repository '${repository.id}': ${
+        changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
+    }
+  }
+}
+
+export function reportMultiRepositorySandbox(context, id, state) {
+  console.log(`MULTI-REPOSITORY SANDBOX ${id}`);
+  for (const repository of context.selectedRepositories(id, state))
+    console.log(`  ${repository.id}: ${repository.workspacePath}`);
+}
+
+export function createSandbox(context, id, flags = {}) {
+  const { initial, repositories } = sandboxCreatePreflight(context, id, flags);
+  if (repositories.length === 1 && repositories[0].id === "root" && !flags.all) {
+    context.createSingle(id);
+    return;
+  }
+  context.createSingle(id);
+  const state = context.loadRuntime(id);
+  isolateSelectedRepositories(context, id, state, repositories);
+  setupSelectedRepositories(context, state, repositories);
+  state.status = "building";
+  context.saveRuntime(state);
+  context.clearSnapshotCache(id);
+  reportMultiRepositorySandbox(context, id, state);
+}
+
 export function createSandboxRuntime({
   root, policy, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
   loadRuntime, saveRuntime,
@@ -647,102 +757,6 @@ export function createSandboxRuntime({
     console.log(`SANDBOX ${id}\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
   }
 
-  function create(id, flags = {}) {
-    if (flags.unattended) {
-      const preflight = hostAttestation.preflight(id, flags, true);
-      if (!preflight.safeForUnattended)
-        fail(`unattended sandbox creation requires a trusted host-owned security attestation; detected virtualization alone is insufficient: ${preflight.reasons.join("; ")}`);
-    }
-    const initial = loadRuntime(id);
-    const topology = repositoryCatalog();
-    if (topology.drift.length)
-      fail(`sandbox preflight found unregistered submodule(s): ${
-        topology.drift.map((repository) => repository.path).join(", ")}\n  register the complete set in openspec/repositories.yaml, select the repositories for '${id}', validate once, then create the sandbox`);
-    const targetStatus = git([
-      "status", "--porcelain=v1", "-z", "--untracked-files=all"
-    ], root);
-    const unownedInvestigations = targetStatus.status === 0
-      ? porcelainStatusRecords(targetStatus.stdout).filter((row) =>
-        row.status === "??" && row.path.startsWith("openspec/investigations/"))
-      : [];
-    if (unownedInvestigations.length)
-      fail(`sandbox preflight found untracked investigation note(s): ${
-        unownedInvestigations.map((row) => row.path).join(", ")}\n  commit the investigation record in the control repository before Build so sandbox apply cannot race another writer at archive`);
-    const repositories = selectedRepositories(id, initial);
-    if (repositories.length === 1 && repositories[0].id === "root" && !flags.all) {
-      createSingle(id);
-      return;
-    }
-    createSingle(id);
-    const state = loadRuntime(id);
-    state.repositories = {};
-    try {
-      for (const repository of repositories) {
-        if (repository.id === "root") {
-          state.repositories.root = {
-            mode: state.workspace.mode, path: state.workspace.path, targetPath: root,
-            baseHead: state.workspace.baseHead || gitHead(root), access: repository.mode
-          };
-          continue;
-        }
-        const baseHead = gitHead(repository.path);
-        if (!baseHead)
-          throw new Error(`repository '${repository.id}' cannot be isolated because it is not an initialized Git repository`);
-        const requestedPath = join(root, ".foundation", "repository-sandboxes", id, repository.id);
-        if (existsSync(requestedPath)) throw new Error(`repository sandbox already exists: ${requestedPath}`);
-        mkdirSync(dirname(requestedPath), { recursive: true });
-        // Same dead registration hazard as the single-repo path.
-        git(["worktree", "prune"], repository.path);
-        const result = git(["worktree", "add", "--detach", requestedPath, baseHead], repository.path);
-        if (result.status !== 0)
-          throw new Error(`cannot create sandbox for '${repository.id}': ${result.stderr.trim()}`);
-        const path = canonicalPath(requestedPath);
-        state.repositories[repository.id] = {
-          mode: "worktree", path, targetPath: repository.path,
-          baseHead, access: repository.mode, applied: false
-        };
-      }
-    } catch (error) {
-      cleanupRepositorySandboxes(id, state);
-      cleanupAppliedSandbox(id, state);
-      state.workspace = {
-        // What the tree carried at `change new` survives the rollback; both
-        // single-repo paths preserve it for the same reason — dropping it
-        // pulls pre-existing dirt back into the changed surface.
-        preexisting: state.workspace?.preexisting || {},
-        mode: "current", path: root, baseHead: gitHead(root)
-      };
-      delete state.repositories;
-      state.status = "change";
-      saveRuntime(state);
-      fail(`${error.message}; created sandboxes rolled back`);
-    }
-    // Per-repository setup runs only after every worktree exists: creation
-    // failures roll everything back above, while a failed install keeps its
-    // sandbox and is reported per repository.
-    for (const repository of repositories) {
-      const record = state.repositories[repository.id];
-      if (!repository.setupCommand || !record || record.mode !== "worktree") continue;
-      runSetupCommand(record, repository.setupCommand,
-        policy().sandbox?.setupTimeoutMs, record.path, repository.id);
-      if (record.access === "read") {
-        const changed = git(["status", "--porcelain"], record.path);
-        if (changed.status !== 0 || changed.stdout.trim()) {
-          record.setup.status = "failed";
-          record.setup.reason = "setup modified a read-only repository";
-          console.error(`WARNING: sandbox setup modified read-only repository '${repository.id}': ${
-            changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
-        }
-      }
-    }
-    state.status = "building";
-    saveRuntime(state);
-    clearSnapshotCache(id);
-    console.log(`MULTI-REPOSITORY SANDBOX ${id}`);
-    for (const repository of selectedRepositories(id, state))
-      console.log(`  ${repository.id}: ${repository.workspacePath}`);
-  }
-
   function mergeTaskProgress(source, sandbox) {
     const completedIds = new Set(taskBlocks(sandbox)
       .filter((task) => task.done && task.id).map((task) => task.id));
@@ -1228,6 +1242,26 @@ export function createSandboxRuntime({
       id, state, movement, forwarded, conflicts, relevantHash
     });
   }
+
+  const create = createSandbox.bind(null, {
+    root,
+    policy,
+    hostAttestation,
+    loadRuntime,
+    saveRuntime,
+    canonicalPath,
+    gitHead,
+    git,
+    porcelainStatusRecords,
+    selectedRepositories,
+    cleanupRepositorySandboxes,
+    cleanupAppliedSandbox,
+    repositoryCatalog,
+    clearSnapshotCache,
+    createSingle,
+    runSetupCommand,
+    fail
+  });
 
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
