@@ -108,6 +108,49 @@ export function groundingPortabilityFindings(grounding, repositories, portable) 
   });
 }
 
+export function sandboxMovementLine(movement) {
+  const shortHead = (value) => String(value || "").slice(0, 8);
+  if (!movement) return "";
+  if (!movement.multiRepository && movement.repositories.length === 1) {
+    return movement.rebased
+      ? `\n  rebased: ${shortHead(movement.from)} -> ${shortHead(movement.to)} (sandbox commits flattened into the replayed diff)`
+      : `\n  target moved: ${shortHead(movement.repositories[0].from)} -> ${shortHead(movement.repositories[0].to)} (sandbox NOT rebased)`;
+  }
+  return movement.repositories.map((repository) => repository.rebased
+    ? `\n  rebased ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox commits flattened into the replayed diff)`
+    : `\n  target moved ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox NOT rebased)`).join("");
+}
+
+export function recordSandboxBaseMove({ id, state, movement, preDiffIdentity,
+  now, changeDiffIdentity }) {
+  if (!movement?.rebased) return;
+  const moved = movement.repositories.filter((entry) => entry.rebased);
+  state.lastBaseMove = {
+    at: now(),
+    movementKey: moved.map((entry) => `${entry.repository}:${entry.to}`)
+      .sort().join("|"),
+    preDiffIdentity,
+    postDiffIdentity: changeDiffIdentity(id, state),
+    repositories: moved.map(({ repository, from, to }) =>
+      ({ repository, from, to }))
+  };
+}
+
+export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
+  relevantHash, log = console.log }) {
+  const movementLine = sandboxMovementLine(movement);
+  log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}${
+    movementLine}${
+    forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
+  }`);
+  for (const rel of conflicts)
+    log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy, then rerun sandbox sync with --resolve ${rel} (comma-separate several paths). Land stays blocked until every conflict is resolved.`);
+  for (const conflict of movement?.conflicts || [])
+    log(`CONFLICT ${movement.multiRepository ? `${conflict.repository}:` : ""}${conflict.path}: the sandbox diff no longer applies to the moved target; merge the target's version into the named repository sandbox worktree, then rerun sandbox sync. Land stays blocked until every repository sandbox replays onto its current commit.`);
+  if (movement && !movement.rebased && !movement.conflicts.length)
+    log(`TARGET MOVED ${id}: rerun 'claude-foundation sandbox sync ${id}' after repairing the named repository replay.`);
+}
+
 export function createSandboxRuntime({
   root, policy, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
   loadRuntime, saveRuntime,
@@ -1138,47 +1181,6 @@ export function createSandboxRuntime({
     if (existsSync(proofPath(id))) rmSync(proofPath(id));
   }
 
-  function recordSandboxBaseMove(id, state, movement, preDiffIdentity) {
-    if (!movement?.rebased) return;
-    const moved = movement.repositories.filter((entry) => entry.rebased);
-    state.lastBaseMove = {
-      at: now(),
-      movementKey: moved.map((entry) => `${entry.repository}:${entry.to}`)
-        .sort().join("|"),
-      preDiffIdentity,
-      postDiffIdentity: changeDiffIdentity(id, state),
-      repositories: moved.map(({ repository, from, to }) =>
-        ({ repository, from, to }))
-    };
-  }
-
-  function sandboxMovementLine(movement) {
-    const shortHead = (value) => String(value || "").slice(0, 8);
-    if (!movement) return "";
-    if (!movement.multiRepository && movement.repositories.length === 1) {
-      return movement.rebased
-        ? `\n  rebased: ${shortHead(movement.from)} -> ${shortHead(movement.to)} (sandbox commits flattened into the replayed diff)`
-        : `\n  target moved: ${shortHead(movement.repositories[0].from)} -> ${shortHead(movement.repositories[0].to)} (sandbox NOT rebased)`;
-    }
-    return movement.repositories.map((repository) => repository.rebased
-      ? `\n  rebased ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox commits flattened into the replayed diff)`
-      : `\n  target moved ${repository.repository}: ${shortHead(repository.from)} -> ${shortHead(repository.to)} (sandbox NOT rebased)`).join("");
-  }
-
-  function reportSandboxSync(id, state, movement, forwarded, conflicts) {
-    const movementLine = sandboxMovementLine(movement);
-    console.log(`SYNCED ${id}\n  revision: ${state.revision}\n  workspace: ${relevantHash(id)}${
-      movementLine}${
-      forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
-    }`);
-    for (const rel of conflicts)
-      console.log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy, then rerun sandbox sync with --resolve ${rel} (comma-separate several paths). Land stays blocked until every conflict is resolved.`);
-    for (const conflict of movement?.conflicts || [])
-      console.log(`CONFLICT ${movement.multiRepository ? `${conflict.repository}:` : ""}${conflict.path}: the sandbox diff no longer applies to the moved target; merge the target's version into the named repository sandbox worktree, then rerun sandbox sync. Land stays blocked until every repository sandbox replays onto its current commit.`);
-    if (movement && !movement.rebased && !movement.conflicts.length)
-      console.log(`TARGET MOVED ${id}: rerun 'claude-foundation sandbox sync ${id}' after repairing the named repository replay.`);
-  }
-
   function sync(id, flags = {}) {
     validate(id, "root", { quiet: true });
     const state = loadRuntime(id);
@@ -1214,13 +1216,17 @@ export function createSandboxRuntime({
     // and base-move review accounting reads this journal to tell that apart
     // from an author edit. Keyed by destination heads so one movement can
     // authorize at most one accounting reset.
-    recordSandboxBaseMove(id, state, movement, preDiffIdentity);
+    recordSandboxBaseMove({
+      id, state, movement, preDiffIdentity, now, changeDiffIdentity
+    });
     clearSnapshotCache(id);
     saveRuntime(state);
     // Stated whether or not it could be resolved. A target that moved and a
     // sandbox that silently kept building against the old base is the failure
     // this line exists to make impossible.
-    reportSandboxSync(id, state, movement, forwarded, conflicts);
+    reportSandboxSync({
+      id, state, movement, forwarded, conflicts, relevantHash
+    });
   }
 
   return {
