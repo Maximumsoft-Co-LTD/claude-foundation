@@ -8,7 +8,7 @@ import {
   claimContractIssues, taskContractIssues
 } from "../../harness/runtime/workflow/change-validation.mjs";
 import {
-  usageAvailability
+  eventUsageRecoveryActions, usageAvailability
 } from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
   createTelemetryRuntime
@@ -90,6 +90,18 @@ test("request-only events expose missing usage without inventing totals", () => 
   assert.equal(value.reason, "correlation-missing");
   assert.deepEqual(value.correlatedHosts, ["codex"]);
   assert.match(value.recoveryActions[0].command, /--format codex/);
+});
+
+test("event recovery routes every correlated host without adding irrelevant actions", () => {
+  assert.deepEqual(eventUsageRecoveryActions("measured", ["codex"], "change-id"), []);
+  assert.deepEqual(eventUsageRecoveryActions("correlation-missing", [
+    "codex", "claude-code", "generic-host"
+  ], "change-id").map((action) => action.type), [
+    "import-codex-events", "sync-claude-transcript", "import-generic-events"
+  ]);
+  assert.deepEqual(eventUsageRecoveryActions(
+    "source-unsupported", [], "change-id").map((action) => action.type),
+  ["import-generic-events"]);
 });
 
 test("Cursor imports retain measured generic-host attribution", () => {

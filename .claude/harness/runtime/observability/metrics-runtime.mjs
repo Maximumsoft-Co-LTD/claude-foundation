@@ -3,6 +3,29 @@ import { join } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
 
+export function eventUsageRecoveryActions(classification, correlatedHosts, changeId) {
+  const recoveryActions = [];
+  if (["correlation-missing", "partial-measurement"].includes(classification)) {
+    if (correlatedHosts.includes("codex")) recoveryActions.push({
+      type: "import-codex-events",
+      command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format codex`
+    });
+    if (correlatedHosts.includes("claude-code")) recoveryActions.push({
+      type: "sync-claude-transcript",
+      command: `claude-foundation telemetry sync ${changeId} [transcript.jsonl]`
+    });
+    if (correlatedHosts.includes("generic-host")) recoveryActions.push({
+      type: "import-generic-events",
+      command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
+    });
+  }
+  if (classification === "source-unsupported") recoveryActions.push({
+    type: "import-generic-events",
+    command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
+  });
+  return recoveryActions;
+}
+
 export function usageAvailability(events = [], phaseContextRows = [], changeId = "<change>") {
   if (events.length) {
     const correlatedHosts = [...new Set(events.map((event) => {
@@ -36,25 +59,8 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
               .filter((field) => finite(event[field]))
               .every((field) => measuredNumber(event[field]) === 0)) ? "no-usage"
             : "measured";
-    const recoveryActions = [];
-    if (["correlation-missing", "partial-measurement"].includes(classification)) {
-      if (correlatedHosts.includes("codex")) recoveryActions.push({
-        type: "import-codex-events",
-        command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format codex`
-      });
-      if (correlatedHosts.includes("claude-code")) recoveryActions.push({
-        type: "sync-claude-transcript",
-        command: `claude-foundation telemetry sync ${changeId} [transcript.jsonl]`
-      });
-      if (correlatedHosts.includes("generic-host")) recoveryActions.push({
-        type: "import-generic-events",
-        command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
-      });
-    }
-    if (classification === "source-unsupported") recoveryActions.push({
-      type: "import-generic-events",
-      command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
-    });
+    const recoveryActions = eventUsageRecoveryActions(
+      classification, correlatedHosts, changeId);
     return {
       status: "measured",
       classification,
