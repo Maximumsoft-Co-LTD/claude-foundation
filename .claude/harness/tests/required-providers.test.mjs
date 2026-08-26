@@ -6,6 +6,8 @@ import {
   providersForCapability,
   requiredProvidersOperation
 } from "../runtime/workflow/change-validation.mjs";
+import { providerCapability as catalogCapability } from
+  "../runtime/evidence/provider-catalog.mjs";
 
 const providers = {
   "test-global": { capability: "test" },
@@ -17,6 +19,13 @@ const providers = {
   security: { capability: "security-static" }
 };
 const capability = (provider, config) => config.capability || provider;
+
+test("provider catalog resolves configured, built-in, and unknown capabilities", () => {
+  assert.equal(catalogCapability("custom", { capability: "test" }), "test");
+  assert.equal(catalogCapability("review"), "review");
+  assert.equal(catalogCapability("unknown"), null);
+  assert.equal(catalogCapability("test", null), "test");
+});
 
 test("provider capability matching honors global and repository-scoped instances", () => {
   assert.deepEqual(providersForCapability(
