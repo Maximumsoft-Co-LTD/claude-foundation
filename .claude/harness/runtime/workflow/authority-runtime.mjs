@@ -29,6 +29,51 @@ export function authorityRequestDisplayValue(request, limit = 8192) {
   };
 }
 
+export function requireExternalCiConfig({ fail }, provider, config) {
+  if (!config || config.adapter !== "external" || !config.ci?.publicKey || !config.ci?.issuer)
+    fail(`provider '${provider}' requires external ci.issuer and ci.publicKey configuration`);
+  return config;
+}
+
+export function signedCiReceiptFlags(context, id, provider, config, workspaceHash, result) {
+  const { payload, artifacts } = result;
+  return {
+    claims: context.providerClaims(id, provider, config).join(","),
+    workspaceHash,
+    observed: String(payload.observed || `CI ${payload.status}; commit ${payload.commit || "unknown"}`),
+    source: `signed-ci:${payload.issuer}`,
+    reference: [payload.runUrl, ...artifacts.map((artifact) =>
+      `artifact:${artifact.name}:sha256:${artifact.sha256}`)],
+    "recorded-by": `evidence-verify-ci:${payload.issuer}`
+  };
+}
+
+export function recordVerifiedCiOperation(context, id, provider, source) {
+  const config = requireExternalCiConfig(context, provider,
+    context.providerConfig(id, provider));
+  const path = context.resolvePath(source || "");
+  if (!source || !context.pathExists(path))
+    context.fail("evidence verify-ci requires a signed JSON envelope");
+  const envelope = context.readJson(path);
+  const workspaceHash = context.providerWorkspaceHash(id, provider);
+  const repository = context.providerRepository(id, provider, config);
+  const workspacePath = repository?.workspacePath || context.providerWorkspace(id, provider);
+  const result = context.validateSignedCiEnvelope({
+    envelope,
+    protocolVersion: context.ciEvidenceProtocolVersion,
+    issuer: config.ci.issuer,
+    publicKey: config.ci.publicKey,
+    changeId: id,
+    provider,
+    workspaceHash,
+    head: context.gitHead(workspacePath)
+  });
+  if (!result.valid) context.fail(result.reason);
+  context.recordReceipt(id, provider, result.status,
+    signedCiReceiptFlags(context, id, provider, config, workspaceHash, result));
+  context.output.log(`CI EVIDENCE ${id}/${provider}: ${result.status}\n  run: ${result.payload.runUrl}`);
+}
+
 export function createAuthorityRuntime({
   root,
   protocolVersion,
@@ -1374,38 +1419,22 @@ export function createAuthorityRuntime({
     return withAuthorityLock(id, () => recordAuthorityUnlocked(id, flags));
   }
 
-  function recordVerifiedCi(id, provider, source) {
-    const config = providerConfig(id, provider);
-    if (!config || config.adapter !== "external" || !config.ci?.publicKey || !config.ci?.issuer)
-      fail(`provider '${provider}' requires external ci.issuer and ci.publicKey configuration`);
-    const path = resolve(source || "");
-    if (!source || !existsSync(path)) fail("evidence verify-ci requires a signed JSON envelope");
-    const envelope = readJson(path);
-    const workspaceHash = providerWorkspaceHash(id, provider);
-    const repository = providerRepository(id, provider, config);
-    const head = repository ? gitHead(repository.workspacePath) : gitHead(providerWorkspace(id, provider));
-    const result = validateSignedCiEnvelope({
-      envelope,
-      protocolVersion: ciEvidenceProtocolVersion,
-      issuer: config.ci.issuer,
-      publicKey: config.ci.publicKey,
-      changeId: id,
-      provider,
-      workspaceHash,
-      head
-    });
-    if (!result.valid) fail(result.reason);
-    const { payload, artifacts, status } = result;
-    recordReceipt(id, provider, status, {
-      claims: providerClaims(id, provider, config).join(","), workspaceHash,
-      observed: String(payload.observed || `CI ${payload.status}; commit ${payload.commit || "unknown"}`),
-      source: `signed-ci:${payload.issuer}`,
-      reference: [payload.runUrl, ...artifacts.map((artifact) =>
-        `artifact:${artifact.name}:sha256:${artifact.sha256}`)],
-      "recorded-by": `evidence-verify-ci:${payload.issuer}`
-    });
-    console.log(`CI EVIDENCE ${id}/${provider}: ${status}\n  run: ${payload.runUrl}`);
-  }
+  const recordVerifiedCi = recordVerifiedCiOperation.bind(null, {
+    providerConfig,
+    resolvePath: resolve,
+    pathExists: existsSync,
+    readJson,
+    providerWorkspaceHash,
+    providerRepository,
+    providerWorkspace,
+    gitHead,
+    validateSignedCiEnvelope,
+    ciEvidenceProtocolVersion,
+    recordReceipt,
+    providerClaims,
+    fail,
+    output: console
+  });
 
   // The bounded infrastructure recovery consumed by a failed reviewer run has
   // no automatic escape: the guard's own message routes the operator through a
