@@ -525,39 +525,77 @@ export function createProofExecutionRuntime({
     return providers.map((provider) => byProvider.get(provider)).filter(Boolean);
   }
 
-  async function advanceUnlocked(id, flags = {}) {
-    const advanceStart = readAdvance(id);
-    let readiness = proofReadinessValue(id, "prove");
-    const audit = proofAudit(id, true);
-    let forcedSnapshot = null;
-    if (readiness.status === "READY" && audit.valid) {
-      // Audit proves the copied evidence was not tampered with; it does not
-      // prove that evidence still belongs to the current files. Force one
-      // snapshot before reuse so neither a cached relevant hash nor an intact
-      // stale proof can turn into a false PASS.
-      forcedSnapshot = relevantSnapshot(id, null, true);
-      if (readiness.workspaceHash !== forcedSnapshot.workspaceHash)
-        readiness = proofReadinessValue(id, "prove");
-    }
-    if (readiness.status === "READY" && audit.valid && forcedSnapshot &&
-        audit.proof.workspaceHash === forcedSnapshot.workspaceHash &&
-        readiness.workspaceHash === forcedSnapshot.workspaceHash) {
-      return printOutcome(writeAdvance(id, {
+  function stopProofAdvance(outcome) {
+    markBlocked();
+    process.exitCode = 2;
+    return printOutcome(outcome);
+  }
+
+  async function collectAdvanceExecution(id, flags, snapshot, readiness,
+    authorityRequests) {
+    const execution = executionNodes(id, snapshot.workspaceHash);
+    const collectable = collectableExecutionNodes(
+      id, execution.nodes, snapshot.workspaceHash);
+    let executedProviders = [];
+    if (!collectable.nodes.length)
+      return { readiness, authorityRequests, executedProviders };
+
+    const priorAdvance = readAdvance(id);
+    const retryIndeterminate = Boolean(flags["retry-indeterminate"]);
+    const decisionRef = String(flags["decision-ref"] || "").trim();
+    if (["RUNNING", "INDETERMINATE"].includes(priorAdvance.status) &&
+        priorAdvance.stage === "execution-running" &&
+        priorAdvance.workspaceHash === readiness.workspaceHash &&
+        !retryIndeterminate) {
+      const outcome = writeAdvance(id, {
         version: 1,
         changeId: id,
         command: "proof advance",
-        status: "PASS",
-        stage: "complete",
-        completed: true,
-        reused: true,
-        proofRunId: audit.proof.proofRunId || null,
+        status: "ACTION_REQUIRED",
+        cursorStatus: "INDETERMINATE",
+        stage: "execution-indeterminate",
+        completed: false,
         workspaceHash: readiness.workspaceHash,
-        providers: audit.proof.providers || [],
+        providers: priorAdvance.providers || collectable.nodes.map((node) => node.provider),
+        recoveryDecisionRef: priorAdvance.recoveryDecisionRef || null,
         requests: [],
         executedProviders: [],
-        next: []
-      }));
+        next: [{
+          kind: "decide-indeterminate-execution",
+          reason: "A prior controller stopped after reserving provider execution but before proving its receipt. Inspect side effects before retrying.",
+          command: `claude-foundation proof advance ${id} --retry-indeterminate --decision-ref <host-decision-reference>`
+        }]
+      });
+      return { outcome: stopProofAdvance(outcome) };
     }
+    if (retryIndeterminate && !decisionRef)
+      die("proof advance --retry-indeterminate requires --decision-ref");
+    if (retryIndeterminate && priorAdvance.recoveryDecisionRef &&
+        priorAdvance.recoveryDecisionRef === decisionRef)
+      die("proof advance retry decision was already consumed by an interrupted attempt; inspect side effects again and provide a new --decision-ref");
+    writeAdvance(id, {
+      version: 1,
+      changeId: id,
+      status: "RUNNING",
+      stage: "execution-running",
+      workspaceHash: readiness.workspaceHash,
+      providers: collectable.nodes.map((node) => node.provider),
+      requests: [],
+      recoveryDecisionRef: decisionRef || null
+    });
+    const collection = await proofCollectUnlocked(id, {
+      readiness,
+      snapshot,
+      execution,
+      collectable,
+      quiet: true,
+      includeReadiness: true,
+      manageReservation: false
+    });
+    executedProviders = collection.executedProviders || [];
+    readiness = collection.readiness;
+    authorityRequests = readiness.status === "NEEDS_USER_DECISION"
+      ? statusRequests(id) : [];
     if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
       const outcome = writeAdvance(id, {
         ...readiness,
@@ -565,237 +603,15 @@ export function createProofExecutionRuntime({
         completed: false,
         stage: "blocked",
         requests: [],
-        executedProviders: []
+        executedProviders
       });
-      markBlocked();
-      process.exitCode = 2;
-      return printOutcome(outcome);
+      return { outcome: stopProofAdvance(outcome) };
     }
+    return { readiness, authorityRequests, executedProviders };
+  }
 
-    const failedEvidence = terminalEvidence(id, readiness);
-    if (failedEvidence.length) {
-      const capabilities = new Set(failedEvidence.map((row) => row.capability));
-      const stage = capabilities.has("review") ? "review-rejected"
-        : capabilities.has("acceptance") ? "acceptance-rejected" : "evidence-failed";
-      const outcome = capabilities.has("review")
-        ? writeReviewRepairStop(id, readiness, advanceStart, {
-            failures: failedEvidence
-          })
-        : writeAdvance(id, {
-        version: 1,
-        changeId: id,
-        command: "proof advance",
-        status: "ACTION_REQUIRED",
-        stage,
-        completed: false,
-        workspaceHash: readiness.workspaceHash,
-        failures: failedEvidence,
-        requests: [],
-        executedProviders: [],
-        next: [{
-          kind: "correct-failed-evidence",
-          reason: "A provider returned or retained a terminal invalid result. Correct the implementation, evidence, or authority provenance before advancing again.",
-          command: `claude-foundation packet ${id} --phase build`
-        }]
-        });
-      markBlocked();
-      process.exitCode = 2;
-      return printOutcome(outcome);
-    }
-
-    let reviewProviders = missingByCapability(id, readiness, "review");
-    let authorityRequests = readiness.status === "NEEDS_USER_DECISION"
-      ? statusRequests(id) : [];
-    const rejected = currentRequests(
-      id, reviewProviders, readiness.workspaceHash,
-      ["rejected"], authorityRequests);
-    if (rejected.length) {
-      const outcome = writeReviewRepairStop(id, readiness, advanceStart, {
-        requests: rejected
-      });
-      markBlocked();
-      process.exitCode = 2;
-      return printOutcome(outcome);
-    }
-    const earlyAcceptanceProviders = missingByCapability(
-      id, readiness, "acceptance");
-    const rejectedAcceptance = currentRequests(
-      id, earlyAcceptanceProviders, readiness.workspaceHash,
-      ["rejected"], authorityRequests);
-    if (!reviewProviders.length && rejectedAcceptance.length) {
-      const outcome = writeAdvance(id, {
-        version: 1,
-        changeId: id,
-        command: "proof advance",
-        status: "ACTION_REQUIRED",
-        stage: "acceptance-rejected",
-        completed: false,
-        workspaceHash: readiness.workspaceHash,
-        requests: rejectedAcceptance,
-        executedProviders: [],
-        next: [{
-          kind: "revise-after-acceptance",
-          reason: "Acceptance is terminal or its receipt is invalid for this workspace. Revise the result before another request.",
-          command: `claude-foundation packet ${id} --phase build`
-        }]
-      });
-      markBlocked();
-      process.exitCode = 2;
-      return printOutcome(outcome);
-    }
-
-    const snapshot = forcedSnapshot || relevantSnapshot(id, null, true);
-    const reusable = requiredProviders(id)
-      .map((provider) => receiptValidity(id, provider, snapshot.workspaceHash))
-      .filter((row) => ["reusable-inputs", "reusable-diff"].includes(row.validity));
-    if (reusable.length) {
-      const reuseRunId = `advance-reuse-${Date.now()}`;
-      for (const row of reusable)
-        (row.validity === "reusable-inputs"
-          ? rebindReusableReceipt : rebindDiffBoundReceipt)(id, row, snapshot, reuseRunId);
-      readiness = proofReadinessValue(id, "prove");
-      authorityRequests = readiness.status === "NEEDS_USER_DECISION"
-        ? statusRequests(id) : [];
-      if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
-        const outcome = writeAdvance(id, {
-          ...readiness,
-          command: "proof advance",
-          completed: false,
-          stage: "blocked",
-          requests: [],
-          executedProviders: [],
-          reusedProviders: reusable.map((row) => row.provider)
-        });
-        markBlocked();
-        process.exitCode = 2;
-        return printOutcome(outcome);
-      }
-    }
-    const execution = executionNodes(id, snapshot.workspaceHash);
-    const collectable = collectableExecutionNodes(
-      id, execution.nodes, snapshot.workspaceHash);
-    let executedProviders = [];
-    if (collectable.nodes.length) {
-      const priorAdvance = readAdvance(id);
-      const retryIndeterminate = Boolean(flags["retry-indeterminate"]);
-      const decisionRef = String(flags["decision-ref"] || "").trim();
-      if (["RUNNING", "INDETERMINATE"].includes(priorAdvance.status) &&
-          priorAdvance.stage === "execution-running" &&
-          priorAdvance.workspaceHash === readiness.workspaceHash &&
-          !retryIndeterminate) {
-        const outcome = writeAdvance(id, {
-          version: 1,
-          changeId: id,
-          command: "proof advance",
-          status: "ACTION_REQUIRED",
-          cursorStatus: "INDETERMINATE",
-          stage: "execution-indeterminate",
-          completed: false,
-          workspaceHash: readiness.workspaceHash,
-          providers: priorAdvance.providers || collectable.nodes.map((node) => node.provider),
-          recoveryDecisionRef: priorAdvance.recoveryDecisionRef || null,
-          requests: [],
-          executedProviders: [],
-          next: [{
-            kind: "decide-indeterminate-execution",
-            reason: "A prior controller stopped after reserving provider execution but before proving its receipt. Inspect side effects before retrying.",
-            command: `claude-foundation proof advance ${id} --retry-indeterminate --decision-ref <host-decision-reference>`
-          }]
-        });
-        markBlocked();
-        process.exitCode = 2;
-        return printOutcome(outcome);
-      }
-      if (retryIndeterminate && !decisionRef)
-        die("proof advance --retry-indeterminate requires --decision-ref");
-      if (retryIndeterminate && priorAdvance.recoveryDecisionRef &&
-          priorAdvance.recoveryDecisionRef === decisionRef)
-        die("proof advance retry decision was already consumed by an interrupted attempt; inspect side effects again and provide a new --decision-ref");
-      writeAdvance(id, {
-        version: 1,
-        changeId: id,
-        status: "RUNNING",
-        stage: "execution-running",
-        workspaceHash: readiness.workspaceHash,
-        providers: collectable.nodes.map((node) => node.provider),
-        requests: [],
-        recoveryDecisionRef: decisionRef || null
-      });
-      const collection = await proofCollectUnlocked(id, {
-        readiness,
-        snapshot,
-        execution,
-        collectable,
-        quiet: true,
-        includeReadiness: true,
-        manageReservation: false
-      });
-      executedProviders = collection.executedProviders || [];
-      readiness = collection.readiness;
-      authorityRequests = readiness.status === "NEEDS_USER_DECISION"
-        ? statusRequests(id) : [];
-      if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
-        const outcome = writeAdvance(id, {
-          ...readiness,
-          command: "proof advance",
-          completed: false,
-          stage: "blocked",
-          requests: [],
-          executedProviders
-        });
-        markBlocked();
-        process.exitCode = 2;
-        return printOutcome(outcome);
-      }
-    }
-
-    // Two delivered AI waves are the end of the open-review route, not the
-    // beginning of a human/third-AI loop. If the final delta found an
-    // in-contract defect, its structured claim/case bindings let current
-    // executable evidence close only those IDs. This operation is a durable
-    // hash-chained deterministic attempt; it cannot invent a pass while any
-    // non-review provider is stale or failing.
-    const delivered = deliveredAiAttempts(id);
-    const boundedReviewProviders = missingByCapability(id, readiness, "review");
-    if (delivered.length >= 2 && delivered.at(-1)?.resultStatus === "fail" &&
-        boundedReviewProviders.length) {
-      const closures = boundedReviewProviders.map((provider) =>
-        recordDeterministicReviewClosure(id, provider,
-          currentProviderHash(id, provider, readiness.workspaceHash)))
-        .filter(Boolean);
-      const blockedClosures = closures.filter((row) => !row.closed);
-      if (blockedClosures.length) {
-        const outcome = writeAdvance(id, {
-          version: 1,
-          changeId: id,
-          command: "proof advance",
-          status: "ACTION_REQUIRED",
-          route: blockedClosures.some((row) =>
-            row.route === "CONTRACT_DECISION_REQUIRED")
-            ? "CONTRACT_DECISION_REQUIRED" : "AUTO_REPAIR",
-          stage: "review-repair-closure",
-          completed: false,
-          workspaceHash: readiness.workspaceHash,
-          closures: blockedClosures,
-          requests: [],
-          executedProviders,
-          next: [{
-            kind: "repair-final-review-findings",
-            reason: "Repair the final finding batch inside the locked contract and bind each blocker to a current declared critical case; do not dispatch another AI or open a generic choice interview.",
-            command: `claude-foundation packet ${id} --phase build`
-          }]
-        });
-        markBlocked();
-        process.exitCode = 2;
-        return printOutcome(outcome);
-      }
-      if (closures.some((row) => row.closed)) {
-        readiness = proofReadinessValue(id, "prove");
-        authorityRequests = readiness.status === "NEEDS_USER_DECISION"
-          ? statusRequests(id) : [];
-      }
-    }
-
+  async function finishProofAdvance(id, advanceStart, readiness,
+    authorityRequests, executedProviders) {
     if (readiness.status === "READY") {
       const outcome = await proofRunUnlocked(id, {
         readiness,
@@ -813,7 +629,7 @@ export function createProofExecutionRuntime({
       }));
     }
 
-    reviewProviders = missingByCapability(id, readiness, "review");
+    const reviewProviders = missingByCapability(id, readiness, "review");
     if (reviewProviders.length) {
       const terminal = currentRequests(
         id, reviewProviders, readiness.workspaceHash,
@@ -822,9 +638,7 @@ export function createProofExecutionRuntime({
         const outcome = writeReviewRepairStop(id, readiness, advanceStart, {
           requests: terminal, executedProviders
         });
-        markBlocked();
-        process.exitCode = 2;
-        return printOutcome(outcome);
+        return stopProofAdvance(outcome);
       }
       const requests = requestMissingAuthority(
         id, reviewProviders, "review", readiness.workspaceHash, authorityRequests);
@@ -883,9 +697,7 @@ export function createProofExecutionRuntime({
             command: `claude-foundation packet ${id} --phase build`
           }]
         });
-        markBlocked();
-        process.exitCode = 2;
-        return printOutcome(outcome);
+        return stopProofAdvance(outcome);
       }
       const requests = requestMissingAuthority(
         id, acceptanceProviders, "acceptance", readiness.workspaceHash,
@@ -904,9 +716,218 @@ export function createProofExecutionRuntime({
       }));
     }
 
-    // NEEDS_USER_DECISION without a classified external provider is an
-    // invariant violation in readiness; surface it instead of spinning.
     die(`proof advance could not classify readiness for '${id}'`);
+  }
+
+  function closeBoundedReviewAttempts(id, readiness, authorityRequests,
+    executedProviders) {
+    const delivered = deliveredAiAttempts(id);
+    const boundedReviewProviders = missingByCapability(id, readiness, "review");
+    if (!(delivered.length >= 2 && delivered.at(-1)?.resultStatus === "fail" &&
+        boundedReviewProviders.length))
+      return { readiness, authorityRequests };
+
+    const closures = boundedReviewProviders.map((provider) =>
+      recordDeterministicReviewClosure(id, provider,
+        currentProviderHash(id, provider, readiness.workspaceHash)))
+      .filter(Boolean);
+    const blockedClosures = closures.filter((row) => !row.closed);
+    if (blockedClosures.length) {
+      const outcome = writeAdvance(id, {
+        version: 1,
+        changeId: id,
+        command: "proof advance",
+        status: "ACTION_REQUIRED",
+        route: blockedClosures.some((row) =>
+          row.route === "CONTRACT_DECISION_REQUIRED")
+          ? "CONTRACT_DECISION_REQUIRED" : "AUTO_REPAIR",
+        stage: "review-repair-closure",
+        completed: false,
+        workspaceHash: readiness.workspaceHash,
+        closures: blockedClosures,
+        requests: [],
+        executedProviders,
+        next: [{
+          kind: "repair-final-review-findings",
+          reason: "Repair the final finding batch inside the locked contract and bind each blocker to a current declared critical case; do not dispatch another AI or open a generic choice interview.",
+          command: `claude-foundation packet ${id} --phase build`
+        }]
+      });
+      return { outcome: stopProofAdvance(outcome) };
+    }
+    if (closures.some((row) => row.closed)) {
+      readiness = proofReadinessValue(id, "prove");
+      authorityRequests = readiness.status === "NEEDS_USER_DECISION"
+        ? statusRequests(id) : [];
+    }
+    return { readiness, authorityRequests };
+  }
+
+  function refreshedAdvanceReadiness(id) {
+    const advanceStart = readAdvance(id);
+    let readiness = proofReadinessValue(id, "prove");
+    const audit = proofAudit(id, true);
+    let forcedSnapshot = null;
+    if (readiness.status === "READY" && audit.valid) {
+      // Audit authenticates the copied evidence, while this forced snapshot
+      // establishes that it still belongs to the current workspace.
+      forcedSnapshot = relevantSnapshot(id, null, true);
+      if (readiness.workspaceHash !== forcedSnapshot.workspaceHash)
+        readiness = proofReadinessValue(id, "prove");
+    }
+    return { advanceStart, readiness, audit, forcedSnapshot };
+  }
+
+  function initialAdvanceStop(id, advanceStart, readiness) {
+    if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
+      return { outcome: stopProofAdvance(writeAdvance(id, {
+        ...readiness,
+        command: "proof advance",
+        completed: false,
+        stage: "blocked",
+        requests: [],
+        executedProviders: []
+      })) };
+    }
+
+    const failedEvidence = terminalEvidence(id, readiness);
+    if (failedEvidence.length) {
+      const capabilities = new Set(failedEvidence.map((row) => row.capability));
+      const stage = capabilities.has("review") ? "review-rejected"
+        : capabilities.has("acceptance") ? "acceptance-rejected" : "evidence-failed";
+      const outcome = capabilities.has("review")
+        ? writeReviewRepairStop(id, readiness, advanceStart, {
+            failures: failedEvidence
+          })
+        : writeAdvance(id, {
+            version: 1,
+            changeId: id,
+            command: "proof advance",
+            status: "ACTION_REQUIRED",
+            stage,
+            completed: false,
+            workspaceHash: readiness.workspaceHash,
+            failures: failedEvidence,
+            requests: [],
+            executedProviders: [],
+            next: [{
+              kind: "correct-failed-evidence",
+              reason: "A provider returned or retained a terminal invalid result. Correct the implementation, evidence, or authority provenance before advancing again.",
+              command: `claude-foundation packet ${id} --phase build`
+            }]
+          });
+      return { outcome: stopProofAdvance(outcome) };
+    }
+
+    const reviewProviders = missingByCapability(id, readiness, "review");
+    const authorityRequests = readiness.status === "NEEDS_USER_DECISION"
+      ? statusRequests(id) : [];
+    const rejected = currentRequests(
+      id, reviewProviders, readiness.workspaceHash,
+      ["rejected"], authorityRequests);
+    if (rejected.length) {
+      return { outcome: stopProofAdvance(writeReviewRepairStop(
+        id, readiness, advanceStart, { requests: rejected })) };
+    }
+    const earlyAcceptanceProviders = missingByCapability(
+      id, readiness, "acceptance");
+    const rejectedAcceptance = currentRequests(
+      id, earlyAcceptanceProviders, readiness.workspaceHash,
+      ["rejected"], authorityRequests);
+    if (!reviewProviders.length && rejectedAcceptance.length) {
+      return { outcome: stopProofAdvance(writeAdvance(id, {
+        version: 1,
+        changeId: id,
+        command: "proof advance",
+        status: "ACTION_REQUIRED",
+        stage: "acceptance-rejected",
+        completed: false,
+        workspaceHash: readiness.workspaceHash,
+        requests: rejectedAcceptance,
+        executedProviders: [],
+        next: [{
+          kind: "revise-after-acceptance",
+          reason: "Acceptance is terminal or its receipt is invalid for this workspace. Revise the result before another request.",
+          command: `claude-foundation packet ${id} --phase build`
+        }]
+      })) };
+    }
+    return { authorityRequests };
+  }
+
+  async function advanceUnlocked(id, flags = {}) {
+    const refreshed = refreshedAdvanceReadiness(id);
+    const { advanceStart, audit, forcedSnapshot } = refreshed;
+    let { readiness } = refreshed;
+    if (readiness.status === "READY" && audit.valid && forcedSnapshot &&
+        audit.proof.workspaceHash === forcedSnapshot.workspaceHash &&
+        readiness.workspaceHash === forcedSnapshot.workspaceHash) {
+      return printOutcome(writeAdvance(id, {
+        version: 1,
+        changeId: id,
+        command: "proof advance",
+        status: "PASS",
+        stage: "complete",
+        completed: true,
+        reused: true,
+        proofRunId: audit.proof.proofRunId || null,
+        workspaceHash: readiness.workspaceHash,
+        providers: audit.proof.providers || [],
+        requests: [],
+        executedProviders: [],
+        next: []
+      }));
+    }
+    const initial = initialAdvanceStop(id, advanceStart, readiness);
+    if (initial.outcome) return initial.outcome;
+    let { authorityRequests } = initial;
+
+    const snapshot = forcedSnapshot || relevantSnapshot(id, null, true);
+    const reusable = requiredProviders(id)
+      .map((provider) => receiptValidity(id, provider, snapshot.workspaceHash))
+      .filter((row) => ["reusable-inputs", "reusable-diff"].includes(row.validity));
+    if (reusable.length) {
+      const reuseRunId = `advance-reuse-${Date.now()}`;
+      for (const row of reusable)
+        (row.validity === "reusable-inputs"
+          ? rebindReusableReceipt : rebindDiffBoundReceipt)(id, row, snapshot, reuseRunId);
+      readiness = proofReadinessValue(id, "prove");
+      authorityRequests = readiness.status === "NEEDS_USER_DECISION"
+        ? statusRequests(id) : [];
+      if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
+        const outcome = writeAdvance(id, {
+          ...readiness,
+          command: "proof advance",
+          completed: false,
+          stage: "blocked",
+          requests: [],
+          executedProviders: [],
+          reusedProviders: reusable.map((row) => row.provider)
+        });
+        markBlocked();
+        process.exitCode = 2;
+        return printOutcome(outcome);
+      }
+    }
+    const executionResult = await collectAdvanceExecution(
+      id, flags, snapshot, readiness, authorityRequests);
+    if (executionResult.outcome) return executionResult.outcome;
+    ({ readiness, authorityRequests } = executionResult);
+    const { executedProviders } = executionResult;
+
+    // Two delivered AI waves are the end of the open-review route, not the
+    // beginning of a human/third-AI loop. If the final delta found an
+    // in-contract defect, its structured claim/case bindings let current
+    // executable evidence close only those IDs. This operation is a durable
+    // hash-chained deterministic attempt; it cannot invent a pass while any
+    // non-review provider is stale or failing.
+    const closureResult = closeBoundedReviewAttempts(
+      id, readiness, authorityRequests, executedProviders);
+    if (closureResult.outcome) return closureResult.outcome;
+    ({ readiness, authorityRequests } = closureResult);
+
+    return finishProofAdvance(
+      id, advanceStart, readiness, authorityRequests, executedProviders);
   }
 
   function mutationInProgress(id, command, locked) {

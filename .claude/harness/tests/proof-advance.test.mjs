@@ -24,7 +24,9 @@ function fixture(options = {}) {
   const externalProviders = () => phase === "review"
     // Production validation sorts provider names, so acceptance appears first.
     // The controller must still select review by capability.
-    ? ["acceptance", "review"] : phase === "acceptance" ? ["acceptance"] : [];
+    ? ["acceptance", "review"]
+    : phase === "acceptance" ? ["acceptance"]
+    : phase === "external" ? ["external"] : [];
   const readiness = () => phase === "blocked" ? {
     version: 1,
     changeId: "change-a",
@@ -233,6 +235,23 @@ const unchangedAcceptance = await quiet(() => flow.runtime.proofAdvance("change-
 assert.equal(unchangedAcceptance.progressed, false);
 assert.equal(flow.requests.length, 2,
   "acceptance waiting must also reuse its open request");
+
+const externalEvidence = fixture({ phase: "external", executionNeeded: false });
+const externalWait = await quiet(() =>
+  externalEvidence.runtime.proofAdvance("change-a"));
+assert.equal(externalWait.status, "WAITING_EXTERNAL");
+assert.equal(externalWait.stage, "external-evidence");
+assert.deepEqual(externalWait.providers, ["external"]);
+
+const unclassified = fixture({
+  phase: "unclassified",
+  executionNeeded: false,
+  receiptOverrides: { acceptance: "valid" }
+});
+await assert.rejects(() => quiet(() =>
+  unclassified.runtime.proofAdvance("change-a")),
+/could not classify readiness/,
+"an unclassified decision state fails instead of spinning");
 
 flow.requests[1].status = "completed";
 flow.setPhase("ready");
