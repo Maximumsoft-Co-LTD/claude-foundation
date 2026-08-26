@@ -1,0 +1,224 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  assertBudgetContinuationAvailable,
+  assertBudgetContinuationEligible,
+  budgetContinuationInputs,
+  budgetContinuationReadiness,
+  budgetContinuationUnblock,
+  continueBudgetWindow,
+  nextBudgetContinuationWindow,
+  persistBudgetContinuation
+} from "../runtime/workflow/budget-commands.mjs";
+
+const fail = (message) => { throw new Error(message); };
+const stop = (_id, code, decision) => {
+  const error = new Error(code);
+  error.decision = decision;
+  throw error;
+};
+
+test("continuation inputs require trimmed reason and decision identity", () => {
+  assert.deepEqual(budgetContinuationInputs({
+    reason: "  finish proof ", "decision-ref": " user-1 "
+  }, fail), { reason: "finish proof", decisionRef: "user-1" });
+  assert.throws(() => budgetContinuationInputs({ "decision-ref": "user" }, fail),
+    /requires --reason/);
+  assert.throws(() => budgetContinuationInputs({ reason: "why" }, fail),
+    /requires --decision-ref/);
+});
+
+test("continuation availability accepts boundaries and blocks repeated extension", () => {
+  const context = { fail, blockWithDecision: stop };
+  const budget = { window: { usedTokens: 4, targetTokens: 10 } };
+  assert.equal(assertBudgetContinuationAvailable(
+    context, "change", budget, { mode: "completion-only" }), 0);
+  assert.equal(assertBudgetContinuationAvailable(
+    context, "change", budget, { mode: "operator-required" }), 0);
+  assert.throws(() => assertBudgetContinuationAvailable(
+    context, "change", budget, { mode: "active" }), /completion boundary/);
+  budget.window.extensionNumber = 1;
+  try {
+    assertBudgetContinuationAvailable(context, "change", budget, { mode: "completion-only" });
+    assert.fail("expected stop");
+  } catch (error) {
+    assert.equal(error.message, "budget-continuation-spent");
+    assert.equal(error.decision.recommended, "rescope");
+    assert.deepEqual(error.decision.window, { used: 4, target: 10 });
+  }
+});
+
+function readinessContext(overrides = {}) {
+  return {
+    activeChangePath: () => "/change",
+    changeArtifactGaps: () => [],
+    pendingTasks: () => [],
+    readinessBudgetPolicy: (status) => ({ eligible: true, class: status }),
+    proofReadinessValue: () => ({
+      status: "READY", pendingTasks: [], externalProviders: [],
+      unavailableProviders: [], budget: { eligible: false, class: "deterministic" }
+    }),
+    ...overrides
+  };
+}
+
+test("continuation readiness prioritizes artifacts, tasks, then proof", () => {
+  const pending = budgetContinuationReadiness(readinessContext({
+    pendingTasks: () => [{ id: "T1" }, { text: "unnumbered" }]
+  }), "change", {});
+  assert.equal(pending.status, "NEEDS_CODE_CHANGE");
+  assert.deepEqual(pending.pendingTasks, ["T1", "unnumbered"]);
+
+  let pendingCalled = false;
+  const artifacts = budgetContinuationReadiness(readinessContext({
+    changeArtifactGaps: () => ["proposal.md", "tasks.md"],
+    pendingTasks: () => { pendingCalled = true; return [{ id: "T1" }]; }
+  }), "change", {});
+  assert.equal(pendingCalled, false);
+  assert.equal(artifacts.status, "CONFIGURATION_ERROR");
+  assert.deepEqual(artifacts.issues, [
+    "missing change artifact: proposal.md", "missing change artifact: tasks.md"
+  ]);
+
+  const proof = budgetContinuationReadiness(readinessContext(), "change", {});
+  assert.equal(proof.status, "READY");
+});
+
+test("continuation unblock maps every ineligible work class", () => {
+  const expected = {
+    "external-authority": "external-evidence",
+    infrastructure: "restore-provider",
+    "active-work": "wait",
+    deterministic: "run-proof",
+    unknown: "run-proof"
+  };
+  for (const [kind, id] of Object.entries(expected))
+    assert.equal(budgetContinuationUnblock({ budget: { class: kind } }).id, id);
+  assert.equal(budgetContinuationUnblock({}).id, "run-proof");
+});
+
+test("eligible continuation passes and ineligible readiness produces a typed stop", () => {
+  const context = { blockWithDecision: stop };
+  assert.doesNotThrow(() => assertBudgetContinuationEligible(
+    context, "change", { budget: { eligible: true } }));
+  try {
+    assertBudgetContinuationEligible(context, "change", {
+      status: "WAITING", budget: {
+        eligible: false, class: "external-authority", reason: "needs approval"
+      }
+    });
+    assert.fail("expected stop");
+  } catch (error) {
+    assert.equal(error.message, "budget-continuation-rejected");
+    assert.equal(error.decision.recommended, "external-evidence");
+    assert.match(error.decision.summary, /needs approval/);
+  }
+  try {
+    assertBudgetContinuationEligible(context, "change", { status: "READY" });
+    assert.fail("expected stop");
+  } catch (error) {
+    assert.equal(error.decision.budgetClass, "READY");
+    assert.match(error.decision.summary, /no model-completable work remains/);
+  }
+});
+
+test("next continuation window filters usage and retains extension root", () => {
+  let received;
+  const context = {
+    logs: "/logs",
+    readJsonLines: () => [
+      { runId: "run-2", inputTokens: 3 }, { runId: "other", inputTokens: 9 }
+    ],
+    eventUsage: (events) => { received = events; return { tokens: 3 }; },
+    budgetWindow: (id, targets, usage, sequence, reason) =>
+      ({ id, targets, usage, sequence, reason })
+  };
+  const result = nextBudgetContinuationWindow(context, "change", { run: "run-2" }, {
+    targetRequests: "4", targetTokens: "100"
+  }, { id: "run-1", extensionRootId: "root", sequence: 2 }, 0);
+  assert.deepEqual(received, [{ runId: "run-2", inputTokens: 3 }]);
+  assert.equal(result.runId, "run-2");
+  assert.deepEqual(result.window.targets, { requests: 4, tokens: 100 });
+  assert.equal(result.window.sequence, 3);
+  assert.equal(result.window.extensionRootId, "root");
+  assert.equal(result.window.extensionNumber, 1);
+
+  const fallback = nextBudgetContinuationWindow(context, "change", {}, {
+    targetRequests: 1, targetTokens: 2
+  }, { id: "prior", sequence: 0 }, 0);
+  assert.equal(fallback.runId, "prior");
+  assert.equal(fallback.window.extensionRootId, "prior");
+});
+
+test("persistence audits success and restores the previous window on failure", () => {
+  const prior = { id: "prior" };
+  const budget = { window: { id: "next" } };
+  const calls = [];
+  persistBudgetContinuation({
+    saveRuntime: () => calls.push("save"),
+    appendBudgetAudit: () => calls.push("audit")
+  }, "change", {}, budget, prior, { id: "next" }, "why", "decision");
+  assert.deepEqual(calls, ["save", "audit"]);
+
+  let saves = 0;
+  const failed = { window: { id: "next" } };
+  assert.throws(() => persistBudgetContinuation({
+    saveRuntime: () => { saves += 1; },
+    appendBudgetAudit: () => { throw new Error("disk full"); }
+  }, "change", {}, failed, prior, {}, "why", "decision"), /disk full/);
+  assert.equal(saves, 2);
+  assert.equal(failed.window, prior);
+
+  const doubleFailure = { window: { id: "next" } };
+  assert.throws(() => persistBudgetContinuation({
+    saveRuntime: () => { throw new Error("save failed"); },
+    appendBudgetAudit: () => {}
+  }, "change", {}, doubleFailure, prior, {}, "why", "decision"), /save failed/);
+  assert.equal(doubleFailure.window, prior);
+});
+
+function continuationFixture(overrides = {}) {
+  const state = {};
+  const budget = {
+    targetRequests: 5, targetTokens: 100,
+    window: { id: "run-1", sequence: 0, usedTokens: 100, targetTokens: 100 }
+  };
+  const calls = { saved: 0, audited: [] };
+  return {
+    state, budget, calls,
+    context: {
+      logs: "/logs",
+      loadRuntime: () => state,
+      saveRuntime: () => { calls.saved += 1; },
+      ensureBudgetState: () => budget,
+      applyBudgetDecision: () => ({ mode: "completion-only" }),
+      changeArtifactGaps: () => [], activeChangePath: () => "/change",
+      pendingTasks: () => [{ id: "T1" }],
+      readinessBudgetPolicy: () => ({ eligible: true, class: "model-work" }),
+      proofReadinessValue: () => { throw new Error("not expected"); },
+      eventUsage: () => ({ tokens: 0 }), budgetWindow: (id) => ({ id, sequence: 1 }),
+      readJsonLines: () => [],
+      appendBudgetAudit: (...args) => calls.audited.push(args),
+      blockWithDecision: stop, fail,
+      ...overrides
+    }
+  };
+}
+
+test("continuation orchestration advances, persists, audits, and reports", () => {
+  const f = continuationFixture();
+  const prior = console.log;
+  const rows = [];
+  console.log = (value) => rows.push(String(value));
+  try {
+    continueBudgetWindow(f.context, "change", {
+      reason: "finish", "decision-ref": "user-1", run: "run-2"
+    });
+  } finally { console.log = prior; }
+  assert.equal(f.budget.window.id, "run-2");
+  assert.equal(f.budget.window.extensionNumber, 1);
+  assert.equal(f.calls.saved, 1);
+  assert.equal(f.calls.audited[0][1], "continue");
+  assert.match(rows[0], /BUDGET CONTINUED change/);
+});

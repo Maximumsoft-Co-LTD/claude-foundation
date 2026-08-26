@@ -85,6 +85,7 @@ telemetry record event|node --test "$ROOT/.claude/harness/tests/telemetry-record
 signed CI|node --test "$ROOT/.claude/harness/tests/signed-ci.test.mjs"
 adapter fingerprint|node --test "$ROOT/.claude/harness/tests/adapter-fingerprint.test.mjs"
 agent plan view|node --test "$ROOT/.claude/harness/tests/agent-plan-view.test.mjs"
+budget continuation|node --test "$ROOT/.claude/harness/tests/budget-continuation.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
 grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 receipt validity|node "$ROOT/.claude/harness/tests/receipt-validity.test.mjs"
