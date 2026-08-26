@@ -4,6 +4,85 @@ import {
 import { join, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
 
+export function priorChangeResidue(root, id) {
+  return [
+    join(root, ".foundation", "runtime", `${id}.json`),
+    join(root, ".foundation", "receipts", id),
+    join(root, ".foundation", "evidence", id),
+    join(root, ".foundation", "handoffs", id)
+  ].filter((path) => existsSync(path));
+}
+
+export function materializeChangeTemplates({
+  schema,
+  source,
+  target,
+  intent,
+  groundingRequired,
+  instantiate
+}) {
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, ".openspec.yaml"), schema === "foundation-rapid"
+    ? `schema: ${schema}\nskip_specs: true\n`
+    : `schema: ${schema}\n`);
+  for (const name of [
+    "proposal.md", "tasks.md", "evidence.yaml", "execution.yaml",
+    "repositories.yaml", "handoffs.yaml"
+  ])
+    writeFileSync(join(target, name), instantiate(join(source, name), intent));
+  if (groundingRequired)
+    writeFileSync(join(target, "grounding.yaml"),
+      instantiate(join(source, "grounding.yaml"), intent));
+  if (schema === "foundation-standard") {
+    writeFileSync(join(target, "design.md"), instantiate(join(source, "design.md"), intent));
+    mkdirSync(join(target, "specs", "change"), { recursive: true });
+    writeFileSync(join(target, "specs", "change", "spec.md"),
+      instantiate(join(source, "spec.md"), intent));
+  }
+}
+
+export function initialChangeState({
+  root,
+  id,
+  intent,
+  schema,
+  groundingRequired,
+  riskBasedCi,
+  gitHead,
+  preexistingDirty,
+  initialBudget,
+  now
+}) {
+  const standard = schema === "foundation-standard";
+  return {
+    version: 2, id, intent, schema, status: "change", ambiguity: "clear",
+    groundingRequired,
+    groundingVersion: groundingRequired ? 2 : null,
+    nfrAssessmentRequired: standard,
+    decisionMetadataRequired: standard,
+    semanticInvariantsRequired: standard,
+    riskBasedCiRequired: standard && riskBasedCi,
+    externalOperationsVersion: 1,
+    graphExecutionVersion: 1,
+    revision: 0, contractRevision: 0, executionRevision: 0,
+    impact: standard ? null : "low",
+    coupling: standard ? null : "isolated",
+    securityTriggers: [], reviewRequired: false, evidenceCapabilities: [],
+    acceptance: {
+      version: 2,
+      decision: standard ? "undecided" : "not-required",
+      required: false, reason: null, claimIds: [], declaredAt: null
+    },
+    reviewHistory: { version: 1, aiAttempts: 0, totalAttempts: 0, chainHead: null },
+    workspace: {
+      mode: "current", path: root, baseHead: gitHead(root),
+      preexisting: preexistingDirty(root)
+    },
+    budget: initialBudget(schema, id),
+    createdAt: now(), updatedAt: now()
+  };
+}
+
 export function renderDraftDecisions(decisions) {
   if (!Array.isArray(decisions))
     throw new Error("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
@@ -289,12 +368,7 @@ export function createChangeLifecycle({
     // as history. A new change reusing the id would inherit them — review
     // rounds it never ran, receipts bound to another workspace — so the id is
     // refused rather than quietly adopted.
-    const residue = [
-      join(root, ".foundation", "runtime", `${id}.json`),
-      join(root, ".foundation", "receipts", id),
-      join(root, ".foundation", "evidence", id),
-      join(root, ".foundation", "handoffs", id)
-    ].filter((path) => existsSync(path));
+    const residue = priorChangeResidue(root, id);
     if (residue.length)
       fail(`change id '${id}' was used before and its recorded history remains ` +
         `(${residue.map((path) => path.slice(root.length + 1)).join(", ")}); pick a new id`);
@@ -302,57 +376,20 @@ export function createChangeLifecycle({
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
     const source = templateDir(schema);
     const target = changePath(id);
-    mkdirSync(target, { recursive: true });
+    const groundingRequired = workflowPolicy().workflow.grounding === "required";
     // The rapid schema declares no spec artifact, so a rapid change never has
     // deltas to find. OpenSpec reads that absence as an error — every rapid
     // change was invalid to `openspec validate`, and Land printed five lines of
     // raw validator text at the user for a lane whose whole point is small work.
     // `skip_specs` is the flag OpenSpec's own message names for exactly this.
-    writeFileSync(join(target, ".openspec.yaml"), schema === "foundation-rapid"
-      ? `schema: ${schema}\nskip_specs: true\n`
-      : `schema: ${schema}\n`);
-    for (const name of [
-      "proposal.md", "tasks.md", "evidence.yaml", "execution.yaml",
-      "repositories.yaml", "handoffs.yaml"
-    ])
-      writeFileSync(join(target, name), instantiate(join(source, name), intent));
-    if (workflowPolicy().workflow.grounding === "required")
-      writeFileSync(join(target, "grounding.yaml"), instantiate(join(source, "grounding.yaml"), intent));
-    if (schema === "foundation-standard") {
-      writeFileSync(join(target, "design.md"), instantiate(join(source, "design.md"), intent));
-      mkdirSync(join(target, "specs", "change"), { recursive: true });
-      writeFileSync(join(target, "specs", "change", "spec.md"), instantiate(join(source, "spec.md"), intent));
-    }
-    const state = {
-      version: 2, id, intent, schema, status: "change", ambiguity: "clear",
-      groundingRequired: workflowPolicy().workflow.grounding === "required",
-      groundingVersion: workflowPolicy().workflow.grounding === "required" ? 2 : null,
-      nfrAssessmentRequired: schema === "foundation-standard",
-      decisionMetadataRequired: schema === "foundation-standard",
-      semanticInvariantsRequired: schema === "foundation-standard",
-      riskBasedCiRequired: schema === "foundation-standard" &&
-        workflowPolicy().land?.riskBasedCi === true,
-      externalOperationsVersion: 1,
-      graphExecutionVersion: 1,
-      revision: 0, contractRevision: 0, executionRevision: 0,
-      impact: schema === "foundation-rapid" ? "low" : null,
-      coupling: schema === "foundation-rapid" ? "isolated" : null,
-      securityTriggers: [], reviewRequired: false, evidenceCapabilities: [],
-      acceptance: {
-        version: 2,
-        decision: schema === "foundation-rapid" ? "not-required" : "undecided",
-        required: false, reason: null, claimIds: [], declaredAt: null
-      },
-      reviewHistory: { version: 1, aiAttempts: 0, totalAttempts: 0, chainHead: null },
-      // Recorded now, before the change writes anything, so the surface can
-      // later tell what this change did from what the tree already carried.
-      workspace: {
-        mode: "current", path: root, baseHead: gitHead(root),
-        preexisting: preexistingDirty(root)
-      },
-      budget: initialBudget(schema, id),
-      createdAt: now(), updatedAt: now()
-    };
+    materializeChangeTemplates({
+      schema, source, target, intent, groundingRequired, instantiate
+    });
+    const state = initialChangeState({
+      root, id, intent, schema, groundingRequired,
+      riskBasedCi: workflowPolicy().land?.riskBasedCi === true,
+      gitHead, preexistingDirty, initialBudget, now
+    });
     saveRuntime(state);
     if (draft) materializeDraft(id, draft);
     bindClaudeSession(id, "change");
