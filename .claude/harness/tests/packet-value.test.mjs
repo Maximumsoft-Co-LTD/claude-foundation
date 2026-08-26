@@ -5,7 +5,16 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { createPacketRuntime } from "../runtime/workflow/packet-runtime.mjs";
+import {
+  createPacketRuntime,
+  priorReviewValue,
+  reviewArtifactValue,
+  reviewChangedSurface,
+  reviewContractArtifactValues,
+  reviewEvidenceRows,
+  reviewSurfaceRows,
+  reviewSurfaceWorkspace
+} from "../runtime/workflow/packet-runtime.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-packet-value-"));
 let activePath = join(root, "openspec", "changes", "packet-test");
@@ -83,6 +92,8 @@ const providerClaims = {
   global: [], "root-provider": [{ id: "c1" }],
   "other-provider": [{ id: "c2" }], uncovered: [{ id: "missing" }]
 };
+const providerCapabilities = {};
+const providerReceiptPaths = {};
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
 const readJson = (path, fallback) => {
@@ -91,6 +102,97 @@ const readJson = (path, fallback) => {
 const compactList = (rows, limit) => rows.length <= limit ? rows : {
   count: rows.length, preview: rows.slice(0, limit), digest: stableHash(rows)
 };
+
+const surfaceContext = {
+  root,
+  canonicalChangedSurface: () => [
+    { repositoryId: "root", path: "file.js" },
+    { repositoryId: "root", path: "directory" },
+    { repositoryId: "other", path: "missing.js" },
+    { repositoryId: "other", path: "unreadable.js" }
+  ],
+  repositoryById: (_id, repositoryId) => repositories[repositoryId],
+  pathExists: (path) => !path.endsWith("missing.js"),
+  fileStat: (path) => {
+    if (path.endsWith("unreadable.js")) throw new Error("permission denied");
+    return { isDirectory: () => path.endsWith("directory") };
+  },
+  directoryHash: () => "directory-hash",
+  fileDigest: () => "file-hash",
+  stableHash,
+  compactList
+};
+assert.equal(reviewSurfaceWorkspace(surfaceContext, "change", {
+  workspace: { path: "/root-workspace" }
+}, "root"), "/root-workspace");
+assert.equal(reviewSurfaceWorkspace(surfaceContext, "change", {
+  repositories: { other: { path: "/other-workspace" } }
+}, "other"), "/other-workspace");
+assert.equal(reviewSurfaceWorkspace(surfaceContext, "change", {}, "other"),
+  repositories.other.workspacePath);
+const projectedSurface = reviewSurfaceRows(surfaceContext, "change", {
+  workspace: { path: root }, repositories: { other: { path: repositories.other.workspacePath } }
+});
+assert.deepEqual(projectedSurface.map((row) => row.identity),
+  ["file-hash", "directory-hash", "deleted", "unreadable"]);
+const smallSurface = reviewChangedSurface(surfaceContext, "change", {
+  workspace: { path: root, baseHead: "root-base" },
+  repositories: { other: { path: repositories.other.workspacePath, baseHead: "other-base" } }
+}, projectedSurface);
+assert.equal(smallSurface.paths.length, 4);
+assert.equal(smallSurface.inspection[0].baseHead, "root-base");
+assert.equal(smallSurface.inspection[1].baseHead, "other-base");
+const largeRows = Array.from({ length: 61 }, (_, index) => ({
+  repositoryId: "root", path: `src/file-${index}.js`, kind: "code", identity: String(index)
+}));
+const largeSurface = reviewChangedSurface(surfaceContext, "change", {}, largeRows);
+assert.equal(largeSurface.count, 61);
+assert.equal(largeSurface.groups[0].prefix, "root/src");
+assert.equal(largeSurface.inspection[0].paths.length, 20);
+assert.equal(largeSurface.inspection[0].truncated, true);
+
+assert.equal(reviewArtifactValue({
+  pathExists: () => false, fileStat: () => null,
+  directoryHash: () => "unused", fileDigest: () => "unused"
+}, root, "missing"), null);
+assert.deepEqual(reviewArtifactValue({
+  pathExists: () => true, fileStat: () => ({ isDirectory: () => false }),
+  directoryHash: () => "directory", fileDigest: () => "file"
+}, root, "proposal.md"), { relativePath: "proposal.md", sha256: "file" });
+const artifacts = reviewContractArtifactValues((name) => name === "present"
+  ? { relativePath: name, sha256: "digest" } : null, ["present", "missing"]);
+assert.deepEqual(Object.keys(artifacts.contractArtifacts), ["present"]);
+assert.equal(artifacts.manifest[0].identity, "digest");
+
+const evidenceRows = reviewEvidenceRows({
+  requiredProviders: () => ["test", "review", "receipt"],
+  providerConfig: (_id, provider) => ({ capability: provider }),
+  providerCapability: (_provider, config) => config.capability,
+  receiptValidity: (_id, provider) => provider === "test"
+    ? { validity: "fresh", status: "pass", receipt: {
+      observed: "ok", artifacts: [{ path: "report.json" }], references: ["run"]
+    } }
+    : { validity: "stale" },
+  receiptPath: (_id, provider) => `/receipts/${provider}.json`,
+  pathExists: (path) => path.endsWith("receipt.json"),
+  readJson: () => ({ status: "fail", observed: "saved receipt" })
+}, "change", "hash");
+assert.deepEqual(evidenceRows.map((row) => row.provider), ["test", "receipt"]);
+assert.equal(evidenceRows[0].artifacts[0], "report.json");
+assert.equal(evidenceRows[1].status, "fail");
+assert.equal(evidenceRows[1].observed, "saved receipt");
+assert.equal(priorReviewValue(null), null);
+assert.deepEqual(priorReviewValue({}), {
+  round: null, status: null, workspaceHash: null,
+  observed: null, findings: null, scope: null
+});
+assert.deepEqual(priorReviewValue({
+  status: "fail", workspaceHash: "hash", observed: "reviewed",
+  review: { round: 2, findings: { unresolvedBlockers: 1 }, scope: ["src"] }
+}), {
+  round: 2, status: "fail", workspaceHash: "hash", observed: "reviewed",
+  findings: { unresolvedBlockers: 1 }, scope: ["src"]
+});
 
 const runtime = createPacketRuntime({
   ROOT: root, PACKET_SCHEMA_VERSION: "4", REVIEW_PACKET_SCHEMA_VERSION: "1",
@@ -116,7 +218,9 @@ const runtime = createPacketRuntime({
   fileDigest: (path) => `file:${basename(path)}`, directoryHash: () => "directory:specs",
   ensureBudgetState: () => ({ mode: "active" }), budgetDecision: () => ({ allowed: true }),
   scopedReviewClaims: (claims) => claims, relevantHash: () => "review-hash",
-  providerCapability: () => "test", receiptPath: () => join(root, "missing-receipt.json"),
+  providerCapability: (provider) => providerCapabilities[provider] || "test",
+  receiptPath: (_id, provider) =>
+    providerReceiptPaths[provider] || join(root, "missing-receipt.json"),
   contractFingerprint: () => "fingerprint", reviewPolicy: () => ({}),
   resolvedAcceptance: () => ({}), handoffReadiness: () => ({ status: "ready" }),
   deliveredAiAttempts: () => attempts, serializedJson: JSON.stringify,
@@ -258,6 +362,37 @@ try {
   runtime.showPacket("packet-test", { phase: "review" });
   assert.equal(JSON.parse(stdout).packetType, "review");
   assert.equal(contextMetrics.at(-1)[1], "packet-review");
+
+  const reviewProviders = providers;
+  const reviewSurface = surface;
+  providers = [...providers, "review-provider", "acceptance-provider"];
+  providerCapabilities["review-provider"] = "review";
+  providerCapabilities["acceptance-provider"] = "acceptance";
+  providerReceiptPaths["review-provider"] = join(root, "review-receipt.json");
+  writeFileSync(providerReceiptPaths["review-provider"], JSON.stringify({
+    status: "fail", workspaceHash: "prior-hash", observed: "prior review",
+    review: {
+      round: 2, findings: { unresolvedBlockers: 1 }, scope: ["src/a.js"]
+    }
+  }));
+  writeFileSync(join(activePath, "grounding.yaml"), JSON.stringify({
+    decisionBatch: "decision-1", readSet: [{ path: "proposal.md" }], claims: ["c1"]
+  }));
+  surface = Array.from({ length: 61 }, (_, index) => ({
+    repositoryId: "root", path: `src/review-${index}.js`
+  }));
+  const detailedReview = runtime.reviewPacketValue("packet-test");
+  assert.equal(detailedReview.changedSurface.count, 61);
+  assert.equal(detailedReview.changedSurface.inspection[0].truncated, true);
+  assert.equal(detailedReview.grounding.decisionBatch, "decision-1");
+  assert.equal(detailedReview.priorReview.round, 2);
+  assert.equal(detailedReview.unresolvedFindings, 1);
+  assert.equal(detailedReview.evidence.some((row) =>
+    ["review-provider", "acceptance-provider"].includes(row.provider)), false);
+  assert.ok(detailedReview.changedSurface.manifest.some((row) =>
+    row.repositoryId === "contract" && row.path === "grounding.yaml"));
+  providers = reviewProviders;
+  surface = reviewSurface;
 
   const priorConsoleError = console.error;
   let warning = "";

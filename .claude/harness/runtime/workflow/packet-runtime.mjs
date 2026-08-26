@@ -38,6 +38,128 @@ export function packetOverflowSummary(value, bytes, limit, largestFields = []) {
   };
 }
 
+export function reviewArtifactValue(context, activePath, name) {
+  const path = join(activePath, name);
+  if (!context.pathExists(path)) return null;
+  return {
+    relativePath: name,
+    sha256: context.fileStat(path).isDirectory()
+      ? context.directoryHash(path)
+      : context.fileDigest(path)
+  };
+}
+
+export function reviewSurfaceWorkspace(context, id, state, repositoryId) {
+  if (repositoryId === "root") return state.workspace?.path || context.root;
+  return state.repositories?.[repositoryId]?.path ||
+    context.repositoryById(id, repositoryId, state).workspacePath;
+}
+
+export function reviewSurfaceRows(context, id, state) {
+  return context.canonicalChangedSurface(id, state).map((row) => {
+    const workspace = reviewSurfaceWorkspace(context, id, state, row.repositoryId);
+    const path = join(workspace, row.path);
+    let identity = "deleted";
+    if (context.pathExists(path)) {
+      try {
+        identity = context.fileStat(path).isDirectory()
+          ? context.directoryHash(path)
+          : context.fileDigest(path);
+      } catch {
+        identity = "unreadable";
+      }
+    }
+    return { ...row, kind: "code", identity };
+  });
+}
+
+export function reviewChangedSurface(context, id, state, surfaceRows) {
+  const paths = surfaceRows.map((row) => `${row.repositoryId}/${row.path}`);
+  const inspection = [...surfaceRows.reduce((groups, row) => {
+    if (!groups.has(row.repositoryId)) groups.set(row.repositoryId, []);
+    groups.get(row.repositoryId).push(row.path);
+    return groups;
+  }, new Map())].map(([repositoryId, repositoryPaths]) => ({
+    repositoryId,
+    workspacePath: reviewSurfaceWorkspace(context, id, state, repositoryId),
+    baseHead: repositoryId === "root"
+      ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
+      : state.repositories?.[repositoryId]?.baseHead || null,
+    paths: repositoryPaths
+  }));
+  if (paths.length <= 60) return {
+    paths, digest: context.stableHash(paths), inspection
+  };
+  const groups = Object.entries(paths.reduce((counts, path) => {
+    const prefix = path.split("/").slice(0, 2).join("/");
+    counts[prefix] = Number(counts[prefix] || 0) + 1;
+    return counts;
+  }, {})).sort(([left], [right]) => left.localeCompare(right))
+    .map(([prefix, count]) => ({ prefix, count }));
+  return {
+    count: paths.length,
+    digest: context.stableHash(paths),
+    groups: context.compactList(groups, 30),
+    inspection: inspection.map((entry) => ({
+      ...entry,
+      pathCount: entry.paths.length,
+      paths: entry.paths.slice(0, 20),
+      truncated: entry.paths.length > 20
+    }))
+  };
+}
+
+export function reviewEvidenceRows(context, id, workspaceHash) {
+  return context.requiredProviders(id)
+    .filter((provider) => !["review", "acceptance"].includes(
+      context.providerCapability(provider, context.providerConfig(id, provider))))
+    .map((provider) => {
+      const config = context.providerConfig(id, provider);
+      const capability = context.providerCapability(provider, config);
+      const check = context.receiptValidity(id, provider, workspaceHash);
+      const path = context.receiptPath(id, provider);
+      const receipt = check.receipt ||
+        (context.pathExists(path) ? context.readJson(path, {}) : {});
+      return {
+        provider,
+        capability,
+        validity: check.validity,
+        status: check.status || receipt.status || null,
+        observed: receipt.observed ? String(receipt.observed).slice(0, 240) : null,
+        artifacts: (receipt.artifacts || []).slice(0, 5).map((value) => value.path),
+        references: (receipt.references || []).slice(0, 5)
+      };
+    });
+}
+
+export function priorReviewValue(prior) {
+  if (!prior) return null;
+  return {
+    round: prior.review?.round || null,
+    status: prior.status || null,
+    workspaceHash: prior.workspaceHash || null,
+    observed: prior.observed ? String(prior.observed).slice(0, 240) : null,
+    findings: prior.review?.findings || null,
+    scope: prior.review?.scope || null
+  };
+}
+
+export function reviewContractArtifactValues(artifact, names) {
+  const rows = names.map((name) => [name, artifact(name)])
+    .filter(([, row]) => Boolean(row));
+  return {
+    contractArtifacts: Object.fromEntries(rows),
+    manifest: rows.map(([name, row]) => ({
+      repositoryId: "contract",
+      path: name,
+      relativePath: name,
+      kind: "contract-artifact",
+      sources: ["change-contract"],
+      identity: row.sha256
+    }))
+  };
+}
+
 export function createPacketRuntime({
   ROOT, PACKET_SCHEMA_VERSION, REVIEW_PACKET_SCHEMA_VERSION, leasesRoot = null, loadRuntime,
   foundationVersion, installedCliVersion,
@@ -379,83 +501,20 @@ export function createPacketRuntime({
       capabilities: claim.capabilities,
       repositories: claim.repositories || null
     }));
-    const artifact = (name) => {
-      const path = join(activePath, name);
-      return existsSync(path) ? {
-        relativePath: name,
-        sha256: statSync(path).isDirectory() ? directoryHash(path) : fileDigest(path)
-      } : null;
+    const artifact = reviewArtifactValue.bind(null, {
+      pathExists: existsSync, fileStat: statSync, directoryHash, fileDigest
+    }, activePath);
+    const surfaceContext = {
+      root: ROOT, canonicalChangedSurface, repositoryById,
+      pathExists: existsSync, fileStat: statSync, directoryHash, fileDigest,
+      stableHash, compactList
     };
-    const surfaceRows = canonicalChangedSurface(id, state).map((row) => {
-      const workspace = row.repositoryId === "root"
-        ? state.workspace?.path || ROOT
-        : state.repositories?.[row.repositoryId]?.path ||
-          repositoryById(id, row.repositoryId, state).workspacePath;
-      const path = join(workspace, row.path);
-      let identity = "deleted";
-      if (existsSync(path)) {
-        try { identity = statSync(path).isDirectory() ? directoryHash(path) : fileDigest(path); }
-        catch { identity = "unreadable"; }
-      }
-      return {
-        ...row,
-        kind: "code",
-        identity
-      };
-    });
-    const paths = surfaceRows.map((row) => `${row.repositoryId}/${row.path}`);
-    const inspection = [...surfaceRows.reduce((groups, row) => {
-      if (!groups.has(row.repositoryId)) groups.set(row.repositoryId, []);
-      groups.get(row.repositoryId).push(row.path);
-      return groups;
-    }, new Map())].map(([repositoryId, repositoryPaths]) => ({
-      repositoryId,
-      workspacePath: repositoryId === "root"
-        ? state.workspace?.path || ROOT
-        : state.repositories?.[repositoryId]?.path ||
-          repositoryById(id, repositoryId, state).workspacePath,
-      baseHead: repositoryId === "root"
-        ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
-        : state.repositories?.[repositoryId]?.baseHead || null,
-      paths: repositoryPaths
-    }));
-    const changedSurface = paths.length <= 60 ? {
-      paths,
-      digest: stableHash(paths),
-      inspection
-    } : {
-      count: paths.length,
-      digest: stableHash(paths),
-      groups: compactList(Object.entries(paths.reduce((groups, path) => {
-        const prefix = path.split("/").slice(0, 2).join("/");
-        groups[prefix] = Number(groups[prefix] || 0) + 1;
-        return groups;
-      }, {})).sort(([left], [right]) => left.localeCompare(right))
-        .map(([prefix, count]) => ({ prefix, count })), 30),
-      inspection: inspection.map((entry) => ({
-        ...entry,
-        pathCount: entry.paths.length,
-        paths: entry.paths.slice(0, 20),
-        truncated: entry.paths.length > 20
-      }))
-    };
-    const evidenceRows = requiredProviders(id)
-      .filter((provider) => !["review", "acceptance"].includes(
-        providerCapability(provider, providerConfig(id, provider))))
-      .map((provider) => {
-        const check = receiptValidity(id, provider, workspaceHash);
-        const path = receiptPath(id, provider);
-        const receipt = check.receipt || (existsSync(path) ? readJson(path, {}) : {});
-        return {
-          provider,
-          capability: providerCapability(provider, providerConfig(id, provider)),
-          validity: check.validity,
-          status: check.status || receipt.status || null,
-          observed: receipt.observed ? String(receipt.observed).slice(0, 240) : null,
-          artifacts: (receipt.artifacts || []).slice(0, 5).map((value) => value.path),
-          references: (receipt.references || []).slice(0, 5)
-        };
-      });
+    const surfaceRows = reviewSurfaceRows(surfaceContext, id, state);
+    const changedSurface = reviewChangedSurface(surfaceContext, id, state, surfaceRows);
+    const evidenceRows = reviewEvidenceRows({
+      requiredProviders, providerCapability, providerConfig, receiptValidity,
+      receiptPath, pathExists: existsSync, readJson
+    }, id, workspaceHash);
     const reviewProvider = requiredProviders(id).find((provider) =>
       providerCapability(provider, providerConfig(id, provider)) === "review") || "review";
     const prior = existsSync(receiptPath(id, reviewProvider))
@@ -466,19 +525,9 @@ export function createPacketRuntime({
       "proposal.md", "design.md", "tasks.md", "evidence.yaml",
       "execution.yaml", "repositories.yaml", "grounding.yaml", "handoffs.yaml", "specs"
     ];
-    const contractArtifacts = Object.fromEntries(reviewArtifactNames.map((name) =>
-      [name, artifact(name)]).filter(([, row]) => Boolean(row)));
-    const reviewArtifactManifest = reviewArtifactNames.map((name) => {
-      const row = artifact(name);
-      return row ? {
-        repositoryId: "contract",
-        path: name,
-        relativePath: name,
-        kind: "contract-artifact",
-        sources: ["change-contract"],
-        identity: row.sha256
-      } : null;
-    }).filter(Boolean);
+    const {
+      contractArtifacts, manifest: reviewArtifactManifest
+    } = reviewContractArtifactValues(artifact, reviewArtifactNames);
     const reviewManifest = [...surfaceRows, ...reviewArtifactManifest]
       .sort((left, right) => `${left.repositoryId}/${left.path}`
         .localeCompare(`${right.repositoryId}/${right.path}`));
@@ -522,14 +571,7 @@ export function createPacketRuntime({
         reference: grounding
       } : null,
       evidence: compactList(evidenceRows, 15),
-      priorReview: prior ? {
-        round: prior.review?.round || null,
-        status: prior.status || null,
-        workspaceHash: prior.workspaceHash || null,
-        observed: prior.observed ? String(prior.observed).slice(0, 240) : null,
-        findings: prior.review?.findings || null,
-        scope: prior.review?.scope || null
-      } : null,
+      priorReview: priorReviewValue(prior),
       unresolvedFindings: Number(prior?.review?.findings?.unresolvedBlockers || 0),
       references: {
         evidence: artifact("evidence.yaml"),
