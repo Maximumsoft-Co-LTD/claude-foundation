@@ -3,7 +3,8 @@ import {
   acceptanceEvidenceRecovery,
   externalEvidenceRecoveryOperation,
   genericExternalEvidenceRecovery,
-  reviewEvidenceRecovery
+  reviewEvidenceRecovery,
+  wiringChoiceOperation
 } from "../runtime/evidence/proof-readiness.mjs";
 
 const review = reviewEvidenceRecovery("c", "reviewer");
@@ -68,3 +69,26 @@ const operation = (provider) => externalEvidenceRecoveryOperation({
 assert.equal(operation("reviewer").decision.kind, "independent-review");
 assert.equal(operation("acceptance").decision.scope.origin, "claim-capability");
 assert.equal(operation("security").wiring, wiring);
+
+assert.equal(wiringChoiceOperation({
+  evidenceDetectionValue: () => { throw new Error("unavailable"); }
+}, "c", "security"), null);
+assert.equal(wiringChoiceOperation({
+  evidenceDetectionValue: () => ({ candidates: [
+    { provider: "other", recommended: true, config: {}, source: "other.json" },
+    { provider: "security", recommended: false, config: {}, source: "ignored.json" },
+    { provider: "security", recommended: true, config: null, source: "ignored.json" }
+  ] })
+}, "c", "security"), null);
+assert.deepEqual(wiringChoiceOperation({
+  evidenceDetectionValue: () => ({ candidates: [
+    { provider: "security", recommended: true, config: { command: ["npm", "test"] },
+      source: "package.json" }
+  ] })
+}, "c", "security"), {
+  kind: "configure-provider",
+  command: "claude-foundation evidence init c --write",
+  source: "package.json",
+  instruction: "Wire provider 'security' from the project-owned command detected at package.json, then re-run proof.",
+  verify: "claude-foundation proof readiness c"
+});

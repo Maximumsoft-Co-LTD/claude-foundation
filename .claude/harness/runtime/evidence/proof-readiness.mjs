@@ -433,6 +433,27 @@ export function proofReadinessValueOperation(context, id, stage = "prove") {
   };
 }
 
+export function wiringChoiceOperation({ evidenceDetectionValue }, id, provider) {
+  let detection;
+  try { detection = evidenceDetectionValue(id); }
+  catch { return null; }
+  let candidate = null;
+  for (const row of detection.candidates || []) {
+    if (row.provider !== provider || !row.recommended || !row.config) continue;
+    candidate = row;
+    break;
+  }
+  if (!candidate) return null;
+  return {
+    kind: "configure-provider",
+    command: `claude-foundation evidence init ${id} --write`,
+    source: candidate.source,
+    instruction: `Wire provider '${provider}' from the project-owned command detected at ${
+      candidate.source}, then re-run proof.`,
+    verify: `claude-foundation proof readiness ${id}`
+  };
+}
+
 export function createProofReadinessRuntime({
   markBlocked = () => {},
   evidence,
@@ -603,22 +624,7 @@ export function createProofReadinessRuntime({
   // those are, so the recovery names the wiring route first instead of routing
   // every unconfigured provider through an external-evidence decision that most
   // of them never needed.
-  function wiringChoice(id, provider) {
-    let detection;
-    try { detection = evidenceDetectionValue(id); }
-    catch { return null; }
-    const candidate = (detection.candidates || []).find((row) =>
-      row.provider === provider && row.recommended && row.config);
-    if (!candidate) return null;
-    return {
-      kind: "configure-provider",
-      command: `claude-foundation evidence init ${id} --write`,
-      source: candidate.source,
-      instruction: `Wire provider '${provider}' from the project-owned command detected at ${
-        candidate.source}, then re-run proof.`,
-      verify: `claude-foundation proof readiness ${id}`
-    };
-  }
+  const wiringChoice = wiringChoiceOperation.bind(null, { evidenceDetectionValue });
 
   const externalEvidenceRecovery = externalEvidenceRecoveryOperation.bind(null, {
     providerCapability,
