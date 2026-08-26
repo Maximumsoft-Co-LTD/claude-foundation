@@ -210,6 +210,57 @@ export function commitSandboxReplay(context, id, state, prepared) {
   movement.rebased = true;
 }
 
+export function unrelatedSandboxTargetChanges(context, id, state, statusOutput) {
+  const allowedPrefix = `openspec/changes/${id}/`;
+  const preexisting = state.workspace?.preexisting || {};
+  const unrelated = [];
+  for (const row of context.porcelainStatusRecords(statusOutput)) {
+    const path = row.path;
+    if (path === `openspec/changes/${id}` || path.startsWith(allowedPrefix)) continue;
+    if (path === ".foundation" || path.startsWith(".foundation/")) continue;
+    if (path === "openspec/changes" || path.startsWith("openspec/changes/")) continue;
+    if (Object.prototype.hasOwnProperty.call(preexisting, path)) {
+      const absolute = join(context.root, path);
+      try {
+        if (context.pathExists(absolute) &&
+            preexisting[path] === context.fileDigest(absolute)) continue;
+      } catch {
+        // An unreadable carried-in path is dirty because its identity is unknown.
+      }
+    }
+    unrelated.push(row);
+  }
+  return unrelated;
+}
+
+export function assertSandboxGroundingPortable(context, id, state) {
+  const groundingPath = join(context.changePath(id), "grounding.yaml");
+  if (!state.groundingRequired || !context.pathExists(groundingPath)) return;
+  let grounding;
+  try { grounding = JSON.parse(context.readText(groundingPath, "utf8")); }
+  catch { grounding = null; }
+  const portability = groundingPortabilityFindings(
+    grounding,
+    context.selectedRepositories(id, state),
+    (repository, source) => {
+      const absolute = resolve(repository.path, source.path);
+      let matchesDigest = false;
+      try {
+        matchesDigest = context.fileDigest(absolute) ===
+          String(source.sha256 || "").toLowerCase();
+      } catch {}
+      if (!matchesDigest) return "working-tree-digest-mismatch";
+      if (repository.id === "root" &&
+          isPacketLocalSource(context.changePath(id), absolute)) return null;
+      return gitBaseCheckoutStatus(repository, source.path, context.gitBuffer);
+    }
+  );
+  if (portability.length)
+    context.fail(`grounding readSet is not sandbox-portable: ${
+      portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
+    } — commit the source or move the required decision/evidence into the change packet before creating a sandbox`);
+}
+
 // Which files `git apply` refused, so a replay that cannot proceed names the
 // same thing the isolated-copy path names: the files, not the exit code.
 //
@@ -962,6 +1013,15 @@ export function createSandboxRuntime({
   const showInspection = showSandboxInspection.bind(null, {
     inspect, markBlocked, output: console, runtimeProcess: process
   });
+  const assertGroundingPortable = assertSandboxGroundingPortable.bind(null, {
+    changePath,
+    pathExists: existsSync,
+    readText: readFileSync,
+    selectedRepositories,
+    fileDigest,
+    gitBuffer,
+    fail
+  });
 
   function createSingle(id) {
     const state = loadRuntime(id);
@@ -969,39 +1029,13 @@ export function createSandboxRuntime({
     if (rebindRelocatedSandbox(id, state)) return;
     if (["worktree", "copy"].includes(state.workspace?.mode) && existsSync(state.workspace.path))
       fail(`sandbox already exists: ${state.workspace.path}`);
-    const groundingPath = join(changePath(id), "grounding.yaml");
-    if (state.groundingRequired && existsSync(groundingPath)) {
-      let grounding;
-      try { grounding = JSON.parse(readFileSync(groundingPath, "utf8")); }
-      catch { grounding = null; }
-      const portability = groundingPortabilityFindings(
-        grounding,
-        selectedRepositories(id, state),
-        (repository, source) => {
-          const absolute = resolve(repository.path, source.path);
-          let matchesDigest = false;
-          try {
-            matchesDigest = fileDigest(absolute) === String(source.sha256 || "").toLowerCase();
-          } catch {}
-          if (!matchesDigest) return "working-tree-digest-mismatch";
-          if (repository.id === "root" &&
-              isPacketLocalSource(changePath(id), absolute))
-            return null;
-          return gitBaseCheckoutStatus(repository, source.path, gitBuffer);
-        }
-      );
-      if (portability.length)
-        fail(`grounding readSet is not sandbox-portable: ${
-          portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
-        } — commit the source or move the required decision/evidence into the change packet before creating a sandbox`);
-    }
+    assertGroundingPortable(id, state);
     if (!gitHead(root)) {
       createCopy(id, state, "no-git");
       return;
     }
     const dirty = git(["status", "--porcelain", "-z", "--untracked-files=all"], root);
     if (dirty.status !== 0) fail(`cannot inspect target workspace: ${dirty.stderr.trim()}`);
-    const allowedPrefix = `openspec/changes/${id}/`;
     // Dirt the harness produced itself must not cost this change its worktree.
     // Landing a *previous* change moves its packet into `changes/archive/` and
     // leaves that move uncommitted, so the very next `sandbox create` saw a
@@ -1017,9 +1051,6 @@ export function createSandboxRuntime({
     // for state the operator was told to leave uncommitted. Nothing is lost by
     // ignoring it: `singleRelevantSnapshot` drops `openspec/changes/` that is
     // not this change, and the apply diff excludes this change's own directory.
-    const harnessOwned = (path) =>
-      path.startsWith(".foundation/") || path === ".foundation" ||
-      path.startsWith("openspec/changes/") || path === "openspec/changes";
     // Dirt that was already there when the change began is not this change's
     // doing, and it should not cost the change its worktree. The surface
     // already ignores these paths; without the same test here a single stray
@@ -1027,19 +1058,9 @@ export function createSandboxRuntime({
     // fidelity and, on a large repository, the expensive mode — for a file
     // nobody in this change had touched. Compared by digest, so a pre-existing
     // file the operator has since edited still counts as a dirty target.
-    const preexisting = state.workspace?.preexisting || {};
-    const carriedIn = (path) => {
-      if (!Object.prototype.hasOwnProperty.call(preexisting, path)) return false;
-      const absolute = join(root, path);
-      try {
-        return existsSync(absolute) && preexisting[path] === fileDigest(absolute);
-      } catch {
-        return false;
-      }
-    };
-    const unrelated = porcelainStatusRecords(dirty.stdout).filter(({ path }) =>
-      path !== `openspec/changes/${id}` && !path.startsWith(allowedPrefix) &&
-        !harnessOwned(path) && !carriedIn(path));
+    const unrelated = unrelatedSandboxTargetChanges({
+      root, pathExists: existsSync, fileDigest, porcelainStatusRecords
+    }, id, state, dirty.stdout);
     if (unrelated.length) {
       createCopy(id, state, `dirty-target:${unrelated[0].status} ${unrelated[0].path}`);
       return;

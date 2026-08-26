@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
+  assertSandboxGroundingPortable,
   carrySandboxIgnoredArtifacts,
   carryableGitMetadata,
   commitSandboxReplay,
@@ -25,7 +26,8 @@ import {
   sandboxCopyWorkspace,
   sandboxCreatePreflight,
   showSandboxInspection,
-  setupSelectedRepositories
+  setupSelectedRepositories,
+  unrelatedSandboxTargetChanges
 } from "../runtime/workflow/sandbox-runtime.mjs";
 
 const fail = (message) => { throw new Error(message); };
@@ -272,6 +274,92 @@ test("replay commit preserves recovery artifacts and validates worktree replacem
   commitSandboxReplay(fixture.context, "change", state, prepared);
   assert.equal(state.workspace.baseHead, "root-new");
   assert.equal(fixture.calls.setup, 1);
+});
+
+test("sandbox target dirt excludes owned and unchanged carried-in paths", () => {
+  const rows = [
+    { status: "??", path: "openspec/changes/change" },
+    { status: " M", path: "openspec/changes/change/tasks.md" },
+    { status: "??", path: ".foundation" },
+    { status: "??", path: ".foundation/cache/data" },
+    { status: "??", path: "openspec/changes" },
+    { status: "??", path: "openspec/changes/other/proposal.md" },
+    { status: " M", path: "carried.txt" },
+    { status: " M", path: "changed.txt" },
+    { status: " D", path: "missing.txt" },
+    { status: " M", path: "unreadable.txt" },
+    { status: "??", path: "new.txt" }
+  ];
+  const state = { workspace: { preexisting: {
+    "carried.txt": "same", "changed.txt": "old",
+    "missing.txt": "old", "unreadable.txt": "old"
+  } } };
+  const result = unrelatedSandboxTargetChanges({
+    root: "/repo",
+    porcelainStatusRecords: () => rows,
+    pathExists: (path) => !path.endsWith("missing.txt"),
+    fileDigest: (path) => {
+      if (path.endsWith("unreadable.txt")) throw new Error("permission denied");
+      return path.endsWith("carried.txt") ? "same" : "new";
+    }
+  }, "change", state, "ignored by fixture");
+  assert.deepEqual(result, rows.slice(7));
+
+  assert.deepEqual(unrelatedSandboxTargetChanges({
+    root: "/repo", porcelainStatusRecords: () => [{ status: "??", path: "new.txt" }],
+    pathExists: () => true, fileDigest: () => "digest"
+  }, "change", {}, ""), [{ status: "??", path: "new.txt" }]);
+});
+
+test("sandbox grounding validation accepts absent and packet-local evidence", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-grounding-check-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change");
+  mkdirSync(packet, { recursive: true });
+  const evidence = join(packet, "decision.md");
+  writeFileSync(evidence, "decision\n");
+  const groundingPath = join(packet, "grounding.yaml");
+  const state = { groundingRequired: false };
+  const context = {
+    changePath: () => packet,
+    pathExists: existsSync,
+    readText: readFileSync,
+    selectedRepositories: () => [{ id: "root", path: root, baseHead: "head" }],
+    fileDigest: () => "digest",
+    gitBuffer: () => ({ status: 0 }),
+    fail
+  };
+  assert.doesNotThrow(() => assertSandboxGroundingPortable(context, "change", state));
+  state.groundingRequired = true;
+  writeFileSync(groundingPath, "not-json");
+  assert.doesNotThrow(() => assertSandboxGroundingPortable(context, "change", state));
+  writeFileSync(groundingPath, JSON.stringify({ readSet: [{
+    repository: "root", path: "openspec/changes/change/decision.md", sha256: "digest"
+  }] }));
+  assert.doesNotThrow(() => assertSandboxGroundingPortable(context, "change", state));
+});
+
+test("sandbox grounding validation reports unreadable or changed evidence", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-grounding-failure-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change");
+  mkdirSync(packet, { recursive: true });
+  writeFileSync(join(packet, "grounding.yaml"), JSON.stringify({ readSet: [{
+    repository: "root", path: "missing.md", sha256: "expected"
+  }] }));
+  const context = {
+    changePath: () => packet,
+    pathExists: existsSync,
+    readText: readFileSync,
+    selectedRepositories: () => [{ id: "root", path: root, baseHead: "head" }],
+    fileDigest: () => { throw new Error("unreadable"); },
+    gitBuffer: () => ({ status: 0 }),
+    fail
+  };
+  assert.throws(
+    () => assertSandboxGroundingPortable(context, "change", { groundingRequired: true }),
+    /root:missing\.md \(working-tree-digest-mismatch\)/
+  );
 });
 
 test("sandbox create preflight accepts safe targets and selects repositories", (t) => {
@@ -581,7 +669,10 @@ test("copy workspace state binds source and sandbox snapshots for Git and no-Git
   assert.equal(absent.git, "absent");
 });
 
-function copyRuntimeFixture(t, { carriesGit = false, setup = false } = {}) {
+function copyRuntimeFixture(t, {
+  carriesGit = false, setup = false, status = 0,
+  statusOutput = "?? outside.txt\0", worktreeAddStatus = 0
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), "sandbox-copy-runtime-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const packet = join(root, "openspec", "changes", "change");
@@ -596,8 +687,15 @@ function copyRuntimeFixture(t, { carriesGit = false, setup = false } = {}) {
     mode: "current", path: root, preexisting: { "source.txt": "old" }
   } };
   const saved = [];
+  const gitCalls = [];
   const git = (args) => {
-    if (args[0] === "status") return { status: 0, stdout: "?? outside.txt\0", stderr: "" };
+    gitCalls.push(args);
+    if (args[0] === "status")
+      return { status, stdout: statusOutput, stderr: "status failed" };
+    if (args[0] === "worktree" && args[1] === "add") {
+      if (worktreeAddStatus === 0) mkdirSync(args[3], { recursive: true });
+      return { status: worktreeAddStatus, stdout: "", stderr: "add failed" };
+    }
     if (args.includes("--others")) return { status: 0, stdout: "ignored/\0" };
     if (args[0] === "ls-files")
       return { status: 0, stdout: ".git/HEAD\0openspec/changes/change/tasks.md\0source.txt\0" };
@@ -617,7 +715,9 @@ function copyRuntimeFixture(t, { carriesGit = false, setup = false } = {}) {
     changePath: () => packet,
     gitHead: () => carriesGit ? "head" : null,
     git, gitBuffer: () => ({ status: 0 }),
-    porcelainStatusRecords: () => [{ status: "??", path: "outside.txt" }],
+    porcelainStatusRecords: () => statusOutput
+      ? [{ status: "??", path: "outside.txt" }]
+      : [],
     selectedRepositories: () => [], cleanupRepositorySandboxes: () => {},
     cleanupAppliedSandbox: () => {}, repositoryCatalog: () => ({ drift: [] }),
     clearSnapshotCache: () => {}, validate: () => {},
@@ -626,7 +726,7 @@ function copyRuntimeFixture(t, { carriesGit = false, setup = false } = {}) {
     proofPath: () => join(root, "proof.json"), relevantHash: () => "hash",
     now: () => "now", fail
   });
-  return { root, state, saved, runtime };
+  return { root, state, saved, gitCalls, runtime };
 }
 
 test("createSingle records isolated copies with and without carried Git metadata", (t) => {
@@ -646,4 +746,33 @@ test("createSingle records isolated copies with and without carried Git metadata
   assert.equal(existsSync(join(carried.state.workspace.path, ".git", "worktrees")), false);
   assert.equal(carried.saved.length, 2);
   assert.match(second.rows[0], /setup: ok/);
+});
+
+test("createSingle rejects archived changes and Git inspection failures", (t) => {
+  const archived = copyRuntimeFixture(t);
+  archived.state.status = "archived";
+  assert.throws(() => archived.runtime.createSingle("change"), /already archived/);
+
+  const failed = copyRuntimeFixture(t, { carriesGit: true, status: 128 });
+  assert.throws(() => failed.runtime.createSingle("change"),
+    /cannot inspect target workspace: status failed/);
+});
+
+test("createSingle creates clean worktrees and reports add failures", (t) => {
+  const failed = copyRuntimeFixture(t, {
+    carriesGit: true, statusOutput: "", worktreeAddStatus: 1
+  });
+  assert.throws(() => failed.runtime.createSingle("change"),
+    /cannot create sandbox: add failed/);
+  assert.equal(failed.gitCalls.some((args) => args[1] === "prune"), true);
+
+  const clean = copyRuntimeFixture(t, { carriesGit: true, statusOutput: "" });
+  const output = captureConsole("log", () => clean.runtime.createSingle("change"));
+  assert.equal(clean.state.workspace.mode, "worktree");
+  assert.equal(clean.state.workspace.baseHead, "head");
+  assert.equal(clean.state.status, "building");
+  assert.equal(readFileSync(join(clean.state.workspace.path,
+    "openspec", "changes", "change", "tasks.md"), "utf8"), "- [ ] task\n");
+  assert.equal(clean.saved.length, 1);
+  assert.match(output.rows[0], /SANDBOX change/);
 });
