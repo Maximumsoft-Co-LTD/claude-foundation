@@ -86,6 +86,17 @@ export function signedCiProvider(providers, receiptPath, readJson) {
   }) || null;
 }
 
+export function configuredLandCiIssuers(repositories, repositoryId = null) {
+  const issuers = {};
+  for (const repository of repositories) {
+    if (repositoryId && repository.id !== repositoryId) continue;
+    for (const [name, config] of Object.entries(repository.ci?.issuers || {}))
+      if (config?.algorithm === "ed25519" && String(config.publicKey || "").includes("PUBLIC KEY"))
+        issuers[name] = config;
+  }
+  return issuers;
+}
+
 export function eligibleRootPointerEntries(context, id, state) {
   const {
     orderedRepositories, repositoryCommitLanded, rootGitlink, root, fail
@@ -685,14 +696,7 @@ export function createLandRuntime({
   // for another, and two repositories declaring the same issuer name with
   // different keys silently collided.
   function landCiIssuers(id, repositoryId = null) {
-    const issuers = {};
-    for (const repository of selectedRepositories(id)) {
-      if (repositoryId && repository.id !== repositoryId) continue;
-      for (const [name, config] of Object.entries(repository.ci?.issuers || {}))
-        if (config?.algorithm === "ed25519" && String(config.publicKey || "").includes("PUBLIC KEY"))
-          issuers[name] = config;
-    }
-    return issuers;
+    return configuredLandCiIssuers(selectedRepositories(id), repositoryId);
   }
 
   // Branch name of the checked-out target, or null for detached HEAD or any

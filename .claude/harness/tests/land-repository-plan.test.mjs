@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   ciRepositoryLandStatus,
+  configuredLandCiIssuers,
   createLandRuntime,
   landRepositoryPlanRow,
   readRepositoryLandStatus,
@@ -13,6 +14,40 @@ import {
 } from "../runtime/workflow/land-runtime.mjs";
 
 const fail = (message) => { throw new Error(message); };
+
+test("Land CI issuers are valid Ed25519 keys scoped to the attested repository", () => {
+  const firstKey = "-----BEGIN PUBLIC KEY-----\nfirst\n-----END PUBLIC KEY-----";
+  const secondKey = "-----BEGIN PUBLIC KEY-----\nsecond\n-----END PUBLIC KEY-----";
+  const repositories = [
+    {
+      id: "api",
+      ci: { issuers: {
+        valid: { algorithm: "ed25519", publicKey: firstKey },
+        wrongAlgorithm: { algorithm: "rsa", publicKey: firstKey },
+        missingKey: { algorithm: "ed25519" },
+        malformedKey: { algorithm: "ed25519", publicKey: "not a PEM key" },
+        empty: null
+      } }
+    },
+    {
+      id: "web",
+      ci: { issuers: {
+        valid: { algorithm: "ed25519", publicKey: secondKey },
+        web: { algorithm: "ed25519", publicKey: secondKey }
+      } }
+    },
+    { id: "docs" }
+  ];
+
+  assert.deepEqual(configuredLandCiIssuers(repositories, "api"), {
+    valid: { algorithm: "ed25519", publicKey: firstKey }
+  });
+  assert.deepEqual(configuredLandCiIssuers(repositories, "missing"), {});
+  assert.deepEqual(configuredLandCiIssuers(repositories), {
+    valid: { algorithm: "ed25519", publicKey: secondKey },
+    web: { algorithm: "ed25519", publicKey: secondKey }
+  });
+});
 
 test("read repository status covers isolation, dirt, drift, and readiness", () => {
   const repository = { baseHead: "base" };
