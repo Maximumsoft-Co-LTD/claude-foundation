@@ -5,11 +5,17 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
+  agentExecutionSummary,
+  agentGraphProviderRows,
+  agentPlanBlockingReasons,
   agentPlanGroupSummaries,
   agentPlanGroupView,
   agentPlanNext,
   agentPlanSummaryView,
+  agentTaskExecutionRows,
   changedPlanRepositories,
+  enrichAgentTasks,
+  groupAgentTasks,
   invalidatedPlanTasks,
   persistedPlanOutput,
   propagateInvalidatedTasks,
@@ -27,6 +33,132 @@ const task = (id, options = {}) => ({
   dependsOn: options.dependsOn || [], paths: options.paths || [`src/${id}.js`],
   resources: options.resources || ["workspace:root"], text: options.text || id,
   packetCommand: `packet ${id}`
+});
+
+test("task enrichment validates repositories and dependencies", () => {
+  const context = {
+    modelForTask: () => ({ tier: "standard", family: "sonnet" }), fail
+  };
+  const policy = { execution: { maxParallelAgents: 3 } };
+  const repositories = [{ id: "root" }, { id: "api", dependsOn: ["root"] }];
+  assert.throws(() => enrichAgentTasks(context, "change", [
+    { ...task("T1"), repository: "missing", done: false }
+  ], repositories, policy), /unselected repository 'missing'/);
+  assert.throws(() => enrichAgentTasks(context, "change", [
+    { ...task("T1"), done: false, dependsOn: ["T404"] }
+  ], repositories, policy), /depends on unknown task\(s\): T404/);
+});
+
+test("task enrichment applies precise and repository dependency policy", () => {
+  const context = {
+    modelForTask: (_id, value) => ({ tier: value.kind === "code" ? "deep" : "fast" }),
+    fail
+  };
+  const allTasks = [
+    { ...task("T0"), done: true },
+    { ...task("T1"), done: false, resources: ["db", "db"] },
+    { ...task("T2"), done: false, repository: "api", dependsOn: [], resources: [] },
+    { ...task("T3"), done: false, repository: "api", dependsOn: ["T0"], resources: [] }
+  ];
+  const result = enrichAgentTasks(context, "change", allTasks,
+    [{ id: "root" }, { id: "api", dependsOn: ["root"] }], {});
+  assert.deepEqual([...result.completed], ["T0"]);
+  assert.deepEqual(result.tasks[1].dependsOn, ["T1"]);
+  assert.deepEqual(result.tasks[2].dependsOn, ["T0"]);
+  assert.deepEqual(result.tasks[0].resources, ["db", "workspace:root"]);
+  assert.deepEqual(result.tasks[1].resources, ["workspace:api"]);
+  assert.equal(result.tasks[0].model.tier, "deep");
+  assert.equal(result.tasks[0].packetCommand,
+    "claude-foundation packet change --task T1");
+  assert.ok(result.tasks.every((value) => value.leaseKeys.length > 0));
+});
+
+test("task grouping respects dependencies, conflicts, and parallel limits", () => {
+  const tasks = [
+    { ...task("T1"), done: false },
+    { ...task("T2"), done: false },
+    { ...task("T3", { dependsOn: ["T1"] }), done: false }
+  ];
+  assert.deepEqual(groupAgentTasks(tasks, new Set(), 2,
+    (left, right) => left.id === "T1" && right.id === "T2", fail),
+  [["T1"], ["T2", "T3"]]);
+  assert.throws(() => groupAgentTasks([
+    { ...task("T1", { dependsOn: ["T2"] }), done: false },
+    { ...task("T2", { dependsOn: ["T1"] }), done: false }
+  ], new Set(), 2, () => false, fail), /task dependency cycle/);
+});
+
+test("execution summary selects proof, single-agent, and planned routes", () => {
+  assert.equal(agentExecutionSummary([], true).recommendedExecution, "proof-ready");
+  const tasks = [
+    { ...task("T1"), model: { tier: "standard", family: "sonnet" } },
+    { ...task("T2"), model: { tier: "deep", family: "opus" } }
+  ];
+  const single = agentExecutionSummary(tasks, true);
+  assert.equal(single.recommendedExecution, "single-agent");
+  assert.equal(single.sessionTask.id, "T2");
+  assert.equal(single.sessionModel.family, "opus");
+  assert.match(single.executionReason, /highest required tier is deep/);
+  const planned = agentExecutionSummary(tasks, false);
+  assert.equal(planned.recommendedExecution, "planned-agents");
+  assert.equal(planned.sessionModel, null);
+});
+
+test("task execution preserves history and binds the current graph", () => {
+  const rows = agentTaskExecutionRows([
+    task("T1"), { ...task("T2"), repository: "api" }
+  ], false, { taskExecution: { old: { mode: "prior" } } }, {
+    revision: 4, identity: "graph-id"
+  });
+  assert.deepEqual(rows.old, { mode: "prior" });
+  assert.deepEqual(rows.T2, {
+    mode: "lease-result", repository: "api",
+    graphRevision: 4, graphIdentity: "graph-id"
+  });
+  assert.equal(agentTaskExecutionRows([task("T1")], true, {}, {
+    revision: 1, identity: "one"
+  }).T1.mode, "single-agent-observed");
+});
+
+test("blocking reasons combine ambiguity and active scope conflicts", () => {
+  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "clear" }, []), []);
+  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "unclear" }, [{
+    key: "path:root:src <> path:root:src", changeId: "other"
+  }]), [
+    "ambiguity requires /investigate",
+    "scope path:root:src <> path:root:src is active in other"
+  ]);
+});
+
+test("graph provider rows support contract defaults and configured providers", () => {
+  const fallback = agentGraphProviderRows({
+    requiredProviders: null, providerConfig: null,
+    providerCapability: (provider) => provider,
+    providerRepositories: null, claimsForProvider: null, stableHash
+  }, "change", { providers: { test: { repository: "root" } } });
+  assert.deepEqual(fallback[0].repositories, []);
+  assert.equal(fallback[0].repository, "root");
+  assert.equal(fallback[0].claims, null);
+
+  const configured = agentGraphProviderRows({
+    requiredProviders: () => ["test"],
+    providerConfig: () => ({
+      repositories: ["ignored"], dependsOn: ["lint"], resources: ["workspace-read"],
+      inputSchema: "in", outputSchema: "out"
+    }),
+    providerCapability: () => "tests",
+    providerRepositories: () => [{ id: "api" }],
+    claimsForProvider: () => [{ id: "claim-1" }], stableHash
+  }, "change", { providers: {} });
+  assert.deepEqual(configured[0], {
+    id: "test", capability: "tests", repository: null,
+    repositories: ["api"], dependsOn: ["lint"], resources: ["workspace-read"],
+    claims: ["claim-1"], inputSchema: "in", outputSchema: "out",
+    configurationIdentity: stableHash({
+      repositories: ["ignored"], dependsOn: ["lint"], resources: ["workspace-read"],
+      inputSchema: "in", outputSchema: "out"
+    }), required: true
+  });
 });
 
 function plan(options = {}) {

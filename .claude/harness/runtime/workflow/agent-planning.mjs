@@ -259,6 +259,133 @@ export function repositoryConflictRows(other, wanted, held, overlap) {
   return conflicts;
 }
 
+export function enrichAgentTasks(context, id, allTasks, repositories, selectedPolicy) {
+  const repositoryMap = new Map(repositories.map((repository) => [repository.id, repository]));
+  const tasks = allTasks.filter((task) => !task.done);
+  const ids = new Set(allTasks.map((task) => task.id));
+  const completed = new Set(allTasks.filter((task) => task.done).map((task) => task.id));
+  for (const task of tasks) {
+    if (!repositoryMap.has(task.repository))
+      context.fail(`task '${task.id}' references unselected repository '${task.repository}'`);
+    const unknown = task.dependsOn.filter((dependency) => !ids.has(dependency));
+    if (unknown.length)
+      context.fail(`task '${task.id}' depends on unknown task(s): ${unknown.join(", ")}`);
+    const repository = repositoryMap.get(task.repository);
+    // A task-level dependency is precise enough to replace the repository's
+    // coarse dependency edge. Without it every task in the dependency repo
+    // would unnecessarily serialize this task.
+    if (task.dependsOn.length === 0)
+      for (const dependencyRepository of repository.dependsOn || [])
+        for (const dependencyTask of tasks.filter((candidate) =>
+          candidate.repository === dependencyRepository))
+          if (!task.dependsOn.includes(dependencyTask.id))
+            task.dependsOn.push(dependencyTask.id);
+    task.resources = [...new Set([`workspace:${task.repository}`, ...task.resources])].sort();
+    task.leaseKeys = conflictKeysForTask(task);
+    task.model = context.modelForTask(id, task, selectedPolicy);
+    task.packetCommand = `claude-foundation packet ${id} --task ${task.id}`;
+  }
+  return { tasks, completed };
+}
+
+export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesConflict, fail) {
+  const pending = new Map(tasks.map((task) => [task.id, task]));
+  const groups = [];
+  while (pending.size) {
+    const ready = [...pending.values()].filter((task) =>
+      task.dependsOn.every((dependency) => completed.has(dependency)));
+    if (!ready.length) {
+      const cycle = findCyclePath(new Map([...pending.values()].map((task) =>
+        [task.id, task.dependsOn.filter((dependency) => pending.has(dependency))])));
+      fail(cycle
+        ? `task dependency cycle: ${cycle.join(" -> ")}`
+        : `task dependency deadlock: ${[...pending.keys()].join(", ")}`);
+    }
+    const group = [];
+    for (const task of ready) {
+      const conflicts = group.some((selected) => resourcesConflict(selected, task));
+      if (!conflicts && group.length < maxParallelAgents) group.push(task);
+    }
+    if (!group.length) group.push(ready[0]);
+    groups.push(group.map((task) => task.id));
+    for (const task of group) {
+      pending.delete(task.id);
+      completed.add(task.id);
+    }
+  }
+  return groups;
+}
+
+export function agentExecutionSummary(tasks, singleAgent) {
+  const tierRank = { fast: 0, standard: 1, deep: 2 };
+  const sessionTask = tasks.reduce((highest, task) =>
+    !highest || tierRank[task.model.tier] > tierRank[highest.model.tier] ? task : highest, null);
+  if (tasks.length === 0) return {
+    sessionTask: null,
+    recommendedExecution: "proof-ready",
+    sessionModel: null,
+    executionReason: "all implementation tasks are complete"
+  };
+  if (singleAgent) return {
+    sessionTask,
+    recommendedExecution: "single-agent",
+    sessionModel: sessionTask.model,
+    executionReason: `one repository; highest required tier is ${sessionTask.model.tier}`
+  };
+  return {
+    sessionTask,
+    recommendedExecution: "planned-agents",
+    sessionModel: null,
+    executionReason: "independent dependency/resource groups require planned dispatch"
+  };
+}
+
+export function agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph) {
+  const execution = { ...(priorPlan.taskExecution || {}) };
+  for (const task of tasks) execution[task.id] = {
+    mode: singleAgent ? "single-agent-observed" : "lease-result",
+    repository: task.repository,
+    graphRevision: graph.revision,
+    graphIdentity: graph.identity
+  };
+  return execution;
+}
+
+export function agentPlanBlockingReasons(state, conflicts) {
+  return [
+    ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
+    ...conflicts.map((conflict) =>
+      `scope ${conflict.key} is active in ${conflict.changeId}`)
+  ];
+}
+
+export function agentGraphProviderRows(context, id, contract) {
+  const providers = context.requiredProviders
+    ? context.requiredProviders(id)
+    : Object.keys(contract.providers || {});
+  return providers.map((provider) => {
+    const config = context.providerConfig?.(id, provider) ||
+      contract.providers?.[provider] || {};
+    return {
+      id: provider,
+      capability: context.providerCapability(provider, config),
+      repository: config.repository || null,
+      repositories: context.providerRepositories
+        ? context.providerRepositories(id, provider, config).map((repository) => repository.id)
+        : config.repositories || [],
+      dependsOn: config.dependsOn || [],
+      resources: config.resources || [],
+      claims: context.claimsForProvider
+        ? context.claimsForProvider(id, provider).map((claim) => claim.id)
+        : null,
+      inputSchema: config.inputSchema || null,
+      outputSchema: config.outputSchema || null,
+      configurationIdentity: context.stableHash(config),
+      required: true
+    };
+  });
+}
+
 export function activeRepositoryConflictsOperation(
   context, id, repositories, { executing = false } = {}
 ) {
@@ -349,87 +476,26 @@ export function createAgentPlanner({
     const state = loadRuntime(id);
     const selectedPolicy = policy();
     const repositories = selectedRepositories(id, state);
-    const repositoryMap = new Map(repositories.map((repository) => [repository.id, repository]));
     const allTasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
       .map((task) => ({
         ...taskMetadata(task),
         authorityDigest: stableHash(task.text.replace(/\s+/g, " ").trim())
       }));
-    const tasks = allTasks.filter((task) => !task.done);
-    const ids = new Set(allTasks.map((task) => task.id));
-    const completed = new Set(allTasks.filter((task) => task.done).map((task) => task.id));
-    for (const task of tasks) {
-      if (!repositoryMap.has(task.repository))
-        fail(`task '${task.id}' references unselected repository '${task.repository}'`);
-      const unknown = task.dependsOn.filter((dependency) => !ids.has(dependency));
-      if (unknown.length)
-        fail(`task '${task.id}' depends on unknown task(s): ${unknown.join(", ")}`);
-      const repository = repositoryMap.get(task.repository);
-      // Repo-level `dependsOn` is a blunt instrument: it makes every task here
-      // wait for every task there. That is the safe default when the author has
-      // said nothing, but a task that declares its own `[depends:]` has said
-      // precisely what it needs — adding the coarse edges on top would
-      // serialize work the author already sequenced.
-      const authorSequenced = task.dependsOn.length > 0;
-      if (!authorSequenced)
-        for (const dependencyRepository of repository.dependsOn || [])
-          for (const dependencyTask of tasks.filter((candidate) =>
-            candidate.repository === dependencyRepository))
-            if (!task.dependsOn.includes(dependencyTask.id)) task.dependsOn.push(dependencyTask.id);
-      task.resources = [...new Set([`workspace:${task.repository}`, ...task.resources])].sort();
-      task.leaseKeys = conflictKeysForTask(task);
-      task.model = modelForTask(id, task, selectedPolicy);
-      task.packetCommand = `claude-foundation packet ${id} --task ${task.id}`;
-    }
-    const pending = new Map(tasks.map((task) => [task.id, task]));
-    const groups = [];
-    while (pending.size) {
-      const ready = [...pending.values()].filter((task) =>
-        task.dependsOn.every((dependency) => completed.has(dependency)));
-      if (!ready.length) {
-        // Unknown dependencies already failed above and done tasks are in
-        // `completed`, so a stuck graph here can only be a cycle among the
-        // pending tasks — name one concrete cycle instead of every pending id.
-        const cycle = findCyclePath(new Map([...pending.values()].map((task) =>
-          [task.id, task.dependsOn.filter((dependency) => pending.has(dependency))])));
-        fail(cycle
-          ? `task dependency cycle: ${cycle.join(" -> ")}`
-          : `task dependency deadlock: ${[...pending.keys()].join(", ")}`);
-      }
-      const group = [];
-      for (const task of ready) {
-        const conflicts = group.some((selected) => taskResourcesConflict(selected, task));
-        if (!conflicts && group.length < selectedPolicy.execution.maxParallelAgents) group.push(task);
-      }
-      if (!group.length) group.push(ready[0]);
-      groups.push(group.map((task) => task.id));
-      for (const task of group) {
-        pending.delete(task.id);
-        completed.add(task.id);
-      }
-    }
+    const { tasks, completed } = enrichAgentTasks({ modelForTask, fail },
+      id, allTasks, repositories, selectedPolicy);
+    const groups = groupAgentTasks(tasks, completed,
+      selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail);
     const contract = evidence(id);
     const claims = contract.claims;
     const singleAgent = singleAgentExecutionEligible(tasks, claims);
     const priorPlanPath = join(plans, `${id}.json`);
     const priorPlan = existsSync(priorPlanPath) ? readJson(priorPlanPath, {}) : {};
-    const taskExecution = { ...(priorPlan.taskExecution || {}) };
-    for (const task of tasks) taskExecution[task.id] = {
-      mode: singleAgent ? "single-agent-observed" : "lease-result",
-      repository: task.repository
-    };
-    const tierRank = { fast: 0, standard: 1, deep: 2 };
-    const sessionTask = tasks.reduce((highest, task) =>
-      !highest || tierRank[task.model.tier] > tierRank[highest.model.tier] ? task : highest, null);
     const conflicts = activeRepositoryConflicts(id, repositories);
-    const blockingReasons = [
-      ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
-      ...conflicts.map((conflict) =>
-        `scope ${conflict.key} is active in ${conflict.changeId}`)
-    ];
+    const blockingReasons = agentPlanBlockingReasons(state, conflicts);
+    const execution = agentExecutionSummary(tasks, singleAgent);
     const instructionManifest = recordInstructionManifest?.(id, "build", {
       scope: "plan",
-      requestedModel: singleAgent ? sessionTask?.model?.tier || null : null
+      requestedModel: singleAgent ? execution.sessionTask?.model?.tier || null : null
     });
     const workspaceHash = relevantHash(id);
     const graph = compileExecutionGraph({
@@ -442,32 +508,13 @@ export function createAgentPlanner({
         resources: [...new Set([`workspace:${task.repository}`, ...(task.resources || [])])]
       })),
       claims,
-      providers: (requiredProviders ? requiredProviders(id) : Object.keys(contract.providers || {}))
-        .map((provider) => {
-        const config = providerConfig?.(id, provider) || contract.providers?.[provider] || {};
-        return {
-        id: provider,
-        capability: providerCapability(provider, config),
-        repository: config.repository || null,
-        repositories: providerRepositories
-          ? providerRepositories(id, provider, config).map((repository) => repository.id)
-          : config.repositories || [],
-        dependsOn: config.dependsOn || [],
-        resources: config.resources || [],
-        claims: claimsForProvider ? claimsForProvider(id, provider).map((claim) => claim.id) : null,
-        inputSchema: config.inputSchema || null,
-        outputSchema: config.outputSchema || null,
-        configurationIdentity: stableHash(config),
-        required: true
-        };
-      }),
+      providers: agentGraphProviderRows({
+        requiredProviders, providerConfig, providerCapability,
+        providerRepositories, claimsForProvider, stableHash
+      }, id, contract),
       stableHash
     });
-    for (const task of tasks) taskExecution[task.id] = {
-      ...taskExecution[task.id],
-      graphRevision: graph.revision,
-      graphIdentity: graph.identity
-    };
+    const taskExecution = agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph);
     const basePlan = {
       version: Number(schemaVersion),
       changeId: id,
@@ -486,14 +533,9 @@ export function createAgentPlanner({
       })),
       tasks,
       groups,
-      recommendedExecution: tasks.length === 0
-        ? "proof-ready" : singleAgent ? "single-agent" : "planned-agents",
-      sessionModel: singleAgent ? sessionTask.model : null,
-      executionReason: tasks.length === 0
-        ? "all implementation tasks are complete"
-        : singleAgent
-          ? `one repository; highest required tier is ${sessionTask.model.tier}`
-          : "independent dependency/resource groups require planned dispatch",
+      recommendedExecution: execution.recommendedExecution,
+      sessionModel: execution.sessionModel,
+      executionReason: execution.executionReason,
       conflicts,
       blockingReasons,
       dispatchable: blockingReasons.length === 0,
