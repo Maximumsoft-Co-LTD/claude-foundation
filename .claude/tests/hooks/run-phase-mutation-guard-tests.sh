@@ -9,6 +9,8 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/openspec/changes/demo" "$TMP/project/.foundation" "$TMP/workspace/src" "$TMP/outside"
 HOOK="$ROOT/.claude/hooks/phase-mutation-guard.mjs"
 
+node --test "$ROOT/.claude/tests/hooks/phase-state.test.mjs"
+
 invoke() {
   phase="$1" mode="$2" workspace="$3" event="$4"
   printf '%s' "$event" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE="$phase" \

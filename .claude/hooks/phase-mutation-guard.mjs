@@ -9,6 +9,7 @@ import {
   realpathSync, renameSync, statSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { recordedPhase } from "./phase-state.mjs";
 
 // Large enough that a real audit trail survives a working session, small enough
 // that an unattended project never carries an unbounded file.
@@ -45,7 +46,14 @@ if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
 if (tool === "Bash" && !looksMutating(String(input.command || ""))) process.exit(0);
 
 const projectRoot = canonical(process.env.CLAUDE_PROJECT_DIR || process.cwd());
-const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recordedPhase()).toLowerCase();
+const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recordedPhase({
+  projectRoot,
+  freshnessMs: PHASE_FRESHNESS_MS,
+  pathExists: existsSync,
+  readDirectory: (path) => readdirSync(path, { withFileTypes: true }),
+  readText: readFileSync,
+  nowMs: Date.now
+})).toLowerCase();
 const violations = [];
 
 // Block mode still fails closed: a host that asked for enforcement gets it
@@ -145,34 +153,6 @@ function looksMutating(command) {
     // 2>/dev/null are how read-only commands silence noise, and >&2 / 2>&1
     // are fd duplication, not writes.
     || /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/null(?:[\s;&|)]|$))\S/m.test(stripped);
-}
-
-// The host is not the only thing that knows the phase. Every `/build`,
-// `/prove` and `/land` runs `packet <change> --phase <phase>`, which appends a
-// row here — so on a stock install, where nothing exports
-// FOUNDATION_ACTIVE_PHASE, this is what the guard reads.
-function recordedPhase() {
-  try {
-    const logs = join(projectRoot, ".foundation", "logs");
-    if (!existsSync(logs)) return "";
-    let newest = null;
-    for (const entry of readdirSync(logs, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const path = join(logs, entry.name, "phase-context.jsonl");
-      if (!existsSync(path)) continue;
-      const last = readFileSync(path, "utf8").split("\n").filter(Boolean).at(-1);
-      if (!last) continue;
-      let row;
-      try { row = JSON.parse(last); } catch { continue; }
-      const at = Date.parse(row?.timestamp || "");
-      if (!Number.isFinite(at)) continue;
-      if (!newest || at > newest.at) newest = { at, phase: String(row.phase || "") };
-    }
-    if (!newest || Date.now() - newest.at > PHASE_FRESHNESS_MS) return "";
-    return newest.phase;
-  } catch {
-    return "";
-  }
 }
 
 function eventPaths(value) {
