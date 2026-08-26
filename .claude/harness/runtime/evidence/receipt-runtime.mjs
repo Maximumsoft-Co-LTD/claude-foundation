@@ -64,6 +64,230 @@ export function approvedGroundingRevision(state, currentContractFingerprint) {
     row.contractFingerprint === currentContractFingerprint) || null;
 }
 
+export function deterministicReviewClosureSource(delivered) {
+  const source = delivered.at(-1);
+  return delivered.length >= 2 && source?.resultStatus === "fail" &&
+    source.scope?.mode === "delta" ? source : null;
+}
+
+export function repairClosureBindingsComplete(blockers) {
+  return blockers.length > 0 && blockers.every((finding) =>
+    String(finding.path || "").trim() &&
+    finding.claimIds?.length && finding.verificationCaseIds?.length);
+}
+
+export function currentRepairProviders(context, id, workspaceHash) {
+  const current = context.requiredProviders(id)
+    .filter((candidate) => {
+      const capability = context.providerCapability(
+        candidate, context.providerConfig(id, candidate));
+      return capability !== "review" && capability !== "acceptance";
+    })
+    .map((candidate) => ({
+      provider: candidate,
+      config: context.providerConfig(id, candidate),
+      validity: context.receiptValidity(id, candidate, workspaceHash)
+    }));
+  return {
+    current,
+    invalid: current.filter((row) => row.validity.validity !== "valid")
+  };
+}
+
+export function repairClosureEvidenceBindings(context, id, blockers, current) {
+  const bindings = [];
+  for (const finding of blockers) {
+    for (const claimId of finding.claimIds) {
+      for (const caseId of finding.verificationCaseIds) {
+        const row = current.find((candidate) =>
+          context.claimsForProvider(id, candidate.provider)
+            .some((claim) => claim.id === claimId) &&
+          (candidate.config?.criticalCases || []).includes(caseId));
+        if (!row)
+          return {
+            error: {
+              closed: false,
+              route: "AUTO_REPAIR",
+              reason: `No current executable provider binds finding '${finding.id}' to claim '${claimId}' and critical case '${caseId}'.`,
+              findingId: finding.id,
+              claimId,
+              caseId
+            }
+          };
+        const evidencePath = context.receiptPath(id, row.provider);
+        const evidenceReceipt = context.readJson(evidencePath, {});
+        bindings.push({
+          provider: row.provider,
+          findingId: finding.id,
+          claimId,
+          caseId,
+          bindingSource: finding.bindingSource,
+          receiptDigest: context.stableHash(evidenceReceipt),
+          receipt: context.relativeReceipt(evidencePath)
+        });
+      }
+    }
+  }
+  return { bindings };
+}
+
+export function uniqueRepairEvidenceBindings(bindings) {
+  return [...new Map(bindings.sort((left, right) =>
+    `${left.provider}/${left.claimId}/${left.caseId}`.localeCompare(
+      `${right.provider}/${right.claimId}/${right.caseId}`))
+    .map((row) => [
+      `${row.findingId}/${row.provider}/${row.claimId}/${row.caseId}`, row
+    ])).values()];
+}
+
+export function deterministicClosureIsBound(context, id, prior, source) {
+  const priorClosure = prior?.review?.repairClosure || null;
+  const directlyBound = prior?.status === "fail" &&
+    prior?.review?.attemptDigest === source.digest;
+  const priorClosureAttempt = priorClosure && prior?.review?.attemptDigest
+    ? context.reviewAttemptByDigest(id, prior.review.attemptDigest) : null;
+  const closureBound = prior?.status === "pass" &&
+    priorClosure?.sourceAttemptDigest === source.digest &&
+    priorClosureAttempt && context.reviewAttemptIsValid(prior, priorClosureAttempt);
+  return Boolean(directlyBound || closureBound);
+}
+
+export function deterministicRepairClosureValue({
+  contractChanged, source, prior, priorClosure, currentContractFingerprint,
+  approvedRevision, blockers, evidenceBindings
+}) {
+  return {
+    version: 1,
+    kind: contractChanged
+      ? "deterministic-after-approved-contract-revision"
+      : "deterministic-after-bounded-ai",
+    sourceAttemptDigest: source.digest,
+    sourceWorkspaceHash: source.workspaceHash,
+    sourceContractFingerprint: priorClosure?.sourceContractFingerprint ||
+      prior.contractFingerprint,
+    contractFingerprint: currentContractFingerprint,
+    ...(approvedRevision ? {
+      approvedRevision: {
+        decisionRef: approvedRevision.decisionRef,
+        reason: approvedRevision.reason,
+        priorDigest: approvedRevision.priorDigest,
+        newDigest: approvedRevision.newDigest,
+        completedAt: approvedRevision.completedAt
+      }
+    } : {}),
+    findingBindings: blockers.map((finding) => ({
+      findingId: finding.id,
+      source: finding.bindingSource,
+      claimIds: finding.claimIds,
+      verificationCaseIds: finding.verificationCaseIds
+    })),
+    evidenceBindings
+  };
+}
+
+export function recordDeterministicReviewClosureOperation(
+  context, id, provider, workspaceHash
+) {
+  const config = context.providerConfig(id, provider);
+  if (context.providerCapability(provider, config) !== "review") return null;
+  const source = deterministicReviewClosureSource(context.deliveredAiAttempts(id));
+  if (!source) return null;
+  const priorPath = context.receiptPath(id, provider);
+  const prior = context.exists(priorPath) ? context.readJson(priorPath, {}) : null;
+  const priorClosure = prior?.review?.repairClosure || null;
+  if (!deterministicClosureIsBound(context, id, prior, source))
+    return {
+      closed: false,
+      route: "CONTRACT_DECISION_REQUIRED",
+      reason: "Neither the failed final AI delta nor a valid deterministic closure of it is currently bound to this change."
+    };
+  const currentContractFingerprint = context.contractFingerprint(id);
+  const contractChanged = prior.contractFingerprint !== currentContractFingerprint;
+  const approvedRevision = approvedGroundingRevision(
+    context.loadRuntime(id), currentContractFingerprint);
+  if (contractChanged && !approvedRevision)
+    return {
+      closed: false,
+      route: "CONTRACT_DECISION_REQUIRED",
+      reason: "The agreement changed after the final AI delta without a completed locked Decision Sheet revision."
+    };
+  if (source.workspaceHash === workspaceHash)
+    return {
+      closed: false,
+      route: "AUTO_REPAIR",
+      reason: "The final AI delta still describes the current workspace; repair its blocker/major findings before advancing."
+    };
+  const blockers = repairClosureFindings(
+    (source.findings || []).filter((finding) =>
+      ["blocker", "major"].includes(finding.severity)),
+    (finding) => groundedRepairBinding(context.groundingForReview(id), finding));
+  if (!repairClosureBindingsComplete(blockers))
+    return {
+      closed: false,
+      route: "AUTO_REPAIR",
+      reason: "Final blocker/major findings must name a path, claimIds, and verificationCaseIds before deterministic closure is possible."
+    };
+  const { current, invalid: invalidProviders } = currentRepairProviders(context,
+    id, workspaceHash);
+  if (invalidProviders.length)
+    return {
+      closed: false,
+      route: "AUTO_REPAIR",
+      reason: "Current non-review proof is not yet valid for every required provider.",
+      providers: invalidProviders.map((row) => ({
+        provider: row.provider, validity: row.validity.validity
+      }))
+    };
+  const bindingResult = repairClosureEvidenceBindings(
+    context, id, blockers, current);
+  if (bindingResult.error) return bindingResult.error;
+  const evidenceBindings = uniqueRepairEvidenceBindings(bindingResult.bindings);
+  const scopePaths = [...new Set(blockers.map((finding) => finding.path))].sort();
+  const scopeDigest = context.stableHash({
+    priorWorkspaceHash: prior.workspaceHash || null,
+    workspaceHash,
+    paths: scopePaths
+  });
+  const verifiedFindingIds = blockers.map((finding) => finding.id).sort();
+  const attempt = context.recordRepairClosureAttempt(id, {
+    sourceAttemptDigest: source.digest,
+    workspaceHash,
+    paths: scopePaths,
+    scopeDigest,
+    verifiedFindingIds,
+    evidenceBindings
+  });
+  const repairClosure = deterministicRepairClosureValue({
+    contractChanged, source, prior, priorClosure, currentContractFingerprint,
+    approvedRevision, blockers, evidenceBindings
+  });
+  context.recordReceipt(id, provider, "pass", {
+    claims: "declared",
+    workspaceHash,
+    observed: `closed final AI finding IDs ${verifiedFindingIds.join(", ")} with current declared critical-case evidence`,
+    source: `foundation-repair-closure:${source.digest}`,
+    reference: evidenceBindings.map((row) => row.receipt),
+    "reviewer-type": "deterministic",
+    "reviewer-identity": "foundation-repair-closure",
+    "subject-provenance": (prior.review.subjects || []).map((subject) =>
+      JSON.stringify(subject)),
+    "unresolved-blockers": 0,
+    "verified-findings": verifiedFindingIds.length,
+    findings: [],
+    verifiedFindingIds,
+    "scope-path": scopePaths,
+    "review-attempt": attempt.digest
+  }, { repairClosure, quiet: true });
+  return {
+    closed: true,
+    provider,
+    sourceAttemptDigest: source.digest,
+    attemptDigest: attempt.digest,
+    findingIds: verifiedFindingIds,
+    evidenceBindings
+  };
+}
+
 export function createReceiptRuntime({
   ROOT, LOGS, PROVIDERS, INPUT_MODES, providerWorkspace,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
@@ -669,181 +893,15 @@ export function createReceiptRuntime({
     if (!options.quiet) console.log(`RECEIPT ${id}/${provider}: ${status}`);
   }
 
-  function recordDeterministicReviewClosure(id, provider, workspaceHash) {
-    const config = providerConfig(id, provider);
-    if (providerCapability(provider, config) !== "review") return null;
-    const delivered = deliveredAiAttempts(id);
-    const source = delivered.at(-1);
-    if (delivered.length < 2 || source?.resultStatus !== "fail" ||
-        source.scope?.mode !== "delta") return null;
-    const priorPath = receiptPath(id, provider);
-    const prior = existsSync(priorPath) ? readJson(priorPath, {}) : null;
-    const priorClosure = prior?.review?.repairClosure || null;
-    const directlyBound = prior?.status === "fail" &&
-      prior?.review?.attemptDigest === source.digest;
-    const priorClosureAttempt = priorClosure && prior?.review?.attemptDigest
-      ? reviewAttemptByDigest(id, prior.review.attemptDigest) : null;
-    const closureBound = prior?.status === "pass" &&
-      priorClosure?.sourceAttemptDigest === source.digest &&
-      priorClosureAttempt && reviewAttemptIsValid(prior, priorClosureAttempt);
-    if (!directlyBound && !closureBound)
-      return {
-        closed: false,
-        route: "CONTRACT_DECISION_REQUIRED",
-        reason: "Neither the failed final AI delta nor a valid deterministic closure of it is currently bound to this change."
-      };
-    const currentContractFingerprint = contractFingerprint(id);
-    const contractChanged = prior.contractFingerprint !== currentContractFingerprint;
-    const state = loadRuntime(id);
-    const approvedRevision = approvedGroundingRevision(
-      state, currentContractFingerprint);
-    if (contractChanged && !approvedRevision)
-      return {
-        closed: false,
-        route: "CONTRACT_DECISION_REQUIRED",
-        reason: "The agreement changed after the final AI delta without a completed locked Decision Sheet revision."
-      };
-    if (source.workspaceHash === workspaceHash)
-      return {
-        closed: false,
-        route: "AUTO_REPAIR",
-        reason: "The final AI delta still describes the current workspace; repair its blocker/major findings before advancing."
-      };
-    const blockers = repairClosureFindings(
-      (source.findings || []).filter((finding) =>
-        ["blocker", "major"].includes(finding.severity)),
-      (finding) => groundedRepairBinding(groundingForReview(id), finding));
-    if (!blockers.length || blockers.some((finding) =>
-      !String(finding.path || "").trim() ||
-      !finding.claimIds?.length || !finding.verificationCaseIds?.length))
-      return {
-        closed: false,
-        route: "AUTO_REPAIR",
-        reason: "Final blocker/major findings must name a path, claimIds, and verificationCaseIds before deterministic closure is possible."
-      };
-
-    const currentProviders = requiredProviders(id).filter((candidate) => {
-      const capability = providerCapability(candidate, providerConfig(id, candidate));
-      return capability !== "review" && capability !== "acceptance";
+  const recordDeterministicReviewClosure =
+    recordDeterministicReviewClosureOperation.bind(null, {
+      providerConfig, providerCapability, deliveredAiAttempts, receiptPath,
+      exists: existsSync, readJson, reviewAttemptByDigest, reviewAttemptIsValid,
+      contractFingerprint, loadRuntime, groundingForReview, requiredProviders,
+      receiptValidity, claimsForProvider, stableHash,
+      relativeReceipt: (path) => relative(ROOT, path),
+      recordRepairClosureAttempt, recordReceipt
     });
-    const current = currentProviders.map((candidate) => ({
-      provider: candidate,
-      config: providerConfig(id, candidate),
-      validity: receiptValidity(id, candidate, workspaceHash)
-    }));
-    const invalidProviders = current.filter((row) => row.validity.validity !== "valid");
-    if (invalidProviders.length)
-      return {
-        closed: false,
-        route: "AUTO_REPAIR",
-        reason: "Current non-review proof is not yet valid for every required provider.",
-        providers: invalidProviders.map((row) => ({
-          provider: row.provider, validity: row.validity.validity
-        }))
-      };
-
-    const bindings = [];
-    for (const finding of blockers) {
-      for (const claimId of finding.claimIds) {
-        for (const caseId of finding.verificationCaseIds) {
-          const row = current.find((candidate) =>
-            claimsForProvider(id, candidate.provider).some((claim) => claim.id === claimId) &&
-            (candidate.config?.criticalCases || []).includes(caseId));
-          if (!row)
-            return {
-              closed: false,
-              route: "AUTO_REPAIR",
-              reason: `No current executable provider binds finding '${finding.id}' to claim '${claimId}' and critical case '${caseId}'.`,
-              findingId: finding.id,
-              claimId,
-              caseId
-            };
-          const evidencePath = receiptPath(id, row.provider);
-          const evidenceReceipt = readJson(evidencePath, {});
-          bindings.push({
-            provider: row.provider,
-            findingId: finding.id,
-            claimId,
-            caseId,
-            bindingSource: finding.bindingSource,
-            receiptDigest: stableHash(evidenceReceipt),
-            receipt: relative(ROOT, evidencePath)
-          });
-        }
-      }
-    }
-    const evidenceBindings = [...new Map(bindings.sort((left, right) =>
-      `${left.provider}/${left.claimId}/${left.caseId}`.localeCompare(
-        `${right.provider}/${right.claimId}/${right.caseId}`))
-      .map((row) => [`${row.findingId}/${row.provider}/${row.claimId}/${row.caseId}`, row])).values()];
-    const scopePaths = [...new Set(blockers.map((finding) => finding.path))].sort();
-    const scopeDigest = stableHash({
-      priorWorkspaceHash: prior.workspaceHash || null,
-      workspaceHash,
-      paths: scopePaths
-    });
-    const verifiedFindingIds = blockers.map((finding) => finding.id).sort();
-    const attempt = recordRepairClosureAttempt(id, {
-      sourceAttemptDigest: source.digest,
-      workspaceHash,
-      paths: scopePaths,
-      scopeDigest,
-      verifiedFindingIds,
-      evidenceBindings
-    });
-    const repairClosure = {
-      version: 1,
-      kind: contractChanged
-        ? "deterministic-after-approved-contract-revision"
-        : "deterministic-after-bounded-ai",
-      sourceAttemptDigest: source.digest,
-      sourceWorkspaceHash: source.workspaceHash,
-      sourceContractFingerprint: priorClosure?.sourceContractFingerprint ||
-        prior.contractFingerprint,
-      contractFingerprint: currentContractFingerprint,
-      ...(approvedRevision ? {
-        approvedRevision: {
-          decisionRef: approvedRevision.decisionRef,
-          reason: approvedRevision.reason,
-          priorDigest: approvedRevision.priorDigest,
-          newDigest: approvedRevision.newDigest,
-          completedAt: approvedRevision.completedAt
-        }
-      } : {}),
-      findingBindings: blockers.map((finding) => ({
-        findingId: finding.id,
-        source: finding.bindingSource,
-        claimIds: finding.claimIds,
-        verificationCaseIds: finding.verificationCaseIds
-      })),
-      evidenceBindings
-    };
-    recordReceipt(id, provider, "pass", {
-      claims: "declared",
-      workspaceHash,
-      observed: `closed final AI finding IDs ${verifiedFindingIds.join(", ")} with current declared critical-case evidence`,
-      source: `foundation-repair-closure:${source.digest}`,
-      reference: evidenceBindings.map((row) => row.receipt),
-      "reviewer-type": "deterministic",
-      "reviewer-identity": "foundation-repair-closure",
-      "subject-provenance": (prior.review.subjects || []).map((subject) =>
-        JSON.stringify(subject)),
-      "unresolved-blockers": 0,
-      "verified-findings": verifiedFindingIds.length,
-      findings: [],
-      verifiedFindingIds,
-      "scope-path": scopePaths,
-      "review-attempt": attempt.digest
-    }, { repairClosure, quiet: true });
-    return {
-      closed: true,
-      provider,
-      sourceAttemptDigest: source.digest,
-      attemptDigest: attempt.digest,
-      findingIds: verifiedFindingIds,
-      evidenceBindings
-    };
-  }
 
   return {
     proofPlan,
