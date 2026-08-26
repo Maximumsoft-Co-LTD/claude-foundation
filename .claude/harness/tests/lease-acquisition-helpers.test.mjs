@@ -6,10 +6,16 @@ import test from "node:test";
 
 import {
   acquireLeaseUnderLock,
+  cleanupLeaseOperation,
   leaseAcquisitionRequest,
   leaseDescriptorIsOwned,
+  leasePathIsAllowed,
+  leaseReleaseIdentity,
   leaseRenewalRows,
   leaseResourceConflicts,
+  observedLeaseWrites,
+  reapExpiredLeaseOperation,
+  releaseLeaseUnderLock,
   sameLeaseRenewalAuthority,
   taskNodeOutputSchema
 } from "../runtime/workflow/lease-runtime.mjs";
@@ -218,4 +224,187 @@ test("lease transaction creates default authority and rolls back partial resourc
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("expired lease reaping serializes stale locks, residue, and active contenders", () => {
+  const removed = [];
+  const renamed = [];
+  const closed = [];
+  reapExpiredLeaseOperation({
+    nowMs: () => 100_000, pid: 7,
+    lstat: (path) => ({ mtimeMs: path.endsWith(".reap") ? 0 : 90_000 }),
+    rename: (...args) => renamed.push(args),
+    remove: (...args) => removed.push(args),
+    open: () => 11, close: (handle) => closed.push(handle),
+    readJson: () => ({ expiresAt: "1970-01-01T00:00:00.000Z" })
+  }, "/lease.json");
+  assert.deepEqual(renamed, [["/lease.json.reap", "/lease.json.reap.7.stale"]]);
+  assert.ok(removed.some(([path]) => path === "/lease.json"));
+  assert.deepEqual(closed, [11]);
+
+  let opened = 0;
+  reapExpiredLeaseOperation({
+    nowMs: () => 100_000, pid: 7,
+    lstat: () => { throw new Error("missing"); }, rename: assert.fail, remove: assert.fail,
+    open: () => { opened += 1; throw new Error("busy"); }, close: assert.fail,
+    readJson: assert.fail
+  }, "/lease.json");
+  assert.equal(opened, 1);
+
+  const residueRemoved = [];
+  reapExpiredLeaseOperation({
+    nowMs: () => 100_000, pid: 7,
+    lstat: (path) => {
+      if (path.endsWith(".reap")) throw new Error("missing");
+      return { mtimeMs: 80_000 };
+    },
+    rename: assert.fail, remove: (path) => residueRemoved.push(path),
+    open: () => 12, close: () => {}, readJson: () => ({})
+  }, "/lease.json");
+  assert.deepEqual(residueRemoved, ["/lease.json", "/lease.json.reap"]);
+
+  const freshRemoved = [];
+  reapExpiredLeaseOperation({
+    nowMs: () => 100_000, pid: 7,
+    lstat: (path) => {
+      if (path.endsWith(".reap")) throw new Error("missing");
+      return { mtimeMs: 99_999 };
+    },
+    rename: assert.fail, remove: (path) => freshRemoved.push(path),
+    open: () => 13, close: () => {}, readJson: () => ({})
+  }, "/lease.json");
+  assert.deepEqual(freshRemoved, ["/lease.json.reap"]);
+});
+
+function releaseFail(message) { throw new Error(message); }
+
+test("release identity validates absence, owner, generation, and takeover decisions", () => {
+  const logs = [];
+  const base = {
+    leases: "/leases", exists: () => false, readJson: () => ({}),
+    nowMs: () => Date.parse("2026-08-27T00:00:00Z"), fail: releaseFail,
+    log: (message) => logs.push(message)
+  };
+  assert.throws(() => leaseReleaseIdentity(base, "change", "T001", {}), /requires/);
+  assert.deepEqual(leaseReleaseIdentity(base, "change", "t001", { owner: "agent" }), {
+    absent: true
+  });
+  assert.match(logs[0], /LEASE ABSENT change\/T001/);
+
+  const live = {
+    taskId: "T001", owner: "other", leaseId: "lease-2", executionAttempt: 2,
+    expiresAt: "2099-01-01T00:00:00.000Z"
+  };
+  const present = { ...base, exists: () => true, readJson: () => live };
+  assert.throws(() => leaseReleaseIdentity(present, "change", "T001", { owner: "agent" }),
+    /lease id is required/);
+  assert.throws(() => leaseReleaseIdentity(present, "change", "T001", {
+    owner: "agent", "lease-id": "stale"
+  }), /stale lease result/);
+  assert.throws(() => leaseReleaseIdentity(present, "change", "T001", {
+    owner: "agent", "lease-id": "lease-2"
+  }), /owner mismatch/);
+  assert.throws(() => leaseReleaseIdentity(present, "change", "T001", {
+    owner: "agent", force: true
+  }), /requires --decision-ref/);
+  assert.equal(leaseReleaseIdentity(present, "change", "T001", {
+    owner: "agent", force: true, "decision-ref": "host://decision"
+  }).force, true);
+});
+
+test("observed release writes enforce graph authority and granted path scopes", () => {
+  assert.equal(leasePathIsAllowed("src/app.mjs", ["*"]), true);
+  assert.equal(leasePathIsAllowed("src", ["src/**"]), true);
+  assert.equal(leasePathIsAllowed("src/app.mjs", ["src/"]), true);
+  assert.equal(leasePathIsAllowed("docs/readme.md", ["src/**"]), false);
+  const lease = {
+    taskId: "T001", graphRevision: "g", graphIdentity: "gi", contractRevision: 1,
+    baselineSurface: [
+      { path: "src/a.mjs", identity: "old" },
+      { path: "src/same.mjs", identity: "same" }
+    ],
+    paths: ["src/**"]
+  };
+  const context = {
+    agentPlanValue: () => ({
+      graphRevision: "g", graphIdentity: "gi", contractRevision: "1"
+    }),
+    observedTaskSurface: () => [
+      { path: "src/a.mjs", identity: "new" },
+      { path: "src/same.mjs", identity: "same" },
+      { path: "src/new.mjs", identity: "new" }
+    ],
+    fail: releaseFail
+  };
+  assert.deepEqual(observedLeaseWrites(context, "change", lease, false), [
+    "src/a.mjs", "src/new.mjs"
+  ]);
+  assert.deepEqual(observedLeaseWrites(context, "change", lease, true), []);
+  assert.throws(() => observedLeaseWrites({
+    ...context, agentPlanValue: () => ({
+      graphRevision: "changed", graphIdentity: "gi", contractRevision: 1
+    })
+  }, "change", lease, false), /graph or contract changed/);
+  assert.throws(() => observedLeaseWrites({
+    ...context, observedTaskSurface: () => [{ path: "docs/readme.md", identity: "new" }]
+  }, "change", lease, false), /outside granted scope/);
+});
+
+test("locked release fences resources and persists observed or takeover results", () => {
+  const writes = [];
+  const removed = [];
+  const taskLease = {
+    taskId: "T001", owner: "agent", leaseId: "lease", fencingGeneration: 2,
+    executionAttempt: 0, resources: ["missing", "owned"]
+  };
+  const base = {
+    id: "change", owner: "agent", index: "/index", taskLease,
+    observedWrites: ["src/a.mjs"], leases: "/leases",
+    leasePath: (resource) => `/${resource}`,
+    exists: (path) => path !== "/missing",
+    readJson: () => ({
+      leaseId: "lease", fencingGeneration: 2, changeId: "change", taskId: "T001",
+      owner: "agent", expiresAt: null
+    }),
+    fail: releaseFail, remove: (path) => removed.push(path),
+    writeJson: (...args) => writes.push(args), now: () => "now"
+  };
+  releaseLeaseUnderLock({ ...base, force: false });
+  assert.deepEqual(removed, ["/owned", "/index"]);
+  assert.equal(writes[0][1].status, "observed");
+
+  writes.length = 0;
+  removed.length = 0;
+  releaseLeaseUnderLock({ ...base, force: true });
+  assert.equal(writes[0][0], "/index");
+  assert.equal(writes[0][1].status, "taken-over");
+  assert.equal(writes[0][1].executionAttempt, 1);
+
+  assert.throws(() => releaseLeaseUnderLock({
+    ...base, force: false, readJson: () => ({ leaseId: "stale", fencingGeneration: 1 })
+  }), /generation/);
+});
+
+test("lease cleanup removes only matching resources plus task and result trees", () => {
+  const removed = [];
+  const entries = [
+    { name: "keep.txt", isFile: () => true },
+    { name: "directory.json", isFile: () => false },
+    { name: "other.json", isFile: () => true },
+    { name: "owned.json", isFile: () => true }
+  ];
+  cleanupLeaseOperation({
+    leases: "/leases", exists: () => true, readDirectory: () => entries,
+    readJson: (path) => ({ changeId: path.endsWith("owned.json") ? "change" : "other" }),
+    remove: (...args) => removed.push(args)
+  }, "change");
+  assert.deepEqual(removed, [
+    ["/leases/resources/owned.json"],
+    ["/leases/tasks/change", { recursive: true }],
+    ["/leases/results/change", { recursive: true }]
+  ]);
+  cleanupLeaseOperation({
+    leases: "/leases", exists: () => false,
+    readDirectory: assert.fail, readJson: assert.fail, remove: assert.fail
+  }, "change");
 });
