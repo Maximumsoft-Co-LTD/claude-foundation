@@ -302,6 +302,78 @@ export function providerWorkspaceHashOperation(context, id, provider, fallback =
   });
 }
 
+export function normalizedProviderInputPatterns(inputs = []) {
+  return [...new Set(inputs.map((item) =>
+    item.replaceAll("\\", "/").replace(/^\.\/+/, "")))].sort();
+}
+
+export function providerInputRoots(context, id, workspace, patterns) {
+  const scoped = patterns.filter((pattern) => /^[a-z0-9][a-z0-9._-]*:/i.test(pattern));
+  const roots = new Map([
+    [workspace, patterns.filter((pattern) => !scoped.includes(pattern))]
+  ]);
+  for (const pattern of scoped) {
+    const separator = pattern.indexOf(":");
+    const repositoryId = pattern.slice(0, separator);
+    const rest = pattern.slice(separator + 1);
+    const root = context.canonicalPath(context.repositoryById(id, repositoryId).workspacePath);
+    roots.set(root, [...(roots.get(root) || []), rest]);
+  }
+  return roots;
+}
+
+export function collectProviderInputFiles(context, dir, base, patterns, label, files) {
+  for (const entry of context.readDirectory(dir, { withFileTypes: true })) {
+    if (context.excludedDirectories.has(entry.name)) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectProviderInputFiles(context, path, base, patterns, label, files);
+      continue;
+    }
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+    const rel = relative(base, path).replaceAll("\\", "/");
+    if (patterns.some((pattern) => context.inputPatternMatches(rel, pattern)))
+      files.push({
+        path: label ? `${label}:${rel}` : rel,
+        identity: context.filesystemEntryIdentity(path)
+      });
+  }
+}
+
+export function sortProviderInputFiles(files) {
+  return files.sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+}
+
+export function providerInputIdentityOperation(context, id, provider,
+    config = context.providerConfig(id, provider), globalHash = null) {
+  const workspace = context.canonicalPath(context.providerWorkspace(id, provider, config));
+  if (!Array.isArray(config?.inputs) || config.inputs.length === 0) {
+    const workspaceHash = globalHash || context.providerWorkspaceHash(id, provider);
+    return {
+      mode: "global",
+      patterns: [],
+      files: [],
+      fingerprint: context.stableHash({ mode: "global", workspaceHash })
+    };
+  }
+  const patterns = normalizedProviderInputPatterns(config.inputs);
+  const roots = providerInputRoots(context, id, workspace, patterns);
+  const files = [];
+  for (const [base, scopePatterns] of roots) {
+    if (!scopePatterns.length || !context.pathExists(base)) continue;
+    collectProviderInputFiles(context, base, base, scopePatterns,
+      base === workspace ? null : context.repositoryLabel(id, base), files);
+  }
+  sortProviderInputFiles(files);
+  return {
+    mode: "declared",
+    patterns,
+    files,
+    fingerprint: context.stableHash({ mode: "declared", patterns, files })
+  };
+}
+
 export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
@@ -799,66 +871,20 @@ export function createEvidenceContract({
     return null;
   }
 
-  function providerInputIdentity(id, provider, config = providerConfig(id, provider),
-      globalHash = null) {
-    const workspace = canonicalPath(providerWorkspace(id, provider, config));
-    if (!Array.isArray(config?.inputs) || config.inputs.length === 0) {
-      const workspaceHash = globalHash || providerWorkspaceHash(id, provider);
-      return {
-        mode: "global",
-        patterns: [],
-        files: [],
-        fingerprint: stableHash({ mode: "global", workspaceHash })
-      };
-    }
-    const patterns = [...new Set(config.inputs.map((item) =>
-      item.replaceAll("\\", "/").replace(/^\.\/+/, "")))].sort();
-    // A provider that spans repositories has no single workspace to walk, so
-    // `inputs` may name one: `api:openapi.yaml` reads from repository `api`.
-    // Without this a cross-repo provider could only bind to the composite hash
-    // — all-or-nothing — and any edit anywhere invalidated its receipt.
-    const scoped = patterns.filter((pattern) => /^[a-z0-9][a-z0-9._-]*:/i.test(pattern));
-    const roots = new Map([[workspace, patterns.filter((pattern) => !scoped.includes(pattern))]]);
-    for (const pattern of scoped) {
-      const separator = pattern.indexOf(":");
-      const repositoryId = pattern.slice(0, separator);
-      const rest = pattern.slice(separator + 1);
-      const repositoryRoot = canonicalPath(repositoryById(id, repositoryId).workspacePath);
-      roots.set(repositoryRoot, [...(roots.get(repositoryRoot) || []), rest]);
-    }
-    const files = [];
-    const collect = (dir, base, scopePatterns, label) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (EXCLUDED_WORKSPACE_DIRS.has(entry.name)) continue;
-        const path = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          collect(path, base, scopePatterns, label);
-          continue;
-        }
-        if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-        const rel = relative(base, path).replaceAll("\\", "/");
-        if (scopePatterns.some((pattern) => inputPatternMatches(rel, pattern)))
-          files.push({
-            path: label ? `${label}:${rel}` : rel,
-            identity: filesystemEntryIdentity(path)
-          });
-      }
-    };
-    for (const [base, scopePatterns] of roots) {
-      if (!scopePatterns.length || !existsSync(base)) continue;
-      collect(base, base, scopePatterns, base === workspace ? null : repositoryLabel(id, base));
-    }
-    // Codepoint order, not localeCompare: the fingerprint must not depend on
-    // the machine's collation tables, or identical inputs expire receipts.
-    files.sort((left, right) =>
-      (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-    return {
-      mode: "declared",
-      patterns,
-      files,
-      fingerprint: stableHash({ mode: "declared", patterns, files })
-    };
-  }
+  const providerInputIdentity = providerInputIdentityOperation.bind(null, {
+    providerConfig,
+    providerWorkspace,
+    providerWorkspaceHash,
+    canonicalPath,
+    repositoryById,
+    repositoryLabel,
+    pathExists: existsSync,
+    readDirectory: readdirSync,
+    excludedDirectories: EXCLUDED_WORKSPACE_DIRS,
+    inputPatternMatches,
+    filesystemEntryIdentity,
+    stableHash
+  });
   
   const environmentDescriptor = environmentDescriptorOperation.bind(null, {
     root: ROOT,

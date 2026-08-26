@@ -124,6 +124,7 @@ proof topology issues|node --test "$ROOT/.claude/harness/tests/proof-topology-is
 subject provenance|node --test "$ROOT/.claude/harness/tests/subject-provenance.test.mjs"
 handoff operation normalization|node --test "$ROOT/.claude/harness/tests/handoff-operation-normalization.test.mjs"
 relocated sandbox rebind|node --test "$ROOT/.claude/harness/tests/relocated-sandbox-rebind.test.mjs"
+provider input identity|node --test "$ROOT/.claude/harness/tests/provider-input-identity.test.mjs"
 proof audit|node "$ROOT/.claude/harness/tests/proof-audit.test.mjs"
 change draft loading|node "$ROOT/.claude/harness/tests/change-draft-loading.test.mjs"
 change creation|node --test "$ROOT/.claude/harness/tests/change-creation.test.mjs"
