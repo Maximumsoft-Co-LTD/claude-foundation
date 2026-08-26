@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const {
   canonicalJson, createInstructionManifest, instructionProvenance,
-  verifyInstructionManifest
+  instructionManifestShapeReason, verifyInstructionManifest
 } = await import(`${process.env.ROOT}/.claude/harness/runtime/core/instruction-manifest.mjs`);
 
 const fixture = process.env.FIXTURE;
@@ -40,8 +40,47 @@ const second = createInstructionManifest({ ...options, rulePaths: [...options.ru
 assert.deepEqual(first, second);
 assert.equal(verifyInstructionManifest(first).valid, true);
 assert.equal(instructionProvenance(null).available, false);
+assert.equal(instructionProvenance(first).valid, true);
 assert.equal(canonicalJson({ z: 1, a: { y: 2, b: 3 } }), '{"a":{"b":3,"y":2},"z":1}');
 assert.equal(JSON.stringify(first).includes("review carefully"), false);
+assert.equal(instructionManifestShapeReason(null), "unsupported-schema");
+assert.equal(instructionManifestShapeReason({ schemaVersion: 2 }), "unsupported-schema");
+assert.equal(instructionManifestShapeReason({ schemaVersion: 1, dispatch: {} }),
+  "missing-dispatch-instruction");
+assert.equal(instructionManifestShapeReason({
+  schemaVersion: 1,
+  dispatch: { command: "build", commandInstruction: { digest: "sha256:x" }, rules: {} },
+  execution: { skills: [] }
+}), "invalid-instruction-collections");
+assert.equal(instructionManifestShapeReason({
+  schemaVersion: 1,
+  dispatch: { command: "build", commandInstruction: { digest: "sha256:x" }, rules: [] },
+  execution: { skills: {} }
+}), "invalid-instruction-collections");
+assert.equal(verifyInstructionManifest(null).reason, "unsupported-schema");
+assert.equal(verifyInstructionManifest({ schemaVersion: 1, dispatch: {} }).reason,
+  "missing-dispatch-instruction");
+
+assert.throws(() => createInstructionManifest({ ...options, root: "" }),
+  /requires root/);
+assert.throws(() => createInstructionManifest({ ...options, command: "" }),
+  /requires command and commandPath/);
+assert.throws(() => createInstructionManifest({ ...options, commandPath: "" }),
+  /requires command and commandPath/);
+assert.throws(() => createInstructionManifest({ ...options, commandPath: "../outside.md" }),
+  /escapes root/);
+assert.throws(() => createInstructionManifest({
+  ...options, rulePaths: [".claude/rules/missing.md"]
+}), /missing rule instruction/);
+for (const skill of [null, {}, { name: "review" }, { path: options.skills[0].path }])
+  assert.throws(() => createInstructionManifest({ ...options, skills: [skill] }),
+    /skill instructions require name and path/);
+assert.throws(() => createInstructionManifest({
+  ...options, skills: [{ name: "missing", path: ".claude/skills/missing/SKILL.md" }]
+}), /missing skill instruction/);
+assert.throws(() => createInstructionManifest({
+  ...options, skills: [{ name: "other", path: options.skills[0].path }]
+}), /skill name mismatch/);
 
 const command = join(fixture, ".claude/commands/build.md");
 writeFileSync(command, readFileSync(command, "utf8") + "changed\n");
