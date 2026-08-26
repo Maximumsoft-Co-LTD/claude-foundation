@@ -74,6 +74,98 @@ export function recordVerifiedCiOperation(context, id, provider, source) {
   context.output.log(`CI EVIDENCE ${id}/${provider}: ${result.status}\n  run: ${result.payload.runUrl}`);
 }
 
+export function authorityRequestSelection(context, id, flags) {
+  const type = String(flags.type || "");
+  if (!["review", "acceptance"].includes(type))
+    context.fail("authority request --type must be review|acceptance");
+  context.validate(id, "active", { quiet: true });
+  const pending = context.pendingTasks(id);
+  if (pending.length)
+    context.fail(`authority request requires completed implementation tasks: ${
+      pending.map((task) => task.id).join(", ")}`);
+  const repository = String(flags.repo || "").trim() || null;
+  const provider = context.authorityProvider(id, type, repository);
+  if (!provider || !context.requiredProviders(id).includes(provider))
+    context.fail(repository
+      ? `change '${id}' has no ${type} provider scoped to repository '${repository}'`
+      : `change '${id}' does not require ${type} authority`);
+  return {
+    type, repository, provider,
+    workspaceHash: context.authorityWorkspaceHash(id, provider)
+  };
+}
+
+export function pendingAuthorityRequest(entries, selection) {
+  for (const entry of entries) {
+    const value = entry.value;
+    if (value.type === selection.type && value.provider === selection.provider &&
+        value.workspaceHash === selection.workspaceHash &&
+        ["requested", "dispatched", "pending"].includes(value.status))
+      return value;
+  }
+  return null;
+}
+
+export function authorityClaimIds(claims) {
+  return claims.map((claim) => claim.id);
+}
+
+export function randomAuthorityRequestHex() {
+  return randomBytes(8).toString("hex");
+}
+
+export function authorityRequestPolicy(context, id, type) {
+  return type === "review" ? {
+    reviewCircuit: context.policy().workflow.reviewCircuit,
+    requirements: context.reviewPolicy(id)
+  } : {
+    reviewCircuit: null,
+    requirements: { actor: "human", acceptance: context.resolvedAcceptance(id) }
+  };
+}
+
+export function newAuthorityRequestValue(context, id, selection) {
+  const { type, provider, workspaceHash } = selection;
+  const packet = context.authorityPacket(id, type);
+  const requestId = `${type}-${context.timestamp()}-${context.randomHex()}`;
+  const claimIds = authorityClaimIds(context.claimsForProvider(id, provider));
+  const packetDigest = context.canonicalPacketDigest(packet);
+  const requestedAt = context.now();
+  const expiresAt = new Date(
+    context.timestamp() + 24 * 60 * 60 * 1000).toISOString();
+  const policy = authorityRequestPolicy(context, id, type);
+  return {
+    version: Number(context.protocolVersion),
+    requestId,
+    changeId: id, type, provider, status: "requested", workspaceHash,
+    claimIds,
+    packet,
+    packetDigest,
+    requestedAt,
+    expiresAt,
+    ...policy
+  };
+}
+
+export function displayAuthorityRequest(context, request, quiet) {
+  if (quiet) return;
+  const limit = Number(context.policy().execution?.packetBytes?.review || 8192);
+  context.output.log(JSON.stringify(context.displayValue(request, limit), null, 2));
+}
+
+export function requestAuthorityOperation(context, id, flags = {}, options = {}) {
+  const selection = authorityRequestSelection(context, id, flags);
+  const existing = pendingAuthorityRequest(context.authorityStore.list(id), selection);
+  if (existing) {
+    displayAuthorityRequest(context, existing, options.quiet);
+    return existing;
+  }
+  const request = newAuthorityRequestValue(context, id, selection);
+  context.authorityStore.writeRequest(id, request);
+  displayAuthorityRequest(context, request, options.quiet);
+  return request;
+}
+
 export function createAuthorityRuntime({
   root,
   protocolVersion,
@@ -209,52 +301,26 @@ export function createAuthorityRuntime({
     return latest;
   }
 
-  function requestAuthorityUnlocked(id, flags = {}, options = {}) {
-    const type = String(flags.type || "");
-    if (!["review", "acceptance"].includes(type))
-      fail("authority request --type must be review|acceptance");
-    validate(id, "active", { quiet: true });
-    const pending = pendingTasks(id);
-    if (pending.length)
-      fail(`authority request requires completed implementation tasks: ${pending.map((task) => task.id).join(", ")}`);
-    const repository = String(flags.repo || "").trim() || null;
-    const provider = authorityProvider(id, type, repository);
-    if (!provider || !requiredProviders(id).includes(provider))
-      fail(repository
-        ? `change '${id}' has no ${type} provider scoped to repository '${repository}'`
-        : `change '${id}' does not require ${type} authority`);
-    const workspaceHash = authorityWorkspaceHash(id, provider);
-    const existing = authorityStore.list(id).find((entry) =>
-      entry.value.type === type && entry.value.provider === provider &&
-      entry.value.workspaceHash === workspaceHash &&
-      ["requested", "dispatched", "pending"].includes(entry.value.status));
-    if (existing) {
-      if (!options.quiet) console.log(JSON.stringify(authorityRequestDisplayValue(
-        existing.value,
-        Number(foundationPolicy().execution?.packetBytes?.review || 8192)
-      ), null, 2));
-      return existing.value;
-    }
-    const packet = authorityPacket(id, type);
-    const requestId = `${type}-${Date.now()}-${randomBytes(8).toString("hex")}`;
-    const request = {
-      version: Number(protocolVersion), requestId, changeId: id, type, provider,
-      status: "requested", workspaceHash, claimIds: claimsForProvider(id, provider).map((claim) => claim.id),
-      packet, packetDigest: canonicalPacketDigest(packet), requestedAt: now(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      reviewCircuit: type === "review"
-        ? foundationPolicy().workflow.reviewCircuit : null,
-      requirements: type === "review" ? reviewPolicy(id) : {
-        actor: "human", acceptance: resolvedAcceptance(id)
-      }
-    };
-    authorityStore.writeRequest(id, request);
-    if (!options.quiet) console.log(JSON.stringify(authorityRequestDisplayValue(
-      request,
-      Number(foundationPolicy().execution?.packetBytes?.review || 8192)
-    ), null, 2));
-    return request;
-  }
+  const requestAuthorityUnlocked = requestAuthorityOperation.bind(null, {
+    validate,
+    pendingTasks,
+    authorityProvider,
+    requiredProviders,
+    authorityWorkspaceHash,
+    authorityStore,
+    authorityPacket,
+    claimsForProvider,
+    canonicalPacketDigest,
+    protocolVersion,
+    timestamp: Date.now,
+    randomHex: randomAuthorityRequestHex,
+    now,
+    policy: foundationPolicy,
+    reviewPolicy,
+    resolvedAcceptance,
+    displayValue: authorityRequestDisplayValue,
+    output: console
+  });
 
   function requestAuthority(id, flags = {}, options = {}) {
     return withAuthorityLock(id, () => requestAuthorityUnlocked(id, flags, options));
