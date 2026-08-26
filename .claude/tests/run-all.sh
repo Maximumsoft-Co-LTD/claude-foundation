@@ -109,6 +109,7 @@ attestation validity|node "$ROOT/.claude/harness/tests/attestation-validity.test
 security boundary|node --test "$ROOT/.claude/harness/tests/security-boundary.test.mjs"
 abandon runtime|node "$ROOT/.claude/harness/tests/abandon-runtime.test.mjs"
 repository land record|node "$ROOT/.claude/harness/tests/repository-land-record.test.mjs"
+repository snapshot|node --test "$ROOT/.claude/harness/tests/repository-snapshot.test.mjs"
 task node proof|node "$ROOT/.claude/harness/tests/task-node-proof.test.mjs"
 proof finalize|node "$ROOT/.claude/harness/tests/proof-finalize.test.mjs"
 proof advance runtime|node "$ROOT/.claude/harness/tests/proof-advance.test.mjs"

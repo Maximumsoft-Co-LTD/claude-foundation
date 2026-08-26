@@ -130,7 +130,7 @@ const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /repository, workspaceHash: value\[field\]/,
+  /repository,\s*workspaceHash: value\[field\]/,
   "repository, workspaceHash: value[field], baseHead: value.baseHead // FOUNDATION-INJECTED-FAULT");
 if (mutated === source) { console.error("content identity fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);

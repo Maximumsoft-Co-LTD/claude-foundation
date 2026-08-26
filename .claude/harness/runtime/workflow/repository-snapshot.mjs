@@ -1,89 +1,118 @@
 import { existsSync } from "node:fs";
 
+export function snapshotChildPaths(selection) {
+  return selection.filter((repository) => repository.id !== "root" &&
+    repository.relativePath && repository.relativePath !== "." &&
+    !repository.relativePath.startsWith("../"))
+    .map((repository) => repository.relativePath);
+}
+
+export function repositorySnapshotEntries({
+  root,
+  id,
+  selection,
+  control,
+  force,
+  singleRelevantSnapshot,
+  gitHead
+}) {
+  const repositories = {};
+  for (const repository of selection) {
+    if (repository.id === "root") {
+      repositories.root = {
+        id: control.id,
+        workspaceHash: control.workspaceHash,
+        codeHash: control.codeHash,
+        reviewHash: control.reviewHash,
+        workspace: control.workspace,
+        baseHead: repository.baseHead || gitHead(root)
+      };
+      continue;
+    }
+    const workspace = repository.workspacePath || repository.path;
+    const snapshot = singleRelevantSnapshot(id, workspace, force);
+    repositories[repository.id] = {
+      id: snapshot.id,
+      workspaceHash: snapshot.workspaceHash,
+      codeHash: snapshot.codeHash,
+      reviewHash: snapshot.reviewHash,
+      workspace: snapshot.workspace,
+      baseHead: repository.baseHead || gitHead(repository.path)
+    };
+  }
+  return repositories;
+}
+
+export function compositeSnapshotHash({
+  stableHash,
+  contractRevision,
+  control,
+  repositories
+}, field) {
+  return stableHash({
+    version: 2,
+    contractRevision,
+    control: control[field],
+    repositories: Object.entries(repositories).sort(([left], [right]) =>
+      left.localeCompare(right)).map(([repository, value]) => ({
+      repository,
+      workspaceHash: value[field]
+    }))
+  });
+}
+
+export function relevantSnapshotOperation({
+  root,
+  runtimePath,
+  snapshotPath,
+  readJson,
+  writeJson,
+  singleRelevantSnapshot,
+  selectedRepositories,
+  gitHead,
+  stableHash,
+  now
+}, id, workspaceOverride = null, force = false) {
+  const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
+  const contractRevision = Number(state.contractRevision ?? 0);
+  if (workspaceOverride || !state.repositories ||
+      Object.keys(state.repositories).length === 0)
+    return singleRelevantSnapshot(id, workspaceOverride, force);
+  const selection = selectedRepositories(id, state);
+  const control = singleRelevantSnapshot(
+    id, state.workspace?.path || root, force, snapshotChildPaths(selection));
+  const repositories = repositorySnapshotEntries({
+    root, id, selection, control, force, singleRelevantSnapshot, gitHead
+  });
+  const composition = { stableHash, contractRevision, control, repositories };
+  const workspaceHash = compositeSnapshotHash(composition, "workspaceHash");
+  const value = {
+    version: 3,
+    id: `snapshot-${workspaceHash.slice(0, 20)}`,
+    changeId: id,
+    workspace: control.workspace,
+    workspaceHash,
+    codeHash: compositeSnapshotHash(composition, "codeHash"),
+    reviewHash: compositeSnapshotHash(composition, "reviewHash"),
+    packetReviewHash: control.packetReviewHash,
+    revision: contractRevision,
+    fileCount: control.fileCount,
+    control,
+    repositories,
+    createdAt: now()
+  };
+  writeJson(snapshotPath(id), value);
+  return value;
+}
+
 export function createRepositorySnapshot({
   root, runtimePath, snapshotPath, readJson, writeJson, singleRelevantSnapshot,
   selectedRepositories, gitHead, stableHash, now
 }) {
-  function relevantSnapshot(id, workspaceOverride = null, force = false) {
-    const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
-    // Mirrors state-runtime: sync-counting `state.revision` must not shift
-    // snapshot identity; only a real contract edit (contractRevision) may.
-    const contractRevision = Number(state.contractRevision ?? 0);
-    if (workspaceOverride || !state.repositories ||
-        Object.keys(state.repositories).length === 0)
-      return singleRelevantSnapshot(id, workspaceOverride, force);
-    const selection = selectedRepositories(id, state);
-    // A registered child repository is represented by its own content
-    // snapshot below. Keeping its root gitlink in the control snapshot bound
-    // the same product twice and made staging only the delivery pointer expire
-    // review receipts.
-    const childPaths = selection.filter((repository) => repository.id !== "root" &&
-      repository.relativePath && repository.relativePath !== "." &&
-      !repository.relativePath.startsWith("../"))
-      .map((repository) => repository.relativePath);
-    const control = singleRelevantSnapshot(
-      id, state.workspace?.path || root, force, childPaths);
-    const repositories = {};
-    for (const repository of selection) {
-      if (repository.id === "root") {
-        repositories.root = {
-          id: control.id,
-          workspaceHash: control.workspaceHash,
-          codeHash: control.codeHash,
-          reviewHash: control.reviewHash,
-          workspace: control.workspace,
-          baseHead: repository.baseHead || gitHead(root)
-        };
-        continue;
-      }
-      const workspace = repository.workspacePath || repository.path;
-      const snapshot = singleRelevantSnapshot(id, workspace, force);
-      repositories[repository.id] = {
-        id: snapshot.id,
-        workspaceHash: snapshot.workspaceHash,
-        codeHash: snapshot.codeHash,
-        reviewHash: snapshot.reviewHash,
-        workspace: snapshot.workspace,
-        baseHead: repository.baseHead || gitHead(repository.path)
-      };
-    }
-    // Composed twice from the same entries. The packet lives in the control
-    // repository, so every other entry's two hashes are equal by construction —
-    // but composing the code hash from the code halves is what keeps a packet
-    // edit out of the composite an executable provider binds.
-    const composite = (field) => stableHash({
-      version: 2,
-      contractRevision,
-      control: control[field],
-      repositories: Object.entries(repositories).sort(([left], [right]) =>
-        left.localeCompare(right)).map(([repository, value]) => ({
-        // Commit identity is Land/recovery state, not content identity. The
-        // snapshot already hashes every tracked byte and the contract revision;
-        // explicit target-head guards separately refuse an unreconciled base.
-        repository, workspaceHash: value[field]
-      }))
-    });
-    const workspaceHash = composite("workspaceHash");
-    const value = {
-      version: 3,
-      id: `snapshot-${workspaceHash.slice(0, 20)}`,
-      changeId: id,
-      workspace: control.workspace,
-      workspaceHash,
-      codeHash: composite("codeHash"),
-      reviewHash: composite("reviewHash"),
-      // Control-only: the packet lives in the control repository, so its
-      // review-relevant content needs no composition across children.
-      packetReviewHash: control.packetReviewHash,
-      revision: contractRevision,
-      fileCount: control.fileCount,
-      control,
-      repositories,
-      createdAt: now()
-    };
-    writeJson(snapshotPath(id), value);
-    return value;
-  }
+  const relevantSnapshot = relevantSnapshotOperation.bind(null, {
+    root, runtimePath, snapshotPath, readJson, writeJson, singleRelevantSnapshot,
+    selectedRepositories, gitHead, stableHash, now
+  });
 
   function relevantHash(id, workspaceOverride = null, force = false) {
     return relevantSnapshot(id, workspaceOverride, force).workspaceHash;
