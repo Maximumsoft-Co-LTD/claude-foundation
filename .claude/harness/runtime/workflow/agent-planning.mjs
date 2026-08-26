@@ -206,6 +206,66 @@ export function showAgentPlan(context, id, flags = {}) {
   else process.stdout.write(encoded);
 }
 
+const PROOF_RUN_STALE_MS = 2 * 60 * 60 * 1000;
+
+export function runtimeEntryIsJsonFile(entry) {
+  return entry.isFile() && entry.name.endsWith(".json");
+}
+
+export function readRuntimeDirectory(path) {
+  return readdirSync(path, { withFileTypes: true });
+}
+
+export function conflictChangeIsEligible(other, id) {
+  return Boolean(other.id && other.id !== id && other.status !== "archived");
+}
+
+export function activeProofRunIsCurrent(other, nowMs = Date.now()) {
+  const startedAt = Date.parse(other.activeProofRun?.startedAt || "");
+  return Boolean(other.activeProofRun && Number.isFinite(startedAt) &&
+    nowMs - startedAt <= PROOF_RUN_STALE_MS);
+}
+
+export function repositoryConflictRows(other, wanted, held, overlap) {
+  const conflicts = [];
+  for (const requestedKey of wanted) {
+    for (const heldKey of held) {
+      if (!overlap(requestedKey, heldKey)) continue;
+      conflicts.push({
+        changeId: other.id,
+        repository: requestedKey.match(/^(?:repo|path):([^:]+)/)?.[1] || null,
+        key: `${requestedKey} <> ${heldKey}`,
+        status: other.status
+      });
+      break;
+    }
+  }
+  return conflicts;
+}
+
+export function activeRepositoryConflictsOperation(
+  context, id, repositories, { executing = false } = {}
+) {
+  const current = context.loadRuntime(id);
+  const wanted = context.changeConflictKeys(id, current, repositories);
+  const conflicts = [];
+  if (!context.exists(context.runtime)) return conflicts;
+  for (const entry of context.readDirectory(context.runtime)) {
+    if (!runtimeEntryIsJsonFile(entry)) continue;
+    const other = context.readJson(join(context.runtime, entry.name), {});
+    if (!conflictChangeIsEligible(other, id)) continue;
+    if (executing && !activeProofRunIsCurrent(other, context.nowMs())) continue;
+    let selected;
+    try { selected = context.safeSelectedRepositories(other.id, other); }
+    catch { continue; }
+    if (!selected) continue;
+    const held = context.changeConflictKeys(other.id, other, selected);
+    conflicts.push(...repositoryConflictRows(
+      other, wanted, held, context.conflictKeysOverlap));
+  }
+  return conflicts;
+}
+
 export function createAgentPlanner({
   root, plans, runtime, schemaVersion, validate, loadRuntime, policy,
   selectedRepositories, safeSelectedRepositories, taskBlocks, taskMetadata,
@@ -247,11 +307,6 @@ export function createAgentPlanner({
     return pathsOverlap(left.paths || [], right.paths || []);
   }
 
-  // A proof run that no process is behind any more must not block forever:
-  // a hard kill can leave the marker set, and the normal paths that clear it
-  // cannot run. Anything older than this is treated as abandoned.
-  const PROOF_RUN_STALE_MS = 2 * 60 * 60 * 1000;
-
   function changeConflictKeys(changeId, state, repositories) {
     const writable = new Set(repositories.filter((repository) => repository.mode === "write")
       .map((repository) => repository.id));
@@ -263,49 +318,15 @@ export function createAgentPlanner({
     return [...new Set(tasks.flatMap(conflictKeysForTask))].sort();
   }
 
-  // `executing` narrows the scan to changes with a proof run in flight. Plan
-  // time wants every change holding write scope; proof time wants only the
-  // ones that would actually be running commands against the repository at the
-  // same moment, or a project with two open changes could never prove either.
-  function activeRepositoryConflicts(id, repositories, { executing = false } = {}) {
-    const current = loadRuntime(id);
-    const wanted = changeConflictKeys(id, current, repositories);
-    const conflicts = [];
-    if (!existsSync(runtime)) return conflicts;
-    for (const entry of readdirSync(runtime, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const other = readJson(join(runtime, entry.name), {});
-      if (!other.id || other.id === id || other.status === "archived") continue;
-      if (executing) {
-        const startedAt = Date.parse(other.activeProofRun?.startedAt || "");
-        if (!other.activeProofRun ||
-            !Number.isFinite(startedAt) ||
-            Date.now() - startedAt > PROOF_RUN_STALE_MS) continue;
-      }
-      // selectedRepositories reports a bad topology by exiting the process, so
-      // this catch never fired: one change with a stale repositories.yaml
-      // reference blocked planning and lease acquisition for every unrelated
-      // change. A change we cannot read cannot be shown to conflict, so skip it
-      // — its own commands still surface the error.
-      let selected;
-      try { selected = safeSelectedRepositories(other.id, other); }
-      catch { continue; }
-      if (!selected) continue;
-      const held = changeConflictKeys(other.id, other, selected);
-      for (const requestedKey of wanted)
-        for (const heldKey of held)
-          if (conflictKeysOverlap(requestedKey, heldKey)) {
-            conflicts.push({
-              changeId: other.id,
-              repository: requestedKey.match(/^(?:repo|path):([^:]+)/)?.[1] || null,
-              key: `${requestedKey} <> ${heldKey}`,
-              status: other.status
-            });
-            break;
-          }
-    }
-    return conflicts;
-  }
+  // `executing` narrows the scan to changes with a live proof run. Plan time
+  // still considers every change holding write scope.
+  const activeRepositoryConflicts = activeRepositoryConflictsOperation.bind(null, {
+    runtime, loadRuntime, changeConflictKeys,
+    exists: existsSync,
+    readDirectory: readRuntimeDirectory,
+    readJson, safeSelectedRepositories, conflictKeysOverlap,
+    nowMs: Date.now
+  });
 
   function planValue(id) {
     validate(id, "active", { quiet: true });
