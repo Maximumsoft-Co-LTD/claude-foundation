@@ -80,6 +80,7 @@ runtime environment policy|node --test "$HERE/harness/run-runtime-environment-po
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
+traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
 grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 receipt validity|node "$ROOT/.claude/harness/tests/receipt-validity.test.mjs"
