@@ -167,51 +167,10 @@ function renderCols(el, items) {
   }).join('')}</div>`;
 }
 
-// ── Team cards ──────────────────────────────────────────────────────────────
-// One compact line per repo (most-recently-edited first, as ranked by the
-// client). Display name = the folder's own name (unique); full repo + path in
-// the tooltip so the row stays short.
-function workingLine(r) {
-  const name = escapeHtml((r.dir && r.dir.split('/').pop()) || r.repo || '·');
-  const title = escapeHtml(`${r.repo || ''}${r.dir ? ' · ' + r.dir : ''}`);
-  const label = r.label ? `<span class="wk-tag">${escapeHtml(r.label)}</span>` : '';
-  const branch = r.branch ? `<span class="wk-branch">⎇ ${escapeHtml(r.branch)}</span>` : '';
-  const n = Number(r.files) || 0;
-  return `<div class="wk" title="${title}">${label}<span class="wk-repo">${name}</span>${branch}<span class="wk-files">${n}f</span></div>`;
-}
-function activityLine(it) {
-  const repo = escapeHtml(it.repo || '·');
-  const branch = it.branch ? `<span class="act-branch">⎇ ${escapeHtml(it.branch)}</span>` : '';
-  const run = it.runId ? `<span class="act-run">/dev ${escapeHtml(it.runId)}${it.phase ? ` · ${escapeHtml(it.phase)}` : ''}</span>` : '';
-  return `<div class="act"><span class="act-repo">${repo}</span>${branch}${run}</div>`;
-}
-const WK_VISIBLE = 6;
 const expandedAgents = new Set();
-
-function agentCard(a) {
-  const cls = a.online ? 'agent agent--online' : 'agent agent--stale';
-  const id = escapeHtml((a.agentId || '').slice(0, 8));
-  const repos = Array.isArray(a.repos) ? a.repos : [];
-  const acts = Array.isArray(a.activity) ? a.activity : [];
-  const expanded = expandedAgents.has(a.agentId);
-  const shown = expanded ? repos : repos.slice(0, WK_VISIBLE);
-  const moreBtn = repos.length > WK_VISIBLE
-    ? `<button class="wk-more" data-agent="${escapeHtml(a.agentId)}">${expanded ? 'show less' : `+ ${repos.length - WK_VISIBLE} more`}</button>`
-    : '';
-  const working = repos.length
-    ? `<div class="agent-working"><div class="wk-label">working in · ${repos.length} repo${repos.length === 1 ? '' : 's'}</div>${shown.map(workingLine).join('')}${moreBtn}</div>`
-    : '';
-  const activity = acts.length ? `<div class="agent-activity">${acts.map(activityLine).join('')}</div>` : '';
-  const idle = !repos.length && !acts.length ? '<div class="agent-activity agent-activity--idle">no tracked work</div>' : '';
-  const meta = [a.host && escapeHtml(a.host), a.version && `v${escapeHtml(a.version)}`, id].filter(Boolean).join(' · ');
-  return `
-    <article class="${cls}">
-      <div class="agent-head"><span class="agent-dot"></span><span class="agent-name">${userDot(a.gitUser)}${escapeHtml(a.gitUser || 'unknown')}</span></div>
-      <div class="agent-meta">${meta}</div>
-      ${working}${activity}${idle}
-      <div class="agent-seen">${a.online ? 'online' : 'seen'} · ${relTime(a.ageMs)}</div>
-    </article>`;
-}
+const agentCard = FoundationAgentView.agentCard.bind(null, {
+  escapeHtml, expandedAgents, relTime, userDot
+});
 
 // ── Conflicts ───────────────────────────────────────────────────────────────
 function shortRepo(repoId) { return escapeHtml(String(repoId).split('/').slice(-2).join('/')); }
