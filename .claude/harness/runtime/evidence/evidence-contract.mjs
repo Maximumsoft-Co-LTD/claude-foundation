@@ -178,6 +178,53 @@ export function providerReceiptWriterConflicts(configuredProviders, capabilityOf
   return conflicts;
 }
 
+export function adapterConfigurationIdentity(config = {}, command = null) {
+  return {
+    repository: config.repository || null,
+    adapter: config.adapter || "external",
+    adapterVersion: String(config.version || "1"),
+    command: command || config.command || null,
+    inputMode: config.inputMode || null,
+    project: config.project || null,
+    outputs: config.outputs || [],
+    resources: config.resources || null,
+    dependsOn: config.dependsOn || []
+  };
+}
+
+export function adapterServiceIdentity(context, id, config = {}) {
+  if (!config.service) return null;
+  return {
+    name: config.service,
+    config: context.evidence(id).execution?.services?.[config.service] || null
+  };
+}
+
+export function createAdapterFingerprint(context, id, provider, config, command = null) {
+  const identity = adapterConfigurationIdentity(config, command);
+  return context.stableHash({
+    adapterProtocolVersion: context.adapterProtocolVersion,
+    providerProtocolVersion: context.providerProtocolVersion,
+    provider,
+    capability: context.providerCapability(provider, config),
+    repository: identity.repository,
+    repositories: context.providerRepositories(id, provider, config)
+      .map((repository) => repository.id),
+    adapter: identity.adapter,
+    adapterVersion: identity.adapterVersion,
+    command: identity.command,
+    claims: context.providerClaims(id, provider, config),
+    environment: context.environmentDescriptor(config, id),
+    inputMode: identity.inputMode,
+    project: identity.project,
+    outputs: identity.outputs,
+    resources: identity.resources,
+    dependsOn: identity.dependsOn,
+    service: adapterServiceIdentity(context, id, config),
+    executionPolicy: providerEvidencePolicy(config)
+  });
+}
+
 export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
@@ -782,32 +829,6 @@ export function createEvidenceContract({
     };
   }
   
-  function adapterFingerprint(id, provider, config, command = null) {
-    return stableHash({
-      adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
-      providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
-      provider,
-      capability: providerCapability(provider, config),
-      repository: config?.repository || null,
-      repositories: providerRepositories(id, provider, config).map((repository) => repository.id),
-      adapter: config?.adapter || "external",
-      adapterVersion: String(config?.version || "1"),
-      command: command || config?.command || null,
-      claims: providerClaims(id, provider, config),
-      environment: environmentDescriptor(config, id),
-      inputMode: config?.inputMode || null,
-      project: config?.project || null,
-      outputs: config?.outputs || [],
-      resources: config?.resources || null,
-      dependsOn: config?.dependsOn || [],
-      service: config?.service ? {
-        name: config.service,
-        config: evidence(id).execution?.services?.[config.service] || null
-      } : null,
-      executionPolicy: providerEvidencePolicy(config)
-    });
-  }
-  
   function contractFingerprint(id, dir = activeChangePath(id)) {
     const state = loadRuntime(id);
     const contract = evidence(id, dir);
@@ -869,6 +890,17 @@ export function createEvidenceContract({
       services: contract.execution?.services || {}
     });
   }
+
+  const adapterFingerprint = createAdapterFingerprint.bind(null, {
+    adapterProtocolVersion: ADAPTER_PROTOCOL_VERSION,
+    providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
+    stableHash,
+    providerCapability,
+    providerRepositories,
+    providerClaims,
+    environmentDescriptor,
+    evidence
+  });
 
   return {
     rawExecution,
