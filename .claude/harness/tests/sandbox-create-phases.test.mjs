@@ -8,7 +8,9 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
+  carrySandboxIgnoredArtifacts,
   carryableGitMetadata,
+  commitSandboxReplay,
   copiedPreexistingDigests,
   copySandboxEntries,
   copyTrackedRootMetadata,
@@ -18,6 +20,7 @@ import {
   inspectSandbox,
   isolateSelectedRepositories,
   reportMultiRepositorySandbox,
+  runSandboxSetupCommand,
   sandboxCopyPlan,
   sandboxCopyWorkspace,
   sandboxCreatePreflight,
@@ -154,6 +157,121 @@ test("sandbox inspection output covers text, JSON, drift, reasons, and blocking"
   result.execution.reasons = [];
   showSandboxInspection(context, "change", { unattended: true });
   assert.equal(blocked, 1);
+});
+
+test("sandbox setup records success and actionable process failures", () => {
+  const record = {};
+  const warnings = [];
+  let result = { status: 0, stdout: "", stderr: "" };
+  const context = {
+    spawn: () => result,
+    output: { error: (value) => warnings.push(String(value)) }
+  };
+  assert.deepEqual(runSandboxSetupCommand(
+    context, record, "npm ci", 1000, "/workspace", null
+  ), { command: "npm ci", status: "ok", exitCode: 0 });
+  assert.deepEqual(warnings, []);
+
+  result = {
+    status: null, error: { code: "ETIMEDOUT" },
+    stdout: "one\ntwo\nthree\nfour\nfive\nsix", stderr: "seven"
+  };
+  assert.equal(runSandboxSetupCommand(
+    context, record, "npm ci", 1000, "/workspace", "api"
+  ).exitCode, null);
+  assert.match(warnings[0], /for 'api' \(ETIMEDOUT\)/);
+  assert.doesNotMatch(warnings[0], /one|two/);
+  assert.match(warnings[0], /three[\s\S]*seven/);
+
+  result = { status: 2, stdout: "", stderr: "install failed" };
+  runSandboxSetupCommand(context, record, "npm ci", 1000, "/workspace", null);
+  assert.match(warnings[1], /\(exit 2\)/);
+  assert.equal(record.setup.status, "failed");
+});
+
+test("ignored artifact carry skips failures, existing targets, and unmovable entries", () => {
+  const actions = [];
+  let listStatus = 1;
+  const context = {
+    git: () => ({ status: listStatus, stdout: "cache/\0exists/\0broken/\0" }),
+    pathExists: (path) => path.endsWith("exists/"),
+    makeDirectory: (path) => actions.push(["mkdir", path]),
+    rename: (from, to) => {
+      actions.push(["rename", from, to]);
+      if (from.endsWith("broken/")) throw new Error("cross-device");
+    }
+  };
+  carrySandboxIgnoredArtifacts(context, "/source", "/staging");
+  assert.deepEqual(actions, []);
+  listStatus = 0;
+  carrySandboxIgnoredArtifacts(context, "/source", "/staging");
+  assert.equal(actions.filter(([kind]) => kind === "rename").length, 2);
+  assert.equal(actions.some(([, path]) => path?.includes("exists")), false);
+});
+
+function replayFixture(overrides = {}) {
+  const calls = { carry: 0, setup: 0, git: [] };
+  let removeStatus = 0;
+  let moveStatus = 0;
+  let statusResult = { status: 0, stdout: " M generated", stderr: "" };
+  const repositories = [{
+    id: "api", access: "read", setupCommand: "npm ci"
+  }];
+  const context = {
+    carryIgnoredArtifacts: () => { calls.carry += 1; },
+    git: (args, path) => {
+      calls.git.push({ args, path });
+      if (args[1] === "remove")
+        return { status: removeStatus, stdout: "", stderr: "remove failed" };
+      if (args[1] === "move")
+        return { status: moveStatus, stdout: "", stderr: "move failed" };
+      return statusResult;
+    },
+    fail,
+    selectedRepositories: () => repositories,
+    runSetupCommand: (record) => {
+      calls.setup += 1;
+      record.setup = { status: "ok" };
+    },
+    policy: () => ({ sandbox: { setupTimeoutMs: 1000 } }),
+    ...overrides
+  };
+  return {
+    context, calls, repositories,
+    setRemoveStatus: (value) => { removeStatus = value; },
+    setMoveStatus: (value) => { moveStatus = value; },
+    setStatusResult: (value) => { statusResult = value; }
+  };
+}
+
+test("replay commit preserves recovery artifacts and validates worktree replacement", () => {
+  const fixture = replayFixture();
+  const state = { workspace: { baseHead: "old" } };
+  const prepared = {
+    movement: { repository: "api", to: "new" },
+    record: { path: "/sandbox/api", access: "read" },
+    targetPath: "/target/api", staging: "/staging/api", patch: "/patch/api.diff"
+  };
+  fixture.setRemoveStatus(1);
+  assert.throws(() => commitSandboxReplay(fixture.context, "change", state, prepared),
+    /cannot replace.*Prepared replay remains/);
+  fixture.setRemoveStatus(0);
+  fixture.setMoveStatus(1);
+  assert.throws(() => commitSandboxReplay(fixture.context, "change", state, prepared),
+    /replacement could not be moved/);
+  fixture.setMoveStatus(0);
+  commitSandboxReplay(fixture.context, "change", state, prepared);
+  assert.equal(prepared.record.baseHead, "new");
+  assert.equal(prepared.record.setup.status, "failed");
+  assert.match(prepared.record.setup.reason, /read-only repository/);
+  assert.equal(prepared.movement.rebased, true);
+  assert.equal(fixture.calls.setup, 1);
+
+  prepared.movement = { repository: "root", to: "root-new" };
+  prepared.record = { path: "/sandbox/root", access: "write" };
+  commitSandboxReplay(fixture.context, "change", state, prepared);
+  assert.equal(state.workspace.baseHead, "root-new");
+  assert.equal(fixture.calls.setup, 1);
 });
 
 test("sandbox create preflight accepts safe targets and selects repositories", (t) => {

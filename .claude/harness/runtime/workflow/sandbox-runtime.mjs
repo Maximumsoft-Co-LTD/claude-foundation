@@ -144,6 +144,72 @@ export function showSandboxInspection(context, id, flags = {}) {
   }
 }
 
+export function runSandboxSetupCommand(context, record, command, timeoutMs, cwd, label) {
+  const result = context.spawn("sh", ["-c", command], {
+    cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024
+  });
+  const failed = Boolean(result.error) || result.status !== 0;
+  record.setup = {
+    command, status: failed ? "failed" : "ok",
+    exitCode: typeof result.status === "number" ? result.status : null
+  };
+  if (failed) {
+    const cause = result.error
+      ? String(result.error.code || result.error.message)
+      : `exit ${result.status}`;
+    const tail = `${result.stdout || ""}\n${result.stderr || ""}`
+      .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
+    context.output.error(`WARNING: sandbox setup command failed${
+      label ? ` for '${label}'` : ""} (${cause}): ${command}\n  workspace: ${cwd}\n  rerun it there manually before Prove${tail ? `\n    ${tail}` : ""}`);
+  }
+  return record.setup;
+}
+
+export function carrySandboxIgnoredArtifacts(context, sourcePath, stagingPath) {
+  const listed = context.git(["ls-files", "-z", "--others", "--ignored",
+    "--exclude-standard", "--directory"], sourcePath);
+  if (listed.status !== 0) return;
+  for (const entry of listed.stdout.split("\0").filter(Boolean)) {
+    const to = join(stagingPath, entry);
+    if (context.pathExists(to)) continue;
+    try {
+      context.makeDirectory(dirname(to), { recursive: true });
+      context.rename(join(sourcePath, entry), to);
+    } catch {
+      // Best effort: an artifact that cannot move falls back to rebuilding it.
+    }
+  }
+}
+
+export function commitSandboxReplay(context, id, state, prepared) {
+  const { movement, record, targetPath, staging, patch } = prepared;
+  context.carryIgnoredArtifacts(record.path, staging);
+  const removed = context.git(["worktree", "remove", "--force", record.path], targetPath);
+  if (removed.status !== 0)
+    context.fail(`cannot replace the '${movement.repository}' sandbox worktree: ${
+      removed.stderr.trim()}. Prepared replay remains at '${staging}' with patch '${patch}'.`);
+  const moved = context.git(["worktree", "move", staging, record.path], targetPath);
+  if (moved.status !== 0)
+    context.fail(`the '${movement.repository}' sandbox worktree was removed and its replacement could not be moved into place: ${
+      moved.stderr.trim()}. The replayed work is at '${staging}' and the patch at '${patch}'.`);
+  record.baseHead = movement.to;
+  if (movement.repository === "root") state.workspace.baseHead = movement.to;
+  const repository = context.selectedRepositories(id, state)
+    .find((entry) => entry.id === movement.repository);
+  if (repository?.setupCommand && movement.repository !== "root") {
+    context.runSetupCommand(record, repository.setupCommand,
+      context.policy().sandbox?.setupTimeoutMs, record.path, repository.id);
+    if (record.access === "read") {
+      const changed = context.git(["status", "--porcelain"], record.path);
+      if (changed.status !== 0 || changed.stdout.trim()) {
+        record.setup.status = "failed";
+        record.setup.reason = "setup modified a read-only repository";
+      }
+    }
+  }
+  movement.rebased = true;
+}
+
 // Which files `git apply` refused, so a replay that cannot proceed names the
 // same thing the isolated-copy path names: the files, not the exit code.
 //
@@ -749,26 +815,9 @@ export function createSandboxRuntime({
   // that. Failure keeps the sandbox — the workspace itself is correct, and
   // destroying it over a flaky install would cost more than the one manual
   // rerun the warning asks for.
-  function runSetupCommand(record, command, timeoutMs, cwd, label) {
-    const result = spawnSync("sh", ["-c", command], {
-      cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024
-    });
-    const failed = Boolean(result.error) || result.status !== 0;
-    record.setup = {
-      command, status: failed ? "failed" : "ok",
-      exitCode: typeof result.status === "number" ? result.status : null
-    };
-    if (failed) {
-      const cause = result.error
-        ? String(result.error.code || result.error.message)
-        : `exit ${result.status}`;
-      const tail = `${result.stdout || ""}\n${result.stderr || ""}`
-        .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
-      console.error(`WARNING: sandbox setup command failed${
-        label ? ` for '${label}'` : ""} (${cause}): ${command}\n  workspace: ${cwd}\n  rerun it there manually before Prove${tail ? `\n    ${tail}` : ""}`);
-    }
-    return record.setup;
-  }
+  const runSetupCommand = runSandboxSetupCommand.bind(null, {
+    spawn: spawnSync, output: console
+  });
 
   // Single-repository setup comes from foundation.json; a repository row in a
   // multi-repository change carries its own `setupCommand` because each
@@ -1104,51 +1153,13 @@ export function createSandboxRuntime({
   // prove the wipe was environmental rather than a regression. Carry ignored
   // artifacts into the replacement worktree instead: they are ignored, so
   // they cannot alter any tracked state the replay verified.
-  function carryIgnoredArtifacts(sourcePath, stagingPath) {
-    const listed = git(["ls-files", "-z", "--others", "--ignored",
-      "--exclude-standard", "--directory"], sourcePath);
-    if (listed.status !== 0) return;
-    for (const entry of listed.stdout.split("\0").filter(Boolean)) {
-      const to = join(stagingPath, entry);
-      if (existsSync(to)) continue;
-      try {
-        mkdirSync(dirname(to), { recursive: true });
-        renameSync(join(sourcePath, entry), to);
-      } catch {
-        // Best effort: an artifact that cannot move (cross-device link,
-        // permissions) falls back to the previous behavior of rebuilding it.
-      }
-    }
-  }
-
-  function commitReplay(id, state, prepared) {
-    const { movement, record, targetPath, staging, patch } = prepared;
-    carryIgnoredArtifacts(record.path, staging);
-    const removed = git(["worktree", "remove", "--force", record.path], targetPath);
-    if (removed.status !== 0)
-      fail(`cannot replace the '${movement.repository}' sandbox worktree: ${
-        removed.stderr.trim()}. Prepared replay remains at '${staging}' with patch '${patch}'.`);
-    const moved = git(["worktree", "move", staging, record.path], targetPath);
-    if (moved.status !== 0)
-      fail(`the '${movement.repository}' sandbox worktree was removed and its replacement could not be moved into place: ${
-        moved.stderr.trim()}. The replayed work is at '${staging}' and the patch at '${patch}'.`);
-    record.baseHead = movement.to;
-    if (movement.repository === "root") state.workspace.baseHead = movement.to;
-    const repository = selectedRepositories(id, state)
-      .find((entry) => entry.id === movement.repository);
-    if (repository?.setupCommand && movement.repository !== "root") {
-      runSetupCommand(record, repository.setupCommand,
-        policy().sandbox?.setupTimeoutMs, record.path, repository.id);
-      if (record.access === "read") {
-        const changed = git(["status", "--porcelain"], record.path);
-        if (changed.status !== 0 || changed.stdout.trim()) {
-          record.setup.status = "failed";
-          record.setup.reason = "setup modified a read-only repository";
-        }
-      }
-    }
-    movement.rebased = true;
-  }
+  const carryIgnoredArtifacts = carrySandboxIgnoredArtifacts.bind(null, {
+    git, pathExists: existsSync, makeDirectory: mkdirSync, rename: renameSync
+  });
+  const commitReplay = commitSandboxReplay.bind(null, {
+    carryIgnoredArtifacts, git, fail, selectedRepositories,
+    runSetupCommand, policy
+  });
 
   function rebaseWorktree(id, state) {
     const candidates = replayCandidates(state)
