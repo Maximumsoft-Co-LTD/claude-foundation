@@ -76,6 +76,7 @@ proof execution boundaries|node --test "$ROOT/.claude/harness/tests/proof-execut
 durable decision metadata|node --test "$ROOT/.claude/harness/tests/durable-decision-metadata.test.mjs"
 carried unchanged|node --test "$ROOT/.claude/harness/tests/carried-unchanged.test.mjs"
 reviewer config|node --test "$ROOT/.claude/harness/tests/reviewer-config.test.mjs"
+claude review operation|node --test "$ROOT/.claude/harness/tests/claude-review-operation.test.mjs"
 review closure helpers|node --test "$ROOT/.claude/harness/tests/review-closure-helpers.test.mjs"
 review dispatch helpers|node --test "$ROOT/.claude/harness/tests/review-dispatch-helpers.test.mjs"
 agent repository conflicts|node --test "$ROOT/.claude/harness/tests/agent-repository-conflicts.test.mjs"

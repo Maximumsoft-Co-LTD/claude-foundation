@@ -144,6 +144,85 @@ export function reviewerConfigValue(context, name = null) {
   return { identity, ...config };
 }
 
+export function claudeReviewerEnvironment(env, changeId) {
+  const environment = { ...env, FOUNDATION_CHANGE_ID: changeId };
+  delete environment.CLAUDECODE;
+  return environment;
+}
+
+export function claudeReviewerArguments(config, packet, requestedSession) {
+  return [
+    "-p", "--output-format", "json",
+    "--json-schema", JSON.stringify(REVIEW_SCHEMA),
+    "--model", config.modelId,
+    "--effort", config.reasoningEffort,
+    "--permission-mode", "plan",
+    "--tools", CLAUDE_READ_ONLY_TOOLS,
+    "--safe-mode", "--no-session-persistence",
+    "--session-id", requestedSession,
+    configuredReviewPrompt(packet)
+  ];
+}
+
+export function claudeReviewerFailure(result, envelope, sessionId) {
+  if (envelope?.envelopeError)
+    return {
+      status: "error", sessionId: sessionId || null,
+      summary: `Claude Code reviewer returned an invalid event envelope (${envelope.envelopeError})`
+    };
+  if (result.error || result.status !== 0 || envelope?.is_error === true ||
+      envelope?.subtype && envelope.subtype !== "success")
+    return {
+      status: "error", sessionId: sessionId || null,
+      summary: `Claude Code reviewer failed: ${diagnostic(result)}`
+    };
+  return null;
+}
+
+export function reviewerSessionIsForbidden(sessionId, forbiddenSessionIds) {
+  if (!sessionId) return false;
+  return forbiddenSessionIds.some((value) =>
+    text(value).toLowerCase() === sessionId.toLowerCase());
+}
+
+export function claudeStructuredReview(envelope) {
+  if (envelope?.structured_output) return envelope.structured_output;
+  return typeof envelope?.result === "object"
+    ? envelope.result : parseJson(envelope?.result);
+}
+
+export function runClaudeReviewOperation(
+  context, config, changeId, workspace, packet, forbiddenSessionIds
+) {
+  const environment = claudeReviewerEnvironment(context.env, changeId);
+  const requestedSession = context.uuid();
+  const args = claudeReviewerArguments(config, packet, requestedSession);
+  const result = context.spawn(config.executable, args, {
+    cwd: workspace, encoding: "utf8",
+    timeout: Number(config.timeoutMs || 45 * 60 * 1000),
+    maxBuffer: 64 * 1024 * 1024,
+    env: environment
+  });
+  const envelope = claudeResultEnvelope(result.stdout);
+  const sessionId = text(envelope?.session_id);
+  const failure = claudeReviewerFailure(result, envelope, sessionId);
+  if (failure)
+    return context.persist(config, changeId, workspace, failure);
+  if (reviewerSessionIsForbidden(sessionId, forbiddenSessionIds))
+    return context.persist(config, changeId, workspace, {
+      status: "error", sessionId,
+      summary: "Configured reviewer reused an implementation session; independence requires a fresh session"
+    });
+  if (!sessionId)
+    return context.persist(config, changeId, workspace, {
+      status: "error", sessionId: null,
+      summary: "Claude Code reviewer did not return an actual fresh session ID"
+    });
+  return context.normalizeReview(
+    config, changeId, workspace, claudeStructuredReview(envelope),
+    sessionId, forbiddenSessionIds);
+}
+
 export function createConfiguredReviewerRuntime({
   root, foundationPolicy, commandExists, now, fail, uuid = randomUUID,
   spawn = spawnSync
@@ -337,64 +416,9 @@ export function createConfiguredReviewerRuntime({
     }
   }
 
-  function runClaude(config, changeId, workspace, packet, forbiddenSessionIds) {
-    const environment = {
-      ...process.env, FOUNDATION_CHANGE_ID: changeId
-    };
-    // Claude Code rejects nested launches when its host marker is inherited.
-    // The reviewer is an intentionally separate headless process/session.
-    delete environment.CLAUDECODE;
-    const requestedSession = uuid();
-    const args = [
-      "-p", "--output-format", "json",
-      "--json-schema", JSON.stringify(REVIEW_SCHEMA),
-      "--model", config.modelId,
-      "--effort", config.reasoningEffort,
-      "--permission-mode", "plan",
-      "--tools", CLAUDE_READ_ONLY_TOOLS,
-      "--safe-mode", "--no-session-persistence",
-      "--session-id", requestedSession,
-      configuredReviewPrompt(packet)
-    ];
-    const result = spawn(config.executable, args, {
-      cwd: workspace, encoding: "utf8",
-      timeout: Number(config.timeoutMs || 45 * 60 * 1000),
-      maxBuffer: 64 * 1024 * 1024,
-      env: environment
-    });
-    const envelope = claudeResultEnvelope(result.stdout);
-    const sessionId = text(envelope?.session_id);
-    if (envelope?.envelopeError)
-      return persist(config, changeId, workspace, {
-        status: "error", sessionId: sessionId || null,
-        summary: `Claude Code reviewer returned an invalid event envelope (${envelope.envelopeError})`
-      });
-    if (result.error || result.status !== 0 || envelope?.is_error === true ||
-        envelope?.subtype && envelope.subtype !== "success")
-      return persist(config, changeId, workspace, {
-        status: "error", sessionId: sessionId || null,
-        summary: `Claude Code reviewer failed: ${diagnostic(result)}`
-      });
-    if (sessionId && forbiddenSessionIds.some((value) =>
-      text(value).toLowerCase() === sessionId.toLowerCase()))
-      return persist(config, changeId, workspace, {
-        status: "error", sessionId,
-        summary: "Configured reviewer reused an implementation session; independence requires a fresh session"
-      });
-    // Claude Code versions may allocate a fresh actual session even when a
-    // caller supplied --session-id. Provenance must record what the process
-    // actually emitted; freshness is enforced by no-session-persistence and
-    // the forbidden-session check above, not by string equality with our hint.
-    if (!sessionId)
-      return persist(config, changeId, workspace, {
-        status: "error", sessionId: null,
-        summary: "Claude Code reviewer did not return an actual fresh session ID"
-      });
-    const review = envelope?.structured_output ||
-      (typeof envelope?.result === "object" ? envelope.result : parseJson(envelope?.result));
-    return normalizeReview(config, changeId, workspace, review, sessionId,
-      forbiddenSessionIds);
-  }
+  const runClaude = runClaudeReviewOperation.bind(null, {
+    env: process.env, uuid, spawn, persist, normalizeReview
+  });
 
   function runReview({
     changeId, reviewer = null, workspace, packet, forbiddenSessionIds = []
