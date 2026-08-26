@@ -22,6 +22,8 @@ const fail = (message) => { throw new Error(message); };
 function validationRuntimeFixture() {
   const root = mkdtempSync(join(tmpdir(), "foundation-validation-phases-"));
   const packet = join(root, "change-a");
+  let activePacket = packet;
+  let durablePacket = packet;
   const state = {
     id: "change-a",
     status: "change",
@@ -38,6 +40,7 @@ function validationRuntimeFixture() {
   };
   const saved = [];
   const handoffs = [];
+  const writes = [];
   mkdirSync(packet, { recursive: true });
   writeFileSync(join(packet, "proposal.md"), "# Proposal\nBounded change.\n");
   writeFileSync(join(packet, "tasks.md"),
@@ -45,13 +48,15 @@ function validationRuntimeFixture() {
   writeFileSync(join(packet, "evidence.yaml"), "version: 1\n");
   const runtime = createChangeValidationRuntime({
     root,
-    activeChangePath: () => packet,
-    changePath: () => packet,
+    activeChangePath: () => activePacket,
+    changePath: () => durablePacket,
     walk: () => {},
     loadRuntime: () => state,
     saveRuntime: (value) => saved.push(structuredClone(value)),
     evidence: () => contract,
-    selectedRepositories: () => [{ id: "root", workspacePath: root }],
+    selectedRepositories: () => [{
+      id: "root", mode: "write", workspacePath: root, relativePath: "."
+    }],
     providerCapability: (provider, config) => config?.capability || provider,
     providerConfig: (_id, provider) => contract.providers[provider],
     resolvedAcceptance: () => ({ required: false, version: 2, claimIds: [] }),
@@ -64,16 +69,22 @@ function validationRuntimeFixture() {
     rawExecution: () => ({ providers: {} }),
     handoffContract: (id, value) => handoffs.push({ id, value }),
     contractFingerprint: () => "fingerprint",
-    commandExists: () => true,
+    commandExists: (command) => command !== "missing",
     stableHash: () => "hash",
     fileDigest: () => "digest",
     pathInside: () => true,
     knownProviders: new Set(),
-    writeJson: () => {},
+    writeJson: (path, value) => writes.push({ path, value: structuredClone(value) }),
     now: () => "2026-08-26T00:00:00Z",
     fail
   });
-  return { runtime, state, contract, saved, handoffs, packet };
+  return {
+    runtime, state, contract, saved, handoffs, packet, writes,
+    setPacketPaths(active, durable) {
+      activePacket = active;
+      durablePacket = durable;
+    }
+  };
 }
 
 test("validation preflight reports every unresolved prerequisite", () => {
@@ -247,6 +258,87 @@ test("grounding lock records first lock and closes a pending reopen", () => {
     completedAt: "completed-at"
   });
   assert.equal(reopened.groundingReopenPending, undefined);
+});
+
+test("artifact gaps cover rapid and standard packet requirements", () => {
+  const fixture = validationRuntimeFixture();
+  assert.deepEqual(fixture.runtime.changeArtifactGaps(fixture.state, fixture.packet), []);
+
+  fixture.state.groundingRequired = true;
+  fixture.state.version = 2;
+  fixture.state.externalOperationsVersion = 1;
+  assert.deepEqual(fixture.runtime.changeArtifactGaps(fixture.state, fixture.packet), [
+    "grounding.yaml", "execution.yaml", "repositories.yaml", "handoffs.yaml"
+  ]);
+
+  fixture.state.schema = "foundation-standard";
+  assert.deepEqual(fixture.runtime.changeArtifactGaps(fixture.state, fixture.packet), [
+    "design.md", "grounding.yaml", "execution.yaml", "repositories.yaml",
+    "handoffs.yaml", "specs/**/*.md"
+  ]);
+});
+
+test("evidence initialization previews and mirrors durable provider wiring", () => {
+  const fixture = validationRuntimeFixture();
+  const active = join(fixture.packet, "active");
+  const durable = join(fixture.packet, "durable");
+  fixture.setPacketPaths(active, durable);
+  fixture.contract.claims[0].capabilities = ["test"];
+  fixture.contract.providers.external = { adapter: "external" };
+  fixture.contract.providers.broken = { adapter: "command", command: ["missing"] };
+  writeFileSync(join(fixture.packet, "..", "package.json"), JSON.stringify({
+    scripts: { test: "node --test" }
+  }));
+
+  const messages = [];
+  const originalLog = console.log;
+  console.log = (message) => messages.push(String(message));
+  try {
+    fixture.runtime.initializeEvidence("change-a");
+    assert.equal(fixture.writes.length, 0);
+    fixture.runtime.initializeEvidence("change-a", { write: true });
+    fixture.runtime.showEvidenceDoctor("change-a");
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(fixture.writes.length, 2);
+  assert.equal(fixture.writes[0].path, join(durable, "execution.yaml"));
+  assert.equal(fixture.writes[1].path, join(active, "execution.yaml"));
+  assert.deepEqual(fixture.writes[0].value, fixture.writes[1].value);
+  assert.equal(fixture.writes[0].value.providers.test.adapter, "test-discovery");
+  assert.ok(messages.some((message) => message.includes('"write": false')));
+  assert.ok(messages.some((message) => message.includes('"written"')));
+  assert.ok(messages.some((message) => message.includes("EVIDENCE DOCTOR change-a")));
+  assert.ok(messages.some((message) => message.includes("OK       external")));
+  assert.ok(messages.some((message) => message.includes("CANDIDATE test")));
+  assert.ok(messages.some((message) => message.includes("BLOCKED  review")));
+  assert.ok(messages.some((message) => message.includes("BLOCKED  broken")));
+  assert.ok(messages.some((message) => message.includes("evidence init change-a --write")));
+});
+
+test("traceability audit renders text and JSON and marks invalid links", () => {
+  const fixture = validationRuntimeFixture();
+  const messages = [];
+  const originalLog = console.log;
+  const originalExitCode = process.exitCode;
+  console.log = (message) => messages.push(String(message));
+  try {
+    fixture.runtime.showTraceabilityAudit("change-a");
+    fixture.runtime.showTraceabilityAudit("change-a", { json: true });
+    assert.notEqual(process.exitCode, 1);
+
+    writeFileSync(join(fixture.packet, "tasks.md"),
+      "- [ ] T001 Implement behavior [claims:unknown] [paths:src/runtime.mjs]\n");
+    fixture.runtime.showTraceabilityAudit("change-a");
+    assert.equal(process.exitCode, 1);
+  } finally {
+    console.log = originalLog;
+    process.exitCode = originalExitCode;
+  }
+  assert.ok(messages.some((message) => message.includes("TRACEABILITY change-a: PASS")));
+  assert.ok(messages.some((message) => message.includes('"changeId": "change-a"')));
+  assert.ok(messages.some((message) => message.includes("unknown-task-claim")));
 });
 
 test("validation runtime orchestrates contract, state, advisory, and review phases", () => {
