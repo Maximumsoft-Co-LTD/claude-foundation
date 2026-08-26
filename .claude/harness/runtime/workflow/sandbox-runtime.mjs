@@ -559,6 +559,102 @@ export function rebindRelocatedSandboxOperation(context, id, state) {
   return true;
 }
 
+export function changeDiffCandidates(root, state) {
+  if (!state.repositories || Object.keys(state.repositories).length === 0)
+    return [{ repository: "root", record: state.workspace, targetPath: root }];
+  return Object.entries(state.repositories)
+    .filter(([, record]) => record.mode === "worktree")
+    .map(([repository, record]) => ({
+      repository, record,
+      targetPath: record.targetPath || (repository === "root" ? root : null)
+    }));
+}
+
+export function normalizedDiffDigest(buffer) {
+  const digest = createHash("sha256");
+  // latin1 round-trips bytes 1:1, so `GIT binary patch` sections pass
+  // through the line-level normalization untouched.
+  for (const line of buffer.toString("latin1").split("\n")) {
+    if (line.startsWith("index ")) continue;
+    digest.update(line.replace(/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/, "@@"));
+    digest.update("\n");
+  }
+  return digest.digest("hex");
+}
+
+export function changeDiffCandidatePlan(context, id, state, candidate) {
+  const { repository, record } = candidate;
+  if (!record || record.mode !== "worktree" || record.access === "read")
+    return { status: "skip" };
+  if (!record.baseHead || !record.path || !context.pathExists(record.path))
+    return { status: "invalid" };
+  const nested = repository === "root"
+    ? context.selectedRepositories(id, state)
+      .filter((entry) => entry.type === "submodule")
+      .map((entry) => entry.relativePath)
+    : [];
+  const indexFile = `${record.path}.diff-identity-index.${context.pid}`;
+  return {
+    status: "ready", repository, record,
+    pathspec: context.codePathspec(id, nested),
+    indexFile,
+    env: { ...context.environment, GIT_INDEX_FILE: indexFile }
+  };
+}
+
+export function changeDiffCandidateRow(context, plan) {
+  const { repository, record, pathspec, indexFile, env } = plan;
+  try {
+    // Keep the scratch index beside the worktree so it can never stage itself.
+    context.remove(indexFile, { force: true });
+    // Seed from the base before add -A: tracked-but-ignored files must remain
+    // known to the index, while real deletions must still enter the patch.
+    const seeded = context.spawn("git", ["read-tree", record.baseHead],
+      { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (seeded.status !== 0) return null;
+    const staged = context.spawn("git", ["-c", "core.quotepath=false", "add", "-A"],
+      { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (staged.status !== 0) return null;
+    // No encoding: binary patch bytes, same rationale as gitBuffer.
+    const diff = context.spawn("git", [
+      "-c", "diff.algorithm=myers", "-c", "core.quotepath=false",
+      "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+      "-c", "diff.renames=true",
+      "diff", "--binary", "--cached", record.baseHead, "--", ...pathspec
+    ], { cwd: record.path, env, maxBuffer: 64 * 1024 * 1024 });
+    if (diff.status !== 0) return null;
+    return `${repository}\0${context.diffDigest(diff.stdout)}`;
+  } finally {
+    context.remove(indexFile, { force: true });
+  }
+}
+
+export function combinedDiffIdentity(rows) {
+  const digest = createHash("sha256");
+  // :3 — the representation changed again (base-seeded index); a verdict
+  // stamped under an earlier form must read as stale, never as
+  // accidentally equal.
+  digest.update("foundation-diff-identity:3\0");
+  for (const row of [...rows].sort()) {
+    digest.update(row);
+    digest.update("\0");
+  }
+  return digest.digest("hex");
+}
+
+export function changeDiffIdentityOperation(context, id, state) {
+  const rows = [];
+  for (const candidate of context.candidates(state)) {
+    const plan = context.plan(id, state, candidate);
+    if (plan.status === "skip") continue;
+    if (plan.status !== "ready") return null;
+    const row = context.row(plan);
+    if (!row) return null;
+    rows.push(row);
+  }
+  return rows.length ? context.combine(rows) : null;
+}
+
 export function createSandboxRuntime({
   root, policy, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
   loadRuntime, saveRuntime,
@@ -951,16 +1047,7 @@ export function createSandboxRuntime({
   // `baseHead`, which is exactly what apply projects, and no contract downstream
   // reads sandbox commit history. Flattening it into working-tree changes costs
   // nothing that is ever consulted.
-  function replayCandidates(state) {
-    if (!state.repositories || Object.keys(state.repositories).length === 0)
-      return [{ repository: "root", record: state.workspace, targetPath: root }];
-    return Object.entries(state.repositories)
-      .filter(([, record]) => record.mode === "worktree")
-      .map(([repository, record]) => ({
-        repository, record,
-        targetPath: record.targetPath || (repository === "root" ? root : null)
-      }));
-  }
+  const replayCandidates = changeDiffCandidates.bind(null, root);
 
   // The change's whole contribution is its diff from `baseHead` — the same
   // content replay projects and a reviewer reads. Hashing the raw patch would
@@ -969,18 +1056,6 @@ export function createSandboxRuntime({
   // coordinates removed, the identity survives a clean replay onto a moved
   // base and changes exactly when the diff's content changes — which is when
   // a review verdict genuinely needs renewing.
-  function normalizedDiffDigest(buffer) {
-    const digest = createHash("sha256");
-    // latin1 round-trips bytes 1:1, so `GIT binary patch` sections pass
-    // through the line-level normalization untouched.
-    for (const line of buffer.toString("latin1").split("\n")) {
-      if (line.startsWith("index ")) continue;
-      digest.update(line.replace(/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/, "@@"));
-      digest.update("\n");
-    }
-    return digest.digest("hex");
-  }
-
   // Worktree sandboxes only: a copy sandbox reconciles by manifest, not by
   // git, and the Land head-moved guard this identity exists to soften applies
   // only to worktree mode. Read-only repositories contribute no diff and are
@@ -998,65 +1073,26 @@ export function createSandboxRuntime({
   // never mutates it, so no snapshot hash moves as a side effect of reading.
   // The diff drivers are pinned because patch text is the identity: a
   // machine-level `diff.algorithm` or prefix tweak must not expire verdicts.
+  const changeDiffIdentityPlan = changeDiffCandidatePlan.bind(null, {
+    pathExists: existsSync,
+    selectedRepositories,
+    codePathspec: sandboxCodePathspec,
+    pid: process.pid,
+    environment: process.env
+  });
+  const changeDiffIdentityRow = changeDiffCandidateRow.bind(null, {
+    remove: rmSync,
+    spawn: spawnSync,
+    diffDigest: normalizedDiffDigest
+  });
+  const changeDiffIdentityForState = changeDiffIdentityOperation.bind(null, {
+    candidates: replayCandidates,
+    plan: changeDiffIdentityPlan,
+    row: changeDiffIdentityRow,
+    combine: combinedDiffIdentity
+  });
   function changeDiffIdentity(id, state = loadRuntime(id)) {
-    const rows = [];
-    for (const candidate of replayCandidates(state)) {
-      const { repository, record } = candidate;
-      if (!record || record.mode !== "worktree" || record.access === "read") continue;
-      if (!record.baseHead || !record.path || !existsSync(record.path)) return null;
-      const nested = repository === "root"
-        ? selectedRepositories(id, state)
-          .filter((entry) => entry.type === "submodule")
-          .map((entry) => entry.relativePath)
-        : [];
-      const pathspec = sandboxCodePathspec(id, nested);
-      // Beside the worktree, like `.rebase`, never inside it: a scratch index
-      // that lived in the tree would stage itself. Per-process, because
-      // `proof plan` takes no lock and can compute identity while a sync is
-      // computing its own — two writers on one scratch index read back as a
-      // corrupted diff.
-      const indexFile = `${record.path}.diff-identity-index.${process.pid}`;
-      const env = { ...process.env, GIT_INDEX_FILE: indexFile };
-      try {
-        rmSync(indexFile, { force: true });
-        // Seeded from the base, not empty: from an empty index `add -A`
-        // skips a tracked-but-ignored file (ignore rules apply to paths the
-        // index does not know), which turned such a file into a phantom
-        // deletion whose patch text was the *base's* content — so an
-        // upstream edit to a file the change never touched moved the
-        // identity. With the base read in first, `add -A` updates the entry
-        // like any tracked file, and a file the change really deleted still
-        // registers: present in the seed, absent from the worktree.
-        const seeded = spawnSync("git", ["read-tree", record.baseHead],
-          { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-        if (seeded.status !== 0) return null;
-        const staged = spawnSync("git", ["-c", "core.quotepath=false", "add", "-A"],
-          { cwd: record.path, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-        if (staged.status !== 0) return null;
-        // No encoding: binary patch bytes, same rationale as gitBuffer.
-        const diff = spawnSync("git", [
-          "-c", "diff.algorithm=myers", "-c", "core.quotepath=false",
-          "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
-          "-c", "diff.renames=true",
-          "diff", "--binary", "--cached", record.baseHead, "--", ...pathspec
-        ], { cwd: record.path, env, maxBuffer: 64 * 1024 * 1024 });
-        if (diff.status !== 0) return null;
-        rows.push(`${repository}\0${normalizedDiffDigest(diff.stdout)}`);
-      } finally {
-        rmSync(indexFile, { force: true });
-      }
-    }
-    if (!rows.length) return null;
-    const digest = createHash("sha256");
-    // :3 — the representation changed again (base-seeded index); a verdict
-    // stamped under an earlier form must read as stale, never as
-    // accidentally equal.
-    digest.update("foundation-diff-identity:3\0");
-    for (const row of rows.sort()) {
-      digest.update(row);
-      digest.update("\0");
-    }
-    return digest.digest("hex");
+    return changeDiffIdentityForState(id, state);
   }
 
   const prepareReplay = prepareWorktreeReplay.bind(null, {
