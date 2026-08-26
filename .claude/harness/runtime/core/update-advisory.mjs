@@ -91,6 +91,24 @@ function updateActions(status) {
   return actions;
 }
 
+export function updateStatus(installed, project, latest) {
+  if (installed && latest) {
+    const cliAhead = compareVersions(installed, latest) > 0;
+    const cliBehind = compareVersions(installed, latest) < 0;
+    const projectBehind = Boolean(project && compareVersions(project, installed) < 0);
+    const projectLatestBehind = Boolean(project && compareVersions(project, latest) < 0);
+    if (cliAhead && projectBehind) return "project-refresh-required";
+    if (cliAhead) return "head-installation";
+    if (cliBehind && projectLatestBehind) return "both-outdated";
+    if (cliBehind) return "cli-update-available";
+    if (projectBehind) return "project-refresh-required";
+    return "current";
+  }
+  if (installed && project && compareVersions(project, installed) < 0)
+    return "project-refresh-required";
+  return "unknown";
+}
+
 export function advisoryFromVersions({
   installedVersion, projectVersion = null, latestVersion = null,
   checkedAt = null, freshness = "unavailable", source = "none", reason = null
@@ -98,20 +116,7 @@ export function advisoryFromVersions({
   const installed = stableVersion(installedVersion);
   const project = projectVersion === null ? null : stableVersion(projectVersion);
   const latest = latestVersion === null ? null : stableVersion(latestVersion);
-  let status = "unknown";
-  if (installed && latest) {
-    const cliAhead = compareVersions(installed, latest) > 0;
-    const cliBehind = compareVersions(installed, latest) < 0;
-    const projectBehind = Boolean(project && compareVersions(project, installed) < 0);
-    const projectLatestBehind = Boolean(project && compareVersions(project, latest) < 0);
-    if (cliAhead && projectBehind) status = "project-refresh-required";
-    else if (cliAhead) status = "head-installation";
-    else if (cliBehind && projectLatestBehind) status = "both-outdated";
-    else if (cliBehind) status = "cli-update-available";
-    else if (projectBehind) status = "project-refresh-required";
-    else status = "current";
-  } else if (installed && project && compareVersions(project, installed) < 0)
-    status = "project-refresh-required";
+  const status = updateStatus(installed, project, latest);
   return {
     status,
     installedVersion: installed || String(installedVersion || "unknown"),
@@ -173,20 +178,54 @@ function readNotificationState(path) {
   }
 }
 
-export function updateNotificationDirective(advisory, trigger, options = {}) {
+export function baseUpdateNotificationDirective(advisory, trigger) {
   const actionable = Array.isArray(advisory?.actions) && advisory.actions.length > 0;
-  const sessionId = String(options.sessionId ||
-    options.env?.FOUNDATION_SESSION_ID || process.env.FOUNDATION_SESSION_ID || "").trim();
   const version = stableVersion(advisory?.latestVersion) || null;
-  const kind = trigger === "build" ? "update-reminder" : "update-available";
-  const directive = {
-    surface: actionable,
-    kind,
-    timing: trigger === "build" ? "before-build" : "phase-entry",
-    dedupeKey: version ? `foundation-update:${version}` : null,
-    blocking: false,
-    reason: actionable ? null : "no-update-action"
+  return {
+    actionable,
+    directive: {
+      surface: actionable,
+      kind: trigger === "build" ? "update-reminder" : "update-available",
+      timing: trigger === "build" ? "before-build" : "phase-entry",
+      dedupeKey: version ? `foundation-update:${version}` : null,
+      blocking: false,
+      reason: actionable ? null : "no-update-action"
+    }
   };
+}
+
+export function notificationSessionId(options) {
+  return String(options.sessionId || options.env?.FOUNDATION_SESSION_ID ||
+    process.env.FOUNDATION_SESSION_ID || "").trim();
+}
+
+export function acquireNotificationLock(path, timeoutMs) {
+  const deadline = Date.now() + Number(timeoutMs ?? 250);
+  let lock;
+  do {
+    lock = acquireProcessLock(`${path}.lock`);
+    if (lock.acquired) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  } while (Date.now() < deadline);
+  return lock;
+}
+
+export function nextNotificationState(state, sessionId, directive, trigger, now) {
+  const sessions = Object.fromEntries(Object.entries({
+    ...state.sessions,
+    [sessionId]: {
+      dedupeKey: directive.dedupeKey,
+      trigger,
+      notifiedAt: new Date(now ?? Date.now()).toISOString()
+    }
+  }).sort(([, left], [, right]) => String(right?.notifiedAt || "")
+    .localeCompare(String(left?.notifiedAt || ""))).slice(0, 100));
+  return { version: UPDATE_NOTIFICATION_STATE_VERSION, sessions };
+}
+
+export function updateNotificationDirective(advisory, trigger, options = {}) {
+  const { actionable, directive } = baseUpdateNotificationDirective(advisory, trigger);
+  const sessionId = notificationSessionId(options);
   if (!actionable || trigger === "build") return directive;
   if (!sessionId) return { ...directive, reason: "session-unavailable" };
 
@@ -194,12 +233,7 @@ export function updateNotificationDirective(advisory, trigger, options = {}) {
     defaultUpdateNotificationStatePath(options.env || process.env);
   let lock;
   try {
-    const deadline = Date.now() + Number(options.notificationLockTimeoutMs ?? 250);
-    do {
-      lock = acquireProcessLock(`${path}.lock`);
-      if (lock.acquired) break;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-    } while (Date.now() < deadline);
+    lock = acquireNotificationLock(path, options.notificationLockTimeoutMs);
     if (!lock?.acquired)
       return { ...directive, surface: false, reason: "notification-state-busy" };
 
@@ -211,19 +245,8 @@ export function updateNotificationDirective(advisory, trigger, options = {}) {
     if (previous?.dedupeKey === directive.dedupeKey)
       return { ...directive, surface: false, reason: "already-notified-in-session" };
 
-    const sessions = Object.fromEntries(Object.entries({
-      ...state.sessions,
-      [sessionId]: {
-        dedupeKey: directive.dedupeKey,
-        trigger,
-        notifiedAt: new Date(options.now ?? Date.now()).toISOString()
-      }
-    }).sort(([, left], [, right]) => String(right?.notifiedAt || "")
-      .localeCompare(String(left?.notifiedAt || ""))).slice(0, 100));
-    writeUpdateCache(path, {
-      version: UPDATE_NOTIFICATION_STATE_VERSION,
-      sessions
-    });
+    writeUpdateCache(path, nextNotificationState(
+      state, sessionId, directive, trigger, options.now));
     return directive;
   } catch {
     return { ...directive, reason: "notification-state-unavailable" };
@@ -301,15 +324,15 @@ function readInstalledVersion(packageRoot) {
   return readFileSync(join(packageRoot, "VERSION"), "utf8").trim();
 }
 
-function printHuman(advisory) {
-  console.log("Foundation update status");
-  console.log(`CLI       ${advisory.installedVersion}${
+export function printHuman(advisory, log = console.log) {
+  log("Foundation update status");
+  log(`CLI       ${advisory.installedVersion}${
     advisory.latestVersion && advisory.status !== "current"
       ? ` -> ${advisory.latestVersion}` : ""}`);
-  if (advisory.projectVersion) console.log(`Project   ${advisory.projectVersion}`);
-  console.log(`Status    ${advisory.status}`);
-  console.log(`Freshness ${advisory.freshness}`);
-  for (const action of advisory.actions) console.log(`Next      ${action.command}`);
+  if (advisory.projectVersion) log(`Project   ${advisory.projectVersion}`);
+  log(`Status    ${advisory.status}`);
+  log(`Freshness ${advisory.freshness}`);
+  for (const action of advisory.actions) log(`Next      ${action.command}`);
 }
 
 async function main() {

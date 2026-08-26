@@ -8,9 +8,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
-  advisoryFromVersions, cachedUpdateAdvisory, compareVersions,
-  readUpdateCache, resolveUpdateAdvisory, stableVersion,
-  updateNotificationDirective, writeUpdateCache
+  advisoryFromVersions, baseUpdateNotificationDirective, cachedUpdateAdvisory,
+  compareVersions, nextNotificationState, notificationSessionId, printHuman,
+  readUpdateCache, resolveUpdateAdvisory, stableVersion, updateNotificationDirective,
+  updateStatus, writeUpdateCache
 } from "../../harness/runtime/core/update-advisory.mjs";
 import { resolveHostInstructionWithUpdate } from
   "../../harness/runtime/core/host-instruction.mjs";
@@ -88,6 +89,82 @@ test("a head installation still reports an older project runtime", () => {
   });
   assert.equal(value.status, "project-refresh-required");
   assert.deepEqual(value.actions.map((action) => action.type), ["refresh-project"]);
+});
+
+test("status and advisory values fail open for incomplete version identities", () => {
+  assert.equal(updateStatus(null, null, null), "unknown");
+  assert.equal(updateStatus("3.3.2", "3.3.2", null), "unknown");
+  const unknown = advisoryFromVersions({
+    installedVersion: "source-build", projectVersion: "project-build",
+    latestVersion: "invalid", reason: "unverified"
+  });
+  assert.equal(unknown.status, "unknown");
+  assert.equal(unknown.installedVersion, "source-build");
+  assert.equal(unknown.projectVersion, "project-build");
+  assert.equal(unknown.latestVersion, null);
+  assert.equal(unknown.reason, "unverified");
+});
+
+test("notification value helpers preserve timing, identity, and bounded history", () => {
+  assert.deepEqual(baseUpdateNotificationDirective({}, "change"), {
+    actionable: false,
+    directive: {
+      surface: false, kind: "update-available", timing: "phase-entry",
+      dedupeKey: null, blocking: false, reason: "no-update-action"
+    }
+  });
+  const build = baseUpdateNotificationDirective({
+    latestVersion: "v3.4.0", actions: [{ command: "upgrade" }]
+  }, "build");
+  assert.equal(build.actionable, true);
+  assert.equal(build.directive.kind, "update-reminder");
+  assert.equal(build.directive.timing, "before-build");
+  assert.equal(build.directive.dedupeKey, "foundation-update:3.4.0");
+  assert.equal(notificationSessionId({ sessionId: " explicit ", env: {
+    FOUNDATION_SESSION_ID: "environment"
+  } }), "explicit");
+  assert.equal(notificationSessionId({ env: {
+    FOUNDATION_SESSION_ID: " environment "
+  } }), "environment");
+
+  const sessions = {};
+  for (let index = 0; index < 101; index += 1)
+    sessions[`old-${index}`] = {
+      notifiedAt: new Date(NOW - index * 1000).toISOString()
+    };
+  const next = nextNotificationState({ sessions }, "new-session", build.directive,
+    "change", NOW + 1000);
+  assert.equal(Object.keys(next.sessions).length, 100);
+  assert.equal(next.sessions["new-session"].trigger, "change");
+  assert.equal(next.sessions["old-100"], undefined);
+  const incomplete = nextNotificationState({
+    sessions: { missingA: {}, missingB: {} }
+  }, "latest", build.directive, "change", NOW);
+  assert.equal(Object.keys(incomplete.sessions).length, 3);
+  assert.equal(incomplete.sessions.latest.notifiedAt, new Date(NOW).toISOString());
+});
+
+test("human update rendering covers current and actionable output", () => {
+  const current = [];
+  printHuman({
+    installedVersion: "3.3.2", latestVersion: "3.3.2", status: "current",
+    freshness: "fresh", actions: []
+  }, (line) => current.push(line));
+  assert.deepEqual(current, [
+    "Foundation update status", "CLI       3.3.2", "Status    current",
+    "Freshness fresh"
+  ]);
+  const update = [];
+  printHuman({
+    installedVersion: "3.3.1", projectVersion: "3.3.0", latestVersion: "3.3.2",
+    status: "both-outdated", freshness: "stale",
+    actions: [{ command: "upgrade" }, { command: "refresh" }]
+  }, (line) => update.push(line));
+  assert.deepEqual(update, [
+    "Foundation update status", "CLI       3.3.1 -> 3.3.2",
+    "Project   3.3.0", "Status    both-outdated", "Freshness stale",
+    "Next      upgrade", "Next      refresh"
+  ]);
 });
 
 test("fresh user cache prevents a network request", async () => {
@@ -191,6 +268,64 @@ test("environment opt-out performs no request", async () => {
   });
   assert.equal(requests, 0);
   assert.equal(value.status, "disabled");
+});
+
+test("network policy and explicit refresh select the expected cache route", async () => {
+  const item = fixture();
+  try {
+    cached(item.cachePath);
+    let requests = 0;
+    const cachedOnly = await resolveUpdateAdvisory({
+      installedVersion: "3.3.1", cachePath: item.cachePath, now: NOW,
+      refresh: true, allowNetwork: false,
+      fetchImpl: async () => { requests += 1; throw new Error("unexpected"); }
+    });
+    assert.equal(requests, 0);
+    assert.equal(cachedOnly.source, "cache");
+
+    const refreshed = await resolveUpdateAdvisory({
+      installedVersion: "3.3.1", cachePath: item.cachePath, now: NOW,
+      refresh: true,
+      fetchImpl: async () => ({
+        ok: true, async json() { return { tag_name: "v3.3.4" }; }
+      })
+    });
+    assert.equal(refreshed.latestVersion, "3.3.4");
+    assert.equal(refreshed.source, "remote");
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
+test("remote protocol and timeout failures retain non-blocking cache semantics", async () => {
+  const item = fixture();
+  try {
+    cached(item.cachePath, "3.3.2", "2026-08-17T00:00:00.000Z");
+    const http = await resolveUpdateAdvisory({
+      installedVersion: "3.3.1", cachePath: item.cachePath, now: NOW,
+      fetchImpl: async () => ({ ok: false, status: 503 })
+    });
+    assert.equal(http.reason, "release-unavailable");
+    assert.equal(http.latestVersion, "3.3.2");
+
+    const timeoutError = new Error("timeout");
+    timeoutError.name = "AbortError";
+    const timeout = await resolveUpdateAdvisory({
+      installedVersion: "3.3.1", cachePath: item.cachePath, now: NOW,
+      fetchImpl: async () => { throw timeoutError; }
+    });
+    assert.equal(timeout.reason, "release-timeout");
+
+    rmSync(item.cachePath, { force: true });
+    const invalid = await resolveUpdateAdvisory({
+      installedVersion: "3.3.1", cachePath: item.cachePath, now: NOW,
+      fetchImpl: async () => ({ ok: true, async json() { return { tag_name: "beta" }; } })
+    });
+    assert.equal(invalid.status, "unknown");
+    assert.equal(invalid.reason, "release-unavailable");
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
 });
 
 test("Investigate and Change host instructions carry boundary advisories", async () => {
