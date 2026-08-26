@@ -9,30 +9,39 @@ import {
 } from "../core/graph-execution.mjs";
 import { findCyclePath } from "../core/graph.mjs";
 
+export function taskIsHighRisk(state, task) {
+  return state.impact === "high" ||
+    (state.securityTriggers || []).length > 0 ||
+    DRIFT_BLOCKING_TASK_KINDS.has(task.kind);
+}
+
+export function defaultTaskModelTier(task, highRisk) {
+  if (highRisk && DRIFT_BLOCKING_TASK_KINDS.has(task.kind)) return "deep";
+  if (!highRisk && ["inventory", "logs", "mechanical-docs"].includes(task.kind))
+    return "fast";
+  return "standard";
+}
+
+export function modelForTaskOperation(context, id, task,
+  selectedPolicy = context.policy()) {
+  const highRisk = taskIsHighRisk(context.loadRuntime(id), task);
+  let tier = task.requestedModel;
+  if (tier && !["fast", "standard", "deep"].includes(tier))
+    context.fail(`task '${task.id}' model must be fast|standard|deep`);
+  if (!tier) tier = defaultTaskModelTier(task, highRisk);
+  if (tier === "fast" && highRisk) tier = "standard";
+  const fallbackTier = selectedPolicy.models[tier].fallbackTier ?? null;
+  return {
+    tier,
+    family: selectedPolicy.models[tier].family,
+    fallbackTier,
+    fallbackFamily: fallbackTier ? selectedPolicy.models[fallbackTier].family : null,
+    reason: highRisk ? "risk-sensitive task" : `${task.kind} task`
+  };
+}
+
 export function createModelRouter({ loadRuntime, policy, fail }) {
-  function modelForTask(id, task, selectedPolicy = policy()) {
-    const state = loadRuntime(id);
-    const highRisk = state.impact === "high" ||
-      (state.securityTriggers || []).length > 0 ||
-      DRIFT_BLOCKING_TASK_KINDS.has(task.kind);
-    let tier = task.requestedModel;
-    if (tier && !["fast", "standard", "deep"].includes(tier))
-      fail(`task '${task.id}' model must be fast|standard|deep`);
-    if (!tier) {
-      if (highRisk && DRIFT_BLOCKING_TASK_KINDS.has(task.kind)) tier = "deep";
-      else if (!highRisk && ["inventory", "logs", "mechanical-docs"].includes(task.kind))
-        tier = "fast";
-      else tier = "standard";
-    }
-    if (tier === "fast" && highRisk) tier = "standard";
-    const fallbackTier = selectedPolicy.models[tier].fallbackTier ?? null;
-    return {
-      tier, family: selectedPolicy.models[tier].family,
-      fallbackTier,
-      fallbackFamily: fallbackTier ? selectedPolicy.models[fallbackTier].family : null,
-      reason: highRisk ? "risk-sensitive task" : `${task.kind} task`
-    };
-  }
+  const modelForTask = modelForTaskOperation.bind(null, { loadRuntime, policy, fail });
   return { modelForTask };
 }
 
