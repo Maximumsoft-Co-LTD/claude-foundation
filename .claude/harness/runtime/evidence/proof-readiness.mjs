@@ -39,6 +39,51 @@ export function recoveryLines(next = []) {
   return lines;
 }
 
+export function proofPreflightBlockers(value) {
+  const blockers = [
+    ...value.issues,
+    ...value.externalProviders.map((provider) =>
+      `provider '${provider}' has no executable adapter or valid external receipt`),
+    ...value.unavailableProviders.map((provider) => `provider unavailable: ${provider}`)
+  ];
+  if (value.pendingTasks.length)
+    blockers.push(`${value.pendingTasks.length} implementation task(s) remain unchecked`);
+  return blockers;
+}
+
+export function proofPreflightFailure(id, value, blockers, recovery) {
+  return `proof preflight failed: ${blockers.join("; ")}${
+    recovery.length ? `\n\nhow to clear this (${value.status}):\n${recovery.join("\n")}` : ""
+  }\n\nfull detail: claude-foundation proof readiness ${id}`;
+}
+
+export function proofPreflightAdvisory(advisory) {
+  if (advisory.reason === "user-waived")
+    return `  WAIVED ${advisory.capability}: withdrawn by ${
+      advisory.authority?.reference || "user decision"}${
+      advisory.detail ? ` — ${advisory.detail}` : ""}; not blocking`;
+  return `  ADVISORY ${advisory.capability}: inferred from ${
+    advisory.trigger || "the changed surface"} with no provider wired; not blocking`;
+}
+
+export function proofPreflightOperation({
+  proofReadinessValue,
+  recoveryLines,
+  fail,
+  output = console
+}, id, stage = "prove", quiet = false) {
+  const value = proofReadinessValue(id, stage);
+  const blockers = proofPreflightBlockers(value);
+  if (blockers.length)
+    fail(proofPreflightFailure(id, value, blockers, recoveryLines(value.next)));
+  if (!quiet) {
+    output.log(`PROOF PREFLIGHT ${id}: ready\n  stage: ${stage}\n  workspace: ${value.workspaceHash}`);
+    for (const advisory of value.advisories || [])
+      output.error(proofPreflightAdvisory(advisory));
+  }
+  return true;
+}
+
 export function reviewEvidenceRecovery(id, provider) {
   return {
     provider,
@@ -653,34 +698,11 @@ export function createProofReadinessRuntime({
   // end: the way out was computed, then discarded one frame before the person
   // who needed it. Render it as prose here — `/prove` is told not to expose raw
   // readiness JSON, so JSON is not a substitute for saying the next command.
-  function proofPreflight(id, stage = "prove", quiet = false) {
-    const value = proofReadinessValue(id, stage);
-    const blockers = [
-      ...value.issues,
-      ...value.externalProviders.map((provider) =>
-        `provider '${provider}' has no executable adapter or valid external receipt`),
-      ...value.unavailableProviders.map((provider) => `provider unavailable: ${provider}`)
-    ];
-    if (value.pendingTasks.length)
-      blockers.push(`${value.pendingTasks.length} implementation task(s) remain unchecked`);
-    if (blockers.length) {
-      const recovery = recoveryLines(value.next);
-      fail(`proof preflight failed: ${blockers.join("; ")}${
-        recovery.length ? `\n\nhow to clear this (${value.status}):\n${recovery.join("\n")}` : ""
-      }\n\nfull detail: claude-foundation proof readiness ${id}`);
-    }
-    if (!quiet) {
-      console.log(`PROOF PREFLIGHT ${id}: ready\n  stage: ${stage}\n  workspace: ${value.workspaceHash}`);
-      for (const advisory of value.advisories || [])
-        console.error(advisory.reason === "user-waived"
-          ? `  WAIVED ${advisory.capability}: withdrawn by ${
-            advisory.authority?.reference || "user decision"}${
-            advisory.detail ? ` — ${advisory.detail}` : ""}; not blocking`
-          : `  ADVISORY ${advisory.capability}: inferred from ${
-            advisory.trigger || "the changed surface"} with no provider wired; not blocking`);
-    }
-    return true;
-  }
+  const proofPreflight = proofPreflightOperation.bind(null, {
+    proofReadinessValue,
+    recoveryLines,
+    fail
+  });
 
   function upgradeEvidence(id) {
     const state = loadRuntime(id);
