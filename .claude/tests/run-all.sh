@@ -73,6 +73,7 @@ sandbox diff identity|node --test "$ROOT/.claude/harness/tests/sandbox-diff-iden
 authority request operation|node --test "$ROOT/.claude/harness/tests/authority-request-operation.test.mjs"
 proof request summary|node --test "$ROOT/.claude/harness/tests/proof-request-summary.test.mjs"
 proof execution boundaries|node --test "$ROOT/.claude/harness/tests/proof-execution-boundaries.test.mjs"
+durable decision metadata|node --test "$ROOT/.claude/harness/tests/durable-decision-metadata.test.mjs"
 repository head|node --test "$ROOT/.claude/harness/tests/repository-head.test.mjs"
 proof readiness value|node --test "$ROOT/.claude/harness/tests/proof-readiness-value.test.mjs"
 provider claim scope|node --test "$ROOT/.claude/harness/tests/provider-claim-scope.test.mjs"
