@@ -10,6 +10,67 @@ import {
   ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
 } from "../core/workspace-surface.mjs";
 
+export function workspaceIsolationKind(mode) {
+  if (mode === "worktree") return "git-worktree";
+  if (mode === "copy") return "filesystem-copy";
+  return "none";
+}
+
+export function workspaceIdentityValid(kind, path, { gitMetadataPresent, directoryExists }) {
+  if (kind === "git-worktree") return gitMetadataPresent(path);
+  if (kind === "filesystem-copy") return directoryExists(path);
+  return true;
+}
+
+export function repositoryInspectionRows(repositories) {
+  return Object.entries(repositories || {}).map(([repositoryId, runtime]) => ({
+    id: repositoryId,
+    access: runtime.access || "write",
+    kind: runtime.mode === "worktree" ? "git-worktree" :
+      runtime.mode === "copy" ? "filesystem-copy" :
+        runtime.mode === "reference" ? "reference" : "none",
+    status: runtime.path && existsSync(runtime.path) ? "active" : "missing",
+    path: runtime.path || null
+  })).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function workspaceTargetDrift(kind, baseHead, targetHead) {
+  return kind === "git-worktree" && baseHead && targetHead && baseHead !== targetHead
+    ? "target-moved"
+    : "none";
+}
+
+export function workspaceInspectionValue({
+  root,
+  gitMetadataPresent,
+  directoryExists,
+  headOfRepository
+}, state) {
+  const workspace = state.workspace || {};
+  const kind = workspaceIsolationKind(workspace.mode);
+  const identityValid = workspaceIdentityValid(kind, workspace.path, {
+    gitMetadataPresent,
+    directoryExists
+  });
+  const status = kind === "none" ? "current" : identityValid ? "active" : "missing";
+  const targetHead = headOfRepository(root);
+  const baseHead = workspace.baseHead || null;
+  return {
+    kind,
+    status,
+    path: workspace.path || root,
+    baseHead,
+    targetHead,
+    drift: workspaceTargetDrift(kind, baseHead, targetHead),
+    repositories: repositoryInspectionRows(state.repositories)
+  };
+}
+
+export function workspaceInspectionFor(context) {
+  return (id, state = context.loadRuntime(id)) =>
+    workspaceInspectionValue(context, state);
+}
+
 // Which files `git apply` refused, so a replay that cannot proceed names the
 // same thing the isolated-copy path names: the files, not the exit code.
 //
@@ -680,36 +741,13 @@ export function createSandboxRuntime({
     }
   }
 
-  function workspaceInspection(id, state = loadRuntime(id)) {
-    const workspace = state.workspace || {};
-    const kind = workspace.mode === "worktree" ? "git-worktree" :
-      workspace.mode === "copy" ? "filesystem-copy" : "none";
-    const identityValid = kind === "git-worktree" ? gitMetadataPresent(workspace.path) :
-      kind === "filesystem-copy" ? directoryExists(workspace.path) : true;
-    const status = kind === "none" ? "current" : identityValid ? "active" : "missing";
-    const repositories = Object.entries(state.repositories || {}).map(([repositoryId, runtime]) => ({
-      id: repositoryId,
-      access: runtime.access || "write",
-      kind: runtime.mode === "worktree" ? "git-worktree" :
-        runtime.mode === "copy" ? "filesystem-copy" :
-          runtime.mode === "reference" ? "reference" : "none",
-      status: runtime.path && existsSync(runtime.path) ? "active" : "missing",
-      path: runtime.path || null
-    })).sort((left, right) => left.id.localeCompare(right.id));
-    // The recorded base and the target's head, because the difference between
-    // them decides whether a proven change can still land — and diagnosing it
-    // used to mean reading `.foundation/` by hand. Only a worktree is pinned to
-    // a commit; an isolated copy reconciles a moved target at sync, so it
-    // reports no drift.
-    const targetHead = headOfRepository(root);
-    const baseHead = workspace.baseHead || null;
-    const drift = kind === "git-worktree" && baseHead && targetHead &&
-      baseHead !== targetHead ? "target-moved" : "none";
-    return {
-      kind, status, path: workspace.path || root,
-      baseHead, targetHead, drift, repositories
-    };
-  }
+  const workspaceInspection = workspaceInspectionFor({
+    root,
+    loadRuntime,
+    gitMetadataPresent,
+    directoryExists,
+    headOfRepository
+  });
 
   function inspect(id, flags = {}) {
     const workspaceIsolation = workspaceInspection(id);
