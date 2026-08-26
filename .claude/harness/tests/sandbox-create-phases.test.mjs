@@ -15,11 +15,13 @@ import {
   createSandbox,
   createSandboxRuntime,
   ignoredSandboxPaths,
+  inspectSandbox,
   isolateSelectedRepositories,
   reportMultiRepositorySandbox,
   sandboxCopyPlan,
   sandboxCopyWorkspace,
   sandboxCreatePreflight,
+  showSandboxInspection,
   setupSelectedRepositories
 } from "../runtime/workflow/sandbox-runtime.mjs";
 
@@ -89,6 +91,70 @@ function captureConsole(method, run) {
   try { return { value: run(), rows }; }
   finally { console[method] = prior; }
 }
+
+test("sandbox inspection classifies interactive and unattended execution", () => {
+  const workspaceIsolation = {
+    kind: "git-worktree", status: "active", drift: "target-moved",
+    baseHead: "1234567890", targetHead: "abcdef1234", repositories: []
+  };
+  const preflight = {
+    securityBoundary: { kind: "container", status: "verified" },
+    attestation: { issuer: "host" }, boundaryDetected: true,
+    safeForUnattended: false, reasons: ["owner mismatch", "attestation stale"]
+  };
+  const context = {
+    workspaceInspection: () => workspaceIsolation,
+    hostAttestation: { preflight: () => preflight }
+  };
+  const interactive = inspectSandbox(context, "change");
+  assert.equal(interactive.execution.mode, "interactive");
+  assert.equal(interactive.execution.decision, "allow");
+  assert.equal(interactive.securityBoundary.kind, "container");
+  assert.deepEqual(interactive.attestation, { issuer: "host" });
+  const unattended = inspectSandbox(context, "change", { unattended: true });
+  assert.equal(unattended.execution.mode, "unattended");
+  assert.equal(unattended.execution.decision, "block");
+  preflight.safeForUnattended = true;
+  assert.equal(inspectSandbox(context, "change", { unattended: true }).execution.decision,
+    "allow");
+});
+
+test("sandbox inspection output covers text, JSON, drift, reasons, and blocking", () => {
+  const result = {
+    version: 1, changeId: "change",
+    workspaceIsolation: {
+      kind: "git-worktree", status: "active", drift: "target-moved",
+      baseHead: "1234567890", targetHead: "abcdef1234"
+    },
+    securityBoundary: { kind: "container", status: "unverified" },
+    execution: { safeForUnattended: false, reasons: ["owner mismatch"] }
+  };
+  const rows = [];
+  const runtimeProcess = {};
+  let blocked = 0;
+  const context = {
+    inspect: () => result,
+    output: { log: (value) => rows.push(String(value)) },
+    markBlocked: () => { blocked += 1; },
+    runtimeProcess
+  };
+  showSandboxInspection(context, "change");
+  assert.ok(rows.some((row) => row.includes("target drift: base 12345678")));
+  assert.ok(rows.some((row) => row.includes("safe for unattended: no")));
+  assert.ok(rows.some((row) => row.includes("reason: owner mismatch")));
+  assert.equal(blocked, 0);
+  showSandboxInspection(context, "change", { json: true });
+  assert.ok(rows.some((row) => row.includes('"changeId": "change"')));
+  showSandboxInspection(context, "change", { unattended: true });
+  assert.equal(blocked, 1);
+  assert.equal(runtimeProcess.exitCode, 1);
+
+  result.workspaceIsolation.drift = "none";
+  result.execution.safeForUnattended = true;
+  result.execution.reasons = [];
+  showSandboxInspection(context, "change", { unattended: true });
+  assert.equal(blocked, 1);
+});
 
 test("sandbox create preflight accepts safe targets and selects repositories", (t) => {
   const f = fixture(t);

@@ -105,6 +105,45 @@ export function workspaceInspectionFor(context) {
     workspaceInspectionValue(context, state);
 }
 
+export function inspectSandbox(context, id, flags = {}) {
+  const workspaceIsolation = context.workspaceInspection(id);
+  const preflight = context.hostAttestation.preflight(id, flags);
+  return {
+    version: 1,
+    changeId: id,
+    workspaceIsolation,
+    securityBoundary: preflight.securityBoundary,
+    attestation: preflight.attestation,
+    execution: {
+      mode: flags.unattended ? "unattended" : "interactive",
+      boundaryDetected: preflight.boundaryDetected,
+      safeForUnattended: preflight.safeForUnattended,
+      decision: !flags.unattended || preflight.safeForUnattended ? "allow" : "block",
+      reasons: preflight.reasons
+    }
+  };
+}
+
+export function showSandboxInspection(context, id, flags = {}) {
+  const result = context.inspect(id, flags);
+  if (flags.json) context.output.log(JSON.stringify(result, null, 2));
+  else {
+    context.output.log(`ISOLATION ${id}`);
+    context.output.log(`  workspace isolation: ${result.workspaceIsolation.kind} (${result.workspaceIsolation.status})`);
+    if (result.workspaceIsolation.drift === "target-moved")
+      context.output.log(`  target drift: base ${
+        String(result.workspaceIsolation.baseHead).slice(0, 8)} -> target ${
+        String(result.workspaceIsolation.targetHead).slice(0, 8)}; run 'claude-foundation sandbox sync ${id}' to replay onto it`);
+    context.output.log(`  security boundary: ${result.securityBoundary.kind} (${result.securityBoundary.status})`);
+    context.output.log(`  safe for unattended: ${result.execution.safeForUnattended ? "yes" : "no"}`);
+    for (const reason of result.execution.reasons) context.output.log(`  reason: ${reason}`);
+  }
+  if (flags.unattended && !result.execution.safeForUnattended) {
+    context.markBlocked();
+    context.runtimeProcess.exitCode = 1;
+  }
+}
+
 // Which files `git apply` refused, so a replay that cannot proceed names the
 // same thing the isolated-copy path names: the files, not the exit code.
 //
@@ -870,46 +909,10 @@ export function createSandboxRuntime({
     headOfRepository
   });
 
-  function inspect(id, flags = {}) {
-    const workspaceIsolation = workspaceInspection(id);
-    const preflight = hostAttestation.preflight(id, flags);
-    return {
-      version: 1,
-      changeId: id,
-      workspaceIsolation,
-      securityBoundary: preflight.securityBoundary,
-      attestation: preflight.attestation,
-      execution: {
-        mode: flags.unattended ? "unattended" : "interactive",
-        boundaryDetected: preflight.boundaryDetected,
-        safeForUnattended: preflight.safeForUnattended,
-        decision: !flags.unattended || preflight.safeForUnattended ? "allow" : "block",
-        reasons: preflight.reasons
-      }
-    };
-  }
-
-  function showInspection(id, flags = {}) {
-    const result = inspect(id, flags);
-    if (flags.json) console.log(JSON.stringify(result, null, 2));
-    else {
-      console.log(`ISOLATION ${id}`);
-      console.log(`  workspace isolation: ${result.workspaceIsolation.kind} (${result.workspaceIsolation.status})`);
-      if (result.workspaceIsolation.drift === "target-moved")
-        console.log(`  target drift: base ${
-          String(result.workspaceIsolation.baseHead).slice(0, 8)} -> target ${
-          String(result.workspaceIsolation.targetHead).slice(0, 8)}; run 'claude-foundation sandbox sync ${id}' to replay onto it`);
-      console.log(`  security boundary: ${result.securityBoundary.kind} (${result.securityBoundary.status})`);
-      console.log(`  safe for unattended: ${result.execution.safeForUnattended ? "yes" : "no"}`);
-      for (const reason of result.execution.reasons) console.log(`  reason: ${reason}`);
-    }
-    // Refusing unattended execution on an unsafe boundary is the guard working,
-    // not the command breaking.
-    if (flags.unattended && !result.execution.safeForUnattended) {
-      markBlocked();
-      process.exitCode = 1;
-    }
-  }
+  const inspect = inspectSandbox.bind(null, { workspaceInspection, hostAttestation });
+  const showInspection = showSandboxInspection.bind(null, {
+    inspect, markBlocked, output: console, runtimeProcess: process
+  });
 
   function createSingle(id) {
     const state = loadRuntime(id);
