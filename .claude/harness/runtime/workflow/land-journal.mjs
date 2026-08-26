@@ -14,6 +14,50 @@ export function transactionJournals(transactions, id, readJson) {
     .map((path) => readJson(path, {}));
 }
 
+export function landEntryNoOp(entry) {
+  return entry.before === entry.after &&
+    (entry.beforeMode === undefined || entry.beforeMode === entry.afterMode);
+}
+
+export function applyFailureAfter(env = process.env) {
+  return env.FOUNDATION_TEST_MODE === "1"
+    ? Number(env.FOUNDATION_TEST_FAIL_APPLY_AFTER || 0) : 0;
+}
+
+export function projectLandEntry(context, journal, entry, index, target, current) {
+  if (landEntryNoOp(entry)) return;
+  if (entry.after === null) {
+    if (current !== null) context.remove(target, { recursive: true });
+    return;
+  }
+  const source = resolve(journal.sandboxPath, entry.path);
+  const stage = join(context.transactionRoot(journal.changeId, journal.transactionId),
+    "stage", String(index));
+  if (context.pathExists(stage)) context.remove(stage, { recursive: true });
+  context.copyPath(source, stage);
+  context.makeDirectory(dirname(target), { recursive: true });
+  if (current !== null) context.remove(target, { recursive: true });
+  context.rename(stage, target);
+}
+
+export function applyLandJournalEntry(context, journal, entry, index) {
+  const target = context.safeRootPath(entry.path);
+  const current = context.pathIdentity(target);
+  if (!context.matches(target, entry, "before"))
+    throw new Error(`target changed during apply at '${entry.path}'`);
+  journal.inFlightPaths = [entry.path];
+  context.save(journal);
+  projectLandEntry(context, journal, entry, index, target, current);
+  if (!context.matches(target, entry, "after"))
+    throw new Error(`post-apply projection mismatch at '${entry.path}'`);
+  journal.appliedPaths.push(entry.path);
+  journal.inFlightPaths = [];
+  context.save(journal);
+  const failAfter = applyFailureAfter(context.env);
+  if (failAfter > 0 && journal.appliedPaths.length >= failAfter)
+    throw new Error(`injected apply failure after ${journal.appliedPaths.length} path(s)`);
+}
+
 export function createLandJournal({
   root, transactions, fileDigest, directoryHash, pathInside, readJson, writeJson, now
 }) {
@@ -75,39 +119,19 @@ export function createLandJournal({
     writeJson(journalPath(journal.changeId, journal.transactionId), journal);
   }
 
-  function applyEntry(journal, entry, index) {
-    const target = safeRootPath(entry.path);
-    const current = pathIdentity(target);
-    if (!matches(target, entry, "before"))
-      throw new Error(`target changed during apply at '${entry.path}'`);
-    journal.inFlightPaths = [entry.path];
-    save(journal);
-    const noOp = entry.before === entry.after &&
-      (entry.beforeMode === undefined || entry.beforeMode === entry.afterMode);
-    if (noOp) {
-      // Exact pre-applied paths remain covered by the journal without a copy.
-    } else if (entry.after === null) {
-      if (current !== null) rmSync(target, { recursive: true });
-    } else {
-      const source = resolve(journal.sandboxPath, entry.path);
-      const stage = join(transactionRoot(journal.changeId, journal.transactionId),
-        "stage", String(index));
-      if (existsSync(stage)) rmSync(stage, { recursive: true });
-      copyPath(source, stage);
-      mkdirSync(dirname(target), { recursive: true });
-      if (current !== null) rmSync(target, { recursive: true });
-      renameSync(stage, target);
-    }
-    if (!matches(target, entry, "after"))
-      throw new Error(`post-apply projection mismatch at '${entry.path}'`);
-    journal.appliedPaths.push(entry.path);
-    journal.inFlightPaths = [];
-    save(journal);
-    const failAfter = process.env.FOUNDATION_TEST_MODE === "1"
-      ? Number(process.env.FOUNDATION_TEST_FAIL_APPLY_AFTER || 0) : 0;
-    if (failAfter > 0 && journal.appliedPaths.length >= failAfter)
-      throw new Error(`injected apply failure after ${journal.appliedPaths.length} path(s)`);
-  }
+  const applyEntry = applyLandJournalEntry.bind(null, {
+    safeRootPath,
+    pathIdentity,
+    matches,
+    save,
+    transactionRoot,
+    pathExists: existsSync,
+    remove: rmSync,
+    copyPath,
+    makeDirectory: mkdirSync,
+    rename: renameSync,
+    env: process.env
+  });
 
   function restoreEntry(journal, entry) {
     const target = safeRootPath(entry.path);
