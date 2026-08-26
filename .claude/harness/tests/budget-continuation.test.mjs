@@ -8,6 +8,7 @@ import {
   budgetContinuationReadiness,
   budgetContinuationUnblock,
   continueBudgetWindow,
+  createBudgetReporter,
   nextBudgetContinuationWindow,
   persistBudgetContinuation
 } from "../runtime/workflow/budget-commands.mjs";
@@ -18,6 +19,36 @@ const stop = (_id, code, decision) => {
   error.decision = decision;
   throw error;
 };
+
+test("budget reporter formats measured state and limits quiet output to warnings", () => {
+  const decisions = [
+    { measured: true, ratio: 0.5, action: "CONTINUE", recommendation: "BUILD", limiter: "tokens", mode: "active" },
+    { measured: false, ratio: 0.2, action: "WAIT", recommendation: "MEASURE", limiter: null, mode: "active" },
+    { measured: true, ratio: 0.7, action: "STOP", recommendation: "RESCOPE", limiter: "requests", mode: "active" },
+    { measured: true, ratio: 0.1, action: "STOP", recommendation: "ASK", limiter: "tokens", mode: "operator-required" }
+  ];
+  const reporter = createBudgetReporter({ applyBudgetDecision: () => decisions.shift() });
+  const logs = [];
+  const warnings = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (value) => logs.push(String(value));
+  console.error = (value) => warnings.push(String(value));
+  try {
+    assert.equal(reporter.reportBudget("change", {}).ratio, 0.5);
+    assert.equal(reporter.reportBudget("change", {}, true).measured, false);
+    reporter.reportBudget("change", {}, true);
+    reporter.reportBudget("change", {}, true);
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  assert.deepEqual(logs, ["BUDGET change: 50.0% CONTINUE BUILD (tokens)"]);
+  assert.deepEqual(warnings, [
+    "WARNING: BUDGET change: 70.0% STOP RESCOPE (requests)",
+    "WARNING: BUDGET change: 10.0% STOP ASK (tokens)"
+  ]);
+});
 
 test("continuation inputs require trimmed reason and decision identity", () => {
   assert.deepEqual(budgetContinuationInputs({
