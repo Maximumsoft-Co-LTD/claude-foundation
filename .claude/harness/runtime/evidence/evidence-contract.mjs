@@ -374,6 +374,41 @@ export function providerInputIdentityOperation(context, id, provider,
   };
 }
 
+export function claimsForCapability(context, id, claims, capability) {
+  if (capability === "review") return context.scopedReviewClaims(claims);
+  if (capability === "acceptance") {
+    const ids = context.resolvedAcceptance(
+      id, context.loadRuntime(id), context.evidence(id)).claimIds;
+    return claims.filter((claim) => ids.includes(claim.id));
+  }
+  if (context.policyCapabilities(id).includes(capability)) return claims;
+  return claims.filter((claim) =>
+    claim.capabilities.includes(capability) ||
+    (capability === "discovery" && claim.capabilities.includes("test")));
+}
+
+export function providerClaimRepositories(config) {
+  if (config?.repositories) return config.repositories;
+  if (config?.adapter === "contract-digest") return Object.keys(config.contract || {});
+  if (config?.repository) return [config.repository];
+  return null;
+}
+
+export function claimsInRepositories(claims, repositories) {
+  if (!repositories) return claims;
+  return claims.filter((claim) =>
+    !claim.repositories || claim.repositories.some((repository) =>
+      repositories.includes(repository)));
+}
+
+export function claimsForProviderOperation(context, id, provider) {
+  const claims = context.evidence(id).claims;
+  const config = context.providerConfig(id, provider);
+  const capability = context.providerCapability(provider, config);
+  const scoped = claimsForCapability(context, id, claims, capability);
+  return claimsInRepositories(scoped, providerClaimRepositories(config));
+}
+
 export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
@@ -790,28 +825,15 @@ export function createEvidenceContract({
     return null;
   }
 
-  function claimsForProvider(id, provider) {
-    const claims = evidence(id).claims;
-    const config = providerConfig(id, provider);
-    const capability = providerCapability(provider, config);
-    let scoped = capability === "review" ? scopedReviewClaims(claims)
-      : capability === "acceptance" ? (() => {
-        const ids = resolvedAcceptance(id, loadRuntime(id), evidence(id)).claimIds;
-        return claims.filter((claim) => ids.includes(claim.id));
-      })()
-        : policyCapabilities(id).includes(capability) ? claims
-          : claims.filter((claim) =>
-            claim.capabilities.includes(capability) ||
-            (capability === "discovery" && claim.capabilities.includes("test")));
-    const scopedRepositories = config?.repositories ||
-      (config?.adapter === "contract-digest" ? Object.keys(config.contract || {}) :
-        config?.repository ? [config.repository] : null);
-    if (scopedRepositories)
-      scoped = scoped.filter((claim) =>
-        !claim.repositories || claim.repositories.some((repository) =>
-          scopedRepositories.includes(repository)));
-    return scoped;
-  }
+  const claimsForProvider = claimsForProviderOperation.bind(null, {
+    evidence,
+    providerConfig,
+    providerCapability,
+    scopedReviewClaims,
+    resolvedAcceptance,
+    loadRuntime,
+    policyCapabilities
+  });
   
   function providerClaims(id, provider, config = providerConfig(id, provider)) {
     const declared = claimsForProvider(id, provider).map((claim) => claim.id);
