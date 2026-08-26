@@ -126,22 +126,29 @@ export function configuredReviewPrompt(packet) {
     payload;
 }
 
+export function validReviewerConfig(config) {
+  return Boolean(ADAPTERS.has(config.adapter) && text(config.executable) &&
+    text(config.modelId) && text(config.providerFamily) &&
+    text(config.modelFamily) && config.reasoningEffort === "high" &&
+    config.sandbox === "read-only" && config.ephemeral === true);
+}
+
+export function reviewerConfigValue(context, name = null) {
+  const review = context.foundationPolicy().review || {};
+  const identity = name || review.defaultReviewer;
+  const config = review.reviewers?.[identity] || null;
+  if (!identity || !config)
+    context.fail(`unknown configured reviewer '${identity || ""}'`);
+  if (!validReviewerConfig(config))
+    context.fail(`configured reviewer '${identity}' must pin codex-cli|claude-cli, executable, provider/model identity, high reasoning, read-only sandbox, and ephemeral sessions`);
+  return { identity, ...config };
+}
+
 export function createConfiguredReviewerRuntime({
   root, foundationPolicy, commandExists, now, fail, uuid = randomUUID,
   spawn = spawnSync
 }) {
-  function reviewerConfig(name = null) {
-    const review = foundationPolicy().review || {};
-    const identity = name || review.defaultReviewer;
-    const config = review.reviewers?.[identity] || null;
-    if (!identity || !config) fail(`unknown configured reviewer '${identity || ""}'`);
-    if (!ADAPTERS.has(config.adapter) || !text(config.executable) ||
-        !text(config.modelId) || !text(config.providerFamily) ||
-        !text(config.modelFamily) || config.reasoningEffort !== "high" ||
-        config.sandbox !== "read-only" || config.ephemeral !== true)
-      fail(`configured reviewer '${identity}' must pin codex-cli|claude-cli, executable, provider/model identity, high reasoning, read-only sandbox, and ephemeral sessions`);
-    return { identity, ...config };
-  }
+  const reviewerConfig = reviewerConfigValue.bind(null, { foundationPolicy, fail });
 
   function codexStatus(config) {
     const login = spawn(config.executable, ["login", "status"], {
