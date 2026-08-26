@@ -171,6 +171,29 @@ export function runProviderOperation(context, id, provider, values) {
   if (result.status !== 0) context.exit(result.status || 1);
 }
 
+export function providerRepositoryManifestValue(context, id, provider, state, rows) {
+  const repositories = {};
+  for (const repository of rows) {
+    if (!context.pathExists(repository.workspacePath))
+      context.die(`provider '${provider}' repository '${repository.id}' workspace is missing`);
+    const runtime = state.repositories?.[repository.id] ||
+      (repository.id === "root" ? state.workspace : null) || {};
+    if (runtime.setup?.status === "failed")
+      context.die(`provider '${provider}' repository '${repository.id}' setup failed`);
+    if (repository.mode === "read") {
+      const changed = context.repositoryStatus(repository);
+      if (changed)
+        context.die(`provider '${provider}' read-only repository '${repository.id}' changed inside its sandbox: ${changed}`);
+    }
+    repositories[repository.id] = {
+      path: repository.workspacePath,
+      access: repository.mode,
+      baseHead: runtime.baseHead || repository.baseHead || null
+    };
+  }
+  return { version: 1, changeId: id, provider, repositories };
+}
+
 export function createAdapterRuntime({
   ROOT, LOGS, PROVIDERS,
   providerCapability, providerConfig, parseFlags, providerWorkspace,
@@ -192,29 +215,13 @@ export function createAdapterRuntime({
   function providerRepositoryManifest(id, provider, config, proofRunId) {
     const state = loadRuntime(id);
     const rows = providerRepositories(id, provider, config);
-    const repositories = {};
-    for (const repository of rows) {
-      if (!existsSync(repository.workspacePath))
-        die(`provider '${provider}' repository '${repository.id}' workspace is missing`);
-      const runtime = state.repositories?.[repository.id] ||
-        (repository.id === "root" ? state.workspace : null) || {};
-      if (runtime.setup?.status === "failed")
-        die(`provider '${provider}' repository '${repository.id}' setup failed`);
-      if (repository.mode === "read") {
-        const changed = repositoryStatus(repository);
-        if (changed)
-          die(`provider '${provider}' read-only repository '${repository.id}' changed inside its sandbox: ${changed}`);
-      }
-      repositories[repository.id] = {
-        path: repository.workspacePath,
-        access: repository.mode,
-        baseHead: runtime.baseHead || repository.baseHead || null
-      };
-    }
+    const value = providerRepositoryManifestValue({
+      pathExists: existsSync, repositoryStatus, die
+    }, id, provider, state, rows);
     const path = join(LOGS, id, `${proofRunId}-${provider}-repositories.json`);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, `${JSON.stringify({
-      version: 1, changeId: id, proofRunId, provider, repositories
+      ...value, proofRunId
     }, null, 2)}\n`, { mode: 0o600 });
     return { path, rows };
   }

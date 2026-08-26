@@ -6,12 +6,54 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  createAdapterRuntime, criticalCaseResult
+  createAdapterRuntime, criticalCaseResult, providerRepositoryManifestValue
 } from "../../harness/runtime/evidence/adapter-runtime.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
 const fail = (message) => { throw new Error(message); };
+
+test("repository manifest validates workspaces, setup, and read-only state", () => {
+  const root = { id: "root", workspacePath: "/root", mode: "write", baseHead: "row-root" };
+  const child = { id: "child", workspacePath: "/child", mode: "read", baseHead: "row-child" };
+  const context = {
+    pathExists: () => true,
+    repositoryStatus: () => "",
+    die: fail
+  };
+  const value = providerRepositoryManifestValue(context, "change", "test", {
+    workspace: { baseHead: "runtime-root" },
+    repositories: { child: { baseHead: "runtime-child" } }
+  }, [root, child]);
+  assert.deepEqual(value, {
+    version: 1, changeId: "change", provider: "test",
+    repositories: {
+      root: { path: "/root", access: "write", baseHead: "runtime-root" },
+      child: { path: "/child", access: "read", baseHead: "runtime-child" }
+    }
+  });
+
+  assert.throws(() => providerRepositoryManifestValue({
+    ...context, pathExists: () => false
+  }, "change", "test", {}, [root]), /workspace is missing/);
+  assert.throws(() => providerRepositoryManifestValue(context, "change", "test", {
+    repositories: { child: { setup: { status: "failed" } } }
+  }, [child]), /setup failed/);
+  assert.throws(() => providerRepositoryManifestValue({
+    ...context, repositoryStatus: () => " M generated.txt"
+  }, "change", "test", {}, [child]), /read-only repository 'child' changed/);
+});
+
+test("repository manifest falls back to selected heads and null", () => {
+  const context = { pathExists: () => true, repositoryStatus: () => null, die: fail };
+  const value = providerRepositoryManifestValue(context, "change", "test", {}, [{
+    id: "child", workspacePath: "/child", mode: "read", baseHead: "selected"
+  }, {
+    id: "empty", workspacePath: "/empty", mode: "write"
+  }]);
+  assert.equal(value.repositories.child.baseHead, "selected");
+  assert.equal(value.repositories.empty.baseHead, null);
+});
 
 function result(patch = {}) {
   return {
