@@ -7,7 +7,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { findCyclePath } from "../../harness/runtime/core/graph.mjs";
-import { createProviderScheduler } from "../../harness/runtime/evidence/provider-scheduler.mjs";
+import {
+  createProviderScheduler,
+  discoveryProducer,
+  executionNodeCovers,
+  executionNodesOperation,
+  neededExecutionProviders,
+  providerAvailabilityIssue,
+  providerExecutionNode
+} from "../../harness/runtime/evidence/provider-scheduler.mjs";
 import { createAgentPlanner } from "../../harness/runtime/workflow/agent-planning.mjs";
 
 test("findCyclePath returns null for an acyclic diamond", () => {
@@ -45,6 +53,87 @@ function scheduler(statusByProvider) {
 function node(provider, dependsOn = [], covers = [provider]) {
   return { provider, covers, config: {}, resources: [], dependsOn };
 }
+
+test("execution node helpers filter valid receipts and classify availability", () => {
+  const context = {
+    requiredProviders: () => ["valid", "needed"],
+    receiptValidity: (_id, provider) => ({ validity: provider === "valid" ? "valid" : "missing" }),
+    commandExists: (command) => command !== "missing",
+    providerWorkspace: (_id, provider) => provider,
+    playwrightAvailability: (workspace) => ({
+      packageOwned: workspace !== "unowned", binaryAvailable: workspace !== "unavailable"
+    }),
+    adapterResources: (provider) => [`resource:${provider}`]
+  };
+  assert.deepEqual(neededExecutionProviders(context, "c", "hash"), ["needed"]);
+  assert.equal(providerAvailabilityIssue(context, "c", "p", {
+    adapter: "shell", command: ["missing"]
+  }), "p:command");
+  assert.equal(providerAvailabilityIssue(context, "c", "unowned", {
+    adapter: "playwright", command: ["playwright"]
+  }), "unowned:project-owned-playwright");
+  assert.equal(providerAvailabilityIssue(context, "c", "unavailable", {
+    adapter: "playwright", command: ["playwright"]
+  }), "unavailable:project-owned-playwright");
+  assert.equal(providerAvailabilityIssue(context, "c", "p", {
+    adapter: "contract-digest"
+  }), null);
+  assert.deepEqual(executionNodeCovers("p", {
+    adapter: "shell", outputs: ["extra", "p"]
+  }, ["p", "extra"]), ["p", "extra"]);
+  assert.deepEqual(executionNodeCovers("test", {
+    adapter: "test-discovery", discoveryProvider: "discovery"
+  }, ["test", "discovery"]), ["test", "discovery"]);
+  const built = providerExecutionNode(context, "p", {
+    adapter: "shell", dependsOn: ["base"]
+  }, null, ["p"]);
+  assert.deepEqual(built.dependsOn, ["base"]);
+  assert.deepEqual(built.resources, ["resource:p"]);
+});
+
+test("executionNodesOperation binds discovery outputs to their producer", () => {
+  const configs = {
+    discovery: { adapter: "discovery", command: ["discover"], capability: "discovery" },
+    test: {
+      adapter: "test-discovery", command: ["test"], capability: "test",
+      discoveryProvider: "discovery", dependsOn: ["base"]
+    },
+    external: { adapter: "external" },
+    command: { adapter: "shell", command: ["missing"] },
+    browser: { adapter: "playwright", command: ["playwright"] },
+    contract: { adapter: "contract-digest", capability: "contract" },
+    output: { adapter: "shell", command: ["run"], outputs: ["covered"] },
+    covered: { adapter: "shell", command: ["covered"] }
+  };
+  const required = [
+    "discovery", "test", "external", "absent", "command", "browser",
+    "contract", "output", "covered"
+  ];
+  const context = {
+    requiredProviders: () => required,
+    receiptValidity: () => ({ validity: "missing" }),
+    providerConfig: (_id, provider) => configs[provider],
+    commandExists: (command) => command !== "missing",
+    providerWorkspace: (_id, provider) => provider,
+    playwrightAvailability: () => ({ packageOwned: true, binaryAvailable: false }),
+    evidence: () => ({ providers: configs }),
+    providerCapability: (_provider, config) => config.capability,
+    adapterResources: (provider) => [`resource:${provider}`]
+  };
+  const producer = discoveryProducer(
+    "discovery", configs.discovery, configs, context.providerCapability);
+  assert.equal(producer[0], "test");
+  assert.equal(discoveryProducer("contract", configs.contract, configs,
+    context.providerCapability), null);
+  const result = executionNodesOperation(context, "c", "hash");
+  assert.deepEqual(result.unconfigured, ["external", "absent"]);
+  assert.deepEqual(result.unavailable, [
+    "command:command", "browser:project-owned-playwright"
+  ]);
+  assert.deepEqual(result.nodes.map((entry) => entry.provider), ["test", "contract", "output"]);
+  assert.deepEqual(result.nodes[0].covers, ["test", "discovery"]);
+  assert.deepEqual(result.nodes[2].covers, ["output", "covered"]);
+});
 
 test("provider scheduler runs an acyclic graph in dependency order", async () => {
   const { instance, executions } = scheduler({});
