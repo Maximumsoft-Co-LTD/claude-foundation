@@ -17,34 +17,38 @@ function isWithinPath(parent, candidate) {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function writableControlSocket(path) {
-  if (!path || !existsSync(path)) return false;
+export function writableControlSocket(path, options = {}) {
+  const {
+    exists = existsSync, realpath = realpathSync, stat = statSync, access = accessSync
+  } = options;
+  if (!path || !exists(path)) return false;
   try {
-    const resolved = realpathSync(path);
-    const stat = statSync(resolved);
-    if (!stat.isSocket() && !stat.isFile()) return false;
-    accessSync(resolved, fsConstants.W_OK);
+    const resolved = realpath(path);
+    const metadata = stat(resolved);
+    if (!metadata.isSocket() && !metadata.isFile()) return false;
+    access(resolved, fsConstants.W_OK);
     return true;
   } catch {
     return false;
   }
 }
 
-export function securityBoundaryInspection() {
+export function inspectContainerBoundary(options = {}) {
+  const { exists = existsSync, read = readFileSync, env = process.env } = options;
   const evidence = [];
   let kind = "unknown";
   let status = "not-detected";
-  if (existsSync("/.dockerenv")) {
+  if (exists("/.dockerenv")) {
     kind = "container";
     status = "detected";
     evidence.push({ source: "filesystem", value: "/.dockerenv" });
-  } else if (existsSync("/run/.containerenv")) {
+  } else if (exists("/run/.containerenv")) {
     kind = "container";
     status = "detected";
     evidence.push({ source: "filesystem", value: "/run/.containerenv" });
   } else {
     try {
-      const cgroup = readFileSync("/proc/1/cgroup", "utf8").toLowerCase();
+      const cgroup = read("/proc/1/cgroup", "utf8").toLowerCase();
       const token = ["docker", "containerd", "kubepods", "lxc", "podman"]
         .find((candidate) => cgroup.includes(candidate));
       if (token) {
@@ -56,11 +60,60 @@ export function securityBoundaryInspection() {
       // Platforms without procfs remain unknown unless another strong signal exists.
     }
   }
-  if (kind === "unknown" && process.env.CODESPACES === "true" && existsSync("/workspaces")) {
+  if (kind === "unknown" && env.CODESPACES === "true" && exists("/workspaces")) {
     kind = "container";
     status = "detected";
     evidence.push({ source: "codespaces", value: "/workspaces" });
   }
+  return { kind, status, evidence };
+}
+
+export function controlSocketCandidates(hostRoot = "", env = process.env) {
+  const hostPath = (path) => (hostRoot ? join(hostRoot, path) : path);
+  const candidates = [
+    "/var/run/docker.sock", "/run/docker.sock", "/run/podman/podman.sock",
+    "/run/containerd/containerd.sock", "/var/run/crio/crio.sock"
+  ].map(hostPath);
+  const runtimeDir = env.XDG_RUNTIME_DIR || "";
+  if (runtimeDir) {
+    candidates.push(join(runtimeDir, "docker.sock"));
+    candidates.push(join(runtimeDir, "podman", "podman.sock"));
+  }
+  const dockerHost = env.DOCKER_HOST || "";
+  if (dockerHost.startsWith("unix://")) candidates.push(dockerHost.slice("unix://".length));
+  const containerHost = env.CONTAINER_HOST || "";
+  if (containerHost.startsWith("unix://"))
+    candidates.push(containerHost.slice("unix://".length));
+  return candidates;
+}
+
+export function securityBoundaryHazards(options = {}) {
+  const {
+    hostRoot = "", env = process.env, exists = existsSync,
+    writable = writableControlSocket
+  } = options;
+  const hostPath = (path) => (hostRoot ? join(hostRoot, path) : path);
+  const dockerHost = env.DOCKER_HOST || "";
+  const containerHost = env.CONTAINER_HOST || "";
+  const hazards = [...new Set(controlSocketCandidates(hostRoot, env).filter(writable))]
+    .sort().map((path) => `writable host-control socket: ${path}`);
+  if (dockerHost && !dockerHost.startsWith("unix://"))
+    hazards.push(`remote Docker control endpoint configured (${dockerHost.split(":", 1)[0] || "unknown"})`);
+  if (containerHost && !containerHost.startsWith("unix://"))
+    hazards.push(`remote container control endpoint configured (${containerHost.split(":", 1)[0] || "unknown"})`);
+  if (exists(hostPath("/var/run/secrets/kubernetes.io/serviceaccount/token")))
+    hazards.push("mounted Kubernetes service-account credential");
+  if (env.SSH_AUTH_SOCK && exists(env.SSH_AUTH_SOCK))
+    hazards.push("mounted SSH agent socket");
+  return hazards;
+}
+
+export function securityBoundaryInspection(options = {}) {
+  const {
+    env = process.env, exists = existsSync, read = readFileSync,
+    writable = writableControlSocket
+  } = options;
+  const boundary = inspectContainerBoundary({ exists, read, env });
   // These probes are absolute host paths, which makes the scan depend on the
   // machine running it: a CI runner with Docker installed owns a writable
   // /var/run/docker.sock, so no attestation could ever authorize unattended
@@ -69,34 +122,11 @@ export function securityBoundaryInspection() {
   // contract instead of its host. Production never sets it and keeps the real
   // absolute paths.
   const hostRoot =
-    process.env.FOUNDATION_TESTING === "1" && process.env.FOUNDATION_TEST_HOST_ROOT
-      ? resolve(process.env.FOUNDATION_TEST_HOST_ROOT)
+    env.FOUNDATION_TESTING === "1" && env.FOUNDATION_TEST_HOST_ROOT
+      ? resolve(env.FOUNDATION_TEST_HOST_ROOT)
       : "";
-  const hostPath = (path) => (hostRoot ? join(hostRoot, path) : path);
-  const candidates = [
-    "/var/run/docker.sock", "/run/docker.sock", "/run/podman/podman.sock",
-    "/run/containerd/containerd.sock", "/var/run/crio/crio.sock"
-  ].map(hostPath);
-  const runtimeDir = process.env.XDG_RUNTIME_DIR || "";
-  if (runtimeDir) {
-    candidates.push(join(runtimeDir, "docker.sock"));
-    candidates.push(join(runtimeDir, "podman", "podman.sock"));
-  }
-  const dockerHost = process.env.DOCKER_HOST || "";
-  if (dockerHost.startsWith("unix://")) candidates.push(dockerHost.slice("unix://".length));
-  const containerHost = process.env.CONTAINER_HOST || "";
-  if (containerHost.startsWith("unix://")) candidates.push(containerHost.slice("unix://".length));
-  const hazards = [...new Set(candidates.filter(writableControlSocket))]
-    .sort().map((path) => `writable host-control socket: ${path}`);
-  if (dockerHost && !dockerHost.startsWith("unix://"))
-    hazards.push(`remote Docker control endpoint configured (${dockerHost.split(":", 1)[0] || "unknown"})`);
-  if (containerHost && !containerHost.startsWith("unix://"))
-    hazards.push(`remote container control endpoint configured (${containerHost.split(":", 1)[0] || "unknown"})`);
-  if (existsSync(hostPath("/var/run/secrets/kubernetes.io/serviceaccount/token")))
-    hazards.push("mounted Kubernetes service-account credential");
-  if (process.env.SSH_AUTH_SOCK && existsSync(process.env.SSH_AUTH_SOCK))
-    hazards.push("mounted SSH agent socket");
-  return { kind, status, evidence, hazards };
+  const hazards = securityBoundaryHazards({ hostRoot, env, exists, writable });
+  return { ...boundary, hazards };
 }
 
 export function createHostAttestationRuntime(options) {
