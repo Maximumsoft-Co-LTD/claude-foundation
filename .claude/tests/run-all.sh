@@ -122,6 +122,7 @@ diagnostics runtime|node "$ROOT/.claude/harness/tests/diagnostics-runtime.test.m
 diagnostics changes|node --test "$ROOT/.claude/harness/tests/diagnostics-changes.test.mjs"
 authority workflow policy|node --test "$ROOT/.claude/harness/tests/workflow-policy.test.mjs"
 apply archive runtime|node --test "$ROOT/.claude/harness/tests/apply-runtime-archive.test.mjs"
+apply sandbox operation|node --test "$ROOT/.claude/harness/tests/apply-sandbox-operation.test.mjs"
 sandbox sync runtime|node --test "$ROOT/.claude/harness/tests/sandbox-runtime-sync.test.mjs"
 sandbox cleanup|node --test "$ROOT/.claude/harness/tests/sandbox-cleanup.test.mjs"
 workspace inspection|node --test "$ROOT/.claude/harness/tests/workspace-inspection.test.mjs"

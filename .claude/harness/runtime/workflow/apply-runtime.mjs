@@ -31,6 +31,150 @@ export function telemetryLandIssue(policy, telemetry) {
     telemetry.classification}'. Recover with: ${recovery}`;
 }
 
+export function assertLocalApply(initialState, options, fail) {
+  if (initialState.repositories && Object.keys(initialState.repositories).length > 1 &&
+      !options.controlPlane)
+    fail("multi-repository sandboxes do not apply as one local transaction; use land plan/record/resume");
+}
+
+export function projectionHash(stableHash, entries) {
+  return stableHash(entries.map(({ path, after, afterMode }) =>
+    ({ path, after, afterMode })));
+}
+
+export function reapplyProjection({
+  id,
+  state,
+  verifyAppliedProjection,
+  buildReapplyEntries,
+  stableHash,
+  fail
+}) {
+  if (!state.workspace?.applied) return { prepared: null, resumed: false };
+  const verification = verifyAppliedProjection(state);
+  if (!verification.valid) fail(`applied projection is invalid: ${verification.reason}`);
+  const prepared = buildReapplyEntries(id, state, verification.journal);
+  const desired = projectionHash(stableHash, prepared);
+  if (desired !== state.workspace.apply.projectionHash)
+    return { prepared, resumed: false };
+  console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
+  return { prepared, resumed: true };
+}
+
+export function projectionMismatch(entries, {
+  safeRootPath,
+  pathIdentity,
+  pathMode
+}, phase) {
+  const identityField = phase === "before" ? "before" : "after";
+  const modeField = phase === "before" ? "beforeMode" : "afterMode";
+  return entries.find((entry) =>
+    pathIdentity(safeRootPath(entry.path)) !== entry[identityField] ||
+    pathMode(safeRootPath(entry.path)) !== entry[modeField]);
+}
+
+export function beginApplyJournal({
+  id,
+  journal,
+  safeRootPath,
+  pathIdentity,
+  pathMode,
+  saveApplyJournal,
+  now,
+  fail
+}) {
+  const changed = projectionMismatch(journal.entries, {
+    safeRootPath, pathIdentity, pathMode
+  }, "before");
+  if (changed) {
+    journal.status = "aborted";
+    journal.failure = `target changed before apply at '${changed.path}'`;
+    journal.abortedAt = now();
+    saveApplyJournal(journal);
+    fail(journal.failure);
+  }
+  journal.status = "applying";
+  saveApplyJournal(journal);
+  const counts = projectionCounts(journal.entries);
+  console.log(`PROJECTION ${id}\n  update: ${counts.update}; create: ${
+    counts.create}; delete: ${counts.delete}`);
+}
+
+export function appliedRuntimeState(state, root, journal) {
+  state.workspace = {
+    ...state.workspace,
+    applied: true,
+    sandboxPath: state.workspace.path,
+    targetPath: root,
+    apply: {
+      transactionId: journal.transactionId,
+      status: "verified",
+      projectionHash: journal.projectionHash,
+      touchedPaths: journal.entries.map((entry) => entry.path)
+    }
+  };
+  state.status = "applied";
+  return state;
+}
+
+export function executeApplyJournal({
+  id,
+  journal,
+  root,
+  loadRuntime,
+  saveRuntime,
+  safeRootPath,
+  pathIdentity,
+  pathMode,
+  applyTransactionEntry,
+  rollbackApplyTransaction,
+  saveApplyJournal,
+  now,
+  fail
+}) {
+  const priorTransactionMarker = process.env.FOUNDATION_LAND_TRANSACTION;
+  process.env.FOUNDATION_LAND_TRANSACTION = "1";
+  try {
+    journal.entries.forEach((entry, index) =>
+      applyTransactionEntry(journal, entry, index));
+    const mismatch = projectionMismatch(journal.entries, {
+      safeRootPath, pathIdentity, pathMode
+    }, "after");
+    if (mismatch) throw new Error(`post-apply projection mismatch at '${mismatch.path}'`);
+    const state = appliedRuntimeState(loadRuntime(id), root, journal);
+    saveRuntime(state);
+    journal.status = "verified";
+    journal.verifiedAt = now();
+    saveApplyJournal(journal);
+    console.log(`APPLIED ${id}\n  mode: ${state.workspace.mode}\n  projection: ${journal.projectionHash}`);
+  } catch (error) {
+    try {
+      rollbackApplyTransaction(journal, error);
+    } catch (rollbackError) {
+      fail(`${error.message}; ${rollbackError.message}`);
+    }
+    fail(`${error.message}; transaction rolled back`);
+  } finally {
+    if (priorTransactionMarker === undefined) delete process.env.FOUNDATION_LAND_TRANSACTION;
+    else process.env.FOUNDATION_LAND_TRANSACTION = priorTransactionMarker;
+  }
+}
+
+export function applySandboxOperation(context, id, options = {}) {
+  const initialState = context.loadRuntime(id);
+  assertLocalApply(initialState, options, context.fail);
+  if (initialState.workspace?.applied && options.refresh)
+    context.refreshAppliedProjection(initialState);
+  context.recoverPendingApply(id, initialState);
+  if (context.landCheck(id).archived) return;
+  const state = context.loadRuntime(id);
+  const reapply = reapplyProjection({ ...context, id, state });
+  if (reapply.resumed) return;
+  const journal = context.prepareApplyTransaction(id, state, reapply.prepared);
+  beginApplyJournal({ ...context, id, journal });
+  executeApplyJournal({ ...context, id, journal });
+}
+
 export function createApplyRuntime({
   root,
   transactions,
@@ -359,93 +503,26 @@ export function createApplyRuntime({
     saveRuntime(state);
   }
 
-  function applySandbox(id, options = {}) {
-    const initialState = loadRuntime(id);
-    if (initialState.repositories && Object.keys(initialState.repositories).length > 1 &&
-        !options.controlPlane)
-      fail("multi-repository sandboxes do not apply as one local transaction; use land plan/record/resume");
-    if (initialState.workspace?.applied && options.refresh)
-      refreshAppliedProjection(initialState);
-    // Before `landCheck`, not after: an apply is the authorized place to settle
-    // an interrupted apply, and `landCheck` now refuses while one is pending
-    // rather than quietly settling it itself.
-    recoverPendingApply(id, initialState);
-    const readiness = landCheck(id);
-    if (readiness.archived) return;
-    let state = loadRuntime(id);
-    let prepared = null;
-    if (state.workspace?.applied) {
-      const verification = verifyAppliedProjection(state);
-      if (!verification.valid) fail(`applied projection is invalid: ${verification.reason}`);
-      prepared = buildReapplyEntries(id, state, verification.journal);
-      const desired = stableHash(prepared.map(({ path, after, afterMode }) =>
-        ({ path, after, afterMode })));
-      if (desired === state.workspace.apply.projectionHash) {
-        console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
-        return;
-      }
-    }
-    const journal = prepareApplyTransaction(id, state, prepared);
-    const changed = journal.entries.find((entry) =>
-      pathIdentity(safeRootPath(entry.path)) !== entry.before ||
-      pathMode(safeRootPath(entry.path)) !== entry.beforeMode);
-    if (changed) {
-      journal.status = "aborted";
-      journal.failure = `target changed before apply at '${changed.path}'`;
-      journal.abortedAt = now();
-      saveApplyJournal(journal);
-      fail(journal.failure);
-    }
-    journal.status = "applying";
-    saveApplyJournal(journal);
-    // Before the first path moves, not after the last one. A projection that
-    // does not match the change is only cheap to notice here.
-    const counts = projectionCounts(journal.entries);
-    console.log(`PROJECTION ${id}\n  update: ${counts.update}; create: ${
-      counts.create}; delete: ${counts.delete}`);
-    // The marker the phase guard documents as the Land carve-out. Nothing set
-    // it before, so the carve-out was unreachable and any child this
-    // transaction spawns looked like an unaudited Land mutation.
-    const priorTransactionMarker = process.env.FOUNDATION_LAND_TRANSACTION;
-    process.env.FOUNDATION_LAND_TRANSACTION = "1";
-    try {
-      journal.entries.forEach((entry, index) =>
-        applyTransactionEntry(journal, entry, index));
-      const mismatch = journal.entries.find((entry) =>
-        pathIdentity(safeRootPath(entry.path)) !== entry.after ||
-        pathMode(safeRootPath(entry.path)) !== entry.afterMode);
-      if (mismatch) throw new Error(`post-apply projection mismatch at '${mismatch.path}'`);
-      state = loadRuntime(id);
-      state.workspace = {
-        ...state.workspace,
-        applied: true,
-        sandboxPath: state.workspace.path,
-        targetPath: root,
-        apply: {
-          transactionId: journal.transactionId,
-          status: "verified",
-          projectionHash: journal.projectionHash,
-          touchedPaths: journal.entries.map((entry) => entry.path)
-        }
-      };
-      state.status = "applied";
-      saveRuntime(state);
-      journal.status = "verified";
-      journal.verifiedAt = now();
-      saveApplyJournal(journal);
-      console.log(`APPLIED ${id}\n  mode: ${state.workspace.mode}\n  projection: ${journal.projectionHash}`);
-    } catch (error) {
-      try {
-        rollbackApplyTransaction(journal, error);
-      } catch (rollbackError) {
-        fail(`${error.message}; ${rollbackError.message}`);
-      }
-      fail(`${error.message}; transaction rolled back`);
-    } finally {
-      if (priorTransactionMarker === undefined) delete process.env.FOUNDATION_LAND_TRANSACTION;
-      else process.env.FOUNDATION_LAND_TRANSACTION = priorTransactionMarker;
-    }
-  }
+  const applySandbox = applySandboxOperation.bind(null, {
+    root,
+    loadRuntime,
+    saveRuntime,
+    refreshAppliedProjection,
+    recoverPendingApply,
+    landCheck,
+    verifyAppliedProjection,
+    buildReapplyEntries,
+    stableHash,
+    prepareApplyTransaction,
+    safeRootPath,
+    pathIdentity,
+    pathMode,
+    saveApplyJournal,
+    applyTransactionEntry,
+    rollbackApplyTransaction,
+    now,
+    fail
+  });
 
   function currentSpecText(capability) {
     const path = join(root, "openspec", "specs", capability, "spec.md");
