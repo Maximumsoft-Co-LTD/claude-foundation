@@ -36,56 +36,85 @@ const DEFAULT_POLICY = {
   }
 };
 
+export function reviewAssuranceDimension(review, effectiveReview, definition) {
+  const active = Boolean(effectiveReview);
+  const configured = review[definition.key];
+  const waived = active
+    ? effectiveReview[`${definition.key}Waived`] === true
+    : configured === definition.waivedValue;
+  const required = active
+    ? effectiveReview[definition.key] === "required"
+    : !waived;
+  let consequence = definition.preferredConsequence;
+  if (waived) consequence = definition.waivedConsequence;
+  else if (required) consequence = definition.requiredConsequence;
+  return {
+    configured,
+    effective: active ? effectiveReview[definition.key] || configured : configured,
+    required,
+    waived,
+    consequence
+  };
+}
+
 export function reviewAssurancePosture(policy, effectiveReview = null) {
   const review = policy?.review || {};
-  const independenceWaived = effectiveReview
-    ? effectiveReview.independenceWaived === true
-    : review.independence === "self";
-  const diversityWaived = effectiveReview
-    ? effectiveReview.diversityWaived === true
-    : review.diversity === "single-model";
-  const independenceRequired = effectiveReview
-    ? effectiveReview.independence === "required"
-    : !independenceWaived;
-  const diversityRequired = effectiveReview
-    ? effectiveReview.diversity === "required"
-    : !diversityWaived;
-  const waivers = [
-    ...(independenceWaived ? ["reviewer-independence"] : []),
-    ...(diversityWaived ? ["model-diversity"] : [])
-  ];
-  const consequences = [
-    independenceWaived
-      ? "review may be non-independent"
-      : independenceRequired
-        ? "independent reviewer required"
-        : "reviewer independence preferred",
-    diversityWaived
-      ? "review may use the same model family"
-      : diversityRequired
-        ? "cross-family model diversity required"
-        : "cross-family model diversity preferred"
-  ];
+  const independence = reviewAssuranceDimension(review, effectiveReview, {
+    key: "independence", waivedValue: "self",
+    waivedConsequence: "review may be non-independent",
+    requiredConsequence: "independent reviewer required",
+    preferredConsequence: "reviewer independence preferred"
+  });
+  const diversity = reviewAssuranceDimension(review, effectiveReview, {
+    key: "diversity", waivedValue: "single-model",
+    waivedConsequence: "review may use the same model family",
+    requiredConsequence: "cross-family model diversity required",
+    preferredConsequence: "cross-family model diversity preferred"
+  });
+  const waivers = [];
+  if (independence.waived) waivers.push("reviewer-independence");
+  if (diversity.waived) waivers.push("model-diversity");
+  const consequences = [independence.consequence, diversity.consequence];
+  const { consequence: _independenceConsequence, ...independencePosture } = independence;
+  const { consequence: _diversityConsequence, ...diversityPosture } = diversity;
   return {
     version: 1,
-    independence: {
-      configured: review.independence,
-      effective: effectiveReview?.independence || review.independence,
-      required: independenceRequired,
-      waived: independenceWaived
-    },
-    diversity: {
-      configured: review.diversity,
-      effective: effectiveReview?.diversity || review.diversity,
-      required: diversityRequired,
-      waived: diversityWaived
-    },
+    independence: independencePosture,
+    diversity: diversityPosture,
     waivers,
     assurance: consequences.join("; "),
     summary: waivers.length
       ? `${effectiveReview ? "active" : "committed"} assurance waiver${waivers.length === 1 ? "" : "s"}: ${waivers.join(", ")}; ${consequences.join("; ")}`
       : `${consequences.join("; ")}; no ${effectiveReview ? "active" : "committed"} assurance waivers`
   };
+}
+
+export function commandExistsOperation(context, command, cwd = context.root) {
+  if (!command) return false;
+  if (command.includes("/") || context.isAbsolute(command))
+    return context.exists(context.resolve(cwd, command));
+  for (const directory of String(context.pathValue || "").split(context.delimiter))
+    if (context.exists(context.join(directory, command))) return true;
+  return false;
+}
+
+export function playwrightAvailabilityOperation(context, workspace) {
+  const packageJson = context.readJson(context.join(workspace, "package.json"), {});
+  const packages = {
+    ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {})
+  };
+  const packageOwned = Boolean(packages["@playwright/test"] || packages.playwright);
+  const binary = context.join(workspace, "node_modules", ".bin", "playwright");
+  let config = null;
+  for (const name of [
+    "playwright.config.ts", "playwright.config.js", "playwright.config.mjs",
+    "playwright.config.cjs"
+  ]) {
+    if (!context.exists(context.join(workspace, name))) continue;
+    config = name;
+    break;
+  }
+  return { packageOwned, binary, binaryAvailable: context.exists(binary), config };
 }
 
 export function createRuntimeEnvironment({
@@ -97,27 +126,14 @@ export function createRuntimeEnvironment({
     return readJson(protocolPath, protocols);
   }
 
-  function commandExists(command, cwd = root) {
-    if (!command) return false;
-    if (command.includes("/") || isAbsolute(command))
-      return existsSync(resolve(cwd, command));
-    return String(process.env.PATH || "").split(delimiter)
-      .some((directory) => existsSync(join(directory, command)));
-  }
+  const commandExists = commandExistsOperation.bind(null, {
+    root, exists: existsSync, isAbsolute, resolve, join,
+    pathValue: process.env.PATH, delimiter
+  });
 
-  function playwrightAvailability(workspace) {
-    const packageJson = readJson(join(workspace, "package.json"), {});
-    const packages = {
-      ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {})
-    };
-    const packageOwned = Boolean(packages["@playwright/test"] || packages.playwright);
-    const binary = join(workspace, "node_modules", ".bin", "playwright");
-    const config = [
-      "playwright.config.ts", "playwright.config.js", "playwright.config.mjs",
-      "playwright.config.cjs"
-    ].find((name) => existsSync(join(workspace, name))) || null;
-    return { packageOwned, binary, binaryAvailable: existsSync(binary), config };
-  }
+  const playwrightAvailability = playwrightAvailabilityOperation.bind(null, {
+    readJson, join, exists: existsSync
+  });
 
   function mergePolicy(configured) {
     return {

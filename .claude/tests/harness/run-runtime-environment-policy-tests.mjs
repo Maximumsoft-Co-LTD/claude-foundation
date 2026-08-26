@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createRuntimeEnvironment } from "../../harness/runtime/core/runtime-environment.mjs";
+import {
+  commandExistsOperation,
+  createRuntimeEnvironment,
+  playwrightAvailabilityOperation,
+  reviewAssuranceDimension
+} from "../../harness/runtime/core/runtime-environment.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-policy-unit-"));
 const policyPath = join(root, "foundation.json");
@@ -23,6 +28,75 @@ const reviewer = {
   modelFamily: "gpt", modelId: "gpt-review", reasoningEffort: "high",
   sandbox: "read-only", ephemeral: true
 };
+
+test("runtime discovery operations resolve commands and Playwright ownership", () => {
+  const commandContext = {
+    root: "/repo",
+    exists: (path) => path === "/tools/node" || path === "/repo/bin/tool",
+    isAbsolute: (path) => path.startsWith("/"),
+    resolve: (...parts) => join(...parts), join,
+    pathValue: "/missing:/tools", delimiter: ":"
+  };
+  assert.equal(commandExistsOperation(commandContext, "", root), false);
+  assert.equal(commandExistsOperation(commandContext, "node", root), true);
+  assert.equal(commandExistsOperation(commandContext, "missing", root), false);
+  assert.equal(commandExistsOperation(commandContext, "bin/tool", "/repo"), true);
+  assert.equal(commandExistsOperation(commandContext, "bin/tool"), true);
+  assert.equal(commandExistsOperation(commandContext, "/absent", root), false);
+
+  const requested = [];
+  const availability = playwrightAvailabilityOperation({
+    readJson: () => ({
+      dependencies: { "@playwright/test": "1.0.0" },
+      devDependencies: { other: "1.0.0" }
+    }),
+    join,
+    exists: (path) => {
+      requested.push(path);
+      return path.endsWith("playwright.config.mjs") || path.endsWith("/.bin/playwright");
+    }
+  }, "/workspace");
+  assert.deepEqual(availability, {
+    packageOwned: true,
+    binary: "/workspace/node_modules/.bin/playwright",
+    binaryAvailable: true,
+    config: "playwright.config.mjs"
+  });
+  assert.ok(requested.some((path) => path.endsWith("playwright.config.ts")));
+
+  assert.deepEqual(playwrightAvailabilityOperation({
+    readJson: () => ({}), join, exists: () => false
+  }, "/empty"), {
+    packageOwned: false,
+    binary: "/empty/node_modules/.bin/playwright",
+    binaryAvailable: false,
+    config: null
+  });
+});
+
+test("assurance dimensions distinguish configured, active, and preferred posture", () => {
+  const definition = {
+    key: "independence", waivedValue: "self",
+    waivedConsequence: "waived", requiredConsequence: "required",
+    preferredConsequence: "preferred"
+  };
+  assert.deepEqual(reviewAssuranceDimension({ independence: "self" }, null, definition), {
+    configured: "self", effective: "self", required: false,
+    waived: true, consequence: "waived"
+  });
+  assert.deepEqual(reviewAssuranceDimension({ independence: "required" }, {
+    independence: "preferred"
+  }, definition), {
+    configured: "required", effective: "preferred", required: false,
+    waived: false, consequence: "preferred"
+  });
+  assert.deepEqual(reviewAssuranceDimension({ independence: "self" }, {
+    independence: "required", independenceWaived: false
+  }, definition), {
+    configured: "self", effective: "required", required: true,
+    waived: false, consequence: "required"
+  });
+});
 
 test("policy defaults and legacy execution values normalize deterministically", () => {
   const defaults = policy({}, join(root, "missing-foundation.json"));
