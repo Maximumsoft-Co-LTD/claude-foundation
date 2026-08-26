@@ -298,6 +298,104 @@ export function topologyIssuesOperation({ evidence }, id) {
   ];
 }
 
+export function readinessStatus({
+  pending, issues, leases, repositoryConflicts,
+  unavailable, repositoryIssues, unconfigured
+}) {
+  if (pending.length) return "NEEDS_CODE_CHANGE";
+  if (issues.length) return "CONFIGURATION_ERROR";
+  if (leases.length || repositoryConflicts.length) return "BLOCKED_BY_ACTIVE_WORK";
+  if (unavailable.length || repositoryIssues.length) return "INFRASTRUCTURE_ERROR";
+  if (unconfigured.length) return "NEEDS_USER_DECISION";
+  return "READY";
+}
+
+export function readinessGraph(plan, pending) {
+  if (!plan?.graph) return null;
+  const pendingNodeIds = pending.map((task) => `task:${task.id}`).filter((nodeId) =>
+    plan.graph.nodes.some((node) => node.id === nodeId));
+  const blockedNodes = dependentClosure(plan.graph, pendingNodeIds);
+  const completedTaskNodes = plan.graph.nodes.filter((node) =>
+    node.kind === "task" && !pendingNodeIds.includes(node.id)).map((node) => node.id);
+  return {
+    version: plan.graph.version,
+    revision: plan.graph.revision,
+    identity: plan.graph.identity,
+    nodeCount: plan.graph.nodes.length,
+    edgeCount: plan.graph.edges.length,
+    pendingNodes: pendingNodeIds,
+    affectedNodes: blockedNodes,
+    preservedNodes: completedTaskNodes.filter((node) => !blockedNodes.includes(node))
+  };
+}
+
+export function readinessNext(context, input) {
+  const {
+    id, status, pending, issues, surfaceFixits, leases,
+    repositoryConflicts, unconfigured, unavailable
+  } = input;
+  if (status === "NEEDS_CODE_CHANGE") return context.codeChangeRecovery(id, pending);
+  if (status === "CONFIGURATION_ERROR")
+    return context.configurationRecovery(id, issues, surfaceFixits);
+  if (status === "BLOCKED_BY_ACTIVE_WORK")
+    return context.activeWorkRecovery(id, leases, repositoryConflicts);
+  if (status === "NEEDS_USER_DECISION")
+    return unconfigured.map((provider) => context.externalEvidenceRecovery(id, provider));
+  if (status === "INFRASTRUCTURE_ERROR")
+    return unavailable.map((provider) => context.unavailableProviderRecovery(id, provider));
+  return [];
+}
+
+export function proofReadinessValueOperation(context, id, stage = "prove") {
+  context.validate(id, "active", { quiet: true });
+  const issues = context.topologyIssues(id);
+  const surfaceFixits = [];
+  if (stage === "prove") issues.push(...context.changedSurfaceIssues(id, surfaceFixits));
+  if (stage === "prove") issues.push(...context.criticalCaseIssues(id));
+  const hash = context.relevantHash(id);
+  const { unconfigured, unavailable } = context.executionNodes(id, hash);
+  const repositoryIssues = stage === "prove"
+    ? context.repositoryInfrastructureIssues(id) : [];
+  const pending = context.pendingTasks(id);
+  const plan = context.agentPlanValue?.(id) || null;
+  const externalOperations = context.handoffReadiness(id);
+  const leases = stage === "prove" ? context.activeChangeLeases(id) : [];
+  const repositoryConflicts = context.activeRepositoryConflicts(
+    id, context.selectedRepositories(id), { executing: true });
+  const status = readinessStatus({
+    pending, issues, leases, repositoryConflicts,
+    unavailable, repositoryIssues, unconfigured
+  });
+  return {
+    version: 1,
+    changeId: id,
+    stage,
+    status,
+    workspaceHash: hash,
+    pendingTasks: pending.map((task) => task.id || task.text),
+    externalOperations: {
+      ...externalOperations,
+      proofBlocking: false,
+      note: "External operations are handed off during Prove and are evaluated at Land by timing and activation safety."
+    },
+    externalProviders: unconfigured,
+    unavailableProviders: unavailable,
+    repositoryIssues,
+    activeLeases: leases.map((lease) => ({
+      taskId: lease.taskId, owner: lease.owner, expiresAt: lease.expiresAt || null
+    })),
+    repositoryConflicts,
+    graph: readinessGraph(plan, pending),
+    issues,
+    advisories: context.advisoryCapabilities(id),
+    budget: context.readinessBudgetPolicy(status),
+    next: readinessNext(context, {
+      id, status, pending, issues, surfaceFixits, leases,
+      repositoryConflicts, unconfigured, unavailable
+    })
+  };
+}
+
 export function createProofReadinessRuntime({
   markBlocked = () => {},
   evidence,
@@ -624,83 +722,30 @@ export function createProofReadinessRuntime({
     };
   }
 
+  const proofReadinessValueFor = proofReadinessValueOperation.bind(null, {
+    validate,
+    topologyIssues,
+    changedSurfaceIssues,
+    criticalCaseIssues,
+    relevantHash,
+    executionNodes,
+    repositoryInfrastructureIssues,
+    pendingTasks,
+    agentPlanValue,
+    handoffReadiness,
+    activeChangeLeases,
+    activeRepositoryConflicts,
+    selectedRepositories,
+    advisoryCapabilities,
+    readinessBudgetPolicy,
+    codeChangeRecovery,
+    configurationRecovery,
+    activeWorkRecovery,
+    externalEvidenceRecovery,
+    unavailableProviderRecovery
+  });
   function proofReadinessValue(id, stage = "prove") {
-    validate(id, "active", { quiet: true });
-    const issues = topologyIssues(id);
-    const surfaceFixits = [];
-    if (stage === "prove") issues.push(...changedSurfaceIssues(id, surfaceFixits));
-    if (stage === "prove") issues.push(...criticalCaseIssues(id));
-    const hash = relevantHash(id);
-    const { unconfigured, unavailable } = executionNodes(id, hash);
-    const repositoryIssues = stage === "prove" ? repositoryInfrastructureIssues(id) : [];
-    const pending = pendingTasks(id);
-    const plan = agentPlanValue?.(id) || null;
-    const pendingNodeIds = pending.map((task) => `task:${task.id}`).filter((nodeId) =>
-      plan?.graph?.nodes?.some((node) => node.id === nodeId));
-    const blockedNodes = plan?.graph ? dependentClosure(plan.graph, pendingNodeIds) : [];
-    const completedTaskNodes = (plan?.graph?.nodes || []).filter((node) =>
-      node.kind === "task" && !pendingNodeIds.includes(node.id)).map((node) => node.id);
-    const externalOperations = handoffReadiness(id);
-    const leases = stage === "prove" ? activeChangeLeases(id) : [];
-    // The cross-change guard reached dispatch and lease acquisition but never
-    // the proof path, so two changes could execute providers against the same
-    // repository at once — sharing ports, databases and the working tree.
-    // `activeChangeLeases` only sees this change's own leases, so it cannot
-    // stand in for it.
-    const repositoryConflicts = activeRepositoryConflicts(
-      id, selectedRepositories(id), { executing: true });
-    const status = pending.length ? "NEEDS_CODE_CHANGE"
-      : issues.length ? "CONFIGURATION_ERROR"
-        : leases.length || repositoryConflicts.length ? "BLOCKED_BY_ACTIVE_WORK"
-          : unavailable.length || repositoryIssues.length ? "INFRASTRUCTURE_ERROR"
-          : unconfigured.length ? "NEEDS_USER_DECISION" : "READY";
-    return {
-      version: 1,
-      changeId: id,
-      stage,
-      status,
-      workspaceHash: hash,
-      pendingTasks: pending.map((task) => task.id || task.text),
-      externalOperations: {
-        ...externalOperations,
-        proofBlocking: false,
-        note: "External operations are handed off during Prove and are evaluated at Land by timing and activation safety."
-      },
-      externalProviders: unconfigured,
-      unavailableProviders: unavailable,
-      repositoryIssues,
-      activeLeases: leases.map((lease) => ({
-        taskId: lease.taskId, owner: lease.owner, expiresAt: lease.expiresAt || null
-      })),
-      repositoryConflicts,
-      graph: plan?.graph ? {
-        version: plan.graph.version,
-        revision: plan.graph.revision,
-        identity: plan.graph.identity,
-        nodeCount: plan.graph.nodes.length,
-        edgeCount: plan.graph.edges.length,
-        pendingNodes: pendingNodeIds,
-        affectedNodes: blockedNodes,
-        preservedNodes: completedTaskNodes.filter((node) => !blockedNodes.includes(node))
-      } : null,
-      issues,
-      // Reported, never counted into `status`: these are the capabilities the
-      // policy inferred from the diff and the project never wired. They are the
-      // record that a gate was downgraded rather than silently dropped.
-      advisories: advisoryCapabilities(id),
-      budget: readinessBudgetPolicy(status),
-      next: status === "NEEDS_CODE_CHANGE"
-        ? codeChangeRecovery(id, pending)
-        : status === "CONFIGURATION_ERROR"
-          ? configurationRecovery(id, issues, surfaceFixits)
-          : status === "BLOCKED_BY_ACTIVE_WORK"
-            ? activeWorkRecovery(id, leases, repositoryConflicts)
-            : status === "NEEDS_USER_DECISION"
-              ? unconfigured.map((provider) => externalEvidenceRecovery(id, provider))
-              : status === "INFRASTRUCTURE_ERROR"
-                ? unavailable.map((provider) => unavailableProviderRecovery(id, provider))
-                : []
-    };
+    return proofReadinessValueFor(id, stage);
   }
 
   function proofReadiness(id, stage = "prove") {
