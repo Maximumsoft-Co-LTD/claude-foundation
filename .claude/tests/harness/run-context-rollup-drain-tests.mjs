@@ -11,7 +11,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, utimesSync,
+  writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -83,6 +84,64 @@ function seed(dir, count, make) {
 function pendingCount(dir) {
   return readdirSync(dir).filter((name) => name.endsWith(".json")).length;
 }
+
+test("small event sets stay pending without creating a rollup", () => {
+  const { logs, runtime, dir } = freshRuntime();
+  runtime.recordContextMetric(ID, "single", 3);
+  assert.equal(pendingCount(dir), 1);
+  assert.equal(existsSync(join(logs, ID, "context-rollup.json")), false);
+});
+
+test("a fresh rollup lock defers the drain without dropping events", () => {
+  const { logs, runtime, dir } = freshRuntime();
+  seed(dir, 1000, () => ({ kind: "pending", bytes: 1 }));
+  const lockPath = join(logs, ID, "context-rollup.lock");
+  writeFileSync(lockPath, "busy\n");
+  runtime.recordContextMetric(ID, "trigger", 2);
+  assert.equal(pendingCount(dir), 1001);
+  assert.equal(existsSync(join(logs, ID, "context-rollup.json")), false);
+});
+
+test("a stale rollup lock is reclaimed before draining", () => {
+  const { logs, runtime, dir } = freshRuntime();
+  seed(dir, 1000, () => ({ kind: "recovered", bytes: 1 }));
+  const lockPath = join(logs, ID, "context-rollup.lock");
+  writeFileSync(lockPath, "stale\n");
+  utimesSync(lockPath, new Date(0), new Date(0));
+  runtime.recordContextMetric(ID, "trigger", 2);
+  assert.equal(pendingCount(dir), 501);
+  assert.equal(readJson(join(logs, ID, "context-rollup.json")).count, 500);
+});
+
+test("context telemetry failures remain non-blocking and debug-visible", () => {
+  const root = mkdtempSync(join(tmpdir(), "context-rollup-failure-"));
+  const logs = join(root, "logs");
+  writeFileSync(logs, "not-a-directory\n");
+  const runtime = createTelemetryRuntime({
+    root, logs, contextEventSchemaVersion: 1, stableHash,
+    now: () => "2026-08-27T00:00:00.000Z", readJson, writeJson,
+    readJsonLines: () => [], readJsonLinesTolerant: () => [],
+    loadRuntime: () => ({}), saveRuntime: () => {},
+    synchronizeBudgetUsage: () => {}, reportBudget: () => {},
+    snapshotPath: () => join(root, "snapshot.json"),
+    parseFlags: () => ({ flags: {}, rest: [] }), activeChangePath: () => root,
+    repositoryById: () => {}, taskBlocks: () => [],
+    fail: (message) => { throw new Error(message); }
+  });
+  const priorDebug = process.env.FOUNDATION_TELEMETRY_DEBUG;
+  const priorError = console.error;
+  const warnings = [];
+  process.env.FOUNDATION_TELEMETRY_DEBUG = "1";
+  console.error = (message) => warnings.push(String(message));
+  try {
+    assert.doesNotThrow(() => runtime.recordContextMetric(ID, "unavailable", 1));
+  } finally {
+    console.error = priorError;
+    if (priorDebug === undefined) delete process.env.FOUNDATION_TELEMETRY_DEBUG;
+    else process.env.FOUNDATION_TELEMETRY_DEBUG = priorDebug;
+  }
+  assert.match(warnings[0], /context telemetry unavailable/);
+});
 
 test("junk and missing rows are excluded but their files are drained", () => {
   const { logs, runtime, dir } = freshRuntime();

@@ -449,6 +449,26 @@ export function readCompleteJsonLinesOperation({
   return { rows, nextOffset: start + newline + 1 };
 }
 
+export function normalizedContextRollup(id, loaded) {
+  const rollup = {
+    version: 1,
+    changeId: id,
+    count: measuredNumber(loaded.count) ?? 0,
+    totalBytes: measuredNumber(loaded.totalBytes) ?? 0,
+    byKind: {}
+  };
+  const archivedKinds = loaded.byKind && typeof loaded.byKind === "object"
+    ? Object.entries(loaded.byKind) : [];
+  for (const [kind, archived] of archivedKinds) {
+    const count = measuredNumber(archived?.count);
+    const totalBytes = measuredNumber(archived?.totalBytes);
+    const maxBytes = measuredNumber(archived?.maxBytes);
+    if (count === null || totalBytes === null || maxBytes === null) continue;
+    rollup.byKind[kind] = { count, totalBytes, maxBytes };
+  }
+  return rollup;
+}
+
 export function createTelemetryRuntime({
   root,
   logs,
@@ -511,22 +531,7 @@ export function createTelemetryRuntime({
         // the fresh measurements, matching the skip rule metrics-runtime
         // applies when it reads the rollup back.
         const loaded = readJson(rollupPath, {});
-        const rollup = {
-          version: 1,
-          changeId: id,
-          count: measuredNumber(loaded.count) ?? 0,
-          totalBytes: measuredNumber(loaded.totalBytes) ?? 0,
-          byKind: {}
-        };
-        const archivedKinds = loaded.byKind && typeof loaded.byKind === "object"
-          ? Object.entries(loaded.byKind) : [];
-        for (const [kind, archived] of archivedKinds) {
-          const count = measuredNumber(archived?.count);
-          const totalBytes = measuredNumber(archived?.totalBytes);
-          const maxBytes = measuredNumber(archived?.maxBytes);
-          if ([count, totalBytes, maxBytes].some((value) => value === null)) continue;
-          rollup.byKind[kind] = { count, totalBytes, maxBytes };
-        }
+        const rollup = normalizedContextRollup(id, loaded);
         for (const entry of entries.slice(0, 500)) {
           const path = join(dir, entry);
           const row = readJson(path, {});
