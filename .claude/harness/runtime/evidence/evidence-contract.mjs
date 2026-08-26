@@ -18,6 +18,84 @@ export const REVIEW_DIVERSITY_CAPABILITIES = Object.freeze([
   "security-static", "data-migration", "compatibility"
 ]);
 
+export function collectReviewSignals(state, contract, configuredCapabilities = []) {
+  const capabilities = new Set([
+    ...(state.evidenceCapabilities || []),
+    ...contract.claims.flatMap((claim) => claim.capabilities || []),
+    ...configuredCapabilities
+  ]);
+  const semantic = `${state.intent || ""} ${(state.securityTriggers || []).join(" ")}`
+    .toLowerCase();
+  const requiredTriggers = [];
+  const diversityTriggers = [];
+  const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
+  if (riskClaims.some((claim) => claim.capabilities.some((capability) =>
+    REVIEW_FORCING_CAPABILITIES.includes(capability))))
+    requiredTriggers.push("risk-capability");
+  if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
+    requiredTriggers.push("multi-repository-claim");
+  if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
+    requiredTriggers.push("risk-semantics");
+  if ((state.securityTriggers || []).length ||
+      REVIEW_DIVERSITY_CAPABILITIES.some((value) => capabilities.has(value)))
+    diversityTriggers.push("critical-capability");
+  if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
+    diversityTriggers.push("critical-semantics");
+  return { capabilities, requiredTriggers, diversityTriggers };
+}
+
+export function assembleReviewPolicy({
+  state, signals, riskRoute, policy, riskTiered
+}) {
+  const { capabilities, requiredTriggers, diversityTriggers } = signals;
+  const triggers = [...new Set([...requiredTriggers, ...diversityTriggers])].sort();
+  // A project with one model available cannot satisfy diversity with a second
+  // provider, so the only remaining path is a person — on every critical
+  // change, forever. `review.diversity: "single-model"` in foundation.json
+  // trades that for a same-family reviewer, and says so: the waiver is a
+  // trigger of its own, so it travels into the review packet and the receipt
+  // instead of quietly disappearing.
+  //
+  // `review.independence: "self"` is the same trade for the other property,
+  // for a project driven from a single session: a fresh session is free only
+  // when there is a second one to open. It applies at every impact, because
+  // the changes that force review are exactly the ones that would otherwise
+  // be understated to get past it — and it relaxes nothing else, so a
+  // critical self-review still has to satisfy diversity on its own terms.
+  //
+  // contractFingerprint hashes this whole object, so a project that never
+  // opts in must keep producing the byte-identical shape it produced before
+  // either waiver existed — otherwise upgrading Foundation would
+  // re-fingerprint every in-flight change and invalidate evidence nobody
+  // asked to re-earn. Hence each key appears only when its waiver is in force.
+  const singleModel = policy.diversity === "single-model";
+  const diversityRequired = diversityTriggers.length > 0 ||
+    (riskTiered && riskRoute.tier === "high");
+  const waived = singleModel && diversityRequired;
+  if (waived) triggers.push("diversity-waived-single-model");
+  const selfReview = policy.independence === "self";
+  if (selfReview) triggers.push("independence-waived-self-review");
+  return {
+    required: riskTiered
+      ? true
+      : Boolean(state.reviewRequired || requiredTriggers.length ||
+        capabilities.has("review")),
+    ...(riskTiered ? {
+      tier: riskRoute.tier,
+      route: riskRoute.route,
+      maxAiAttempts: riskRoute.maxAiAttempts,
+      requiresHumanFinal: riskRoute.requiresHumanFinal
+    } : {}),
+    independence: selfReview ? "self" : "required",
+    diversity: diversityRequired && !singleModel ? "required" : "preferred",
+    ...(waived ? { diversityWaived: true } : {}),
+    ...(selfReview ? { independenceWaived: true } : {}),
+    triggers: [...new Set(riskTiered
+      ? [...triggers, ...riskRoute.triggers]
+      : triggers)].sort()
+  };
+}
+
 function inputPatternMatches(rel, pattern) {
   if (pattern.endsWith("/**"))
     return rel === pattern.slice(0, -3) || rel.startsWith(pattern.slice(0, -2));
@@ -773,79 +851,14 @@ export function createEvidenceContract({
   
   function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
     const grounding = readJson(join(activeChangePath(id), "grounding.yaml"), {});
-    const capabilities = new Set([
-      ...(state.evidenceCapabilities || []),
-      ...contract.claims.flatMap((claim) => claim.capabilities || []),
-      ...policyCapabilities(id)
-    ]);
-    const semantic = `${state.intent || ""} ${(state.securityTriggers || []).join(" ")}`.toLowerCase();
-    const requiredTriggers = [];
-    const diversityTriggers = [];
-    const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
-    const requiredCapabilities = REVIEW_FORCING_CAPABILITIES;
-    if (riskClaims.some((claim) =>
-      claim.capabilities.some((capability) => requiredCapabilities.includes(capability))))
-      requiredTriggers.push("risk-capability");
-    if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
-      requiredTriggers.push("multi-repository-claim");
-    if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
-      requiredTriggers.push("risk-semantics");
-    if ((state.securityTriggers || []).length ||
-        REVIEW_DIVERSITY_CAPABILITIES.some((value) => capabilities.has(value)))
-      diversityTriggers.push("critical-capability");
-    if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
-      diversityTriggers.push("critical-semantics");
+    const signals = collectReviewSignals(state, contract, policyCapabilities(id));
     const riskRoute = classifyReviewRisk({
-      state, claims: contract.claims, capabilities, grounding, requiredTriggers
+      state, claims: contract.claims, capabilities: signals.capabilities, grounding,
+      requiredTriggers: signals.requiredTriggers
     });
-    const triggers = [...new Set([...requiredTriggers, ...diversityTriggers])].sort();
-    // A project with one model available cannot satisfy diversity with a second
-    // provider, so the only remaining path is a person — on every critical
-    // change, forever. `review.diversity: "single-model"` in foundation.json
-    // trades that for a same-family reviewer, and says so: the waiver is a
-    // trigger of its own, so it travels into the review packet and the receipt
-    // instead of quietly disappearing.
-    //
-    // `review.independence: "self"` is the same trade for the other property,
-    // for a project driven from a single session: a fresh session is free only
-    // when there is a second one to open. It applies at every impact, because
-    // the changes that force review are exactly the ones that would otherwise
-    // be understated to get past it — and it relaxes nothing else, so a
-    // critical self-review still has to satisfy diversity on its own terms.
-    //
-    // contractFingerprint hashes this whole object, so a project that never
-    // opts in must keep producing the byte-identical shape it produced before
-    // either waiver existed — otherwise upgrading Foundation would
-    // re-fingerprint every in-flight change and invalidate evidence nobody
-    // asked to re-earn. Hence each key appears only when its waiver is in force.
     const policy = foundationPolicy().review || {};
     const riskTiered = foundationPolicy().workflow.reviewPolicy === "risk-tiered";
-    const singleModel = policy.diversity === "single-model";
-    const diversityRequired = diversityTriggers.length > 0 ||
-      (riskTiered && riskRoute.tier === "high");
-    const waived = singleModel && diversityRequired;
-    if (waived) triggers.push("diversity-waived-single-model");
-    const selfReview = policy.independence === "self";
-    if (selfReview) triggers.push("independence-waived-self-review");
-    return {
-      required: riskTiered
-        ? true
-        : Boolean(state.reviewRequired || requiredTriggers.length ||
-          capabilities.has("review")),
-      ...(riskTiered ? {
-        tier: riskRoute.tier,
-        route: riskRoute.route,
-        maxAiAttempts: riskRoute.maxAiAttempts,
-        requiresHumanFinal: riskRoute.requiresHumanFinal
-      } : {}),
-      independence: selfReview ? "self" : "required",
-      diversity: diversityRequired && !singleModel ? "required" : "preferred",
-      ...(waived ? { diversityWaived: true } : {}),
-      ...(selfReview ? { independenceWaived: true } : {}),
-      triggers: [...new Set(riskTiered
-        ? [...triggers, ...riskRoute.triggers]
-        : triggers)].sort()
-    };
+    return assembleReviewPolicy({ state, signals, riskRoute, policy, riskTiered });
   }
   
   function executionFingerprint(id, dir = activeChangePath(id)) {
