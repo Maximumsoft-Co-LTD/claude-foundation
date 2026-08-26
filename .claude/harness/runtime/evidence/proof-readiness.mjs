@@ -2,6 +2,43 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { dependentClosure } from "../core/graph-execution.mjs";
 
+export function recoverySummaryLine(entry) {
+  const heading = entry.provider ? `${entry.provider}: ` : "";
+  if (entry.decision?.summary) return `  ${heading}${entry.decision.summary}`;
+  if (entry.reason) return `  ${heading}${entry.reason}`;
+  return null;
+}
+
+export function recoveryCommands(entry) {
+  return [...new Set([
+    entry.wiring?.command,
+    entry.request?.command,
+    entry.request?.packet,
+    entry.verify,
+    ...(entry.choices || []).map((choice) => choice?.command || choice?.verify)
+  ].filter(Boolean))];
+}
+
+export function recoveryInstructions(entry) {
+  const outcomes = (entry.decision?.options || [])
+    .map((option) => option?.outcome).filter(Boolean);
+  const choices = (entry.choices || [])
+    .map((choice) => choice?.instruction).filter(Boolean);
+  return [...outcomes, ...choices];
+}
+
+export function recoveryLines(next = []) {
+  const lines = [];
+  for (const entry of next) {
+    if (!entry) continue;
+    const summary = recoverySummaryLine(entry);
+    if (summary) lines.push(summary);
+    lines.push(...recoveryCommands(entry).map((command) => `    ${command}`));
+    lines.push(...recoveryInstructions(entry).map((instruction) => `    - ${instruction}`));
+  }
+  return lines;
+}
+
 export function createProofReadinessRuntime({
   markBlocked = () => {},
   evidence,
@@ -579,29 +616,6 @@ export function createProofReadinessRuntime({
   // end: the way out was computed, then discarded one frame before the person
   // who needed it. Render it as prose here — `/prove` is told not to expose raw
   // readiness JSON, so JSON is not a substitute for saying the next command.
-  function recoveryLines(next = []) {
-    const lines = [];
-    for (const entry of next) {
-      if (!entry) continue;
-      const heading = entry.provider ? `${entry.provider}: ` : "";
-      if (entry.decision?.summary) lines.push(`  ${heading}${entry.decision.summary}`);
-      else if (entry.reason) lines.push(`  ${heading}${entry.reason}`);
-      const commands = [
-        entry.wiring?.command,
-        entry.request?.command,
-        entry.request?.packet,
-        entry.verify,
-        ...(entry.choices || []).map((choice) => choice.command || choice.verify)
-      ].filter(Boolean);
-      for (const command of [...new Set(commands)]) lines.push(`    ${command}`);
-      for (const option of entry.decision?.options || [])
-        if (option?.outcome) lines.push(`    - ${option.outcome}`);
-      for (const choice of entry.choices || [])
-        if (choice?.instruction) lines.push(`    - ${choice.instruction}`);
-    }
-    return lines;
-  }
-
   function proofPreflight(id, stage = "prove", quiet = false) {
     const value = proofReadinessValue(id, stage);
     const blockers = [

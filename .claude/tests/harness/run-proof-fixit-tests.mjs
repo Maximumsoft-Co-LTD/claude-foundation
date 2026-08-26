@@ -11,7 +11,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createProofReadinessRuntime } from "../../harness/runtime/evidence/proof-readiness.mjs";
+import {
+  createProofReadinessRuntime,
+  recoveryCommands,
+  recoveryInstructions,
+  recoveryLines,
+  recoverySummaryLine
+} from "../../harness/runtime/evidence/proof-readiness.mjs";
 
 // A packet directory real enough for the readiness scan: only tasks.md is read.
 const packet = mkdtempSync(join(tmpdir(), "proof-fixit-"));
@@ -108,4 +114,44 @@ test("the readiness value routes fix-its into the recovery entries", () => {
   assert.equal(value.next[0].kind, "declare-surface");
   assert.match(value.next[0].choices[0].instruction,
     /repository 'api': \[paths:api\/test\/new\.spec\.js\]/);
+});
+
+test("recovery prose preserves summaries, commands, decisions and instructions", () => {
+  const detailed = {
+    provider: "browser",
+    decision: {
+      summary: "Choose how to continue",
+      options: [{ outcome: "Use the recorded result" }, {}, null]
+    },
+    reason: "summary takes precedence",
+    wiring: { command: "wire browser" },
+    request: { command: "request browser", packet: "open packet" },
+    verify: "verify browser",
+    choices: [
+      { command: "wire browser", instruction: "Run the browser check" },
+      { verify: "verify fallback" },
+      null
+    ]
+  };
+  assert.equal(recoverySummaryLine(detailed),
+    "  browser: Choose how to continue");
+  assert.deepEqual(recoveryCommands(detailed), [
+    "wire browser", "request browser", "open packet", "verify browser", "verify fallback"
+  ]);
+  assert.deepEqual(recoveryInstructions(detailed), [
+    "Use the recorded result", "Run the browser check"
+  ]);
+  assert.deepEqual(recoveryLines([null, detailed, { reason: "Retry later" }, {}]), [
+    "  browser: Choose how to continue",
+    "    wire browser",
+    "    request browser",
+    "    open packet",
+    "    verify browser",
+    "    verify fallback",
+    "    - Use the recorded result",
+    "    - Run the browser check",
+    "  Retry later"
+  ]);
+  assert.equal(recoverySummaryLine({}), null);
+  assert.deepEqual(recoveryLines(), []);
 });
