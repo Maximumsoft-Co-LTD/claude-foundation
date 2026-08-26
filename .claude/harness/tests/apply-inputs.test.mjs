@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  assertRecoveredArchiveReadyOperation,
+  buildApplyEntriesOperation,
+  buildReapplyEntriesOperation,
+  createApplyRuntime,
   gitApplyInputsOperation,
+  prepareApplyTransactionOperation,
+  refreshAppliedProjectionOperation,
   sandboxDiffNamesOperation
 } from "../runtime/workflow/apply-runtime.mjs";
 
@@ -149,4 +155,258 @@ test("git apply inputs refuses target edits absent from the sandbox base", () =>
 
   assert.throws(() => gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
     /overwrite uncommitted target edits at: file\.js/);
+});
+
+function entryContext(overrides = {}) {
+  const manifests = {
+    "/target": { "file.js": "base" },
+    "/sandbox": { "file.js": "changed" }
+  };
+  const calls = { head: 0, git: 0 };
+  return {
+    calls,
+    context: {
+      root: "/target",
+      workspaceManifest: (path) => manifests[path],
+      copyCodePaths: () => ["file.js"],
+      pathMode: () => "100644",
+      assertTargetHeadUnmoved: () => { calls.head += 1; },
+      gitApplyInputs: () => { calls.git += 1; return ["git.js"]; },
+      safeRootPath: (path) => `/target/${path}`,
+      pathIdentity: (path) => `identity:${path}`,
+      currentChangeRelativePath: () => "openspec/changes/change",
+      changePath: () => "/target/openspec/changes/change",
+      fail,
+      ...overrides
+    },
+    manifests
+  };
+}
+
+test("apply entries build copy and worktree projections and reject invalid modes", () => {
+  const copy = entryContext();
+  const copyEntries = buildApplyEntriesOperation(copy.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", baseline: { "file.js": "base" } }
+  });
+  assert.equal(copyEntries[0].path, "file.js");
+  assert.equal(copyEntries[0].role, "code");
+  assert.equal(copyEntries[1].role, "change-artifacts");
+
+  const conflict = entryContext();
+  conflict.manifests["/target"]["file.js"] = "local";
+  assert.throws(() => buildApplyEntriesOperation(conflict.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", baseline: { "file.js": "base" } }
+  }), /isolated-copy conflict at 'file\.js'/);
+
+  const modeConflict = entryContext({
+    pathMode: (path) => path.startsWith("/sandbox/") ? "100755" : "100644"
+  });
+  modeConflict.manifests["/target"]["file.js"] = "same";
+  modeConflict.manifests["/sandbox"]["file.js"] = "same";
+  assert.throws(() => buildApplyEntriesOperation(modeConflict.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", baseline: { "file.js": "base" } }
+  }), /isolated-copy conflict at 'file\.js'/);
+
+  const noBaseline = entryContext();
+  noBaseline.manifests["/target"]["file.js"] = "same";
+  noBaseline.manifests["/sandbox"]["file.js"] = "same";
+  assert.equal(buildApplyEntriesOperation(noBaseline.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox" }
+  })[0].path, "file.js");
+
+  const worktree = entryContext();
+  const worktreeEntries = buildApplyEntriesOperation(worktree.context, "change", {
+    workspace: { mode: "worktree", path: "/sandbox" }
+  });
+  assert.equal(worktree.calls.head, 1);
+  assert.equal(worktree.calls.git, 1);
+  assert.equal(worktreeEntries[0].path, "git.js");
+
+  assert.throws(() => buildApplyEntriesOperation(entryContext().context, "change", {
+    workspace: { mode: "direct", path: "/sandbox" }
+  }), /change has no isolated sandbox/);
+});
+
+test("reapply entries preserve prior projection identity and add new owned paths", () => {
+  const context = {
+    currentChangeRelativePath: () => "change",
+    reapplyCodePaths: () => ["old.js", "new.js", "legacy.js"],
+    safeRootPath: (path) => `/target/${path}`,
+    pathIdentity: (path) => `identity:${path}`,
+    pathMode: (path) => `mode:${path}`
+  };
+  const entries = buildReapplyEntriesOperation(context, "change", {
+    workspace: { path: "/sandbox" }
+  }, { entries: [
+    { path: "old.js", role: "code", after: "prior-old", afterMode: "100755" },
+    { path: "legacy.js", after: "prior-legacy" }
+  ] });
+
+  assert.deepEqual(entries.map((entry) => entry.path), [
+    "change", "legacy.js", "new.js", "old.js"
+  ]);
+  assert.equal(entries[0].role, "change-artifacts");
+  assert.equal(entries[1].before, "prior-legacy");
+  assert.equal(entries[1].beforeMode, "mode:/target/legacy.js");
+  assert.equal(entries[2].role, "code");
+  assert.equal(entries[3].beforeMode, "100755");
+});
+
+function transactionContext(overrides = {}) {
+  const copies = [];
+  const saves = [];
+  const context = {
+    root: "/target",
+    directoryHash: () => "source-hash",
+    changePath: () => "/target/change",
+    buildApplyEntries: () => [],
+    nestedRepositoryPathMatcher: (paths) => (path) => paths.includes(path),
+    nestedRepositoryPaths: () => [],
+    assertDeletionsAreDeclared: () => {},
+    dateNow: () => 123,
+    pid: 456,
+    applyTransactionRoot: (_id, transactionId) => `/transactions/${transactionId}`,
+    makeDirectory: () => {},
+    copyPath: (...args) => copies.push(args),
+    safeRootPath: (path) => `/target/${path}`,
+    readJson: () => ({ proofRunId: "proof" }),
+    proofPath: () => "/proof.json",
+    stableHash: (value) => JSON.stringify(value),
+    now: () => "now",
+    saveApplyJournal: (journal) => saves.push(structuredClone(journal)),
+    fail,
+    ...overrides
+  };
+  return { context, copies, saves };
+}
+
+test("apply transaction preparation validates source, child scope, and records backups", () => {
+  assert.throws(() => prepareApplyTransactionOperation(transactionContext({
+    directoryHash: () => "changed"
+  }).context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", changeSourceHash: "source-hash" }
+  }), /active change was edited/);
+
+  const child = transactionContext({ nestedRepositoryPaths: () => ["child/file.js"] });
+  assert.throws(() => prepareApplyTransactionOperation(child.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", changeSourceHash: "source-hash" }
+  }, [{ path: "child/file.js", role: "code", before: null }]),
+  /crosses into a child repository/);
+
+  const fixture = transactionContext();
+  const journal = prepareApplyTransactionOperation(fixture.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", changeSourceHash: "source-hash" }
+  }, [
+    { path: "existing.js", role: "code", before: "old", after: "new", afterMode: "100" },
+    { path: "new.js", role: "code", before: null, after: "new", afterMode: "100" }
+  ]);
+  assert.equal(journal.transactionId, "apply-123-456");
+  assert.equal(journal.proofRunId, "proof");
+  assert.equal(journal.status, "prepared");
+  assert.deepEqual(journal.entries.map((entry) => entry.backup), ["backup/0", "backup/1"]);
+  assert.deepEqual(fixture.copies, [[
+    "/target/existing.js", "/transactions/apply-123-456/backup/0"
+  ]]);
+  assert.equal(fixture.saves.length, 1);
+
+  const generated = transactionContext({
+    buildApplyEntries: () => [{
+      path: "generated.js", role: "code", before: null,
+      after: "new", afterMode: "100"
+    }]
+  });
+  assert.equal(prepareApplyTransactionOperation(generated.context, "change", {
+    workspace: { mode: "copy", path: "/sandbox", changeSourceHash: "source-hash" }
+  }).entries[0].path, "generated.js");
+});
+
+function refreshContext(overrides = {}) {
+  const journal = { entries: [{ path: "file.js", after: "old", afterMode: "old-mode" }] };
+  const saved = { journals: [], runtime: [] };
+  return {
+    journal,
+    saved,
+    context: {
+      transactionJournalPath: () => "/journal.json",
+      pathExists: () => true,
+      readJson: (path) => path === "/proof.json"
+        ? { proofRunId: "new-proof" } : journal,
+      pathIdentity: (path) => path.startsWith("/sandbox/") ? "desired" : "desired",
+      pathMode: () => "100644",
+      safeRootPath: (path) => `/target/${path}`,
+      stableHash: (value) => JSON.stringify(value),
+      proofPath: () => "/proof.json",
+      now: () => "now",
+      saveApplyJournal: (value) => saved.journals.push(structuredClone(value)),
+      saveRuntime: (value) => saved.runtime.push(structuredClone(value)),
+      fail,
+      ...overrides
+    }
+  };
+}
+
+test("projection refresh rejects missing/diverged journals and persists verified identity", () => {
+  const state = {
+    id: "change",
+    workspace: { path: "/sandbox", apply: { transactionId: "tx" } }
+  };
+  assert.throws(() => refreshAppliedProjectionOperation(refreshContext().context, {
+    id: "change", workspace: { path: "/sandbox", apply: {} }
+  }), /without its transaction journal/);
+  assert.throws(() => refreshAppliedProjectionOperation(refreshContext({
+    pathExists: () => false
+  }).context, state), /without its transaction journal/);
+  assert.throws(() => refreshAppliedProjectionOperation(refreshContext({
+    pathIdentity: (path) => path.startsWith("/sandbox/") ? "desired" : "diverged"
+  }).context, state), /diverged applied path 'file\.js'/);
+
+  const fixture = refreshContext();
+  refreshAppliedProjectionOperation(fixture.context, state);
+  assert.equal(fixture.journal.after, undefined);
+  assert.equal(fixture.journal.entries[0].after, "desired");
+  assert.equal(fixture.journal.proofRunId, "new-proof");
+  assert.equal(fixture.journal.status, "verified");
+  assert.equal(state.workspace.apply.status, "verified");
+  assert.equal(fixture.saved.journals.length, 1);
+  assert.equal(fixture.saved.runtime.length, 1);
+});
+
+function recoveryContext(overrides = {}) {
+  return {
+    root: "/target",
+    proofAudit: () => ({ valid: true }),
+    assertMultiRepositoryArchiveReady: () => {},
+    verifyAppliedProjection: () => ({ valid: true }),
+    pendingTasks: () => [],
+    fail,
+    ...overrides
+  };
+}
+
+test("interrupted archive readiness enforces proof, projection, and completed tasks", () => {
+  const direct = { workspace: { mode: "direct" } };
+  assert.doesNotThrow(() => assertRecoveredArchiveReadyOperation(
+    recoveryContext(), "change", direct, "archive/change"));
+  assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext({
+    proofAudit: () => ({ valid: false, reason: "bad signature" })
+  }), "change", direct, "archive/change"), /invalid proof: bad signature/);
+  assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext(), "change", {
+    workspace: { mode: "copy", applied: false }
+  }, "archive/change"), /never projected the sandbox/);
+  assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext({
+    verifyAppliedProjection: () => ({ valid: false, reason: "changed" })
+  }), "change", {
+    workspace: { mode: "worktree", applied: true }
+  }, "archive/change"), /invalid applied projection: changed/);
+  assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext({
+    pendingTasks: () => [{ id: "task" }]
+  }), "change", direct, "archive/change"), /1 implementation task\(s\) remain unchecked/);
+});
+
+test("apply runtime factory supports default and explicit telemetry policy dependencies", () => {
+  assert.equal(typeof createApplyRuntime({}).archive, "function");
+  assert.equal(typeof createApplyRuntime({
+    telemetryReadiness: () => ({ classification: "measured" }),
+    foundationPolicy: () => ({ telemetry: { requireUsage: true } })
+  }).applySandbox, "function");
 });

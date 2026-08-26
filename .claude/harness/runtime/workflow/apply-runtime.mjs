@@ -236,6 +236,196 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
   return names;
 }
 
+export function copyApplyCodePaths(context, id, state, sandboxPath) {
+  const baseline = state.workspace.baseline || {};
+  const target = context.workspaceManifest(context.root, id, true);
+  const sandbox = context.workspaceManifest(sandboxPath, id, true);
+  const codePaths = context.copyCodePaths(id, state);
+  for (const path of codePaths) {
+    if ((target[path] ?? null) !== (baseline[path] ?? null) &&
+        ((target[path] ?? null) !== (sandbox[path] ?? null) ||
+         context.pathMode(join(context.root, path)) !==
+           context.pathMode(join(sandboxPath, path))))
+      context.fail(`isolated-copy conflict at '${path}'`);
+  }
+  return codePaths;
+}
+
+export function applyCodePaths(context, id, state, sandboxPath) {
+  if (state.workspace.mode === "copy")
+    return copyApplyCodePaths(context, id, state, sandboxPath);
+  if (state.workspace.mode === "worktree") {
+    context.assertTargetHeadUnmoved(id, state);
+    return context.gitApplyInputs(id, sandboxPath);
+  }
+  context.fail("change has no isolated sandbox");
+}
+
+export function applyCodeEntry(context, sandboxPath, rel) {
+  const source = resolve(sandboxPath, rel);
+  const target = context.safeRootPath(rel);
+  return {
+    path: rel,
+    role: "code",
+    before: context.pathIdentity(target),
+    beforeMode: context.pathMode(target),
+    after: context.pathIdentity(source),
+    afterMode: context.pathMode(source)
+  };
+}
+
+export function changeArtifactApplyEntry(context, id, sandboxPath) {
+  const changeRel = context.currentChangeRelativePath(id);
+  return {
+    path: changeRel,
+    role: "change-artifacts",
+    before: context.pathIdentity(context.changePath(id)),
+    beforeMode: context.pathMode(context.changePath(id)),
+    after: context.pathIdentity(join(sandboxPath, changeRel)),
+    afterMode: context.pathMode(join(sandboxPath, changeRel))
+  };
+}
+
+export function buildApplyEntriesOperation(context, id, state) {
+  const sandboxPath = state.workspace.path;
+  const entries = [];
+  for (const rel of applyCodePaths(context, id, state, sandboxPath))
+    entries.push(applyCodeEntry(context, sandboxPath, rel));
+  entries.push(changeArtifactApplyEntry(context, id, sandboxPath));
+  return entries;
+}
+
+export function buildReapplyEntriesOperation(context, id, state, priorJournal) {
+  const sandboxPath = state.workspace.path;
+  const projected = new Map((priorJournal.entries || [])
+    .map((entry) => [entry.path, entry]));
+  const changeRel = context.currentChangeRelativePath(id);
+  const paths = [...new Set([
+    ...projected.keys(), ...context.reapplyCodePaths(id, state), changeRel
+  ])].sort();
+  return paths.map((rel) => {
+    const prior = projected.get(rel);
+    return {
+      path: rel,
+      role: prior?.role || (rel === changeRel ? "change-artifacts" : "code"),
+      before: prior ? prior.after : context.pathIdentity(context.safeRootPath(rel)),
+      beforeMode: prior && Object.prototype.hasOwnProperty.call(prior, "afterMode")
+        ? prior.afterMode : context.pathMode(context.safeRootPath(rel)),
+      after: context.pathIdentity(resolve(sandboxPath, rel)),
+      afterMode: context.pathMode(resolve(sandboxPath, rel))
+    };
+  });
+}
+
+export function assertApplySourceUnchanged(context, id, state, prepared) {
+  if (!prepared && context.directoryHash(context.changePath(id)) !==
+      state.workspace.changeSourceHash)
+    context.fail("active change was edited after the last sandbox sync");
+}
+
+export function assertNoChildApplyEntries(context, id, state, entries) {
+  const nested = context.nestedRepositoryPathMatcher(context.nestedRepositoryPaths(id, state));
+  for (const entry of entries) {
+    if (entry.role === "code" && nested(entry.path))
+      context.fail(`apply entry '${entry.path}' crosses into a child repository`);
+  }
+}
+
+export function backupApplyEntries(context, transactionRoot, entries) {
+  for (const [index, entry] of entries.entries()) {
+    entry.backup = `backup/${index}`;
+    if (entry.before !== null)
+      context.copyPath(context.safeRootPath(entry.path),
+        join(transactionRoot, entry.backup));
+  }
+}
+
+export function prepareApplyTransactionOperation(context, id, state, prepared = null) {
+  assertApplySourceUnchanged(context, id, state, prepared);
+  const entries = prepared || context.buildApplyEntries(id, state);
+  assertNoChildApplyEntries(context, id, state, entries);
+  context.assertDeletionsAreDeclared(id, state, entries);
+  const transactionId = `apply-${context.dateNow()}-${context.pid}`;
+  const transactionRoot = context.applyTransactionRoot(id, transactionId);
+  context.makeDirectory(transactionRoot, { recursive: true });
+  backupApplyEntries(context, transactionRoot, entries);
+  const proof = context.readJson(context.proofPath(id));
+  const journal = {
+    version: 1,
+    changeId: id,
+    transactionId,
+    proofRunId: proof.proofRunId,
+    mode: state.workspace.mode,
+    status: "prepared",
+    sandboxPath: state.workspace.path,
+    targetPath: context.root,
+    projectionHash: projectionHash(context.stableHash, entries),
+    entries,
+    appliedPaths: [],
+    inFlightPaths: [],
+    createdAt: context.now()
+  };
+  context.saveApplyJournal(journal);
+  return journal;
+}
+
+export function refreshProjectionEntry(context, state, entry) {
+  const source = resolve(state.workspace.path, entry.path);
+  const expected = context.pathIdentity(source);
+  const expectedMode = context.pathMode(source);
+  const current = context.pathIdentity(context.safeRootPath(entry.path));
+  const currentMode = context.pathMode(context.safeRootPath(entry.path));
+  if (current !== expected || currentMode !== expectedMode)
+    context.fail(`cannot refresh diverged applied path '${entry.path}'`);
+  entry.after = expected;
+  entry.afterMode = expectedMode;
+}
+
+export function refreshAppliedProjectionOperation(context, state) {
+  const transactionId = state.workspace?.apply?.transactionId;
+  const journalPath = context.transactionJournalPath(state.id, transactionId);
+  if (!transactionId || !context.pathExists(journalPath))
+    context.fail("cannot refresh an applied projection without its transaction journal");
+  const journal = context.readJson(journalPath);
+  for (const entry of journal.entries) refreshProjectionEntry(context, state, entry);
+  journal.projectionHash = projectionHash(context.stableHash, journal.entries);
+  journal.proofRunId = context.readJson(context.proofPath(state.id)).proofRunId;
+  journal.status = "verified";
+  journal.refreshedAt = context.now();
+  context.saveApplyJournal(journal);
+  state.workspace.apply.projectionHash = journal.projectionHash;
+  state.workspace.apply.status = "verified";
+  context.saveRuntime(state);
+}
+
+export function assertRecoveredProof(context, id) {
+  const audit = context.proofAudit(id, true);
+  if (!audit.valid) context.fail(`recovered archive has invalid proof: ${audit.reason}`);
+}
+
+export function assertRecoveredProjection(context, id, state, archivedPath) {
+  if (!["worktree", "copy"].includes(state.workspace?.mode)) return;
+  if (!state.workspace.applied)
+    context.fail(`the interrupted archive never projected the sandbox into the target; ` +
+      `restore 'openspec/changes/${id}' from '${archivedPath}' and land again`);
+  const verification = context.verifyAppliedProjection(state);
+  if (!verification.valid)
+    context.fail(`recovered archive has an invalid applied projection: ${verification.reason}`);
+}
+
+export function assertRecoveredTasksComplete(context, id, archivedPath) {
+  const pending = context.pendingTasks(id, resolve(context.root, archivedPath));
+  if (pending.length)
+    context.fail(`${pending.length} implementation task(s) remain unchecked`);
+}
+
+export function assertRecoveredArchiveReadyOperation(context, id, state, archivedPath) {
+  assertRecoveredProof(context, id);
+  context.assertMultiRepositoryArchiveReady(id, state);
+  assertRecoveredProjection(context, id, state, archivedPath);
+  assertRecoveredTasksComplete(context, id, archivedPath);
+}
+
 export function createApplyRuntime({
   root,
   transactions,
@@ -348,49 +538,19 @@ export function createApplyRuntime({
     }));
   }
 
-  function buildApplyEntries(id, state) {
-    const sandboxPath = state.workspace.path;
-    let codePaths;
-    if (state.workspace.mode === "copy") {
-      const baseline = state.workspace.baseline || {};
-      const target = workspaceManifest(root, id, true);
-      const sandbox = workspaceManifest(sandboxPath, id, true);
-      codePaths = copyCodePaths(id, state);
-      for (const path of codePaths) {
-        if ((target[path] ?? null) !== (baseline[path] ?? null) &&
-            ((target[path] ?? null) !== (sandbox[path] ?? null) ||
-             pathMode(join(root, path)) !== pathMode(join(sandboxPath, path))))
-          fail(`isolated-copy conflict at '${path}'`);
-      }
-    } else if (state.workspace.mode === "worktree") {
-      assertTargetHeadUnmoved(id, state);
-      codePaths = gitApplyInputs(id, sandboxPath);
-    } else {
-      fail("change has no isolated sandbox");
-    }
-    const entries = codePaths.map((rel) => {
-      const source = resolve(sandboxPath, rel);
-      const target = safeRootPath(rel);
-      return {
-        path: rel,
-        role: "code",
-        before: pathIdentity(target),
-        beforeMode: pathMode(target),
-        after: pathIdentity(source),
-        afterMode: pathMode(source)
-      };
-    });
-    const changeRel = currentChangeRelativePath(id);
-    entries.push({
-      path: changeRel,
-      role: "change-artifacts",
-      before: pathIdentity(changePath(id)),
-      beforeMode: pathMode(changePath(id)),
-      after: pathIdentity(join(sandboxPath, changeRel)),
-      afterMode: pathMode(join(sandboxPath, changeRel))
-    });
-    return entries;
-  }
+  const buildApplyEntries = buildApplyEntriesOperation.bind(null, {
+    root,
+    workspaceManifest,
+    copyCodePaths,
+    pathMode,
+    assertTargetHeadUnmoved,
+    gitApplyInputs,
+    safeRootPath,
+    pathIdentity,
+    currentChangeRelativePath,
+    changePath,
+    fail
+  });
 
   // Paths the sandbox still wants to project once the target already carries a
   // prior projection. The virgin-target conflict guards in buildApplyEntries
@@ -410,27 +570,13 @@ export function createApplyRuntime({
 
   // The full projection, not just the delta, so verifyAppliedProjection keeps
   // covering every path the change owns.
-  function buildReapplyEntries(id, state, priorJournal) {
-    const sandboxPath = state.workspace.path;
-    const projected = new Map((priorJournal.entries || [])
-      .map((entry) => [entry.path, entry]));
-    const changeRel = currentChangeRelativePath(id);
-    const paths = [...new Set([
-      ...projected.keys(), ...reapplyCodePaths(id, state), changeRel
-    ])].sort();
-    return paths.map((rel) => {
-      const prior = projected.get(rel);
-      return {
-        path: rel,
-        role: prior?.role || (rel === changeRel ? "change-artifacts" : "code"),
-        before: prior ? prior.after : pathIdentity(safeRootPath(rel)),
-        beforeMode: prior && Object.prototype.hasOwnProperty.call(prior, "afterMode")
-          ? prior.afterMode : pathMode(safeRootPath(rel)),
-        after: pathIdentity(resolve(sandboxPath, rel)),
-        afterMode: pathMode(resolve(sandboxPath, rel))
-      };
-    });
-  }
+  const buildReapplyEntries = buildReapplyEntriesOperation.bind(null, {
+    currentChangeRelativePath,
+    reapplyCodePaths,
+    pathIdentity,
+    safeRootPath,
+    pathMode
+  });
 
   function assertDeletionsAreDeclared(id, state, entries) {
     const undeclared = undeclaredDeletions(entries, declaredSurfaceMatcher(id, state));
@@ -443,77 +589,42 @@ export function createApplyRuntime({
       "`[paths:]` if the change really owns it.");
   }
 
-  function prepareApplyTransaction(id, state, prepared = null) {
-    // The recorded baseline only describes a sandbox that has not been
-    // projected yet. Once it has, the control-plane change directory *is* the
-    // projection, and verifyAppliedProjection — already run to build `prepared`
-    // — is what guards it against an edit outside the sandbox.
-    if (!prepared &&
-        directoryHash(changePath(id)) !== state.workspace.changeSourceHash)
-      fail("active change was edited after the last sandbox sync");
-    const entries = prepared || buildApplyEntries(id, state);
-    const nested = nestedRepositoryPathMatcher(nestedRepositoryPaths(id, state));
-    const childEntry = entries.find((entry) => entry.role === "code" && nested(entry.path));
-    if (childEntry)
-      fail(`apply entry '${childEntry.path}' crosses into a child repository`);
-    assertDeletionsAreDeclared(id, state, entries);
-    const transactionId = `apply-${Date.now()}-${process.pid}`;
-    const transactionRoot = applyTransactionRoot(id, transactionId);
-    mkdirSync(transactionRoot, { recursive: true });
-    entries.forEach((entry, index) => {
-      entry.backup = `backup/${index}`;
-      if (entry.before !== null)
-        copyPath(safeRootPath(entry.path), join(transactionRoot, entry.backup));
-    });
-    const proof = readJson(proofPath(id));
-    const journal = {
-      version: 1,
-      changeId: id,
-      transactionId,
-      proofRunId: proof.proofRunId,
-      mode: state.workspace.mode,
-      status: "prepared",
-      sandboxPath: state.workspace.path,
-      targetPath: root,
-      projectionHash: stableHash(entries.map(({ path, after, afterMode }) =>
-        ({ path, after, afterMode }))),
-      entries,
-      appliedPaths: [],
-      inFlightPaths: [],
-      createdAt: now()
-    };
-    saveApplyJournal(journal);
-    return journal;
-  }
+  const prepareApplyTransaction = prepareApplyTransactionOperation.bind(null, {
+    root,
+    directoryHash,
+    changePath,
+    buildApplyEntries,
+    nestedRepositoryPathMatcher,
+    nestedRepositoryPaths,
+    assertDeletionsAreDeclared,
+    dateNow: Date.now,
+    pid: process.pid,
+    applyTransactionRoot,
+    makeDirectory: mkdirSync,
+    copyPath,
+    safeRootPath,
+    readJson,
+    proofPath,
+    stableHash,
+    now,
+    saveApplyJournal,
+    fail
+  });
 
-  function refreshAppliedProjection(state) {
-    const transactionId = state.workspace?.apply?.transactionId;
-    const journalPath = transactionJournalPath(state.id, transactionId);
-    if (!transactionId || !existsSync(journalPath))
-      fail("cannot refresh an applied projection without its transaction journal");
-    const journal = readJson(journalPath);
-    for (const entry of journal.entries) {
-      const source = resolve(state.workspace.path, entry.path);
-      const expected = pathIdentity(source);
-      const expectedMode = pathMode(source);
-      const current = pathIdentity(safeRootPath(entry.path));
-      const currentMode = pathMode(safeRootPath(entry.path));
-      if (current !== expected || currentMode !== expectedMode)
-        fail(`cannot refresh diverged applied path '${entry.path}'`);
-      entry.after = expected;
-      entry.afterMode = expectedMode;
-    }
-    journal.projectionHash = stableHash(
-      journal.entries.map(({ path, after, afterMode }) => ({ path, after, afterMode }))
-    );
-    journal.proofRunId = readJson(proofPath(state.id)).proofRunId;
-    journal.status = "verified";
-    journal.refreshedAt = now();
-    saveApplyJournal(journal);
-    state.workspace.apply.projectionHash = journal.projectionHash;
-    state.workspace.apply.status = "verified";
-    saveRuntime(state);
-  }
+  const refreshAppliedProjection = refreshAppliedProjectionOperation.bind(null, {
+    transactionJournalPath,
+    pathExists: existsSync,
+    readJson,
+    pathIdentity,
+    pathMode,
+    safeRootPath,
+    stableHash,
+    proofPath,
+    now,
+    saveApplyJournal,
+    saveRuntime,
+    fail
+  });
 
   const applySandbox = applySandboxOperation.bind(null, {
     root,
@@ -577,24 +688,14 @@ export function createApplyRuntime({
       ? verifyArchivedSpecs(captured) : state.specSyncViolations;
   }
 
-  function assertRecoveredArchiveReady(id, state, archivedPath) {
-    const audit = proofAudit(id, true);
-    if (!audit.valid) fail(`recovered archive has invalid proof: ${audit.reason}`);
-    assertMultiRepositoryArchiveReady(id, state);
-    if (["worktree", "copy"].includes(state.workspace?.mode)) {
-      // Specs moved but no code did. Calling that archived would report a land
-      // that never happened and then delete the sandbox holding the work.
-      if (!state.workspace.applied)
-        fail(`the interrupted archive never projected the sandbox into the target; ` +
-          `restore 'openspec/changes/${id}' from '${archivedPath}' and land again`);
-      const verification = verifyAppliedProjection(state);
-      if (!verification.valid)
-        fail(`recovered archive has an invalid applied projection: ${verification.reason}`);
-    }
-    const pending = pendingTasks(id, resolve(root, archivedPath));
-    if (pending.length)
-      fail(`${pending.length} implementation task(s) remain unchecked`);
-  }
+  const assertRecoveredArchiveReady = assertRecoveredArchiveReadyOperation.bind(null, {
+    root,
+    proofAudit,
+    assertMultiRepositoryArchiveReady,
+    verifyAppliedProjection,
+    pendingTasks,
+    fail
+  });
 
   function resumeArchivedChange(id, state) {
     const outstanding = outstandingSpecSync(state);
