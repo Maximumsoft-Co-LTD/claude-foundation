@@ -46,51 +46,73 @@ export function numericReportValue(report, keys) {
   return null;
 }
 
+export function playwrightAnnotationClaims(annotations) {
+  if (!Array.isArray(annotations)) return [];
+  return annotations
+    .filter((annotation) => annotation?.type === "claim" && annotation.description)
+    .map((annotation) => String(annotation.description));
+}
+
+export function playwrightTestOutcome(results) {
+  const statuses = results.map((result) => result?.status).filter(Boolean);
+  const failed = statuses.some((status) =>
+    ["failed", "timedOut", "interrupted"].includes(status));
+  const skipped = !failed && statuses.length > 0 &&
+    statuses.every((status) => status === "skipped");
+  return { failed, skipped };
+}
+
+export function collectPlaywrightAttachments(attachments, destination) {
+  if (!Array.isArray(attachments)) return;
+  for (const attachment of attachments)
+    if (attachment?.path) destination.add(String(attachment.path));
+}
+
+export function recordPlaywrightTest(results, carried, state) {
+  if (!Array.isArray(results)) return;
+  state.tests += 1;
+  const outcome = playwrightTestOutcome(results);
+  if (outcome.failed) state.failed += 1;
+  else if (outcome.skipped) state.skipped += 1;
+  const destination = outcome.skipped ? state.skippedClaims : state.claims;
+  for (const claim of carried) destination.add(claim);
+}
+
+export function visitPlaywrightChildren(value, carried, state, seen) {
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child))
+      child.forEach((item) => visitPlaywrightReport(item, carried, state, seen));
+    else if (child && typeof child === "object")
+      visitPlaywrightReport(child, carried, state, seen);
+  }
+}
+
+export function visitPlaywrightReport(value, inherited, state, seen = new WeakSet()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  const ownClaims = playwrightAnnotationClaims(value.annotations);
+  const carried = ownClaims.length ? [...inherited, ...ownClaims] : inherited;
+  collectPlaywrightAttachments(value.attachments, state.attachments);
+  recordPlaywrightTest(value.results, carried, state);
+  visitPlaywrightChildren(value, carried, state, seen);
+}
+
 export function playwrightReportSummary(report) {
-  const claims = new Set();
-  const attachments = new Set();
-  let tests = 0;
-  let failed = 0;
-  let skipped = 0;
-  const skippedClaims = new Set();
+  const state = {
+    claims: new Set(), attachments: new Set(), skippedClaims: new Set(),
+    tests: 0, failed: 0, skipped: 0
+  };
   // Annotations are carried down from suites to the tests they contain, and a
   // claim is credited only where a test actually ran. Playwright emits the
   // annotations of a `test.skip`/`test.fixme`/filtered-out test and still
   // exits 0, so harvesting them regardless recorded claims as proven by tests
   // that never executed.
-  function visit(value, inherited) {
-    if (!value || typeof value !== "object") return;
-    let carried = inherited;
-    if (Array.isArray(value.annotations)) {
-      const own = value.annotations
-        .filter((annotation) => annotation?.type === "claim" && annotation.description)
-        .map((annotation) => String(annotation.description));
-      if (own.length) carried = [...carried, ...own];
-    }
-    if (Array.isArray(value.attachments))
-      for (const attachment of value.attachments)
-        if (attachment?.path) attachments.add(String(attachment.path));
-    if (Array.isArray(value.results)) {
-      tests += 1;
-      const statuses = value.results.map((result) => result?.status).filter(Boolean);
-      const didFail = statuses.some((status) =>
-        ["failed", "timedOut", "interrupted"].includes(status));
-      const didSkip = !didFail && statuses.length &&
-        statuses.every((status) => status === "skipped");
-      if (didFail) failed += 1;
-      else if (didSkip) skipped += 1;
-      for (const claim of carried) (didSkip ? skippedClaims : claims).add(claim);
-    }
-    for (const child of Object.values(value)) {
-      if (Array.isArray(child)) child.forEach((item) => visit(item, carried));
-      else if (child && typeof child === "object") visit(child, carried);
-    }
-  }
-  visit(report, []);
+  visitPlaywrightReport(report, [], state);
   return {
-    claims: [...claims].sort(), attachments: [...attachments].sort(),
-    skippedClaims: [...skippedClaims].filter((claim) => !claims.has(claim)).sort(),
-    tests, failed, skipped
+    claims: [...state.claims].sort(), attachments: [...state.attachments].sort(),
+    skippedClaims: [...state.skippedClaims]
+      .filter((claim) => !state.claims.has(claim)).sort(),
+    tests: state.tests, failed: state.failed, skipped: state.skipped
   };
 }
 
