@@ -22,6 +22,25 @@ export const ENVIRONMENT_LOCKFILES = Object.freeze([
   "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock"
 ]);
 
+export function providerRepositoryIds(config, selectedRepositoryIds = () => []) {
+  const ids = config?.repositories ||
+    (config?.adapter === "contract-digest" ? Object.keys(config.contract || {}) :
+      config?.repository ? [config.repository] : selectedRepositoryIds());
+  return [...new Set(ids)].sort();
+}
+
+export function normalizedAcceptanceValue(state) {
+  const value = state.acceptance || {};
+  return {
+    version: Number(value.version || 1),
+    decision: value.decision || (value.required ? "required" : "legacy-not-required"),
+    required: Boolean(value.required),
+    reason: value.required ? String(value.reason || "").trim() || null : null,
+    claimIds: value.required ? [...new Set(value.claimIds || [])].sort() : [],
+    scopeOrigin: value.scopeOrigin || null
+  };
+}
+
 export function environmentWorkspace({ root, repositoryById, loadRuntime }, config, id) {
   if (id && config?.repository)
     return repositoryById(id, config.repository).workspacePath;
@@ -852,10 +871,9 @@ export function createEvidenceContract({
   }
 
   function providerRepositories(id, provider, config = providerConfig(id, provider)) {
-    const ids = config?.repositories ||
-      (config?.adapter === "contract-digest" ? Object.keys(config.contract || {}) :
-        config?.repository ? [config.repository] : selectedRepositories(id).map((row) => row.id));
-    return [...new Set(ids)].sort().map((repositoryId) => repositoryById(id, repositoryId));
+    return providerRepositoryIds(config,
+      () => selectedRepositories(id).map((row) => row.id))
+      .map((repositoryId) => repositoryById(id, repositoryId));
   }
   
   function providerWorkspace(id, provider, config = providerConfig(id, provider)) {
@@ -932,17 +950,7 @@ export function createEvidenceContract({
     });
   }
   
-  function normalizedAcceptance(state) {
-    const value = state.acceptance || {};
-    return {
-      version: Number(value.version || 1),
-      decision: value.decision || (value.required ? "required" : "legacy-not-required"),
-      required: Boolean(value.required),
-      reason: value.required ? String(value.reason || "").trim() || null : null,
-      claimIds: value.required ? [...new Set(value.claimIds || [])].sort() : [],
-      scopeOrigin: value.scopeOrigin || null
-    };
-  }
+  const normalizedAcceptance = normalizedAcceptanceValue;
   
   function resolvedAcceptance(id, state = loadRuntime(id), contract = evidence(id)) {
     const normalized = normalizedAcceptance(state);

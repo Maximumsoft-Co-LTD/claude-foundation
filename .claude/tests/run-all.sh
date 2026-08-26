@@ -99,6 +99,7 @@ state runtime helpers|node --test "$ROOT/.claude/harness/tests/state-runtime-hel
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 artifact store|node --test "$ROOT/.claude/harness/tests/artifact-store.test.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
+evidence contract values|node --test "$ROOT/.claude/harness/tests/evidence-contract-values.test.mjs"
 environment descriptor|node --test "$ROOT/.claude/harness/tests/environment-descriptor.test.mjs"
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
