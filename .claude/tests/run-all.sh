@@ -119,6 +119,7 @@ proof preflight|node --test "$ROOT/.claude/harness/tests/proof-preflight.test.mj
 telemetry import and sync|node --test "$ROOT/.claude/harness/tests/telemetry-import-sync.test.mjs"
 land journal apply entry|node --test "$ROOT/.claude/harness/tests/land-journal-apply-entry.test.mjs"
 verified CI recording|node --test "$ROOT/.claude/harness/tests/verified-ci-recording.test.mjs"
+authority response validation|node --test "$ROOT/.claude/harness/tests/authority-response-validation.test.mjs"
 proof audit|node "$ROOT/.claude/harness/tests/proof-audit.test.mjs"
 change draft loading|node "$ROOT/.claude/harness/tests/change-draft-loading.test.mjs"
 change creation|node --test "$ROOT/.claude/harness/tests/change-creation.test.mjs"
