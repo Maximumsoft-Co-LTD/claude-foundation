@@ -86,6 +86,156 @@ export function signedCiProvider(providers, receiptPath, readJson) {
   }) || null;
 }
 
+export function eligibleRootPointerEntries(context, id, state) {
+  const {
+    orderedRepositories, repositoryCommitLanded, rootGitlink, root, fail
+  } = context;
+  return orderedRepositories(id, state)
+    .filter((repository) => repository.type === "submodule" && repository.mode === "write")
+    .map((repository) => {
+      const runtime = state.repositories[repository.id];
+      const commit = runtime?.land?.commit;
+      if (!commit || !repositoryCommitLanded(repository, commit))
+        fail(`repository '${repository.id}' commit has not landed`);
+      if (runtime.land.ciRequired && runtime.land.ci !== "pass")
+        fail(`repository '${repository.id}' required CI has not passed`);
+      const sandboxBefore = rootGitlink(state.workspace.path, repository);
+      const targetBefore = rootGitlink(root, repository);
+      if (![runtime.baseHead, commit].includes(sandboxBefore) ||
+          ![runtime.baseHead, commit].includes(targetBefore))
+        fail(`repository '${repository.id}' root pointer changed outside the Land plan`);
+      return { repository, commit, sandboxBefore, targetBefore };
+    });
+}
+
+export function pendingRootPointers(entries) {
+  return entries.filter((entry) =>
+    entry.sandboxBefore !== entry.commit || entry.targetBefore !== entry.commit);
+}
+
+export function rootPointerSignature(entries) {
+  return entries.map((entry) => `${entry.repository.id}:${entry.commit}`).sort().join(",");
+}
+
+export function updateRootPointerIndex(git, path, entry, commit = entry.commit) {
+  return git([
+    "update-index", "--cacheinfo",
+    `160000,${commit},${entry.repository.relativePath}`
+  ], path);
+}
+
+export function applyRootPointerUpdates({ git, root, workspacePath, entries, fail }) {
+  const applied = [];
+  try {
+    for (const entry of entries) {
+      const sandboxResult = updateRootPointerIndex(git, workspacePath, entry);
+      if (sandboxResult.status !== 0)
+        throw new Error(
+          `cannot update ${entry.repository.id} sandbox pointer: ${sandboxResult.stderr.trim()}`);
+      const targetResult = updateRootPointerIndex(git, root, entry);
+      if (targetResult.status !== 0) {
+        updateRootPointerIndex(git, workspacePath, entry, entry.sandboxBefore);
+        throw new Error(
+          `cannot update ${entry.repository.id} target pointer: ${targetResult.stderr.trim()}`);
+      }
+      applied.push(entry);
+    }
+  } catch (error) {
+    for (const entry of applied.reverse()) {
+      updateRootPointerIndex(git, workspacePath, entry, entry.sandboxBefore);
+      updateRootPointerIndex(git, root, entry, entry.targetBefore);
+    }
+    fail(`${error.message}; root pointers rolled back`);
+  }
+}
+
+export function rootPointerLandState(state, entries, signature, now) {
+  return {
+    ...(state.land || {}),
+    strategy: "ordered-resumable-saga",
+    status: "root-pointers-staged",
+    pointers: Object.fromEntries(entries.map((entry) =>
+      [entry.repository.id, entry.commit])),
+    pointerStagings: {
+      ...(state.land?.pointerStagings || {}),
+      [signature]: now()
+    },
+    pointersStagedAt: now()
+  };
+}
+
+export function controlHeadMovedStageDecision(state, currentHead) {
+  return {
+    kind: "control-head-moved",
+    summary: "The control repository moved to a different commit after this change's sandbox was created, so staging submodule pointers now could bind them to a base nobody proved.",
+    options: [
+      { id: "inspect", outcome: "Compare the recorded base with the current control repository history before choosing." },
+      { id: "recreate-sandbox", outcome: "Re-create the sandbox on the current control commit and re-prove the change against it." },
+      { id: "abandon", outcome: "Retire this change and reopen it against the current control commit." },
+      { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
+    ],
+    recommended: "inspect",
+    recordedBase: state.workspace?.baseHead || null,
+    currentHead
+  };
+}
+
+export function restagedRootPointersDecision(staged, pending) {
+  return {
+    kind: "root-pointers-restaged",
+    summary: "These submodule pointers were already staged once and have since been reset outside Foundation, so staging them again would restart the same Prove-and-Land cycle.",
+    options: [
+      { id: "inspect", outcome: "Find what reset the staged pointers — a checkout, reset, or stash in the control repository — before staging again." },
+      { id: "restage", outcome: "Clear the recorded staging attempt and stage the pointers once more after resolving the cause." },
+      { id: "abandon", outcome: "Retire this change instead of landing its pointers." },
+      { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
+    ],
+    recommended: "inspect",
+    stagedAt: staged,
+    pointers: Object.fromEntries(pending.map((entry) =>
+      [entry.repository.id, entry.commit]))
+  };
+}
+
+export function stageRootPointersOperation(context, id) {
+  const {
+    landCheck, requirePreparedLand, loadRuntime, root, gitHead, blockWithDecision,
+    git, clearSnapshotCache, saveRuntime, now, log = console.log
+  } = context;
+  landCheck(id);
+  requirePreparedLand(id);
+  const state = loadRuntime(id);
+  if (!state.repositories || Object.keys(state.repositories).length <= 1)
+    context.fail(`change '${id}' is not multi-repository`);
+  const currentHead = gitHead(root);
+  if (currentHead !== state.workspace?.baseHead)
+    blockWithDecision(id, "control-head-moved",
+      controlHeadMovedStageDecision(state, currentHead));
+  const entries = eligibleRootPointerEntries(context, id, state);
+  if (!entries.length) {
+    log(`ROOT POINTERS ${id}: no submodule pointers required`);
+    return;
+  }
+  const pending = pendingRootPointers(entries);
+  if (!pending.length) {
+    log(`ROOT POINTERS ${id}: already staged\n  proof remains valid`);
+    return;
+  }
+  const signature = rootPointerSignature(pending);
+  const staged = state.land?.pointerStagings?.[signature];
+  if (staged)
+    blockWithDecision(id, "root-pointers-restaged",
+      restagedRootPointersDecision(staged, pending));
+  applyRootPointerUpdates({
+    git, root, workspacePath: state.workspace.path, entries: pending, fail: context.fail
+  });
+  state.land = rootPointerLandState(state, entries, signature, now);
+  state.status = "building";
+  clearSnapshotCache(id);
+  saveRuntime(state);
+  log(`ROOT POINTERS STAGED ${id}\n  proof is stale; run /prove ${id}`);
+}
+
 export function createLandRuntime({
   root,
   transactions,
@@ -643,146 +793,11 @@ export function createLandRuntime({
     reportRepositoryLand(id, repositoryId, repository, land);
   }
 
-  function stageRootPointers(id) {
-    landCheck(id);
-    requirePreparedLand(id);
-    const state = loadRuntime(id);
-    if (!state.repositories || Object.keys(state.repositories).length <= 1)
-      fail(`change '${id}' is not multi-repository`);
-    if (gitHead(root) !== state.workspace?.baseHead)
-      // Any commit on the control repository during multi-repository work trips
-      // this, and the bare refusal made it look permanent. Re-basing the sandbox
-      // is the ordinary fix; it just has to be named.
-      blockWithDecision(id, "control-head-moved", {
-        kind: "control-head-moved",
-        summary: "The control repository moved to a different commit after this change's sandbox was created, so staging submodule pointers now could bind them to a base nobody proved.",
-        options: [
-          {
-            id: "inspect",
-            outcome: "Compare the recorded base with the current control repository history before choosing."
-          },
-          {
-            id: "recreate-sandbox",
-            outcome: "Re-create the sandbox on the current control commit and re-prove the change against it."
-          },
-          {
-            id: "abandon",
-            outcome: "Retire this change and reopen it against the current control commit."
-          },
-          { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
-        ],
-        recommended: "inspect",
-        recordedBase: state.workspace?.baseHead || null,
-        currentHead: gitHead(root)
-      });
-    const entries = orderedRepositories(id, state)
-      .filter((repository) => repository.type === "submodule" &&
-        repository.mode === "write")
-      .map((repository) => {
-        const runtime = state.repositories[repository.id];
-        const commit = runtime?.land?.commit;
-        if (!commit || !repositoryCommitLanded(repository, commit))
-          fail(`repository '${repository.id}' commit has not landed`);
-        if (runtime.land.ciRequired && runtime.land.ci !== "pass")
-          fail(`repository '${repository.id}' required CI has not passed`);
-        const sandboxBefore = rootGitlink(state.workspace.path, repository);
-        const targetBefore = rootGitlink(root, repository);
-        if (![runtime.baseHead, commit].includes(sandboxBefore) ||
-            ![runtime.baseHead, commit].includes(targetBefore))
-          fail(`repository '${repository.id}' root pointer changed outside the Land plan`);
-        return { repository, commit, sandboxBefore, targetBefore };
-      });
-    if (!entries.length) {
-      console.log(`ROOT POINTERS ${id}: no submodule pointers required`);
-      return;
-    }
-    // Staging is only a mutation when a pointer actually moves. Re-staging
-    // pointers that already hold the landed commit used to invalidate the proof
-    // anyway, which sent Land back to Prove and straight into Land again.
-    const pending = entries.filter((entry) =>
-      entry.sandboxBefore !== entry.commit || entry.targetBefore !== entry.commit);
-    if (!pending.length) {
-      console.log(`ROOT POINTERS ${id}: already staged\n  proof remains valid`);
-      return;
-    }
-    const signature = pending
-      .map((entry) => `${entry.repository.id}:${entry.commit}`).sort().join(",");
-    const staged = state.land?.pointerStagings?.[signature];
-    // The same pointers needing a second staging means something outside
-    // Foundation is resetting the index; looping through Prove again would
-    // never converge.
-    if (staged)
-      blockWithDecision(id, "root-pointers-restaged", {
-        kind: "root-pointers-restaged",
-        summary: "These submodule pointers were already staged once and have since been reset outside Foundation, so staging them again would restart the same Prove-and-Land cycle.",
-        options: [
-          {
-            id: "inspect",
-            outcome: "Find what reset the staged pointers — a checkout, reset, or stash in the control repository — before staging again."
-          },
-          {
-            id: "restage",
-            outcome: "Clear the recorded staging attempt and stage the pointers once more after resolving the cause."
-          },
-          {
-            id: "abandon",
-            outcome: "Retire this change instead of landing its pointers."
-          },
-          { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
-        ],
-        recommended: "inspect",
-        stagedAt: staged,
-        pointers: Object.fromEntries(pending.map((entry) =>
-          [entry.repository.id, entry.commit]))
-      });
-    const applied = [];
-    try {
-      for (const entry of pending) {
-        const sandboxResult = git([
-          "update-index", "--cacheinfo",
-          `160000,${entry.commit},${entry.repository.relativePath}`
-        ], state.workspace.path);
-        if (sandboxResult.status !== 0)
-          throw new Error(`cannot update ${entry.repository.id} sandbox pointer: ${sandboxResult.stderr.trim()}`);
-        const targetResult = git([
-          "update-index", "--cacheinfo",
-          `160000,${entry.commit},${entry.repository.relativePath}`
-        ], root);
-        if (targetResult.status !== 0) {
-          git(["update-index", "--cacheinfo",
-            `160000,${entry.sandboxBefore},${entry.repository.relativePath}`],
-          state.workspace.path);
-          throw new Error(`cannot update ${entry.repository.id} target pointer: ${targetResult.stderr.trim()}`);
-        }
-        applied.push(entry);
-      }
-    } catch (error) {
-      for (const entry of applied.reverse()) {
-        git(["update-index", "--cacheinfo",
-          `160000,${entry.sandboxBefore},${entry.repository.relativePath}`],
-        state.workspace.path);
-        git(["update-index", "--cacheinfo",
-          `160000,${entry.targetBefore},${entry.repository.relativePath}`], root);
-      }
-      fail(`${error.message}; root pointers rolled back`);
-    }
-    state.land = {
-      ...(state.land || {}),
-      strategy: "ordered-resumable-saga",
-      status: "root-pointers-staged",
-      pointers: Object.fromEntries(entries.map((entry) =>
-        [entry.repository.id, entry.commit])),
-      pointerStagings: {
-        ...(state.land?.pointerStagings || {}),
-        [signature]: now()
-      },
-      pointersStagedAt: now()
-    };
-    state.status = "building";
-    clearSnapshotCache(id);
-    saveRuntime(state);
-    console.log(`ROOT POINTERS STAGED ${id}\n  proof is stale; run /prove ${id}`);
-  }
+  const stageRootPointers = stageRootPointersOperation.bind(null, {
+    landCheck, requirePreparedLand, loadRuntime, root, gitHead, blockWithDecision,
+    orderedRepositories, repositoryCommitLanded, rootGitlink, git, fail,
+    clearSnapshotCache, saveRuntime, now
+  });
 
   function resumeLand(id) {
     landCheck(id);

@@ -95,6 +95,7 @@ sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-repl
 evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.mjs"
 telemetry append|node --test "$ROOT/.claude/harness/tests/telemetry-append.test.mjs"
 change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs"
+land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"
 grounding policy|node "$ROOT/.claude/harness/tests/grounding-policy.test.mjs"
 receipt validity|node "$ROOT/.claude/harness/tests/receipt-validity.test.mjs"
