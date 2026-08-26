@@ -620,8 +620,6 @@ function computeConflicts(now) {
   return conflicts.slice(0, 100);
 }
 
-const DAY_MS = 86400 * 1000;
-
 /**
  * Dedupe runs across all agents by repoId|id (repo basename as fallback).
  * Freshness: first/most-recent reporter wins the run's live fields. Attribution:
@@ -645,10 +643,6 @@ function dedupeRuns(pickNewest) {
     }
   }
   return [...seen.values()];
-}
-
-function median(sortedNums) {
-  return sortedNums.length ? sortedNums[Math.floor(sortedNums.length / 2)] : 0;
 }
 
 /**
@@ -705,64 +699,6 @@ function collectRepoStats() {
     }
   }
   return [...idx.values()].slice(0, 100);
-}
-
-/** Aggregate /dev completion stats across all known agents. */
-function computeStats(now) {
-  const all = dedupeRuns(false);
-  const completed = all.filter((r) => r.done);
-  const inFlight = all.filter((r) => !r.done && r.finished && now - r.finished * 1000 <= 7 * DAY_MS);
-
-  const durs = completed.map((r) => r.finished - r.started).filter((d) => d > 0).sort((x, y) => x - y);
-  const avgDuration = durs.length ? Math.round(durs.reduce((s, d) => s + d, 0) / durs.length) : 0;
-
-  const byType = {};
-  const durByTypeArr = {};
-  for (const r of completed) {
-    const t = r.type || 'other';
-    byType[t] = (byType[t] || 0) + 1;
-    const d = r.finished - r.started;
-    if (d > 0) (durByTypeArr[t] = durByTypeArr[t] || []).push(d);
-  }
-  const durByType = {};
-  for (const t of Object.keys(durByTypeArr)) durByType[t] = median(durByTypeArr[t].sort((x, y) => x - y));
-
-  const weekAgo = now - 7 * DAY_MS;
-  const completedThisWeek = completed.filter((r) => r.finished * 1000 >= weekAgo).length;
-
-  const throughput = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(now - i * DAY_MS);
-    d.setHours(0, 0, 0, 0);
-    const start = d.getTime();
-    throughput.push({
-      label: `${d.getMonth() + 1}/${d.getDate()}`,
-      count: completed.filter((r) => r.finished * 1000 >= start && r.finished * 1000 < start + DAY_MS).length,
-    });
-  }
-
-  const byPerson = {};
-  const byRepo = {};
-  for (const r of completed) {
-    byPerson[r.gitUser || 'unknown'] = (byPerson[r.gitUser || 'unknown'] || 0) + 1;
-    byRepo[r.repo || 'unknown'] = (byRepo[r.repo || 'unknown'] || 0) + 1;
-  }
-  const top = (obj, k) =>
-    Object.entries(obj).map(([name, count]) => ({ [k]: name, count })).sort((a, b) => b.count - a.count).slice(0, 8);
-
-  return {
-    totalCompleted: completed.length,
-    completedThisWeek,
-    inFlight: inFlight.length,
-    totalRuns: all.length,
-    avgDuration,
-    medianDuration: median(durs),
-    byType,
-    durByType,
-    throughput,
-    topPeople: top(byPerson, 'name'),
-    topRepos: top(byRepo, 'repo'),
-  };
 }
 
 /** Recent run events for the Activity feed (newest first). */
