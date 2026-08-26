@@ -48,6 +48,94 @@ function rejectedPaths(output) {
 // these two options for the same reason on the way back out.
 const VERBATIM_COPY = { dereference: false, verbatimSymlinks: true };
 
+export function carryableGitMetadata(root) {
+  const gitPath = join(root, ".git");
+  if (!existsSync(gitPath)) return false;
+  try { return statSync(gitPath).isDirectory(); }
+  catch { return false; }
+}
+
+export function ignoredSandboxPaths(carriesGit, root, git) {
+  if (!carriesGit) return new Set();
+  const listed = git(
+    ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
+    root);
+  if (listed.status !== 0) return new Set();
+  return new Set(listed.stdout.split("\0").filter(Boolean)
+    .map((path) => path.endsWith("/") ? path.slice(0, -1) : path));
+}
+
+export function sandboxCopyPlan({
+  root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs
+}) {
+  const copyExcluded = carriesGit ? sandboxCopyExcludedDirs : excludedWorkspaceDirs;
+  const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
+  const listedPaths = listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : [];
+  const tracked = trackedPathSet(listedPaths);
+  const ignored = ignoredSandboxPaths(carriesGit, root, git);
+  const excludes = (rel) => ignored.has(rel) ||
+    isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
+  const filter = (source) =>
+    !excludes(relative(root, source).replaceAll("\\", "/"));
+  return { listed, listedPaths, excludes, filter };
+}
+
+export function copySandboxEntries({ root, requestedPath, plan, fail }) {
+  try {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (plan.excludes(entry.name)) continue;
+      cpSync(join(root, entry.name), join(requestedPath, entry.name), {
+        recursive: true,
+        mode: fsConstants.COPYFILE_FICLONE,
+        ...VERBATIM_COPY,
+        filter: plan.filter
+      });
+    }
+  } catch (error) {
+    rmSync(requestedPath, { recursive: true, force: true });
+    fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
+  }
+}
+
+export function copyTrackedRootMetadata(root, requestedPath, listedPaths) {
+  for (const rel of listedPaths) {
+    if (!ROOT_ONLY_EXCLUDED_DIRS.has(rel.split("/")[0])) continue;
+    const source = join(root, rel);
+    if (!existsSync(source)) continue;
+    const destination = join(requestedPath, rel);
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(source, destination, VERBATIM_COPY);
+  }
+}
+
+export function copiedPreexistingDigests(path, preexisting, fileDigest) {
+  const carried = {};
+  for (const rel of Object.keys(preexisting || {})) {
+    const copied = join(path, rel);
+    try {
+      if (existsSync(copied)) carried[rel] = fileDigest(copied);
+    } catch {}
+  }
+  return carried;
+}
+
+export function sandboxCopyWorkspace({
+  id, root, path, reason, carriesGit, preexisting, gitHead, workspaceManifest,
+  fileDigest, directoryHash, changePath, packetManifest
+}) {
+  return {
+    preexisting,
+    mode: "copy", path, applied: false, reason,
+    baseHead: carriesGit ? gitHead(root) : null,
+    git: carriesGit ? "carried" : "absent",
+    baseline: workspaceManifest(root, id, true),
+    sandboxBaseline: workspaceManifest(path, id, true),
+    sandboxPreexisting: copiedPreexistingDigests(path, preexisting, fileDigest),
+    changeSourceHash: directoryHash(changePath(id)),
+    packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
+  };
+}
+
 export function gitBaseCheckoutStatus(repository, path, gitBuffer) {
   if (!repository?.baseHead) return null;
   const paths = [path];
@@ -330,40 +418,6 @@ export function createSandboxRuntime({
     return result;
   }
 
-  // A linked worktree or a submodule carries `.git` as a *file* pointing at a
-  // gitdir somewhere else. Copying that file would hand the sandbox a pointer
-  // straight back into the target's repository, so every commit, checkout, or
-  // index write made in isolation would land in the very tree the sandbox
-  // exists to leave alone. Only a real directory is safe to carry.
-  function gitMetadataIsCarryable() {
-    const gitPath = join(root, ".git");
-    if (!existsSync(gitPath)) return false;
-    try {
-      return statSync(gitPath).isDirectory();
-    } catch {
-      return false;
-    }
-  }
-
-  // Regenerable build output is pure cost to copy, and at real repository sizes
-  // it is a fault rather than an inefficiency: a 79GB Rust `target/` exhausted
-  // the disk mid-copy and left a 41GB tree the runtime had never recorded. A
-  // fixed list of directory *names* cannot keep up with that — it knew
-  // `node_modules` and `coverage` but not `target`, `dist`, `build`, `vendor`,
-  // or `.venv`. Git already tracks the distinction the copy actually needs, so
-  // ask it. `--others --ignored` never reports a tracked path, so committed
-  // content stays carried no matter what it is named, and `--directory`
-  // collapses a wholly-ignored tree to one entry the filter can refuse before
-  // descending into it.
-  function ignoredPathSet(carriesGit) {
-    if (!carriesGit) return new Set();
-    const listed = git(
-      ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], root);
-    if (listed.status !== 0) return new Set();
-    return new Set(listed.stdout.split("\0").filter(Boolean)
-      .map((path) => (path.endsWith("/") ? path.slice(0, -1) : path)));
-  }
-
   function createCopy(id, state, reason) {
     const requestedPath = sandboxRoot(id);
     if (existsSync(requestedPath))
@@ -375,8 +429,7 @@ export function createSandboxRuntime({
     // the whole tree, and `singleRelevantSnapshot` loses its `.gitignore`
     // awareness — so running the evidence wrote build output into the workspace
     // hash and expired the evidence that had just been collected.
-    const carriesGit = gitMetadataIsCarryable();
-    const copyExcluded = carriesGit ? sandboxCopyExcludedDirs : excludedWorkspaceDirs;
+    const carriesGit = carryableGitMetadata(root);
     mkdirSync(requestedPath, { recursive: true });
     // The sandbox lives under `.foundation/`, which is inside the tree being
     // copied. `cpSync(root, dest)` rejects that outright — it checks for a
@@ -387,33 +440,15 @@ export function createSandboxRuntime({
     // What git tracks is content, whatever it is named. Without this the copy
     // silently omitted committed fixtures whose directory name collided with a
     // build-output name, and git inside the sandbox then reported them deleted.
-    const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
-    const tracked = trackedPathSet(
-      listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : []);
-    const ignored = ignoredPathSet(carriesGit);
-    const excludes = (rel) =>
-      ignored.has(rel) ||
-      isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
-    const filter = (source) => !excludes(relative(root, source).replaceAll("\\", "/"));
+    const plan = sandboxCopyPlan({
+      root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs
+    });
     // A copy that dies partway leaves a directory the runtime never recorded:
     // `state.workspace` is still whatever it was, so nothing knows the tree
     // exists, while `sandbox path already occupied` blocks every retry. Filling
     // the disk is exactly how that happens, so the failure path has to remove
     // what it wrote before reporting.
-    try {
-      for (const entry of readdirSync(root, { withFileTypes: true })) {
-        if (excludes(entry.name)) continue;
-        cpSync(join(root, entry.name), join(requestedPath, entry.name), {
-          recursive: true,
-          mode: fsConstants.COPYFILE_FICLONE,
-          ...VERBATIM_COPY,
-          filter
-        });
-      }
-    } catch (error) {
-      rmSync(requestedPath, { recursive: true, force: true });
-      fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
-    }
+    copySandboxEntries({ root, requestedPath, plan, fail });
     // `.foundation/` and `.workflow/` are excluded by name at the root because
     // they are machine state, and that exclusion must not weaken — the sandbox
     // itself lives under `.foundation/`. But the installer *ships* two tracked
@@ -424,49 +459,18 @@ export function createSandboxRuntime({
     // Carry exactly what git tracks and nothing else. Untracked machine state —
     // including this sandbox — is never listed, so the recursion the name-based
     // exclusion prevents stays prevented.
-    for (const rel of listed.status === 0
-      ? listed.stdout.split("\0").filter(Boolean) : []) {
-      if (!ROOT_ONLY_EXCLUDED_DIRS.has(rel.split("/")[0])) continue;
-      const source = join(root, rel);
-      if (!existsSync(source)) continue;
-      const destination = join(requestedPath, rel);
-      mkdirSync(dirname(destination), { recursive: true });
-      cpSync(source, destination, VERBATIM_COPY);
-    }
+    copyTrackedRootMetadata(root, requestedPath, plan.listedPaths);
     const path = canonicalPath(requestedPath);
     // The copied `.git/worktrees` still names the *target's* linked worktrees by
     // absolute path. Left in place, a `git worktree` command run inside the
     // sandbox would operate on directories outside it.
     if (carriesGit)
       rmSync(join(path, ".git", "worktrees"), { recursive: true, force: true });
-    const carriedPreexisting = {};
-    for (const rel of Object.keys(state.workspace?.preexisting || {})) {
-      const copied = join(path, rel);
-      try {
-        if (existsSync(copied)) carriedPreexisting[rel] = fileDigest(copied);
-      } catch {}
-    }
-    state.workspace = {
-      // What the tree already carried at `change new` is still not this
-      // change's surface once a sandbox exists; replacing the workspace record
-      // wholesale would forget it and pull those paths back into the surface.
-      preexisting: state.workspace?.preexisting || {},
-      mode: "copy", path, applied: false, reason,
-      // Recorded for the same reason the worktree mode records it: without a
-      // base commit the changed surface cannot separate what this change did
-      // from what the working tree already carried.
-      baseHead: carriesGit ? gitHead(root) : null,
-      git: carriesGit ? "carried" : "absent",
-      baseline: workspaceManifest(root, id, true),
-      // Snapshot the bytes that actually reached the copy. A dirty target file
-      // can still be growing while the sandbox command is being redirected to
-      // it; comparing only with the earlier control-tree digest makes that
-      // carried file look like a write performed inside the sandbox.
-      sandboxBaseline: workspaceManifest(path, id, true),
-      sandboxPreexisting: carriedPreexisting,
-      changeSourceHash: directoryHash(changePath(id)),
-      packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
-    };
+    const preexisting = state.workspace?.preexisting || {};
+    state.workspace = sandboxCopyWorkspace({
+      id, root, path, reason, carriesGit, preexisting, gitHead, workspaceManifest,
+      fileDigest, directoryHash, changePath, packetManifest
+    });
     state.status = "building";
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);

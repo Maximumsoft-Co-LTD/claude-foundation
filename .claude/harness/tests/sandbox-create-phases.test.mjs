@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  writeFileSync
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
+  carryableGitMetadata,
+  copiedPreexistingDigests,
+  copySandboxEntries,
+  copyTrackedRootMetadata,
   createSandbox,
+  createSandboxRuntime,
+  ignoredSandboxPaths,
   isolateSelectedRepositories,
   reportMultiRepositorySandbox,
+  sandboxCopyPlan,
+  sandboxCopyWorkspace,
   sandboxCreatePreflight,
   setupSelectedRepositories
 } from "../runtime/workflow/sandbox-runtime.mjs";
@@ -255,4 +266,200 @@ test("create sandbox completes the multi-repository lifecycle", (t) => {
   all.setRepositories([{ id: "root", mode: "write", path: all.root }]);
   captureConsole("log", () => createSandbox(all.context, "change", { all: true }));
   assert.equal(all.calls.saved.at(-1).status, "building");
+});
+
+test("copy planning recognizes carryable Git metadata and ignored paths", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-copy-plan-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(carryableGitMetadata(root), false);
+  writeFileSync(join(root, ".git"), "gitdir: elsewhere\n");
+  assert.equal(carryableGitMetadata(root), false);
+  rmSync(join(root, ".git"));
+  mkdirSync(join(root, ".git"));
+  assert.equal(carryableGitMetadata(root), true);
+
+  let calls = 0;
+  assert.deepEqual([...ignoredSandboxPaths(false, root, () => { calls += 1; })], []);
+  assert.equal(calls, 0);
+  const ignored = ignoredSandboxPaths(true, root, () => ({
+    status: 0, stdout: "coverage/\0dist/file.js\0\0"
+  }));
+  assert.deepEqual([...ignored], ["coverage", "dist/file.js"]);
+  assert.deepEqual([...ignoredSandboxPaths(true, root, () => ({ status: 1 }))], []);
+
+  const git = (args) => args.includes("--others")
+    ? { status: 0, stdout: "ignored/\0" }
+    : { status: 0, stdout: "node_modules/fixture.txt\0src/app.mjs\0" };
+  const plan = sandboxCopyPlan({
+    root, carriesGit: true, git,
+    sandboxCopyExcludedDirs: new Set(["node_modules"]),
+    excludedWorkspaceDirs: new Set([".git", "node_modules"])
+  });
+  assert.equal(plan.excludes("ignored"), true);
+  assert.equal(plan.excludes("node_modules"), false);
+  assert.equal(plan.excludes("node_modules/fixture.txt"), false);
+  assert.equal(plan.excludes("node_modules/untracked.txt"), true);
+  assert.equal(plan.excludes("src/app.mjs"), false);
+
+  const noGit = sandboxCopyPlan({
+    root, carriesGit: false, git: () => { throw new Error("not called"); },
+    sandboxCopyExcludedDirs: new Set(),
+    excludedWorkspaceDirs: new Set([".git", "node_modules"])
+  });
+  assert.deepEqual(noGit.listedPaths, []);
+  assert.equal(noGit.excludes(".git/config"), true);
+});
+
+test("sandbox tree copy preserves links and removes partial output on failure", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-copy-tree-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "source.txt"), "content\n");
+  symlinkSync("source.txt", join(root, "source-link"));
+  mkdirSync(join(root, "skip"));
+  writeFileSync(join(root, "skip", "ignored.txt"), "ignored\n");
+  const destination = join(root, ".foundation", "sandboxes", "ok");
+  mkdirSync(destination, { recursive: true });
+  copySandboxEntries({
+    root, requestedPath: destination,
+    plan: {
+      excludes: (rel) => rel === ".foundation" || rel === "skip",
+      filter: () => true
+    }, fail
+  });
+  assert.equal(readFileSync(join(destination, "source.txt"), "utf8"), "content\n");
+  assert.equal(readFileSync(join(destination, "source-link"), "utf8"), "content\n");
+  assert.equal(existsSync(join(destination, "skip")), false);
+
+  const failed = join(root, ".foundation", "sandboxes", "failed");
+  mkdirSync(failed, { recursive: true });
+  assert.throws(() => copySandboxEntries({
+    root, requestedPath: failed,
+    plan: {
+      excludes: (rel) => rel === ".foundation" || rel === "skip",
+      filter: () => { throw new Error("disk full"); }
+    }, fail
+  }), /disk full; partial copy removed/);
+  assert.equal(existsSync(failed), false);
+});
+
+test("tracked root metadata and preexisting digests carry only existing allowed files", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-copy-metadata-"));
+  const destination = join(root, "destination");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, ".foundation"));
+  writeFileSync(join(root, ".foundation", "shipped.txt"), "ship\n");
+  writeFileSync(join(root, "ordinary.txt"), "ordinary\n");
+  copyTrackedRootMetadata(root, destination, [
+    ".foundation/shipped.txt", ".workflow/missing.txt", "ordinary.txt"
+  ]);
+  assert.equal(readFileSync(join(destination, ".foundation", "shipped.txt"), "utf8"),
+    "ship\n");
+  assert.equal(existsSync(join(destination, "ordinary.txt")), false);
+
+  writeFileSync(join(destination, "good.txt"), "good\n");
+  writeFileSync(join(destination, "bad.txt"), "bad\n");
+  const digests = copiedPreexistingDigests(destination, {
+    "good.txt": "old", "bad.txt": "old", "missing.txt": "old"
+  }, (path) => {
+    if (path.endsWith("bad.txt")) throw new Error("unreadable");
+    return `digest:${readFileSync(path, "utf8").trim()}`;
+  });
+  assert.deepEqual(digests, { "good.txt": "digest:good" });
+  assert.deepEqual(copiedPreexistingDigests(destination, null, () => "digest"), {});
+});
+
+test("copy workspace state binds source and sandbox snapshots for Git and no-Git modes", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-copy-state-"));
+  const path = join(root, "copy");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path);
+  writeFileSync(join(path, "pre.txt"), "pre\n");
+  const calls = [];
+  const input = {
+    id: "change", root, path, reason: "dirty", carriesGit: true,
+    preexisting: { "pre.txt": "prior" }, gitHead: () => "head",
+    workspaceManifest: (workspacePath, id, includeDirty) => {
+      calls.push([workspacePath, id, includeDirty]);
+      return { workspacePath };
+    },
+    fileDigest: () => "copied-digest", directoryHash: () => "change-hash",
+    changePath: () => join(root, "openspec", "changes", "change"),
+    packetManifest: (packet) => ({ packet })
+  };
+  const carried = sandboxCopyWorkspace(input);
+  assert.equal(carried.baseHead, "head");
+  assert.equal(carried.git, "carried");
+  assert.deepEqual(carried.sandboxPreexisting, { "pre.txt": "copied-digest" });
+  assert.equal(carried.changeSourceHash, "change-hash");
+  assert.equal(calls.length, 2);
+  const absent = sandboxCopyWorkspace({ ...input, carriesGit: false, preexisting: {} });
+  assert.equal(absent.baseHead, null);
+  assert.equal(absent.git, "absent");
+});
+
+function copyRuntimeFixture(t, { carriesGit = false, setup = false } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-copy-runtime-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change");
+  mkdirSync(packet, { recursive: true });
+  writeFileSync(join(packet, "tasks.md"), "- [ ] task\n");
+  writeFileSync(join(root, "source.txt"), "source\n");
+  if (carriesGit) {
+    mkdirSync(join(root, ".git", "worktrees", "outside"), { recursive: true });
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+  }
+  const state = { status: "change", workspace: {
+    mode: "current", path: root, preexisting: { "source.txt": "old" }
+  } };
+  const saved = [];
+  const git = (args) => {
+    if (args[0] === "status") return { status: 0, stdout: "?? outside.txt\0", stderr: "" };
+    if (args.includes("--others")) return { status: 0, stdout: "ignored/\0" };
+    if (args[0] === "ls-files")
+      return { status: 0, stdout: ".git/HEAD\0openspec/changes/change/tasks.md\0source.txt\0" };
+    return { status: 0, stdout: "", stderr: "" };
+  };
+  const runtime = createSandboxRuntime({
+    root,
+    policy: () => ({ sandbox: setup ? { setupCommand: "true", setupTimeoutMs: 1000 } : {} }),
+    excludedWorkspaceDirs: new Set([".git", "node_modules", "ignored"]),
+    sandboxCopyExcludedDirs: new Set(["node_modules", "ignored"]),
+    hostAttestation: { createChallenge: () => ({}) },
+    loadRuntime: () => state, saveRuntime: (value) => saved.push(structuredClone(value)),
+    canonicalPath: (value) => value,
+    workspaceManifest: (value) => ({ root: value }),
+    directoryHash: () => "change-hash",
+    fileDigest: (value) => `digest:${readFileSync(value, "utf8").length}`,
+    changePath: () => packet,
+    gitHead: () => carriesGit ? "head" : null,
+    git, gitBuffer: () => ({ status: 0 }),
+    porcelainStatusRecords: () => [{ status: "??", path: "outside.txt" }],
+    selectedRepositories: () => [], cleanupRepositorySandboxes: () => {},
+    cleanupAppliedSandbox: () => {}, repositoryCatalog: () => ({ drift: [] }),
+    clearSnapshotCache: () => {}, validate: () => {},
+    repositorySelectionIdsAt: () => [], contractFingerprint: () => "contract",
+    executionFingerprint: () => "execution", taskBlocks: () => [],
+    proofPath: () => join(root, "proof.json"), relevantHash: () => "hash",
+    now: () => "now", fail
+  });
+  return { root, state, saved, runtime };
+}
+
+test("createSingle records isolated copies with and without carried Git metadata", (t) => {
+  const noGit = copyRuntimeFixture(t);
+  const first = captureConsole("log", () => noGit.runtime.createSingle("change"));
+  assert.equal(noGit.state.workspace.mode, "copy");
+  assert.equal(noGit.state.workspace.git, "absent");
+  assert.equal(noGit.state.status, "building");
+  assert.match(first.rows[0], /git: absent/);
+  assert.equal(noGit.saved.length, 1);
+  assert.throws(() => noGit.runtime.createSingle("change"), /sandbox already exists/);
+
+  const carried = copyRuntimeFixture(t, { carriesGit: true, setup: true });
+  const second = captureConsole("log", () => carried.runtime.createSingle("change"));
+  assert.equal(carried.state.workspace.git, "carried");
+  assert.equal(carried.state.workspace.baseHead, "head");
+  assert.equal(existsSync(join(carried.state.workspace.path, ".git", "worktrees")), false);
+  assert.equal(carried.saved.length, 2);
+  assert.match(second.rows[0], /setup: ok/);
 });
