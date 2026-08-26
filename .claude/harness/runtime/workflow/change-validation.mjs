@@ -152,6 +152,142 @@ export function taskContractIssues(tasks = [], claims = [],
   return issues;
 }
 
+export function validationPreflightIssues(id, state, missing = []) {
+  const issues = [];
+  if (missing.length)
+    issues.push(`missing change artifacts: ${missing.join(", ")}`);
+  if (!["low", "medium", "high"].includes(state.impact || ""))
+    issues.push(`resolve impact for '${id}'`);
+  if (!["isolated", "coupled"].includes(state.coupling || ""))
+    issues.push(`resolve coupling for '${id}'`);
+  if (state.acceptance?.decision === "undecided")
+    issues.push(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
+  return issues;
+}
+
+export function assertValidationPreflight(id, state, missing, fail) {
+  if (state.status === "archived") fail(`change '${id}' is already archived`);
+  const issues = validationPreflightIssues(id, state, missing);
+  if (issues.length)
+    fail(`change validation preflight failed:\n  - ${issues.join("\n  - ")}`);
+}
+
+export function validationChangeDirectory(id, source, state,
+  activeChangePath, changePath) {
+  return source === "active" ? activeChangePath(id, state) : changePath(id);
+}
+
+export function validateImplementationTasks(tasks, fail) {
+  const taskIds = tasks.map((task) => task.id).filter(Boolean);
+  if (tasks.length && taskIds.length !== tasks.length)
+    fail("every implementation task requires a stable ID such as T001");
+  if (new Set(taskIds).size !== taskIds.length)
+    fail("tasks.md contains duplicate task IDs");
+  const lifecycleTasks = tasks.filter((task) =>
+    !task.done && /(?:^|[\s(`"'])\/(?:prove|land)\b/.test(task.text));
+  if (lifecycleTasks.length)
+    fail("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
+  return taskIds;
+}
+
+export function normalizeValidationAcceptance(id, state, claims, acceptance,
+  fail, warn = console.error, timestamp = new Date().toISOString()) {
+  const claimById = new Map(claims.map((claim) => [claim.id, claim]));
+  const unknown = acceptance.claimIds.filter((claim) => !claimById.has(claim));
+  if (unknown.length)
+    fail(`acceptance references unknown claim(s): ${unknown.join(", ")}`);
+  let resolved = acceptance;
+  if (resolved.required && resolved.claimIds.length === 0) {
+    if (resolved.version < 2) {
+      resolved = {
+        ...resolved,
+        claimIds: claims.map((claim) => claim.id),
+        scopeOrigin: "legacy-all"
+      };
+      warn("WARNING: migrated legacy acceptance scope to all current claims");
+    } else {
+      fail(`change '${id}' requires acceptance but nothing is in scope. Either name the ` +
+        "claims a person is accepting:\n" +
+        `  claude-foundation change resolve ${id} --impact <impact> --coupling <coupling> ` +
+        "--acceptance-required --acceptance-reason <why> --acceptance-claims <ids>\n" +
+        "or declare capability 'acceptance' on a claim in evidence.yaml. To withdraw the " +
+        "requirement instead, re-resolve with --acceptance-not-required.");
+    }
+  }
+  if (!resolved.required) return resolved;
+  if (resolved.scopeOrigin === "claim-capability")
+    warn(`WARNING: acceptance stays required because claim(s) ${resolved.claimIds.join(", ")} declare capability 'acceptance'; --acceptance-not-required cannot drop a human gate while that capability remains in evidence.yaml`);
+  state.acceptance = {
+    version: 2,
+    decision: "required",
+    required: true,
+    reason: resolved.reason || "declared evidence capability",
+    claimIds: resolved.claimIds,
+    scopeOrigin: resolved.scopeOrigin || "explicit",
+    declaredAt: state.acceptance?.declaredAt || timestamp
+  };
+  return resolved;
+}
+
+export function validationDocumentBudgets(state) {
+  return ["xs", "s"].includes(String(state.size || "").toLowerCase()) ||
+    state.impact === "low"
+    ? { "proposal.md": 900, "design.md": 1400, "tasks.md": 900 }
+    : { "proposal.md": 1600, "design.md": 2600, "tasks.md": 1600 };
+}
+
+export function lockValidatedGrounding(state, grounding, fingerprint, timestamp) {
+  if (!grounding?.firstLock) return;
+  state.groundingDigest = grounding.digest;
+  state.groundingLockedAt = grounding.lockedAt;
+  if (!state.groundingReopenPending) return;
+  state.groundingReopens = [...(state.groundingReopens || []), {
+    ...state.groundingReopenPending,
+    newDigest: grounding.digest,
+    newLockedAt: grounding.lockedAt,
+    contractFingerprint: fingerprint,
+    completedAt: timestamp
+  }];
+  delete state.groundingReopenPending;
+}
+
+export function warnValidationDocumentBudgets(dir, state,
+  exists = existsSync, read = readFileSync, warn = console.error) {
+  for (const [name, limit] of Object.entries(validationDocumentBudgets(state))) {
+    const path = join(dir, name);
+    if (!exists(path)) continue;
+    const words = read(path, "utf8").trim().split(/\s+/).filter(Boolean).length;
+    if (words > limit)
+      warn(`WARNING: ${name} is ${words} words (soft budget ${limit}); retain only load-bearing content`);
+  }
+}
+
+export function reportDeclaredSurfaceForecast(id, state, quiet, covered,
+  forecast, warn = console.error) {
+  if (!state.declaredSurface?.length || quiet) return;
+  const missing = forecast(state.declaredSurface).capabilities
+    .filter((capability) => !covered.has(capability));
+  if (!missing.length) return;
+  warn(`WARNING: declared surface forecasts ${missing.join(", ")} with no provider`);
+  warn("  wire them now: claude-foundation evidence init " + id + " --write");
+  warn("  inspect first: claude-foundation evidence doctor " + id);
+  if (missing.includes("review"))
+    warn("  review needs a configured fresh reviewer at Prove; a one-family project selects codex-sol or claude-opus and commits review.diversity='single-model' while keeping independence required");
+  warn("  anything left unwired is carried as a non-blocking advisory, not a gate");
+}
+
+export function reportValidationReviewAssurance(quiet, resolvable, policy,
+  assurance, note = console.error) {
+  if (quiet || !resolvable) return null;
+  if (assurance)
+    note(`NOTE: review assurance posture: ${assurance.summary}`);
+  if (policy.required && !policy.independenceWaived) {
+    note("NOTE: this change requires review evidence; an independent reviewer must exist by Prove");
+    note("  one-family project: select codex-sol or claude-opus and set review.diversity='single-model'; the reviewer still uses a distinct identity and fresh session");
+  }
+  return assurance;
+}
+
 function failValidationLayer(fail, name, issues) {
   if (issues.length)
     fail(`${name} validation failed:\n  - ${issues.join("\n  - ")}`);
@@ -986,20 +1122,9 @@ export function createChangeValidationRuntime({
 
   function validate(id, source = "root", options = {}) {
     const state = loadRuntime(id);
-    if (state.status === "archived") fail(`change '${id}' is already archived`);
-    const dir = source === "active" ? activeChangePath(id, state) : changePath(id);
-    const missing = changeArtifactGaps(state, dir);
-    const preflight = [];
-    if (missing.length)
-      preflight.push(`missing change artifacts: ${missing.join(", ")}`);
-    if (!["low", "medium", "high"].includes(state.impact || ""))
-      preflight.push(`resolve impact for '${id}'`);
-    if (!["isolated", "coupled"].includes(state.coupling || ""))
-      preflight.push(`resolve coupling for '${id}'`);
-    if (state.acceptance?.decision === "undecided")
-      preflight.push(`acceptance decision is unresolved for '${id}'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required`);
-    if (preflight.length)
-      fail(`change validation preflight failed:\n  - ${preflight.join("\n  - ")}`);
+    const dir = validationChangeDirectory(
+      id, source, state, activeChangePath, changePath);
+    assertValidationPreflight(id, state, changeArtifactGaps(state, dir), fail);
     assertNoScaffolds(state, dir);
     const contractDiagnostics = [];
     if (state.decisionMetadataRequired) {
@@ -1021,20 +1146,12 @@ export function createChangeValidationRuntime({
     if (!options.quiet && state.schema !== "foundation-rapid")
       assertOpenSpecStrictValid(id, dir, fail);
 
-    const taskIds = parsedTasks.map((task) => task.id).filter(Boolean);
-    if (parsedTasks.length && taskIds.length !== parsedTasks.length)
-      fail("every implementation task requires a stable ID such as T001");
-    if (new Set(taskIds).size !== taskIds.length)
-      fail("tasks.md contains duplicate task IDs");
     // The gate is about a task that names a lifecycle *command*, so the slash
     // has to start a token. Matching a bare `/land` anywhere also matched the
     // path `runtime/workflow/land-runtime.mjs`, which made every change that
     // declares that file's path in `[paths:]` unvalidatable — the guard blocked
     // work on the very code it guards.
-    const lifecycleTasks = taskBlocks(tasks).filter((task) =>
-      !task.done && /(?:^|[\s(`"'])\/(?:prove|land)\b/.test(task.text));
-    if (lifecycleTasks.length)
-      fail("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
+    const taskIds = validateImplementationTasks(parsedTasks, fail);
 
     const claims = evidence(id, dir).claims;
     const claimById = new Map(claims.map((claim) => [claim.id, claim]));
@@ -1053,110 +1170,34 @@ export function createChangeValidationRuntime({
       taskIds: new Set(taskIds)
     });
 
-    let acceptance = resolvedAcceptance(id, state, { claims });
-    const unknownAcceptanceClaims = acceptance.claimIds.filter((claim) => !claimById.has(claim));
-    if (unknownAcceptanceClaims.length)
-      fail(`acceptance references unknown claim(s): ${unknownAcceptanceClaims.join(", ")}`);
-    if (acceptance.required && acceptance.claimIds.length === 0) {
-      if (acceptance.version < 2) {
-        acceptance = {
-          ...acceptance,
-          claimIds: claims.map((claim) => claim.id),
-          scopeOrigin: "legacy-all"
-        };
-        console.error("WARNING: migrated legacy acceptance scope to all current claims");
-      } else {
-        // Declaring acceptance required without naming what is to be accepted
-        // leaves every later command refusing the change — validate, readiness,
-        // sync and Land alike. The old wording named two flags of `change
-        // resolve`, a command already run by the time anything reads this, and
-        // said nothing about how to get out. Both exits belong here.
-        fail(`change '${id}' requires acceptance but nothing is in scope. Either name the ` +
-          "claims a person is accepting:\n" +
-          `  claude-foundation change resolve ${id} --impact <impact> --coupling <coupling> ` +
-          "--acceptance-required --acceptance-reason <why> --acceptance-claims <ids>\n" +
-          "or declare capability 'acceptance' on a claim in evidence.yaml. To withdraw the " +
-          "requirement instead, re-resolve with --acceptance-not-required.");
-      }
-    }
-    if (acceptance.required) {
-      // A claim declaring capability `acceptance` outranks the resolve flag —
-      // `resolvedAcceptance` ORs the two — and this rewrite then persists the
-      // derived answer. Silently. So `--acceptance-not-required` appeared to
-      // do nothing, forever, and the only way to learn why was to read
-      // `resolvedAcceptance`. Name the claims that hold the gate open, the way
-      // `policyCapabilityTrigger` names the file that pulled a capability in.
-      if (acceptance.scopeOrigin === "claim-capability")
-        console.error(`WARNING: acceptance stays required because claim(s) ${acceptance.claimIds.join(", ")} declare capability 'acceptance'; --acceptance-not-required cannot drop a human gate while that capability remains in evidence.yaml`);
-      state.acceptance = {
-        version: 2,
-        decision: "required",
-        required: true,
-        reason: acceptance.reason || "declared evidence capability",
-        claimIds: acceptance.claimIds,
-        scopeOrigin: acceptance.scopeOrigin || "explicit",
-        declaredAt: state.acceptance?.declaredAt || now()
-      };
-    }
+    const acceptance = resolvedAcceptance(id, state, { claims });
+    normalizeValidationAcceptance(id, state, claims, acceptance,
+      fail, console.error, acceptance.required ? now() : null);
 
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
     // Case-insensitive and `xs`-aware: this compared against the literal "S",
     // so an atomic start's own "xs" fell through to the wide budget and the
     // check only ever passed via the impact disjunct.
-    const budgets = ["xs", "s"].includes(String(state.size || "").toLowerCase())
-      || state.impact === "low"
-      ? { "proposal.md": 900, "design.md": 1400, "tasks.md": 900 }
-      : { "proposal.md": 1600, "design.md": 2600, "tasks.md": 1600 };
-    for (const [name, limit] of Object.entries(budgets)) {
-      const path = join(dir, name);
-      if (!existsSync(path)) continue;
-      const words = readFileSync(path, "utf8").trim().split(/\s+/).filter(Boolean).length;
-      if (words > limit)
-        console.error(`WARNING: ${name} is ${words} words (soft budget ${limit}); retain only load-bearing content`);
-    }
+    warnValidationDocumentBudgets(dir, state);
     // Lock only after every validation gate above passes. A malformed task or
     // unresolved acceptance decision must not freeze a grounding ledger that
     // has never represented a valid Change contract.
-    if (grounding?.firstLock) {
-      state.groundingDigest = grounding.digest;
-      state.groundingLockedAt = grounding.lockedAt;
-      if (state.groundingReopenPending) {
-        state.groundingReopens = [...(state.groundingReopens || []), {
-          ...state.groundingReopenPending,
-          newDigest: grounding.digest,
-          newLockedAt: grounding.lockedAt,
-          contractFingerprint: contractFingerprint(id, dir),
-          completedAt: now()
-        }];
-        delete state.groundingReopenPending;
-      }
-    }
+    if (grounding?.firstLock)
+      lockValidatedGrounding(state, grounding, contractFingerprint(id, dir), now());
+    else
+      lockValidatedGrounding(state, grounding, null, null);
     saveRuntime(state);
     // A declared surface predicts capabilities that the *changed* surface will
     // only reveal once files exist — by which point this contract is signed and
     // its evidence collected. Warn, never fail: the forecast is a prediction the
     // author owns, and failing here would be routed around by declaring nothing.
-    if (state.declaredSurface?.length && !options.quiet) {
-      const covered = new Set(requiredProviders(id).map((provider) =>
-        providerCapability(provider, providerConfig(id, provider))));
-      const missing = forecastCapabilities(state.declaredSurface)
-        .capabilities.filter((capability) => !covered.has(capability));
-      // A warning that names no action is a warning nobody acts on, and this
-      // one fires at the last moment the contract is still cheap to change.
-      // Say what each outcome actually is now: a wired capability is enforced,
-      // an unwired one is carried as an advisory rather than becoming an
-      // unsatisfiable gate at Prove — except review, which stops the loop until
-      // a reviewer or a foundation.json waiver exists.
-      if (missing.length) {
-        console.error(`WARNING: declared surface forecasts ${missing.join(", ")} with no provider`);
-        console.error(`  wire them now: claude-foundation evidence init ${id} --write`);
-        console.error(`  inspect first: claude-foundation evidence doctor ${id}`);
-        if (missing.includes("review"))
-          console.error("  review needs a configured fresh reviewer at Prove; a one-family project selects codex-sol or claude-opus and commits review.diversity='single-model' while keeping independence required");
-        console.error("  anything left unwired is carried as a non-blocking advisory, not a gate");
-      }
-    }
+    const coveredCapabilities = state.declaredSurface?.length && !options.quiet
+      ? new Set(requiredProviders(id).map((provider) =>
+        providerCapability(provider, providerConfig(id, provider))))
+      : new Set();
+    reportDeclaredSurfaceForecast(id, state, options.quiet,
+      coveredCapabilities, forecastCapabilities);
     // Review is the one gate a change cannot wire its way out of, and the loop
     // used to reveal it at Prove — after the build is spent, and with the
     // waiver that resolves it named nowhere. A forecast only covers what is not
@@ -1165,17 +1206,13 @@ export function createChangeValidationRuntime({
     // Guarded for the same reason as `advisoryCapabilities`: `reviewPolicy`
     // reads the changed surface, which a multi-repository change cannot resolve
     // until its sandboxes exist. A hint must never be able to fail validate.
-    let assurance = null;
-    if (!options.quiet && changedSurfaceResolvable(id, state)) {
-      const policy = reviewPolicy(id, state, evidence(id, dir));
-      assurance = reviewAssurancePosture(policy);
-      if (assurance)
-        console.error(`NOTE: review assurance posture: ${assurance.summary}`);
-      if (policy.required && !policy.independenceWaived) {
-        console.error("NOTE: this change requires review evidence; an independent reviewer must exist by Prove");
-        console.error("  one-family project: select codex-sol or claude-opus and set review.diversity='single-model'; the reviewer still uses a distinct identity and fresh session");
-      }
-    }
+    const reviewResolvable = !options.quiet && changedSurfaceResolvable(id, state);
+    const policy = reviewResolvable
+      ? reviewPolicy(id, state, evidence(id, dir))
+      : {};
+    const assurance = reportValidationReviewAssurance(
+      options.quiet, reviewResolvable, policy,
+      reviewResolvable ? reviewAssurancePosture(policy) : null);
     if (!options.quiet)
       console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
     return { version: 1, changeId: id, reviewAssurance: assurance };

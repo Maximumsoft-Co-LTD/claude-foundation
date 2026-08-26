@@ -94,6 +94,7 @@ diagnostics runtime|node "$ROOT/.claude/harness/tests/diagnostics-runtime.test.m
 authority workflow policy|node --test "$ROOT/.claude/harness/tests/workflow-policy.test.mjs"
 apply archive runtime|node --test "$ROOT/.claude/harness/tests/apply-runtime-archive.test.mjs"
 sandbox sync runtime|node --test "$ROOT/.claude/harness/tests/sandbox-runtime-sync.test.mjs"
+change validation phases|node --test "$ROOT/.claude/harness/tests/change-validation-phases.test.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"
