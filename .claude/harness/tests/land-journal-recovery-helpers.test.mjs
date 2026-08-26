@@ -8,6 +8,7 @@ import {
   replaceRecoveryEntry,
   stageRecoveryBackups
 } from "../runtime/workflow/land-journal.mjs";
+import { createLandRuntime } from "../runtime/workflow/land-runtime.mjs";
 
 const entry = {
   path: "app.txt", before: "before", after: "after", backup: "backup/0"
@@ -19,6 +20,55 @@ function journal(entries = [entry]) {
     recoveredPaths: [], inFlightPaths: ["app.txt"]
   };
 }
+
+test("land recovery requires authority and settles automatic and manual journals", () => {
+  let pending = [];
+  const recoveries = [];
+  const runtime = createLandRuntime({
+    pendingApplyTransactions: () => pending,
+    recoverPendingApply: (id, state, options) => {
+      recoveries.push({ id, state, options });
+      pending = [];
+    },
+    loadRuntime: () => ({ id: "change-a" }),
+    fail: (message) => { throw new Error(message); }
+  });
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (message) => logs.push(String(message));
+  try {
+    assert.throws(() => runtime.recoverLand("change-a"), /requires --decision-ref/);
+    runtime.recoverLand("change-a", { "decision-ref": "decision-1" });
+    assert.match(logs.at(-1), /NOTHING TO RECOVER/);
+
+    pending = [{
+      transactionId: "tx-manual", status: "rolling-back",
+      counts: { update: 2, create: 1, delete: 0 }
+    }];
+    assert.throws(() => runtime.recoverLand("change-a", {
+      "decision-ref": "decision-2"
+    }), /requires --resolution/);
+    runtime.recoverLand("change-a", {
+      "decision-ref": "decision-2", resolution: "restore-backup"
+    });
+    assert.deepEqual(recoveries.at(-1).options, {
+      resolution: "restore-backup", decisionRef: "decision-2"
+    });
+
+    pending = [{
+      transactionId: "tx-auto", status: "applying",
+      counts: { update: 0, create: 0, delete: 1 }
+    }];
+    runtime.recoverLand("change-a", { "decision-ref": "decision-3" });
+    assert.deepEqual(recoveries.at(-1).options, {
+      resolution: "", decisionRef: "decision-3"
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  assert.ok(logs.some((message) => message.includes("RECOVERING tx-manual")));
+  assert.ok(logs.some((message) => message.includes("RECOVERED change-a")));
+});
 
 test("manual recovery start validates authority and snapshots current targets", () => {
   const saves = [];

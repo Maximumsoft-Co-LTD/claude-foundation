@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
   ciRepositoryLandStatus,
+  createLandRuntime,
   landRepositoryPlanRow,
   readRepositoryLandStatus,
   writeRepositoryLandStatus
 } from "../runtime/workflow/land-runtime.mjs";
+
+const fail = (message) => { throw new Error(message); };
 
 test("read repository status covers isolation, dirt, drift, and readiness", () => {
   const repository = { baseHead: "base" };
@@ -111,4 +117,98 @@ test("land repository row preserves legacy defaults and read dirty inspection", 
   } } }, repository);
   assert.equal(dirty.status, "read-sandbox-dirty");
   assert.deepEqual(gitArgs, [["status", "--porcelain"], "/box/docs"]);
+});
+
+test("prepared Land rejects missing and stale preparation identities", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-land-preparation-"));
+  const transactions = join(root, "transactions");
+  let hash = "hash-a";
+  const state = { workspace: { path: root }, repositories: {} };
+  const readJson = (path, fallback = null) => {
+    try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+  };
+  const runtime = createLandRuntime({
+    root, transactions,
+    loadRuntime: () => state,
+    proofPath: () => join(root, "missing-proof.json"),
+    readJson,
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    selectedRepositories: () => [],
+    relevantHash: () => hash,
+    stableHash: (value) => JSON.stringify(value),
+    now: () => "2026-08-27T00:00:00.000Z",
+    fail
+  });
+  try {
+    assert.throws(() => runtime.requirePreparedLand("change-a"), /Land preparation changed/);
+    const prepared = runtime.landPreparationValue("change-a");
+    mkdirSync(join(transactions, "change-a"), { recursive: true });
+    writeFileSync(join(transactions, "change-a", "land-preparation.json"),
+      `${JSON.stringify(prepared)}\n`);
+    assert.deepEqual(runtime.requirePreparedLand("change-a"), prepared);
+    hash = "hash-b";
+    assert.throws(() => runtime.requirePreparedLand("change-a"), /Land preparation changed/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Land resume refreshes child statuses and emits the resumable plan", () => {
+  const state = {
+    status: "archived",
+    archivedAt: "2026-08-27T00:00:00.000Z",
+    workspace: { path: "/workspace" },
+    repositories: {
+      root: { path: "/workspace" },
+      landed: { path: "/workspace/landed", land: { commit: "commit-a" } },
+      pending: { path: "/workspace/pending", land: { commit: "commit-b" } },
+      unrecorded: { path: "/workspace/unrecorded" },
+      docs: { mode: "worktree", path: "/workspace/docs", baseHead: "head" }
+    }
+  };
+  const repositories = [
+    { id: "landed", type: "repository", mode: "write", path: "/target/landed", workspacePath: "/target/landed" },
+    { id: "pending", type: "repository", mode: "write", path: "/target/pending", workspacePath: "/target/pending" },
+    { id: "unrecorded", type: "repository", mode: "write", path: "/target/unrecorded", workspacePath: "/target/unrecorded" },
+    { id: "docs", type: "repository", mode: "read", path: "/target/docs", workspacePath: "/target/docs", baseHead: "head" },
+    { id: "root", type: "repository", mode: "write", path: "/target", workspacePath: "/target" }
+  ];
+  const saved = [];
+  const written = [];
+  const logs = [];
+  const runtime = createLandRuntime({
+    root: "/target", transactions: "/transactions",
+    loadRuntime: () => state,
+    saveRuntime: (value) => saved.push(structuredClone(value)),
+    proofAudit: () => ({ valid: true }),
+    selectedRepositories: () => repositories,
+    gitHead: () => "head",
+    git: (args, path) => args[0] === "merge-base"
+      ? { status: path.endsWith("/landed") ? 0 : 1, stdout: "", stderr: "" }
+      : { status: 0, stdout: "", stderr: "" },
+    relevantHash: () => "workspace-hash",
+    proofPath: () => "/missing-proof.json",
+    readJson: () => null,
+    writeJson: (path, value) => written.push({ path, value }),
+    now: () => "2026-08-27T01:00:00.000Z",
+    fail
+  });
+  const originalLog = console.log;
+  console.log = (message) => logs.push(String(message));
+  try {
+    runtime.resumeLand("change-a");
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(state.repositories.landed.land.status, "child-landed");
+  assert.equal(state.repositories.pending.land.status, "awaiting-explicit-branch-land");
+  assert.equal(state.repositories.unrecorded.land, undefined);
+  assert.equal(state.land.status, "children-inspected");
+  assert.equal(saved.length, 1);
+  assert.equal(written[0].path, "/transactions/change-a/multi-repo-land.json");
+  assert.ok(logs.some((message) => message.includes("ALREADY ARCHIVED change-a")));
+  assert.ok(logs.some((message) => message.includes('"strategy": "ordered-resumable-saga"')));
 });
