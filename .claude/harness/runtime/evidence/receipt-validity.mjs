@@ -40,6 +40,69 @@ export function validityRecovery(validity, id, provider) {
   return `re-run: claude-foundation proof run ${id}`;
 }
 
+export function reviewProvenanceValidityReason(context) {
+  const { value, id, reviewProtocolVersion, reviewProvenanceResult, reviewPolicy } = context;
+  if (String(value.reviewProtocolVersion || "") !== reviewProtocolVersion)
+    return "review-version-stale";
+  const infrastructureError = value.status === "error";
+  const provenance = reviewProvenanceResult(value.review, {
+    allowMissingAiSession: infrastructureError
+  });
+  if (!provenance.complete ||
+      (!infrastructureError && !provenance.independent &&
+        reviewPolicy(id).independence !== "self"))
+    return "review-not-independent";
+  return { provenance };
+}
+
+export function reviewAttemptValidityReason(context) {
+  const { value, id, evidenceVault, pathExists, readDirectory,
+    reviewAttemptByDigest, reviewAttemptIsValid } = context;
+  const attemptDigest = String(value.review?.attemptDigest || "");
+  const attemptDir = join(evidenceVault, id, "review-attempts");
+  let attemptPath = null;
+  if (attemptDigest && pathExists(attemptDir))
+    for (const name of readDirectory(attemptDir)) {
+      if (!name.includes(attemptDigest.slice(0, 12))) continue;
+      attemptPath = name;
+      break;
+    }
+  if (!attemptPath) return "review-attempt-history-missing";
+  if (!reviewAttemptIsValid(value, reviewAttemptByDigest(id, attemptDigest)))
+    return "review-attempt-history-invalid";
+  return null;
+}
+
+export function reviewOutcomeValidityReason(context, provenance) {
+  const { value, id, hash, repairBindingValid, reviewPolicy } = context;
+  const bindings = value.review?.repairClosure?.evidenceBindings;
+  if (value.review?.repairClosure && !(Array.isArray(bindings) && bindings.length > 0 &&
+      bindings.every((binding) => repairBindingValid(id, binding, hash))))
+    return "review-repair-evidence-stale";
+  if (value.status === "pass" &&
+      reviewPolicy(id).diversity === "required" && !provenance.diverse)
+    return "review-not-diverse";
+  if (value.status === "pass" &&
+      Number(value.review?.findings?.unresolvedBlockers || 0) > 0)
+    return "review-blockers";
+  return null;
+}
+
+export function acceptanceDecisionIsValid({
+  value, currentAcceptance, actualClaims, expectedClaims, stableHash
+}) {
+  const criteria = value.acceptance?.criteria;
+  return value.acceptance?.actor?.type === "human" &&
+    Boolean(String(value.acceptance?.actor?.identity || "").trim()) &&
+    value.acceptance?.decision === "accept" &&
+    Array.isArray(criteria) && criteria.length > 0 &&
+    !criteria.some((criterion) => !String(criterion).trim()) &&
+    new Set(criteria.map((criterion) => String(criterion).trim())).size === criteria.length &&
+    stableHash(actualClaims) === stableHash(expectedClaims) &&
+    value.acceptance?.subjectWorkspaceHash === value.workspaceHash &&
+    value.acceptance?.reason === currentAcceptance.reason;
+}
+
 export function createReceiptValidity({
   evidenceVault, providerProtocolVersion, adapterProtocolVersion,
   reviewProtocolVersion, acceptanceProtocolVersion, receiptPath, readJson,
@@ -165,35 +228,20 @@ export function createReceiptValidity({
   function reviewValidity(context) {
     const { id, provider, value, hash, capability } = context;
     if (capability !== "review") return null;
-    if (String(value.reviewProtocolVersion || "") !== reviewProtocolVersion)
-      return invalidReceipt(provider, "review-version-stale", value);
-    const infrastructureError = value.status === "error";
-    const provenance = reviewProvenanceResult(value.review, {
-      allowMissingAiSession: infrastructureError
+    const provenanceResult = reviewProvenanceValidityReason({
+      value, id, reviewProtocolVersion, reviewProvenanceResult, reviewPolicy
     });
-    if (!provenance.complete ||
-        (!infrastructureError && !provenance.independent &&
-          reviewPolicy(id).independence !== "self"))
-      return invalidReceipt(provider, "review-not-independent", value);
-    const attemptDigest = String(value.review?.attemptDigest || "");
-    const attemptDir = join(evidenceVault, id, "review-attempts");
-    const attemptPath = attemptDigest && existsSync(attemptDir)
-      ? readdirSync(attemptDir).find((name) => name.includes(attemptDigest.slice(0, 12))) : null;
-    if (!attemptPath)
-      return invalidReceipt(provider, "review-attempt-history-missing", value);
-    if (!reviewAttemptIsValid(value, reviewAttemptByDigest(id, attemptDigest)))
-      return invalidReceipt(provider, "review-attempt-history-invalid", value);
-    const bindings = value.review?.repairClosure?.evidenceBindings;
-    if (value.review?.repairClosure && !(Array.isArray(bindings) && bindings.length > 0 &&
-        bindings.every((binding) => repairBindingValid(id, binding, hash))))
-      return invalidReceipt(provider, "review-repair-evidence-stale", value);
-    if (value.status === "pass" &&
-        reviewPolicy(id).diversity === "required" && !provenance.diverse)
-      return invalidReceipt(provider, "review-not-diverse", value);
-    if (value.status === "pass" &&
-        Number(value.review?.findings?.unresolvedBlockers || 0) > 0)
-      return invalidReceipt(provider, "review-blockers", value);
-    return null;
+    if (typeof provenanceResult === "string")
+      return invalidReceipt(provider, provenanceResult, value);
+    const attemptReason = reviewAttemptValidityReason({
+      value, id, evidenceVault, pathExists: existsSync, readDirectory: readdirSync,
+      reviewAttemptByDigest, reviewAttemptIsValid
+    });
+    if (attemptReason) return invalidReceipt(provider, attemptReason, value);
+    const outcomeReason = reviewOutcomeValidityReason({
+      value, id, hash, repairBindingValid, reviewPolicy
+    }, provenanceResult.provenance);
+    return outcomeReason ? invalidReceipt(provider, outcomeReason, value) : null;
   }
 
   function acceptanceValidity(context) {
@@ -202,18 +250,11 @@ export function createReceiptValidity({
     if (String(value.acceptanceProtocolVersion || "") !== acceptanceProtocolVersion)
       return invalidReceipt(provider, "acceptance-version-stale", value);
     const currentAcceptance = resolvedAcceptance(id);
-    const criteria = value.acceptance?.criteria;
     const actualClaims = Array.isArray(value.claims) ? [...value.claims].sort() : [];
     const expectedClaims = claimsForProvider(id, provider).map((claim) => claim.id).sort();
-    if (value.acceptance?.actor?.type !== "human" ||
-        !String(value.acceptance?.actor?.identity || "").trim() ||
-        value.acceptance?.decision !== "accept" ||
-        !Array.isArray(criteria) || criteria.length === 0 ||
-        criteria.some((criterion) => !String(criterion).trim()) ||
-        new Set(criteria.map((criterion) => String(criterion).trim())).size !== criteria.length ||
-        stableHash(actualClaims) !== stableHash(expectedClaims) ||
-        value.acceptance?.subjectWorkspaceHash !== value.workspaceHash ||
-        value.acceptance?.reason !== currentAcceptance.reason)
+    if (!acceptanceDecisionIsValid({
+      value, currentAcceptance, actualClaims, expectedClaims, stableHash
+    }))
       return invalidReceipt(provider, "acceptance-invalid", value);
     return null;
   }
