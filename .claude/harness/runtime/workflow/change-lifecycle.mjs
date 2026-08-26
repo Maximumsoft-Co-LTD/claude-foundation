@@ -20,6 +20,89 @@ export function renderDraftDecisions(decisions) {
   }).join("\n");
 }
 
+export function draftBullets(items) {
+  return items.map((item) => `- ${item}`).join("\n");
+}
+
+export function renderDraftProposal(draft, state) {
+  const title = draft.title || state.intent;
+  return `# Change: ${title}\n\n## Why\n\n${draft.why}\n\n` +
+    `## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
+    `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
+    `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
+    `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
+    `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
+    `## Non-goals\n\n${draftBullets(draft.nonGoals)}\n`;
+}
+
+export function draftDomainRows(domainLanguage = []) {
+  return domainLanguage.length
+    ? domainLanguage.map((term) =>
+      `| ${term.term} | ${term.meaning} | ${term.avoid} |`).join("\n")
+    : "| `none` | This change introduces no project-specific term. | `none` |";
+}
+
+export function renderDraftDesign(draft) {
+  return `# Design\n\n## Current state\n\n${draft.currentState}\n\n` +
+    `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
+    `${draftDomainRows(draft.domainLanguage)}\n\n## Decisions\n\n` +
+    renderDraftDecisions(draft.decisions) +
+    `\n\n## Compatibility and migration\n\n${draft.compatibility}\n\n## Risks\n\n` +
+    `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n` +
+    draft.risks.map((risk) =>
+      `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n") + "\n";
+}
+
+export function renderDraftTask(task, index) {
+  const taskId = task.id || `T${String(index + 1).padStart(3, "0")}`;
+  const metadata = [
+    task.repository ? `[repo:${task.repository}]` : "",
+    task.kind ? `[kind:${task.kind}]` : "",
+    task.paths?.length ? `[paths:${task.paths.join(",")}]` : "",
+    task.dependsOn?.length ? `[depends:${task.dependsOn.join(",")}]` : ""
+  ].filter(Boolean).join(" ");
+  return `- [ ] **${taskId}** ${task.outcome} ${metadata} — verify: \`${task.verify}\``;
+}
+
+export function renderDraftTasks(tasks) {
+  return `# Tasks\n\n> This is the sole implementation ledger.\n\n` +
+    tasks.map(renderDraftTask).join("\n") + "\n";
+}
+
+export function groupDraftSpecs(specs, slugify) {
+  const grouped = new Map();
+  for (const spec of specs) {
+    const capability = slugify(spec.name);
+    grouped.set(capability, [...(grouped.get(capability) || []), spec]);
+  }
+  return grouped;
+}
+
+export function renderDraftSpecDocument(specs, renderRequirement) {
+  const operationOrder = ["added", "modified", "removed"];
+  const sections = operationOrder.flatMap((operation) => {
+    const requirements = specs.filter((spec) =>
+      String(spec.operation || "added").toLowerCase() === operation);
+    if (!requirements.length) return [];
+    return [`## ${operation.toUpperCase()} Requirements\n\n` +
+      requirements.map(renderRequirement).join("\n\n")];
+  });
+  return `# ${specs[0].name}\n\n${sections.join("\n\n")}\n`;
+}
+
+export function materializeDraftSpecs({
+  basePath, specs, slugify, renderRequirement,
+  remove = rmSync, makeDirectory = mkdirSync, write = writeFileSync
+}) {
+  remove(join(basePath, "specs"), { recursive: true, force: true });
+  for (const [capability, capabilitySpecs] of groupDraftSpecs(specs, slugify)) {
+    const specDir = join(basePath, "specs", capability);
+    makeDirectory(specDir, { recursive: true });
+    write(join(specDir, "spec.md"),
+      renderDraftSpecDocument(capabilitySpecs, renderRequirement));
+  }
+}
+
 export function createChangeLifecycle({
   root,
   policy,
@@ -150,79 +233,30 @@ export function createChangeLifecycle({
 
   function materializeDraft(id, draft) {
     const state = loadRuntime(id);
-    const title = draft.title || state.intent;
-    const bullets = (items) => items.map((item) => `- ${item}`).join("\n");
-    const domainRows = (draft.domainLanguage || []).length
-      ? draft.domainLanguage.map((term) =>
-        `| ${term.term} | ${term.meaning} | ${term.avoid} |`).join("\n")
-      : "| `none` | This change introduces no project-specific term. | `none` |";
-    writeFileSync(join(changePath(id), "proposal.md"),
-      `# Change: ${title}\n\n## Why\n\n${draft.why}\n\n` +
-      `## What changes\n\n${bullets(draft.changes)}\n\n## Impact\n\n` +
-      `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
-      `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
-      `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
-      `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
-      `## Non-goals\n\n${bullets(draft.nonGoals)}\n`);
+    const basePath = changePath(id);
+    writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(draft, state));
     if (state.schema === "foundation-standard")
-      writeFileSync(join(changePath(id), "design.md"),
-        `# Design\n\n## Current state\n\n${draft.currentState}\n\n` +
-        `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
-        `${domainRows}\n\n## Decisions\n\n` +
-        renderDraftDecisions(draft.decisions) +
-        `\n\n## Compatibility and migration\n\n${draft.compatibility}\n\n## Risks\n\n` +
-        `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n` +
-        draft.risks.map((risk) =>
-          `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n") + "\n");
+      writeFileSync(join(basePath, "design.md"), renderDraftDesign(draft));
     if (state.groundingRequired && draft.grounding)
-      writeJson(join(changePath(id), "grounding.yaml"), draft.grounding);
-    writeFileSync(join(changePath(id), "tasks.md"),
-      `# Tasks\n\n> This is the sole implementation ledger.\n\n` +
-      draft.tasks.map((task, index) => {
-        const taskId = task.id || `T${String(index + 1).padStart(3, "0")}`;
-        const metadata = [
-          task.repository ? `[repo:${task.repository}]` : "",
-          task.kind ? `[kind:${task.kind}]` : "",
-          task.paths?.length ? `[paths:${task.paths.join(",")}]` : "",
-          task.dependsOn?.length ? `[depends:${task.dependsOn.join(",")}]` : ""
-        ].filter(Boolean).join(" ");
-        return `- [ ] **${taskId}** ${task.outcome} ${metadata} — verify: \`${task.verify}\``;
-      }).join("\n") + "\n");
-    const contract = readJson(join(changePath(id), "evidence.yaml"));
+      writeJson(join(basePath, "grounding.yaml"), draft.grounding);
+    writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));
+    const contract = readJson(join(basePath, "evidence.yaml"));
     contract.claims = draft.claims;
-    writeJson(join(changePath(id), "evidence.yaml"), contract);
-    if (draft.execution) writeJson(join(changePath(id), "execution.yaml"), draft.execution);
-    writeJson(join(changePath(id), "handoffs.yaml"), {
+    writeJson(join(basePath, "evidence.yaml"), contract);
+    if (draft.execution) writeJson(join(basePath, "execution.yaml"), draft.execution);
+    writeJson(join(basePath, "handoffs.yaml"), {
       version: 1,
       operations: draft.externalOperations || []
     });
-    if (draft.repositories) writeJson(join(changePath(id), "repositories.yaml"), {
+    if (draft.repositories) writeJson(join(basePath, "repositories.yaml"), {
       version: 1,
       repositories: draft.repositories
     });
-    if (state.schema === "foundation-standard") {
-      rmSync(join(changePath(id), "specs"), { recursive: true, force: true });
-      const byCapability = new Map();
-      for (const spec of draft.specs) {
-        const capability = slugify(spec.name);
-        const entries = byCapability.get(capability) || [];
-        byCapability.set(capability, [...entries, spec]);
-      }
-      const operationOrder = ["added", "modified", "removed"];
-      for (const [capability, specs] of byCapability) {
-        const specDir = join(changePath(id), "specs", capability);
-        mkdirSync(specDir, { recursive: true });
-        const sections = operationOrder.flatMap((operation) => {
-          const requirements = specs.filter((spec) =>
-            String(spec.operation || "added").toLowerCase() === operation);
-          if (!requirements.length) return [];
-          return [`## ${operation.toUpperCase()} Requirements\n\n` +
-            requirements.map(renderDraftRequirement).join("\n\n")];
-        });
-        writeFileSync(join(specDir, "spec.md"),
-          `# ${specs[0].name}\n\n${sections.join("\n\n")}\n`);
-      }
-    }
+    if (state.schema === "foundation-standard")
+      materializeDraftSpecs({
+        basePath, specs: draft.specs, slugify,
+        renderRequirement: renderDraftRequirement
+      });
   }
 
   // The artifacts the standard schema adds over the rapid one. Written only
