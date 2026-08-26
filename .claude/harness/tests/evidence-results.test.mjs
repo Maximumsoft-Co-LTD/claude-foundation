@@ -1,13 +1,123 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  adapterResources,
   collectPlaywrightAttachments,
+  configuredCommand,
+  mutationProtocolResult,
+  numericReportValue,
+  parseJsonOutput,
+  parseTapOutput,
   playwrightAnnotationClaims,
   playwrightReportSummary,
   playwrightTestOutcome,
   recordPlaywrightTest,
+  resourcesConflict,
   visitPlaywrightReport
 } from "../runtime/evidence/evidence-results.mjs";
+
+test("result parsers accept JSON and complete TAP summaries", () => {
+  assert.equal(parseJsonOutput(""), null);
+  assert.deepEqual(parseJsonOutput("  {\"status\":\"ok\"}  "), { status: "ok" });
+  assert.equal(parseJsonOutput("not json"), null);
+
+  assert.equal(parseTapOutput(null), null);
+  assert.equal(parseTapOutput("ordinary output"), null);
+  assert.equal(parseTapOutput("TAP version 13\n# no totals"), null);
+  assert.deepEqual(parseTapOutput([
+    "TAP version 13", "1..2", "ok 1 - first", "not ok 2 - second",
+    "# tests 2", "# pass 1", "# fail 1"
+  ].join("\n")), { totalTests: 2, passed: 1, failed: 1, format: "tap" });
+  assert.deepEqual(parseTapOutput("ok 1 - works\n1..1"), {
+    totalTests: 1, passed: null, failed: null, format: "tap"
+  });
+  assert.equal(parseTapOutput(`TAP version 13\n1..${"9".repeat(400)}`), null);
+});
+
+test("mutation protocol parser accepts markers and supported JSON fields only", () => {
+  assert.equal(mutationProtocolResult(null), null);
+  for (const result of [
+    "behavioral-kill", "test-failure", "survived", "crash", "timeout", "not-applied"
+  ])
+    assert.equal(mutationProtocolResult(
+      `diagnostic\nFOUNDATION_MUTATION_RESULT=${result}\n`), result);
+  assert.equal(mutationProtocolResult(JSON.stringify({
+    foundationMutationResult: "behavioral-kill"
+  })), "behavioral-kill");
+  assert.equal(mutationProtocolResult(JSON.stringify({
+    mutationResult: "timeout"
+  })), "timeout");
+  assert.equal(mutationProtocolResult(JSON.stringify({
+    foundationMutationResult: "unsupported", mutationResult: "survived"
+  })), null);
+  assert.equal(mutationProtocolResult("not json"), null);
+});
+
+test("numeric report lookup checks direct, summary, and stats containers safely", () => {
+  assert.equal(numericReportValue(null, ["tests"]), null);
+  assert.equal(numericReportValue([], ["tests"]), null);
+  assert.equal(numericReportValue({ tests: 3, summary: { tests: 4 } }, ["tests"]), 3);
+  assert.equal(numericReportValue({ summary: { tests: 4 } }, ["tests"]), 4);
+  assert.equal(numericReportValue({ summary: [], stats: { total: 5 } },
+    ["tests", "total"]), 5);
+  for (const value of [-1, 1.5, "2", null])
+    assert.equal(numericReportValue({ tests: value }, ["tests"]), null);
+});
+
+test("configured commands normalize direct Playwright flags without duplication", () => {
+  assert.deepEqual(configuredCommand("test", {
+    adapter: "shell", command: ["node", "test.mjs"]
+  }), { command: "node", args: ["test.mjs"], display: "node test.mjs" });
+
+  const direct = configuredCommand("browser", {
+    adapter: "playwright", command: ["playwright", "test"], project: "chromium"
+  });
+  assert.deepEqual(direct.args,
+    ["test", "--project=chromium", "--reporter=json"]);
+  assert.equal(direct.display,
+    "playwright test --project=chromium --reporter=json");
+
+  const pinned = configuredCommand("browser", {
+    adapter: "playwright",
+    command: ["/tools/playwright", "test", "--project", "webkit", "--reporter=line"],
+    project: "chromium"
+  });
+  assert.deepEqual(pinned.args,
+    ["test", "--project", "webkit", "--reporter=line"]);
+  assert.deepEqual(configuredCommand("browser", {
+    adapter: "playwright", command: ["npx", "@playwright/test", "--reporter", "dot"]
+  }).args, ["@playwright/test", "--reporter", "dot"]);
+  assert.deepEqual(configuredCommand("browser", {
+    adapter: "playwright", command: ["node", "custom-runner.mjs"]
+  }).args, ["custom-runner.mjs"]);
+});
+
+test("adapter resources are scoped, stable, and honor explicit declarations", () => {
+  const capability = (provider) => provider === "mutant" ? "mutation" : "test";
+  assert.deepEqual(adapterResources("custom", {
+    resources: ["database", "database", "browser"]
+  }, capability), ["browser", "database"]);
+  assert.deepEqual(adapterResources("contract", {
+    adapter: "contract-digest", repository: "api"
+  }, capability), ["workspace-read"]);
+  assert.deepEqual(adapterResources("browser", {
+    adapter: "playwright", repository: "app"
+  }, capability), ["browser:app", "dev-server:app", "workspace-read"]);
+  assert.deepEqual(adapterResources("mutant", {
+    adapter: "command", repository: "api"
+  }, capability), ["workspace-write:api"]);
+  assert.deepEqual(adapterResources("test", { adapter: "command" }, capability),
+    ["workspace-read"]);
+});
+
+test("resource conflicts serialize workspace writers and shared exclusive resources", () => {
+  assert.equal(resourcesConflict(["workspace-write:api"], ["workspace-read"]), true);
+  assert.equal(resourcesConflict(["workspace-read"], ["workspace-write:app"]), true);
+  assert.equal(resourcesConflict(["database"], ["database"]), true);
+  assert.equal(resourcesConflict(["workspace-read"], ["workspace-read"]), false);
+  assert.equal(resourcesConflict(["browser:app"], ["browser:api"]), false);
+  assert.equal(resourcesConflict([], []), false);
+});
 
 test("Playwright result helpers classify annotations and terminal outcomes", () => {
   assert.deepEqual(playwrightAnnotationClaims(null), []);
