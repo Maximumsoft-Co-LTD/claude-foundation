@@ -121,21 +121,10 @@ export function createLandRuntime({
   blockWithDecision,
   fail
 }) {
-  function landCheck(id) {
-    const state = loadRuntime(id);
-    if (state.status === "archived") {
-      const audit = proofAudit(id, true);
-      if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
-      console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
-      return { archived: true, state };
-    }
+  function assertLandTargetReady(id, state) {
     if (state.workspace?.recovery?.requiresSync)
       fail(`the target was preserved during manual recovery; run 'claude-foundation sandbox sync ${
         id}' before proving and landing again`);
-    // A check reports; it does not settle. Resuming or rolling back an
-    // interrupted apply replays filesystem mutations against the target, so it
-    // belongs to `land recover`, under a decision reference — not to the
-    // command an operator runs to ask whether landing is possible.
     const pending = pendingApplyTransactions(id);
     if (pending.length)
       blockWithDecision(id, "apply-pending-recovery", {
@@ -156,23 +145,8 @@ export function createLandRuntime({
         ],
         recommended: "inspect"
       });
-    // Before any projection: a spec delta that silently drops a scenario only
-    // fails inside 'openspec archive', by which point the code has landed and
-    // the change is stuck half-applied.
     assertNoDroppedScenarios(id);
-    // Same class of failure, different cause: a missing or incompatible
-    // OpenSpec CLI only surfaces at 'openspec archive', after the code has
-    // already landed, leaving the change stuck at land.status "code-applied".
     assertOpenSpecCli(root, fail);
-    // A check that answers "is this landable?" has to weigh the target, not
-    // only the change. This condition used to surface two commands later, from
-    // inside the apply transaction, so `land check` reported LAND READY for a
-    // projection `land archive` would refuse — and every evidence question
-    // below is a red herring while the base is wrong.
-    //
-    // Worktree only: an isolated copy reconciles a moved target at sync and is
-    // not blocked by one. Pre-projection only: once applied, the transaction
-    // journal is what governs, and the target legitimately carries the change.
     if (state.workspace?.mode === "worktree" && !state.workspace.applied &&
         gitHead(root) !== state.workspace.baseHead)
       blockWithDecision(id, "control-head-moved", targetHeadMovedDecision({
@@ -182,6 +156,9 @@ export function createLandRuntime({
         multiRepository: Object.keys(state.repositories || {}).length > 1,
         action: "Landing"
       }));
+  }
+
+  function assertReadOnlyLandDependencies(id, state) {
     for (const repository of selectedRepositories(id, state)) {
       if (repository.mode !== "read") continue;
       const runtime = state.repositories?.[repository.id] || {};
@@ -196,6 +173,26 @@ export function createLandRuntime({
         fail(`read-only dependency '${repository.id}' moved after sandbox creation (${
           String(runtime.baseHead || "").slice(0, 8)} -> ${String(targetHead || "").slice(0, 8)}); run sandbox sync and prove again`);
     }
+  }
+
+  function assertAggregateLandProof(graph, proof, hash) {
+    if (!graph) return;
+    const aggregate = proof.aggregateGraphProof;
+    if (!aggregate || aggregate.status !== "pass")
+      fail(`aggregate graph proof is missing; finalize one fresh proof for graph ${graph.revision}`);
+    if (aggregate.graphIdentity !== graph.identity ||
+        aggregate.graphRevision !== graph.revision || aggregate.workspaceHash !== hash)
+      fail(`aggregate graph proof is stale for ${graph.revision}; run one fresh prove`);
+    const missingNodes = (aggregate.requiredNodes || []).filter((node) =>
+      !(aggregate.coveredNodes || []).includes(node));
+    const missingEdges = (aggregate.requiredEdges || []).filter((edge) =>
+      !(aggregate.coveredEdges || []).includes(edge));
+    if (missingNodes.length || missingEdges.length)
+      fail(`aggregate graph proof is incomplete: nodes ${missingNodes.join(", ") || "none"}; edges ${
+        missingEdges.join(", ") || "none"}`);
+  }
+
+  function validatedLandProof(id) {
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id)) : null;
     if (!proof || proof.status !== "pass") fail(`change '${id}' has no passing proof`);
     const audit = proofAudit(id, true);
@@ -205,26 +202,13 @@ export function createLandRuntime({
     if (proof.workspaceHash !== hash)
       fail(`proof is stale (${proof.workspaceHash.slice(0, 8)} != ${hash.slice(0, 8)}) — the workspace changed after Prove; finish contract and code edits first, sync, then run one fresh prove: claude-foundation proof run ${id}. When only the base moved and the change's diff is unchanged, that run rebinds the review verdict instead of dispatching a new one`);
     const graph = agentPlanValue?.(id)?.graph || null;
-    if (graph) {
-      const aggregate = proof.aggregateGraphProof;
-      if (!aggregate || aggregate.status !== "pass")
-        fail(`aggregate graph proof is missing; finalize one fresh proof for graph ${graph.revision}`);
-      if (aggregate.graphIdentity !== graph.identity ||
-          aggregate.graphRevision !== graph.revision || aggregate.workspaceHash !== hash)
-        fail(`aggregate graph proof is stale for ${graph.revision}; run one fresh prove`);
-      const missingNodes = (aggregate.requiredNodes || []).filter((node) =>
-        !(aggregate.coveredNodes || []).includes(node));
-      const missingEdges = (aggregate.requiredEdges || []).filter((edge) =>
-        !(aggregate.coveredEdges || []).includes(edge));
-      if (missingNodes.length || missingEdges.length)
-        fail(`aggregate graph proof is incomplete: nodes ${missingNodes.join(", ") || "none"}; edges ${
-          missingEdges.join(", ") || "none"}`);
-    }
+    assertAggregateLandProof(graph, proof, hash);
+    return { proof, graph, hash };
+  }
+
+  function assertLandEvidence(id, state, proof, hash) {
     for (const provider of requiredProviders(id)) {
       const check = receiptValidity(id, provider, hash);
-      // Land is the last place a person finds out, and it used to be the least
-      // helpful: a bare validity code, at the end of the loop, with the fix
-      // several commands away. The route is derivable from the code, so say it.
       if (check.validity !== "valid")
         fail(`${provider} evidence is ${check.validity}\n  ${
           validityRecovery(check.validity, id, provider)}`);
@@ -241,7 +225,9 @@ export function createLandRuntime({
           `provider with ci.issuer and ci.publicKey, then run: claude-foundation evidence ` +
           `verify-ci ${id} <provider> <signed.json>`);
     }
-    const externalOperations = handoffReadiness(id);
+  }
+
+  function assertLandOperationalGates(id, state, externalOperations) {
     if (externalOperations.blocking.length) {
       const blocked = externalOperations.operations
         .filter((row) => row.landBlocking)
@@ -254,19 +240,15 @@ export function createLandRuntime({
       const applied = verifyAppliedProjection(state);
       if (!applied.valid) fail(`applied projection is invalid: ${applied.reason}`);
     }
-    // The planner forces a deep tier for risk-sensitive task kinds; a host that
-    // silently ran a weaker model produced evidence the policy never sanctioned.
-    // Only a proven downgrade blocks — unreported models classify as unknown.
     const drift = blockingDrift(id);
     if (drift.length)
       fail(`model tier downgrade on risk-sensitive task(s):\n${drift
         .map((row) => `  ${row.taskId || (row.blockingTasks || []).join("|") || "?"} (${
           row.taskKind || "ambiguous"}): requested ${row.requestedTier}, ran ${
           row.actualModel || "unreported"} — ${row.reason}`).join("\n")}`);
-    const multiRepository = state.repositories && Object.keys(state.repositories).length > 1;
-    if (multiRepository) persistLandPreparation(id, state, proof, graph, hash);
-    // A waived gate must be visible in the same breath as the word READY:
-    // landing with a withdrawn requirement is legitimate, hiding it is not.
+  }
+
+  function reportLandReady(id, state, hash, externalOperations, multiRepository) {
     const waived = (state.waivers || []).map((row) =>
       `${row.capability} (${row.authority?.reference || "user decision"})`);
     const rootBranch = targetBranch(root);
@@ -283,6 +265,27 @@ export function createLandRuntime({
       multiRepository ? "resume" : "archive"} ${id}${telemetry
         ? `\n  telemetry: ${telemetry.classification}${telemetryRecovery
           ? `; recovery: ${telemetryRecovery}` : ""}` : ""}`);
+    return telemetry;
+  }
+
+  function landCheck(id) {
+    const state = loadRuntime(id);
+    if (state.status === "archived") {
+      const audit = proofAudit(id, true);
+      if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
+      console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
+      return { archived: true, state };
+    }
+    assertLandTargetReady(id, state);
+    assertReadOnlyLandDependencies(id, state);
+    const { proof, graph, hash } = validatedLandProof(id);
+    assertLandEvidence(id, state, proof, hash);
+    const externalOperations = handoffReadiness(id);
+    assertLandOperationalGates(id, state, externalOperations);
+    const multiRepository = state.repositories && Object.keys(state.repositories).length > 1;
+    if (multiRepository) persistLandPreparation(id, state, proof, graph, hash);
+    const telemetry = reportLandReady(
+      id, state, hash, externalOperations, multiRepository);
     return { archived: false, state, hash, externalOperations, telemetry };
   }
 
