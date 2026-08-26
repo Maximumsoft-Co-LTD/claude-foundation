@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  completeReviewAttemptOperation,
+  completedReviewAttemptValue,
   createRepairClosureAttempt,
   matchingRepairClosure,
+  normalizeReviewCompletionFindings,
   recordRepairClosureAttemptOperation,
   repairClosureSource,
-  repairClosureVerifiedFindingIds
+  repairClosureVerifiedFindingIds,
+  reviewCompletionIdentity,
+  validateFinalReviewFindings,
+  validateReviewCompletionFindings
 } from "../runtime/evidence/review-attempt-store.mjs";
 
 const hash = (value) => JSON.stringify(value);
@@ -26,6 +32,148 @@ const details = {
   verifiedFindingIds: ["F-2", "F-1", "F-1"],
   evidenceBindings: [{ provider: "test", digest: "evidence" }]
 };
+
+test("review completion normalizes finding identity and bindings", () => {
+  const findings = normalizeReviewCompletionFindings({ findings: [{
+    id: " F-1 ", severity: "MAJOR", path: "app.mjs", line: "2",
+    message: " defect ", claimIds: [" c2 ", "c1", "c1", ""],
+    verificationCaseIds: ["CASE-B", "CASE-A", "CASE-A"]
+  }, {
+    id: "F-2", severity: "minor", message: "note", line: undefined
+  }] });
+  assert.deepEqual(findings[0], {
+    id: "F-1", severity: "major", path: "app.mjs", line: 2,
+    message: "defect", claimIds: ["c1", "c2"],
+    verificationCaseIds: ["CASE-A", "CASE-B"]
+  });
+  assert.equal(findings[1].line, null);
+  assert.deepEqual(findings[1].claimIds, []);
+  assert.deepEqual(normalizeReviewCompletionFindings({}), []);
+});
+
+test("review completion enforces reviewer session identity", () => {
+  const ai = { reviewerType: "ai", reviewerSessionId: "session", sessionDeferred: false };
+  assert.deepEqual(reviewCompletionIdentity(ai, {
+    resultStatus: "pass", reviewerSessionId: " session "
+  }, fail), { resultStatus: "pass", sessionId: "session" });
+  assert.throws(() => reviewCompletionIdentity(ai, {
+    resultStatus: "pass"
+  }, fail), /actual reviewer session ID/);
+  assert.throws(() => reviewCompletionIdentity(ai, {
+    resultStatus: "error", reviewerSessionId: "other"
+  }, fail), /does not match/);
+  assert.deepEqual(reviewCompletionIdentity({
+    reviewerType: "ai", sessionDeferred: true
+  }, { resultStatus: "error" }, fail), { resultStatus: "error", sessionId: "" });
+});
+
+test("review completion validates statuses, IDs, fields, and passing findings", () => {
+  const minor = [{
+    id: "F-1", severity: "minor", message: "note", line: null,
+    path: "", claimIds: [], verificationCaseIds: []
+  }];
+  assert.doesNotThrow(() => validateReviewCompletionFindings("pass", minor, fail));
+  assert.throws(() => validateReviewCompletionFindings("unknown", [], fail), /non-empty and unique/);
+  assert.throws(() => validateReviewCompletionFindings("fail", [
+    { ...minor[0], id: "" }
+  ], fail), /non-empty and unique/);
+  assert.throws(() => validateReviewCompletionFindings("fail", [minor[0], minor[0]], fail),
+    /non-empty and unique/);
+  for (const invalid of [
+    { severity: "unknown" }, { message: "" }, { line: 0 }, { line: 1.5 }
+  ]) assert.throws(() => validateReviewCompletionFindings("fail", [
+    { ...minor[0], ...invalid }
+  ], fail), /valid severity/);
+  assert.throws(() => validateReviewCompletionFindings("pass", [
+    { ...minor[0], severity: "major" }
+  ], fail), /passing review/);
+});
+
+test("final delta findings require deterministic closure bindings", () => {
+  const complete = [{
+    id: "F-1", severity: "major", message: "defect", line: 1,
+    path: "app.mjs", claimIds: ["claim"], verificationCaseIds: ["CASE"]
+  }];
+  assert.deepEqual(validateFinalReviewFindings("fail", complete, [{}], fail), complete);
+  assert.deepEqual(validateFinalReviewFindings("fail", complete, [], fail), []);
+  assert.deepEqual(validateFinalReviewFindings("pass", complete, [{}], fail), []);
+  for (const invalid of [
+    { path: "" }, { claimIds: [] }, { verificationCaseIds: [] }
+  ]) assert.throws(() => validateFinalReviewFindings("fail", [
+    { ...complete[0], ...invalid }
+  ], [{}], fail), /must name a path/);
+});
+
+test("completed review builder replaces dispatch identity immutably", () => {
+  const completed = completedReviewAttemptValue({
+    now: () => "now", stableHash: () => "completed-digest"
+  }, {
+    version: 2, digest: "dispatch-digest", attempt: 1,
+    reviewerSessionId: "old"
+  }, {
+    verifiedFindingIds: [" F-2 ", "F-1", "F-1", ""]
+  }, "pass", "session", []);
+  assert.equal(completed.version, 3);
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.digest, "completed-digest");
+  assert.equal(completed.reviewerSessionId, "session");
+  assert.deepEqual(completed.verifiedFindingIds, ["F-1", "F-2"]);
+  assert.equal(completed.completedAt, "now");
+});
+
+function completionOperationFixture(overrides = {}) {
+  const state = {};
+  const writes = [];
+  const saves = [];
+  const dispatched = {
+    version: 2, status: "dispatched", digest: "dispatch", attempt: 1,
+    reviewerType: "ai", reviewerSessionId: "session", sessionDeferred: false
+  };
+  return {
+    state, writes, saves, dispatched,
+    context: {
+      evidenceVault: "/vault",
+      loadRuntime: () => state,
+      saveRuntime: (value) => saves.push(value),
+      reviewHistoryState: () => ({ chainHead: "dispatch", totalAttempts: 1 }),
+      reviewAttemptByDigest: () => dispatched,
+      deliveredAiAttempts: () => [],
+      writeJson: (...args) => writes.push(args),
+      now: () => "now",
+      stableHash: () => "completed-digest",
+      fail,
+      ...overrides
+    }
+  };
+}
+
+test("completion operation rejects stale heads and invalid dispatch records", () => {
+  const stale = completionOperationFixture({
+    reviewHistoryState: () => ({ chainHead: "other" })
+  });
+  assert.throws(() => completeReviewAttemptOperation(stale.context,
+    "change", "dispatch", {}), /current dispatched attempt/);
+  for (const invalid of [null, { version: 1, status: "dispatched" }, {
+    version: 2, status: "completed"
+  }]) {
+    const fixture = completionOperationFixture({ reviewAttemptByDigest: () => invalid });
+    assert.throws(() => completeReviewAttemptOperation(fixture.context,
+      "change", "dispatch", {}), /valid dispatched attempt/);
+  }
+});
+
+test("completion operation persists the completed immutable chain head", () => {
+  const fixture = completionOperationFixture();
+  const completed = completeReviewAttemptOperation(fixture.context,
+    "change", "dispatch", {
+      resultStatus: "pass", reviewerSessionId: "session",
+      findings: [], verifiedFindingIds: []
+    });
+  assert.equal(completed.digest, "completed-digest");
+  assert.match(fixture.writes[0][0], /0001-completed-di\.json$/);
+  assert.equal(fixture.state.reviewHistory.chainHead, "completed-digest");
+  assert.equal(fixture.saves.length, 1);
+});
 
 test("matching repair closure requires the complete deterministic identity", () => {
   const current = {

@@ -248,6 +248,101 @@ export function reviewHistoryAfterDispatch(history, attempt, reviewerType) {
   };
 }
 
+export function reviewCompletionIdentity(dispatched, details, fail) {
+  const resultStatus = String(details.resultStatus || "");
+  const sessionId = String(details.reviewerSessionId || "").trim();
+  if (dispatched.reviewerType === "ai" && !sessionId && resultStatus !== "error")
+    fail("AI review completion requires the actual reviewer session ID");
+  if (!dispatched.sessionDeferred &&
+      (dispatched.reviewerSessionId || null) !== (sessionId || null))
+    fail("review completion session does not match the dispatched reviewer");
+  return { resultStatus, sessionId };
+}
+
+export function normalizeReviewCompletionFindings(details) {
+  return (details.findings || []).map((finding) => ({
+    id: String(finding.id || "").trim(),
+    severity: String(finding.severity || "").toLowerCase(),
+    path: String(finding.path || ""),
+    line: finding.line === null || finding.line === undefined
+      ? null : Number(finding.line),
+    message: String(finding.message || "").trim(),
+    claimIds: [...new Set((finding.claimIds || []).map((value) =>
+      String(value).trim()).filter(Boolean))].sort(),
+    verificationCaseIds: [...new Set((finding.verificationCaseIds || [])
+      .map((value) => String(value).trim()).filter(Boolean))].sort()
+  }));
+}
+
+export function validateReviewCompletionFindings(resultStatus, findings, fail) {
+  const findingIds = findings.map((finding) => finding.id);
+  if (!["pass", "fail", "inconclusive", "error"].includes(resultStatus) ||
+      findingIds.some((idValue) => !idValue) ||
+      new Set(findingIds).size !== findingIds.length)
+    fail("review completion finding IDs must be non-empty and unique");
+  if (findings.some((finding) =>
+    !["blocker", "major", "minor"].includes(finding.severity) ||
+    !finding.message ||
+    (finding.line !== null && (!Number.isInteger(finding.line) || finding.line < 1))))
+    fail("review completion findings require valid severity, message, and optional positive line");
+  if (resultStatus === "pass" && findings.some((finding) =>
+    ["blocker", "major"].includes(finding.severity)))
+    fail("a passing review completion cannot carry blocker or major findings");
+}
+
+export function validateFinalReviewFindings(resultStatus, findings, priorDelivered, fail) {
+  const finalBlocking = resultStatus === "fail" && priorDelivered.length >= 1
+    ? findings.filter((finding) => ["blocker", "major"].includes(finding.severity))
+    : [];
+  if (finalBlocking.some((finding) =>
+    !finding.path || finding.claimIds.length === 0 ||
+    finding.verificationCaseIds.length === 0))
+    fail("a blocker or major finding in the final AI delta must name a path, claimIds, and verificationCaseIds for deterministic repair closure");
+  return finalBlocking;
+}
+
+export function completedReviewAttemptValue(context, dispatched, details,
+  resultStatus, sessionId, findings) {
+  const verifiedFindingIds = [...new Set((details.verifiedFindingIds || [])
+    .map((value) => String(value).trim()).filter(Boolean))].sort();
+  const completed = {
+    ...dispatched,
+    version: 3,
+    status: "completed",
+    resultStatus,
+    reviewerSessionId: sessionId || null,
+    findings,
+    verifiedFindingIds,
+    completedAt: context.now()
+  };
+  delete completed.digest;
+  completed.digest = context.stableHash(completed);
+  return completed;
+}
+
+export function completeReviewAttemptOperation(context, id, digest, details) {
+  const state = context.loadRuntime(id);
+  const history = context.reviewHistoryState(id, state);
+  if (history.chainHead !== digest)
+    context.fail("review completion must finalize the current dispatched attempt");
+  const dispatched = context.reviewAttemptByDigest(id, digest);
+  if (!dispatched || dispatched.version !== 2 || dispatched.status !== "dispatched")
+    context.fail("review completion requires a valid dispatched attempt");
+  const { resultStatus, sessionId } = reviewCompletionIdentity(
+    dispatched, details, context.fail);
+  const findings = normalizeReviewCompletionFindings(details);
+  validateReviewCompletionFindings(resultStatus, findings, context.fail);
+  const priorDelivered = context.deliveredAiAttempts(id, history);
+  validateFinalReviewFindings(resultStatus, findings, priorDelivered, context.fail);
+  const completed = completedReviewAttemptValue(context,
+    dispatched, details, resultStatus, sessionId, findings);
+  context.writeJson(join(context.evidenceVault, id, "review-attempts",
+    `${String(completed.attempt).padStart(4, "0")}-${completed.digest.slice(0, 12)}.json`), completed);
+  state.reviewHistory = { ...history, chainHead: completed.digest };
+  context.saveRuntime(state);
+  return completed;
+}
+
 export function createReviewAttemptStore({
   receiptsRoot,
   evidenceVault,
@@ -524,74 +619,10 @@ export function createReviewAttemptStore({
     return attempt;
   }
 
-  function completeReviewAttempt(id, digest, details) {
-    const state = loadRuntime(id);
-    const history = reviewHistoryState(id, state);
-    if (history.chainHead !== digest)
-      fail("review completion must finalize the current dispatched attempt");
-    const dispatched = reviewAttemptByDigest(id, digest);
-    if (!dispatched || dispatched.version !== 2 || dispatched.status !== "dispatched")
-      fail("review completion requires a valid dispatched attempt");
-    const resultStatus = String(details.resultStatus || "");
-    const sessionId = String(details.reviewerSessionId || "").trim();
-    if (dispatched.reviewerType === "ai" && !sessionId && resultStatus !== "error")
-      fail("AI review completion requires the actual reviewer session ID");
-    if (!dispatched.sessionDeferred &&
-        (dispatched.reviewerSessionId || null) !== (sessionId || null))
-      fail("review completion session does not match the dispatched reviewer");
-    const findings = (details.findings || []).map((finding) => ({
-      id: String(finding.id || "").trim(),
-      severity: String(finding.severity || "").toLowerCase(),
-      path: String(finding.path || ""),
-      line: finding.line === null || finding.line === undefined
-        ? null : Number(finding.line),
-      message: String(finding.message || "").trim(),
-      claimIds: [...new Set((finding.claimIds || []).map((value) =>
-        String(value).trim()).filter(Boolean))].sort(),
-      verificationCaseIds: [...new Set((finding.verificationCaseIds || [])
-        .map((value) => String(value).trim()).filter(Boolean))].sort()
-    }));
-    const findingIds = findings.map((finding) => finding.id);
-    if (!["pass", "fail", "inconclusive", "error"].includes(resultStatus) ||
-        findingIds.some((idValue) => !idValue) ||
-        new Set(findingIds).size !== findingIds.length)
-      fail("review completion finding IDs must be non-empty and unique");
-    if (findings.some((finding) =>
-      !["blocker", "major", "minor"].includes(finding.severity) ||
-      !finding.message ||
-      (finding.line !== null && (!Number.isInteger(finding.line) || finding.line < 1))))
-      fail("review completion findings require valid severity, message, and optional positive line");
-    if (details.resultStatus === "pass" && findings.some((finding) =>
-      ["blocker", "major"].includes(finding.severity)))
-      fail("a passing review completion cannot carry blocker or major findings");
-    const priorDelivered = deliveredAiAttempts(id, history);
-    const finalBlocking = resultStatus === "fail" && priorDelivered.length >= 1
-      ? findings.filter((finding) => ["blocker", "major"].includes(finding.severity))
-      : [];
-    if (finalBlocking.some((finding) =>
-      !finding.path || finding.claimIds.length === 0 ||
-      finding.verificationCaseIds.length === 0))
-      fail("a blocker or major finding in the final AI delta must name a path, claimIds, and verificationCaseIds for deterministic repair closure");
-    const verifiedFindingIds = [...new Set((details.verifiedFindingIds || [])
-      .map((value) => String(value).trim()).filter(Boolean))].sort();
-    const completed = {
-      ...dispatched,
-      version: 3,
-      status: "completed",
-      resultStatus,
-      reviewerSessionId: sessionId || null,
-      findings,
-      verifiedFindingIds,
-      completedAt: now()
-    };
-    delete completed.digest;
-    completed.digest = stableHash(completed);
-    writeJson(join(evidenceVault, id, "review-attempts",
-      `${String(completed.attempt).padStart(4, "0")}-${completed.digest.slice(0, 12)}.json`), completed);
-    state.reviewHistory = { ...history, chainHead: completed.digest };
-    saveRuntime(state);
-    return completed;
-  }
+  const completeReviewAttempt = completeReviewAttemptOperation.bind(null, {
+    evidenceVault, loadRuntime, saveRuntime, stableHash, writeJson, now, fail,
+    reviewHistoryState, reviewAttemptByDigest, deliveredAiAttempts
+  });
 
   const recordRepairClosureAttempt = recordRepairClosureAttemptOperation.bind(null, {
     evidenceVault, loadRuntime, saveRuntime, stableHash, writeJson, now, fail,
