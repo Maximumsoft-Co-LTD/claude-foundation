@@ -21,6 +21,90 @@ import {
 } from "./telemetry.mjs";
 import { usageAvailability } from "./metrics-runtime.mjs";
 
+export function validateTelemetryEventFlags(context, id, state, flags) {
+  if (flags.repo) context.repositoryById(id, flags.repo, state);
+  if (flags.task) {
+    const taskId = String(flags.task).toUpperCase();
+    const known = context.taskBlocks(context.readFile(
+      join(context.activeChangePath(id), "tasks.md"), "utf8"))
+      .some((task) => task.id === taskId);
+    if (!known) context.fail(`event references unknown task '${flags.task}'`);
+    flags.task = taskId;
+  }
+  for (const field of ["input", "output", "cache", "cache-create", "cost", "duration"])
+    if (flags[field] !== undefined && measuredNumber(flags[field]) === null)
+      context.fail(`event --${field} must be numeric`);
+}
+
+export function telemetryCacheUsage(flags) {
+  // `--cache` is the read. A separate write input is required so cache-write
+  // spend remains billable instead of collapsing structurally to zero.
+  const cacheReadTokens = measuredNumber(flags.cache);
+  const cacheCreationTokens = flags["cache-create"] === undefined
+    ? null : measuredNumber(flags["cache-create"]);
+  const measured = [cacheReadTokens, cacheCreationTokens]
+    .filter((value) => value !== null);
+  return {
+    cacheReadTokens,
+    cacheCreationTokens,
+    cacheTokens: measured.length
+      ? measured.reduce((sum, value) => sum + value, 0)
+      : null
+  };
+}
+
+export function buildTelemetryEvent(context, id, flags, snapshot) {
+  return {
+    version: 2,
+    runId: flags.run || process.env.FOUNDATION_RUN_ID ||
+      process.env.FOUNDATION_CLAUDE_SESSION_ID || id,
+    operationId: flags.operation || "unknown",
+    agentId: flags.agent || null,
+    modelId: flags.model || null,
+    requestId: flags.request || null,
+    parentRequestId: flags.parent || null,
+    timestamp: context.now(),
+    inputTokens: measuredNumber(flags.input),
+    outputTokens: measuredNumber(flags.output),
+    ...telemetryCacheUsage(flags),
+    cost: measuredNumber(flags.cost),
+    durationMs: measuredNumber(flags.duration),
+    tool: flags.tool || null,
+    repositoryId: flags.repo || null,
+    taskId: flags.task || null,
+    workspaceHash: snapshot.workspaceHash || null,
+    workspaceSnapshotId: snapshot.snapshotId || snapshot.id || null,
+    changeId: id,
+    source: "host-execution-contract"
+  };
+}
+
+export function assertUniqueTelemetryRequest(context, path, requestId) {
+  if (!existsSync(path)) return;
+  const duplicate = context.readFile(path, "utf8").split("\n")
+    .filter(Boolean).some((line) => {
+      try { return JSON.parse(line).requestId === requestId; }
+      catch { context.fail(`invalid telemetry ledger: ${relative(context.root, path)}`); }
+    });
+  if (duplicate) context.fail(`duplicate telemetry request '${requestId}'`);
+}
+
+export function recordTelemetryEvent(context, id, flags) {
+  const state = context.loadRuntime(id);
+  validateTelemetryEventFlags(context, id, state, flags);
+  const snapshot = state.activeProofRun || context.readJson(context.snapshotPath(id), {});
+  const event = buildTelemetryEvent(context, id, flags, snapshot);
+  if (!event.requestId) context.fail("event requires --request for unique telemetry identity");
+  const path = join(context.logs, id, "events.jsonl");
+  mkdirSync(dirname(path), { recursive: true });
+  assertUniqueTelemetryRequest(context, path, event.requestId);
+  context.append(path, `${JSON.stringify(event)}\n`);
+  context.synchronizeBudgetUsage(
+    state, context.readJsonLines(path), event.runId, "external-events", 1);
+  context.saveRuntime(state);
+  context.reportBudget(id, state);
+}
+
 export function createTelemetryRuntime({
   root,
   logs,
@@ -266,77 +350,6 @@ export function createTelemetryRuntime({
       if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
         console.error(`WARNING: phase telemetry unavailable: ${error.message}`);
     }
-  }
-
-  function recordEvent(id, flags) {
-    const state = loadRuntime(id);
-    if (flags.repo) repositoryById(id, flags.repo, state);
-    if (flags.task) {
-      const taskId = String(flags.task).toUpperCase();
-      const known = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
-        .some((task) => task.id === taskId);
-      if (!known) fail(`event references unknown task '${flags.task}'`);
-      flags.task = taskId;
-    }
-    for (const field of ["input", "output", "cache", "cache-create", "cost", "duration"])
-      if (flags[field] !== undefined && measuredNumber(flags[field]) === null)
-        fail(`event --${field} must be numeric`);
-    const snapshot = state.activeProofRun || readJson(snapshotPath(id), {});
-    // `--cache` is the read. Without a separate write input, `cacheCreationTokens`
-    // was hardcoded null and the budget derived cache-write as
-    // `cacheTokens - cacheReadTokens` — structurally zero for every event
-    // recorded through this path, so cache-write spend was unbillable.
-    const cacheReadTokens = measuredNumber(flags.cache);
-    const cacheCreationTokens = flags["cache-create"] === undefined
-      ? null : measuredNumber(flags["cache-create"]);
-    const cacheTokens = [cacheReadTokens, cacheCreationTokens]
-      .some((value) => value !== null)
-      ? [cacheReadTokens, cacheCreationTokens]
-        .filter((value) => value !== null)
-        .reduce((sum, value) => sum + value, 0)
-      : null;
-    const event = {
-      version: 2,
-      runId: flags.run || process.env.FOUNDATION_RUN_ID ||
-        process.env.FOUNDATION_CLAUDE_SESSION_ID || id,
-      operationId: flags.operation || "unknown",
-      agentId: flags.agent || null,
-      modelId: flags.model || null,
-      requestId: flags.request || null,
-      parentRequestId: flags.parent || null,
-      timestamp: now(),
-      inputTokens: measuredNumber(flags.input),
-      outputTokens: measuredNumber(flags.output),
-      cacheCreationTokens,
-      cacheReadTokens,
-      cacheTokens,
-      cost: measuredNumber(flags.cost),
-      durationMs: measuredNumber(flags.duration),
-      tool: flags.tool || null,
-      repositoryId: flags.repo || null,
-      taskId: flags.task || null,
-      workspaceHash: snapshot.workspaceHash || null,
-      workspaceSnapshotId: snapshot.snapshotId || snapshot.id || null,
-      changeId: id,
-      source: "host-execution-contract"
-    };
-    if (!event.requestId) fail("event requires --request for unique telemetry identity");
-    const path = join(logs, id, "events.jsonl");
-    mkdirSync(dirname(path), { recursive: true });
-    if (existsSync(path)) {
-      const duplicate = readFileSync(path, "utf8").split("\n").filter(Boolean).some((line) => {
-        try {
-          return JSON.parse(line).requestId === event.requestId;
-        } catch {
-          fail(`invalid telemetry ledger: ${relative(root, path)}`);
-        }
-      });
-      if (duplicate) fail(`duplicate telemetry request '${event.requestId}'`);
-    }
-    appendFileSync(path, `${JSON.stringify(event)}\n`);
-    synchronizeBudgetUsage(state, readJsonLines(path), event.runId, "external-events", 1);
-    saveRuntime(state);
-    reportBudget(id, state);
   }
 
   function collectClaudeSources(transcriptPath) {
@@ -587,6 +600,17 @@ export function createTelemetryRuntime({
     });
     console.log(`TELEMETRY ${id}: imported ${imported}; skipped ${rows.length - imported}`);
   }
+
+  const recordEvent = recordTelemetryEvent.bind(null, {
+    root, logs, now, loadRuntime, readJson, snapshotPath, repositoryById,
+    activeChangePath, taskBlocks, fail,
+    readFile: readFileSync,
+    append: appendFileSync,
+    readJsonLines,
+    synchronizeBudgetUsage,
+    saveRuntime,
+    reportBudget
+  });
 
   return {
     appendTelemetryRows,
