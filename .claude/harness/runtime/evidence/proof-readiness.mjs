@@ -228,6 +228,76 @@ export function repositoryInfrastructureIssuesOperation({
   return [...new Set(issues)];
 }
 
+export function visitProviderTopology(providers, provider, trail, state) {
+  if (state.visiting.has(provider)) {
+    state.issues.push(`provider dependency cycle: ${[...trail, provider].join(" -> ")}`);
+    return;
+  }
+  if (state.visited.has(provider) || !providers[provider]) return;
+  state.visiting.add(provider);
+  for (const dependency of providers[provider].dependsOn || [])
+    visitProviderTopology(providers, dependency, [...trail, provider], state);
+  state.visiting.delete(provider);
+  state.visited.add(provider);
+}
+
+export function providerDependencyIssues(providers) {
+  const state = {
+    issues: [],
+    visiting: new Set(),
+    visited: new Set()
+  };
+  for (const provider of Object.keys(providers))
+    visitProviderTopology(providers, provider, [], state);
+  return state.issues;
+}
+
+export function providerReportIssues(providers) {
+  const issues = [];
+  const reportOwners = new Map();
+  for (const [provider, config] of Object.entries(providers)) {
+    if (config.report) {
+      const key = config.report.replaceAll("\\", "/");
+      const owner = reportOwners.get(key);
+      const command = JSON.stringify(config.command || []);
+      if (owner && owner.command !== command)
+        issues.push(`structured report collision: ${key} (${owner.provider}, ${provider})`);
+      else reportOwners.set(key, { provider, command });
+    }
+    if (config.readiness?.url && !config.readiness.expectBody &&
+        !config.readiness.expectHeader)
+      issues.push(`provider '${provider}' readiness lacks an identity body/header`);
+  }
+  return issues;
+}
+
+export function serviceResourceIssues(services = {}) {
+  const issues = [];
+  const owners = new Map();
+  for (const [service, config] of Object.entries(services)) {
+    let port = null;
+    try { port = new URL(config.readiness.url).port || null; } catch {}
+    const resources = [...(config.resources || []), ...(port ? [`port:${port}`] : [])];
+    for (const resource of resources) {
+      const owner = owners.get(resource);
+      if (owner && owner !== service)
+        issues.push(`service resource collision: ${resource} (${owner}, ${service})`);
+      else owners.set(resource, service);
+    }
+  }
+  return issues;
+}
+
+export function topologyIssuesOperation({ evidence }, id) {
+  const contract = evidence(id);
+  const providers = contract.providers || {};
+  return [
+    ...providerDependencyIssues(providers),
+    ...providerReportIssues(providers),
+    ...serviceResourceIssues(contract.execution?.services)
+  ];
+}
+
 export function createProofReadinessRuntime({
   markBlocked = () => {},
   evidence,
@@ -274,57 +344,7 @@ export function createProofReadinessRuntime({
     git
   });
 
-  function topologyIssues(id) {
-    const contract = evidence(id);
-    const providers = contract.providers || {};
-    const issues = [];
-    const visiting = new Set();
-    const visited = new Set();
-    function visit(provider, trail = []) {
-      if (visiting.has(provider)) {
-        issues.push(`provider dependency cycle: ${[...trail, provider].join(" -> ")}`);
-        return;
-      }
-      if (visited.has(provider) || !providers[provider]) return;
-      visiting.add(provider);
-      for (const dependency of providers[provider].dependsOn || [])
-        visit(dependency, [...trail, provider]);
-      visiting.delete(provider);
-      visited.add(provider);
-    }
-    Object.keys(providers).forEach((provider) => visit(provider));
-
-    const reportOwners = new Map();
-    for (const [provider, config] of Object.entries(providers)) {
-      if (config.report) {
-        const key = config.report.replaceAll("\\", "/");
-        const owner = reportOwners.get(key);
-        const command = JSON.stringify(config.command || []);
-        if (owner && owner.command !== command)
-          issues.push(`structured report collision: ${key} (${owner.provider}, ${provider})`);
-        else reportOwners.set(key, { provider, command });
-      }
-      if (config.readiness?.url && !config.readiness.expectBody &&
-          !config.readiness.expectHeader)
-        issues.push(`provider '${provider}' readiness lacks an identity body/header`);
-    }
-
-    const serviceResources = new Map();
-    for (const [service, config] of Object.entries(contract.execution?.services || {})) {
-      let port = null;
-      try {
-        port = new URL(config.readiness.url).port || null;
-      } catch {}
-      const resources = [...(config.resources || []), ...(port ? [`port:${port}`] : [])];
-      for (const resource of resources) {
-        const owner = serviceResources.get(resource);
-        if (owner && owner !== service)
-          issues.push(`service resource collision: ${resource} (${owner}, ${service})`);
-        else serviceResources.set(resource, service);
-      }
-    }
-    return issues;
-  }
+  const topologyIssues = topologyIssuesOperation.bind(null, { evidence });
 
   // `details`, when supplied, collects `{ repositoryId, paths }` per blocked
   // repository so the recovery can render a paste-ready annotation. The string
