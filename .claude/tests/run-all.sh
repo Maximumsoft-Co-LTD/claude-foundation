@@ -119,6 +119,7 @@ diagnostics changes|node --test "$ROOT/.claude/harness/tests/diagnostics-changes
 authority workflow policy|node --test "$ROOT/.claude/harness/tests/workflow-policy.test.mjs"
 apply archive runtime|node --test "$ROOT/.claude/harness/tests/apply-runtime-archive.test.mjs"
 sandbox sync runtime|node --test "$ROOT/.claude/harness/tests/sandbox-runtime-sync.test.mjs"
+sandbox cleanup|node --test "$ROOT/.claude/harness/tests/sandbox-cleanup.test.mjs"
 sandbox create phases|node --test "$ROOT/.claude/harness/tests/sandbox-create-phases.test.mjs"
 change validation phases|node --test "$ROOT/.claude/harness/tests/change-validation-phases.test.mjs"
 semantic invariant validation|node --test "$ROOT/.claude/harness/tests/semantic-invariant-issues.test.mjs"
