@@ -21,6 +21,84 @@ export function requestSummary(id, request) {
   };
 }
 
+export function prepareProofExecution(context, id, options = {}) {
+  if (options.preflight !== false) context.proofPreflight(id, "prove", true);
+  const pending = context.pendingTasks(id);
+  if (pending.length)
+    context.die(`${pending.length} implementation task(s) remain unchecked`);
+  const snapshot = options.snapshot || context.relevantSnapshot(id, null, true);
+  const state = context.loadRuntime(id);
+  const proofRunId = `proof-${Date.now()}`;
+  state.activeProofRun = {
+    id: proofRunId,
+    snapshotId: snapshot.id,
+    workspaceHash: snapshot.workspaceHash,
+    startedAt: context.now()
+  };
+  context.saveRuntime(state);
+  for (const provider of context.requiredProviders(id)) {
+    const row = context.receiptValidity(id, provider, snapshot.workspaceHash);
+    if (row.validity === "reusable-inputs")
+      context.rebindReusableReceipt(id, row, snapshot, proofRunId);
+    else if (row.validity === "reusable-diff")
+      context.rebindDiffBoundReceipt(id, row, snapshot, proofRunId);
+  }
+  return { snapshot, proofRunId };
+}
+
+export function executionAvailabilityError(execution, id) {
+  if (execution.unconfigured.length)
+    return `missing executable adapter for provider(s): ${execution.unconfigured.join(", ")}; record external receipts or configure evidence v2`;
+  if (execution.unavailable.length)
+    return `provider environment unavailable: ${execution.unavailable.join(", ")}; run doctor --stage prove --change ${id}`;
+  return null;
+}
+
+export function assertExecutionAvailable(execution, id) {
+  const error = executionAvailabilityError(execution, id);
+  if (error) throw new Error(error);
+}
+
+export function proofExecutionAdvanceValue(id, options, snapshot, proofRunId, nodes, audit) {
+  if (options.manageReservation === false || !nodes.length) return null;
+  return {
+    version: 1,
+    changeId: id,
+    command: options.command || "proof execute",
+    status: audit.valid ? "PASS" : "ACTION_REQUIRED",
+    stage: audit.valid ? "complete" : "proof-invalid",
+    completed: audit.valid,
+    proofRunId,
+    workspaceHash: snapshot.workspaceHash,
+    providers: audit.valid ? (audit.proof.providers || []) : [],
+    requests: [],
+    executedProviders: nodes.map((node) => node.provider),
+    next: audit.valid ? [{
+      kind: "land",
+      command: `claude-foundation land check ${id}`
+    }] : []
+  };
+}
+
+export async function runProofExecutionNodes(context, id, nodes, proofRunId, options) {
+  if (nodes.length)
+    await context.runExecutionDag(id, nodes, proofRunId, { quiet: options.quiet });
+  else if (!options.quiet)
+    context.log(`EXECUTION ${proofRunId}: all receipts reused`);
+}
+
+export function writeProofExecutionAdvance(
+  context, id, options, snapshot, proofRunId, nodes, audit
+) {
+  const advance = proofExecutionAdvanceValue(
+    id, options, snapshot, proofRunId, nodes, audit);
+  if (advance) context.writeAdvance(id, advance);
+}
+
+export function proofExecutionResult(audit, proofRunId) {
+  return { status: audit.valid ? "PASS" : "ACTION_REQUIRED", proofRunId };
+}
+
 export function createProofExecutionRuntime({
   proofReadinessValue, relevantSnapshot, loadRuntime, saveRuntime, now,
   requiredProviders, receiptValidity, rebindReusableReceipt,
@@ -38,6 +116,11 @@ export function createProofExecutionRuntime({
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
   const { startTrackedServices, stopAll } = createServiceSessions({ startRequiredServices });
+  const prepareProofExecutionFor = prepareProofExecution.bind(null, {
+    proofPreflight, pendingTasks, die, relevantSnapshot, loadRuntime, saveRuntime,
+    now, requiredProviders, receiptValidity, rebindReusableReceipt,
+    rebindDiffBoundReceipt
+  });
 
   // `proof advance` may be invoked by two agents at the same time. The
   // authority store already serializes request mutations, but that is too late
@@ -263,35 +346,13 @@ export function createProofExecutionRuntime({
   }
   
   async function proofExecuteUnlocked(id, options = {}) {
-    if (options.preflight !== false) proofPreflight(id, "prove", true);
-    const pending = pendingTasks(id);
-    if (pending.length) die(`${pending.length} implementation task(s) remain unchecked`);
-    const snapshot = options.snapshot || relevantSnapshot(id, null, true);
-    const state = loadRuntime(id);
-    const proofRunId = `proof-${Date.now()}`;
-    state.activeProofRun = {
-      id: proofRunId,
-      snapshotId: snapshot.id,
-      workspaceHash: snapshot.workspaceHash,
-      startedAt: now()
-    };
-    saveRuntime(state);
-    for (const provider of requiredProviders(id)) {
-      const row = receiptValidity(id, provider, snapshot.workspaceHash);
-      if (row.validity === "reusable-inputs")
-        rebindReusableReceipt(id, row, snapshot, proofRunId);
-      else if (row.validity === "reusable-diff")
-        rebindDiffBoundReceipt(id, row, snapshot, proofRunId);
-    }
+    const { snapshot, proofRunId } = prepareProofExecutionFor(id, options);
     let sessions = [];
     try {
       const hash = snapshot.workspaceHash;
-      const { nodes, unconfigured, unavailable } =
-        options.execution || executionNodes(id, hash);
-      if (unconfigured.length)
-        throw new Error(`missing executable adapter for provider(s): ${unconfigured.join(", ")}; record external receipts or configure evidence v2`);
-      if (unavailable.length)
-        throw new Error(`provider environment unavailable: ${unavailable.join(", ")}; run doctor --stage prove --change ${id}`);
+      const execution = options.execution || executionNodes(id, hash);
+      const { nodes } = execution;
+      assertExecutionAvailable(execution, id);
       const reservation = reserveProviderExecution(
         id, options.command || "proof execute", snapshot.workspaceHash,
         nodes.map((node) => node.provider), options);
@@ -300,11 +361,8 @@ export function createProofExecutionRuntime({
         return reservation;
       }
       sessions = await startTrackedServices(id, nodes, proofRunId);
-      if (nodes.length) await runExecutionDag(id, nodes, proofRunId, {
-        quiet: options.quiet
-      });
-      else if (!options.quiet)
-        console.log(`EXECUTION ${proofRunId}: all receipts reused`);
+      await runProofExecutionNodes(
+        { runExecutionDag, log: console.log }, id, nodes, proofRunId, options);
       const serviceArtifacts = stopAll(sessions)
         .map((artifact) => durableArtifact(id, "service", proofRunId, {
           path: artifact.path,
@@ -317,26 +375,9 @@ export function createProofExecutionRuntime({
       sessions = [];
       prove(id, proofRunId, { quiet: options.quiet });
       const audit = proofAudit(id, true);
-      if (options.manageReservation !== false && nodes.length) {
-        writeAdvance(id, {
-          version: 1,
-          changeId: id,
-          command: options.command || "proof execute",
-          status: audit.valid ? "PASS" : "ACTION_REQUIRED",
-          stage: audit.valid ? "complete" : "proof-invalid",
-          completed: audit.valid,
-          proofRunId,
-          workspaceHash: snapshot.workspaceHash,
-          providers: audit.valid ? (audit.proof.providers || []) : [],
-          requests: [],
-          executedProviders: nodes.map((node) => node.provider),
-          next: audit.valid ? [{
-            kind: "land",
-            command: `claude-foundation land check ${id}`
-          }] : []
-        });
-      }
-      return { status: audit.valid ? "PASS" : "ACTION_REQUIRED", proofRunId };
+      writeProofExecutionAdvance(
+        { writeAdvance }, id, options, snapshot, proofRunId, nodes, audit);
+      return proofExecutionResult(audit, proofRunId);
     } catch (error) {
       stopAll(sessions);
       clearActiveProofRun(id);
