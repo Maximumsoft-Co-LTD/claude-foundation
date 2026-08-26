@@ -7,6 +7,43 @@ import {
 import { dirname, join } from "node:path";
 import { nextCommand } from "./next-step.mjs";
 
+export function changeReadiness(state, proof, current) {
+  if (proof?.status === "pass" && proof.workspaceHash === current)
+    return "ready-to-land";
+  return state.status === "proven" ? "stale-proof" : state.status;
+}
+
+export function changeListingRow(id, {
+  runtimePath,
+  proofPath,
+  readJson,
+  readJsonOrNull,
+  relevantHash,
+  pathExists = existsSync
+}) {
+  let state;
+  if (!pathExists(runtimePath(id))) state = { status: "untracked" };
+  else {
+    state = readJsonOrNull(runtimePath(id));
+    if (state === null)
+      return `${id}\tinvalid-runtime-json\tunknown\tclaude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>`;
+  }
+
+  const proof = pathExists(proofPath(id)) ? readJson(proofPath(id), {}) : null;
+  let current = null;
+  if (state.status !== "untracked") {
+    try {
+      current = relevantHash(id);
+    } catch (error) {
+      if (error.code !== "FOUNDATION_WORKSPACE_MISSING") throw error;
+      return `${id}\tworkspace-missing\t${state.schema || "unknown"}\tclaude-foundation sandbox create ${id}`;
+    }
+  }
+
+  const readiness = changeReadiness(state, proof, current);
+  return `${id}\t${readiness}\t${state.schema || "unknown"}\t${nextCommand(readiness, id)}`;
+}
+
 export function createDiagnosticsRuntime({
   root,
   version,
@@ -111,45 +148,14 @@ export function createDiagnosticsRuntime({
     const ids = activeChanges();
     const orphans = orphanRuntimeChanges();
     if (!ids.length) console.log("No active changes.");
-    for (const id of ids) {
-      // One unreadable state file used to kill the whole listing — every other
-      // change became invisible because of a neighbour. `changes` is how a
-      // stuck project is diagnosed, so it degrades per row instead.
-      let state;
-      if (!existsSync(runtimePath(id))) state = { status: "untracked" };
-      else {
-        state = readJsonOrNull(runtimePath(id));
-        if (state === null) {
-          console.log(`${id}\tinvalid-runtime-json\tunknown\tclaude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>`);
-          continue;
-        }
-      }
-      const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
-      // Same degradation for a change whose recorded workspace is gone: the
-      // snapshot throws with the exit instruction, and this listing is where
-      // that instruction has to reach the operator.
-      let current = null;
-      if (state.status !== "untracked") {
-        try {
-          current = relevantHash(id);
-        } catch (error) {
-          // Only the typed missing-workspace case degrades; anything else
-          // (permissions, git failure) is a real fault this label would hide.
-          if (error.code !== "FOUNDATION_WORKSPACE_MISSING") throw error;
-          console.log(`${id}\tworkspace-missing\t${state.schema || "unknown"
-            }\tclaude-foundation sandbox create ${id}`);
-          continue;
-        }
-      }
-      const readiness = proof?.status === "pass" && proof.workspaceHash === current
-        ? "ready-to-land"
-        : state.status === "proven" ? "stale-proof" : state.status;
-      // A listed change without a real next command reads as a dead entry, so
-      // every reachable status names the operation that moves it. The map now
-      // lives in core/next-step.mjs because this was the only place that knew
-      // it — a listing nobody thinks to run.
-      console.log(`${id}\t${readiness}\t${state.schema || "unknown"}\t${nextCommand(readiness, id)}`);
-    }
+    for (const id of ids)
+      console.log(changeListingRow(id, {
+        runtimePath,
+        proofPath,
+        readJson,
+        readJsonOrNull,
+        relevantHash
+      }));
     for (const orphan of orphans)
       console.log(`${orphan.id}\torphan-runtime\t${orphan.schema}\t${orphan.reason}`);
   }
