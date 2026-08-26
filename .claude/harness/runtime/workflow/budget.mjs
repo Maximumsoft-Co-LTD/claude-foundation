@@ -1,5 +1,29 @@
 import { measuredNumber } from "../core/measured-number.mjs";
 
+export function budgetDirective(ratio, operatorRequired) {
+  if (operatorRequired)
+    return {
+      mode: "operator-required", action: "OPERATOR_REQUIRED",
+      recommendation: "CONTINUE_OR_RESCOPE"
+    };
+  if (ratio >= 1)
+    return {
+      mode: "completion-only", action: "COMPLETION_ONLY",
+      recommendation: "STOP_AND_RESCOPE"
+    };
+  if (ratio >= 0.85)
+    return {
+      mode: "completion-only", action: "COMPLETION_ONLY",
+      recommendation: "STOP_EXPLORATION"
+    };
+  if (ratio >= 0.7)
+    return {
+      mode: "conserve", action: "BATCH_AND_REUSE",
+      recommendation: "BATCH_AND_REUSE"
+    };
+  return { mode: "normal", action: "CONTINUE", recommendation: "CONTINUE" };
+}
+
 export function createBudgetRuntime({ policy, now }) {
   // Spend is new work: what the model read fresh, wrote, and cached for later.
   // Cache reads are excluded on purpose. Every turn re-reads the whole
@@ -209,14 +233,7 @@ export function createBudgetRuntime({ policy, now }) {
     const limiter = !measured ? null
       : tokenRatio > requestRatio ? "tokens" : "requests";
     const operatorRequired = window.mode === "operator-required";
-    const mode = operatorRequired ? "operator-required" :
-      ratio >= 0.85 ? "completion-only" : ratio >= 0.7 ? "conserve" : "normal";
-    const action = operatorRequired ? "OPERATOR_REQUIRED" :
-      ratio >= 1 ? "COMPLETION_ONLY" : ratio >= 0.85 ? "COMPLETION_ONLY" :
-        ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
-    const recommendation = operatorRequired ? "CONTINUE_OR_RESCOPE" :
-      ratio >= 1 ? "STOP_AND_RESCOPE" : ratio >= 0.85 ? "STOP_EXPLORATION" :
-        ratio >= 0.7 ? "BATCH_AND_REUSE" : "CONTINUE";
+    const { mode, action, recommendation } = budgetDirective(ratio, operatorRequired);
     return {
       ratio, measured, limiter, mode, action, recommendation,
       allowed: mode === "completion-only" ? [
@@ -283,7 +300,8 @@ export function createBudgetRuntime({ policy, now }) {
   }
 
   return {
-    eventTokenCount, budgetWindow, initialBudget, knownNumber, ensureBudgetState, eventUsage,
-    activateBudgetWindow, budgetDecision, applyBudgetDecision, synchronizeBudgetUsage
+    eventTokenCount, budgetTargets, budgetWindow, initialBudget, knownNumber,
+    ensureBudgetState, eventUsage, activateBudgetWindow, budgetDecision,
+    applyBudgetDecision, synchronizeBudgetUsage
   };
 }

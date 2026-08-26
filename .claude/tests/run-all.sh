@@ -112,6 +112,7 @@ provider workspace hash|node --test "$ROOT/.claude/harness/tests/provider-worksp
 agent plan view|node --test "$ROOT/.claude/harness/tests/agent-plan-view.test.mjs"
 agent dispatch|node --test "$ROOT/.claude/harness/tests/agent-dispatch.test.mjs"
 budget continuation|node --test "$ROOT/.claude/harness/tests/budget-continuation.test.mjs"
+budget runtime|node --test "$ROOT/.claude/harness/tests/budget-runtime.test.mjs"
 repository topology|node --test "$ROOT/.claude/harness/tests/repository-topology.test.mjs"
 evidence bootstrap|node --test "$ROOT/.claude/harness/tests/evidence-bootstrap.test.mjs" "$ROOT/.claude/harness/tests/evidence-input-coverage.test.mjs"
 command registry|node --test "$ROOT/.claude/harness/tests/command-registry.test.mjs"
