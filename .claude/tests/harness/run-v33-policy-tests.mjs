@@ -5,7 +5,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyReviewRisk } from "../../harness/runtime/evidence/review-routing.mjs";
+import {
+  classifyReviewRisk, highReviewRiskTriggers, mediumReviewRiskTriggers
+} from "../../harness/runtime/evidence/review-routing.mjs";
 import {
   criticalCaseResult, enforceCriticalCases, mutationReceiptClassification,
   mutationV2Result, providerExecutionEnvironment
@@ -50,6 +52,27 @@ assert.deepEqual(high.route, ["ai-full", "ai-delta-after-correction"]);
 assert.equal(high.maxAiAttempts, 2);
 assert.equal(high.requiresHumanFinal, false);
 pass("legacy queue activation uses bounded AI full and correction closure");
+
+const compositeInput = {
+  state: {
+    intent: "Authorize destructive migration", impact: "high", coupling: "coupled",
+    securityTriggers: ["credential"]
+  },
+  claims: [{ impact: "high" }],
+  capabilities: new Set(["security-static", "data-migration"]),
+  grounding: { risk: { tier: "high", classes: ["money"] } },
+  requiredTriggers: ["review"]
+};
+assert.deepEqual(highReviewRiskTriggers(compositeInput), [
+  "declared-high-risk", "declared-critical-class", "high-impact",
+  "authorization-or-secrets", "destructive-data-or-external-contract",
+  "critical-semantics"
+]);
+assert.deepEqual(mediumReviewRiskTriggers({
+  ...compositeInput, grounding: { risk: { tier: "medium" } }
+}), ["declared-medium-risk", "medium-impact-or-coupling", "review-risk"]);
+assert.equal(classifyReviewRisk(compositeInput).tier, "high");
+pass("composite review risk preserves every declared and inferred trigger");
 
 let reopenState = {
   id: "reopen-change", intent: "revise one locked decision", schema: "foundation-standard",
