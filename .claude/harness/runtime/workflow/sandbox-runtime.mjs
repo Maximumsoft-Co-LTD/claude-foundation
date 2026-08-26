@@ -10,6 +10,40 @@ import {
   ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
 } from "../core/workspace-surface.mjs";
 
+// A commit read, not executed. Inspection must not resolve a program through
+// PATH, so ref files are the authority for both ordinary and linked worktrees.
+export function headOfRepository(start) {
+  let gitPath = join(start, ".git");
+  if (!existsSync(gitPath)) return null;
+  try {
+    if (statSync(gitPath).isFile()) {
+      const pointer = readFileSync(gitPath, "utf8").match(/^gitdir:\s*(.+?)\s*$/m);
+      if (!pointer) return null;
+      gitPath = resolve(start, pointer[1]);
+    }
+    const head = readFileSync(join(gitPath, "HEAD"), "utf8").trim();
+    if (/^[0-9a-f]{40}$/i.test(head)) return head;
+    const ref = head.match(/^ref:\s*(.+)$/)?.[1]?.trim();
+    if (!ref) return null;
+    const loose = join(gitPath, ...ref.split("/"));
+    if (existsSync(loose)) {
+      const value = readFileSync(loose, "utf8").trim();
+      return /^[0-9a-f]{40}$/i.test(value) ? value : null;
+    }
+    // A ref that has been packed away has no loose file, and a repository
+    // that has ever been gc'd keeps most of its refs that way.
+    const packed = join(gitPath, "packed-refs");
+    if (!existsSync(packed)) return null;
+    for (const line of readFileSync(packed, "utf8").split("\n")) {
+      const match = line.match(/^([0-9a-f]{40})\s+(.+)$/);
+      if (match && match[2].trim() === ref) return match[1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function workspaceIsolationKind(mode) {
   if (mode === "worktree") return "git-worktree";
   if (mode === "copy") return "filesystem-copy";
@@ -827,45 +861,6 @@ export function createSandboxRuntime({
     fail,
     output: console
   });
-
-  // A commit read, not executed.
-  //
-  // Isolation inspection is the diagnostic someone reaches for when the
-  // environment is suspect, and the unattended preflight beside it decides
-  // whether running anything is safe at all — so neither may resolve a program
-  // through PATH. Shelling out to `git rev-parse` here would hand the decision
-  // to whatever PATH happens to name. The ref files answer the same question.
-  function headOfRepository(start) {
-    let gitPath = join(start, ".git");
-    if (!existsSync(gitPath)) return null;
-    try {
-      if (statSync(gitPath).isFile()) {
-        const pointer = readFileSync(gitPath, "utf8").match(/^gitdir:\s*(.+?)\s*$/m);
-        if (!pointer) return null;
-        gitPath = resolve(start, pointer[1]);
-      }
-      const head = readFileSync(join(gitPath, "HEAD"), "utf8").trim();
-      if (/^[0-9a-f]{40}$/i.test(head)) return head;
-      const ref = head.match(/^ref:\s*(.+)$/)?.[1]?.trim();
-      if (!ref) return null;
-      const loose = join(gitPath, ...ref.split("/"));
-      if (existsSync(loose)) {
-        const value = readFileSync(loose, "utf8").trim();
-        return /^[0-9a-f]{40}$/i.test(value) ? value : null;
-      }
-      // A ref that has been packed away has no loose file, and a repository
-      // that has ever been gc'd keeps most of its refs that way.
-      const packed = join(gitPath, "packed-refs");
-      if (!existsSync(packed)) return null;
-      for (const line of readFileSync(packed, "utf8").split("\n")) {
-        const match = line.match(/^([0-9a-f]{40})\s+(.+)$/);
-        if (match && match[2].trim() === ref) return match[1];
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
 
   const workspaceInspection = workspaceInspectionFor({
     root,
