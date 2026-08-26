@@ -131,6 +131,58 @@ export function externalEvidenceRecoveryOperation({
   return genericExternalEvidenceRecovery(provider, wiringChoice(id, provider));
 }
 
+export function repositoryRuntimeState(state, repository) {
+  return state.repositories?.[repository.id] ||
+    (repository.id === "root" ? state.workspace : null) || {};
+}
+
+export function repositoryInfrastructureIssueRows({
+  provider,
+  repository,
+  runtime,
+  pathExists,
+  git
+}) {
+  if (!pathExists(repository.workspacePath))
+    return [`provider '${provider}' repository '${repository.id}' workspace is missing`];
+  const issues = [];
+  if (repository.mode === "read" && runtime.mode === "reference")
+    issues.push(`provider '${provider}' repository '${repository.id}' is a live reference, not an isolated workspace`);
+  if (runtime.setup?.status === "failed")
+    issues.push(`provider '${provider}' repository '${repository.id}' setup failed`);
+  if (repository.mode === "read" && runtime.mode === "worktree") {
+    const changed = git(["status", "--porcelain"], repository.workspacePath);
+    if (changed.status !== 0 || changed.stdout.trim())
+      issues.push(`provider '${provider}' read-only repository '${repository.id}' changed: ${
+        changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
+  }
+  return issues;
+}
+
+export function repositoryInfrastructureIssuesOperation({
+  loadRuntime,
+  requiredProviders,
+  providerConfig,
+  providerRepositories,
+  pathExists,
+  git
+}, id) {
+  const state = loadRuntime(id);
+  const issues = [];
+  for (const provider of requiredProviders(id)) {
+    const config = providerConfig(id, provider) || {};
+    for (const repository of providerRepositories(id, provider, config))
+      issues.push(...repositoryInfrastructureIssueRows({
+        provider,
+        repository,
+        runtime: repositoryRuntimeState(state, repository),
+        pathExists,
+        git
+      }));
+  }
+  return [...new Set(issues)];
+}
+
 export function createProofReadinessRuntime({
   markBlocked = () => {},
   evidence,
@@ -168,32 +220,14 @@ export function createProofReadinessRuntime({
   saveRuntime,
   fail
 }) {
-  function repositoryInfrastructureIssues(id) {
-    const state = loadRuntime(id);
-    const issues = [];
-    for (const provider of requiredProviders(id)) {
-      const config = providerConfig(id, provider) || {};
-      for (const repository of providerRepositories(id, provider, config)) {
-        const runtime = state.repositories?.[repository.id] ||
-          (repository.id === "root" ? state.workspace : null) || {};
-        if (!existsSync(repository.workspacePath)) {
-          issues.push(`provider '${provider}' repository '${repository.id}' workspace is missing`);
-          continue;
-        }
-        if (repository.mode === "read" && runtime.mode === "reference")
-          issues.push(`provider '${provider}' repository '${repository.id}' is a live reference, not an isolated workspace`);
-        if (runtime.setup?.status === "failed")
-          issues.push(`provider '${provider}' repository '${repository.id}' setup failed`);
-        if (repository.mode === "read" && runtime.mode === "worktree") {
-          const changed = git(["status", "--porcelain"], repository.workspacePath);
-          if (changed.status !== 0 || changed.stdout.trim())
-            issues.push(`provider '${provider}' read-only repository '${repository.id}' changed: ${
-              changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
-        }
-      }
-    }
-    return [...new Set(issues)];
-  }
+  const repositoryInfrastructureIssues = repositoryInfrastructureIssuesOperation.bind(null, {
+    loadRuntime,
+    requiredProviders,
+    providerConfig,
+    providerRepositories,
+    pathExists: existsSync,
+    git
+  });
 
   function topologyIssues(id) {
     const contract = evidence(id);
