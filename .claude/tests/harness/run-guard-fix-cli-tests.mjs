@@ -17,6 +17,29 @@ import {
 const fail = (message) => { throw new Error(message); };
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail });
 
+{
+  const schema = { boolean: ["force"], value: ["owner", "reason"] };
+  assert.deepEqual(parseStrictCommandFlags([
+    "change", "--force", "--owner", "agent", "--reason=contains=equals"
+  ], "agents release", schema), {
+    flags: { force: true, owner: "agent", reason: "contains=equals" },
+    rest: ["change"]
+  });
+  assert.throws(() => parseStrictCommandFlags(
+    ["--unknown"], "agents release", schema),
+  /does not support --unknown[\s\S]*supported: --force, --owner <value>, --reason <value>/);
+  assert.throws(() => parseStrictCommandFlags(
+    ["--"], "agents release", {}), /does not support --<empty>[\s\S]*no flags/);
+  assert.throws(() => parseStrictCommandFlags(
+    ["--force", "--force"], "agents release", schema), /duplicate --force/);
+  assert.throws(() => parseStrictCommandFlags(
+    ["--force=yes"], "agents release", schema), /does not accept a value/);
+  assert.throws(() => parseStrictCommandFlags(
+    ["--owner"], "agents release", schema), /requires a value/);
+  assert.throws(() => parseStrictCommandFlags(
+    ["--owner", "--force"], "agents release", schema), /requires a value/);
+}
+
 async function route(command, values, overrides) {
   await routeRuntimeCommand(command, values, {
     parseFlags, parseStrictCommandFlags, fail, ...overrides
