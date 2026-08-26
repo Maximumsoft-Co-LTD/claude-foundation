@@ -157,6 +157,91 @@ export function settleLandJournalOperation(
   finishManualRecovery(context, journal);
 }
 
+export function restoreLandJournalEntry(context, journal, entry) {
+  const target = context.safeRootPath(entry.path);
+  const current = context.pathIdentity(target);
+  if (context.matches(target, entry, "before")) return;
+  const possiblyApplied = journal.appliedPaths.includes(entry.path) ||
+    journal.inFlightPaths.includes(entry.path);
+  if (!possiblyApplied || (!context.matches(target, entry, "after") && current !== null))
+    throw new Error(`rollback requires manual recovery at '${entry.path}'`);
+  if (current !== null) context.remove(target, { recursive: true });
+  if (entry.before !== null)
+    context.copyPath(join(context.transactionRoot(
+      journal.changeId, journal.transactionId), entry.backup), target);
+  if (!context.matches(target, entry, "before"))
+    throw new Error(`rollback verification failed at '${entry.path}'`);
+}
+
+export function rollbackLandJournalOperation(context, journal, reason) {
+  journal.status = "rolling-back";
+  journal.failure = String(reason?.message || reason);
+  context.save(journal);
+  try {
+    for (const entry of [...journal.entries].reverse())
+      context.restoreEntry(journal, entry);
+    journal.status = "rolled-back";
+    journal.inFlightPaths = [];
+    journal.rolledBackAt = context.now();
+    context.save(journal);
+  } catch (error) {
+    journal.status = "manual-recovery";
+    journal.recoveryError = error.message;
+    journal.decision = {
+      kind: "manual-recovery",
+      summary: "The target changed during rollback, so Foundation stopped without overwriting the divergent content.",
+      options: [
+        { id: "inspect", outcome: "Inspect the target and transaction backup before choosing a recovery." },
+        { id: "keep-current", outcome: "Preserve the current target and abandon automatic rollback." },
+        { id: "restore-backup", outcome: "Restore the recorded backup after explicitly resolving the divergence." },
+        { id: "pause", outcome: "Leave the journal pending and make no further changes." }
+      ],
+      recommended: "inspect",
+      transactionRoot: context.transactionRoot(journal.changeId, journal.transactionId)
+    };
+    context.save(journal);
+    throw error;
+  }
+}
+
+export function verifyLandJournalOperation(context, state) {
+  const transactionId = state.workspace?.apply?.transactionId;
+  if (!transactionId) return { valid: false, reason: "missing-apply-transaction" };
+  const path = context.journalPath(state.id, transactionId);
+  if (!context.exists(path)) return { valid: false, reason: "missing-apply-journal" };
+  const journal = context.readJson(path);
+  for (const entry of journal.entries) {
+    if (!context.matches(context.safeRootPath(entry.path), entry, "after"))
+      return { valid: false, reason: `projection-mismatch:${entry.path}` };
+  }
+  if (journal.projectionHash !== state.workspace.apply.projectionHash)
+    return { valid: false, reason: "projection-identity-mismatch" };
+  return { valid: true, journal };
+}
+
+export function cleanupLandJournalOperation(context, state) {
+  const transactionId = state.workspace?.apply?.transactionId;
+  if (!transactionId) return { status: "not-needed" };
+  const transactionPath = context.transactionRoot(state.id, transactionId);
+  try {
+    for (const name of ["backup", "stage"]) {
+      const path = join(transactionPath, name);
+      if (context.exists(path)) context.remove(path, { recursive: true });
+    }
+    const path = context.journalPath(state.id, transactionId);
+    if (context.exists(path)) {
+      const journal = context.readJson(path);
+      journal.status = "committed";
+      journal.committedAt = context.now();
+      delete journal.inFlightPaths;
+      context.save(journal);
+    }
+    return { status: "committed", transactionId };
+  } catch (error) {
+    return { status: "failed", transactionId, reason: error.message };
+  }
+}
+
 export function createLandJournal({
   root, transactions, fileDigest, directoryHash, pathInside, readJson, writeJson, now
 }) {
@@ -232,50 +317,12 @@ export function createLandJournal({
     env: process.env
   });
 
-  function restoreEntry(journal, entry) {
-    const target = safeRootPath(entry.path);
-    const current = pathIdentity(target);
-    if (matches(target, entry, "before")) return;
-    const possiblyApplied = journal.appliedPaths.includes(entry.path) ||
-      journal.inFlightPaths.includes(entry.path);
-    if (!possiblyApplied || (!matches(target, entry, "after") && current !== null))
-      throw new Error(`rollback requires manual recovery at '${entry.path}'`);
-    if (current !== null) rmSync(target, { recursive: true });
-    if (entry.before !== null)
-      copyPath(join(transactionRoot(journal.changeId, journal.transactionId), entry.backup), target);
-    if (!matches(target, entry, "before"))
-      throw new Error(`rollback verification failed at '${entry.path}'`);
-  }
-
-  function rollback(journal, reason) {
-    journal.status = "rolling-back";
-    journal.failure = String(reason?.message || reason);
-    save(journal);
-    try {
-      for (const entry of [...journal.entries].reverse()) restoreEntry(journal, entry);
-      journal.status = "rolled-back";
-      journal.inFlightPaths = [];
-      journal.rolledBackAt = now();
-      save(journal);
-    } catch (error) {
-      journal.status = "manual-recovery";
-      journal.recoveryError = error.message;
-      journal.decision = {
-        kind: "manual-recovery",
-        summary: "The target changed during rollback, so Foundation stopped without overwriting the divergent content.",
-        options: [
-          { id: "inspect", outcome: "Inspect the target and transaction backup before choosing a recovery." },
-          { id: "keep-current", outcome: "Preserve the current target and abandon automatic rollback." },
-          { id: "restore-backup", outcome: "Restore the recorded backup after explicitly resolving the divergence." },
-          { id: "pause", outcome: "Leave the journal pending and make no further changes." }
-        ],
-        recommended: "inspect",
-        transactionRoot: transactionRoot(journal.changeId, journal.transactionId)
-      };
-      save(journal);
-      throw error;
-    }
-  }
+  const restoreEntry = restoreLandJournalEntry.bind(null, {
+    safeRootPath, pathIdentity, matches, remove: rmSync, copyPath, transactionRoot
+  });
+  const rollback = rollbackLandJournalOperation.bind(null, {
+    restoreEntry, save, now, transactionRoot
+  });
 
   const settle = settleLandJournalOperation.bind(null, {
     safeRootPath, pathIdentity, pathMode, now, save, matches, transactionRoot,
@@ -283,42 +330,13 @@ export function createLandJournal({
     makeDirectory: mkdirSync, rename: renameSync
   });
 
-  function verify(state) {
-    const transactionId = state.workspace?.apply?.transactionId;
-    if (!transactionId) return { valid: false, reason: "missing-apply-transaction" };
-    const path = journalPath(state.id, transactionId);
-    if (!existsSync(path)) return { valid: false, reason: "missing-apply-journal" };
-    const journal = readJson(path);
-    const mismatch = journal.entries.find((entry) =>
-      !matches(safeRootPath(entry.path), entry, "after"));
-    if (mismatch) return { valid: false, reason: `projection-mismatch:${mismatch.path}` };
-    if (journal.projectionHash !== state.workspace.apply.projectionHash)
-      return { valid: false, reason: "projection-identity-mismatch" };
-    return { valid: true, journal };
-  }
-
-  function cleanup(state) {
-    const transactionId = state.workspace?.apply?.transactionId;
-    if (!transactionId) return { status: "not-needed" };
-    const transactionPath = transactionRoot(state.id, transactionId);
-    try {
-      for (const name of ["backup", "stage"]) {
-        const path = join(transactionPath, name);
-        if (existsSync(path)) rmSync(path, { recursive: true });
-      }
-      const path = journalPath(state.id, transactionId);
-      if (existsSync(path)) {
-        const journal = readJson(path);
-        journal.status = "committed";
-        journal.committedAt = now();
-        delete journal.inFlightPaths;
-        save(journal);
-      }
-      return { status: "committed", transactionId };
-    } catch (error) {
-      return { status: "failed", transactionId, reason: error.message };
-    }
-  }
+  const verify = verifyLandJournalOperation.bind(null, {
+    journalPath, exists: existsSync, readJson, matches, safeRootPath
+  });
+  const cleanup = cleanupLandJournalOperation.bind(null, {
+    transactionRoot, exists: existsSync, remove: rmSync,
+    journalPath, readJson, now, save
+  });
 
   return {
     pathIdentity, pathMode, safeRootPath, copyPath,
