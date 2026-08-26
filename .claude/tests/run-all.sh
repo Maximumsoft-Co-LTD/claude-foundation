@@ -95,6 +95,7 @@ dashboard contracts|npm --prefix "$ROOT/dashboard" test
 quality tooling|node --test "$ROOT"/scripts/quality/test/*.test.mjs && node "$ROOT/scripts/quality/validate-config.mjs" && node "$ROOT/scripts/quality/validate-exceptions.mjs" && bash "$ROOT/scripts/quality/check-static-surfaces.sh"
 runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
 runtime environment policy|node --test "$HERE/harness/run-runtime-environment-policy-tests.mjs"
+state runtime helpers|node --test "$ROOT/.claude/harness/tests/state-runtime-helpers.test.mjs"
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 artifact store|node --test "$ROOT/.claude/harness/tests/artifact-store.test.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
