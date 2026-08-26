@@ -17,6 +17,44 @@ export const REVIEW_FORCING_CAPABILITIES = Object.freeze([
 export const REVIEW_DIVERSITY_CAPABILITIES = Object.freeze([
   "security-static", "data-migration", "compatibility"
 ]);
+export const ENVIRONMENT_LOCKFILES = Object.freeze([
+  "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
+  "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock"
+]);
+
+export function environmentWorkspace({ root, repositoryById, loadRuntime }, config, id) {
+  if (id && config?.repository)
+    return repositoryById(id, config.repository).workspacePath;
+  if (id) return loadRuntime(id).workspace?.path || root;
+  return root;
+}
+
+export function environmentLockfiles(workspace, fileDigest) {
+  return ENVIRONMENT_LOCKFILES
+    .filter((name) => existsSync(join(workspace, name)))
+    .map((name) => ({ path: name, sha256: fileDigest(join(workspace, name)) }));
+}
+
+export function environmentDescriptorOperation({
+  root,
+  repositoryById,
+  loadRuntime,
+  fileDigest,
+  stableHash
+}, config = null, id = null) {
+  const workspace = environmentWorkspace({ root, repositoryById, loadRuntime }, config, id);
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    node: process.versions.node,
+    declared: config?.environment || null,
+    envFingerprint: stableHash({
+      literals: config?.env || {},
+      inheritedNames: config?.envFrom || []
+    }),
+    lockfiles: environmentLockfiles(workspace, fileDigest)
+  };
+}
 
 export function collectReviewSignals(state, contract, configuredCapabilities = []) {
   const capabilities = new Set([
@@ -822,27 +860,13 @@ export function createEvidenceContract({
     };
   }
   
-  function environmentDescriptor(config = null, id = null) {
-    const workspace = id && config?.repository
-      ? repositoryById(id, config.repository).workspacePath
-      : (id ? loadRuntime(id).workspace?.path || ROOT : ROOT);
-    const lockfiles = [
-      "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
-      "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock"
-    ].filter((name) => existsSync(join(workspace, name)))
-      .map((name) => ({ path: name, sha256: fileDigest(join(workspace, name)) }));
-    return {
-      platform: process.platform,
-      arch: process.arch,
-      node: process.versions.node,
-      declared: config?.environment || null,
-      envFingerprint: stableHash({
-        literals: config?.env || {},
-        inheritedNames: config?.envFrom || []
-      }),
-      lockfiles
-    };
-  }
+  const environmentDescriptor = environmentDescriptorOperation.bind(null, {
+    root: ROOT,
+    repositoryById,
+    loadRuntime,
+    fileDigest,
+    stableHash
+  });
   
   function contractFingerprint(id, dir = activeChangePath(id)) {
     const state = loadRuntime(id);

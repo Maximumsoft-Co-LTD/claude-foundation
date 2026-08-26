@@ -81,6 +81,7 @@ runtime environment policy|node --test "$HERE/harness/run-runtime-environment-po
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
 artifact store|node --test "$ROOT/.claude/harness/tests/artifact-store.test.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
+environment descriptor|node --test "$ROOT/.claude/harness/tests/environment-descriptor.test.mjs"
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
 telemetry record event|node --test "$ROOT/.claude/harness/tests/telemetry-record-event.test.mjs"
