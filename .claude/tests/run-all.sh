@@ -79,6 +79,7 @@ quality tooling|node --test "$ROOT"/scripts/quality/test/*.test.mjs && node "$RO
 runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
 runtime environment policy|node --test "$HERE/harness/run-runtime-environment-policy-tests.mjs"
 receipt runtime|node --test "$HERE/harness/run-receipt-runtime-tests.mjs"
+artifact store|node --test "$ROOT/.claude/harness/tests/artifact-store.test.mjs"
 evidence contract|node --test "$HERE/harness/run-evidence-contract-tests.mjs"
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
