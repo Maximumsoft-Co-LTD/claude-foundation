@@ -138,6 +138,15 @@ test("a live lease returns wait and never another spawn group", () => {
   assert.equal("workers" in value, false);
 });
 
+test("a legacy live lease exposes unknown optional fencing fields as null", () => {
+  const value = runtime(plan(), [{
+    taskId: "T001", owner: "worker-a", expiresAt: "2026-08-19T08:00:00.000Z"
+  }]).dispatchValue("dispatch-change");
+  assert.equal(value.activeWorkers[0].leaseId, null);
+  assert.equal(value.activeWorkers[0].fencingGeneration, null);
+  assert.equal(value.activeWorkers[0].executionAttempt, null);
+});
+
 function leaseRuntimeFixture(root, planValue) {
   return createLeaseRuntime({
     leases: root,
@@ -258,13 +267,17 @@ test("a non-dispatchable plan returns its existing blockers", () => {
   assert.equal("workers" in value, false);
 });
 
-test("oversized dispatch output returns a bounded recovery action", () => {
-  const dispatch = runtime(plan({
-    maxParallelAgents: 16,
-    groups: [[...Array(16)].map((_, index) => `T${String(index + 1).padStart(3, "0")}`)],
-    tasks: [...Array(16)].map((_, index) =>
-      task(`T${String(index + 1).padStart(3, "0")}`, `repository-${"x".repeat(80)}-${index}`))
-  }), [], 1024);
+test("dispatch rejects missing changes and empty planned frontiers", () => {
+  assert.throws(() => runtime(plan()).dispatchValue(),
+    /agents dispatch requires <change>/);
+  assert.throws(() => runtime(plan({ groups: [], tasks: [] }))
+    .dispatchValue("dispatch-change"), /has no dispatchable task group/);
+  assert.throws(() => runtime(plan({ groups: [["missing"]], tasks: [] }))
+    .dispatchValue("dispatch-change"), /has no dispatchable task group/);
+});
+
+test("dispatch writes an ordinary decision without truncating it", () => {
+  const dispatch = runtime(plan());
   let output = "";
   const originalWrite = process.stdout.write;
   process.stdout.write = (chunk) => { output += String(chunk); return true; };
@@ -273,11 +286,75 @@ test("oversized dispatch output returns a bounded recovery action", () => {
   } finally {
     process.stdout.write = originalWrite;
   }
+  const value = JSON.parse(output);
+  assert.equal(value.action, "spawn-group");
+  assert.equal(value.workersTruncated, undefined);
+});
+
+test("oversized dispatch output returns a bounded recovery action", () => {
+  const planValue = plan({
+    maxParallelAgents: 16,
+    groups: [[...Array(16)].map((_, index) => `T${String(index + 1).padStart(3, "0")}`)],
+    tasks: [...Array(16)].map((_, index) =>
+      task(`T${String(index + 1).padStart(3, "0")}`, `repository-${"x".repeat(80)}-${index}`))
+  });
+  const full = runtime(planValue).dispatchValue("dispatch-change");
+  const oneWorker = {
+    ...full,
+    workerCount: 1,
+    totalReadyWorkerCount: full.workers.length,
+    workersTruncated: true,
+    workersDigest: hash(full.workers),
+    workers: full.workers.slice(0, 1)
+  };
+  const limit = Buffer.byteLength(JSON.stringify(oneWorker));
+  const dispatch = runtime(planValue, [], limit);
+  let output = "";
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => { output += String(chunk); return true; };
+  try {
+    dispatch.showDispatch("dispatch-change");
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  assert.ok(Buffer.byteLength(output) <= limit);
+  const value = JSON.parse(output);
+  assert.equal(value.action, "spawn-group");
+  assert.equal(value.workersTruncated, true);
+  assert.equal(value.workers.length, 1);
+});
+
+test("oversized wait output truncates active workers deterministically", () => {
+  const active = [...Array(16)].map((_, index) => ({
+    taskId: `T${String(index + 1).padStart(3, "0")}`,
+    owner: `worker-${"x".repeat(80)}-${index}`,
+    leaseId: `lease-${index}`,
+    fencingGeneration: index + 1,
+    executionAttempt: 1,
+    expiresAt: "2026-08-19T08:00:00.000Z"
+  }));
+  const dispatch = runtime(plan(), active, 1024);
+  let output = "";
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => { output += String(chunk); return true; };
+  try {
+    dispatch.showDispatch("dispatch-change", { pretty: true });
+  } finally {
+    process.stdout.write = originalWrite;
+  }
   assert.ok(Buffer.byteLength(output) <= 1024);
   const value = JSON.parse(output);
-  assert.ok(["spawn-group", "blocked"].includes(value.action));
-  if (value.action === "spawn-group") assert.equal(value.workersTruncated, true);
-  else assert.match(value.nextCommand, /agents plan/);
+  assert.equal(value.action, "wait");
+  assert.equal(value.activeWorkerCount, 16);
+  assert.equal(value.activeWorkersTruncated, true);
+  assert.ok(value.activeWorkers.length < 16);
+  assert.match(value.activeWorkersDigest, /^[a-f0-9]{64}$/);
+});
+
+test("dispatch fails closed when even its recovery decision exceeds the limit", () => {
+  const dispatch = runtime(plan(), [], 1);
+  assert.throws(() => dispatch.showDispatch("dispatch-change"),
+    /recovery decision exceeds 1 bytes/);
 });
 
 test("runtime router exposes the strict host dispatch command", async () => {
