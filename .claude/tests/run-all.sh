@@ -120,6 +120,7 @@ sandbox sync runtime|node --test "$ROOT/.claude/harness/tests/sandbox-runtime-sy
 sandbox create phases|node --test "$ROOT/.claude/harness/tests/sandbox-create-phases.test.mjs"
 change validation phases|node --test "$ROOT/.claude/harness/tests/change-validation-phases.test.mjs"
 semantic invariant validation|node --test "$ROOT/.claude/harness/tests/semantic-invariant-issues.test.mjs"
+waive gate|node --test "$ROOT/.claude/harness/tests/waive-gate.test.mjs"
 land check phases|node --test "$ROOT/.claude/harness/tests/land-check-phases.test.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"

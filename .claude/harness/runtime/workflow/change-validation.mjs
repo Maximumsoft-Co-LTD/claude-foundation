@@ -288,6 +288,57 @@ export function reportValidationReviewAssurance(quiet, resolvable, policy,
   return assurance;
 }
 
+export function waiverRequest(flags, fail) {
+  const capability = String(flags.capability || "").trim();
+  const decisionRef = String(flags["decision-ref"] || "").trim();
+  const reason = String(flags.reason || "").trim();
+  if (!capability) fail("change waive requires --capability <capability>");
+  if (!decisionRef)
+    fail("change waive requires --decision-ref <host-user-decision>; ask the user to authorize withdrawing this gate before recording it");
+  return { capability, decisionRef, reason };
+}
+
+export function revokeGateWaiver(context, id, state, waivers, request) {
+  if (!waivers.some((row) => row.capability === request.capability))
+    context.fail(`capability '${request.capability}' has no recorded waiver to revoke`);
+  state.waivers = waivers.filter((row) => row.capability !== request.capability);
+  context.saveRuntime(state);
+  context.log(`WAIVER REVOKED ${id}/${request.capability}\n  the capability is required again\n  next: claude-foundation proof run ${id}`);
+}
+
+export function assertWaivableCapability(context, id, request, waivers) {
+  if (!request.reason) context.fail("change waive requires --reason <why>");
+  if (request.capability === "review")
+    context.fail("review cannot be waived here; use the configured risk route or record an explicit policy/change decision");
+  if (request.capability === "acceptance")
+    context.fail(`acceptance cannot be waived here; withdraw the requirement instead: claude-foundation change resolve ${id} --acceptance-not-required`);
+  if (waivers.some((row) => row.capability === request.capability))
+    context.fail(`capability '${request.capability}' is already waived`);
+  const required = context.requiredProviders(id);
+  if (!required.includes(request.capability) && !required.some((provider) =>
+    context.providerCapability(provider,
+      context.providerConfig(id, provider)) === request.capability))
+    context.fail(`capability '${request.capability}' is not required by change '${id}'; nothing to waive`);
+}
+
+export function waiveGateOperation(context, id, flags = {}) {
+  const request = waiverRequest(flags, context.fail);
+  const state = context.loadRuntime(id);
+  if (state.status === "archived") context.fail(`change '${id}' is already archived`);
+  const waivers = state.waivers || [];
+  if (flags.revoke)
+    return revokeGateWaiver(context, id, state, waivers, request);
+  assertWaivableCapability(context, id, request, waivers);
+  state.waivers = [...waivers, {
+    capability: request.capability,
+    reason: request.reason,
+    authority: { kind: "host-user-decision", reference: request.decisionRef },
+    recordedAt: context.now()
+  }];
+  context.saveRuntime(state);
+  context.log(`GATE WAIVED ${id}/${request.capability}\n  reason: ${request.reason}\n  decision: ${request.decisionRef}\n  recorded in proof advisories; the claim keeps declaring it\n  next: claude-foundation proof run ${id}`);
+}
+
 function failValidationLayer(fail, name, issues) {
   if (issues.length)
     fail(`${name} validation failed:\n  - ${issues.join("\n  - ")}`);
@@ -1337,44 +1388,10 @@ export function createChangeValidationRuntime({
     ];
   }
 
-  function waiveGate(id, flags = {}) {
-    const capability = String(flags.capability || "").trim();
-    const decisionRef = String(flags["decision-ref"] || "").trim();
-    const reason = String(flags.reason || "").trim();
-    if (!capability) fail("change waive requires --capability <capability>");
-    if (!decisionRef)
-      fail("change waive requires --decision-ref <host-user-decision>; ask the user to authorize withdrawing this gate before recording it");
-    const state = loadRuntime(id);
-    if (state.status === "archived") fail(`change '${id}' is already archived`);
-    const waivers = state.waivers || [];
-    if (flags.revoke) {
-      if (!waivers.some((row) => row.capability === capability))
-        fail(`capability '${capability}' has no recorded waiver to revoke`);
-      state.waivers = waivers.filter((row) => row.capability !== capability);
-      saveRuntime(state);
-      console.log(`WAIVER REVOKED ${id}/${capability}\n  the capability is required again\n  next: claude-foundation proof run ${id}`);
-      return;
-    }
-    if (!reason) fail("change waive requires --reason <why>");
-    if (capability === "review")
-      fail("review cannot be waived here; use the configured risk route or record an explicit policy/change decision");
-    if (capability === "acceptance")
-      fail(`acceptance cannot be waived here; withdraw the requirement instead: claude-foundation change resolve ${id} --acceptance-not-required`);
-    if (waivers.some((row) => row.capability === capability))
-      fail(`capability '${capability}' is already waived`);
-    const required = requiredProviders(id);
-    if (!required.includes(capability) && !required.some((provider) =>
-      providerCapability(provider, providerConfig(id, provider)) === capability))
-      fail(`capability '${capability}' is not required by change '${id}'; nothing to waive`);
-    state.waivers = [...waivers, {
-      capability,
-      reason,
-      authority: { kind: "host-user-decision", reference: decisionRef },
-      recordedAt: now()
-    }];
-    saveRuntime(state);
-    console.log(`GATE WAIVED ${id}/${capability}\n  reason: ${reason}\n  decision: ${decisionRef}\n  recorded in proof advisories; the claim keeps declaring it\n  next: claude-foundation proof run ${id}`);
-  }
+  const waiveGate = waiveGateOperation.bind(null, {
+    loadRuntime, saveRuntime, requiredProviders, providerCapability,
+    providerConfig, now, fail, log: console.log
+  });
 
   function evidenceDetectionValue(id) {
     const state = loadRuntime(id);
