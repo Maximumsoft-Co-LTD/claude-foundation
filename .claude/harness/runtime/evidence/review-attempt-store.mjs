@@ -156,6 +156,98 @@ export function acknowledgeBaseMoveAttemptsOperation(context, id, decisionRef) {
   };
 }
 
+export function assertReviewDispatchHistory(context, id, history) {
+  if (!history.chainHead || context.reviewHistoryChainValid(id, history)) return;
+  context.blockWithDecision(id, "review-history-corrupt", {
+    kind: "review-history-corrupt",
+    summary: "The review attempt chain is corrupt, so Foundation cannot safely reserve another dispatch.",
+    options: [
+      { id: "restore", outcome: "Restore the attempt records from backup." },
+      { id: "abandon", outcome: "Retire this change and start a fresh one." },
+      { id: "pause", outcome: "Leave the change unchanged." }
+    ],
+    recommended: "restore",
+    attemptsRecorded: Number(history.totalAttempts || 0)
+  });
+}
+
+export function reviewDispatchType(details, fail) {
+  const reviewerType = String(details.reviewerType || "").toLowerCase();
+  if (!["ai", "human"].includes(reviewerType))
+    fail("review dispatch requires reviewerType ai|human");
+  return reviewerType;
+}
+
+export function validateReviewDispatchBudget(context, id, reviewerType,
+  history, details, completedAi, infrastructureAi) {
+  const maxAiAttempts = Number(details.maxAiAttempts || 2);
+  const maxInfrastructureRetries = Number(details.maxInfrastructureRetries ?? 1);
+  if (reviewerType !== "ai") return;
+  if (completedAi.length >= maxAiAttempts)
+    context.blockAiExhausted(id, history, maxAiAttempts);
+  if (infrastructureAi.length > maxInfrastructureRetries)
+    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview.`);
+}
+
+export function reviewDispatchScope(details, reviewerType, aiAttempts,
+  completedAi, fail) {
+  const scopeMode = String(details.scope?.mode || "");
+  if (!["full", "delta"].includes(scopeMode))
+    fail("review dispatch scope must be full|delta");
+  if (reviewerType === "ai") {
+    const expectedMode = completedAi.length === 0 ? "full" : "delta";
+    if (scopeMode !== expectedMode)
+      fail(`AI review dispatch ${aiAttempts.length + 1} requires --scope ${expectedMode}`);
+    const expectedBase = completedAi.at(-1)?.digest || null;
+    if (scopeMode === "delta" && details.scope?.baseAttemptDigest !== expectedBase)
+      fail(`AI delta review must reference the first AI dispatch with --base-attempt ${expectedBase}`);
+    if (scopeMode === "full" && details.scope?.baseAttemptDigest)
+      fail("the first AI full review must not declare --base-attempt");
+  }
+  return scopeMode;
+}
+
+export function reviewDispatchAttemptValue(context, id, details, history,
+  reviewerType, scopeMode) {
+  const attempt = {
+    version: 2, changeId: id,
+    attempt: Number(history.totalAttempts || 0) + 1,
+    reviewerType,
+    reviewerIdentity: String(details.reviewerIdentity || "").trim(),
+    reviewerProviderFamily: details.reviewerProviderFamily || null,
+    reviewerModelFamily: details.reviewerModelFamily || null,
+    reviewerModelId: details.reviewerModelId || null,
+    reviewerSessionId: details.reviewerSessionId || null,
+    sessionDeferred: details.sessionDeferred === true,
+    requestId: String(details.requestId || ""),
+    workspaceHash: details.workspaceHash,
+    scope: {
+      mode: scopeMode,
+      baseAttemptDigest: details.scope?.baseAttemptDigest || null,
+      paths: [...new Set(details.scope?.paths || [])].sort(),
+      digest: details.scope?.digest || null
+    },
+    packetDigest: details.packetDigest || null,
+    status: "dispatched",
+    priorChainHead: history.chainHead || null,
+    timestamp: context.now()
+  };
+  if (!attempt.reviewerIdentity || !attempt.requestId || !attempt.workspaceHash)
+    context.fail("review dispatch requires reviewer identity, request, and workspace hash");
+  attempt.digest = context.stableHash(attempt);
+  return attempt;
+}
+
+export function reviewHistoryAfterDispatch(history, attempt, reviewerType) {
+  return {
+    ...history,
+    version: 1,
+    aiAttempts: Number(history.aiAttempts || 0) + (reviewerType === "ai" ? 1 : 0),
+    totalAttempts: attempt.attempt,
+    chainHead: attempt.digest
+  };
+}
+
 export function createReviewAttemptStore({
   receiptsRoot,
   evidenceVault,
@@ -411,86 +503,23 @@ export function createReviewAttemptStore({
   function dispatchReviewAttempt(id, details) {
     const state = loadRuntime(id);
     const history = reviewHistoryState(id, state);
-    if (history.chainHead && !reviewHistoryChainValid(id, history))
-      blockWithDecision(id, "review-history-corrupt", {
-        kind: "review-history-corrupt",
-        summary: "The review attempt chain is corrupt, so Foundation cannot safely reserve another dispatch.",
-        options: [
-          { id: "restore", outcome: "Restore the attempt records from backup." },
-          { id: "abandon", outcome: "Retire this change and start a fresh one." },
-          { id: "pause", outcome: "Leave the change unchanged." }
-        ],
-        recommended: "restore",
-        attemptsRecorded: Number(history.totalAttempts || 0)
-      });
-    const reviewerType = String(details.reviewerType || "").toLowerCase();
-    if (!["ai", "human"].includes(reviewerType))
-      fail("review dispatch requires reviewerType ai|human");
+    assertReviewDispatchHistory({ reviewHistoryChainValid, blockWithDecision },
+      id, history);
+    const reviewerType = reviewDispatchType(details, fail);
     const priorAttempts = reviewAttempts(id, history);
     const aiAttempts = priorAttempts.filter((attempt) => attempt.reviewerType === "ai");
     const completedAi = deliveredAiAttempts(id, history);
     const infrastructureAi = infrastructureAiAttempts(id, history);
-    const maxAiAttempts = Number(details.maxAiAttempts || 2);
-    const maxInfrastructureRetries = Number(details.maxInfrastructureRetries ?? 1);
-    if (reviewerType === "ai") {
-      if (completedAi.length >= maxAiAttempts)
-        blockAiExhausted(id, history, maxAiAttempts);
-      if (infrastructureAi.length > maxInfrastructureRetries)
-        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview.`);
-    }
-    const scopeMode = String(details.scope?.mode || "");
-    if (!["full", "delta"].includes(scopeMode))
-      fail("review dispatch scope must be full|delta");
-    if (reviewerType === "ai") {
-      // A crashed/aborted dispatch does not produce a review baseline. The one
-      // infrastructure recovery is therefore full; delta is available only
-      // after a delivered full response.
-      const expectedMode = completedAi.length === 0 ? "full" : "delta";
-      if (scopeMode !== expectedMode)
-        fail(`AI review dispatch ${aiAttempts.length + 1} requires --scope ${expectedMode}`);
-      const expectedBase = completedAi.at(-1)?.digest || null;
-      if (scopeMode === "delta" && details.scope?.baseAttemptDigest !== expectedBase)
-        fail(`AI delta review must reference the first AI dispatch with --base-attempt ${expectedBase}`);
-      if (scopeMode === "full" && details.scope?.baseAttemptDigest)
-        fail("the first AI full review must not declare --base-attempt");
-    }
-    const attempt = {
-      version: 2,
-      changeId: id,
-      attempt: Number(history.totalAttempts || 0) + 1,
-      reviewerType,
-      reviewerIdentity: String(details.reviewerIdentity || "").trim(),
-      reviewerProviderFamily: details.reviewerProviderFamily || null,
-      reviewerModelFamily: details.reviewerModelFamily || null,
-      reviewerModelId: details.reviewerModelId || null,
-      reviewerSessionId: details.reviewerSessionId || null,
-      sessionDeferred: details.sessionDeferred === true,
-      requestId: String(details.requestId || ""),
-      workspaceHash: details.workspaceHash,
-      scope: {
-        mode: scopeMode,
-        baseAttemptDigest: details.scope?.baseAttemptDigest || null,
-        paths: [...new Set(details.scope?.paths || [])].sort(),
-        digest: details.scope?.digest || null
-      },
-      packetDigest: details.packetDigest || null,
-      status: "dispatched",
-      priorChainHead: history.chainHead || null,
-      timestamp: now()
-    };
-    if (!attempt.reviewerIdentity || !attempt.requestId || !attempt.workspaceHash)
-      fail("review dispatch requires reviewer identity, request, and workspace hash");
-    attempt.digest = stableHash(attempt);
+    validateReviewDispatchBudget({ blockAiExhausted, fail }, id, reviewerType,
+      history, details, completedAi, infrastructureAi);
+    const scopeMode = reviewDispatchScope(
+      details, reviewerType, aiAttempts, completedAi, fail);
+    const attempt = reviewDispatchAttemptValue({ now, stableHash, fail },
+      id, details, history, reviewerType, scopeMode);
     const path = join(evidenceVault, id, "review-attempts",
       `${String(attempt.attempt).padStart(4, "0")}-${attempt.digest.slice(0, 12)}.json`);
     writeJson(path, attempt);
-    state.reviewHistory = {
-      ...history,
-      version: 1,
-      aiAttempts: Number(history.aiAttempts || 0) + (reviewerType === "ai" ? 1 : 0),
-      totalAttempts: attempt.attempt,
-      chainHead: attempt.digest
-    };
+    state.reviewHistory = reviewHistoryAfterDispatch(history, attempt, reviewerType);
     saveRuntime(state);
     return attempt;
   }
