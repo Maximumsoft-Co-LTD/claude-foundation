@@ -39,6 +39,98 @@ export function recoveryLines(next = []) {
   return lines;
 }
 
+export function reviewEvidenceRecovery(id, provider) {
+  return {
+    provider,
+    kind: "user-decision",
+    request: {
+      command: `claude-foundation authority request ${id} --type review`,
+      packet: `claude-foundation packet ${id} --phase review`
+    },
+    decision: {
+      kind: "independent-review",
+      summary: "Automated evidence is ready, but an independent reviewer must inspect the current implementation before proof can finish.",
+      options: [
+        { id: "prepare-for-user", outcome: "Prepare a bounded review packet for the user to inspect." },
+        { id: "prepare-for-reviewer", outcome: "Run the configured fresh reviewer. A Codex-only or Claude-Code-only project may commit review.diversity='single-model' while keeping identity/session independence required." },
+        { id: "waive-independence", outcome: "Only if the project deliberately accepts the same reviewer identity/session, set review.independence='self'; the receipt records that independence was not observed." },
+        { id: "pause", outcome: "Keep the change pending without recording a review result." }
+      ],
+      recommended: "prepare-for-reviewer",
+      responseStatuses: ["pass", "fail", "inconclusive", "error"]
+    }
+  };
+}
+
+export function acceptanceEvidenceRecovery(id, provider, acceptance = {}) {
+  const claimIds = acceptance.claimIds || [];
+  const origin = acceptance.scopeOrigin || "explicit";
+  const withdrawal = origin === "claim-capability"
+    ? `Drop capability 'acceptance' from claim(s) ${claimIds.join(", ") || "in evidence.yaml"}, then re-run 'claude-foundation change validate ${id}'. Clearing the resolve flag alone will not lift this gate while the claim declares it.`
+    : `Withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required`;
+  return {
+    provider,
+    kind: "user-decision",
+    request: { command: `claude-foundation authority request ${id} --type acceptance` },
+    decision: {
+      kind: "human-acceptance",
+      summary: `A named person must inspect the final result and decide whether the declared acceptance criteria are satisfied${
+        claimIds.length ? ` for claim(s) ${claimIds.join(", ")}` : ""}.`,
+      scope: {
+        claims: claimIds,
+        origin,
+        reason: acceptance.reason || null,
+        detail: origin === "claim-capability"
+          ? "These claims declare capability 'acceptance' in evidence.yaml; that declaration, not the resolve flag, is what requires a human here."
+          : "This gate was recorded by an explicit --acceptance-required decision."
+      },
+      options: [
+        { id: "inspect", outcome: "Inspect the final result and then accept, reject, or report uncertainty." },
+        { id: "request-changes", outcome: "Reject the current result and describe what must change." },
+        { id: "withdraw-requirement", outcome: withdrawal },
+        { id: "pause", outcome: "Keep the change pending without an acceptance decision." }
+      ],
+      recommended: "inspect",
+      responseStatuses: ["pass", "fail", "inconclusive", "error"]
+    }
+  };
+}
+
+export function genericExternalEvidenceRecovery(provider, wiring) {
+  return {
+    provider,
+    kind: "user-decision",
+    ...(wiring ? { wiring } : {}),
+    decision: {
+      kind: "external-evidence",
+      summary: wiring
+        ? `Provider '${provider}' has no adapter yet, but this project already owns a command that can prove it (${wiring.source}).`
+        : `Provider '${provider}' needs verifiable evidence from outside the local harness.`,
+      options: [
+        ...(wiring ? [{ id: "wire-provider", outcome: `Wire the project-owned command detected at ${wiring.source}.` }] : []),
+        { id: "provide-evidence", outcome: "Provide a real external result and durable reference." },
+        { id: "configure-provider", outcome: "Configure an equivalent project-owned executable provider." },
+        { id: "pause", outcome: "Keep the change pending without claiming a result." }
+      ],
+      recommended: wiring ? "wire-provider" : "provide-evidence",
+      responseStatuses: ["pass", "fail", "inconclusive", "error"]
+    }
+  };
+}
+
+export function externalEvidenceRecoveryOperation({
+  providerCapability,
+  providerConfig,
+  loadRuntime,
+  wiringChoice
+}, id, provider) {
+  const capability = providerCapability(provider, providerConfig(id, provider));
+  if (capability === "review") return reviewEvidenceRecovery(id, provider);
+  if (capability === "acceptance")
+    return acceptanceEvidenceRecovery(id, provider, loadRuntime(id).acceptance || {});
+  return genericExternalEvidenceRecovery(provider, wiringChoice(id, provider));
+}
+
 export function createProofReadinessRuntime({
   markBlocked = () => {},
   evidence,
@@ -294,101 +386,12 @@ export function createProofReadinessRuntime({
     };
   }
 
-  function externalEvidenceRecovery(id, provider) {
-    const capability = providerCapability(provider, providerConfig(id, provider));
-    if (capability === "review") return {
-      provider,
-      kind: "user-decision",
-      request: {
-        command: `claude-foundation authority request ${id} --type review`,
-        packet: `claude-foundation packet ${id} --phase review`
-      },
-      decision: {
-        kind: "independent-review",
-        summary: "Automated evidence is ready, but an independent reviewer must inspect the current implementation before proof can finish.",
-        options: [
-          { id: "prepare-for-user", outcome: "Prepare a bounded review packet for the user to inspect." },
-          { id: "prepare-for-reviewer", outcome: "Run the configured fresh reviewer. A Codex-only or Claude-Code-only project may commit review.diversity='single-model' while keeping identity/session independence required." },
-          // A project driven from one session has no second session to open, so
-          // the reviewer gate had no reachable end state and the loop stopped
-          // here for good. The waiver already existed in `reviewPolicy`; it was
-          // simply never named at the point where somebody needs it.
-          { id: "waive-independence", outcome: "Only if the project deliberately accepts the same reviewer identity/session, set review.independence='self'; the receipt records that independence was not observed." },
-          { id: "pause", outcome: "Keep the change pending without recording a review result." }
-        ],
-        recommended: "prepare-for-reviewer",
-        responseStatuses: ["pass", "fail", "inconclusive", "error"]
-      }
-    };
-    if (capability === "acceptance") {
-      // `validate` has already normalized acceptance onto the state, so the
-      // scope is read rather than re-derived here. Without it, the one gate in
-      // the loop that can only be cleared by a named human refused to say
-      // which claim was holding it, and the origin — an explicit decision, or
-      // a capability declared on a claim — was invisible entirely.
-      const acceptance = loadRuntime(id).acceptance || {};
-      const claimIds = acceptance.claimIds || [];
-      const origin = acceptance.scopeOrigin || "explicit";
-      return {
-        provider,
-        kind: "user-decision",
-        request: {
-          command: `claude-foundation authority request ${id} --type acceptance`
-        },
-        decision: {
-          kind: "human-acceptance",
-          summary: `A named person must inspect the final result and decide whether the declared acceptance criteria are satisfied${
-            claimIds.length ? ` for claim(s) ${claimIds.join(", ")}` : ""}.`,
-          scope: {
-            claims: claimIds,
-            origin,
-            reason: acceptance.reason || null,
-            detail: origin === "claim-capability"
-              ? "These claims declare capability 'acceptance' in evidence.yaml; that declaration, not the resolve flag, is what requires a human here."
-              : "This gate was recorded by an explicit --acceptance-required decision."
-          },
-          options: [
-            { id: "inspect", outcome: "Inspect the final result and then accept, reject, or report uncertainty." },
-            { id: "request-changes", outcome: "Reject the current result and describe what must change." },
-            // Acceptance is the one gate with no waiver — a self-attested human
-            // acceptance would be a false record, so the escape is to withdraw
-            // the requirement, not to fake satisfying it. Which command does
-            // that depends on where the requirement came from, and getting that
-            // wrong is why this gate read as permanent: clearing the flag has
-            // no effect while a claim still declares the capability.
-            origin === "claim-capability"
-              ? { id: "withdraw-requirement", outcome: `Drop capability 'acceptance' from claim(s) ${claimIds.join(", ") || "in evidence.yaml"}, then re-run 'claude-foundation change validate ${id}'. Clearing the resolve flag alone will not lift this gate while the claim declares it.` }
-              : { id: "withdraw-requirement", outcome: `Withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required` },
-            { id: "pause", outcome: "Keep the change pending without an acceptance decision." }
-          ],
-          recommended: "inspect",
-          responseStatuses: ["pass", "fail", "inconclusive", "error"]
-        }
-      };
-    }
-    const wiring = wiringChoice(id, provider);
-    return {
-      provider,
-      kind: "user-decision",
-      ...(wiring ? { wiring } : {}),
-      decision: {
-        kind: "external-evidence",
-        summary: wiring
-          ? `Provider '${provider}' has no adapter yet, but this project already owns a command that can prove it (${wiring.source}).`
-          : `Provider '${provider}' needs verifiable evidence from outside the local harness.`,
-        options: [
-          // The command itself is carried on `wiring`, which every renderer
-          // prints; repeating it here made the rendered recovery echo itself.
-          ...(wiring ? [{ id: "wire-provider", outcome: `Wire the project-owned command detected at ${wiring.source}.` }] : []),
-          { id: "provide-evidence", outcome: "Provide a real external result and durable reference." },
-          { id: "configure-provider", outcome: "Configure an equivalent project-owned executable provider." },
-          { id: "pause", outcome: "Keep the change pending without claiming a result." }
-        ],
-        recommended: wiring ? "wire-provider" : "provide-evidence",
-        responseStatuses: ["pass", "fail", "inconclusive", "error"]
-      }
-    };
-  }
+  const externalEvidenceRecovery = externalEvidenceRecoveryOperation.bind(null, {
+    providerCapability,
+    providerConfig,
+    loadRuntime,
+    wiringChoice
+  });
 
   function unavailableProviderRecovery(id, unavailable) {
     const separator = unavailable.indexOf(":");
