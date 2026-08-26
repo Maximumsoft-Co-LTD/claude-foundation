@@ -121,6 +121,7 @@ land journal apply entry|node --test "$ROOT/.claude/harness/tests/land-journal-a
 verified CI recording|node --test "$ROOT/.claude/harness/tests/verified-ci-recording.test.mjs"
 authority response validation|node --test "$ROOT/.claude/harness/tests/authority-response-validation.test.mjs"
 proof topology issues|node --test "$ROOT/.claude/harness/tests/proof-topology-issues.test.mjs"
+subject provenance|node --test "$ROOT/.claude/harness/tests/subject-provenance.test.mjs"
 proof audit|node "$ROOT/.claude/harness/tests/proof-audit.test.mjs"
 change draft loading|node "$ROOT/.claude/harness/tests/change-draft-loading.test.mjs"
 change creation|node --test "$ROOT/.claude/harness/tests/change-creation.test.mjs"

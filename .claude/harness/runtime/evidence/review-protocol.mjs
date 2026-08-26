@@ -1,3 +1,37 @@
+export function structuredSubjectProvenance({ fail }, value) {
+  if (value === undefined) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.map((entry) => {
+    try { return JSON.parse(String(entry)); }
+    catch (error) { fail(`invalid --subject-provenance JSON (${error.message})`); }
+  });
+}
+
+export function legacySubjectProvenance({ flagValues, fail }, flags) {
+  const actors = flagValues(flags, "subject-actor");
+  const sessions = flagValues(flags, "subject-session");
+  const providers = flagValues(flags, "subject-provider-family");
+  const families = flagValues(flags, "subject-model-family");
+  const models = flagValues(flags, "subject-model");
+  if ([actors, sessions, providers, families, models].some((values) => values.length > 1))
+    fail("multiple implementers require repeated --subject-provenance JSON tuples");
+  if (!actors.length) return [];
+  const ai = sessions.length || providers.length || families.length || models.length;
+  return [{
+    type: ai ? "ai" : "human",
+    identity: actors[0],
+    sessionId: sessions[0] || null,
+    providerFamily: providers[0]?.toLowerCase() || null,
+    modelFamily: families[0]?.toLowerCase() || null,
+    modelId: models[0] || null
+  }];
+}
+
+export function subjectProvenanceOperation(context, flags) {
+  const structured = structuredSubjectProvenance(context, flags["subject-provenance"]);
+  return structured.length ? structured : legacySubjectProvenance(context, flags);
+}
+
 export function createReviewProtocol({ stableHash, fail }) {
   function flagValues(flags, name) {
     const value = flags[name];
@@ -50,37 +84,7 @@ export function createReviewProtocol({ stableHash, fail }) {
     return stableHash(canonical);
   }
 
-  function subjectProvenance(flags) {
-    const rawStructured = flags["subject-provenance"] === undefined
-      ? []
-      : Array.isArray(flags["subject-provenance"])
-        ? flags["subject-provenance"]
-        : [flags["subject-provenance"]];
-    const structured = rawStructured.map((value) => {
-      let subject;
-      try { subject = JSON.parse(String(value)); }
-      catch (error) { fail(`invalid --subject-provenance JSON (${error.message})`); }
-      return subject;
-    });
-    if (structured.length) return structured;
-    const actors = flagValues(flags, "subject-actor");
-    const sessions = flagValues(flags, "subject-session");
-    const providers = flagValues(flags, "subject-provider-family");
-    const families = flagValues(flags, "subject-model-family");
-    const models = flagValues(flags, "subject-model");
-    if ([actors, sessions, providers, families, models].some((values) => values.length > 1))
-      fail("multiple implementers require repeated --subject-provenance JSON tuples");
-    if (!actors.length) return [];
-    const ai = sessions.length || providers.length || families.length || models.length;
-    return [{
-      type: ai ? "ai" : "human",
-      identity: actors[0],
-      sessionId: sessions[0] || null,
-      providerFamily: providers[0]?.toLowerCase() || null,
-      modelFamily: families[0]?.toLowerCase() || null,
-      modelId: models[0] || null
-    }];
-  }
+  const subjectProvenance = subjectProvenanceOperation.bind(null, { flagValues, fail });
 
   function optionalEqual(left, right) {
     return (left || null) === (right || null);
