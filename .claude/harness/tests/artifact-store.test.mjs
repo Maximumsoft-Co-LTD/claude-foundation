@@ -9,6 +9,7 @@ import {
   symlinkSync,
   writeFileSync
 } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -100,6 +101,66 @@ try {
     () => store.durableArtifact("c", "test", "r", { path: "escape.txt" }),
     /escapes the project workspace/
   );
+
+  const prototypes = join(root, ".foundation", "prototypes");
+  const workspacePrototypes = join(workspace, ".foundation", "prototypes");
+  mkdirSync(prototypes, { recursive: true });
+  mkdirSync(workspacePrototypes, { recursive: true });
+  const prototype = join(prototypes, "mock.json");
+  writeFileSync(prototype, "prototype\n");
+  assert.equal(store.decodedEvidencePath("%2Efoundation%2Fprototypes%2Fmock.json"),
+    ".foundation/prototypes/mock.json");
+  assert.equal(store.decodedEvidencePath("%invalid"), "%invalid");
+  assert.equal(store.decodedEvidencePath(null), "");
+  assert.equal(store.evidenceInputTargetsPrototype("", workspace), false);
+  assert.equal(store.evidenceInputTargetsPrototype(
+    ".foundation/prototypes/mock.json", workspace), true);
+  assert.equal(store.evidenceInputTargetsPrototype(pathToFileURL(prototype).href,
+    workspace), true);
+  assert.equal(store.evidenceInputTargetsPrototype("https://example.com/report.json",
+    workspace), false);
+  assert.equal(store.evidenceInputTargetsPrototype(prototype, workspace), true);
+  assert.equal(store.evidenceInputTargetsPrototype(outside, workspace), false);
+  assert.equal(store.evidenceInputTargetsPrototype("ordinary.json", workspace), false);
+  symlinkSync(prototype, join(workspace, "prototype-link.json"));
+  assert.equal(store.evidenceInputTargetsPrototype("prototype-link.json", workspace), true);
+  assert.equal(store.evidenceInputTargetsPrototype("file:%invalid", workspace), false);
+
+  store.rejectPrototypeEvidenceInputs("c", "test", [{ path: "ordinary.json" }],
+    ["https://example.com/evidence"]);
+  assert.throws(() => store.rejectPrototypeEvidenceInputs("c", "test", [{
+    path: ".foundation/prototypes/mock.json"
+  }], []), /prototype artifacts and references are non-authoritative/);
+  assert.throws(() => store.rejectPrototypeEvidenceInputs("c", "test", [], [
+    pathToFileURL(prototype).href
+  ]), /prototype artifacts and references are non-authoritative/);
+
+  assert.equal(store.receiptPrototypeEvidence("c", "test", {}), null);
+  assert.equal(store.receiptPrototypeEvidence("c", "test", {
+    references: ["ordinary.json"], artifacts: [], provenance: { source: "external" }
+  }), null);
+  assert.equal(store.receiptPrototypeEvidence("c", "test", {
+    references: [], artifacts: [{ sourcePath: ".foundation/prototypes/mock.json" }]
+  }), ".foundation/prototypes/mock.json");
+  assert.equal(store.receiptPrototypeEvidence("c", "test", {
+    references: [], artifacts: [],
+    provenance: { source: pathToFileURL(prototype).href }
+  }), pathToFileURL(prototype).href);
+
+  assert.equal(store.validateArtifact({ required: false, missing: true }), true);
+  assert.equal(store.validateArtifact({}), false);
+  assert.equal(store.validateArtifact({ path: "outside.json" }), false);
+  assert.equal(store.validateArtifact({
+    path: ".foundation/evidence/missing.json", sha256: "missing", size: 0
+  }), false);
+  const evidenceDirectory = join(root, ".foundation", "evidence", "directory");
+  mkdirSync(evidenceDirectory, { recursive: true });
+  assert.equal(store.validateArtifact({
+    path: relative(root, evidenceDirectory), sha256: "directory", size: 0
+  }), false);
+  assert.equal(store.validateArtifact(artifact), true);
+  assert.equal(store.validateArtifact({ ...artifact, sha256: "tampered" }), false);
+  assert.equal(store.validateArtifact({ ...artifact, size: artifact.size + 1 }), false);
 } finally {
   rmSync(container, { recursive: true, force: true });
 }
