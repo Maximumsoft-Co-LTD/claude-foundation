@@ -105,6 +105,47 @@ export function recordTelemetryEvent(context, id, flags) {
   context.reportBudget(id, state);
 }
 
+export function normalizeTelemetryBatch({
+  id, rows, format, context, known, knownTransitions, now,
+  normalizeEvent = normalizeTelemetryRow,
+  normalizeTransition = normalizeClaudeUserTransition
+}) {
+  const normalized = [];
+  const transitions = [];
+  for (const row of rows) {
+    if (format === "claude") {
+      const transition = normalizeTransition(id, row, context, now());
+      if (transition && !knownTransitions.has(transition.transitionId)) {
+        knownTransitions.add(transition.transitionId);
+        transitions.push(transition);
+      }
+    }
+    const event = normalizeEvent(id, row, format, context, now());
+    if (!event || known.has(event.requestId)) continue;
+    known.add(event.requestId);
+    normalized.push(event);
+  }
+  return { normalized, transitions };
+}
+
+export function appendTelemetryJsonLines(path, rows, options = {}) {
+  const { makeDirectory = mkdirSync, append = appendFileSync } = options;
+  if (!rows.length) return false;
+  makeDirectory(dirname(path), { recursive: true });
+  append(path, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  return true;
+}
+
+export function rebindTelemetryWindow(events, changeId, windowId) {
+  if (!windowId) return;
+  for (const event of events)
+    if (event.runId === changeId) event.runId = windowId;
+}
+
+export function activeTelemetryRunId(events, context, changeId) {
+  return events.at(-1)?.runId || context.sessionId || changeId;
+}
+
 export function createTelemetryRuntime({
   root,
   logs,
@@ -452,26 +493,10 @@ export function createTelemetryRuntime({
     const known = new Set(readJsonLines(target).map((row) => row.requestId));
     const knownTransitions = new Set(readJsonLines(transitionTarget)
       .map((row) => row.transitionId));
-    const normalized = [];
-    const transitions = [];
-    for (const row of rows) {
-      if (format === "claude") {
-        const transition = normalizeClaudeUserTransition(id, row, context, now());
-        if (transition && !knownTransitions.has(transition.transitionId)) {
-          knownTransitions.add(transition.transitionId);
-          transitions.push(transition);
-        }
-      }
-      const event = normalizeTelemetryRow(id, row, format, context, now());
-      if (!event || known.has(event.requestId)) continue;
-      known.add(event.requestId);
-      normalized.push(event);
-    }
-    if (transitions.length) {
-      mkdirSync(dirname(transitionTarget), { recursive: true });
-      appendFileSync(transitionTarget,
-        transitions.map((row) => JSON.stringify(row)).join("\n") + "\n");
-    }
+    const { normalized, transitions } = normalizeTelemetryBatch({
+      id, rows, format, context, known, knownTransitions, now
+    });
+    appendTelemetryJsonLines(transitionTarget, transitions);
     if (normalized.length) {
       // Loading runtime state can normalize it, so it stays inside this branch:
       // an import that adds nothing must leave the change untouched.
@@ -482,13 +507,10 @@ export function createTelemetryRuntime({
       // or every external import opens a window and discards the current one
       // along with its targets.
       const windowId = state.budget?.window?.id || null;
-      if (windowId)
-        for (const event of normalized)
-          if (event.runId === id) event.runId = windowId;
-      mkdirSync(dirname(target), { recursive: true });
-      appendFileSync(target, normalized.map((row) => JSON.stringify(row)).join("\n") + "\n");
+      rebindTelemetryWindow(normalized, id, windowId);
+      appendTelemetryJsonLines(target, normalized);
       const allEvents = readJsonLines(target);
-      const activeRunId = normalized.at(-1)?.runId || context.sessionId || id;
+      const activeRunId = activeTelemetryRunId(normalized, context, id);
       synchronizeBudgetUsage(state, allEvents, activeRunId, format === "claude"
         ? "claude-transcript" : `host-events:${format}`, normalized.length);
       saveRuntime(state);
