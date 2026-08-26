@@ -9,10 +9,33 @@ import { pathToFileURL } from 'node:url';
 
 const DAY_MS = 86400000;
 
-function localDate(value) {
+export function localDate(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function assistantUsage(row) {
+  const message = row && typeof row.message === 'object' ? row.message : null;
+  const usage = message && typeof message.usage === 'object' ? message.usage : null;
+  return row?.type === 'assistant' && message?.role === 'assistant' && usage
+    ? { message, usage } : null;
+}
+
+export function transcriptProject(cwd) {
+  const normalized = typeof cwd === 'string' ? cwd.replace(/[\\/]+$/, '') : '';
+  return normalized ? normalized.split(/[\\/]/).at(-1) : '';
+}
+
+export function messageTools(content) {
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((block) => block?.type === 'tool_use' && block.name)
+    .map((block) => String(block.name));
+}
+
+export function nonNegativeUsage(value) {
+  return Math.max(0, Number(value || 0));
 }
 
 function discoverJsonl(root, cutoffMs, cap) {
@@ -78,27 +101,23 @@ function readCompleteLines(path, offset, onLine) {
   return committed;
 }
 
-function messageRecord(row, source, fallbackId) {
-  const message = row && typeof row.message === 'object' ? row.message : null;
-  const usage = message && typeof message.usage === 'object' ? message.usage : null;
-  if (row?.type !== 'assistant' || message?.role !== 'assistant' || !usage) return null;
+export function messageRecord(row, source, fallbackId) {
+  const assistant = assistantUsage(row);
+  if (!assistant) return null;
+  const { message, usage } = assistant;
   const model = String(message.model || '');
   if (!model || model === '<synthetic>') return null;
   const date = localDate(row.timestamp);
   if (!date) return null;
-  const cwd = typeof row.cwd === 'string' ? row.cwd.replace(/[\\/]+$/, '') : '';
-  const project = cwd ? cwd.split(/[\\/]/).at(-1) : '';
-  const tools = Array.isArray(message.content)
-    ? message.content.filter((block) => block?.type === 'tool_use' && block.name).map((block) => String(block.name))
-    : [];
   return {
     id: String(row.requestId || row.request_id || message.id || row.uuid || fallbackId),
-    source, sources: [source], date, timestamp: Date.parse(row.timestamp), model, project,
-    input: Math.max(0, Number(usage.input_tokens || 0)),
-    output: Math.max(0, Number(usage.output_tokens || 0)),
-    cacheCreate: Math.max(0, Number(usage.cache_creation_input_tokens || 0)),
-    cacheRead: Math.max(0, Number(usage.cache_read_input_tokens || 0)),
-    tools,
+    source, sources: [source], date, timestamp: Date.parse(row.timestamp), model,
+    project: transcriptProject(row.cwd),
+    input: nonNegativeUsage(usage.input_tokens),
+    output: nonNegativeUsage(usage.output_tokens),
+    cacheCreate: nonNegativeUsage(usage.cache_creation_input_tokens),
+    cacheRead: nonNegativeUsage(usage.cache_read_input_tokens),
+    tools: messageTools(message.content),
   };
 }
 
