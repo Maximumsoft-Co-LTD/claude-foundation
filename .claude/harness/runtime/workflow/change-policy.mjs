@@ -1,6 +1,37 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+export function repositoryBaseHead(repository, state) {
+  return repository.id === "root"
+    ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
+    : state.repositories?.[repository.id]?.baseHead || null;
+}
+
+export function addChangedSurfaceSource({
+  sources, path, source, repositoryId, changeId, excludedWorkspaceDirs,
+  isCurrentChangePath
+}) {
+  if (!path) return;
+  const normalized = path.replaceAll("\\", "/");
+  if (excludedWorkspaceDirs.has(normalized.split("/")[0])) return;
+  if (repositoryId === "root" &&
+      (isCurrentChangePath(normalized, changeId) || normalized.startsWith("openspec/changes/")))
+    return;
+  if (!sources.has(normalized)) sources.set(normalized, new Set());
+  sources.get(normalized).add(source);
+}
+
+export function changedSurfaceRows(repositoryId, sources) {
+  return [...sources].map(([path, rowSources]) => ({
+    repositoryId, path, sources: [...rowSources].sort()
+  }));
+}
+
+export function sortChangedSurface(rows) {
+  return rows.sort((left, right) =>
+    left.repositoryId.localeCompare(right.repositoryId) || left.path.localeCompare(right.path));
+}
+
 export function createChangePolicy({
   root, excludedWorkspaceDirs, providers, gitHead, git, porcelainStatusRecords,
   workspaceManifest, loadRuntime, selectedRepositories, isCurrentChangePath,
@@ -83,20 +114,13 @@ export function createChangePolicy({
       const preexisting = repository.id === "root"
         ? state.workspace?.preexisting || null : null;
       const sources = new Map();
-      const add = (path, source) => {
-        if (!path) return;
-        const normalized = path.replaceAll("\\", "/");
-        if (excludedWorkspaceDirs.has(normalized.split("/")[0])) return;
-        if (repository.id === "root" &&
-            (isCurrentChangePath(normalized, id) || normalized.startsWith("openspec/changes/"))) return;
-        if (!sources.has(normalized)) sources.set(normalized, new Set());
-        sources.get(normalized).add(source);
-      };
+      const add = (path, source) => addChangedSurfaceSource({
+        sources, path, source, repositoryId: repository.id, changeId: id,
+        excludedWorkspaceDirs, isCurrentChangePath
+      });
       const head = gitHead(workspace);
       if (head) {
-        const baseHead = repository.id === "root"
-          ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
-          : state.repositories?.[repository.id]?.baseHead || null;
+        const baseHead = repositoryBaseHead(repository, state);
         if (!baseHead)
           fail(`cannot resolve changed surface for repository '${repository.id}': missing baseHead; sync or recreate the change sandbox`);
         if (baseHead !== head) {
@@ -113,11 +137,9 @@ export function createChangePolicy({
           .filter((path) => !carriedInUnchanged(workspace, preexisting, path, state))
           .forEach((path) => add(path, "dirty"));
       }
-      for (const [path, rowSources] of sources)
-        rows.push({ repositoryId: repository.id, path, sources: [...rowSources].sort() });
+      rows.push(...changedSurfaceRows(repository.id, sources));
     }
-    return rows.sort((left, right) =>
-      left.repositoryId.localeCompare(right.repositoryId) || left.path.localeCompare(right.path));
+    return sortChangedSurface(rows);
   }
 
   function capabilitiesForPaths(paths) {
