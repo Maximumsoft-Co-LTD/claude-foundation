@@ -507,6 +507,58 @@ export function createSandbox(context, id, flags = {}) {
   reportMultiRepositorySandbox(context, id, state);
 }
 
+export function relocatedSandboxCandidate(context, id, workspace) {
+  if (!["worktree", "copy"].includes(workspace.mode) ||
+      !workspace.path || context.pathExists(workspace.path)) return null;
+  const canonicalRoot = context.canonicalPath(
+    join(context.root, ".foundation", "sandboxes"));
+  const candidate = context.canonicalPath(context.sandboxRoot(id));
+  if (!context.directoryExists(candidate) ||
+      candidate === context.canonicalPath(workspace.path)) return null;
+  if (relative(canonicalRoot, candidate).replaceAll("\\", "/") !== id)
+    context.fail(`cannot rebind relocated sandbox '${candidate}': candidate escapes the canonical sandbox directory; recreate the sandbox`);
+  return candidate;
+}
+
+export function assertRelocatedSandboxIdentity(context, id, workspace, candidate) {
+  const packet = join(candidate, "openspec", "changes", id);
+  const marker = join(packet, ".openspec.yaml");
+  const expected = workspace.packetSnapshot?.[".openspec.yaml"];
+  if (!context.directoryExists(packet) || !expected || !context.pathExists(marker) ||
+      context.fileDigest(marker) !== expected)
+    context.fail(`cannot rebind relocated sandbox '${candidate}': change identity does not match '${id}'`);
+}
+
+export function assertRelocatedSandboxLayout(context, workspace, candidate) {
+  const required = [
+    join(candidate, ".claude", "harness", "foundation.mjs"),
+    join(candidate, "openspec", "config.yaml")
+  ];
+  if (required.some((path) => !context.pathExists(path)))
+    context.fail(`cannot rebind relocated sandbox '${candidate}': sandbox layout is incomplete; recreate the sandbox`);
+  if (workspace.mode === "worktree" && !context.gitMetadataPresent(candidate))
+    context.fail(`cannot rebind relocated sandbox '${candidate}': recorded worktree metadata is not valid at the new project location; recreate the sandbox`);
+  if (workspace.mode === "copy" && workspace.git === "carried" &&
+      !context.gitMetadataPresent(candidate))
+    context.fail(`cannot rebind relocated sandbox '${candidate}': recorded copied Git metadata is not valid at the new project location; recreate the sandbox`);
+}
+
+export function rebindRelocatedSandboxOperation(context, id, state) {
+  const workspace = state.workspace || {};
+  const candidate = relocatedSandboxCandidate(context, id, workspace);
+  if (!candidate) return false;
+  assertRelocatedSandboxIdentity(context, id, workspace, candidate);
+  assertRelocatedSandboxLayout(context, workspace, candidate);
+  workspace.relocatedFrom = context.canonicalPath(workspace.path);
+  workspace.path = candidate;
+  workspace.reboundAt = context.now();
+  state.workspace = workspace;
+  context.saveRuntime(state);
+  context.clearSnapshotCache(id);
+  context.output.log(`REBOUND ${id}\n  workspace: ${candidate}`);
+  return true;
+}
+
 export function createSandboxRuntime({
   root, policy, excludedWorkspaceDirs, sandboxCopyExcludedDirs, hostAttestation,
   loadRuntime, saveRuntime,
@@ -665,42 +717,20 @@ export function createSandboxRuntime({
     }
   }
 
-  function rebindRelocatedSandbox(id, state) {
-    const workspace = state.workspace || {};
-    if (!["worktree", "copy"].includes(workspace.mode) ||
-        !workspace.path || existsSync(workspace.path)) return false;
-    const canonicalSandboxRoot = canonicalPath(join(root, ".foundation", "sandboxes"));
-    const candidate = canonicalPath(sandboxRoot(id));
-    if (!directoryExists(candidate) || candidate === canonicalPath(workspace.path)) return false;
-    if (relative(canonicalSandboxRoot, candidate).replaceAll("\\", "/") !== id)
-      fail(`cannot rebind relocated sandbox '${candidate}': candidate escapes the canonical sandbox directory; recreate the sandbox`);
-    const packet = join(candidate, "openspec", "changes", id);
-    const marker = join(packet, ".openspec.yaml");
-    const expectedMarker = workspace.packetSnapshot?.[".openspec.yaml"];
-    if (!directoryExists(packet) || !expectedMarker || !existsSync(marker) ||
-        fileDigest(marker) !== expectedMarker)
-      fail(`cannot rebind relocated sandbox '${candidate}': change identity does not match '${id}'`);
-    const requiredLayout = [
-      join(candidate, ".claude", "harness", "foundation.mjs"),
-      join(candidate, "openspec", "config.yaml")
-    ];
-    if (requiredLayout.some((path) => !existsSync(path)))
-      fail(`cannot rebind relocated sandbox '${candidate}': sandbox layout is incomplete; recreate the sandbox`);
-    if (workspace.mode === "worktree" && !gitMetadataPresent(candidate))
-      fail(`cannot rebind relocated sandbox '${candidate}': recorded worktree metadata is not valid at the new project location; recreate the sandbox`);
-    if (workspace.mode === "copy" && workspace.git === "carried" &&
-        !gitMetadataPresent(candidate))
-      fail(`cannot rebind relocated sandbox '${candidate}': recorded copied Git metadata is not valid at the new project location; recreate the sandbox`);
-    const relocatedFrom = canonicalPath(workspace.path);
-    workspace.path = candidate;
-    workspace.relocatedFrom = relocatedFrom;
-    workspace.reboundAt = now();
-    state.workspace = workspace;
-    saveRuntime(state);
-    clearSnapshotCache(id);
-    console.log(`REBOUND ${id}\n  workspace: ${candidate}`);
-    return true;
-  }
+  const rebindRelocatedSandbox = rebindRelocatedSandboxOperation.bind(null, {
+    root,
+    sandboxRoot,
+    canonicalPath,
+    pathExists: existsSync,
+    directoryExists,
+    fileDigest,
+    gitMetadataPresent,
+    saveRuntime,
+    clearSnapshotCache,
+    now,
+    fail,
+    output: console
+  });
 
   // A commit read, not executed.
   //
