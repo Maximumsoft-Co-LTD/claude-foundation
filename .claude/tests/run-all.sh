@@ -106,6 +106,7 @@ environment descriptor|node --test "$ROOT/.claude/harness/tests/environment-desc
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
 telemetry record event|node --test "$ROOT/.claude/harness/tests/telemetry-record-event.test.mjs"
+host execution contract|node --test "$ROOT/.claude/harness/tests/host-execution-contract.test.mjs"
 signed CI|node --test "$ROOT/.claude/harness/tests/signed-ci.test.mjs"
 adapter fingerprint|node --test "$ROOT/.claude/harness/tests/adapter-fingerprint.test.mjs"
 provider workspace hash|node --test "$ROOT/.claude/harness/tests/provider-workspace-hash.test.mjs"
