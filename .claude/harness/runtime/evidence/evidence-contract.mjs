@@ -225,6 +225,45 @@ export function createAdapterFingerprint(context, id, provider, config, command 
   });
 }
 
+export function providerHashField(capability, packetBound) {
+  if (capability === "review") return "reviewHash";
+  return packetBound ? "workspaceHash" : "codeHash";
+}
+
+export function providerHashExplicitlyScoped(config) {
+  return Boolean(config?.repository || config?.repositories ||
+    config?.adapter === "contract-digest");
+}
+
+export function repositoryFieldHash(context, id, snapshot, repository, field) {
+  return snapshot.repositories?.[repository.id]?.[field] ||
+    context.singleRelevantSnapshot(id, repository.workspacePath, true)[field];
+}
+
+export function providerWorkspaceHashOperation(context, id, provider, fallback = null) {
+  const config = context.providerConfig(id, provider);
+  const capability = context.providerCapability(provider, config);
+  const field = providerHashField(
+    capability, context.packetBoundCapability(id, provider));
+  const explicitlyScoped = providerHashExplicitlyScoped(config);
+  const repositories = context.providerRepositories(id, provider, config);
+  if (!explicitlyScoped) {
+    if (field === "workspaceHash") return fallback || context.relevantHash(id);
+    return context.relevantSnapshot(id)[field] || fallback || context.relevantHash(id);
+  }
+  const snapshot = context.relevantSnapshot(id);
+  if (repositories.length === 1)
+    return repositoryFieldHash(context, id, snapshot, repositories[0], field);
+  return context.stableHash({
+    version: 1,
+    field,
+    repositories: repositories.map((repository) => ({
+      id: repository.id,
+      hash: repositoryFieldHash(context, id, snapshot, repository, field)
+    }))
+  });
+}
+
 export function createEvidenceContract({
   ROOT, PROVIDERS, ADAPTERS, INPUT_MODES, EXCLUDED_WORKSPACE_DIRS,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
@@ -709,34 +748,10 @@ export function createEvidenceContract({
       .includes(providerCapability(provider, providerConfig(id, provider)));
   }
 
-  function providerWorkspaceHash(id, provider, fallback = null) {
-    const capability = providerCapability(provider, providerConfig(id, provider));
-    const field = capability === "review" ? "reviewHash"
-      : packetBoundCapability(id, provider) ? "workspaceHash" : "codeHash";
-    const config = providerConfig(id, provider);
-    const explicitlyScoped = Boolean(config?.repository || config?.repositories ||
-      config?.adapter === "contract-digest");
-    const repositories = providerRepositories(id, provider, config);
-    if (!explicitlyScoped)
-      return field === "workspaceHash"
-        ? fallback || relevantHash(id)
-        : relevantSnapshot(id)[field] || fallback || relevantHash(id);
-    const snapshot = relevantSnapshot(id);
-    if (repositories.length === 1) {
-      const repository = repositories[0];
-      return snapshot.repositories?.[repository.id]?.[field] ||
-        singleRelevantSnapshot(id, repository.workspacePath, true)[field];
-    }
-    return stableHash({
-      version: 1,
-      field,
-      repositories: repositories.map((repository) => ({
-        id: repository.id,
-        hash: snapshot.repositories?.[repository.id]?.[field] ||
-          singleRelevantSnapshot(id, repository.workspacePath, true)[field]
-      }))
-    });
-  }
+  const providerWorkspaceHash = providerWorkspaceHashOperation.bind(null, {
+    providerConfig, providerCapability, packetBoundCapability, providerRepositories,
+    relevantHash, relevantSnapshot, singleRelevantSnapshot, stableHash
+  });
   
   // Which repository a scoped input root belongs to, for a stable label in the
   // recorded file list.

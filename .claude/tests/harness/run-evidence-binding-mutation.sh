@@ -132,8 +132,8 @@ const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /const field = capability === "review" \? "reviewHash"/,
-  'const field = capability === "review" ? "codeHash" /* FOUNDATION-INJECTED-FAULT */');
+  /if \(capability === "review"\) return "reviewHash";/,
+  'if (capability === "review") return "codeHash"; /* FOUNDATION-INJECTED-FAULT */');
 if (mutated === source) { console.error("review-exemption fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);
 MUTATE
