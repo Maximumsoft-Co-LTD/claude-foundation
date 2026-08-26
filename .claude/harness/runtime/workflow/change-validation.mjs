@@ -563,6 +563,55 @@ export function durableDecisionMetadataIssues(content) {
   return [...parsed.issues, ...durableDecisionGraphIssues(parsed.decisions)];
 }
 
+export function providersForCapability(
+  providers, providerCapability, capability, repositories = []
+) {
+  const instances = [];
+  for (const [provider, config] of Object.entries(providers)) {
+    if (providerCapability(provider, config) !== capability) continue;
+    if (config.repository && repositories.length > 0 &&
+        !repositories.includes(config.repository)) continue;
+    instances.push(provider);
+  }
+  return instances;
+}
+
+export function addRequiredCapability(context, capability, repositories = []) {
+  if (context.waived.has(capability)) return;
+  const instances = providersForCapability(
+    context.providers, context.providerCapability, capability, repositories);
+  if (instances.length)
+    for (const provider of instances) context.required.add(provider);
+  else context.required.add(capability);
+}
+
+export function requiredProvidersOperation(context, id) {
+  const state = context.loadRuntime(id);
+  const contract = context.evidence(id);
+  const capabilityContext = {
+    providers: contract.providers || {},
+    providerCapability: context.providerCapability,
+    waived: new Set((state.waivers || []).map((row) => row.capability)),
+    required: new Set()
+  };
+  for (const claim of contract.claims) {
+    for (const capability of claim.capabilities) {
+      addRequiredCapability(
+        capabilityContext, capability, claim.repositories || []);
+      if (capability === "test" && !capabilityContext.waived.has("test"))
+        addRequiredCapability(
+          capabilityContext, "discovery", claim.repositories || []);
+    }
+  }
+  if (context.reviewPolicy(id, state, contract).required)
+    addRequiredCapability(capabilityContext, "review");
+  if (context.resolvedAcceptance(id, state, contract).required)
+    addRequiredCapability(capabilityContext, "acceptance");
+  for (const capability of context.policyCapabilitySplit(id, contract).enforced)
+    addRequiredCapability(capabilityContext, capability);
+  return [...capabilityContext.required].sort();
+}
+
 export function createChangeValidationRuntime({
   markBlocked = () => {},
   root,
@@ -1358,36 +1407,6 @@ export function createChangeValidationRuntime({
     return { version: 1, changeId: id, reviewAssurance: assurance };
   }
 
-  function requiredProviders(id) {
-    const state = loadRuntime(id);
-    const contract = evidence(id);
-    const providers = contract.providers || {};
-    const waived = new Set((state.waivers || []).map((row) => row.capability));
-    const required = new Set();
-    const addCapability = (capability, repositories = []) => {
-      if (waived.has(capability)) return;
-      const instances = Object.entries(providers).filter(([provider, config]) => {
-        if (providerCapability(provider, config) !== capability) return false;
-        if (!config.repository || repositories.length === 0) return true;
-        return repositories.includes(config.repository);
-      }).map(([provider]) => provider);
-      if (instances.length) instances.forEach((provider) => required.add(provider));
-      else required.add(capability);
-    };
-    for (const claim of contract.claims) {
-      for (const capability of claim.capabilities) {
-        addCapability(capability, claim.repositories || []);
-        if (capability === "test" && !waived.has("test"))
-          addCapability("discovery", claim.repositories || []);
-      }
-    }
-    if (reviewPolicy(id, state, contract).required) addCapability("review");
-    if (resolvedAcceptance(id, state, contract).required) addCapability("acceptance");
-    for (const capability of policyCapabilitySplit(id, contract).enforced)
-      addCapability(capability);
-    return [...required].sort();
-  }
-
   // A capability the policy infers from the *realized* diff is a risk hint, not
   // a contract the author signed. It can only appear once the files exist —
   // after Build — and an inferred capability nobody wired defaults to adapter
@@ -1413,6 +1432,11 @@ export function createChangeValidationRuntime({
         .push(capability);
     return { enforced, advisory };
   }
+
+  const requiredProviders = requiredProvidersOperation.bind(null, {
+    loadRuntime, evidence, providerCapability, reviewPolicy,
+    resolvedAcceptance, policyCapabilitySplit
+  });
 
   // Advisories are the record that the downgrade above happened. Dropping an
   // inferred capability silently would make "the policy saw nothing" and "the

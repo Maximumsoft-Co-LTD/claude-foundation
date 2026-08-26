@@ -1,0 +1,79 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  addRequiredCapability,
+  providersForCapability,
+  requiredProvidersOperation
+} from "../runtime/workflow/change-validation.mjs";
+
+const providers = {
+  "test-global": { capability: "test" },
+  "test-api": { capability: "test", repository: "api" },
+  "test-web": { capability: "test", repository: "web" },
+  discovery: { capability: "discovery", repository: "api" },
+  review: { capability: "review" },
+  acceptance: { capability: "acceptance" },
+  security: { capability: "security-static" }
+};
+const capability = (provider, config) => config.capability || provider;
+
+test("provider capability matching honors global and repository-scoped instances", () => {
+  assert.deepEqual(providersForCapability(
+    providers, capability, "test", ["api"]), ["test-global", "test-api"]);
+  assert.deepEqual(providersForCapability(
+    providers, capability, "test", ["missing"]), ["test-global"]);
+  assert.deepEqual(providersForCapability(
+    providers, capability, "test"), ["test-global", "test-api", "test-web"]);
+  assert.deepEqual(providersForCapability(
+    providers, capability, "unknown"), []);
+});
+
+test("required capability addition uses configured providers, fallback names, and waivers", () => {
+  const context = {
+    providers,
+    providerCapability: capability,
+    waived: new Set(["review"]),
+    required: new Set()
+  };
+  addRequiredCapability(context, "test", ["api"]);
+  addRequiredCapability(context, "deployment");
+  addRequiredCapability(context, "review");
+  assert.deepEqual([...context.required].sort(),
+    ["deployment", "test-api", "test-global"]);
+});
+
+test("required provider operation combines claims, discovery, review, acceptance, and policy", () => {
+  const contract = {
+    providers,
+    claims: [{
+      id: "claim-a",
+      capabilities: ["test", "security-static"],
+      repositories: ["api"]
+    }]
+  };
+  const result = requiredProvidersOperation({
+    loadRuntime: () => ({ waivers: [] }),
+    evidence: () => contract,
+    providerCapability: capability,
+    reviewPolicy: () => ({ required: true }),
+    resolvedAcceptance: () => ({ required: true }),
+    policyCapabilitySplit: () => ({ enforced: ["deployment", "security-static"] })
+  }, "change-a");
+  assert.deepEqual(result, [
+    "acceptance", "deployment", "discovery", "review", "security",
+    "test-api", "test-global"
+  ]);
+});
+
+test("waiving test also suppresses automatic discovery while optional gates stay absent", () => {
+  const result = requiredProvidersOperation({
+    loadRuntime: () => ({ waivers: [{ capability: "test" }] }),
+    evidence: () => ({ claims: [{ capabilities: ["test"] }] }),
+    providerCapability: capability,
+    reviewPolicy: () => ({ required: false }),
+    resolvedAcceptance: () => ({ required: false }),
+    policyCapabilitySplit: () => ({ enforced: [] })
+  }, "change-a");
+  assert.deepEqual(result, []);
+});
