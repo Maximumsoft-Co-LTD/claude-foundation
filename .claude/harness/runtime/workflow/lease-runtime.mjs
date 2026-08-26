@@ -6,6 +6,142 @@ import { dirname, join } from "node:path";
 import { conflictKeysOverlap } from "../core/graph-execution.mjs";
 import { acquireProcessLock } from "../core/process-lock.mjs";
 
+export function leaseDescriptorIsOwned(descriptor, id, taskId, owner) {
+  return descriptor.changeId === id && descriptor.taskId === taskId &&
+    descriptor.owner === owner;
+}
+
+export function leaseRenewalRows(descriptors, id, taskId, owner) {
+  return descriptors.filter(({ descriptor }) =>
+    leaseDescriptorIsOwned(descriptor, id, taskId, owner));
+}
+
+export function leaseResourceConflicts(
+  keys, descriptors, id, taskId, owner, overlap = conflictKeysOverlap
+) {
+  const conflicts = [];
+  for (const key of keys) {
+    for (const { descriptor } of descriptors) {
+      if (leaseDescriptorIsOwned(descriptor, id, taskId, owner)) continue;
+      const held = descriptor.key || descriptor.resource;
+      if (overlap(key, held)) conflicts.push({ key, held, descriptor });
+    }
+  }
+  return conflicts;
+}
+
+export function sameLeaseRenewalAuthority(
+  renewal, keys, prior, owner, plan
+) {
+  const renewalKeys = renewal.map(({ descriptor }) =>
+    descriptor.key || descriptor.resource).sort();
+  return JSON.stringify(renewalKeys) === JSON.stringify(keys) &&
+    prior.owner === owner && prior.graphRevision === plan.graphRevision &&
+    prior.graphIdentity === plan.graphIdentity &&
+    Number(prior.contractRevision) === Number(plan.contractRevision);
+}
+
+export function taskNodeOutputSchema(plan, taskId) {
+  for (const node of plan.graph?.nodes || [])
+    if (node.id === `task:${taskId}`) return node.outputSchema;
+  return undefined;
+}
+
+export function leaseAcquisitionRequest(context, id, taskId, flags) {
+  const owner = flags.owner;
+  if (!taskId || !owner || !/^[a-zA-Z0-9._-]+$/.test(owner))
+    context.fail("agents acquire requires <change> <task> --owner <agent-id>");
+  const plan = context.agentPlanValue(id);
+  if (!plan.dispatchable)
+    context.fail(`change '${id}' conflicts with active repository work`);
+  const normalizedTaskId = taskId.toUpperCase();
+  let task = null;
+  for (const candidate of plan.tasks)
+    if (candidate.id === normalizedTaskId) task = candidate;
+  if (!task) context.fail(`unknown pending task '${taskId}'`);
+  const pendingIds = new Set(plan.tasks.map((candidate) => candidate.id));
+  const blockedBy = task.dependsOn.filter((dependency) => pendingIds.has(dependency));
+  if (blockedBy.length)
+    context.fail(`task '${task.id}' is blocked by pending task(s): ${blockedBy.join(", ")}`);
+  const durationMs = Number(context.policy().execution.leaseMinutes) * 60 * 1000;
+  const expiresAt = new Date(context.nowMs() + durationMs).toISOString();
+  const keys = [...new Set(task.leaseKeys || task.resources || [])].sort();
+  const taskLeasePath = join(context.leases, "tasks", id, `${task.id}.json`);
+  const prior = context.exists(taskLeasePath)
+    ? context.readJson(taskLeasePath, {}) : {};
+  return { id, task, owner, keys, prior, plan, expiresAt, taskLeasePath };
+}
+
+export function acquireLeaseUnderLock(context) {
+  const {
+    id, task, owner, keys, prior, plan, expiresAt, taskLeasePath
+  } = context;
+  const descriptors = context.resourceDescriptors();
+  const renewal = leaseRenewalRows(descriptors, id, task.id, owner);
+  const conflicts = leaseResourceConflicts(keys, descriptors, id, task.id, owner);
+  if (conflicts.length) {
+    const conflict = conflicts[0];
+    throw new Error(`scope '${conflict.key}' conflicts with '${conflict.held}' held by ${
+      conflict.descriptor.changeId || "unknown"}/${conflict.descriptor.taskId || "unknown"}`);
+  }
+  const sameRenewal = sameLeaseRenewalAuthority(
+    renewal, keys, prior, owner, plan);
+  if (renewal.length && !sameRenewal)
+    throw new Error(`stale lease authority for '${id}/${task.id}'; release or take over the prior lease before reacquiring`);
+  if (sameRenewal) {
+    for (const row of renewal) context.writeJson(row.path, {
+      ...row.descriptor, expiresAt, renewedAt: context.now()
+    });
+    const renewed = { ...prior, expiresAt, renewedAt: context.now() };
+    context.writeJson(taskLeasePath, renewed);
+    return renewed;
+  }
+  const counterPath = join(context.leases, "fencing.json");
+  const fencingGeneration = Number(
+    context.readJson(counterPath, { generation: 0 }).generation || 0) + 1;
+  context.writeJson(counterPath, {
+    version: 1, generation: fencingGeneration, updatedAt: context.now()
+  });
+  const executionAttempt = Number(prior.executionAttempt || 0) + 1;
+  const acquiredAt = context.now();
+  const leaseId = context.stableHash({
+    id, taskId: task.id, owner, fencingGeneration, acquiredAt
+  });
+  const created = [];
+  try {
+    for (const key of keys) {
+      const path = context.leasePath(key);
+      mkdirSync(dirname(path), { recursive: true });
+      const descriptor = {
+        version: 2, key, resource: key, changeId: id, taskId: task.id, owner,
+        leaseId, fencingGeneration, executionAttempt,
+        graphRevision: plan.graphRevision, graphIdentity: plan.graphIdentity,
+        planDigest: plan.planDigest, acquiredAt, expiresAt
+      };
+      const handle = openSync(path, "wx");
+      created.push(path);
+      try { writeFileSync(handle, `${JSON.stringify(descriptor, null, 2)}\n`); }
+      finally { closeSync(handle); }
+    }
+  } catch (error) {
+    for (const path of created) rmSync(path, { force: true });
+    throw error;
+  }
+  const lease = {
+    version: 2, changeId: id, taskId: task.id, owner, leaseId,
+    fencingGeneration, executionAttempt,
+    graphRevision: plan.graphRevision, graphIdentity: plan.graphIdentity,
+    planDigest: plan.planDigest, contractRevision: plan.contractRevision,
+    workspaceHash: plan.workspaceHash, repository: task.repository,
+    paths: task.paths || [], claimIds: task.claims || [],
+    outputSchema: taskNodeOutputSchema(plan, task.id),
+    resources: keys, baselineSurface: context.observedTaskSurface(id, task),
+    acquiredAt, expiresAt
+  };
+  context.writeJson(taskLeasePath, lease);
+  return lease;
+}
+
 export function createLeaseRuntime({
   leases,
   stableHash,
@@ -94,96 +230,17 @@ export function createLeaseRuntime({
   }
 
   function acquire(id, taskId, flags) {
-    const owner = flags.owner;
-    if (!taskId || !owner || !/^[a-zA-Z0-9._-]+$/.test(owner))
-      fail("agents acquire requires <change> <task> --owner <agent-id>");
-    const plan = agentPlanValue(id);
-    if (!plan.dispatchable) fail(`change '${id}' conflicts with active repository work`);
-    const task = plan.tasks.find((candidate) => candidate.id === taskId.toUpperCase());
-    if (!task) fail(`unknown pending task '${taskId}'`);
-    const pendingIds = new Set(plan.tasks.map((candidate) => candidate.id));
-    const blockedBy = task.dependsOn.filter((dependency) => pendingIds.has(dependency));
-    if (blockedBy.length)
-      fail(`task '${task.id}' is blocked by pending task(s): ${blockedBy.join(", ")}`);
-    const durationMs = Number(policy().execution.leaseMinutes) * 60 * 1000;
-    const expiresAt = new Date(Date.now() + durationMs).toISOString();
-    const keys = [...new Set(task.leaseKeys || task.resources || [])].sort();
-    const taskLeasePath = join(leases, "tasks", id, `${task.id}.json`);
-    const prior = existsSync(taskLeasePath) ? readJson(taskLeasePath, {}) : {};
-    const result = withAcquisitionLock(() => {
-      const descriptors = resourceDescriptors();
-      const renewal = descriptors.filter(({ descriptor }) =>
-        descriptor.changeId === id && descriptor.taskId === task.id && descriptor.owner === owner);
-      const conflicts = [];
-      for (const key of keys)
-        for (const { descriptor } of descriptors) {
-          if (descriptor.changeId === id && descriptor.taskId === task.id && descriptor.owner === owner)
-            continue;
-          const held = descriptor.key || descriptor.resource;
-          if (conflictKeysOverlap(key, held)) conflicts.push({ key, held, descriptor });
-        }
-      if (conflicts.length) {
-        const conflict = conflicts[0];
-        throw new Error(`scope '${conflict.key}' conflicts with '${conflict.held}' held by ${
-          conflict.descriptor.changeId || "unknown"}/${conflict.descriptor.taskId || "unknown"}`);
-      }
-      const renewalKeys = renewal.map(({ descriptor }) => descriptor.key || descriptor.resource)
-        .sort();
-      const sameRenewalAuthority = JSON.stringify(renewalKeys) === JSON.stringify(keys) &&
-        prior.owner === owner && prior.graphRevision === plan.graphRevision &&
-        prior.graphIdentity === plan.graphIdentity &&
-        Number(prior.contractRevision) === Number(plan.contractRevision);
-      if (renewal.length && !sameRenewalAuthority)
-        throw new Error(`stale lease authority for '${id}/${task.id}'; release or take over the prior lease before reacquiring`);
-      if (sameRenewalAuthority) {
-        for (const row of renewal) writeJson(row.path, {
-          ...row.descriptor, expiresAt, renewedAt: now()
-        });
-        const renewed = { ...prior, expiresAt, renewedAt: now() };
-        writeJson(taskLeasePath, renewed);
-        return renewed;
-      }
-      const counterPath = join(leases, "fencing.json");
-      const fencingGeneration = Number(readJson(counterPath, { generation: 0 }).generation || 0) + 1;
-      writeJson(counterPath, { version: 1, generation: fencingGeneration, updatedAt: now() });
-      const executionAttempt = Number(prior.executionAttempt || 0) + 1;
-      const acquiredAt = now();
-      const leaseId = stableHash({ id, taskId: task.id, owner, fencingGeneration, acquiredAt });
-      const created = [];
-      try {
-        for (const key of keys) {
-          const path = leasePath(key);
-          mkdirSync(dirname(path), { recursive: true });
-          const descriptor = {
-            version: 2, key, resource: key, changeId: id, taskId: task.id, owner,
-            leaseId, fencingGeneration, executionAttempt,
-            graphRevision: plan.graphRevision, graphIdentity: plan.graphIdentity,
-            planDigest: plan.planDigest, acquiredAt, expiresAt
-          };
-          let handle = openSync(path, "wx");
-          created.push(path);
-          try { writeFileSync(handle, `${JSON.stringify(descriptor, null, 2)}\n`); }
-          finally { closeSync(handle); }
-        }
-      } catch (error) {
-        for (const path of created) rmSync(path, { force: true });
-        throw error;
-      }
-      const lease = {
-        version: 2, changeId: id, taskId: task.id, owner, leaseId,
-        fencingGeneration, executionAttempt,
-        graphRevision: plan.graphRevision, graphIdentity: plan.graphIdentity,
-        planDigest: plan.planDigest, contractRevision: plan.contractRevision,
-        workspaceHash: plan.workspaceHash, repository: task.repository,
-        paths: task.paths || [], claimIds: task.claims || [],
-        outputSchema: plan.graph?.nodes?.find((entry) => entry.id === `task:${task.id}`)?.outputSchema,
-        resources: keys, baselineSurface: observedTaskSurface(id, task),
-        acquiredAt, expiresAt
-      };
-      writeJson(taskLeasePath, lease);
-      return lease;
+    const request = leaseAcquisitionRequest({
+      agentPlanValue, policy, leases, exists: existsSync, readJson,
+      nowMs: Date.now, fail
+    }, id, taskId, flags);
+    const operation = acquireLeaseUnderLock.bind(null, {
+      ...request,
+      leases, resourceDescriptors, writeJson, now, readJson, stableHash,
+      leasePath, observedTaskSurface
     });
-    console.log(`LEASE ACQUIRED ${id}/${task.id}\n  owner: ${owner}\n  lease: ${result.leaseId}\n  generation: ${result.fencingGeneration}\n  attempt: ${result.executionAttempt}\n  expires: ${expiresAt}`);
+    const result = withAcquisitionLock(operation);
+    console.log(`LEASE ACQUIRED ${id}/${request.task.id}\n  owner: ${request.owner}\n  lease: ${result.leaseId}\n  generation: ${result.fencingGeneration}\n  attempt: ${result.executionAttempt}\n  expires: ${request.expiresAt}`);
   }
 
   function release(id, taskId, flags) {
