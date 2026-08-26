@@ -40,6 +40,86 @@ function assertNoSecretMaterial(value, label, fail, path = []) {
     fail(`${label} appears to contain credential material at '${path.join(".") || "value"}'`);
 }
 
+export function requiredOperationString(raw, name, label, fail) {
+  const value = cleanString(raw[name]);
+  if (!value) fail(`${label}.${name} is required`);
+  if (value.length > 1000) fail(`${label}.${name} is too long`);
+  return value;
+}
+
+export function normalizedOperationReferences(raw, label, context, fail) {
+  const claimIds = [...new Set(raw.claimIds || [])].sort();
+  const taskIds = [...new Set((raw.taskIds || []).map((value) =>
+    cleanString(value).toUpperCase()))].sort();
+  if (!claimIds.length) fail(`${label}.claimIds must be non-empty`);
+  if (claimIds.some((value) => !cleanString(value)))
+    fail(`${label}.claimIds must contain non-empty strings`);
+  if (taskIds.some((value) => !/^T\d{3,}$/.test(value)))
+    fail(`${label}.taskIds must contain stable task IDs`);
+  if (context.claimIds) {
+    const unknown = claimIds.filter((value) => !context.claimIds.has(value));
+    if (unknown.length) fail(`${label} references unknown claim(s): ${unknown.join(", ")}`);
+  }
+  if (context.taskIds) {
+    const unknown = taskIds.filter((value) => !context.taskIds.has(value));
+    if (unknown.length) fail(`${label} references unknown task(s): ${unknown.join(", ")}`);
+  }
+  return { claimIds, taskIds };
+}
+
+export function normalizedActivationProof(raw, activation, claimIds, label, fail) {
+  const proof = raw.activationProof || null;
+  if (activation !== "safe-before-activation") {
+    if (proof !== null)
+      fail(`${label}.activationProof is only valid for safe-before-activation`);
+    return null;
+  }
+  if (!proof || typeof proof !== "object" ||
+      !cleanString(proof.claimId) || !cleanString(proof.condition))
+    fail(`${label}.activationProof requires claimId and condition for safe-before-activation`);
+  const claimId = cleanString(proof.claimId);
+  if (!claimIds.includes(claimId))
+    fail(`${label}.activationProof.claimId must be listed in claimIds`);
+  return { claimId, condition: cleanString(proof.condition) };
+}
+
+export function normalizeHandoffOperation(context, raw, index, scope = {}) {
+  const label = `${scope.id || "change"}/handoffs.yaml operations[${index}]`;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    context.fail(`${label} must be an object`);
+  context.assertNoSecretMaterial(raw, label, context.fail);
+  const id = context.safeId(raw.id, /^H\d{3,}$/, `${label}.id`, context.fail);
+  const string = (name) => requiredOperationString(raw, name, label, context.fail);
+  const timing = string("timing");
+  if (!TIMINGS.has(timing)) context.fail(`${label}.timing must be pre-land|post-land`);
+  const activation = string("activation");
+  if (!ACTIVATIONS.has(activation))
+    context.fail(`${label}.activation must be safe-before-activation|activation-coupled`);
+  if (!Array.isArray(raw.evidence) || raw.evidence.length === 0 ||
+      raw.evidence.some((entry) => !EVIDENCE_TYPES.has(entry)))
+    context.fail(`${label}.evidence must contain supported evidence types`);
+  const { claimIds, taskIds } = normalizedOperationReferences(raw, label, scope, context.fail);
+  const activationProof = normalizedActivationProof(raw, activation, claimIds, label, context.fail);
+  const owner = cleanString(raw.owner) || cleanString(context.defaultOwner());
+  if (!owner) context.fail(`${label}.owner is required`);
+  if (owner.length > 1000) context.fail(`${label}.owner is too long`);
+  return {
+    id,
+    owner,
+    environment: string("environment"),
+    authority: string("authority"),
+    operation: string("operation"),
+    timing,
+    activation,
+    evidence: [...new Set(raw.evidence)].sort(),
+    runbook: string("runbook"),
+    rollback: string("rollback"),
+    claimIds,
+    taskIds,
+    ...(activationProof ? { activationProof } : {})
+  };
+}
+
 export function createHandoffRuntime({
   root,
   handoffsRoot,
@@ -60,76 +140,12 @@ export function createHandoffRuntime({
     return join(handoffsRoot, id, `${operationId}.json`);
   }
 
-  function normalizeOperation(raw, index, context = {}) {
-    const label = `${context.id || "change"}/handoffs.yaml operations[${index}]`;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw))
-      fail(`${label} must be an object`);
-    assertNoSecretMaterial(raw, label, fail);
-    const id = safeId(raw.id, /^H\d{3,}$/, `${label}.id`, fail);
-    const string = (name) => {
-      const value = cleanString(raw[name]);
-      if (!value) fail(`${label}.${name} is required`);
-      if (value.length > 1000) fail(`${label}.${name} is too long`);
-      return value;
-    };
-    const timing = string("timing");
-    if (!TIMINGS.has(timing)) fail(`${label}.timing must be pre-land|post-land`);
-    const activation = string("activation");
-    if (!ACTIVATIONS.has(activation))
-      fail(`${label}.activation must be safe-before-activation|activation-coupled`);
-    if (!Array.isArray(raw.evidence) || raw.evidence.length === 0 ||
-        raw.evidence.some((entry) => !EVIDENCE_TYPES.has(entry)))
-      fail(`${label}.evidence must contain supported evidence types`);
-    const claimIds = [...new Set(raw.claimIds || [])].sort();
-    const taskIds = [...new Set((raw.taskIds || []).map((value) =>
-      cleanString(value).toUpperCase()))].sort();
-    if (!claimIds.length) fail(`${label}.claimIds must be non-empty`);
-    if (claimIds.some((value) => !cleanString(value)))
-      fail(`${label}.claimIds must contain non-empty strings`);
-    if (taskIds.some((value) => !/^T\d{3,}$/.test(value)))
-      fail(`${label}.taskIds must contain stable task IDs`);
-    const activationProof = raw.activationProof || null;
-    if (activation === "safe-before-activation") {
-      if (!activationProof || typeof activationProof !== "object" ||
-          !cleanString(activationProof.claimId) || !cleanString(activationProof.condition))
-        fail(`${label}.activationProof requires claimId and condition for safe-before-activation`);
-      if (!claimIds.includes(cleanString(activationProof.claimId)))
-        fail(`${label}.activationProof.claimId must be listed in claimIds`);
-    } else if (activationProof !== null)
-      fail(`${label}.activationProof is only valid for safe-before-activation`);
-    if (context.claimIds) {
-      const unknown = claimIds.filter((value) => !context.claimIds.has(value));
-      if (unknown.length) fail(`${label} references unknown claim(s): ${unknown.join(", ")}`);
-    }
-    if (context.taskIds) {
-      const unknown = taskIds.filter((value) => !context.taskIds.has(value));
-      if (unknown.length) fail(`${label} references unknown task(s): ${unknown.join(", ")}`);
-    }
-    const owner = cleanString(raw.owner) || cleanString(defaultOwner());
-    if (!owner) fail(`${label}.owner is required`);
-    if (owner.length > 1000) fail(`${label}.owner is too long`);
-    const operation = {
-      id,
-      owner,
-      environment: string("environment"),
-      authority: string("authority"),
-      operation: string("operation"),
-      timing,
-      activation,
-      evidence: [...new Set(raw.evidence)].sort(),
-      runbook: string("runbook"),
-      rollback: string("rollback"),
-      claimIds,
-      taskIds,
-      ...(activationProof ? {
-        activationProof: {
-          claimId: cleanString(activationProof.claimId),
-          condition: cleanString(activationProof.condition)
-        }
-      } : {})
-    };
-    return operation;
-  }
+  const normalizeOperation = normalizeHandoffOperation.bind(null, {
+    assertNoSecretMaterial,
+    safeId,
+    defaultOwner,
+    fail
+  });
 
   function handoffContract(id, options = {}) {
     const state = options.state || loadRuntime(id);
