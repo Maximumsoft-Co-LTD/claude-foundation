@@ -188,6 +188,111 @@ export function buildPhaseContextRow({
   };
 }
 
+export const TELEMETRY_IMPORT_FORMATS = Object.freeze([
+  "generic", "codex", "cursor", "otel", "claude"
+]);
+
+export function parseTelemetryImportRows({ fail, output = console }, source, text) {
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    const rows = [];
+    let unparseable = 0;
+    for (const line of text.split("\n").filter(Boolean)) {
+      try { rows.push(JSON.parse(line)); }
+      catch { unparseable += 1; }
+    }
+    if (!rows.length) fail(`telemetry source is neither JSON nor JSONL: ${source}`);
+    if (unparseable)
+      output.error(`WARNING: skipped ${unparseable} unparseable telemetry line(s) in ${source}`);
+    return rows;
+  }
+}
+
+export function validateTelemetryImportRows({ fail }, format, rows) {
+  if (format === "claude" && !rows.some((row) =>
+    row.type === "assistant" && row.message?.role === "assistant" && row.message?.usage))
+    fail("Claude telemetry source has no assistant.message.usage records");
+}
+
+export function importTelemetryOperation(context, id, values) {
+  const { flags, rest } = context.parseFlags(values);
+  const source = rest[0];
+  if (!source) context.fail("telemetry import requires a JSON or JSONL file");
+  const format = flags.format || "generic";
+  if (!TELEMETRY_IMPORT_FORMATS.includes(format))
+    context.fail("telemetry --format must be generic|codex|cursor|otel|claude");
+  const path = context.resolvePath(context.cwd(), source);
+  if (!context.pathExists(path)) context.fail(`telemetry source not found: ${source}`);
+  const rows = parseTelemetryImportRows(context, source, context.readFile(path, "utf8").trim());
+  validateTelemetryImportRows(context, format, rows);
+  const snapshot = context.readJson(context.snapshotPath(id), {});
+  const imported = context.appendTelemetryRows(id, rows, format, {
+    snapshot,
+    sessionId: format === "codex" ? context.runtimeSessionId() : null
+  });
+  context.output.log(`TELEMETRY ${id}: imported ${imported}; skipped ${rows.length - imported}`);
+}
+
+export function syncClaudeTelemetrySource(context, {
+  id, path, host, session, snapshot, options
+}) {
+  const key = context.sourceKey(path);
+  const source = session.sources[key] || { path, offset: 0 };
+  let chunk;
+  let nextSource;
+  try {
+    chunk = context.readCompleteJsonLines(path, context.sourceReadOffset(path, source));
+    nextSource = context.sourceCursor(path, chunk.nextOffset);
+  } catch (error) {
+    if (!options.quiet) context.fail(error.message);
+    context.output.error(
+      `WARNING: skipped unreadable Claude transcript ${context.basename(path)}: ${error.message}`);
+    return { imported: 0, scanned: 0 };
+  }
+  const rows = chunk.rows.filter(context.belongsToThisProject);
+  const imported = context.appendTelemetryRows(id, rows, "claude", {
+    sessionId: host.sessionId,
+    operationId: session.operationId || "unknown",
+    agentId: path !== host.transcriptPath
+      ? context.basename(path).replace(/^agent-/, "").replace(/\.jsonl$/, "")
+      : "orchestrator",
+    sourcePath: path,
+    snapshot
+  });
+  session.sources[key] = nextSource;
+  return { imported, scanned: chunk.rows.length };
+}
+
+export function syncClaudeTelemetryOperation(context, id, options = {}) {
+  context.loadRuntime(id);
+  const host = context.claudeHostContext(options.source || null);
+  if (!host) {
+    if (!options.quiet)
+      context.output.log(`TELEMETRY ${id}: Claude transcript unavailable; imported 0`);
+    return { imported: 0, scanned: 0 };
+  }
+  const { cursors, session } = context.bindClaudeSession(id, options.operationId || null, {
+    source: options.source || null,
+    fromStart: Boolean(options.source)
+  });
+  const snapshot = context.readJson(context.snapshotPath(id), {});
+  const totals = { imported: 0, scanned: 0 };
+  for (const path of context.collectClaudeSources(host.transcriptPath)) {
+    const result = syncClaudeTelemetrySource(context, {
+      id, path, host, session, snapshot, options
+    });
+    totals.imported += result.imported;
+    totals.scanned += result.scanned;
+  }
+  session.updatedAt = context.now();
+  context.saveClaudeCursors(id, cursors);
+  if (!options.quiet)
+    context.output.log(`TELEMETRY ${id}: imported ${totals.imported}; scanned ${totals.scanned}; source claude-transcript`);
+  return totals;
+}
+
 export function createTelemetryRuntime({
   root,
   logs,
@@ -535,56 +640,25 @@ export function createTelemetryRuntime({
     return normalized.length;
   }
 
-  function syncClaudeTelemetry(id, options = {}) {
-    loadRuntime(id);
-    const context = claudeHostContext(options.source || null);
-    if (!context) {
-      if (!options.quiet)
-        console.log(`TELEMETRY ${id}: Claude transcript unavailable; imported 0`);
-      return { imported: 0, scanned: 0 };
-    }
-    const { cursors, session } = bindClaudeSession(id, options.operationId || null, {
-      source: options.source || null,
-      fromStart: Boolean(options.source)
-    });
-    const snapshot = readJson(snapshotPath(id), {});
-    let imported = 0;
-    let scanned = 0;
-    for (const path of collectClaudeSources(context.transcriptPath)) {
-      const key = sourceKey(path);
-      const source = session.sources[key] || { path, offset: 0 };
-      let chunk;
-      let nextSource;
-      try {
-        const offset = sourceReadOffset(path, source);
-        chunk = readCompleteJsonLines(path, offset);
-        nextSource = sourceCursor(path, chunk.nextOffset);
-      } catch (error) {
-        if (!options.quiet) fail(error.message);
-        console.error(
-          `WARNING: skipped unreadable Claude transcript ${basename(path)}: ${error.message}`);
-        continue;
-      }
-      const isSubagent = path !== context.transcriptPath;
-      const rows = chunk.rows.filter(belongsToThisProject);
-      imported += appendTelemetryRows(id, rows, "claude", {
-        sessionId: context.sessionId,
-        operationId: session.operationId || "unknown",
-        agentId: isSubagent
-          ? basename(path).replace(/^agent-/, "").replace(/\.jsonl$/, "")
-          : "orchestrator",
-        sourcePath: path,
-        snapshot
-      });
-      scanned += chunk.rows.length;
-      session.sources[key] = nextSource;
-    }
-    session.updatedAt = now();
-    saveClaudeCursors(id, cursors);
-    if (!options.quiet)
-      console.log(`TELEMETRY ${id}: imported ${imported}; scanned ${scanned}; source claude-transcript`);
-    return { imported, scanned };
-  }
+  const syncClaudeTelemetry = syncClaudeTelemetryOperation.bind(null, {
+    loadRuntime,
+    claudeHostContext,
+    bindClaudeSession,
+    readJson,
+    snapshotPath,
+    collectClaudeSources,
+    sourceKey,
+    sourceReadOffset,
+    readCompleteJsonLines,
+    sourceCursor,
+    belongsToThisProject,
+    appendTelemetryRows,
+    saveClaudeCursors,
+    now,
+    fail,
+    basename,
+    output: console
+  });
 
   function prepareClaudeTelemetry(id, operationId) {
     const context = claudeHostContext();
@@ -594,50 +668,19 @@ export function createTelemetryRuntime({
     bindClaudeSession(id, operationId);
   }
 
-  function importTelemetry(id, values) {
-    const { flags, rest } = parseFlags(values);
-    const source = rest[0];
-    if (!source) fail("telemetry import requires a JSON or JSONL file");
-    const format = flags.format || "generic";
-    if (!["generic", "codex", "cursor", "otel", "claude"].includes(format))
-      fail("telemetry --format must be generic|codex|cursor|otel|claude");
-    const path = resolve(process.cwd(), source);
-    if (!existsSync(path)) fail(`telemetry source not found: ${source}`);
-    const text = readFileSync(path, "utf8").trim();
-    let rows;
-    try {
-      const parsed = JSON.parse(text);
-      rows = Array.isArray(parsed) ? parsed : [parsed];
-    } catch {
-      // A telemetry export is someone else's file, so a malformed line is an
-      // expected input rather than an exceptional one. Parsing the JSONL
-      // fallback with a bare `map` threw out of the command: the operator got a
-      // Node stack trace with absolute runtime paths instead of a sentence, for
-      // the ordinary case of a truncated or half-written export. Skipping is
-      // already this command's vocabulary — it reports `imported N; skipped M` —
-      // so unparseable lines join that count, and only a file with nothing
-      // readable in it is an error.
-      rows = [];
-      let unparseable = 0;
-      for (const line of text.split("\n").filter(Boolean)) {
-        try { rows.push(JSON.parse(line)); }
-        catch { unparseable += 1; }
-      }
-      if (!rows.length)
-        fail(`telemetry source is neither JSON nor JSONL: ${source}`);
-      if (unparseable)
-        console.error(`WARNING: skipped ${unparseable} unparseable telemetry line(s) in ${source}`);
-    }
-    if (format === "claude" && !rows.some((row) =>
-      row.type === "assistant" && row.message?.role === "assistant" && row.message?.usage))
-      fail("Claude telemetry source has no assistant.message.usage records");
-    const snapshot = readJson(snapshotPath(id), {});
-    const imported = appendTelemetryRows(id, rows, format, {
-      snapshot,
-      sessionId: format === "codex" ? runtimeSessionId() : null
-    });
-    console.log(`TELEMETRY ${id}: imported ${imported}; skipped ${rows.length - imported}`);
-  }
+  const importTelemetry = importTelemetryOperation.bind(null, {
+    parseFlags,
+    fail,
+    resolvePath: resolve,
+    cwd: process.cwd,
+    pathExists: existsSync,
+    readFile: readFileSync,
+    readJson,
+    snapshotPath,
+    appendTelemetryRows,
+    runtimeSessionId,
+    output: console
+  });
 
   const recordEvent = recordTelemetryEvent.bind(null, {
     root, logs, now, loadRuntime, readJson, snapshotPath, repositoryById,
