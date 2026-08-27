@@ -4,10 +4,10 @@
   "tool": "@stryker-mutator/core@9.6.1",
   "scope": "dashboard",
   "counts": {
-    "killed": 456,
+    "killed": 471,
     "timeout": 5,
-    "survived": 204,
+    "survived": 189,
     "noCoverage": 60
   },
-  "score": 63.59
+  "score": 65.66
 }

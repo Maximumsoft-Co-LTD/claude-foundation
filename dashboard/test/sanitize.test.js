@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
-  clean, cleanChanges, cleanRuns, cleanUsage, hasChangeActivity
+  clean, cleanChanges, cleanRanges, cleanRuns, cleanUsage, hasChangeActivity
 } = require('../sanitize');
 
 test('clean bounds strings and removes control characters', () => {
@@ -26,6 +26,14 @@ test('change sanitizer retains history-only repository rows', () => {
   const rows = cleanChanges([{ repoId: 'org/repo', commits: [{ date: '2026-08-16', n: 2 }] }]);
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0].commits, [{ date: '2026-08-16', n: 2 }]);
+});
+
+test('range sanitizer rejects malformed rows and normalizes numeric boundaries', () => {
+  assert.deepEqual(cleanRanges(null), []);
+  assert.deepEqual(cleanRanges([null, [1], ['3.9', '8.2'], [-2, -1], [9, 4],
+    ['bad', 'also-bad']]), [
+    [3, 8], [0, 0], [9, 9], [0, 0]
+  ]);
 });
 
 test('change activity recognizes every retained source and requires repository identity', () => {
