@@ -59,57 +59,74 @@ function budgetProjection(value) {
   };
 }
 
-function receiptProjection(root, id) {
-  const dir = join(root, ".foundation", "receipts", id);
-  if (!existsSync(dir)) return { status: "missing", providers: [] };
+function readReceiptFile(dir, entry) {
+  if (!entry.isFile() || !entry.name.endsWith(".json")) return null;
+  try {
+    const raw = readFileSync(join(dir, entry.name));
+    const value = JSON.parse(raw.toString("utf8"));
+    return value && typeof value === "object" ? { name: entry.name, raw, value } : null;
+  } catch {
+    return null;
+  }
+}
+
+function receiptDirectoryProjection(dir) {
   const providers = [];
   const receiptDigests = new Map();
   let proof = null;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    const path = join(dir, entry.name);
-    let raw;
-    let value;
-    try {
-      raw = readFileSync(path);
-      value = JSON.parse(raw.toString("utf8"));
-    } catch { continue; }
-    if (!value || typeof value !== "object") continue;
+    const receipt = readReceiptFile(dir, entry);
+    if (!receipt) continue;
     // proof.json is the manifest the receipts roll up into, not a provider —
     // the harness skips it here for the same reason. Listing it produced a
     // phantom provider row, and reading its absence as the only signal meant a
     // receipt set containing failures reported the same "partial" as an
     // all-green set still waiting for `prove`.
-    if (entry.name === "proof.json") {
-      proof = value;
+    if (receipt.name === "proof.json") {
+      proof = receipt.value;
       continue;
     }
-    const provider = entry.name.slice(0, -5);
-    receiptDigests.set(provider, createHash("sha256").update(raw).digest("hex"));
+    const provider = receipt.name.slice(0, -5);
+    receiptDigests.set(provider, createHash("sha256").update(receipt.raw).digest("hex"));
     providers.push({
       provider,
-      status: typeof value.status === "string" ? value.status : "unknown"
+      status: typeof receipt.value.status === "string" ? receipt.value.status : "unknown"
     });
   }
   providers.sort((a, b) => a.provider.localeCompare(b.provider));
-  const failing = providers.some((item) => ["fail", "error"].includes(item.status));
+  return { proof, providers, receiptDigests };
+}
+
+function proofIsFresh(proof, providers, receiptDigests) {
   const provenReceipts = Array.isArray(proof?.receipts) ? proof.receipts : null;
   const provenByProvider = new Map((provenReceipts || []).map((entry) =>
     [entry?.provider, entry?.sha256]));
   const excludedProviders = new Set((Array.isArray(proof?.excludedReceipts)
     ? proof.excludedReceipts : []).map((entry) => entry?.provider));
-  const proofFresh = typeof proof?.status === "string" && provenReceipts !== null &&
+  return typeof proof?.status === "string" && provenReceipts !== null &&
     provenReceipts.every((entry) => typeof entry?.provider === "string" &&
       typeof entry?.sha256 === "string" && receiptDigests.get(entry.provider) === entry.sha256) &&
     providers.every((entry) => provenByProvider.has(entry.provider) ||
       excludedProviders.has(entry.provider));
+}
+
+function projectedReceiptStatus(providers, proof, proofFresh) {
+  if (providers.some((item) => ["fail", "error"].includes(item.status))) return "failing";
+  if (proofFresh) return proof.status;
+  return providers.length ? "partial" : "missing";
+}
+
+function receiptProjection(root, id) {
+  const dir = join(root, ".foundation", "receipts", id);
+  if (!existsSync(dir)) return { status: "missing", providers: [] };
+  const { proof, providers, receiptDigests } = receiptDirectoryProjection(dir);
+  const proofFresh = proofIsFresh(proof, providers, receiptDigests);
   // A proof is current only while every included receipt still has the digest
   // the proof certified and every extra receipt was explicitly excluded by
   // that proof. Any changed/new/missing receipt makes the projection partial;
   // fail/error remains the stronger live signal.
   return {
-    status: failing ? "failing" : (proofFresh
-      ? proof.status : providers.length ? "partial" : "missing"),
+    status: projectedReceiptStatus(providers, proof, proofFresh),
     providers
   };
 }

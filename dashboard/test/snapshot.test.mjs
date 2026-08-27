@@ -81,3 +81,41 @@ test("a changed non-failing receipt makes an old proof partial until re-proven",
   writeFileSync(receiptPath, JSON.stringify({ status: "pass", output: "new run" }));
   assert.equal(buildDashboardSnapshot(root).evidence["safe-change"].status, "partial");
 });
+
+test("receipt projection ignores malformed files and honors explicit proof exclusions", () => {
+  const root = mkdtempSync(join(tmpdir(), "cf-dashboard-snapshot-"));
+  const runtimeDir = join(root, ".foundation", "runtime");
+  const receiptDir = join(root, ".foundation", "receipts", "mixed-change");
+  mkdirSync(runtimeDir, { recursive: true });
+  mkdirSync(receiptDir, { recursive: true });
+  mkdirSync(join(receiptDir, "directory.json"));
+  for (const id of ["mixed-change", "no-receipts", "empty-receipts"]) {
+    writeFileSync(join(runtimeDir, `${id}.json`), JSON.stringify({
+      id, schema: "foundation-standard", status: "building"
+    }));
+  }
+  mkdirSync(join(root, ".foundation", "receipts", "empty-receipts"), { recursive: true });
+
+  writeFileSync(join(receiptDir, "notes.txt"), "ignored");
+  writeFileSync(join(receiptDir, "broken.json"), "{not-json");
+  writeFileSync(join(receiptDir, "null.json"), "null");
+  const testReceipt = JSON.stringify({ status: "pass" });
+  writeFileSync(join(receiptDir, "test.json"), testReceipt);
+  writeFileSync(join(receiptDir, "optional.json"), JSON.stringify({}));
+  writeFileSync(join(receiptDir, "proof.json"), JSON.stringify({
+    status: "pass",
+    receipts: [{
+      provider: "test", sha256: createHash("sha256").update(testReceipt).digest("hex")
+    }],
+    excludedReceipts: [{ provider: "optional" }]
+  }));
+
+  const snapshot = buildDashboardSnapshot(root);
+  assert.equal(snapshot.evidence["mixed-change"].status, "pass");
+  assert.deepEqual(snapshot.evidence["mixed-change"].providers, [
+    { provider: "optional", status: "unknown" },
+    { provider: "test", status: "pass" }
+  ]);
+  assert.deepEqual(snapshot.evidence["no-receipts"], { status: "missing", providers: [] });
+  assert.deepEqual(snapshot.evidence["empty-receipts"], { status: "missing", providers: [] });
+});
