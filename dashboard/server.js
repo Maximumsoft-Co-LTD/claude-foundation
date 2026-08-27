@@ -544,6 +544,46 @@ function serveStatic(req, res, pathname) {
 }
 
 // ── Route handlers ──────────────────────────────────────────────────────────
+function onlineAgentCount(now) {
+  return [...agents.values()].filter((agent) => now - agent.lastSeen <= ONLINE_TTL_MS).length;
+}
+
+function heartbeatRecord(value, agentId, status, existing, now) {
+  const next = {
+    agentId,
+    gitUser: clean(value.gitUser) || 'unknown',
+    gitEmail: clean(value.gitEmail, 120).toLowerCase(),
+    host: clean(value.host),
+    version: clean(value.version),
+    sourceSchema: clean(value.sourceSchema, 64) || 'unknown',
+    foundationVersion: clean(value.foundationVersion, 64) || 'unknown',
+    status,
+    runs: cleanRuns(value.runs),
+    changes: cleanChanges(value.changes),
+    usage: cleanUsage(value.usage),
+    sessions: cleanSessions(value.sessions),
+    tools: cleanTools(value.tools),
+    prs: cleanDateCounts(value.prs, 'n'),
+    firstSeen: existing ? existing.firstSeen : now,
+    lastSeen: now,
+    lastAccepted: now,
+  };
+  next.datasetHashes = datasetHashes(next);
+  return next;
+}
+
+function acceptHeartbeat(next, existing, now) {
+  const changed = changedDatasets(existing, next.datasetHashes);
+  agents.set(next.agentId, next);
+  persistHeartbeat(next, now, changed);
+  if (next.status === 'offline') agents.delete(next.agentId);
+  else if (!existing || changed.changes) persistConflicts(now);
+  onlineCache.at = 0;
+  if (changed.usage || changed.sessions || changed.tools || changed.changes || changed.prs)
+    usageCache.at = 0;
+  prune(now);
+}
+
 async function handleHeartbeat(req, res, url) {
   if (!keyMatches(presentedKey(req, url), SHARED_KEY)) {
     return sendJson(res, 401, { ok: false, error: 'bad key' });
@@ -574,43 +614,14 @@ async function handleHeartbeat(req, res, url) {
     existing.lastSeen = now;
     return sendJson(res, 200, {
       ok: true,
-      onlineCount: [...agents.values()].filter((a) => now - a.lastSeen <= ONLINE_TTL_MS).length,
+      onlineCount: onlineAgentCount(now),
       ttlMs: ONLINE_TTL_MS,
       throttled: true,
     });
   }
-  const next = {
-    agentId,
-    gitUser: clean(body.value.gitUser) || 'unknown',
-    gitEmail: clean(body.value.gitEmail, 120).toLowerCase(),
-    host: clean(body.value.host),
-    version: clean(body.value.version),
-    sourceSchema: clean(body.value.sourceSchema, 64) || 'unknown',
-    foundationVersion: clean(body.value.foundationVersion, 64) || 'unknown',
-    status,
-    runs: cleanRuns(body.value.runs),
-    changes: cleanChanges(body.value.changes),
-    usage: cleanUsage(body.value.usage),
-    sessions: cleanSessions(body.value.sessions),
-    tools: cleanTools(body.value.tools),
-    prs: cleanDateCounts(body.value.prs, 'n'),
-    firstSeen: existing ? existing.firstSeen : now,
-    lastSeen: now,
-    lastAccepted: now,
-  };
-  next.datasetHashes = datasetHashes(next);
-  const changed = changedDatasets(existing, next.datasetHashes);
-  agents.set(agentId, next);
-
-  persistHeartbeat(next, now, changed);
-  if (status === 'offline') agents.delete(agentId);
-  else if (!existing || changed.changes) persistConflicts(now);
-  onlineCache.at = 0;
-  if (changed.usage || changed.sessions || changed.tools || changed.changes || changed.prs) usageCache.at = 0;
-
-  prune(now);
-  const onlineCount = [...agents.values()].filter((a) => now - a.lastSeen <= ONLINE_TTL_MS).length;
-  return sendJson(res, 200, { ok: true, onlineCount, ttlMs: ONLINE_TTL_MS });
+  const next = heartbeatRecord(body.value, agentId, status, existing, now);
+  acceptHeartbeat(next, existing, now);
+  return sendJson(res, 200, { ok: true, onlineCount: onlineAgentCount(now), ttlMs: ONLINE_TTL_MS });
 }
 
 // git performs 3-way merges with 3 lines of context, so edits within a few

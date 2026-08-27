@@ -82,6 +82,26 @@ test('heartbeat rejects an unknown status', async () => {
   assert.equal(result.response.status, 400);
 });
 
+test('heartbeat requires its shared key and a non-empty agent identity', async () => {
+  const unauthorized = await request('/api/heartbeat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-cf-key': 'wrong-key' },
+    body: JSON.stringify({ agentId: 'intruder' }),
+  });
+  assert.equal(unauthorized.response.status, 401);
+  const missing = await heartbeat('   ');
+  assert.equal(missing.response.status, 400);
+  assert.equal(missing.body.error, 'agentId required');
+});
+
+test('an offline heartbeat persists the transition and removes the live agent', async () => {
+  await heartbeat('leaving-agent', { gitUser: '', sourceSchema: '', foundationVersion: '' });
+  _internals.agents.get('leaving-agent').lastAccepted -= 60_000;
+  const result = await heartbeat('leaving-agent', { status: 'offline' });
+  assert.equal(result.response.status, 200);
+  assert.equal(_internals.agents.has('leaving-agent'), false);
+});
+
 test('heartbeat exposes bounded runtime source metadata', async () => {
   await heartbeat('runtime-agent', {
     sourceSchema: 'foundation-runtime-v2', foundationVersion: '3.1.7',
