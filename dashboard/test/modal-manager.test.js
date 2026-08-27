@@ -82,3 +82,35 @@ test('Escape cannot dismiss the required dashboard-key gate', () => {
   assert.equal(modal.hidden, false);
   assert.equal(f.shell.inert, true);
 });
+
+test('opening another modal hides the first and preserves the original return focus', () => {
+  const f = fixture();
+  const hidden = f.element();
+  hidden.hidden = true;
+  const ariaHidden = f.element();
+  ariaHidden.getAttribute = () => 'true';
+  const visible = f.element();
+  const first = f.element([hidden, ariaHidden, visible]);
+  const second = f.element();
+
+  f.manager.open(first);
+  assert.equal(f.document.activeElement, visible, 'the first visible child receives fallback focus');
+  f.manager.open(second);
+  assert.equal(first.hidden, true);
+  assert.equal(f.document.activeElement, second, 'an empty modal focuses its container');
+
+  f.manager.close(second);
+  assert.equal(f.document.activeElement, f.returnTarget,
+    'replacing a modal must not replace the original return target');
+});
+
+test('reopening the active modal does not hide it and tolerates a non-focusable container', () => {
+  const f = fixture();
+  const modal = f.element();
+  modal.focus = null;
+
+  f.manager.open(modal);
+  f.manager.open(modal);
+  assert.equal(modal.hidden, false);
+  assert.equal(f.manager.active(), modal);
+});

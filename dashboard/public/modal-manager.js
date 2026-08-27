@@ -20,18 +20,25 @@
         .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
     }
 
-    function open(modal, initialFocus, options = {}) {
+    function prepareModalTransition(modal) {
       if (!activeModal) returnFocus = document.activeElement;
       else if (activeModal !== modal) activeModal.hidden = true;
+    }
+
+    function focusModal(modal, initialFocus) {
+      const target = initialFocus || focusableElements(modal)[0] || modal;
+      if (typeof target.focus === 'function') target.focus();
+    }
+
+    function open(modal, initialFocus, options = {}) {
+      prepareModalTransition(modal);
 
       activeModal = modal;
       dismissible = options.dismissible === true;
       modal.hidden = false;
       shell.inert = true;
       skipLink.hidden = true;
-
-      const target = initialFocus || focusableElements(modal)[0] || modal;
-      if (typeof target.focus === 'function') target.focus();
+      focusModal(modal, initialFocus);
     }
 
     function close(modal, options = {}) {
