@@ -47,6 +47,7 @@ Foundation จงใจแยกความรับผิดชอบ เพ�
 - [ติดตั้ง](/docs/th/install/) — requirement และวิธีติดตั้งสองแบบ
 - [เริ่มใช้งาน](/docs/th/quickstart/) — พา change หนึ่งตัวจนจบวงจร
 - [วงจรการเปลี่ยนแปลง](/docs/th/loop/) — ห้าคำสั่งทำอะไรและทำไม
+- [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — เพิ่ม CRAP, mutation, baseline และ debt โดยไม่ขยาย Change scope
 
 :::note[เวอร์ชัน]
 เอกสารชุดนี้อ้างอิง Foundation **v3.4.8** — runtime API 26, provider protocol 12 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่

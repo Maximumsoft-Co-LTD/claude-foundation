@@ -27,6 +27,21 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `providers` | ดูการต่อสายหลักฐานระหว่างนิยาม change contract |
 | `version` | พิมพ์เวอร์ชันแพ็กเกจที่ติดตั้งอยู่ |
 
+## Consumer quality
+
+ดูการตั้งค่า language profile, baseline และ rollout policy ที่
+[Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
+| คำสั่ง | ใช้ทำอะไร |
+|---|---|
+| `quality discover [--change <id>]` | อ่าน manifest แล้วรายงานภาษา profile provider และ capability ที่ไม่รองรับ โดยไม่รัน command ของโปรเจกต์ |
+| `quality init [--change <id>] [--write] [--force] [--ci github]` | preview consumer quality config แล้วเขียน config/ตัวอย่าง GitHub workflow เมื่อสั่งชัดเจน |
+| `quality doctor [--change <id>] [--enforce]` | ตรวจ repository ที่เลือก, provider config, executable ที่พร้อมใช้ และ mutation isolation |
+| `quality run [--change <id>] [--repo <id>] [--capability <name>] [--full] [--shard-index <n> --shard-count <n>] [--enforce]` | รัน lane แยก repository และใช้ changed-code หรือ full-inventory ratchet |
+| `quality report` | อ่าน summary ล่าสุดแบบไม่เฉลี่ยกลบ repository |
+| `quality baseline [--repo <id>] [--capability <name>] [--write --decision-ref <ref> --reason <why>]` | preview หรืออนุมัติ versioned CRAP/mutation baseline อย่างชัดเจน |
+| `quality debt` | สร้าง debt แบบ JSON/Markdown จากรอบล่าสุดโดยไม่ขยาย Change scope |
+
 ## วงจรชีวิตของ change
 
 | คำสั่ง | ใช้ทำอะไร |
@@ -113,6 +128,9 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | acceptance protocol | 2 |
 | attestation protocol | 1 |
 | authority protocol | 2 |
+| quality capabilities protocol | 1 |
+| CRAP protocol | 1 |
+| automated mutation protocol | 1 |
 
 :::note
 provider protocol 12 หมายความว่า receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันถูกรันจริงหรือแค่ถูกกล่าวอ้าง จึงเชื่อไม่ได้ว่าถูกรัน

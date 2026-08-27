@@ -160,6 +160,13 @@ claude-foundation evidence doctor <change>    # อธิบายว่าย�
 
 การตั้งต้นไม่เคยติดตั้ง dependency ไม่สร้าง receipt ไม่ลดทอน claim และไม่ถือว่าการตรวจพบคือการพิสูจน์
 
+ถ้า commit `quality/foundation-quality.json` แล้วและ Change ต้องใช้
+`static-analysis` bootstrap จะแนะนำคำสั่ง consumer quality ของ Foundation เป็น
+orchestration provider หนึ่งตัว คำสั่งนี้ route repository ที่ได้รับผลทั้งหมด,
+สร้าง assurance summary แบบไม่เฉลี่ย และเก็บ lane รายละเอียดไว้ใน command log
+ต้อง configure และ pilot ก่อนเสมอ เพราะ discovery ไม่สร้างผล quality ที่ผ่านขึ้นมาเอง
+ดู [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
 ## Resource และการทำงานคู่ขนาน
 
 resource เริ่มต้นถูกระบุพร้อมชื่อรีโป suite ของสองรีโปจึงไม่ต้องมารอคิวกัน

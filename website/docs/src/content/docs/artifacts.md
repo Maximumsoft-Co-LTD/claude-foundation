@@ -63,6 +63,20 @@ most one required delta.
 See [Configure foundation.json](/docs/foundation-config/) for every field,
 valid ranges, and ready-to-use policy recipes.
 
+Consumer quality adds another committed, project-owned tree:
+
+```text
+quality/
+├── foundation-quality.json       repository profiles, providers, thresholds, exceptions
+└── baselines/
+    ├── manifest.json             decision references and baseline provenance
+    └── <repository>/             versioned CRAP and mutation reports
+```
+
+`quality init` previews this configuration before writing it. Baselines are
+never created implicitly: `quality baseline --write` requires both a decision
+reference and a reason. See [Consumer quality gates](/docs/consumer-quality/).
+
 :::caution[Two files named `repositories.yaml`]
 `openspec/repositories.yaml` describes the project's repository topology.
 `openspec/changes/<id>/repositories.yaml` describes the repositories **one
@@ -127,6 +141,7 @@ state cannot drift into a commit by accident.
 | `recovery/` | Quarantined abandoned changes and orphaned state |
 | `prototypes/` | Disposable comparison prototypes |
 | `policy.json` | Optional project rules mapping paths to required capabilities |
+| `quality/results/` | Latest consumer-quality lane reports, aggregate summary, and rendered debt |
 | `install-manifest.txt` | Installer record of which files it owns |
 
 Several of these appear only once something creates them —

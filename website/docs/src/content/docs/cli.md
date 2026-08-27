@@ -27,6 +27,21 @@ Safe to run at any time. These mutate nothing.
 | `providers` | Inspect evidence wiring while defining a change contract |
 | `version` | Print the installed package version |
 
+## Consumer quality
+
+See [Consumer quality gates](/docs/consumer-quality/) for configuration,
+language profiles, baselines, and rollout policy.
+
+| Command | Purpose |
+|---|---|
+| `quality discover [--change <id>]` | Read repository manifests and report detected languages, profiles, providers, and unsupported capabilities without executing project commands |
+| `quality init [--change <id>] [--write] [--force] [--ci github]` | Preview consumer quality config; explicitly write it and optional GitHub workflow templates |
+| `quality doctor [--change <id>] [--enforce]` | Validate selected repositories, provider configuration, executable availability, and mutation isolation |
+| `quality run [--change <id>] [--repo <id>] [--capability <name>] [--full] [--shard-index <n> --shard-count <n>] [--enforce]` | Run per-repository lanes and apply changed-code or full-inventory ratchets |
+| `quality report` | Read the latest non-averaged repository-lane summary |
+| `quality baseline [--repo <id>] [--capability <name>] [--write --decision-ref <ref> --reason <why>]` | Preview or explicitly approve versioned CRAP/mutation baselines |
+| `quality debt` | Render JSON and Markdown debt from the latest run without widening Change scope |
+
 ## The change lifecycle
 
 | Command | Purpose |
@@ -113,6 +128,9 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | acceptance protocol | 2 |
 | attestation protocol | 1 |
 | authority protocol | 2 |
+| quality capabilities protocol | 1 |
+| CRAP protocol | 1 |
+| automated mutation protocol | 1 |
 
 :::note
 Provider protocol 12 means receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven. An old receipt cannot say whether it was executed or merely asserted, so it cannot be trusted to have been executed.

@@ -62,6 +62,20 @@ duties สามารถเพิ่ม independence, diversity หรือท
 ดูรายละเอียดทุก field, ช่วงค่าที่ใช้ได้ และ policy recipe พร้อมใช้ได้ที่
 [ตั้งค่า foundation.json](/docs/th/foundation-config/)
 
+Consumer quality เพิ่ม tree ที่ commit และเป็นของโปรเจกต์อีกหนึ่งชุด:
+
+```text
+quality/
+├── foundation-quality.json       profile, provider, threshold และ exception แยก repository
+└── baselines/
+    ├── manifest.json             decision reference และ provenance ของ baseline
+    └── <repository>/             versioned CRAP และ mutation report
+```
+
+`quality init` จะ preview config ก่อนเขียนเสมอ ส่วน baseline ไม่ถูกสร้างเงียบ ๆ:
+`quality baseline --write` ต้องมีทั้ง decision reference และเหตุผล ดูรายละเอียดที่
+[Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
 :::caution[มีไฟล์ชื่อ `repositories.yaml` สองตัว]
 `openspec/repositories.yaml` อธิบายโครงสร้าง repository ของทั้งโปรเจกต์
 ส่วน `openspec/changes/<id>/repositories.yaml` อธิบายว่า **change ตัวนั้น**
@@ -125,6 +139,7 @@ machine state จึงหลุดเข้า commit โดยบังเอ�
 | `recovery/` | change ที่ถูกยกเลิกและ state ที่กำพร้า |
 | `prototypes/` | prototype สำหรับเปรียบเทียบ ใช้แล้วทิ้ง |
 | `policy.json` | กฎของโปรเจกต์ที่แม็ป path ไปยัง capability ที่ต้องมี (ไม่บังคับ) |
+| `quality/results/` | lane report, aggregate summary และ rendered debt ของ consumer quality รอบล่าสุด |
 | `install-manifest.txt` | บันทึกของ installer ว่ามันเป็นเจ้าของไฟล์ไหนบ้าง |
 
 หลายตัวจะปรากฏก็ต่อเมื่อมีอะไรสร้างมันขึ้นมา — `repository-sandboxes/`

@@ -56,6 +56,28 @@ Before the first Foundation packet on a developer machine:
    authentication and required headless/read-only flags and prints the exact
    install, login or upgrade command when the machine is not ready.
 
+## Optional consumer-quality onboarding
+
+To add changed-code CRAP and mutation gates, run `quality discover` first. It
+reads repository manifests without executing scripts. Preview
+`quality init`; only use `--write` after checking detected profiles and
+commands. Then install the project-owned language tools and run
+`quality doctor`.
+
+Keep `quality/foundation-quality.json` at `policy.mode: "report"` for at least
+three representative runs. Check function/source mapping, skipped mutants,
+unsupported capabilities, repository selection, and false positives. Approve
+the initial baseline only with `quality baseline --write --decision-ref …
+--reason …`, then enable enforcement in CI. `quality init --write --ci github`
+provides reusable/manual changed-code, nightly, and release templates; add the
+consumer's runtime/tool setup and call the reusable workflow from the existing
+PR trigger.
+
+The Harness does not install Jest, Stryker, gocyclo, Radon, coverage.py,
+PHPUnit, ShellCheck, database engines, browsers, or accessibility tools. Each
+consumer repository owns and pins them. See `CONSUMER-QUALITY.md` for protocols,
+adapters, isolation, baseline, exception, and multi-repository rules.
+
 Safe single-family profiles (merge either selection into the existing
 `review` object; keep the shipped `reviewers` map):
 

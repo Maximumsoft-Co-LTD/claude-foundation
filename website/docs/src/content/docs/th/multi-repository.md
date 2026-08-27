@@ -176,6 +176,13 @@ Prove รัน branch อิสระขนานกันได้และร
 read dependency ที่ขยับต้อง sync และ prove ใหม่ Foundation จะไม่รับรอง commit เก่า
 ใต้ repository manifest ใหม่
 
+Consumer quality ใช้ graph เดียวกันแต่ไม่เฉลี่ยคะแนนข้าม repository ต้องเพิ่ม
+ทุก repository ที่ถูกเลือกไว้ใน `quality/foundation-quality.json`; ถ้าขาดตัวใด
+ระบบจะ fail closed แต่ละ lane เก็บ commit, workspace digest, tool/config identity,
+baseline และ assurance แยกกัน รัน `quality run --change <change>` ก่อน Prove
+หรือให้ evidence bootstrap ต่อ quality config ที่ commit แล้วเป็น static-analysis
+evidence ดูรายละเอียดที่ [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
 ## 8. Land ตามลำดับที่ระบบรายงาน
 
 read repository ไม่มี Land node ส่วน writable child repository จะ Land เป็น saga

@@ -37,6 +37,12 @@ checkout ชุด repository เป็นส่วนหนึ่งของ i
 ให้ตั้งค่าส่วนนี้หลัง topology และ scope ของ change ถูกต้องแล้ว ตามลำดับเต็มใน
 [Workflow หลาย Repository](/docs/th/multi-repository/)
 
+เมื่อ commit `quality/foundation-quality.json` แล้ว consumer quality สามารถรัน
+เป็น static-analysis evidence ของโปรเจกต์ Receipt จะบันทึก full หรือ reduced
+assurance ส่วน command log เก็บทุก repository lane ไว้ Missing หรือ unmapped
+quality จะไม่กลายเป็นเลขศูนย์ที่ผ่าน ตั้งค่า report-only pilot, baseline และ
+enforcement policy ที่ [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
 ## ผลลัพธ์มีสี่แบบ ไม่ใช่สอง
 
 หลักฐานคืนค่าเป็น `pass`, `fail`, `inconclusive` หรือ `error` ทุกอย่างที่ไม่ใช่ `pass` บล็อกการ land

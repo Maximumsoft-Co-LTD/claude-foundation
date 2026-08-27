@@ -24,6 +24,12 @@ layer.
 claude-foundation doctor --stage change
 ```
 
+Consumer quality is optional. To add changed-code CRAP and mutation gates,
+onboard the repository once with `quality discover`, `quality init`, and
+`quality doctor` before starting enforcement. Keep the initial policy
+report-only until its mappings and baselines have been reviewed. See
+[Consumer quality gates](/docs/consumer-quality/).
+
 ## 1. Agree on the change
 
 ```text

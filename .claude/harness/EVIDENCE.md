@@ -197,7 +197,7 @@ provider. It resolves `FOUNDATION_CHANGE_ID`, runs in selected repository
 workspaces, and emits one non-averaged lane per repository. Missing quality
 capabilities remain explicit `unsupported` or `unavailable` assurance and are
 never converted to passing evidence. Setup, adapter authoring, rollout,
-baseline, and scope rules are documented in `docs/consumer-quality.md`.
+baseline, and scope rules are documented in `CONSUMER-QUALITY.md`.
 
 Prototype files under `.foundation/prototypes/` are non-authoritative. The
 runtime rejects them, including local-path references and symlinked origins,

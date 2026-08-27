@@ -71,6 +71,7 @@ Playwright, linters, or security scanners produce evidence.
 | Docs | `runtime/README.md` | Domain boundaries and dependency rules |
 | Docs | `AGENT.md` | Small portable contract loaded by Claude, Codex, and other agents |
 | Docs | `EVIDENCE.md` | Evidence contract, execution adapter, and proof reference |
+| Docs | `CONSUMER-QUALITY.md` | Installed quality protocols, onboarding, adapters, baselines, and fail-closed rules |
 | Docs | `README.md` | Runtime overview and operator guide |
 
 Use the public CLI instead of invoking `foundation.mjs` directly. The CLI finds
@@ -174,6 +175,11 @@ claude-foundation doctor --stage prove --change <change>
 | `handoff status <change>` | Shows external operations and Land disposition | Checking work owned by DevOps/SRE/security |
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
 | `handoff record <change> ...` | Records accepted/completed/rejected with actor and evidence references | Resuming Land without turning operator work into a developer task |
+
+Consumer-quality configuration is opt-in and remains report-only until the
+project explicitly enables enforcement. The complete installed command,
+protocol, adapter, baseline, exception, CI, and fail-closed reference is
+[`CONSUMER-QUALITY.md`](CONSUMER-QUALITY.md).
 
 If the whole project directory moves, rerunning `sandbox create <change>` can
 rebind a recorded sandbox to the canonical `.foundation/sandboxes/<change>` in

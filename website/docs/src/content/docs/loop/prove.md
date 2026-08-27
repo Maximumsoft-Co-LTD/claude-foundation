@@ -37,6 +37,13 @@ assume sibling checkouts. The repository set is part of execution and receipt
 identity. Configure this only after topology and change scope are correct; the
 [multi-repository workflow](/docs/multi-repository/) shows the full order.
 
+When `quality/foundation-quality.json` is committed, consumer quality can run
+as project-owned static-analysis evidence. Its receipt records full or reduced
+assurance, while the command log retains every repository lane. Missing or
+unmapped quality never becomes a passing zero. Configure the report-only pilot,
+baselines, and enforcement policy in
+[Consumer quality gates](/docs/consumer-quality/).
+
 ## Four outcomes, not two
 
 Evidence returns `pass`, `fail`, `inconclusive`, or `error`. Everything except `pass` blocks landing.

@@ -1,19 +1,30 @@
-# Consumer Quality: CRAP Score และ Mutation Testing
+# Consumer Quality: CRAP Score and Mutation Testing
 
-เอกสารนี้อธิบายการเปิดใช้ quality gate ของ Foundation ใน repository ของผู้ใช้ ระบบทำงานแบบ report-only เป็นค่าเริ่มต้น และไม่มีอำนาจแก้ code เพิ่มจาก scope ที่ประกาศไว้ใน change/spec
+Foundation can run project-owned quality tools across one or many consumer repositories. It starts in report-only mode and never grants permission to edit code outside the approved Change/spec.
 
-## หลักการทำงาน
+Thai version: [consumer-quality.th.md](consumer-quality.th.md)
 
-- CRAP รวม cyclomatic complexity กับ coverage ระดับ function เพื่อชี้ code ที่ทั้งซับซ้อนและพิสูจน์ได้น้อย
-- Automated mutation เปลี่ยน code ชั่วคราวแล้วตรวจว่า test ฆ่า mutant ได้หรือไม่; timeout และ crash ไม่นับเป็น kill
-- Semantic mutation ใช้ fault ที่ตรงกับ surface เช่น ลบ `WHERE`, ลบ tenant filter, ข้าม rollback หรือลบ focus state
-- แต่ละ repository เป็น lane แยก มี tool identity, commit, config digest และ baseline ของตัวเอง ไม่มีการเฉลี่ยคะแนนเพื่อกลบ lane ที่ fail
-- legacy debt ที่ไม่เกี่ยวกับ changed surface ถูกบันทึกเป็น debt แต่ไม่ block change ปัจจุบัน
-- `unsupported`, `unavailable` และ `unmapped` ไม่ถูกตีความเป็น pass หรือศูนย์
+## Guarantees
 
-## เริ่มใช้งาน
+- CRAP combines cyclomatic complexity with function coverage; Foundation recomputes the score itself.
+- Automated mutation counts only behavioral kills. Timeout, crash, compile/runtime error, no coverage, skipped, and unavailable are not kills.
+- Semantic mutation targets domain-specific faults such as a removed tenant filter or skipped transaction.
+- Repository lanes keep separate commit, workspace, tool/config, baseline, and assurance identity. Scores are never averaged across repositories.
+- Unrelated legacy debt is inventoried without blocking the current changed surface.
+- Unsupported, unavailable, and unmapped evidence never becomes zero or pass.
+- A quality finding is evidence, not scope authority. Out-of-spec edits fail the scope lane.
 
-ตรวจ topology และ capability โดยไม่รัน project command:
+CRAP is calculated as:
+
+```text
+CRAP = complexity² × (1 − coverage/100)³ + complexity
+```
+
+Default changed-code gates require unit coverage of 80%, integration coverage of 70%, and critical-journey coverage of 50%. New functions fail at CRAP 30 or above, existing functions fail on CRAP regression, and changed complexity above 30 fails.
+
+## Onboard a repository
+
+Discovery reads manifests and filenames without executing project commands:
 
 ```bash
 claude-foundation quality discover
@@ -22,51 +33,46 @@ claude-foundation quality init --write --ci github
 claude-foundation quality doctor
 ```
 
-`quality init` เป็น preview จนกว่าจะใส่ `--write` และสร้าง `quality/foundation-quality.json` เมื่อใช้ `--ci github` จะติดตั้ง workflow สำหรับ PR, nightly และ release เพิ่มด้วย โดยไม่เขียนทับไฟล์เดิมหากไม่มี `--force`
+`quality init` is preview-only until `--write`. It creates `quality/foundation-quality.json`. `--ci github` additionally copies reusable/manual changed-code, four-shard nightly, and full-release workflow templates. The changed-code template must be called by the repository's existing PR workflow; it does not register a `pull_request` trigger itself.
 
-รัน changed-code gate ใน sandbox ของ change:
+Run against the isolated workspace selected by a Change:
 
 ```bash
 claude-foundation quality run --change <change-id>
-claude-foundation quality run --change <change-id> --enforce
 claude-foundation quality report
+claude-foundation quality run --change <change-id> --enforce
 ```
 
-เมื่อ config ถูก commit แล้ว Harness จะเพิ่ม `static-analysis` evidence candidate ที่รัน quality gate ให้ change โดยอัตโนมัติ ผลอยู่ที่ `.foundation/quality/results/` และโฟลเดอร์นี้ไม่ควร commit
+Once the config is committed, evidence bootstrap can wire the enforced run as `static-analysis` evidence. Results are written under `.foundation/quality/results/` and must not be committed.
 
-## ภาษาและ profile
+## Profiles
 
-| Surface | Profile | วิธีตรวจหลัก |
+| Surface | Profile | Controls |
 |---|---|---|
-| JavaScript / TypeScript | `application-js-ts` | test, static, Istanbul + complexity, mutation |
-| Go | `application-go` | `go test`, `go vet`, gocyclo + cover, mutation |
+| JavaScript / TypeScript | `application-js-ts` | tests, static, Istanbul + complexity, automated/semantic mutation |
+| Go | `application-go` | tests, vet, gocyclo + cover, mutation, compatibility, resilience |
 | Python | `application-python` | pytest, static, Radon + coverage.py, mutation |
 | PHP | `application-php` | Composer/PHPUnit, Clover, mutation |
-| Bash | `script-bash` | test, ShellCheck/static, state identity, semantic faults |
-| SQL | `database-sql` | isolated integration, compatibility, migration and semantic faults |
-| MongoDB | `database-mongodb` | isolated data fixture, schema/query/migration faults |
-| HTML | `web-markup` | validation, browser and accessibility evidence |
-| CSS / Sass | `web-style` | lint/build, browser, accessibility and responsive evidence |
+| Bash | `script-bash` | tests, static, state identity, semantic faults |
+| SQL | `database-sql` | isolated integration, compatibility, migration, performance, semantic faults |
+| MongoDB | `database-mongodb` | isolated data, schema/query/migration faults |
+| HTML | `web-markup` | validation, browser, accessibility |
+| CSS / Sass | `web-style` | lint/build, browser, accessibility, responsive evidence |
 
-CRAP ไม่ถูกสร้างขึ้นปลอม ๆ ให้ Bash, SQL, MongoDB, HTML, CSS หรือ Sass เพราะ metric นี้ไม่เหมาะกับ surface เหล่านั้น ระบบจะใช้ capability ที่ตรงชนิดงานแทน
+Foundation does not invent CRAP values for Bash, SQL, MongoDB, HTML, CSS, or Sass. Those surfaces use controls that match their behavior.
 
-## Provider และ adapter
+## Providers and adapters
 
-Harness ไม่ติดตั้ง tool ของภาษา ผู้ใช้เป็นเจ้าของ version และ command ใน repo provider มีสองแบบ:
+The consumer project owns every executable and version. Providers are either:
 
-1. `command` รันคำสั่งแล้วอ่าน JSON protocol มาตรฐานจาก stdout หรือ `output`
-2. `builtin` รัน command ของ project (ถ้ามี) แล้ว normalize report ผ่าน adapter
+1. `command`: emit `foundation-crap-v1` or `foundation-automated-mutation-v1` JSON via stdout or `output`;
+2. `builtin`: run a project command and normalize its native reports.
 
-Built-in adapter ที่มีให้:
+Built-in normalizers are `javascript-istanbul`, `go-complexity-cover`, `python-radon-coverage`, `php-clover`, `canonical-functions`, and `generic-mutation-json`.
 
-- `javascript-istanbul`: complexity JSON + Istanbul coverage JSON
-- `go-complexity-cover`: gocyclo text + `go tool cover -func` text
-- `python-radon-coverage`: Radon JSON + coverage.py JSON
-- `php-clover`: PHPUnit Clover XML
-- `canonical-functions`: language ใดก็ได้ที่ส่ง function complexity/coverage แบบ canonical
-- `generic-mutation-json`: Stryker-like หรือ canonical mutant JSON ใช้ได้กับ JS/TS, Go, Python และ PHP
+Reports bind `repository`, `repositoryCommit`, `workspaceDigest`, `language`, and tool `name/version/adapterVersion/configDigest`. Paths are repository-relative. The schemas live in `.claude/harness/runtime/contracts/`.
 
-ตัวอย่าง:
+Example provider:
 
 ```json
 {
@@ -83,37 +89,35 @@ Built-in adapter ที่มีให้:
 }
 ```
 
-Adapter ใหม่ควร output `foundation-crap-v1` หรือ `foundation-automated-mutation-v1` พร้อม `repository`, `repositoryCommit`, `language`, tool `name/version/adapterVersion/configDigest` และ path แบบ repository-relative ดู schema ใน `.claude/harness/runtime/contracts/`
+## Baselines, debt, and exceptions
 
-## Baseline, debt และ exception
-
-หลังตรวจ pilot report และยืนยันผลแล้วจึงสร้าง baseline แบบ explicit:
+After at least three representative pilot runs, review the findings before explicitly creating a baseline:
 
 ```bash
 claude-foundation quality baseline
-claude-foundation quality baseline --write --decision-ref ADR-42 --reason "approved pilot baseline"
+claude-foundation quality baseline --write \
+  --decision-ref ADR-42 --reason "approved pilot baseline"
 ```
 
-Baseline แยกตาม repository/capability และใช้ได้ต่อเมื่อ language, tool version, adapter version และ config digest ตรงกัน การเปลี่ยน tool ต้อง review และสร้าง baseline ใหม่ ไม่ควร copy ค่าเดิมโดยไม่ตรวจ
+Baselines are separate per repository/capability and remain compatible only while language, tool version, adapter version, and config digest match. Automated mutation compares the baseline only over the current affected surface.
 
-Nightly ใช้:
+Nightly inventory uses:
 
 ```bash
 claude-foundation quality run --full
 claude-foundation quality debt
 ```
 
-งาน full ที่ใหญ่แบ่ง lane แบบ deterministic ได้ด้วย `--shard-index <0-based>`
-และ `--shard-count <n>` โดย GitHub nightly template แบ่งไว้สี่ shard
+Large runs accept `--shard-index <zero-based>` and `--shard-count <n>`. An exception identifies exactly one function or mutant—never a glob—and requires reason, risk, compensating evidence, owner, approver, tracking issue, and expiry within 90 days.
 
-Exception ต้องระบุ function หรือ mutant เดียว ห้าม glob ต้องมี owner, approver, risk, compensating evidence, tracking issue และวันหมดอายุไม่เกิน 90 วัน
+## Safety and rollout
 
-## ขอบเขตและความปลอดภัย
+- A selected repository missing from quality config fails closed.
+- Profile capabilities cannot be made optional with `required: false`.
+- Missing capabilities remain reduced assurance even when compensating evidence permits progress.
+- Mutation declares `tool` or `harness-sandbox` isolation; harness-sandbox runs require `--change`.
+- Git status before and after a provider must match.
+- SQL/MongoDB providers use isolated per-run databases, never shared or production data.
+- HTML/style quality remains browser/accessibility/visual evidence, not a fabricated code metric.
 
-Quality finding เป็น evidence ไม่ใช่ authority หากพบคะแนนสูงนอก spec ให้บันทึกใน debt แล้วหยุดที่ขอบเขตเดิม การแก้เพิ่มต้องเปิด/แก้ change พร้อม approval ก่อน ระบบตรวจ changed surface กับ task scope และทำ lane `scope: fail` เมื่อพบไฟล์นอกขอบเขต Mutation provider ต้องประกาศ isolation เป็น `tool` หรือ `harness-sandbox`; หาก working tree หลังรันไม่เหมือนก่อนรัน lane จะ fail
-
-สำหรับ SQL/MongoDB ให้ใช้ database ชั่วคราวที่แยกต่อ run ห้ามชี้ shared database หรือ production credential จาก provider ส่วน browser/visual evidence ต้องผูกกับ acceptance claim ไม่ควรนำ pixel difference ไปแปลงเป็น CRAP
-
-## การ rollout
-
-เริ่มด้วย `policy.mode: report` อย่างน้อยสามรอบ ตรวจ mapping และ false positive จากนั้นเก็บ baseline ที่มี decision reference แล้วจึงเปิด `--enforce` ใน PR Nightly ทำ full inventory ส่วน release รัน full gate แบบ enforce หากภาษาใดยังไม่มี adapter ให้คงสถานะ unsupported พร้อม compensating evidence ตาม risk ห้ามตั้งค่าคะแนนสมมติเป็นศูนย์เพื่อให้ผ่าน
+Keep `policy.mode: report` through the pilot. Approve stable mappings and baselines before enabling PR enforcement. Use nightly for full debt inventory and release for the full enforced gate.

@@ -511,6 +511,18 @@ lanes with `claude-foundation quality init`. Results keep repository identities
 separate, unsupported tools remain explicit, and findings never grant authority
 to edit outside the approved change. See [Consumer Quality](docs/consumer-quality.md).
 
+```bash
+claude-foundation quality discover                 # read-only capability inventory
+claude-foundation quality init                     # preview committed config
+claude-foundation quality init --write --ci github
+claude-foundation quality doctor
+claude-foundation quality run --change <change-id> # report-only pilot
+```
+
+The default remains report-only. Review mappings and establish an explicitly
+approved baseline before adding `--enforce`; nightly owns full debt inventory,
+while PR runs stay scoped to the Change.
+
 Useful diagnostics:
 
 ```bash

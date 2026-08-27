@@ -1,6 +1,6 @@
 # Consumer Quality Framework Plan
 
-> Status: Proposed
+> Status: Implemented (QF-001–QF-027)
 > Scope: Quality controls delivered to projects that adopt Foundation Harness
 > Date: 2026-08-27
 
@@ -88,14 +88,16 @@ Evidence receipt and lifecycle gate
 {
   "protocol": "foundation-quality-capabilities-v1",
   "repository": "api",
-  "language": "go",
+  "root": "services/api",
+  "languages": ["go"],
+  "profiles": ["application-go"],
   "capabilities": {
-    "test": "available",
-    "coverage": "available",
-    "complexity": "available",
-    "crap": "available",
-    "automatedMutation": "available",
-    "semanticMutation": "available"
+    "test": { "status": "available", "adapter": "command", "tool": "go" },
+    "crap": { "status": "available", "adapter": "builtin", "tool": "gocyclo" },
+    "automated-mutation": {
+      "status": "unsupported",
+      "reason": "no configured mutation provider"
+    }
   }
 }
 ```
@@ -119,10 +121,13 @@ Evidence receipt and lifecycle gate
 {
   "protocol": "foundation-crap-v1",
   "repository": "api",
+  "repositoryCommit": "4f2c...",
+  "workspaceDigest": "sha256:...",
   "language": "go",
   "tool": {
     "name": "adapter-name",
     "version": "1.0.0",
+    "adapterVersion": "1",
     "configDigest": "sha256:..."
   },
   "functions": [
@@ -133,6 +138,7 @@ Evidence receipt and lifecycle gate
       "endLine": 87,
       "complexity": 12,
       "coverageKind": "branch",
+      "coverageClass": "unit",
       "coveragePercent": 85,
       "crap": 12.41,
       "mapping": "exact"
@@ -151,6 +157,15 @@ Adapter หา function identity, complexity และ coverage mapping ส่�
 {
   "protocol": "foundation-automated-mutation-v1",
   "repository": "frontend",
+  "repositoryCommit": "9ac1...",
+  "workspaceDigest": "sha256:...",
+  "language": "typescript",
+  "tool": {
+    "name": "stryker",
+    "version": "9.6.1",
+    "adapterVersion": "1",
+    "configDigest": "sha256:..."
+  },
   "mutants": [
     {
       "id": "src/auth.ts:42:conditional-boundary",
@@ -158,7 +173,8 @@ Adapter หา function identity, complexity และ coverage mapping ส่�
       "line": 42,
       "operator": "conditional-boundary",
       "status": "killed",
-      "killedBy": ["CASE-EXPIRED-TOKEN-REFUSED"]
+      "killedBy": ["CASE-EXPIRED-TOKEN-REFUSED"],
+      "changedSurface": "changed-relevant"
     }
   ]
 }
@@ -270,7 +286,6 @@ Quality providers อ่านข้อมูลกว้างขึ้นเ�
 ```yaml
 qualityRemediation:
   mode: changed-code-only
-  maxAdditionalFiles: 3
   allowBehaviorPreservingRefactor: true
   allowPublicContractChange: false
   allowCrossRepositoryExpansion: false
@@ -365,15 +380,22 @@ Adapter ไม่ตัดสิน policy เอง หน้าที่ขอ
 
 ต้องมีตั้งแต่ MVP เพื่อให้ภาษาใหม่ใช้งานได้โดยไม่รอ built-in support:
 
-```yaml
-providers:
-  complexity:
-    command: ./scripts/quality-complexity
-    protocol: foundation-crap-v1
-
-  mutation:
-    command: ./scripts/quality-mutation
-    protocol: foundation-automated-mutation-v1
+```json
+{
+  "providers": {
+    "crap": {
+      "kind": "command",
+      "command": ["./scripts/quality-complexity"],
+      "protocol": "foundation-crap-v1"
+    },
+    "automated-mutation": {
+      "kind": "command",
+      "command": ["./scripts/quality-mutation"],
+      "protocol": "foundation-automated-mutation-v1",
+      "isolation": "tool"
+    }
+  }
+}
 ```
 
 Harness ต้องตรวจ schema, repository identity, workspace binding, tool version และ config digest
@@ -386,8 +408,8 @@ Harness ต้องตรวจ schema, repository identity, workspace binding,
 | Go | Full | Full | Full | Compile, test/race, coverage, CRAP, mutation |
 | Python | Full | Full | Full | Type/static, test, coverage, CRAP, mutation |
 | PHP | Full | Full | Full | Static, test, coverage, CRAP, mutation |
-| Bash | Advisory | Limited | Full | Syntax, shell static, behavior, state identity |
-| SQL | Stored procedures only | Not general | Full | Schema, migration, compatibility, query behavior |
+| Bash | N/A | Limited | Full | Syntax, shell static, behavior, state identity |
+| SQL | N/A | Not general | Full | Schema, migration, compatibility, query behavior |
 | MongoDB | Not applicable | Not general | Full | Schema, index, query, migration, transaction |
 | HTML | Not applicable | Not applicable | DOM behavior only | Validation, accessibility, browser |
 | CSS/Sass | Not applicable | Not applicable | Not general | Lint, compile, visual and responsive checks |
@@ -396,7 +418,8 @@ Harness ต้องตรวจ schema, repository identity, workspace binding,
 
 - refactor internal JavaScript tooling เป็น reusable adapter;
 - รองรับ JS, MJS, CJS, TS, TSX และ JSX;
-- map generated coverage/mutants กลับไป TypeScript source maps;
+- รับ original TypeScript paths ที่ Istanbul/source-map-aware tool ส่งมา และรายงาน
+  `unmapped` แทนการเดาเมื่อ provider ส่ง compiled paths;
 - รองรับ branch/function coverage, complexity, CRAP และ changed mutation;
 - รายงาน `unmapped` เมื่อ source mapping ไม่แน่นอน
 
@@ -494,13 +517,13 @@ Reviewer ตรวจ observable assertions, coverage quality, CRAP causes, surv
 เพิ่มคำสั่ง:
 
 ```text
-foundation quality discover
-foundation quality init
-foundation quality doctor
-foundation quality run
-foundation quality report
-foundation quality baseline
-foundation quality debt
+claude-foundation quality discover
+claude-foundation quality init
+claude-foundation quality doctor
+claude-foundation quality run
+claude-foundation quality report
+claude-foundation quality baseline
+claude-foundation quality debt
 ```
 
 ### `quality discover`

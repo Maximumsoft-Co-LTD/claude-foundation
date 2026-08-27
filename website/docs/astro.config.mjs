@@ -90,6 +90,7 @@ export default defineConfig({
           items: [
             { slug: "evidence/claims", label: "Claims and capabilities", translations: { th: "Claim และ capability" } },
             { slug: "evidence/adapters", label: "Adapters and wiring", translations: { th: "Adapter และการต่อสาย" } },
+            { slug: "consumer-quality", label: "Consumer quality gates", translations: { th: "Quality gate ของโปรเจกต์" } },
             { slug: "evidence/receipts", label: "Receipts and staleness", translations: { th: "Receipt และความ stale" } },
             { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
           ],

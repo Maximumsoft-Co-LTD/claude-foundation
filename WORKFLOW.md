@@ -387,6 +387,26 @@ forward. Wire the capability with `evidence init --write` to make it binding.
 Review is deliberately outside this rule: it stays a gate, and it has its own
 declared waivers below.
 
+Consumer projects may commit `quality/foundation-quality.json` to add
+per-repository changed-code CRAP and mutation evaluation. Onboarding is
+explicit and preview-first:
+
+```bash
+claude-foundation quality discover
+claude-foundation quality init
+claude-foundation quality init --write
+claude-foundation quality doctor
+```
+
+The default policy is report-only. Quality reports bind repository, commit,
+workspace digest, language, tool/adapter version, and config digest. A selected
+repository missing from config fails; unsupported, unavailable, unmapped, and
+reduced assurance remain visible rather than becoming pass or zero. Findings
+never expand the Change surface. Once committed, evidence bootstrap may wire
+`quality run --enforce` as static-analysis evidence. Baselines require an
+explicit decision reference and reason. The installed operational reference is
+`.claude/harness/CONSUMER-QUALITY.md`.
+
 Each receipt records provider/version, change, claims, workspace hash, result,
 observations, capability metadata, command/log, and timestamps. Status is one of
 `pass`, `fail`, `inconclusive`, or `error`.

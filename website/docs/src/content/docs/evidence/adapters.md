@@ -161,6 +161,13 @@ claude-foundation evidence doctor <change>    # explain what is still unresolved
 
 Bootstrap never installs a dependency, creates a receipt, weakens a claim, or treats detection as proof.
 
+If `quality/foundation-quality.json` is committed and the Change requires
+`static-analysis`, bootstrap recommends the Foundation consumer-quality command
+as one orchestration provider. That command routes all affected repositories,
+emits a non-averaged assurance summary, and stores its detailed lanes in the
+command log. Configure and pilot it first; discovery never invents a passing
+quality result. See [Consumer quality gates](/docs/consumer-quality/).
+
 ## Resources and parallelism
 
 Default resources are repository-qualified, so two repositories' suites do not serialize against each other:

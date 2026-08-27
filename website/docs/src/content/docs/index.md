@@ -47,6 +47,7 @@ Foundation deliberately splits responsibility so that no single party can both d
 - [Install](/docs/install/) — requirements and the two supported install paths
 - [Quickstart](/docs/quickstart/) — take one change end to end
 - [The change loop](/docs/loop/) — what each of the five commands does and why
+- [Consumer quality gates](/docs/consumer-quality/) — add CRAP, mutation, baselines, and debt without widening Change scope
 
 :::note[Version]
 These docs track Foundation **v3.4.8** — runtime API 26, provider protocol 12. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.

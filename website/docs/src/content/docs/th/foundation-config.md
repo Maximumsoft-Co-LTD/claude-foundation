@@ -114,6 +114,13 @@ independent หรือ diverse receipt จะบันทึก `independence-
 capability สำหรับงาน high-impact หรือ security-sensitive โดยแต่ละภาษาสามารถ
 ใช้ command adapter ของโครงการเองได้
 
+field นี้เลือก **ว่า Change แบบไหนต้องมี quality evidence** ส่วนไฟล์ commit แยก
+`quality/foundation-quality.json` กำหนด **ว่าแต่ละ repository สร้างและประเมิน
+หลักฐานนั้นอย่างไร** ได้แก่ language profile, command, built-in normalizer,
+threshold, baseline และ exception ให้สร้างไฟล์นี้ด้วย `quality init` ไม่ใช่เพิ่ม
+provider command ลง `foundation.json` ดูรายละเอียดที่
+[Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
 ## `models`: route ตามจุดประสงค์ ไม่ผูกกับคำสั่งของ host
 
 ```json

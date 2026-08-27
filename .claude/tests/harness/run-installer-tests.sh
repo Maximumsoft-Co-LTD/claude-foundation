@@ -162,11 +162,10 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 assert_eq "agent command surface is bounded" "20" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 24 includes the bounded proof controller and its two internal execution
-# commands, explicit authority
-# dispatch/abort/configured-reviewer/reset-infra routes, and the operator-owned
-# handoff record. Keep this count intentional so a newly exposed recovery
-# command cannot appear silently.
+# 28 includes the bounded proof controller, its internal execution commands,
+# explicit authority dispatch/abort/configured-reviewer/reset routes,
+# consumer-quality reporting, and the operator-owned handoff record. Keep this
+# count intentional so a newly exposed recovery command cannot appear silently.
 assert_eq "conditional recovery surface is bounded" "28" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
@@ -178,6 +177,11 @@ assert_cmd_zero "operator continuations and child Land records require decision 
     (.kind == "authority" and (.usage | contains("--decision-ref")))] | all' \
     "$TARGET/.claude/harness/commands.json"
 assert_file_exists "harness operator guide installed" "$TARGET/.claude/harness/README.md"
+assert_file_exists "consumer quality guide installed" \
+  "$TARGET/.claude/harness/CONSUMER-QUALITY.md"
+assert_file_contains "consumer quality guide documents fail-closed repository coverage" \
+  "$TARGET/.claude/harness/CONSUMER-QUALITY.md" \
+  "A selected repository missing from config fails"
 assert_file_exists "Claude session context hook installed" \
   "$TARGET/.claude/hooks/session-context.sh"
 assert_file_exists "portable agent contract installed" "$TARGET/.claude/harness/AGENT.md"

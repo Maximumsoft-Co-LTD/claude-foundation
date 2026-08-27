@@ -23,6 +23,12 @@ Agent จะใช้ภาษาของคุณ เริ่มจากผ�
 claude-foundation doctor --stage change
 ```
 
+Consumer quality เป็นตัวเลือก ถ้าต้องการ changed-code CRAP และ mutation gate
+ให้ onboard repository หนึ่งครั้งด้วย `quality discover`, `quality init` และ
+`quality doctor` ก่อนเปิด enforcement โดยคง policy เริ่มต้นเป็น report-only
+จนตรวจ mapping กับ baseline แล้ว ดู
+[Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+
 ## 1. ตกลงขอบเขต
 
 ```text

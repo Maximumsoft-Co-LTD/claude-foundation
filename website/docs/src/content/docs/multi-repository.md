@@ -179,6 +179,14 @@ provider scope to match the current graph. A moved read dependency requires
 sync and fresh proof; Foundation never certifies the old commit under the new
 repository manifest.
 
+Consumer quality follows the same graph but never averages repositories. Add a
+row for every selected repository to `quality/foundation-quality.json`; a
+selected repository missing from that file fails closed. Each lane keeps its
+own commit, workspace digest, tool/config identity, baseline, and assurance.
+Use `quality run --change <change>` before Prove or let evidence bootstrap wire
+the committed quality config as static-analysis evidence. See
+[Consumer quality gates](/docs/consumer-quality/).
+
 ## 8. Land in reported order
 
 Read repositories have no Land node. Writable child repositories land as an

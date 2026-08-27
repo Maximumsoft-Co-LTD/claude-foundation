@@ -84,6 +84,7 @@ dashboard/data/*.db-wal
 !/docs/database-recovery.md
 !/docs/independent-review.md
 !/docs/consumer-quality.md
+!/docs/consumer-quality.th.md
 !/docs/reports/
 !/docs/reports/*.md
 !/docs/adr/

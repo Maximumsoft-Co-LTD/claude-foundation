@@ -490,7 +490,18 @@ Repository ของผู้ใช้เปิด changed-code CRAP และ m
 `claude-foundation quality init` โดยผลแต่ละ repository ไม่ถูกเฉลี่ยรวม ภาษา/เครื่องมือ
 ที่ยังไม่รองรับจะแสดงสถานะตรงไปตรงมา และ finding ไม่มีอำนาจให้แก้ code นอก change
 อ่านวิธีตั้งค่า adapter, baseline, CI และ rollout ที่
-[Consumer Quality](docs/consumer-quality.md)
+[Consumer Quality](docs/consumer-quality.th.md)
+
+```bash
+claude-foundation quality discover                 # สำรวจ capability แบบ read-only
+claude-foundation quality init                     # preview config ที่จะ commit
+claude-foundation quality init --write --ci github
+claude-foundation quality doctor
+claude-foundation quality run --change <change-id> # pilot แบบ report-only
+```
+
+ค่าเริ่มต้นยังเป็น report-only ให้ตรวจ mapping และสร้าง baseline ที่อนุมัติชัดเจน
+ก่อนเพิ่ม `--enforce`; nightly ดูแล full debt inventory ส่วน PR จำกัดอยู่ใน Change
 
 คำสั่งวิเคราะห์ที่ใช้บ่อย:
 

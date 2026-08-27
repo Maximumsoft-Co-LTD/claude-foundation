@@ -120,7 +120,8 @@ fi
 # settings.json were absent before, which is where the escapes were.
 SHIPPED_DOCS="$ROOT/.claude/orchestrator.md $ROOT/.claude/commands
 $ROOT/.claude/harness/AGENT.md $ROOT/.claude/harness/EVIDENCE.md
-$ROOT/.claude/harness/README.md $ROOT/.claude/hooks $ROOT/.claude/settings.json
+$ROOT/.claude/harness/README.md $ROOT/.claude/harness/CONSUMER-QUALITY.md
+$ROOT/.claude/hooks $ROOT/.claude/settings.json
 $ROOT/.claude/rules $ROOT/.claude/skills $ROOT/WORKFLOW.md"
 # Only unambiguous repository-only filenames. Bare directory words like
 # "dashboard/" appear as ordinary content in the UI skill's data and would be
@@ -184,6 +185,26 @@ assert_file_contains "the English CLI page pins the runtime API" \
   "$DOCS/cli.md" "| runtime API | $runtime_api |"
 assert_file_contains "the Thai CLI page pins the runtime API" \
   "$DOCS/th/cli.md" "| runtime API | $runtime_api |"
+
+quality_capabilities_protocol="$(jq -r '.qualityCapabilitiesProtocol' \
+  "$ROOT/.claude/harness/protocol.json")"
+crap_protocol="$(jq -r '.crapProtocol' "$ROOT/.claude/harness/protocol.json")"
+automated_mutation_protocol="$(jq -r '.automatedMutationProtocol' \
+  "$ROOT/.claude/harness/protocol.json")"
+for page in "$DOCS/cli.md" "$DOCS/th/cli.md"; do
+  assert_file_contains "$(basename "$(dirname "$page")") CLI pins quality capabilities protocol" \
+    "$page" "| quality capabilities protocol | $quality_capabilities_protocol |"
+  assert_file_contains "$(basename "$(dirname "$page")") CLI pins CRAP protocol" \
+    "$page" "| CRAP protocol | $crap_protocol |"
+  assert_file_contains "$(basename "$(dirname "$page")") CLI pins automated mutation protocol" \
+    "$page" "| automated mutation protocol | $automated_mutation_protocol |"
+done
+assert_file_contains "English consumer quality docs forbid scope expansion" \
+  "$DOCS/consumer-quality.md" "Quality findings are evidence, not permission to edit"
+assert_file_contains "Thai consumer quality docs forbid scope expansion" \
+  "$DOCS/th/consumer-quality.md" "Quality finding เป็นหลักฐาน ไม่ใช่อำนาจแก้ code"
+assert_file_contains "installed consumer quality guide documents report-only default" \
+  "$ROOT/.claude/harness/CONSUMER-QUALITY.md" "report-only by default"
 
 # Every adapter the runtime implements must appear in the shipped operator
 # guide. Deriving the set from the provider catalog turns "contract-digest is missing

@@ -4,6 +4,12 @@ This directory owns the enforced changed-code CRAP Score and mutation-testing
 policy for the complete repository. It is intentionally separate from Foundation's
 consumer-facing runtime configuration.
 
+For quality gates installed into consumer projects, use
+`claude-foundation quality …` and see
+[`docs/consumer-quality.md`](../docs/consumer-quality.md). The files, protocols,
+baselines, output paths, and rollout policy are separate; do not copy this
+repository's internal thresholds into a consumer config blindly.
+
 ## Commands
 
 ```bash

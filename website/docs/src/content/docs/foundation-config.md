@@ -116,6 +116,13 @@ providers for high-risk work. Enforce mode requires both capabilities on
 high-impact or security-sensitive Changes; a project can use any command
 adapter that emits trustworthy evidence for its language.
 
+This field selects **when a Change requires quality evidence**. The separate
+committed file `quality/foundation-quality.json` defines **how each repository
+produces and evaluates it**: language profiles, commands, built-in normalizers,
+thresholds, baselines, and exceptions. Bootstrap that file with `quality init`,
+not by adding provider commands to `foundation.json`. See
+[Consumer quality gates](/docs/consumer-quality/).
+
 ## `models`: route purpose, not a host-specific command
 
 ```json
