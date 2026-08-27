@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  normalizeHostExecution, normalizedAttempt, normalizedAttempts,
-  normalizedExecutionIdentity, normalizedExecutionTiming, normalizedUsage, sum
+  createHostExecutionImporter, normalizeHostExecution, normalizedAttempt, normalizedAttempts,
+  normalizedExecutionIdentity, normalizedExecutionTiming, normalizedUsage,
+  resolveHostExecutionSource, sum
 } from "../runtime/observability/host-execution-contract.mjs";
 
 test("usage normalization accepts both host naming styles and rejects invented numbers", () => {
@@ -122,4 +123,74 @@ test("nullable telemetry sums preserve unknown rather than coercing it to zero",
   assert.equal(sum(3, null), 3);
   assert.equal(sum(3, undefined), 3);
   assert.equal(sum(3, 4), 7);
+});
+
+test("host execution importer validates input and records telemetry idempotently", () => {
+  const calls = { loads: [], reads: [], appends: [], logs: [], failures: [] };
+  let exists = true;
+  let invalid = false;
+  let duplicate = false;
+  const execution = normalizeHostExecution({
+    dispatchId: "dispatch", host: "host", status: "completed",
+    usage: { inputTokens: 2 }
+  }, { changeId: "change", importedAt: "2026-08-27T00:00:00Z" });
+  const importer = createHostExecutionImporter({
+    loadRuntime: (id) => calls.loads.push(id),
+    resolveSource: (source) => `/resolved/${source}`,
+    exists: () => exists,
+    store: {
+      importExecution: () => {
+        if (invalid) throw new Error("bad schema");
+        return { duplicate, execution };
+      }
+    },
+    readJson: (path, fallback) => {
+      calls.reads.push([path, fallback]);
+      return path.endsWith("snapshot.json") ? { snapshot: true } : { input: true };
+    },
+    appendTelemetryRows: (...args) => {
+      calls.appends.push(args);
+      return 1;
+    },
+    snapshotPath: (id) => `/state/${id}/snapshot.json`,
+    fail: (message) => {
+      calls.failures.push(message);
+      return { failed: message };
+    },
+    log: (message) => calls.logs.push(message)
+  });
+
+  const recorded = importer("change", "result.json");
+  assert.equal(recorded.imported, 1);
+  assert.equal(calls.loads[0], "change");
+  assert.deepEqual(calls.reads, [
+    ["/resolved/result.json", undefined],
+    ["/state/change/snapshot.json", {}]
+  ]);
+  assert.equal(calls.appends[0][0], "change");
+  assert.equal(calls.appends[0][1][0].inputTokens, 2);
+  assert.equal(calls.appends[0][2], "host-execution");
+  assert.deepEqual(calls.appends[0][3], { snapshot: { snapshot: true } });
+  assert.match(calls.logs[0], /recorded; imported 1/);
+
+  duplicate = true;
+  importer("change", "result.json");
+  assert.match(calls.logs[1], /duplicate; imported 1/);
+
+  exists = false;
+  assert.deepEqual(importer("change", "missing.json"), {
+    failed: "host execution result not found: missing.json"
+  });
+  exists = true;
+  invalid = true;
+  assert.deepEqual(importer("change", "invalid.json"), {
+    failed: "host execution result is invalid: bad schema"
+  });
+  assert.equal(calls.appends.length, 2);
+});
+
+test("host execution source resolves relative to the invoking workspace", () => {
+  assert.equal(resolveHostExecutionSource("/workspace", "results/host.json"),
+    "/workspace/results/host.json");
+  assert.equal(resolveHostExecutionSource("/workspace", "/tmp/host.json"), "/tmp/host.json");
 });

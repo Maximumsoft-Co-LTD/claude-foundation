@@ -192,6 +192,13 @@ export async function startSpawnedService({
   throw new Error(`service '${name}' readiness timed out`);
 }
 
+export function serviceWorkspace({ root, loadRuntime, repositoryById }, id, config) {
+  const state = loadRuntime(id);
+  return config.repository
+    ? repositoryById(id, config.repository, state).workspacePath
+    : state.workspace?.path || root;
+}
+
 export function createProcessRuntime({ root, logs, now, resolveServiceCwd }) {
   function runCommand(command, args, options) {
     return new Promise((complete) => {

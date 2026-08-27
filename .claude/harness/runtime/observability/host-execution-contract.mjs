@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { classifyDrift, isBlockingDrift, isUnverifiedDrift } from "./model-drift.mjs";
 
 export const HOST_EXECUTION_SCHEMA_VERSION = 1;
@@ -262,6 +262,39 @@ export function createHostExecutionStore({ root, now = () => new Date().toISOStr
   }
 
   return { executionPath, importExecution };
+}
+
+export function resolveHostExecutionSource(cwd, source) {
+  return resolve(cwd, source);
+}
+
+export function createHostExecutionImporter(context) {
+  return function importHostExecution(id, source) {
+    context.loadRuntime(id);
+    const path = context.resolveSource(source);
+    if (!context.exists(path))
+      return context.fail(`host execution result not found: ${source}`);
+    // A malformed host file is the host's input being wrong, not the harness
+    // breaking. Convert it to the same blocked command outcome as other bad
+    // external evidence instead of letting it escape as a harness failure.
+    let result;
+    try {
+      result = context.store.importExecution(id, context.readJson(path));
+    } catch (error) {
+      return context.fail(`host execution result is invalid: ${error.message}`);
+    }
+    const imported = context.appendTelemetryRows(
+      id,
+      hostExecutionTelemetryRows(result.execution),
+      "host-execution",
+      { snapshot: context.readJson(context.snapshotPath(id), {}) }
+    );
+    context.log(
+      `HOST EXECUTION ${id}: ${result.duplicate ? "duplicate" : "recorded"}; ` +
+      `imported ${imported}`
+    );
+    return { imported, result };
+  };
 }
 
 export function driftAttribution(digest, manifest, kinds) {

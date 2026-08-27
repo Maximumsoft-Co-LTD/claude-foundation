@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  createProcessRuntime,
+  createProcessRuntime, serviceWorkspace,
   pathInside,
   readinessMatches,
   servesOverNetwork,
@@ -17,6 +17,32 @@ import {
   staticServiceRequestHandler,
   writeServiceLog
 } from "../runtime/core/process-runtime.mjs";
+
+test("service workspace resolves repository, runtime, and root locations", () => {
+  const loaded = [];
+  const context = {
+    root: "/root",
+    loadRuntime: (id) => {
+      loaded.push(id);
+      return { workspace: { path: "/runtime" } };
+    },
+    repositoryById: (id, repository, state) => {
+      assert.equal(id, "change");
+      assert.equal(repository, "api");
+      assert.equal(state.workspace.path, "/runtime");
+      return { workspacePath: "/repository" };
+    }
+  };
+  assert.equal(serviceWorkspace(context, "change", { repository: "api" }), "/repository");
+  assert.equal(serviceWorkspace(context, "change", {}), "/runtime");
+  assert.equal(serviceWorkspace({
+    ...context, loadRuntime: (id) => {
+      loaded.push(id);
+      return { workspace: {} };
+    }
+  }, "change", {}), "/root");
+  assert.deepEqual(loaded, ["change", "change", "change"]);
+});
 
 function workspace(t) {
   const root = mkdtempSync(join(tmpdir(), "foundation-process-runtime-"));

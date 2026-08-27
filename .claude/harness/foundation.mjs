@@ -3,7 +3,7 @@
 import {
   appendFileSync, existsSync, lstatSync, mkdirSync
 } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
@@ -12,7 +12,8 @@ import {
 } from "./runtime/observability/telemetry-runtime.mjs";
 import { createJsonlReader } from "./runtime/observability/telemetry.mjs";
 import {
-  createHostExecutionStore, createModelDriftInspector, hostExecutionTelemetryRows
+  createHostExecutionImporter, createHostExecutionStore, createModelDriftInspector,
+  resolveHostExecutionSource
 } from "./runtime/observability/host-execution-contract.mjs";
 import { createHostAttestationRuntime } from "./runtime/evidence/attestation.mjs";
 import { validateSignedCiEnvelope } from "./runtime/evidence/signed-ci.mjs";
@@ -37,7 +38,7 @@ import { createRuntimeEnvironment } from "./runtime/core/runtime-environment.mjs
 import {
   phaseForCommand, telemetryPhaseForCommand
 } from "./runtime/core/lifecycle-phase.mjs";
-import { createProcessRuntime } from "./runtime/core/process-runtime.mjs";
+import { createProcessRuntime, serviceWorkspace } from "./runtime/core/process-runtime.mjs";
 import { createInstructionRecorder } from "./runtime/core/instruction-recorder.mjs";
 import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
 import { createAgentDispatchRuntime } from "./runtime/workflow/agent-dispatch.mjs";
@@ -484,27 +485,17 @@ const {
   fail: die
 });
 const hostExecutionStore = createHostExecutionStore({ root: ROOT, now });
-function importHostExecution(id, source) {
-  loadRuntime(id);
-  const path = resolve(process.cwd(), source);
-  if (!existsSync(path)) die(`host execution result not found: ${source}`);
-  // A malformed host file is the host's input being wrong, not the harness
-  // breaking. Letting the throw escape reported it as a crash and logged the
-  // operation "failed" rather than "blocked".
-  let result;
-  try {
-    result = hostExecutionStore.importExecution(id, readJson(path));
-  } catch (error) {
-    die(`host execution result is invalid: ${error.message}`);
-  }
-  const imported = appendTelemetryRows(
-    id,
-    hostExecutionTelemetryRows(result.execution),
-    "host-execution",
-    { snapshot: readJson(snapshotPath(id), {}) }
-  );
-  console.log(`HOST EXECUTION ${id}: ${result.duplicate ? "duplicate" : "recorded"}; imported ${imported}`);
-}
+const importHostExecution = createHostExecutionImporter({
+  loadRuntime,
+  resolveSource: resolveHostExecutionSource.bind(null, process.cwd()),
+  exists: existsSync,
+  store: hostExecutionStore,
+  readJson,
+  appendTelemetryRows,
+  snapshotPath,
+  fail: die,
+  log: console.log
+});
 const handoffRuntime = createHandoffRuntime({
   root: ROOT,
   handoffsRoot: HANDOFFS,
@@ -671,12 +662,9 @@ const { runCommand, startServiceSession } = createProcessRuntime({
   root: ROOT,
   logs: LOGS,
   now,
-  resolveServiceCwd(id, config) {
-    const state = loadRuntime(id);
-    return config.repository
-      ? repositoryById(id, config.repository, state).workspacePath
-      : state.workspace?.path || ROOT;
-  }
+  resolveServiceCwd: serviceWorkspace.bind(null, {
+    root: ROOT, loadRuntime, repositoryById
+  })
 });
 const receiptRuntime = createReceiptRuntime({
   ROOT,
