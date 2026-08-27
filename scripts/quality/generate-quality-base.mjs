@@ -50,7 +50,12 @@ async function main() {
     if (existsSync(join(archive, "examples/todolist/test"))) {
       const tests = readdirSync(join(archive, "examples/todolist/test"))
         .filter((name) => name.endsWith(".test.mjs")).map((name) => `examples/todolist/test/${name}`);
-      run(c8, ["--include=examples/todolist/**/*.js", "--exclude=examples/**/test/**", "--reporter=json",
+      if (existsSync(join(archive, "examples/workflow-slides/test")))
+        tests.push(...readdirSync(join(archive, "examples/workflow-slides/test"))
+          .filter((name) => name.endsWith(".test.mjs"))
+          .map((name) => `examples/workflow-slides/test/${name}`));
+      run(c8, ["--include=examples/todolist/**/*.js", "--include=examples/workflow-slides/src/**/*.js",
+        "--exclude=examples/**/test/**", "--reporter=json",
         "--report-dir=.foundation/test-results/quality/coverage-examples-v1", "node", "--test", ...tests], archive);
       const exampleReports = [join(archive,
         ".foundation/test-results/quality/coverage-examples-v1/coverage-final.json")];
