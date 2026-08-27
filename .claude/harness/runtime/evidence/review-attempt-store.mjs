@@ -381,14 +381,34 @@ export function createReviewAttemptStore({
   blockWithDecision,
   fail
 }) {
-  function reviewHistoryState(id, state = loadRuntime(id)) {
+  function legacyReviewReceipts(id) {
     const receiptDir = join(receiptsRoot, id);
-    const candidates = existsSync(receiptDir)
-      ? readdirSync(receiptDir, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "proof.json")
-        .map((entry) => readJson(join(receiptDir, entry.name), {}))
-        .filter((receipt) => receipt.review)
-      : [];
+    if (!existsSync(receiptDir)) return [];
+    return readdirSync(receiptDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json") &&
+        entry.name !== "proof.json")
+      .map((entry) => readJson(join(receiptDir, entry.name), {}))
+      .filter((receipt) => receipt.review);
+  }
+
+  function migratedReviewAttempt(id, latest, round) {
+    if (!latest) return null;
+    const attempt = {
+      version: 1, changeId: id, attempt: round || 1,
+      reviewerType: latest.review?.reviewer?.type || "unknown",
+      workspaceHash: latest.workspaceHash || null, status: latest.status || null,
+      reviewBinding: reviewReceiptBinding(latest),
+      priorChainHead: null, migrated: true,
+      migratedFromReceiptDigest: stableHash(latest), timestamp: now()
+    };
+    attempt.digest = stableHash(attempt);
+    writeJson(join(evidenceVault, id, "review-attempts",
+      `${String(round || 1).padStart(4, "0")}-${attempt.digest.slice(0, 12)}.json`), attempt);
+    return attempt;
+  }
+
+  function reviewHistoryState(id, state = loadRuntime(id)) {
+    const candidates = legacyReviewReceipts(id);
     if (state.reviewHistory?.version === 1 &&
         (Number(state.reviewHistory.totalAttempts || 0) > 0 || candidates.length === 0))
       return state.reviewHistory;
@@ -398,20 +418,7 @@ export function createReviewAttemptStore({
     // of earlier rounds. Treat every prior round as potentially AI so migration
     // cannot manufacture extra AI retries when the latest receipt is human.
     const aiAttempts = Math.min(round, 2);
-    let migratedAttempt = null;
-    if (latest) {
-      migratedAttempt = {
-        version: 1, changeId: id, attempt: round || 1,
-        reviewerType: latest.review?.reviewer?.type || "unknown",
-        workspaceHash: latest.workspaceHash || null, status: latest.status || null,
-        reviewBinding: reviewReceiptBinding(latest),
-        priorChainHead: null, migrated: true,
-        migratedFromReceiptDigest: stableHash(latest), timestamp: now()
-      };
-      migratedAttempt.digest = stableHash(migratedAttempt);
-      writeJson(join(evidenceVault, id, "review-attempts",
-        `${String(round || 1).padStart(4, "0")}-${migratedAttempt.digest.slice(0, 12)}.json`), migratedAttempt);
-    }
+    const migratedAttempt = migratedReviewAttempt(id, latest, round);
     state.reviewHistory = {
       version: 1, aiAttempts, totalAttempts: round,
       chainHead: migratedAttempt?.digest || null,

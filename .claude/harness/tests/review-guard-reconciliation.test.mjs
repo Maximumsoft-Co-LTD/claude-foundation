@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  mkdirSync, mkdtempSync, readFileSync, writeFileSync
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -127,6 +127,71 @@ function fixture(id) {
       id, state.reviewHistory, "review"),
     history: () => state.reviewHistory
   };
+}
+
+{
+  const id = "case-legacy-migration";
+  const root = mkdtempSync(join(tmpdir(), "foundation-review-migration-"));
+  const receiptsRoot = join(root, "receipts");
+  const evidenceVault = join(root, "evidence");
+  let state = { id, status: "proving", reviewHistory: null };
+  const protocol = createReviewProtocol({ stableHash, fail });
+  const legacyReceipt = {
+    version: 6,
+    changeId: id,
+    provider: "review",
+    status: "pass",
+    workspaceHash: "workspace-legacy",
+    review: { round: 3, reviewer: { type: "human" } }
+  };
+  writeJson(join(receiptsRoot, id, "review.json"), legacyReceipt);
+  writeJson(join(receiptsRoot, id, "proof.json"), {
+    review: { round: 99, reviewer: { type: "ai" } }
+  });
+  writeFileSync(join(receiptsRoot, id, "ignored.txt"), "not a receipt\n");
+  mkdirSync(join(receiptsRoot, id, "nested.json"));
+  const store = createReviewAttemptStore({
+    receiptsRoot, evidenceVault, readJson, writeJson,
+    loadRuntime: () => state,
+    saveRuntime: (next) => { state = next; },
+    stableHash,
+    reviewReceiptBinding: protocol.receiptBinding,
+    now,
+    blockWithDecision: (_changeId, kind) => fail(kind),
+    fail
+  });
+  const history = store.reviewHistoryState(id);
+  assert.equal(history.totalAttempts, 3);
+  assert.equal(history.aiAttempts, 2);
+  assert.equal(history.migratedFromReceiptDigest, stableHash(legacyReceipt));
+  assert.match(history.chainHead, /^[a-f0-9]{64}$/);
+  const attempt = store.reviewAttemptByDigest(id, history.chainHead);
+  assert.equal(attempt.migrated, true);
+  assert.equal(attempt.attempt, 3);
+  assert.equal(attempt.reviewerType, "human");
+  assert.equal(attempt.workspaceHash, "workspace-legacy");
+  assert.equal(attempt.status, "pass");
+  assert.equal(attempt.migratedFromReceiptDigest, stableHash(legacyReceipt));
+  assert.strictEqual(store.reviewHistoryState(id), history,
+    "a migrated current history is reused without another artifact");
+
+  const sparseId = "case-sparse-legacy-migration";
+  state = { id: sparseId, status: "proving", reviewHistory: null };
+  const sparseReceipt = {
+    version: 5, changeId: sparseId, provider: "review", review: {}
+  };
+  writeJson(join(receiptsRoot, sparseId, "review.json"), sparseReceipt);
+  const sparseHistory = store.reviewHistoryState(sparseId);
+  assert.equal(sparseHistory.totalAttempts, 0);
+  assert.equal(sparseHistory.aiAttempts, 0);
+  assert.match(sparseHistory.chainHead, /^[a-f0-9]{64}$/);
+  const sparseAttempt = store.reviewAttemptByDigest(sparseId, sparseHistory.chainHead);
+  assert.equal(sparseAttempt.attempt, 1);
+  assert.equal(sparseAttempt.reviewerType, "unknown");
+  assert.equal(sparseAttempt.workspaceHash, null);
+  assert.equal(sparseAttempt.status, null);
+  assert.equal(sparseAttempt.migratedFromReceiptDigest, stableHash(sparseReceipt));
+  rmSync(root, { recursive: true, force: true });
 }
 
 // Case 1 — receipt overwrite: a recorded delta receipt replaces the full
