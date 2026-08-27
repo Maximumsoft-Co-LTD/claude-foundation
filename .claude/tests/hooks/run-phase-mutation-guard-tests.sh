@@ -30,8 +30,18 @@ assert_contains "Change blocks product mutation" "$out" '"decision":"block"'
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/src/app.js")")"
 assert_eq "Build permits isolated workspace mutation" "" "$out"
 
+out="$(invoke build block "$TMP/workspace" "$(write_event "../workspace/src/relative.js")")"
+assert_eq "Build resolves a relative mutation target from the project" "" "$out"
+
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/outside/app.js")")"
 assert_contains "Build blocks paths outside isolation" "$out" '"decision":"block"'
+
+out="$(invoke build block "$TMP/workspace" "$(write_event "")")"
+assert_contains "Build blocks an empty mutation target" "$out" 'mutation target is missing or invalid'
+
+out="$(invoke build block "$TMP/workspace" \
+  '{"tool_name":"Write","tool_input":{"file_path":"bad\u0000path"}}')"
+assert_contains "Build blocks a NUL mutation target" "$out" 'mutation target is missing or invalid'
 
 ln -s "$TMP/outside" "$TMP/workspace/escape"
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/escape/app.js")")"

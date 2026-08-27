@@ -5,7 +5,7 @@
 // FOUNDATION_ACTIVE_PHASE and, for Build, FOUNDATION_WORKSPACE_ROOT.
 
 import {
-  appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
+  appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync,
   realpathSync, renameSync, statSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -169,21 +169,27 @@ function allowedPaths() {
   }
 }
 
-function canonicalTarget(value, base) {
-  if (typeof value !== "string" || value.length === 0 || value.includes("\0")) return null;
-  const absolute = isAbsolute(value) ? resolve(value) : resolve(base, value);
+function validTargetInput(value) {
+  return typeof value === "string" && value.length > 0 && !value.includes("\0");
+}
+
+function existingTargetAncestor(absolute) {
   let cursor = absolute;
   const suffix = [];
   while (!existsSync(cursor)) {
     const parent = dirname(cursor);
-    if (parent === cursor) return null;
-    suffix.unshift(cursor.slice(parent.length + (parent.endsWith(sep) ? 0 : 1)));
+    suffix.unshift(relative(parent, cursor));
     cursor = parent;
   }
+  return { cursor, suffix };
+}
+
+function canonicalTarget(value, base) {
+  if (!validTargetInput(value)) return null;
+  const absolute = isAbsolute(value) ? resolve(value) : resolve(base, value);
+  const ancestor = existingTargetAncestor(absolute);
   try {
-    if (lstatSync(cursor).isSymbolicLink()) cursor = realpathSync(cursor);
-    else cursor = realpathSync(cursor);
-    return resolve(cursor, ...suffix);
+    return resolve(realpathSync(ancestor.cursor), ...ancestor.suffix);
   } catch {
     return null;
   }
