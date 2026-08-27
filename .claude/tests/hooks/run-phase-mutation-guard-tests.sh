@@ -10,6 +10,7 @@ mkdir -p "$TMP/project/openspec/changes/demo" "$TMP/project/.foundation" "$TMP/w
 HOOK="$ROOT/.claude/hooks/phase-mutation-guard.mjs"
 
 node --test "$ROOT/.claude/tests/hooks/phase-state.test.mjs"
+node --test "$ROOT/.claude/tests/hooks/phase-guard-policy.test.mjs"
 
 invoke() {
   phase="$1" mode="$2" workspace="$3" event="$4"

@@ -9,6 +9,7 @@ import {
   realpathSync, renameSync, statSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { shellMutationViolation } from "./phase-guard-policy.mjs";
 import { recordedPhase } from "./phase-state.mjs";
 
 // Large enough that a real audit trail survives a working session, small enough
@@ -127,15 +128,9 @@ function inspectPath(rawPath) {
   }
 }
 
-function inspectBash(command) {
-  if (!looksMutating(command)) return;
-  if (phase === "prove" || phase === "change") {
-    violations.push(`${phase === "prove" ? "Prove" : "Change"} cannot run mutating shell commands`);
-  } else if (phase === "land" && process.env.FOUNDATION_LAND_TRANSACTION !== "1") {
-    violations.push("Land shell mutations require the runtime transaction marker");
-  } else if (phase === "build" && !process.env.FOUNDATION_WORKSPACE_ROOT) {
-    violations.push("Build shell mutations require an isolated workspace");
-  }
+function inspectBash() {
+  const violation = shellMutationViolation(phase, process.env);
+  if (violation) violations.push(violation);
 }
 
 function looksMutating(command) {
