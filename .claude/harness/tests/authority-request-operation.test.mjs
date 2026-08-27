@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   abortAuthorityOperation,
+  acceptanceResponseEvidence,
   authorityClaimIds,
+  authorityResponseTemplate,
   authorityRequestPolicy,
   authorityRequestSelection,
   displayAuthorityRequest,
@@ -10,6 +12,7 @@ import {
   newAuthorityRequestValue,
   pendingAuthorityRequest,
   requestAuthorityOperation,
+  reviewResponseEvidence,
   resetInfrastructureAuthorityOperation
 } from "../runtime/workflow/authority-runtime.mjs";
 
@@ -345,4 +348,75 @@ test("locked authority adapter preserves identity, flags, and lock ownership", (
   assert.deepEqual(operations, [
     ["change-a", { reason: "test" }], ["change-b", {}]
   ]);
+});
+
+const templateContext = {
+  protocolVersion: "3",
+  expandList: (value) => Array.isArray(value) ? value : value?.preview || [],
+  listCount: (value) => Array.isArray(value) ? value.length : value?.count || 0
+};
+
+test("acceptance response evidence expands criteria and names compact omissions", () => {
+  assert.deepEqual(acceptanceResponseEvidence(templateContext, {
+    packet: { claims: { count: 3, preview: [
+      { criterion: "criterion-a" }, { id: "claim-b" }
+    ] } }
+  }).criterion, [
+    "criterion-a",
+    "<2 further criteria omitted from this preview; read the packet's claims>"
+  ]);
+  assert.deepEqual(acceptanceResponseEvidence(templateContext, {
+    packet: { claims: [] }
+  }).criterion, ["<criterion the responder confirmed>"]);
+});
+
+test("review response evidence projects undispatched, human, and AI delta provenance", () => {
+  const undispatched = reviewResponseEvidence({ packet: {} });
+  assert.equal(undispatched.reviewer, "<independent reviewer identity>");
+  assert.equal(undispatched["reviewer-provider-family"], "<AI provider family>");
+  assert.deepEqual(undispatched.verifiedFindingIds, []);
+
+  const human = reviewResponseEvidence({
+    dispatch: { reviewer: { type: "human", identity: "alice" }, scope: { mode: "full" } }
+  });
+  assert.equal(human.reviewer, "alice");
+  assert.equal(human["reviewer-provider-family"], undefined);
+  assert.equal(human["scope-path"], undefined);
+
+  const ai = reviewResponseEvidence({
+    packet: { closureFindings: { ids: ["F-1"] } },
+    dispatch: {
+      reviewer: {
+        type: "ai", identity: "codex", providerFamily: "openai",
+        modelFamily: "gpt", modelId: "gpt-5", sessionId: "session-a"
+      },
+      scope: { mode: "delta", paths: ["src/app.mjs"] }
+    }
+  });
+  assert.equal(ai["reviewer-model"], "gpt-5");
+  assert.deepEqual(ai.verifiedFindingIds, ["F-1"]);
+  assert.deepEqual(ai["scope-path"], ["src/app.mjs"]);
+});
+
+test("authority response template binds its envelope and type-specific evidence", () => {
+  const acceptance = authorityResponseTemplate(templateContext, {
+    requestId: "request-a", changeId: "change-a", type: "acceptance",
+    workspaceHash: "workspace-a", packet: { claims: [{ criterion: "accepted" }] }
+  });
+  assert.deepEqual({
+    version: acceptance.version,
+    requestId: acceptance.requestId,
+    changeId: acceptance.changeId,
+    type: acceptance.type,
+    workspaceHash: acceptance.workspaceHash,
+    status: acceptance.status
+  }, {
+    version: 3, requestId: "request-a", changeId: "change-a",
+    type: "acceptance", workspaceHash: "workspace-a",
+    status: "pass|fail|inconclusive|error"
+  });
+  assert.deepEqual(acceptance.evidence.criterion, ["accepted"]);
+  assert.equal(authorityResponseTemplate(templateContext, {
+    type: "review", packet: {}
+  }).evidence["reviewer-type"], "human|ai");
 });

@@ -227,6 +227,97 @@ export function lockedAuthorityOperation(withAuthorityLock, operation) {
     id, operation.bind(null, id, flags));
 }
 
+export function acceptanceResponseEvidence(context, request) {
+  const claimRows = context.expandList(request.packet?.claims);
+  const criteria = claimRows.map((claim) => claim.criterion).filter(Boolean);
+  const count = context.listCount(request.packet?.claims);
+  if (criteria.length && criteria.length < count)
+    criteria.push(`<${count - criteria.length} further criteria omitted from this preview; read the packet's claims>`);
+  return {
+    observed: "<what the responder actually saw, in their own words>",
+    artifact: [],
+    reference: ["<url or path the responder inspected>"],
+    acceptor: "<name of the person who decided>",
+    decision: "accept",
+    criterion: criteria.length ? criteria : ["<criterion the responder confirmed>"]
+  };
+}
+
+export function responseEvidenceBase() {
+  return {
+    observed: "<what the responder actually saw, in their own words>",
+    artifact: [],
+    reference: ["<url or path the responder inspected>"]
+  };
+}
+
+export function reviewerResponseEvidence(dispatched) {
+  const evidence = {
+    reviewer: dispatched?.identity || "<independent reviewer identity>",
+    "reviewer-type": dispatched?.type || "human|ai"
+  };
+  if (!dispatched || dispatched.type === "ai") {
+    evidence["reviewer-provider-family"] = dispatched?.providerFamily ||
+      "<AI provider family>";
+    evidence["reviewer-model-family"] = dispatched?.modelFamily ||
+      "<AI model family>";
+    evidence["reviewer-model"] = dispatched?.modelId || "<AI model id>";
+    evidence["reviewer-session"] = dispatched?.sessionId ||
+      "<AI review session>";
+  }
+  return evidence;
+}
+
+export function reviewSubjectResponseEvidence() {
+  return {
+    "subject-actor": "<who or what implemented the change>",
+    "subject-session": "<implementation session id, omit for a human implementer>",
+    "subject-provider-family":
+      "<implementation provider family, omit for a human implementer>",
+    "subject-model-family":
+      "<implementation model family, omit for a human implementer>",
+    "subject-model": "<implementation model id, omit for a human implementer>"
+  };
+}
+
+export function reviewFindingResponseEvidence(request) {
+  const evidence = {
+    "unresolved-blockers": 0,
+    "verified-findings": 0,
+    findings: [],
+    verifiedFindingIds: request.packet?.closureFindings?.ids || []
+  };
+  if (request.dispatch?.scope?.mode === "delta")
+    evidence["scope-path"] = request.dispatch.scope.paths;
+  return evidence;
+}
+
+export function reviewResponseEvidence(request) {
+  return {
+    ...responseEvidenceBase(),
+    ...reviewerResponseEvidence(request.dispatch?.reviewer || null),
+    ...reviewSubjectResponseEvidence(),
+    ...reviewFindingResponseEvidence(request)
+  };
+}
+
+export function authorityResponseTemplate(context, request) {
+  // Preserve the established eager claim expansion. The production compactor
+  // supports both arrays and previews, and callers may rely on malformed packet
+  // shapes failing before a review template is projected.
+  const acceptanceEvidence = acceptanceResponseEvidence(context, request);
+  return {
+    version: Number(context.protocolVersion),
+    requestId: request.requestId,
+    changeId: request.changeId,
+    type: request.type,
+    workspaceHash: request.workspaceHash,
+    status: "pass|fail|inconclusive|error",
+    evidence: request.type === "acceptance"
+      ? acceptanceEvidence : reviewResponseEvidence(request)
+  };
+}
+
 export function mainSessionEnvironment(environment) {
   const claudeSession = String(
     environment.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
@@ -1310,70 +1401,9 @@ export function createAuthorityRuntime({
   // discovers it one rejection at a time while the person who gave the verdict
   // waits. The identity fields are prefilled because those are exactly the
   // ones `validateResponse` matches against the request.
-  function responseTemplate(request) {
-    // An acceptance packet carries its claims as a plain array; a review packet
-    // compacts them past twelve into `{count, preview, digest}`. Only acceptance
-    // reads `criterion`, but this ran before the type check, so `.map` on the
-    // compact object threw for every review with more than twelve claims — the
-    // template was unreachable for exactly the changes with the most to inspect.
-    const claimRows = expandList(request.packet?.claims);
-    const criteria = claimRows.map((claim) => claim.criterion).filter(Boolean);
-    if (criteria.length && criteria.length < listCount(request.packet?.claims))
-      criteria.push(`<${listCount(request.packet?.claims) - criteria.length
-        } further criteria omitted from this preview; read the packet's claims>`);
-    const evidence = {
-      observed: "<what the responder actually saw, in their own words>",
-      artifact: [],
-      reference: ["<url or path the responder inspected>"]
-    };
-    if (request.type === "acceptance") {
-      evidence.acceptor = "<name of the person who decided>";
-      evidence.decision = "accept";
-      evidence.criterion = criteria.length ? criteria
-        : ["<criterion the responder confirmed>"];
-    } else {
-      // `validateResponse` forwards every key under `evidence` into the receipt
-      // flags, so this is where a reviewer states provenance. Omitting these
-      // fields from the template made the documented path a dead end: the
-      // receipt refused the response for a missing `--subject-actor`, and
-      // `authority record` does not accept that flag. Naming them here is the
-      // difference between a template a responder can complete and one that
-      // cannot be recorded at all.
-      const dispatched = request.dispatch?.reviewer || null;
-      evidence.reviewer = dispatched?.identity || "<independent reviewer identity>";
-      evidence["reviewer-type"] = dispatched?.type || "human|ai";
-      if (!dispatched || dispatched.type === "ai") {
-        evidence["reviewer-provider-family"] = dispatched?.providerFamily || "<AI provider family>";
-        evidence["reviewer-model-family"] = dispatched?.modelFamily || "<AI model family>";
-        evidence["reviewer-model"] = dispatched?.modelId || "<AI model id>";
-        evidence["reviewer-session"] = dispatched?.sessionId || "<AI review session>";
-      }
-      evidence["subject-actor"] = "<who or what implemented the change>";
-      evidence["subject-session"] = "<implementation session id, omit for a human implementer>";
-      evidence["subject-provider-family"] = "<implementation provider family, omit for a human implementer>";
-      evidence["subject-model-family"] = "<implementation model family, omit for a human implementer>";
-      evidence["subject-model"] = "<implementation model id, omit for a human implementer>";
-      // Numbers, not placeholders, because the receipt parses them. A passing
-      // review now has to state its blocker count rather than inherit a zero
-      // from an absent flag, so the template is where the responder is asked
-      // for it — the same lesson as the provenance fields above.
-      evidence["unresolved-blockers"] = 0;
-      evidence["verified-findings"] = 0;
-      evidence.findings = [];
-      evidence.verifiedFindingIds = request.packet?.closureFindings?.ids || [];
-      if (request.dispatch?.scope?.mode === "delta")
-        evidence["scope-path"] = request.dispatch.scope.paths;
-    }
-    return {
-      version: Number(protocolVersion),
-      requestId: request.requestId,
-      changeId: request.changeId,
-      type: request.type,
-      workspaceHash: request.workspaceHash,
-      status: "pass|fail|inconclusive|error",
-      evidence
-    };
-  }
+  const responseTemplate = authorityResponseTemplate.bind(null, {
+    protocolVersion, expandList, listCount
+  });
 
   function showAuthorityStatus(id, flags = {}) {
     const value = authorityStatusValue(id, flags.request || null);
