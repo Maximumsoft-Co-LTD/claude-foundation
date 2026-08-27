@@ -298,6 +298,14 @@ test("dedupe and top-level detection return stable ready, configuration, and inf
     const ready = detectEvidenceWiring({ ...base, required: [] });
     assert.equal(ready.status, "READY");
 
+    mkdirSync(join(root, "quality"), { recursive: true });
+    writeFileSync(join(root, "quality", "foundation-quality.json"), "{}\n");
+    const quality = detectEvidenceWiring({ ...base,
+      knownProviders: new Set(["static-analysis"]), required: ["static-analysis"] });
+    assert.equal(quality.candidates[0].source, "quality/foundation-quality.json");
+    assert.deepEqual(quality.candidates[0].config.repositories, ["root"]);
+    assert.ok(quality.candidates[0].config.command.includes("--enforce"));
+
     const unavailable = detectEvidenceWiring({ ...base, required: [],
       contract: { claims: [], providers: {
         test: { adapter: "command", command: ["missing"] }

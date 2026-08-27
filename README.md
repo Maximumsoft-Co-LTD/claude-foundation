@@ -506,6 +506,11 @@ repository declares and stores receipts under
 workspace hash, agreement, provider protocol/version, and claim coverage remain
 valid.
 
+Consumer repositories can opt into changed-code CRAP and mutation quality
+lanes with `claude-foundation quality init`. Results keep repository identities
+separate, unsupported tools remain explicit, and findings never grant authority
+to edit outside the approved change. See [Consumer Quality](docs/consumer-quality.md).
+
 Useful diagnostics:
 
 ```bash

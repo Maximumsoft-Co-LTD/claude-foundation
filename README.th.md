@@ -486,6 +486,12 @@ Foundation ไม่ติดตั้ง test framework หรือ browser �
 เฉพาะเมื่อ workspace hash, agreement, provider protocol/version และ claim coverage
 ยังตรงกัน
 
+Repository ของผู้ใช้เปิด changed-code CRAP และ mutation quality lane ได้ด้วย
+`claude-foundation quality init` โดยผลแต่ละ repository ไม่ถูกเฉลี่ยรวม ภาษา/เครื่องมือ
+ที่ยังไม่รองรับจะแสดงสถานะตรงไปตรงมา และ finding ไม่มีอำนาจให้แก้ code นอก change
+อ่านวิธีตั้งค่า adapter, baseline, CI และ rollout ที่
+[Consumer Quality](docs/consumer-quality.md)
+
 คำสั่งวิเคราะห์ที่ใช้บ่อย:
 
 ```bash

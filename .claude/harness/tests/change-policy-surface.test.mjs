@@ -161,6 +161,18 @@ test("capability policy recognizes defaults, ignores packets, and validates cust
   assert.equal(result.triggers.unknown, undefined);
 });
 
+test("committed consumer quality configuration activates static analysis for executable surfaces", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-consumer-quality-policy-"));
+  try {
+    mkdirSync(join(root, "quality"), { recursive: true });
+    writeFileSync(join(root, "quality", "foundation-quality.json"), "{}\n");
+    const policy = capabilityPolicy({ root });
+    assert.deepEqual(policy.capabilitiesForPaths(["src/app.ts"]).capabilities,
+      ["static-analysis"]);
+    assert.deepEqual(policy.capabilitiesForPaths(["README.md"]).capabilities, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("forecast expands declared globs across files while respecting ignored trees", (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-policy-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -181,7 +193,7 @@ test("forecast expands declared globs across files while respecting ignored tree
     "README.md"
   ]);
 
-  assert.deepEqual(forecast.capabilities, ["accessibility"]);
+    assert.deepEqual(forecast.capabilities, ["accessibility"]);
   assert.equal(forecast.triggers.accessibility[0], "src/**/*.tsx");
 });
 

@@ -231,7 +231,7 @@ export function evidenceCandidateRows(
 
 export function discoverMissingEvidence({
   missing, providerConfig, providerCapability, knownProviders, repositories, contract,
-  tooling, declaredSurface
+  tooling, declaredSurface, root = process.cwd()
 }) {
   const candidates = [];
   const unresolved = [];
@@ -246,6 +246,26 @@ export function discoverMissingEvidence({
       continue;
     }
     const targets = capabilityRepositories(capability, repositories, contract);
+    const consumerQualityConfig = join(root, "quality", "foundation-quality.json");
+    if (capability === "static-analysis" && existsSync(consumerQualityConfig)) {
+      candidates.push({
+        provider: requiredProvider,
+        capability,
+        // Quality is an orchestration provider: it starts from the Foundation
+        // root workspace and routes its own selected repository lanes.
+        repository: null,
+        confidence: "high",
+        recommended: true,
+        source: "quality/foundation-quality.json",
+        detail: "Foundation consumer quality gate bound to all affected repositories",
+        config: {
+          adapter: "command",
+          command: ["node", ".claude/harness/foundation.mjs", "quality-run", "--enforce"],
+          repositories: targets.map((repository) => repository.id)
+        }
+      });
+      continue;
+    }
     let found = false;
     for (const repository of targets) {
       const rows = evidenceCandidateRows(capability, tooling.get(repository.id), repository,
@@ -306,7 +326,7 @@ export function detectEvidenceWiring({
   const missing = required.filter((provider) => !providerConfig(provider));
   const { candidates, unresolved } = discoverMissingEvidence({
     missing, providerConfig, providerCapability, knownProviders, repositories, contract,
-    tooling, declaredSurface
+    tooling, declaredSurface, root
   });
   const unavailable = unavailableEvidenceProviders(configured);
   return {

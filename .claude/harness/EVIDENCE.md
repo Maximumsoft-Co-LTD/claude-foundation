@@ -191,6 +191,14 @@ changed-surface policy inferred and nobody wired is not a required provider at
 all: it appears under `advisories` in readiness, `proof plan`, and the proof
 record, and does not block.
 
+When `quality/foundation-quality.json` is committed, evidence bootstrap can
+wire `claude-foundation quality run --enforce` as the change's static-analysis
+provider. It resolves `FOUNDATION_CHANGE_ID`, runs in selected repository
+workspaces, and emits one non-averaged lane per repository. Missing quality
+capabilities remain explicit `unsupported` or `unavailable` assurance and are
+never converted to passing evidence. Setup, adapter authoring, rollout,
+baseline, and scope rules are documented in `docs/consumer-quality.md`.
+
 Prototype files under `.foundation/prototypes/` are non-authoritative. The
 runtime rejects them, including local-path references and symlinked origins,
 before copying any artifact or writing a receipt.

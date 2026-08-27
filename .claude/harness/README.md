@@ -46,6 +46,9 @@ Playwright, linters, or security scanners produce evidence.
 | Evidence | `runtime/evidence/review-protocol.mjs` | Pure review provenance, receipt binding, and attempt validation |
 | Evidence | `runtime/evidence/signed-ci.mjs` | Signed CI envelope verification |
 | Evidence | `runtime/evidence/traceability.mjs` | Pure scenario, claim, task, and provider auditing |
+| Quality | `runtime/quality/quality-runtime.mjs` | Consumer discovery, execution, baselines, debt, and repository-lane aggregation |
+| Quality | `runtime/quality/adapter-registry.mjs` | Portable CRAP and mutation report adapters |
+| Quality | `runtime/quality/quality-policy.mjs` | Changed-code ratchets, fallback assurance, and bounded exceptions |
 | Observability | `runtime/observability/telemetry.mjs` | Portable host telemetry normalization |
 | Observability | `runtime/observability/metrics-runtime.mjs` | Read-only aggregation of operations, usage, context, and evidence metrics |
 | Observability | `runtime/observability/telemetry-runtime.mjs` | Context events, host transcript synchronization, and telemetry ledgers |
@@ -133,6 +136,9 @@ claude-foundation doctor --stage prove --change <change>
 | `providers` | Lists supported evidence contracts | Choosing evidence for a change |
 | `repos [change]` | Shows discovered topology, drift, and change selection | Setting up or diagnosing multi-repo work |
 | `models` | Shows portable model-tier mappings | Reviewing cost/quality routing |
+| `quality discover\|init\|doctor` | Discovers profiles, drafts config, and diagnoses project-owned tools | Onboarding a consumer repository |
+| `quality run\|report` | Runs report-only or enforced per-repository quality lanes | PR/Prove quality checks |
+| `quality baseline\|debt` | Explicitly versions reviewed baselines and renders debt inventory | Pilot graduation and nightly inventory |
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
 | `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Driving the resumable Build loop |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |

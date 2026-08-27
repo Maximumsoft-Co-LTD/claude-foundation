@@ -34,6 +34,9 @@ export const PHASE_BY_COMMAND = {
   "evidence-init": "change",
   "evidence-doctor": "change",
   "evidence-upgrade": "change",
+  "quality-discover": "change",
+  "quality-init": "change",
+  "quality-doctor": "change",
 
   sandbox: "build",
   "agent-plan": "build",
@@ -61,6 +64,10 @@ export const PHASE_BY_COMMAND = {
   receipt: "prove",
   "run-provider": "prove",
   prove: "prove",
+  "quality-run": "prove",
+  "quality-report": "prove",
+  "quality-baseline": "prove",
+  "quality-debt": "prove",
 
   "handoff-status": "land",
   "handoff-packet": "land",

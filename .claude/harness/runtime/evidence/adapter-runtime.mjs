@@ -572,7 +572,11 @@ export function createAdapterRuntime({
     return ["crash", "timeout", "not-applied"].includes(mutation.legacy) ? "error" : "fail";
   }
 
-  function genericAdapterObservation(baseFlags, mutation, critical) {
+  function genericAdapterObservation(baseFlags, mutation, critical, report = null) {
+    if (report?.protocol === "foundation-quality-summary-v1")
+      return `consumer quality ${report.status}; lanes ${report.summary?.total ?? 0}; ` +
+        `failed ${report.summary?.failed ?? 0}; unavailable ${report.summary?.unavailable ?? 0}; ` +
+        `reduced assurance ${report.summary?.reduced ?? 0}; ${baseFlags.observed}`;
     if (mutation.v2)
       return `mutation v2 ${mutation.v2.observations.map((row) =>
         `${row.id}=${row.result}/applied:${row.applied}/compiled:${row.compiled}/killedBy:${
@@ -598,7 +602,8 @@ export function createAdapterRuntime({
       "foreground-available": config.foregroundAvailable ? "yes" : "no",
       classification: mutationReceiptClassification(
         config.resultProtocol, mutation.legacy, config.classification),
-      observed: genericAdapterObservation(baseFlags, mutation, evidenceRow.critical)
+      observed: genericAdapterObservation(baseFlags, mutation, evidenceRow.critical,
+        evidenceRow.report)
     }, { executed: true });
     return { provider, status };
   }

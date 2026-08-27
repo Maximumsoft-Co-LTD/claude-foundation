@@ -79,7 +79,14 @@ export async function routeRuntimeCommand(command, values, api) {
     usage,
     describeCommand,
     runtimeApiVersion,
-    version
+    version,
+    showQualityDiscovery,
+    initializeQuality,
+    qualityDoctor,
+    runQuality,
+    showQualityReport,
+    updateQualityBaseline,
+    showQualityDebt
   } = api;
   const die = fail;
   const handlers = {
@@ -157,6 +164,50 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "models": async () => {
       console.log(JSON.stringify(foundationPolicy().models, null, 2));
+    },
+    "quality-discover": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality discover", { value: ["change"] });
+      if (rest.length) die(`unexpected quality discover argument(s): ${rest.join(", ")}`);
+      showQualityDiscovery(flags);
+    },
+    "quality-init": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality init", {
+        boolean: ["write", "force"], value: ["change", "ci"]
+      });
+      if (rest.length) die(`unexpected quality init argument(s): ${rest.join(", ")}`);
+      initializeQuality(flags);
+    },
+    "quality-doctor": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality doctor", {
+        boolean: ["enforce"], value: ["change"]
+      });
+      if (rest.length) die(`unexpected quality doctor argument(s): ${rest.join(", ")}`);
+      qualityDoctor(flags);
+    },
+    "quality-run": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality run", {
+        boolean: ["enforce", "full"],
+        value: ["change", "repo", "capability", "shard-index", "shard-count"]
+      });
+      if (rest.length) die(`unexpected quality run argument(s): ${rest.join(", ")}`);
+      runQuality({ ...flags, repository: flags.repo });
+    },
+    "quality-report": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality report");
+      if (Object.keys(flags).length || rest.length) die("quality report takes no arguments");
+      showQualityReport();
+    },
+    "quality-baseline": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality baseline", {
+        boolean: ["write"], value: ["repo", "capability", "decision-ref", "reason"]
+      });
+      if (rest.length) die(`unexpected quality baseline argument(s): ${rest.join(", ")}`);
+      updateQualityBaseline({ ...flags, repository: flags.repo });
+    },
+    "quality-debt": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "quality debt");
+      if (Object.keys(flags).length || rest.length) die("quality debt takes no arguments");
+      showQualityDebt();
     },
     "agent-plan": async () => {
       const {

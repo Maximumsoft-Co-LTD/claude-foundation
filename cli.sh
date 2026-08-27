@@ -78,9 +78,9 @@ run_runtime() {
   fi
   local phase=""
   case "${1:-}" in
-    new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade) phase="change" ;;
+    new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move) phase="prove" ;;
+    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
     handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
   esac
   telemetry=1
@@ -401,6 +401,19 @@ case "${1:-}" in
         need_arg "evidence upgrade" "${1:-}"
         run_runtime write evidence-upgrade "$@" ;;
       *) fail "evidence requires 'detect', 'init', 'doctor', 'verify-ci', 'run', 'record', or 'upgrade'" ;;
+    esac ;;
+  quality)
+    shift
+    sub="${1:-}"; [ "$#" -gt 0 ] && shift
+    case "$sub" in
+      discover) run_runtime read quality-discover "$@" ;;
+      init) run_runtime write quality-init "$@" ;;
+      doctor) run_runtime read quality-doctor "$@" ;;
+      run) run_runtime write quality-run "$@" ;;
+      report) run_runtime read quality-report "$@" ;;
+      baseline) run_runtime write quality-baseline "$@" ;;
+      debt) run_runtime write quality-debt "$@" ;;
+      *) fail "quality requires 'discover', 'init', 'doctor', 'run', 'report', 'baseline', or 'debt'" ;;
     esac ;;
   authority)
     shift

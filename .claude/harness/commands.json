@@ -394,6 +394,62 @@
       "description": "Inspect model-tier policy."
     },
     {
+      "name": "quality discover",
+      "usage": "quality discover [--change <id>]",
+      "audience": "admin",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Detect repository languages, profiles, and quality capabilities without executing project commands."
+    },
+    {
+      "name": "quality init",
+      "usage": "quality init [--change <id>] [--write] [--force] [--ci github]",
+      "audience": "admin",
+      "kind": "write",
+      "idempotent": true,
+      "description": "Preview or explicitly write the committed consumer quality configuration."
+    },
+    {
+      "name": "quality doctor",
+      "usage": "quality doctor [--change <id>] [--enforce]",
+      "audience": "admin",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Validate quality profiles, adapters, tools, isolation, and fallback readiness."
+    },
+    {
+      "name": "quality run",
+      "usage": "quality run [--change <id>] [--repo <id>] [--capability <name>] [--full] [--shard-index <n> --shard-count <n>] [--enforce]",
+      "audience": "conditional",
+      "kind": "write",
+      "idempotent": false,
+      "description": "Run configured quality lanes and apply changed-code and affected-mutant ratchets."
+    },
+    {
+      "name": "quality report",
+      "usage": "quality report",
+      "audience": "conditional",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Show the latest per-repository consumer quality result."
+    },
+    {
+      "name": "quality baseline",
+      "usage": "quality baseline [--repo <id>] [--capability crap|automated-mutation] [--write --decision-ref <ref> --reason <why>]",
+      "audience": "admin",
+      "kind": "authority",
+      "idempotent": true,
+      "description": "Preview or explicitly update versioned repository quality baselines."
+    },
+    {
+      "name": "quality debt",
+      "usage": "quality debt",
+      "audience": "conditional",
+      "kind": "write",
+      "idempotent": true,
+      "description": "Render the latest non-silent quality debt inventory without widening change scope."
+    },
+    {
       "name": "migrate",
       "usage": "migrate [legacy-id] [--apply]",
       "audience": "admin",
@@ -667,6 +723,13 @@
     "providers",
     "repos",
     "models",
+    "quality-discover",
+    "quality-init",
+    "quality-doctor",
+    "quality-run",
+    "quality-report",
+    "quality-baseline",
+    "quality-debt",
     "agent-plan",
     "agent-dispatch",
     "agent-task",

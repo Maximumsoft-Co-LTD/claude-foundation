@@ -188,6 +188,11 @@ export function createChangePolicy({
       if (trigger !== undefined)
         policy.capabilities.forEach((capability) => require(capability, trigger));
     }
+    if (existsSync(join(root, "quality", "foundation-quality.json"))) {
+      const executable = relevantFiles.find((path) =>
+        /\.(?:[cm]?js|jsx|tsx?|go|py|php|sh|bash)$/i.test(path));
+      if (executable !== undefined) require("static-analysis", executable);
+    }
     const configured = readJson(join(root, ".foundation", "policy.json"), { rules: [] });
     for (const rule of configured.rules || []) {
       if (!Array.isArray(rule.paths) || !Array.isArray(rule.capabilities)) continue;

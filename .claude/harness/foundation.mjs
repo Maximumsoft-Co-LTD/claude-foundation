@@ -94,6 +94,7 @@ import {
   ADAPTERS, INPUT_MODES, PROVIDER_CONTRACTS, PROVIDERS, providerCapability
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
+import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.4.8";
 const RUNTIME_API_VERSION = "26";
@@ -119,6 +120,9 @@ const REVIEW_PACKET_SCHEMA_VERSION = "4";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "2";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
+const QUALITY_CAPABILITIES_PROTOCOL_VERSION = "1";
+const CRAP_PROTOCOL_VERSION = "1";
+const AUTOMATED_MUTATION_PROTOCOL_VERSION = "1";
 // A refusal is a lifecycle stop, not a crash. Recording it as a failure would
 // bury real breakage under the guards that are working as designed.
 let operationBlocked = false;
@@ -173,7 +177,8 @@ const READ_ONLY_OPERATIONS = new Set([
   "metrics", "hash", "changes", "providers", "repos", "models", "describe",
   "packet", "agent-task", "audit-change", "authority-status",
   "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
-  "doctor", "api-version", "version"
+  "doctor", "quality-discover", "quality-doctor", "quality-report",
+  "api-version", "version"
 ]);
 process.on("exit", (code) => {
   recordCommandTelemetry({
@@ -233,7 +238,10 @@ const {
     reviewPacketSchema: REVIEW_PACKET_SCHEMA_VERSION,
     attestationProtocol: ATTESTATION_PROTOCOL_VERSION,
     authorityProtocol: AUTHORITY_PROTOCOL_VERSION,
-    ciEvidenceProtocol: CI_EVIDENCE_PROTOCOL_VERSION
+    ciEvidenceProtocol: CI_EVIDENCE_PROTOCOL_VERSION,
+    qualityCapabilitiesProtocol: QUALITY_CAPABILITIES_PROTOCOL_VERSION,
+    crapProtocol: CRAP_PROTOCOL_VERSION,
+    automatedMutationProtocol: AUTOMATED_MUTATION_PROTOCOL_VERSION
   },
   readJson,
   fail: die
@@ -453,6 +461,29 @@ const {
 // clearSnapshotCache is what every surface mutation already calls; the policy
 // cache invalidates with it or not at all.
 registerPolicyCacheClearer(clearPolicyCache);
+const {
+  showDiscovery: showQualityDiscovery,
+  initialize: initializeQuality,
+  doctor: qualityDoctor,
+  run: runQuality,
+  report: showQualityReport,
+  baseline: updateQualityBaseline,
+  debt: showQualityDebt
+} = createQualityRuntime({
+  root: ROOT,
+  repositoryCatalog,
+  selectedRepositories,
+  canonicalChangedSurface,
+  declaredSurfaceMatcher,
+  loadRuntime,
+  git,
+  gitHead,
+  readJson,
+  writeJson,
+  pathInside,
+  workspaceManifest,
+  fail: die
+});
 const {
   appendTelemetryRows,
   bindClaudeSession,
@@ -1515,9 +1546,16 @@ operationName = command || null;
 // `sandbox create --all <change>` created `.foundation/logs/--all/`.
 const namedChange = (value) =>
   typeof value === "string" && !value.startsWith("-") ? value : null;
+const qualityChange = () => {
+  const index = values.findIndex((value) => value === "--change");
+  return namedChange(index >= 0 ? values[index + 1] : process.env.FOUNDATION_CHANGE_ID);
+};
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
   ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
-    "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) : null;
+    "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) :
+    command?.startsWith("quality-")
+      ? qualityChange()
+      : null;
 operationStatusAtStart = operationChangeId
   ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
 
@@ -1617,5 +1655,12 @@ await routeRuntimeCommand(command, values, {
   usage,
   describeCommand,
   runtimeApiVersion: RUNTIME_API_VERSION,
-  version: VERSION
+  version: VERSION,
+  showQualityDiscovery,
+  initializeQuality,
+  qualityDoctor,
+  runQuality,
+  showQualityReport,
+  updateQualityBaseline,
+  showQualityDebt
 });
