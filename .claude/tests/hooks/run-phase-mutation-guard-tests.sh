@@ -30,6 +30,14 @@ assert_contains "Change blocks product mutation" "$out" '"decision":"block"'
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/src/app.js")")"
 assert_eq "Build permits isolated workspace mutation" "" "$out"
 
+out="$(invoke build block "$TMP/workspace" \
+  "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"$TMP/workspace/notebook.ipynb\"}}")"
+assert_eq "Build permits an isolated notebook mutation" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" \
+  "{\"tool_name\":\"MultiEdit\",\"tool_input\":{\"edits\":[null,{\"file_path\":42},{\"file_path\":\"$TMP/workspace/src/one.js\"},{\"file_path\":\"$TMP/outside/two.js\"}]}}")"
+assert_contains "Build checks every string path in a multi-edit" "$out" '"decision":"block"'
+
 out="$(invoke build block "$TMP/workspace" "$(write_event "../workspace/src/relative.js")")"
 assert_eq "Build resolves a relative mutation target from the project" "" "$out"
 

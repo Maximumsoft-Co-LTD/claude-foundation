@@ -150,13 +150,16 @@ function looksMutating(command) {
     || /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/null(?:[\s;&|)]|$))\S/m.test(stripped);
 }
 
+function appendStringPath(paths, value) {
+  if (typeof value === "string") paths.push(value);
+}
+
 function eventPaths(value) {
   const paths = [];
-  if (typeof value.file_path === "string") paths.push(value.file_path);
-  if (typeof value.notebook_path === "string") paths.push(value.notebook_path);
-  if (Array.isArray(value.edits)) {
-    for (const edit of value.edits) if (typeof edit?.file_path === "string") paths.push(edit.file_path);
-  }
+  appendStringPath(paths, value.file_path);
+  appendStringPath(paths, value.notebook_path);
+  if (!Array.isArray(value.edits)) return paths;
+  for (const edit of value.edits) appendStringPath(paths, edit?.file_path);
   return paths;
 }
 
