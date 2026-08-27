@@ -50,8 +50,25 @@ async function main() {
     if (existsSync(join(archive, "examples/todolist/test"))) {
       const tests = readdirSync(join(archive, "examples/todolist/test"))
         .filter((name) => name.endsWith(".test.mjs")).map((name) => `examples/todolist/test/${name}`);
-      run(c8, ["--include=examples/**/*.js", "--exclude=examples/**/test/**", "--exclude=examples/**/tests/**", "--reporter=json",
-        "--report-dir=.foundation/test-results/quality/coverage-examples", "node", "--test", ...tests], archive);
+      run(c8, ["--include=examples/todolist/**/*.js", "--exclude=examples/**/test/**", "--reporter=json",
+        "--report-dir=.foundation/test-results/quality/coverage-examples-v1", "node", "--test", ...tests], archive);
+      const exampleReports = [join(archive,
+        ".foundation/test-results/quality/coverage-examples-v1/coverage-final.json")];
+      if (existsSync(join(archive, "examples/todolist-v2/vitest.config.js"))) {
+        run(resolve(ROOT, "node_modules/.bin/vitest"), [
+          "run", "--root", "examples/todolist-v2", "--coverage",
+          "--coverage.reporter=json",
+          "--coverage.reportsDirectory=../../.foundation/test-results/quality/coverage-examples-v2"
+        ], archive);
+        exampleReports.push(join(archive,
+          ".foundation/test-results/quality/coverage-examples-v2/coverage-final.json"));
+      }
+      run(process.execPath, [
+        resolve(ROOT, "scripts/quality/merge-coverage.mjs"),
+        "--output", join(archive,
+          ".foundation/test-results/quality/coverage-examples/coverage-final.json"),
+        ...exampleReports
+      ], ROOT);
       coverageReports.push(join(archive,
         ".foundation/test-results/quality/coverage-examples/coverage-final.json"));
     }

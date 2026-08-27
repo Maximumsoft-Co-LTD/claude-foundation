@@ -181,6 +181,35 @@ describe('sortByPriority — AC19: High → Medium → Low → none', () => {
     sortByPriority(todos);
     expect(todos[0].title).toBe('a');
   });
+
+  test('breaks equal-priority ties by due date with undated items last', () => {
+    const early = createTodo({
+      title: 'early', priority: 'Medium', dueDate: '2025-01-01'
+    });
+    const sameEarly = createTodo({
+      title: 'same early', priority: 'Medium', dueDate: '2025-01-01'
+    });
+    const late = createTodo({
+      title: 'late', priority: 'Medium', dueDate: '2025-12-31'
+    });
+    const undated = createTodo({ title: 'undated', priority: 'Medium' });
+
+    expect(sortByPriority([late, early]).map(todo => todo.title)).toEqual([
+      'early', 'late'
+    ]);
+    expect(sortByPriority([early, late]).map(todo => todo.title)).toEqual([
+      'early', 'late'
+    ]);
+    expect(sortByPriority([undated, early]).map(todo => todo.title)).toEqual([
+      'early', 'undated'
+    ]);
+    expect(sortByPriority([early, undated]).map(todo => todo.title)).toEqual([
+      'early', 'undated'
+    ]);
+    expect(sortByPriority([sameEarly, early]).map(todo => todo.title)).toEqual([
+      'same early', 'early'
+    ]);
+  });
 });
 
 // ─── FR-005: validateEditTitle — edit save to empty/whitespace ───────────────

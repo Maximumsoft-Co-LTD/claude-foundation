@@ -10,12 +10,14 @@
   "devDependencies": {
     "@fission-ai/openspec": "1.7.0",
     "@stryker-mutator/core": "9.6.1",
+    "@vitest/coverage-v8": "2.1.8",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "c8": "10.1.3",
     "eslint": "9.39.2",
     "espree": "10.4.0",
-    "happy-dom": "20.10.6"
+    "happy-dom": "20.10.6",
+    "vitest": "2.1.8"
   },
   "scripts": {
     "foundation": "node .claude/harness/foundation.mjs",
@@ -27,7 +29,9 @@
     "quality:complexity": "node scripts/quality/collect-complexity.mjs",
     "quality:coverage:dashboard": "c8 --include='dashboard/*.js' --include='dashboard/*.mjs' --include='dashboard/public/*.js' --exclude='dashboard/test/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-dashboard node --test dashboard/test/*.test.js dashboard/test/*.test.mjs",
     "quality:coverage:runtime": "c8 --include='.claude/harness/foundation.mjs' --include='.claude/harness/runtime/**/*.mjs' --include='.claude/hooks/**/*.mjs' --exclude='.claude/**/tests/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-runtime sh .claude/tests/run-all.sh",
-    "quality:coverage:examples": "c8 --include='examples/**/*.js' --exclude='examples/**/test/**' --exclude='examples/**/tests/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-examples node --test examples/todolist/test/*.test.mjs",
+    "quality:coverage:examples:v1": "c8 --include='examples/todolist/**/*.js' --exclude='examples/**/test/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-examples-v1 node --test examples/todolist/test/*.test.mjs",
+    "quality:coverage:examples:v2": "vitest run --root examples/todolist-v2 --coverage --coverage.reporter=json --coverage.reporter=text-summary --coverage.reportsDirectory=../../.foundation/test-results/quality/coverage-examples-v2",
+    "quality:coverage:examples": "npm run quality:coverage:examples:v1 && npm run quality:coverage:examples:v2 && node scripts/quality/merge-coverage.mjs --output .foundation/test-results/quality/coverage-examples/coverage-final.json .foundation/test-results/quality/coverage-examples-v1/coverage-final.json .foundation/test-results/quality/coverage-examples-v2/coverage-final.json",
     "quality:coverage:website": "c8 --include='website/*.js' --include='website/demo/src/**/*.js' --exclude='website/**/test/**' --reporter=json --reporter=text-summary --report-dir=.foundation/test-results/quality/coverage-website node --test website/demo/test/*.test.mjs",
     "quality:crap": "node scripts/quality/calculate-crap.mjs",
     "quality:report:validate": "node scripts/quality/validate-quality-report.mjs",
