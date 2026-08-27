@@ -50,6 +50,12 @@ export function workspaceIsolationKind(mode) {
   return "none";
 }
 
+export function unusedCopyResolveMessage(paths) {
+  return `--resolve names ${paths.map((path) => `'${path}'`).join(", ")
+  }, which ${paths.length === 1 ? "is" : "are"} not in conflict; drop ${
+    paths.length === 1 ? "it" : "them"} and sync again`;
+}
+
 export function workspaceIdentityValid(kind, path, { gitMetadataPresent, directoryExists }) {
   if (kind === "git-worktree") return gitMetadataPresent(path);
   if (kind === "filesystem-copy") return directoryExists(path);
@@ -1283,6 +1289,43 @@ export function createSandboxRuntime({
     state.workspace.packetSnapshot = packetManifest(destination);
   }
 
+  function advanceCopyBaseline(baseline, rel, target) {
+    if (target === null) delete baseline[rel];
+    else baseline[rel] = target;
+  }
+
+  function forwardCopyWorkspacePath(workspace, rel, target) {
+    const destination = join(workspace.path, rel);
+    rmSync(destination, { force: true });
+    if (target === null) return;
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(join(root, rel), destination, VERBATIM_COPY);
+  }
+
+  function reconcileCopyWorkspacePath({
+    rel, baseline, targetManifest, sandboxManifest, resolves, usedResolves, workspace
+  }) {
+    const base = baseline[rel] ?? null;
+    const target = targetManifest[rel] ?? null;
+    const sandboxEntry = sandboxManifest[rel] ?? null;
+    if (target === base) return "unchanged";
+    if (sandboxEntry === target) {
+      advanceCopyBaseline(baseline, rel, target);
+      return "settled";
+    }
+    if (sandboxEntry === base) {
+      forwardCopyWorkspacePath(workspace, rel, target);
+      advanceCopyBaseline(baseline, rel, target);
+      return "forwarded";
+    }
+    if (resolves.has(rel)) {
+      usedResolves.add(rel);
+      advanceCopyBaseline(baseline, rel, target);
+      return "settled";
+    }
+    return "conflict";
+  }
+
   function reconcileCopyWorkspace(id, state, flags) {
     const workspace = state.workspace;
     if (workspace.mode !== "copy" || workspace.applied)
@@ -1300,33 +1343,14 @@ export function createSandboxRuntime({
     let forwarded = 0;
     const conflicts = [];
     for (const rel of paths) {
-      const base = baseline[rel] ?? null;
-      const target = targetManifest[rel] ?? null;
-      const sandboxEntry = sandboxManifest[rel] ?? null;
-      const advance = () => {
-        if (target === null) delete baseline[rel]; else baseline[rel] = target;
-      };
-      if (target === base) continue;
-      if (sandboxEntry === target) { advance(); continue; }
-      if (sandboxEntry === base) {
-        const to = join(workspace.path, rel);
-        rmSync(to, { force: true });
-        if (target !== null) {
-          mkdirSync(dirname(to), { recursive: true });
-          cpSync(join(root, rel), to, VERBATIM_COPY);
-        }
-        advance();
-        forwarded += 1;
-        continue;
-      }
-      if (resolves.has(rel)) { usedResolves.add(rel); advance(); continue; }
-      conflicts.push(rel);
+      const outcome = reconcileCopyWorkspacePath({
+        rel, baseline, targetManifest, sandboxManifest, resolves, usedResolves, workspace
+      });
+      if (outcome === "forwarded") forwarded += 1;
+      else if (outcome === "conflict") conflicts.push(rel);
     }
     const unusedResolves = [...resolves].filter((rel) => !usedResolves.has(rel));
-    if (unusedResolves.length)
-      fail(`--resolve names ${unusedResolves.map((rel) => `'${rel}'`).join(", ")
-      }, which ${unusedResolves.length === 1 ? "is" : "are"} not in conflict; drop ${
-        unusedResolves.length === 1 ? "it" : "them"} and sync again`);
+    if (unusedResolves.length) fail(unusedCopyResolveMessage(unusedResolves));
     workspace.baseline = baseline;
     return { forwarded, conflicts };
   }

@@ -2,8 +2,8 @@
 
 > Generated from the versioned CRAP inventory; do not edit function rows by hand.
 
-- Production functions planned: 3503
-- Source commit: `37e3353f503fb504a2af1f8a6b3ae83e3fd8cc8a`
+- Production functions planned: 3506
+- Source commit: `409c9cf439a725fffa844b94de7763ac9c80c7a6`
 - Coverage model: branch-with-function-fallback
 
 Every measured production function has exactly one action. Test, generated and vendored functions are excluded by project quality policy.
@@ -15,15 +15,15 @@ Every measured production function has exactly one action. Test, generated and v
 | W1 | Critical refactors and coverage-mapping gaps | 0 |
 | W2 | High-risk refactors | 14 |
 | W3 | Remaining CRAP failures | 44 |
-| W4 | Warning functions: test and simplify when touched | 26 |
+| W4 | Warning functions: test and simplify when touched | 25 |
 | W5 | Passing but below changed-code coverage floor | 709 |
-| Continuous | Healthy functions to preserve | 2710 |
+| Continuous | Healthy functions to preserve | 2714 |
 
 ## Surface plans
 
 | Surface | Functions | Fail | Warn | Unmapped | Plan |
 |---|---:|---:|---:|---:|---|
-| runtime | 2889 | 2 | 8 | 0 | [Open](./runtime.md) |
+| runtime | 2892 | 2 | 7 | 0 | [Open](./runtime.md) |
 | dashboard | 397 | 39 | 11 | 0 | [Open](./dashboard.md) |
 | examples | 187 | 17 | 6 | 0 | [Open](./examples.md) |
 | website | 30 | 0 | 1 | 0 | [Open](./website.md) |

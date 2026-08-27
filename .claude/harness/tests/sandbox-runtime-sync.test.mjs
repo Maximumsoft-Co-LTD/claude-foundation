@@ -8,7 +8,7 @@ import test from "node:test";
 
 import {
   createSandboxRuntime, recordSandboxBaseMove, reportSandboxSync,
-  sandboxMovementLine
+  sandboxMovementLine, unusedCopyResolveMessage
 } from "../runtime/workflow/sandbox-runtime.mjs";
 
 const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -130,6 +130,13 @@ test("sync rejects a resolve path that is not a conflict", () => {
     resolve: "same.txt"
   }), /not in conflict/);
   rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("unused copy resolution diagnostics preserve singular and plural instructions", () => {
+  assert.match(unusedCopyResolveMessage(["one.txt"]),
+    /'one\.txt'.*which is not in conflict; drop it/s);
+  assert.match(unusedCopyResolveMessage(["one.txt", "two.txt"]),
+    /'one\.txt', 'two\.txt'.*which are not in conflict; drop them/s);
 });
 
 test("sync creates a missing packet for an already-applied copy", () => {
