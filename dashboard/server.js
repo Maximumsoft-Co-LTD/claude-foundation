@@ -341,31 +341,40 @@ function dbDeleteAgent(agentId) {
 }
 
 /** Reload the presence map from SQLite so a redeploy doesn't blank the board. */
-function restoreAgents(agentsMap) {
-  if (!db) return;
+function parseRestoredState(raw) {
+  try { return JSON.parse(raw || '{}'); } catch { return {}; }
+}
+
+function restoredAgent(row, cleanValue) {
+  const state = parseRestoredState(row.state);
+  const restored = {
+    agentId: row.agent_id,
+    gitUser: row.git_user, gitEmail: row.git_email || '', host: row.host, version: row.version, status: row.status,
+    sourceSchema: cleanValue(state.sourceSchema, 64),
+    foundationVersion: cleanValue(state.foundationVersion, 64),
+    runs: Array.isArray(state.runs) ? state.runs : [],
+    changes: Array.isArray(state.changes) ? state.changes : [],
+    usage: Array.isArray(state.usage) ? state.usage : [],
+    sessions: Array.isArray(state.sessions) ? state.sessions : [],
+    tools: Array.isArray(state.tools) ? state.tools : [],
+    prs: Array.isArray(state.prs) ? state.prs : [],
+    firstSeen: row.first_seen, lastSeen: row.last_seen,
+  };
+  restored.datasetHashes = datasetHashes(restored);
+  return restored;
+}
+
+function restoreAgents(agentsMap, context = {
+  db, stmts, clean, dbPath: DB_PATH, log: console.log, warn: console.warn,
+}) {
+  if (!context.db) return;
   try {
-    for (const row of stmts.loadAgents.all()) {
-      let state = {};
-      try { state = JSON.parse(row.state || '{}'); } catch { /* corrupt row — presence only */ }
-      const restored = {
-        agentId: row.agent_id,
-        gitUser: row.git_user, gitEmail: row.git_email || '', host: row.host, version: row.version, status: row.status,
-        sourceSchema: clean(state.sourceSchema, 64),
-        foundationVersion: clean(state.foundationVersion, 64),
-        runs: Array.isArray(state.runs) ? state.runs : [],
-        changes: Array.isArray(state.changes) ? state.changes : [],
-        usage: Array.isArray(state.usage) ? state.usage : [],
-        sessions: Array.isArray(state.sessions) ? state.sessions : [],
-        tools: Array.isArray(state.tools) ? state.tools : [],
-        prs: Array.isArray(state.prs) ? state.prs : [],
-        firstSeen: row.first_seen, lastSeen: row.last_seen,
-      };
-      restored.datasetHashes = datasetHashes(restored);
-      agentsMap.set(row.agent_id, restored);
+    for (const row of context.stmts.loadAgents.all()) {
+      agentsMap.set(row.agent_id, restoredAgent(row, context.clean));
     }
-    if (agentsMap.size) console.log(`sqlite: restored ${agentsMap.size} agent(s) from ${DB_PATH}`);
+    if (agentsMap.size) context.log(`sqlite: restored ${agentsMap.size} agent(s) from ${context.dbPath}`);
   } catch (err) {
-    console.warn(`sqlite restore failed: ${err.message}`);
+    context.warn(`sqlite restore failed: ${err.message}`);
   }
 }
 
@@ -973,20 +982,22 @@ function guard(res, promise) {
   });
 }
 
-const server = http.createServer((req, res) => {
+function requestUrl(req) {
   // `new URL('//', base)` throws, and so does any Host header the parser
   // rejects. Both are reachable unauthenticated, so neither may reach the
   // top of a request listener that has nothing above it to catch.
-  let url;
   try {
     // A leading '//' reads as protocol-relative, so '//api/online' would parse
     // to host 'api' and path '/online' and silently misroute. Proxies do emit
     // it; collapse it rather than serve the wrong thing.
-    url = new URL(String(req.url || '/').replace(/^\/{2,}/, '/'),
+    return new URL(String(req.url || '/').replace(/^\/{2,}/, '/'),
       `http://${req.headers.host || 'localhost'}`);
   } catch {
-    return sendJson(res, 400, { ok: false, error: 'bad request target' });
+    return null;
   }
+}
+
+function routeRequest(req, res, url) {
   const { pathname } = url;
 
   if (req.method === 'OPTIONS') {
@@ -1012,7 +1023,15 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, error: 'unknown endpoint' });
 
   return serveStatic(req, res, pathname);
-});
+}
+
+function handleRequest(req, res) {
+  const url = requestUrl(req);
+  if (!url) return sendJson(res, 400, { ok: false, error: 'bad request target' });
+  return routeRequest(req, res, url);
+}
+
+const server = http.createServer(handleRequest);
 
 function startServer(port = PORT) {
   return server.listen(port, () => {
@@ -1047,6 +1066,8 @@ module.exports = {
   _internals: {
     agents, profiles, db, datasetHashes, changedDatasets, computeConflicts,
     heartbeatFileCount, heartbeatToolTotals, persistHeartbeatIfAvailable,
-    persistHeartbeatOperation
+    persistHeartbeatOperation, workRowsFor, parseRestoredState, restoredAgent,
+    restoreAgents, rangesOverlap, dedupeRuns, requestUrl, routeRequest,
+    handleRequest
   },
 };

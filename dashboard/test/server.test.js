@@ -77,6 +77,178 @@ test('unchanged aggregate hashes suppress repeat dataset persistence', () => {
   });
 });
 
+test('work rows merge commits, pushes, and pull requests by day', () => {
+  assert.deepEqual(_internals.workRowsFor({
+    changes: [
+      {
+        work: [{ date: '2026-08-01', commits: 2, added: 10, deleted: 3 }],
+        pushes: [{ date: '2026-08-02', n: 4 }],
+      },
+      {
+        work: [{ date: '2026-08-01', commits: 1, added: 5, deleted: 2 }],
+        pushes: [{ date: '2026-08-01', n: 2 }],
+      },
+    ],
+    prs: [{ date: '2026-08-01', n: 3 }],
+  }), [
+    { date: '2026-08-01', commits: 3, added: 15, deleted: 5, pushes: 2, prs: 3 },
+    { date: '2026-08-02', commits: 0, added: 0, deleted: 0, pushes: 4, prs: 0 },
+  ]);
+  assert.deepEqual(_internals.workRowsFor({}), []);
+});
+
+test('range overlap includes merge-context padding', () => {
+  assert.equal(_internals.rangesOverlap([[10, 12]], [[15, 18]]), true);
+  assert.equal(_internals.rangesOverlap([[10, 12]], [[16, 18]]), false);
+  assert.equal(_internals.rangesOverlap([], [[1, 2]]), false);
+});
+
+test('conflicts include only live parties with overlapping edits', () => {
+  const now = Date.now();
+  const original = new Map(_internals.agents);
+  _internals.agents.clear();
+  const change = (branch, path, ranges) => [{ repoId: 'repo-1', branch, files: [{ path, ranges }] }];
+  _internals.agents.set('one', {
+    gitUser: 'alice', status: 'online', lastSeen: now,
+    changes: change('feature-a', 'src/app.js', [[10, 12]]),
+  });
+  _internals.agents.set('two', {
+    gitUser: 'bob', status: 'online', lastSeen: now,
+    changes: change('feature-b', 'src/app.js', [[15, 16]]),
+  });
+  _internals.agents.set('three', {
+    gitUser: 'carol', status: 'online', lastSeen: now,
+    changes: change('feature-c', 'src/app.js', [[40, 42]]),
+  });
+  _internals.agents.set('offline', {
+    gitUser: 'dave', status: 'offline', lastSeen: now,
+    changes: change('feature-d', 'src/app.js', [[10, 12]]),
+  });
+  try {
+    assert.deepEqual(_internals.computeConflicts(now), [{
+      repoId: 'repo-1', path: 'src/app.js', parties: [
+        { gitUser: 'alice', branch: 'feature-a', ranges: [[10, 12]] },
+        { gitUser: 'bob', branch: 'feature-b', ranges: [[15, 16]] },
+      ],
+    }]);
+  } finally {
+    _internals.agents.clear();
+    for (const [key, value] of original) _internals.agents.set(key, value);
+  }
+});
+
+test('run deduplication preserves explicit ownership and can pick newest data', () => {
+  const original = new Map(_internals.agents);
+  _internals.agents.clear();
+  _internals.agents.set('one', { gitUser: 'reporter-a', runs: [
+    { repoId: 'repo-1', id: 'run-1', finished: 10, phase: 'old' },
+    { repo: 'fallback', id: 'run-2', finished: 30, owner: '', phase: 'first' },
+  ] });
+  _internals.agents.set('two', { gitUser: 'reporter-b', runs: [
+    { repoId: 'repo-1', id: 'run-1', finished: 20, owner: 'owner', phase: 'new' },
+    { repo: 'fallback', id: 'run-2', finished: 20, owner: 'late-owner', phase: 'older' },
+  ] });
+  try {
+    const newest = _internals.dedupeRuns(true);
+    assert.deepEqual(newest.map(({ id, phase, owner, gitUser }) => ({ id, phase, owner, gitUser })), [
+      { id: 'run-1', phase: 'new', owner: 'owner', gitUser: 'owner' },
+      { id: 'run-2', phase: 'first', owner: 'late-owner', gitUser: 'late-owner' },
+    ]);
+    assert.equal(_internals.dedupeRuns(false)[0].phase, 'old');
+  } finally {
+    _internals.agents.clear();
+    for (const [key, value] of original) _internals.agents.set(key, value);
+  }
+});
+
+test('agent restoration tolerates corrupt state and storage failure', () => {
+  const restored = new Map();
+  const logs = [];
+  const warnings = [];
+  const row = {
+    agent_id: 'restored', git_user: 'alice', git_email: null, host: 'host',
+    version: '1', status: 'online', first_seen: 1, last_seen: 2, state: '{bad json',
+  };
+  _internals.restoreAgents(restored, {
+    db: {}, stmts: { loadAgents: { all: () => [row] } }, clean: (value) => value || '',
+    dbPath: '/tmp/test.db', log: (message) => logs.push(message), warn: (message) => warnings.push(message),
+  });
+  assert.equal(restored.get('restored').gitEmail, '');
+  assert.deepEqual(restored.get('restored').runs, []);
+  assert.equal(logs.length, 1);
+  _internals.restoreAgents(new Map(), {
+    db: {}, stmts: { loadAgents: { all: () => { throw new Error('read failed'); } } },
+    clean: String, dbPath: '', log: assert.fail, warn: (message) => warnings.push(message),
+  });
+  assert.match(warnings[0], /read failed/);
+  _internals.restoreAgents(new Map(), { db: null });
+});
+
+test('restored agents retain valid aggregate arrays and discard invalid ones', () => {
+  assert.deepEqual(_internals.parseRestoredState(''), {});
+  const restored = _internals.restoredAgent({
+    agent_id: 'agent', git_user: 'alice', git_email: 'a@example.test', host: 'host',
+    version: '1', status: 'online', first_seen: 1, last_seen: 2,
+    state: JSON.stringify({
+      sourceSchema: 'schema', foundationVersion: '2', runs: [{ id: 'run' }],
+      changes: [{ repoId: 'repo' }], usage: [{ input: 1 }], sessions: [{ count: 1 }],
+      tools: [1], prs: [{ n: 1 }],
+    }),
+  }, (value) => value || '');
+  assert.equal(restored.sourceSchema, 'schema');
+  assert.deepEqual(restored.runs, [{ id: 'run' }]);
+  assert.deepEqual(restored.changes, [{ repoId: 'repo' }]);
+  assert.deepEqual(restored.usage, [{ input: 1 }]);
+  assert.deepEqual(restored.sessions, [{ count: 1 }]);
+  assert.deepEqual(restored.tools, [1]);
+  assert.deepEqual(restored.prs, [{ n: 1 }]);
+});
+
+test('persisted log and history endpoints enforce keys and bound queries', async () => {
+  assert.equal((await request('/api/log/heartbeats')).response.status, 401);
+  const log = await request('/api/log/heartbeats?limit=9999&since=0&agent=agent-one&user=same-user', {
+    headers: { 'x-cf-key': 'view-key' },
+  });
+  assert.equal(log.response.status, 200);
+  assert.equal(log.body.ok, true);
+  assert.equal(log.body.since, 0);
+  assert.equal(log.body.beats.every((row) => row.agentId === 'agent-one'), true);
+
+  assert.equal((await request('/api/history')).response.status, 401);
+  const shortHistory = await request('/api/history?days=1', { headers: { 'x-cf-key': 'view-key' } });
+  assert.equal(shortHistory.response.status, 200);
+  assert.equal(shortHistory.body.days, 7);
+  assert.deepEqual(
+    ['usage', 'projects', 'hotspots', 'conflicts', 'work'].filter((key) => Array.isArray(shortHistory.body[key])),
+    ['usage', 'projects', 'hotspots', 'conflicts', 'work'],
+  );
+  const longHistory = await request('/api/history?days=9999', { headers: { authorization: 'Bearer view-key' } });
+  assert.equal(longHistory.body.days, 365);
+});
+
+test('request routing handles preflight, unknown APIs, and static misses', async () => {
+  const preflight = await fetch(`${origin}/api/online`, { method: 'OPTIONS' });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, POST, OPTIONS');
+  assert.equal((await request('/api/not-real')).response.status, 404);
+  const missing = await fetch(`${origin}/not-real.txt`);
+  assert.equal(missing.status, 404);
+});
+
+test('request target parsing supplies safe defaults and rejects an invalid host', () => {
+  const fallback = _internals.requestUrl({ url: '', headers: {} });
+  assert.equal(fallback.href, 'http://localhost/');
+  assert.equal(_internals.requestUrl({ url: '/', headers: { host: '[' } }), null);
+
+  const writes = [];
+  _internals.handleRequest({ url: '/', headers: { host: '[' } }, {
+    writeHead: (status, headers) => writes.push({ status, headers }),
+    end: (body) => writes.push(JSON.parse(body)),
+  });
+  assert.equal(writes[0].status, 400);
+  assert.equal(writes[1].error, 'bad request target');
+});
+
 test('heartbeat rejects an unknown status', async () => {
   const result = await heartbeat('bad-status', { status: 'pretending' });
   assert.equal(result.response.status, 400);
