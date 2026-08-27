@@ -63,6 +63,7 @@ jobs:
           set -euo pipefail
           command -v jq >/dev/null || brew install jq
           npm ci
+          export PATH="$PWD/node_modules/.bin:$PATH"
           npm run quality:config
           npm run quality:exceptions
           npm run quality:static
