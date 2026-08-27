@@ -4,6 +4,7 @@ import {
   abortAuthorityOperation,
   acceptanceResponseEvidence,
   authorityClaimIds,
+  authorityPacketOperation,
   authorityResponseTemplate,
   authorityRequestPolicy,
   authorityRequestSelection,
@@ -419,4 +420,67 @@ test("authority response template binds its envelope and type-specific evidence"
   assert.equal(authorityResponseTemplate(templateContext, {
     type: "review", packet: {}
   }).evidence["reviewer-type"], "human|ai");
+});
+
+function packetContext(overrides = {}) {
+  const reviewPacket = {
+    changedSurface: {
+      inspection: [{ repository: "root", paths: ["src/app.mjs"] }]
+    },
+    decisions: [{ id: "decision-a" }],
+    evidence: [{ provider: "test", status: "pass" }]
+  };
+  return {
+    protocolVersion: "4",
+    reviewPacketValue: () => reviewPacket,
+    loadRuntime: () => ({ intent: "ship the bounded behavior" }),
+    evidence: () => ({ claims: [
+      { id: "claim-a", scenario: "A works", impact: "high" },
+      { id: "claim-b", scenario: "B works", impact: "low" }
+    ] }),
+    resolvedAcceptance: () => ({
+      claimIds: ["claim-a"], reason: "human decision required"
+    }),
+    relevantHash: () => "workspace-a",
+    reviewPacket,
+    ...overrides
+  };
+}
+
+test("authority packet returns the review packet without loading acceptance state", () => {
+  const reviewPacket = { packetType: "review", changeId: "change-a" };
+  const context = packetContext({
+    reviewPacketValue: () => reviewPacket,
+    loadRuntime: () => assert.fail("review packets must not load acceptance state")
+  });
+  assert.equal(authorityPacketOperation(context, "change-a", "review"), reviewPacket);
+});
+
+test("authority packet projects selected acceptance claims and inspection context", () => {
+  const context = packetContext();
+  const packet = authorityPacketOperation(context, "change-a", "acceptance");
+  assert.equal(packet.version, 4);
+  assert.equal(packet.packetType, "acceptance");
+  assert.equal(packet.workspaceHash, "workspace-a");
+  assert.equal(packet.intent, "ship the bounded behavior");
+  assert.deepEqual(packet.claims, [{
+    id: "claim-a", scenario: "A works", impact: "high",
+    criterion: "Confirm the final result satisfies: A works"
+  }]);
+  assert.equal(packet.inspection.changedSurface, context.reviewPacket.changedSurface);
+  assert.deepEqual(packet.inspection.decisions, [{ id: "decision-a" }]);
+  assert.deepEqual(packet.inspection.automatedEvidence,
+    [{ provider: "test", status: "pass" }]);
+  assert.equal(packet.requiredActor, "human");
+});
+
+test("authority packet supplies empty inspection fallbacks", () => {
+  const packet = authorityPacketOperation(packetContext({
+    reviewPacketValue: () => ({}),
+    resolvedAcceptance: () => ({ claimIds: [], reason: "acceptance" })
+  }), "change-a", "acceptance");
+  assert.deepEqual(packet.claims, []);
+  assert.deepEqual(packet.inspection, {
+    workspaces: [], changedSurface: null, decisions: null, automatedEvidence: []
+  });
 });

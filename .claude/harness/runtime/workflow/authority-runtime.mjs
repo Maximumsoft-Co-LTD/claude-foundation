@@ -318,6 +318,45 @@ export function authorityResponseTemplate(context, request) {
   };
 }
 
+export function authorityPacketOperation(context, id, type) {
+  if (type === "review") return context.reviewPacketValue(id);
+  const state = context.loadRuntime(id);
+  const contract = context.evidence(id);
+  const acceptance = context.resolvedAcceptance(id, state, contract);
+  const reviewContext = context.reviewPacketValue(id);
+  const claims = contract.claims
+    .filter((claim) => acceptance.claimIds.includes(claim.id))
+    .map((claim) => ({
+      id: claim.id,
+      scenario: claim.scenario,
+      impact: claim.impact,
+      criterion: `Confirm the final result satisfies: ${claim.scenario}`
+    }));
+  return {
+    version: Number(context.protocolVersion),
+    packetType: "acceptance",
+    changeId: id,
+    workspaceHash: context.relevantHash(id),
+    reason: acceptance.reason,
+    intent: state.intent,
+    claims,
+    inspection: {
+      workspaces: reviewContext.changedSurface?.inspection || [],
+      changedSurface: reviewContext.changedSurface || null,
+      decisions: reviewContext.decisions || null,
+      automatedEvidence: reviewContext.evidence || []
+    },
+    response: {
+      statuses: ["pass", "fail", "inconclusive", "error"],
+      instructions: "Inspect the final workspace against every criterion. Pass only when all criteria are satisfied; otherwise reject, report uncertainty, or pause without a response.",
+      requiredForPass: [
+        "named human", "criterion observations", "durable artifact or reference"
+      ]
+    },
+    requiredActor: "human"
+  };
+}
+
 export function mainSessionEnvironment(environment) {
   const claudeSession = String(
     environment.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
@@ -476,38 +515,10 @@ export function createAuthorityRuntime({
     return providerWorkspaceHash(id, provider);
   }
 
-  function authorityPacket(id, type) {
-    if (type === "review") return reviewPacketValue(id);
-    const state = loadRuntime(id);
-    const contract = evidence(id);
-    const acceptance = resolvedAcceptance(id, state, contract);
-    const context = reviewPacketValue(id);
-    const claims = contract.claims.filter((claim) => acceptance.claimIds.includes(claim.id))
-      .map((claim) => ({
-        id: claim.id,
-        scenario: claim.scenario,
-        impact: claim.impact,
-        criterion: `Confirm the final result satisfies: ${claim.scenario}`
-      }));
-    return {
-      version: Number(protocolVersion), packetType: "acceptance", changeId: id,
-      workspaceHash: relevantHash(id), reason: acceptance.reason,
-      intent: state.intent,
-      claims,
-      inspection: {
-        workspaces: context.changedSurface?.inspection || [],
-        changedSurface: context.changedSurface || null,
-        decisions: context.decisions || null,
-        automatedEvidence: context.evidence || []
-      },
-      response: {
-        statuses: ["pass", "fail", "inconclusive", "error"],
-        instructions: "Inspect the final workspace against every criterion. Pass only when all criteria are satisfied; otherwise reject, report uncertainty, or pause without a response.",
-        requiredForPass: ["named human", "criterion observations", "durable artifact or reference"]
-      },
-      requiredActor: "human"
-    };
-  }
+  const authorityPacket = authorityPacketOperation.bind(null, {
+    protocolVersion, reviewPacketValue, loadRuntime, evidence,
+    resolvedAcceptance, relevantHash
+  });
 
   function canonicalPacketDigest(packet) {
     const canonical = JSON.parse(JSON.stringify(packet || {}));
