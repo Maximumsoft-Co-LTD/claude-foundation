@@ -178,26 +178,39 @@ export function createHostAttestationRuntime(options) {
     return roots;
   }
 
+  function loadTrustedHostRoot(path, administered) {
+    if (!existsSync(path)) return null;
+    let stat;
+    try { stat = lstatSync(path); } catch { return null; }
+    if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o022) !== 0) return null;
+    // `chmod 600` on a self-authored file satisfies the mode check, so mode
+    // alone does not establish that an administrator installed this. The
+    // real roots live in root-owned system directories; require that.
+    if (administered && stat.uid !== 0) {
+      console.error(
+        `WARNING: ignoring trust root '${path}': it is not owned by root, so it does not establish administered trust`);
+      return null;
+    }
+    const value = readJson(path, {});
+    if (value.version !== 1 || !value.issuers || typeof value.issuers !== "object") return null;
+    return value;
+  }
+
+  function trustedIssuer(config, trustRoot) {
+    if (config?.algorithm !== "ed25519" ||
+        !String(config.publicKey || "").includes("PUBLIC KEY")) return null;
+    return { ...config, trustRoot };
+  }
+
   function trustedHostIssuers() {
     const issuers = {};
     for (const { path, administered } of trustedHostRoots()) {
-      if (!existsSync(path)) continue;
-      let stat;
-      try { stat = lstatSync(path); } catch { continue; }
-      if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o022) !== 0) continue;
-      // `chmod 600` on a self-authored file satisfies the mode check, so mode
-      // alone does not establish that an administrator installed this. The
-      // real roots live in root-owned system directories; require that.
-      if (administered && stat.uid !== 0) {
-        console.error(
-          `WARNING: ignoring trust root '${path}': it is not owned by root, so it does not establish administered trust`);
-        continue;
+      const value = loadTrustedHostRoot(path, administered);
+      if (!value) continue;
+      for (const [issuer, config] of Object.entries(value.issuers)) {
+        const trusted = trustedIssuer(config, path);
+        if (trusted) issuers[issuer] = trusted;
       }
-      const value = readJson(path, {});
-      if (value.version !== 1 || !value.issuers || typeof value.issuers !== "object") continue;
-      for (const [issuer, config] of Object.entries(value.issuers))
-        if (config?.algorithm === "ed25519" && String(config.publicKey || "").includes("PUBLIC KEY"))
-          issuers[issuer] = { ...config, trustRoot: path };
     }
     return issuers;
   }

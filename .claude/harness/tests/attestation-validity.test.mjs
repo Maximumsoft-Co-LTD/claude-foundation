@@ -24,7 +24,7 @@ console.error = () => {};
 mkdirSync(changeDir, { recursive: true });
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-writeFileSync(trustPath, `${JSON.stringify({
+const trustDocument = {
   version: 1,
   issuers: {
     [issuer]: {
@@ -32,7 +32,10 @@ writeFileSync(trustPath, `${JSON.stringify({
       publicKey: publicKey.export({ type: "spki", format: "pem" })
     }
   }
-}, null, 2)}\n`);
+};
+const writeTrustDocument = (value = trustDocument) =>
+  writeFileSync(trustPath, `${JSON.stringify(value, null, 2)}\n`);
+writeTrustDocument();
 chmodSync(trustPath, 0o600);
 
 const stableHash = (value) => createHash("sha256")
@@ -91,6 +94,20 @@ try {
     writeJson(attestationPath, value);
     assert.match(runtime.validate(id, attestationPath).reason, /envelope is malformed/);
   }
+
+  chmodSync(trustPath, 0o622);
+  assert.match(resultFor().reason, /is not trusted/);
+  chmodSync(trustPath, 0o600);
+  for (const invalidRoot of [
+    { ...trustDocument, version: 2 },
+    { version: 1, issuers: null },
+    { version: 1, issuers: { [issuer]: { algorithm: "rsa", publicKey: "PUBLIC KEY" } } },
+    { version: 1, issuers: { [issuer]: { algorithm: "ed25519", publicKey: "invalid" } } }
+  ]) {
+    writeTrustDocument(invalidRoot);
+    assert.match(resultFor().reason, /is not trusted/);
+  }
+  writeTrustDocument();
 
   assert.match(resultFor((payload) => { payload.issuer = "unknown"; }).reason,
     /is not trusted/);
