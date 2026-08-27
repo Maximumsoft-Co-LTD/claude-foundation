@@ -343,6 +343,31 @@ export function completeReviewAttemptOperation(context, id, digest, details) {
   return completed;
 }
 
+export function reviewHistoryAttemptValid(attempt, id, expectedAttempt) {
+  return Boolean(attempt) &&
+    Number(attempt.attempt) === expectedAttempt &&
+    attempt.changeId === id;
+}
+
+export function reviewHistoryChainValidOperation(context, id, history) {
+  let digest = history.chainHead || null;
+  let expectedAttempt = Number(history.totalAttempts || 0);
+  let base = null;
+  const seen = new Set();
+  while (digest) {
+    if (seen.has(digest) || seen.size > 1000) return false;
+    seen.add(digest);
+    const attempt = context.reviewAttemptByDigest(id, digest);
+    if (!reviewHistoryAttemptValid(attempt, id, expectedAttempt)) return false;
+    base = attempt;
+    digest = attempt.priorChainHead || null;
+    expectedAttempt -= 1;
+  }
+  // Migrated histories intentionally have no records before their synthetic
+  // base. A real attempt may subsequently sit above that migrated base.
+  return expectedAttempt === 0 || Boolean(base?.migrated);
+}
+
 export function createReviewAttemptStore({
   receiptsRoot,
   evidenceVault,
@@ -408,27 +433,9 @@ export function createReviewAttemptStore({
     return claimed === digest && stableHash(canonical) === claimed ? attempt : null;
   }
 
-  function reviewHistoryChainValid(id, history) {
-    let digest = history.chainHead || null;
-    let expectedAttempt = Number(history.totalAttempts || 0);
-    let base = null;
-    const seen = new Set();
-    while (digest) {
-      if (seen.has(digest) || seen.size > 1000) return false;
-      seen.add(digest);
-      const attempt = reviewAttemptByDigest(id, digest);
-      if (!attempt || Number(attempt.attempt) !== expectedAttempt || attempt.changeId !== id)
-        return false;
-      base = attempt;
-      digest = attempt.priorChainHead || null;
-      expectedAttempt -= 1;
-    }
-    // A migrated history has no records before its synthetic attempt, so the
-    // walk legitimately stops above zero. That marker sits at the chain *base*;
-    // looking for it on the head declared every migrated change corrupt the
-    // moment a real attempt was appended on top of it.
-    return expectedAttempt === 0 || Boolean(base?.migrated);
-  }
+  const reviewHistoryChainValid = reviewHistoryChainValidOperation.bind(null, {
+    reviewAttemptByDigest
+  });
 
   function reviewAttempts(id, history = reviewHistoryState(id)) {
     const attempts = [];

@@ -6,7 +6,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
+import {
+  createReviewAttemptStore,
+  reviewHistoryAttemptValid,
+  reviewHistoryChainValidOperation
+} from "../runtime/evidence/review-attempt-store.mjs";
 import { createReviewProtocol } from "../runtime/evidence/review-protocol.mjs";
 import { createAuthorityRuntime } from "../runtime/workflow/authority-runtime.mjs";
 
@@ -26,6 +30,58 @@ const writeJson = (path, value) => {
 };
 const fail = (message) => { throw new Error(message); };
 const now = () => "2026-08-16T12:00:00.000Z";
+
+function chainValid(attempts, history, id = "change-a") {
+  return reviewHistoryChainValidOperation({
+    reviewAttemptByDigest: (_changeId, digest) => attempts.get(digest) || null
+  }, id, history);
+}
+
+{
+  assert.equal(reviewHistoryAttemptValid(null, "change-a", 1), false);
+  assert.equal(reviewHistoryAttemptValid({
+    attempt: 1, changeId: "change-a"
+  }, "change-a", 1), true);
+  assert.equal(reviewHistoryAttemptValid({
+    attempt: 2, changeId: "change-a"
+  }, "change-a", 1), false);
+  assert.equal(reviewHistoryAttemptValid({
+    attempt: 1, changeId: "change-b"
+  }, "change-a", 1), false);
+  assert.equal(chainValid(new Map(), { chainHead: null, totalAttempts: 0 }), true);
+  const valid = new Map([
+    ["second", { attempt: 2, changeId: "change-a", priorChainHead: "first" }],
+    ["first", { attempt: 1, changeId: "change-a", priorChainHead: null }]
+  ]);
+  assert.equal(chainValid(valid, { chainHead: "second", totalAttempts: 2 }), true);
+  assert.equal(chainValid(new Map(), { chainHead: "missing", totalAttempts: 1 }), false);
+  assert.equal(chainValid(new Map([["wrong", {
+    attempt: 2, changeId: "change-a", priorChainHead: null
+  }]]), { chainHead: "wrong", totalAttempts: 1 }), false);
+  assert.equal(chainValid(new Map([["foreign", {
+    attempt: 1, changeId: "change-b", priorChainHead: null
+  }]]), { chainHead: "foreign", totalAttempts: 1 }), false);
+  assert.equal(chainValid(new Map([["cycle", {
+    attempt: 1, changeId: "change-a", priorChainHead: "cycle"
+  }]]), { chainHead: "cycle", totalAttempts: 1 }), false);
+  assert.equal(chainValid(new Map([["migrated", {
+    attempt: 3, changeId: "change-a", priorChainHead: null, migrated: true
+  }]]), { chainHead: "migrated", totalAttempts: 3 }), true);
+  assert.equal(chainValid(new Map([["gap", {
+    attempt: 3, changeId: "change-a", priorChainHead: null
+  }]]), { chainHead: "gap", totalAttempts: 3 }), false);
+  const oversized = new Map();
+  for (let attempt = 1; attempt <= 1002; attempt += 1) {
+    oversized.set(`attempt-${attempt}`, {
+      attempt,
+      changeId: "change-a",
+      priorChainHead: attempt === 1 ? null : `attempt-${attempt - 1}`
+    });
+  }
+  assert.equal(chainValid(oversized, {
+    chainHead: "attempt-1002", totalAttempts: 1002
+  }), false, "review history traversal is bounded even for a valid-shaped chain");
+}
 
 function fixture(id) {
   const root = mkdtempSync(join(tmpdir(), "foundation-guard-reconcile-"));
