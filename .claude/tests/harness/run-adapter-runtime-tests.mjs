@@ -143,6 +143,19 @@ test("critical cases normalize structured and test-runner reports", () => {
   assert.equal(criticalCaseResult({ criticalCases: [
     { id: "case-1", status: "failed" }
   ] }, ["case-1"]).status, "fail");
+  assert.deepEqual(criticalCaseResult({ foundation: { criticalCases: [
+    null, { id: "", status: "pass" }, { id: 42, status: "OK" }
+  ] } }, ["42"]), { status: "pass", observations: [{ id: "42", status: "ok" }] });
+  assert.deepEqual(criticalCaseResult({ testResults: [null, {
+    assertionResults: [{ fullName: "case-full", status: "SUCCESS" }]
+  }] }, ["case-full"]), {
+    status: "pass", observations: [{ id: "case-full", status: "success" }]
+  });
+  assert.deepEqual(criticalCaseResult({
+    testResults: [{ assertionResults: [{}] }]
+  }, ["case-missing"]), {
+    status: "fail", observations: [{ id: "case-missing", status: "missing" }]
+  });
   assert.deepEqual(criticalCaseResult({}, []), { status: "pass", observations: [] });
 });
 

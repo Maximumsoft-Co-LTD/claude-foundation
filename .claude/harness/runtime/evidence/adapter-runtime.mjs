@@ -16,22 +16,28 @@ const worstStatus = (...values) => values
   .reduce((worst, value) =>
     STATUS_SEVERITY[value] > STATUS_SEVERITY[worst] ? value : worst, "pass");
 
+function normalizedCriticalCase(row) {
+  return {
+    id: String(row?.id || ""),
+    status: String(row?.status || "").toLowerCase()
+  };
+}
+
+function assertionCriticalCase(assertion) {
+  const name = [assertion?.ancestorTitles?.join(" "), assertion?.title,
+    assertion?.fullName].filter(Boolean).join(" ");
+  return { id: name, status: String(assertion?.status || "").toLowerCase() };
+}
+
+function suiteCriticalCases(suite) {
+  return (suite?.assertionResults || []).map(assertionCriticalCase);
+}
+
 function criticalCaseRows(report) {
   const explicit = report?.criticalCases || report?.foundation?.criticalCases;
   if (Array.isArray(explicit))
-    return explicit.map((row) => ({
-      id: String(row?.id || ""),
-      status: String(row?.status || "").toLowerCase()
-    })).filter((row) => row.id);
-  const rows = [];
-  for (const suite of report?.testResults || []) {
-    for (const assertion of suite?.assertionResults || []) {
-      const name = [assertion?.ancestorTitles?.join(" "), assertion?.title,
-        assertion?.fullName].filter(Boolean).join(" ");
-      rows.push({ id: name, status: String(assertion?.status || "").toLowerCase() });
-    }
-  }
-  return rows;
+    return explicit.map(normalizedCriticalCase).filter((row) => row.id);
+  return (report?.testResults || []).flatMap(suiteCriticalCases);
 }
 
 export function criticalCaseResult(report, required) {
