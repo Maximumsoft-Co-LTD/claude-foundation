@@ -166,6 +166,90 @@ export function requestAuthorityOperation(context, id, flags = {}, options = {})
   return request;
 }
 
+export function mainSessionEnvironment(environment) {
+  const claudeSession = String(
+    environment.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
+  const codexSession = String(environment.CODEX_THREAD_ID || "").trim();
+  const genericSession = String(environment.FOUNDATION_SESSION_ID || "").trim();
+  const declaredMainSession = String(
+    environment.FOUNDATION_MAIN_SESSION_ID || "").trim();
+  return {
+    claudeSession,
+    codexSession,
+    ambientSession: claudeSession || genericSession || codexSession ||
+      declaredMainSession
+  };
+}
+
+export function bindMainSession(context, flags, environment) {
+  const requestedSession = String(
+    flags["main-session-id"] || environment.ambientSession).trim();
+  if (environment.ambientSession && requestedSession &&
+      environment.ambientSession !== requestedSession)
+    context.fail("main-session fallback session must match the calling host session");
+  return environment.ambientSession ? requestedSession : "";
+}
+
+export function inferredMainSession(environment) {
+  if (environment.claudeSession &&
+      environment.ambientSession === environment.claudeSession)
+    return { providerFamily: "anthropic", identity: "claude-main-session" };
+  if (environment.codexSession &&
+      environment.ambientSession === environment.codexSession)
+    return { providerFamily: "openai", identity: "codex-main-session" };
+  return { providerFamily: "", identity: "" };
+}
+
+export function firstMainSessionValue(values, lowercase = false) {
+  const value = String(values.find(Boolean) || "").trim();
+  return lowercase ? value.toLowerCase() : value;
+}
+
+export function mainSessionFallbackValue(
+  inheritsSubject, subjectValue, telemetryValue, inferredValue = ""
+) {
+  return inheritsSubject
+    ? subjectValue : firstMainSessionValue([telemetryValue, inferredValue]);
+}
+
+export function mainSessionProvenanceValue(
+  flags, subject, environmentVariables, session, telemetry
+) {
+  const inheritsSubject = subject.sessionId && session.boundSession &&
+    String(subject.sessionId).toLowerCase() === session.boundSession.toLowerCase();
+  const inferred = inferredMainSession(session.environment);
+  const value = {
+    identity: firstMainSessionValue([
+      flags["main-session-identity"],
+      environmentVariables.FOUNDATION_MAIN_IDENTITY,
+      mainSessionFallbackValue(
+        inheritsSubject, subject.identity, telemetry.identity, inferred.identity)
+    ]),
+    sessionId: session.boundSession || null,
+    providerFamily: firstMainSessionValue([
+      flags["main-session-provider-family"],
+      environmentVariables.FOUNDATION_MAIN_PROVIDER_FAMILY,
+      mainSessionFallbackValue(inheritsSubject, subject.providerFamily,
+        telemetry.providerFamily, inferred.providerFamily)
+    ], true),
+    modelFamily: firstMainSessionValue([
+      flags["main-session-model-family"],
+      environmentVariables.FOUNDATION_MAIN_MODEL_FAMILY,
+      mainSessionFallbackValue(
+        inheritsSubject, subject.modelFamily, telemetry.modelFamily)
+    ], true),
+    modelId: firstMainSessionValue([
+      flags["main-session-model"],
+      environmentVariables.FOUNDATION_MODEL_ID,
+      mainSessionFallbackValue(
+        inheritsSubject, subject.modelId, telemetry.modelId)
+    ])
+  };
+  const missing = Object.entries(value)
+    .filter(([, fieldValue]) => !fieldValue).map(([name]) => name);
+  return { ...value, missing };
+}
+
 export function createAuthorityRuntime({
   root,
   protocolVersion,
@@ -699,44 +783,12 @@ export function createAuthorityRuntime({
   }
 
   function mainSessionProvenance(id, flags, subject = {}) {
-    const claudeSession = String(process.env.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
-    const codexSession = String(process.env.CODEX_THREAD_ID || "").trim();
-    const genericSession = String(process.env.FOUNDATION_SESSION_ID || "").trim();
-    const declaredMainSession = String(
-      process.env.FOUNDATION_MAIN_SESSION_ID || "").trim();
-    const ambientSession = claudeSession || genericSession || codexSession ||
-      declaredMainSession;
-    const requestedSession = String(flags["main-session-id"] || ambientSession).trim();
-    if (ambientSession && requestedSession && ambientSession !== requestedSession)
-      fail("main-session fallback session must match the calling host session");
-    const boundSession = ambientSession ? requestedSession : "";
-    const inheritsSubject = subject.sessionId && boundSession &&
-      String(subject.sessionId).toLowerCase() === boundSession.toLowerCase();
+    const environment = mainSessionEnvironment(process.env);
+    const boundSession = bindMainSession({ fail }, flags, environment);
     const telemetry = sessionTelemetryProvenance(id, boundSession);
-    const inferredProvider = claudeSession && ambientSession === claudeSession
-      ? "anthropic" : codexSession && ambientSession === codexSession ? "openai" : "";
-    const inferredIdentity = claudeSession && ambientSession === claudeSession
-      ? "claude-main-session"
-      : codexSession && ambientSession === codexSession ? "codex-main-session" : "";
-    const value = {
-      identity: String(flags["main-session-identity"] ||
-        process.env.FOUNDATION_MAIN_IDENTITY ||
-        (inheritsSubject ? subject.identity : telemetry.identity || inferredIdentity) || "").trim(),
-      sessionId: boundSession || null,
-      providerFamily: String(flags["main-session-provider-family"] ||
-        process.env.FOUNDATION_MAIN_PROVIDER_FAMILY ||
-        (inheritsSubject ? subject.providerFamily : telemetry.providerFamily ||
-          inferredProvider) || "").trim().toLowerCase(),
-      modelFamily: String(flags["main-session-model-family"] ||
-        process.env.FOUNDATION_MAIN_MODEL_FAMILY ||
-        (inheritsSubject ? subject.modelFamily : telemetry.modelFamily) || "").trim().toLowerCase(),
-      modelId: String(flags["main-session-model"] ||
-        process.env.FOUNDATION_MODEL_ID ||
-        (inheritsSubject ? subject.modelId : telemetry.modelId) || "").trim()
-    };
-    const missing = Object.entries(value)
-      .filter(([, fieldValue]) => !fieldValue).map(([name]) => name);
-    return { ...value, missing };
+    return mainSessionProvenanceValue(flags, subject, process.env, {
+      environment, boundSession
+    }, telemetry);
   }
 
   function mainSessionHandback(id, requestId, configuredIdentity,

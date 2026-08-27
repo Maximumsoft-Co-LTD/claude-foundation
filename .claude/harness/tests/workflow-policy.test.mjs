@@ -10,7 +10,15 @@ import { fileURLToPath } from "node:url";
 import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
 import { createReviewProtocol } from "../runtime/evidence/review-protocol.mjs";
 import { createAuthorityStore } from "../runtime/workflow/authority.mjs";
-import { createAuthorityRuntime } from "../runtime/workflow/authority-runtime.mjs";
+import {
+  bindMainSession,
+  createAuthorityRuntime,
+  firstMainSessionValue,
+  inferredMainSession,
+  mainSessionEnvironment,
+  mainSessionFallbackValue,
+  mainSessionProvenanceValue
+} from "../runtime/workflow/authority-runtime.mjs";
 import { reviewAssurancePosture } from "../runtime/core/runtime-environment.mjs";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -33,6 +41,89 @@ const writeJson = (path, value) => {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
 const fail = (message) => { throw new Error(message); };
+
+{
+  const claude = mainSessionEnvironment({
+    FOUNDATION_CLAUDE_SESSION_ID: " claude ",
+    FOUNDATION_SESSION_ID: "generic",
+    CODEX_THREAD_ID: "codex",
+    FOUNDATION_MAIN_SESSION_ID: "declared"
+  });
+  assert.equal(claude.ambientSession, "claude");
+  assert.deepEqual(inferredMainSession(claude), {
+    providerFamily: "anthropic", identity: "claude-main-session"
+  });
+  const generic = mainSessionEnvironment({
+    FOUNDATION_SESSION_ID: "generic", CODEX_THREAD_ID: "codex"
+  });
+  assert.equal(generic.ambientSession, "generic");
+  assert.deepEqual(inferredMainSession(generic), {
+    providerFamily: "", identity: ""
+  });
+  const codex = mainSessionEnvironment({ CODEX_THREAD_ID: " codex " });
+  assert.deepEqual(inferredMainSession(codex), {
+    providerFamily: "openai", identity: "codex-main-session"
+  });
+  assert.equal(firstMainSessionValue([null, " VALUE "]), "VALUE");
+  assert.equal(firstMainSessionValue([null, " VALUE "], true), "value");
+  assert.equal(mainSessionFallbackValue(true, "subject", "telemetry"), "subject");
+  assert.equal(mainSessionFallbackValue(false, "subject", "telemetry"), "telemetry");
+  assert.equal(mainSessionEnvironment({
+    FOUNDATION_MAIN_SESSION_ID: "declared"
+  }).ambientSession, "declared");
+  assert.equal(bindMainSession({ fail }, {}, codex), "codex");
+  assert.equal(bindMainSession({ fail }, { "main-session-id": "manual" },
+    mainSessionEnvironment({})), "");
+  assert.throws(() => bindMainSession({ fail }, {
+    "main-session-id": "spoofed"
+  }, codex), /must match the calling host session/);
+
+  const subject = {
+    sessionId: "CODEX", identity: "subject", providerFamily: "OPENAI",
+    modelFamily: "GPT", modelId: "gpt-subject"
+  };
+  const inherited = mainSessionProvenanceValue({}, subject, {}, {
+    environment: codex, boundSession: "codex"
+  }, {});
+  assert.deepEqual(inherited.missing, []);
+  assert.equal(inherited.identity, "subject");
+  assert.equal(inherited.providerFamily, "openai");
+  const telemetry = mainSessionProvenanceValue({}, {}, {}, {
+    environment: codex, boundSession: "codex"
+  }, {
+    identity: "telemetry", providerFamily: "openai",
+    modelFamily: "gpt-5.6", modelId: "gpt-5.6-sol"
+  });
+  assert.equal(telemetry.identity, "telemetry");
+  const explicit = mainSessionProvenanceValue({
+    "main-session-identity": " flag ",
+    "main-session-provider-family": " OPENAI ",
+    "main-session-model-family": " GPT-FLAG ",
+    "main-session-model": "gpt-flag"
+  }, {}, {
+    FOUNDATION_MAIN_IDENTITY: "environment",
+    FOUNDATION_MAIN_PROVIDER_FAMILY: "anthropic",
+    FOUNDATION_MAIN_MODEL_FAMILY: "claude",
+    FOUNDATION_MODEL_ID: "claude-model"
+  }, { environment: codex, boundSession: "codex" }, {});
+  assert.deepEqual(explicit, {
+    identity: "flag", sessionId: "codex", providerFamily: "openai",
+    modelFamily: "gpt-flag", modelId: "gpt-flag", missing: []
+  });
+  const environmentDefaults = mainSessionProvenanceValue({}, {}, {
+    FOUNDATION_MAIN_IDENTITY: "environment",
+    FOUNDATION_MAIN_PROVIDER_FAMILY: "ANTHROPIC",
+    FOUNDATION_MAIN_MODEL_FAMILY: "CLAUDE",
+    FOUNDATION_MODEL_ID: "claude-model"
+  }, { environment: generic, boundSession: "generic" }, {});
+  assert.equal(environmentDefaults.identity, "environment");
+  assert.equal(environmentDefaults.providerFamily, "anthropic");
+  const missing = mainSessionProvenanceValue({}, {}, {}, {
+    environment: mainSessionEnvironment({}), boundSession: ""
+  }, {});
+  assert.deepEqual(missing.missing,
+    ["identity", "sessionId", "providerFamily", "modelFamily", "modelId"]);
+}
 const decisions = [];
 const quiet = (fn) => {
   const prior = console.log;
