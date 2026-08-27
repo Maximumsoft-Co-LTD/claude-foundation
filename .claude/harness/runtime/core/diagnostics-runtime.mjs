@@ -316,6 +316,28 @@ export function createDiagnosticsRuntime({
       }
       }
       collectRepositoryChecks();
+      function collectPlaywrightProviderChecks(config, providerCwd) {
+        if (config.adapter !== "playwright") return;
+        const providerPlaywright = playwrightAvailability(providerCwd);
+        checks.push({
+          level: providerPlaywright.packageOwned && providerPlaywright.binaryAvailable
+            ? "ok" : (stage === "prove" ? "error" : "info"),
+          name: "playwright:package",
+          detail: providerPlaywright.packageOwned && providerPlaywright.binaryAvailable
+            ? "project-owned dependency available"
+            : "install and lock @playwright/test in the project"
+        });
+        checks.push({
+          level: providerPlaywright.config ? "ok" : "warn",
+          name: "playwright:config",
+          detail: providerPlaywright.config || "no config found; command must provide complete setup"
+        });
+        checks.push({
+          level: config.readiness?.url ? "ok" : "info",
+          name: "playwright:readiness",
+          detail: config.readiness?.url || "delegated to Playwright webServer configuration"
+        });
+      }
       function collectProviderChecks() {
       // Keep the eager host inspection from the original diagnostics path.
       playwrightAvailability(workspace);
@@ -350,27 +372,7 @@ export function createDiagnosticsRuntime({
             ? executable
             : `${executable || "missing"} ${stage === "prove" ? "unavailable" : "planned"}`
         });
-        if (config.adapter === "playwright") {
-          const providerPlaywright = playwrightAvailability(providerCwd);
-          checks.push({
-            level: providerPlaywright.packageOwned && providerPlaywright.binaryAvailable
-              ? "ok" : (stage === "prove" ? "error" : "info"),
-            name: "playwright:package",
-            detail: providerPlaywright.packageOwned && providerPlaywright.binaryAvailable
-              ? "project-owned dependency available"
-              : "install and lock @playwright/test in the project"
-          });
-          checks.push({
-            level: providerPlaywright.config ? "ok" : "warn",
-            name: "playwright:config",
-            detail: providerPlaywright.config || "no config found; command must provide complete setup"
-          });
-          checks.push({
-            level: config.readiness?.url ? "ok" : "info",
-            name: "playwright:readiness",
-            detail: config.readiness?.url || "delegated to Playwright webServer configuration"
-          });
-        }
+        collectPlaywrightProviderChecks(config, providerCwd);
       }
       }
       collectProviderChecks();
