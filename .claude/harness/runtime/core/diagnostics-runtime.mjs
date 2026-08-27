@@ -427,13 +427,19 @@ export function createDiagnosticsRuntime({
       // the capability a change under time pressure omits, and its absence looks
       // identical to a change that considered it and decided against. Naming it
       // is not the same as requiring it — the contract stays the author's.
-      const proves = requiredProviders(requestedChange).some((provider) =>
-        providerCapability(provider, providerConfig(requestedChange, provider)) === "mutation");
-      if (state.impact === "high" && !proves)
-        checks.push({
-          level: "warn",
-          name: "mutation-coverage",
-          detail: "high-impact change declares no 'mutation' provider; nothing proves the evidence suite detects a deliberate fault"
+      const qualityMode = foundationPolicy().quality?.changeGate || "warn";
+      const highRisk = state.impact === "high" ||
+        (state.securityTriggers || []).length > 0;
+      const configuredCapabilities = new Set(Object.entries(contract.providers || {})
+        .map(([provider, config]) => providerCapability(provider, config)));
+      if (qualityMode !== "off" && highRisk)
+        for (const [capability, detail] of [
+          ["mutation", "nothing proves the evidence suite detects a deliberate fault"],
+          ["changed-quality", "nothing proves changed functions meet coverage, complexity, and CRAP-score policy"]
+        ]) if (!configuredCapabilities.has(capability)) checks.push({
+          level: qualityMode === "enforce-high-risk" ? "error" : "warn",
+          name: capability === "mutation" ? "mutation-coverage" : "changed-quality",
+          detail: `high-risk change declares no '${capability}' provider; ${detail}; quality.changeGate=${qualityMode}`
         });
       // "could not be checked" must not read like "checked and matched".
       const unverified = unverifiedDrift ? unverifiedDrift(requestedChange) : [];

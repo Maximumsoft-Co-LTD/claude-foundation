@@ -136,6 +136,7 @@ test("Claude operation normalizes a fresh structured review", () => {
   assert.equal(calls.persisted.length, 0);
   assert.equal(calls.spawned[0][2].timeout, 2500);
   assert.deepEqual(calls.normalized[0], [
-    custom, "change-a", "/workspace", review, "fresh-session", ["old"]
+    custom, "change-a", "/workspace", review, "fresh-session", ["old"],
+    { schemaVersion: 4 }
   ]);
 });

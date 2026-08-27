@@ -20,6 +20,8 @@ let transactionRows = [
 ];
 let settings = {};
 let contractVersion = 1;
+let evidenceProviders = { command: { adapter: "test" } };
+let qualityMode = "warn";
 let policyRows = ["security"];
 let policyTrigger = "src/app.js";
 let driftRows = [{ reason: "host missing" }];
@@ -67,13 +69,14 @@ const runtime = createDiagnosticsRuntime({
     models: { fast: { family: "f" }, standard: { family: "s" }, deep: { family: "d" } },
     execution: { maxParallelAgents: 2, legacyNumericPacketBytes: legacyPacketBytes,
       packetBytes: { task: 1, review: 2, repository: 3, global: 4 } },
-    review: { defaultReviewer }
+    review: { defaultReviewer },
+    quality: { changeGate: qualityMode }
   }),
   reviewAssurancePosture: () => assurance,
   isolationInspection: () => ({ execution: { safeForUnattended: unattendedSafe, reasons: ["hazard"] }, securityBoundary: { kind: "copy" } }),
   openSpecCliStatus: () => openspecStatus,
   loadRuntime: () => runtimeState,
-  evidence: () => ({ version: contractVersion }),
+  evidence: () => ({ version: contractVersion, providers: evidenceProviders }),
   selectedRepositories: () => [
     { id: "missing", path: join(root, "missing"), type: "git", mode: "write", relativePath: "missing" },
     { id: "external", path: availableRepo, type: "external", mode: "read", relativePath: "available" },
@@ -114,9 +117,17 @@ try {
   assert.match(output, /provider:browser:command/);
   assert.match(output, /playwright:readiness/);
   assert.match(output, /apply-transactions/);
-  assert.match(output, /mutation-coverage|evidence-schema/);
+  assert.doesNotMatch(output, /mutation-coverage/);
+  assert.match(output, /changed-quality/);
+  evidenceProviders = {};
+  qualityMode = "enforce-high-risk";
+  output = "";
+  runtime.doctor({ stage: "prove", change: "c" });
+  assert.match(output, /mutation-coverage/);
+  assert.match(output, /quality\.changeGate=enforce-high-risk/);
   assert.equal(process.exitCode, 1);
   output = "";
+  qualityMode = "off";
   unattendedSafe = true;
   topologyRows = [];
   transactionRows = [{ transactionId: "t3", status: "pending" }];

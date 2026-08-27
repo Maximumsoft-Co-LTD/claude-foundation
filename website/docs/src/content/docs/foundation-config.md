@@ -81,6 +81,7 @@ Re-run readiness and Prove rather than editing receipts.
     },
     "tokenBudgets": { "rapid": 800000, "standard": 1600000 },
     "requestBudgets": { "rapid": 100, "standard": 200 },
+    "maxContinuationWindows": 3,
     "planSummaryBytes": 4096,
     "leaseMinutes": 45
   }
@@ -93,17 +94,27 @@ Re-run readiness and Prove rather than editing receipts.
 | `packetBytes.*` | Integer `2048..65536` bytes | Increase only when a bounded task, review, repository description, or whole packet is being truncated |
 | `tokenBudgets.rapid/standard` | Integer `10000..100000000` | Cap model tokens for one autonomous run; this is a ceiling, not a target |
 | `requestBudgets.rapid/standard` | Integer `10..100000` | Cap model requests for one autonomous run |
+| `maxContinuationWindows` | Integer `1..20` | Bound separately approved continuation windows without forcing unfinished in-scope work into another Change |
 | `planSummaryBytes` | Integer `1024..16384` | Bound the compact plan handed between phases |
 | `leaseMinutes` | Number `1..1440` | Allow longer workspaces for slow builds or shorten stale-worker recovery |
 
-At 85% of a budget, Foundation enters completion-only mode. At 100%, it
-recommends splitting or rescoping model-completable work; deterministic
-readiness, receipt reuse, recovery, and archive operations remain available.
+At 85% of a budget, Foundation enters completion-only mode. At 100%, an
+operator can approve another audited window while unresolved in-scope model
+work remains, up to `maxContinuationWindows`. Deterministic readiness, receipt
+reuse, recovery, and archive operations remain available without an extension.
 
 :::tip
 Do not raise every budget to fix one oversized task. First split independent
 work, remove irrelevant packet context, or move durable facts into OpenSpec.
 :::
+
+## `quality`: stage changed-code and mutation gates
+
+`quality.changeGate` accepts `off`, `warn`, or `enforce-high-risk`. Warning mode
+reports missing changed-quality (coverage, complexity, and CRAP) and mutation
+providers for high-risk work. Enforce mode requires both capabilities on
+high-impact or security-sensitive Changes; a project can use any command
+adapter that emits trustworthy evidence for its language.
 
 ## `models`: route purpose, not a host-specific command
 

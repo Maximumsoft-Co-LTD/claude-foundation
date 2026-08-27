@@ -151,10 +151,17 @@ assert_eq "a rollover before any extension still resets" "normal:0" "$(mode_of)"
 $F event "$C" --request b3 --input 800000 --output 0 > /dev/null 2>&1
 $F budget-continue "$C" --reason "operator window" --decision-ref ops-1 > /dev/null 2>&1
 $F event "$C" --request b4 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "exhausting the one extension raises the operator stop" "operator-required:1" "$(mode_of)"
+assert_eq "an exhausted approved window permits another recorded continuation" \
+  "completion-only:1" "$(mode_of)"
+$F budget-continue "$C" --reason "operator window two" --decision-ref ops-2 > /dev/null 2>&1
+$F event "$C" --request b5 --input 800000 --output 0 > /dev/null 2>&1
+$F budget-continue "$C" --reason "operator window three" --decision-ref ops-3 > /dev/null 2>&1
+$F event "$C" --request b6 --input 800000 --output 0 > /dev/null 2>&1
+assert_eq "exhausting the configured continuation ceiling raises the operator stop" \
+  "operator-required:3" "$(mode_of)"
 
-$F event "$C" --request b5 --run escape-hatch --input 10 --output 0 > /dev/null 2>&1
-assert_eq "a renamed run cannot clear that stop" "operator-required:1" "$(mode_of)"
+$F event "$C" --request b7 --run escape-hatch --input 10 --output 0 > /dev/null 2>&1
+assert_eq "a renamed run cannot clear that stop" "operator-required:3" "$(mode_of)"
 
 stopped="$($F packet "$C" --phase change 2>/dev/null)"
 assert_contains "the agent is told an operator decision is required" \

@@ -50,6 +50,10 @@ test("budget targets select lanes and apply the largest request scale", () => {
   assert.deepEqual(runtime.budgetTargets("foundation-rapid", "high", "m"), {
     requests: 15, tokens: 100
   });
+  assert.deepEqual(runtime.budgetTargets("foundation-standard", "medium", "s", {
+    coupling: "coupled", repositoryCount: 4, providerCount: 8,
+    securityTriggerCount: 1
+  }), { requests: 50, tokens: 200 });
   assert.deepEqual(fixture({ requestBudgets: {} }).runtime
     .budgetTargets("foundation-rapid"), { requests: 100, tokens: 100 });
   assert.deepEqual(fixture({ requestBudgets: {} }).runtime
@@ -229,7 +233,7 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
   ]);
 });
 
-test("applying a decision timestamps exhaustion and stops a spent extension", () => {
+test("applying a decision timestamps exhaustion and stops at the continuation ceiling", () => {
   const { runtime, ticks } = fixture();
   const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
   state.budget.window.usedRequests = 15;
@@ -238,7 +242,7 @@ test("applying a decision timestamps exhaustion and stops a spent extension", ()
   assert.equal(state.budget.window.exhaustedAt, null);
 
   state.budget.window.usedRequests = 20;
-  state.budget.window.extensionNumber = 1;
+  state.budget.window.extensionNumber = 3;
   decision = runtime.applyBudgetDecision(state);
   assert.equal(state.budget.window.exhaustedAt, "time-1");
   assert.equal(decision.mode, "operator-required");

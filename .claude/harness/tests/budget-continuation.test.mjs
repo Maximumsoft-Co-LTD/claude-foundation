@@ -60,8 +60,11 @@ test("continuation inputs require trimmed reason and decision identity", () => {
     /requires --decision-ref/);
 });
 
-test("continuation availability accepts boundaries and blocks repeated extension", () => {
-  const context = { fail, blockWithDecision: stop };
+test("continuation availability accepts repeated approvals up to the configured ceiling", () => {
+  const context = {
+    fail, blockWithDecision: stop,
+    foundationPolicy: () => ({ execution: { maxContinuationWindows: 3 } })
+  };
   const budget = { window: { usedTokens: 4, targetTokens: 10 } };
   assert.equal(assertBudgetContinuationAvailable(
     context, "change", budget, { mode: "completion-only" }), 0);
@@ -69,7 +72,10 @@ test("continuation availability accepts boundaries and blocks repeated extension
     context, "change", budget, { mode: "operator-required" }), 0);
   assert.throws(() => assertBudgetContinuationAvailable(
     context, "change", budget, { mode: "active" }), /completion boundary/);
-  budget.window.extensionNumber = 1;
+  budget.window.extensionNumber = 2;
+  assert.equal(assertBudgetContinuationAvailable(
+    context, "change", budget, { mode: "operator-required" }), 2);
+  budget.window.extensionNumber = 3;
   try {
     assertBudgetContinuationAvailable(context, "change", budget, { mode: "completion-only" });
     assert.fail("expected stop");
@@ -77,6 +83,7 @@ test("continuation availability accepts boundaries and blocks repeated extension
     assert.equal(error.message, "budget-continuation-spent");
     assert.equal(error.decision.recommended, "rescope");
     assert.deepEqual(error.decision.window, { used: 4, target: 10 });
+    assert.deepEqual(error.decision.extensions, { used: 3, maximum: 3 });
   }
 });
 
@@ -231,6 +238,7 @@ function continuationFixture(overrides = {}) {
       eventUsage: () => ({ tokens: 0 }), budgetWindow: (id) => ({ id, sequence: 1 }),
       readJsonLines: () => [],
       appendBudgetAudit: (...args) => calls.audited.push(args),
+      foundationPolicy: () => ({ execution: { maxContinuationWindows: 3 } }),
       blockWithDecision: stop, fail,
       ...overrides
     }

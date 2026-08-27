@@ -29,10 +29,12 @@ export function assertBudgetContinuationAvailable(context, id, budget, decision)
   if (!["completion-only", "operator-required"].includes(decision.mode))
     context.fail("budget continue is available only after the active run reaches a completion boundary");
   const extensionNumber = Number(budget.window.extensionNumber || 0);
-  if (extensionNumber >= 1)
+  const maxContinuations = Number(
+    context.foundationPolicy?.().execution?.maxContinuationWindows || 3);
+  if (extensionNumber >= maxContinuations)
     context.blockWithDecision(id, "budget-continuation-spent", {
       kind: "budget-continuation-spent",
-      summary: "This run already used its one extra budget window, so continuing again would hide how much the change actually costs.",
+      summary: `This change already used all ${maxContinuations} operator-approved budget continuation windows.`,
       options: [
         { id: "rescope", outcome: "Narrow this change to what is already provable and carry the remainder into a new change." },
         { id: "split", outcome: "Create a follow-up change for the unfinished tasks and finish this one at its current scope." },
@@ -40,7 +42,8 @@ export function assertBudgetContinuationAvailable(context, id, budget, decision)
         { id: "pause", outcome: "Spend nothing further and leave the change as it stands." }
       ],
       recommended: "rescope",
-      window: { used: budget.window.usedTokens, target: budget.window.targetTokens }
+      window: { used: budget.window.usedTokens, target: budget.window.targetTokens },
+      extensions: { used: extensionNumber, maximum: maxContinuations }
     });
   return extensionNumber;
 }

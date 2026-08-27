@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   addRequiredCapability,
+  missingHighRiskQualityCapabilities,
   providersForCapability,
   requiredProvidersOperation
 } from "../runtime/workflow/change-validation.mjs";
@@ -16,15 +17,46 @@ const providers = {
   discovery: { capability: "discovery", repository: "api" },
   review: { capability: "review" },
   acceptance: { capability: "acceptance" },
-  security: { capability: "security-static" }
+  security: { capability: "security-static" },
+  quality: { capability: "changed-quality" },
+  mutants: { capability: "mutation" }
 };
 const capability = (provider, config) => config.capability || provider;
 
 test("provider catalog resolves configured, built-in, and unknown capabilities", () => {
   assert.equal(catalogCapability("custom", { capability: "test" }), "test");
   assert.equal(catalogCapability("review"), "review");
+  assert.equal(catalogCapability("changed-quality"), "changed-quality");
   assert.equal(catalogCapability("unknown"), null);
   assert.equal(catalogCapability("test", null), "test");
+});
+
+test("enforced high-risk policy requires changed quality and mutation providers", () => {
+  const result = requiredProvidersOperation({
+    loadRuntime: () => ({ impact: "high", securityTriggers: [], waivers: [] }),
+    evidence: () => ({ providers, claims: [] }),
+    providerCapability: capability,
+    reviewPolicy: () => ({ required: false }),
+    resolvedAcceptance: () => ({ required: false }),
+    policyCapabilitySplit: () => ({ enforced: [] }),
+    foundationPolicy: () => ({ quality: { changeGate: "enforce-high-risk" } })
+  }, "change-a");
+  assert.deepEqual(result, ["mutants", "quality"]);
+});
+
+test("high-risk claim validation follows the configured quality mode", () => {
+  const enforce = { quality: { changeGate: "enforce-high-risk" } };
+  assert.deepEqual(missingHighRiskQualityCapabilities(
+    { impact: "high" }, [{ capabilities: ["mutation"] }], enforce),
+  ["changed-quality"]);
+  assert.deepEqual(missingHighRiskQualityCapabilities(
+    { impact: "low", securityTriggers: ["auth"] }, [{ capabilities: [
+      "changed-quality", "mutation"
+    ] }], enforce), []);
+  assert.deepEqual(missingHighRiskQualityCapabilities(
+    { impact: "low" }, [], enforce), []);
+  assert.deepEqual(missingHighRiskQualityCapabilities(
+    { impact: "high" }, [], { quality: { changeGate: "warn" } }), []);
 });
 
 test("provider capability matching honors global and repository-scoped instances", () => {

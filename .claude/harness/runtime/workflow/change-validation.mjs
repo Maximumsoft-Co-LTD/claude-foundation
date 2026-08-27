@@ -609,7 +609,20 @@ export function requiredProvidersOperation(context, id) {
     addRequiredCapability(capabilityContext, "acceptance");
   for (const capability of context.policyCapabilitySplit(id, contract).enforced)
     addRequiredCapability(capabilityContext, capability);
+  const qualityMode = context.foundationPolicy?.().quality?.changeGate || "warn";
+  const highRisk = state.impact === "high" ||
+    (state.securityTriggers || []).length > 0;
+  if (qualityMode === "enforce-high-risk" && highRisk)
+    for (const capability of ["changed-quality", "mutation"])
+      addRequiredCapability(capabilityContext, capability);
   return [...capabilityContext.required].sort();
+}
+
+export function missingHighRiskQualityCapabilities(state, claims, policy) {
+  if (policy?.quality?.changeGate !== "enforce-high-risk") return [];
+  if (state.impact !== "high" && !(state.securityTriggers || []).length) return [];
+  return ["changed-quality", "mutation"].filter((capability) =>
+    !claims.some((claim) => (claim.capabilities || []).includes(capability)));
 }
 
 export function createChangeValidationRuntime({
@@ -641,6 +654,7 @@ export function createChangeValidationRuntime({
   knownProviders,
   writeJson,
   now,
+  foundationPolicy = () => ({ quality: { changeGate: "warn" } }),
   fail
 }) {
   // `dir` is an override for the one case where the ledger is no longer at the
@@ -1157,7 +1171,8 @@ export function createChangeValidationRuntime({
   function validateGroundingClaimEvidence(label, claim, evidenceClaim) {
     const classes = new Set([
       "static", "unit", "test", "integration", "live", "mutation", "security",
-      "review", "acceptance", "browser", "deployment", "cross-repo-contract"
+      "review", "acceptance", "browser", "deployment", "cross-repo-contract",
+      "changed-quality"
     ]);
     if (!Array.isArray(claim.evidenceClass) || claim.evidenceClass.length === 0 ||
         claim.evidenceClass.some((entry) => !String(entry || "").trim()))
@@ -1175,7 +1190,8 @@ export function createChangeValidationRuntime({
       integration: ["integration"], live: ["live"], mutation: ["mutation"],
       security: ["security", "security-static"], review: ["review"],
       acceptance: ["acceptance"], browser: ["browser"], deployment: ["deployment"],
-      "cross-repo-contract": ["compatibility", "integration"]
+      "cross-repo-contract": ["compatibility", "integration"],
+      "changed-quality": ["changed-quality"]
     };
     for (const evidenceClass of claim.evidenceClass)
       if (!aliases[evidenceClass].some((capability) => capabilities.has(capability)))
@@ -1365,6 +1381,10 @@ export function createChangeValidationRuntime({
 
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
+    const missingQuality = missingHighRiskQualityCapabilities(
+      state, claims, foundationPolicy());
+    if (missingQuality.length)
+      fail(`${id}/evidence.yaml high-risk quality policy requires claim capabilities: ${missingQuality.join(", ")}; configure project-owned providers or record a capability waiver`);
     // Case-insensitive and `xs`-aware: this compared against the literal "S",
     // so an atomic start's own "xs" fell through to the wide budget and the
     // check only ever passed via the impact disjunct.
@@ -1435,7 +1455,7 @@ export function createChangeValidationRuntime({
 
   const requiredProviders = requiredProvidersOperation.bind(null, {
     loadRuntime, evidence, providerCapability, reviewPolicy,
-    resolvedAcceptance, policyCapabilitySplit
+    resolvedAcceptance, policyCapabilitySplit, foundationPolicy
   });
 
   // Advisories are the record that the downgrade above happened. Dropping an

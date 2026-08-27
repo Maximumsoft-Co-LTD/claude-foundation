@@ -16,6 +16,7 @@
       "rapid": 100,
       "standard": 200
     },
+    "maxContinuationWindows": 3,
     "planSummaryBytes": 4096,
     "leaseMinutes": 45
   },
@@ -77,6 +78,9 @@
   },
   "telemetry": {
     "requireUsage": true
+  },
+  "quality": {
+    "changeGate": "warn"
   },
   "land": {
     "riskBasedCi": true

@@ -4,7 +4,7 @@ import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 // No `uniqueItems` anywhere in this schema: OpenAI structured output rejects
 // the keyword, failing every dispatch as an infrastructure error. `validReview`
@@ -107,6 +107,85 @@ export function validReview(review) {
   for (const finding of review.findings)
     if (!validReviewFinding(finding, ids)) return false;
   return true;
+}
+
+function deltaFindingIssue(review, packet) {
+  if (packet?.reviewScope?.mode !== "delta" ||
+      !Array.isArray(packet?.closureFindings?.ids)) return null;
+  const expected = [...packet.closureFindings.ids].map(String).sort();
+  const verified = [...(review?.verifiedFindingIds || [])].map(String).sort();
+  if (JSON.stringify(expected) === JSON.stringify(verified)) return null;
+  return `delta closure must verify exactly: ${expected.join(", ") || "<none>"}`;
+}
+
+function findingLineIssue(finding, binding, candidate) {
+  if (finding.line === null) return null;
+  let lines;
+  try { lines = readFileSync(candidate, "utf8").split(/\r?\n/).length; }
+  catch { return `${finding.id}: path '${binding.raw}' cannot be read from the reviewed workspace`; }
+  return finding.line > lines
+    ? `${finding.id}: line ${finding.line} is outside '${binding.raw}' (${lines} line(s))`
+    : null;
+}
+
+function findingScopeBinding(finding, scopePaths) {
+  const raw = String(finding.path || "").replace(/\\/g, "/")
+    .replace(/^\.\//, "");
+  if (!raw || isAbsolute(raw) || raw.split("/").includes(".."))
+    return { issue: `${finding.id}: invalid finding path '${finding.path || "<empty>"}'` };
+  const matches = scopePaths.filter((candidate) =>
+    candidate === raw || candidate.endsWith(`/${raw}`));
+  if (matches.length !== 1)
+    return { issue: `${finding.id}: path '${raw}' is outside the dispatched review scope` };
+  const scoped = matches[0];
+  const separator = scoped.indexOf("/");
+  return {
+    raw, scoped,
+    repositoryId: separator === -1 ? "root" : scoped.slice(0, separator),
+    repositoryPath: separator === -1 ? scoped : scoped.slice(separator + 1)
+  };
+}
+
+function findingWorkspaceIssue(finding, binding, inspections, manifest) {
+  const inspection = inspections.get(binding.repositoryId);
+  if (!inspection?.workspacePath)
+    return `${finding.id}: review packet has no workspace for repository '${binding.repositoryId}'`;
+  const workspaceRoot = resolve(inspection.workspacePath);
+  const candidate = resolve(workspaceRoot, binding.repositoryPath);
+  const fromRoot = relative(workspaceRoot, candidate);
+  if (!fromRoot || fromRoot.startsWith("..") || isAbsolute(fromRoot))
+    return `${finding.id}: path '${binding.raw}' does not resolve inside repository '${binding.repositoryId}'`;
+  if (!existsSync(candidate)) {
+    const identity = manifest.get(binding.scoped)?.identity;
+    return ["deleted", "reverted-to-base"].includes(identity)
+      ? null
+      : `${finding.id}: path '${binding.raw}' does not exist in the reviewed workspace`;
+  }
+  return findingLineIssue(finding, binding, candidate);
+}
+
+export function reviewFindingIssues(review, packet) {
+  const issues = [];
+  const deltaIssue = deltaFindingIssue(review, packet);
+  if (deltaIssue) issues.push(deltaIssue);
+  const scopePaths = Array.isArray(packet?.reviewScope?.paths)
+    ? packet.reviewScope.paths.map((value) => String(value).replace(/\\/g, "/"))
+    : [];
+  // Legacy/manual packets did not carry a scoped manifest. Preserve their
+  // schema validation while making every current configured dispatch fail
+  // closed against the exact workspace it advertised.
+  if (!scopePaths.length || !review?.findings?.length) return issues;
+  const inspections = new Map((packet.changedSurface?.inspection || [])
+    .map((entry) => [String(entry.repositoryId), entry]));
+  const manifest = new Map((packet.changedSurface?.manifest || [])
+    .map((entry) => [`${entry.repositoryId}/${entry.path}`, entry]));
+  for (const finding of review.findings) {
+    const binding = findingScopeBinding(finding, scopePaths);
+    const issue = binding.issue ||
+      findingWorkspaceIssue(finding, binding, inspections, manifest);
+    if (issue) issues.push(issue);
+  }
+  return issues;
 }
 
 function parseJson(value) {
@@ -224,7 +303,7 @@ export function runClaudeReviewOperation(
     });
   return context.normalizeReview(
     config, changeId, workspace, claudeStructuredReview(envelope),
-    sessionId, forbiddenSessionIds);
+    sessionId, forbiddenSessionIds, packet);
 }
 
 export function createConfiguredReviewerRuntime({
@@ -351,7 +430,7 @@ export function createConfiguredReviewerRuntime({
   }
 
   function normalizeReview(config, changeId, workspace, review, sessionId,
-    forbiddenSessionIds = []) {
+    forbiddenSessionIds = [], packet = null) {
     if (sessionId && forbiddenSessionIds.some((value) =>
       text(value).toLowerCase() === sessionId.toLowerCase()))
       return persist(config, changeId, workspace, {
@@ -362,6 +441,12 @@ export function createConfiguredReviewerRuntime({
       return persist(config, changeId, workspace, {
         status: "error", sessionId,
         summary: `${config.adapter} reviewer returned a result outside the required schema`
+      });
+    const findingIssues = reviewFindingIssues(review, packet);
+    if (findingIssues.length)
+      return persist(config, changeId, workspace, {
+        status: "error", sessionId,
+        summary: `${config.adapter} reviewer returned findings that do not bind to the dispatched workspace: ${findingIssues.join("; ")}`
       });
     const blockers = review.findings.filter((finding) =>
       ["blocker", "major"].includes(finding.severity));
@@ -414,7 +499,7 @@ export function createConfiguredReviewerRuntime({
         });
       const review = parseJson(readFileSync(outputPath, "utf8"));
       return normalizeReview(config, changeId, workspace, review,
-        sessionId || null, forbiddenSessionIds);
+        sessionId || null, forbiddenSessionIds, packet);
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }

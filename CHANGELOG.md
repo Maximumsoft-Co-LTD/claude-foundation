@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **High-risk changes can now require changed-code quality and mutation proof
+  as first-class evidence.** The new `quality.changeGate` policy supports
+  `off`, advisory `warn`, and `enforce-high-risk` modes, while diagnostics
+  explain which project-owned providers are missing before Prove.
+
+### Changed
+
+- **Budget sizing now reflects the real execution surface instead of only the
+  declared impact and size.** Coupling, repository count, provider count, and
+  security triggers increase the initial allowance for work that is
+  predictably expensive.
+
+- **Operator-approved continuation windows are configurable and repeatable.**
+  A run may now use up to `execution.maxContinuationWindows` audited windows
+  (three by default), preserving lifetime usage while avoiding artificial
+  Change splits after a single extension.
+
+### Fixed
+
+- **Configured AI review findings are now bound to the exact dispatched
+  workspace.** Findings outside review scope, invalid or missing paths,
+  impossible line numbers, and incorrect delta-closure IDs become durable
+  infrastructure errors instead of product blockers or orphaned attempts.
+
+- **Claude and Codex review adapters now carry the review packet through final
+  normalization consistently.** Regression coverage includes both adapters,
+  repository-root paths, deletions, unreadable targets, and cross-repository
+  scope mismatches.
+
 ## [3.4.7] - 2026-08-27
 
 ### Added

@@ -641,6 +641,7 @@ const changeValidationRuntime = createChangeValidationRuntime({
   knownProviders: PROVIDERS,
   writeJson,
   now,
+  foundationPolicy,
   fail: die
 });
 const {

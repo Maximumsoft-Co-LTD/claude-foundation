@@ -52,7 +52,7 @@ export function createBudgetRuntime({ policy, now }) {
   // large high-impact change earns one widening, not two multiplied together.
   const SIZE_REQUEST_SCALE = { xs: 0.5, s: 1, m: 1.5, l: 2 };
 
-  function budgetTargets(schema, impact, size) {
+  function budgetTargets(schema, impact, size, profile = {}) {
     const { requestBudgets, tokenBudgets } = policy().execution;
     // An unrecognized schema takes the standard lane deliberately: a spend
     // target is not an assurance gate, and refusing to compute one would strand
@@ -62,7 +62,23 @@ export function createBudgetRuntime({ policy, now }) {
     // requests spent at 33% of tokens), so the request lane widens with the
     // declared impact. Tokens do not scale: they were never the limiter.
     const sizeScale = SIZE_REQUEST_SCALE[String(size || "").toLowerCase()] ?? 1;
-    const scale = Math.max(impact === "high" ? 1.5 : 1, sizeScale);
+    const repositoryCount = Math.max(0, Number(profile.repositoryCount || 0));
+    const providerCount = Math.max(0, Number(profile.providerCount || 0));
+    const securityTriggerCount = Math.max(0, Number(profile.securityTriggerCount || 0));
+    // These factors overlap heavily, so take the widest declared lane rather
+    // than multiplying them. Multiplication makes a high-impact multi-repo
+    // change effectively unbounded; ignoring them recreates the Stripe case
+    // where the default request lane was exhausted before Prove could finish.
+    const riskScale = securityTriggerCount > 0 ? 2 : 1;
+    const couplingScale = profile.coupling === "coupled" ? 1.5 : 1;
+    const repositoryScale = repositoryCount > 1
+      ? Math.min(3, 1 + (repositoryCount - 1) * 0.5) : 1;
+    const providerScale = providerCount > 4
+      ? Math.min(2, 1 + (providerCount - 4) * 0.15) : 1;
+    const scale = Math.max(
+      impact === "high" ? 1.5 : impact === "medium" ? 1.25 : 1,
+      sizeScale, riskScale, couplingScale, repositoryScale, providerScale
+    );
     return {
       requests: Math.ceil((requestBudgets?.[lane] ?? (lane === "rapid" ? 100 : 200)) * scale),
       tokens: tokenBudgets[lane]
@@ -120,7 +136,14 @@ export function createBudgetRuntime({ policy, now }) {
     // --impact high` arrives after the first window already exists, and policy
     // budgets can change between runs. Recomputing here is what lets a later
     // impact declaration actually widen the allowance.
-    const targets = budgetTargets(state.schema, state.impact, state.size);
+    const targets = budgetTargets(state.schema, state.impact, state.size, {
+      coupling: state.coupling,
+      repositoryCount: Object.keys(state.repositories || {}).length,
+      providerCount: Array.isArray(state.evidenceCapabilities)
+        ? state.evidenceCapabilities.length : 0,
+      securityTriggerCount: Array.isArray(state.securityTriggers)
+        ? state.securityTriggers.length : 0
+    });
     if (existing.version !== 3 || !existing.lifetime || !existing.window) {
       const legacyRequests = knownNumber(existing.usedRequests)
         ? Number(existing.usedRequests) : null;
@@ -261,7 +284,7 @@ export function createBudgetRuntime({ policy, now }) {
     const preliminary = budgetDecision(state);
     if (window.mode !== "operator-required") window.mode = preliminary.mode;
     if (preliminary.ratio >= 1 && !window.exhaustedAt) window.exhaustedAt = now();
-    // Blowing through the one extra window an operator already funded is the
+    // Blowing through every extra window the configured policy permits is the
     // stop `activateBudgetWindow` carries across a run id — and nothing ever
     // raised it, so that carry-forward was unreachable and the protection its
     // comment describes never engaged. An exhausted run read `completion-only`,
@@ -271,7 +294,9 @@ export function createBudgetRuntime({ policy, now }) {
     // Only after the extension is spent. A first window that runs out is a
     // normal completion boundary, and a genuine host rollover still earns a
     // fresh one — that is what a new run id legitimately means.
-    if (preliminary.ratio >= 1 && Number(window.extensionNumber || 0) >= 1)
+    const maxContinuations = Number(policy().execution.maxContinuationWindows || 3);
+    if (preliminary.ratio >= 1 &&
+        Number(window.extensionNumber || 0) >= maxContinuations)
       window.mode = "operator-required";
     // Recomputed, because the transition above changes the answer the caller is
     // about to act on.

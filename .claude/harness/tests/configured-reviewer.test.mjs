@@ -8,7 +8,8 @@ import { join } from "node:path";
 
 import {
   REVIEW_SCHEMA, claudeResultEnvelope, configuredReviewPrompt,
-  createConfiguredReviewerRuntime, validReview, validReviewFinding
+  createConfiguredReviewerRuntime, reviewFindingIssues, validReview,
+  validReviewFinding
 } from
   "../runtime/evidence/configured-reviewer.mjs";
 import { createRuntimeEnvironment } from
@@ -74,6 +75,26 @@ emit({
 });
 `);
 chmodSync(executable, 0o755);
+const codexExecutable = join(root, "fake-codex.cjs");
+writeFileSync(codexExecutable, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+if (args[0] === "login" && args[1] === "status") process.exit(0);
+if (args[0] === "doctor") process.exit(0);
+if (args[0] === "exec" && args[1] === "--help") {
+  process.stdout.write("--output-schema --ephemeral --sandbox --model --cd");
+  process.exit(0);
+}
+const outputPath = args[args.indexOf("-o") + 1];
+fs.writeFileSync(outputPath, JSON.stringify({
+  status: "pass", summary: "fresh codex review passed",
+  findings: [], verifiedFindingIds: []
+}));
+process.stdout.write(JSON.stringify({
+  type: "thread.started", thread_id: "codex-review-session"
+}) + "\\n");
+`);
+chmodSync(codexExecutable, 0o755);
 
 const reviewer = {
   adapter: "claude-cli", executable,
@@ -85,6 +106,82 @@ const validFinding = {
   id: "F1", severity: "major", path: "src/app.mjs", line: 1,
   message: "finding", claimIds: ["C1"], verificationCaseIds: ["V1"]
 };
+const reviewedSource = join(workspace, "src", "app.mjs");
+mkdirSync(join(workspace, "src"), { recursive: true });
+writeFileSync(reviewedSource, "export const value = 1;\n");
+const scopedPacket = {
+  reviewScope: { mode: "full", paths: ["root/src/app.mjs"] },
+  changedSurface: {
+    inspection: [{
+      repositoryId: "root", workspacePath: workspace, paths: ["src/app.mjs"]
+    }],
+    manifest: [{
+      repositoryId: "root", path: "src/app.mjs", identity: "digest"
+    }]
+  }
+};
+assert.deepEqual(reviewFindingIssues({ findings: [validFinding] }, scopedPacket), []);
+writeFileSync(join(workspace, "root-file.mjs"), "export const root = true;\n");
+assert.deepEqual(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "root-file.mjs"
+}] }, {
+  reviewScope: { mode: "full", paths: ["root-file.mjs"] },
+  changedSurface: {
+    inspection: [{ repositoryId: "root", workspacePath: workspace }],
+    manifest: [{ repositoryId: "root", path: "root-file.mjs", identity: "digest" }]
+  }
+}), []);
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, id: "F-WRONG", path: "repos/GOTOPOPOFFICE/src/app.mjs"
+}] }, scopedPacket)[0], /outside the dispatched review scope/);
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, id: "F-LINE", line: 99
+}] }, scopedPacket)[0], /line 99 is outside/);
+assert.match(reviewFindingIssues({
+  findings: [], verifiedFindingIds: ["F-WRONG"]
+}, {
+  ...scopedPacket,
+  reviewScope: { ...scopedPacket.reviewScope, mode: "delta" },
+  closureFindings: { ids: ["F-BASE"] }
+})[0], /delta closure must verify exactly: F-BASE/);
+assert.deepEqual(reviewFindingIssues({
+  findings: [], verifiedFindingIds: ["F-BASE"]
+}, {
+  ...scopedPacket,
+  reviewScope: { ...scopedPacket.reviewScope, mode: "delta" },
+  closureFindings: { ids: ["F-BASE"] }
+}), []);
+for (const path of ["/tmp/app.mjs", "../src/app.mjs"])
+  assert.match(reviewFindingIssues({ findings: [{ ...validFinding, path }] },
+    scopedPacket)[0], /invalid finding path/);
+assert.match(reviewFindingIssues({ findings: [validFinding] }, {
+  ...scopedPacket, changedSurface: { ...scopedPacket.changedSurface, inspection: [] }
+})[0], /no workspace for repository 'root'/);
+const missingPacket = {
+  reviewScope: { mode: "full", paths: ["root/src/missing.mjs"] },
+  changedSurface: {
+    inspection: scopedPacket.changedSurface.inspection,
+    manifest: [{ repositoryId: "root", path: "src/missing.mjs", identity: "digest" }]
+  }
+};
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "src/missing.mjs"
+}] }, missingPacket)[0], /does not exist/);
+assert.deepEqual(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "src/missing.mjs", line: null
+}] }, {
+  ...missingPacket,
+  changedSurface: { ...missingPacket.changedSurface, manifest: [{
+    repositoryId: "root", path: "src/missing.mjs", identity: "deleted"
+  }] }
+}), []);
+mkdirSync(join(workspace, "src", "directory.mjs"));
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "src/directory.mjs"
+}] }, {
+  ...scopedPacket,
+  reviewScope: { mode: "full", paths: ["root/src/directory.mjs"] }
+})[0], /cannot be read/);
 assert.equal(validReviewFinding(validFinding, new Set()), true);
 assert.equal(validReview({
   status: "fail", summary: "reviewed", findings: [validFinding],
@@ -109,6 +206,20 @@ const runtime = createConfiguredReviewerRuntime({
   commandExists: (command) => existsSync(command),
   now: () => "2026-08-14T00:00:00.000Z",
   uuid: () => "11111111-1111-4111-8111-111111111111",
+  fail: (message) => { throw new Error(message); }
+});
+const codexReviewer = {
+  ...reviewer, adapter: "codex-cli", executable: codexExecutable,
+  providerFamily: "openai", modelFamily: "codex", modelId: "gpt-5"
+};
+const codexRuntime = createConfiguredReviewerRuntime({
+  root,
+  foundationPolicy: () => ({ review: {
+    diversity: "cross-model", independence: "required",
+    defaultReviewer: "codex", reviewers: { codex: codexReviewer }
+  } }),
+  commandExists: (command) => existsSync(command),
+  now: () => "2026-08-14T00:00:00.000Z",
   fail: (message) => { throw new Error(message); }
 });
 
@@ -152,6 +263,12 @@ try {
     ["status", "summary", "findings", "verifiedFindingIds"]);
   assert.equal(readFileSync(join(workspace, "claude-invocations.txt"), "utf8")
     .trim().split("\n").length, 1, "one review must use one Claude invocation");
+  const codexResult = codexRuntime.runReview({
+    changeId: "codex-only", workspace, packet: scopedPacket,
+    forbiddenSessionIds: ["implementation-session"]
+  });
+  assert.equal(codexResult.status, "pass");
+  assert.equal(codexResult.reviewer.sessionId, "codex-review-session");
 
   process.env.FAKE_CLAUDE_SESSION = "implementation-session";
   const reused = runtime.runReview({

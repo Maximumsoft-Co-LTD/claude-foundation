@@ -11,6 +11,7 @@ export const PROVIDER_CONTRACTS = {
   "discovery": "Expected tests were found and the discovered count meets the floor.",
   "browser": "Rendered behavior in a real browser with the required input capability.",
   "mutation": "A deliberate behavioral fault is detected by the evidence suite.",
+  "changed-quality": "Changed functions meet complexity, coverage, and CRAP-score policy without regressing from their baseline.",
   "state-identity": "State before, during, or after the change belongs to the intended actor and revision.",
   "integration": "Multiple components or external boundaries work together.",
   "compatibility": "Public or persisted contracts remain compatible across supported versions.",

@@ -78,6 +78,7 @@ independent หรือ diverse receipt จะบันทึก `independence-
     },
     "tokenBudgets": { "rapid": 800000, "standard": 1600000 },
     "requestBudgets": { "rapid": 100, "standard": 200 },
+    "maxContinuationWindows": 3,
     "planSummaryBytes": 4096,
     "leaseMinutes": 45
   }
@@ -90,18 +91,28 @@ independent หรือ diverse receipt จะบันทึก `independence-
 | `packetBytes.*` | จำนวนเต็ม `2048..65536` byte | เพิ่มเมื่อ task, review, repository description หรือ packet ทั้งก้อนถูกตัดจริง ๆ |
 | `tokenBudgets.rapid/standard` | จำนวนเต็ม `10000..100000000` | จำกัด token ของ autonomous run หนึ่งรอบ เป็นเพดาน ไม่ใช่เป้าหมาย |
 | `requestBudgets.rapid/standard` | จำนวนเต็ม `10..100000` | จำกัดจำนวน model request ต่อ run |
+| `maxContinuationWindows` | จำนวนเต็ม `1..20` | จำกัดจำนวน continuation window ที่ operator อนุมัติแยกกัน โดยไม่บังคับงานเดิมที่ยังค้างให้แตกเป็น Change ใหม่ |
 | `planSummaryBytes` | จำนวนเต็ม `1024..16384` | จำกัด plan แบบย่อที่ส่งต่อระหว่าง phase |
 | `leaseMinutes` | ตัวเลข `1..1440` | เพิ่มสำหรับ build ช้า หรือลดเพื่อคืนงานจาก worker ที่ค้างเร็วขึ้น |
 
 เมื่อใช้ budget ถึง 85% Foundation จะเข้า completion-only mode และหยุดงาน
-สำรวจหรือ refactor ที่ไม่จำเป็น เมื่อถึง 100% จะแนะนำให้แบ่งหรือ rescope งานที่
-model ยังต้องทำ แต่คำสั่ง deterministic เช่น readiness, receipt reuse, recovery
-และ archive ยังทำงานต่อได้
+สำรวจหรือ refactor ที่ไม่จำเป็น เมื่อถึง 100% operator สามารถอนุมัติ window ใหม่
+แบบมี audit ได้ตราบใดที่ยังมีงานใน scope เดิมค้างอยู่ จนถึงเพดาน
+`maxContinuationWindows` ส่วน readiness, receipt reuse, recovery และ archive
+ยังทำงานต่อได้โดยไม่ต้องขยาย budget
 
 :::tip
 อย่าเพิ่ม budget ทุกตัวเพื่อแก้ task ใหญ่เพียงตัวเดียว ลองแบ่งงานที่เป็นอิสระ,
 ตัด context ที่ไม่เกี่ยว หรือย้าย fact ถาวรเข้า OpenSpec ก่อน
 :::
+
+## `quality`: เปิด quality gate แบบเป็นขั้น
+
+`quality.changeGate` รับค่า `off`, `warn` หรือ `enforce-high-risk` โหมด warn
+จะแจ้งเมื่อ Change ความเสี่ยงสูงไม่มี provider สำหรับ changed-quality
+(coverage, complexity และ CRAP) หรือ mutation ส่วน enforce จะบังคับทั้งสอง
+capability สำหรับงาน high-impact หรือ security-sensitive โดยแต่ละภาษาสามารถ
+ใช้ command adapter ของโครงการเองได้
 
 ## `models`: route ตามจุดประสงค์ ไม่ผูกกับคำสั่งของ host
 

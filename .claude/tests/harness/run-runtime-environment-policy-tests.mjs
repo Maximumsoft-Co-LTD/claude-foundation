@@ -101,6 +101,8 @@ test("assurance dimensions distinguish configured, active, and preferred posture
 test("policy defaults and legacy execution values normalize deterministically", () => {
   const defaults = policy({}, join(root, "missing-foundation.json"));
   assert.equal(defaults.execution.packetBytes.task, 8192);
+  assert.equal(defaults.execution.maxContinuationWindows, 3);
+  assert.equal(defaults.quality.changeGate, "warn");
   assert.deepEqual(defaults.review.fallbackReviewers, []);
 
   const legacy = policy({
@@ -140,6 +142,8 @@ test("execution validation rejects every bounded numeric class", () => {
     [{ execution: { tokenBudgets: { standard: 100000001 } } }, /tokenBudgets.standard/],
     [{ execution: { requestBudgets: { rapid: 1 } } }, /requestBudgets.rapid/],
     [{ execution: { requestBudgets: { standard: 100001 } } }, /requestBudgets.standard/],
+    [{ execution: { maxContinuationWindows: 0 } }, /maxContinuationWindows/],
+    [{ execution: { maxContinuationWindows: 21 } }, /maxContinuationWindows/],
     [{ execution: { maxParallelAgents: 0 } }, /maxParallelAgents/],
     [{ execution: { maxParallelAgents: 17 } }, /maxParallelAgents/],
     [{ execution: { leaseMinutes: 0 } }, /leaseMinutes/],
@@ -147,6 +151,13 @@ test("execution validation rejects every bounded numeric class", () => {
   ];
   for (const [configured, expected] of invalid)
     assert.throws(() => policy(configured), expected);
+});
+
+test("quality change gate accepts staged rollout modes and rejects unknown modes", () => {
+  for (const changeGate of ["off", "warn", "enforce-high-risk"])
+    assert.equal(policy({ quality: { changeGate } }).quality.changeGate, changeGate);
+  assert.throws(() => policy({ quality: { changeGate: "always" } }),
+    /quality.changeGate/);
 });
 
 test("workflow, sandbox and boolean controls fail closed", () => {

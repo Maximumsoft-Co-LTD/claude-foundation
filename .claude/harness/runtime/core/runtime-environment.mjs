@@ -8,6 +8,7 @@ const DEFAULT_POLICY = {
     packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
     tokenBudgets: { rapid: 800000, standard: 1600000 },
     requestBudgets: { rapid: 100, standard: 200 },
+    maxContinuationWindows: 3,
     planSummaryBytes: 4096,
     leaseMinutes: 45
   },
@@ -26,6 +27,7 @@ const DEFAULT_POLICY = {
     fallbackReviewers: [], infraFailureThreshold: 1
   },
   telemetry: { requireUsage: false },
+  quality: { changeGate: "warn" },
   land: { riskBasedCi: false },
   sandbox: { setupCommand: null, setupTimeoutMs: 600000 },
   workflow: {
@@ -150,6 +152,7 @@ export function createRuntimeEnvironment({
         }
       },
       telemetry: { ...DEFAULT_POLICY.telemetry, ...(configured.telemetry || {}) },
+      quality: { ...DEFAULT_POLICY.quality, ...(configured.quality || {}) },
       land: { ...DEFAULT_POLICY.land, ...(configured.land || {}) },
       sandbox: { ...DEFAULT_POLICY.sandbox, ...(configured.sandbox || {}) },
       workflow: { ...DEFAULT_POLICY.workflow, ...(configured.workflow || {}) }
@@ -201,6 +204,9 @@ export function createRuntimeEnvironment({
       if (!Number.isInteger(requests) || requests < 10 || requests > 100000)
         fail(`foundation.json execution.requestBudgets.${type} must be 10..100000`);
     }
+    const continuations = Number(policy.execution.maxContinuationWindows);
+    if (!Number.isInteger(continuations) || continuations < 1 || continuations > 20)
+      fail("foundation.json execution.maxContinuationWindows must be 1..20");
   }
 
   function validateExecutionLimits(policy) {
@@ -219,6 +225,8 @@ export function createRuntimeEnvironment({
   }
 
   function validateWorkflowPolicy(policy) {
+    if (!["off", "warn", "enforce-high-risk"].includes(policy.quality.changeGate))
+      fail("foundation.json quality.changeGate must be off|warn|enforce-high-risk");
     const setupCommand = policy.sandbox.setupCommand;
     if (setupCommand !== null && setupCommand !== undefined &&
         (typeof setupCommand !== "string" || setupCommand.trim() === ""))

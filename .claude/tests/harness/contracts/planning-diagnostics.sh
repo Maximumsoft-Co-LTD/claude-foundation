@@ -109,12 +109,15 @@ fi
 jq '.claims[0].capabilities += ["mutation"]' \
   openspec/changes/rework-the-pricing-engine/evidence.yaml > "$TMP/mutation-claims.json"
 cp "$TMP/mutation-claims.json" openspec/changes/rework-the-pricing-engine/evidence.yaml
+jq '.providers.mutation = {"adapter":"external","capability":"mutation"}' \
+  openspec/changes/rework-the-pricing-engine/execution.yaml > "$TMP/mutation-provider.json"
+cp "$TMP/mutation-provider.json" openspec/changes/rework-the-pricing-engine/execution.yaml
 covered_doctor="$(node .claude/harness/foundation.mjs doctor \
   --stage change --change rework-the-pricing-engine 2>&1 || true)"
 if printf '%s' "$covered_doctor" | grep -qF "mutation-coverage"; then
-  fail "declaring a mutation provider clears the warning"
+  fail "configuring a mutation provider clears the warning"
 else
-  pass "declaring a mutation provider clears the warning"
+  pass "configuring a mutation provider clears the warning"
 fi
 
 # Abandon. Until this existed, a change nobody could prove had no terminal state

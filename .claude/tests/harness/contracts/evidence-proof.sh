@@ -1098,9 +1098,27 @@ node .claude/harness/foundation.mjs event tiny-copy-edit \
 if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
   --reason "second required attempt" --run tiny-copy-edit \
   --decision-ref fixture://user/continue-second-attempt >/dev/null 2>&1; then
-  fail "active run cannot extend its budget twice"
+  pass "active run can extend its budget twice with separate operator approval"
 else
-  pass "active run cannot extend its budget twice"
+  fail "active run can extend its budget twice with separate operator approval"
+fi
+node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-third-limit --operation build --input 10001 >/dev/null
+if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
+  --reason "third required attempt" --run tiny-copy-edit \
+  --decision-ref fixture://user/continue-third-attempt >/dev/null 2>&1; then
+  pass "active run can use the configured third continuation"
+else
+  fail "active run can use the configured third continuation"
+fi
+node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-continuation-ceiling --operation build --input 10001 >/dev/null
+if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
+  --reason "fourth required attempt" --run tiny-copy-edit \
+  --decision-ref fixture://user/continue-fourth-attempt >/dev/null 2>&1; then
+  fail "active run stops at the configured continuation ceiling"
+else
+  pass "active run stops at the configured continuation ceiling"
 fi
 
 # Claude usage belongs to assistant requests in the session transcript, not to
@@ -1176,9 +1194,9 @@ resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
   2>"$TMP/over-budget-resume.err")"
 assert_contains "over-budget telemetry does not block lifecycle resume" \
   "$resume_packet" '"packetType":"global"'
-# This run already spent its one extra window above, so exhausting it again is
-# the operator stop rather than another completion boundary — otherwise renaming
-# the run would hand back a full allowance with no decision recorded.
+# This change already spent every configured continuation window above, so it
+# remains an operator stop rather than another completion boundary — otherwise
+# renaming the run would hand back a full allowance with no decision recorded.
 assert_contains "over-budget packet after a spent extension requires an operator" \
   "$resume_packet" '"mode":"operator-required"'
 assert_contains "the stopped packet forbids scope expansion" \
