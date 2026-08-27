@@ -213,29 +213,28 @@ function renderConflicts(data) {
 }
 
 function renderInsights(s) {
-  s = s || {};
-  $('st-total').textContent = s.totalCompleted ?? 0;
-  $('st-week').textContent = s.completedThisWeek ?? 0;
-  $('st-flight').textContent = s.inFlight ?? 0;
-  $('st-median').textContent = fmtDur(s.medianDuration || 0);
+  $('st-total').textContent = s.totalCompleted;
+  $('st-week').textContent = s.completedThisWeek;
+  $('st-flight').textContent = s.inFlight;
+  $('st-median').textContent = fmtDur(s.medianDuration);
 
-  const byType = s.byType || {};
+  const byType = s.byType;
   const maxType = Math.max(1, ...Object.values(byType));
   renderBars($('bytype'), Object.entries(byType).sort((a, b) => b[1] - a[1])
     .map(([t, n]) => barRow(t, n, maxType, TYPE_COLOR[t] || TYPE_COLOR.other, n)));
 
-  const durType = s.durByType || {};
+  const durType = s.durByType;
   const maxDur = Math.max(1, ...Object.values(durType));
   renderBars($('durtype'), Object.entries(durType).sort((a, b) => b[1] - a[1])
     .map(([t, d]) => barRow(t, d, maxDur, TYPE_COLOR[t] || TYPE_COLOR.other, fmtDur(d))));
 
-  renderCols($('throughput'), s.throughput || []);
+  renderCols($('throughput'), s.throughput);
 
-  const people = s.topPeople || [];
+  const people = s.topPeople;
   const maxP = Math.max(1, ...people.map((p) => p.count));
   renderBars($('lead-people'), people.map((p) => barRow(p.name, p.count, maxP, userColor(p.name), p.count)));
 
-  const repos = s.topRepos || [];
+  const repos = s.topRepos;
   const maxR = Math.max(1, ...repos.map((r) => r.count));
   renderBars($('lead-repos'), repos.map((r) => barRow(r.repo, r.count, maxR, 'var(--marker)', r.count)));
 }
@@ -374,8 +373,10 @@ function renderHistoryExtras(hist) {
 const EXTRAS_MS = 60000;
 let extrasTimer = null;
 async function pollExtras() {
+  if (document.hidden) return;
+  // Every caller already owns the key guard (start, applyRange, and the
+  // visibility handler); the interval is cleared on sign-out.
   const key = getKey();
-  if (!key || document.hidden) return;
   const headers = { 'x-cf-key': key };
   const R = rangeInfo(Date.now());
   const days = Math.min(30, Math.max(1, Math.ceil((Date.now() - R.fromMs) / DAY)));
@@ -393,11 +394,12 @@ async function pollExtras() {
     lastHistory = hi.ok ? await hi.json() : null;
     if (us.ok) {
       const usageData = await us.json();
-      lastUsage = Array.isArray(usageData.usage) ? usageData.usage : [];
-      lastSessions = Array.isArray(usageData.sessions) ? usageData.sessions : [];
-      lastTools = Array.isArray(usageData.tools) ? usageData.tools : [];
-      lastWork = Array.isArray(usageData.work) ? usageData.work : [];
-      lastRepoStats = Array.isArray(usageData.repoStats) ? usageData.repoStats : [];
+      // /api/usage owns this schema and always returns these five arrays.
+      lastUsage = usageData.usage;
+      lastSessions = usageData.sessions;
+      lastTools = usageData.tools;
+      lastWork = usageData.work;
+      lastRepoStats = usageData.repoStats;
     }
   } catch (err) {
     return; // keep last known extras on transient failures
@@ -575,7 +577,7 @@ function applyFilter() {
   const runs = by(lastRuns).filter((r) => !r.finished || (r.finished * 1000 >= R.fromMs && r.finished * 1000 < R.toMsEx));
   renderInsights(statsFrom(runs, now));
   renderWork(byDate(by(lastWork)));
-  renderWorkload(now);
+  renderWorkload(now, selectedUsers, lastRuns, lastWork, lastHistory);
   renderFunnel(runs);
   renderRepoStats(lastRepoStats, now);
   renderActivity(feedFrom(runs));
@@ -853,13 +855,15 @@ RANGE_CONTAINERS.forEach((rid) => {
 });
 renderRangeFilter();
 
-['online-grid', 'recent-grid'].forEach((gid) => $(gid).addEventListener('click', (e) => {
+function toggleExpandedAgent(e) {
   const btn = e.target.closest('.wk-more');
   if (!btn) return;
   const id = btn.dataset.agent;
   if (expandedAgents.has(id)) expandedAgents.delete(id); else expandedAgents.add(id);
   if (lastData) renderTeam(lastData);
-}));
+}
+for (const gid of ['online-grid', 'recent-grid'])
+  $(gid).addEventListener('click', toggleExpandedAgent);
 
 $('gate-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -871,9 +875,10 @@ $('signout').addEventListener('click', () => { clearKey(); showGate(false); });
 $('gate-demo').addEventListener('click', enterDemo);
 $('header-demo').addEventListener('click', enterDemo);
 $('demo-exit').addEventListener('click', exitDemo);
-document.addEventListener('visibilitychange', () => {
+function handleVisibilityChange() {
   if (document.visibilityState === 'visible' && !isDemo() && getKey()) { poll(); pollExtras(); }
-});
+}
+document.addEventListener('visibilitychange', handleVisibilityChange);
 
 // ── My profile (team tags / org / color) ───────────────────────────────────
 const ME_STORE = 'cf-dashboard-me';
@@ -898,7 +903,7 @@ $('pf-color-clear').addEventListener('click', () => {
   pfColorAuto = true;
   $('pf-color').value = userColor($('pf-user').value.trim() || 'unknown');
 });
-$('profile-form').addEventListener('submit', async (e) => {
+async function submitProfile(e) {
   e.preventDefault();
   const user = $('pf-user').value.trim();
   if (!user) return;
@@ -924,7 +929,8 @@ $('profile-form').addEventListener('submit', async (e) => {
   } catch (err) {
     $('pf-error').hidden = false;
   }
-});
+}
+$('profile-form').addEventListener('submit', submitProfile);
 
 if (isDemo()) enterDemo();
 else start();
