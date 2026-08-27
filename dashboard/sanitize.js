@@ -97,6 +97,13 @@ function cleanRanges(raw) {
   return out;
 }
 
+function hasChangeActivity(repo) {
+  return Boolean(repo.repoId && (
+    repo.files.length || repo.work.length || repo.commits.length || repo.pushes.length ||
+    repo.fuOpen || repo.fuClosed
+  ));
+}
+
 function cleanChanges(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.slice(0, 60).map((repo) => ({
@@ -121,13 +128,10 @@ function cleanChanges(raw) {
           .map((file) => ({ path: clean(file && file.path, 300), ranges: cleanRanges(file && file.ranges) }))
           .filter((file) => file.path && file.ranges.length)
       : [],
-  })).filter((repo) => repo.repoId && (
-    repo.files.length || repo.work.length || repo.commits.length || repo.pushes.length ||
-    repo.fuOpen || repo.fuClosed
-  ));
+  })).filter(hasChangeActivity);
 }
 
 module.exports = {
   clean, cleanArtifacts, cleanChanges, cleanDateCounts, cleanRanges, cleanRuns,
-  cleanSessions, cleanTools, cleanUsage, toInt,
+  cleanSessions, cleanTools, cleanUsage, hasChangeActivity, toInt,
 };
