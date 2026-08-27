@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project-wide code-quality enforcement now measures every production
+  function.** Dedicated coverage lanes for the runtime, dashboard, examples,
+  and website feed CRAP scoring, changed-code gates, mutation ratchets,
+  semantic mutation catalogs, versioned reports, and CI/nightly workflows.
+
+- **Mutation and integration suites now exercise the highest-risk runtime and
+  dashboard boundaries.** The dashboard mutation score increased from 41.25%
+  to 65.66%, its killed mutants increased from 299 to 471, and all 12 semantic
+  mutation scenarios are killed.
+
+### Changed
+
+- **High-complexity runtime and dashboard orchestration has been decomposed
+  into smaller, behavior-preserving operations with explicit test seams.** All
+  3,517 measured production functions now pass the project CRAP policy, with
+  no warning, failing, or unmapped functions remaining.
+
+- **Dashboard client and server responsibilities are more sharply isolated.**
+  Restore and persistence flows, request routing, demo and authentication
+  state, profile loading, polling, usage, presence, and workload rendering now
+  have focused modules and regression coverage.
+
+### Fixed
+
+- **Coverage aggregation now includes the `todolist-v2` Vitest lane and merges
+  example results without replacing duplicate source records.** Runtime,
+  dashboard, example, and website code can therefore be evaluated under one
+  consistent quality policy.
+
+- **Previously uncovered dashboard edge cases now have regression protection.**
+  This includes usage scanning, sparse snapshots, sanitization, request
+  routing, and profile and polling fallback paths.
+
 ## [3.4.6] - 2026-08-25
 
 ### Added
