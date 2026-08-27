@@ -2,7 +2,7 @@
 
 Use the lifecycle and ownership in `.claude/orchestrator.md`.
 
-Before developer work, verify Foundation 3.4.7/runtime API `26`; run both
+Before developer work, verify Foundation 3.4.8/runtime API `26`; run both
 doctors. Only a failing doctor blocks: relay
 `.claude/harness/DEVELOPER-SETUP.md`; never improvise installation.
 Single-family: select reviewer plus `single-model`; retain distinct identity/session.

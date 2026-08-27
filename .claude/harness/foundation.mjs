@@ -95,7 +95,7 @@ import {
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 
-const VERSION = "3.4.7";
+const VERSION = "3.4.8";
 const RUNTIME_API_VERSION = "26";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
