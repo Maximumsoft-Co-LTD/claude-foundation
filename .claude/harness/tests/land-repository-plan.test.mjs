@@ -8,6 +8,8 @@ import {
   ciRepositoryLandStatus,
   configuredLandCiIssuers,
   createLandRuntime,
+  landPreparationBindings,
+  landPreparationRepositoryValue,
   landRepositoryPlanRow,
   readRepositoryLandStatus,
   writeRepositoryLandStatus
@@ -154,6 +156,34 @@ test("land repository row preserves legacy defaults and read dirty inspection", 
   assert.deepEqual(gitArgs, [["status", "--porcelain"], "/box/docs"]);
 });
 
+test("land preparation helpers bind repository authority, recovery, proof, and graph identity", () => {
+  const state = { land: { recovery: { api: "restore-backup" } } };
+  assert.deepEqual(landPreparationRepositoryValue(state, {
+    id: "api", mode: "write", dependsOn: ["db"], commit: "child-commit",
+    sandboxHead: "sandbox-head", ci: "pass", targetHead: "target-head", status: "child-landed"
+  }), {
+    id: "api", mode: "write", dependsOn: ["db"], authorizedCommit: "child-commit",
+    ci: "pass", targetHead: "target-head", status: "child-landed",
+    recoveryDisposition: "restore-backup"
+  });
+  assert.equal(landPreparationRepositoryValue({}, {
+    id: "root", mode: "write", dependsOn: [], sandboxHead: "root-commit"
+  }).authorizedCommit, "root-commit");
+  assert.equal(landPreparationRepositoryValue({}, {
+    id: "docs", mode: "read", dependsOn: [], commit: null
+  }).recoveryDisposition, "forward-fix");
+  assert.deepEqual(landPreparationBindings({
+    proofRunId: "proof-1", aggregateGraphProof: { graphIdentity: "proof-graph" }
+  }, { revision: 3, identity: "graph-3" }), {
+    graphRevision: 3, graphIdentity: "graph-3",
+    aggregateProofRunId: "proof-1", aggregateProofIdentity: "proof-graph"
+  });
+  assert.deepEqual(landPreparationBindings(null, null), {
+    graphRevision: null, graphIdentity: null,
+    aggregateProofRunId: null, aggregateProofIdentity: null
+  });
+});
+
 test("prepared Land rejects missing and stale preparation identities", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-land-preparation-"));
   const transactions = join(root, "transactions");
@@ -162,10 +192,12 @@ test("prepared Land rejects missing and stale preparation identities", () => {
   const readJson = (path, fallback = null) => {
     try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
   };
+  const proofFile = join(root, "proof.json");
   const runtime = createLandRuntime({
     root, transactions,
     loadRuntime: () => state,
-    proofPath: () => join(root, "missing-proof.json"),
+    proofPath: () => proofFile,
+    agentPlanValue: () => ({ graph: { revision: 2, identity: "planned-graph" } }),
     readJson,
     writeJson: (path, value) => {
       mkdirSync(dirname(path), { recursive: true });
@@ -179,7 +211,18 @@ test("prepared Land rejects missing and stale preparation identities", () => {
   });
   try {
     assert.throws(() => runtime.requirePreparedLand("change-a"), /Land preparation changed/);
+    writeFileSync(proofFile, JSON.stringify({
+      proofRunId: "stored-proof", aggregateGraphProof: { graphIdentity: "stored-graph" }
+    }));
     const prepared = runtime.landPreparationValue("change-a");
+    assert.equal(prepared.graphRevision, 2);
+    assert.equal(prepared.aggregateProofRunId, "stored-proof");
+    const supplied = runtime.landPreparationValue("change-a", state, {
+      proofRunId: "supplied-proof", aggregateGraphProof: { graphIdentity: "supplied-proof-graph" }
+    }, { revision: 4, identity: "supplied-graph" }, "supplied-hash");
+    assert.equal(supplied.graphRevision, 4);
+    assert.equal(supplied.aggregateProofRunId, "supplied-proof");
+    assert.equal(supplied.workspaceHash, "supplied-hash");
     mkdirSync(join(transactions, "change-a"), { recursive: true });
     writeFileSync(join(transactions, "change-a", "land-preparation.json"),
       `${JSON.stringify(prepared)}\n`);

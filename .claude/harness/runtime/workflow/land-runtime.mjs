@@ -307,6 +307,29 @@ export function landRepositoryPlanRow(context, state, repository) {
   };
 }
 
+export function landPreparationRepositoryValue(state, repository) {
+  return {
+    id: repository.id,
+    mode: repository.mode,
+    dependsOn: repository.dependsOn,
+    authorizedCommit: repository.id === "root"
+      ? repository.sandboxHead : repository.commit,
+    ci: repository.ci,
+    targetHead: repository.targetHead,
+    status: repository.status,
+    recoveryDisposition: state.land?.recovery?.[repository.id] || "forward-fix"
+  };
+}
+
+export function landPreparationBindings(proof, graph) {
+  return {
+    graphRevision: graph?.revision || null,
+    graphIdentity: graph?.identity || null,
+    aggregateProofRunId: proof?.proofRunId || null,
+    aggregateProofIdentity: proof?.aggregateGraphProof?.graphIdentity || null
+  };
+}
+
 export function createLandRuntime({
   root,
   transactions,
@@ -600,27 +623,25 @@ export function createLandRuntime({
     };
   }
 
+  function currentLandProof(id, proof) {
+    if (proof) return proof;
+    return existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
+  }
+
+  function currentLandGraph(id, graph) {
+    if (graph) return graph;
+    return agentPlanValue?.(id)?.graph || null;
+  }
+
   function landPreparationValue(id, state = loadRuntime(id), proof = null, graph = null, hash = null) {
-    const currentProof = proof || (existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null);
-    const currentGraph = graph || agentPlanValue?.(id)?.graph || null;
+    const currentProof = currentLandProof(id, proof);
+    const currentGraph = currentLandGraph(id, graph);
     const plan = landPlanValue(id);
-    const repositories = plan.repositories.map((repository) => ({
-      id: repository.id,
-      mode: repository.mode,
-      dependsOn: repository.dependsOn,
-      authorizedCommit: repository.id === "root"
-        ? repository.sandboxHead : repository.commit,
-      ci: repository.ci,
-      targetHead: repository.targetHead,
-      status: repository.status,
-      recoveryDisposition: state.land?.recovery?.[repository.id] || "forward-fix"
-    }));
+    const repositories = plan.repositories.map(
+      landPreparationRepositoryValue.bind(null, state));
     return compileLandPreparation({
       changeId: id,
-      graphRevision: currentGraph?.revision || null,
-      graphIdentity: currentGraph?.identity || null,
-      aggregateProofRunId: currentProof?.proofRunId || null,
-      aggregateProofIdentity: currentProof?.aggregateGraphProof?.graphIdentity || null,
+      ...landPreparationBindings(currentProof, currentGraph),
       workspaceHash: hash || relevantHash(id),
       repositories,
       stableHash,
