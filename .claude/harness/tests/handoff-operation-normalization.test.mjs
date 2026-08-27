@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  handoffRecordValue,
   normalizeHandoffOperation,
+  normalizeHandoffRecordInput,
   normalizedActivationProof,
   normalizedOperationReferences,
+  recordHandoffOperation,
   requiredOperationString
 } from "../runtime/workflow/handoff-runtime.mjs";
 
@@ -138,4 +141,91 @@ test("normalization rejects shape, enum, evidence, owner, and secret failures", 
     assertNoSecretMaterial: (_raw, secretLabel, reject) =>
       reject(`${secretLabel} cannot contain secret material`)
   }), operation(), 0), /cannot contain secret material/);
+});
+
+test("handoff record input validates status, authority, and required evidence", () => {
+  const recordContext = { assertNoSecretMaterial: () => {}, fail };
+  assert.deepEqual(normalizeHandoffRecordInput(recordContext, "change", {
+    id: " h001 ", status: "completed", actor: " Nok ", reference: " OPS-1 ",
+    evidence: " report-a, report-b, "
+  }), {
+    operationId: "H001", status: "completed", actor: "Nok", reference: "OPS-1",
+    reason: "", evidenceReferences: ["report-a", "report-b"]
+  });
+  assert.throws(() => normalizeHandoffRecordInput(recordContext, "change", {
+    status: "pending", actor: "Nok", reference: "OPS"
+  }), /status must be/);
+  assert.throws(() => normalizeHandoffRecordInput(recordContext, "change", {
+    status: "accepted", reference: "OPS"
+  }), /requires --actor/);
+  assert.throws(() => normalizeHandoffRecordInput(recordContext, "change", {
+    status: "completed", actor: "Nok", reference: "OPS"
+  }), /requires --evidence/);
+  assert.throws(() => normalizeHandoffRecordInput(recordContext, "change", {
+    status: "rejected", actor: "Nok", reference: "OPS"
+  }), /requires --reason/);
+  assert.throws(() => normalizeHandoffRecordInput({
+    ...recordContext,
+    assertNoSecretMaterial: () => fail("secret")
+  }, "change", {
+    id: "H001", status: "accepted", actor: "Nok", reference: "OPS"
+  }), /secret/);
+});
+
+test("handoff record value preserves history and prevents completed downgrade", () => {
+  const recordContext = {
+    operationDigest: () => "operation-digest", now: () => "now", fail
+  };
+  const selected = operation();
+  const input = {
+    status: "rejected", actor: "Nok", reference: "OPS", reason: "not approved",
+    evidenceReferences: ["ignored"]
+  };
+  const value = handoffRecordValue(recordContext, "change", selected, input, {
+    history: [{ status: "accepted" }]
+  }, {});
+  assert.equal(value.contractRevision, 0);
+  assert.deepEqual(value.evidenceReferences, []);
+  assert.equal(value.reason, "not approved");
+  assert.equal(value.history.length, 2);
+  assert.throws(() => handoffRecordValue(recordContext, "change", selected, {
+    ...input, status: "accepted"
+  }, { operationDigest: "operation-digest", status: "completed" }, {}),
+  /cannot be downgraded/);
+  const completed = handoffRecordValue(recordContext, "change", selected, {
+    ...input, status: "completed", evidenceReferences: ["report"]
+  }, { operationDigest: "operation-digest", status: "completed" }, {
+    contractRevision: 3
+  });
+  assert.deepEqual(completed.evidenceReferences, ["report"]);
+  assert.equal(completed.reason, null);
+  assert.equal(completed.contractRevision, 3);
+});
+
+test("handoff record operation resolves, persists, and reports the operation", () => {
+  const writes = [];
+  const logs = [];
+  const selected = operation();
+  const operationContext = {
+    handoffContract: () => ({ operations: [selected] }),
+    recordPath: () => "/records/H001.json",
+    operationDigest: () => "digest",
+    pathExists: () => false,
+    readJson: () => ({}),
+    writeJson: (...args) => writes.push(args),
+    loadRuntime: () => ({ contractRevision: 2 }),
+    now: () => "now",
+    assertNoSecretMaterial: () => {},
+    fail,
+    output: { log: (value) => logs.push(value) }
+  };
+  const record = recordHandoffOperation(operationContext, "change", {
+    id: "H001", status: "accepted", actor: "Nok", reference: "OPS-1"
+  });
+  assert.equal(record.operationId, "H001");
+  assert.equal(writes.length, 1);
+  assert.match(logs[0], /HANDOFF H001 ACCEPTED/);
+  assert.throws(() => recordHandoffOperation(operationContext, "change", {
+    id: "H404", status: "accepted", actor: "Nok", reference: "OPS-1"
+  }), /unknown handoff operation/);
 });

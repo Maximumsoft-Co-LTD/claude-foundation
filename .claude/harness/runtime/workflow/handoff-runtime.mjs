@@ -120,6 +120,65 @@ export function normalizeHandoffOperation(context, raw, index, scope = {}) {
   };
 }
 
+export function normalizeHandoffRecordInput(context, id, flags = {}) {
+  const operationId = cleanString(flags.id).toUpperCase();
+  const status = cleanString(flags.status);
+  if (!RECORD_STATUSES.has(status))
+    context.fail("handoff record --status must be accepted|completed|rejected");
+  const actor = cleanString(flags.actor);
+  const reference = cleanString(flags.reference);
+  const reason = cleanString(flags.reason);
+  const evidenceReferences = cleanString(flags.evidence).split(",")
+    .map((value) => value.trim()).filter(Boolean);
+  if (!actor || !reference)
+    context.fail("handoff record requires --actor <named-operator> and --reference <tracking-reference>");
+  if (status === "completed" && !evidenceReferences.length)
+    context.fail("completed handoff requires --evidence <reference[,reference]>");
+  if (status === "rejected" && !reason)
+    context.fail("rejected handoff requires --reason <why>");
+  context.assertNoSecretMaterial({ actor, reference, reason, evidenceReferences },
+    `${id}/${operationId} handoff record`, context.fail);
+  return { operationId, status, actor, reference, reason, evidenceReferences };
+}
+
+export function handoffRecordValue(context, id, operation, input, previous, state) {
+  if (previous.operationDigest === context.operationDigest(operation) &&
+      previous.status === "completed" && input.status !== "completed")
+    context.fail(`completed handoff '${operation.id}' cannot be downgraded`);
+  const event = {
+    status: input.status,
+    actor: input.actor,
+    reference: input.reference,
+    evidenceReferences: input.status === "completed" ? input.evidenceReferences : [],
+    reason: input.status === "rejected" ? input.reason : null,
+    recordedAt: context.now()
+  };
+  return {
+    version: 1,
+    changeId: id,
+    operationId: operation.id,
+    operationDigest: context.operationDigest(operation),
+    contractRevision: Number(state.contractRevision || 0),
+    ...event,
+    history: [...(previous.history || []), event].slice(-50)
+  };
+}
+
+export function recordHandoffOperation(context, id, flags = {}) {
+  const contract = context.handoffContract(id);
+  const input = normalizeHandoffRecordInput(context, id, flags);
+  const operation = contract.operations.find((row) => row.id === input.operationId);
+  if (!operation)
+    context.fail(`unknown handoff operation '${input.operationId || "(missing)"}'`);
+  const path = context.recordPath(id, operation.id);
+  const previous = context.pathExists(path) ? context.readJson(path, {}) : {};
+  const record = handoffRecordValue(context, id, operation, input, previous,
+    context.loadRuntime(id));
+  context.writeJson(path, record);
+  context.output.log(`HANDOFF ${operation.id} ${input.status.toUpperCase()}\n  owner: ${operation.owner}\n  actor: ${input.actor}\n  reference: ${input.reference}\n  next: claude-foundation handoff status ${id}`);
+  return record;
+}
+
 export function createHandoffRuntime({
   root,
   handoffsRoot,
@@ -238,51 +297,19 @@ export function createHandoffRuntime({
   }
 
   function recordHandoff(id, flags = {}) {
-    return withLock(id, () => {
-      const contract = handoffContract(id);
-      const operationId = cleanString(flags.id).toUpperCase();
-      const operation = contract.operations.find((row) => row.id === operationId);
-      if (!operation) fail(`unknown handoff operation '${operationId || "(missing)"}'`);
-      const status = cleanString(flags.status);
-      if (!RECORD_STATUSES.has(status))
-        fail("handoff record --status must be accepted|completed|rejected");
-      const actor = cleanString(flags.actor);
-      const reference = cleanString(flags.reference);
-      const reason = cleanString(flags.reason);
-      const evidenceReferences = cleanString(flags.evidence).split(",")
-        .map((value) => value.trim()).filter(Boolean);
-      if (!actor || !reference)
-        fail("handoff record requires --actor <named-operator> and --reference <tracking-reference>");
-      if (status === "completed" && !evidenceReferences.length)
-        fail("completed handoff requires --evidence <reference[,reference]>");
-      if (status === "rejected" && !reason)
-        fail("rejected handoff requires --reason <why>");
-      const material = { actor, reference, reason, evidenceReferences };
-      assertNoSecretMaterial(material, `${id}/${operationId} handoff record`, fail);
-      const previousPath = recordPath(id, operation.id);
-      const previous = existsSync(previousPath) ? readJson(previousPath, {}) : {};
-      if (previous.operationDigest === operationDigest(operation) &&
-          previous.status === "completed" && status !== "completed")
-        fail(`completed handoff '${operation.id}' cannot be downgraded`);
-      const event = {
-        status, actor, reference,
-        evidenceReferences: status === "completed" ? evidenceReferences : [],
-        reason: status === "rejected" ? reason : null,
-        recordedAt: now()
-      };
-      const record = {
-        version: 1,
-        changeId: id,
-        operationId: operation.id,
-        operationDigest: operationDigest(operation),
-        contractRevision: Number(loadRuntime(id).contractRevision || 0),
-        ...event,
-        history: [...(previous.history || []), event].slice(-50)
-      };
-      writeJson(previousPath, record);
-      console.log(`HANDOFF ${operation.id} ${status.toUpperCase()}\n  owner: ${operation.owner}\n  actor: ${actor}\n  reference: ${reference}\n  next: claude-foundation handoff status ${id}`);
-      return record;
-    });
+    return withLock(id, () => recordHandoffOperation({
+      handoffContract,
+      recordPath,
+      operationDigest,
+      pathExists: existsSync,
+      readJson,
+      writeJson,
+      loadRuntime,
+      now,
+      assertNoSecretMaterial,
+      fail,
+      output: console
+    }, id, flags));
   }
 
   function handoffPacketValue(id, operationId = null) {
