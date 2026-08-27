@@ -3,7 +3,16 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createProofExecutionRuntime } from "../runtime/evidence/proof-execution-runtime.mjs";
+import {
+  assertProofCollectionOutcomes,
+  beginProofCollection,
+  createProofExecutionRuntime,
+  persistProofCollectionArtifacts,
+  proofCollectionOutcome,
+  rebindProofCollectionReceipts,
+  settleProofCollection,
+  stopProofCollection
+} from "../runtime/evidence/proof-execution-runtime.mjs";
 import { createReceiptValidity } from "../runtime/evidence/receipt-validity.mjs";
 
 function fixture(options = {}) {
@@ -184,6 +193,137 @@ async function within(promise, timeoutMs, message) {
   }
 }
 
+{
+  const readiness = { status: "CONFIGURATION_ERROR", issues: ["missing adapter"] };
+  const printed = [];
+  let blocked = 0;
+  const runtimeProcess = { exitCode: 0 };
+  assert.equal(stopProofCollection({
+    printOutcome: (outcome) => printed.push(outcome),
+    markBlocked: () => { blocked += 1; },
+    runtimeProcess
+  }, readiness), readiness);
+  assert.deepEqual(printed, [{
+    ...readiness, command: "proof collect", completed: false
+  }]);
+  assert.equal(blocked, 1);
+  assert.equal(runtimeProcess.exitCode, 2);
+  stopProofCollection({
+    printOutcome: () => assert.fail("quiet collection stop must not print"),
+    markBlocked: () => { blocked += 1; },
+    runtimeProcess
+  }, readiness, { quiet: true });
+  assert.equal(blocked, 2);
+}
+
+{
+  let state = { status: "building" };
+  const snapshot = { id: "snapshot-a", workspaceHash: "workspace-a" };
+  const proofRunId = beginProofCollection({
+    loadRuntime: () => state,
+    saveRuntime: (next) => { state = next; },
+    now: () => "2026-08-27T00:00:00.000Z",
+    timestamp: () => 42
+  }, "change-a", snapshot);
+  assert.equal(proofRunId, "collect-42");
+  assert.deepEqual(state.activeProofRun, {
+    id: "collect-42",
+    snapshotId: "snapshot-a",
+    workspaceHash: "workspace-a",
+    startedAt: "2026-08-27T00:00:00.000Z",
+    mode: "collect"
+  });
+}
+
+{
+  const rebound = [];
+  const validities = {
+    inputs: "reusable-inputs",
+    diff: "reusable-diff",
+    current: "valid"
+  };
+  const snapshot = { workspaceHash: "workspace-a" };
+  rebindProofCollectionReceipts({
+    requiredProviders: () => Object.keys(validities),
+    receiptValidity: (_id, provider) => ({ validity: validities[provider], provider }),
+    rebindReusableReceipt: (_id, row) => rebound.push(`inputs:${row.provider}`),
+    rebindDiffBoundReceipt: (_id, row) => rebound.push(`diff:${row.provider}`)
+  }, "change-a", snapshot, "collect-42");
+  assert.deepEqual(rebound, ["inputs:inputs", "diff:diff"]);
+}
+
+{
+  assert.doesNotThrow(() => assertProofCollectionOutcomes([
+    { provider: "test", status: "pass" }
+  ]));
+  assert.throws(() => assertProofCollectionOutcomes([
+    { provider: "test", status: "fail" },
+    { provider: "lint", status: "error" }
+  ]), /evidence collection failed: test:fail, lint:error/);
+}
+
+{
+  let state = { activeProofRun: { id: "collect-42" } };
+  const durableCalls = [];
+  persistProofCollectionArtifacts({
+    stopAll: () => [{ path: "service-a.log" }, { path: "service-b.log" }],
+    durableArtifact: (id, kind, runId, artifact) => {
+      durableCalls.push({ id, kind, runId, artifact });
+      return { path: artifact.path, digest: `digest-${durableCalls.length}` };
+    },
+    loadRuntime: () => state,
+    saveRuntime: (next) => { state = next; }
+  }, "change-a", "collect-42", [{ pid: 1 }]);
+  assert.equal(durableCalls.length, 2);
+  assert.deepEqual(durableCalls[0], {
+    id: "change-a",
+    kind: "service",
+    runId: "collect-42",
+    artifact: { path: "service-a.log", type: "service-log", required: true }
+  });
+  assert.deepEqual(state.collectedServiceArtifacts, [
+    { path: "service-a.log", digest: "digest-1" },
+    { path: "service-b.log", digest: "digest-2" }
+  ]);
+}
+
+{
+  const readiness = { status: "NEEDS_USER_DECISION", externalProviders: ["review"] };
+  const outcome = proofCollectionOutcome(
+    "change-a",
+    { workspaceHash: "workspace-a" },
+    "collect-42",
+    [{ provider: "test", status: "pass" }],
+    { blocked: ["browser"] },
+    readiness
+  );
+  assert.deepEqual(outcome.executedProviders, ["test"]);
+  assert.deepEqual(outcome.blockedExecutableProviders, ["browser"]);
+  assert.deepEqual(outcome.remainingExternalProviders, ["review"]);
+  const writes = [];
+  const prints = [];
+  const managed = settleProofCollection({
+    writeAdvance: (_id, value) => {
+      writes.push(value);
+      return { ...value, progressed: true };
+    },
+    printOutcome: (value) => prints.push(value)
+  }, "change-a", outcome, readiness, { includeReadiness: true });
+  assert.equal(writes[0].stage, "evidence-collected");
+  assert.equal(managed.progressed, true);
+  assert.equal(managed.readiness, readiness);
+  assert.equal(prints.length, 1);
+  const unmanaged = settleProofCollection({
+    writeAdvance: () => assert.fail("unmanaged collection must not write an advance"),
+    printOutcome: () => assert.fail("quiet collection must not print")
+  }, "change-a", outcome, readiness, {
+    manageReservation: false,
+    quiet: true,
+    includeReadiness: false
+  });
+  assert.equal(unmanaged, outcome);
+}
+
 const serialized = fixture();
 let releaseMutation;
 let mutationStarted;
@@ -331,6 +471,16 @@ assert.equal(blockedResult.status, "CONFIGURATION_ERROR");
 assert.equal(blocked.counters().blocked, 1,
   "a real configuration blocker remains a blocked operation");
 assert.equal(blocked.counters().executions, 0);
+
+process.exitCode = 0;
+const blockedCollection = fixture({ phase: "blocked" });
+const blockedCollectionResult = await quiet(() =>
+  blockedCollection.runtime.proofCollect("change-a"));
+assert.equal(blockedCollectionResult.status, "CONFIGURATION_ERROR");
+assert.equal(blockedCollection.counters().blocked, 1,
+  "proof collect preserves a typed readiness stop without starting providers");
+assert.equal(blockedCollection.counters().executions, 0);
+process.exitCode = 0;
 
 process.exitCode = 0;
 const interrupted = fixture({ phase: "ready", failExecutionOnce: true });

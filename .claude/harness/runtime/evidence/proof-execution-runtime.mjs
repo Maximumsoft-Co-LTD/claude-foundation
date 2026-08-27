@@ -99,6 +99,95 @@ export function proofExecutionResult(audit, proofRunId) {
   return { status: audit.valid ? "PASS" : "ACTION_REQUIRED", proofRunId };
 }
 
+export function stopProofCollection(context, readiness, options = {}) {
+  const stopped = {
+    ...readiness,
+    command: "proof collect",
+    completed: false
+  };
+  if (!options.quiet) context.printOutcome(stopped);
+  context.markBlocked();
+  context.runtimeProcess.exitCode = 2;
+  return readiness;
+}
+
+export function beginProofCollection(context, id, snapshot) {
+  const state = context.loadRuntime(id);
+  const proofRunId = `collect-${context.timestamp()}`;
+  state.activeProofRun = {
+    id: proofRunId,
+    snapshotId: snapshot.id,
+    workspaceHash: snapshot.workspaceHash,
+    startedAt: context.now(),
+    mode: "collect"
+  };
+  context.saveRuntime(state);
+  return proofRunId;
+}
+
+export function rebindProofCollectionReceipts(
+  context, id, snapshot, proofRunId
+) {
+  for (const provider of context.requiredProviders(id)) {
+    const row = context.receiptValidity(id, provider, snapshot.workspaceHash);
+    if (row.validity === "reusable-inputs")
+      context.rebindReusableReceipt(id, row, snapshot, proofRunId);
+    else if (row.validity === "reusable-diff")
+      context.rebindDiffBoundReceipt(id, row, snapshot, proofRunId);
+  }
+}
+
+export function assertProofCollectionOutcomes(outcomes) {
+  const failed = outcomes.filter((row) => row.status !== "pass");
+  if (failed.length)
+    throw new Error(`evidence collection failed: ${failed.map((row) => `${row.provider}:${row.status}`).join(", ")}`);
+}
+
+export function persistProofCollectionArtifacts(
+  context, id, proofRunId, sessions
+) {
+  const serviceArtifacts = context.stopAll(sessions)
+    .map((artifact) => context.durableArtifact(id, "service", proofRunId, {
+      path: artifact.path,
+      type: "service-log",
+      required: true
+    }));
+  // Not on activeProofRun: the caller clears that before `prove` reads it.
+  // This key survives the clear; finalize consumes and removes it.
+  const state = context.loadRuntime(id);
+  state.collectedServiceArtifacts = serviceArtifacts;
+  context.saveRuntime(state);
+}
+
+export function proofCollectionOutcome(
+  id, snapshot, proofRunId, outcomes, collectable, readiness
+) {
+  return {
+    version: 1,
+    changeId: id,
+    command: "proof collect",
+    status: readiness.status,
+    completed: true,
+    proofFinalized: false,
+    proofRunId,
+    workspaceHash: snapshot.workspaceHash,
+    executedProviders: outcomes.map((row) => row.provider),
+    blockedExecutableProviders: collectable.blocked,
+    remainingExternalProviders: readiness.externalProviders
+  };
+}
+
+export function settleProofCollection(context, id, outcome, readiness, options) {
+  const settled = options.manageReservation === false ? outcome : context.writeAdvance(id, {
+    ...outcome,
+    stage: "evidence-collected",
+    providers: [],
+    requests: []
+  });
+  if (!options.quiet) context.printOutcome(settled);
+  return options.includeReadiness ? { ...settled, readiness } : settled;
+}
+
 export function createProofExecutionRuntime({
   proofReadinessValue, relevantSnapshot, loadRuntime, saveRuntime, now,
   requiredProviders, receiptValidity, rebindReusableReceipt,
@@ -248,17 +337,9 @@ export function createProofExecutionRuntime({
 
   async function proofCollectUnlocked(id, options = {}) {
     const readiness = options.readiness || proofReadinessValue(id, "prove");
-    if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
-      const stopped = {
-        ...readiness,
-        command: "proof collect",
-        completed: false
-      };
-      if (!options.quiet) printOutcome(stopped);
-      markBlocked();
-      process.exitCode = 2;
-      return readiness;
-    }
+    if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status))
+      return stopProofCollection(
+        { printOutcome, markBlocked, runtimeProcess: process }, readiness, options);
     const snapshot = options.snapshot || relevantSnapshot(id, null, true);
     const execution = options.execution || executionNodes(id, snapshot.workspaceHash);
     const { nodes, unavailable } = execution;
@@ -270,23 +351,12 @@ export function createProofExecutionRuntime({
       id, "proof collect", snapshot.workspaceHash,
       collectable.nodes.map((node) => node.provider), options);
     if (reservation) return reservation;
-    const state = loadRuntime(id);
-    const proofRunId = `collect-${Date.now()}`;
-    state.activeProofRun = {
-      id: proofRunId,
-      snapshotId: snapshot.id,
-      workspaceHash: snapshot.workspaceHash,
-      startedAt: now(),
-      mode: "collect"
-    };
-    saveRuntime(state);
-    for (const provider of requiredProviders(id)) {
-      const row = receiptValidity(id, provider, snapshot.workspaceHash);
-      if (row.validity === "reusable-inputs")
-        rebindReusableReceipt(id, row, snapshot, proofRunId);
-      else if (row.validity === "reusable-diff")
-        rebindDiffBoundReceipt(id, row, snapshot, proofRunId);
-    }
+    const proofRunId = beginProofCollection(
+      { loadRuntime, saveRuntime, now, timestamp: Date.now }, id, snapshot);
+    rebindProofCollectionReceipts({
+      requiredProviders, receiptValidity, rebindReusableReceipt,
+      rebindDiffBoundReceipt
+    }, id, snapshot, proofRunId);
     let sessions = [];
     try {
       sessions = await startTrackedServices(id, collectable.nodes, proofRunId);
@@ -295,45 +365,16 @@ export function createProofExecutionRuntime({
             quiet: options.quiet
           })
         : [];
-      const failed = outcomes.filter((row) => row.status !== "pass");
-      if (failed.length)
-        throw new Error(`evidence collection failed: ${failed.map((row) => `${row.provider}:${row.status}`).join(", ")}`);
-      const serviceArtifacts = stopAll(sessions)
-        .map((artifact) => durableArtifact(id, "service", proofRunId, {
-          path: artifact.path,
-          type: "service-log",
-          required: true
-        }));
-      // Not on activeProofRun: the finally below clears that before `prove`
-      // ever reads it, so service logs collected here silently vanished from
-      // the proof manifest. This key survives the clear; finalize consumes and
-      // removes it.
-      const withServices = loadRuntime(id);
-      withServices.collectedServiceArtifacts = serviceArtifacts;
-      saveRuntime(withServices);
+      assertProofCollectionOutcomes(outcomes);
+      persistProofCollectionArtifacts({
+        stopAll, durableArtifact, loadRuntime, saveRuntime
+      }, id, proofRunId, sessions);
       sessions = [];
       const after = proofReadinessValue(id, "prove");
-      const outcome = {
-        version: 1,
-        changeId: id,
-        command: "proof collect",
-        status: after.status,
-        completed: true,
-        proofFinalized: false,
-        proofRunId,
-        workspaceHash: snapshot.workspaceHash,
-        executedProviders: outcomes.map((row) => row.provider),
-        blockedExecutableProviders: collectable.blocked,
-        remainingExternalProviders: after.externalProviders
-      };
-      const settled = options.manageReservation === false ? outcome : writeAdvance(id, {
-        ...outcome,
-        stage: "evidence-collected",
-        providers: [],
-        requests: []
-      });
-      if (!options.quiet) printOutcome(settled);
-      return options.includeReadiness ? { ...settled, readiness: after } : settled;
+      const outcome = proofCollectionOutcome(
+        id, snapshot, proofRunId, outcomes, collectable, after);
+      return settleProofCollection(
+        { writeAdvance, printOutcome }, id, outcome, after, options);
     } catch (error) {
       stopAll(sessions);
       // Before die(), not after: a stale activeProofRun makes the next receipt
