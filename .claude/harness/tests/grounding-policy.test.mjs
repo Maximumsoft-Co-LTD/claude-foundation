@@ -136,6 +136,7 @@ try {
     [(value) => { value.claims = []; }, /map every evidence claim exactly once/],
     [(value) => { value.claims[0].id = "unknown"; }, /unknown evidence claim/],
     [(value) => { value.claims[0].productionPath = []; }, /productionPath must be/],
+    [(value) => { value.claims[0].productionPath[0] = null; }, /path must be repository-relative/],
     [(value) => { value.claims[0].failurePaths = []; }, /failurePaths must be/],
     [(value) => { value.claims[0].failurePaths[0].failure = ""; }, /failure is required/],
     [(value) => { value.claims[0].evidenceClass = []; }, /evidenceClass must be/],
@@ -154,6 +155,21 @@ try {
     mutate(value);
     expectFailure(value, expected);
   }
+  const implicitRoot = valid();
+  delete implicitRoot.claims[0].productionPath[0].repository;
+  delete implicitRoot.claims[0].failurePaths[0].repository;
+  delete implicitRoot.readSet[1].repository;
+  writeGrounding(implicitRoot);
+  assert.equal(runtime.groundingValue("change-a", state, packet).value.version, 1,
+    "omitted grounding repositories resolve to the selected root repository");
+
+  const failureWithoutBaseline = valid();
+  failureWithoutBaseline.claims[0].failurePaths[0] = {
+    repository: "root", path: "activation.mjs", failure: "activation fails"
+  };
+  expectFailure(failureWithoutBaseline,
+    /failurePaths\[0\] must appear in readSet with a baseline digest/);
+
   writeFileSync(join(packet, "grounding.yaml"), "not-json\n");
   assert.throws(() => runtime.groundingValue("change-a", state, packet), /JSON-compatible/);
 

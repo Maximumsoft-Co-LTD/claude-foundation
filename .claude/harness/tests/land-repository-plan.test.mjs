@@ -290,3 +290,44 @@ test("Land resume refreshes child statuses and emits the resumable plan", () => 
   assert.ok(logs.some((message) => message.includes("ALREADY ARCHIVED change-a")));
   assert.ok(logs.some((message) => message.includes('"strategy": "ordered-resumable-saga"')));
 });
+
+test("multi-repository archive readiness accepts settled plans and names blockers", () => {
+  const state = {
+    workspace: { path: "/workspace" },
+    repositories: {
+      root: { path: "/workspace" },
+      docs: { mode: "worktree", path: "/workspace/docs", baseHead: "head" }
+    }
+  };
+  const repositories = [
+    {
+      id: "docs", type: "repository", mode: "read", path: "/target/docs",
+      workspacePath: "/target/docs", baseHead: "head"
+    },
+    {
+      id: "root", type: "repository", mode: "write", path: "/target",
+      workspacePath: "/target"
+    }
+  ];
+  const runtime = createLandRuntime({
+    root: "/target", transactions: "/transactions",
+    loadRuntime: () => state,
+    selectedRepositories: () => repositories,
+    proofPath: () => "/missing-proof.json",
+    readJson: () => null,
+    relevantHash: () => "workspace-hash",
+    git: () => ({ status: 0, stdout: "", stderr: "" }),
+    gitHead: () => "head",
+    now: () => "2026-08-27T00:00:00.000Z",
+    fail
+  });
+
+  assert.doesNotThrow(() => runtime.assertMultiRepositoryArchiveReady("change-a", state));
+  delete state.repositories.docs.mode;
+  assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", state),
+    /multi-repository Land is incomplete: docs:read-not-isolated/);
+  assert.doesNotThrow(() => runtime.assertMultiRepositoryArchiveReady("change-a", {
+    repositories: { root: {} }
+  }));
+  assert.doesNotThrow(() => runtime.assertMultiRepositoryArchiveReady("change-a", {}));
+});

@@ -110,6 +110,32 @@ test("existing capability collector handles missing, non-markdown, new and curre
   assert.deepEqual(validator.existingCapabilityOperationFindings("missing"), []);
   assert.deepEqual(validator.existingCapabilityOperationFindings("change-a")
     .map((finding) => finding.kind), ["added-preexisting"]);
+
+  const scenarioChange = join(root, "scenario-change");
+  const scenarioSpec = join(scenarioChange, "specs", "accounts", "spec.md");
+  mkdirSync(dirname(scenarioSpec), { recursive: true });
+  writeFileSync(scenarioSpec, [
+    "#### Scenario: Unscoped behavior", "",
+    "### Requirement: First", "", "#### Scenario: First behavior", "",
+    "### Requirement: Second", "", "#### Scenario: Second behavior", ""
+  ].join("\n"));
+  writeFileSync(join(dirname(scenarioSpec), "ignored.txt"),
+    "#### Scenario: Ignored behavior\n");
+  assert.deepEqual(validator.changeSpecScenarios("change-a", scenarioChange), [
+    {
+      name: "First behavior", requirement: "First",
+      path: "scenario-change/specs/accounts/spec.md", key: "first behavior"
+    },
+    {
+      name: "Second behavior", requirement: "Second",
+      path: "scenario-change/specs/accounts/spec.md", key: "second behavior"
+    },
+    {
+      name: "Unscoped behavior", requirement: null,
+      path: "scenario-change/specs/accounts/spec.md", key: "unscoped behavior"
+    }
+  ]);
+  assert.deepEqual(validator.changeSpecScenarios("change-a", join(root, "absent")), []);
 });
 
 function validationRuntimeFixture() {
