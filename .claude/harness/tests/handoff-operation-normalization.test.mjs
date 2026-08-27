@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  handoffRecordContentValid,
+  handoffRecordIdentityValidity,
   handoffRecordValue,
   normalizeHandoffOperation,
   normalizeHandoffRecordInput,
@@ -200,6 +202,37 @@ test("handoff record value preserves history and prevents completed downgrade", 
   assert.deepEqual(completed.evidenceReferences, ["report"]);
   assert.equal(completed.reason, null);
   assert.equal(completed.contractRevision, 3);
+});
+
+test("handoff record validity separates identity drift from status-specific content", () => {
+  const base = {
+    version: 1, changeId: "change", operationId: "H001", operationDigest: "digest",
+    status: "accepted", actor: "Nok", reference: "OPS-1"
+  };
+  assert.equal(handoffRecordIdentityValidity(base, "change", "H001", "digest"), null);
+  assert.equal(handoffRecordIdentityValidity({ ...base, version: 2 },
+    "change", "H001", "digest"), "invalid");
+  assert.equal(handoffRecordIdentityValidity({ ...base, changeId: "other" },
+    "change", "H001", "digest"), "invalid");
+  assert.equal(handoffRecordIdentityValidity({ ...base, operationId: "H002" },
+    "change", "H001", "digest"), "invalid");
+  assert.equal(handoffRecordIdentityValidity(base, "change", "H001", "other"), "stale");
+
+  assert.equal(handoffRecordContentValid(base), true);
+  for (const record of [
+    { ...base, status: "pending" },
+    { ...base, actor: " " },
+    { ...base, reference: "" },
+    { ...base, status: "completed" },
+    { ...base, status: "completed", evidenceReferences: [] },
+    { ...base, status: "rejected", reason: "" }
+  ]) assert.equal(handoffRecordContentValid(record), false);
+  assert.equal(handoffRecordContentValid({
+    ...base, status: "completed", evidenceReferences: ["report-1"]
+  }), true);
+  assert.equal(handoffRecordContentValid({
+    ...base, status: "rejected", reason: "not approved"
+  }), true);
 });
 
 test("handoff record operation resolves, persists, and reports the operation", () => {

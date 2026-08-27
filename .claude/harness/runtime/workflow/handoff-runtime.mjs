@@ -16,6 +16,26 @@ function cleanString(value) {
   return String(value || "").trim();
 }
 
+export function handoffRecordIdentityValidity(record, changeId, operationId, operationDigest) {
+  if (record.version !== 1 || record.changeId !== changeId || record.operationId !== operationId)
+    return "invalid";
+  if (record.operationDigest !== operationDigest) return "stale";
+  return null;
+}
+
+export function handoffRecordContentValid(record) {
+  if (!RECORD_STATUSES.has(record.status) || !cleanString(record.actor) ||
+      !cleanString(record.reference)) return false;
+  if (record.status === "completed")
+    return Array.isArray(record.evidenceReferences) && record.evidenceReferences.length > 0;
+  if (record.status === "rejected") return Boolean(cleanString(record.reason));
+  return true;
+}
+
+function handoffRecordStatus(record, fallback) {
+  return record.status || fallback;
+}
+
 function safeId(value, pattern, label, fail) {
   const id = cleanString(value).toUpperCase();
   if (!pattern.test(id)) fail(`${label} must match ${pattern}`);
@@ -231,19 +251,16 @@ export function createHandoffRuntime({
     const path = recordPath(id, operation.id);
     const record = existsSync(path) ? readJson(path, {}) : null;
     if (!record) return { validity: "missing", status: "pending", record: null };
-    if (record.version !== 1 || record.changeId !== id ||
-        record.operationId !== operation.id)
-      return { validity: "invalid", status: record.status || "invalid", record };
-    if (record.operationDigest !== operationDigest(operation))
-      return { validity: "stale", status: record.status || "stale", record };
-    if (!RECORD_STATUSES.has(record.status) || !cleanString(record.actor) ||
-        !cleanString(record.reference))
-      return { validity: "invalid", status: record.status || "invalid", record };
-    if (record.status === "completed" &&
-        (!Array.isArray(record.evidenceReferences) || !record.evidenceReferences.length))
-      return { validity: "invalid", status: record.status, record };
-    if (record.status === "rejected" && !cleanString(record.reason))
-      return { validity: "invalid", status: record.status, record };
+    const identityValidity = handoffRecordIdentityValidity(
+      record, id, operation.id, operationDigest(operation));
+    if (identityValidity)
+      return {
+        validity: identityValidity,
+        status: handoffRecordStatus(record, identityValidity),
+        record
+      };
+    if (!handoffRecordContentValid(record))
+      return { validity: "invalid", status: handoffRecordStatus(record, "invalid"), record };
     return { validity: "valid", status: record.status, record };
   }
 
