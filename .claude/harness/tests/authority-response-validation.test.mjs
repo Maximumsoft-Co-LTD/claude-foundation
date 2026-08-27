@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   authorityResponseProblems,
+  authorityStatusValue,
   createAuthorityStore,
   normalizeAuthorityEvidence,
   validateAuthorityResponseOperation
@@ -109,4 +110,34 @@ test("authority store exposes the decomposed validator without changing its cont
   assert.equal(store.validateResponse(response(), request, "change").valid, true);
   assert.equal(store.validateResponse(response({ type: "acceptance" }),
     request, "change").valid, false);
+});
+
+test("open authority status distinguishes current, stale, and expired requests", () => {
+  const future = "2999-01-01T00:00:00.000Z";
+  const current = { value: { status: "requested", workspaceHash: "current", expiresAt: future } };
+  assert.equal(authorityStatusValue(current, "current", null, () => 1).status, "requested");
+  assert.equal(authorityStatusValue(current, "other", null,
+    () => { throw new Error("a stale workspace must short-circuit expiry"); }).status, "stale");
+  assert.equal(authorityStatusValue({
+    value: { ...current.value, status: "pending", expiresAt: "2000-01-01T00:00:00.000Z" }
+  }, "current", null, () => Date.now()).status, "expired");
+  assert.equal(authorityStatusValue({ value: { ...current.value, status: "dispatched" } },
+    "composite", () => "current", () => 1).status, "dispatched");
+  assert.equal(current.value.status, "requested", "status reads must not mutate stored requests");
+});
+
+test("only a current unexpired stale request heals in memory", () => {
+  const entry = { value: {
+    status: "stale", workspaceHash: "repository-hash", expiresAt: "2999-01-01T00:00:00.000Z"
+  } };
+  assert.equal(authorityStatusValue(entry, "composite", () => "repository-hash", () => 1).status,
+    "requested");
+  assert.equal(authorityStatusValue(entry, "composite", null, () => 1).status, "stale");
+  assert.equal(authorityStatusValue(entry, "composite", () => "other", () => 1).status, "stale");
+  assert.equal(authorityStatusValue({
+    value: { ...entry.value, expiresAt: "2000-01-01T00:00:00.000Z" }
+  }, "composite", () => "repository-hash", Date.now).status, "stale");
+  assert.equal(authorityStatusValue({ value: { ...entry.value, status: "completed" } },
+    "composite", () => "repository-hash",
+    () => { throw new Error("closed requests must not inspect expiry"); }).status, "completed");
 });

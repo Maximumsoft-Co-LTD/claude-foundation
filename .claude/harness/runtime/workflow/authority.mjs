@@ -48,6 +48,28 @@ export function validateAuthorityResponseOperation({ protocolVersion }, response
   };
 }
 
+function openAuthorityStatus(value, workspaceHash, expectedHashFor, now) {
+  const expected = expectedHashFor ? expectedHashFor(value) : workspaceHash;
+  if (value.workspaceHash !== expected) return "stale";
+  if (Date.parse(value.expiresAt || "") <= now()) return "expired";
+  return value.status;
+}
+
+function healedAuthorityStatus(value, expectedHashFor, now) {
+  if (value.status !== "stale" || !expectedHashFor) return value.status;
+  if (value.workspaceHash !== expectedHashFor(value)) return value.status;
+  if (Date.parse(value.expiresAt || "") <= now()) return value.status;
+  return "requested";
+}
+
+export function authorityStatusValue(entry, workspaceHash, expectedHashFor = null, now = Date.now) {
+  const value = { ...entry.value };
+  value.status = OPEN_STATUSES.has(value.status)
+    ? openAuthorityStatus(value, workspaceHash, expectedHashFor, now)
+    : healedAuthorityStatus(value, expectedHashFor, now);
+  return value;
+}
+
 export function createAuthorityStore({ root, protocolVersion, readJson, writeJson, now }) {
   const requestRoot = (id) => join(root, id);
 
@@ -83,21 +105,9 @@ export function createAuthorityStore({ root, protocolVersion, readJson, writeJso
   function status(id, workspaceHash, requestId = null, expectedHashFor = null) {
     const rows = list(id)
       .filter((entry) => !requestId || entry.value.requestId === requestId)
-      .map((entry) => {
-        const value = { ...entry.value };
-        if (OPEN_STATUSES.has(value.status)) {
-          const expected = expectedHashFor ? expectedHashFor(value) : workspaceHash;
-          if (value.workspaceHash !== expected) value.status = "stale";
-          else if (Date.parse(value.expiresAt || "") <= Date.now()) value.status = "expired";
-        } else if (value.status === "stale" && expectedHashFor &&
-            value.workspaceHash === expectedHashFor(value) &&
-            Date.parse(value.expiresAt || "") > Date.now()) {
-          // Heal the value in memory. Status is deliberately side-effect free;
-          // request transitions are serialized by the authority mutation lock.
-          value.status = "requested";
-        }
-        return value;
-      });
+      // Heal values in memory only. Status is deliberately side-effect free;
+      // request transitions are serialized by the authority mutation lock.
+      .map((entry) => authorityStatusValue(entry, workspaceHash, expectedHashFor));
     return {
       found: !requestId || rows.length > 0,
       value: {
