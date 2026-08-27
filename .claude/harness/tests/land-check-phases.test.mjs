@@ -3,9 +3,40 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createLandRuntime } from "../runtime/workflow/land-runtime.mjs";
+import {
+  advanceLandOperation, createLandRuntime
+} from "../runtime/workflow/land-runtime.mjs";
 
 const HASH = "workspacehash0000000000000000000000000000000000000000000000000000";
+
+test("land advance handles single repositories and multi-repository resume states", () => {
+  const calls = [];
+  const dependencies = (states, plan = {}) => ({
+    loadRuntime: () => states.shift(),
+    landCheck: (id) => calls.push(["check", id]),
+    archive: (id) => calls.push(["archive", id]),
+    resumeLand: (id) => calls.push(["resume", id]),
+    landPlanValue: (id) => { calls.push(["plan", id]); return plan; }
+  });
+
+  advanceLandOperation(dependencies([{ repositories: {} }]), "single");
+  assert.deepEqual(calls.splice(0), [["check", "single"], ["archive", "single"]]);
+
+  advanceLandOperation(dependencies([
+    { repositories: { root: {}, api: {} } }, { status: "building" }
+  ]), "building");
+  assert.deepEqual(calls.splice(0), [["resume", "building"]]);
+
+  advanceLandOperation(dependencies([
+    { repositories: { root: {}, api: {} } }, { status: "proven" }
+  ], { readyToArchive: false }), "waiting");
+  assert.deepEqual(calls.splice(0), [["resume", "waiting"], ["plan", "waiting"]]);
+
+  advanceLandOperation(dependencies([
+    { repositories: { root: {}, api: {} } }, { status: "proven" }
+  ], { readyToArchive: true }), "ready");
+  assert.deepEqual(calls, [["resume", "ready"], ["plan", "ready"], ["archive", "ready"]]);
+});
 
 test("land check phases preserve every refusal and ready route", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-land-check-phases-"));

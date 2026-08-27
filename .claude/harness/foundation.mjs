@@ -47,7 +47,9 @@ import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
 import {
   createLandJournal, transactionJournals as readTransactionJournals
 } from "./runtime/workflow/land-journal.mjs";
-import { createProofRuntime } from "./runtime/evidence/proof-runtime.mjs";
+import {
+  createProofRuntime, taskPacketWasPrecompletedOperation
+} from "./runtime/evidence/proof-runtime.mjs";
 import { createRepositoryTopology } from "./runtime/workflow/repository-topology.mjs";
 import { createRepositorySnapshot } from "./runtime/workflow/repository-snapshot.mjs";
 import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
@@ -58,7 +60,7 @@ import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
 import { createHandoffRuntime } from "./runtime/workflow/handoff-runtime.mjs";
 import {
-  assertOpenSpecCli, createLandRuntime, openSpecCliStatus
+  advanceLandOperation, assertOpenSpecCli, createLandRuntime, openSpecCliStatus
 } from "./runtime/workflow/land-runtime.mjs";
 import { createApplyRuntime } from "./runtime/workflow/apply-runtime.mjs";
 import { createApplyRecovery } from "./runtime/workflow/apply-recovery.mjs";
@@ -1235,6 +1237,9 @@ const { recoverPendingApply, pendingApplyTransactions } = createApplyRecovery({
   blockWithDecision,
   fail: die
 });
+const taskPacketWasPrecompleted = taskPacketWasPrecompletedOperation.bind(null, {
+  loadRuntime, activeChangePath, exists: existsSync, fileDigest
+});
 const { finalize: prove, audit: proofAudit } = createProofRuntime({
   root: ROOT,
   protocolVersion: PROOF_PROTOCOL_VERSION,
@@ -1273,12 +1278,7 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
     const path = join(LEASES, "results", id, `${taskId}.json`);
     return existsSync(path) ? { path, value: readJson(path, null) } : null;
   },
-  taskPacketWasPrecompleted: (id) => {
-    const state = loadRuntime(id);
-    const expected = state.workspace?.packetSnapshot?.["tasks.md"] || null;
-    const path = join(activeChangePath(id), "tasks.md");
-    return Boolean(expected && existsSync(path) && fileDigest(path) === expected);
-  },
+  taskPacketWasPrecompleted,
   legacyExecutionPolicy: () =>
     foundationPolicy().workflow?.reviewCircuit === "legacy",
   selectedRepositories,
@@ -1457,21 +1457,9 @@ const {
   applySandbox,
   archive
 } = applyRuntime;
-function advanceLand(id) {
-  const state = loadRuntime(id);
-  const multiRepository = state.repositories &&
-    Object.keys(state.repositories).length > 1;
-  if (!multiRepository) {
-    landCheck(id);
-    archive(id);
-    return;
-  }
-  resumeLand(id);
-  const refreshed = loadRuntime(id);
-  if (refreshed.status === "building") return;
-  const plan = landPlanValue(id);
-  if (plan.readyToArchive) archive(id);
-}
+const advanceLand = advanceLandOperation.bind(null, {
+  loadRuntime, landCheck, archive, resumeLand, landPlanValue
+});
 const abandonRuntime = createAbandonRuntime({
   root: ROOT,
   paths: {

@@ -5,7 +5,9 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { taskNodeProof } from "../runtime/evidence/proof-runtime.mjs";
+import {
+  taskNodeProof, taskPacketWasPrecompletedOperation
+} from "../runtime/evidence/proof-runtime.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-task-node-proof-"));
 const runRoot = join(root, "proof-run");
@@ -44,6 +46,20 @@ const dependencies = (overrides = {}) => ({
 });
 
 try {
+  const packetPath = join(root, "tasks.md");
+  writeFileSync(packetPath, "done\n");
+  const packetDependencies = {
+    loadRuntime: () => ({ workspace: { packetSnapshot: { "tasks.md": fileDigest(packetPath) } } }),
+    activeChangePath: () => root, exists: () => true, fileDigest
+  };
+  assert.equal(taskPacketWasPrecompletedOperation(packetDependencies, id), true);
+  assert.equal(taskPacketWasPrecompletedOperation({
+    ...packetDependencies, exists: () => false
+  }, id), false);
+  assert.equal(taskPacketWasPrecompletedOperation({
+    ...packetDependencies, loadRuntime: () => ({})
+  }, id), false);
+
   assert.equal(taskNodeProof(dependencies(), id, node, graph, {}, runRoot).source,
     "legacy-upgrade");
   assert.equal(taskNodeProof(dependencies({ legacyExecutionPolicy: () => true }),

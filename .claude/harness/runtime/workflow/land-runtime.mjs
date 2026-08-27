@@ -12,6 +12,24 @@ const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
 const OPENSPEC_PACKAGE = "@fission-ai/openspec@^1.7";
 
+export function advanceLandOperation({
+  loadRuntime, landCheck, archive, resumeLand, landPlanValue
+}, id) {
+  const state = loadRuntime(id);
+  const multiRepository = state.repositories &&
+    Object.keys(state.repositories).length > 1;
+  if (!multiRepository) {
+    landCheck(id);
+    archive(id);
+    return;
+  }
+  resumeLand(id);
+  const refreshed = loadRuntime(id);
+  if (refreshed.status === "building") return;
+  const plan = landPlanValue(id);
+  if (plan.readyToArchive) archive(id);
+}
+
 // Layered policy rather than a pinned string: a wrong major cannot sync specs,
 // a lower minor predates behavior the archive step depends on, a higher minor
 // is untested but not known-broken, and patch releases inside the tested minor

@@ -2,6 +2,16 @@ import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { validityRecovery } from "./receipt-validity.mjs";
 import { singleAgentExecutionEligible } from "../core/graph-execution.mjs";
+
+export function taskPacketWasPrecompletedOperation({
+  loadRuntime, activeChangePath, exists, fileDigest
+}, id) {
+  const state = loadRuntime(id);
+  const expected = state.workspace?.packetSnapshot?.["tasks.md"] || null;
+  const path = join(activeChangePath(id), "tasks.md");
+  return Boolean(expected && exists(path) && fileDigest(path) === expected);
+}
+
 function passingTaskNode(node, source, resultAuthority) {
   return {
     nodeId: node.id, lifecycle: node.lifecycle, status: "pass", source, claims: node.claims,
