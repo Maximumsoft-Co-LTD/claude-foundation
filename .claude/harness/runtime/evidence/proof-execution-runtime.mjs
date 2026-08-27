@@ -99,6 +99,36 @@ export function proofExecutionResult(audit, proofRunId) {
   return { status: audit.valid ? "PASS" : "ACTION_REQUIRED", proofRunId };
 }
 
+export function proofRunExecutionStops(result) {
+  return result?.stage === "execution-indeterminate" ||
+    result?.status === "ACTION_REQUIRED";
+}
+
+export function stopProofRun(context, readiness, options = {}) {
+  const stopped = {
+    ...readiness,
+    command: "proof run",
+    completed: false
+  };
+  if (!options.quiet) context.printOutcome(stopped);
+  context.markBlocked();
+  context.runtimeProcess.exitCode = 2;
+  return readiness;
+}
+
+export function proofRunOutcome(id, proof) {
+  return {
+    version: 1,
+    changeId: id,
+    command: "proof run",
+    status: "PASS",
+    completed: true,
+    proofRunId: proof.proofRunId || null,
+    workspaceHash: proof.workspaceHash,
+    providers: proof.providers || []
+  };
+}
+
 export function stopProofCollection(context, readiness, options = {}) {
   const stopped = {
     ...readiness,
@@ -430,17 +460,9 @@ export function createProofExecutionRuntime({
   
   async function proofRunUnlocked(id, options = {}) {
     const readiness = options.readiness || proofReadinessValue(id, "prove");
-    if (readiness.status !== "READY") {
-      const stopped = {
-        ...readiness,
-        command: "proof run",
-        completed: false
-      };
-      if (!options.quiet) printOutcome(stopped);
-      markBlocked();
-      process.exitCode = 2;
-      return readiness;
-    }
+    if (readiness.status !== "READY")
+      return stopProofRun({ printOutcome, markBlocked, runtimeProcess: process },
+        readiness, options);
     const executionResult = await proofExecuteUnlocked(id, {
       preflight: false,
       snapshot: options.snapshot,
@@ -448,22 +470,12 @@ export function createProofExecutionRuntime({
       command: "proof run",
       manageReservation: options.manageReservation
     });
-    if (executionResult?.stage === "execution-indeterminate" ||
-        executionResult?.status === "ACTION_REQUIRED") return executionResult;
+    if (proofRunExecutionStops(executionResult)) return executionResult;
     const audit = proofAudit(id, true);
     if (!audit.valid)
       die(`proof run audit failed: ${audit.reason}`);
     const proof = readJson(proofPath(id));
-    const outcome = {
-      version: 1,
-      changeId: id,
-      command: "proof run",
-      status: "PASS",
-      completed: true,
-      proofRunId: proof.proofRunId || null,
-      workspaceHash: proof.workspaceHash,
-      providers: proof.providers || []
-    };
+    const outcome = proofRunOutcome(id, proof);
     if (!options.quiet) printOutcome(outcome);
     return outcome;
   }

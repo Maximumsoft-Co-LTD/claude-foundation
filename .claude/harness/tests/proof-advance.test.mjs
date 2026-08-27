@@ -102,8 +102,9 @@ function fixture(options = {}) {
       };
       state = { ...state, status: "proven" };
     },
-    proofAudit: () => proof
-      ? { valid: true, proof } : { valid: false, reason: "missing-proof" },
+    proofAudit: () => options.invalidAudit
+      ? { valid: false, reason: "invalid-proof" }
+      : proof ? { valid: true, proof } : { valid: false, reason: "missing-proof" },
     readJson: () => proof,
     proofPath: () => "proof.json",
     providerCapability: (provider) => provider,
@@ -191,6 +192,31 @@ async function within(promise, timeoutMs, message) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+{
+  const priorExitCode = process.exitCode;
+  const blockedRun = fixture({ phase: "blocked" });
+  const blocked = await quiet(() => blockedRun.runtime.proofRun("change-a"));
+  assert.equal(blocked.status, "CONFIGURATION_ERROR");
+  assert.equal(blockedRun.counters().blocked, 1);
+  assert.equal(process.exitCode, 2);
+  process.exitCode = priorExitCode;
+
+  const successfulRun = fixture({ phase: "ready" });
+  const passed = await quiet(() => successfulRun.runtime.proofRun("change-a"));
+  assert.equal(passed.status, "PASS");
+  assert.equal(passed.completed, true);
+  assert.equal(passed.workspaceHash, "workspace-a");
+  assert.deepEqual(passed.providers, ["test", "review", "acceptance"]);
+  assert.deepEqual(successfulRun.counters(), {
+    executions: 1, finalizations: 1, blocked: 0, closures: 0
+  });
+
+  const invalidRun = fixture({ phase: "ready", invalidAudit: true });
+  const actionRequired = await quiet(() => invalidRun.runtime.proofRun("change-a"));
+  assert.equal(actionRequired.status, "ACTION_REQUIRED");
+  assert.match(actionRequired.proofRunId, /^proof-/);
 }
 
 {

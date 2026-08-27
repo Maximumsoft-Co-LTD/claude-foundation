@@ -7,7 +7,10 @@ import {
   prepareProofExecution,
   proofExecutionAdvanceValue,
   proofExecutionResult,
+  proofRunExecutionStops,
+  proofRunOutcome,
   runProofExecutionNodes,
+  stopProofRun,
   writeProofExecutionAdvance
 } from "../runtime/evidence/proof-execution-runtime.mjs";
 
@@ -150,6 +153,45 @@ test("proof execution advance writer persists only a material advance", () => {
   assert.equal(writes.length, 1);
   assert.equal(writes[0][0], "change-a");
   assert.equal(writes[0][1].status, "PASS");
+});
+
+test("proof run boundaries stop non-ready work and project successful proof output", () => {
+  const calls = [];
+  const runtimeProcess = { exitCode: 0 };
+  const readiness = { status: "BLOCKED", reason: "not ready" };
+  assert.strictEqual(stopProofRun({
+    printOutcome: (value) => calls.push(value),
+    markBlocked: () => calls.push("blocked"),
+    runtimeProcess
+  }, readiness), readiness);
+  assert.equal(calls[0].command, "proof run");
+  assert.equal(calls[0].completed, false);
+  assert.equal(calls[1], "blocked");
+  assert.equal(runtimeProcess.exitCode, 2);
+
+  const quietCalls = [];
+  stopProofRun({
+    printOutcome: () => quietCalls.push("printed"),
+    markBlocked: () => quietCalls.push("blocked"),
+    runtimeProcess: { exitCode: 0 }
+  }, readiness, { quiet: true });
+  assert.deepEqual(quietCalls, ["blocked"]);
+
+  assert.equal(proofRunExecutionStops({ stage: "execution-indeterminate" }), true);
+  assert.equal(proofRunExecutionStops({ status: "ACTION_REQUIRED" }), true);
+  assert.equal(proofRunExecutionStops({ status: "PASS" }), false);
+  assert.equal(proofRunExecutionStops(null), false);
+  assert.deepEqual(proofRunOutcome("change-a", {
+    workspaceHash: "hash-a", proofRunId: "proof-a", providers: ["test"]
+  }), {
+    version: 1, changeId: "change-a", command: "proof run", status: "PASS",
+    completed: true, proofRunId: "proof-a", workspaceHash: "hash-a",
+    providers: ["test"]
+  });
+  assert.deepEqual(proofRunOutcome("change-b", { workspaceHash: "hash-b" }), {
+    version: 1, changeId: "change-b", command: "proof run", status: "PASS",
+    completed: true, proofRunId: null, workspaceHash: "hash-b", providers: []
+  });
 });
 
 test("proof execution result reflects audit validity", () => {
