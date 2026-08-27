@@ -357,6 +357,57 @@ export function authorityPacketOperation(context, id, type) {
   };
 }
 
+export function parseTelemetryEventLine(line) {
+  try { return JSON.parse(line); }
+  catch { return null; }
+}
+
+export function telemetryRowsForSession(text, sessionId) {
+  const normalizedSession = sessionId.toLowerCase();
+  return text.split(/\r?\n/).filter(Boolean)
+    .map(parseTelemetryEventLine)
+    .filter((row) => row && [row.sessionId, row.runId]
+      .some((value) => String(value || "").toLowerCase() === normalizedSession));
+}
+
+export function telemetryRowHasModel(candidate) {
+  return Boolean(candidate.modelId);
+}
+
+export function preferredSessionTelemetryRow(rows) {
+  return rows.filter(telemetryRowHasModel).at(-1) ||
+    rows.at(-1) || null;
+}
+
+export function telemetryProviderFamily(source) {
+  const normalized = String(source || "").toLowerCase();
+  if (normalized.includes("claude")) return "anthropic";
+  if (normalized.includes("codex") || normalized.includes("openai"))
+    return "openai";
+  return "";
+}
+
+export function telemetryProvenanceValue(row) {
+  if (!row) return {};
+  const modelId = String(row.modelId || "").trim();
+  return {
+    identity: String(row.agentId || "").trim(),
+    providerFamily: telemetryProviderFamily(row.source),
+    modelFamily: String(row.modelFamily || modelId).trim().toLowerCase(),
+    modelId
+  };
+}
+
+export function sessionTelemetryProvenanceOperation(context, id, sessionId) {
+  if (!sessionId) return {};
+  try {
+    const text = context.readFile(join(
+      context.root, ".foundation", "logs", id, "events.jsonl"), "utf8");
+    return telemetryProvenanceValue(preferredSessionTelemetryRow(
+      telemetryRowsForSession(text, sessionId)));
+  } catch { return {}; }
+}
+
 export function mainSessionEnvironment(environment) {
   const claudeSession = String(
     environment.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
@@ -883,34 +934,8 @@ export function createAuthorityRuntime({
     return withAuthorityLock(id, () => abortAuthorityUnlocked(id, flags));
   }
 
-  function sessionTelemetryProvenance(id, sessionId) {
-    if (!sessionId) return {};
-    try {
-      const rows = readFileSync(join(root, ".foundation", "logs", id,
-        "events.jsonl"), "utf8").split(/\r?\n/).filter(Boolean)
-        .map((line) => {
-          try { return JSON.parse(line); } catch { return null; }
-        }).filter((row) => row && [row.sessionId, row.runId]
-          .some((value) => String(value || "").toLowerCase() ===
-            sessionId.toLowerCase()));
-      const row = rows.filter((candidate) => candidate.modelId).at(-1) ||
-        rows.at(-1) || null;
-      if (!row) return {};
-      const source = String(row.source || "").toLowerCase();
-      const modelId = String(row.modelId || "").trim();
-      const providerFamily = source.includes("claude") ? "anthropic"
-        : source.includes("codex") || source.includes("openai") ? "openai" : "";
-      return {
-        identity: String(row.agentId || "").trim(),
-        providerFamily,
-        // Telemetry does not currently expose a separate family field. The
-        // exact model ID is a conservative singleton family: it never claims
-        // diversity between two observations of the same model.
-        modelFamily: String(row.modelFamily || modelId).trim().toLowerCase(),
-        modelId
-      };
-    } catch { return {}; }
-  }
+  const sessionTelemetryProvenance = sessionTelemetryProvenanceOperation.bind(
+    null, { root, readFile: readFileSync });
 
   function mainSessionProvenance(id, flags, subject = {}) {
     const environment = mainSessionEnvironment(process.env);

@@ -12,8 +12,15 @@ import {
   lockedAuthorityOperation,
   newAuthorityRequestValue,
   pendingAuthorityRequest,
+  parseTelemetryEventLine,
+  preferredSessionTelemetryRow,
   requestAuthorityOperation,
   reviewResponseEvidence,
+  sessionTelemetryProvenanceOperation,
+  telemetryProviderFamily,
+  telemetryProvenanceValue,
+  telemetryRowHasModel,
+  telemetryRowsForSession,
   resetInfrastructureAuthorityOperation
 } from "../runtime/workflow/authority-runtime.mjs";
 
@@ -483,4 +490,74 @@ test("authority packet supplies empty inspection fallbacks", () => {
   assert.deepEqual(packet.inspection, {
     workspaces: [], changedSurface: null, decisions: null, automatedEvidence: []
   });
+});
+
+test("session telemetry parsing tolerates malformed rows and matches session or run identity", () => {
+  assert.equal(parseTelemetryEventLine("{broken"), null);
+  assert.deepEqual(parseTelemetryEventLine('{"sessionId":"session-a"}'), {
+    sessionId: "session-a"
+  });
+  const rows = telemetryRowsForSession([
+    "{broken",
+    JSON.stringify({ sessionId: "other", agentId: "ignored" }),
+    JSON.stringify({ runId: "SESSION-A", agentId: "run-match" }),
+    JSON.stringify({ sessionId: "session-a", agentId: "session-match", modelId: "gpt" })
+  ].join("\n"), "session-a");
+  assert.deepEqual(rows.map((row) => row.agentId), ["run-match", "session-match"]);
+  assert.equal(telemetryRowHasModel({ modelId: "gpt" }), true);
+  assert.equal(telemetryRowHasModel({ modelId: "" }), false);
+  assert.equal(preferredSessionTelemetryRow(rows).agentId, "session-match");
+  assert.equal(preferredSessionTelemetryRow([{ agentId: "fallback" }]).agentId,
+    "fallback");
+  assert.equal(preferredSessionTelemetryRow([]), null);
+});
+
+test("telemetry provenance normalizes provider and conservative model family", () => {
+  assert.equal(telemetryProviderFamily("claude-transcript"), "anthropic");
+  assert.equal(telemetryProviderFamily("codex"), "openai");
+  assert.equal(telemetryProviderFamily("OPENAI-api"), "openai");
+  assert.equal(telemetryProviderFamily("custom"), "");
+  assert.deepEqual(telemetryProvenanceValue({
+    agentId: " agent ", source: "codex", modelId: " GPT-5 ",
+    modelFamily: " GPT "
+  }), {
+    identity: "agent", providerFamily: "openai",
+    modelFamily: "gpt", modelId: "GPT-5"
+  });
+  assert.equal(telemetryProvenanceValue({
+    source: "claude", modelId: "Claude-Opus"
+  }).modelFamily, "claude-opus");
+  assert.deepEqual(telemetryProvenanceValue(null), {});
+});
+
+test("session telemetry provenance contains missing ledgers and selects the best matching row", () => {
+  let reads = 0;
+  const context = {
+    root: "/workspace",
+    readFile: () => {
+      reads += 1;
+      return [
+        JSON.stringify({ runId: "session-a", agentId: "without-model" }),
+        JSON.stringify({
+          sessionId: "session-a", agentId: "with-model",
+          source: "claude", modelId: "claude-opus"
+        }),
+        JSON.stringify({ sessionId: "session-a", agentId: "later-no-model" })
+      ].join("\n");
+    }
+  };
+  assert.deepEqual(sessionTelemetryProvenanceOperation(context, "change-a", ""), {});
+  assert.equal(reads, 0);
+  assert.deepEqual(sessionTelemetryProvenanceOperation(
+    context, "change-a", "session-a"), {
+    identity: "with-model", providerFamily: "anthropic",
+    modelFamily: "claude-opus", modelId: "claude-opus"
+  });
+  assert.equal(reads, 1);
+  assert.deepEqual(sessionTelemetryProvenanceOperation({
+    root: "/workspace", readFile: () => { throw new Error("missing"); }
+  }, "change-a", "session-a"), {});
+  assert.deepEqual(sessionTelemetryProvenanceOperation({
+    root: "/workspace", readFile: () => ""
+  }, "change-a", "session-a"), {});
 });
