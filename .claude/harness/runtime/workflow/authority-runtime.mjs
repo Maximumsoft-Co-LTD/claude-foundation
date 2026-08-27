@@ -166,6 +166,45 @@ export function requestAuthorityOperation(context, id, flags = {}, options = {})
   return request;
 }
 
+export function abortAuthorityOperation(context, id, flags = {}) {
+  const requestId = String(flags.request || "");
+  const reason = String(flags.reason || "").trim();
+  if (!requestId || !reason)
+    context.fail("authority abort requires --request <id> --reason <text>");
+  const entry = context.authorityStore.list(id)
+    .find((row) => row.value.requestId === requestId);
+  if (!entry) context.fail(`unknown authority request '${requestId}'`);
+  const request = entry.value;
+  const dispatchedAttempt = request.dispatch?.attemptDigest
+    ? context.reviewAttemptByDigest(id, request.dispatch.attemptDigest) : null;
+  const attemptIsCurrent = dispatchedAttempt?.status === "dispatched" &&
+    context.reviewHistoryState(id, context.loadRuntime(id)).chainHead ===
+      dispatchedAttempt.digest;
+  if (attemptIsCurrent) {
+    context.completeReviewAttempt(id, dispatchedAttempt.digest, {
+      reviewerSessionId: dispatchedAttempt.reviewerSessionId || "",
+      resultStatus: "error",
+      findings: [],
+      verifiedFindingIds: []
+    });
+  }
+  if (request.status === "aborted" && attemptIsCurrent) {
+    context.output.log(JSON.stringify(request, null, 2));
+    return request;
+  }
+  if (!["requested", "dispatched"].includes(request.status))
+    context.fail(`authority request '${requestId}' is ${request.status}`);
+  const updated = {
+    ...request,
+    status: request.status === "dispatched" ? "aborted" : "cancelled",
+    abortedAt: context.now(),
+    abortReason: reason
+  };
+  context.authorityStore.replace(entry, updated);
+  context.output.log(JSON.stringify(updated, null, 2));
+  return updated;
+}
+
 export function mainSessionEnvironment(environment) {
   const claudeSession = String(
     environment.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
@@ -711,43 +750,10 @@ export function createAuthorityRuntime({
     return withAuthorityLock(id, () => dispatchAuthorityUnlocked(id, flags));
   }
 
-  function abortAuthorityUnlocked(id, flags = {}) {
-    const requestId = String(flags.request || "");
-    const reason = String(flags.reason || "").trim();
-    if (!requestId || !reason)
-      fail("authority abort requires --request <id> --reason <text>");
-    const entry = authorityStore.list(id)
-      .find((row) => row.value.requestId === requestId);
-    if (!entry) fail(`unknown authority request '${requestId}'`);
-    const request = entry.value;
-    const dispatchedAttempt = request.dispatch?.attemptDigest
-      ? reviewAttemptByDigest(id, request.dispatch.attemptDigest) : null;
-    const attemptIsCurrent = dispatchedAttempt?.status === "dispatched" &&
-      reviewHistoryState(id, loadRuntime(id)).chainHead === dispatchedAttempt.digest;
-    if (attemptIsCurrent) {
-      completeReviewAttempt(id, dispatchedAttempt.digest, {
-        reviewerSessionId: dispatchedAttempt.reviewerSessionId || "",
-        resultStatus: "error",
-        findings: [],
-        verifiedFindingIds: []
-      });
-    }
-    if (request.status === "aborted" && attemptIsCurrent) {
-      console.log(JSON.stringify(request, null, 2));
-      return request;
-    }
-    if (!["requested", "dispatched"].includes(request.status))
-      fail(`authority request '${requestId}' is ${request.status}`);
-    const updated = {
-      ...request,
-      status: request.status === "dispatched" ? "aborted" : "cancelled",
-      abortedAt: now(),
-      abortReason: reason
-    };
-    authorityStore.replace(entry, updated);
-    console.log(JSON.stringify(updated, null, 2));
-    return updated;
-  }
+  const abortAuthorityUnlocked = abortAuthorityOperation.bind(null, {
+    authorityStore, reviewAttemptByDigest, reviewHistoryState, loadRuntime,
+    completeReviewAttempt, now, fail, output: console
+  });
 
   function abortAuthority(id, flags = {}) {
     return withAuthorityLock(id, () => abortAuthorityUnlocked(id, flags));

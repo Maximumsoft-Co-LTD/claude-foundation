@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  abortAuthorityOperation,
   authorityClaimIds,
   authorityRequestPolicy,
   authorityRequestSelection,
@@ -186,4 +187,92 @@ test("authority operation reuses open requests and writes new requests once", ()
   assert.equal(created.writes.length, 1);
   assert.deepEqual(created.writes[0], ["c", request]);
   assert.equal(created.rows.length, 0);
+});
+
+function abortContext(request, attempt = null, chainHead = null) {
+  const entry = request ? { value: request } : null;
+  const replaced = [];
+  const completed = [];
+  const output = [];
+  return {
+    authorityStore: {
+      list: () => entry ? [entry] : [],
+      replace: (...args) => replaced.push(args)
+    },
+    reviewAttemptByDigest: () => attempt,
+    reviewHistoryState: () => ({ chainHead }),
+    loadRuntime: () => ({}),
+    completeReviewAttempt: (...args) => completed.push(args),
+    now: () => "2026-08-27T00:00:00.000Z",
+    fail,
+    output: { log: (row) => output.push(JSON.parse(row)) },
+    replaced,
+    completed,
+    outputRows: output
+  };
+}
+
+test("authority abort validates identity and terminal request states", () => {
+  const missing = abortContext(null);
+  assert.throws(() => abortAuthorityOperation(missing, "c", {}),
+    /requires --request/);
+  assert.throws(() => abortAuthorityOperation(missing, "c", {
+    request: "request-a", reason: "reason"
+  }), /unknown authority request/);
+  const terminal = abortContext({ requestId: "request-a", status: "completed" });
+  assert.throws(() => abortAuthorityOperation(terminal, "c", {
+    request: "request-a", reason: "reason"
+  }), /is completed/);
+});
+
+test("authority abort cancels requested work and aborts stale dispatches", () => {
+  const requested = abortContext({ requestId: "request-a", status: "requested" });
+  const cancelled = abortAuthorityOperation(requested, "c", {
+    request: "request-a", reason: " no longer needed "
+  });
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.abortReason, "no longer needed");
+  assert.equal(requested.replaced.length, 1);
+  assert.deepEqual(requested.outputRows, [cancelled]);
+
+  const stale = abortContext({
+    requestId: "request-b", status: "dispatched",
+    dispatch: { attemptDigest: "attempt-old" }
+  }, { digest: "attempt-old", status: "dispatched" }, "attempt-new");
+  const aborted = abortAuthorityOperation(stale, "c", {
+    request: "request-b", reason: "stale dispatch"
+  });
+  assert.equal(aborted.status, "aborted");
+  assert.equal(stale.completed.length, 0);
+  assert.equal(stale.replaced.length, 1);
+});
+
+test("authority abort completes the current dispatch and preserves idempotency", () => {
+  const attempt = {
+    digest: "attempt-current", status: "dispatched", reviewerSessionId: null
+  };
+  const current = abortContext({
+    requestId: "request-a", status: "dispatched",
+    dispatch: { attemptDigest: attempt.digest }
+  }, attempt, attempt.digest);
+  const aborted = abortAuthorityOperation(current, "c", {
+    request: "request-a", reason: "reviewer crashed"
+  });
+  assert.equal(aborted.status, "aborted");
+  assert.deepEqual(current.completed[0], ["c", attempt.digest, {
+    reviewerSessionId: "", resultStatus: "error",
+    findings: [], verifiedFindingIds: []
+  }]);
+
+  const already = abortContext({
+    requestId: "request-a", status: "aborted",
+    dispatch: { attemptDigest: attempt.digest }
+  }, { ...attempt, reviewerSessionId: "session-a" }, attempt.digest);
+  const unchanged = abortAuthorityOperation(already, "c", {
+    request: "request-a", reason: "repeat"
+  });
+  assert.equal(unchanged.status, "aborted");
+  assert.equal(already.replaced.length, 0);
+  assert.equal(already.completed[0][2].reviewerSessionId, "session-a");
+  assert.deepEqual(already.outputRows, [unchanged]);
 });
