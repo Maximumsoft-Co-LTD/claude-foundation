@@ -38,6 +38,30 @@ test("projects current runtime into the stable dashboard schema", () => {
   assert.equal(snapshot.generatedAt, "2026-08-04T00:00:00.000Z");
 });
 
+test("sparse valid runtime states project stable defaults", () => {
+  const root = mkdtempSync(join(tmpdir(), "cf-dashboard-snapshot-sparse-"));
+  const runtimeDir = join(root, ".foundation", "runtime");
+  mkdirSync(runtimeDir, { recursive: true });
+  writeFileSync(join(runtimeDir, "sparse.json"), JSON.stringify({
+    id: "sparse", revision: 7, workspace: {}
+  }));
+
+  const snapshot = buildDashboardSnapshot(root);
+  assert.deepEqual(snapshot.changes[0], {
+    id: "sparse", schema: "unknown", status: "unknown", phase: "change",
+    revision: 7, updatedAt: null, blockerCount: 0, evidenceStatus: "missing"
+  });
+  assert.equal(snapshot.runs[0].type, "unknown");
+  assert.equal(snapshot.runs[0].lifecycleStatus, "unknown");
+  assert.equal(snapshot.runs[0].branch, snapshot.project.branch);
+  assert.equal(snapshot.runs[0].owner, snapshot.project.owner);
+  assert.equal(snapshot.runs[0].ownerEmail, snapshot.project.ownerEmail);
+  assert.equal(snapshot.runs[0].size, "");
+  assert.equal(snapshot.runs[0].started, 0);
+  assert.equal(snapshot.runs[0].finished, 0);
+  assert.equal(snapshot.runs[0].done, false);
+});
+
 test("snapshot never projects prompt or provider payload content", () => {
   const serialized = JSON.stringify(buildDashboardSnapshot(fixture()));
   assert.equal(serialized.includes("must-never-leave-the-machine"), false);
