@@ -490,14 +490,13 @@ export function sandboxCopyWorkspace({
   };
 }
 
-export function gitBaseCheckoutStatus(repository, path, gitBuffer) {
-  if (!repository?.baseHead) return null;
+export function gitBaseCheckoutPaths(repository, path) {
   const paths = [path];
   let current = resolve(repository.path, path);
   const visited = new Set();
   for (;;) {
-    if (visited.has(current)) return "symlink-cycle";
-    if (visited.size >= 64) return "symlink-depth-exceeded";
+    if (visited.has(current)) return { paths, error: "symlink-cycle" };
+    if (visited.size >= 64) return { paths, error: "symlink-depth-exceeded" };
     visited.add(current);
     let stat;
     try { stat = lstatSync(current); }
@@ -506,16 +505,23 @@ export function gitBaseCheckoutStatus(repository, path, gitBuffer) {
     current = resolve(dirname(current), readlinkSync(current));
     const target = relative(repository.path, current).replaceAll("\\", "/");
     if (!target || target === ".." || target.startsWith("../") || isAbsolute(target))
-      return "symlink-target-outside-repository";
+      return { paths, error: "symlink-target-outside-repository" };
     paths.push(target);
   }
-  for (const candidate of paths) {
+  return { paths, error: null };
+}
+
+export function gitBaseCheckoutStatus(repository, path, gitBuffer) {
+  if (!repository?.baseHead) return null;
+  const checkout = gitBaseCheckoutPaths(repository, path);
+  if (checkout.error) return checkout.error;
+  for (const candidate of checkout.paths) {
     const exists = gitBuffer(
       ["cat-file", "-e", `${repository.baseHead}:${candidate}`], repository.path);
     if (exists.status !== 0) return "missing-from-base";
   }
   const diff = gitBuffer(
-    ["diff", "--quiet", repository.baseHead, "--", ...paths], repository.path);
+    ["diff", "--quiet", repository.baseHead, "--", ...checkout.paths], repository.path);
   return diff.status === 0 ? null : "differs-from-base";
 }
 
