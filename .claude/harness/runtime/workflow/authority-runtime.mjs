@@ -1013,9 +1013,29 @@ export function createAuthorityRuntime({
       subjectFamily, subjectModel, aiSubject };
   }
 
+  function authorityReviewerConfiguration(reviewerName, request) {
+    if (reviewerName !== "main-session") return reviewerConfig(reviewerName);
+    return {
+      identity: request.fallbackAttempts?.at(-1)?.reviewer || "configured-reviewer",
+      providerFamily: "",
+      modelFamily: ""
+    };
+  }
+
+  function assertAuthorityReviewerSeparation(reviewerName, configured, reviewSettings, subject) {
+    const configuredProvider = String(configured.providerFamily).toLowerCase();
+    const configuredFamily = String(configured.modelFamily).toLowerCase();
+    const sameFamily = subject.aiSubject && subject.subjectProvider === configuredProvider &&
+      subject.subjectFamily === configuredFamily;
+    if (sameFamily && reviewSettings.diversity !== "single-model")
+      fail(`configured reviewer '${reviewerName}' shares the implementation provider/model family; choose a diverse configured reviewer or commit review.diversity='single-model' before Build`);
+    if (subject.aiSubject && reviewSettings.independence !== "self" &&
+        subject.subjectActor.toLowerCase() === configured.identity.toLowerCase())
+      fail(`configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`);
+  }
+
   function authorityRunReviewer(id, flags, subject) {
-    const { requestId, subjectActor, subjectProvider, subjectFamily,
-      aiSubject } = subject;
+    const { requestId } = subject;
     const reviewSettings = foundationPolicy().review || {};
     const requestEntry = authorityStore.list(id)
       .find((row) => row.value.requestId === requestId);
@@ -1027,19 +1047,8 @@ export function createAuthorityRuntime({
       fail("configured reviewer infrastructure retries are exhausted; configure a fallback reviewer or pause");
     if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback)
       fail("main-session fallback was selected without a recorded configured reviewer failure");
-    const configured = reviewerName === "main-session"
-      ? { identity: requestEntry.value.fallbackAttempts?.at(-1)?.reviewer || "configured-reviewer",
-        providerFamily: "", modelFamily: "" }
-      : reviewerConfig(reviewerName);
-    const configuredProvider = String(configured.providerFamily).toLowerCase();
-    const configuredFamily = String(configured.modelFamily).toLowerCase();
-    const sameFamily = aiSubject && subjectProvider === configuredProvider &&
-      subjectFamily === configuredFamily;
-    if (sameFamily && reviewSettings.diversity !== "single-model")
-      fail(`configured reviewer '${reviewerName}' shares the implementation provider/model family; choose a diverse configured reviewer or commit review.diversity='single-model' before Build`);
-    if (aiSubject && reviewSettings.independence !== "self" &&
-        subjectActor.toLowerCase() === configured.identity.toLowerCase())
-      fail(`configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`);
+    const configured = authorityReviewerConfiguration(reviewerName, requestEntry.value);
+    assertAuthorityReviewerSeparation(reviewerName, configured, reviewSettings, subject);
     return { reviewSettings, requestEntry, reviewerName, configured };
   }
 
