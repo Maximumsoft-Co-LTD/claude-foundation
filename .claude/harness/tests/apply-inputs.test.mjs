@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import {
   assertRecoveredArchiveReadyOperation,
@@ -39,6 +43,35 @@ test("sandbox diff names handles empty scopes, git failures, and sorted NUL outp
   assert.deepEqual(calls[0], [[
     "diff", "--name-only", "-z", "base", "--", "src/**"
   ], "/sandbox"]);
+  assert.deepEqual(calls[1], [[
+    "ls-files", "--others", "--exclude-standard", "-z", "--", "src/**"
+  ], "/sandbox"]);
+});
+
+test("sandbox diff discovery includes untracked files without mutating the index", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-apply-inputs-"));
+  try {
+    const git = (args, cwd = root) => spawnSync("git", args, {
+      cwd, encoding: "utf8"
+    });
+    assert.equal(git(["init", "-q"]).status, 0);
+    assert.equal(git(["config", "user.email", "test@example.invalid"]).status, 0);
+    assert.equal(git(["config", "user.name", "Foundation Test"]).status, 0);
+    writeFileSync(join(root, "tracked.js"), "before\n");
+    assert.equal(git(["add", "tracked.js"]).status, 0);
+    assert.equal(git(["commit", "-qm", "base"]).status, 0);
+    writeFileSync(join(root, "tracked.js"), "after\n");
+    writeFileSync(join(root, "new.test.js"), "new\n");
+    const indexPath = git(["rev-parse", "--git-path", "index"]).stdout.trim();
+    const before = readFileSync(join(root, indexPath));
+    const names = sandboxDiffNamesOperation({
+      applyPathspec: () => ["*.js"], git, sandboxBase: () => "HEAD", fail
+    }, "change", root, {});
+    assert.deepEqual(names, ["new.test.js", "tracked.js"]);
+    assert.deepEqual(readFileSync(join(root, indexPath)), before);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 function applyContext(overrides = {}) {
@@ -85,10 +118,10 @@ test("git apply inputs accepts paths already projected byte-for-byte", () => {
   assert.deepEqual(gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
     ["file.js"]);
   assert.equal(fixture.calls.buffers.length, 0);
-  assert.deepEqual(fixture.calls.git[0], [["add", "-N", "."], "/sandbox"]);
+  assert.equal(fixture.calls.git.length, 0);
 });
 
-test("git apply inputs rejects directories and unreadable or empty root diffs", () => {
+test("git apply inputs rejects directories and unreadable diffs but permits patchless projection", () => {
   const directory = applyContext();
   directory.kinds.set("/sandbox/file.js", "directory");
   assert.throws(() => gitApplyInputsOperation(directory.context, "change", "/sandbox"),
@@ -103,10 +136,9 @@ test("git apply inputs rejects directories and unreadable or empty root diffs", 
   const empty = applyContext({
     gitBuffer: () => ({ status: 0, stdout: Buffer.alloc(0) })
   });
-  assert.throws(() => gitApplyInputsOperation(empty.context, "change", "/sandbox"),
-    /sandbox has no applicable diff/);
-  empty.state.repositories.api = {};
-  assert.deepEqual(gitApplyInputsOperation(empty.context, "change", "/sandbox"), []);
+  assert.deepEqual(gitApplyInputsOperation(empty.context, "change", "/sandbox"),
+    ["file.js"]);
+  assert.equal(empty.calls.spawn.length, 0);
 });
 
 test("git apply inputs reports textual conflicts before inspecting target blobs", () => {

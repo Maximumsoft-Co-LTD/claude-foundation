@@ -13,9 +13,10 @@ answers gets the full guard set without changing a hook.
                 "path": "...", "glob": "...", "output_mode": "..."}}
 ```
 
-Only the fields relevant to the tool are read. `session-context.sh` is the
-exception: it reads a session event (`session_id`, `transcript_path`), not a
-tool event.
+Only the fields relevant to the tool are read. `session-context.sh` and
+`dev-terminal-guard.sh` read session events (`session_id`, `transcript_path`),
+not tool events. The terminal guard is wired to `Stop` and applies only when
+the active transcript's prompt starts with `/dev`.
 
 ## Answer contract
 
@@ -26,10 +27,16 @@ tool event.
   host must surface stderr to the model. Used by `lint.sh`.
 - Exit 0 with no output means allow. Hooks fail open when a toolchain is
   missing (no jq, no node): absence of a guard must not brick a session.
+- **Refuse a false terminal success**: the `/dev` Stop hook returns
+  `{"decision":"block","reason":"DEV_TERMINAL ..."}` until exactly one active
+  change has a passing, audited proof bound to the current workspace hash.
 
 Environment: `CLAUDE_PROJECT_DIR` names the project root (default: cwd).
 `FOUNDATION_GUARDRAIL_MODE` (`off|audit|block`) governs the phase guard;
 phase context comes from `FOUNDATION_ACTIVE_PHASE` or `.foundation/logs/`.
+The default audit mode automatically enforces mutations during a `/dev`
+transcript. A recorded Build phase recovers its workspace from runtime state
+when the host does not export `FOUNDATION_WORKSPACE_ROOT`.
 
 ## Host wiring
 

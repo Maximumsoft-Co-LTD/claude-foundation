@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-export function recordedPhase(context) {
+export function recordedPhaseContext(context) {
   try {
     const logs = join(context.projectRoot, ".foundation", "logs");
     if (!context.pathExists(logs)) return "";
@@ -15,11 +15,17 @@ export function recordedPhase(context) {
       try { row = JSON.parse(last); } catch { continue; }
       const at = Date.parse(row?.timestamp || "");
       if (!Number.isFinite(at)) continue;
-      if (!newest || at > newest.at) newest = { at, phase: String(row.phase || "") };
+      if (!newest || at > newest.at) newest = {
+        at, phase: String(row.phase || ""), changeId: String(row.changeId || "")
+      };
     }
     if (!newest || context.nowMs() - newest.at > context.freshnessMs) return "";
-    return newest.phase;
+    return newest;
   } catch {
-    return "";
+    return null;
   }
+}
+
+export function recordedPhase(context) {
+  return recordedPhaseContext(context)?.phase || "";
 }

@@ -120,6 +120,16 @@ assert_cmd_zero "audit mode with no phase context resolves without starting Node
 assert_cmd_zero "guardrail mode off resolves without starting Node" \
   pre_isolated off "$(write_event "$TMP/pre/src/app.js")"
 
+# /dev opts into the lifecycle. Its transcript makes the default audit rollout
+# enforce from the first mutation, before a phase packet has been read.
+printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev --yes build it"}' \
+  > "$TMP/dev-transcript.jsonl"
+out="$(printf '%s' "$(write_event "$TMP/pre/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit \
+  FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$TMP/dev-transcript.jsonl" sh "$PREFILTER")"
+assert_contains "a dev session fails closed before its first phase packet" \
+  "$out" 'active phase is unavailable'
+
 out="$(pre block "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_contains "block mode delegates even when no phase is recorded" \
   "$out" 'active phase is unavailable'
@@ -128,6 +138,20 @@ out="$(pre audit prove "$(write_event "$TMP/pre/src/app.js")")"
 assert_eq "an exported phase delegates and audit mode still does not block" "" "$out"
 assert_file_contains "an exported phase reaches the guard through the prefilter" \
   "$TMP/pre/.foundation/logs/guardrail-audit.jsonl" '"phase":"prove"'
+
+# A recorded Build phase can recover its workspace from runtime state; Claude
+# Code hook processes do not need a manually exported workspace variable.
+mkdir -p "$TMP/buildpre/.foundation/logs/build-change" "$TMP/buildpre/.foundation/runtime" \
+  "$TMP/buildpre/.foundation/sandboxes/build-change/src"
+printf '{"timestamp":"%s","phase":"build","changeId":"build-change"}\n' \
+  "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  > "$TMP/buildpre/.foundation/logs/build-change/phase-context.jsonl"
+printf '{"workspace":{"path":"%s"}}\n' \
+  "$TMP/buildpre/.foundation/sandboxes/build-change" \
+  > "$TMP/buildpre/.foundation/runtime/build-change.json"
+out="$(printf '%s' "$(write_event "$TMP/buildpre/.foundation/sandboxes/build-change/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/buildpre" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_eq "Build derives the recorded sandbox when the host exports no workspace" "" "$out"
 
 # The guard lowercases the mode, so "BLock" means enforcement there. A
 # prefilter that only recognised three block spellings took the audit fast

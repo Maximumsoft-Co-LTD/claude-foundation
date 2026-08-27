@@ -178,15 +178,24 @@ export function applySandboxOperation(context, id, options = {}) {
 export function sandboxDiffNamesOperation(context, id, sandboxPath, state,
   paths = context.applyPathspec(id, state)) {
   if (!paths.length) return [];
-  const names = context.git(["diff", "--name-only", "-z", context.sandboxBase(state), "--",
+  const tracked = context.git(["diff", "--name-only", "-z", context.sandboxBase(state), "--",
     ...paths], sandboxPath);
-  if (names.status !== 0)
-    context.fail(`cannot inspect sandbox paths: ${names.stderr.trim()}`);
-  return names.stdout.split("\0").filter(Boolean).sort();
+  if (tracked.status !== 0)
+    context.fail(`cannot inspect sandbox paths: ${tracked.stderr.trim()}`);
+  // Read untracked names directly. `git add -N .` used to make them visible to
+  // diff, but it also mutated the sandbox index during Land and changed the
+  // forced workspace snapshot after a passing proof.
+  const untracked = context.git([
+    "ls-files", "--others", "--exclude-standard", "-z", "--", ...paths
+  ], sandboxPath);
+  if (untracked.status !== 0)
+    context.fail(`cannot inspect untracked sandbox paths: ${untracked.stderr.trim()}`);
+  return [...new Set([
+    ...tracked.stdout.split("\0"), ...untracked.stdout.split("\0")
+  ].filter(Boolean))].sort();
 }
 
 export function gitApplyInputsOperation(context, id, sandboxPath) {
-  context.git(["add", "-N", "."], sandboxPath);
   const state = context.loadRuntime(id);
   const names = context.sandboxDiffNames(id, sandboxPath, state);
   const pending = names.filter((path) =>
@@ -204,15 +213,16 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
     "diff", "--binary", context.sandboxBase(state), "--", ...pending
   ], sandboxPath);
   if (diff.status !== 0) context.fail("cannot inspect sandbox diff");
-  if (!diff.stdout.length) {
-    if (emptyRootDiffPermitted(state)) return [];
-    context.fail("sandbox has no applicable diff");
+  // An untracked-only or mode-only projection has no Git patch, but the
+  // transaction below still copies it and binds its bytes/mode. Patch-check
+  // only the tracked part; target-clobber checks still cover every path.
+  if (diff.stdout.length) {
+    const check = context.spawn("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
+      cwd: context.root, input: diff.stdout, encoding: "utf8"
+    });
+    if (check.status !== 0)
+      context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
   }
-  const check = context.spawn("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
-    cwd: context.root, input: diff.stdout, encoding: "utf8"
-  });
-  if (check.status !== 0)
-    context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
   const base = context.sandboxBase(state);
   const workingBlob = (path) => {
     const stats = context.lstat(path, { throwIfNoEntry: false });
@@ -564,7 +574,6 @@ export function createApplyRuntime({
     }
     if (state.workspace.mode !== "worktree") fail("change has no isolated sandbox");
     assertTargetHeadUnmoved(id, state);
-    git(["add", "-N", "."], sandboxPath);
     return sandboxDiffNames(id, sandboxPath, state);
   }
 

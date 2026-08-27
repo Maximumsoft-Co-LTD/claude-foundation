@@ -10,6 +10,8 @@ non-interactive run your final reply terminates the process, kills the
 in-flight dispatch, and burns an infrastructure retry. Never end the reply
 while a dispatch or background task is pending — stay in-session and wait for
 it to complete or fail.
+The Bash guard rejects detached `authority run` commands (`&`, `nohup`,
+`setsid`, or `disown`); the configured reviewer is synchronous by contract.
 
 Review is fresh independent work: full, then one changed delta. When configured
 reviewer infrastructure fails and policy names `main-session`, review the

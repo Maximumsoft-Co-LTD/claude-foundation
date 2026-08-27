@@ -101,6 +101,15 @@ export function assertBaseMoveResetAllowed(history, move, reference, fail) {
     fail("--decision-ref was already used for a base-move reset on this change");
 }
 
+export function baseMoveResetRecovery(state, id) {
+  const move = state?.lastBaseMove;
+  if (!move || !move.movementKey || !move.preDiffIdentity || !move.postDiffIdentity ||
+      move.preDiffIdentity === move.postDiffIdentity) return "";
+  return " If the passing verdict expired because this recorded sandbox sync changed the diff, " +
+    "that is not a quality round: ask the user to authorize " +
+    `'claude-foundation authority reset-base-move ${id} --decision-ref <ref>' and dispatch the review again.`;
+}
+
 export function assertNoLiveBaseMoveReview(attempts, id, fail) {
   const live = attempts.find((attempt) =>
     attempt.reviewerType === "ai" && attempt.status === "dispatched");
@@ -545,12 +554,12 @@ export function createReviewAttemptStore({
 
   function blockAiExhausted(id, history, maxAiAttempts = 2) {
     const delivered = deliveredAiAttempts(id, history).length;
+    const baseMoveRecovery = baseMoveResetRecovery(loadRuntime(id), id);
     fail(`REVIEW_ROUTE_COMPLETE: ${delivered}/${maxAiAttempts} delivered AI review wave(s) are complete. ` +
       "Do not ask the user to choose redesign/split/pause and do not dispatch another open-ended AI review. " +
       "Continue when proof is satisfied; otherwise route a remaining item as AUTO_REPAIR inside the locked contract, " +
-      "CONTRACT_DECISION_REQUIRED only for changed behavior/security/data/rollout, or EXTERNAL_WAIT for missing authority. " +
-      "If the passing verdict expired because a sandbox sync replayed the change onto a moved base, that is not a quality round: " +
-      `ask the user to authorize 'claude-foundation authority reset-base-move ${id} --decision-ref <ref>' and dispatch the review again.`);
+      "CONTRACT_DECISION_REQUIRED only for changed behavior/security/data/rollout, or EXTERNAL_WAIT for missing authority." +
+      baseMoveRecovery);
   }
 
   function assertReviewDispatchAllowed(id, reviewerType, maxAiAttempts = 2,

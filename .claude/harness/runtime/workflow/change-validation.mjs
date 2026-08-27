@@ -776,6 +776,29 @@ export function createChangeValidationRuntime({
       fail(`change artifacts still contain scaffold or unresolved content: ${findings.join("; ")}`);
   }
 
+  function assertArchiveSafeArtifacts(id, dir) {
+    const runnable = [];
+    // OpenSpec archives the complete packet under openspec/changes/archive.
+    // Runnable source copied here as "test topology" is then rediscovered by
+    // Node, pytest, Jest, and similar default test globs from an invalid cwd.
+    // A packet records source paths and digests in grounding.yaml; it never
+    // needs an executable copy of the inspected file.
+    const executableExtensions = new Set([
+      ".c", ".cc", ".cpp", ".cs", ".go", ".java", ".js", ".jsx",
+      ".kt", ".mjs", ".cjs", ".php", ".py", ".rb", ".rs", ".sh",
+      ".swift", ".ts", ".tsx"
+    ]);
+    walk(dir, (path) => {
+      const rel = relative(dir, path).replaceAll("\\", "/");
+      const name = rel.toLowerCase();
+      const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+      if (executableExtensions.has(extension)) runnable.push(rel);
+    });
+    if (runnable.length)
+      fail(`${id} contains runnable source inside the change packet: ${runnable.sort().join(", ")}. ` +
+        "Record test-topology paths and digests in grounding.yaml; do not copy executable files into openspec/changes because archive test discovery will execute them.");
+  }
+
   function readGroundingDocument(id, state, dir) {
     let value;
     try {
@@ -1330,6 +1353,7 @@ export function createChangeValidationRuntime({
     const dir = validationChangeDirectory(
       id, source, state, activeChangePath, changePath);
     assertValidationPreflight(id, state, changeArtifactGaps(state, dir), fail);
+    assertArchiveSafeArtifacts(id, dir);
     assertNoScaffolds(state, dir);
     const contractDiagnostics = [];
     if (state.decisionMetadataRequired) {

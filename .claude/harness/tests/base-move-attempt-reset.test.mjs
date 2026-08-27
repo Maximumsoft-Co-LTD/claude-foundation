@@ -5,6 +5,7 @@ import {
   acknowledgeBaseMoveAttemptsOperation,
   assertBaseMoveResetAllowed,
   assertNoLiveBaseMoveReview,
+  baseMoveResetRecovery,
   baseMoveReleasedAttempt
 } from "../runtime/evidence/review-attempt-store.mjs";
 
@@ -13,6 +14,15 @@ const move = {
   movementKey: "move-1", preDiffIdentity: "before",
   postDiffIdentity: "after", at: "2026-08-20T12:00:00Z"
 };
+
+test("base-move reset is recommended only for an eligible recorded move", () => {
+  assert.equal(baseMoveResetRecovery({}, "change"), "");
+  assert.equal(baseMoveResetRecovery({ lastBaseMove: {
+    ...move, postDiffIdentity: "before"
+  } }, "change"), "");
+  assert.match(baseMoveResetRecovery({ lastBaseMove: move }, "change"),
+    /authority reset-base-move change/);
+});
 
 test("base-move reset rejects absent, unchanged, and reused authority", () => {
   assert.throws(() => assertBaseMoveResetAllowed({}, null, "decision", fail),

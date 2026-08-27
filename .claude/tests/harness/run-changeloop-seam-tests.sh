@@ -849,6 +849,22 @@ missing_repositories="$($F validate "$C" 2>&1 || true)"
 assert_contains "a deleted repositories.yaml is named at validate" \
   "$missing_repositories" "missing change artifacts: repositories.yaml"
 
+# Archived packets are documentation/evidence. Executable copies placed under
+# test-topology are rediscovered by broad project test commands after Land.
+$F new "archive packet remains inert" --rapid > /dev/null
+C=archive-packet-remains-inert
+mkdir -p "openspec/changes/$C/test-topology"
+printf 'import "../src/app.js";\n' > \
+  "openspec/changes/$C/test-topology/render.test.js"
+unsafe_archive_artifact="$($F validate "$C" 2>&1 || true)"
+assert_contains "validate rejects runnable test copies that would pollute archive discovery" \
+  "$unsafe_archive_artifact" "contains runnable source inside the change packet"
+assert_contains "archive-safe failure directs topology evidence to grounding" \
+  "$unsafe_archive_artifact" "Record test-topology paths and digests in grounding.yaml"
+rm "openspec/changes/$C/test-topology/render.test.js"
+rmdir "openspec/changes/$C/test-topology"
+assert_cmd_zero "removing the runnable packet copy restores validation" $F validate "$C"
+
 # Cheap agreement gaps are one preflight result rather than four serial
 # validate/refuse/edit cycles. Deeper semantic checks still run only after the
 # packet is structurally ready, so they never dereference missing artifacts.

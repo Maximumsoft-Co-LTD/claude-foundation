@@ -5,12 +5,13 @@
 // FOUNDATION_ACTIVE_PHASE and, for Build, FOUNDATION_WORKSPACE_ROOT.
 
 import {
-  appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync,
-  realpathSync, renameSync, statSync
+  appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync,
+  readdirSync, readFileSync, realpathSync, renameSync, statSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { shellMutationViolation } from "./phase-guard-policy.mjs";
-import { recordedPhase } from "./phase-state.mjs";
+import { recordedPhaseContext } from "./phase-state.mjs";
+import { devPrompt } from "./dev-terminal-guard.mjs";
 
 // Large enough that a real audit trail survives a working session, small enough
 // that an unattended project never carries an unbounded file.
@@ -21,7 +22,11 @@ const AUDIT_MAX_BYTES = 1024 * 1024;
 // and the guard has nothing to enforce.
 const PHASE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 
-const mode = (process.env.FOUNDATION_GUARDRAIL_MODE || "audit").toLowerCase();
+const configuredMode = (process.env.FOUNDATION_GUARDRAIL_MODE || "audit").toLowerCase();
+// `/dev` explicitly opts into the lifecycle. Enforce it from the first tool
+// call, before an eager root edit can poison the sandbox baseline.
+const devSession = configuredMode === "audit" && currentTranscriptIsDev();
+const mode = devSession ? "block" : configuredMode;
 if (mode === "off") process.exit(0);
 
 let event;
@@ -47,14 +52,16 @@ if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
 if (tool === "Bash" && !looksMutating(String(input.command || ""))) process.exit(0);
 
 const projectRoot = canonical(process.env.CLAUDE_PROJECT_DIR || process.cwd());
-const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recordedPhase({
+const recorded = recordedPhaseContext({
   projectRoot,
   freshnessMs: PHASE_FRESHNESS_MS,
   pathExists: existsSync,
   readDirectory: (path) => readdirSync(path, { withFileTypes: true }),
   readText: readFileSync,
   nowMs: Date.now
-})).toLowerCase();
+});
+const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recorded?.phase || "").toLowerCase();
+const recordedWorkspace = recorded?.changeId ? runtimeWorkspace(recorded.changeId) : "";
 const violations = [];
 
 // Block mode still fails closed: a host that asked for enforcement gets it
@@ -117,7 +124,7 @@ function inspectPath(rawPath) {
   }
 
   if (phase === "build") {
-    const workspace = process.env.FOUNDATION_WORKSPACE_ROOT;
+    const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
     if (!workspace) {
       violations.push("Build workspace is unavailable");
       return;
@@ -129,8 +136,38 @@ function inspectPath(rawPath) {
 }
 
 function inspectBash() {
-  const violation = shellMutationViolation(phase, process.env);
+  const violation = shellMutationViolation(phase, {
+    ...process.env,
+    ...(recordedWorkspace && !process.env.FOUNDATION_WORKSPACE_ROOT
+      ? { FOUNDATION_WORKSPACE_ROOT: recordedWorkspace } : {})
+  });
   if (violation) violations.push(violation);
+}
+
+function runtimeWorkspace(changeId) {
+  try {
+    const state = JSON.parse(readFileSync(join(projectRoot, ".foundation", "runtime",
+      `${changeId}.json`), "utf8"));
+    return typeof state.workspace?.path === "string"
+      ? canonicalTarget(state.workspace.path, projectRoot) || "" : "";
+  } catch { return ""; }
+}
+
+function currentTranscriptIsDev() {
+  const path = process.env.FOUNDATION_CLAUDE_TRANSCRIPT_PATH;
+  if (!path || !existsSync(path)) return false;
+  let descriptor = null;
+  try {
+    // The initiating prompt is near the transcript header. Bound this hot-path
+    // read: the guard runs for every candidate mutation and long sessions can
+    // otherwise add megabytes of I/O to each tool call.
+    const bytes = Math.min(statSync(path).size, 512 * 1024);
+    const buffer = Buffer.alloc(bytes);
+    descriptor = openSync(path, "r");
+    const read = readSync(descriptor, buffer, 0, bytes, 0);
+    return Boolean(devPrompt(buffer.subarray(0, read).toString("utf8")));
+  } catch { return false; }
+  finally { if (descriptor !== null) closeSync(descriptor); }
 }
 
 function looksMutating(command) {

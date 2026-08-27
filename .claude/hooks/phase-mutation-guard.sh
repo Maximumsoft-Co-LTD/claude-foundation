@@ -34,7 +34,8 @@ HERE="${0%/*}"
 
 # Block mode fails closed inside the guard even when the phase is unknown, so
 # nothing may be decided here. Delegate before any other test.
-if [ "$mode" != "block" ] && [ -z "${FOUNDATION_ACTIVE_PHASE:-}" ]; then
+if [ "$mode" != "block" ] && [ -z "${FOUNDATION_ACTIVE_PHASE:-}" ] &&
+   [ -z "${FOUNDATION_CLAUDE_TRANSCRIPT_PATH:-}" ]; then
   logs="${CLAUDE_PROJECT_DIR:-$PWD}/.foundation/logs"
   if [ ! -d "$logs" ]; then exit 0; fi
   # Presence, not freshness. Whether a recorded phase is still within the
