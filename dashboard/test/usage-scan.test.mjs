@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, appendFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, appendFileSync, readFileSync, rmSync, unlinkSync, utimesSync,
+  writeFileSync
+} from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -110,5 +114,88 @@ test('messageRecord rejects non-attributable rows and preserves all usage fields
       message: { ...base.message, ...(changes.message || {}) }
     };
     assert.equal(messageRecord(row, 'source', 'fallback').id, expected);
+  }
+});
+
+test('scanner rebuilds changed sources and prunes stale duplicate ownership', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cf-usage-rebuild-'));
+  try {
+    const projects = join(root, 'projects');
+    const nested = join(projects, 'nested');
+    const firstPath = join(nested, 'first.jsonl');
+    const secondPath = join(projects, 'second.jsonl');
+    const statePath = join(root, 'state.json');
+    mkdirSync(nested, { recursive: true });
+    const now = Date.parse('2026-08-03T00:00:00Z');
+    const shared = assistant('shared', '2026-08-02T01:00:00.000Z', '/work/demo', 5);
+    writeFileSync(firstPath, [
+      'not-json',
+      assistant('old', '2026-06-01T01:00:00.000Z', '/work/old', 99),
+      shared,
+      assistant('partial', '2026-08-02T02:00:00.000Z', '/work/demo', 7)
+    ].join('\n'));
+    writeFileSync(secondPath, `${shared}\n${
+      assistant('second', '2026-08-02T03:00:00.000Z', '/work/demo', 11)}\n`);
+    writeFileSync(statePath, JSON.stringify({ version: 2, days: 30 }));
+
+    const first = scanUsage({ projectsDir: projects, statePath, days: 30, now });
+    assert.equal(first.usage[0].count, 2, 'shared request is counted once across two files');
+    assert.equal(first.usage[0].input, 16);
+    assert.equal(first.sessions[0].count, 2);
+
+    const legacy = JSON.parse(readFileSync(statePath, 'utf8'));
+    delete legacy.messages.shared.sources;
+    legacy.messages.shared.source = firstPath;
+    delete legacy.files[firstPath].sessions;
+    legacy.files[secondPath].sessions = {
+      '2026-01-01': { first: now, last: now }
+    };
+    writeFileSync(statePath, JSON.stringify(legacy));
+    const normalized = scanUsage({ projectsDir: projects, statePath, days: 30, now });
+    assert.equal(normalized.sessions.some((row) => row.date === '2026-01-01'), false);
+
+    unlinkSync(secondPath);
+    const pruned = scanUsage({ projectsDir: projects, statePath, days: 30, now });
+    assert.equal(pruned.usage[0].count, 1);
+    assert.equal(pruned.usage[0].input, 5);
+
+    const replacement = `${assistant(
+      'replacement', '2026-08-02T04:00:00.000Z', '/work/new', 3)}\n`;
+    writeFileSync(firstPath, replacement);
+    utimesSync(firstPath, new Date(now - 1000), new Date(now - 1000));
+    const rebuilt = scanUsage({ projectsDir: projects, statePath, days: 30, now });
+    assert.equal(rebuilt.usage[0].project, 'new');
+    assert.equal(rebuilt.usage[0].input, 3);
+
+    const resetWindow = scanUsage({ projectsDir: projects, statePath, days: 7, now });
+    assert.equal(resetWindow.usage[0].input, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('usage scanner CLI validates arguments and emits its three datasets', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cf-usage-cli-'));
+  try {
+    const projects = join(root, 'projects');
+    const transcript = join(projects, 'session.jsonl');
+    const statePath = join(root, 'state.json');
+    mkdirSync(projects);
+    writeFileSync(transcript, `${assistant(
+      'cli', new Date().toISOString(), '/work/cli', 2, ['Read'])}\n`);
+    const script = new URL('../usage-scan.mjs', import.meta.url).pathname;
+    const missing = spawnSync(process.execPath, [script], { encoding: 'utf8' });
+    assert.equal(missing.status, 2);
+    assert.match(missing.stderr, /usage: usage-scan/);
+
+    const valid = spawnSync(process.execPath,
+      [script, projects, statePath, '1', '5'], { encoding: 'utf8' });
+    assert.equal(valid.status, 0, valid.stderr);
+    const rows = valid.stdout.trim().split('\n').map(JSON.parse);
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0][0].project, 'cli');
+    assert.equal(rows[2][0].tool, 'Read');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

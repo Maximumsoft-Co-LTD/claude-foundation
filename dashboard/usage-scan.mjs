@@ -125,56 +125,57 @@ function emptyState(days) {
   return { version: 1, days, files: {}, messages: {} };
 }
 
-export function scanUsage({ projectsDir, statePath, days = 30, fileCap = 4000, now = Date.now() }) {
-  const cutoffMs = now - days * DAY_MS;
-  const cutoffDate = localDate(cutoffMs);
-  const files = discoverJsonl(projectsDir, cutoffMs, fileCap);
-  let state = readState(statePath) || emptyState(days);
+export function reconcileUsageState(files, state, days, cutoffDate) {
   if (state.days !== days) state = emptyState(days);
-
-  // A rewrite/truncation invalidates source ownership. Rebuilding is rare and
-  // safer than retaining messages that no longer exist.
   const mustRebuild = files.some(({ path, stat }) => {
     const prior = state.files[path];
-    return prior && (stat.size < prior.offset || (stat.mtimeMs !== prior.mtimeMs && stat.size === prior.offset));
+    return prior && (stat.size < prior.offset ||
+      (stat.mtimeMs !== prior.mtimeMs && stat.size === prior.offset));
   });
   if (mustRebuild) state = emptyState(days);
 
   const activePaths = new Set(files.map((file) => file.path));
-  for (const path of Object.keys(state.files)) if (!activePaths.has(path)) delete state.files[path];
+  for (const path of Object.keys(state.files))
+    if (!activePaths.has(path)) delete state.files[path];
   for (const [id, message] of Object.entries(state.messages)) {
-    message.sources = (message.sources || [message.source]).filter((source) => activePaths.has(source));
+    message.sources = (message.sources || [message.source])
+      .filter((source) => activePaths.has(source));
     message.source = message.sources[0] || message.source;
-    if (message.date < cutoffDate || message.sources.length === 0) delete state.messages[id];
+    if (message.date < cutoffDate || message.sources.length === 0)
+      delete state.messages[id];
   }
+  return state;
+}
 
-  let scannedBytes = 0;
-  for (const { path, stat } of files) {
-    const prior = state.files[path] || { offset: 0, sessions: {} };
-    const session = { ...prior, sessions: prior.sessions || {} };
-    const start = Math.min(session.offset || 0, stat.size);
-    let ordinal = 0;
-    session.offset = readCompleteLines(path, start, (line) => {
-      let row;
-      try { row = JSON.parse(line); } catch { return; }
-      const record = messageRecord(row, path, `${path}:${start}:${ordinal++}`);
-      if (!record || record.date < cutoffDate) return;
-      const daily = session.sessions[record.date] || { first: record.timestamp, last: record.timestamp };
-      daily.first = Math.min(daily.first, record.timestamp);
-      daily.last = Math.max(daily.last, record.timestamp);
-      session.sessions[record.date] = daily;
-      if (!state.messages[record.id]) state.messages[record.id] = record;
-      else if (!(state.messages[record.id].sources || []).includes(path)) {
-        state.messages[record.id].sources = [...(state.messages[record.id].sources || [state.messages[record.id].source]), path];
-      }
-    });
-    scannedBytes += Math.max(0, session.offset - start);
-    session.mtimeMs = stat.mtimeMs;
-    session.size = stat.size;
-    for (const date of Object.keys(session.sessions)) if (date < cutoffDate) delete session.sessions[date];
-    state.files[path] = session;
-  }
+export function scanUsageFile(path, stat, state, cutoffDate) {
+  const prior = state.files[path] || { offset: 0, sessions: {} };
+  const session = { ...prior, sessions: prior.sessions || {} };
+  const start = Math.min(session.offset || 0, stat.size);
+  let ordinal = 0;
+  session.offset = readCompleteLines(path, start, (line) => {
+    let row;
+    try { row = JSON.parse(line); } catch { return; }
+    const record = messageRecord(row, path, `${path}:${start}:${ordinal++}`);
+    if (!record || record.date < cutoffDate) return;
+    const daily = session.sessions[record.date] || {
+      first: record.timestamp, last: record.timestamp
+    };
+    daily.first = Math.min(daily.first, record.timestamp);
+    daily.last = Math.max(daily.last, record.timestamp);
+    session.sessions[record.date] = daily;
+    if (!state.messages[record.id]) state.messages[record.id] = record;
+    else if (!state.messages[record.id].sources.includes(path))
+      state.messages[record.id].sources.push(path);
+  });
+  session.mtimeMs = stat.mtimeMs;
+  session.size = stat.size;
+  for (const date of Object.keys(session.sessions))
+    if (date < cutoffDate) delete session.sessions[date];
+  state.files[path] = session;
+  return Math.max(0, session.offset - start);
+}
 
+export function usageResult(state, scannedBytes) {
   const usage = new Map();
   const tools = new Map();
   for (const message of Object.values(state.messages)) {
@@ -193,21 +194,36 @@ export function scanUsage({ projectsDir, statePath, days = 30, fileCap = 4000, n
   }
   const sessionsByDate = new Map();
   for (const file of Object.values(state.files)) {
-    for (const [date, times] of Object.entries(file.sessions || {})) {
+    for (const [date, times] of Object.entries(file.sessions)) {
       const row = sessionsByDate.get(date) || { date, count: 0, seconds: 0 };
       row.count += 1;
       row.seconds += Math.max(0, Math.round((times.last - times.first) / 1000));
       sessionsByDate.set(date, row);
     }
   }
-  const result = {
-    usage: [...usage.values()].sort((a, b) => a.date.localeCompare(b.date) || a.model.localeCompare(b.model)),
+  return {
+    usage: [...usage.values()].sort((a, b) =>
+      a.date.localeCompare(b.date) || a.model.localeCompare(b.model)),
     sessions: [...sessionsByDate.values()].sort((a, b) => a.date.localeCompare(b.date)),
     tools: [...tools].map(([key, count]) => {
       const [date, tool] = key.split('\0'); return { date, tool, count };
     }).sort((a, b) => a.date.localeCompare(b.date) || a.tool.localeCompare(b.tool)),
     scannedBytes,
   };
+}
+
+export function scanUsage({ projectsDir, statePath, days = 30, fileCap = 4000, now = Date.now() }) {
+  const cutoffMs = now - days * DAY_MS;
+  const cutoffDate = localDate(cutoffMs);
+  const files = discoverJsonl(projectsDir, cutoffMs, fileCap);
+  let state = readState(statePath) || emptyState(days);
+  state = reconcileUsageState(files, state, days, cutoffDate);
+
+  let scannedBytes = 0;
+  for (const { path, stat } of files) {
+    scannedBytes += scanUsageFile(path, stat, state, cutoffDate);
+  }
+  const result = usageResult(state, scannedBytes);
   writeState(statePath, state);
   return result;
 }
