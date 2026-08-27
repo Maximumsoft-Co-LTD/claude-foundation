@@ -40,21 +40,25 @@ function lifecyclePhase(status) {
   return "change";
 }
 
+function finiteNumber(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
 function budgetProjection(value) {
   if (!value || typeof value !== "object") return null;
   const lifetime = value.lifetime || {};
   const window = value.window || {};
   return {
     lifetime: {
-      usedRequests: Number.isFinite(lifetime.usedRequests) ? lifetime.usedRequests : null,
-      usedTokens: Number.isFinite(lifetime.usedTokens) ? lifetime.usedTokens : null
+      usedRequests: finiteNumber(lifetime.usedRequests),
+      usedTokens: finiteNumber(lifetime.usedTokens)
     },
     window: {
       id: typeof window.id === "string" ? window.id : null,
-      usedRequests: Number.isFinite(window.usedRequests) ? window.usedRequests : null,
-      usedTokens: Number.isFinite(window.usedTokens) ? window.usedTokens : null,
-      targetRequests: Number.isFinite(window.targetRequests) ? window.targetRequests : null,
-      targetTokens: Number.isFinite(window.targetTokens) ? window.targetTokens : null
+      usedRequests: finiteNumber(window.usedRequests),
+      usedTokens: finiteNumber(window.usedTokens),
+      targetRequests: finiteNumber(window.targetRequests),
+      targetTokens: finiteNumber(window.targetTokens)
     }
   };
 }
@@ -131,16 +135,20 @@ function receiptProjection(root, id) {
   };
 }
 
+function blockerProjection(item) {
+  if (typeof item === "string") return { code: "runtime-blocker" };
+  if (!item || typeof item !== "object") return null;
+  return { code: String(item.code || item.id || "runtime-blocker").slice(0, 128) };
+}
+
 function stateBlockers(state) {
   const blockers = [];
   const candidates = [state.blockers, state.pendingBlockers, state.land?.blockers];
   for (const candidate of candidates) {
     if (!Array.isArray(candidate)) continue;
     for (const item of candidate) {
-      if (typeof item === "string") blockers.push({ code: "runtime-blocker" });
-      else if (item && typeof item === "object") blockers.push({
-        code: String(item.code || item.id || "runtime-blocker").slice(0, 128)
-      });
+      const blocker = blockerProjection(item);
+      if (blocker) blockers.push(blocker);
     }
   }
   return blockers.slice(0, 50);

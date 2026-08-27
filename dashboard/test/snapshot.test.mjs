@@ -119,3 +119,51 @@ test("receipt projection ignores malformed files and honors explicit proof exclu
   assert.deepEqual(snapshot.evidence["no-receipts"], { status: "missing", providers: [] });
   assert.deepEqual(snapshot.evidence["empty-receipts"], { status: "missing", providers: [] });
 });
+
+test("snapshot bounds blocker variants and nulls malformed budget fields", () => {
+  const root = mkdtempSync(join(tmpdir(), "cf-dashboard-snapshot-"));
+  const runtimeDir = join(root, ".foundation", "runtime");
+  mkdirSync(runtimeDir, { recursive: true });
+  const repeated = Array.from({ length: 55 }, (_, index) => ({ code: `code-${index}` }));
+  writeFileSync(join(runtimeDir, "edge.json"), JSON.stringify({
+    id: "edge", schema: "foundation-standard", status: "building",
+    blockers: ["prose", { id: "by-id" }, {}, null, 7, ...repeated],
+    pendingBlockers: "not-an-array",
+    land: { blockers: [{ code: "land-code" }] },
+    budget: {
+      lifetime: { usedRequests: "many", usedTokens: 0 },
+      window: {
+        id: 7, usedRequests: null, usedTokens: 4,
+        targetRequests: "ten", targetTokens: 100
+      }
+    }
+  }));
+  writeFileSync(join(runtimeDir, "invalid-budget.json"), JSON.stringify({
+    id: "invalid-budget", schema: "foundation-standard", status: "change", budget: "invalid"
+  }));
+  writeFileSync(join(runtimeDir, "sparse-budget.json"), JSON.stringify({
+    id: "sparse-budget", schema: "foundation-standard", status: "change", budget: {}
+  }));
+
+  const snapshot = buildDashboardSnapshot(root);
+  assert.deepEqual(snapshot.budgets.edge, {
+    lifetime: { usedRequests: null, usedTokens: 0 },
+    window: {
+      id: null, usedRequests: null, usedTokens: 4,
+      targetRequests: null, targetTokens: 100
+    }
+  });
+  assert.equal(Object.hasOwn(snapshot.budgets, "invalid-budget"), false);
+  assert.deepEqual(snapshot.budgets["sparse-budget"], {
+    lifetime: { usedRequests: null, usedTokens: null },
+    window: {
+      id: null, usedRequests: null, usedTokens: null,
+      targetRequests: null, targetTokens: null
+    }
+  });
+  assert.equal(snapshot.changes.find((change) => change.id === "edge").blockerCount, 50);
+  assert.deepEqual(snapshot.blockers.slice(0, 3).map((item) => item.code),
+    ["runtime-blocker", "by-id", "runtime-blocker"]);
+  assert.equal(snapshot.blockers.some((item) => item.code === "land-code"), false,
+    "the global cap applies before later blocker sources");
+});
