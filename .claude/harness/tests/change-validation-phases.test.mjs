@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import {
   assertValidationPreflight,
@@ -16,8 +18,99 @@ import {
   validationPreflightIssues,
   warnValidationDocumentBudgets
 } from "../runtime/workflow/change-validation.mjs";
+import {
+  createSpecDeltaValidator,
+  existingCapabilityRequirementFindings
+} from "../runtime/workflow/validation/spec-delta.mjs";
 
 const fail = (message) => { throw new Error(message); };
+
+test("existing capability spec operations report every invalid delta shape", () => {
+  const findings = existingCapabilityRequirementFindings(
+    "accounts",
+    new Set(["Existing", "Removed with migration", "Duplicate"]),
+    [
+      { name: "Existing", section: "ADDED Requirements", body: "" },
+      { name: "Missing modified", section: "MODIFIED Requirements", body: "" },
+      { name: "Missing removed", section: "REMOVED Requirements", body: "" },
+      {
+        name: "Removed with migration", section: "REMOVED Requirements",
+        body: "**Migration:** move clients to v2"
+      },
+      { name: "Duplicate", section: "MODIFIED Requirements", body: "" },
+      { name: "Duplicate", section: "ADDED Requirements", body: "" },
+      { name: "Unknown", section: "CUSTOM Requirements", body: "" },
+      { name: "Unknown", section: "", body: "" }
+    ]
+  );
+  assert.deepEqual(findings.map((finding) => [finding.kind, finding.requirement]), [
+    ["added-preexisting", "Existing"],
+    ["target-absent", "Missing modified"],
+    ["target-absent", "Missing removed"],
+    ["removal-migration-missing", "Missing removed"],
+    ["added-preexisting", "Duplicate"],
+    ["ambiguous", "Duplicate"],
+    ["ambiguous", "Unknown"]
+  ]);
+  assert.match(findings.find((finding) => finding.kind === "ambiguous" &&
+    finding.requirement === "Unknown").detail, /CUSTOM Requirements, unrecognized/);
+});
+
+test("valid existing capability operations produce no findings", () => {
+  assert.deepEqual(existingCapabilityRequirementFindings(
+    "accounts",
+    new Set(["Modified", "Removed"]),
+    [
+      { name: "New", section: "ADDED Requirements", body: "" },
+      { name: "Modified", section: "MODIFIED Requirements", body: "" },
+      {
+        name: "Removed", section: "REMOVED Requirements",
+        body: "**Compatibility:** existing clients receive a deprecation response"
+      }
+    ]
+  ), []);
+});
+
+test("existing capability collector handles missing, non-markdown, new and current specs", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "spec-delta-collector-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const change = join(root, "openspec", "changes", "change-a");
+  const canonical = join(root, "openspec", "specs", "accounts", "spec.md");
+  const delta = join(change, "specs", "accounts", "spec.md");
+  const newCapability = join(change, "specs", "new-capability", "spec.md");
+  for (const path of [canonical, delta, newCapability])
+    mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(canonical, [
+    "# Accounts", "", "## Requirements", "",
+    "### Requirement: Existing", "",
+    "#### Scenario: Existing works", "- **WHEN** called", "- **THEN** pass", ""
+  ].join("\n"));
+  writeFileSync(delta, [
+    "## ADDED Requirements", "",
+    "### Requirement: Existing", "",
+    "#### Scenario: Existing works", "- **WHEN** called", "- **THEN** pass", ""
+  ].join("\n"));
+  writeFileSync(newCapability, [
+    "## ADDED Requirements", "", "### Requirement: New", ""
+  ].join("\n"));
+  writeFileSync(join(change, "specs", "notes.txt"), "ignored\n");
+  const walk = (directory, visit) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) walk(path, visit); else visit(path);
+    }
+  };
+  const validator = createSpecDeltaValidator({
+    root,
+    activeChangePath: (id) => id === "missing"
+      ? join(root, "openspec", "changes", "missing") : change,
+    walk,
+    fail
+  });
+  assert.deepEqual(validator.existingCapabilityOperationFindings("missing"), []);
+  assert.deepEqual(validator.existingCapabilityOperationFindings("change-a")
+    .map((finding) => finding.kind), ["added-preexisting"]);
+});
 
 function validationRuntimeFixture() {
   const root = mkdtempSync(join(tmpdir(), "foundation-validation-phases-"));
