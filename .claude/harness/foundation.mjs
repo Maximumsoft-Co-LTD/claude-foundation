@@ -7,7 +7,9 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
-import { createTelemetryRuntime } from "./runtime/observability/telemetry-runtime.mjs";
+import {
+  createTelemetryRuntime, recordCommandTelemetry
+} from "./runtime/observability/telemetry-runtime.mjs";
 import { createJsonlReader } from "./runtime/observability/telemetry.mjs";
 import {
   createHostExecutionStore, createModelDriftInspector, hostExecutionTelemetryRows
@@ -171,37 +173,24 @@ const READ_ONLY_OPERATIONS = new Set([
   "doctor", "api-version", "version"
 ]);
 process.on("exit", (code) => {
-  if (process.env.FOUNDATION_TELEMETRY === "0" || !operationChangeId || !operationName) return;
-  if (READ_ONLY_OPERATIONS.has(operationName)) return;
-  // An archived change is finished. Nothing this session did belongs in it —
-  // judged by the status the change had when the command started, so the
-  // archive that finishes it still logs its own row while later sessions that
-  // merely touch the finished change stay silent.
-  if (operationStatusAtStart === "archived") return;
-  try {
-    const path = join(LOGS, operationChangeId, "operations.jsonl");
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${JSON.stringify({
-      version: 2, changeId: operationChangeId, operation: operationName,
-      phase: process.env.FOUNDATION_PUBLIC_OPERATION || operationPhase || null,
-      // Blocked is declared by the command through `block()`/`die()`, never
-      // inferred here. The previous spelling guessed from (exit code 2,
-      // operation name) against a hardcoded list, so any path that set an exit
-      // code without going through `die` was filed as a failure: the same
-      // `validate` refusal read `failed` in one change and `blocked` in
-      // another, and `metrics` counted the difference as rework.
-      status: code === 0 ? "completed"
-        : operationBlocked ? "blocked" : "failed", exitCode: code,
-      startedAt: new Date(operationStartedAt).toISOString(), finishedAt: now(),
-      durationMs: Date.now() - operationStartedAt,
-      requests: null, inputTokens: null, outputTokens: null,
-      cacheCreationTokens: null, cacheReadTokens: null, cacheTokens: null, cost: null,
-      measurement: "command-observed; model usage requires host telemetry ingestion"
-    })}\n`);
-  } catch (error) {
-    if (process.env.FOUNDATION_TELEMETRY_DEBUG === "1")
-      console.error(`WARNING: telemetry unavailable: ${error.message}`);
-  }
+  recordCommandTelemetry({
+    telemetryDisabled: process.env.FOUNDATION_TELEMETRY === "0",
+    telemetryDebug: process.env.FOUNDATION_TELEMETRY_DEBUG === "1",
+    changeId: operationChangeId,
+    operationName,
+    operationPhase,
+    operationStatusAtStart,
+    publicOperation: process.env.FOUNDATION_PUBLIC_OPERATION,
+    blocked: operationBlocked,
+    operationStartedAt,
+    readOnlyOperations: READ_ONLY_OPERATIONS,
+    logs: LOGS,
+    mkdir: mkdirSync,
+    append: appendFileSync,
+    now,
+    timestamp: Date.now,
+    warn: console.error
+  }, code);
 });
 
 const {

@@ -21,6 +21,53 @@ import {
 } from "./telemetry.mjs";
 import { usageAvailability } from "./metrics-runtime.mjs";
 
+export function commandTelemetryStatus(code, blocked) {
+  return code === 0 ? "completed" : blocked ? "blocked" : "failed";
+}
+
+export function commandTelemetryRow(context, code) {
+  return {
+    version: 2,
+    changeId: context.changeId,
+    operation: context.operationName,
+    phase: context.publicOperation || context.operationPhase || null,
+    status: commandTelemetryStatus(code, context.blocked),
+    exitCode: code,
+    startedAt: new Date(context.operationStartedAt).toISOString(),
+    finishedAt: context.now(),
+    durationMs: context.timestamp() - context.operationStartedAt,
+    requests: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheCreationTokens: null,
+    cacheReadTokens: null,
+    cacheTokens: null,
+    cost: null,
+    measurement: "command-observed; model usage requires host telemetry ingestion"
+  };
+}
+
+export function commandTelemetryEligible(context) {
+  if (context.telemetryDisabled || !context.changeId || !context.operationName)
+    return false;
+  if (context.readOnlyOperations.has(context.operationName)) return false;
+  return context.operationStatusAtStart !== "archived";
+}
+
+export function recordCommandTelemetry(context, code) {
+  if (!commandTelemetryEligible(context)) return false;
+  try {
+    const path = join(context.logs, context.changeId, "operations.jsonl");
+    context.mkdir(dirname(path), { recursive: true });
+    context.append(path, `${JSON.stringify(commandTelemetryRow(context, code))}\n`);
+    return true;
+  } catch (error) {
+    if (context.telemetryDebug)
+      context.warn(`WARNING: telemetry unavailable: ${error.message}`);
+    return false;
+  }
+}
+
 export function validateTelemetryEventFlags(context, id, state, flags) {
   if (flags.repo) context.repositoryById(id, flags.repo, state);
   if (flags.task) {

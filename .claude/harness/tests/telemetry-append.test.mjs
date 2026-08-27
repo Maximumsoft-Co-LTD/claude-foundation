@@ -1,19 +1,103 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
   activeTelemetryRunId,
   appendTelemetryJsonLines,
+  commandTelemetryEligible,
+  commandTelemetryRow,
+  commandTelemetryStatus,
   createTelemetryRuntime,
   normalizeTelemetryBatch,
+  recordCommandTelemetry,
   rebindTelemetryWindow
 } from "../runtime/observability/telemetry-runtime.mjs";
 
 const readLines = (path) => existsSync(path)
   ? readFileSync(path, "utf8").split("\n").filter(Boolean).map(JSON.parse)
   : [];
+
+function commandContext(overrides = {}) {
+  return {
+    telemetryDisabled: false,
+    telemetryDebug: false,
+    changeId: "change-a",
+    operationName: "validate",
+    operationPhase: "prove",
+    operationStatusAtStart: "building",
+    publicOperation: null,
+    blocked: false,
+    operationStartedAt: Date.parse("2026-08-27T00:00:00.000Z"),
+    readOnlyOperations: new Set(["metrics"]),
+    logs: "/logs",
+    mkdir: () => {},
+    append: () => {},
+    now: () => "2026-08-27T00:00:01.000Z",
+    timestamp: () => Date.parse("2026-08-27T00:00:01.000Z"),
+    warn: () => {},
+    ...overrides
+  };
+}
+
+test("command telemetry projects honest command outcomes and phase fallbacks", () => {
+  assert.equal(commandTelemetryStatus(0, false), "completed");
+  assert.equal(commandTelemetryStatus(2, true), "blocked");
+  assert.equal(commandTelemetryStatus(1, false), "failed");
+  const publicRow = commandTelemetryRow(commandContext({
+    publicOperation: "proof-run", blocked: true
+  }), 2);
+  assert.equal(publicRow.phase, "proof-run");
+  assert.equal(publicRow.status, "blocked");
+  assert.equal(publicRow.durationMs, 1_000);
+  assert.equal(publicRow.measurement,
+    "command-observed; model usage requires host telemetry ingestion");
+  assert.equal(commandTelemetryRow(commandContext(), 0).phase, "prove");
+  assert.equal(commandTelemetryRow(commandContext({ operationPhase: null }), 1).phase, null);
+});
+
+test("command telemetry eligibility excludes disabled, incomplete, read-only and archived work", () => {
+  assert.equal(commandTelemetryEligible(commandContext()), true);
+  assert.equal(commandTelemetryEligible(commandContext({ telemetryDisabled: true })), false);
+  assert.equal(commandTelemetryEligible(commandContext({ changeId: null })), false);
+  assert.equal(commandTelemetryEligible(commandContext({ operationName: null })), false);
+  assert.equal(commandTelemetryEligible(commandContext({ operationName: "metrics" })), false);
+  assert.equal(commandTelemetryEligible(commandContext({
+    operationStatusAtStart: "archived"
+  })), false);
+});
+
+test("command telemetry writes one JSONL row and contains optional write failures", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "command-telemetry-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const context = commandContext({
+    logs: root,
+    mkdir: mkdirSync,
+    append: appendFileSync
+  });
+  assert.equal(recordCommandTelemetry(context, 0), true);
+  const rows = readLines(join(root, "change-a", "operations.jsonl"));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].operation, "validate");
+  assert.equal(recordCommandTelemetry(commandContext({
+    telemetryDisabled: true,
+    append: () => assert.fail("ineligible telemetry must not write")
+  }), 0), false);
+  const warnings = [];
+  assert.equal(recordCommandTelemetry(commandContext({
+    telemetryDebug: true,
+    mkdir: () => { throw new Error("read only filesystem"); },
+    warn: (message) => warnings.push(message)
+  }), 1), false);
+  assert.deepEqual(warnings, ["WARNING: telemetry unavailable: read only filesystem"]);
+  assert.equal(recordCommandTelemetry(commandContext({
+    mkdir: () => { throw new Error("hidden failure"); },
+    warn: () => assert.fail("debug-disabled telemetry must stay quiet")
+  }), 1), false);
+});
 
 test("telemetry batch normalization deduplicates events and Claude transitions", () => {
   let clock = 0;
