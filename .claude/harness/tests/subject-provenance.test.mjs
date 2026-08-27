@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createReviewProtocol,
+  deterministicReview,
   legacySubjectProvenance,
+  reviewActorComplete,
+  reviewProvenanceResult,
+  reviewSessionIndependent,
+  reviewSubjectComplete,
+  reviewSubjectsComplete,
+  reviewSubjectsDiverse,
   structuredSubjectProvenance,
   subjectProvenanceOperation
 } from "../runtime/evidence/review-protocol.mjs";
@@ -99,4 +106,90 @@ test("review protocol exposes the decomposed provenance operation", () => {
     modelFamily: null,
     modelId: null
   }]);
+});
+
+const humanSubject = { type: "human", identity: "implementer" };
+const aiSubject = {
+  type: "ai", identity: "builder", sessionId: "build-session",
+  providerFamily: "openai", modelFamily: "gpt", modelId: "gpt-5"
+};
+const aiReviewer = {
+  type: "ai", identity: "reviewer", sessionId: "review-session",
+  providerFamily: "anthropic", modelFamily: "claude", modelId: "claude-opus"
+};
+
+test("review provenance completeness validates every actor shape and subject bound", () => {
+  assert.equal(reviewSubjectComplete(humanSubject), true);
+  assert.equal(reviewSubjectComplete({ type: "human", identity: "" }), false);
+  assert.equal(reviewSubjectComplete(aiSubject), true);
+  assert.equal(reviewSubjectComplete({ ...aiSubject, modelId: null }), false);
+  assert.equal(reviewSubjectComplete({ type: "service", identity: "x" }), false);
+  assert.equal(reviewSubjectsComplete([]), false);
+  assert.equal(reviewSubjectsComplete([humanSubject]), true);
+  assert.equal(reviewSubjectsComplete(Array(17).fill(humanSubject)), false);
+  assert.equal(deterministicReview({
+    type: "deterministic", identity: "foundation-repair-closure"
+  }), true);
+  assert.equal(deterministicReview({ type: "deterministic", identity: "other" }), false);
+});
+
+test("review actor and session predicates preserve human, AI, and deterministic rules", () => {
+  assert.equal(reviewActorComplete({}, "", "", false, true), true);
+  assert.equal(reviewActorComplete({ type: "human" }, "human", "", false, false), true);
+  assert.equal(reviewActorComplete({ type: "human" }, "", "", false, false), false);
+  assert.equal(reviewActorComplete(aiReviewer, "reviewer", "review-session",
+    false, false), true);
+  assert.equal(reviewActorComplete({ ...aiReviewer, modelId: null }, "reviewer",
+    "review-session", false, false), false);
+  assert.equal(reviewActorComplete({ ...aiReviewer, sessionId: null }, "reviewer",
+    "", true, false), true);
+  assert.equal(reviewSessionIndependent(aiReviewer, "", [aiSubject], false), false);
+  assert.equal(reviewSessionIndependent(aiReviewer, "review-session",
+    [aiSubject], false), true);
+  assert.equal(reviewSessionIndependent(aiReviewer, "build-session",
+    [aiSubject], false), false);
+  assert.equal(reviewSessionIndependent({ type: "human" }, "", [aiSubject], false), true);
+  assert.equal(reviewSessionIndependent(aiReviewer, "", [aiSubject], true), true);
+});
+
+test("review provenance reports identity, session, and model diversity independently", () => {
+  assert.deepEqual(reviewProvenanceResult({
+    reviewer: aiReviewer, subjects: [aiSubject, humanSubject]
+  }), { complete: true, independent: true, diverse: true });
+  assert.equal(reviewProvenanceResult({
+    reviewer: aiReviewer,
+    subjects: [{ ...aiSubject, identity: "REVIEWER" }]
+  }).independent, false);
+  assert.equal(reviewProvenanceResult({
+    reviewer: aiReviewer,
+    subjects: [{ ...aiSubject, sessionId: "REVIEW-SESSION" }]
+  }).independent, false);
+  assert.equal(reviewProvenanceResult({
+    reviewer: aiReviewer,
+    subjects: [{ ...aiSubject, providerFamily: "ANTHROPIC", modelFamily: "CLAUDE" }]
+  }).diverse, false);
+  assert.equal(reviewProvenanceResult({
+    reviewer: aiReviewer,
+    subjects: [{ ...aiSubject, providerFamily: "anthropic", modelFamily: "other" }]
+  }).diverse, true);
+  assert.deepEqual(reviewProvenanceResult({
+    reviewer: { type: "human", identity: "reviewer" }, subjects: [humanSubject]
+  }), { complete: true, independent: true, diverse: true });
+  assert.deepEqual(reviewProvenanceResult({
+    reviewer: {
+      type: "deterministic", identity: "foundation-repair-closure"
+    }, subjects: [humanSubject]
+  }), { complete: true, independent: true, diverse: true });
+  assert.deepEqual(reviewProvenanceResult(undefined), {
+    complete: false, independent: false, diverse: false
+  });
+  assert.equal(reviewProvenanceResult({
+    reviewer: { ...aiReviewer, sessionId: null }, subjects: [humanSubject]
+  }, { allowMissingAiSession: true }).complete, true);
+});
+
+test("review diversity predicate returns early for authority and incomplete evidence", () => {
+  assert.equal(reviewSubjectsDiverse(aiReviewer, [aiSubject], false, false), false);
+  assert.equal(reviewSubjectsDiverse({ type: "human" }, [aiSubject], false, false), true);
+  assert.equal(reviewSubjectsDiverse(aiReviewer, [aiSubject], false, true), true);
 });

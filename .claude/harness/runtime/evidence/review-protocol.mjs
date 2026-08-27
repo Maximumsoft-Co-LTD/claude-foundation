@@ -32,6 +32,75 @@ export function subjectProvenanceOperation(context, flags) {
   return structured.length ? structured : legacySubjectProvenance(context, flags);
 }
 
+export function reviewSubjectComplete(subject) {
+  if (subject?.type === "human") return Boolean(subject.identity);
+  return subject?.type === "ai" && Boolean(
+    subject.identity && subject.sessionId && subject.providerFamily &&
+    subject.modelFamily && subject.modelId);
+}
+
+export function reviewSubjectsComplete(subjects) {
+  return subjects.length > 0 && subjects.length <= 16 &&
+    subjects.every(reviewSubjectComplete);
+}
+
+export function deterministicReview(reviewer) {
+  return reviewer.type === "deterministic" &&
+    reviewer.identity === "foundation-repair-closure";
+}
+
+export function reviewActorComplete(
+  reviewer, reviewerIdentity, reviewerSession, allowMissingAiSession, deterministic
+) {
+  if (deterministic) return true;
+  if (reviewer.type === "human") return Boolean(reviewerIdentity);
+  return reviewer.type === "ai" && Boolean(
+    reviewer.providerFamily && reviewer.modelFamily && reviewer.modelId &&
+    (reviewerSession || allowMissingAiSession));
+}
+
+export function reviewSessionIndependent(
+  reviewer, reviewerSession, subjects, deterministic
+) {
+  if (deterministic || reviewer.type === "human") return true;
+  if (!reviewerSession) return false;
+  return subjects.filter((subject) => subject.type === "ai")
+    .every((subject) =>
+      String(subject.sessionId).toLowerCase() !== reviewerSession);
+}
+
+export function reviewSubjectsDiverse(reviewer, subjects, complete, deterministic) {
+  if (deterministic || reviewer.type === "human") return true;
+  if (!complete) return false;
+  return subjects.filter((subject) => subject.type === "ai")
+    .every((subject) =>
+      String(subject.providerFamily).toLowerCase() !==
+        String(reviewer.providerFamily).toLowerCase() ||
+      String(subject.modelFamily).toLowerCase() !==
+        String(reviewer.modelFamily).toLowerCase());
+}
+
+export function reviewProvenanceResult(
+  review, { allowMissingAiSession = false } = {}
+) {
+  const reviewer = review?.reviewer || {};
+  const subjects = Array.isArray(review?.subjects) ? review.subjects : [];
+  const actors = subjects.map((subject) =>
+    String(subject.identity || "").toLowerCase());
+  const reviewerIdentity = String(reviewer.identity || "").toLowerCase();
+  const reviewerSession = String(reviewer.sessionId || "").toLowerCase();
+  const deterministic = deterministicReview(reviewer);
+  const complete = reviewActorComplete(reviewer, reviewerIdentity,
+    reviewerSession, allowMissingAiSession, deterministic) &&
+    reviewSubjectsComplete(subjects);
+  const independent = complete && !actors.includes(reviewerIdentity) &&
+    reviewSessionIndependent(
+      reviewer, reviewerSession, subjects, deterministic);
+  const diverse = reviewSubjectsDiverse(
+    reviewer, subjects, complete, deterministic);
+  return { complete, independent, diverse };
+}
+
 export function createReviewProtocol({ stableHash, fail }) {
   function flagValues(flags, name) {
     const value = flags[name];
@@ -40,42 +109,6 @@ export function createReviewProtocol({ stableHash, fail }) {
       .flatMap((item) => String(item).split(","))
       .map((item) => item.trim())
       .filter(Boolean);
-  }
-
-  function provenanceResult(review, { allowMissingAiSession = false } = {}) {
-    const reviewer = review?.reviewer || {};
-    const subjects = Array.isArray(review?.subjects) ? review.subjects : [];
-    const actors = subjects.map((subject) => String(subject.identity || "").toLowerCase());
-    const reviewerIdentity = String(reviewer.identity || "").toLowerCase();
-    const reviewerSession = String(reviewer.sessionId || "").toLowerCase();
-    const subjectsComplete = subjects.length > 0 && subjects.length <= 16 &&
-      subjects.every((subject) => subject?.type === "human"
-        ? Boolean(subject.identity)
-        : subject?.type === "ai" && Boolean(subject.identity && subject.sessionId &&
-          subject.providerFamily && subject.modelFamily && subject.modelId));
-    const deterministic = reviewer.type === "deterministic" &&
-      reviewer.identity === "foundation-repair-closure";
-    const reviewerComplete = deterministic
-      ? true
-      : reviewer.type === "human"
-      ? Boolean(reviewerIdentity)
-      : reviewer.type === "ai" && Boolean(
-        reviewer.providerFamily && reviewer.modelFamily && reviewer.modelId &&
-        (reviewerSession || allowMissingAiSession)
-      );
-    const complete = reviewerComplete && subjectsComplete;
-    const sessionIndependent = deterministic || reviewer.type === "human" || Boolean(reviewerSession) &&
-      subjects.filter((subject) => subject.type === "ai")
-        .every((subject) => String(subject.sessionId).toLowerCase() !== reviewerSession);
-    const independent = complete && !actors.includes(reviewerIdentity) && sessionIndependent;
-    const diverse = deterministic || reviewer.type === "human" || (complete && subjects
-      .filter((subject) => subject.type === "ai")
-      .every((subject) =>
-        String(subject.providerFamily).toLowerCase() !==
-          String(reviewer.providerFamily).toLowerCase() ||
-        String(subject.modelFamily).toLowerCase() !==
-          String(reviewer.modelFamily).toLowerCase()));
-    return { complete, independent, diverse };
   }
 
   function receiptBinding(receipt) {
@@ -206,7 +239,7 @@ export function createReviewProtocol({ stableHash, fail }) {
 
   return {
     flagValues,
-    provenanceResult,
+    provenanceResult: reviewProvenanceResult,
     receiptBinding,
     subjectProvenance,
     attemptIsValid
