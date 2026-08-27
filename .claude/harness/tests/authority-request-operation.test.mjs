@@ -6,9 +6,11 @@ import {
   authorityRequestPolicy,
   authorityRequestSelection,
   displayAuthorityRequest,
+  lockedAuthorityOperation,
   newAuthorityRequestValue,
   pendingAuthorityRequest,
-  requestAuthorityOperation
+  requestAuthorityOperation,
+  resetInfrastructureAuthorityOperation
 } from "../runtime/workflow/authority-runtime.mjs";
 
 const fail = (message) => { throw new Error(message); };
@@ -275,4 +277,72 @@ test("authority abort completes the current dispatch and preserves idempotency",
   assert.equal(already.replaced.length, 0);
   assert.equal(already.completed[0][2].reviewerSessionId, "session-a");
   assert.deepEqual(already.outputRows, [unchanged]);
+});
+
+function resetInfrastructureContext(overrides = {}) {
+  const validated = [];
+  const acknowledgements = [];
+  const output = [];
+  return {
+    validate: (...args) => validated.push(args),
+    reviewerStatus: (reviewer) => ({
+      ok: true, reviewer: reviewer || "default-reviewer", check: "doctor"
+    }),
+    acknowledgeInfrastructureAttempts: (...args) => {
+      acknowledgements.push(args);
+      return { digests: ["attempt-a", "attempt-b"] };
+    },
+    fail,
+    output: { log: (row) => output.push(row) },
+    validated,
+    acknowledgements,
+    outputRows: output,
+    ...overrides
+  };
+}
+
+test("infrastructure reset validates decision identity and reviewer diagnosis", () => {
+  const missing = resetInfrastructureContext();
+  assert.throws(() => resetInfrastructureAuthorityOperation(missing, "c"),
+    /requires --decision-ref/);
+  assert.deepEqual(missing.validated, [["c", "active", { quiet: true }]]);
+  const broken = resetInfrastructureContext({
+    reviewerStatus: () => ({
+      ok: false, reviewer: "codex", check: "authentication", detail: "expired"
+    })
+  });
+  assert.throws(() => resetInfrastructureAuthorityOperation(broken, "c", {
+    "decision-ref": "decision-a", reviewer: " codex "
+  }), /codex.*authentication.*expired/);
+  assert.equal(broken.acknowledgements.length, 0);
+});
+
+test("infrastructure reset acknowledges attempts and renders the recovery route", () => {
+  const context = resetInfrastructureContext();
+  const result = resetInfrastructureAuthorityOperation(context, "c", {
+    "decision-ref": " decision-a ", reviewer: ""
+  });
+  assert.deepEqual(result, { digests: ["attempt-a", "attempt-b"] });
+  assert.deepEqual(context.acknowledgements, [["c", "decision-a"]]);
+  assert.match(context.outputRows[0], /default-reviewer \(doctor\)/);
+  assert.match(context.outputRows[0], /acknowledged: 2 attempt/);
+  assert.match(context.outputRows[0], /decision: decision-a/);
+});
+
+test("locked authority adapter preserves identity, flags, and lock ownership", () => {
+  const locks = [];
+  const operations = [];
+  const locked = lockedAuthorityOperation((id, operation) => {
+    locks.push(id);
+    return operation();
+  }, (id, flags) => {
+    operations.push([id, flags]);
+    return "completed";
+  });
+  assert.equal(locked("change-a", { reason: "test" }), "completed");
+  assert.equal(locked("change-b"), "completed");
+  assert.deepEqual(locks, ["change-a", "change-b"]);
+  assert.deepEqual(operations, [
+    ["change-a", { reason: "test" }], ["change-b", {}]
+  ]);
 });

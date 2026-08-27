@@ -205,6 +205,28 @@ export function abortAuthorityOperation(context, id, flags = {}) {
   return updated;
 }
 
+export function resetInfrastructureAuthorityOperation(context, id, flags = {}) {
+  context.validate(id, "active", { quiet: true });
+  const decisionRef = String(flags["decision-ref"] || "").trim();
+  if (!decisionRef)
+    context.fail("authority reset-infra requires --decision-ref <ref>");
+  const reviewerName = String(flags.reviewer || "").trim() || null;
+  const status = context.reviewerStatus(reviewerName);
+  if (!status.ok)
+    context.fail(`configured reviewer '${status.reviewer}' still fails its ${status.check} diagnosis: ${status.detail}`);
+  const result = context.acknowledgeInfrastructureAttempts(id, decisionRef);
+  context.output.log(`AUTHORITY ${id}: infrastructure retries reset\n  reviewer: ${
+    status.reviewer} (${status.check})\n  acknowledged: ${
+    result.digests.length} attempt(s)\n  decision: ${decisionRef
+    }\n  next: request and dispatch the AI review again`);
+  return result;
+}
+
+export function lockedAuthorityOperation(withAuthorityLock, operation) {
+  return (id, flags = {}) => withAuthorityLock(
+    id, operation.bind(null, id, flags));
+}
+
 export function mainSessionEnvironment(environment) {
   const claudeSession = String(
     environment.FOUNDATION_CLAUDE_SESSION_ID || "").trim();
@@ -1565,23 +1587,14 @@ export function createAuthorityRuntime({
   // provider repair and doctor. This is that route — it re-runs the reviewer
   // diagnosis in-process and acknowledges the consumed attempts only when the
   // diagnosis passes and the decision reference is fresh.
-  function resetInfrastructureAuthority(id, flags = {}) {
-    return withAuthorityLock(id, () => {
-      validate(id, "active", { quiet: true });
-      const decisionRef = String(flags["decision-ref"] || "").trim();
-      if (!decisionRef) fail("authority reset-infra requires --decision-ref <ref>");
-      const reviewerName = String(flags.reviewer || "").trim() || null;
-      const status = reviewerStatus(reviewerName);
-      if (!status.ok)
-        fail(`configured reviewer '${status.reviewer}' still fails its ${status.check} diagnosis: ${status.detail}`);
-      const result = acknowledgeInfrastructureAttempts(id, decisionRef);
-      console.log(`AUTHORITY ${id}: infrastructure retries reset\n  reviewer: ${
-        status.reviewer} (${status.check})\n  acknowledged: ${
-        result.digests.length} attempt(s)\n  decision: ${decisionRef
-        }\n  next: request and dispatch the AI review again`);
-      return result;
+  const resetInfrastructureAuthorityUnlocked =
+    resetInfrastructureAuthorityOperation.bind(null, {
+      validate, reviewerStatus, acknowledgeInfrastructureAttempts, fail,
+      output: console
     });
-  }
+
+  const resetInfrastructureAuthority = lockedAuthorityOperation(
+    withAuthorityLock, resetInfrastructureAuthorityUnlocked);
 
   // A moved base whose replay altered the change's diff expires a delivered
   // passing verdict through no fault of the work. This route releases exactly
