@@ -100,7 +100,7 @@ const fs = require("node:fs");
 const path = process.argv[2];
 const source = fs.readFileSync(path, "utf8");
 const mutated = source.replace(
-  /if \(digest === codeHash && isChangePacketPath\(rel, id\)\) continue;/,
+  /if \(name === "codeHash" && isChangePacketPath\(rel, id\)\) continue;/,
   "// FOUNDATION-INJECTED-FAULT: the packet is code again");
 if (mutated === source) { console.error("packet-omission fault did not apply"); process.exit(3); }
 fs.writeFileSync(path, mutated);

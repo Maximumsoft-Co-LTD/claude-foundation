@@ -132,6 +132,9 @@ test("filesystem identities, deterministic hashes, and compact lists cover all s
   assert.equal(f.state.filesystemEntryIdentity(join(tree, "link")),
     "symlink:regular.txt");
   assert.match(f.state.filesystemEntryIdentity(tree), /^unsupported:/);
+  assert.equal(f.state.codepointOrder("a", "b"), -1);
+  assert.equal(f.state.codepointOrder("b", "a"), 1);
+  assert.equal(f.state.codepointOrder("same", "same"), 0);
   const visited = [];
   f.state.walk(tree, (path) => visited.push(path));
   assert.equal(visited.length, 3);
